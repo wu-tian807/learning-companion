@@ -438,7 +438,7 @@ export function Home() {
         {loadState.kind === 'ready' && projects.length === 0 && (
           <div className="rounded-[17px] border border-dashed border-white/[0.1] px-6 py-14 text-center">
             <p className="text-sm font-medium text-slate-300">还没有 Project</p>
-            <p className="mt-2 text-xs text-slate-500">从右上角创建第一个学习 Project。</p>
+            <p className="mt-2 text-xs text-slate-500">点击下方创建第一个学习 Project。</p>
             <button
               type="button"
               onClick={openCreateDialog}
