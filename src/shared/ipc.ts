@@ -1,5 +1,10 @@
+import type { AppPreferences, HomePreferences } from './app-preferences';
+import { isHomePreferences } from './app-preferences';
+
 export const IPC_CHANNELS = {
   healthCheck: 'app:health-check',
+  getAppPreferences: 'settings:get',
+  updateHomePreferences: 'settings:update-home',
   listProjects: 'project:list',
   createProject: 'project:create',
   renameProject: 'project:rename',
@@ -19,6 +24,10 @@ export interface HealthCheckResponse {
 
 export interface LearningCompanionApi {
   healthCheck: () => Promise<HealthCheckResponse>;
+  getAppPreferences: () => Promise<AppPreferences>;
+  updateHomePreferences: (
+    request: UpdateHomePreferencesRequest,
+  ) => Promise<AppPreferences>;
   listProjects: () => Promise<ProjectSummary[]>;
   createProject: (request: CreateProjectRequest) => Promise<ProjectSummary>;
   renameProject: (request: RenameProjectRequest) => Promise<ProjectSummary>;
@@ -52,6 +61,8 @@ export interface SetProjectPinnedRequest {
 export interface DeleteProjectRequest {
   id: string;
 }
+
+export type UpdateHomePreferencesRequest = HomePreferences;
 
 export function createHealthCheckResponse(
   appVersion: string,
@@ -140,4 +151,10 @@ export function isSetProjectPinnedRequest(
 
 export function isDeleteProjectRequest(value: unknown): value is DeleteProjectRequest {
   return isRecord(value) && isRequiredText(value.id);
+}
+
+export function isUpdateHomePreferencesRequest(
+  value: unknown,
+): value is UpdateHomePreferencesRequest {
+  return isHomePreferences(value);
 }

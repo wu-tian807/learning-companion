@@ -9,6 +9,7 @@ import {
   isProjectSummaryList,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
+  isUpdateHomePreferencesRequest,
 } from './ipc';
 
 describe('health check contract', () => {
@@ -78,5 +79,32 @@ describe('project mutation contracts', () => {
     expect(isRenameProjectRequest({ id: '', name: '新标题' })).toBe(false);
     expect(isSetProjectPinnedRequest({ id: 'project-1', pinned: 'yes' })).toBe(false);
     expect(isDeleteProjectRequest(null)).toBe(false);
+  });
+});
+
+describe('settings mutation contracts', () => {
+  it('accepts supported home preferences', () => {
+    expect(
+      isUpdateHomePreferencesRequest({
+        viewMode: 'list',
+        sortMode: 'title',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects malformed home preferences', () => {
+    expect(isUpdateHomePreferencesRequest(null)).toBe(false);
+    expect(
+      isUpdateHomePreferencesRequest({
+        viewMode: 'compact',
+        sortMode: 'newest',
+      }),
+    ).toBe(false);
+    expect(
+      isUpdateHomePreferencesRequest({
+        viewMode: 'grid',
+        sortMode: 'popular',
+      }),
+    ).toBe(false);
   });
 });

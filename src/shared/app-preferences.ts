@@ -25,12 +25,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isProjectViewMode(value: unknown): value is ProjectViewMode {
+export function isProjectViewMode(value: unknown): value is ProjectViewMode {
   return value === 'grid' || value === 'list';
 }
 
-function isProjectSortMode(value: unknown): value is ProjectSortMode {
+export function isProjectSortMode(value: unknown): value is ProjectSortMode {
   return value === 'newest' || value === 'oldest' || value === 'title';
+}
+
+export function isHomePreferences(value: unknown): value is HomePreferences {
+  return (
+    isRecord(value) &&
+    isProjectViewMode(value.viewMode) &&
+    isProjectSortMode(value.sortMode)
+  );
 }
 
 export function isAppPreferences(value: unknown): value is AppPreferences {
@@ -38,11 +46,5 @@ export function isAppPreferences(value: unknown): value is AppPreferences {
     return false;
   }
 
-  const home = value.home;
-
-  return (
-    isRecord(home) &&
-    isProjectViewMode(home.viewMode) &&
-    isProjectSortMode(home.sortMode)
-  );
+  return isHomePreferences(value.home);
 }

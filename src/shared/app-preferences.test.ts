@@ -4,6 +4,7 @@ import {
   APP_PREFERENCES_SCHEMA_VERSION,
   DEFAULT_APP_PREFERENCES,
   isAppPreferences,
+  isHomePreferences,
   type AppPreferences,
 } from './app-preferences';
 
@@ -22,6 +23,12 @@ describe('app preferences contract', () => {
   });
 
   it('accepts every supported home preference', () => {
+    expect(
+      isHomePreferences({
+        viewMode: 'list',
+        sortMode: 'title',
+      }),
+    ).toBe(true);
     expect(
       isAppPreferences({
         schemaVersion: 1,
@@ -43,6 +50,8 @@ describe('app preferences contract', () => {
   });
 
   it('rejects unknown versions and malformed home preferences', () => {
+    expect(isHomePreferences(null)).toBe(false);
+    expect(isHomePreferences({ viewMode: 'grid', sortMode: 'popular' })).toBe(false);
     expect(isAppPreferences(null)).toBe(false);
     expect(isAppPreferences([])).toBe(false);
     expect(isAppPreferences({ schemaVersion: 2, home: DEFAULT_APP_PREFERENCES.home })).toBe(

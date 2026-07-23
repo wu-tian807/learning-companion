@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+import type { AppPreferences } from '../shared/app-preferences';
 import type {
   CreateProjectRequest,
   DeleteProjectRequest,
@@ -8,12 +9,20 @@ import type {
   ProjectSummary,
   RenameProjectRequest,
   SetProjectPinnedRequest,
+  UpdateHomePreferencesRequest,
 } from '../shared/ipc';
 import { IPC_CHANNELS } from '../shared/ipc';
 
 const api: LearningCompanionApi = {
   healthCheck: () =>
     ipcRenderer.invoke(IPC_CHANNELS.healthCheck) as Promise<HealthCheckResponse>,
+  getAppPreferences: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getAppPreferences) as Promise<AppPreferences>,
+  updateHomePreferences: (request: UpdateHomePreferencesRequest) =>
+    ipcRenderer.invoke(
+      IPC_CHANNELS.updateHomePreferences,
+      request,
+    ) as Promise<AppPreferences>,
   listProjects: () =>
     ipcRenderer.invoke(IPC_CHANNELS.listProjects) as Promise<ProjectSummary[]>,
   createProject: (request: CreateProjectRequest) =>
