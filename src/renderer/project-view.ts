@@ -1,7 +1,7 @@
 import type { ProjectSummary } from '../shared/ipc';
+import type { ProjectSortMode } from '../shared/app-preferences';
 
-export type ProjectViewMode = 'grid' | 'list';
-export type ProjectSortMode = 'newest' | 'oldest' | 'title';
+export type { ProjectSortMode, ProjectViewMode } from '../shared/app-preferences';
 
 const PROJECT_CARD_COLORS = [
   '#323941',
