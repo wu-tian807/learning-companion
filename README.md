@@ -9,7 +9,7 @@
 - 新建、重命名、置顶和删除 Project。
 - Renderer 通过 Preload 白名单 API 调用 Main，不直接访问 Node.js。
 
-Project 当前使用调试用内存仓库：操作在本次应用进程中真实生效，但应用重启后会恢复内置示例数据。本阶段尚未接入 SQLite。
+Project 当前使用调试用内存仓库：操作在本次应用进程中真实生效，但应用重启后会恢复内置示例数据。本阶段尚未接入 SQLite。新建 Project 时由 Main 自动分配占位图标 `📘`，后续将在后端替换为模型生成或挑选图标，不要求用户手动填写。
 
 ## 开发环境
 
@@ -46,4 +46,4 @@ React Renderer
 
 Renderer 禁止直接访问 Node.js。当前通过类型安全的 IPC 开放健康检查和 Project 的列表、创建、重命名、置顶、删除操作；两种首页视图使用同一份 Main Repository 数据。Project 当前包含 `id`、`name`、`icon`、`createdTime`、`sources` 和 `pinned`，内存实现后续可以在不改变 Renderer 调用方式的前提下替换为 SQLite。
 
-完整技术选择见 [`TECH_STACK.md`](./TECH_STACK.md)，最新 Project 首页交互设计见 [`docs/superpowers/specs/2026-07-23-project-home-interactions-design.md`](./docs/superpowers/specs/2026-07-23-project-home-interactions-design.md)。
+完整技术选择见 [`TECH_STACK.md`](./TECH_STACK.md)，Project 首页交互设计见 [`docs/superpowers/specs/2026-07-23-project-home-interactions-design.md`](./docs/superpowers/specs/2026-07-23-project-home-interactions-design.md)，本轮控件体验修订见 [`docs/superpowers/specs/2026-07-23-project-home-polish-design.md`](./docs/superpowers/specs/2026-07-23-project-home-polish-design.md)。
