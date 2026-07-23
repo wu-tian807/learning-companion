@@ -67,7 +67,6 @@ flowchart LR
     PDB --> ORM["Drizzle ORM"]
     ORM --> SQLITE["better-sqlite3"]
     SQLITE --> FILE["userData/data/learning-companion.sqlite3"]
-    PDB --> MAPPER["Project Row Mapper"]
 ```
 
 Renderer 和 Preload 只能通过白名单 IPC 访问 Project。它们不能接触：
@@ -93,7 +92,6 @@ src/main/
 └── projects/
     ├── project.ts
     ├── project-database.ts
-    ├── project-row-mapper.ts
     └── project-database.test.ts
 ```
 
@@ -102,9 +100,8 @@ src/main/
 - `database-context.ts`：定义 Main 内共享的 Drizzle 和 better-sqlite3 连接上下文，并提供关闭能力。
 - `initialize-database.ts`：创建数据库目录、打开连接、配置 SQLite、执行版本化迁移。
 - `migrations/`：只保存数据库结构演进，不包含业务 CRUD。
-- `schema/projects.ts`：Drizzle 的 projects 表结构。
-- `project.ts`：纯数据类型、创建和更新输入类型。
-- `project-row-mapper.ts`：数据库行与内存 Project 的双向映射。
+- `schema/projects.ts`：Drizzle 的 projects 表结构，并声明 SQLite 时间戳、布尔值和 TypeScript 字段名之间的转换。
+- `project.ts`：纯数据类型、创建和更新输入类型，以及创建不可变快照的纯函数。
 - `project-database.ts`：组合 Map 与数据库操作，对外提供 Project API。
 
 当前用户新建的 Source 相关文件不在本阶段修改。
@@ -137,10 +134,12 @@ export interface UpdateProjectInput {
 - `name`、`icon` 和 `pinned` 是允许更新的白名单字段。
 - `CreateProjectInput` 不接收 icon，继续符合“图标由应用或后端模型选择”的产品要求。
 - 骨架阶段创建 Project 时使用内部默认图标，未来图标选择器只需替换该依赖。
-- `createdTime` 在内存中使用 `Date`，进入 IPC 时转换为 ISO 8601 字符串，进入 SQLite 时转换为整数时间戳。
+- `createdTime` 在内存中使用 `Date`，进入 IPC 时转换为 ISO 8601 字符串；Drizzle schema 负责它与 SQLite 整数时间戳的转换。
 - Project 不包含 Source、Asset、数量或 UI 排序状态。
 
 `Project` 使用普通对象而不是带成员方法的 class。运行时创建的对象执行浅冻结；因为当前所有字段都是标量或 `Date`，返回给调用方时仍需复制 `Date`，避免通过 `setTime()` 修改内部状态。
+
+当前数据库行和 Project 的字段结构几乎一一对应，因此不增加独立的 row mapper。Drizzle schema 直接把 `created_time` 映射为 `createdTime: Date`、把 SQLite `0/1` 映射为 `pinned: boolean`；查询结果再经过 `project.ts` 的快照函数完成校验、复制和冻结。只有未来数据库结构与内存结构明显分化时，才引入 mapper。
 
 ## 数据库表
 
@@ -207,7 +206,7 @@ app.whenReady()
 
 1. 拒绝在已有内存数据的情况下重复初始化；已经成功初始化时再次调用直接返回。
 2. 一次性查询全部 Project 行。
-3. 使用 row mapper 验证并转换每一行。
+3. 使用 `project.ts` 的快照函数验证、复制并冻结每一行。
 4. 先构建临时 Map。
 5. 全部行转换成功后，才把临时 Map 设为当前容器。
 
@@ -302,7 +301,7 @@ Drizzle 负责类型安全查询和 schema 定义；better-sqlite3 负责同步 
 
 - Project 创建后各字段符合规范化结果。
 - Date 和 Project 快照不会共享可变引用。
-- SQLite 的时间戳和 pinned 整数可正确双向转换。
+- Drizzle schema 可正确转换 SQLite 时间戳和 pinned 整数。
 - 非法数据库行不能进入内存 Map。
 
 ### ProjectDatabase
@@ -331,7 +330,6 @@ Drizzle 负责类型安全查询和 schema 定义；better-sqlite3 负责同步 
 - Project 纯数据化。
 - 数据库路径和 DatabaseContext。
 - projects schema 与首个迁移。
-- Project row mapper。
 - ProjectDatabase 的初始化和 CRUD 写穿实现。
 - Project IPC 改用 ProjectDatabase。
 - 删除旧的 `InMemoryProjectRepository` 及其测试。
