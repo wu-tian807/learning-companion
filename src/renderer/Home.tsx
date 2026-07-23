@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  DEFAULT_APP_PREFERENCES,
+  isAppPreferences,
+  type HomePreferences,
+  type ProjectSortMode,
+  type ProjectViewMode,
+} from '../shared/app-preferences';
 import type { ProjectSummary } from '../shared/ipc';
 import { isProjectSummary, isProjectSummaryList } from '../shared/ipc';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -7,11 +14,7 @@ import { HomeToolbar } from './components/HomeToolbar';
 import { ProjectDialog, type ProjectDialogValues } from './components/ProjectDialog';
 import { ProjectGrid } from './components/ProjectGrid';
 import { ProjectList } from './components/ProjectList';
-import {
-  filterAndSortProjects,
-  type ProjectSortMode,
-  type ProjectViewMode,
-} from './project-view';
+import { filterAndSortProjects } from './project-view';
 
 type ProjectLoadState =
   | { kind: 'loading' }
@@ -22,6 +25,13 @@ type ProjectEditorState =
   | { kind: 'closed' }
   | { kind: 'create' }
   | { kind: 'rename'; project: ProjectSummary };
+
+function copyHomePreferences(preferences: HomePreferences): HomePreferences {
+  return {
+    viewMode: preferences.viewMode,
+    sortMode: preferences.sortMode,
+  };
+}
 
 function LoadingProjectGrid() {
   return (
@@ -60,14 +70,30 @@ function LoadingProjectList() {
 export function Home() {
   const [loadState, setLoadState] = useState<ProjectLoadState>({ kind: 'loading' });
   const [requestVersion, setRequestVersion] = useState(0);
-  const [viewMode, setViewMode] = useState<ProjectViewMode>('grid');
-  const [sortMode, setSortMode] = useState<ProjectSortMode>('newest');
+  const [homePreferences, setHomePreferences] = useState<HomePreferences>(() =>
+    copyHomePreferences(DEFAULT_APP_PREFERENCES.home),
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [editorState, setEditorState] = useState<ProjectEditorState>({ kind: 'closed' });
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const mutationLockRef = useRef(false);
+  const displayedHomePreferencesRef = useRef<HomePreferences>(
+    copyHomePreferences(DEFAULT_APP_PREFERENCES.home),
+  );
+  const confirmedHomePreferencesRef = useRef<HomePreferences>(
+    copyHomePreferences(DEFAULT_APP_PREFERENCES.home),
+  );
+  const preferencesMutationVersionRef = useRef(0);
+  const { sortMode, viewMode } = homePreferences;
+
+  const applyHomePreferences = useCallback((preferences: HomePreferences) => {
+    const nextPreferences = copyHomePreferences(preferences);
+    displayedHomePreferencesRef.current = nextPreferences;
+    setHomePreferences(nextPreferences);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -98,6 +124,38 @@ export function Home() {
       active = false;
     };
   }, [requestVersion]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPreferences = async () => {
+      try {
+        const preferences = await window.learningCompanion.getAppPreferences();
+
+        if (!isAppPreferences(preferences)) {
+          throw new Error('Settings 响应格式无效');
+        }
+
+        if (active && preferencesMutationVersionRef.current === 0) {
+          const restoredHome = copyHomePreferences(preferences.home);
+          confirmedHomePreferencesRef.current = restoredHome;
+          applyHomePreferences(restoredHome);
+        }
+      } catch (error) {
+        console.error('加载 Settings 失败', error);
+
+        if (active && preferencesMutationVersionRef.current === 0) {
+          setSettingsError('无法加载界面设置，已使用默认值。');
+        }
+      }
+    };
+
+    void loadPreferences();
+
+    return () => {
+      active = false;
+    };
+  }, [applyHomePreferences]);
 
   const projects = useMemo(
     () => (loadState.kind === 'ready' ? loadState.projects : []),
@@ -149,6 +207,59 @@ export function Home() {
       }
     },
     [],
+  );
+
+  const persistHomePreferences = useCallback(
+    async (nextPreferences: HomePreferences) => {
+      const mutationVersion = preferencesMutationVersionRef.current + 1;
+      preferencesMutationVersionRef.current = mutationVersion;
+      applyHomePreferences(nextPreferences);
+      setSettingsError(null);
+
+      try {
+        const preferences =
+          await window.learningCompanion.updateHomePreferences(nextPreferences);
+
+        if (!isAppPreferences(preferences)) {
+          throw new Error('Settings 更新响应格式无效');
+        }
+
+        const confirmedHome = copyHomePreferences(preferences.home);
+        confirmedHomePreferencesRef.current = confirmedHome;
+
+        if (preferencesMutationVersionRef.current === mutationVersion) {
+          applyHomePreferences(confirmedHome);
+        }
+      } catch (error) {
+        console.error('保存 Settings 失败', error);
+
+        if (preferencesMutationVersionRef.current === mutationVersion) {
+          applyHomePreferences(confirmedHomePreferencesRef.current);
+          setSettingsError('无法保存界面设置，已恢复上一次选择。');
+        }
+      }
+    },
+    [applyHomePreferences],
+  );
+
+  const changeViewMode = useCallback(
+    (viewMode: ProjectViewMode) => {
+      void persistHomePreferences({
+        ...displayedHomePreferencesRef.current,
+        viewMode,
+      });
+    },
+    [persistHomePreferences],
+  );
+
+  const changeSortMode = useCallback(
+    (sortMode: ProjectSortMode) => {
+      void persistHomePreferences({
+        ...displayedHomePreferencesRef.current,
+        sortMode,
+      });
+    },
+    [persistHomePreferences],
   );
 
   const openCreateDialog = useCallback(() => {
@@ -266,6 +377,7 @@ export function Home() {
       setDeleteTarget(project);
     },
   };
+  const pageError = mutationError ?? settingsError;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#1f2329] text-slate-100">
@@ -285,22 +397,25 @@ export function Home() {
             viewMode={viewMode}
             sortMode={sortMode}
             onSearchQueryChange={setSearchQuery}
-            onViewModeChange={setViewMode}
-            onSortModeChange={setSortMode}
+            onViewModeChange={changeViewMode}
+            onSortModeChange={changeSortMode}
             onCreate={openCreateDialog}
           />
         </header>
 
-        {mutationError && editorState.kind === 'closed' && !deleteTarget && (
+        {pageError && editorState.kind === 'closed' && !deleteTarget && (
           <div
             role="alert"
             className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-4 py-3 text-xs text-rose-200"
           >
-            <span>{mutationError}</span>
+            <span>{pageError}</span>
             <button
               type="button"
               aria-label="关闭错误提示"
-              onClick={() => setMutationError(null)}
+              onClick={() => {
+                setMutationError(null);
+                setSettingsError(null);
+              }}
               className="ui-icon-button grid size-7 place-items-center rounded-full text-base text-rose-200/60"
             >
               ×
