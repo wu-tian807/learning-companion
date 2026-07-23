@@ -4,6 +4,8 @@ export interface AppPaths {
   readonly userDataDirectory: string;
   readonly configDirectory: string;
   readonly settingsFile: string;
+  readonly dataDirectory: string;
+  readonly databaseFile: string;
 }
 
 export function createAppPaths(userDataDirectory: string): AppPaths {
@@ -17,10 +19,13 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
 
   const normalizedUserDataDirectory = normalize(userDataDirectory);
   const configDirectory = join(normalizedUserDataDirectory, 'config');
+  const dataDirectory = join(normalizedUserDataDirectory, 'data');
 
   return Object.freeze({
     userDataDirectory: normalizedUserDataDirectory,
     configDirectory,
     settingsFile: join(configDirectory, 'settings.json'),
+    dataDirectory,
+    databaseFile: join(dataDirectory, 'learning-companion.sqlite3'),
   });
 }

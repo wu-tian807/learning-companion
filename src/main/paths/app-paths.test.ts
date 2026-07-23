@@ -12,6 +12,8 @@ describe('app paths', () => {
       userDataDirectory,
       configDirectory: join(userDataDirectory, 'config'),
       settingsFile: join(userDataDirectory, 'config', 'settings.json'),
+      dataDirectory: join(userDataDirectory, 'data'),
+      databaseFile: join(userDataDirectory, 'data', 'learning-companion.sqlite3'),
     });
   });
 
