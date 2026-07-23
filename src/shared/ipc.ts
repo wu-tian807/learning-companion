@@ -1,7 +1,14 @@
 export const IPC_CHANNELS = {
   healthCheck: 'app:health-check',
   listProjects: 'project:list',
+  createProject: 'project:create',
+  renameProject: 'project:rename',
+  setProjectPinned: 'project:set-pinned',
+  deleteProject: 'project:delete',
 } as const;
+
+export const PROJECT_NAME_MAX_LENGTH = 80;
+export const PROJECT_ICON_MAX_CODE_POINTS = 8;
 
 export interface HealthCheckResponse {
   status: 'ok';
@@ -13,6 +20,10 @@ export interface HealthCheckResponse {
 export interface LearningCompanionApi {
   healthCheck: () => Promise<HealthCheckResponse>;
   listProjects: () => Promise<ProjectSummary[]>;
+  createProject: (request: CreateProjectRequest) => Promise<ProjectSummary>;
+  renameProject: (request: RenameProjectRequest) => Promise<ProjectSummary>;
+  setProjectPinned: (request: SetProjectPinnedRequest) => Promise<ProjectSummary>;
+  deleteProject: (request: DeleteProjectRequest) => Promise<void>;
 }
 
 export interface ProjectSummary {
@@ -21,6 +32,26 @@ export interface ProjectSummary {
   icon: string;
   createdTime: string;
   sources: string[];
+  pinned: boolean;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  icon: string;
+}
+
+export interface RenameProjectRequest {
+  id: string;
+  name: string;
+}
+
+export interface SetProjectPinnedRequest {
+  id: string;
+  pinned: boolean;
+}
+
+export interface DeleteProjectRequest {
+  id: string;
 }
 
 export function createHealthCheckResponse(
@@ -69,10 +100,49 @@ export function isProjectSummary(value: unknown): value is ProjectSummary {
     typeof candidate.createdTime === 'string' &&
     !Number.isNaN(Date.parse(candidate.createdTime)) &&
     Array.isArray(candidate.sources) &&
-    candidate.sources.every((source) => typeof source === 'string' && source.length > 0)
+    candidate.sources.every((source) => typeof source === 'string' && source.length > 0) &&
+    typeof candidate.pinned === 'boolean'
   );
 }
 
 export function isProjectSummaryList(value: unknown): value is ProjectSummary[] {
   return Array.isArray(value) && value.every(isProjectSummary);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isRequiredText(value: unknown, maxLength?: number): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    (maxLength === undefined || [...value].length <= maxLength)
+  );
+}
+
+export function isCreateProjectRequest(value: unknown): value is CreateProjectRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH) &&
+    isRequiredText(value.icon, PROJECT_ICON_MAX_CODE_POINTS)
+  );
+}
+
+export function isRenameProjectRequest(value: unknown): value is RenameProjectRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.id) &&
+    isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH)
+  );
+}
+
+export function isSetProjectPinnedRequest(
+  value: unknown,
+): value is SetProjectPinnedRequest {
+  return isRecord(value) && isRequiredText(value.id) && typeof value.pinned === 'boolean';
+}
+
+export function isDeleteProjectRequest(value: unknown): value is DeleteProjectRequest {
+  return isRecord(value) && isRequiredText(value.id);
 }

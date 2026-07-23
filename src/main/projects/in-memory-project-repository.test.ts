@@ -32,4 +32,35 @@ describe('InMemoryProjectRepository', () => {
 
     expect(repository.list()[0]?.sources).toEqual(['project:source-1']);
   });
+
+  it('creates, renames, pins and deletes projects', () => {
+    const repository = new InMemoryProjectRepository([], {
+      createId: () => 'created-project',
+      now: () => new Date('2026-07-23T02:00:00.000Z'),
+    });
+
+    const created = repository.create({ name: '新 Project', icon: '📘' });
+    const renamed = repository.rename(created.id, '新标题');
+    const pinned = repository.setPinned(created.id, true);
+
+    expect(created.toSummary()).toMatchObject({
+      id: 'created-project',
+      createdTime: '2026-07-23T02:00:00.000Z',
+      sources: [],
+      pinned: false,
+    });
+    expect(renamed.name).toBe('新标题');
+    expect(pinned.pinned).toBe(true);
+
+    repository.delete(created.id);
+    expect(repository.list()).toEqual([]);
+  });
+
+  it('rejects operations for an unknown project', () => {
+    const repository = new InMemoryProjectRepository([]);
+
+    expect(() => repository.rename('missing', '新标题')).toThrow('找不到指定的 Project');
+    expect(() => repository.setPinned('missing', true)).toThrow('找不到指定的 Project');
+    expect(() => repository.delete('missing')).toThrow('找不到指定的 Project');
+  });
 });

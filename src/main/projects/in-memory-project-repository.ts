@@ -1,17 +1,79 @@
+import { randomUUID } from 'node:crypto';
+
 import { Project } from './project';
-import type { ProjectRepository } from './project-repository';
+import type { CreateProjectInput, ProjectRepository } from './project-repository';
+
+interface RepositoryDependencies {
+  createId: () => string;
+  now: () => Date;
+}
+
+const defaultDependencies: RepositoryDependencies = {
+  createId: randomUUID,
+  now: () => new Date(),
+};
 
 export class InMemoryProjectRepository implements ProjectRepository {
   private readonly projects: Project[];
+  private readonly dependencies: RepositoryDependencies;
 
-  constructor(projects: readonly Project[]) {
+  constructor(
+    projects: readonly Project[],
+    dependencies: RepositoryDependencies = defaultDependencies,
+  ) {
     this.projects = projects.map((project) => project.clone());
+    this.dependencies = dependencies;
   }
 
   list(): readonly Project[] {
     return [...this.projects]
       .sort((left, right) => right.createdTime.getTime() - left.createdTime.getTime())
       .map((project) => project.clone());
+  }
+
+  create(input: CreateProjectInput): Project {
+    const project = new Project({
+      id: this.dependencies.createId(),
+      name: input.name,
+      icon: input.icon,
+      createdTime: this.dependencies.now(),
+      sources: [],
+    });
+
+    this.projects.push(project);
+    return project.clone();
+  }
+
+  rename(id: string, name: string): Project {
+    const project = this.find(id);
+    project.rename(name);
+    return project.clone();
+  }
+
+  setPinned(id: string, pinned: boolean): Project {
+    const project = this.find(id);
+    project.setPinned(pinned);
+    return project.clone();
+  }
+
+  delete(id: string): void {
+    const projectIndex = this.projects.findIndex((project) => project.id === id);
+
+    if (projectIndex === -1) {
+      throw new Error('找不到指定的 Project');
+    }
+
+    this.projects.splice(projectIndex, 1);
+  }
+
+  private find(id: string): Project {
+    const project = this.projects.find((candidate) => candidate.id === id);
+
+    if (!project) {
+      throw new Error('找不到指定的 Project');
+    }
+
+    return project;
   }
 }
 

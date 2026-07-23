@@ -1,4 +1,8 @@
-import type { ProjectSummary } from '../../shared/ipc';
+import {
+  PROJECT_ICON_MAX_CODE_POINTS,
+  PROJECT_NAME_MAX_LENGTH,
+  type ProjectSummary,
+} from '../../shared/ipc';
 
 export interface ProjectInput {
   id: string;
@@ -6,14 +10,21 @@ export interface ProjectInput {
   icon: string;
   createdTime: Date;
   sources: string[];
+  pinned?: boolean;
 }
 
-function requireText(value: string, field: string): string {
-  if (value.trim().length === 0) {
+function requireText(value: string, field: string, maxLength?: number): string {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
     throw new Error(`Project ${field} 不能为空`);
   }
 
-  return value;
+  if (maxLength !== undefined && [...normalized].length > maxLength) {
+    throw new Error(`Project ${field} 过长`);
+  }
+
+  return normalized;
 }
 
 function copySources(sources: string[]): string[] {
@@ -30,6 +41,7 @@ export class Project {
   icon: string;
   readonly createdTime: Date;
   readonly sources: string[];
+  pinned: boolean;
 
   constructor(input: ProjectInput) {
     if (Number.isNaN(input.createdTime.getTime())) {
@@ -37,10 +49,19 @@ export class Project {
     }
 
     this.id = requireText(input.id, 'id');
-    this.name = requireText(input.name, 'name');
-    this.icon = requireText(input.icon, 'icon');
+    this.name = requireText(input.name, 'name', PROJECT_NAME_MAX_LENGTH);
+    this.icon = requireText(input.icon, 'icon', PROJECT_ICON_MAX_CODE_POINTS);
     this.createdTime = new Date(input.createdTime.getTime());
     this.sources = copySources(input.sources);
+    this.pinned = input.pinned ?? false;
+  }
+
+  rename(name: string): void {
+    this.name = requireText(name, 'name', PROJECT_NAME_MAX_LENGTH);
+  }
+
+  setPinned(pinned: boolean): void {
+    this.pinned = pinned;
   }
 
   clone(): Project {
@@ -50,6 +71,7 @@ export class Project {
       icon: this.icon,
       createdTime: this.createdTime,
       sources: this.sources,
+      pinned: this.pinned,
     });
   }
 
@@ -60,6 +82,7 @@ export class Project {
       icon: this.icon,
       createdTime: this.createdTime.toISOString(),
       sources: [...this.sources],
+      pinned: this.pinned,
     };
   }
 }
