@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createHealthCheckResponse, isHealthCheckResponse } from './ipc';
+import {
+  createHealthCheckResponse,
+  isHealthCheckResponse,
+  isProjectSummary,
+  isProjectSummaryList,
+} from './ipc';
 
 describe('health check contract', () => {
   it('creates a serializable health response', () => {
@@ -28,5 +33,27 @@ describe('health check contract', () => {
         timestamp: 'not-a-date',
       }),
     ).toBe(false);
+  });
+});
+
+describe('project summary contract', () => {
+  const project = {
+    id: 'machine-learning',
+    name: '机器学习基础',
+    icon: '🤖',
+    createdTime: '2026-07-22T08:00:00.000Z',
+    sources: ['source-1', 'source-2'],
+  };
+
+  it('accepts a serializable project list', () => {
+    expect(isProjectSummary(project)).toBe(true);
+    expect(isProjectSummaryList([project])).toBe(true);
+  });
+
+  it('rejects malformed projects', () => {
+    expect(isProjectSummary({ ...project, name: '' })).toBe(false);
+    expect(isProjectSummary({ ...project, createdTime: 'not-a-date' })).toBe(false);
+    expect(isProjectSummary({ ...project, sources: [42] })).toBe(false);
+    expect(isProjectSummaryList([project, null])).toBe(false);
   });
 });
