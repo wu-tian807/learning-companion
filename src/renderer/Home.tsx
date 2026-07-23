@@ -1,93 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ProjectSummary } from '../shared/ipc';
-import { isProjectSummaryList } from '../shared/ipc';
-import { formatProjectDate, formatSourceCount, getProjectCardColor } from './project-view';
+import { isProjectSummary, isProjectSummaryList } from '../shared/ipc';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { HomeToolbar } from './components/HomeToolbar';
+import { ProjectDialog, type ProjectDialogValues } from './components/ProjectDialog';
+import { ProjectGrid } from './components/ProjectGrid';
+import { ProjectList } from './components/ProjectList';
+import {
+  filterAndSortProjects,
+  type ProjectSortMode,
+  type ProjectViewMode,
+} from './project-view';
 
 type ProjectLoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; projects: ProjectSummary[] }
   | { kind: 'failed' };
 
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-4-4" />
-    </svg>
-  );
-}
+type ProjectEditorState =
+  | { kind: 'closed' }
+  | { kind: 'create' }
+  | { kind: 'rename'; project: ProjectSummary };
 
-function ChevronDownIcon() {
+function LoadingProjectGrid() {
   return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="m4 6 4 4 4-4" />
-    </svg>
-  );
-}
-
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <circle cx="12" cy="5" r="1.5" />
-      <circle cx="12" cy="12" r="1.5" />
-      <circle cx="12" cy="19" r="1.5" />
-    </svg>
-  );
-}
-
-function CreateProjectCard() {
-  return (
-    <button
-      type="button"
-      aria-label="创建新 Project，功能即将开放"
-      className="flex min-h-[230px] flex-col items-center justify-center gap-4 rounded-[17px] border border-white/[0.1] bg-black/10 text-slate-100 transition-colors hover:border-indigo-300/30 hover:bg-white/[0.025]"
-    >
-      <span className="grid size-16 place-items-center rounded-full bg-[#343650] text-[31px] font-light text-indigo-200">
-        ＋
-      </span>
-      <span className="text-[17px] font-medium">创建新 Project</span>
-    </button>
-  );
-}
-
-function ProjectCard({ project }: { project: ProjectSummary }) {
-  return (
-    <article
-      className="group flex min-h-[230px] flex-col justify-between overflow-hidden rounded-[17px] border border-white/[0.035] p-6 shadow-[0_10px_28px_rgba(7,9,12,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-indigo-200/20 hover:shadow-[0_18px_40px_rgba(7,9,12,0.18)]"
-      style={{ backgroundColor: getProjectCardColor(project.id) }}
-    >
-      <div className="flex items-start justify-between">
-        <span className="text-[43px] leading-none drop-shadow-[0_6px_10px_rgba(0,0,0,0.16)]">
-          {project.icon}
-        </span>
-        <button
-          type="button"
-          aria-label={`${project.name} 的更多操作，功能即将开放`}
-          className="grid size-8 place-items-center rounded-lg text-indigo-100/55 transition hover:bg-white/[0.06] hover:text-indigo-100"
-        >
-          <span className="size-5">
-            <MoreIcon />
-          </span>
-        </button>
-      </div>
-
-      <div>
-        <h2 className="mb-2 line-clamp-2 text-[19px] leading-[1.35] font-medium text-slate-100">
-          {project.name}
-        </h2>
-        <p className="text-xs text-slate-300/75">
-          {formatProjectDate(project.createdTime)} · {formatSourceCount(project.sources.length)}
-        </p>
-      </div>
-    </article>
-  );
-}
-
-function LoadingCards() {
-  return (
-    <>
-      {Array.from({ length: 7 }, (_, index) => (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(245px,1fr))] gap-4">
+      {Array.from({ length: 8 }, (_, index) => (
         <div
           key={index}
           className="min-h-[230px] animate-pulse rounded-[17px] border border-white/[0.035] bg-white/[0.035] p-6"
@@ -97,13 +36,38 @@ function LoadingCards() {
           <div className="mt-3 h-3 w-2/5 rounded bg-white/[0.04]" />
         </div>
       ))}
-    </>
+    </div>
+  );
+}
+
+function LoadingProjectList() {
+  return (
+    <div className="border-t border-white/[0.12]">
+      {Array.from({ length: 7 }, (_, index) => (
+        <div
+          key={index}
+          className="flex h-[62px] animate-pulse items-center gap-4 border-b border-white/[0.08] px-4"
+        >
+          <div className="size-6 rounded bg-white/[0.05]" />
+          <div className="h-4 w-1/3 rounded bg-white/[0.05]" />
+          <div className="ml-auto h-3 w-1/6 rounded bg-white/[0.035]" />
+        </div>
+      ))}
+    </div>
   );
 }
 
 export function Home() {
   const [loadState, setLoadState] = useState<ProjectLoadState>({ kind: 'loading' });
   const [requestVersion, setRequestVersion] = useState(0);
+  const [viewMode, setViewMode] = useState<ProjectViewMode>('grid');
+  const [sortMode, setSortMode] = useState<ProjectSortMode>('newest');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editorState, setEditorState] = useState<ProjectEditorState>({ kind: 'closed' });
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const mutationLockRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -135,140 +99,314 @@ export function Home() {
     };
   }, [requestVersion]);
 
+  const projects = useMemo(
+    () => (loadState.kind === 'ready' ? loadState.projects : []),
+    [loadState],
+  );
+  const visibleProjects = useMemo(
+    () => filterAndSortProjects(projects, searchQuery, sortMode),
+    [projects, searchQuery, sortMode],
+  );
+
+  const updateProject = useCallback((updatedProject: ProjectSummary) => {
+    setLoadState((current) => {
+      if (current.kind !== 'ready') {
+        return current;
+      }
+
+      const exists = current.projects.some((project) => project.id === updatedProject.id);
+      return {
+        kind: 'ready',
+        projects: exists
+          ? current.projects.map((project) =>
+              project.id === updatedProject.id ? updatedProject : project,
+            )
+          : [...current.projects, updatedProject],
+      };
+    });
+  }, []);
+
+  const runMutation = useCallback(
+    async (operation: () => Promise<void>, failureMessage: string): Promise<boolean> => {
+      if (mutationLockRef.current) {
+        return false;
+      }
+
+      mutationLockRef.current = true;
+      setMutationBusy(true);
+      setMutationError(null);
+
+      try {
+        await operation();
+        return true;
+      } catch (error) {
+        console.error(failureMessage, error);
+        setMutationError(failureMessage);
+        return false;
+      } finally {
+        mutationLockRef.current = false;
+        setMutationBusy(false);
+      }
+    },
+    [],
+  );
+
+  const openCreateDialog = useCallback(() => {
+    setMutationError(null);
+    setEditorState({ kind: 'create' });
+  }, []);
+
+  const closeEditor = useCallback(() => {
+    if (!mutationLockRef.current) {
+      setEditorState({ kind: 'closed' });
+      setMutationError(null);
+    }
+  }, []);
+
+  const closeDeleteDialog = useCallback(() => {
+    if (!mutationLockRef.current) {
+      setDeleteTarget(null);
+      setMutationError(null);
+    }
+  }, []);
+
+  const createProject = async ({ name, icon }: ProjectDialogValues) => {
+    const succeeded = await runMutation(async () => {
+      const createdProject = await window.learningCompanion.createProject({ name, icon });
+
+      if (!isProjectSummary(createdProject)) {
+        throw new Error('Project 创建响应格式无效');
+      }
+
+      updateProject(createdProject);
+    }, '无法创建 Project，请重试。');
+
+    if (succeeded) {
+      setEditorState({ kind: 'closed' });
+    }
+  };
+
+  const renameProject = async ({ name }: ProjectDialogValues) => {
+    if (editorState.kind !== 'rename') {
+      return;
+    }
+
+    const targetId = editorState.project.id;
+    const succeeded = await runMutation(async () => {
+      const renamedProject = await window.learningCompanion.renameProject({
+        id: targetId,
+        name,
+      });
+
+      if (!isProjectSummary(renamedProject)) {
+        throw new Error('Project 重命名响应格式无效');
+      }
+
+      updateProject(renamedProject);
+    }, '无法保存标题，请重试。');
+
+    if (succeeded) {
+      setEditorState({ kind: 'closed' });
+    }
+  };
+
+  const toggleProjectPinned = async (project: ProjectSummary) => {
+    await runMutation(async () => {
+      const updatedProject = await window.learningCompanion.setProjectPinned({
+        id: project.id,
+        pinned: !project.pinned,
+      });
+
+      if (!isProjectSummary(updatedProject)) {
+        throw new Error('Project 置顶响应格式无效');
+      }
+
+      updateProject(updatedProject);
+    }, project.pinned ? '无法取消置顶，请重试。' : '无法置顶 Project，请重试。');
+  };
+
+  const deleteProject = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    const targetId = deleteTarget.id;
+    const succeeded = await runMutation(async () => {
+      await window.learningCompanion.deleteProject({ id: targetId });
+      setLoadState((current) =>
+        current.kind === 'ready'
+          ? {
+              kind: 'ready',
+              projects: current.projects.filter((project) => project.id !== targetId),
+            }
+          : current,
+      );
+    }, '无法删除 Project，请重试。');
+
+    if (succeeded) {
+      setDeleteTarget(null);
+    }
+  };
+
   const retry = () => {
     setLoadState({ kind: 'loading' });
     setRequestVersion((version) => version + 1);
   };
 
+  const actionHandlers = {
+    onRename: (project: ProjectSummary) => {
+      setMutationError(null);
+      setEditorState({ kind: 'rename', project });
+    },
+    onTogglePinned: (project: ProjectSummary) => {
+      void toggleProjectPinned(project);
+    },
+    onDelete: (project: ProjectSummary) => {
+      setMutationError(null);
+      setDeleteTarget(project);
+    },
+  };
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#1f2329] text-slate-100">
-      <div className="mx-auto w-full max-w-[1500px] px-8 pt-6 pb-14">
-        <nav
-          aria-label="Project 筛选与显示方式"
-          className="flex items-center justify-between gap-6"
-        >
-          <div role="tablist" aria-label="Project 分类" className="flex items-center gap-2">
-            <button
-              type="button"
-              role="tab"
-              aria-selected="false"
-              className="rounded-full border border-transparent px-3.5 py-2 text-sm text-slate-400"
-            >
-              全部
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected="true"
-              className="rounded-full border border-indigo-300/80 bg-indigo-400/10 px-3.5 py-2 text-sm text-slate-50 shadow-[0_0_0_3px_rgba(139,142,234,0.15)]"
-            >
+      <div className="mx-auto w-full max-w-[1500px] px-8 pt-9 pb-14">
+        <header className="mb-8 flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em]">
               我的 Projects
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected="false"
-              className="rounded-full border border-transparent px-3.5 py-2 text-sm text-slate-400"
-            >
-              精选
-            </button>
+            </h1>
+            <p className="mt-2 text-[13px] text-slate-500">
+              每个 Project 聚合学习资料、对话和沉淀下来的笔记。
+            </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <HomeToolbar
+            searchQuery={searchQuery}
+            viewMode={viewMode}
+            sortMode={sortMode}
+            onSearchQueryChange={setSearchQuery}
+            onViewModeChange={setViewMode}
+            onSortModeChange={setSortMode}
+            onCreate={openCreateDialog}
+          />
+        </header>
+
+        {mutationError && editorState.kind === 'closed' && !deleteTarget && (
+          <div
+            role="alert"
+            className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-4 py-3 text-xs text-rose-200"
+          >
+            <span>{mutationError}</span>
             <button
               type="button"
-              aria-label="搜索 Project，功能即将开放"
-              className="grid size-[42px] place-items-center rounded-full border border-white/[0.13] bg-black/10 text-slate-300"
+              aria-label="关闭错误提示"
+              onClick={() => setMutationError(null)}
+              className="text-base text-rose-200/60 hover:text-rose-100"
             >
-              <span className="size-[19px]">
-                <SearchIcon />
-              </span>
+              ×
             </button>
+          </div>
+        )}
 
-            <div
-              aria-label="卡片密度"
-              className="flex overflow-hidden rounded-[13px] border border-white/[0.13] bg-black/10 max-[1060px]:hidden"
-            >
-              <button
-                type="button"
-                aria-pressed="true"
-                className="h-10 border-r border-white/[0.13] bg-[#343650] px-3.5 text-xs font-medium text-white"
-              >
-                舒展
-              </button>
-              <button
-                type="button"
-                aria-pressed="false"
-                className="h-10 px-3.5 text-xs text-slate-400"
-              >
-                紧凑
-              </button>
-            </div>
+        {loadState.kind === 'loading' &&
+          (viewMode === 'grid' ? <LoadingProjectGrid /> : <LoadingProjectList />)}
 
+        {loadState.kind === 'failed' && (
+          <div className="rounded-[17px] border border-rose-300/15 bg-rose-400/[0.04] px-6 py-12 text-center">
+            <p className="text-sm font-medium text-slate-300">Project 列表加载失败</p>
+            <p className="mt-2 text-xs text-slate-500">请确认本地后端正在运行后重试。</p>
             <button
               type="button"
-              className="flex h-[42px] items-center justify-center gap-[9px] rounded-full border border-white/[0.13] bg-black/10 px-[18px] text-xs text-slate-300 max-[970px]:hidden"
+              onClick={retry}
+              className="mt-5 rounded-full border border-white/[0.14] bg-white/[0.06] px-4 py-2 text-xs font-medium text-slate-200"
             >
-              <span>最近创建</span>
-              <span className="size-3 text-slate-500">
-                <ChevronDownIcon />
-              </span>
+              重新加载
             </button>
+          </div>
+        )}
 
+        {loadState.kind === 'ready' && projects.length === 0 && (
+          <div className="rounded-[17px] border border-dashed border-white/[0.1] px-6 py-14 text-center">
+            <p className="text-sm font-medium text-slate-300">还没有 Project</p>
+            <p className="mt-2 text-xs text-slate-500">从右上角创建第一个学习 Project。</p>
             <button
               type="button"
-              aria-label="新建 Project，功能即将开放"
-              className="h-[42px] rounded-full border border-white bg-slate-50 px-[18px] text-xs font-semibold text-slate-900"
+              onClick={openCreateDialog}
+              className="mt-5 rounded-full bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-900"
             >
               ＋ 新建 Project
             </button>
           </div>
-        </nav>
+        )}
 
-        <header className="mt-14 mb-[22px]">
-          <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em]">
-            我的 Projects
-          </h1>
-          <p className="mt-2 text-[13px] text-slate-500">
-            每个 Project 聚合学习资料、对话和沉淀下来的笔记。
-          </p>
-        </header>
-
-        <section
-          aria-label="Project 列表"
-          className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
-        >
-          <CreateProjectCard />
-
-          {loadState.kind === 'loading' && <LoadingCards />}
-
-          {loadState.kind === 'ready' &&
-            loadState.projects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-
-          {loadState.kind === 'ready' && loadState.projects.length === 0 && (
-            <div className="col-span-full rounded-[17px] border border-dashed border-white/[0.1] px-6 py-12 text-center">
-              <p className="text-sm font-medium text-slate-300">还没有 Project</p>
-              <p className="mt-2 text-xs text-slate-500">创建入口将在下一阶段开放。</p>
-            </div>
-          )}
-
-          {loadState.kind === 'failed' && (
-            <div className="col-span-full rounded-[17px] border border-rose-300/15 bg-rose-400/[0.04] px-6 py-10 text-center">
-              <p className="text-sm font-medium text-slate-300">Project 列表加载失败</p>
-              <p className="mt-2 text-xs text-slate-500">请确认本地后端正在运行后重试。</p>
+        {loadState.kind === 'ready' &&
+          projects.length > 0 &&
+          visibleProjects.length === 0 && (
+            <div className="rounded-[17px] border border-dashed border-white/[0.1] px-6 py-14 text-center">
+              <p className="text-sm font-medium text-slate-300">没有匹配的 Project</p>
               <button
                 type="button"
-                onClick={retry}
-                className="mt-5 rounded-full border border-white/[0.14] bg-white/[0.06] px-4 py-2 text-xs font-medium text-slate-200"
+                onClick={() => setSearchQuery('')}
+                className="mt-4 text-xs font-medium text-indigo-200 hover:text-indigo-100"
               >
-                重新加载
+                清空搜索
               </button>
             </div>
           )}
-        </section>
+
+        {loadState.kind === 'ready' && visibleProjects.length > 0 && viewMode === 'grid' && (
+          <ProjectGrid
+            projects={visibleProjects}
+            actionsDisabled={mutationBusy}
+            {...actionHandlers}
+          />
+        )}
+
+        {loadState.kind === 'ready' && visibleProjects.length > 0 && viewMode === 'list' && (
+          <ProjectList
+            projects={visibleProjects}
+            actionsDisabled={mutationBusy}
+            {...actionHandlers}
+          />
+        )}
       </div>
+
+      {editorState.kind === 'create' && (
+        <ProjectDialog
+          mode="create"
+          busy={mutationBusy}
+          error={mutationError}
+          onClose={closeEditor}
+          onSubmit={(values) => {
+            void createProject(values);
+          }}
+        />
+      )}
+
+      {editorState.kind === 'rename' && (
+        <ProjectDialog
+          mode="rename"
+          initialName={editorState.project.name}
+          busy={mutationBusy}
+          error={mutationError}
+          onClose={closeEditor}
+          onSubmit={(values) => {
+            void renameProject(values);
+          }}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          projectName={deleteTarget.name}
+          busy={mutationBusy}
+          error={mutationError}
+          onClose={closeDeleteDialog}
+          onConfirm={() => {
+            void deleteProject();
+          }}
+        />
+      )}
     </main>
   );
 }
