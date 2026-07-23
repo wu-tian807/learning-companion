@@ -11,6 +11,7 @@
 - 固定使用 `better-sqlite3@13.0.1`。该版本基于 Node-API，并在 npm 包内直接携带 macOS ARM64、macOS x64、Windows ARM64 和 Windows x64 原生二进制，不再依赖按 Electron ABI 下载预编译包。
 - 在 `pnpm-workspace.yaml` 中显式允许 Electron 执行安装脚本，同时禁止 `better-sqlite3` 执行隐式源码构建。受支持平台直接使用包内的 Node-API 二进制。
 - 在 Electron Forge 的重建配置中忽略 `better-sqlite3`，避免 `@electron/rebuild` 对兼容 Electron 的 Node-API 二进制进行无意义的源码重编译。
+- Forge Vite 插件只保留 `.vite` 构建目录，因此在 `packageAfterPrune` 阶段把 `better-sqlite3` 运行时文件复制进应用，并只保留目标平台和架构的预编译二进制。
 - 使用 `@electron-forge/plugin-auto-unpack-natives` 将 `.node` 文件自动放到 `app.asar.unpacked`。
 - 在主进程 Vite 配置中把 `better-sqlite3` 标记为外部依赖，防止 Rollup 将原生模块错误地合并进 JavaScript。
 - 删除 Linux 的 DEB/RPM Maker，只保留 macOS ZIP 与 Windows Squirrel。

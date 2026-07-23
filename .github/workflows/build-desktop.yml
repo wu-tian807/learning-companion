@@ -1,0 +1,69 @@
+name: 构建桌面应用
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS ARM64
+            os: macos-15
+            artifact_name: learning-companion-macos-arm64
+            artifact_path: out/make/zip/darwin/arm64/*.zip
+          - name: Windows x64
+            os: windows-2025
+            artifact_name: learning-companion-windows-x64
+            artifact_path: |
+              out/make/squirrel.windows/x64/*.exe
+              out/make/squirrel.windows/x64/*.nupkg
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 检查代码
+        run: pnpm check
+
+      - name: 验证 Electron 原生模块
+        run: pnpm smoke:native
+
+      - name: 构建安装包
+        run: pnpm make
+
+      - name: 检查原生模块解包结果
+        run: pnpm verify:package:native
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error

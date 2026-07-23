@@ -29,6 +29,7 @@ export default tseslint.config(
       'forge.config.ts',
       'vite.*.config.ts',
       'vitest.config.ts',
+      'scripts/**/*.mjs',
       'src/main/**/*.ts',
       'src/preload/**/*.ts',
       'src/shared/**/*.ts',
