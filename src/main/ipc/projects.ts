@@ -6,16 +6,29 @@ import {
   isDeleteProjectRequest,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
+  type ProjectSummary,
 } from '../../shared/ipc';
-import type { ProjectRepository } from '../projects/project-repository';
+import type { ProjectDatabaseApi } from '../projects/project-database';
+import type { Project } from '../projects/project';
 
 function invalidRequest(operation: string): Error {
   return new Error(`Project ${operation}请求无效`);
 }
 
-export function registerProjectHandlers(repository: ProjectRepository): void {
+function toProjectSummary(project: Project): ProjectSummary {
+  return {
+    id: project.id,
+    name: project.name,
+    icon: project.icon,
+    createdTime: project.createdTime.toISOString(),
+    sources: [],
+    pinned: project.pinned,
+  };
+}
+
+export function registerProjectHandlers(database: ProjectDatabaseApi): void {
   ipcMain.handle(IPC_CHANNELS.listProjects, () =>
-    repository.list().map((project) => project.toSummary()),
+    database.list().map(toProjectSummary),
   );
 
   ipcMain.handle(IPC_CHANNELS.createProject, (_event, request: unknown) => {
@@ -23,7 +36,7 @@ export function registerProjectHandlers(repository: ProjectRepository): void {
       throw invalidRequest('创建');
     }
 
-    return repository.create(request).toSummary();
+    return toProjectSummary(database.add(request));
   });
 
   ipcMain.handle(IPC_CHANNELS.renameProject, (_event, request: unknown) => {
@@ -31,7 +44,7 @@ export function registerProjectHandlers(repository: ProjectRepository): void {
       throw invalidRequest('重命名');
     }
 
-    return repository.rename(request.id, request.name).toSummary();
+    return toProjectSummary(database.update(request.id, { name: request.name }));
   });
 
   ipcMain.handle(IPC_CHANNELS.setProjectPinned, (_event, request: unknown) => {
@@ -39,7 +52,9 @@ export function registerProjectHandlers(repository: ProjectRepository): void {
       throw invalidRequest('置顶');
     }
 
-    return repository.setPinned(request.id, request.pinned).toSummary();
+    return toProjectSummary(
+      database.update(request.id, { pinned: request.pinned }),
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.deleteProject, (_event, request: unknown) => {
@@ -47,7 +62,7 @@ export function registerProjectHandlers(repository: ProjectRepository): void {
       throw invalidRequest('删除');
     }
 
-    repository.delete(request.id);
+    database.delete(request.id);
   });
 }
 
