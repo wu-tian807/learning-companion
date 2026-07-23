@@ -383,14 +383,9 @@ export function Home() {
     <main className="min-h-screen overflow-x-hidden bg-[#1f2329] text-slate-100">
       <div className="mx-auto w-full max-w-[1500px] px-8 pt-9 pb-14">
         <header className="mb-8 flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em]">
-              我的 Projects
-            </h1>
-            <p className="mt-2 text-[13px] text-slate-500">
-              每个 Project 聚合学习资料、对话和沉淀下来的笔记。
-            </p>
-          </div>
+          <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em]">
+            伴学伙伴
+          </h1>
 
           <HomeToolbar
             searchQuery={searchQuery}
