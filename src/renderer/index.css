@@ -29,3 +29,95 @@ input,
 select {
   font: inherit;
 }
+
+.ui-control,
+.ui-icon-button,
+.ui-primary-button,
+.ui-danger-button,
+.ui-menu-item {
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    filter 150ms ease,
+    transform 150ms ease,
+    width 200ms ease;
+}
+
+.ui-control:not(:disabled):hover {
+  border-color: rgb(199 210 254 / 0.32);
+  background-color: rgb(255 255 255 / 0.075);
+  color: #f1f5f9;
+  box-shadow: 0 10px 24px rgb(5 8 13 / 0.24);
+  transform: translateY(-1px);
+}
+
+.ui-icon-button:not(:disabled):hover {
+  background-color: rgb(255 255 255 / 0.1);
+  color: #eef2ff;
+  box-shadow: 0 8px 18px rgb(5 8 13 / 0.22);
+  transform: translateY(-1px);
+}
+
+.ui-icon-button:not(:disabled):hover svg {
+  transform: scale(1.06);
+}
+
+.ui-icon-button svg {
+  transition: transform 150ms ease;
+}
+
+.ui-primary-button:not(:disabled):hover {
+  background-color: #ffffff;
+  box-shadow: 0 12px 28px rgb(10 14 22 / 0.34);
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.ui-danger-button:not(:disabled):hover {
+  background-color: #fb7185;
+  box-shadow: 0 12px 26px rgb(136 19 55 / 0.3);
+  transform: translateY(-1px);
+}
+
+.ui-menu-item:not(:disabled):hover {
+  background-color: rgb(255 255 255 / 0.1);
+  color: #f1f5f9;
+}
+
+.ui-menu-item-danger:not(:disabled):hover {
+  background-color: rgb(244 63 94 / 0.16);
+  color: #fda4af;
+}
+
+.ui-control:not(:disabled):active,
+.ui-icon-button:not(:disabled):active,
+.ui-primary-button:not(:disabled):active,
+.ui-danger-button:not(:disabled):active {
+  box-shadow: none;
+  transform: translateY(0) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-control,
+  .ui-icon-button,
+  .ui-primary-button,
+  .ui-danger-button,
+  .ui-menu-item,
+  .ui-icon-button svg {
+    transition: none;
+  }
+
+  .ui-control:not(:disabled):hover,
+  .ui-icon-button:not(:disabled):hover,
+  .ui-primary-button:not(:disabled):hover,
+  .ui-danger-button:not(:disabled):hover,
+  .ui-control:not(:disabled):active,
+  .ui-icon-button:not(:disabled):active,
+  .ui-primary-button:not(:disabled):active,
+  .ui-danger-button:not(:disabled):active,
+  .ui-icon-button:not(:disabled):hover svg {
+    transform: none;
+  }
+}

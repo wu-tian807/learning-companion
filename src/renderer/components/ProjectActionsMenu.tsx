@@ -72,7 +72,7 @@ export function ProjectActionsMenu({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className="grid size-9 place-items-center rounded-lg text-indigo-100/60 transition hover:bg-white/[0.07] hover:text-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 disabled:opacity-40"
+        className="ui-icon-button grid size-9 place-items-center rounded-lg text-indigo-100/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 disabled:opacity-40"
       >
         <span className="size-5">
           <MoreIcon />
@@ -89,7 +89,7 @@ export function ProjectActionsMenu({
             type="button"
             role="menuitem"
             onClick={() => run(onRename)}
-            className="flex w-full items-center rounded-lg px-3 py-2 text-left text-slate-200 hover:bg-white/[0.07]"
+            className="ui-menu-item flex w-full items-center rounded-lg px-3 py-2 text-left text-slate-200"
           >
             编辑标题
           </button>
@@ -97,7 +97,7 @@ export function ProjectActionsMenu({
             type="button"
             role="menuitem"
             onClick={() => run(onTogglePinned)}
-            className="flex w-full items-center rounded-lg px-3 py-2 text-left text-slate-200 hover:bg-white/[0.07]"
+            className="ui-menu-item flex w-full items-center rounded-lg px-3 py-2 text-left text-slate-200"
           >
             {project.pinned ? '取消置顶' : '置顶'}
           </button>
@@ -106,7 +106,7 @@ export function ProjectActionsMenu({
             type="button"
             role="menuitem"
             onClick={() => run(onDelete)}
-            className="flex w-full items-center rounded-lg px-3 py-2 text-left text-rose-300 hover:bg-rose-400/[0.1]"
+            className="ui-menu-item ui-menu-item-danger flex w-full items-center rounded-lg px-3 py-2 text-left text-rose-300"
           >
             删除
           </button>

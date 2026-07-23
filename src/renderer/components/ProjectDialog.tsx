@@ -86,7 +86,7 @@ export function ProjectDialog({
             aria-label="关闭"
             disabled={busy}
             onClick={onClose}
-            className="grid size-8 place-items-center rounded-full text-lg text-slate-500 hover:bg-white/[0.06] hover:text-slate-200 disabled:opacity-40"
+            className="ui-icon-button grid size-8 place-items-center rounded-full text-lg text-slate-500 disabled:opacity-40"
           >
             ×
           </button>
@@ -123,14 +123,14 @@ export function ProjectDialog({
               type="button"
               disabled={busy}
               onClick={onClose}
-              className="h-10 rounded-full border border-white/[0.12] px-4 text-sm text-slate-300 hover:bg-white/[0.05] disabled:opacity-40"
+              className="ui-control h-10 rounded-full border border-white/[0.12] px-4 text-sm text-slate-300 disabled:opacity-40"
             >
               取消
             </button>
             <button
               type="submit"
               disabled={busy}
-              className="h-10 min-w-24 rounded-full bg-slate-50 px-5 text-sm font-semibold text-slate-900 hover:bg-white disabled:cursor-wait disabled:opacity-60"
+              className="ui-primary-button h-10 min-w-24 rounded-full bg-slate-50 px-5 text-sm font-semibold text-slate-900 disabled:cursor-wait disabled:opacity-60"
             >
               {busy ? '处理中…' : mode === 'create' ? '创建' : '保存'}
             </button>

@@ -301,7 +301,7 @@ export function Home() {
               type="button"
               aria-label="关闭错误提示"
               onClick={() => setMutationError(null)}
-              className="text-base text-rose-200/60 hover:text-rose-100"
+              className="ui-icon-button grid size-7 place-items-center rounded-full text-base text-rose-200/60"
             >
               ×
             </button>
@@ -318,7 +318,7 @@ export function Home() {
             <button
               type="button"
               onClick={retry}
-              className="mt-5 rounded-full border border-white/[0.14] bg-white/[0.06] px-4 py-2 text-xs font-medium text-slate-200"
+              className="ui-control mt-5 rounded-full border border-white/[0.14] bg-white/[0.06] px-4 py-2 text-xs font-medium text-slate-200"
             >
               重新加载
             </button>
@@ -332,7 +332,7 @@ export function Home() {
             <button
               type="button"
               onClick={openCreateDialog}
-              className="mt-5 rounded-full bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-900"
+              className="ui-primary-button mt-5 rounded-full bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-900"
             >
               ＋ 新建 Project
             </button>
@@ -347,7 +347,7 @@ export function Home() {
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="mt-4 text-xs font-medium text-indigo-200 hover:text-indigo-100"
+                className="ui-control mt-4 rounded-full border border-indigo-200/10 px-4 py-2 text-xs font-medium text-indigo-200"
               >
                 清空搜索
               </button>

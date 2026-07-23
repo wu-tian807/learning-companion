@@ -65,7 +65,7 @@ export function ConfirmDialog({
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="h-10 rounded-full border border-white/[0.12] px-4 text-sm text-slate-300 hover:bg-white/[0.05] disabled:opacity-40"
+            className="ui-control h-10 rounded-full border border-white/[0.12] px-4 text-sm text-slate-300 disabled:opacity-40"
           >
             取消
           </button>
@@ -73,7 +73,7 @@ export function ConfirmDialog({
             type="button"
             disabled={busy}
             onClick={onConfirm}
-            className="h-10 min-w-24 rounded-full bg-rose-500 px-5 text-sm font-semibold text-white hover:bg-rose-400 disabled:cursor-wait disabled:opacity-60"
+            className="ui-danger-button h-10 min-w-24 rounded-full bg-rose-500 px-5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60"
           >
             {busy ? '删除中…' : '确认删除'}
           </button>

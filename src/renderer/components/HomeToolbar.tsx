@@ -54,6 +54,16 @@ const sortLabels: Record<ProjectSortMode, string> = {
   title: '标题',
 };
 
+const sortOptions = Object.entries(sortLabels) as [ProjectSortMode, string][];
+
+function CheckIcon() {
+  return (
+    <svg className="size-full" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m3 8 3 3 7-7" />
+    </svg>
+  );
+}
+
 export function HomeToolbar({
   searchQuery,
   viewMode,
@@ -64,13 +74,40 @@ export function HomeToolbar({
   onCreate,
 }: HomeToolbarProps) {
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (searchExpanded) {
       searchInputRef.current?.focus();
     }
   }, [searchExpanded]);
+
+  useEffect(() => {
+    if (!sortOpen) {
+      return;
+    }
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!sortMenuRef.current?.contains(event.target as Node)) {
+        setSortOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSortOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [sortOpen]);
 
   return (
     <div
@@ -87,7 +124,7 @@ export function HomeToolbar({
             }
           }
         }}
-        className={`flex h-11 items-center overflow-hidden rounded-full border border-white/[0.14] bg-black/10 text-slate-300 transition-[width] duration-200 ${
+        className={`ui-control flex h-11 items-center overflow-hidden rounded-full border border-white/[0.14] bg-black/10 text-slate-300 transition-[width] duration-200 ${
           searchExpanded ? 'w-[210px]' : 'w-11'
         }`}
       >
@@ -96,7 +133,7 @@ export function HomeToolbar({
           aria-label="搜索 Project"
           aria-expanded={searchExpanded}
           onClick={() => setSearchExpanded(true)}
-          className="grid size-11 shrink-0 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300"
+          className="ui-icon-button grid size-11 shrink-0 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300"
         >
           <span className="size-[19px]">
             <SearchIcon />
@@ -118,7 +155,7 @@ export function HomeToolbar({
                 type="button"
                 aria-label="清空搜索"
                 onClick={() => onSearchQueryChange('')}
-                className="mr-2 grid size-6 shrink-0 place-items-center rounded-full text-xs text-slate-500 hover:bg-white/[0.07] hover:text-slate-300"
+                className="ui-icon-button mr-2 grid size-6 shrink-0 place-items-center rounded-full text-xs text-slate-500"
               >
                 ×
               </button>
@@ -137,10 +174,10 @@ export function HomeToolbar({
           aria-label="舒展卡片视图"
           aria-pressed={viewMode === 'grid'}
           onClick={() => onViewModeChange('grid')}
-          className={`grid w-12 place-items-center border-r border-white/[0.13] transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300 ${
+          className={`ui-icon-button grid w-12 place-items-center border-r border-white/[0.13] transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300 ${
             viewMode === 'grid'
               ? 'bg-[#383a57] text-indigo-100'
-              : 'text-slate-400 hover:bg-white/[0.04]'
+              : 'text-slate-400'
           }`}
         >
           <span className="size-5">
@@ -152,10 +189,10 @@ export function HomeToolbar({
           aria-label="列表视图"
           aria-pressed={viewMode === 'list'}
           onClick={() => onViewModeChange('list')}
-          className={`grid w-12 place-items-center transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300 ${
+          className={`ui-icon-button grid w-12 place-items-center transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300 ${
             viewMode === 'list'
               ? 'bg-[#383a57] text-indigo-100'
-              : 'text-slate-400 hover:bg-white/[0.04]'
+              : 'text-slate-400'
           }`}
         >
           <span className="size-5">
@@ -164,33 +201,63 @@ export function HomeToolbar({
         </button>
       </div>
 
-      <label className="relative flex h-11 items-center rounded-full border border-white/[0.14] bg-black/10 text-sm text-slate-300">
-        <span className="pointer-events-none absolute left-4">{sortLabels[sortMode]}</span>
-        <select
-          value={sortMode}
+      <div ref={sortMenuRef} className="relative">
+        <button
+          type="button"
           aria-label="Project 排序方式"
-          onChange={(event) => onSortModeChange(event.target.value as ProjectSortMode)}
-          className="h-full w-[142px] cursor-pointer appearance-none rounded-full bg-transparent pr-10 pl-4 text-transparent outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+          aria-haspopup="listbox"
+          aria-expanded={sortOpen}
+          onClick={() => setSortOpen((current) => !current)}
+          className="ui-control flex h-11 w-[142px] items-center justify-between rounded-full border border-white/[0.14] bg-black/10 px-4 text-sm text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
         >
-          <option value="newest" className="bg-[#292e36] text-slate-100">
-            最近创建
-          </option>
-          <option value="oldest" className="bg-[#292e36] text-slate-100">
-            最早创建
-          </option>
-          <option value="title" className="bg-[#292e36] text-slate-100">
-            标题
-          </option>
-        </select>
-        <span className="pointer-events-none absolute right-4 size-3 text-slate-500">
-          <ChevronDownIcon />
-        </span>
-      </label>
+          <span>{sortLabels[sortMode]}</span>
+          <span
+            className={`size-3 text-slate-500 transition-transform duration-150 motion-reduce:transition-none ${
+              sortOpen ? 'rotate-180' : ''
+            }`}
+          >
+            <ChevronDownIcon />
+          </span>
+        </button>
+
+        {sortOpen && (
+          <div
+            role="listbox"
+            aria-label="选择 Project 排序方式"
+            className="absolute top-13 right-0 z-40 w-44 rounded-xl border border-white/[0.14] bg-[#292e36] p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.44)]"
+          >
+            {sortOptions.map(([value, label]) => {
+              const selected = value === sortMode;
+
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => {
+                    onSortModeChange(value);
+                    setSortOpen(false);
+                  }}
+                  className={`ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm ${
+                    selected ? 'bg-indigo-300/10 text-indigo-100' : 'text-slate-300'
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span className={`size-4 ${selected ? 'text-indigo-200' : 'opacity-0'}`}>
+                    <CheckIcon />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <button
         type="button"
         onClick={onCreate}
-        className="h-11 rounded-full border border-white bg-slate-50 px-5 text-sm font-semibold text-slate-900 transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+        className="ui-primary-button h-11 rounded-full border border-white bg-slate-50 px-5 text-sm font-semibold text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
       >
         ＋ 新建 Project
       </button>
