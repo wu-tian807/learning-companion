@@ -13,6 +13,8 @@ const defaultDependencies: RepositoryDependencies = {
   now: () => new Date(),
 };
 
+const DEFAULT_PROJECT_ICON = '📘';
+
 export class InMemoryProjectRepository implements ProjectRepository {
   private readonly projects: Project[];
   private readonly dependencies: RepositoryDependencies;
@@ -35,7 +37,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
     const project = new Project({
       id: this.dependencies.createId(),
       name: input.name,
-      icon: input.icon,
+      icon: DEFAULT_PROJECT_ICON,
       createdTime: this.dependencies.now(),
       sources: [],
     });

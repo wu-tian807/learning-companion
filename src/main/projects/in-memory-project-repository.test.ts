@@ -39,13 +39,14 @@ describe('InMemoryProjectRepository', () => {
       now: () => new Date('2026-07-23T02:00:00.000Z'),
     });
 
-    const created = repository.create({ name: '新 Project', icon: '📘' });
+    const created = repository.create({ name: '新 Project' });
     const renamed = repository.rename(created.id, '新标题');
     const pinned = repository.setPinned(created.id, true);
 
     expect(created.toSummary()).toMatchObject({
       id: 'created-project',
       createdTime: '2026-07-23T02:00:00.000Z',
+      icon: '📘',
       sources: [],
       pinned: false,
     });

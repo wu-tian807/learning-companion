@@ -170,9 +170,9 @@ export function Home() {
     }
   }, []);
 
-  const createProject = async ({ name, icon }: ProjectDialogValues) => {
+  const createProject = async ({ name }: ProjectDialogValues) => {
     const succeeded = await runMutation(async () => {
-      const createdProject = await window.learningCompanion.createProject({ name, icon });
+      const createdProject = await window.learningCompanion.createProject({ name });
 
       if (!isProjectSummary(createdProject)) {
         throw new Error('Project 创建响应格式无效');

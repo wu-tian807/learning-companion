@@ -2,7 +2,6 @@ import type { Project } from './project';
 
 export interface CreateProjectInput {
   name: string;
-  icon: string;
 }
 
 export interface ProjectRepository {

@@ -37,7 +37,6 @@ export interface ProjectSummary {
 
 export interface CreateProjectRequest {
   name: string;
-  icon: string;
 }
 
 export interface RenameProjectRequest {
@@ -122,11 +121,7 @@ function isRequiredText(value: unknown, maxLength?: number): value is string {
 }
 
 export function isCreateProjectRequest(value: unknown): value is CreateProjectRequest {
-  return (
-    isRecord(value) &&
-    isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH) &&
-    isRequiredText(value.icon, PROJECT_ICON_MAX_CODE_POINTS)
-  );
+  return isRecord(value) && isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH);
 }
 
 export function isRenameProjectRequest(value: unknown): value is RenameProjectRequest {

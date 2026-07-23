@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
-import {
-  PROJECT_ICON_MAX_CODE_POINTS,
-  PROJECT_NAME_MAX_LENGTH,
-} from '../../shared/ipc';
+import { PROJECT_NAME_MAX_LENGTH } from '../../shared/ipc';
 
 export interface ProjectDialogValues {
   name: string;
-  icon: string;
 }
 
 interface ProjectDialogProps {
@@ -28,7 +24,6 @@ export function ProjectDialog({
   onSubmit,
 }: ProjectDialogProps) {
   const [name, setName] = useState(initialName);
-  const [icon, setIcon] = useState('📘');
   const [validationError, setValidationError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,20 +43,14 @@ export function ProjectDialog({
 
   const submit = () => {
     const normalizedName = name.trim();
-    const normalizedIcon = icon.trim() || '📘';
 
     if (normalizedName.length === 0) {
       setValidationError('请输入 Project 名称。');
       return;
     }
 
-    if ([...normalizedIcon].length > PROJECT_ICON_MAX_CODE_POINTS) {
-      setValidationError('图标请保持在 8 个字符以内。');
-      return;
-    }
-
     setValidationError(null);
-    onSubmit({ name: normalizedName, icon: normalizedIcon });
+    onSubmit({ name: normalizedName });
   };
 
   const title = mode === 'create' ? '新建 Project' : '编辑标题';
@@ -109,19 +98,6 @@ export function ProjectDialog({
             submit();
           }}
         >
-          {mode === 'create' && (
-            <label className="mb-4 block">
-              <span className="mb-2 block text-xs font-medium text-slate-400">图标</span>
-              <input
-                type="text"
-                value={icon}
-                onChange={(event) => setIcon(event.target.value)}
-                aria-label="Project Emoji 图标"
-                className="h-11 w-24 rounded-xl border border-white/[0.12] bg-black/15 px-3 text-xl text-slate-100 outline-none focus:border-indigo-300/55 focus:ring-2 focus:ring-indigo-300/10"
-              />
-            </label>
-          )}
-
           <label className="block">
             <span className="mb-2 block text-xs font-medium text-slate-400">名称</span>
             <input

@@ -66,15 +66,15 @@ describe('project summary contract', () => {
 
 describe('project mutation contracts', () => {
   it('accepts valid mutation requests', () => {
-    expect(isCreateProjectRequest({ name: '新 Project', icon: '📘' })).toBe(true);
+    expect(isCreateProjectRequest({ name: '新 Project' })).toBe(true);
     expect(isRenameProjectRequest({ id: 'project-1', name: '新标题' })).toBe(true);
     expect(isSetProjectPinnedRequest({ id: 'project-1', pinned: true })).toBe(true);
     expect(isDeleteProjectRequest({ id: 'project-1' })).toBe(true);
   });
 
   it('rejects malformed mutation requests', () => {
-    expect(isCreateProjectRequest({ name: '', icon: '📘' })).toBe(false);
-    expect(isCreateProjectRequest({ name: '新 Project', icon: '' })).toBe(false);
+    expect(isCreateProjectRequest({ name: '' })).toBe(false);
+    expect(isCreateProjectRequest({ icon: '📘' })).toBe(false);
     expect(isRenameProjectRequest({ id: '', name: '新标题' })).toBe(false);
     expect(isSetProjectPinnedRequest({ id: 'project-1', pinned: 'yes' })).toBe(false);
     expect(isDeleteProjectRequest(null)).toBe(false);
