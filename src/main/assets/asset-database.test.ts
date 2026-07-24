@@ -1,0 +1,491 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
+import type { DatabaseContext } from '../database/database-context';
+import { initializeDatabase } from '../database/initialize-database';
+import { assets } from '../database/schema/assets';
+import { projects } from '../database/schema/projects';
+import { AssetDatabase } from './asset-database';
+import {
+  createLocalFileContentLocator,
+  DefaultLocalFileLocatorChecker,
+  type LocalFileAvailability,
+  type LocalFileLocatorChecker,
+} from './asset-content-locator';
+
+const contexts: DatabaseContext[] = [];
+const temporaryDirectories: string[] = [];
+
+async function createTemporaryDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'learning-companion-assets-'));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
+async function createContext(): Promise<DatabaseContext> {
+  const directory = await createTemporaryDirectory();
+  const context = initializeDatabase(join(directory, 'database.sqlite3'));
+  contexts.push(context);
+  return context;
+}
+
+function addProject(context: DatabaseContext, id: string): void {
+  context.db
+    .insert(projects)
+    .values({
+      id,
+      name: `${id} Project`,
+      icon: '📘',
+      createdTime: new Date('2026-07-24T01:00:00.000Z'),
+      pinned: false,
+    })
+    .run();
+}
+
+function insertAsset(
+  context: DatabaseContext,
+  input: {
+    id: string;
+    projectId: string;
+    path: string;
+    name?: string;
+  },
+): void {
+  context.db
+    .insert(assets)
+    .values({
+      id: input.id,
+      projectId: input.projectId,
+      name: input.name ?? input.id,
+      mediaType: 'text/markdown',
+      contentKind: 'local-file',
+      contentPath: input.path,
+      createdTime: new Date('2026-07-24T01:00:00.000Z'),
+      lastUsedTime: new Date('2026-07-24T01:00:00.000Z'),
+    })
+    .run();
+}
+
+function createFixedChecker(
+  getAvailability: () => LocalFileAvailability = () => 'available',
+): LocalFileLocatorChecker {
+  return {
+    check: async (path) =>
+      createLocalFileContentLocator({
+        path,
+        availability: getAvailability(),
+        checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+      }),
+  };
+}
+
+afterEach(async () => {
+  for (const context of contexts.splice(0)) {
+    context.close();
+  }
+
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) =>
+      rm(directory, { recursive: true, force: true }),
+    ),
+  );
+});
+
+describe('AssetDatabase', () => {
+  it('requires an active Project for all Asset access', async () => {
+    const context = await createContext();
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+
+    expect(database.getActiveProjectId()).toBeUndefined();
+    expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
+    expect(() => database.get('asset')).toThrow(
+      'AssetDatabase 尚未加载 Project',
+    );
+    await expect(database.add({ path: '/tmp/notes.md' })).rejects.toThrow(
+      'AssetDatabase 尚未加载 Project',
+    );
+    expect(() => database.update('asset', { name: '标题' })).toThrow(
+      'AssetDatabase 尚未加载 Project',
+    );
+    expect(() => database.delete('asset')).toThrow(
+      'AssetDatabase 尚未加载 Project',
+    );
+    await expect(database.refreshAvailability('asset')).rejects.toThrow(
+      'AssetDatabase 尚未加载 Project',
+    );
+  });
+
+  it('loads one Project at a time and unloads its Map', async () => {
+    const context = await createContext();
+    addProject(context, 'project-a');
+    addProject(context, 'project-b');
+    insertAsset(context, {
+      id: 'asset-a',
+      projectId: 'project-a',
+      path: '/tmp/a.md',
+    });
+    insertAsset(context, {
+      id: 'asset-b',
+      projectId: 'project-b',
+      path: '/tmp/b.md',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+
+    await database.loadProject('project-a');
+
+    expect(database.getActiveProjectId()).toBe('project-a');
+    expect(database.list().map(({ id }) => id)).toEqual(['asset-a']);
+
+    await database.loadProject('project-b');
+
+    expect(database.getActiveProjectId()).toBe('project-b');
+    expect(database.list().map(({ id }) => id)).toEqual(['asset-b']);
+    expect(database.get('asset-a')).toBeUndefined();
+
+    database.unloadProject();
+
+    expect(database.getActiveProjectId()).toBeUndefined();
+    expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
+  });
+
+  it('keeps missing Assets while loading a Project', async () => {
+    const context = await createContext();
+    const directory = await createTemporaryDirectory();
+    const missingPath = join(directory, 'missing.pdf');
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'missing',
+      projectId: 'project',
+      path: missingPath,
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: new DefaultLocalFileLocatorChecker({
+        now: () => new Date('2026-07-24T02:00:00.000Z'),
+      }),
+    });
+
+    await database.loadProject('project');
+
+    expect(database.get('missing')?.contentLocator).toMatchObject({
+      path: missingPath,
+      availability: 'missing',
+    });
+  });
+
+  it('adds Assets to the active Project with derived metadata', async () => {
+    const context = await createContext();
+    const directory = await createTemporaryDirectory();
+    const filePath = join(directory, 'attention.v2.PDF');
+    await writeFile(filePath, 'PDF');
+    addProject(context, 'project');
+    const database = new AssetDatabase(context, {
+      createId: () => 'created-asset',
+      now: () => new Date('2026-07-24T03:00:00.000Z'),
+      locatorChecker: new DefaultLocalFileLocatorChecker({
+        now: () => new Date('2026-07-24T02:00:00.000Z'),
+      }),
+    });
+    await database.loadProject('project');
+
+    const created = await database.add({ path: filePath });
+
+    expect(created).toMatchObject({
+      id: 'created-asset',
+      projectId: 'project',
+      name: 'attention.v2',
+      mediaType: 'application/pdf',
+      contentLocator: {
+        kind: 'local-file',
+        path: filePath,
+        availability: 'available',
+      },
+      createdTime: new Date('2026-07-24T03:00:00.000Z'),
+      lastUsedTime: new Date('2026-07-24T03:00:00.000Z'),
+    });
+    expect(context.db.select().from(assets).all()).toEqual([
+      {
+        id: 'created-asset',
+        projectId: 'project',
+        name: 'attention.v2',
+        mediaType: 'application/pdf',
+        contentKind: 'local-file',
+        contentPath: filePath,
+        createdTime: new Date('2026-07-24T03:00:00.000Z'),
+        lastUsedTime: new Date('2026-07-24T03:00:00.000Z'),
+      },
+    ]);
+  });
+
+  it('writes update and delete through to SQLite', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/tmp/notes.md',
+      name: '旧标题',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+    await database.loadProject('project');
+
+    const updated = database.update('asset', {
+      name: '新标题',
+      lastUsedTime: new Date('2026-07-24T04:00:00.000Z'),
+    });
+
+    expect(updated).toMatchObject({
+      name: '新标题',
+      lastUsedTime: new Date('2026-07-24T04:00:00.000Z'),
+    });
+    expect(context.db.select().from(assets).get()).toMatchObject({
+      name: '新标题',
+      lastUsedTime: new Date('2026-07-24T04:00:00.000Z'),
+    });
+
+    database.delete('asset');
+
+    expect(database.list()).toEqual([]);
+    expect(context.db.select().from(assets).all()).toEqual([]);
+  });
+
+  it('refreshes runtime availability without changing SQLite', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/tmp/notes.md',
+    });
+    let availability: LocalFileAvailability = 'available';
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(() => availability),
+    });
+    await database.loadProject('project');
+    availability = 'missing';
+
+    const refreshed = await database.refreshAvailability('asset');
+
+    expect(refreshed.contentLocator.availability).toBe('missing');
+    expect(context.db.select().from(assets).get()).not.toHaveProperty(
+      'availability',
+    );
+  });
+
+  it('does not expose Asset, Locator or Date references', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/tmp/notes.md',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+    await database.loadProject('project');
+    const asset = database.get('asset');
+
+    asset?.createdTime.setTime(0);
+    asset?.contentLocator.checkedTime.setTime(0);
+    database.list()[0]?.lastUsedTime.setTime(0);
+
+    expect(database.get('asset')).toMatchObject({
+      createdTime: new Date('2026-07-24T01:00:00.000Z'),
+      lastUsedTime: new Date('2026-07-24T01:00:00.000Z'),
+      contentLocator: {
+        checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+      },
+    });
+  });
+
+  it('preserves the current Map when loading another Project fails', async () => {
+    const context = await createContext();
+    addProject(context, 'project-a');
+    addProject(context, 'project-b');
+    insertAsset(context, {
+      id: 'asset-a',
+      projectId: 'project-a',
+      path: '/tmp/a.md',
+    });
+    insertAsset(context, {
+      id: 'asset-b',
+      projectId: 'project-b',
+      path: '/tmp/fail.md',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: {
+        check: async (path) => {
+          if (path.endsWith('fail.md')) {
+            throw new Error('checker failed');
+          }
+
+          return createLocalFileContentLocator({
+            path,
+            availability: 'available',
+            checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+          });
+        },
+      },
+    });
+    await database.loadProject('project-a');
+
+    await expect(database.loadProject('project-b')).rejects.toThrow(
+      'checker failed',
+    );
+    expect(database.getActiveProjectId()).toBe('project-a');
+    expect(database.list().map(({ id }) => id)).toEqual(['asset-a']);
+  });
+
+  it('keeps the latest Project when concurrent loads finish out of order', async () => {
+    const context = await createContext();
+    addProject(context, 'project-a');
+    addProject(context, 'project-b');
+    insertAsset(context, {
+      id: 'asset-a',
+      projectId: 'project-a',
+      path: '/tmp/a.md',
+    });
+    insertAsset(context, {
+      id: 'asset-b',
+      projectId: 'project-b',
+      path: '/tmp/b.md',
+    });
+    let finishFirstLoad: (() => void) | undefined;
+    const database = new AssetDatabase(context, {
+      locatorChecker: {
+        check: async (path) => {
+          if (path.endsWith('a.md')) {
+            await new Promise<void>((resolve) => {
+              finishFirstLoad = resolve;
+            });
+          }
+
+          return createLocalFileContentLocator({
+            path,
+            availability: 'available',
+            checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+          });
+        },
+      },
+    });
+
+    const firstLoad = database.loadProject('project-a');
+    await database.loadProject('project-b');
+    finishFirstLoad?.();
+
+    await expect(firstLoad).rejects.toThrow(
+      'AssetDatabase Project 加载已被替代',
+    );
+    expect(database.getActiveProjectId()).toBe('project-b');
+    expect(database.list().map(({ id }) => id)).toEqual(['asset-b']);
+  });
+
+  it('does not restore an Asset after its Project unloads during a refresh', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/tmp/notes.md',
+    });
+    let finishRefresh: ((availability: LocalFileAvailability) => void) | undefined;
+    let checkingRefresh = false;
+    const database = new AssetDatabase(context, {
+      locatorChecker: {
+        check: async (path) => {
+          if (!checkingRefresh) {
+            return createLocalFileContentLocator({
+              path,
+              availability: 'available',
+              checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+            });
+          }
+
+          const availability = await new Promise<LocalFileAvailability>(
+            (resolve) => {
+              finishRefresh = resolve;
+            },
+          );
+          return createLocalFileContentLocator({
+            path,
+            availability,
+            checkedTime: new Date('2026-07-24T03:00:00.000Z'),
+          });
+        },
+      },
+    });
+    await database.loadProject('project');
+    checkingRefresh = true;
+
+    const refresh = database.refreshAvailability('asset');
+    database.unloadProject();
+    finishRefresh?.('missing');
+
+    await expect(refresh).rejects.toThrow(
+      'AssetDatabase 当前 Project 已变化',
+    );
+    expect(database.getActiveProjectId()).toBeUndefined();
+    expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
+  });
+
+  it('keeps the previous Map value when a database write fails', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/tmp/notes.md',
+      name: '旧标题',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+    await database.loadProject('project');
+    context.sqlite.exec('DROP TABLE assets');
+
+    expect(() => database.update('asset', { name: '新标题' })).toThrow();
+    expect(database.get('asset')?.name).toBe('旧标题');
+  });
+
+  it('rejects unknown Projects, unavailable additions and invalid mutations', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    let availability: LocalFileAvailability = 'missing';
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(() => availability),
+    });
+
+    await expect(database.loadProject('missing')).rejects.toThrow(
+      '找不到指定的 Project',
+    );
+    await database.loadProject('project');
+    await expect(database.add({ path: '/tmp/missing.md' })).rejects.toThrow(
+      '无法添加不可用的本地文件：missing',
+    );
+
+    expect(() => database.update('missing', {})).toThrow(
+      'Asset 更新内容无效',
+    );
+    expect(() =>
+      database.update('missing', { projectId: 'other' } as never),
+    ).toThrow('Asset 更新内容无效');
+    expect(() => database.update('missing', { name: '新标题' })).toThrow(
+      '找不到当前 Project 中指定的 Asset',
+    );
+    expect(() => database.delete('missing')).toThrow(
+      '找不到当前 Project 中指定的 Asset',
+    );
+
+    availability = 'available';
+    expect(context.db.select().from(assets).all()).toEqual([]);
+  });
+});
