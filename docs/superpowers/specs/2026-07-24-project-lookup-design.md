@@ -2,11 +2,11 @@
 
 > 日期：2026-07-24
 >
-> 状态：待用户复核
+> 状态：已确认，待实施
 
 ## 目标
 
-移除 `AssetDatabase.loadProject()` 对 `projects` 表的重复查询，统一通过已初始化的 `ProjectDatabase` 内存 Map 判断 Project 是否存在。
+移除 `AssetDatabase.loadFromProject()` 对 `projects` 表的重复查询，统一通过已初始化的 `ProjectDatabase` 内存 Map 判断 Project 是否存在。
 
 ## 设计
 
@@ -26,12 +26,14 @@ export interface ProjectLookup {
 new AssetDatabase(databaseContext, projectDatabase, dependencies)
 ```
 
-`loadProject()` 的职责调整为：
+`loadFromProject()` 的职责调整为：
 
 1. 规范化 Project ID。
 2. 通过 `projectLookup.get()` 从 Project 内存 Map 验证 Project。
 3. 直接从 `assets` 表查询该 Project 的 Asset。
 4. 检查 Locator 并原子替换当前 Asset Map。
+
+该名称明确表达“从指定 Project 加载其 Asset”，与负责释放当前 Project Asset Map 的 `unloadProject()` 配对。
 
 ## 初始化顺序
 
