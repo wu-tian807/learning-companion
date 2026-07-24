@@ -1,9 +1,13 @@
 import type Database from 'better-sqlite3';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
-import type * as schema from './schema/projects';
+import type * as assetSchema from './schema/assets';
+import type * as projectSchema from './schema/projects';
 
-export type LearningCompanionDatabase = BetterSQLite3Database<typeof schema>;
+type LearningCompanionSchema = typeof assetSchema & typeof projectSchema;
+
+export type LearningCompanionDatabase =
+  BetterSQLite3Database<LearningCompanionSchema>;
 
 export interface DatabaseContext {
   readonly sqlite: Database.Database;

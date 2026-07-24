@@ -6,14 +6,23 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 
 import type { DatabaseContext } from './database-context';
 import { createProjectsMigration } from './migrations/0001-create-projects';
-import * as schema from './schema/projects';
+import { createAssetsMigration } from './migrations/0002-create-assets';
+import * as assetSchema from './schema/assets';
+import * as projectSchema from './schema/projects';
 
 interface DatabaseMigration {
   readonly version: number;
   readonly sql: string;
 }
 
-const migrations: readonly DatabaseMigration[] = [createProjectsMigration];
+const migrations: readonly DatabaseMigration[] = [
+  createProjectsMigration,
+  createAssetsMigration,
+];
+const schema = {
+  ...projectSchema,
+  ...assetSchema,
+};
 
 function readUserVersion(sqlite: Database.Database): number {
   const version = sqlite.pragma('user_version', { simple: true });
