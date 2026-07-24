@@ -2,7 +2,7 @@
 
 > 日期：2026-07-24
 >
-> 状态：口头设计已确认，待书面审阅
+> 状态：书面设计已确认，待实施
 
 ## 目标
 
@@ -401,7 +401,7 @@ SQLite 失败时不得修改内存 Map。
 ```text
 src/main/assets/asset.ts
 src/main/assets/asset-database.ts
-src/main/assets/local-file-locator.ts
+src/main/assets/asset-content-locator.ts
 src/main/assets/asset-media-type.ts
 src/main/database/schema/assets.ts
 src/main/database/migrations/0002-create-assets.ts
