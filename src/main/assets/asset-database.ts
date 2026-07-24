@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
-import { projects } from '../database/schema/projects';
+import type { ProjectLookup } from '../projects/project-database';
 import {
   cloneAsset,
   createAssetSnapshot,
@@ -24,7 +24,7 @@ import {
 } from './asset-media-type';
 
 export interface AssetDatabaseApi {
-  loadProject(projectId: string): Promise<readonly Asset[]>;
+  loadFromProject(projectId: string): Promise<readonly Asset[]>;
   unloadProject(): void;
   getActiveProjectId(): string | undefined;
   list(): readonly Asset[];
@@ -65,6 +65,7 @@ export class AssetDatabase implements AssetDatabaseApi {
 
   constructor(
     private readonly context: DatabaseContext,
+    private readonly projectLookup: ProjectLookup,
     dependencies: Partial<AssetDatabaseDependencies> = {},
   ) {
     const now = dependencies.now ?? (() => new Date());
@@ -78,13 +79,9 @@ export class AssetDatabase implements AssetDatabaseApi {
     };
   }
 
-  async loadProject(projectId: string): Promise<readonly Asset[]> {
+  async loadFromProject(projectId: string): Promise<readonly Asset[]> {
     const normalizedProjectId = requireId(projectId, 'projectId');
-    const project = this.context.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, normalizedProjectId))
-      .get();
+    const project = this.projectLookup.get(normalizedProjectId);
 
     if (!project) {
       throw new Error('找不到指定的 Project');

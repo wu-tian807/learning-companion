@@ -12,10 +12,13 @@ import {
   type UpdateProjectInput,
 } from './project';
 
-export interface ProjectDatabaseApi {
+export interface ProjectLookup {
+  get(id: string): Project | undefined;
+}
+
+export interface ProjectDatabaseApi extends ProjectLookup {
   initialize(): void;
   list(): readonly Project[];
-  get(id: string): Project | undefined;
   add(input: CreateProjectInput): Project;
   update(id: string, changes: UpdateProjectInput): Project;
   delete(id: string): void;

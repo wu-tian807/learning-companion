@@ -8,7 +8,11 @@ import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { assets } from '../database/schema/assets';
 import { projects } from '../database/schema/projects';
-import { AssetDatabase } from './asset-database';
+import { ProjectDatabase } from '../projects/project-database';
+import {
+  AssetDatabase,
+  type AssetDatabaseDependencies,
+} from './asset-database';
 import {
   createLocalFileContentLocator,
   DefaultLocalFileLocatorChecker,
@@ -83,6 +87,15 @@ function createFixedChecker(
   };
 }
 
+function createAssetDatabase(
+  context: DatabaseContext,
+  dependencies: Partial<AssetDatabaseDependencies> = {},
+): AssetDatabase {
+  const projectDatabase = new ProjectDatabase(context);
+  projectDatabase.initialize();
+  return new AssetDatabase(context, projectDatabase, dependencies);
+}
+
 afterEach(async () => {
   for (const context of contexts.splice(0)) {
     context.close();
@@ -96,9 +109,22 @@ afterEach(async () => {
 });
 
 describe('AssetDatabase', () => {
+  it('requires its ProjectLookup to be initialized', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    const projectDatabase = new ProjectDatabase(context);
+    const database = new AssetDatabase(context, projectDatabase, {
+      locatorChecker: createFixedChecker(),
+    });
+
+    await expect(database.loadFromProject('project')).rejects.toThrow(
+      'ProjectDatabase 尚未初始化',
+    );
+  });
+
   it('requires an active Project for all Asset access', async () => {
     const context = await createContext();
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
 
@@ -138,16 +164,16 @@ describe('AssetDatabase', () => {
       projectId: 'project-b',
       path: '/tmp/b.md',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
 
-    await database.loadProject('project-a');
+    await database.loadFromProject('project-a');
 
     expect(database.getActiveProjectId()).toBe('project-a');
     expect(database.list().map(({ id }) => id)).toEqual(['asset-a']);
 
-    await database.loadProject('project-b');
+    await database.loadFromProject('project-b');
 
     expect(database.getActiveProjectId()).toBe('project-b');
     expect(database.list().map(({ id }) => id)).toEqual(['asset-b']);
@@ -169,13 +195,13 @@ describe('AssetDatabase', () => {
       projectId: 'project',
       path: missingPath,
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: new DefaultLocalFileLocatorChecker({
         now: () => new Date('2026-07-24T02:00:00.000Z'),
       }),
     });
 
-    await database.loadProject('project');
+    await database.loadFromProject('project');
 
     expect(database.get('missing')?.contentLocator).toMatchObject({
       path: missingPath,
@@ -189,14 +215,14 @@ describe('AssetDatabase', () => {
     const filePath = join(directory, 'attention.v2.PDF');
     await writeFile(filePath, 'PDF');
     addProject(context, 'project');
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       createId: () => 'created-asset',
       now: () => new Date('2026-07-24T03:00:00.000Z'),
       locatorChecker: new DefaultLocalFileLocatorChecker({
         now: () => new Date('2026-07-24T02:00:00.000Z'),
       }),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
 
     const created = await database.add({ path: filePath });
 
@@ -236,10 +262,10 @@ describe('AssetDatabase', () => {
       path: '/tmp/notes.md',
       name: '旧标题',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
 
     const updated = database.update('asset', {
       name: '新标题',
@@ -270,10 +296,10 @@ describe('AssetDatabase', () => {
       path: '/tmp/notes.md',
     });
     let availability: LocalFileAvailability = 'available';
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(() => availability),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     availability = 'missing';
 
     const refreshed = await database.refreshAvailability('asset');
@@ -293,10 +319,10 @@ describe('AssetDatabase', () => {
       path: '/old/notes.md',
       name: '自定义标题',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
 
     const relinked = await database.relink('asset', '/new/notes.markdown');
 
@@ -343,10 +369,10 @@ describe('AssetDatabase', () => {
       path: '/old/notes.md',
     });
     let availability: LocalFileAvailability = 'missing';
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(() => availability),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
 
     await expect(database.relink('asset', '/new/notes.md')).rejects.toThrow(
       '无法重新定位到不可用的本地文件：missing',
@@ -371,10 +397,10 @@ describe('AssetDatabase', () => {
       path: '/old/report.docx',
       mediaType: 'application/octet-stream',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
 
     await database.relink('asset', '/new/report.DOCX');
     await expect(database.relink('asset', '/new/report.xlsx')).rejects.toThrow(
@@ -396,10 +422,10 @@ describe('AssetDatabase', () => {
       path: '/tmp/notes.md',
     });
     let availability: LocalFileAvailability = 'available';
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(() => availability),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     availability = 'missing';
     context.sqlite.exec('DROP TABLE assets');
 
@@ -419,10 +445,10 @@ describe('AssetDatabase', () => {
       projectId: 'project',
       path: '/old/notes.md',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     context.sqlite.exec('DROP TABLE assets');
 
     await expect(database.relink('asset', '/new/notes.md')).rejects.toThrow();
@@ -439,7 +465,7 @@ describe('AssetDatabase', () => {
     });
     let finishRelink: (() => void) | undefined;
     let checkingRelink = false;
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: {
         check: async (path) => {
           if (checkingRelink) {
@@ -456,7 +482,7 @@ describe('AssetDatabase', () => {
         },
       },
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     checkingRelink = true;
 
     const relink = database.relink('asset', '/new/notes.md');
@@ -477,10 +503,10 @@ describe('AssetDatabase', () => {
       projectId: 'project',
       path: '/tmp/notes.md',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     const asset = database.get('asset');
 
     asset?.createdTime.setTime(0);
@@ -510,7 +536,7 @@ describe('AssetDatabase', () => {
       projectId: 'project-b',
       path: '/tmp/fail.md',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: {
         check: async (path) => {
           if (path.endsWith('fail.md')) {
@@ -525,9 +551,9 @@ describe('AssetDatabase', () => {
         },
       },
     });
-    await database.loadProject('project-a');
+    await database.loadFromProject('project-a');
 
-    await expect(database.loadProject('project-b')).rejects.toThrow(
+    await expect(database.loadFromProject('project-b')).rejects.toThrow(
       'checker failed',
     );
     expect(database.getActiveProjectId()).toBe('project-a');
@@ -549,7 +575,7 @@ describe('AssetDatabase', () => {
       path: '/tmp/b.md',
     });
     let finishFirstLoad: (() => void) | undefined;
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: {
         check: async (path) => {
           if (path.endsWith('a.md')) {
@@ -567,8 +593,8 @@ describe('AssetDatabase', () => {
       },
     });
 
-    const firstLoad = database.loadProject('project-a');
-    await database.loadProject('project-b');
+    const firstLoad = database.loadFromProject('project-a');
+    await database.loadFromProject('project-b');
     finishFirstLoad?.();
 
     await expect(firstLoad).rejects.toThrow(
@@ -589,7 +615,7 @@ describe('AssetDatabase', () => {
     let finishRefresh:
       ((availability: LocalFileAvailability) => void) | undefined;
     let checkingRefresh = false;
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: {
         check: async (path) => {
           if (!checkingRefresh) {
@@ -613,7 +639,7 @@ describe('AssetDatabase', () => {
         },
       },
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     checkingRefresh = true;
 
     const refresh = database.refreshAvailability('asset');
@@ -634,10 +660,10 @@ describe('AssetDatabase', () => {
       path: '/tmp/notes.md',
       name: '旧标题',
     });
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(),
     });
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     context.sqlite.exec('DROP TABLE assets');
 
     expect(() => database.update('asset', { name: '新标题' })).toThrow();
@@ -648,14 +674,14 @@ describe('AssetDatabase', () => {
     const context = await createContext();
     addProject(context, 'project');
     let availability: LocalFileAvailability = 'missing';
-    const database = new AssetDatabase(context, {
+    const database = createAssetDatabase(context, {
       locatorChecker: createFixedChecker(() => availability),
     });
 
-    await expect(database.loadProject('missing')).rejects.toThrow(
+    await expect(database.loadFromProject('missing')).rejects.toThrow(
       '找不到指定的 Project',
     );
-    await database.loadProject('project');
+    await database.loadFromProject('project');
     await expect(database.add({ path: '/tmp/missing.md' })).rejects.toThrow(
       '无法添加不可用的本地文件：missing',
     );
