@@ -64,7 +64,13 @@ export function ProjectActionsMenu({
   };
 
   return (
-    <div ref={rootRef} className="relative">
+    <div
+      ref={rootRef}
+      className="relative"
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+    >
       <button
         type="button"
         aria-label={`${project.name} 的更多操作`}

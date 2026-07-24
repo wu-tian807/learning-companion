@@ -7,11 +7,13 @@ import {
 
 interface ProjectListProps extends ProjectActionHandlers {
   projects: readonly ProjectSummary[];
+  onOpenProject: (project: ProjectSummary) => void;
   actionsDisabled?: boolean;
 }
 
 export function ProjectList({
   projects,
+  onOpenProject,
   actionsDisabled = false,
   onRename,
   onTogglePinned,
@@ -46,7 +48,19 @@ export function ProjectList({
           {projects.map((project) => (
             <tr
               key={project.id}
-              className="border-b border-white/[0.1] text-sm text-slate-200 transition hover:bg-white/[0.025]"
+              tabIndex={0}
+              aria-label={`打开 ${project.name}`}
+              onClick={() => onOpenProject(project)}
+              onKeyDown={(event) => {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === 'Enter' || event.key === ' ')
+                ) {
+                  event.preventDefault();
+                  onOpenProject(project);
+                }
+              }}
+              className="cursor-pointer border-b border-white/[0.1] text-sm text-slate-200 transition hover:bg-white/[0.04] focus-visible:bg-indigo-300/[0.06] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-indigo-300"
             >
               <td className="px-4 py-[15px]">
                 <div className="flex min-w-0 items-center gap-3">

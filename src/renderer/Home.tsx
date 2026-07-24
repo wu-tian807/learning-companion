@@ -26,6 +26,10 @@ type ProjectEditorState =
   | { kind: 'create' }
   | { kind: 'rename'; project: ProjectSummary };
 
+interface HomeProps {
+  readonly onOpenProject: (project: ProjectSummary) => void;
+}
+
 function copyHomePreferences(preferences: HomePreferences): HomePreferences {
   return {
     viewMode: preferences.viewMode,
@@ -67,7 +71,7 @@ function LoadingProjectList() {
   );
 }
 
-export function Home() {
+export function Home({ onOpenProject }: HomeProps) {
   const [loadState, setLoadState] = useState<ProjectLoadState>({ kind: 'loading' });
   const [requestVersion, setRequestVersion] = useState(0);
   const [homePreferences, setHomePreferences] = useState<HomePreferences>(() =>
@@ -468,6 +472,7 @@ export function Home() {
           <ProjectGrid
             projects={visibleProjects}
             actionsDisabled={mutationBusy}
+            onOpenProject={onOpenProject}
             {...actionHandlers}
           />
         )}
@@ -476,6 +481,7 @@ export function Home() {
           <ProjectList
             projects={visibleProjects}
             actionsDisabled={mutationBusy}
+            onOpenProject={onOpenProject}
             {...actionHandlers}
           />
         )}

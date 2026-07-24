@@ -7,6 +7,7 @@ import {
 
 interface ProjectGridProps extends ProjectActionHandlers {
   projects: readonly ProjectSummary[];
+  onOpenProject: (project: ProjectSummary) => void;
   actionsDisabled?: boolean;
 }
 
@@ -20,6 +21,7 @@ function PinIcon() {
 
 export function ProjectGrid({
   projects,
+  onOpenProject,
   actionsDisabled = false,
   onRename,
   onTogglePinned,
@@ -33,7 +35,20 @@ export function ProjectGrid({
       {projects.map((project) => (
         <article
           key={project.id}
-          className="group relative flex min-h-[230px] flex-col justify-between rounded-[17px] border border-white/[0.04] p-6 shadow-[0_10px_28px_rgba(7,9,12,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-indigo-200/20 hover:shadow-[0_18px_40px_rgba(7,9,12,0.2)]"
+          role="button"
+          tabIndex={0}
+          aria-label={`打开 ${project.name}`}
+          onClick={() => onOpenProject(project)}
+          onKeyDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              (event.key === 'Enter' || event.key === ' ')
+            ) {
+              event.preventDefault();
+              onOpenProject(project);
+            }
+          }}
+          className="group relative flex min-h-[230px] cursor-pointer flex-col justify-between rounded-[17px] border border-white/[0.04] p-6 shadow-[0_10px_28px_rgba(7,9,12,0.08)] transition duration-150 hover:-translate-y-0.5 hover:border-indigo-200/20 hover:shadow-[0_18px_40px_rgba(7,9,12,0.2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
           style={{ backgroundColor: getProjectCardColor(project.id) }}
         >
           <div className="flex items-start justify-between gap-4">
