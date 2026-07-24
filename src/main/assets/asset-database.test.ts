@@ -52,6 +52,7 @@ function insertAsset(
     projectId: string;
     path: string;
     name?: string;
+    mediaType?: string;
   },
 ): void {
   context.db
@@ -60,7 +61,7 @@ function insertAsset(
       id: input.id,
       projectId: input.projectId,
       name: input.name ?? input.id,
-      mediaType: 'text/markdown',
+      mediaType: input.mediaType ?? 'text/markdown',
       contentKind: 'local-file',
       contentPath: input.path,
       createdTime: new Date('2026-07-24T01:00:00.000Z'),
@@ -88,9 +89,9 @@ afterEach(async () => {
   }
 
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -116,6 +117,9 @@ describe('AssetDatabase', () => {
       'AssetDatabase 尚未加载 Project',
     );
     await expect(database.refreshAvailability('asset')).rejects.toThrow(
+      'AssetDatabase 尚未加载 Project',
+    );
+    await expect(database.relink('asset', '/tmp/new.md')).rejects.toThrow(
       'AssetDatabase 尚未加载 Project',
     );
   });
@@ -280,6 +284,191 @@ describe('AssetDatabase', () => {
     );
   });
 
+  it('relinks an Asset path while preserving all other persisted fields', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/old/notes.md',
+      name: '自定义标题',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+    await database.loadProject('project');
+
+    const relinked = await database.relink('asset', '/new/notes.markdown');
+
+    expect(relinked).toMatchObject({
+      id: 'asset',
+      projectId: 'project',
+      name: '自定义标题',
+      mediaType: 'text/markdown',
+      contentLocator: {
+        path: '/new/notes.markdown',
+        availability: 'available',
+      },
+      createdTime: new Date('2026-07-24T01:00:00.000Z'),
+      lastUsedTime: new Date('2026-07-24T01:00:00.000Z'),
+    });
+    expect(context.db.select().from(assets).get()).toEqual({
+      id: 'asset',
+      projectId: 'project',
+      name: '自定义标题',
+      mediaType: 'text/markdown',
+      contentKind: 'local-file',
+      contentPath: '/new/notes.markdown',
+      createdTime: new Date('2026-07-24T01:00:00.000Z'),
+      lastUsedTime: new Date('2026-07-24T01:00:00.000Z'),
+    });
+
+    relinked.createdTime.setTime(0);
+    relinked.contentLocator.checkedTime.setTime(0);
+    expect(database.get('asset')).toMatchObject({
+      name: '自定义标题',
+      createdTime: new Date('2026-07-24T01:00:00.000Z'),
+      contentLocator: {
+        checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+      },
+    });
+  });
+
+  it('rejects unavailable and incompatible Relink targets atomically', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/old/notes.md',
+    });
+    let availability: LocalFileAvailability = 'missing';
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(() => availability),
+    });
+    await database.loadProject('project');
+
+    await expect(database.relink('asset', '/new/notes.md')).rejects.toThrow(
+      '无法重新定位到不可用的本地文件：missing',
+    );
+    availability = 'available';
+    await expect(database.relink('asset', '/new/book.pdf')).rejects.toThrow(
+      '重新定位的文件类型与原 Asset 不一致',
+    );
+
+    expect(database.get('asset')?.contentLocator.path).toBe('/old/notes.md');
+    expect(context.db.select().from(assets).get()?.contentPath).toBe(
+      '/old/notes.md',
+    );
+  });
+
+  it('relinks unknown media only when final extensions match', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/old/report.docx',
+      mediaType: 'application/octet-stream',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+    await database.loadProject('project');
+
+    await database.relink('asset', '/new/report.DOCX');
+    await expect(database.relink('asset', '/new/report.xlsx')).rejects.toThrow(
+      '重新定位的文件类型与原 Asset 不一致',
+    );
+
+    expect(database.get('asset')).toMatchObject({
+      mediaType: 'application/octet-stream',
+      contentLocator: { path: '/new/report.DOCX' },
+    });
+  });
+
+  it('refreshes a normalized identical Relink path without writing SQLite', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/tmp/notes.md',
+    });
+    let availability: LocalFileAvailability = 'available';
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(() => availability),
+    });
+    await database.loadProject('project');
+    availability = 'missing';
+    context.sqlite.exec('DROP TABLE assets');
+
+    const refreshed = await database.relink('asset', '/tmp/folder/../notes.md');
+
+    expect(refreshed.contentLocator).toMatchObject({
+      path: '/tmp/notes.md',
+      availability: 'missing',
+    });
+  });
+
+  it('keeps the old Relink Map value when the SQLite write fails', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/old/notes.md',
+    });
+    const database = new AssetDatabase(context, {
+      locatorChecker: createFixedChecker(),
+    });
+    await database.loadProject('project');
+    context.sqlite.exec('DROP TABLE assets');
+
+    await expect(database.relink('asset', '/new/notes.md')).rejects.toThrow();
+    expect(database.get('asset')?.contentLocator.path).toBe('/old/notes.md');
+  });
+
+  it('does not write a Relink result after its Project unloads', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project',
+      path: '/old/notes.md',
+    });
+    let finishRelink: (() => void) | undefined;
+    let checkingRelink = false;
+    const database = new AssetDatabase(context, {
+      locatorChecker: {
+        check: async (path) => {
+          if (checkingRelink) {
+            await new Promise<void>((resolve) => {
+              finishRelink = resolve;
+            });
+          }
+
+          return createLocalFileContentLocator({
+            path,
+            availability: 'available',
+            checkedTime: new Date('2026-07-24T02:00:00.000Z'),
+          });
+        },
+      },
+    });
+    await database.loadProject('project');
+    checkingRelink = true;
+
+    const relink = database.relink('asset', '/new/notes.md');
+    database.unloadProject();
+    finishRelink?.();
+
+    await expect(relink).rejects.toThrow('AssetDatabase 当前 Project 已变化');
+    expect(context.db.select().from(assets).get()?.contentPath).toBe(
+      '/old/notes.md',
+    );
+  });
+
   it('does not expose Asset, Locator or Date references', async () => {
     const context = await createContext();
     addProject(context, 'project');
@@ -397,7 +586,8 @@ describe('AssetDatabase', () => {
       projectId: 'project',
       path: '/tmp/notes.md',
     });
-    let finishRefresh: ((availability: LocalFileAvailability) => void) | undefined;
+    let finishRefresh:
+      ((availability: LocalFileAvailability) => void) | undefined;
     let checkingRefresh = false;
     const database = new AssetDatabase(context, {
       locatorChecker: {
@@ -430,9 +620,7 @@ describe('AssetDatabase', () => {
     database.unloadProject();
     finishRefresh?.('missing');
 
-    await expect(refresh).rejects.toThrow(
-      'AssetDatabase 当前 Project 已变化',
-    );
+    await expect(refresh).rejects.toThrow('AssetDatabase 当前 Project 已变化');
     expect(database.getActiveProjectId()).toBeUndefined();
     expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
   });
@@ -472,9 +660,7 @@ describe('AssetDatabase', () => {
       '无法添加不可用的本地文件：missing',
     );
 
-    expect(() => database.update('missing', {})).toThrow(
-      'Asset 更新内容无效',
-    );
+    expect(() => database.update('missing', {})).toThrow('Asset 更新内容无效');
     expect(() =>
       database.update('missing', { projectId: 'other' } as never),
     ).toThrow('Asset 更新内容无效');

@@ -20,6 +20,7 @@ import {
 import {
   createDefaultAssetName,
   detectAssetMediaType,
+  isAssetRelinkMediaCompatible,
 } from './asset-media-type';
 
 export interface AssetDatabaseApi {
@@ -32,6 +33,7 @@ export interface AssetDatabaseApi {
   update(assetId: string, changes: UpdateAssetInput): Asset;
   delete(assetId: string): void;
   refreshAvailability(assetId: string): Promise<Asset>;
+  relink(assetId: string, newPath: string): Promise<Asset>;
 }
 
 export interface AssetDatabaseDependencies {
@@ -267,6 +269,58 @@ export class AssetDatabase implements AssetDatabaseApi {
     return cloneAsset(nextAsset);
   }
 
+  async relink(assetId: string, newPath: string): Promise<Asset> {
+    const projectId = this.requireActiveProjectId();
+    const lifecycleVersion = this.lifecycleVersion;
+    const currentAsset = this.find(assetId);
+    const contentLocator =
+      await this.dependencies.locatorChecker.check(newPath);
+    this.requireUnchangedProject(lifecycleVersion, projectId);
+
+    if (contentLocator.path === currentAsset.contentLocator.path) {
+      const nextAsset = createAssetSnapshot({
+        ...currentAsset,
+        contentLocator,
+      });
+
+      this.assetMap.set(assetId, nextAsset);
+      return cloneAsset(nextAsset);
+    }
+
+    if (contentLocator.availability !== 'available') {
+      throw new Error(
+        `无法重新定位到不可用的本地文件：${contentLocator.availability}`,
+      );
+    }
+
+    if (
+      !isAssetRelinkMediaCompatible(
+        currentAsset.mediaType,
+        currentAsset.contentLocator.path,
+        contentLocator.path,
+      )
+    ) {
+      throw new Error('重新定位的文件类型与原 Asset 不一致');
+    }
+
+    const result = this.context.db
+      .update(assets)
+      .set({ contentPath: contentLocator.path })
+      .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
+      .run();
+
+    if (result.changes !== 1) {
+      throw new Error(`Asset Relink 影响了 ${result.changes} 行`);
+    }
+
+    const nextAsset = createAssetSnapshot({
+      ...currentAsset,
+      contentLocator,
+    });
+    this.assetMap.set(assetId, nextAsset);
+    return cloneAsset(nextAsset);
+  }
+
   private requireActiveProjectId(): string {
     if (!this.activeProjectId) {
       throw new Error('AssetDatabase 尚未加载 Project');
@@ -302,7 +356,9 @@ export class AssetDatabase implements AssetDatabaseApi {
 
     if (
       keys.length === 0 ||
-      keys.some((key) => !mutableAssetFields.has(key as keyof UpdateAssetInput)) ||
+      keys.some(
+        (key) => !mutableAssetFields.has(key as keyof UpdateAssetInput),
+      ) ||
       (changes.name === undefined && changes.lastUsedTime === undefined)
     ) {
       throw new Error('Asset 更新内容无效');
