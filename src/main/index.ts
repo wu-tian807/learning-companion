@@ -23,8 +23,10 @@ import { ProjectService } from './projects/project-service';
 import { JsonSettingsRepository } from './settings/json-settings-repository';
 import { WorkbenchRegistry } from './workbench/workbench-registry';
 import { WorkbenchSessionManager } from './workbench/workbench-session-manager';
-import { EmptyWorkbenchStateRepository } from './workbench/workbench-state-repository';
+import { SqliteWorkbenchStateDataRepository } from './workbench/workbench-state-data-repository';
+import { SqliteWorkbenchStateRepository } from './workbench/workbench-state-repository';
 import { createMainWindow } from './window';
+import { PlainTextWorkbenchProvider } from '../workbenches/plain-text/main';
 import { UnsupportedWorkbenchProvider } from '../workbenches/unsupported/main';
 
 let databaseContext: DatabaseContext | undefined;
@@ -49,11 +51,22 @@ void app.whenReady().then(async () => {
   const workbenchRegistry = new WorkbenchRegistry(
     new UnsupportedWorkbenchProvider(),
   );
+  const workbenchStateRepository = new SqliteWorkbenchStateRepository(
+    databaseContext,
+  );
+  const workbenchStateDataRepository =
+    new SqliteWorkbenchStateDataRepository(databaseContext);
+  workbenchRegistry.register(
+    new PlainTextWorkbenchProvider(
+      workbenchStateRepository,
+      workbenchStateDataRepository,
+    ),
+  );
   const workbenchSessionManager = new WorkbenchSessionManager(
     assetService,
     workbenchRegistry,
     new EmptyAttachmentService(),
-    new EmptyWorkbenchStateRepository(),
+    workbenchStateRepository,
   );
   const projectService = new ProjectService(
     projectDatabase,
