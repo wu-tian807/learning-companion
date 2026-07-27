@@ -26,9 +26,9 @@
 
 ```ts
 export interface ProjectServiceApi {
-  openProject(projectId: string): Promise<readonly Asset[]>;
-  closeProject(projectId: string): void;
-  deleteProject(projectId: string): void;
+  loadProjectWorkspace(projectId: string): Promise<readonly Asset[]>;
+  unloadProjectWorkspace(projectId: string): void;
+  deleteProjectCascade(projectId: string): void;
 }
 ```
 
@@ -37,10 +37,12 @@ export interface ProjectServiceApi {
 - `ProjectDatabase`
 - `AssetDatabase`
 
-### openProject
+Service 方法使用 `Workspace` 和 `Cascade` 命名，与 `ProjectDatabase` 的普通 CRUD 明确区分。IPC 与 Renderer 仍保留面向用户动作的 `openProject`、`closeProject` 和 `deleteProject`。
+
+### loadProjectWorkspace
 
 ```text
-openProject(projectId)
+loadProjectWorkspace(projectId)
   -> ProjectDatabase 内存 Map 验证 Project
   -> AssetDatabase.loadFromProject(projectId)
   -> 返回该 Project 的真实 Asset 快照
@@ -48,10 +50,10 @@ openProject(projectId)
 
 `AssetDatabase` 仍然只维护一个当前 Project 的 Asset Map。
 
-### closeProject
+### unloadProjectWorkspace
 
 ```text
-closeProject(projectId)
+unloadProjectWorkspace(projectId)
   -> 如果当前未加载 Project，幂等返回
   -> 如果当前 Project ID 不匹配，拒绝
   -> AssetDatabase.unloadProject()
@@ -59,10 +61,10 @@ closeProject(projectId)
 
 该操作只卸载内存，不修改 SQLite。
 
-### deleteProject
+### deleteProjectCascade
 
 ```text
-deleteProject(projectId)
+deleteProjectCascade(projectId)
   -> ProjectDatabase 内存 Map 验证 Project
   -> 如果 AssetDatabase 当前加载的是该 Project
        -> 先 AssetDatabase.unloadProject()
