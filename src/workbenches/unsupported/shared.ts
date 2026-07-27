@@ -29,3 +29,19 @@ export function createUnsupportedWorkbenchPayload(
 ): JsonValue {
   return { reason };
 }
+
+export function isUnsupportedWorkbenchPayload(
+  value: JsonValue,
+): value is JsonValue & UnsupportedWorkbenchPayload {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as { readonly [key: string]: JsonValue };
+
+  return (
+    candidate.reason === 'unsupported-media' ||
+    candidate.reason === 'missing-capability' ||
+    candidate.reason === 'content-unavailable'
+  );
+}

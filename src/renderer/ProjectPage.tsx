@@ -20,6 +20,7 @@ import {
   selectInitialAssetId,
 } from './asset-view';
 import { ErrorDialog } from './components/ErrorDialog';
+import { AssetWorkbenchHost } from './workbench/AssetWorkbenchHost';
 
 interface ProjectPageProps {
   readonly project: ProjectSummary;
@@ -439,95 +440,6 @@ function AssetPanel({
   );
 }
 
-interface ReaderPanelProps {
-  readonly asset: AssetSummary | undefined;
-  readonly onRelink: () => void;
-  readonly onRefresh: () => void;
-}
-
-function ReaderPanel({ asset, onRelink, onRefresh }: ReaderPanelProps) {
-  let content = (
-    <div className="grid h-full place-items-center p-8 text-center">
-      <div>
-        <p className="text-sm font-medium text-slate-400">选择一份资料开始学习</p>
-        <p className="mt-2 text-xs text-slate-600">阅读器会显示在这里</p>
-      </div>
-    </div>
-  );
-
-  if (asset) {
-    const availability = asset.contentLocator.availability;
-
-    if (availability === 'available') {
-      content = (
-        <div className="grid h-full place-items-center p-8 text-center">
-          <div>
-            <p className="text-sm font-medium text-slate-300">
-              暂不支持渲染此类型
-            </p>
-            <p className="mt-2 max-w-lg truncate text-xs text-slate-600">
-              {asset.contentLocator.path}
-            </p>
-          </div>
-        </div>
-      );
-    } else {
-      const messages = {
-        missing: ['本地文件已移动或删除', '重新定位'],
-        inaccessible: ['当前没有权限访问该文件', '刷新状态'],
-        invalid: ['该路径不是可读取的普通文件', '重新定位'],
-      } as const;
-      const [message, action] = messages[availability];
-      content = (
-        <div className="grid h-full place-items-center p-8 text-center">
-          <div>
-            <p className="text-sm font-medium text-slate-300">{message}</p>
-            <p className="mt-2 max-w-lg truncate text-xs text-slate-600">
-              {asset.contentLocator.path}
-            </p>
-            <button
-              type="button"
-              onClick={availability === 'inaccessible' ? onRefresh : onRelink}
-              className="ui-control mt-5 rounded-full border border-white/10 px-4 py-2 text-xs"
-            >
-              {action}
-            </button>
-          </div>
-        </div>
-      );
-    }
-  }
-
-  return (
-    <article
-      aria-label="Asset 阅读器"
-      className="flex min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
-    >
-      <div className="flex h-[54px] shrink-0 items-center justify-between gap-4 border-b border-white/[0.075] px-[17px]">
-        <h2 className="truncate text-sm font-semibold text-slate-100">
-          {asset?.name ?? '资料阅读器'}
-        </h2>
-        {asset && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="rounded-lg border border-white/[0.08] px-2 py-1 text-[10px] text-slate-400">
-              {mediaLabel(asset.mediaType)}
-            </span>
-            <button
-              type="button"
-              disabled
-              aria-label="预览器操作"
-              className="grid h-[26px] min-w-[30px] place-items-center rounded-lg border border-white/[0.08] px-2 text-xs tracking-[0.08em] text-slate-400"
-            >
-              •••
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="min-h-0 flex-1">{content}</div>
-    </article>
-  );
-}
-
 function GenerationPanel({ asset }: { readonly asset: AssetSummary | undefined }) {
   return (
     <aside className="flex min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#20252c] shadow-[0_20px_50px_rgba(5,8,12,0.16)]">
@@ -885,14 +797,16 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           onRefreshAll={() => void refreshAllAssets()}
           onDelete={setDeleteTarget}
         />
-        <ReaderPanel
+        <AssetWorkbenchHost
           asset={selectedAsset}
+          mediaLabel={mediaLabel}
           onRelink={() => {
             if (selectedAsset) void relinkAsset(selectedAsset);
           }}
           onRefresh={() => {
             if (selectedAsset) void refreshAsset(selectedAsset);
           }}
+          onError={setError}
         />
         <GenerationPanel asset={selectedAsset} />
       </section>

@@ -102,3 +102,22 @@ export function isWorkbenchCloseRequest(
 ): value is WorkbenchCloseRequest {
   return isRecord(value) && isRequiredText(value.sessionId);
 }
+
+export function isWorkbenchBootstrap(
+  value: unknown,
+): value is WorkbenchBootstrap {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.sessionId) &&
+    isRequiredText(value.workbenchId) &&
+    typeof value.protocolVersion === 'number' &&
+    Number.isSafeInteger(value.protocolVersion) &&
+    value.protocolVersion > 0 &&
+    isRequiredText(value.assetId) &&
+    isRequiredText(value.mediaType) &&
+    ['available', 'missing', 'inaccessible', 'invalid'].includes(
+      value.availability as string,
+    ) &&
+    isJsonValue(value.payload)
+  );
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isJsonValue,
+  isWorkbenchBootstrap,
   isWorkbenchCloseRequest,
   isWorkbenchCommandRequest,
   isWorkbenchOpenRequest,
@@ -36,5 +37,16 @@ describe('Workbench protocol', () => {
       }),
     ).toBe(false);
     expect(isWorkbenchCloseRequest({ sessionId: 'session' })).toBe(true);
+    expect(
+      isWorkbenchBootstrap({
+        sessionId: 'session',
+        workbenchId: 'builtin.unsupported',
+        protocolVersion: 1,
+        assetId: 'asset',
+        mediaType: 'text/plain',
+        availability: 'available',
+        payload: { reason: 'unsupported-media' },
+      }),
+    ).toBe(true);
   });
 });
