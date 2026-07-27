@@ -3,6 +3,10 @@ import type { IpcErrorKind, IpcErrorPayload } from '../../shared/ipc-error';
 export type AppErrorCode =
   | 'OPERATION_SUPERSEDED'
   | 'PROJECT_CONTEXT_CHANGED'
+  | 'CONTENT_RESOLVER_NOT_FOUND'
+  | 'REGISTRATION_CONFLICT'
+  | 'INVALID_EXTENSION_DEFINITION'
+  | 'FEATURE_NOT_SUPPORTED'
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
@@ -32,6 +36,30 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   },
   PROJECT_CONTEXT_CHANGED: {
     kind: 'cancelled',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  CONTENT_RESOLVER_NOT_FOUND: {
+    kind: 'internal',
+    userMessage: '无法读取该资料的内容来源，请重启应用后重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  REGISTRATION_CONFLICT: {
+    kind: 'internal',
+    userMessage: '应用扩展发生冲突，请重启应用后重试。',
+    retryable: false,
+    logLevel: 'error',
+  },
+  INVALID_EXTENSION_DEFINITION: {
+    kind: 'internal',
+    userMessage: '应用扩展定义无效，请重启应用后重试。',
+    retryable: false,
+    logLevel: 'error',
+  },
+  FEATURE_NOT_SUPPORTED: {
+    kind: 'user',
+    userMessage: '该功能当前尚未开放。',
     retryable: false,
     logLevel: 'silent',
   },
