@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import CodeMirror, {
   EditorView,
   type ReactCodeMirrorRef,
@@ -21,12 +22,19 @@ import {
   createPlainTextBufferCommand,
   createPlainTextViewStateCommand,
   isPlainTextBackupResult,
+  isPlainTextLineEndingResult,
+  isPlainTextReopenResult,
   isPlainTextSaveResult,
+  isPlainTextViewOptions,
   isPlainTextWorkbenchPayload,
   plainTextCommands,
   plainTextWorkbenchManifest,
+  type PlainTextEncoding,
+  type PlainTextLineEnding,
+  type PlainTextViewOptions,
   type PlainTextViewState,
 } from './shared';
+import { PlainTextWorkbenchMenu } from './workbench-menu';
 
 type BackupStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
 
@@ -200,6 +208,7 @@ function PlainTextRecoveryDialog({
 
 export function PlainTextWorkbenchView({
   bootstrap,
+  headerActionsTarget,
   executeCommand,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -219,6 +228,16 @@ export function PlainTextWorkbenchView({
   const [savedLineEnding, setSavedLineEnding] = useState(
     payload?.lineEnding ?? 'lf',
   );
+  const [encoding, setEncoding] = useState<PlainTextEncoding>(
+    payload?.encoding ?? 'utf-8',
+  );
+  const [viewOptions, setViewOptions] = useState<PlainTextViewOptions>(
+    payload?.viewOptions ?? {
+      wordWrap: true,
+      lineNumbers: true,
+    },
+  );
+  const [editorInstanceKey, setEditorInstanceKey] = useState(0);
   const [recovery, setRecovery] = useState(payload?.recovery);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -227,10 +246,15 @@ export function PlainTextWorkbenchView({
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
   const dirty =
     content !== savedContent || lineEnding !== savedLineEnding;
-  const extensions = useMemo(
-    () => [plainTextEditorTheme, EditorView.lineWrapping],
-    [],
-  );
+  const extensions = useMemo(() => {
+    const configured = [plainTextEditorTheme];
+
+    if (viewOptions.wordWrap) {
+      configured.push(EditorView.lineWrapping);
+    }
+
+    return configured;
+  }, [viewOptions.wordWrap]);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -251,6 +275,79 @@ export function PlainTextWorkbenchView({
       viewState: viewStateRef.current,
     }),
     [lineEnding],
+  );
+
+  const updateViewOptions = useCallback(
+    async (nextViewOptions: PlainTextViewOptions) => {
+      try {
+        const result = await executeCommand({
+          type: plainTextCommands.setViewOptions,
+          payload: {
+            wordWrap: nextViewOptions.wordWrap,
+            lineNumbers: nextViewOptions.lineNumbers,
+          },
+        });
+
+        if (!isPlainTextViewOptions(result.payload)) {
+          throw new Error('Plain Text Workbench 显示选项响应无效');
+        }
+
+        setViewOptions({
+          wordWrap: result.payload.wordWrap,
+          lineNumbers: result.payload.lineNumbers,
+        });
+      } catch (error) {
+        reportError(error, '无法更新文本编辑器显示选项。');
+      }
+    },
+    [executeCommand, reportError],
+  );
+
+  const updateLineEnding = useCallback(
+    async (nextLineEnding: PlainTextLineEnding) => {
+      try {
+        const result = await executeCommand({
+          type: plainTextCommands.setLineEnding,
+          payload: { lineEnding: nextLineEnding },
+        });
+
+        if (!isPlainTextLineEndingResult(result.payload)) {
+          throw new Error('Plain Text Workbench 行尾序列响应无效');
+        }
+
+        setLineEnding(result.payload.lineEnding);
+      } catch (error) {
+        reportError(error, '无法更新文本文件的行尾序列。');
+      }
+    },
+    [executeCommand, reportError],
+  );
+
+  const reopenWithEncoding = useCallback(
+    async (nextEncoding: PlainTextEncoding) => {
+      try {
+        const result = await executeCommand({
+          type: plainTextCommands.reopenWithEncoding,
+          payload: { encoding: nextEncoding },
+        });
+
+        if (!isPlainTextReopenResult(result.payload)) {
+          throw new Error('Plain Text Workbench 编码重开响应无效');
+        }
+
+        latestContentRef.current = result.payload.content;
+        setContent(result.payload.content);
+        setSavedContent(result.payload.content);
+        setLineEnding(result.payload.lineEnding);
+        setSavedLineEnding(result.payload.lineEnding);
+        setEncoding(result.payload.encoding);
+        setBackupStatus('idle');
+        setEditorInstanceKey((current) => current + 1);
+      } catch (error) {
+        reportError(error, '无法使用所选编码重新打开文本文件。');
+      }
+    },
+    [executeCommand, reportError],
   );
 
   const save = useCallback(async () => {
@@ -391,13 +488,15 @@ export function PlainTextWorkbenchView({
     }
   };
 
-  const backupLabel = {
-    idle: dirty ? '尚未备份' : '已保存',
-    pending: '等待自动备份',
-    saving: '正在备份…',
-    saved: '已备份未保存内容',
-    failed: '备份失败',
-  }[backupStatus];
+  const backupLabel = dirty
+    ? {
+        idle: '尚未备份',
+        pending: '等待自动备份',
+        saving: '正在备份…',
+        saved: '已备份未保存内容',
+        failed: '备份失败',
+      }[backupStatus]
+    : '已保存';
 
   return (
     <div
@@ -425,7 +524,7 @@ export function PlainTextWorkbenchView({
           </span>
           <span className="h-3 w-px bg-white/[0.08]" />
           <span className="rounded-md bg-white/[0.045] px-1.5 py-0.5 text-[10px] text-slate-500">
-            {formatEncoding(payload.encoding)}
+            {formatEncoding(encoding)}
           </span>
           <span className="rounded-md bg-white/[0.045] px-1.5 py-0.5 text-[10px] text-slate-500">
             {lineEnding === 'crlf' ? 'CRLF' : 'LF'}
@@ -444,13 +543,14 @@ export function PlainTextWorkbenchView({
 
       <div className="min-h-0 flex-1 overflow-hidden">
         <CodeMirror
+          key={editorInstanceKey}
           ref={editorRef}
           value={content}
           height="100%"
           theme="none"
           extensions={extensions}
           basicSetup={{
-            lineNumbers: true,
+            lineNumbers: viewOptions.lineNumbers,
             highlightActiveLineGutter: true,
             foldGutter: false,
             autocompletion: false,
@@ -519,6 +619,20 @@ export function PlainTextWorkbenchView({
           onDiscard={() => void discardRecovery()}
         />
       )}
+      {headerActionsTarget &&
+        createPortal(
+          <PlainTextWorkbenchMenu
+            disabled={Boolean(recovery) || saving}
+            encodingDisabled={dirty}
+            encoding={encoding}
+            lineEnding={lineEnding}
+            viewOptions={viewOptions}
+            onSetEncoding={reopenWithEncoding}
+            onSetLineEnding={updateLineEnding}
+            onSetViewOptions={updateViewOptions}
+          />,
+          headerActionsTarget,
+        )}
     </div>
   );
 }

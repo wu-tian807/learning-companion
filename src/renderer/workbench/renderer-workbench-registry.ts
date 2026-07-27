@@ -14,6 +14,7 @@ import type { AssetSnapshot } from '../../shared/assets';
 export interface RendererWorkbenchViewProps {
   readonly asset: AssetSnapshot;
   readonly bootstrap: WorkbenchBootstrap;
+  readonly headerActionsTarget: HTMLElement | null;
   readonly executeCommand: (
     command: WorkbenchCommand,
   ) => Promise<WorkbenchCommandResult>;

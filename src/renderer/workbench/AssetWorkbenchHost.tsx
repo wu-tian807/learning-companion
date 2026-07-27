@@ -50,6 +50,8 @@ export function AssetWorkbenchHost({
 }: AssetWorkbenchHostProps) {
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
+  const [headerActionsTarget, setHeaderActionsTarget] =
+    useState<HTMLDivElement | null>(null);
   const assetId = asset?.id;
   const checkedTime = asset?.contentStatus.checkedTime;
   const mediaType = asset?.mediaType;
@@ -192,6 +194,7 @@ export function AssetWorkbenchHost({
         <View
           asset={asset}
           bootstrap={state.bootstrap}
+          headerActionsTarget={headerActionsTarget}
           executeCommand={state.executeCommand}
           onRelink={onRelink}
           onRefresh={onRefresh}
@@ -216,14 +219,10 @@ export function AssetWorkbenchHost({
             <span className="rounded-lg border border-white/[0.08] px-2 py-1 text-[10px] text-slate-400">
               {mediaLabel(asset.mediaType)}
             </span>
-            <button
-              type="button"
-              disabled
-              aria-label="资料工作台操作"
-              className="grid h-[26px] min-w-[30px] place-items-center rounded-lg border border-white/[0.08] px-2 text-xs tracking-[0.08em] text-slate-400"
-            >
-              •••
-            </button>
+            <div
+              ref={setHeaderActionsTarget}
+              className="flex shrink-0 items-center empty:hidden"
+            />
           </div>
         )}
       </div>
