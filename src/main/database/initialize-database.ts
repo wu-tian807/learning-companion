@@ -8,8 +8,10 @@ import type { DatabaseContext } from './database-context';
 import { createProjectsMigration } from './migrations/0001-create-projects';
 import { createAssetsMigration } from './migrations/0002-create-assets';
 import { recreateAssetsMigration } from './migrations/0003-recreate-assets';
+import { createWorkbenchStateMigration } from './migrations/0004-create-workbench-state';
 import * as assetSchema from './schema/assets';
 import * as projectSchema from './schema/projects';
+import * as workbenchStateSchema from './schema/workbench-state';
 
 interface DatabaseMigration {
   readonly version: number;
@@ -20,10 +22,12 @@ const migrations: readonly DatabaseMigration[] = [
   createProjectsMigration,
   createAssetsMigration,
   recreateAssetsMigration,
+  createWorkbenchStateMigration,
 ];
 const schema = {
   ...projectSchema,
   ...assetSchema,
+  ...workbenchStateSchema,
 };
 
 function readUserVersion(sqlite: Database.Database): number {
