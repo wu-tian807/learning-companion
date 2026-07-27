@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_APP_PREFERENCES } from '../../shared/app-preferences';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { isIpcResult } from '../../shared/ipc-error';
 import type { SettingsRepository } from '../settings/settings-repository';
 import { registerSettingsHandlers, removeSettingsHandlers } from './settings';
 
@@ -17,7 +18,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-type IpcHandler = (event: unknown, request?: unknown) => unknown;
+type RegisteredIpcHandler = (event: unknown, request?: unknown) => unknown;
+type IpcHandler = (event: unknown, request?: unknown) => Promise<unknown>;
 
 function findHandler(channel: string): IpcHandler {
   const registration = electronMocks.handle.mock.calls.find(
@@ -28,7 +30,18 @@ function findHandler(channel: string): IpcHandler {
     throw new Error(`找不到 ${channel} handler`);
   }
 
-  return registration[1] as IpcHandler;
+  const handler = registration[1] as RegisteredIpcHandler;
+
+  return async (event, request) => {
+    const result = await handler(event, request);
+    if (!isIpcResult<unknown>(result)) {
+      throw new Error('IPC 测试响应无效');
+    }
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.data;
+  };
 }
 
 function createRepository() {
@@ -54,11 +67,11 @@ beforeEach(() => {
 });
 
 describe('settings IPC handlers', () => {
-  it('returns the repository settings', () => {
+  it('returns the repository settings', async () => {
     const { get, repository } = createRepository();
     registerSettingsHandlers(repository);
 
-    const result = findHandler(IPC_CHANNELS.getAppPreferences)({});
+    const result = await findHandler(IPC_CHANNELS.getAppPreferences)({});
 
     expect(result).toEqual(DEFAULT_APP_PREFERENCES);
     expect(get).toHaveBeenCalledOnce();
@@ -90,12 +103,12 @@ describe('settings IPC handlers', () => {
     const { repository, updateHomePreferences } = createRepository();
     registerSettingsHandlers(repository);
 
-    expect(() =>
+    await expect(
       findHandler(IPC_CHANNELS.updateHomePreferences)({}, {
         viewMode: 'compact',
         sortMode: 'newest',
       }),
-    ).toThrow('Settings 更新请求无效');
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(updateHomePreferences).not.toHaveBeenCalled();
   });
 

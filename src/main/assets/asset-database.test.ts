@@ -151,7 +151,7 @@ describe('AssetDatabase', () => {
     });
 
     await expect(database.loadFromProject('project')).rejects.toThrow(
-      'ProjectDatabase 尚未初始化',
+      'SERVICE_NOT_READY',
     );
   });
 
@@ -162,24 +162,24 @@ describe('AssetDatabase', () => {
     });
 
     expect(database.getActiveProjectId()).toBeUndefined();
-    expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
+    expect(() => database.list()).toThrow('SERVICE_NOT_READY');
     expect(() => database.get('asset')).toThrow(
-      'AssetDatabase 尚未加载 Project',
+      'SERVICE_NOT_READY',
     );
     await expect(database.add({ path: '/tmp/notes.md' })).rejects.toThrow(
-      'AssetDatabase 尚未加载 Project',
+      'SERVICE_NOT_READY',
     );
     expect(() => database.update('asset', { name: '标题' })).toThrow(
-      'AssetDatabase 尚未加载 Project',
+      'SERVICE_NOT_READY',
     );
     expect(() => database.delete('asset')).toThrow(
-      'AssetDatabase 尚未加载 Project',
+      'SERVICE_NOT_READY',
     );
     await expect(database.refreshAvailability('asset')).rejects.toThrow(
-      'AssetDatabase 尚未加载 Project',
+      'SERVICE_NOT_READY',
     );
     await expect(database.relink('asset', '/tmp/new.md')).rejects.toThrow(
-      'AssetDatabase 尚未加载 Project',
+      'SERVICE_NOT_READY',
     );
   });
 
@@ -215,7 +215,7 @@ describe('AssetDatabase', () => {
     database.unloadProject();
 
     expect(database.getActiveProjectId()).toBeUndefined();
-    expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
+    expect(() => database.list()).toThrow('SERVICE_NOT_READY');
   });
 
   it('keeps missing Assets while loading a Project', async () => {
@@ -343,6 +343,36 @@ describe('AssetDatabase', () => {
     );
   });
 
+  it('refreshes every loaded Asset availability in one operation', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    insertAsset(context, {
+      id: 'first',
+      projectId: 'project',
+      path: '/tmp/first.md',
+    });
+    insertAsset(context, {
+      id: 'second',
+      projectId: 'project',
+      path: '/tmp/second.md',
+    });
+    let availability: LocalFileAvailability = 'available';
+    const database = createAssetDatabase(context, {
+      locatorChecker: createFixedChecker(() => availability),
+    });
+    await database.loadFromProject('project');
+    availability = 'missing';
+
+    const refreshed = await database.refreshAllAvailabilities();
+
+    expect(refreshed).toHaveLength(2);
+    expect(
+      refreshed.every(
+        (asset) => asset.contentLocator.availability === 'missing',
+      ),
+    ).toBe(true);
+  });
+
   it('relinks an Asset path while preserving all other persisted fields', async () => {
     const context = await createContext();
     addProject(context, 'project');
@@ -408,11 +438,11 @@ describe('AssetDatabase', () => {
     await database.loadFromProject('project');
 
     await expect(database.relink('asset', '/new/notes.md')).rejects.toThrow(
-      '无法重新定位到不可用的本地文件：missing',
+      'ASSET_UNAVAILABLE',
     );
     availability = 'available';
     await expect(database.relink('asset', '/new/book.pdf')).rejects.toThrow(
-      '重新定位的文件类型与原 Asset 不一致',
+      'ASSET_MEDIA_TYPE_MISMATCH',
     );
 
     expect(database.get('asset')?.contentLocator.path).toBe('/old/notes.md');
@@ -437,7 +467,7 @@ describe('AssetDatabase', () => {
 
     await database.relink('asset', '/new/report.DOCX');
     await expect(database.relink('asset', '/new/report.xlsx')).rejects.toThrow(
-      '重新定位的文件类型与原 Asset 不一致',
+      'ASSET_MEDIA_TYPE_MISMATCH',
     );
 
     expect(database.get('asset')).toMatchObject({
@@ -522,7 +552,7 @@ describe('AssetDatabase', () => {
     database.unloadProject();
     finishRelink?.();
 
-    await expect(relink).rejects.toThrow('AssetDatabase 当前 Project 已变化');
+    await expect(relink).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
     expect(context.db.select().from(assets).get()?.contentPath).toBe(
       '/old/notes.md',
     );
@@ -631,7 +661,7 @@ describe('AssetDatabase', () => {
     finishFirstLoad?.();
 
     await expect(firstLoad).rejects.toThrow(
-      'AssetDatabase Project 加载已被替代',
+      'OPERATION_SUPERSEDED',
     );
     expect(database.getActiveProjectId()).toBe('project-b');
     expect(database.list().map(({ id }) => id)).toEqual(['asset-b']);
@@ -679,9 +709,9 @@ describe('AssetDatabase', () => {
     database.unloadProject();
     finishRefresh?.('missing');
 
-    await expect(refresh).rejects.toThrow('AssetDatabase 当前 Project 已变化');
+    await expect(refresh).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
     expect(database.getActiveProjectId()).toBeUndefined();
-    expect(() => database.list()).toThrow('AssetDatabase 尚未加载 Project');
+    expect(() => database.list()).toThrow('SERVICE_NOT_READY');
   });
 
   it('keeps the previous Map value when a database write fails', async () => {
@@ -712,22 +742,24 @@ describe('AssetDatabase', () => {
     });
 
     await expect(database.loadFromProject('missing')).rejects.toThrow(
-      '找不到指定的 Project',
+      'PROJECT_NOT_FOUND',
     );
     await database.loadFromProject('project');
     await expect(database.add({ path: '/tmp/missing.md' })).rejects.toThrow(
-      '无法添加不可用的本地文件：missing',
+      'ASSET_UNAVAILABLE',
     );
 
-    expect(() => database.update('missing', {})).toThrow('Asset 更新内容无效');
+    expect(() => database.update('missing', {})).toThrow(
+      'INVALID_IPC_REQUEST',
+    );
     expect(() =>
       database.update('missing', { projectId: 'other' } as never),
-    ).toThrow('Asset 更新内容无效');
+    ).toThrow('INVALID_IPC_REQUEST');
     expect(() => database.update('missing', { name: '新标题' })).toThrow(
-      '找不到当前 Project 中指定的 Asset',
+      'ASSET_NOT_FOUND',
     );
     expect(() => database.delete('missing')).toThrow(
-      '找不到当前 Project 中指定的 Asset',
+      'ASSET_NOT_FOUND',
     );
 
     availability = 'available';

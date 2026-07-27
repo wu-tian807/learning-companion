@@ -4,6 +4,7 @@ import started from 'electron-squirrel-startup';
 import type { DatabaseContext } from './database/database-context';
 import { initializeDatabase } from './database/initialize-database';
 import { AssetDatabase } from './assets/asset-database';
+import { AssetFileService } from './assets/asset-file-service';
 import { registerHealthCheckHandler, removeHealthCheckHandler } from './ipc/health-check';
 import { registerAssetHandlers, removeAssetHandlers } from './ipc/assets';
 import { registerProjectHandlers, removeProjectHandlers } from './ipc/projects';
@@ -26,6 +27,7 @@ void app.whenReady().then(async () => {
   databaseContext = initializeDatabase(appPaths.databaseFile);
   const projectDatabase = new ProjectDatabase(databaseContext);
   const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
+  const assetFileService = new AssetFileService(assetDatabase);
   const projectService = new ProjectService(projectDatabase, assetDatabase);
 
   await settingsRepository.initialize();
@@ -34,7 +36,7 @@ void app.whenReady().then(async () => {
   registerHealthCheckHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectDatabase, projectService);
-  registerAssetHandlers(assetDatabase, projectService);
+  registerAssetHandlers(assetDatabase, assetFileService, projectService);
   createMainWindow();
 
   app.on('activate', () => {

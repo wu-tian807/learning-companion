@@ -12,14 +12,13 @@ import {
 } from '../../shared/ipc';
 import type { Asset } from '../assets/asset';
 import type { AssetDatabaseApi } from '../assets/asset-database';
+import type { AssetFileServiceApi } from '../assets/asset-file-service';
+import { AppError, handleAppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
+import { registerIpcHandler } from './register-handler';
 
-function invalidRequest(operation: string): Error {
-  return new Error(`Asset ${operation}请求无效`);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '未知错误';
+function invalidRequest(): Error {
+  return new AppError('INVALID_IPC_REQUEST');
 }
 
 export function toAssetSummary(asset: Asset): AssetSummary {
@@ -41,26 +40,27 @@ export function toAssetSummary(asset: Asset): AssetSummary {
 
 export function registerAssetHandlers(
   assetDatabase: AssetDatabaseApi,
+  assetFileService: AssetFileServiceApi,
   projectService: ProjectServiceApi,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.openProject, async (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.openProject, async (_event, request: unknown) => {
     if (!isProjectLifecycleRequest(request)) {
-      throw invalidRequest('打开 Project');
+      throw invalidRequest();
     }
 
     const loaded = await projectService.loadProjectWorkspace(request.projectId);
     return loaded.map(toAssetSummary);
   });
 
-  ipcMain.handle(IPC_CHANNELS.closeProject, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.closeProject, (_event, request: unknown) => {
     if (!isProjectLifecycleRequest(request)) {
-      throw invalidRequest('关闭 Project');
+      throw invalidRequest();
     }
 
     projectService.unloadProjectWorkspace(request.projectId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.selectLocalAssetFiles, async () => {
+  registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
     });
@@ -68,11 +68,11 @@ export function registerAssetHandlers(
     return result.canceled ? [] : result.filePaths;
   });
 
-  ipcMain.handle(
+  registerIpcHandler(
     IPC_CHANNELS.addLocalAssets,
     async (_event, request: unknown): Promise<AddLocalAssetsResult> => {
       if (!isAddLocalAssetsRequest(request)) {
-        throw invalidRequest('批量添加');
+        throw invalidRequest();
       }
 
       const result: AddLocalAssetsResult = { added: [], failed: [] };
@@ -81,7 +81,14 @@ export function registerAssetHandlers(
         try {
           result.added.push(toAssetSummary(await assetDatabase.add({ path })));
         } catch (error) {
-          result.failed.push({ path, message: errorMessage(error) });
+          const handled = handleAppError(
+            `${IPC_CHANNELS.addLocalAssets}:${path}`,
+            error,
+          );
+          result.failed.push({
+            path,
+            message: handled.message ?? '无法添加该文件，请稍后重试。',
+          });
         }
       }
 
@@ -89,9 +96,9 @@ export function registerAssetHandlers(
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.renameAsset, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.renameAsset, (_event, request: unknown) => {
     if (!isRenameAssetRequest(request)) {
-      throw invalidRequest('重命名');
+      throw invalidRequest();
     }
 
     return toAssetSummary(
@@ -99,11 +106,11 @@ export function registerAssetHandlers(
     );
   });
 
-  ipcMain.handle(
+  registerIpcHandler(
     IPC_CHANNELS.relinkAsset,
     async (_event, request: unknown) => {
       if (!isRelinkAssetRequest(request)) {
-        throw invalidRequest('重新定位');
+        throw invalidRequest();
       }
 
       return toAssetSummary(
@@ -112,24 +119,52 @@ export function registerAssetHandlers(
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.deleteAsset, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.deleteAsset, (_event, request: unknown) => {
     if (!isAssetIdRequest(request)) {
-      throw invalidRequest('删除');
+      throw invalidRequest();
     }
 
     assetDatabase.delete(request.assetId);
   });
 
-  ipcMain.handle(
+  registerIpcHandler(
     IPC_CHANNELS.refreshAsset,
     async (_event, request: unknown) => {
       if (!isAssetIdRequest(request)) {
-        throw invalidRequest('刷新');
+        throw invalidRequest();
       }
 
       return toAssetSummary(
         await assetDatabase.refreshAvailability(request.assetId),
       );
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.refreshAllAssets,
+    async (_event, request: unknown) => {
+      if (!isProjectLifecycleRequest(request)) {
+        throw invalidRequest();
+      }
+
+      if (assetDatabase.getActiveProjectId() !== request.projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
+
+      return (await assetDatabase.refreshAllAvailabilities()).map(
+        toAssetSummary,
+      );
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.revealAssetInFolder,
+    (_event, request: unknown) => {
+      if (!isAssetIdRequest(request)) {
+        throw invalidRequest();
+      }
+
+      assetFileService.revealInFolder(request.assetId);
     },
   );
 }
@@ -143,4 +178,6 @@ export function removeAssetHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.relinkAsset);
   ipcMain.removeHandler(IPC_CHANNELS.deleteAsset);
   ipcMain.removeHandler(IPC_CHANNELS.refreshAsset);
+  ipcMain.removeHandler(IPC_CHANNELS.refreshAllAssets);
+  ipcMain.removeHandler(IPC_CHANNELS.revealAssetInFolder);
 }

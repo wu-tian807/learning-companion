@@ -166,17 +166,19 @@ describe('ProjectDatabase', () => {
     const context = await createContext();
     const database = new ProjectDatabase(context);
 
-    expect(() => database.list()).toThrow('ProjectDatabase 尚未初始化');
+    expect(() => database.list()).toThrow('SERVICE_NOT_READY');
 
     database.initialize();
 
     expect(() => database.update('missing', { name: '新标题' })).toThrow(
-      '找不到指定的 Project',
+      'PROJECT_NOT_FOUND',
     );
-    expect(() => database.update('missing', {})).toThrow('Project 更新内容无效');
+    expect(() => database.update('missing', {})).toThrow(
+      'INVALID_IPC_REQUEST',
+    );
     expect(() =>
       database.update('missing', { unknown: true } as never),
-    ).toThrow('Project 更新内容无效');
-    expect(() => database.delete('missing')).toThrow('找不到指定的 Project');
+    ).toThrow('INVALID_IPC_REQUEST');
+    expect(() => database.delete('missing')).toThrow('PROJECT_NOT_FOUND');
   });
 });

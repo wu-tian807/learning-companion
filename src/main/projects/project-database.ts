@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 
 import type { DatabaseContext } from '../database/database-context';
 import { projects } from '../database/schema/projects';
+import { AppError } from '../errors/app-error';
 import {
   cloneProject,
   createProjectSnapshot,
@@ -69,7 +70,7 @@ export class ProjectDatabase implements ProjectDatabaseApi {
       const project = createProjectSnapshot(row);
 
       if (nextProjectMap.has(project.id)) {
-        throw new Error(`数据库包含重复的 Project ID：${project.id}`);
+        throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
       nextProjectMap.set(project.id, project);
@@ -101,13 +102,13 @@ export class ProjectDatabase implements ProjectDatabaseApi {
     });
 
     if (this.projectMap.has(project.id)) {
-      throw new Error(`Project ID 已存在：${project.id}`);
+      throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
     const result = this.context.db.insert(projects).values(project).run();
 
     if (result.changes !== 1) {
-      throw new Error(`Project 创建影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     this.projectMap.set(project.id, project);
@@ -137,7 +138,7 @@ export class ProjectDatabase implements ProjectDatabaseApi {
       .run();
 
     if (result.changes !== 1) {
-      throw new Error(`Project 更新影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     this.projectMap.set(id, nextProject);
@@ -151,7 +152,7 @@ export class ProjectDatabase implements ProjectDatabaseApi {
     const result = this.context.db.delete(projects).where(eq(projects.id, id)).run();
 
     if (result.changes !== 1) {
-      throw new Error(`Project 删除影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     this.projectMap.delete(id);
@@ -161,7 +162,7 @@ export class ProjectDatabase implements ProjectDatabaseApi {
     const project = this.projectMap.get(id);
 
     if (!project) {
-      throw new Error('找不到指定的 Project');
+      throw new AppError('PROJECT_NOT_FOUND');
     }
 
     return project;
@@ -169,7 +170,7 @@ export class ProjectDatabase implements ProjectDatabaseApi {
 
   private requireInitialized(): void {
     if (!this.initialized) {
-      throw new Error('ProjectDatabase 尚未初始化');
+      throw new AppError('SERVICE_NOT_READY');
     }
   }
 
@@ -183,7 +184,7 @@ export class ProjectDatabase implements ProjectDatabaseApi {
         changes.icon === undefined &&
         changes.pinned === undefined)
     ) {
-      throw new Error('Project 更新内容无效');
+      throw new AppError('INVALID_IPC_REQUEST');
     }
   }
 }

@@ -1,9 +1,10 @@
 import { app, ipcMain } from 'electron';
 
 import { createHealthCheckResponse, IPC_CHANNELS } from '../../shared/ipc';
+import { registerIpcHandler } from './register-handler';
 
 export function registerHealthCheckHandler(): void {
-  ipcMain.handle(IPC_CHANNELS.healthCheck, () =>
+  registerIpcHandler(IPC_CHANNELS.healthCheck, () =>
     createHealthCheckResponse(app.getVersion(), process.platform),
   );
 }

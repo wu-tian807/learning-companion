@@ -13,9 +13,11 @@ import type {
   ProjectOverview,
   ProjectServiceApi,
 } from '../projects/project-service';
+import { AppError } from '../errors/app-error';
+import { registerIpcHandler } from './register-handler';
 
-function invalidRequest(operation: string): Error {
-  return new Error(`Project ${operation}请求无效`);
+function invalidRequest(): Error {
+  return new AppError('INVALID_IPC_REQUEST');
 }
 
 function toProjectSummary({
@@ -39,7 +41,7 @@ function requireProjectOverview(
   const overview = projectService.getProjectOverview(projectId);
 
   if (!overview) {
-    throw new Error('找不到指定的 Project');
+    throw new AppError('PROJECT_NOT_FOUND');
   }
 
   return overview;
@@ -49,40 +51,40 @@ export function registerProjectHandlers(
   database: ProjectDatabaseApi,
   projectService: ProjectServiceApi,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.listProjects, () =>
+  registerIpcHandler(IPC_CHANNELS.listProjects, () =>
     projectService.listProjectOverviews().map(toProjectSummary),
   );
 
-  ipcMain.handle(IPC_CHANNELS.createProject, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.createProject, (_event, request: unknown) => {
     if (!isCreateProjectRequest(request)) {
-      throw invalidRequest('创建');
+      throw invalidRequest();
     }
 
     const project = database.add(request);
     return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
-  ipcMain.handle(IPC_CHANNELS.renameProject, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.renameProject, (_event, request: unknown) => {
     if (!isRenameProjectRequest(request)) {
-      throw invalidRequest('重命名');
+      throw invalidRequest();
     }
 
     const project = database.update(request.id, { name: request.name });
     return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
-  ipcMain.handle(IPC_CHANNELS.setProjectPinned, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.setProjectPinned, (_event, request: unknown) => {
     if (!isSetProjectPinnedRequest(request)) {
-      throw invalidRequest('置顶');
+      throw invalidRequest();
     }
 
     const project = database.update(request.id, { pinned: request.pinned });
     return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
-  ipcMain.handle(IPC_CHANNELS.deleteProject, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.deleteProject, (_event, request: unknown) => {
     if (!isDeleteProjectRequest(request)) {
-      throw invalidRequest('删除');
+      throw invalidRequest();
     }
 
     projectService.deleteProjectCascade(request.id);

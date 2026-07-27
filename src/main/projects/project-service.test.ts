@@ -81,7 +81,7 @@ describe('ProjectService', () => {
       other.assetDatabase,
     );
     expect(() => otherService.unloadProjectWorkspace('project')).toThrow(
-      '不能卸载非当前 Project',
+      'PROJECT_CONTEXT_CHANGED',
     );
     expect(other.assetDatabase.unloadProject).not.toHaveBeenCalled();
   });
@@ -112,7 +112,7 @@ describe('ProjectService', () => {
     const service = new ProjectService(projectDatabase, assetDatabase);
 
     expect(() => service.deleteProjectCascade('missing')).toThrow(
-      '找不到指定的 Project',
+      'PROJECT_NOT_FOUND',
     );
     expect(assetDatabase.unloadProject).not.toHaveBeenCalled();
     expect(projectDatabase.delete).not.toHaveBeenCalled();

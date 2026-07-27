@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { isIpcResult } from '../../shared/ipc-error';
 import { createAssetSnapshot } from '../assets/asset';
 import { createLocalFileContentLocator } from '../assets/asset-content-locator';
 import type { AssetDatabaseApi } from '../assets/asset-database';
+import type { AssetFileServiceApi } from '../assets/asset-file-service';
+import { AppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { registerAssetHandlers, removeAssetHandlers } from './assets';
 
@@ -23,7 +26,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-type IpcHandler = (event: unknown, request?: unknown) => unknown;
+type RegisteredIpcHandler = (event: unknown, request?: unknown) => unknown;
+type IpcHandler = (event: unknown, request?: unknown) => Promise<unknown>;
 
 function findHandler(channel: string): IpcHandler {
   const registration = electronMocks.handle.mock.calls.find(
@@ -34,7 +38,21 @@ function findHandler(channel: string): IpcHandler {
     throw new Error(`找不到 ${channel} handler`);
   }
 
-  return registration[1] as IpcHandler;
+  const handler = registration[1] as RegisteredIpcHandler;
+
+  return async (event, request) => {
+    const result = await handler(event, request);
+
+    if (!isIpcResult<unknown>(result)) {
+      throw new Error('IPC 测试响应无效');
+    }
+
+    if (!result.ok) {
+      throw result.error;
+    }
+
+    return result.data;
+  };
 }
 
 function createAsset(id = 'asset', path = '/tmp/notes.md') {
@@ -58,7 +76,7 @@ function createDependencies() {
   const assetDatabase = {
     add: vi.fn(async ({ path }: { path: string }) => {
       if (path.includes('failed')) {
-        throw new Error('文件不可用');
+        throw new AppError('ASSET_UNAVAILABLE');
       }
 
       return createAsset(path, path);
@@ -67,13 +85,18 @@ function createDependencies() {
     relink: vi.fn(async () => asset),
     delete: vi.fn(),
     refreshAvailability: vi.fn(async () => asset),
+    refreshAllAvailabilities: vi.fn(async () => [asset]),
+    getActiveProjectId: vi.fn(() => 'project'),
   } as unknown as AssetDatabaseApi;
   const projectService = {
     loadProjectWorkspace: vi.fn(async () => [asset]),
     unloadProjectWorkspace: vi.fn(),
   } as unknown as ProjectServiceApi;
+  const assetFileService = {
+    revealInFolder: vi.fn(),
+  } as unknown as AssetFileServiceApi;
 
-  return { asset, assetDatabase, projectService };
+  return { asset, assetDatabase, assetFileService, projectService };
 }
 
 beforeEach(() => {
@@ -82,8 +105,9 @@ beforeEach(() => {
 
 describe('Asset IPC handlers', () => {
   it('opens and closes Project workspaces with serializable Assets', async () => {
-    const { assetDatabase, projectService } = createDependencies();
-    registerAssetHandlers(assetDatabase, projectService);
+    const { assetDatabase, assetFileService, projectService } =
+      createDependencies();
+    registerAssetHandlers(assetDatabase, assetFileService, projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.openProject)({}, { projectId: 'project' }),
@@ -104,7 +128,10 @@ describe('Asset IPC handlers', () => {
       },
     ]);
 
-    findHandler(IPC_CHANNELS.closeProject)({}, { projectId: 'project' });
+    await findHandler(IPC_CHANNELS.closeProject)(
+      {},
+      { projectId: 'project' },
+    );
     expect(projectService.loadProjectWorkspace).toHaveBeenCalledWith('project');
     expect(projectService.unloadProjectWorkspace).toHaveBeenCalledWith(
       'project',
@@ -112,8 +139,9 @@ describe('Asset IPC handlers', () => {
   });
 
   it('selects multiple files and returns an empty list after cancellation', async () => {
-    const { assetDatabase, projectService } = createDependencies();
-    registerAssetHandlers(assetDatabase, projectService);
+    const { assetDatabase, assetFileService, projectService } =
+      createDependencies();
+    registerAssetHandlers(assetDatabase, assetFileService, projectService);
     electronMocks.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
       filePaths: ['/tmp/a.md', '/tmp/b.pdf'],
@@ -136,8 +164,9 @@ describe('Asset IPC handlers', () => {
   });
 
   it('keeps successful files when a batch addition partially fails', async () => {
-    const { assetDatabase, projectService } = createDependencies();
-    registerAssetHandlers(assetDatabase, projectService);
+    const { assetDatabase, assetFileService, projectService } =
+      createDependencies();
+    registerAssetHandlers(assetDatabase, assetFileService, projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)(
@@ -149,16 +178,22 @@ describe('Asset IPC handlers', () => {
         { id: '/tmp/a.md', contentLocator: { path: '/tmp/a.md' } },
         { id: '/tmp/b.md', contentLocator: { path: '/tmp/b.md' } },
       ],
-      failed: [{ path: '/tmp/failed.md', message: '文件不可用' }],
+      failed: [
+        {
+          path: '/tmp/failed.md',
+          message: '所选文件当前不可用，请检查文件是否存在以及访问权限。',
+        },
+      ],
     });
     expect(assetDatabase.add).toHaveBeenCalledTimes(3);
   });
 
   it('forwards Asset mutations to the current Project container', async () => {
-    const { assetDatabase, projectService } = createDependencies();
-    registerAssetHandlers(assetDatabase, projectService);
+    const { assetDatabase, assetFileService, projectService } =
+      createDependencies();
+    registerAssetHandlers(assetDatabase, assetFileService, projectService);
 
-    findHandler(IPC_CHANNELS.renameAsset)(
+    await findHandler(IPC_CHANNELS.renameAsset)(
       {},
       { assetId: 'asset', name: '新标题' },
     );
@@ -166,8 +201,16 @@ describe('Asset IPC handlers', () => {
       {},
       { assetId: 'asset', path: '/tmp/new.md' },
     );
-    findHandler(IPC_CHANNELS.deleteAsset)({}, { assetId: 'asset' });
+    await findHandler(IPC_CHANNELS.deleteAsset)({}, { assetId: 'asset' });
     await findHandler(IPC_CHANNELS.refreshAsset)({}, { assetId: 'asset' });
+    await findHandler(IPC_CHANNELS.refreshAllAssets)(
+      {},
+      { projectId: 'project' },
+    );
+    await findHandler(IPC_CHANNELS.revealAssetInFolder)(
+      {},
+      { assetId: 'asset' },
+    );
 
     expect(assetDatabase.update).toHaveBeenCalledWith('asset', {
       name: '新标题',
@@ -175,24 +218,27 @@ describe('Asset IPC handlers', () => {
     expect(assetDatabase.relink).toHaveBeenCalledWith('asset', '/tmp/new.md');
     expect(assetDatabase.delete).toHaveBeenCalledWith('asset');
     expect(assetDatabase.refreshAvailability).toHaveBeenCalledWith('asset');
+    expect(assetDatabase.refreshAllAvailabilities).toHaveBeenCalledOnce();
+    expect(assetFileService.revealInFolder).toHaveBeenCalledWith('asset');
   });
 
   it('rejects malformed requests before reaching the back end', async () => {
-    const { assetDatabase, projectService } = createDependencies();
-    registerAssetHandlers(assetDatabase, projectService);
+    const { assetDatabase, assetFileService, projectService } =
+      createDependencies();
+    registerAssetHandlers(assetDatabase, assetFileService, projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.openProject)({}, { projectId: '' }),
-    ).rejects.toThrow('Asset 打开 Project请求无效');
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)({}, { paths: [] }),
-    ).rejects.toThrow('Asset 批量添加请求无效');
-    expect(() =>
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
       findHandler(IPC_CHANNELS.renameAsset)(
         {},
         { assetId: 'asset', name: '' },
       ),
-    ).toThrow('Asset 重命名请求无效');
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(assetDatabase.add).not.toHaveBeenCalled();
     expect(projectService.loadProjectWorkspace).not.toHaveBeenCalled();
   });
@@ -209,6 +255,8 @@ describe('Asset IPC handlers', () => {
       IPC_CHANNELS.relinkAsset,
       IPC_CHANNELS.deleteAsset,
       IPC_CHANNELS.refreshAsset,
+      IPC_CHANNELS.refreshAllAssets,
+      IPC_CHANNELS.revealAssetInFolder,
     ]) {
       expect(electronMocks.removeHandler).toHaveBeenCalledWith(channel);
     }

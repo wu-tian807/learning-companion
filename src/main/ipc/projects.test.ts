@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { isIpcResult } from '../../shared/ipc-error';
 import type { ProjectDatabaseApi } from '../projects/project-database';
 import { createProjectSnapshot } from '../projects/project';
 import type { ProjectServiceApi } from '../projects/project-service';
@@ -18,7 +19,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-type IpcHandler = (event: unknown, request?: unknown) => unknown;
+type RegisteredIpcHandler = (event: unknown, request?: unknown) => unknown;
+type IpcHandler = (event: unknown, request?: unknown) => Promise<unknown>;
 
 function findHandler(channel: string): IpcHandler {
   const registration = electronMocks.handle.mock.calls.find(
@@ -29,7 +31,18 @@ function findHandler(channel: string): IpcHandler {
     throw new Error(`找不到 ${channel} handler`);
   }
 
-  return registration[1] as IpcHandler;
+  const handler = registration[1] as RegisteredIpcHandler;
+
+  return async (event, request) => {
+    const result = await handler(event, request);
+    if (!isIpcResult<unknown>(result)) {
+      throw new Error('IPC 测试响应无效');
+    }
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.data;
+  };
 }
 
 function createDatabase() {
@@ -76,11 +89,11 @@ beforeEach(() => {
 });
 
 describe('Project IPC handlers', () => {
-  it('maps in-memory Projects to serializable summaries', () => {
+  it('maps in-memory Projects to serializable summaries', async () => {
     const { database, listProjectOverviews, projectService } = createDatabase();
     registerProjectHandlers(database, projectService);
 
-    const result = findHandler(IPC_CHANNELS.listProjects)({});
+    const result = await findHandler(IPC_CHANNELS.listProjects)({});
 
     expect(result).toEqual([
       {
@@ -95,7 +108,7 @@ describe('Project IPC handlers', () => {
     expect(listProjectOverviews).toHaveBeenCalledOnce();
   });
 
-  it('forwards explicit mutation requests to the composed database API', () => {
+  it('forwards explicit mutation requests to the composed database API', async () => {
     const {
       add,
       database,
@@ -106,16 +119,16 @@ describe('Project IPC handlers', () => {
     } = createDatabase();
     registerProjectHandlers(database, projectService);
 
-    findHandler(IPC_CHANNELS.createProject)({}, { name: '新 Project' });
-    findHandler(IPC_CHANNELS.renameProject)(
+    await findHandler(IPC_CHANNELS.createProject)({}, { name: '新 Project' });
+    await findHandler(IPC_CHANNELS.renameProject)(
       {},
       { id: 'project-1', name: '新标题' },
     );
-    findHandler(IPC_CHANNELS.setProjectPinned)(
+    await findHandler(IPC_CHANNELS.setProjectPinned)(
       {},
       { id: 'project-1', pinned: true },
     );
-    findHandler(IPC_CHANNELS.deleteProject)({}, { id: 'project-1' });
+    await findHandler(IPC_CHANNELS.deleteProject)({}, { id: 'project-1' });
 
     expect(add).toHaveBeenCalledWith({ name: '新 Project' });
     expect(update).toHaveBeenNthCalledWith(1, 'project-1', { name: '新标题' });
@@ -124,13 +137,13 @@ describe('Project IPC handlers', () => {
     expect(deleteProject).toHaveBeenCalledWith('project-1');
   });
 
-  it('rejects malformed mutations before they reach ProjectDatabase', () => {
+  it('rejects malformed mutations before they reach ProjectDatabase', async () => {
     const { add, database, projectService } = createDatabase();
     registerProjectHandlers(database, projectService);
 
-    expect(() =>
+    await expect(
       findHandler(IPC_CHANNELS.createProject)({}, { name: '' }),
-    ).toThrow('Project 创建请求无效');
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(add).not.toHaveBeenCalled();
   });
 

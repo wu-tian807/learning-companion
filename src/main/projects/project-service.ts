@@ -1,5 +1,6 @@
 import type { Asset } from '../assets/asset';
 import type { AssetDatabaseApi } from '../assets/asset-database';
+import { AppError } from '../errors/app-error';
 import type { ProjectDatabaseApi } from './project-database';
 import type { Project } from './project';
 
@@ -60,7 +61,7 @@ export class ProjectService implements ProjectServiceApi {
     }
 
     if (activeProjectId !== projectId) {
-      throw new Error('不能卸载非当前 Project');
+      throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
 
     this.assetDatabase.unloadProject();
@@ -68,7 +69,7 @@ export class ProjectService implements ProjectServiceApi {
 
   deleteProjectCascade(projectId: string): void {
     if (!this.projectDatabase.get(projectId)) {
-      throw new Error('找不到指定的 Project');
+      throw new AppError('PROJECT_NOT_FOUND');
     }
 
     if (this.assetDatabase.getActiveProjectId() === projectId) {

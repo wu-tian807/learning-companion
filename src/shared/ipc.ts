@@ -18,6 +18,8 @@ export const IPC_CHANNELS = {
   relinkAsset: 'asset:relink',
   deleteAsset: 'asset:delete',
   refreshAsset: 'asset:refresh',
+  refreshAllAssets: 'asset:refresh-all',
+  revealAssetInFolder: 'asset:reveal-in-folder',
 } as const;
 
 export const PROJECT_NAME_MAX_LENGTH = 80;
@@ -53,6 +55,10 @@ export interface LearningCompanionApi {
   relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSummary>;
   deleteAsset: (request: AssetIdRequest) => Promise<void>;
   refreshAsset: (request: AssetIdRequest) => Promise<AssetSummary>;
+  refreshAllAssets: (
+    request: ProjectLifecycleRequest,
+  ) => Promise<AssetSummary[]>;
+  revealAssetInFolder: (request: AssetIdRequest) => Promise<void>;
   getPathForFile: (file: File) => string;
 }
 

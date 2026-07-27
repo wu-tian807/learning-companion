@@ -1,0 +1,143 @@
+import type { IpcErrorKind, IpcErrorPayload } from '../../shared/ipc-error';
+
+export type AppErrorCode =
+  | 'OPERATION_SUPERSEDED'
+  | 'PROJECT_CONTEXT_CHANGED'
+  | 'ASSET_MEDIA_TYPE_MISMATCH'
+  | 'ASSET_UNAVAILABLE'
+  | 'ASSET_NOT_FOUND'
+  | 'PROJECT_NOT_FOUND'
+  | 'INVALID_IPC_REQUEST'
+  | 'DATABASE_WRITE_CONFLICT'
+  | 'DATA_INTEGRITY_ERROR'
+  | 'SERVICE_NOT_READY';
+
+interface ErrorPolicy {
+  readonly kind: IpcErrorKind;
+  readonly userMessage?: string;
+  readonly retryable: boolean;
+  readonly logLevel: 'silent' | 'warn' | 'error';
+}
+
+interface ErrorLogger {
+  warn(message: string, error?: unknown): void;
+  error(message: string, error?: unknown): void;
+}
+
+const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
+  OPERATION_SUPERSEDED: {
+    kind: 'cancelled',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  PROJECT_CONTEXT_CHANGED: {
+    kind: 'cancelled',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  ASSET_MEDIA_TYPE_MISMATCH: {
+    kind: 'user',
+    userMessage: '所选文件类型与原资料不一致，请重新选择同类型文件。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  ASSET_UNAVAILABLE: {
+    kind: 'user',
+    userMessage: '所选文件当前不可用，请检查文件是否存在以及访问权限。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  ASSET_NOT_FOUND: {
+    kind: 'user',
+    userMessage: '该资料已经不存在，请刷新资料列表。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  PROJECT_NOT_FOUND: {
+    kind: 'user',
+    userMessage: '该 Project 已经不存在，请返回首页刷新。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  INVALID_IPC_REQUEST: {
+    kind: 'internal',
+    userMessage: '应用请求无效，请重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  DATABASE_WRITE_CONFLICT: {
+    kind: 'internal',
+    userMessage: '数据没有正确保存，请重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  DATA_INTEGRITY_ERROR: {
+    kind: 'internal',
+    userMessage: '本地数据出现异常，请重启应用后重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  SERVICE_NOT_READY: {
+    kind: 'internal',
+    userMessage: '功能尚未准备完成，请稍后重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+};
+
+const internalErrorPolicy: ErrorPolicy = {
+  kind: 'internal',
+  userMessage: '操作没有完成，请稍后重试。',
+  retryable: true,
+  logLevel: 'error',
+};
+
+export class AppError extends Error {
+  constructor(
+    readonly code: AppErrorCode,
+    options?: ErrorOptions,
+  ) {
+    super(code, options);
+    this.name = 'AppError';
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'AbortError'
+  );
+}
+
+export function handleAppError(
+  operation: string,
+  error: unknown,
+  logger: ErrorLogger = console,
+): IpcErrorPayload {
+  if (isAbortError(error)) {
+    return {
+      code: 'OPERATION_CANCELLED',
+      kind: 'cancelled',
+      retryable: false,
+    };
+  }
+
+  const code = error instanceof AppError ? error.code : 'INTERNAL_ERROR';
+  const policy =
+    error instanceof AppError ? errorPolicies[error.code] : internalErrorPolicy;
+
+  if (policy.logLevel === 'warn') {
+    logger.warn(`[${operation}] ${code}`, error);
+  } else if (policy.logLevel === 'error') {
+    logger.error(`[${operation}] ${code}`, error);
+  }
+
+  return {
+    code,
+    kind: policy.kind,
+    message: policy.userMessage,
+    retryable: policy.retryable,
+  };
+}

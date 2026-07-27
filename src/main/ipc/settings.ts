@@ -1,18 +1,23 @@
 import { ipcMain } from 'electron';
 
 import { IPC_CHANNELS, isUpdateHomePreferencesRequest } from '../../shared/ipc';
+import { AppError } from '../errors/app-error';
 import type { SettingsRepository } from '../settings/settings-repository';
+import { registerIpcHandler } from './register-handler';
 
 export function registerSettingsHandlers(repository: SettingsRepository): void {
-  ipcMain.handle(IPC_CHANNELS.getAppPreferences, () => repository.get());
+  registerIpcHandler(IPC_CHANNELS.getAppPreferences, () => repository.get());
 
-  ipcMain.handle(IPC_CHANNELS.updateHomePreferences, (_event, request: unknown) => {
-    if (!isUpdateHomePreferencesRequest(request)) {
-      throw new Error('Settings 更新请求无效');
-    }
+  registerIpcHandler(
+    IPC_CHANNELS.updateHomePreferences,
+    (_event, request: unknown) => {
+      if (!isUpdateHomePreferencesRequest(request)) {
+        throw new AppError('INVALID_IPC_REQUEST');
+      }
 
-    return repository.updateHomePreferences(request);
-  });
+      return repository.updateHomePreferences(request);
+    },
+  );
 }
 
 export function removeSettingsHandlers(): void {

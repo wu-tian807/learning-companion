@@ -1,13 +1,15 @@
 import { basename, extname } from 'node:path';
 
+import { detectFileTextEncoding } from './asset-text-encoding';
+
 export const UNKNOWN_ASSET_MEDIA_TYPE = 'application/octet-stream';
+export const PLAIN_TEXT_ASSET_MEDIA_TYPE = 'text/plain';
 
 const mediaTypeByExtension = new Map<string, string>([
   ['.epub', 'application/epub+zip'],
   ['.markdown', 'text/markdown'],
   ['.md', 'text/markdown'],
   ['.pdf', 'application/pdf'],
-  ['.txt', 'text/plain'],
 ]);
 
 function requireFileName(path: string): string {
@@ -20,18 +22,26 @@ function requireFileName(path: string): string {
   return fileName;
 }
 
-export function detectAssetMediaType(path: string): string {
+export async function detectAssetMediaType(path: string): Promise<string> {
   const extension = extname(requireFileName(path)).toLowerCase();
-  return mediaTypeByExtension.get(extension) ?? UNKNOWN_ASSET_MEDIA_TYPE;
+  const mappedMediaType = mediaTypeByExtension.get(extension);
+
+  if (mappedMediaType) {
+    return mappedMediaType;
+  }
+
+  return (await detectFileTextEncoding(path))
+    ? PLAIN_TEXT_ASSET_MEDIA_TYPE
+    : UNKNOWN_ASSET_MEDIA_TYPE;
 }
 
-export function isAssetRelinkMediaCompatible(
+export async function isAssetRelinkMediaCompatible(
   currentMediaType: string,
   currentPath: string,
   newPath: string,
-): boolean {
+): Promise<boolean> {
   if (currentMediaType !== UNKNOWN_ASSET_MEDIA_TYPE) {
-    return detectAssetMediaType(newPath) === currentMediaType;
+    return (await detectAssetMediaType(newPath)) === currentMediaType;
   }
 
   return extname(currentPath).toLowerCase() === extname(newPath).toLowerCase();

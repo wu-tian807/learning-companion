@@ -4,6 +4,7 @@ import { and, count, eq, inArray } from 'drizzle-orm';
 
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
+import { AppError } from '../errors/app-error';
 import type { ProjectLookup } from '../projects/project-database';
 import {
   cloneAsset,
@@ -34,6 +35,7 @@ export interface AssetDatabaseApi {
   update(assetId: string, changes: UpdateAssetInput): Asset;
   delete(assetId: string): void;
   refreshAvailability(assetId: string): Promise<Asset>;
+  refreshAllAvailabilities(): Promise<readonly Asset[]>;
   relink(assetId: string, newPath: string): Promise<Asset>;
 }
 
@@ -85,7 +87,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     const project = this.projectLookup.get(normalizedProjectId);
 
     if (!project) {
-      throw new Error('找不到指定的 Project');
+      throw new AppError('PROJECT_NOT_FOUND');
     }
 
     const rows = this.context.db
@@ -98,7 +100,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     const loadedAssets = await Promise.all(
       rows.map(async (row) => {
         if (row.contentKind !== LOCAL_FILE_CONTENT_KIND) {
-          throw new Error(`Asset contentKind 无效：${row.contentKind}`);
+          throw new AppError('DATA_INTEGRITY_ERROR');
         }
 
         const contentLocator = await this.dependencies.locatorChecker.check(
@@ -120,14 +122,14 @@ export class AssetDatabase implements AssetDatabaseApi {
 
     for (const asset of loadedAssets) {
       if (nextAssetMap.has(asset.id)) {
-        throw new Error(`数据库包含重复的 Asset ID：${asset.id}`);
+        throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
       nextAssetMap.set(asset.id, asset);
     }
 
     if (this.lifecycleVersion !== loadVersion) {
-      throw new Error('AssetDatabase Project 加载已被替代');
+      throw new AppError('OPERATION_SUPERSEDED');
     }
 
     this.activeProjectId = normalizedProjectId;
@@ -195,9 +197,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     this.requireUnchangedProject(lifecycleVersion, projectId);
 
     if (contentLocator.availability !== 'available') {
-      throw new Error(
-        `无法添加不可用的本地文件：${contentLocator.availability}`,
-      );
+      throw new AppError('ASSET_UNAVAILABLE');
     }
 
     const now = this.dependencies.now();
@@ -205,14 +205,14 @@ export class AssetDatabase implements AssetDatabaseApi {
       id: this.dependencies.createId(),
       projectId,
       name: createDefaultAssetName(contentLocator.path),
-      mediaType: detectAssetMediaType(contentLocator.path),
+      mediaType: await detectAssetMediaType(contentLocator.path),
       contentLocator,
       createdTime: now,
       lastUsedTime: now,
     });
 
     if (this.assetMap.has(asset.id)) {
-      throw new Error(`Asset ID 已存在：${asset.id}`);
+      throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
     const result = this.context.db
@@ -230,7 +230,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       .run();
 
     if (result.changes !== 1) {
-      throw new Error(`Asset 创建影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     this.assetMap.set(asset.id, asset);
@@ -256,7 +256,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       .run();
 
     if (result.changes !== 1) {
-      throw new Error(`Asset 更新影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     this.assetMap.set(assetId, nextAsset);
@@ -273,7 +273,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       .run();
 
     if (result.changes !== 1) {
-      throw new Error(`Asset 删除影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     this.assetMap.delete(assetId);
@@ -296,6 +296,29 @@ export class AssetDatabase implements AssetDatabaseApi {
     return cloneAsset(nextAsset);
   }
 
+  async refreshAllAvailabilities(): Promise<readonly Asset[]> {
+    const projectId = this.requireActiveProjectId();
+    const lifecycleVersion = this.lifecycleVersion;
+    const currentAssets = [...this.assetMap.values()];
+    const refreshedAssets = await Promise.all(
+      currentAssets.map(async (asset) =>
+        createAssetSnapshot({
+          ...asset,
+          contentLocator: await this.dependencies.locatorChecker.check(
+            asset.contentLocator.path,
+          ),
+        }),
+      ),
+    );
+    this.requireUnchangedProject(lifecycleVersion, projectId);
+
+    for (const asset of refreshedAssets) {
+      this.assetMap.set(asset.id, asset);
+    }
+
+    return this.list();
+  }
+
   async relink(assetId: string, newPath: string): Promise<Asset> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
@@ -315,19 +338,17 @@ export class AssetDatabase implements AssetDatabaseApi {
     }
 
     if (contentLocator.availability !== 'available') {
-      throw new Error(
-        `无法重新定位到不可用的本地文件：${contentLocator.availability}`,
-      );
+      throw new AppError('ASSET_UNAVAILABLE');
     }
 
     if (
-      !isAssetRelinkMediaCompatible(
+      !(await isAssetRelinkMediaCompatible(
         currentAsset.mediaType,
         currentAsset.contentLocator.path,
         contentLocator.path,
-      )
+      ))
     ) {
-      throw new Error('重新定位的文件类型与原 Asset 不一致');
+      throw new AppError('ASSET_MEDIA_TYPE_MISMATCH');
     }
 
     const result = this.context.db
@@ -337,7 +358,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       .run();
 
     if (result.changes !== 1) {
-      throw new Error(`Asset Relink 影响了 ${result.changes} 行`);
+      throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
     const nextAsset = createAssetSnapshot({
@@ -350,7 +371,7 @@ export class AssetDatabase implements AssetDatabaseApi {
 
   private requireActiveProjectId(): string {
     if (!this.activeProjectId) {
-      throw new Error('AssetDatabase 尚未加载 Project');
+      throw new AppError('SERVICE_NOT_READY');
     }
 
     return this.activeProjectId;
@@ -360,7 +381,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     const asset = this.assetMap.get(assetId);
 
     if (!asset) {
-      throw new Error('找不到当前 Project 中指定的 Asset');
+      throw new AppError('ASSET_NOT_FOUND');
     }
 
     return asset;
@@ -374,7 +395,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       this.lifecycleVersion !== lifecycleVersion ||
       this.activeProjectId !== projectId
     ) {
-      throw new Error('AssetDatabase 当前 Project 已变化');
+      throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
   }
 
@@ -388,7 +409,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       ) ||
       (changes.name === undefined && changes.lastUsedTime === undefined)
     ) {
-      throw new Error('Asset 更新内容无效');
+      throw new AppError('INVALID_IPC_REQUEST');
     }
   }
 }
