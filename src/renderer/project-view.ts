@@ -1,4 +1,4 @@
-import type { ProjectSummary } from '../shared/ipc';
+import type { ProjectSnapshot } from '../shared/projects';
 import type { ProjectSortMode } from '../shared/app-preferences';
 
 export type { ProjectSortMode, ProjectViewMode } from '../shared/app-preferences';
@@ -20,23 +20,23 @@ const titleCollator = new Intl.Collator('zh-CN', {
 });
 
 function compareBySortMode(
-  left: ProjectSummary,
-  right: ProjectSummary,
+  left: ProjectSnapshot,
+  right: ProjectSnapshot,
   sortMode: ProjectSortMode,
 ): number {
   if (sortMode === 'title') {
     return titleCollator.compare(left.name, right.name);
   }
 
-  const difference = Date.parse(left.createdTime) - Date.parse(right.createdTime);
+  const difference = left.createdTime - right.createdTime;
   return sortMode === 'oldest' ? difference : -difference;
 }
 
 export function filterAndSortProjects(
-  projects: readonly ProjectSummary[],
+  projects: readonly ProjectSnapshot[],
   searchQuery: string,
   sortMode: ProjectSortMode,
-): ProjectSummary[] {
+): ProjectSnapshot[] {
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase('zh-CN');
 
   return projects
@@ -63,7 +63,7 @@ export function getProjectCardColor(projectId: string): string {
   return PROJECT_CARD_COLORS[hash % PROJECT_CARD_COLORS.length]!;
 }
 
-export function formatProjectDate(createdTime: string): string {
+export function formatProjectDate(createdTime: number): string {
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: 'long',

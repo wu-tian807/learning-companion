@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { PROJECT_NAME_MAX_LENGTH } from '../../shared/ipc';
+import { PROJECT_NAME_MAX_LENGTH } from '../../shared/projects';
 
 export interface ProjectDialogValues {
   name: string;

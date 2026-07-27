@@ -128,7 +128,6 @@ describe('AssetService', () => {
       contentRef: { kind: 'local-file', path: '/tmp/notes.md' },
       contentStatus: { availability: 'missing' },
     });
-    expect(loaded[0]).not.toHaveProperty('contentLocator');
     expect(handles).toHaveLength(0);
   });
 

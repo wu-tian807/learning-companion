@@ -128,14 +128,16 @@ describe('Asset IPC handlers', () => {
         projectId: 'project',
         name: '学习笔记',
         mediaType: 'text/markdown',
-        contentLocator: {
+        contentRef: {
           kind: 'local-file',
           path: '/tmp/notes.md',
-          availability: 'available',
-          checkedTime: '2026-07-27T02:00:00.000Z',
         },
-        createdTime: '2026-07-27T01:00:00.000Z',
-        lastUsedTime: '2026-07-27T03:00:00.000Z',
+        contentStatus: {
+          availability: 'available',
+          checkedTime: Date.parse('2026-07-27T02:00:00.000Z'),
+        },
+        createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+        lastUsedTime: Date.parse('2026-07-27T03:00:00.000Z'),
       },
     ]);
 
@@ -184,8 +186,8 @@ describe('Asset IPC handlers', () => {
       ),
     ).resolves.toMatchObject({
       added: [
-        { id: '/tmp/a.md', contentLocator: { path: '/tmp/a.md' } },
-        { id: '/tmp/b.md', contentLocator: { path: '/tmp/b.md' } },
+        { id: '/tmp/a.md', contentRef: { path: '/tmp/a.md' } },
+        { id: '/tmp/b.md', contentRef: { path: '/tmp/b.md' } },
       ],
       failed: [
         {

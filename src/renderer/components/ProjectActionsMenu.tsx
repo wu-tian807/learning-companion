@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { ProjectSummary } from '../../shared/ipc';
+import type { ProjectSnapshot } from '../../shared/projects';
 
 export interface ProjectActionHandlers {
-  onRename: (project: ProjectSummary) => void;
-  onTogglePinned: (project: ProjectSummary) => void;
-  onDelete: (project: ProjectSummary) => void;
+  onRename: (project: ProjectSnapshot) => void;
+  onTogglePinned: (project: ProjectSnapshot) => void;
+  onDelete: (project: ProjectSnapshot) => void;
 }
 
 interface ProjectActionsMenuProps extends ProjectActionHandlers {
-  project: ProjectSummary;
+  project: ProjectSnapshot;
   disabled?: boolean;
 }
 
@@ -58,7 +58,7 @@ export function ProjectActionsMenu({
     };
   }, [open]);
 
-  const run = (action: (target: ProjectSummary) => void) => {
+  const run = (action: (target: ProjectSnapshot) => void) => {
     setOpen(false);
     action(project);
   };

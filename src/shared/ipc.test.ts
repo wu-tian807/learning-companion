@@ -3,14 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createHealthCheckResponse,
   isAddLocalAssetsRequest,
+  isAddLocalAssetsResult,
   isAssetIdRequest,
-  isAssetSummary,
-  isAssetSummaryList,
   isCreateProjectRequest,
   isDeleteProjectRequest,
   isHealthCheckResponse,
-  isProjectSummary,
-  isProjectSummaryList,
   isProjectLifecycleRequest,
   isRelinkAssetRequest,
   isRenameAssetRequest,
@@ -48,31 +45,6 @@ describe('health check contract', () => {
   });
 });
 
-describe('project summary contract', () => {
-  const project = {
-    id: 'machine-learning',
-    name: '机器学习基础',
-    icon: '🤖',
-    createdTime: '2026-07-22T08:00:00.000Z',
-    assetCount: 2,
-    pinned: false,
-  };
-
-  it('accepts a serializable project list', () => {
-    expect(isProjectSummary(project)).toBe(true);
-    expect(isProjectSummaryList([project])).toBe(true);
-  });
-
-  it('rejects malformed projects', () => {
-    expect(isProjectSummary({ ...project, name: '' })).toBe(false);
-    expect(isProjectSummary({ ...project, createdTime: 'not-a-date' })).toBe(false);
-    expect(isProjectSummary({ ...project, assetCount: -1 })).toBe(false);
-    expect(isProjectSummary({ ...project, assetCount: 1.5 })).toBe(false);
-    expect(isProjectSummary({ ...project, pinned: 'yes' })).toBe(false);
-    expect(isProjectSummaryList([project, null])).toBe(false);
-  });
-});
-
 describe('project mutation contracts', () => {
   it('accepts valid mutation requests', () => {
     expect(isCreateProjectRequest({ name: '新 Project' })).toBe(true);
@@ -91,24 +63,7 @@ describe('project mutation contracts', () => {
 });
 
 describe('Asset contracts', () => {
-  const asset = {
-    id: 'asset',
-    projectId: 'project',
-    name: '学习笔记',
-    mediaType: 'text/markdown',
-    contentLocator: {
-      kind: 'local-file',
-      path: '/tmp/notes.md',
-      availability: 'available',
-      checkedTime: '2026-07-27T01:00:00.000Z',
-    },
-    createdTime: '2026-07-27T01:00:00.000Z',
-    lastUsedTime: '2026-07-27T02:00:00.000Z',
-  };
-
-  it('accepts serializable Asset snapshots and requests', () => {
-    expect(isAssetSummary(asset)).toBe(true);
-    expect(isAssetSummaryList([asset])).toBe(true);
+  it('accepts Asset requests', () => {
     expect(isProjectLifecycleRequest({ projectId: 'project' })).toBe(true);
     expect(isAddLocalAssetsRequest({ paths: ['/tmp/a.md', '/tmp/b.pdf'] })).toBe(
       true,
@@ -122,18 +77,7 @@ describe('Asset contracts', () => {
     expect(isAssetIdRequest({ assetId: 'asset' })).toBe(true);
   });
 
-  it('rejects malformed Asset snapshots and requests', () => {
-    expect(
-      isAssetSummary({
-        ...asset,
-        contentLocator: {
-          ...asset.contentLocator,
-          availability: 'offline',
-        },
-      }),
-    ).toBe(false);
-    expect(isAssetSummary({ ...asset, lastUsedTime: 'invalid' })).toBe(false);
-    expect(isAssetSummaryList([asset, null])).toBe(false);
+  it('rejects malformed Asset requests', () => {
     expect(isProjectLifecycleRequest({ projectId: '' })).toBe(false);
     expect(isAddLocalAssetsRequest({ paths: [] })).toBe(false);
     expect(isRenameAssetRequest({ assetId: 'asset', name: '' })).toBe(false);
@@ -141,6 +85,17 @@ describe('Asset contracts', () => {
       false,
     );
     expect(isAssetIdRequest(null)).toBe(false);
+  });
+
+  it('rejects malformed batch addition results', () => {
+    expect(isAddLocalAssetsResult({ added: [], failed: [] })).toBe(true);
+    expect(
+      isAddLocalAssetsResult({
+        added: [],
+        failed: [{ path: '/tmp/a.md', message: '' }],
+      }),
+    ).toBe(false);
+    expect(isAddLocalAssetsResult({ added: [null], failed: [] })).toBe(false);
   });
 });
 

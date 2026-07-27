@@ -108,7 +108,6 @@ describe('AssetDatabase', () => {
         path: '/tmp/missing.md',
       },
     });
-    expect(database.get('asset')).not.toHaveProperty('contentLocator');
   });
 
   it('rejects ContentRef JSON that violates the shared contract', async () => {

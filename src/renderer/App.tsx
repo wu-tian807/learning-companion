@@ -1,12 +1,12 @@
 import { useState } from 'react';
 
-import type { ProjectSummary } from '../shared/ipc';
+import type { ProjectSnapshot } from '../shared/projects';
 import { Home } from './Home';
 import { ProjectPage } from './ProjectPage';
 
 type AppPage =
   | { readonly kind: 'home' }
-  | { readonly kind: 'project'; readonly project: ProjectSummary };
+  | { readonly kind: 'project'; readonly project: ProjectSnapshot };
 
 export function App() {
   const [page, setPage] = useState<AppPage>({ kind: 'home' });

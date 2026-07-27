@@ -7,13 +7,16 @@ import {
 } from 'react';
 
 import {
-  isAssetSummary,
-  isAssetSummaryList,
+  isAssetSnapshot,
+  isAssetSnapshotList,
+  type AssetSnapshot,
+} from '../shared/assets';
+import {
+  isAddLocalAssetsResult,
   type AddLocalAssetsResult,
-  type AssetSummary,
-  type ProjectSummary,
 } from '../shared/ipc';
 import { userMessageFromError } from '../shared/ipc-error';
+import type { ProjectSnapshot } from '../shared/projects';
 import {
   replaceAsset,
   selectAfterAssetDeletion,
@@ -23,13 +26,13 @@ import { ErrorDialog } from './components/ErrorDialog';
 import { AssetWorkbenchHost } from './workbench/AssetWorkbenchHost';
 
 interface ProjectPageProps {
-  readonly project: ProjectSummary;
+  readonly project: ProjectSnapshot;
   readonly onBack: () => void;
 }
 
 type AssetLoadState =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'ready'; readonly assets: AssetSummary[] }
+  | { readonly kind: 'ready'; readonly assets: AssetSnapshot[] }
   | { readonly kind: 'failed' };
 
 const availabilityLabels = {
@@ -39,7 +42,7 @@ const availabilityLabels = {
   invalid: '路径无效',
 } as const;
 
-function formatLastUsed(value: string): string {
+function formatLastUsed(value: number): string {
   return new Intl.DateTimeFormat('zh-CN', {
     month: 'short',
     day: 'numeric',
@@ -112,7 +115,7 @@ function SettingsIcon() {
 }
 
 interface AssetActionsMenuProps {
-  readonly asset: AssetSummary;
+  readonly asset: AssetSnapshot;
   readonly disabled: boolean;
   readonly onRename: () => void;
   readonly onReveal: () => void;
@@ -180,7 +183,8 @@ function AssetActionsMenu({
           >
             编辑标题
           </button>
-          {asset.contentLocator.availability === 'available' && (
+          {asset.contentRef.kind === 'local-file' &&
+            asset.contentStatus.availability === 'available' && (
             <button
               type="button"
               role="menuitem"
@@ -190,8 +194,9 @@ function AssetActionsMenu({
               在文件夹中显示
             </button>
           )}
-          {(asset.contentLocator.availability === 'missing' ||
-            asset.contentLocator.availability === 'invalid') && (
+          {asset.contentRef.kind === 'local-file' &&
+            (asset.contentStatus.availability === 'missing' ||
+              asset.contentStatus.availability === 'invalid') && (
             <button
               type="button"
               role="menuitem"
@@ -217,7 +222,7 @@ function AssetActionsMenu({
 }
 
 interface RenameDialogProps {
-  readonly asset: AssetSummary;
+  readonly asset: AssetSnapshot;
   readonly busy: boolean;
   readonly error: string | null;
   readonly onClose: () => void;
@@ -283,11 +288,11 @@ interface AssetPanelProps {
   readonly onSelect: (assetId: string) => void;
   readonly onAdd: () => void;
   readonly onRetry: () => void;
-  readonly onRename: (asset: AssetSummary) => void;
-  readonly onReveal: (asset: AssetSummary) => void;
-  readonly onRelink: (asset: AssetSummary) => void;
+  readonly onRename: (asset: AssetSnapshot) => void;
+  readonly onReveal: (asset: AssetSnapshot) => void;
+  readonly onRelink: (asset: AssetSnapshot) => void;
   readonly onRefreshAll: () => void;
-  readonly onDelete: (asset: AssetSummary) => void;
+  readonly onDelete: (asset: AssetSnapshot) => void;
 }
 
 function AssetPanel({
@@ -405,7 +410,7 @@ function AssetPanel({
               <span
                 className={[
                   'block truncate text-xs font-medium',
-                  asset.contentLocator.availability === 'available'
+                  asset.contentStatus.availability === 'available'
                     ? 'text-slate-200'
                     : 'text-red-400',
                 ].join(' ')}
@@ -417,11 +422,11 @@ function AssetPanel({
               </span>
             </span>
             <span className="flex items-center gap-1">
-              {asset.contentLocator.availability !== 'available' && (
+              {asset.contentStatus.availability !== 'available' && (
                 <span
                   className="size-1.5 rounded-full bg-red-400"
-                  title={availabilityLabels[asset.contentLocator.availability]}
-                  aria-label={availabilityLabels[asset.contentLocator.availability]}
+                  title={availabilityLabels[asset.contentStatus.availability]}
+                  aria-label={availabilityLabels[asset.contentStatus.availability]}
                 />
               )}
               <AssetActionsMenu
@@ -440,7 +445,7 @@ function AssetPanel({
   );
 }
 
-function GenerationPanel({ asset }: { readonly asset: AssetSummary | undefined }) {
+function GenerationPanel({ asset }: { readonly asset: AssetSnapshot | undefined }) {
   return (
     <aside className="flex min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#20252c] shadow-[0_20px_50px_rgba(5,8,12,0.16)]">
       <div className="flex h-[54px] items-center border-b border-white/[0.075] px-[17px]">
@@ -485,8 +490,8 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget] = useState<AssetSummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AssetSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<AssetSnapshot | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AssetSnapshot | null>(null);
   const mutationLockRef = useRef(false);
 
   useEffect(() => {
@@ -498,7 +503,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           projectId: project.id,
         });
 
-        if (!isAssetSummaryList(assets)) {
+        if (!isAssetSnapshotList(assets)) {
           throw new Error('Project Asset 列表响应无效');
         }
 
@@ -550,7 +555,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   );
 
   const updateAssets = useCallback(
-    (operation: (assets: AssetSummary[]) => AssetSummary[]) => {
+    (operation: (assets: AssetSnapshot[]) => AssetSnapshot[]) => {
       setLoadState((current) =>
         current.kind === 'ready'
           ? { kind: 'ready', assets: operation(current.assets) }
@@ -596,6 +601,11 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
       await runMutation(async () => {
         const result: AddLocalAssetsResult =
           await window.learningCompanion.addLocalAssets({ paths });
+
+        if (!isAddLocalAssetsResult(result)) {
+          throw new Error('批量添加 Asset 响应无效');
+        }
+
         updateAssets((current) => [...current, ...result.added]);
 
         if (result.added[0]) {
@@ -626,7 +636,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         assetId: renameTarget.id,
         name,
       });
-      if (!isAssetSummary(updated)) {
+      if (!isAssetSnapshot(updated)) {
         throw new Error('Asset 重命名响应无效');
       }
       updateAssets((current) => replaceAsset(current, updated));
@@ -637,7 +647,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     }
   };
 
-  const relinkAsset = async (asset: AssetSummary) => {
+  const relinkAsset = async (asset: AssetSnapshot) => {
     const [path] = await window.learningCompanion.selectLocalAssetFiles();
     if (!path) {
       return;
@@ -648,14 +658,14 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         assetId: asset.id,
         path,
       });
-      if (!isAssetSummary(updated)) {
+      if (!isAssetSnapshot(updated)) {
         throw new Error('Asset Relink 响应无效');
       }
       updateAssets((current) => replaceAsset(current, updated));
     }, '无法重新定位该 Asset。');
   };
 
-  const revealAssetInFolder = async (asset: AssetSummary) => {
+  const revealAssetInFolder = async (asset: AssetSnapshot) => {
     await runMutation(
       () =>
         window.learningCompanion.revealAssetInFolder({
@@ -665,12 +675,12 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     );
   };
 
-  const refreshAsset = async (asset: AssetSummary) => {
+  const refreshAsset = async (asset: AssetSnapshot) => {
     await runMutation(async () => {
       const updated = await window.learningCompanion.refreshAsset({
         assetId: asset.id,
       });
-      if (!isAssetSummary(updated)) {
+      if (!isAssetSnapshot(updated)) {
         throw new Error('Asset 刷新响应无效');
       }
       updateAssets((current) => replaceAsset(current, updated));
@@ -684,7 +694,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         const refreshed = await window.learningCompanion.refreshAllAssets({
           projectId: project.id,
         });
-        if (!isAssetSummaryList(refreshed)) {
+        if (!isAssetSnapshotList(refreshed)) {
           throw new Error('Asset 批量刷新响应无效');
         }
         setLoadState({ kind: 'ready', assets: refreshed });

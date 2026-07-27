@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 import type { AppPreferences } from '../shared/app-preferences';
+import type { AssetSnapshot } from '../shared/assets';
 import { isIpcResult, type IpcErrorPayload } from '../shared/ipc-error';
+import type { ProjectSnapshot } from '../shared/projects';
 import type {
   WorkbenchBootstrap,
   WorkbenchCloseRequest,
@@ -15,10 +17,8 @@ import type {
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
   AssetIdRequest,
-  AssetSummary,
   HealthCheckResponse,
   LearningCompanionApi,
-  ProjectSummary,
   ProjectLifecycleRequest,
   RelinkAssetRequest,
   RenameAssetRequest,
@@ -60,17 +60,17 @@ const api: LearningCompanionApi = {
       IPC_CHANNELS.updateHomePreferences,
       request,
     ),
-  listProjects: () => invoke<ProjectSummary[]>(IPC_CHANNELS.listProjects),
+  listProjects: () => invoke<ProjectSnapshot[]>(IPC_CHANNELS.listProjects),
   createProject: (request: CreateProjectRequest) =>
-    invoke<ProjectSummary>(IPC_CHANNELS.createProject, request),
+    invoke<ProjectSnapshot>(IPC_CHANNELS.createProject, request),
   renameProject: (request: RenameProjectRequest) =>
-    invoke<ProjectSummary>(IPC_CHANNELS.renameProject, request),
+    invoke<ProjectSnapshot>(IPC_CHANNELS.renameProject, request),
   setProjectPinned: (request: SetProjectPinnedRequest) =>
-    invoke<ProjectSummary>(IPC_CHANNELS.setProjectPinned, request),
+    invoke<ProjectSnapshot>(IPC_CHANNELS.setProjectPinned, request),
   deleteProject: (request: DeleteProjectRequest) =>
     invoke<void>(IPC_CHANNELS.deleteProject, request),
   openProject: (request: ProjectLifecycleRequest) =>
-    invoke<AssetSummary[]>(IPC_CHANNELS.openProject, request),
+    invoke<AssetSnapshot[]>(IPC_CHANNELS.openProject, request),
   closeProject: (request: ProjectLifecycleRequest) =>
     invoke<void>(IPC_CHANNELS.closeProject, request),
   selectLocalAssetFiles: () =>
@@ -81,15 +81,15 @@ const api: LearningCompanionApi = {
       request,
     ),
   renameAsset: (request: RenameAssetRequest) =>
-    invoke<AssetSummary>(IPC_CHANNELS.renameAsset, request),
+    invoke<AssetSnapshot>(IPC_CHANNELS.renameAsset, request),
   relinkAsset: (request: RelinkAssetRequest) =>
-    invoke<AssetSummary>(IPC_CHANNELS.relinkAsset, request),
+    invoke<AssetSnapshot>(IPC_CHANNELS.relinkAsset, request),
   deleteAsset: (request: AssetIdRequest) =>
     invoke<void>(IPC_CHANNELS.deleteAsset, request),
   refreshAsset: (request: AssetIdRequest) =>
-    invoke<AssetSummary>(IPC_CHANNELS.refreshAsset, request),
+    invoke<AssetSnapshot>(IPC_CHANNELS.refreshAsset, request),
   refreshAllAssets: (request: ProjectLifecycleRequest) =>
-    invoke<AssetSummary[]>(IPC_CHANNELS.refreshAllAssets, request),
+    invoke<AssetSnapshot[]>(IPC_CHANNELS.refreshAllAssets, request),
   revealAssetInFolder: (request: AssetIdRequest) =>
     invoke<void>(IPC_CHANNELS.revealAssetInFolder, request),
   openWorkbench: (request: WorkbenchOpenRequest) =>

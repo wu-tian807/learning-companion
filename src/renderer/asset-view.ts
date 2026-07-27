@@ -1,26 +1,25 @@
-import type { AssetSummary } from '../shared/ipc';
+import type { AssetSnapshot } from '../shared/assets';
 
 export function selectInitialAssetId(
-  assets: readonly AssetSummary[],
+  assets: readonly AssetSnapshot[],
 ): string | null {
   if (assets.length === 0) {
     return null;
   }
 
   const byRecentUse = [...assets].sort(
-    (left, right) =>
-      Date.parse(right.lastUsedTime) - Date.parse(left.lastUsedTime),
+    (left, right) => right.lastUsedTime - left.lastUsedTime,
   );
 
   return (
     byRecentUse.find(
-      (asset) => asset.contentLocator.availability === 'available',
+      (asset) => asset.contentStatus.availability === 'available',
     ) ?? byRecentUse[0]
   ).id;
 }
 
 export function selectAfterAssetDeletion(
-  assets: readonly AssetSummary[],
+  assets: readonly AssetSnapshot[],
   deletedAssetId: string,
   selectedAssetId: string | null,
 ): string | null {
@@ -39,9 +38,9 @@ export function selectAfterAssetDeletion(
 }
 
 export function replaceAsset(
-  assets: readonly AssetSummary[],
-  updatedAsset: AssetSummary,
-): AssetSummary[] {
+  assets: readonly AssetSnapshot[],
+  updatedAsset: AssetSnapshot,
+): AssetSnapshot[] {
   return assets.map((asset) =>
     asset.id === updatedAsset.id ? updatedAsset : asset,
   );

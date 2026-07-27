@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ProjectSummary } from '../shared/ipc';
+import type { ProjectSnapshot } from '../shared/projects';
 import {
   filterAndSortProjects,
   formatProjectDate,
@@ -11,9 +11,9 @@ import {
 function createProject(
   id: string,
   name: string,
-  createdTime: string,
+  createdTime: number,
   pinned = false,
-): ProjectSummary {
+): ProjectSnapshot {
   return {
     id,
     name,
@@ -26,7 +26,9 @@ function createProject(
 
 describe('project view helpers', () => {
   it('formats project metadata in Chinese', () => {
-    expect(formatProjectDate('2026-07-22T23:30:00.000Z')).toBe('2026年7月22日');
+    expect(formatProjectDate(Date.parse('2026-07-22T23:30:00.000Z'))).toBe(
+      '2026年7月22日',
+    );
     expect(formatAssetCount(12)).toBe('12 个 Asset');
   });
 
@@ -39,8 +41,16 @@ describe('project view helpers', () => {
 
   it('filters project names without changing the input', () => {
     const projects = [
-      createProject('a', '机器学习基础', '2026-07-22T00:00:00.000Z'),
-      createProject('b', '信号与系统', '2026-07-21T00:00:00.000Z'),
+      createProject(
+        'a',
+        '机器学习基础',
+        Date.parse('2026-07-22T00:00:00.000Z'),
+      ),
+      createProject(
+        'b',
+        '信号与系统',
+        Date.parse('2026-07-21T00:00:00.000Z'),
+      ),
     ];
 
     expect(filterAndSortProjects(projects, '  机器学习 ', 'newest')).toEqual([
@@ -51,9 +61,22 @@ describe('project view helpers', () => {
 
   it('keeps pinned projects first in every sort mode', () => {
     const projects = [
-      createProject('newer', 'C', '2026-07-22T00:00:00.000Z'),
-      createProject('older', 'A', '2026-07-20T00:00:00.000Z'),
-      createProject('pinned', 'B', '2026-07-21T00:00:00.000Z', true),
+      createProject(
+        'newer',
+        'C',
+        Date.parse('2026-07-22T00:00:00.000Z'),
+      ),
+      createProject(
+        'older',
+        'A',
+        Date.parse('2026-07-20T00:00:00.000Z'),
+      ),
+      createProject(
+        'pinned',
+        'B',
+        Date.parse('2026-07-21T00:00:00.000Z'),
+        true,
+      ),
     ];
 
     expect(filterAndSortProjects(projects, '', 'newest').map(({ id }) => id)).toEqual([

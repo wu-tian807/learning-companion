@@ -5,10 +5,10 @@ import {
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
-import type { AssetSummary } from '../../shared/ipc';
+import type { AssetSnapshot } from '../../shared/assets';
 
 export interface RendererWorkbenchViewProps {
-  readonly asset: AssetSummary;
+  readonly asset: AssetSnapshot;
   readonly bootstrap: WorkbenchBootstrap;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;

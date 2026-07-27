@@ -6,9 +6,7 @@ import {
   isDeleteProjectRequest,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
-  type ProjectSummary,
 } from '../../shared/ipc';
-import type { ProjectSnapshot } from '../../shared/projects';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { AppError } from '../errors/app-error';
 import { registerIpcHandler } from './register-handler';
@@ -17,22 +15,11 @@ function invalidRequest(): Error {
   return new AppError('INVALID_IPC_REQUEST');
 }
 
-function toProjectSummary(project: ProjectSnapshot): ProjectSummary {
-  return {
-    id: project.id,
-    name: project.name,
-    icon: project.icon,
-    createdTime: new Date(project.createdTime).toISOString(),
-    assetCount: project.assetCount,
-    pinned: project.pinned,
-  };
-}
-
 export function registerProjectHandlers(
   projectService: ProjectServiceApi,
 ): void {
   registerIpcHandler(IPC_CHANNELS.listProjects, () =>
-    projectService.listProjects().map(toProjectSummary),
+    projectService.listProjects(),
   );
 
   registerIpcHandler(IPC_CHANNELS.createProject, (_event, request: unknown) => {
@@ -40,7 +27,7 @@ export function registerProjectHandlers(
       throw invalidRequest();
     }
 
-    return toProjectSummary(projectService.createProject(request));
+    return projectService.createProject(request);
   });
 
   registerIpcHandler(IPC_CHANNELS.renameProject, (_event, request: unknown) => {
@@ -48,9 +35,7 @@ export function registerProjectHandlers(
       throw invalidRequest();
     }
 
-    return toProjectSummary(
-      projectService.renameProject(request.id, request.name),
-    );
+    return projectService.renameProject(request.id, request.name);
   });
 
   registerIpcHandler(IPC_CHANNELS.setProjectPinned, (_event, request: unknown) => {
@@ -58,9 +43,7 @@ export function registerProjectHandlers(
       throw invalidRequest();
     }
 
-    return toProjectSummary(
-      projectService.setProjectPinned(request.id, request.pinned),
-    );
+    return projectService.setProjectPinned(request.id, request.pinned);
   });
 
   registerIpcHandler(IPC_CHANNELS.deleteProject, async (_event, request: unknown) => {

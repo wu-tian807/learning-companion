@@ -1,4 +1,4 @@
-import type { ProjectSummary } from '../../shared/ipc';
+import type { ProjectSnapshot } from '../../shared/projects';
 import { formatAssetCount, formatProjectDate, getProjectCardColor } from '../project-view';
 import {
   ProjectActionsMenu,
@@ -6,8 +6,8 @@ import {
 } from './ProjectActionsMenu';
 
 interface ProjectGridProps extends ProjectActionHandlers {
-  projects: readonly ProjectSummary[];
-  onOpenProject: (project: ProjectSummary) => void;
+  projects: readonly ProjectSnapshot[];
+  onOpenProject: (project: ProjectSnapshot) => void;
   actionsDisabled?: boolean;
 }
 

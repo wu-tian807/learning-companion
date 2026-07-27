@@ -91,7 +91,7 @@ describe('Project IPC handlers', () => {
         id: 'project-1',
         name: '机器学习',
         icon: '🤖',
-        createdTime: '2026-07-23T02:00:00.000Z',
+        createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
         assetCount: 3,
         pinned: false,
       },

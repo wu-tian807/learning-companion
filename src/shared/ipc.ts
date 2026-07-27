@@ -1,5 +1,14 @@
 import type { AppPreferences, HomePreferences } from './app-preferences';
 import { isHomePreferences } from './app-preferences';
+import {
+  ASSET_NAME_MAX_LENGTH,
+  isAssetSnapshotList,
+  type AssetSnapshot,
+} from './assets';
+import {
+  PROJECT_NAME_MAX_LENGTH,
+  type ProjectSnapshot,
+} from './projects';
 import type {
   WorkbenchBootstrap,
   WorkbenchCloseRequest,
@@ -32,9 +41,6 @@ export const IPC_CHANNELS = {
   closeWorkbench: 'workbench:close',
 } as const;
 
-export const PROJECT_NAME_MAX_LENGTH = 80;
-export const PROJECT_ICON_MAX_CODE_POINTS = 8;
-export const ASSET_NAME_MAX_LENGTH = 160;
 export const ASSET_BATCH_MAX_SIZE = 512;
 
 export interface HealthCheckResponse {
@@ -50,24 +56,24 @@ export interface LearningCompanionApi {
   updateHomePreferences: (
     request: UpdateHomePreferencesRequest,
   ) => Promise<AppPreferences>;
-  listProjects: () => Promise<ProjectSummary[]>;
-  createProject: (request: CreateProjectRequest) => Promise<ProjectSummary>;
-  renameProject: (request: RenameProjectRequest) => Promise<ProjectSummary>;
-  setProjectPinned: (request: SetProjectPinnedRequest) => Promise<ProjectSummary>;
+  listProjects: () => Promise<ProjectSnapshot[]>;
+  createProject: (request: CreateProjectRequest) => Promise<ProjectSnapshot>;
+  renameProject: (request: RenameProjectRequest) => Promise<ProjectSnapshot>;
+  setProjectPinned: (request: SetProjectPinnedRequest) => Promise<ProjectSnapshot>;
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
-  openProject: (request: ProjectLifecycleRequest) => Promise<AssetSummary[]>;
+  openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
   closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
   selectLocalAssetFiles: () => Promise<string[]>;
   addLocalAssets: (
     request: AddLocalAssetsRequest,
   ) => Promise<AddLocalAssetsResult>;
-  renameAsset: (request: RenameAssetRequest) => Promise<AssetSummary>;
-  relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSummary>;
+  renameAsset: (request: RenameAssetRequest) => Promise<AssetSnapshot>;
+  relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSnapshot>;
   deleteAsset: (request: AssetIdRequest) => Promise<void>;
-  refreshAsset: (request: AssetIdRequest) => Promise<AssetSummary>;
+  refreshAsset: (request: AssetIdRequest) => Promise<AssetSnapshot>;
   refreshAllAssets: (
     request: ProjectLifecycleRequest,
-  ) => Promise<AssetSummary[]>;
+  ) => Promise<AssetSnapshot[]>;
   revealAssetInFolder: (request: AssetIdRequest) => Promise<void>;
   openWorkbench: (
     request: WorkbenchOpenRequest,
@@ -77,15 +83,6 @@ export interface LearningCompanionApi {
   ) => Promise<WorkbenchCommandResult>;
   closeWorkbench: (request: WorkbenchCloseRequest) => Promise<void>;
   getPathForFile: (file: File) => string;
-}
-
-export interface ProjectSummary {
-  id: string;
-  name: string;
-  icon: string;
-  createdTime: string;
-  assetCount: number;
-  pinned: boolean;
 }
 
 export interface CreateProjectRequest {
@@ -110,27 +107,6 @@ export interface ProjectLifecycleRequest {
   projectId: string;
 }
 
-export type AssetAvailability =
-  | 'available'
-  | 'missing'
-  | 'inaccessible'
-  | 'invalid';
-
-export interface AssetSummary {
-  id: string;
-  projectId: string;
-  name: string;
-  mediaType: string;
-  contentLocator: {
-    kind: 'local-file';
-    path: string;
-    availability: AssetAvailability;
-    checkedTime: string;
-  };
-  createdTime: string;
-  lastUsedTime: string;
-}
-
 export interface AddLocalAssetsRequest {
   paths: string[];
 }
@@ -141,7 +117,7 @@ export interface AddLocalAssetFailure {
 }
 
 export interface AddLocalAssetsResult {
-  added: AssetSummary[];
+  added: AssetSnapshot[];
   failed: AddLocalAssetFailure[];
 }
 
@@ -188,64 +164,6 @@ export function isHealthCheckResponse(value: unknown): value is HealthCheckRespo
     typeof candidate.timestamp === 'string' &&
     !Number.isNaN(Date.parse(candidate.timestamp))
   );
-}
-
-export function isProjectSummary(value: unknown): value is ProjectSummary {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<ProjectSummary>;
-
-  return (
-    typeof candidate.id === 'string' &&
-    candidate.id.length > 0 &&
-    typeof candidate.name === 'string' &&
-    candidate.name.length > 0 &&
-    typeof candidate.icon === 'string' &&
-    candidate.icon.length > 0 &&
-    typeof candidate.createdTime === 'string' &&
-    !Number.isNaN(Date.parse(candidate.createdTime)) &&
-    typeof candidate.assetCount === 'number' &&
-    Number.isSafeInteger(candidate.assetCount) &&
-    candidate.assetCount >= 0 &&
-    typeof candidate.pinned === 'boolean'
-  );
-}
-
-export function isProjectSummaryList(value: unknown): value is ProjectSummary[] {
-  return Array.isArray(value) && value.every(isProjectSummary);
-}
-
-export function isAssetSummary(value: unknown): value is AssetSummary {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  const locator = value.contentLocator;
-
-  return (
-    isRequiredText(value.id) &&
-    isRequiredText(value.projectId) &&
-    isRequiredText(value.name, ASSET_NAME_MAX_LENGTH) &&
-    isRequiredText(value.mediaType) &&
-    isRecord(locator) &&
-    locator.kind === 'local-file' &&
-    isRequiredText(locator.path) &&
-    ['available', 'missing', 'inaccessible', 'invalid'].includes(
-      locator.availability as string,
-    ) &&
-    typeof locator.checkedTime === 'string' &&
-    !Number.isNaN(Date.parse(locator.checkedTime)) &&
-    typeof value.createdTime === 'string' &&
-    !Number.isNaN(Date.parse(value.createdTime)) &&
-    typeof value.lastUsedTime === 'string' &&
-    !Number.isNaN(Date.parse(value.lastUsedTime))
-  );
-}
-
-export function isAssetSummaryList(value: unknown): value is AssetSummary[] {
-  return Array.isArray(value) && value.every(isAssetSummary);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -297,6 +215,22 @@ export function isAddLocalAssetsRequest(
     value.paths.length > 0 &&
     value.paths.length <= ASSET_BATCH_MAX_SIZE &&
     value.paths.every((path) => isRequiredText(path))
+  );
+}
+
+export function isAddLocalAssetsResult(
+  value: unknown,
+): value is AddLocalAssetsResult {
+  return (
+    isRecord(value) &&
+    isAssetSnapshotList(value.added) &&
+    Array.isArray(value.failed) &&
+    value.failed.every(
+      (failure) =>
+        isRecord(failure) &&
+        isRequiredText(failure.path) &&
+        isRequiredText(failure.message),
+    )
   );
 }
 

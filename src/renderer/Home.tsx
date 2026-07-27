@@ -7,9 +7,12 @@ import {
   type ProjectSortMode,
   type ProjectViewMode,
 } from '../shared/app-preferences';
-import type { ProjectSummary } from '../shared/ipc';
-import { isProjectSummary, isProjectSummaryList } from '../shared/ipc';
 import { userMessageFromError } from '../shared/ipc-error';
+import {
+  isProjectSnapshot,
+  isProjectSnapshotList,
+  type ProjectSnapshot,
+} from '../shared/projects';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { HomeToolbar } from './components/HomeToolbar';
 import { ProjectDialog, type ProjectDialogValues } from './components/ProjectDialog';
@@ -19,16 +22,16 @@ import { filterAndSortProjects } from './project-view';
 
 type ProjectLoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; projects: ProjectSummary[] }
+  | { kind: 'ready'; projects: ProjectSnapshot[] }
   | { kind: 'failed' };
 
 type ProjectEditorState =
   | { kind: 'closed' }
   | { kind: 'create' }
-  | { kind: 'rename'; project: ProjectSummary };
+  | { kind: 'rename'; project: ProjectSnapshot };
 
 interface HomeProps {
-  readonly onOpenProject: (project: ProjectSummary) => void;
+  readonly onOpenProject: (project: ProjectSnapshot) => void;
 }
 
 function copyHomePreferences(preferences: HomePreferences): HomePreferences {
@@ -80,7 +83,7 @@ export function Home({ onOpenProject }: HomeProps) {
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [editorState, setEditorState] = useState<ProjectEditorState>({ kind: 'closed' });
-  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSnapshot | null>(null);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -107,7 +110,7 @@ export function Home({ onOpenProject }: HomeProps) {
       try {
         const projects = await window.learningCompanion.listProjects();
 
-        if (!isProjectSummaryList(projects)) {
+        if (!isProjectSnapshotList(projects)) {
           throw new Error('Project 列表响应格式无效');
         }
 
@@ -171,7 +174,7 @@ export function Home({ onOpenProject }: HomeProps) {
     [projects, searchQuery, sortMode],
   );
 
-  const updateProject = useCallback((updatedProject: ProjectSummary) => {
+  const updateProject = useCallback((updatedProject: ProjectSnapshot) => {
     setLoadState((current) => {
       if (current.kind !== 'ready') {
         return current;
@@ -293,7 +296,7 @@ export function Home({ onOpenProject }: HomeProps) {
     const succeeded = await runMutation(async () => {
       const createdProject = await window.learningCompanion.createProject({ name });
 
-      if (!isProjectSummary(createdProject)) {
+      if (!isProjectSnapshot(createdProject)) {
         throw new Error('Project 创建响应格式无效');
       }
 
@@ -317,7 +320,7 @@ export function Home({ onOpenProject }: HomeProps) {
         name,
       });
 
-      if (!isProjectSummary(renamedProject)) {
+      if (!isProjectSnapshot(renamedProject)) {
         throw new Error('Project 重命名响应格式无效');
       }
 
@@ -329,14 +332,14 @@ export function Home({ onOpenProject }: HomeProps) {
     }
   };
 
-  const toggleProjectPinned = async (project: ProjectSummary) => {
+  const toggleProjectPinned = async (project: ProjectSnapshot) => {
     await runMutation(async () => {
       const updatedProject = await window.learningCompanion.setProjectPinned({
         id: project.id,
         pinned: !project.pinned,
       });
 
-      if (!isProjectSummary(updatedProject)) {
+      if (!isProjectSnapshot(updatedProject)) {
         throw new Error('Project 置顶响应格式无效');
       }
 
@@ -373,14 +376,14 @@ export function Home({ onOpenProject }: HomeProps) {
   };
 
   const actionHandlers = {
-    onRename: (project: ProjectSummary) => {
+    onRename: (project: ProjectSnapshot) => {
       setMutationError(null);
       setEditorState({ kind: 'rename', project });
     },
-    onTogglePinned: (project: ProjectSummary) => {
+    onTogglePinned: (project: ProjectSnapshot) => {
       void toggleProjectPinned(project);
     },
-    onDelete: (project: ProjectSummary) => {
+    onDelete: (project: ProjectSnapshot) => {
       setMutationError(null);
       setDeleteTarget(project);
     },

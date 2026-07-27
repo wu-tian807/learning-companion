@@ -8,10 +8,8 @@ import {
   isRelinkAssetRequest,
   isRenameAssetRequest,
   type AddLocalAssetsResult,
-  type AssetSummary,
 } from '../../shared/ipc';
 import type { AssetFileServiceApi } from '../assets/asset-file-service';
-import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
@@ -19,29 +17,6 @@ import { registerIpcHandler } from './register-handler';
 
 function invalidRequest(): Error {
   return new AppError('INVALID_IPC_REQUEST');
-}
-
-export function toAssetSummary(
-  snapshot: AssetSnapshot,
-): AssetSummary {
-  if (snapshot.contentRef.kind !== 'local-file') {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return {
-    id: snapshot.id,
-    projectId: snapshot.projectId,
-    name: snapshot.name,
-    mediaType: snapshot.mediaType,
-    contentLocator: {
-      kind: snapshot.contentRef.kind,
-      path: snapshot.contentRef.path,
-      availability: snapshot.contentStatus.availability,
-      checkedTime: new Date(snapshot.contentStatus.checkedTime).toISOString(),
-    },
-    createdTime: new Date(snapshot.createdTime).toISOString(),
-    lastUsedTime: new Date(snapshot.lastUsedTime).toISOString(),
-  };
 }
 
 export function registerAssetHandlers(
@@ -55,7 +30,7 @@ export function registerAssetHandlers(
     }
 
     const loaded = await projectService.openProject(request.projectId);
-    return loaded.map(toAssetSummary);
+    return loaded;
   });
 
   registerIpcHandler(IPC_CHANNELS.closeProject, async (_event, request: unknown) => {
@@ -85,9 +60,7 @@ export function registerAssetHandlers(
 
       for (const path of request.paths) {
         try {
-          result.added.push(
-            toAssetSummary(await assetService.addLocalFile(path)),
-          );
+          result.added.push(await assetService.addLocalFile(path));
         } catch (error) {
           const handled = handleAppError(
             `${IPC_CHANNELS.addLocalAssets}:${path}`,
@@ -109,9 +82,7 @@ export function registerAssetHandlers(
       throw invalidRequest();
     }
 
-    return toAssetSummary(
-      assetService.update(request.assetId, { name: request.name }),
-    );
+    return assetService.update(request.assetId, { name: request.name });
   });
 
   registerIpcHandler(
@@ -121,9 +92,7 @@ export function registerAssetHandlers(
         throw invalidRequest();
       }
 
-      return toAssetSummary(
-        await assetService.relinkLocalFile(request.assetId, request.path),
-      );
+      return assetService.relinkLocalFile(request.assetId, request.path);
     },
   );
 
@@ -142,9 +111,7 @@ export function registerAssetHandlers(
         throw invalidRequest();
       }
 
-      return toAssetSummary(
-        await assetService.refresh(request.assetId),
-      );
+      return assetService.refresh(request.assetId);
     },
   );
 
@@ -159,9 +126,7 @@ export function registerAssetHandlers(
         throw new AppError('PROJECT_CONTEXT_CHANGED');
       }
 
-      return (await assetService.refreshAll()).map(
-        toAssetSummary,
-      );
+      return assetService.refreshAll();
     },
   );
 

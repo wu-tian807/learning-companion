@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import type { AssetSummary } from '../../shared/ipc';
+import type { AssetSnapshot } from '../../shared/assets';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
@@ -11,7 +11,7 @@ import { AttachmentHost } from './AttachmentHost';
 import { RendererWorkbenchRegistry } from './renderer-workbench-registry';
 
 interface AssetWorkbenchHostProps {
-  readonly asset: AssetSummary | undefined;
+  readonly asset: AssetSnapshot | undefined;
   readonly mediaLabel: (mediaType: string) => string;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
@@ -44,10 +44,10 @@ export function AssetWorkbenchHost({
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
   const assetId = asset?.id;
-  const checkedTime = asset?.contentLocator.checkedTime;
+  const checkedTime = asset?.contentStatus.checkedTime;
   const mediaType = asset?.mediaType;
   const assetKey =
-    assetId && checkedTime && mediaType
+    assetId && checkedTime !== undefined && mediaType
       ? `${assetId}:${checkedTime}:${mediaType}`
       : undefined;
 
