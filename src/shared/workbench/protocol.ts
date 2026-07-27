@@ -1,4 +1,7 @@
-import type { AssetAvailability } from '../ipc';
+import {
+  isAssetAvailability,
+  type AssetAvailability,
+} from '../assets';
 
 export type JsonPrimitive = boolean | number | string | null;
 
@@ -115,9 +118,7 @@ export function isWorkbenchBootstrap(
     value.protocolVersion > 0 &&
     isRequiredText(value.assetId) &&
     isRequiredText(value.mediaType) &&
-    ['available', 'missing', 'inaccessible', 'invalid'].includes(
-      value.availability as string,
-    ) &&
+    isAssetAvailability(value.availability) &&
     isJsonValue(value.payload)
   );
 }
