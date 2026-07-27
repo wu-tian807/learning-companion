@@ -4,20 +4,20 @@ import { LOCAL_FILE_CONTENT_KIND } from '../content/content-ref';
 import { AppError } from '../errors/app-error';
 import type { AssetServiceApi } from './asset-service';
 
-export interface AssetFileServiceApi {
+export interface AssetShellServiceApi {
   revealInFolder(assetId: string): void;
 }
 
-export interface AssetFileServiceDependencies {
+export interface AssetShellServiceDependencies {
   readonly showItemInFolder: (path: string) => void;
 }
 
-export class AssetFileService implements AssetFileServiceApi {
-  private readonly dependencies: AssetFileServiceDependencies;
+export class AssetShellService implements AssetShellServiceApi {
+  private readonly dependencies: AssetShellServiceDependencies;
 
   constructor(
     private readonly assetService: AssetServiceApi,
-    dependencies: Partial<AssetFileServiceDependencies> = {},
+    dependencies: Partial<AssetShellServiceDependencies> = {},
   ) {
     this.dependencies = {
       showItemInFolder:

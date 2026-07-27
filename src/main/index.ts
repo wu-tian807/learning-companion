@@ -4,7 +4,7 @@ import started from 'electron-squirrel-startup';
 import type { DatabaseContext } from './database/database-context';
 import { initializeDatabase } from './database/initialize-database';
 import { AssetDatabase } from './assets/asset-database';
-import { AssetFileService } from './assets/asset-file-service';
+import { AssetShellService } from './assets/asset-shell-service';
 import { AssetService } from './assets/asset-service';
 import { EmptyAttachmentService } from './attachments/attachment-service';
 import { ContentResolverRegistry } from './content/content-resolver-registry';
@@ -45,7 +45,7 @@ void app.whenReady().then(async () => {
     assetDatabase,
     contentResolverRegistry,
   );
-  const assetFileService = new AssetFileService(assetService);
+  const assetShellService = new AssetShellService(assetService);
   const workbenchRegistry = new WorkbenchRegistry(
     new UnsupportedWorkbenchProvider(),
   );
@@ -67,7 +67,7 @@ void app.whenReady().then(async () => {
   registerHealthCheckHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectService);
-  registerAssetHandlers(assetService, assetFileService);
+  registerAssetHandlers(assetService, assetShellService);
   registerWorkbenchHandlers(workbenchSessionManager);
   createMainWindow();
 

@@ -6,7 +6,7 @@ import {
   createLocalFileContentRef,
 } from '../content/content-ref';
 import { createAssetSnapshot } from './asset';
-import { AssetFileService } from './asset-file-service';
+import { AssetShellService } from './asset-shell-service';
 import type { AssetServiceApi } from './asset-service';
 
 function createAsset(
@@ -31,13 +31,13 @@ function createAsset(
   };
 }
 
-describe('AssetFileService', () => {
+describe('AssetShellService', () => {
   it('reveals an available Asset using its trusted stored path', () => {
     const showItemInFolder = vi.fn();
     const assetService = {
       get: vi.fn(() => createAsset('available')),
     } as unknown as AssetServiceApi;
-    const service = new AssetFileService(assetService, { showItemInFolder });
+    const service = new AssetShellService(assetService, { showItemInFolder });
 
     service.revealInFolder('asset');
 
@@ -55,12 +55,12 @@ describe('AssetFileService', () => {
     } as unknown as AssetServiceApi;
 
     expect(() =>
-      new AssetFileService(missingService, {
+      new AssetShellService(missingService, {
         showItemInFolder,
       }).revealInFolder('asset'),
     ).toThrow('ASSET_UNAVAILABLE');
     expect(() =>
-      new AssetFileService(unknownService, {
+      new AssetShellService(unknownService, {
         showItemInFolder,
       }).revealInFolder('asset'),
     ).toThrow('ASSET_NOT_FOUND');

@@ -9,7 +9,7 @@ import {
   isRenameAssetRequest,
   type AddLocalAssetsResult,
 } from '../../shared/ipc';
-import type { AssetFileServiceApi } from '../assets/asset-file-service';
+import type { AssetShellServiceApi } from '../assets/asset-shell-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
 import { registerIpcHandler } from './register-handler';
@@ -20,7 +20,7 @@ function invalidRequest(): Error {
 
 export function registerAssetHandlers(
   assetService: AssetServiceApi,
-  assetFileService: AssetFileServiceApi,
+  assetShellService: AssetShellServiceApi,
 ): void {
   registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {
     const result = await dialog.showOpenDialog({
@@ -118,7 +118,7 @@ export function registerAssetHandlers(
         throw invalidRequest();
       }
 
-      assetFileService.revealInFolder(request.assetId);
+      assetShellService.revealInFolder(request.assetId);
     },
   );
 }

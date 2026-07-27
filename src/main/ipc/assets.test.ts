@@ -8,7 +8,7 @@ import {
   createLocalFileContentRef,
 } from '../content/content-ref';
 import { createAssetSnapshot } from '../assets/asset';
-import type { AssetFileServiceApi } from '../assets/asset-file-service';
+import type { AssetShellServiceApi } from '../assets/asset-shell-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import { registerAssetHandlers, removeAssetHandlers } from './assets';
@@ -98,11 +98,11 @@ function createDependencies() {
     refreshAll: vi.fn(async () => [asset]),
     getActiveProjectId: vi.fn(() => 'project'),
   } as unknown as AssetServiceApi;
-  const assetFileService = {
+  const assetShellService = {
     revealInFolder: vi.fn(),
-  } as unknown as AssetFileServiceApi;
+  } as unknown as AssetShellServiceApi;
 
-  return { asset, assetService, assetFileService };
+  return { asset, assetService, assetShellService };
 }
 
 beforeEach(() => {
@@ -111,8 +111,8 @@ beforeEach(() => {
 
 describe('Asset IPC handlers', () => {
   it('selects multiple files and returns an empty list after cancellation', async () => {
-    const { assetService, assetFileService } = createDependencies();
-    registerAssetHandlers(assetService, assetFileService);
+    const { assetService, assetShellService } = createDependencies();
+    registerAssetHandlers(assetService, assetShellService);
     electronMocks.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
       filePaths: ['/tmp/a.md', '/tmp/b.pdf'],
@@ -135,8 +135,8 @@ describe('Asset IPC handlers', () => {
   });
 
   it('keeps successful files when a batch addition partially fails', async () => {
-    const { assetService, assetFileService } = createDependencies();
-    registerAssetHandlers(assetService, assetFileService);
+    const { assetService, assetShellService } = createDependencies();
+    registerAssetHandlers(assetService, assetShellService);
 
     await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)(
@@ -159,8 +159,8 @@ describe('Asset IPC handlers', () => {
   });
 
   it('forwards Asset mutations to the current Project container', async () => {
-    const { assetService, assetFileService } = createDependencies();
-    registerAssetHandlers(assetService, assetFileService);
+    const { assetService, assetShellService } = createDependencies();
+    registerAssetHandlers(assetService, assetShellService);
 
     await findHandler(IPC_CHANNELS.renameAsset)(
       {},
@@ -191,12 +191,12 @@ describe('Asset IPC handlers', () => {
     expect(assetService.delete).toHaveBeenCalledWith('asset');
     expect(assetService.refresh).toHaveBeenCalledWith('asset');
     expect(assetService.refreshAll).toHaveBeenCalledOnce();
-    expect(assetFileService.revealInFolder).toHaveBeenCalledWith('asset');
+    expect(assetShellService.revealInFolder).toHaveBeenCalledWith('asset');
   });
 
   it('rejects malformed requests before reaching the back end', async () => {
-    const { assetService, assetFileService } = createDependencies();
-    registerAssetHandlers(assetService, assetFileService);
+    const { assetService, assetShellService } = createDependencies();
+    registerAssetHandlers(assetService, assetShellService);
 
     await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)({}, { paths: [] }),
