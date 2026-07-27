@@ -8,34 +8,30 @@ describe('Project', () => {
       id: '  machine-learning  ',
       name: '  机器学习基础  ',
       icon: '  🤖  ',
-      createdTime: new Date('2026-07-22T08:00:00.000Z'),
+      createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
     });
 
     expect(project).toEqual({
       id: 'machine-learning',
       name: '机器学习基础',
       icon: '🤖',
-      createdTime: new Date('2026-07-22T08:00:00.000Z'),
+      createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
       pinned: false,
     });
     expect(Object.isFrozen(project)).toBe(true);
   });
 
-  it('does not share its mutable Date with inputs or clones', () => {
-    const inputDate = new Date('2026-07-22T08:00:00.000Z');
+  it('clones immutable primitive data without sharing the object', () => {
     const project = createProjectSnapshot({
       id: 'machine-learning',
       name: '机器学习基础',
       icon: '🤖',
-      createdTime: inputDate,
+      createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
       pinned: true,
     });
     const clone = cloneProject(project);
 
-    inputDate.setTime(0);
-    clone.createdTime.setTime(0);
-
-    expect(project.createdTime.toISOString()).toBe('2026-07-22T08:00:00.000Z');
+    expect(project.createdTime).toBe(Date.parse('2026-07-22T08:00:00.000Z'));
     expect(clone).not.toBe(project);
   });
 
@@ -45,27 +41,27 @@ describe('Project', () => {
         id: '',
         name: '机器学习基础',
         icon: '🤖',
-        createdTime: new Date('2026-07-22T08:00:00.000Z'),
+        createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
       }),
-    ).toThrow('Project id 不能为空');
+    ).toThrow('Project 数据无效');
 
     expect(() =>
       createProjectSnapshot({
         id: 'machine-learning',
         name: '机器学习基础',
         icon: '🤖',
-        createdTime: new Date('invalid'),
+        createdTime: Number.NaN,
       }),
-    ).toThrow('Project createdTime 必须是有效日期');
+    ).toThrow('Project 数据无效');
 
     expect(() =>
       createProjectSnapshot({
         id: 'machine-learning',
         name: '机器学习基础',
         icon: '🤖',
-        createdTime: new Date('2026-07-22T08:00:00.000Z'),
+        createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
         pinned: 'yes' as never,
       }),
-    ).toThrow('Project pinned 必须是布尔值');
+    ).toThrow('Project 数据无效');
   });
 });

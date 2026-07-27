@@ -10,8 +10,8 @@ function createValidAsset() {
     name: '学习资料',
     mediaType: 'application/pdf',
     contentRef: createLocalFileContentRef('/tmp/paper.pdf'),
-    createdTime: new Date('2026-07-24T01:00:00.000Z'),
-    lastUsedTime: new Date('2026-07-24T01:00:00.000Z'),
+    createdTime: Date.parse('2026-07-24T01:00:00.000Z'),
+    lastUsedTime: Date.parse('2026-07-24T01:00:00.000Z'),
   });
 }
 
@@ -35,36 +35,34 @@ describe('Asset', () => {
     expect(Object.isFrozen(asset.contentRef)).toBe(true);
   });
 
-  it('does not expose nested content ref or Date references', () => {
+  it('does not expose nested content ref references', () => {
     const asset = createValidAsset();
     const clone = cloneAsset(asset);
 
-    clone.createdTime.setTime(0);
-    clone.lastUsedTime.setTime(0);
-
     expect(cloneAsset(asset)).toEqual(createValidAsset());
+    expect(clone.contentRef).not.toBe(asset.contentRef);
   });
 
   it('rejects empty identity, invalid MIME and invalid dates', () => {
     const valid = createValidAsset();
 
     expect(() => createAssetSnapshot({ ...valid, id: ' ' })).toThrow(
-      'Asset id 不能为空',
+      'Asset 数据无效',
     );
     expect(() =>
       createAssetSnapshot({ ...valid, projectId: ' ' }),
-    ).toThrow('Asset projectId 不能为空');
+    ).toThrow('Asset 数据无效');
     expect(() => createAssetSnapshot({ ...valid, name: ' ' })).toThrow(
-      'Asset name 不能为空',
+      'Asset 数据无效',
     );
     expect(() =>
       createAssetSnapshot({ ...valid, mediaType: 'pdf' }),
-    ).toThrow('Asset mediaType 必须是标准 MIME');
+    ).toThrow('Asset 数据无效');
     expect(() =>
       createAssetSnapshot({
         ...valid,
-        createdTime: new Date(Number.NaN),
+        createdTime: Number.NaN,
       }),
-    ).toThrow('Asset createdTime 必须是有效日期');
+    ).toThrow('Asset 数据无效');
   });
 });

@@ -11,7 +11,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     id: 'project',
     name: '学习 Project',
     icon: '📘',
-    createdTime: new Date('2026-07-27T01:00:00.000Z'),
+    createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
   });
   const calls: string[] = [];
   const projectDatabase = {

@@ -38,7 +38,7 @@ function addProject(context: DatabaseContext, id: string): void {
       id,
       name: `${id} Project`,
       icon: '📘',
-      createdTime: new Date('2026-07-27T01:00:00.000Z'),
+      createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       pinned: false,
     })
     .run();
@@ -60,10 +60,9 @@ function insertAsset(
       projectId: input.projectId,
       name: input.name ?? input.id,
       mediaType: 'text/markdown',
-      contentKind: 'local-file',
-      contentPath: input.path,
-      createdTime: new Date('2026-07-27T01:00:00.000Z'),
-      lastUsedTime: new Date('2026-07-27T01:00:00.000Z'),
+      contentRef: createLocalFileContentRef(input.path),
+      createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
     })
     .run();
 }
@@ -112,6 +111,34 @@ describe('AssetDatabase', () => {
     expect(database.get('asset')).not.toHaveProperty('contentLocator');
   });
 
+  it('rejects ContentRef JSON that violates the shared contract', async () => {
+    const context = await createContext();
+    addProject(context, 'project');
+    context.sqlite.pragma('ignore_check_constraints = ON');
+    context.sqlite
+      .prepare(
+        `INSERT INTO assets (
+          id, project_id, name, media_type, content_ref, created_time,
+          last_used_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'invalid',
+        'project',
+        '非法资料',
+        'text/plain',
+        JSON.stringify({ kind: 'remote-url', url: 'https://example.com' }),
+        Date.parse('2026-07-27T01:00:00.000Z'),
+        Date.parse('2026-07-27T01:00:00.000Z'),
+      );
+    context.sqlite.pragma('ignore_check_constraints = OFF');
+    const database = createDatabase(context);
+
+    await expect(database.loadFromProject('project')).rejects.toThrow(
+      'DATA_INTEGRITY_ERROR',
+    );
+  });
+
   it('keeps one active Project Map and unloads it', async () => {
     const context = await createContext();
     addProject(context, 'project-a');
@@ -145,7 +172,7 @@ describe('AssetDatabase', () => {
     addProject(context, 'project');
     const database = createDatabase(context, {
       createId: () => 'asset',
-      now: () => new Date('2026-07-27T02:00:00.000Z'),
+      now: () => Date.parse('2026-07-27T02:00:00.000Z'),
     });
     await database.loadFromProject('project');
 
@@ -168,8 +195,10 @@ describe('AssetDatabase', () => {
     expect(context.db.select().from(assets).get()).toMatchObject({
       id: 'asset',
       name: '新标题',
-      contentKind: 'local-file',
-      contentPath: '/tmp/new-notes.md',
+      contentRef: {
+        kind: 'local-file',
+        path: '/tmp/new-notes.md',
+      },
     });
 
     database.delete(created.id);
@@ -177,20 +206,27 @@ describe('AssetDatabase', () => {
     expect(context.db.select().from(assets).all()).toEqual([]);
   });
 
-  it('rejects unsupported content kinds without changing SQLite', async () => {
+  it('stores every ContentRef variant known by the shared contract', async () => {
     const context = await createContext();
     addProject(context, 'project');
-    const database = createDatabase(context);
+    const database = createDatabase(context, {
+      createId: () => 'mindmap',
+    });
     await database.loadFromProject('project');
 
-    expect(() =>
-      database.add({
-        name: '思维导图',
-        mediaType: 'application/vnd.learning-companion.mindmap+json',
-        contentRef: createManagedJsonContentRef('mindmap'),
-      }),
-    ).toThrow('FEATURE_NOT_SUPPORTED');
-    expect(context.db.select().from(assets).all()).toEqual([]);
+    const created = database.add({
+      name: '思维导图',
+      mediaType: 'application/vnd.learning-companion.mindmap+json',
+      contentRef: createManagedJsonContentRef('mindmap-content'),
+    });
+
+    expect(created.contentRef).toEqual({
+      kind: 'managed-json',
+      contentId: 'mindmap-content',
+    });
+    expect(context.db.select().from(assets).get()?.contentRef).toEqual(
+      created.contentRef,
+    );
   });
 
   it('counts Assets without changing the active Project', async () => {

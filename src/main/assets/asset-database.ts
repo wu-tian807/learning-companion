@@ -3,10 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { and, count, eq, inArray } from 'drizzle-orm';
 
 import {
-  createLocalFileContentRef,
-  LOCAL_FILE_CONTENT_KIND,
   type AssetContentRef,
 } from '../content/content-ref';
+import { isAssetContentRef } from '../../shared/assets';
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
 import { AppError } from '../errors/app-error';
@@ -34,7 +33,7 @@ export interface AssetDatabaseApi {
 
 export interface AssetDatabaseDependencies {
   readonly createId: () => string;
-  readonly now: () => Date;
+  readonly now: () => number;
 }
 
 const mutableAssetFields = new Set<keyof UpdateAssetInput>([
@@ -64,7 +63,7 @@ export class AssetDatabase implements AssetDatabaseApi {
   ) {
     this.dependencies = {
       createId: dependencies.createId ?? randomUUID,
-      now: dependencies.now ?? (() => new Date()),
+      now: dependencies.now ?? Date.now,
     };
   }
 
@@ -84,7 +83,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     const nextAssetMap = new Map<string, Asset>();
 
     for (const row of rows) {
-      if (row.contentKind !== LOCAL_FILE_CONTENT_KIND) {
+      if (!isAssetContentRef(row.contentRef)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
@@ -93,7 +92,7 @@ export class AssetDatabase implements AssetDatabaseApi {
         projectId: row.projectId,
         name: row.name,
         mediaType: row.mediaType,
-        contentRef: createLocalFileContentRef(row.contentPath),
+        contentRef: row.contentRef,
         createdTime: row.createdTime,
         lastUsedTime: row.lastUsedTime,
       });
@@ -164,19 +163,13 @@ export class AssetDatabase implements AssetDatabaseApi {
 
   add(input: CreateAssetInput): Asset {
     const projectId = this.requireActiveProjectId();
-    const contentRef = input.contentRef;
-
-    if (contentRef.kind !== LOCAL_FILE_CONTENT_KIND) {
-      throw new AppError('FEATURE_NOT_SUPPORTED');
-    }
-
     const now = this.dependencies.now();
     const asset = createAssetSnapshot({
       id: this.dependencies.createId(),
       projectId,
       name: input.name,
       mediaType: input.mediaType,
-      contentRef,
+      contentRef: input.contentRef,
       createdTime: now,
       lastUsedTime: now,
     });
@@ -192,8 +185,7 @@ export class AssetDatabase implements AssetDatabaseApi {
         projectId: asset.projectId,
         name: asset.name,
         mediaType: asset.mediaType,
-        contentKind: contentRef.kind,
-        contentPath: contentRef.path,
+        contentRef: asset.contentRef,
         createdTime: asset.createdTime,
         lastUsedTime: asset.lastUsedTime,
       })
@@ -238,8 +230,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     const currentAsset = this.find(assetId);
 
     if (
-      currentAsset.contentRef.kind !== contentRef.kind ||
-      contentRef.kind !== LOCAL_FILE_CONTENT_KIND
+      currentAsset.contentRef.kind !== contentRef.kind
     ) {
       throw new AppError('INVALID_IPC_REQUEST');
     }
@@ -250,7 +241,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     });
     const result = this.context.db
       .update(assets)
-      .set({ contentPath: contentRef.path })
+      .set({ contentRef })
       .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
       .run();
 

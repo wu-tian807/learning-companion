@@ -60,8 +60,8 @@ function createAssetRuntime(): AssetRuntimeSnapshot {
       name: '资料',
       mediaType: 'text/plain',
       contentRef,
-      createdTime: new Date('2026-07-27T01:00:00.000Z'),
-      lastUsedTime: new Date('2026-07-27T01:00:00.000Z'),
+      createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
     }),
     content: { ref: contentRef, status },
   };

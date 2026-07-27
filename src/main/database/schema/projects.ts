@@ -4,7 +4,7 @@ export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   icon: text('icon').notNull(),
-  createdTime: integer('created_time', { mode: 'timestamp_ms' }).notNull(),
+  createdTime: integer('created_time').notNull(),
   pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
 });
 

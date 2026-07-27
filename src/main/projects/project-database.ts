@@ -27,13 +27,13 @@ export interface ProjectDatabaseApi extends ProjectLookup {
 
 export interface ProjectDatabaseDependencies {
   readonly createId: () => string;
-  readonly now: () => Date;
+  readonly now: () => number;
   readonly defaultIcon: () => string;
 }
 
 const defaultDependencies: ProjectDatabaseDependencies = {
   createId: randomUUID,
-  now: () => new Date(),
+  now: Date.now,
   defaultIcon: () => '📘',
 };
 

@@ -26,8 +26,8 @@ function createAsset(
     name: '学习笔记',
     mediaType,
     contentRef: createLocalFileContentRef(path),
-    createdTime: new Date('2026-07-27T01:00:00.000Z'),
-    lastUsedTime: new Date('2026-07-27T01:00:00.000Z'),
+    createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+    lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
   });
 }
 
@@ -53,8 +53,8 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
         id: 'created',
         projectId: activeProjectId ?? 'project',
         ...input,
-        createdTime: new Date('2026-07-27T02:00:00.000Z'),
-        lastUsedTime: new Date('2026-07-27T02:00:00.000Z'),
+        createdTime: Date.parse('2026-07-27T02:00:00.000Z'),
+        lastUsedTime: Date.parse('2026-07-27T02:00:00.000Z'),
       });
       assetMap.set(asset.id, asset);
       return cloneAsset(asset);

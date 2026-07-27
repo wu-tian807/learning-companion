@@ -30,7 +30,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(2);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(3);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -60,7 +60,9 @@ describe('initializeDatabase', () => {
     const secondContext = initializeDatabase(databaseFile);
 
     try {
-      expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(2);
+      expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
+        3,
+      );
     } finally {
       secondContext.close();
     }
@@ -83,7 +85,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(2);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(3);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -101,7 +103,87 @@ describe('initializeDatabase', () => {
     }
   });
 
-  it('enforces Asset content kind and cascades Project deletion', async () => {
+  it('clears legacy Assets while preserving Projects during version 2 upgrade', async () => {
+    const databaseFile = await createDatabaseFile();
+    await mkdir(dirname(databaseFile), { recursive: true });
+    const legacyDatabase = new Database(databaseFile);
+
+    legacyDatabase.exec(`
+      ${createProjectsMigration.sql}
+      CREATE TABLE assets (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        content_kind TEXT NOT NULL CHECK (content_kind = 'local-file'),
+        content_path TEXT NOT NULL,
+        created_time INTEGER NOT NULL,
+        last_used_time INTEGER NOT NULL,
+        FOREIGN KEY (project_id)
+          REFERENCES projects(id)
+          ON DELETE CASCADE
+      );
+      CREATE INDEX assets_project_id_index ON assets(project_id);
+    `);
+    legacyDatabase
+      .prepare(
+        'INSERT INTO projects (id, name, icon, created_time, pinned) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run('legacy-project', '保留的 Project', '📘', 1_753_171_200_000, 0);
+    legacyDatabase
+      .prepare(
+        `INSERT INTO assets (
+          id, project_id, name, media_type, content_kind, content_path,
+          created_time, last_used_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'legacy-asset',
+        'legacy-project',
+        '清理的 Asset',
+        'text/plain',
+        'local-file',
+        '/tmp/legacy.txt',
+        1_753_171_200_000,
+        1_753_171_200_000,
+      );
+    legacyDatabase.pragma('user_version = 2');
+    legacyDatabase.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(3);
+      expect(
+        context.sqlite
+          .prepare<[], { id: string }>('SELECT id FROM projects')
+          .all(),
+      ).toEqual([{ id: 'legacy-project' }]);
+      expect(
+        context.sqlite
+          .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM assets')
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(assets)')
+          .all()
+          .map(({ name }) => name),
+      ).toEqual([
+        'id',
+        'project_id',
+        'name',
+        'media_type',
+        'content_ref',
+        'created_time',
+        'last_used_time',
+      ]);
+    } finally {
+      context.close();
+    }
+  });
+
+  it('enforces Asset ContentRef JSON and cascades Project deletion', async () => {
     const databaseFile = await createDatabaseFile();
     const context = initializeDatabase(databaseFile);
 
@@ -117,11 +199,10 @@ describe('initializeDatabase', () => {
           project_id,
           name,
           media_type,
-          content_kind,
-          content_path,
+          content_ref,
           created_time,
           last_used_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
 
       insertAsset.run(
@@ -129,8 +210,7 @@ describe('initializeDatabase', () => {
         'project',
         '资料',
         'application/pdf',
-        'local-file',
-        '/tmp/example.pdf',
+        JSON.stringify({ kind: 'local-file', path: '/tmp/example.pdf' }),
         1_753_171_200_000,
         1_753_171_200_000,
       );
@@ -140,8 +220,21 @@ describe('initializeDatabase', () => {
           'project',
           '网页',
           'text/html',
-          'web-url',
-          'https://example.com',
+          JSON.stringify({
+            kind: 'web-url',
+            url: 'https://example.com',
+          }),
+          1_753_171_200_000,
+          1_753_171_200_000,
+        ),
+      ).toThrow();
+      expect(() =>
+        insertAsset.run(
+          'invalid-json',
+          'project',
+          '损坏数据',
+          'text/plain',
+          '{',
           1_753_171_200_000,
           1_753_171_200_000,
         ),

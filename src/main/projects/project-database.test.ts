@@ -49,7 +49,7 @@ describe('ProjectDatabase', () => {
         id: 'persisted',
         name: '已保存 Project',
         icon: '📚',
-        createdTime: new Date('2026-07-22T08:00:00.000Z'),
+        createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
         pinned: true,
       })
       .run();
@@ -63,7 +63,7 @@ describe('ProjectDatabase', () => {
         id: 'persisted',
         name: '已保存 Project',
         icon: '📚',
-        createdTime: new Date('2026-07-22T08:00:00.000Z'),
+        createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
         pinned: true,
       },
     ]);
@@ -73,7 +73,7 @@ describe('ProjectDatabase', () => {
     const context = await createContext();
     const database = new ProjectDatabase(context, {
       createId: () => 'created-project',
-      now: () => new Date('2026-07-23T02:00:00.000Z'),
+      now: () => Date.parse('2026-07-23T02:00:00.000Z'),
       defaultIcon: () => '🧭',
     });
     database.initialize();
@@ -95,7 +95,7 @@ describe('ProjectDatabase', () => {
         id: 'created-project',
         name: '新标题',
         icon: '🧭',
-        createdTime: new Date('2026-07-23T02:00:00.000Z'),
+        createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
         pinned: true,
       },
     ]);
@@ -111,7 +111,7 @@ describe('ProjectDatabase', () => {
     const firstContext = openContext(databaseFile);
     const firstDatabase = new ProjectDatabase(firstContext, {
       createId: () => 'persisted',
-      now: () => new Date('2026-07-23T02:00:00.000Z'),
+      now: () => Date.parse('2026-07-23T02:00:00.000Z'),
     });
     firstDatabase.initialize();
     firstDatabase.add({ name: '跨启动 Project' });
@@ -126,26 +126,25 @@ describe('ProjectDatabase', () => {
         id: 'persisted',
         name: '跨启动 Project',
         icon: '📘',
-        createdTime: new Date('2026-07-23T02:00:00.000Z'),
+        createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
         pinned: false,
       },
     ]);
   });
 
-  it('does not expose its Project or Date references', async () => {
+  it('does not expose its Project object references', async () => {
     const context = await createContext();
     const database = new ProjectDatabase(context, {
       createId: () => 'isolated',
-      now: () => new Date('2026-07-23T02:00:00.000Z'),
+      now: () => Date.parse('2026-07-23T02:00:00.000Z'),
     });
     database.initialize();
     const created = database.add({ name: '隔离测试' });
 
-    created.createdTime.setTime(0);
-    database.list()[0]?.createdTime.setTime(0);
-
-    expect(database.get(created.id)?.createdTime.toISOString()).toBe(
-      '2026-07-23T02:00:00.000Z',
+    expect(database.get(created.id)).not.toBe(created);
+    expect(database.list()[0]).not.toBe(created);
+    expect(database.get(created.id)?.createdTime).toBe(
+      Date.parse('2026-07-23T02:00:00.000Z'),
     );
   });
 

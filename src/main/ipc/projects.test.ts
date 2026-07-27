@@ -50,7 +50,7 @@ function createDatabase() {
     id: 'project-1',
     name: '机器学习',
     icon: '🤖',
-    createdTime: new Date('2026-07-23T02:00:00.000Z'),
+    createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
   });
   const list = vi.fn(() => [project]);
   const add = vi.fn(() => project);

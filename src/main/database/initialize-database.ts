@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import type { DatabaseContext } from './database-context';
 import { createProjectsMigration } from './migrations/0001-create-projects';
 import { createAssetsMigration } from './migrations/0002-create-assets';
+import { recreateAssetsMigration } from './migrations/0003-recreate-assets';
 import * as assetSchema from './schema/assets';
 import * as projectSchema from './schema/projects';
 
@@ -18,6 +19,7 @@ interface DatabaseMigration {
 const migrations: readonly DatabaseMigration[] = [
   createProjectsMigration,
   createAssetsMigration,
+  recreateAssetsMigration,
 ];
 const schema = {
   ...projectSchema,

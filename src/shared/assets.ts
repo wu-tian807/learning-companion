@@ -60,7 +60,7 @@ function isRequiredText(
 function isMediaType(value: unknown): value is string {
   return (
     isRequiredText(value) &&
-    /^[^\s/]+\/[^\s/]+$/.test(value)
+    /^[^\s/]+\/[^\s/]+$/.test(value.trim())
   );
 }
 

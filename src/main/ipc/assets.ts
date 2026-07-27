@@ -43,8 +43,8 @@ export function toAssetSummary(
       availability: content.status.availability,
       checkedTime: content.status.checkedTime.toISOString(),
     },
-    createdTime: asset.createdTime.toISOString(),
-    lastUsedTime: asset.lastUsedTime.toISOString(),
+    createdTime: new Date(asset.createdTime).toISOString(),
+    lastUsedTime: new Date(asset.lastUsedTime).toISOString(),
   };
 }
 

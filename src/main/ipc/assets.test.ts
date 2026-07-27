@@ -74,8 +74,8 @@ function createAsset(
       name: '学习笔记',
       mediaType: 'text/markdown',
       contentRef,
-      createdTime: new Date('2026-07-27T01:00:00.000Z'),
-      lastUsedTime: new Date('2026-07-27T03:00:00.000Z'),
+      createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      lastUsedTime: Date.parse('2026-07-27T03:00:00.000Z'),
     }),
     content: {
       ref: contentRef,

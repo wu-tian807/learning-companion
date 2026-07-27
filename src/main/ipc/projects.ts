@@ -28,7 +28,7 @@ function toProjectSummary({
     id: project.id,
     name: project.name,
     icon: project.icon,
-    createdTime: project.createdTime.toISOString(),
+    createdTime: new Date(project.createdTime).toISOString(),
     assetCount,
     pinned: project.pinned,
   };
