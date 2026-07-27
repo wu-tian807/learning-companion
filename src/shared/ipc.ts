@@ -10,10 +10,20 @@ export const IPC_CHANNELS = {
   renameProject: 'project:rename',
   setProjectPinned: 'project:set-pinned',
   deleteProject: 'project:delete',
+  openProject: 'project:open',
+  closeProject: 'project:close',
+  selectLocalAssetFiles: 'asset:select-local-files',
+  addLocalAssets: 'asset:add-local-files',
+  renameAsset: 'asset:rename',
+  relinkAsset: 'asset:relink',
+  deleteAsset: 'asset:delete',
+  refreshAsset: 'asset:refresh',
 } as const;
 
 export const PROJECT_NAME_MAX_LENGTH = 80;
 export const PROJECT_ICON_MAX_CODE_POINTS = 8;
+export const ASSET_NAME_MAX_LENGTH = 160;
+export const ASSET_BATCH_MAX_SIZE = 512;
 
 export interface HealthCheckResponse {
   status: 'ok';
@@ -33,6 +43,17 @@ export interface LearningCompanionApi {
   renameProject: (request: RenameProjectRequest) => Promise<ProjectSummary>;
   setProjectPinned: (request: SetProjectPinnedRequest) => Promise<ProjectSummary>;
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
+  openProject: (request: ProjectLifecycleRequest) => Promise<AssetSummary[]>;
+  closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
+  selectLocalAssetFiles: () => Promise<string[]>;
+  addLocalAssets: (
+    request: AddLocalAssetsRequest,
+  ) => Promise<AddLocalAssetsResult>;
+  renameAsset: (request: RenameAssetRequest) => Promise<AssetSummary>;
+  relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSummary>;
+  deleteAsset: (request: AssetIdRequest) => Promise<void>;
+  refreshAsset: (request: AssetIdRequest) => Promise<AssetSummary>;
+  getPathForFile: (file: File) => string;
 }
 
 export interface ProjectSummary {
@@ -60,6 +81,59 @@ export interface SetProjectPinnedRequest {
 
 export interface DeleteProjectRequest {
   id: string;
+}
+
+export interface ProjectLifecycleRequest {
+  projectId: string;
+}
+
+export type AssetAvailability =
+  | 'available'
+  | 'missing'
+  | 'inaccessible'
+  | 'invalid';
+
+export interface AssetSummary {
+  id: string;
+  projectId: string;
+  name: string;
+  mediaType: string;
+  contentLocator: {
+    kind: 'local-file';
+    path: string;
+    availability: AssetAvailability;
+    checkedTime: string;
+  };
+  createdTime: string;
+  lastUsedTime: string;
+}
+
+export interface AddLocalAssetsRequest {
+  paths: string[];
+}
+
+export interface AddLocalAssetFailure {
+  path: string;
+  message: string;
+}
+
+export interface AddLocalAssetsResult {
+  added: AssetSummary[];
+  failed: AddLocalAssetFailure[];
+}
+
+export interface RenameAssetRequest {
+  assetId: string;
+  name: string;
+}
+
+export interface RelinkAssetRequest {
+  assetId: string;
+  path: string;
+}
+
+export interface AssetIdRequest {
+  assetId: string;
 }
 
 export type UpdateHomePreferencesRequest = HomePreferences;
@@ -151,6 +225,48 @@ export function isSetProjectPinnedRequest(
 
 export function isDeleteProjectRequest(value: unknown): value is DeleteProjectRequest {
   return isRecord(value) && isRequiredText(value.id);
+}
+
+export function isProjectLifecycleRequest(
+  value: unknown,
+): value is ProjectLifecycleRequest {
+  return isRecord(value) && isRequiredText(value.projectId);
+}
+
+export function isAddLocalAssetsRequest(
+  value: unknown,
+): value is AddLocalAssetsRequest {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.paths) &&
+    value.paths.length > 0 &&
+    value.paths.length <= ASSET_BATCH_MAX_SIZE &&
+    value.paths.every((path) => isRequiredText(path))
+  );
+}
+
+export function isRenameAssetRequest(
+  value: unknown,
+): value is RenameAssetRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.assetId) &&
+    isRequiredText(value.name, ASSET_NAME_MAX_LENGTH)
+  );
+}
+
+export function isRelinkAssetRequest(
+  value: unknown,
+): value is RelinkAssetRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.assetId) &&
+    isRequiredText(value.path)
+  );
+}
+
+export function isAssetIdRequest(value: unknown): value is AssetIdRequest {
+  return isRecord(value) && isRequiredText(value.assetId);
 }
 
 export function isUpdateHomePreferencesRequest(

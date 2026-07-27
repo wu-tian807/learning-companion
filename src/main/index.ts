@@ -5,6 +5,7 @@ import type { DatabaseContext } from './database/database-context';
 import { initializeDatabase } from './database/initialize-database';
 import { AssetDatabase } from './assets/asset-database';
 import { registerHealthCheckHandler, removeHealthCheckHandler } from './ipc/health-check';
+import { registerAssetHandlers, removeAssetHandlers } from './ipc/assets';
 import { registerProjectHandlers, removeProjectHandlers } from './ipc/projects';
 import { registerSettingsHandlers, removeSettingsHandlers } from './ipc/settings';
 import { createAppPaths } from './paths/app-paths';
@@ -33,6 +34,7 @@ void app.whenReady().then(async () => {
   registerHealthCheckHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectDatabase, projectService);
+  registerAssetHandlers(assetDatabase, projectService);
   createMainWindow();
 
   app.on('activate', () => {
@@ -55,6 +57,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   removeHealthCheckHandler();
+  removeAssetHandlers();
   removeSettingsHandlers();
   removeProjectHandlers();
   databaseContext?.close();
