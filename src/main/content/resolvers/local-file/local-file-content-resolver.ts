@@ -1,22 +1,89 @@
+import { readFile } from 'node:fs/promises';
+
+import writeFileAtomic from 'write-file-atomic';
+
 import type { ContentCapability } from '../../../../shared/workbench/manifest';
+import {
+  detectTextEncoding,
+  TEXT_CONTENT_SAMPLE_SIZE,
+} from '../../../assets/asset-text-encoding';
 import {
   DefaultLocalFileContentInspector,
   type LocalFileContentInspector,
 } from './local-file-content-inspector';
 import { AppError } from '../../../errors/app-error';
-import type { ContentHandle } from '../../content-handle';
+import type {
+  ContentHandle,
+  ResolvedTextContent,
+  WriteTextContentRequest,
+  WriteTextContentResult,
+} from '../../content-handle';
 import {
   LOCAL_FILE_CONTENT_KIND,
 } from '../../content-ref';
 import type { ContentResolver } from '../../content-resolver-registry';
+import {
+  createTextRevision,
+  decodeTextContent,
+  encodeTextContent,
+} from '../../text-content';
 
-const noContentCapabilities = new Set<ContentCapability>();
+const localTextContentCapabilities = new Set<ContentCapability>([
+  'read-text',
+  'write-text',
+]);
 
 export class LocalFileContentHandle implements ContentHandle {
   readonly capabilities: ReadonlySet<ContentCapability> =
-    noContentCapabilities;
+    localTextContentCapabilities;
 
   constructor(readonly path: string) {}
+
+  async readText(): Promise<ResolvedTextContent> {
+    let content: Buffer;
+
+    try {
+      content = await readFile(this.path);
+    } catch (error) {
+      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
+    }
+
+    const encoding = detectTextEncoding(
+      content.subarray(0, TEXT_CONTENT_SAMPLE_SIZE),
+    );
+
+    if (!encoding) {
+      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+    }
+
+    return decodeTextContent(content, encoding);
+  }
+
+  async writeText(
+    request: WriteTextContentRequest,
+  ): Promise<WriteTextContentResult> {
+    let current: Buffer;
+
+    try {
+      current = await readFile(this.path);
+    } catch (error) {
+      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
+    }
+
+    if (createTextRevision(current) !== request.expectedRevision) {
+      throw new AppError('CONTENT_CHANGED_EXTERNALLY');
+    }
+
+    const encoded = encodeTextContent(request);
+
+    try {
+      await writeFileAtomic(this.path, encoded);
+    } catch (error) {
+      throw new AppError('CONTENT_WRITE_FAILED', { cause: error });
+    }
+
+    return { revision: createTextRevision(encoded) };
+  }
 
   async close(): Promise<void> {
     return undefined;

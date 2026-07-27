@@ -9,6 +9,10 @@ export type AppErrorCode =
   | 'FEATURE_NOT_SUPPORTED'
   | 'WORKBENCH_SESSION_NOT_FOUND'
   | 'WORKBENCH_SESSION_EXPIRED'
+  | 'CONTENT_CHANGED_EXTERNALLY'
+  | 'CONTENT_ENCODING_UNSUPPORTED'
+  | 'CONTENT_ENCODING_LOSS'
+  | 'CONTENT_WRITE_FAILED'
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
@@ -74,6 +78,32 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     kind: 'cancelled',
     retryable: false,
     logLevel: 'silent',
+  },
+  CONTENT_CHANGED_EXTERNALLY: {
+    kind: 'user',
+    userMessage:
+      '文件已被其他程序修改。为避免覆盖外部更改，本次保存已取消。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  CONTENT_ENCODING_UNSUPPORTED: {
+    kind: 'user',
+    userMessage: '暂时无法识别或编辑该文本文件的编码。',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  CONTENT_ENCODING_LOSS: {
+    kind: 'user',
+    userMessage:
+      '新内容包含原文件编码无法表示的字符，本次保存已取消。',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  CONTENT_WRITE_FAILED: {
+    kind: 'user',
+    userMessage: '无法写入文件，请检查文件权限后重试。',
+    retryable: true,
+    logLevel: 'warn',
   },
   ASSET_MEDIA_TYPE_MISMATCH: {
     kind: 'user',

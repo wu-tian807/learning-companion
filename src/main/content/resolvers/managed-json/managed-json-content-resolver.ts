@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import type { ContentCapability } from '../../../../shared/workbench/manifest';
 import type { JsonValue } from '../../../../shared/workbench/protocol';
 import { AppError } from '../../../errors/app-error';
 import type {
   ContentHandle,
   ResolvedTextContent,
+  WriteTextContentRequest,
+  WriteTextContentResult,
 } from '../../content-handle';
 import {
   createAssetContentStatus,
@@ -34,22 +38,40 @@ class ManagedJsonContentHandle implements ContentHandle {
       throw new AppError('ASSET_UNAVAILABLE');
     }
 
+    const content = JSON.stringify(value);
+
     return {
-      content: JSON.stringify(value),
+      content,
       encoding: 'utf-8',
+      lineEnding: 'lf',
+      hasByteOrderMark: false,
+      revision: createHash('sha256').update(content).digest('hex'),
     };
   }
 
-  async writeText(content: string): Promise<void> {
+  async writeText(
+    request: WriteTextContentRequest,
+  ): Promise<WriteTextContentResult> {
+    const current = await this.readText();
+
+    if (current.revision !== request.expectedRevision) {
+      throw new AppError('CONTENT_CHANGED_EXTERNALLY');
+    }
+
     let value: JsonValue;
 
     try {
-      value = JSON.parse(content) as JsonValue;
+      value = JSON.parse(request.content) as JsonValue;
     } catch (error) {
       throw new AppError('INVALID_IPC_REQUEST', { cause: error });
     }
 
     await this.repository.set(this.contentId, value);
+    return {
+      revision: createHash('sha256')
+        .update(request.content)
+        .digest('hex'),
+    };
   }
 
   async close(): Promise<void> {
