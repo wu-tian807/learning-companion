@@ -10,6 +10,7 @@ import {
 } from '../../shared/ipc';
 import type { ProjectDatabaseApi } from '../projects/project-database';
 import type { Project } from '../projects/project';
+import type { ProjectServiceApi } from '../projects/project-service';
 
 function invalidRequest(operation: string): Error {
   return new Error(`Project ${operation}请求无效`);
@@ -26,7 +27,10 @@ function toProjectSummary(project: Project): ProjectSummary {
   };
 }
 
-export function registerProjectHandlers(database: ProjectDatabaseApi): void {
+export function registerProjectHandlers(
+  database: ProjectDatabaseApi,
+  projectService: ProjectServiceApi,
+): void {
   ipcMain.handle(IPC_CHANNELS.listProjects, () =>
     database.list().map(toProjectSummary),
   );
@@ -62,7 +66,7 @@ export function registerProjectHandlers(database: ProjectDatabaseApi): void {
       throw invalidRequest('删除');
     }
 
-    database.delete(request.id);
+    projectService.deleteProject(request.id);
   });
 }
 

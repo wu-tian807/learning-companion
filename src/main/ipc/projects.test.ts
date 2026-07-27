@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { ProjectDatabaseApi } from '../projects/project-database';
 import { createProjectSnapshot } from '../projects/project';
+import type { ProjectServiceApi } from '../projects/project-service';
 import { registerProjectHandlers, removeProjectHandlers } from './projects';
 
 const electronMocks = vi.hoisted(() => ({
@@ -41,17 +42,20 @@ function createDatabase() {
   const list = vi.fn(() => [project]);
   const add = vi.fn(() => project);
   const update = vi.fn(() => project);
-  const deleteProject = vi.fn();
   const database: ProjectDatabaseApi = {
     initialize: vi.fn(),
     list,
     get: vi.fn(() => project),
     add,
     update,
-    delete: deleteProject,
+    delete: vi.fn(),
   };
+  const deleteProject = vi.fn();
+  const projectService = {
+    deleteProject,
+  } as unknown as ProjectServiceApi;
 
-  return { add, database, deleteProject, list, update };
+  return { add, database, deleteProject, list, projectService, update };
 }
 
 beforeEach(() => {
@@ -60,8 +64,8 @@ beforeEach(() => {
 
 describe('Project IPC handlers', () => {
   it('maps in-memory Projects to serializable summaries', () => {
-    const { database, list } = createDatabase();
-    registerProjectHandlers(database);
+    const { database, list, projectService } = createDatabase();
+    registerProjectHandlers(database, projectService);
 
     const result = findHandler(IPC_CHANNELS.listProjects)({});
 
@@ -79,8 +83,9 @@ describe('Project IPC handlers', () => {
   });
 
   it('forwards explicit mutation requests to the composed database API', () => {
-    const { add, database, deleteProject, update } = createDatabase();
-    registerProjectHandlers(database);
+    const { add, database, deleteProject, projectService, update } =
+      createDatabase();
+    registerProjectHandlers(database, projectService);
 
     findHandler(IPC_CHANNELS.createProject)({}, { name: '新 Project' });
     findHandler(IPC_CHANNELS.renameProject)(
@@ -100,8 +105,8 @@ describe('Project IPC handlers', () => {
   });
 
   it('rejects malformed mutations before they reach ProjectDatabase', () => {
-    const { add, database } = createDatabase();
-    registerProjectHandlers(database);
+    const { add, database, projectService } = createDatabase();
+    registerProjectHandlers(database, projectService);
 
     expect(() =>
       findHandler(IPC_CHANNELS.createProject)({}, { name: '' }),

@@ -3,11 +3,13 @@ import started from 'electron-squirrel-startup';
 
 import type { DatabaseContext } from './database/database-context';
 import { initializeDatabase } from './database/initialize-database';
+import { AssetDatabase } from './assets/asset-database';
 import { registerHealthCheckHandler, removeHealthCheckHandler } from './ipc/health-check';
 import { registerProjectHandlers, removeProjectHandlers } from './ipc/projects';
 import { registerSettingsHandlers, removeSettingsHandlers } from './ipc/settings';
 import { createAppPaths } from './paths/app-paths';
 import { ProjectDatabase } from './projects/project-database';
+import { ProjectService } from './projects/project-service';
 import { JsonSettingsRepository } from './settings/json-settings-repository';
 import { createMainWindow } from './window';
 
@@ -22,13 +24,15 @@ void app.whenReady().then(async () => {
   const settingsRepository = new JsonSettingsRepository(appPaths.settingsFile);
   databaseContext = initializeDatabase(appPaths.databaseFile);
   const projectDatabase = new ProjectDatabase(databaseContext);
+  const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
+  const projectService = new ProjectService(projectDatabase, assetDatabase);
 
   await settingsRepository.initialize();
   projectDatabase.initialize();
 
   registerHealthCheckHandler();
   registerSettingsHandlers(settingsRepository);
-  registerProjectHandlers(projectDatabase);
+  registerProjectHandlers(projectDatabase, projectService);
   createMainWindow();
 
   app.on('activate', () => {
