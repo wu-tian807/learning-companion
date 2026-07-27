@@ -193,6 +193,37 @@ export function isProjectSummaryList(value: unknown): value is ProjectSummary[] 
   return Array.isArray(value) && value.every(isProjectSummary);
 }
 
+export function isAssetSummary(value: unknown): value is AssetSummary {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const locator = value.contentLocator;
+
+  return (
+    isRequiredText(value.id) &&
+    isRequiredText(value.projectId) &&
+    isRequiredText(value.name, ASSET_NAME_MAX_LENGTH) &&
+    isRequiredText(value.mediaType) &&
+    isRecord(locator) &&
+    locator.kind === 'local-file' &&
+    isRequiredText(locator.path) &&
+    ['available', 'missing', 'inaccessible', 'invalid'].includes(
+      locator.availability as string,
+    ) &&
+    typeof locator.checkedTime === 'string' &&
+    !Number.isNaN(Date.parse(locator.checkedTime)) &&
+    typeof value.createdTime === 'string' &&
+    !Number.isNaN(Date.parse(value.createdTime)) &&
+    typeof value.lastUsedTime === 'string' &&
+    !Number.isNaN(Date.parse(value.lastUsedTime))
+  );
+}
+
+export function isAssetSummaryList(value: unknown): value is AssetSummary[] {
+  return Array.isArray(value) && value.every(isAssetSummary);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }

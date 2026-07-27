@@ -50,7 +50,7 @@ export function ConfirmDialog({
           删除 Project？
         </h2>
         <p id="delete-dialog-description" className="mt-3 text-sm leading-6 text-slate-400">
-          “{projectName}”将从当前内存数据中移除。应用重启后，示例数据仍会恢复。
+          “{projectName}”及其 Asset 记录将从应用中删除，本地原文件不会被删除。
         </p>
 
         {error && (

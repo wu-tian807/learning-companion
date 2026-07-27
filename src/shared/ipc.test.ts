@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createHealthCheckResponse,
+  isAddLocalAssetsRequest,
+  isAssetIdRequest,
+  isAssetSummary,
+  isAssetSummaryList,
   isCreateProjectRequest,
   isDeleteProjectRequest,
   isHealthCheckResponse,
   isProjectSummary,
   isProjectSummaryList,
+  isProjectLifecycleRequest,
+  isRelinkAssetRequest,
+  isRenameAssetRequest,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
   isUpdateHomePreferencesRequest,
@@ -79,6 +86,60 @@ describe('project mutation contracts', () => {
     expect(isRenameProjectRequest({ id: '', name: '新标题' })).toBe(false);
     expect(isSetProjectPinnedRequest({ id: 'project-1', pinned: 'yes' })).toBe(false);
     expect(isDeleteProjectRequest(null)).toBe(false);
+  });
+});
+
+describe('Asset contracts', () => {
+  const asset = {
+    id: 'asset',
+    projectId: 'project',
+    name: '学习笔记',
+    mediaType: 'text/markdown',
+    contentLocator: {
+      kind: 'local-file',
+      path: '/tmp/notes.md',
+      availability: 'available',
+      checkedTime: '2026-07-27T01:00:00.000Z',
+    },
+    createdTime: '2026-07-27T01:00:00.000Z',
+    lastUsedTime: '2026-07-27T02:00:00.000Z',
+  };
+
+  it('accepts serializable Asset snapshots and requests', () => {
+    expect(isAssetSummary(asset)).toBe(true);
+    expect(isAssetSummaryList([asset])).toBe(true);
+    expect(isProjectLifecycleRequest({ projectId: 'project' })).toBe(true);
+    expect(isAddLocalAssetsRequest({ paths: ['/tmp/a.md', '/tmp/b.pdf'] })).toBe(
+      true,
+    );
+    expect(
+      isRenameAssetRequest({ assetId: 'asset', name: '新标题' }),
+    ).toBe(true);
+    expect(
+      isRelinkAssetRequest({ assetId: 'asset', path: '/tmp/new.md' }),
+    ).toBe(true);
+    expect(isAssetIdRequest({ assetId: 'asset' })).toBe(true);
+  });
+
+  it('rejects malformed Asset snapshots and requests', () => {
+    expect(
+      isAssetSummary({
+        ...asset,
+        contentLocator: {
+          ...asset.contentLocator,
+          availability: 'offline',
+        },
+      }),
+    ).toBe(false);
+    expect(isAssetSummary({ ...asset, lastUsedTime: 'invalid' })).toBe(false);
+    expect(isAssetSummaryList([asset, null])).toBe(false);
+    expect(isProjectLifecycleRequest({ projectId: '' })).toBe(false);
+    expect(isAddLocalAssetsRequest({ paths: [] })).toBe(false);
+    expect(isRenameAssetRequest({ assetId: 'asset', name: '' })).toBe(false);
+    expect(isRelinkAssetRequest({ assetId: '', path: '/tmp/new.md' })).toBe(
+      false,
+    );
+    expect(isAssetIdRequest(null)).toBe(false);
   });
 });
 
