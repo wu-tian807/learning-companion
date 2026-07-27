@@ -8,10 +8,13 @@ import {
   type WorkbenchCommandResult,
   type WorkbenchBootstrap,
 } from '../../shared/workbench/protocol';
-import { plainTextRendererWorkbenchModule } from '../../workbenches/plain-text/renderer';
+import { PLAIN_TEXT_WORKBENCH_ID } from '../../workbenches/plain-text/shared';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
-import { RendererWorkbenchRegistry } from './renderer-workbench-registry';
+import {
+  RendererWorkbenchRegistry,
+  type RendererWorkbenchModule,
+} from './renderer-workbench-registry';
 
 interface AssetWorkbenchHostProps {
   readonly asset: AssetSnapshot | undefined;
@@ -26,6 +29,7 @@ type SettledWorkbenchHostState =
       readonly kind: 'ready';
       readonly assetKey: string;
       readonly bootstrap: WorkbenchBootstrap;
+      readonly module: RendererWorkbenchModule;
       readonly executeCommand: (
         command: WorkbenchCommand,
       ) => Promise<WorkbenchCommandResult>;
@@ -39,7 +43,13 @@ type SettledWorkbenchHostState =
 const defaultRegistry = new RendererWorkbenchRegistry(
   unsupportedRendererWorkbenchModule,
 );
-defaultRegistry.register(plainTextRendererWorkbenchModule);
+defaultRegistry.registerLoader(PLAIN_TEXT_WORKBENCH_ID, async () => {
+  const { plainTextRendererWorkbenchModule } = await import(
+    '../../workbenches/plain-text/renderer'
+  );
+
+  return plainTextRendererWorkbenchModule;
+});
 
 export function AssetWorkbenchHost({
   asset,
@@ -64,6 +74,26 @@ export function AssetWorkbenchHost({
     let active = true;
     let openedSessionId: string | undefined;
     let commandTail: Promise<void> = Promise.resolve();
+    const closeOpenedSession = async () => {
+      const sessionId = openedSessionId;
+
+      if (!sessionId) {
+        return;
+      }
+
+      openedSessionId = undefined;
+      await commandTail;
+      await window.learningCompanion.closeWorkbench({ sessionId });
+    };
+    const reportCloseError = (closeError: unknown) => {
+      const message = userMessageFromError(
+        closeError,
+        '无法正确关闭资料工作台。',
+      );
+      if (message) {
+        console.error(message, closeError);
+      }
+    };
 
     if (!assetId || !assetKey) {
       return () => {
@@ -79,6 +109,9 @@ export function AssetWorkbenchHost({
         }
 
         openedSessionId = bootstrap.sessionId;
+        const module = await defaultRegistry.resolve(
+          bootstrap.workbenchId,
+        );
         const executeCommand = (
           command: WorkbenchCommand,
         ): Promise<WorkbenchCommandResult> => {
@@ -96,9 +129,7 @@ export function AssetWorkbenchHost({
         };
 
         if (!active) {
-          await window.learningCompanion.closeWorkbench({
-            sessionId: bootstrap.sessionId,
-          });
+          await closeOpenedSession();
           return;
         }
 
@@ -106,10 +137,13 @@ export function AssetWorkbenchHost({
           kind: 'ready',
           assetKey,
           bootstrap,
+          module,
           executeCommand,
         });
       })
       .catch((openError: unknown) => {
+        void closeOpenedSession().catch(reportCloseError);
+
         if (!active) {
           return;
         }
@@ -130,23 +164,7 @@ export function AssetWorkbenchHost({
 
     return () => {
       active = false;
-
-      if (openedSessionId) {
-        const sessionId = openedSessionId;
-        void commandTail
-          .then(() =>
-            window.learningCompanion.closeWorkbench({ sessionId }),
-          )
-          .catch((closeError: unknown) => {
-            const message = userMessageFromError(
-              closeError,
-              '无法正确关闭资料工作台。',
-            );
-            if (message) {
-              console.error(message, closeError);
-            }
-          });
-      }
+      void closeOpenedSession().catch(reportCloseError);
     };
   }, [assetId, assetKey, onError]);
 
@@ -156,11 +174,6 @@ export function AssetWorkbenchHost({
       : settledState?.assetKey === assetKey
         ? settledState
         : { kind: 'opening' as const };
-
-  const module =
-    state.kind === 'ready'
-      ? defaultRegistry.resolve(state.bootstrap.workbenchId)
-      : undefined;
 
   let content = (
     <div className="grid h-full place-items-center p-8 text-center">
@@ -187,8 +200,8 @@ export function AssetWorkbenchHost({
         <p className="text-sm text-rose-300">{state.message}</p>
       </div>
     );
-  } else if (asset && state.kind === 'ready' && module) {
-    const View = module.View;
+  } else if (asset && state.kind === 'ready') {
+    const View = state.module.View;
     content = (
       <>
         <View
