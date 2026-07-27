@@ -12,7 +12,6 @@ import {
 import type { AssetFileServiceApi } from '../assets/asset-file-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
-import type { ProjectServiceApi } from '../projects/project-service';
 import { registerIpcHandler } from './register-handler';
 
 function invalidRequest(): Error {
@@ -22,25 +21,7 @@ function invalidRequest(): Error {
 export function registerAssetHandlers(
   assetService: AssetServiceApi,
   assetFileService: AssetFileServiceApi,
-  projectService: ProjectServiceApi,
 ): void {
-  registerIpcHandler(IPC_CHANNELS.openProject, async (_event, request: unknown) => {
-    if (!isProjectLifecycleRequest(request)) {
-      throw invalidRequest();
-    }
-
-    const loaded = await projectService.openProject(request.projectId);
-    return loaded;
-  });
-
-  registerIpcHandler(IPC_CHANNELS.closeProject, async (_event, request: unknown) => {
-    if (!isProjectLifecycleRequest(request)) {
-      throw invalidRequest();
-    }
-
-    await projectService.closeProject(request.projectId);
-  });
-
   registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
@@ -143,8 +124,6 @@ export function registerAssetHandlers(
 }
 
 export function removeAssetHandlers(): void {
-  ipcMain.removeHandler(IPC_CHANNELS.openProject);
-  ipcMain.removeHandler(IPC_CHANNELS.closeProject);
   ipcMain.removeHandler(IPC_CHANNELS.selectLocalAssetFiles);
   ipcMain.removeHandler(IPC_CHANNELS.addLocalAssets);
   ipcMain.removeHandler(IPC_CHANNELS.renameAsset);

@@ -67,7 +67,7 @@ void app.whenReady().then(async () => {
   registerHealthCheckHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectService);
-  registerAssetHandlers(assetService, assetFileService, projectService);
+  registerAssetHandlers(assetService, assetFileService);
   registerWorkbenchHandlers(workbenchSessionManager);
   createMainWindow();
 

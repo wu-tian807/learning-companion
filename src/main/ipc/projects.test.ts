@@ -57,8 +57,12 @@ function createService() {
   const renameProject = vi.fn(() => snapshot);
   const setProjectPinned = vi.fn(() => snapshot);
   const deleteProject = vi.fn();
+  const openProject = vi.fn(async () => []);
+  const closeProject = vi.fn();
   const projectService = {
     listProjects,
+    openProject,
+    closeProject,
     createProject,
     renameProject,
     setProjectPinned,
@@ -66,10 +70,12 @@ function createService() {
   } as unknown as ProjectServiceApi;
 
   return {
+    closeProject,
     createProject,
     deleteProject,
     listProjects,
     projectService,
+    openProject,
     renameProject,
     setProjectPinned,
   };
@@ -126,14 +132,34 @@ describe('Project IPC handlers', () => {
     expect(deleteProject).toHaveBeenCalledWith('project-1');
   });
 
+  it('opens and closes the current Project through ProjectService', async () => {
+    const { closeProject, openProject, projectService } = createService();
+    registerProjectHandlers(projectService);
+
+    await expect(
+      findHandler(IPC_CHANNELS.openProject)({}, { projectId: 'project-1' }),
+    ).resolves.toEqual([]);
+    await findHandler(IPC_CHANNELS.closeProject)(
+      {},
+      { projectId: 'project-1' },
+    );
+
+    expect(openProject).toHaveBeenCalledWith('project-1');
+    expect(closeProject).toHaveBeenCalledWith('project-1');
+  });
+
   it('rejects malformed mutations before they reach ProjectService', async () => {
-    const { createProject, projectService } = createService();
+    const { createProject, openProject, projectService } = createService();
     registerProjectHandlers(projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.createProject)({}, { name: '' }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
+      findHandler(IPC_CHANNELS.openProject)({}, { projectId: '' }),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(createProject).not.toHaveBeenCalled();
+    expect(openProject).not.toHaveBeenCalled();
   });
 
   it('removes every Project handler', () => {
@@ -141,6 +167,12 @@ describe('Project IPC handlers', () => {
 
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.listProjects,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.openProject,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.closeProject,
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.createProject,

@@ -4,6 +4,7 @@ import {
   IPC_CHANNELS,
   isCreateProjectRequest,
   isDeleteProjectRequest,
+  isProjectLifecycleRequest,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
 } from '../../shared/ipc';
@@ -20,6 +21,28 @@ export function registerProjectHandlers(
 ): void {
   registerIpcHandler(IPC_CHANNELS.listProjects, () =>
     projectService.listProjects(),
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.openProject,
+    async (_event, request: unknown) => {
+      if (!isProjectLifecycleRequest(request)) {
+        throw invalidRequest();
+      }
+
+      return projectService.openProject(request.projectId);
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.closeProject,
+    async (_event, request: unknown) => {
+      if (!isProjectLifecycleRequest(request)) {
+        throw invalidRequest();
+      }
+
+      await projectService.closeProject(request.projectId);
+    },
   );
 
   registerIpcHandler(IPC_CHANNELS.createProject, (_event, request: unknown) => {
@@ -57,6 +80,8 @@ export function registerProjectHandlers(
 
 export function removeProjectHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.listProjects);
+  ipcMain.removeHandler(IPC_CHANNELS.openProject);
+  ipcMain.removeHandler(IPC_CHANNELS.closeProject);
   ipcMain.removeHandler(IPC_CHANNELS.createProject);
   ipcMain.removeHandler(IPC_CHANNELS.renameProject);
   ipcMain.removeHandler(IPC_CHANNELS.setProjectPinned);
