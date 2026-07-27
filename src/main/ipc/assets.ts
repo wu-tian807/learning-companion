@@ -62,12 +62,12 @@ export function registerAssetHandlers(
     return loaded.map(toAssetSummary);
   });
 
-  registerIpcHandler(IPC_CHANNELS.closeProject, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.closeProject, async (_event, request: unknown) => {
     if (!isProjectLifecycleRequest(request)) {
       throw invalidRequest();
     }
 
-    projectService.unloadProjectWorkspace(request.projectId);
+    await projectService.unloadProjectWorkspace(request.projectId);
   });
 
   registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {

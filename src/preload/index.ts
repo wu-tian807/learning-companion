@@ -3,6 +3,13 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { AppPreferences } from '../shared/app-preferences';
 import { isIpcResult, type IpcErrorPayload } from '../shared/ipc-error';
 import type {
+  WorkbenchBootstrap,
+  WorkbenchCloseRequest,
+  WorkbenchCommandRequest,
+  WorkbenchCommandResult,
+  WorkbenchOpenRequest,
+} from '../shared/workbench/protocol';
+import type {
   CreateProjectRequest,
   DeleteProjectRequest,
   AddLocalAssetsRequest,
@@ -85,6 +92,15 @@ const api: LearningCompanionApi = {
     invoke<AssetSummary[]>(IPC_CHANNELS.refreshAllAssets, request),
   revealAssetInFolder: (request: AssetIdRequest) =>
     invoke<void>(IPC_CHANNELS.revealAssetInFolder, request),
+  openWorkbench: (request: WorkbenchOpenRequest) =>
+    invoke<WorkbenchBootstrap>(IPC_CHANNELS.openWorkbench, request),
+  commandWorkbench: (request: WorkbenchCommandRequest) =>
+    invoke<WorkbenchCommandResult>(
+      IPC_CHANNELS.commandWorkbench,
+      request,
+    ),
+  closeWorkbench: (request: WorkbenchCloseRequest) =>
+    invoke<void>(IPC_CHANNELS.closeWorkbench, request),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 

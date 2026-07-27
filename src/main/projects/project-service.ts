@@ -3,6 +3,7 @@ import type {
   AssetServiceApi,
 } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
+import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-manager';
 import type { ProjectDatabaseApi } from './project-database';
 import type { Project } from './project';
 
@@ -17,14 +18,15 @@ export interface ProjectServiceApi {
   loadProjectWorkspace(
     projectId: string,
   ): Promise<readonly AssetRuntimeSnapshot[]>;
-  unloadProjectWorkspace(projectId: string): void;
-  deleteProjectCascade(projectId: string): void;
+  unloadProjectWorkspace(projectId: string): Promise<void>;
+  deleteProjectCascade(projectId: string): Promise<void>;
 }
 
 export class ProjectService implements ProjectServiceApi {
   constructor(
     private readonly projectDatabase: ProjectDatabaseApi,
     private readonly assetService: AssetServiceApi,
+    private readonly workbenchSessions: WorkbenchSessionLifecycle,
   ) {}
 
   listProjectOverviews(): readonly ProjectOverview[] {
@@ -53,16 +55,18 @@ export class ProjectService implements ProjectServiceApi {
     };
   }
 
-  loadProjectWorkspace(
+  async loadProjectWorkspace(
     projectId: string,
   ): Promise<readonly AssetRuntimeSnapshot[]> {
+    await this.workbenchSessions.closeActive();
     return this.assetService.loadFromProject(projectId);
   }
 
-  unloadProjectWorkspace(projectId: string): void {
+  async unloadProjectWorkspace(projectId: string): Promise<void> {
     const activeProjectId = this.assetService.getActiveProjectId();
 
     if (activeProjectId === undefined) {
+      await this.workbenchSessions.closeActive();
       return;
     }
 
@@ -70,15 +74,17 @@ export class ProjectService implements ProjectServiceApi {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
 
+    await this.workbenchSessions.closeActive();
     this.assetService.unloadProject();
   }
 
-  deleteProjectCascade(projectId: string): void {
+  async deleteProjectCascade(projectId: string): Promise<void> {
     if (!this.projectDatabase.get(projectId)) {
       throw new AppError('PROJECT_NOT_FOUND');
     }
 
     if (this.assetService.getActiveProjectId() === projectId) {
+      await this.workbenchSessions.closeActive();
       this.assetService.unloadProject();
     }
 

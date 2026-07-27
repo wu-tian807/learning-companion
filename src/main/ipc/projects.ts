@@ -82,12 +82,12 @@ export function registerProjectHandlers(
     return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
-  registerIpcHandler(IPC_CHANNELS.deleteProject, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.deleteProject, async (_event, request: unknown) => {
     if (!isDeleteProjectRequest(request)) {
       throw invalidRequest();
     }
 
-    projectService.deleteProjectCascade(request.id);
+    await projectService.deleteProjectCascade(request.id);
   });
 }
 

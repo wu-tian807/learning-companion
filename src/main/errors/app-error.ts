@@ -7,6 +7,8 @@ export type AppErrorCode =
   | 'REGISTRATION_CONFLICT'
   | 'INVALID_EXTENSION_DEFINITION'
   | 'FEATURE_NOT_SUPPORTED'
+  | 'WORKBENCH_SESSION_NOT_FOUND'
+  | 'WORKBENCH_SESSION_EXPIRED'
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
@@ -60,6 +62,16 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   FEATURE_NOT_SUPPORTED: {
     kind: 'user',
     userMessage: '该功能当前尚未开放。',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  WORKBENCH_SESSION_NOT_FOUND: {
+    kind: 'cancelled',
+    retryable: false,
+    logLevel: 'silent',
+  },
+  WORKBENCH_SESSION_EXPIRED: {
+    kind: 'cancelled',
     retryable: false,
     logLevel: 'silent',
   },

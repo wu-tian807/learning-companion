@@ -1,5 +1,12 @@
 import type { AppPreferences, HomePreferences } from './app-preferences';
 import { isHomePreferences } from './app-preferences';
+import type {
+  WorkbenchBootstrap,
+  WorkbenchCloseRequest,
+  WorkbenchCommandRequest,
+  WorkbenchCommandResult,
+  WorkbenchOpenRequest,
+} from './workbench/protocol';
 
 export const IPC_CHANNELS = {
   healthCheck: 'app:health-check',
@@ -20,6 +27,9 @@ export const IPC_CHANNELS = {
   refreshAsset: 'asset:refresh',
   refreshAllAssets: 'asset:refresh-all',
   revealAssetInFolder: 'asset:reveal-in-folder',
+  openWorkbench: 'workbench:open',
+  commandWorkbench: 'workbench:command',
+  closeWorkbench: 'workbench:close',
 } as const;
 
 export const PROJECT_NAME_MAX_LENGTH = 80;
@@ -59,6 +69,13 @@ export interface LearningCompanionApi {
     request: ProjectLifecycleRequest,
   ) => Promise<AssetSummary[]>;
   revealAssetInFolder: (request: AssetIdRequest) => Promise<void>;
+  openWorkbench: (
+    request: WorkbenchOpenRequest,
+  ) => Promise<WorkbenchBootstrap>;
+  commandWorkbench: (
+    request: WorkbenchCommandRequest,
+  ) => Promise<WorkbenchCommandResult>;
+  closeWorkbench: (request: WorkbenchCloseRequest) => Promise<void>;
   getPathForFile: (file: File) => string;
 }
 

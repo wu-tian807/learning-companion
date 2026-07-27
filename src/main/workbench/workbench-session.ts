@@ -1,0 +1,64 @@
+import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type {
+  JsonValue,
+  WorkbenchCommand,
+  WorkbenchCommandResult,
+} from '../../shared/workbench/protocol';
+import type { Asset } from '../assets/asset';
+import type { ResolvedAssetContent } from '../content/content-ref';
+import type { WorkbenchStateRecord } from './workbench-state-repository';
+
+export type WorkbenchSelectionReason =
+  | 'matched'
+  | 'unsupported-media'
+  | 'missing-capability'
+  | 'content-unavailable';
+
+export interface WorkbenchProviderContext {
+  readonly sessionId: string;
+  readonly asset: Asset;
+  readonly content: ResolvedAssetContent;
+  readonly attachments: readonly AssetAttachment[];
+  readonly state: WorkbenchStateRecord | undefined;
+  readonly selectionReason: WorkbenchSelectionReason;
+}
+
+export interface WorkbenchProviderOpenResult {
+  readonly payload: JsonValue;
+}
+
+export interface MainWorkbenchProvider {
+  readonly manifest: import('../../shared/workbench/manifest').AssetWorkbenchManifest;
+  open(
+    context: WorkbenchProviderContext,
+  ): Promise<WorkbenchProviderOpenResult>;
+  command(
+    context: WorkbenchProviderContext,
+    command: WorkbenchCommand,
+  ): Promise<WorkbenchCommandResult>;
+  close(context: WorkbenchProviderContext): Promise<void>;
+}
+
+export interface AssetWorkbenchSession {
+  readonly id: string;
+  readonly asset: Asset;
+  readonly content: ResolvedAssetContent;
+  readonly workbenchId: string;
+  readonly attachments: readonly AssetAttachment[];
+  readonly state: WorkbenchStateRecord | undefined;
+  readonly selectionReason: WorkbenchSelectionReason;
+  readonly provider: MainWorkbenchProvider;
+}
+
+export function toWorkbenchProviderContext(
+  session: AssetWorkbenchSession,
+): WorkbenchProviderContext {
+  return {
+    sessionId: session.id,
+    asset: session.asset,
+    content: session.content,
+    attachments: session.attachments,
+    state: session.state,
+    selectionReason: session.selectionReason,
+  };
+}
