@@ -3,9 +3,9 @@ import type { AssetDatabaseApi } from '../assets/asset-database';
 import type { ProjectDatabaseApi } from './project-database';
 
 export interface ProjectServiceApi {
-  openProject(projectId: string): Promise<readonly Asset[]>;
-  closeProject(projectId: string): void;
-  deleteProject(projectId: string): void;
+  loadProjectWorkspace(projectId: string): Promise<readonly Asset[]>;
+  unloadProjectWorkspace(projectId: string): void;
+  deleteProjectCascade(projectId: string): void;
 }
 
 export class ProjectService implements ProjectServiceApi {
@@ -14,11 +14,11 @@ export class ProjectService implements ProjectServiceApi {
     private readonly assetDatabase: AssetDatabaseApi,
   ) {}
 
-  openProject(projectId: string): Promise<readonly Asset[]> {
+  loadProjectWorkspace(projectId: string): Promise<readonly Asset[]> {
     return this.assetDatabase.loadFromProject(projectId);
   }
 
-  closeProject(projectId: string): void {
+  unloadProjectWorkspace(projectId: string): void {
     const activeProjectId = this.assetDatabase.getActiveProjectId();
 
     if (activeProjectId === undefined) {
@@ -32,7 +32,7 @@ export class ProjectService implements ProjectServiceApi {
     this.assetDatabase.unloadProject();
   }
 
-  deleteProject(projectId: string): void {
+  deleteProjectCascade(projectId: string): void {
     if (!this.projectDatabase.get(projectId)) {
       throw new Error('找不到指定的 Project');
     }

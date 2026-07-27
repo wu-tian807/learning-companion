@@ -52,7 +52,7 @@ function createDatabase() {
   };
   const deleteProject = vi.fn();
   const projectService = {
-    deleteProject,
+    deleteProjectCascade: deleteProject,
   } as unknown as ProjectServiceApi;
 
   return { add, database, deleteProject, list, projectService, update };

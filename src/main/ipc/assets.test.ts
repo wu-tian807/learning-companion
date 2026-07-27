@@ -69,8 +69,8 @@ function createDependencies() {
     refreshAvailability: vi.fn(async () => asset),
   } as unknown as AssetDatabaseApi;
   const projectService = {
-    openProject: vi.fn(async () => [asset]),
-    closeProject: vi.fn(),
+    loadProjectWorkspace: vi.fn(async () => [asset]),
+    unloadProjectWorkspace: vi.fn(),
   } as unknown as ProjectServiceApi;
 
   return { asset, assetDatabase, projectService };
@@ -105,8 +105,10 @@ describe('Asset IPC handlers', () => {
     ]);
 
     findHandler(IPC_CHANNELS.closeProject)({}, { projectId: 'project' });
-    expect(projectService.openProject).toHaveBeenCalledWith('project');
-    expect(projectService.closeProject).toHaveBeenCalledWith('project');
+    expect(projectService.loadProjectWorkspace).toHaveBeenCalledWith('project');
+    expect(projectService.unloadProjectWorkspace).toHaveBeenCalledWith(
+      'project',
+    );
   });
 
   it('selects multiple files and returns an empty list after cancellation', async () => {
@@ -192,7 +194,7 @@ describe('Asset IPC handlers', () => {
       ),
     ).toThrow('Asset 重命名请求无效');
     expect(assetDatabase.add).not.toHaveBeenCalled();
-    expect(projectService.openProject).not.toHaveBeenCalled();
+    expect(projectService.loadProjectWorkspace).not.toHaveBeenCalled();
   });
 
   it('removes every Asset handler', () => {

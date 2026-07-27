@@ -48,7 +48,7 @@ export function registerAssetHandlers(
       throw invalidRequest('打开 Project');
     }
 
-    const loaded = await projectService.openProject(request.projectId);
+    const loaded = await projectService.loadProjectWorkspace(request.projectId);
     return loaded.map(toAssetSummary);
   });
 
@@ -57,7 +57,7 @@ export function registerAssetHandlers(
       throw invalidRequest('关闭 Project');
     }
 
-    projectService.closeProject(request.projectId);
+    projectService.unloadProjectWorkspace(request.projectId);
   });
 
   ipcMain.handle(IPC_CHANNELS.selectLocalAssetFiles, async () => {

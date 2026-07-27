@@ -66,7 +66,7 @@ export function registerProjectHandlers(
       throw invalidRequest('删除');
     }
 
-    projectService.deleteProject(request.id);
+    projectService.deleteProjectCascade(request.id);
   });
 }
 

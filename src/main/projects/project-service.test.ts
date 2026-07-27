@@ -31,7 +31,7 @@ describe('ProjectService', () => {
     const { assetDatabase, projectDatabase } = createDependencies();
     const service = new ProjectService(projectDatabase, assetDatabase);
 
-    await expect(service.openProject('project')).resolves.toEqual([]);
+    await expect(service.loadProjectWorkspace('project')).resolves.toEqual([]);
     expect(assetDatabase.loadFromProject).toHaveBeenCalledWith('project');
   });
 
@@ -42,7 +42,7 @@ describe('ProjectService', () => {
       current.assetDatabase,
     );
 
-    currentService.closeProject('project');
+    currentService.unloadProjectWorkspace('project');
     expect(current.assetDatabase.unloadProject).toHaveBeenCalledOnce();
 
     const empty = createDependencies();
@@ -50,14 +50,14 @@ describe('ProjectService', () => {
       empty.projectDatabase,
       empty.assetDatabase,
     );
-    expect(() => emptyService.closeProject('project')).not.toThrow();
+    expect(() => emptyService.unloadProjectWorkspace('project')).not.toThrow();
 
     const other = createDependencies('other');
     const otherService = new ProjectService(
       other.projectDatabase,
       other.assetDatabase,
     );
-    expect(() => otherService.closeProject('project')).toThrow(
+    expect(() => otherService.unloadProjectWorkspace('project')).toThrow(
       '不能卸载非当前 Project',
     );
     expect(other.assetDatabase.unloadProject).not.toHaveBeenCalled();
@@ -68,7 +68,7 @@ describe('ProjectService', () => {
       createDependencies('project');
     const service = new ProjectService(projectDatabase, assetDatabase);
 
-    service.deleteProject('project');
+    service.deleteProjectCascade('project');
 
     expect(calls).toEqual(['unload-assets', 'delete-project']);
   });
@@ -78,7 +78,7 @@ describe('ProjectService', () => {
       createDependencies('other');
     const service = new ProjectService(projectDatabase, assetDatabase);
 
-    service.deleteProject('project');
+    service.deleteProjectCascade('project');
 
     expect(calls).toEqual(['delete-project']);
     expect(assetDatabase.unloadProject).not.toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe('ProjectService', () => {
     const { assetDatabase, projectDatabase } = createDependencies('project');
     const service = new ProjectService(projectDatabase, assetDatabase);
 
-    expect(() => service.deleteProject('missing')).toThrow(
+    expect(() => service.deleteProjectCascade('missing')).toThrow(
       '找不到指定的 Project',
     );
     expect(assetDatabase.unloadProject).not.toHaveBeenCalled();
