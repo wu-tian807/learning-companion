@@ -2,7 +2,7 @@
 
 > 日期：2026-07-27
 >
-> 状态：待实施
+> 状态：已实施
 
 ## 背景
 
@@ -123,3 +123,20 @@ AssetRelation.createdTime
 - 旧 `AssetFileService` 文件和类型名称全部删除。
 - Attachment、Workbench State、Asset Relation 的契约不再使用 `Date`。
 - 全量类型检查、Lint 和测试通过。
+
+## 实施结果
+
+2026-07-27 已按本设计完成：
+
+- `project:open`、`project:close` 已由 Project IPC 注册、校验和移除，Asset IPC 不再依赖 ProjectService。
+- `AssetFileService` 已完整重命名为 `AssetShellService`，并保持原有系统显示行为与错误语义。
+- Attachment、Workbench State、Asset Relation 时间字段已统一为 Unix 毫秒。
+- AssetAttachment 的既有构造校验已改为复用共享 `isUnixMilliseconds()`。
+- 文件选择器、managed-json 装配、Attachment 真实链路和 Workbench 实现均未改动。
+- `pnpm check` 通过，共 36 个测试文件、139 项测试。
+
+实施提交：
+
+- `aae6460`：将 Project 生命周期 IPC 归位。
+- `3eeede9`：明确 Asset Shell 平台服务。
+- `8648c76`：统一扩展骨架时间契约。

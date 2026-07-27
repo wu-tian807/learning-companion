@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-27
 >
-> 状态：执行中
+> 状态：已完成
 
 ## 实施原则
 
@@ -77,3 +77,12 @@ git diff --check
 完成后把设计和计划状态改为“已实施/已完成”，记录测试结果并提交：
 
 `文档：记录模块边界收口结果`
+
+## 执行记录
+
+- Project 生命周期 IPC 已迁移至 Project IPC，通道和 Renderer API 保持不变。
+- Asset 平台服务已统一为 `AssetShellService`，旧文件名和类型名无残留。
+- 所有已预留扩展骨架中的时间字段均使用 Unix 毫秒。
+- 新增 AssetAttachment 时间戳构造与克隆测试。
+- 静态扫描确认生产代码中不存在旧 AssetFileService 名称或 `Date` 类型时间字段。
+- `pnpm check`：36 个测试文件、139 项测试全部通过。
