@@ -5,6 +5,9 @@ import type { DatabaseContext } from './database/database-context';
 import { initializeDatabase } from './database/initialize-database';
 import { AssetDatabase } from './assets/asset-database';
 import { AssetFileService } from './assets/asset-file-service';
+import { AssetService } from './assets/asset-service';
+import { ContentResolverRegistry } from './content/content-resolver-registry';
+import { LocalFileContentResolver } from './content/resolvers/local-file/local-file-content-resolver';
 import { registerHealthCheckHandler, removeHealthCheckHandler } from './ipc/health-check';
 import { registerAssetHandlers, removeAssetHandlers } from './ipc/assets';
 import { registerProjectHandlers, removeProjectHandlers } from './ipc/projects';
@@ -27,8 +30,14 @@ void app.whenReady().then(async () => {
   databaseContext = initializeDatabase(appPaths.databaseFile);
   const projectDatabase = new ProjectDatabase(databaseContext);
   const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
-  const assetFileService = new AssetFileService(assetDatabase);
-  const projectService = new ProjectService(projectDatabase, assetDatabase);
+  const contentResolverRegistry = new ContentResolverRegistry();
+  contentResolverRegistry.register(new LocalFileContentResolver());
+  const assetService = new AssetService(
+    assetDatabase,
+    contentResolverRegistry,
+  );
+  const assetFileService = new AssetFileService(assetService);
+  const projectService = new ProjectService(projectDatabase, assetService);
 
   await settingsRepository.initialize();
   projectDatabase.initialize();
@@ -36,7 +45,7 @@ void app.whenReady().then(async () => {
   registerHealthCheckHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectDatabase, projectService);
-  registerAssetHandlers(assetDatabase, assetFileService, projectService);
+  registerAssetHandlers(assetService, assetFileService, projectService);
   createMainWindow();
 
   app.on('activate', () => {

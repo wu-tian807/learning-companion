@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
+import {
+  createAssetContentStatus,
+  createLocalFileContentRef,
+} from '../content/content-ref';
 import { createAssetSnapshot } from '../assets/asset';
-import { createLocalFileContentLocator } from '../assets/asset-content-locator';
-import type { AssetDatabaseApi } from '../assets/asset-database';
 import type { AssetFileServiceApi } from '../assets/asset-file-service';
+import type {
+  AssetRuntimeSnapshot,
+  AssetServiceApi,
+} from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { registerAssetHandlers, removeAssetHandlers } from './assets';
@@ -55,26 +61,36 @@ function findHandler(channel: string): IpcHandler {
   };
 }
 
-function createAsset(id = 'asset', path = '/tmp/notes.md') {
-  return createAssetSnapshot({
-    id,
-    projectId: 'project',
-    name: '学习笔记',
-    mediaType: 'text/markdown',
-    contentLocator: createLocalFileContentLocator({
-      path,
-      availability: 'available',
-      checkedTime: new Date('2026-07-27T02:00:00.000Z'),
+function createAsset(
+  id = 'asset',
+  path = '/tmp/notes.md',
+): AssetRuntimeSnapshot {
+  const contentRef = createLocalFileContentRef(path);
+
+  return {
+    asset: createAssetSnapshot({
+      id,
+      projectId: 'project',
+      name: '学习笔记',
+      mediaType: 'text/markdown',
+      contentRef,
+      createdTime: new Date('2026-07-27T01:00:00.000Z'),
+      lastUsedTime: new Date('2026-07-27T03:00:00.000Z'),
     }),
-    createdTime: new Date('2026-07-27T01:00:00.000Z'),
-    lastUsedTime: new Date('2026-07-27T03:00:00.000Z'),
-  });
+    content: {
+      ref: contentRef,
+      status: createAssetContentStatus(
+        'available',
+        new Date('2026-07-27T02:00:00.000Z'),
+      ),
+    },
+  };
 }
 
 function createDependencies() {
   const asset = createAsset();
-  const assetDatabase = {
-    add: vi.fn(async ({ path }: { path: string }) => {
+  const assetService = {
+    addLocalFile: vi.fn(async (path: string) => {
       if (path.includes('failed')) {
         throw new AppError('ASSET_UNAVAILABLE');
       }
@@ -82,12 +98,12 @@ function createDependencies() {
       return createAsset(path, path);
     }),
     update: vi.fn(() => asset),
-    relink: vi.fn(async () => asset),
+    relinkLocalFile: vi.fn(async () => asset),
     delete: vi.fn(),
-    refreshAvailability: vi.fn(async () => asset),
-    refreshAllAvailabilities: vi.fn(async () => [asset]),
+    refresh: vi.fn(async () => asset),
+    refreshAll: vi.fn(async () => [asset]),
     getActiveProjectId: vi.fn(() => 'project'),
-  } as unknown as AssetDatabaseApi;
+  } as unknown as AssetServiceApi;
   const projectService = {
     loadProjectWorkspace: vi.fn(async () => [asset]),
     unloadProjectWorkspace: vi.fn(),
@@ -96,7 +112,7 @@ function createDependencies() {
     revealInFolder: vi.fn(),
   } as unknown as AssetFileServiceApi;
 
-  return { asset, assetDatabase, assetFileService, projectService };
+  return { asset, assetService, assetFileService, projectService };
 }
 
 beforeEach(() => {
@@ -105,9 +121,9 @@ beforeEach(() => {
 
 describe('Asset IPC handlers', () => {
   it('opens and closes Project workspaces with serializable Assets', async () => {
-    const { assetDatabase, assetFileService, projectService } =
+    const { assetService, assetFileService, projectService } =
       createDependencies();
-    registerAssetHandlers(assetDatabase, assetFileService, projectService);
+    registerAssetHandlers(assetService, assetFileService, projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.openProject)({}, { projectId: 'project' }),
@@ -139,9 +155,9 @@ describe('Asset IPC handlers', () => {
   });
 
   it('selects multiple files and returns an empty list after cancellation', async () => {
-    const { assetDatabase, assetFileService, projectService } =
+    const { assetService, assetFileService, projectService } =
       createDependencies();
-    registerAssetHandlers(assetDatabase, assetFileService, projectService);
+    registerAssetHandlers(assetService, assetFileService, projectService);
     electronMocks.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
       filePaths: ['/tmp/a.md', '/tmp/b.pdf'],
@@ -164,9 +180,9 @@ describe('Asset IPC handlers', () => {
   });
 
   it('keeps successful files when a batch addition partially fails', async () => {
-    const { assetDatabase, assetFileService, projectService } =
+    const { assetService, assetFileService, projectService } =
       createDependencies();
-    registerAssetHandlers(assetDatabase, assetFileService, projectService);
+    registerAssetHandlers(assetService, assetFileService, projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)(
@@ -185,13 +201,13 @@ describe('Asset IPC handlers', () => {
         },
       ],
     });
-    expect(assetDatabase.add).toHaveBeenCalledTimes(3);
+    expect(assetService.addLocalFile).toHaveBeenCalledTimes(3);
   });
 
   it('forwards Asset mutations to the current Project container', async () => {
-    const { assetDatabase, assetFileService, projectService } =
+    const { assetService, assetFileService, projectService } =
       createDependencies();
-    registerAssetHandlers(assetDatabase, assetFileService, projectService);
+    registerAssetHandlers(assetService, assetFileService, projectService);
 
     await findHandler(IPC_CHANNELS.renameAsset)(
       {},
@@ -212,20 +228,23 @@ describe('Asset IPC handlers', () => {
       { assetId: 'asset' },
     );
 
-    expect(assetDatabase.update).toHaveBeenCalledWith('asset', {
+    expect(assetService.update).toHaveBeenCalledWith('asset', {
       name: '新标题',
     });
-    expect(assetDatabase.relink).toHaveBeenCalledWith('asset', '/tmp/new.md');
-    expect(assetDatabase.delete).toHaveBeenCalledWith('asset');
-    expect(assetDatabase.refreshAvailability).toHaveBeenCalledWith('asset');
-    expect(assetDatabase.refreshAllAvailabilities).toHaveBeenCalledOnce();
+    expect(assetService.relinkLocalFile).toHaveBeenCalledWith(
+      'asset',
+      '/tmp/new.md',
+    );
+    expect(assetService.delete).toHaveBeenCalledWith('asset');
+    expect(assetService.refresh).toHaveBeenCalledWith('asset');
+    expect(assetService.refreshAll).toHaveBeenCalledOnce();
     expect(assetFileService.revealInFolder).toHaveBeenCalledWith('asset');
   });
 
   it('rejects malformed requests before reaching the back end', async () => {
-    const { assetDatabase, assetFileService, projectService } =
+    const { assetService, assetFileService, projectService } =
       createDependencies();
-    registerAssetHandlers(assetDatabase, assetFileService, projectService);
+    registerAssetHandlers(assetService, assetFileService, projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.openProject)({}, { projectId: '' }),
@@ -239,7 +258,7 @@ describe('Asset IPC handlers', () => {
         { assetId: 'asset', name: '' },
       ),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
-    expect(assetDatabase.add).not.toHaveBeenCalled();
+    expect(assetService.addLocalFile).not.toHaveBeenCalled();
     expect(projectService.loadProjectWorkspace).not.toHaveBeenCalled();
   });
 

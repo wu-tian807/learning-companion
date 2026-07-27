@@ -10,9 +10,11 @@ import {
   type AddLocalAssetsResult,
   type AssetSummary,
 } from '../../shared/ipc';
-import type { Asset } from '../assets/asset';
-import type { AssetDatabaseApi } from '../assets/asset-database';
 import type { AssetFileServiceApi } from '../assets/asset-file-service';
+import type {
+  AssetRuntimeSnapshot,
+  AssetServiceApi,
+} from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { registerIpcHandler } from './register-handler';
@@ -21,17 +23,25 @@ function invalidRequest(): Error {
   return new AppError('INVALID_IPC_REQUEST');
 }
 
-export function toAssetSummary(asset: Asset): AssetSummary {
+export function toAssetSummary(
+  snapshot: AssetRuntimeSnapshot,
+): AssetSummary {
+  const { asset, content } = snapshot;
+
+  if (content.ref.kind !== 'local-file') {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
   return {
     id: asset.id,
     projectId: asset.projectId,
     name: asset.name,
     mediaType: asset.mediaType,
     contentLocator: {
-      kind: asset.contentLocator.kind,
-      path: asset.contentLocator.path,
-      availability: asset.contentLocator.availability,
-      checkedTime: asset.contentLocator.checkedTime.toISOString(),
+      kind: content.ref.kind,
+      path: content.ref.path,
+      availability: content.status.availability,
+      checkedTime: content.status.checkedTime.toISOString(),
     },
     createdTime: asset.createdTime.toISOString(),
     lastUsedTime: asset.lastUsedTime.toISOString(),
@@ -39,7 +49,7 @@ export function toAssetSummary(asset: Asset): AssetSummary {
 }
 
 export function registerAssetHandlers(
-  assetDatabase: AssetDatabaseApi,
+  assetService: AssetServiceApi,
   assetFileService: AssetFileServiceApi,
   projectService: ProjectServiceApi,
 ): void {
@@ -79,7 +89,9 @@ export function registerAssetHandlers(
 
       for (const path of request.paths) {
         try {
-          result.added.push(toAssetSummary(await assetDatabase.add({ path })));
+          result.added.push(
+            toAssetSummary(await assetService.addLocalFile(path)),
+          );
         } catch (error) {
           const handled = handleAppError(
             `${IPC_CHANNELS.addLocalAssets}:${path}`,
@@ -102,7 +114,7 @@ export function registerAssetHandlers(
     }
 
     return toAssetSummary(
-      assetDatabase.update(request.assetId, { name: request.name }),
+      assetService.update(request.assetId, { name: request.name }),
     );
   });
 
@@ -114,7 +126,7 @@ export function registerAssetHandlers(
       }
 
       return toAssetSummary(
-        await assetDatabase.relink(request.assetId, request.path),
+        await assetService.relinkLocalFile(request.assetId, request.path),
       );
     },
   );
@@ -124,7 +136,7 @@ export function registerAssetHandlers(
       throw invalidRequest();
     }
 
-    assetDatabase.delete(request.assetId);
+    assetService.delete(request.assetId);
   });
 
   registerIpcHandler(
@@ -135,7 +147,7 @@ export function registerAssetHandlers(
       }
 
       return toAssetSummary(
-        await assetDatabase.refreshAvailability(request.assetId),
+        await assetService.refresh(request.assetId),
       );
     },
   );
@@ -147,11 +159,11 @@ export function registerAssetHandlers(
         throw invalidRequest();
       }
 
-      if (assetDatabase.getActiveProjectId() !== request.projectId) {
+      if (assetService.getActiveProjectId() !== request.projectId) {
         throw new AppError('PROJECT_CONTEXT_CHANGED');
       }
 
-      return (await assetDatabase.refreshAllAvailabilities()).map(
+      return (await assetService.refreshAll()).map(
         toAssetSummary,
       );
     },

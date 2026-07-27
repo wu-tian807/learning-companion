@@ -2,13 +2,14 @@ import { constants, type Stats } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { isAbsolute, normalize } from 'node:path';
 
-export const LOCAL_FILE_CONTENT_KIND = 'local-file' as const;
+import {
+  LOCAL_FILE_CONTENT_KIND,
+  type AssetContentAvailability,
+} from '../content/content-ref';
 
-export type LocalFileAvailability =
-  | 'available'
-  | 'missing'
-  | 'inaccessible'
-  | 'invalid';
+export { LOCAL_FILE_CONTENT_KIND };
+
+export type LocalFileAvailability = AssetContentAvailability;
 
 export interface LocalFileContentLocator {
   readonly kind: typeof LOCAL_FILE_CONTENT_KIND;

@@ -1,7 +1,8 @@
 import { shell } from 'electron';
 
+import { LOCAL_FILE_CONTENT_KIND } from '../content/content-ref';
 import { AppError } from '../errors/app-error';
-import type { AssetDatabaseApi } from './asset-database';
+import type { AssetServiceApi } from './asset-service';
 
 export interface AssetFileServiceApi {
   revealInFolder(assetId: string): void;
@@ -15,7 +16,7 @@ export class AssetFileService implements AssetFileServiceApi {
   private readonly dependencies: AssetFileServiceDependencies;
 
   constructor(
-    private readonly assetDatabase: AssetDatabaseApi,
+    private readonly assetService: AssetServiceApi,
     dependencies: Partial<AssetFileServiceDependencies> = {},
   ) {
     this.dependencies = {
@@ -28,16 +29,19 @@ export class AssetFileService implements AssetFileServiceApi {
   }
 
   revealInFolder(assetId: string): void {
-    const asset = this.assetDatabase.get(assetId);
+    const snapshot = this.assetService.get(assetId);
 
-    if (!asset) {
+    if (!snapshot) {
       throw new AppError('ASSET_NOT_FOUND');
     }
 
-    if (asset.contentLocator.availability !== 'available') {
+    if (
+      snapshot.content.status.availability !== 'available' ||
+      snapshot.content.ref.kind !== LOCAL_FILE_CONTENT_KIND
+    ) {
       throw new AppError('ASSET_UNAVAILABLE');
     }
 
-    this.dependencies.showItemInFolder(asset.contentLocator.path);
+    this.dependencies.showItemInFolder(snapshot.content.ref.path);
   }
 }

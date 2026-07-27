@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { and, count, eq, inArray } from 'drizzle-orm';
 
+import {
+  createLocalFileContentRef,
+  LOCAL_FILE_CONTENT_KIND,
+  type AssetContentRef,
+} from '../content/content-ref';
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
 import { AppError } from '../errors/app-error';
@@ -13,16 +18,6 @@ import {
   type CreateAssetInput,
   type UpdateAssetInput,
 } from './asset';
-import {
-  DefaultLocalFileLocatorChecker,
-  LOCAL_FILE_CONTENT_KIND,
-  type LocalFileLocatorChecker,
-} from './asset-content-locator';
-import {
-  createDefaultAssetName,
-  detectAssetMediaType,
-  isAssetRelinkMediaCompatible,
-} from './asset-media-type';
 
 export interface AssetDatabaseApi {
   loadFromProject(projectId: string): Promise<readonly Asset[]>;
@@ -31,18 +26,15 @@ export interface AssetDatabaseApi {
   getActiveProjectId(): string | undefined;
   list(): readonly Asset[];
   get(assetId: string): Asset | undefined;
-  add(input: CreateAssetInput): Promise<Asset>;
+  add(input: CreateAssetInput): Asset;
   update(assetId: string, changes: UpdateAssetInput): Asset;
+  updateContentRef(assetId: string, contentRef: AssetContentRef): Asset;
   delete(assetId: string): void;
-  refreshAvailability(assetId: string): Promise<Asset>;
-  refreshAllAvailabilities(): Promise<readonly Asset[]>;
-  relink(assetId: string, newPath: string): Promise<Asset>;
 }
 
 export interface AssetDatabaseDependencies {
   readonly createId: () => string;
   readonly now: () => Date;
-  readonly locatorChecker: LocalFileLocatorChecker;
 }
 
 const mutableAssetFields = new Set<keyof UpdateAssetInput>([
@@ -63,7 +55,6 @@ function requireId(value: string, field: string): string {
 export class AssetDatabase implements AssetDatabaseApi {
   private activeProjectId: string | undefined;
   private assetMap = new Map<string, Asset>();
-  private lifecycleVersion = 0;
   private readonly dependencies: AssetDatabaseDependencies;
 
   constructor(
@@ -71,14 +62,9 @@ export class AssetDatabase implements AssetDatabaseApi {
     private readonly projectLookup: ProjectLookup,
     dependencies: Partial<AssetDatabaseDependencies> = {},
   ) {
-    const now = dependencies.now ?? (() => new Date());
-
     this.dependencies = {
       createId: dependencies.createId ?? randomUUID,
-      now,
-      locatorChecker:
-        dependencies.locatorChecker ??
-        new DefaultLocalFileLocatorChecker({ now }),
+      now: dependencies.now ?? (() => new Date()),
     };
   }
 
@@ -95,41 +81,28 @@ export class AssetDatabase implements AssetDatabaseApi {
       .from(assets)
       .where(eq(assets.projectId, normalizedProjectId))
       .all();
-    const loadVersion = this.lifecycleVersion + 1;
-    this.lifecycleVersion = loadVersion;
-    const loadedAssets = await Promise.all(
-      rows.map(async (row) => {
-        if (row.contentKind !== LOCAL_FILE_CONTENT_KIND) {
-          throw new AppError('DATA_INTEGRITY_ERROR');
-        }
-
-        const contentLocator = await this.dependencies.locatorChecker.check(
-          row.contentPath,
-        );
-
-        return createAssetSnapshot({
-          id: row.id,
-          projectId: row.projectId,
-          name: row.name,
-          mediaType: row.mediaType,
-          contentLocator,
-          createdTime: row.createdTime,
-          lastUsedTime: row.lastUsedTime,
-        });
-      }),
-    );
     const nextAssetMap = new Map<string, Asset>();
 
-    for (const asset of loadedAssets) {
+    for (const row of rows) {
+      if (row.contentKind !== LOCAL_FILE_CONTENT_KIND) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      const asset = createAssetSnapshot({
+        id: row.id,
+        projectId: row.projectId,
+        name: row.name,
+        mediaType: row.mediaType,
+        contentRef: createLocalFileContentRef(row.contentPath),
+        createdTime: row.createdTime,
+        lastUsedTime: row.lastUsedTime,
+      });
+
       if (nextAssetMap.has(asset.id)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
       nextAssetMap.set(asset.id, asset);
-    }
-
-    if (this.lifecycleVersion !== loadVersion) {
-      throw new AppError('OPERATION_SUPERSEDED');
     }
 
     this.activeProjectId = normalizedProjectId;
@@ -140,7 +113,9 @@ export class AssetDatabase implements AssetDatabaseApi {
 
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number> {
     const normalizedProjectIds = [
-      ...new Set(projectIds.map((projectId) => requireId(projectId, 'projectId'))),
+      ...new Set(
+        projectIds.map((projectId) => requireId(projectId, 'projectId')),
+      ),
     ];
 
     if (normalizedProjectIds.length === 0) {
@@ -168,7 +143,6 @@ export class AssetDatabase implements AssetDatabaseApi {
   }
 
   unloadProject(): void {
-    this.lifecycleVersion += 1;
     this.assetMap.clear();
     this.activeProjectId = undefined;
   }
@@ -188,25 +162,21 @@ export class AssetDatabase implements AssetDatabaseApi {
     return asset ? cloneAsset(asset) : undefined;
   }
 
-  async add(input: CreateAssetInput): Promise<Asset> {
+  add(input: CreateAssetInput): Asset {
     const projectId = this.requireActiveProjectId();
-    const lifecycleVersion = this.lifecycleVersion;
-    const contentLocator = await this.dependencies.locatorChecker.check(
-      input.path,
-    );
-    this.requireUnchangedProject(lifecycleVersion, projectId);
+    const contentRef = input.contentRef;
 
-    if (contentLocator.availability !== 'available') {
-      throw new AppError('ASSET_UNAVAILABLE');
+    if (contentRef.kind !== LOCAL_FILE_CONTENT_KIND) {
+      throw new AppError('FEATURE_NOT_SUPPORTED');
     }
 
     const now = this.dependencies.now();
     const asset = createAssetSnapshot({
       id: this.dependencies.createId(),
       projectId,
-      name: createDefaultAssetName(contentLocator.path),
-      mediaType: await detectAssetMediaType(contentLocator.path),
-      contentLocator,
+      name: input.name,
+      mediaType: input.mediaType,
+      contentRef,
       createdTime: now,
       lastUsedTime: now,
     });
@@ -222,8 +192,8 @@ export class AssetDatabase implements AssetDatabaseApi {
         projectId: asset.projectId,
         name: asset.name,
         mediaType: asset.mediaType,
-        contentKind: asset.contentLocator.kind,
-        contentPath: asset.contentLocator.path,
+        contentKind: contentRef.kind,
+        contentPath: contentRef.path,
         createdTime: asset.createdTime,
         lastUsedTime: asset.lastUsedTime,
       })
@@ -263,6 +233,35 @@ export class AssetDatabase implements AssetDatabaseApi {
     return cloneAsset(nextAsset);
   }
 
+  updateContentRef(assetId: string, contentRef: AssetContentRef): Asset {
+    const projectId = this.requireActiveProjectId();
+    const currentAsset = this.find(assetId);
+
+    if (
+      currentAsset.contentRef.kind !== contentRef.kind ||
+      contentRef.kind !== LOCAL_FILE_CONTENT_KIND
+    ) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+
+    const nextAsset = createAssetSnapshot({
+      ...currentAsset,
+      contentRef,
+    });
+    const result = this.context.db
+      .update(assets)
+      .set({ contentPath: contentRef.path })
+      .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
+      .run();
+
+    if (result.changes !== 1) {
+      throw new AppError('DATABASE_WRITE_CONFLICT');
+    }
+
+    this.assetMap.set(assetId, nextAsset);
+    return cloneAsset(nextAsset);
+  }
+
   delete(assetId: string): void {
     const projectId = this.requireActiveProjectId();
     this.find(assetId);
@@ -277,96 +276,6 @@ export class AssetDatabase implements AssetDatabaseApi {
     }
 
     this.assetMap.delete(assetId);
-  }
-
-  async refreshAvailability(assetId: string): Promise<Asset> {
-    const projectId = this.requireActiveProjectId();
-    const lifecycleVersion = this.lifecycleVersion;
-    const currentAsset = this.find(assetId);
-    const contentLocator = await this.dependencies.locatorChecker.check(
-      currentAsset.contentLocator.path,
-    );
-    this.requireUnchangedProject(lifecycleVersion, projectId);
-    const nextAsset = createAssetSnapshot({
-      ...currentAsset,
-      contentLocator,
-    });
-
-    this.assetMap.set(assetId, nextAsset);
-    return cloneAsset(nextAsset);
-  }
-
-  async refreshAllAvailabilities(): Promise<readonly Asset[]> {
-    const projectId = this.requireActiveProjectId();
-    const lifecycleVersion = this.lifecycleVersion;
-    const currentAssets = [...this.assetMap.values()];
-    const refreshedAssets = await Promise.all(
-      currentAssets.map(async (asset) =>
-        createAssetSnapshot({
-          ...asset,
-          contentLocator: await this.dependencies.locatorChecker.check(
-            asset.contentLocator.path,
-          ),
-        }),
-      ),
-    );
-    this.requireUnchangedProject(lifecycleVersion, projectId);
-
-    for (const asset of refreshedAssets) {
-      this.assetMap.set(asset.id, asset);
-    }
-
-    return this.list();
-  }
-
-  async relink(assetId: string, newPath: string): Promise<Asset> {
-    const projectId = this.requireActiveProjectId();
-    const lifecycleVersion = this.lifecycleVersion;
-    const currentAsset = this.find(assetId);
-    const contentLocator =
-      await this.dependencies.locatorChecker.check(newPath);
-    this.requireUnchangedProject(lifecycleVersion, projectId);
-
-    if (contentLocator.path === currentAsset.contentLocator.path) {
-      const nextAsset = createAssetSnapshot({
-        ...currentAsset,
-        contentLocator,
-      });
-
-      this.assetMap.set(assetId, nextAsset);
-      return cloneAsset(nextAsset);
-    }
-
-    if (contentLocator.availability !== 'available') {
-      throw new AppError('ASSET_UNAVAILABLE');
-    }
-
-    if (
-      !(await isAssetRelinkMediaCompatible(
-        currentAsset.mediaType,
-        currentAsset.contentLocator.path,
-        contentLocator.path,
-      ))
-    ) {
-      throw new AppError('ASSET_MEDIA_TYPE_MISMATCH');
-    }
-
-    const result = this.context.db
-      .update(assets)
-      .set({ contentPath: contentLocator.path })
-      .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
-      .run();
-
-    if (result.changes !== 1) {
-      throw new AppError('DATABASE_WRITE_CONFLICT');
-    }
-
-    const nextAsset = createAssetSnapshot({
-      ...currentAsset,
-      contentLocator,
-    });
-    this.assetMap.set(assetId, nextAsset);
-    return cloneAsset(nextAsset);
   }
 
   private requireActiveProjectId(): string {
@@ -385,18 +294,6 @@ export class AssetDatabase implements AssetDatabaseApi {
     }
 
     return asset;
-  }
-
-  private requireUnchangedProject(
-    lifecycleVersion: number,
-    projectId: string,
-  ): void {
-    if (
-      this.lifecycleVersion !== lifecycleVersion ||
-      this.activeProjectId !== projectId
-    ) {
-      throw new AppError('PROJECT_CONTEXT_CHANGED');
-    }
   }
 
   private validateUpdate(changes: UpdateAssetInput): void {

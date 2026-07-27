@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLocalFileContentLocator } from './asset-content-locator';
+import { createLocalFileContentRef } from '../content/content-ref';
 import { cloneAsset, createAssetSnapshot } from './asset';
 
 function createValidAsset() {
@@ -9,11 +9,7 @@ function createValidAsset() {
     projectId: 'project',
     name: '学习资料',
     mediaType: 'application/pdf',
-    contentLocator: createLocalFileContentLocator({
-      path: '/tmp/paper.pdf',
-      availability: 'available',
-      checkedTime: new Date('2026-07-24T02:00:00.000Z'),
-    }),
+    contentRef: createLocalFileContentRef('/tmp/paper.pdf'),
     createdTime: new Date('2026-07-24T01:00:00.000Z'),
     lastUsedTime: new Date('2026-07-24T01:00:00.000Z'),
   });
@@ -36,16 +32,15 @@ describe('Asset', () => {
       mediaType: 'application/pdf',
     });
     expect(Object.isFrozen(asset)).toBe(true);
-    expect(Object.isFrozen(asset.contentLocator)).toBe(true);
+    expect(Object.isFrozen(asset.contentRef)).toBe(true);
   });
 
-  it('does not expose nested locator or Date references', () => {
+  it('does not expose nested content ref or Date references', () => {
     const asset = createValidAsset();
     const clone = cloneAsset(asset);
 
     clone.createdTime.setTime(0);
     clone.lastUsedTime.setTime(0);
-    clone.contentLocator.checkedTime.setTime(0);
 
     expect(cloneAsset(asset)).toEqual(createValidAsset());
   });

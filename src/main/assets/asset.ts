@@ -1,14 +1,14 @@
 import {
-  cloneLocalFileContentLocator,
-  type LocalFileContentLocator,
-} from './asset-content-locator';
+  cloneAssetContentRef,
+  type AssetContentRef,
+} from '../content/content-ref';
 
 export interface Asset {
   readonly id: string;
   readonly projectId: string;
   readonly name: string;
   readonly mediaType: string;
-  readonly contentLocator: LocalFileContentLocator;
+  readonly contentRef: AssetContentRef;
   readonly createdTime: Date;
   readonly lastUsedTime: Date;
 }
@@ -18,13 +18,15 @@ export interface AssetInput {
   readonly projectId: string;
   readonly name: string;
   readonly mediaType: string;
-  readonly contentLocator: LocalFileContentLocator;
+  readonly contentRef: AssetContentRef;
   readonly createdTime: Date;
   readonly lastUsedTime: Date;
 }
 
 export interface CreateAssetInput {
-  readonly path: string;
+  readonly name: string;
+  readonly mediaType: string;
+  readonly contentRef: AssetContentRef;
 }
 
 export interface UpdateAssetInput {
@@ -66,7 +68,7 @@ export function createAssetSnapshot(input: AssetInput): Asset {
     projectId: requireText(input.projectId, 'projectId'),
     name: requireText(input.name, 'name'),
     mediaType: requireMediaType(input.mediaType),
-    contentLocator: cloneLocalFileContentLocator(input.contentLocator),
+    contentRef: cloneAssetContentRef(input.contentRef),
     createdTime: requireDate(input.createdTime, 'createdTime'),
     lastUsedTime: requireDate(input.lastUsedTime, 'lastUsedTime'),
   });
