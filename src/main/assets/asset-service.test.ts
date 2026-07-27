@@ -100,10 +100,10 @@ function createResolver(
       }
 
       return {
-        ref,
-        status: createAssetContentStatus(
+        contentRef: ref,
+        contentStatus: createAssetContentStatus(
           currentAvailability,
-          new Date('2026-07-27T03:00:00.000Z'),
+          Date.parse('2026-07-27T03:00:00.000Z'),
         ),
         handle,
       };
@@ -124,15 +124,11 @@ describe('AssetService', () => {
     const loaded = await service.loadFromProject('project');
 
     expect(loaded[0]).toMatchObject({
-      asset: {
-        id: 'asset',
-        contentRef: { kind: 'local-file', path: '/tmp/notes.md' },
-      },
-      content: {
-        status: { availability: 'missing' },
-      },
+      id: 'asset',
+      contentRef: { kind: 'local-file', path: '/tmp/notes.md' },
+      contentStatus: { availability: 'missing' },
     });
-    expect(loaded[0]?.asset).not.toHaveProperty('contentLocator');
+    expect(loaded[0]).not.toHaveProperty('contentLocator');
     expect(handles).toHaveLength(0);
   });
 
@@ -152,8 +148,10 @@ describe('AssetService', () => {
       contentRef: createLocalFileContentRef('/tmp/资料.txt'),
     });
     expect(created).toMatchObject({
-      asset: { id: 'created', name: '资料', mediaType: 'text/plain' },
-      content: { status: { availability: 'available' } },
+      id: 'created',
+      name: '资料',
+      mediaType: 'text/plain',
+      contentStatus: { availability: 'available' },
     });
     expect(handles[0]?.close).toHaveBeenCalledOnce();
   });
@@ -168,7 +166,7 @@ describe('AssetService', () => {
 
     const refreshed = await service.refresh('asset');
 
-    expect(refreshed.content.status.availability).toBe('missing');
+    expect(refreshed.contentStatus.availability).toBe('missing');
     expect(database.update).not.toHaveBeenCalled();
     expect(database.updateContentRef).not.toHaveBeenCalled();
   });
@@ -196,7 +194,7 @@ describe('AssetService', () => {
       'asset',
       createLocalFileContentRef('/tmp/new-notes.md'),
     );
-    expect(relinked.asset.contentRef).toEqual(
+    expect(relinked.contentRef).toEqual(
       createLocalFileContentRef('/tmp/new-notes.md'),
     );
   });
@@ -241,10 +239,10 @@ describe('AssetService', () => {
           finishResolve = resolve;
         });
         return {
-          ref,
-          status: createAssetContentStatus(
+          contentRef: ref,
+          contentStatus: createAssetContentStatus(
             'available',
-            new Date('2026-07-27T03:00:00.000Z'),
+            Date.parse('2026-07-27T03:00:00.000Z'),
           ),
           handle: {
             capabilities: new Set<ContentCapability>(),

@@ -1,13 +1,11 @@
 import type { ContentCapability } from '../../../../shared/workbench/manifest';
 import {
-  DefaultLocalFileLocatorChecker,
-  type LocalFileLocatorChecker,
-} from '../../../assets/asset-content-locator';
+  DefaultLocalFileContentInspector,
+  type LocalFileContentInspector,
+} from './local-file-content-inspector';
 import { AppError } from '../../../errors/app-error';
 import type { ContentHandle } from '../../content-handle';
 import {
-  createAssetContentStatus,
-  createLocalFileContentRef,
   LOCAL_FILE_CONTENT_KIND,
 } from '../../content-ref';
 import type { ContentResolver } from '../../content-resolver-registry';
@@ -29,8 +27,8 @@ export class LocalFileContentResolver implements ContentResolver {
   readonly kind = LOCAL_FILE_CONTENT_KIND;
 
   constructor(
-    private readonly checker: LocalFileLocatorChecker =
-      new DefaultLocalFileLocatorChecker(),
+    private readonly inspector: LocalFileContentInspector =
+      new DefaultLocalFileContentInspector(),
   ) {}
 
   async resolve(ref: Parameters<ContentResolver['resolve']>[0]) {
@@ -38,19 +36,14 @@ export class LocalFileContentResolver implements ContentResolver {
       throw new AppError('INVALID_EXTENSION_DEFINITION');
     }
 
-    const locator = await this.checker.check(ref.path);
-    const normalizedRef = createLocalFileContentRef(locator.path);
-    const status = createAssetContentStatus(
-      locator.availability,
-      locator.checkedTime,
-    );
+    const inspection = await this.inspector.inspect(ref.path);
 
     return {
-      ref: normalizedRef,
-      status,
+      contentRef: inspection.contentRef,
+      contentStatus: inspection.contentStatus,
       handle:
-        status.availability === 'available'
-          ? new LocalFileContentHandle(normalizedRef.path)
+        inspection.contentStatus.availability === 'available'
+          ? new LocalFileContentHandle(inspection.contentRef.path)
           : undefined,
     };
   }

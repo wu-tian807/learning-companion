@@ -58,18 +58,18 @@ class ManagedJsonContentHandle implements ContentHandle {
 }
 
 export interface ManagedJsonContentResolverDependencies {
-  readonly now: () => Date;
+  readonly now: () => number;
 }
 
 export class ManagedJsonContentResolver implements ContentResolver {
   readonly kind = MANAGED_JSON_CONTENT_KIND;
-  private readonly now: () => Date;
+  private readonly now: () => number;
 
   constructor(
     private readonly repository: ManagedJsonContentRepository,
     dependencies: Partial<ManagedJsonContentResolverDependencies> = {},
   ) {
-    this.now = dependencies.now ?? (() => new Date());
+    this.now = dependencies.now ?? Date.now;
   }
 
   async resolve(ref: Parameters<ContentResolver['resolve']>[0]) {
@@ -82,8 +82,8 @@ export class ManagedJsonContentResolver implements ContentResolver {
     const availability = value === undefined ? 'missing' : 'available';
 
     return {
-      ref: normalizedRef,
-      status: createAssetContentStatus(availability, this.now()),
+      contentRef: normalizedRef,
+      contentStatus: createAssetContentStatus(availability, this.now()),
       handle:
         availability === 'available'
           ? new ManagedJsonContentHandle(

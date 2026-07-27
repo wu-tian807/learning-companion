@@ -15,10 +15,10 @@ describe('ContentResolverRegistry', () => {
   it('dispatches a content ref to its registered kind', async () => {
     const ref = createLocalFileContentRef('/tmp/notes.md');
     const resolve = vi.fn(async () => ({
-      ref,
-      status: createAssetContentStatus(
+      contentRef: ref,
+      contentStatus: createAssetContentStatus(
         'available',
-        new Date('2026-07-27T01:00:00.000Z'),
+        Date.parse('2026-07-27T01:00:00.000Z'),
       ),
       handle: {
         capabilities: new Set<ContentCapability>(),
@@ -34,8 +34,8 @@ describe('ContentResolverRegistry', () => {
     registry.register(resolver);
 
     await expect(registry.resolve(ref)).resolves.toMatchObject({
-      ref,
-      status: { availability: 'available' },
+      contentRef: ref,
+      contentStatus: { availability: 'available' },
     });
     expect(resolve).toHaveBeenCalledWith(ref);
     expect(registry.has('local-file')).toBe(true);
@@ -46,8 +46,8 @@ describe('ContentResolverRegistry', () => {
     const resolver: ContentResolver = {
       kind: 'local-file',
       resolve: async (ref) => ({
-        ref,
-        status: createAssetContentStatus('invalid', new Date()),
+        contentRef: ref,
+        contentStatus: createAssetContentStatus('invalid', Date.now()),
       }),
     };
 

@@ -1,14 +1,16 @@
 import {
-  cloneAssetContentRef,
-  createAssetContentStatus,
+  cloneAssetSnapshot,
+  type Asset,
+  type AssetSnapshot,
+} from '../../shared/assets';
+import {
   createLocalFileContentRef,
   LOCAL_FILE_CONTENT_KIND,
-  type AssetContentStatus,
   type ResolvedAssetContent,
 } from '../content/content-ref';
 import type { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { AppError } from '../errors/app-error';
-import { cloneAsset, type Asset, type UpdateAssetInput } from './asset';
+import type { UpdateAssetInput } from './asset';
 import type { AssetDatabaseApi } from './asset-database';
 import {
   createDefaultAssetName,
@@ -16,35 +18,19 @@ import {
   isAssetRelinkMediaCompatible,
 } from './asset-media-type';
 
-export interface AssetRuntimeContent {
-  readonly ref: Asset['contentRef'];
-  readonly status: AssetContentStatus;
-}
-
-export interface AssetRuntimeSnapshot {
-  readonly asset: Asset;
-  readonly content: AssetRuntimeContent;
-}
-
 export interface AssetServiceApi {
-  loadFromProject(projectId: string): Promise<readonly AssetRuntimeSnapshot[]>;
+  loadFromProject(projectId: string): Promise<readonly AssetSnapshot[]>;
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number>;
   unloadProject(): void;
   getActiveProjectId(): string | undefined;
-  list(): readonly AssetRuntimeSnapshot[];
-  get(assetId: string): AssetRuntimeSnapshot | undefined;
-  addLocalFile(path: string): Promise<AssetRuntimeSnapshot>;
-  update(
-    assetId: string,
-    changes: UpdateAssetInput,
-  ): AssetRuntimeSnapshot;
+  list(): readonly AssetSnapshot[];
+  get(assetId: string): AssetSnapshot | undefined;
+  addLocalFile(path: string): Promise<AssetSnapshot>;
+  update(assetId: string, changes: UpdateAssetInput): AssetSnapshot;
   delete(assetId: string): void;
-  refresh(assetId: string): Promise<AssetRuntimeSnapshot>;
-  refreshAll(): Promise<readonly AssetRuntimeSnapshot[]>;
-  relinkLocalFile(
-    assetId: string,
-    newPath: string,
-  ): Promise<AssetRuntimeSnapshot>;
+  refresh(assetId: string): Promise<AssetSnapshot>;
+  refreshAll(): Promise<readonly AssetSnapshot[]>;
+  relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
   resolveContent(assetId: string): Promise<ResolvedAssetContent>;
 }
 
@@ -54,36 +40,22 @@ export interface AssetServiceDependencies {
   readonly isRelinkMediaCompatible: typeof isAssetRelinkMediaCompatible;
 }
 
-function cloneRuntimeContent(
-  content: AssetRuntimeContent,
-): AssetRuntimeContent {
-  return Object.freeze({
-    ref: cloneAssetContentRef(content.ref),
-    status: createAssetContentStatus(
-      content.status.availability,
-      content.status.checkedTime,
-    ),
-  });
-}
-
-function createRuntimeSnapshot(
+function createSnapshot(
   asset: Asset,
-  resolved: Pick<ResolvedAssetContent, 'ref' | 'status'>,
-): AssetRuntimeSnapshot {
-  return Object.freeze({
-    asset: cloneAsset(asset),
-    content: cloneRuntimeContent(resolved),
+  resolved: Pick<
+    ResolvedAssetContent,
+    'contentRef' | 'contentStatus'
+  >,
+): AssetSnapshot {
+  return cloneAssetSnapshot({
+    ...asset,
+    contentRef: resolved.contentRef,
+    contentStatus: resolved.contentStatus,
   });
-}
-
-function cloneRuntimeSnapshot(
-  snapshot: AssetRuntimeSnapshot,
-): AssetRuntimeSnapshot {
-  return createRuntimeSnapshot(snapshot.asset, snapshot.content);
 }
 
 export class AssetService implements AssetServiceApi {
-  private runtimeMap = new Map<string, AssetRuntimeSnapshot>();
+  private runtimeMap = new Map<string, AssetSnapshot>();
   private lifecycleVersion = 0;
   private readonly dependencies: AssetServiceDependencies;
 
@@ -104,7 +76,7 @@ export class AssetService implements AssetServiceApi {
 
   async loadFromProject(
     projectId: string,
-  ): Promise<readonly AssetRuntimeSnapshot[]> {
+  ): Promise<readonly AssetSnapshot[]> {
     const loadVersion = this.lifecycleVersion + 1;
     this.lifecycleVersion = loadVersion;
     const assets = await this.assetDatabase.loadFromProject(projectId);
@@ -120,7 +92,7 @@ export class AssetService implements AssetServiceApi {
     }
 
     this.runtimeMap = new Map(
-      resolved.map((snapshot) => [snapshot.asset.id, snapshot]),
+      resolved.map((snapshot) => [snapshot.id, snapshot]),
     );
 
     return this.list();
@@ -142,18 +114,18 @@ export class AssetService implements AssetServiceApi {
     return this.assetDatabase.getActiveProjectId();
   }
 
-  list(): readonly AssetRuntimeSnapshot[] {
+  list(): readonly AssetSnapshot[] {
     this.requireActiveProjectId();
-    return [...this.runtimeMap.values()].map(cloneRuntimeSnapshot);
+    return [...this.runtimeMap.values()].map(cloneAssetSnapshot);
   }
 
-  get(assetId: string): AssetRuntimeSnapshot | undefined {
+  get(assetId: string): AssetSnapshot | undefined {
     this.requireActiveProjectId();
     const snapshot = this.runtimeMap.get(assetId);
-    return snapshot ? cloneRuntimeSnapshot(snapshot) : undefined;
+    return snapshot ? cloneAssetSnapshot(snapshot) : undefined;
   }
 
-  async addLocalFile(path: string): Promise<AssetRuntimeSnapshot> {
+  async addLocalFile(path: string): Promise<AssetSnapshot> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
     const contentRef = createLocalFileContentRef(path);
@@ -162,11 +134,11 @@ export class AssetService implements AssetServiceApi {
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
 
-      if (resolved.status.availability !== 'available') {
+      if (resolved.contentStatus.availability !== 'available') {
         throw new AppError('ASSET_UNAVAILABLE');
       }
 
-      const normalizedRef = resolved.ref;
+      const normalizedRef = resolved.contentRef;
 
       if (normalizedRef.kind !== LOCAL_FILE_CONTENT_KIND) {
         throw new AppError('DATA_INTEGRITY_ERROR');
@@ -181,24 +153,24 @@ export class AssetService implements AssetServiceApi {
         mediaType,
         contentRef: normalizedRef,
       });
-      const snapshot = createRuntimeSnapshot(asset, resolved);
+      const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
 
-      return cloneRuntimeSnapshot(snapshot);
+      return cloneAssetSnapshot(snapshot);
     } finally {
       await resolved.handle?.close();
     }
   }
 
-  update(
-    assetId: string,
-    changes: UpdateAssetInput,
-  ): AssetRuntimeSnapshot {
+  update(assetId: string, changes: UpdateAssetInput): AssetSnapshot {
     const current = this.find(assetId);
     const asset = this.assetDatabase.update(assetId, changes);
-    const snapshot = createRuntimeSnapshot(asset, current.content);
+    const snapshot = cloneAssetSnapshot({
+      ...asset,
+      contentStatus: current.contentStatus,
+    });
     this.runtimeMap.set(assetId, snapshot);
-    return cloneRuntimeSnapshot(snapshot);
+    return cloneAssetSnapshot(snapshot);
   }
 
   delete(assetId: string): void {
@@ -207,36 +179,34 @@ export class AssetService implements AssetServiceApi {
     this.runtimeMap.delete(assetId);
   }
 
-  async refresh(assetId: string): Promise<AssetRuntimeSnapshot> {
+  async refresh(assetId: string): Promise<AssetSnapshot> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
     const current = this.find(assetId);
-    const resolved = await this.resolverRegistry.resolve(
-      current.asset.contentRef,
-    );
+    const resolved = await this.resolverRegistry.resolve(current.contentRef);
 
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
-      const snapshot = createRuntimeSnapshot(current.asset, resolved);
+      const snapshot = createSnapshot(current, resolved);
       this.runtimeMap.set(assetId, snapshot);
-      return cloneRuntimeSnapshot(snapshot);
+      return cloneAssetSnapshot(snapshot);
     } finally {
       await resolved.handle?.close();
     }
   }
 
-  async refreshAll(): Promise<readonly AssetRuntimeSnapshot[]> {
+  async refreshAll(): Promise<readonly AssetSnapshot[]> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
     const current = [...this.runtimeMap.values()];
     const resolved = await Promise.all(
       current.map(async (snapshot) => {
         const content = await this.resolverRegistry.resolve(
-          snapshot.asset.contentRef,
+          snapshot.contentRef,
         );
 
         try {
-          return createRuntimeSnapshot(snapshot.asset, content);
+          return createSnapshot(snapshot, content);
         } finally {
           await content.handle?.close();
         }
@@ -245,7 +215,7 @@ export class AssetService implements AssetServiceApi {
     this.requireUnchangedProject(lifecycleVersion, projectId);
 
     this.runtimeMap = new Map(
-      resolved.map((snapshot) => [snapshot.asset.id, snapshot]),
+      resolved.map((snapshot) => [snapshot.id, snapshot]),
     );
     return this.list();
   }
@@ -253,12 +223,12 @@ export class AssetService implements AssetServiceApi {
   async relinkLocalFile(
     assetId: string,
     newPath: string,
-  ): Promise<AssetRuntimeSnapshot> {
+  ): Promise<AssetSnapshot> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
     const current = this.find(assetId);
 
-    if (current.asset.contentRef.kind !== LOCAL_FILE_CONTENT_KIND) {
+    if (current.contentRef.kind !== LOCAL_FILE_CONTENT_KIND) {
       throw new AppError('FEATURE_NOT_SUPPORTED');
     }
 
@@ -268,20 +238,20 @@ export class AssetService implements AssetServiceApi {
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
 
-      if (resolved.status.availability !== 'available') {
+      if (resolved.contentStatus.availability !== 'available') {
         throw new AppError('ASSET_UNAVAILABLE');
       }
 
-      if (resolved.ref.kind !== LOCAL_FILE_CONTENT_KIND) {
+      if (resolved.contentRef.kind !== LOCAL_FILE_CONTENT_KIND) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
       if (
-        resolved.ref.path !== current.asset.contentRef.path &&
+        resolved.contentRef.path !== current.contentRef.path &&
         !(await this.dependencies.isRelinkMediaCompatible(
-          current.asset.mediaType,
-          current.asset.contentRef.path,
-          resolved.ref.path,
+          current.mediaType,
+          current.contentRef.path,
+          resolved.contentRef.path,
         ))
       ) {
         throw new AppError('ASSET_MEDIA_TYPE_MISMATCH');
@@ -289,12 +259,15 @@ export class AssetService implements AssetServiceApi {
 
       this.requireUnchangedProject(lifecycleVersion, projectId);
       const asset =
-        resolved.ref.path === current.asset.contentRef.path
-          ? current.asset
-          : this.assetDatabase.updateContentRef(assetId, resolved.ref);
-      const snapshot = createRuntimeSnapshot(asset, resolved);
+        resolved.contentRef.path === current.contentRef.path
+          ? current
+          : this.assetDatabase.updateContentRef(
+              assetId,
+              resolved.contentRef,
+            );
+      const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(assetId, snapshot);
-      return cloneRuntimeSnapshot(snapshot);
+      return cloneAssetSnapshot(snapshot);
     } finally {
       await resolved.handle?.close();
     }
@@ -303,7 +276,7 @@ export class AssetService implements AssetServiceApi {
   async resolveContent(assetId: string): Promise<ResolvedAssetContent> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
-    const asset = this.find(assetId).asset;
+    const asset = this.find(assetId);
     const resolved = await this.resolverRegistry.resolve(asset.contentRef);
 
     try {
@@ -317,11 +290,11 @@ export class AssetService implements AssetServiceApi {
 
   private async resolveRuntimeSnapshot(
     asset: Asset,
-  ): Promise<AssetRuntimeSnapshot> {
+  ): Promise<AssetSnapshot> {
     const resolved = await this.resolverRegistry.resolve(asset.contentRef);
 
     try {
-      return createRuntimeSnapshot(asset, resolved);
+      return createSnapshot(asset, resolved);
     } finally {
       await resolved.handle?.close();
     }
@@ -337,7 +310,7 @@ export class AssetService implements AssetServiceApi {
     return projectId;
   }
 
-  private find(assetId: string): AssetRuntimeSnapshot {
+  private find(assetId: string): AssetSnapshot {
     const snapshot = this.runtimeMap.get(assetId);
 
     if (!snapshot) {

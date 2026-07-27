@@ -1,7 +1,5 @@
-import type {
-  AssetRuntimeSnapshot,
-  AssetServiceApi,
-} from '../assets/asset-service';
+import type { AssetSnapshot } from '../../shared/assets';
+import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-manager';
 import type { ProjectDatabaseApi } from './project-database';
@@ -17,7 +15,7 @@ export interface ProjectServiceApi {
   getProjectOverview(projectId: string): ProjectOverview | undefined;
   loadProjectWorkspace(
     projectId: string,
-  ): Promise<readonly AssetRuntimeSnapshot[]>;
+  ): Promise<readonly AssetSnapshot[]>;
   unloadProjectWorkspace(projectId: string): Promise<void>;
   deleteProjectCascade(projectId: string): Promise<void>;
 }
@@ -57,7 +55,7 @@ export class ProjectService implements ProjectServiceApi {
 
   async loadProjectWorkspace(
     projectId: string,
-  ): Promise<readonly AssetRuntimeSnapshot[]> {
+  ): Promise<readonly AssetSnapshot[]> {
     await this.workbenchSessions.closeActive();
     return this.assetService.loadFromProject(projectId);
   }

@@ -11,10 +11,8 @@ import {
   type AssetSummary,
 } from '../../shared/ipc';
 import type { AssetFileServiceApi } from '../assets/asset-file-service';
-import type {
-  AssetRuntimeSnapshot,
-  AssetServiceApi,
-} from '../assets/asset-service';
+import type { AssetSnapshot } from '../../shared/assets';
+import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { registerIpcHandler } from './register-handler';
@@ -24,27 +22,25 @@ function invalidRequest(): Error {
 }
 
 export function toAssetSummary(
-  snapshot: AssetRuntimeSnapshot,
+  snapshot: AssetSnapshot,
 ): AssetSummary {
-  const { asset, content } = snapshot;
-
-  if (content.ref.kind !== 'local-file') {
+  if (snapshot.contentRef.kind !== 'local-file') {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
 
   return {
-    id: asset.id,
-    projectId: asset.projectId,
-    name: asset.name,
-    mediaType: asset.mediaType,
+    id: snapshot.id,
+    projectId: snapshot.projectId,
+    name: snapshot.name,
+    mediaType: snapshot.mediaType,
     contentLocator: {
-      kind: content.ref.kind,
-      path: content.ref.path,
-      availability: content.status.availability,
-      checkedTime: content.status.checkedTime.toISOString(),
+      kind: snapshot.contentRef.kind,
+      path: snapshot.contentRef.path,
+      availability: snapshot.contentStatus.availability,
+      checkedTime: new Date(snapshot.contentStatus.checkedTime).toISOString(),
     },
-    createdTime: new Date(asset.createdTime).toISOString(),
-    lastUsedTime: new Date(asset.lastUsedTime).toISOString(),
+    createdTime: new Date(snapshot.createdTime).toISOString(),
+    lastUsedTime: new Date(snapshot.lastUsedTime).toISOString(),
   };
 }
 

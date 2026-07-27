@@ -1,38 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AssetSnapshot } from '../../shared/assets';
 import {
   createAssetContentStatus,
   createLocalFileContentRef,
 } from '../content/content-ref';
 import { createAssetSnapshot } from './asset';
 import { AssetFileService } from './asset-file-service';
-import type {
-  AssetRuntimeSnapshot,
-  AssetServiceApi,
-} from './asset-service';
+import type { AssetServiceApi } from './asset-service';
 
 function createAsset(
   availability: 'available' | 'missing',
-): AssetRuntimeSnapshot {
+): AssetSnapshot {
   const contentRef = createLocalFileContentRef('/tmp/notes.md');
 
   return {
-    asset: createAssetSnapshot({
-    id: 'asset',
-    projectId: 'project',
-    name: '学习资料',
-    mediaType: 'text/markdown',
+    ...createAssetSnapshot({
+      id: 'asset',
+      projectId: 'project',
+      name: '学习资料',
+      mediaType: 'text/markdown',
       contentRef,
-    createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
-    lastUsedTime: Date.parse('2026-07-27T03:00:00.000Z'),
+      createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      lastUsedTime: Date.parse('2026-07-27T03:00:00.000Z'),
     }),
-    content: {
-      ref: contentRef,
-      status: createAssetContentStatus(
-        availability,
-        new Date('2026-07-27T02:00:00.000Z'),
-      ),
-    },
+    contentStatus: createAssetContentStatus(
+      availability,
+      Date.parse('2026-07-27T02:00:00.000Z'),
+    ),
   };
 }
 

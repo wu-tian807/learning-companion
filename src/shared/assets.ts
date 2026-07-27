@@ -178,6 +178,13 @@ export function cloneAssetContentStatus(
   });
 }
 
+export function createAssetContentStatus(
+  availability: AssetAvailability,
+  checkedTime: number,
+): AssetContentStatus {
+  return cloneAssetContentStatus({ availability, checkedTime });
+}
+
 export function cloneAsset(asset: Asset): Asset {
   if (!isAsset(asset)) {
     throw new Error('Asset 数据无效');

@@ -70,8 +70,8 @@ export class WorkbenchSessionManager
     }
 
     const selection =
-      content.status.availability === 'available'
-        ? this.registry.select(snapshot.asset.mediaType, content.handle)
+      content.contentStatus.availability === 'available'
+        ? this.registry.select(snapshot.mediaType, content.handle)
         : this.registry.fallback('content-unavailable');
     const [attachments, state] = await Promise.all([
       this.attachmentService.listByAsset(assetId),
@@ -79,7 +79,7 @@ export class WorkbenchSessionManager
     ]);
     const session: AssetWorkbenchSession = {
       id: this.createId(),
-      asset: snapshot.asset,
+      asset: snapshot,
       content,
       workbenchId: selection.provider.manifest.id,
       attachments,
@@ -116,7 +116,7 @@ export class WorkbenchSessionManager
       protocolVersion: session.provider.manifest.protocolVersion,
       assetId: session.asset.id,
       mediaType: session.asset.mediaType,
-      availability: session.content.status.availability,
+      availability: session.content.contentStatus.availability,
       payload: result.payload,
     };
   }

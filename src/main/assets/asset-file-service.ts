@@ -36,12 +36,12 @@ export class AssetFileService implements AssetFileServiceApi {
     }
 
     if (
-      snapshot.content.status.availability !== 'available' ||
-      snapshot.content.ref.kind !== LOCAL_FILE_CONTENT_KIND
+      snapshot.contentStatus.availability !== 'available' ||
+      snapshot.contentRef.kind !== LOCAL_FILE_CONTENT_KIND
     ) {
       throw new AppError('ASSET_UNAVAILABLE');
     }
 
-    this.dependencies.showItemInFolder(snapshot.content.ref.path);
+    this.dependencies.showItemInFolder(snapshot.contentRef.path);
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AssetSnapshot } from '../../shared/assets';
 import type { ContentCapability } from '../../shared/workbench/manifest';
 import {
   WORKBENCH_PROTOCOL_VERSION,
@@ -12,10 +13,7 @@ import {
   type ResolvedAssetContent,
 } from '../content/content-ref';
 import { createAssetSnapshot } from '../assets/asset';
-import type {
-  AssetRuntimeSnapshot,
-  AssetServiceApi,
-} from '../assets/asset-service';
+import type { AssetServiceApi } from '../assets/asset-service';
 import { EmptyAttachmentService } from '../attachments/attachment-service';
 import type { MainWorkbenchProvider } from './workbench-session';
 import { WorkbenchSessionManager } from './workbench-session-manager';
@@ -46,15 +44,15 @@ function createProvider(
   };
 }
 
-function createAssetRuntime(): AssetRuntimeSnapshot {
+function createAssetRuntime(): AssetSnapshot {
   const contentRef = createLocalFileContentRef('/tmp/notes.txt');
   const status = createAssetContentStatus(
     'available',
-    new Date('2026-07-27T01:00:00.000Z'),
+    Date.parse('2026-07-27T01:00:00.000Z'),
   );
 
   return {
-    asset: createAssetSnapshot({
+    ...createAssetSnapshot({
       id: 'asset',
       projectId: 'project',
       name: '资料',
@@ -63,7 +61,7 @@ function createAssetRuntime(): AssetRuntimeSnapshot {
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
     }),
-    content: { ref: contentRef, status },
+    contentStatus: status,
   };
 }
 
@@ -86,17 +84,17 @@ function createAssetService(
     }
 
     return {
-      ref: snapshot.asset.contentRef,
-      status: createAssetContentStatus(
+      contentRef: snapshot.contentRef,
+      contentStatus: createAssetContentStatus(
         availability,
-        new Date('2026-07-27T02:00:00.000Z'),
+        Date.parse('2026-07-27T02:00:00.000Z'),
       ),
       handle,
     };
   });
   const service = {
     get: vi.fn((assetId: string) =>
-      assetId === snapshot.asset.id ? snapshot : undefined,
+      assetId === snapshot.id ? snapshot : undefined,
     ),
     resolveContent,
   } as unknown as AssetServiceApi;
@@ -195,10 +193,10 @@ describe('WorkbenchSessionManager', () => {
           finishResolve = resolve;
         });
         return {
-          ref: snapshot.asset.contentRef,
-          status: createAssetContentStatus(
+          contentRef: snapshot.contentRef,
+          contentStatus: createAssetContentStatus(
             'available',
-            new Date('2026-07-27T02:00:00.000Z'),
+            Date.parse('2026-07-27T02:00:00.000Z'),
           ),
           handle: {
             capabilities: new Set<ContentCapability>(),

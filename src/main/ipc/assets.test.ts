@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { AssetSnapshot } from '../../shared/assets';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
 import {
@@ -8,10 +9,7 @@ import {
 } from '../content/content-ref';
 import { createAssetSnapshot } from '../assets/asset';
 import type { AssetFileServiceApi } from '../assets/asset-file-service';
-import type {
-  AssetRuntimeSnapshot,
-  AssetServiceApi,
-} from '../assets/asset-service';
+import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { registerAssetHandlers, removeAssetHandlers } from './assets';
@@ -64,11 +62,11 @@ function findHandler(channel: string): IpcHandler {
 function createAsset(
   id = 'asset',
   path = '/tmp/notes.md',
-): AssetRuntimeSnapshot {
+): AssetSnapshot {
   const contentRef = createLocalFileContentRef(path);
 
   return {
-    asset: createAssetSnapshot({
+    ...createAssetSnapshot({
       id,
       projectId: 'project',
       name: '学习笔记',
@@ -77,13 +75,10 @@ function createAsset(
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       lastUsedTime: Date.parse('2026-07-27T03:00:00.000Z'),
     }),
-    content: {
-      ref: contentRef,
-      status: createAssetContentStatus(
-        'available',
-        new Date('2026-07-27T02:00:00.000Z'),
-      ),
-    },
+    contentStatus: createAssetContentStatus(
+      'available',
+      Date.parse('2026-07-27T02:00:00.000Z'),
+    ),
   };
 }
 
