@@ -151,6 +151,27 @@ interface AddLocalAssetsResult {
 
 Project 的列表、创建、重命名和置顶仍由 `ProjectDatabase` 处理。
 
+## 首页 Asset 数量
+
+`ProjectSummary` 使用真实 `assetCount`，不再保留早期占位字段 `sources: string[]`。
+
+```ts
+interface ProjectSummary {
+  id: string;
+  name: string;
+  icon: string;
+  createdTime: string;
+  assetCount: number;
+  pinned: boolean;
+}
+```
+
+`AssetDatabase.countByProjectIds(projectIds)` 使用单条按 `project_id` 分组的 SQLite 查询返回每个 Project 的 Asset 数量，不加载完整 Asset，也不改变当前 Project 的 Asset Map。
+
+`ProjectService` 将 `ProjectDatabase` 内存中的轻量 Project 与 Asset 计数组合为 `ProjectOverview`。Project 列表、创建、重命名和置顶的 IPC 响应均从 Overview 生成，避免 Mutation 后把数量错误重置为零。
+
+首页显示“n 个 Asset”，不再使用“来源”术语。
+
 ## Renderer 状态
 
 删除 `ProjectPage` 中的 `DISPLAY_ASSETS`。

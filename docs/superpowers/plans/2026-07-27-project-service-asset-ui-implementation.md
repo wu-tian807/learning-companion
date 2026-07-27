@@ -41,6 +41,15 @@
 4. 执行 `pnpm package` 和 `pnpm verify:package:native`。
 5. 更新设计文档状态并检查工作区。
 
+## 补充阶段：首页真实 Asset 数量
+
+1. 为 AssetDatabase 增加按 Project ID 批量分组计数。
+2. 由 ProjectService 组合 Project 与 Asset 数量为 ProjectOverview。
+3. 将 `ProjectSummary.sources` 替换为 `assetCount`。
+4. Project 列表和 Mutation 响应统一返回真实计数。
+5. 首页卡片和列表显示“n 个 Asset”。
+6. 覆盖计数查询、Overview 组合与共享协议测试。
+
 ## 约束
 
 - 不实现具体媒体阅读器。
