@@ -3,6 +3,8 @@
 > 日期：2026-07-27
 >
 > 状态：第一阶段已实施
+>
+> 后续数据契约收敛：`2026-07-27-project-asset-shared-data-contract-design.md`
 
 ## 目标
 
