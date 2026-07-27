@@ -213,13 +213,20 @@ export function PlainTextWorkbenchView({
   const latestContentRef = useRef(payload?.content ?? '');
   const [content, setContent] = useState(payload?.content ?? '');
   const [savedContent, setSavedContent] = useState(payload?.content ?? '');
+  const [lineEnding, setLineEnding] = useState(
+    payload?.lineEnding ?? 'lf',
+  );
+  const [savedLineEnding, setSavedLineEnding] = useState(
+    payload?.lineEnding ?? 'lf',
+  );
   const [recovery, setRecovery] = useState(payload?.recovery);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [backupStatus, setBackupStatus] =
     useState<BackupStatus>('idle');
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
-  const dirty = content !== savedContent;
+  const dirty =
+    content !== savedContent || lineEnding !== savedLineEnding;
   const extensions = useMemo(
     () => [plainTextEditorTheme, EditorView.lineWrapping],
     [],
@@ -240,9 +247,10 @@ export function PlainTextWorkbenchView({
   const currentBufferPayload = useCallback(
     () => ({
       content: latestContentRef.current,
+      lineEnding,
       viewState: viewStateRef.current,
     }),
-    [],
+    [lineEnding],
   );
 
   const save = useCallback(async () => {
@@ -252,7 +260,10 @@ export function PlainTextWorkbenchView({
 
     const buffer = currentBufferPayload();
 
-    if (buffer.content === savedContent) {
+    if (
+      buffer.content === savedContent &&
+      buffer.lineEnding === savedLineEnding
+    ) {
       return;
     }
 
@@ -263,6 +274,7 @@ export function PlainTextWorkbenchView({
       );
       validateCommandResult(result, isPlainTextSaveResult);
       setSavedContent(buffer.content);
+      setSavedLineEnding(buffer.lineEnding);
       setBackupStatus('idle');
     } catch (error) {
       reportError(error, '无法保存文本文件，请重试。');
@@ -276,6 +288,7 @@ export function PlainTextWorkbenchView({
     recovery,
     reportError,
     savedContent,
+    savedLineEnding,
     saving,
   ]);
 
@@ -348,11 +361,13 @@ export function PlainTextWorkbenchView({
     const restoredContent = recovery.content;
     latestContentRef.current = restoredContent;
     setContent(restoredContent);
+    setLineEnding(recovery.lineEnding);
     setRecovery(undefined);
     setBackupStatus('pending');
     void executeCommand(
       createPlainTextBufferCommand(plainTextCommands.syncBuffer, {
         content: restoredContent,
+        lineEnding: recovery.lineEnding,
         viewState: viewStateRef.current,
       }),
     ).catch((error: unknown) => {
@@ -367,6 +382,7 @@ export function PlainTextWorkbenchView({
         type: plainTextCommands.discardRecovery,
       });
       setRecovery(undefined);
+      setLineEnding(payload.lineEnding);
       setBackupStatus('idle');
     } catch (error) {
       reportError(error, '无法丢弃恢复内容，请重试。');
@@ -412,7 +428,7 @@ export function PlainTextWorkbenchView({
             {formatEncoding(payload.encoding)}
           </span>
           <span className="rounded-md bg-white/[0.045] px-1.5 py-0.5 text-[10px] text-slate-500">
-            {payload.lineEnding === 'crlf' ? 'CRLF' : 'LF'}
+            {lineEnding === 'crlf' ? 'CRLF' : 'LF'}
           </span>
         </div>
         <button
@@ -471,6 +487,7 @@ export function PlainTextWorkbenchView({
                 plainTextCommands.syncBuffer,
                 {
                   content: value,
+                  lineEnding,
                   viewState: nextViewState,
                 },
               ),

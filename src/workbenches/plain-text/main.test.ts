@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAssetSnapshot } from '../../main/assets/asset';
 import type {
   ContentHandle,
+  ReadTextContentRequest,
   ResolvedTextContent,
   WriteTextContentRequest,
 } from '../../main/content/content-handle';
@@ -21,6 +22,7 @@ import type {
 } from '../../main/workbench/workbench-state-repository';
 import {
   createPlainTextBufferCommand,
+  DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
   isPlainTextWorkbenchPayload,
   PLAIN_TEXT_RECOVERY_DATA_KEY,
   PLAIN_TEXT_WORKBENCH_ID,
@@ -65,6 +67,12 @@ class MemoryDataRepository implements WorkbenchStateDataRepository {
 
 function createHandle(initial: ResolvedTextContent) {
   let current = initial;
+  const readText = vi.fn(
+    async (request?: ReadTextContentRequest): Promise<ResolvedTextContent> => ({
+      ...current,
+      encoding: request?.encoding ?? current.encoding,
+    }),
+  );
   const writeText = vi.fn(async (request: WriteTextContentRequest) => {
     if (request.expectedRevision !== current.revision) {
       throw new Error('revision mismatch');
@@ -73,18 +81,21 @@ function createHandle(initial: ResolvedTextContent) {
     current = {
       ...current,
       content: request.content,
+      encoding: request.encoding,
+      lineEnding: request.lineEnding,
+      hasByteOrderMark: request.hasByteOrderMark,
       revision: `revision-${writeText.mock.calls.length}`,
     };
     return { revision: current.revision };
   });
   const handle: ContentHandle = {
     capabilities: new Set(['read-text', 'write-text']),
-    readText: vi.fn(async () => current),
+    readText,
     writeText,
     close: vi.fn(async () => undefined),
   };
 
-  return { handle, writeText };
+  return { handle, readText, writeText };
 }
 
 function createContext(
@@ -141,6 +152,7 @@ describe('PlainTextWorkbenchProvider', () => {
       context,
       createPlainTextBufferCommand(plainTextCommands.syncBuffer, {
         content: '未保存正文',
+        lineEnding: 'lf',
         viewState,
       }),
     );
@@ -154,6 +166,7 @@ describe('PlainTextWorkbenchProvider', () => {
     );
     expect(state?.payload).toMatchObject({
       viewState,
+      viewOptions: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
       recovery: {
         baseRevision: 'revision-0',
         updatedTime: 200,
@@ -201,8 +214,10 @@ describe('PlainTextWorkbenchProvider', () => {
 
     expect(opened.payload).toMatchObject({
       content: '已保存正文',
+      viewOptions: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
       recovery: {
         content: '恢复正文',
+        lineEnding: 'lf',
         sourceChanged: true,
       },
     });
@@ -221,6 +236,7 @@ describe('PlainTextWorkbenchProvider', () => {
       context,
       createPlainTextBufferCommand(plainTextCommands.backup, {
         content: '准备保存',
+        lineEnding: 'lf',
         viewState,
       }),
     );
@@ -229,6 +245,7 @@ describe('PlainTextWorkbenchProvider', () => {
       context,
       createPlainTextBufferCommand(plainTextCommands.save, {
         content: '正式保存',
+        lineEnding: 'lf',
         viewState,
       }),
     );
@@ -252,6 +269,228 @@ describe('PlainTextWorkbenchProvider', () => {
     ).resolves.toBeUndefined();
     expect(
       (await states.get('asset', PLAIN_TEXT_WORKBENCH_ID))?.payload,
-    ).toEqual({ viewState });
+    ).toEqual({
+      viewState,
+      viewOptions: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
+    });
+  });
+
+  it('persists Plain Text view options in V2 state', async () => {
+    const states = new MemoryStateRepository();
+    const data = new MemoryDataRepository();
+    const provider = new PlainTextWorkbenchProvider(states, data);
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle, undefined);
+    await provider.open(context);
+
+    const result = await provider.command(context, {
+      type: plainTextCommands.setViewOptions,
+      payload: {
+        wordWrap: false,
+        lineNumbers: false,
+      },
+    });
+
+    expect(result.payload).toEqual({
+      wordWrap: false,
+      lineNumbers: false,
+    });
+    expect(
+      await states.get('asset', PLAIN_TEXT_WORKBENCH_ID),
+    ).toMatchObject({
+      schemaVersion: 2,
+      payload: {
+        viewOptions: {
+          wordWrap: false,
+          lineNumbers: false,
+        },
+      },
+    });
+  });
+
+  it('recovers a line-ending-only unsaved change', async () => {
+    const states = new MemoryStateRepository();
+    const data = new MemoryDataRepository();
+    const provider = new PlainTextWorkbenchProvider(states, data, {
+      now: () => 400,
+    });
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle, undefined);
+    await provider.open(context);
+
+    await provider.command(context, {
+      type: plainTextCommands.setLineEnding,
+      payload: { lineEnding: 'crlf' },
+    });
+    await provider.close(context);
+
+    const savedState = await states.get(
+      'asset',
+      PLAIN_TEXT_WORKBENCH_ID,
+    );
+    expect(savedState?.payload).toMatchObject({
+      recovery: {
+        lineEnding: 'crlf',
+        updatedTime: 400,
+      },
+    });
+    expect(
+      new TextDecoder().decode(
+        (
+          await data.get(
+            'asset',
+            PLAIN_TEXT_WORKBENCH_ID,
+            PLAIN_TEXT_RECOVERY_DATA_KEY,
+          )
+        )?.data,
+      ),
+    ).toBe(source.content);
+
+    const reopenedContext = createContext(
+      'reopened-session',
+      handle,
+      savedState,
+    );
+    const reopened = await provider.open(reopenedContext);
+
+    expect(reopened.payload).toMatchObject({
+      content: source.content,
+      lineEnding: 'lf',
+      recovery: {
+        content: source.content,
+        lineEnding: 'crlf',
+      },
+    });
+  });
+
+  it('saves a line-ending-only change through ContentHandle', async () => {
+    const states = new MemoryStateRepository();
+    const data = new MemoryDataRepository();
+    const provider = new PlainTextWorkbenchProvider(states, data);
+    const { handle, writeText } = createHandle(source);
+    const context = createContext('session', handle, undefined);
+    await provider.open(context);
+    await provider.command(context, {
+      type: plainTextCommands.setLineEnding,
+      payload: { lineEnding: 'crlf' },
+    });
+
+    await provider.command(
+      context,
+      createPlainTextBufferCommand(plainTextCommands.save, {
+        content: source.content,
+        lineEnding: 'crlf',
+        viewState,
+      }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: source.content,
+        lineEnding: 'crlf',
+      }),
+    );
+    expect(
+      (await states.get('asset', PLAIN_TEXT_WORKBENCH_ID))?.payload,
+    ).not.toHaveProperty('recovery');
+  });
+
+  it('clears a persisted recovery after returning to the saved format', async () => {
+    const states = new MemoryStateRepository();
+    const data = new MemoryDataRepository();
+    const provider = new PlainTextWorkbenchProvider(states, data);
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle, undefined);
+    await provider.open(context);
+    await provider.command(context, {
+      type: plainTextCommands.setLineEnding,
+      payload: { lineEnding: 'crlf' },
+    });
+    await provider.command(
+      context,
+      createPlainTextBufferCommand(plainTextCommands.backup, {
+        content: source.content,
+        lineEnding: 'crlf',
+        viewState,
+      }),
+    );
+
+    await provider.command(context, {
+      type: plainTextCommands.setLineEnding,
+      payload: { lineEnding: 'lf' },
+    });
+
+    expect(
+      (await states.get('asset', PLAIN_TEXT_WORKBENCH_ID))?.payload,
+    ).not.toHaveProperty('recovery');
+    await expect(
+      data.get(
+        'asset',
+        PLAIN_TEXT_WORKBENCH_ID,
+        PLAIN_TEXT_RECOVERY_DATA_KEY,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('reopens a clean source with the requested encoding', async () => {
+    const states = new MemoryStateRepository();
+    const data = new MemoryDataRepository();
+    const provider = new PlainTextWorkbenchProvider(states, data);
+    const { handle, readText } = createHandle(source);
+    readText.mockImplementation(
+      async (request?: ReadTextContentRequest) =>
+        request?.encoding === 'gbk'
+          ? {
+              content: '以 GBK 打开',
+              encoding: 'gbk',
+              lineEnding: 'crlf',
+              hasByteOrderMark: false,
+              revision: 'revision-gbk',
+            }
+          : source,
+    );
+    const context = createContext('session', handle, undefined);
+    await provider.open(context);
+
+    const result = await provider.command(context, {
+      type: plainTextCommands.reopenWithEncoding,
+      payload: { encoding: 'gbk' },
+    });
+
+    expect(readText).toHaveBeenLastCalledWith({ encoding: 'gbk' });
+    expect(result.payload).toEqual({
+      content: '以 GBK 打开',
+      encoding: 'gbk',
+      lineEnding: 'crlf',
+      hasByteOrderMark: false,
+      revision: 'revision-gbk',
+    });
+  });
+
+  it('rejects encoding reopen while the editor is dirty', async () => {
+    const states = new MemoryStateRepository();
+    const data = new MemoryDataRepository();
+    const provider = new PlainTextWorkbenchProvider(states, data);
+    const { handle, readText } = createHandle(source);
+    const context = createContext('session', handle, undefined);
+    await provider.open(context);
+    await provider.command(
+      context,
+      createPlainTextBufferCommand(plainTextCommands.syncBuffer, {
+        content: '未保存内容',
+        lineEnding: 'lf',
+        viewState,
+      }),
+    );
+
+    await expect(
+      provider.command(context, {
+        type: plainTextCommands.reopenWithEncoding,
+        payload: { encoding: 'gbk' },
+      }),
+    ).rejects.toMatchObject({
+      code: 'CONTENT_HAS_UNSAVED_CHANGES',
+    });
+    expect(readText).toHaveBeenCalledOnce();
   });
 });

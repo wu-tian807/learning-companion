@@ -1,9 +1,11 @@
 import { open } from 'node:fs/promises';
 
+import type { TextEncoding } from '../content/content-handle';
+
 export const TEXT_CONTENT_SAMPLE_SIZE = 64 * 1024;
 
 export interface TextEncodingDetector {
-  readonly encoding: string;
+  readonly encoding: TextEncoding;
   canDecode(content: Uint8Array): boolean;
 }
 
@@ -31,7 +33,7 @@ function hasAcceptableTextCharacters(value: string): boolean {
 }
 
 export function createTextEncodingDetector(
-  encoding: string,
+  encoding: TextEncoding,
 ): TextEncodingDetector {
   return {
     encoding,
@@ -56,7 +58,7 @@ export const defaultTextEncodingDetectors: readonly TextEncodingDetector[] = [
 export function detectTextEncoding(
   content: Uint8Array,
   detectors: readonly TextEncodingDetector[] = defaultTextEncodingDetectors,
-): string | undefined {
+): TextEncoding | undefined {
   if (content.includes(0)) {
     return undefined;
   }
@@ -66,7 +68,7 @@ export function detectTextEncoding(
 
 export async function detectFileTextEncoding(
   path: string,
-): Promise<string | undefined> {
+): Promise<TextEncoding | undefined> {
   const file = await open(path, 'r');
 
   try {

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createPlainTextBufferCommand,
+  DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
   isPlainTextBufferPayload,
+  isPlainTextEncodingPayload,
+  isPlainTextLineEndingPayload,
   isPlainTextWorkbenchPayload,
   isPlainTextWorkbenchStateV1,
+  isPlainTextWorkbenchStateV2,
   plainTextCommands,
 } from './shared';
 
@@ -32,10 +36,28 @@ describe('Plain Text shared protocol', () => {
         lineEnding: 'lf',
         hasByteOrderMark: false,
         revision: 'revision',
+        viewOptions: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
         viewState,
       }),
     ).toBe(true);
     expect(isPlainTextWorkbenchStateV1({ recovery: {} })).toBe(false);
+    expect(
+      isPlainTextWorkbenchStateV2({
+        viewState,
+        viewOptions: {
+          wordWrap: false,
+          lineNumbers: true,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isPlainTextWorkbenchStateV2({
+        viewOptions: {
+          wordWrap: 'yes',
+          lineNumbers: true,
+        },
+      }),
+    ).toBe(false);
   });
 
   it('creates a JSON-safe buffer command', () => {
@@ -43,6 +65,7 @@ describe('Plain Text shared protocol', () => {
       plainTextCommands.backup,
       {
         content: '未保存正文',
+        lineEnding: 'crlf',
         viewState,
       },
     );
@@ -51,9 +74,17 @@ describe('Plain Text shared protocol', () => {
       type: 'plain-text:backup',
       payload: {
         content: '未保存正文',
+        lineEnding: 'crlf',
         viewState,
       },
     });
     expect(isPlainTextBufferPayload(command.payload)).toBe(true);
+  });
+
+  it('validates format control payloads', () => {
+    expect(isPlainTextLineEndingPayload({ lineEnding: 'crlf' })).toBe(true);
+    expect(isPlainTextLineEndingPayload({ lineEnding: 'cr' })).toBe(false);
+    expect(isPlainTextEncodingPayload({ encoding: 'gbk' })).toBe(true);
+    expect(isPlainTextEncodingPayload({ encoding: 'latin1' })).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ export interface ReadTextContentRequest {
 
 export interface ResolvedTextContent {
   readonly content: string;
-  readonly encoding: string;
+  readonly encoding: TextEncoding;
   readonly lineEnding: TextLineEnding;
   readonly hasByteOrderMark: boolean;
   readonly revision: string;
@@ -17,7 +17,7 @@ export interface ResolvedTextContent {
 
 export interface WriteTextContentRequest {
   readonly content: string;
-  readonly encoding: string;
+  readonly encoding: TextEncoding;
   readonly lineEnding: TextLineEnding;
   readonly hasByteOrderMark: boolean;
   readonly expectedRevision: string;

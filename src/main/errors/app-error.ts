@@ -10,6 +10,7 @@ export type AppErrorCode =
   | 'WORKBENCH_SESSION_NOT_FOUND'
   | 'WORKBENCH_SESSION_EXPIRED'
   | 'CONTENT_CHANGED_EXTERNALLY'
+  | 'CONTENT_HAS_UNSAVED_CHANGES'
   | 'CONTENT_ENCODING_UNSUPPORTED'
   | 'CONTENT_ENCODING_LOSS'
   | 'CONTENT_WRITE_FAILED'
@@ -84,6 +85,13 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage:
       '文件已被其他程序修改。为避免覆盖外部更改，本次保存已取消。',
     retryable: true,
+    logLevel: 'silent',
+  },
+  CONTENT_HAS_UNSAVED_CHANGES: {
+    kind: 'user',
+    userMessage:
+      '存在未保存的编辑内容，请先保存或放弃当前修改后再切换编码。',
+    retryable: false,
     logLevel: 'silent',
   },
   CONTENT_ENCODING_UNSUPPORTED: {

@@ -5,6 +5,7 @@ import iconv from 'iconv-lite';
 import { AppError } from '../errors/app-error';
 import type {
   ResolvedTextContent,
+  TextEncoding,
   TextLineEnding,
   WriteTextContentRequest,
 } from './content-handle';
@@ -40,7 +41,7 @@ export function normalizeTextLineEndings(content: string): string {
 
 export function decodeTextContent(
   content: Uint8Array,
-  encoding: string,
+  encoding: TextEncoding,
 ): ResolvedTextContent {
   if (!iconv.encodingExists(encoding)) {
     throw new AppError('CONTENT_ENCODING_UNSUPPORTED');

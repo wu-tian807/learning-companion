@@ -14,17 +14,26 @@ import type {
   WorkbenchCommandResult,
 } from '../../shared/workbench/protocol';
 import {
+  DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
+  isPlainTextEncoding,
+  isPlainTextEncodingPayload,
   isPlainTextBufferPayload,
+  isPlainTextLineEndingPayload,
+  isPlainTextViewOptions,
   isPlainTextViewStatePayload,
   isPlainTextWorkbenchStateV1,
+  isPlainTextWorkbenchStateV2,
   PLAIN_TEXT_RECOVERY_DATA_KEY,
   PLAIN_TEXT_STATE_SCHEMA_VERSION,
+  PLAIN_TEXT_STATE_SCHEMA_VERSION_V1,
   PLAIN_TEXT_WORKBENCH_ID,
   plainTextCommands,
   plainTextWorkbenchManifest,
   type PlainTextRecoveryState,
+  type PlainTextLineEnding,
+  type PlainTextViewOptions,
   type PlainTextViewState,
-  type PlainTextWorkbenchStateV1,
+  type PlainTextWorkbenchStateV2,
 } from './shared';
 
 interface PlainTextSessionRuntime {
@@ -34,6 +43,8 @@ interface PlainTextSessionRuntime {
   >;
   source: ResolvedTextContent;
   bufferContent: string;
+  currentLineEnding: PlainTextLineEnding;
+  viewOptions: PlainTextViewOptions;
   viewState: PlainTextViewState | undefined;
   recovery: PlainTextRecoveryState | undefined;
   recoveryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -43,11 +54,23 @@ export interface PlainTextWorkbenchProviderDependencies {
   readonly now: () => number;
 }
 
-function toJsonState(state: PlainTextWorkbenchStateV1): JsonValue {
+function cloneViewOptions(
+  viewOptions: PlainTextViewOptions,
+): JsonValue & PlainTextViewOptions {
+  return {
+    wordWrap: viewOptions.wordWrap,
+    lineNumbers: viewOptions.lineNumbers,
+  };
+}
+
+function toJsonState(state: PlainTextWorkbenchStateV2): JsonValue {
   const payload: {
+    viewOptions: JsonValue;
     viewState?: JsonValue;
     recovery?: JsonValue;
-  } = {};
+  } = {
+    viewOptions: cloneViewOptions(state.viewOptions),
+  };
 
   if (state.viewState) {
     payload.viewState = {
@@ -122,14 +145,27 @@ export class PlainTextWorkbenchProvider
       } else {
         state = {
           viewState: state.viewState,
+          viewOptions: state.viewOptions,
         };
         await this.saveState(context.asset.id, state);
       }
     }
 
-    if (recoveryContent === source.content) {
-      await this.clearRecovery(context.asset.id, state.viewState);
-      state = { viewState: state.viewState };
+    if (
+      recoveryContent === source.content &&
+      state.recovery?.encoding === source.encoding &&
+      state.recovery.lineEnding === source.lineEnding &&
+      state.recovery.hasByteOrderMark === source.hasByteOrderMark
+    ) {
+      await this.clearRecovery(
+        context.asset.id,
+        state.viewState,
+        state.viewOptions,
+      );
+      state = {
+        viewState: state.viewState,
+        viewOptions: state.viewOptions,
+      };
       recoveryContent = undefined;
     }
 
@@ -138,6 +174,8 @@ export class PlainTextWorkbenchProvider
       handle,
       source,
       bufferContent: source.content,
+      currentLineEnding: source.lineEnding,
+      viewOptions: state.viewOptions,
       viewState: state.viewState,
       recovery: state.recovery,
       recoveryTimer: undefined,
@@ -150,6 +188,7 @@ export class PlainTextWorkbenchProvider
         lineEnding: source.lineEnding,
         hasByteOrderMark: source.hasByteOrderMark,
         revision: source.revision,
+        viewOptions: cloneViewOptions(state.viewOptions),
         ...(state.viewState
           ? {
               viewState: {
@@ -164,6 +203,9 @@ export class PlainTextWorkbenchProvider
               recovery: {
                 content: recoveryContent,
                 baseRevision: state.recovery.baseRevision,
+                encoding: state.recovery.encoding,
+                lineEnding: state.recovery.lineEnding,
+                hasByteOrderMark: state.recovery.hasByteOrderMark,
                 updatedTime: state.recovery.updatedTime,
                 sourceChanged:
                   state.recovery.baseRevision !== source.revision,
@@ -183,20 +225,35 @@ export class PlainTextWorkbenchProvider
     switch (command.type) {
       case plainTextCommands.syncBuffer: {
         const payload = this.requireBufferPayload(command.payload);
-        this.updateRuntime(runtime, payload.content, payload.viewState);
-        this.scheduleRecovery(runtime);
+        this.updateRuntime(
+          runtime,
+          payload.content,
+          payload.lineEnding,
+          payload.viewState,
+        );
+        await this.scheduleRecovery(runtime);
         return createResult({ accepted: true });
       }
       case plainTextCommands.backup: {
         const payload = this.requireBufferPayload(command.payload);
-        this.updateRuntime(runtime, payload.content, payload.viewState);
+        this.updateRuntime(
+          runtime,
+          payload.content,
+          payload.lineEnding,
+          payload.viewState,
+        );
         this.cancelScheduledRecovery(runtime);
         const backedUpTime = await this.persistRecovery(runtime);
         return createResult({ backedUpTime });
       }
       case plainTextCommands.save: {
         const payload = this.requireBufferPayload(command.payload);
-        this.updateRuntime(runtime, payload.content, payload.viewState);
+        this.updateRuntime(
+          runtime,
+          payload.content,
+          payload.lineEnding,
+          payload.viewState,
+        );
         this.cancelScheduledRecovery(runtime);
         const result = await this.saveSource(runtime);
         return createResult({
@@ -211,15 +268,72 @@ export class PlainTextWorkbenchProvider
         runtime.viewState = command.payload;
         await this.saveState(runtime.assetId, {
           viewState: runtime.viewState,
+          viewOptions: runtime.viewOptions,
           recovery: runtime.recovery,
         });
         return createResult({ saved: true });
+      }
+      case plainTextCommands.setViewOptions: {
+        if (!isPlainTextViewOptions(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        runtime.viewOptions = cloneViewOptions(command.payload);
+        await this.saveState(runtime.assetId, {
+          viewState: runtime.viewState,
+          viewOptions: runtime.viewOptions,
+          recovery: runtime.recovery,
+        });
+        return createResult(cloneViewOptions(runtime.viewOptions));
+      }
+      case plainTextCommands.setLineEnding: {
+        if (!isPlainTextLineEndingPayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        runtime.currentLineEnding = command.payload.lineEnding;
+        await this.scheduleRecovery(runtime);
+        return createResult({
+          lineEnding: runtime.currentLineEnding,
+          dirty: this.isDirty(runtime),
+        });
+      }
+      case plainTextCommands.reopenWithEncoding: {
+        if (!isPlainTextEncodingPayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        if (this.isDirty(runtime) || runtime.recovery) {
+          throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
+        }
+
+        const source = await runtime.handle.readText?.({
+          encoding: command.payload.encoding,
+        });
+
+        if (!source || !isPlainTextEncoding(source.encoding)) {
+          throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+        }
+
+        runtime.source = source;
+        runtime.bufferContent = source.content;
+        runtime.currentLineEnding = source.lineEnding;
+
+        return createResult({
+          content: source.content,
+          encoding: source.encoding,
+          lineEnding: source.lineEnding,
+          hasByteOrderMark: source.hasByteOrderMark,
+          revision: source.revision,
+        });
       }
       case plainTextCommands.discardRecovery: {
         this.cancelScheduledRecovery(runtime);
         runtime.recovery = undefined;
         runtime.bufferContent = runtime.source.content;
-        await this.clearRecovery(runtime.assetId, runtime.viewState);
+        runtime.currentLineEnding = runtime.source.lineEnding;
+        await this.clearRecovery(
+          runtime.assetId,
+          runtime.viewState,
+          runtime.viewOptions,
+        );
         return createResult({ discarded: true });
       }
       default:
@@ -238,7 +352,7 @@ export class PlainTextWorkbenchProvider
 
     try {
       this.cancelScheduledRecovery(runtime);
-      if (runtime.bufferContent !== runtime.source.content) {
+      if (this.isDirty(runtime)) {
         await this.persistRecovery(runtime);
       }
     } finally {
@@ -258,17 +372,38 @@ export class PlainTextWorkbenchProvider
 
   private readState(
     record: WorkbenchStateRecord | undefined,
-  ): PlainTextWorkbenchStateV1 {
-    if (
-      !record ||
-      record.workbenchId !== PLAIN_TEXT_WORKBENCH_ID ||
-      record.schemaVersion !== PLAIN_TEXT_STATE_SCHEMA_VERSION ||
-      !isPlainTextWorkbenchStateV1(record.payload)
-    ) {
-      return {};
+  ): PlainTextWorkbenchStateV2 {
+    if (!record || record.workbenchId !== PLAIN_TEXT_WORKBENCH_ID) {
+      return {
+        viewOptions: cloneViewOptions(DEFAULT_PLAIN_TEXT_VIEW_OPTIONS),
+      };
     }
 
-    return record.payload;
+    if (
+      record.schemaVersion === PLAIN_TEXT_STATE_SCHEMA_VERSION &&
+      isPlainTextWorkbenchStateV2(record.payload)
+    ) {
+      return {
+        viewState: record.payload.viewState,
+        viewOptions: cloneViewOptions(record.payload.viewOptions),
+        recovery: record.payload.recovery,
+      };
+    }
+
+    if (
+      record.schemaVersion === PLAIN_TEXT_STATE_SCHEMA_VERSION_V1 &&
+      isPlainTextWorkbenchStateV1(record.payload)
+    ) {
+      return {
+        viewState: record.payload.viewState,
+        viewOptions: cloneViewOptions(DEFAULT_PLAIN_TEXT_VIEW_OPTIONS),
+        recovery: record.payload.recovery,
+      };
+    }
+
+    return {
+      viewOptions: cloneViewOptions(DEFAULT_PLAIN_TEXT_VIEW_OPTIONS),
+    };
   }
 
   private requireBufferPayload(
@@ -284,16 +419,35 @@ export class PlainTextWorkbenchProvider
   private updateRuntime(
     runtime: PlainTextSessionRuntime,
     content: string,
+    lineEnding: PlainTextLineEnding,
     viewState: PlainTextViewState,
   ): void {
     runtime.bufferContent = content;
+    runtime.currentLineEnding = lineEnding;
     runtime.viewState = viewState;
   }
 
-  private scheduleRecovery(runtime: PlainTextSessionRuntime): void {
+  private isDirty(runtime: PlainTextSessionRuntime): boolean {
+    return (
+      runtime.bufferContent !== runtime.source.content ||
+      runtime.currentLineEnding !== runtime.source.lineEnding
+    );
+  }
+
+  private async scheduleRecovery(
+    runtime: PlainTextSessionRuntime,
+  ): Promise<void> {
     this.cancelScheduledRecovery(runtime);
 
-    if (runtime.bufferContent === runtime.source.content) {
+    if (!this.isDirty(runtime)) {
+      if (runtime.recovery) {
+        runtime.recovery = undefined;
+        await this.clearRecovery(
+          runtime.assetId,
+          runtime.viewState,
+          runtime.viewOptions,
+        );
+      }
       return;
     }
 
@@ -315,9 +469,13 @@ export class PlainTextWorkbenchProvider
   private async persistRecovery(
     runtime: PlainTextSessionRuntime,
   ): Promise<number> {
-    if (runtime.bufferContent === runtime.source.content) {
+    if (!this.isDirty(runtime)) {
       runtime.recovery = undefined;
-      await this.clearRecovery(runtime.assetId, runtime.viewState);
+      await this.clearRecovery(
+        runtime.assetId,
+        runtime.viewState,
+        runtime.viewOptions,
+      );
       return this.now();
     }
 
@@ -326,7 +484,7 @@ export class PlainTextWorkbenchProvider
       dataKey: PLAIN_TEXT_RECOVERY_DATA_KEY,
       baseRevision: runtime.source.revision,
       encoding: runtime.source.encoding,
-      lineEnding: runtime.source.lineEnding,
+      lineEnding: runtime.currentLineEnding,
       hasByteOrderMark: runtime.source.hasByteOrderMark,
       updatedTime,
     };
@@ -340,6 +498,7 @@ export class PlainTextWorkbenchProvider
     });
     await this.saveState(runtime.assetId, {
       viewState: runtime.viewState,
+      viewOptions: runtime.viewOptions,
       recovery,
     });
     runtime.recovery = recovery;
@@ -358,35 +517,41 @@ export class PlainTextWorkbenchProvider
     const result = await writeText.call(runtime.handle, {
       content: runtime.bufferContent,
       encoding: runtime.source.encoding,
-      lineEnding: runtime.source.lineEnding,
+      lineEnding: runtime.currentLineEnding,
       hasByteOrderMark: runtime.source.hasByteOrderMark,
       expectedRevision: runtime.source.revision,
     });
     runtime.source = {
       ...runtime.source,
       content: runtime.bufferContent,
+      lineEnding: runtime.currentLineEnding,
       revision: result.revision,
     };
     runtime.recovery = undefined;
-    await this.clearRecovery(runtime.assetId, runtime.viewState);
+    await this.clearRecovery(
+      runtime.assetId,
+      runtime.viewState,
+      runtime.viewOptions,
+    );
     return result;
   }
 
   private async clearRecovery(
     assetId: string,
     viewState: PlainTextViewState | undefined,
+    viewOptions: PlainTextViewOptions,
   ): Promise<void> {
     await this.dataRepository.delete(
       assetId,
       PLAIN_TEXT_WORKBENCH_ID,
       PLAIN_TEXT_RECOVERY_DATA_KEY,
     );
-    await this.saveState(assetId, { viewState });
+    await this.saveState(assetId, { viewState, viewOptions });
   }
 
   private async saveState(
     assetId: string,
-    state: PlainTextWorkbenchStateV1,
+    state: PlainTextWorkbenchStateV2,
   ): Promise<void> {
     await this.stateRepository.save({
       assetId,
