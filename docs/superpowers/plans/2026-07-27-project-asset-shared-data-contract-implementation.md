@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-27
 >
-> 状态：执行中
+> 状态：已完成
 
 ## 实施原则
 
@@ -243,3 +243,14 @@ pnpm verify:package:native
 - version 3 自动保留 Projects 并清空 Assets。
 - 旧数据表达从生产代码删除。
 - 全量测试、原生模块和打包验证全部通过。
+
+## 执行记录
+
+- 共享契约、数据库、ContentResolver、Service、IPC、Preload、Renderer 和 Workbench 适配均已完成。
+- 真实开发数据库由 version 2 升级至 version 3：Project `5 → 5`，旧 Asset `8 → 0`。
+- 迁移后 Electron 可以重新添加并加载使用 JSON `content_ref` 的 Asset。
+- 旧类型检索仅剩 version 2 迁移测试中刻意构造的 `content_kind/content_path` SQL。
+- `pnpm check`：35 个测试文件、137 项测试全部通过。
+- `pnpm smoke:native`：Electron 43.2.0、SQLite 3.53.3、darwin/arm64 通过。
+- `pnpm package`：macOS arm64 应用打包通过。
+- `pnpm verify:package:native`：打包后的 `better-sqlite3` darwin-arm64 原生模块通过。

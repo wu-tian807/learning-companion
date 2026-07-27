@@ -2,7 +2,7 @@
 
 > 日期：2026-07-27
 >
-> 状态：待实施
+> 状态：已实施
 >
 > 前置设计：`2026-07-27-asset-workbench-architecture-design.md`
 
@@ -403,3 +403,24 @@ Electron 手动验证：
 - Project IPC 只依赖 ProjectService。
 - version 3 迁移保留 Projects 并清空 Assets。
 - 所有自动化、原生依赖和打包验证通过。
+
+## 实施结果
+
+2026-07-27 已按本设计完成：
+
+- Project 与 Asset 的共享 Entity/Snapshot 契约已经贯通 Database 上层、Main、Preload、IPC 和 Renderer。
+- Asset 表升级为 JSON `content_ref`；真实 version 2 开发数据库迁移后，5 个 Project 全部保留，8 个旧测试 Asset 清空，数据库版本升级为 3。
+- ProjectService 已成为 Project 用例入口；Project IPC 不再直接依赖 ProjectDatabase。
+- AssetService 直接维护 `AssetSnapshot`，ContentResolver 统一返回 `contentRef/contentStatus/handle`。
+- 生产代码中的旧 Summary、RuntimeSnapshot、Locator 及 `contentKind/contentPath` 表达已经移除。
+- Electron 实际启动后，Home、Project 进入流程、Asset 加载和 UnsupportedWorkbench 兜底渲染正常。
+- `pnpm check` 通过，共 35 个测试文件、137 项测试。
+- `better-sqlite3` Electron 原生烟测、macOS arm64 打包及打包后原生模块校验全部通过。
+
+实施提交：
+
+- `a599422`：建立 Project 与 Asset 共享数据契约。
+- `ba38208`：重建 Asset 表并采用共享实体。
+- `3a4bade`：统一 Asset 内容解析与运行时快照。
+- `592c267`：以 ProjectService 统一项目用例入口。
+- `9a43a51`：Renderer 切换至共享 Project 与 Asset 快照。
