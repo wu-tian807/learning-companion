@@ -6,7 +6,7 @@ export interface WorkbenchStateRecord {
   readonly workbenchId: string;
   readonly schemaVersion: number;
   readonly payload: JsonValue;
-  readonly updatedTime: Date;
+  readonly updatedTime: number;
 }
 
 export interface WorkbenchStateRepository {

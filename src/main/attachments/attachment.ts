@@ -1,6 +1,7 @@
 import type { AssetAttachment } from '../../shared/workbench/attachment';
 import { isAssetAttachmentTarget } from '../../shared/workbench/anchor';
 import { isJsonValue } from '../../shared/workbench/protocol';
+import { isUnixMilliseconds } from '../../shared/projects';
 
 function requireText(value: string, field: string): string {
   const normalized = value.trim();
@@ -12,12 +13,12 @@ function requireText(value: string, field: string): string {
   return normalized;
 }
 
-function requireDate(value: Date, field: string): Date {
-  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-    throw new Error(`AssetAttachment ${field} 必须是有效日期`);
+function requireTimestamp(value: number, field: string): number {
+  if (!isUnixMilliseconds(value)) {
+    throw new Error(`AssetAttachment ${field} 必须是 Unix 毫秒时间戳`);
   }
 
-  return new Date(value.getTime());
+  return value;
 }
 
 export function createAssetAttachment(
@@ -43,8 +44,8 @@ export function createAssetAttachment(
     typeVersion: input.typeVersion,
     payload: input.payload,
     target: input.target,
-    createdTime: requireDate(input.createdTime, 'createdTime'),
-    updatedTime: requireDate(input.updatedTime, 'updatedTime'),
+    createdTime: requireTimestamp(input.createdTime, 'createdTime'),
+    updatedTime: requireTimestamp(input.updatedTime, 'updatedTime'),
   });
 }
 

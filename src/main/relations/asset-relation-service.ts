@@ -11,7 +11,7 @@ export interface AssetRelation {
   readonly fromAssetId: string;
   readonly toAssetId: string;
   readonly relationType: AssetRelationType;
-  readonly createdTime: Date;
+  readonly createdTime: number;
 }
 
 export interface AssetRelationServiceApi {

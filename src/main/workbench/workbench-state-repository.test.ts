@@ -13,7 +13,7 @@ describe('EmptyWorkbenchStateRepository', () => {
         workbenchId: 'workbench',
         schemaVersion: 1,
         payload: {},
-        updatedTime: new Date(),
+        updatedTime: Date.now(),
       }),
     ).rejects.toThrow('FEATURE_NOT_SUPPORTED');
   });

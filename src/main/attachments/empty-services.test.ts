@@ -12,8 +12,8 @@ const attachment: AssetAttachment = {
   typeVersion: 1,
   payload: { text: '笔记' },
   target: { scope: 'asset' },
-  createdTime: new Date('2026-07-27T01:00:00.000Z'),
-  updatedTime: new Date('2026-07-27T01:00:00.000Z'),
+  createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+  updatedTime: Date.parse('2026-07-27T01:00:00.000Z'),
 };
 
 describe('empty extension services', () => {

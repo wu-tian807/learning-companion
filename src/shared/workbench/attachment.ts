@@ -9,6 +9,6 @@ export interface AssetAttachment {
   readonly typeVersion: number;
   readonly payload: JsonValue;
   readonly target: AssetAttachmentTarget;
-  readonly createdTime: Date;
-  readonly updatedTime: Date;
+  readonly createdTime: number;
+  readonly updatedTime: number;
 }
