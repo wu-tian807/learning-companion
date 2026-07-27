@@ -51,11 +51,24 @@ function createDatabase() {
     delete: vi.fn(),
   };
   const deleteProject = vi.fn();
+  const overview = { project, assetCount: 3 };
+  const listProjectOverviews = vi.fn(() => [overview]);
+  const getProjectOverview = vi.fn(() => overview);
   const projectService = {
     deleteProjectCascade: deleteProject,
+    listProjectOverviews,
+    getProjectOverview,
   } as unknown as ProjectServiceApi;
 
-  return { add, database, deleteProject, list, projectService, update };
+  return {
+    add,
+    database,
+    deleteProject,
+    getProjectOverview,
+    listProjectOverviews,
+    projectService,
+    update,
+  };
 }
 
 beforeEach(() => {
@@ -64,7 +77,7 @@ beforeEach(() => {
 
 describe('Project IPC handlers', () => {
   it('maps in-memory Projects to serializable summaries', () => {
-    const { database, list, projectService } = createDatabase();
+    const { database, listProjectOverviews, projectService } = createDatabase();
     registerProjectHandlers(database, projectService);
 
     const result = findHandler(IPC_CHANNELS.listProjects)({});
@@ -75,16 +88,22 @@ describe('Project IPC handlers', () => {
         name: '机器学习',
         icon: '🤖',
         createdTime: '2026-07-23T02:00:00.000Z',
-        sources: [],
+        assetCount: 3,
         pinned: false,
       },
     ]);
-    expect(list).toHaveBeenCalledOnce();
+    expect(listProjectOverviews).toHaveBeenCalledOnce();
   });
 
   it('forwards explicit mutation requests to the composed database API', () => {
-    const { add, database, deleteProject, projectService, update } =
-      createDatabase();
+    const {
+      add,
+      database,
+      deleteProject,
+      getProjectOverview,
+      projectService,
+      update,
+    } = createDatabase();
     registerProjectHandlers(database, projectService);
 
     findHandler(IPC_CHANNELS.createProject)({}, { name: '新 Project' });
@@ -101,6 +120,7 @@ describe('Project IPC handlers', () => {
     expect(add).toHaveBeenCalledWith({ name: '新 Project' });
     expect(update).toHaveBeenNthCalledWith(1, 'project-1', { name: '新标题' });
     expect(update).toHaveBeenNthCalledWith(2, 'project-1', { pinned: true });
+    expect(getProjectOverview).toHaveBeenCalledTimes(3);
     expect(deleteProject).toHaveBeenCalledWith('project-1');
   });
 

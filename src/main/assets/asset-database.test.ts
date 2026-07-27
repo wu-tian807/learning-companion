@@ -109,6 +109,39 @@ afterEach(async () => {
 });
 
 describe('AssetDatabase', () => {
+  it('counts Assets for multiple Projects without loading their Maps', async () => {
+    const context = await createContext();
+    addProject(context, 'project-a');
+    addProject(context, 'project-b');
+    addProject(context, 'project-empty');
+    insertAsset(context, {
+      id: 'asset-a-1',
+      projectId: 'project-a',
+      path: '/tmp/a-1.md',
+    });
+    insertAsset(context, {
+      id: 'asset-a-2',
+      projectId: 'project-a',
+      path: '/tmp/a-2.md',
+    });
+    insertAsset(context, {
+      id: 'asset-b',
+      projectId: 'project-b',
+      path: '/tmp/b.md',
+    });
+    const database = createAssetDatabase(context);
+
+    expect(
+      [...database.countByProjectIds(['project-a', 'project-b', 'project-empty'])],
+    ).toEqual([
+      ['project-a', 2],
+      ['project-b', 1],
+      ['project-empty', 0],
+    ]);
+    expect(database.getActiveProjectId()).toBeUndefined();
+    expect(database.countByProjectIds([]).size).toBe(0);
+  });
+
   it('requires its ProjectLookup to be initialized', async () => {
     const context = await createContext();
     addProject(context, 'project');

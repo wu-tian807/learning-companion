@@ -4,7 +4,7 @@ import type { ProjectSummary } from '../shared/ipc';
 import {
   filterAndSortProjects,
   formatProjectDate,
-  formatSourceCount,
+  formatAssetCount,
   getProjectCardColor,
 } from './project-view';
 
@@ -19,7 +19,7 @@ function createProject(
     name,
     icon: '📘',
     createdTime,
-    sources: [],
+    assetCount: 0,
     pinned,
   };
 }
@@ -27,7 +27,7 @@ function createProject(
 describe('project view helpers', () => {
   it('formats project metadata in Chinese', () => {
     expect(formatProjectDate('2026-07-22T23:30:00.000Z')).toBe('2026年7月22日');
-    expect(formatSourceCount(12)).toBe('12 个来源');
+    expect(formatAssetCount(12)).toBe('12 个 Asset');
   });
 
   it('chooses a stable card color from the project id', () => {

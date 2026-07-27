@@ -9,22 +9,40 @@ import {
   type ProjectSummary,
 } from '../../shared/ipc';
 import type { ProjectDatabaseApi } from '../projects/project-database';
-import type { Project } from '../projects/project';
-import type { ProjectServiceApi } from '../projects/project-service';
+import type {
+  ProjectOverview,
+  ProjectServiceApi,
+} from '../projects/project-service';
 
 function invalidRequest(operation: string): Error {
   return new Error(`Project ${operation}请求无效`);
 }
 
-function toProjectSummary(project: Project): ProjectSummary {
+function toProjectSummary({
+  project,
+  assetCount,
+}: ProjectOverview): ProjectSummary {
   return {
     id: project.id,
     name: project.name,
     icon: project.icon,
     createdTime: project.createdTime.toISOString(),
-    sources: [],
+    assetCount,
     pinned: project.pinned,
   };
+}
+
+function requireProjectOverview(
+  projectService: ProjectServiceApi,
+  projectId: string,
+): ProjectOverview {
+  const overview = projectService.getProjectOverview(projectId);
+
+  if (!overview) {
+    throw new Error('找不到指定的 Project');
+  }
+
+  return overview;
 }
 
 export function registerProjectHandlers(
@@ -32,7 +50,7 @@ export function registerProjectHandlers(
   projectService: ProjectServiceApi,
 ): void {
   ipcMain.handle(IPC_CHANNELS.listProjects, () =>
-    database.list().map(toProjectSummary),
+    projectService.listProjectOverviews().map(toProjectSummary),
   );
 
   ipcMain.handle(IPC_CHANNELS.createProject, (_event, request: unknown) => {
@@ -40,7 +58,8 @@ export function registerProjectHandlers(
       throw invalidRequest('创建');
     }
 
-    return toProjectSummary(database.add(request));
+    const project = database.add(request);
+    return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
   ipcMain.handle(IPC_CHANNELS.renameProject, (_event, request: unknown) => {
@@ -48,7 +67,8 @@ export function registerProjectHandlers(
       throw invalidRequest('重命名');
     }
 
-    return toProjectSummary(database.update(request.id, { name: request.name }));
+    const project = database.update(request.id, { name: request.name });
+    return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
   ipcMain.handle(IPC_CHANNELS.setProjectPinned, (_event, request: unknown) => {
@@ -56,9 +76,8 @@ export function registerProjectHandlers(
       throw invalidRequest('置顶');
     }
 
-    return toProjectSummary(
-      database.update(request.id, { pinned: request.pinned }),
-    );
+    const project = database.update(request.id, { pinned: request.pinned });
+    return toProjectSummary(requireProjectOverview(projectService, project.id));
   });
 
   ipcMain.handle(IPC_CHANNELS.deleteProject, (_event, request: unknown) => {

@@ -72,6 +72,6 @@ export function formatProjectDate(createdTime: string): string {
   }).format(new Date(createdTime));
 }
 
-export function formatSourceCount(count: number): string {
-  return `${count} 个来源`;
+export function formatAssetCount(count: number): string {
+  return `${count} 个 Asset`;
 }

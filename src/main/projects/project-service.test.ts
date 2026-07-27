@@ -14,10 +14,15 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
   });
   const calls: string[] = [];
   const projectDatabase = {
+    list: vi.fn(() => [project]),
     get: vi.fn((id: string) => (id === project.id ? project : undefined)),
     delete: vi.fn(() => calls.push('delete-project')),
   } as unknown as ProjectDatabaseApi;
   const assetDatabase = {
+    countByProjectIds: vi.fn(
+      (projectIds: readonly string[]) =>
+        new Map(projectIds.map((projectId) => [projectId, 3])),
+    ),
     loadFromProject: vi.fn(async () => []),
     getActiveProjectId: vi.fn(() => activeProjectId),
     unloadProject: vi.fn(() => calls.push('unload-assets')),
@@ -27,6 +32,24 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
 }
 
 describe('ProjectService', () => {
+  it('combines in-memory Projects with persistent Asset counts', () => {
+    const { assetDatabase, projectDatabase } = createDependencies();
+    const service = new ProjectService(projectDatabase, assetDatabase);
+
+    expect(service.listProjectOverviews()).toEqual([
+      {
+        project: expect.objectContaining({ id: 'project' }),
+        assetCount: 3,
+      },
+    ]);
+    expect(service.getProjectOverview('project')).toEqual({
+      project: expect.objectContaining({ id: 'project' }),
+      assetCount: 3,
+    });
+    expect(service.getProjectOverview('missing')).toBeUndefined();
+    expect(assetDatabase.countByProjectIds).toHaveBeenCalledWith(['project']);
+  });
+
   it('opens a Project through AssetDatabase', async () => {
     const { assetDatabase, projectDatabase } = createDependencies();
     const service = new ProjectService(projectDatabase, assetDatabase);

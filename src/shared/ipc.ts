@@ -61,7 +61,7 @@ export interface ProjectSummary {
   name: string;
   icon: string;
   createdTime: string;
-  sources: string[];
+  assetCount: number;
   pinned: boolean;
 }
 
@@ -183,8 +183,9 @@ export function isProjectSummary(value: unknown): value is ProjectSummary {
     candidate.icon.length > 0 &&
     typeof candidate.createdTime === 'string' &&
     !Number.isNaN(Date.parse(candidate.createdTime)) &&
-    Array.isArray(candidate.sources) &&
-    candidate.sources.every((source) => typeof source === 'string' && source.length > 0) &&
+    typeof candidate.assetCount === 'number' &&
+    Number.isSafeInteger(candidate.assetCount) &&
+    candidate.assetCount >= 0 &&
     typeof candidate.pinned === 'boolean'
   );
 }

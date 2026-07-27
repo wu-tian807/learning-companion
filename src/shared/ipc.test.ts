@@ -54,7 +54,7 @@ describe('project summary contract', () => {
     name: '机器学习基础',
     icon: '🤖',
     createdTime: '2026-07-22T08:00:00.000Z',
-    sources: ['source-1', 'source-2'],
+    assetCount: 2,
     pinned: false,
   };
 
@@ -66,7 +66,8 @@ describe('project summary contract', () => {
   it('rejects malformed projects', () => {
     expect(isProjectSummary({ ...project, name: '' })).toBe(false);
     expect(isProjectSummary({ ...project, createdTime: 'not-a-date' })).toBe(false);
-    expect(isProjectSummary({ ...project, sources: [42] })).toBe(false);
+    expect(isProjectSummary({ ...project, assetCount: -1 })).toBe(false);
+    expect(isProjectSummary({ ...project, assetCount: 1.5 })).toBe(false);
     expect(isProjectSummary({ ...project, pinned: 'yes' })).toBe(false);
     expect(isProjectSummaryList([project, null])).toBe(false);
   });

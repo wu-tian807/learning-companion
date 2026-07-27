@@ -1,5 +1,5 @@
 import type { ProjectSummary } from '../../shared/ipc';
-import { formatProjectDate, formatSourceCount, getProjectCardColor } from '../project-view';
+import { formatAssetCount, formatProjectDate, getProjectCardColor } from '../project-view';
 import {
   ProjectActionsMenu,
   type ProjectActionHandlers,
@@ -78,7 +78,7 @@ export function ProjectGrid({
             </h2>
             <p className="text-xs text-slate-300/75">
               {formatProjectDate(project.createdTime)} ·{' '}
-              {formatSourceCount(project.sources.length)}
+              {formatAssetCount(project.assetCount)}
             </p>
           </div>
         </article>

@@ -1,5 +1,5 @@
 import type { ProjectSummary } from '../../shared/ipc';
-import { formatProjectDate, formatSourceCount } from '../project-view';
+import { formatAssetCount, formatProjectDate } from '../project-view';
 import {
   ProjectActionsMenu,
   type ProjectActionHandlers,
@@ -74,7 +74,7 @@ export function ProjectList({
                 </div>
               </td>
               <td className="px-4 py-[15px] text-slate-400">
-                {formatSourceCount(project.sources.length)}
+                {formatAssetCount(project.assetCount)}
               </td>
               <td className="px-4 py-[15px] text-slate-400">
                 {formatProjectDate(project.createdTime)}

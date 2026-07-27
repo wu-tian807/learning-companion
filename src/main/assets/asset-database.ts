@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
@@ -25,6 +25,7 @@ import {
 
 export interface AssetDatabaseApi {
   loadFromProject(projectId: string): Promise<readonly Asset[]>;
+  countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number>;
   unloadProject(): void;
   getActiveProjectId(): string | undefined;
   list(): readonly Asset[];
@@ -133,6 +134,35 @@ export class AssetDatabase implements AssetDatabaseApi {
     this.assetMap = nextAssetMap;
 
     return this.list();
+  }
+
+  countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number> {
+    const normalizedProjectIds = [
+      ...new Set(projectIds.map((projectId) => requireId(projectId, 'projectId'))),
+    ];
+
+    if (normalizedProjectIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = this.context.db
+      .select({
+        projectId: assets.projectId,
+        assetCount: count(),
+      })
+      .from(assets)
+      .where(inArray(assets.projectId, normalizedProjectIds))
+      .groupBy(assets.projectId)
+      .all();
+    const counts = new Map(
+      normalizedProjectIds.map((projectId) => [projectId, 0]),
+    );
+
+    for (const row of rows) {
+      counts.set(row.projectId, row.assetCount);
+    }
+
+    return counts;
   }
 
   unloadProject(): void {
