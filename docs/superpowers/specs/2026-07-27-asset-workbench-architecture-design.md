@@ -2,7 +2,7 @@
 
 > 日期：2026-07-27
 >
-> 状态：待实施
+> 状态：第一阶段已实施
 
 ## 目标
 
@@ -580,3 +580,25 @@ sequenceDiagram
 4. **Markdown 与 PDF Workbench**：分别实现媒体特定编辑、选区和 Anchor。
 5. **Managed JSON 与 Relation**：实现应用内 Asset 和思维导图派生链路。
 6. **第三方扩展**：需求稳定后再设计插件发现、隔离和权限模型。
+
+## 第一阶段实施结果
+
+2026-07-27 已完成本设计的第一阶段骨架：
+
+- 已建立共享协议、Manifest、Attachment、Anchor 和 Relation 契约及注册表。
+- 已将 Asset 持久化数据与运行时内容状态拆开，由 `AssetService` 组合 `AssetDatabase` 和 `ContentResolverRegistry`。
+- 已实现本地文件 Resolver，并为 managed JSON 保留 Repository 与 Resolver 边界；现有 SQLite 表结构无需迁移。
+- 已建立 Main Workbench Registry、单活动 Session Manager、空 State Repository、受限 IPC 和 Preload API。
+- 已建立 Renderer Registry、`AssetWorkbenchHost`、空 `AttachmentHost` 和完整的 `UnsupportedWorkbench` 双端链路。
+- 纯文本、Markdown、PDF 和思维导图目录只保留说明文件，没有注册未实现能力。
+- Project 页面已实际通过 `Asset → ContentResolver → Session → Main Provider → Renderer View` 链路打开中栏。
+
+与设计相比没有架构边界变化。现有 `AssetFileService` 被保留为系统文件选择和“在文件夹中显示”的薄封装，由 `AssetService` 调用；它不再承担 Asset 数据加载或状态管理。
+
+验证结果：
+
+- `pnpm check`：33 个测试文件、128 个测试全部通过。
+- `pnpm smoke:native`：Electron 下 `better-sqlite3` 加载和读写通过。
+- `pnpm package`：macOS arm64 生产包构建通过。
+- `pnpm verify:package:native`：打包后的原生模块位于 `app.asar.unpacked` 并可正确加载。
+- Electron 实际界面完成 Home → Project、Asset 切换、Unsupported 兜底显示和 Project → Home 往返验证，未出现运行时错误。

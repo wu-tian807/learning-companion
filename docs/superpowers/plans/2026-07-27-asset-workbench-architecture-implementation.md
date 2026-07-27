@@ -3,6 +3,8 @@
 > 依据：`docs/superpowers/specs/2026-07-27-asset-workbench-architecture-design.md`
 >
 > 日期：2026-07-27
+>
+> 状态：已完成
 
 ## 实施原则
 
