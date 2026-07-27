@@ -1,6 +1,11 @@
 import type { ContentCapability } from '../../shared/workbench/manifest';
 
 export type TextLineEnding = 'lf' | 'crlf';
+export type TextEncoding = 'utf-8' | 'gbk';
+
+export interface ReadTextContentRequest {
+  readonly encoding?: TextEncoding;
+}
 
 export interface ResolvedTextContent {
   readonly content: string;
@@ -24,7 +29,9 @@ export interface WriteTextContentResult {
 
 export interface ContentHandle {
   readonly capabilities: ReadonlySet<ContentCapability>;
-  readText?(): Promise<ResolvedTextContent>;
+  readText?(
+    request?: ReadTextContentRequest,
+  ): Promise<ResolvedTextContent>;
   writeText?(
     request: WriteTextContentRequest,
   ): Promise<WriteTextContentResult>;

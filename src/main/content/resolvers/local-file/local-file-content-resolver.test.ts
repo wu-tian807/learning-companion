@@ -126,7 +126,9 @@ describe('LocalFileContentResolver', () => {
     );
     const resolver = new LocalFileContentResolver();
     const resolved = await resolver.resolve(createLocalFileContentRef(path));
-    const content = await resolved.handle!.readText!();
+    const content = await resolved.handle!.readText!({
+      encoding: 'gbk',
+    });
 
     expect(content).toMatchObject({
       content: '中文内容\n',
@@ -141,6 +143,21 @@ describe('LocalFileContentResolver', () => {
       }),
     ).rejects.toMatchObject({
       code: 'CONTENT_ENCODING_LOSS',
+    });
+  });
+
+  it('rejects bytes that cannot be decoded with the requested encoding', async () => {
+    const path = await createTemporaryFile(
+      'invalid-utf8.txt',
+      Buffer.from([0xff, 0xfe, 0xfd]),
+    );
+    const resolver = new LocalFileContentResolver();
+    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+
+    await expect(
+      resolved.handle!.readText!({ encoding: 'utf-8' }),
+    ).rejects.toMatchObject({
+      code: 'CONTENT_ENCODING_UNSUPPORTED',
     });
   });
 

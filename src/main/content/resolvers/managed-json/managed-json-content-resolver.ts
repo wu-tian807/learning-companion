@@ -5,6 +5,7 @@ import type { JsonValue } from '../../../../shared/workbench/protocol';
 import { AppError } from '../../../errors/app-error';
 import type {
   ContentHandle,
+  ReadTextContentRequest,
   ResolvedTextContent,
   WriteTextContentRequest,
   WriteTextContentResult,
@@ -31,7 +32,13 @@ class ManagedJsonContentHandle implements ContentHandle {
     private readonly repository: ManagedJsonContentRepository,
   ) {}
 
-  async readText(): Promise<ResolvedTextContent> {
+  async readText(
+    request: ReadTextContentRequest = {},
+  ): Promise<ResolvedTextContent> {
+    if (request.encoding && request.encoding !== 'utf-8') {
+      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+    }
+
     const value = await this.repository.get(this.contentId);
 
     if (value === undefined) {

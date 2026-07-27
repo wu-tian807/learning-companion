@@ -4,6 +4,7 @@ import writeFileAtomic from 'write-file-atomic';
 
 import type { ContentCapability } from '../../../../shared/workbench/manifest';
 import {
+  createTextEncodingDetector,
   detectTextEncoding,
   TEXT_CONTENT_SAMPLE_SIZE,
 } from '../../../assets/asset-text-encoding';
@@ -14,6 +15,7 @@ import {
 import { AppError } from '../../../errors/app-error';
 import type {
   ContentHandle,
+  ReadTextContentRequest,
   ResolvedTextContent,
   WriteTextContentRequest,
   WriteTextContentResult,
@@ -39,7 +41,9 @@ export class LocalFileContentHandle implements ContentHandle {
 
   constructor(readonly path: string) {}
 
-  async readText(): Promise<ResolvedTextContent> {
+  async readText(
+    request: ReadTextContentRequest = {},
+  ): Promise<ResolvedTextContent> {
     let content: Buffer;
 
     try {
@@ -48,11 +52,22 @@ export class LocalFileContentHandle implements ContentHandle {
       throw new AppError('ASSET_UNAVAILABLE', { cause: error });
     }
 
-    const encoding = detectTextEncoding(
-      content.subarray(0, TEXT_CONTENT_SAMPLE_SIZE),
-    );
+    const encoding =
+      request.encoding ??
+      detectTextEncoding(
+        content.subarray(0, TEXT_CONTENT_SAMPLE_SIZE),
+      );
 
     if (!encoding) {
+      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+    }
+
+    if (
+      request.encoding &&
+      detectTextEncoding(content, [
+        createTextEncodingDetector(request.encoding),
+      ]) !== request.encoding
+    ) {
       throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
     }
 
