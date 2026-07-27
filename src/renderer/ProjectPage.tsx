@@ -13,11 +13,13 @@ import {
   type AssetSummary,
   type ProjectSummary,
 } from '../shared/ipc';
+import { userMessageFromError } from '../shared/ipc-error';
 import {
   replaceAsset,
   selectAfterAssetDeletion,
   selectInitialAssetId,
 } from './asset-view';
+import { ErrorDialog } from './components/ErrorDialog';
 
 interface ProjectPageProps {
   readonly project: ProjectSummary;
@@ -36,13 +38,6 @@ const availabilityLabels = {
   invalid: '路径无效',
 } as const;
 
-const availabilityColors = {
-  available: '#79a68e',
-  missing: '#d49a6a',
-  inaccessible: '#d17d86',
-  invalid: '#8b93a2',
-} as const;
-
 function formatLastUsed(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', {
     month: 'short',
@@ -55,6 +50,7 @@ function formatLastUsed(value: string): string {
 function mediaLabel(mediaType: string): string {
   const labels: Record<string, string> = {
     'application/epub+zip': 'EPUB',
+    'application/octet-stream': '未知',
     'application/pdf': 'PDF',
     'text/markdown': 'Markdown',
     'text/plain': '纯文本',
@@ -78,12 +74,48 @@ function BackIcon() {
   );
 }
 
+function RefreshIcon({ spinning = false }: { readonly spinning?: boolean }) {
+  return (
+    <svg
+      className={['size-3.5', spinning ? 'animate-spin' : ''].join(' ')}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M16 7a6.5 6.5 0 1 0 .2 5.4" />
+      <path d="M16 3v4h-4" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg
+      className="size-4"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="10" cy="10" r="2.5" />
+      <path d="M16.2 11.4v-2.8l-1.8-.5a5 5 0 0 0-.5-1.1l.9-1.7-2-2-1.7.9a5 5 0 0 0-1.1-.5L9.4 2H6.6l-.5 1.8a5 5 0 0 0-1.1.5l-1.7-.9-2 2 .9 1.7a5 5 0 0 0-.5 1.1L0 8.6v2.8l1.8.5a5 5 0 0 0 .5 1.1l-.9 1.7 2 2 1.7-.9a5 5 0 0 0 1.1.5l.5 1.8h2.8l.5-1.8a5 5 0 0 0 1.1-.5l1.7.9 2-2-.9-1.7a5 5 0 0 0 .5-1.1l1.8-.5Z" transform="translate(2 0) scale(.8 1)" />
+    </svg>
+  );
+}
+
 interface AssetActionsMenuProps {
   readonly asset: AssetSummary;
   readonly disabled: boolean;
   readonly onRename: () => void;
+  readonly onReveal: () => void;
   readonly onRelink: () => void;
-  readonly onRefresh: () => void;
   readonly onDelete: () => void;
 }
 
@@ -91,8 +123,8 @@ function AssetActionsMenu({
   asset,
   disabled,
   onRename,
+  onReveal,
   onRelink,
-  onRefresh,
   onDelete,
 }: AssetActionsMenuProps) {
   const [open, setOpen] = useState(false);
@@ -147,22 +179,27 @@ function AssetActionsMenu({
           >
             编辑标题
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => run(onRelink)}
-            className="ui-menu-item block w-full rounded-lg px-3 py-2 text-left"
-          >
-            重新定位
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => run(onRefresh)}
-            className="ui-menu-item block w-full rounded-lg px-3 py-2 text-left"
-          >
-            刷新状态
-          </button>
+          {asset.contentLocator.availability === 'available' && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run(onReveal)}
+              className="ui-menu-item block w-full rounded-lg px-3 py-2 text-left"
+            >
+              在文件夹中显示
+            </button>
+          )}
+          {(asset.contentLocator.availability === 'missing' ||
+            asset.contentLocator.availability === 'invalid') && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run(onRelink)}
+              className="ui-menu-item block w-full rounded-lg px-3 py-2 text-left"
+            >
+              重新定位
+            </button>
+          )}
           <div className="my-1 h-px bg-white/[0.08]" />
           <button
             type="button"
@@ -240,13 +277,15 @@ interface AssetPanelProps {
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
   readonly busy: boolean;
+  readonly refreshingAll: boolean;
   readonly dragging: boolean;
   readonly onSelect: (assetId: string) => void;
   readonly onAdd: () => void;
   readonly onRetry: () => void;
   readonly onRename: (asset: AssetSummary) => void;
+  readonly onReveal: (asset: AssetSummary) => void;
   readonly onRelink: (asset: AssetSummary) => void;
-  readonly onRefresh: (asset: AssetSummary) => void;
+  readonly onRefreshAll: () => void;
   readonly onDelete: (asset: AssetSummary) => void;
 }
 
@@ -254,13 +293,15 @@ function AssetPanel({
   state,
   selectedAssetId,
   busy,
+  refreshingAll,
   dragging,
   onSelect,
   onAdd,
   onRetry,
   onRename,
+  onReveal,
   onRelink,
-  onRefresh,
+  onRefreshAll,
   onDelete,
 }: AssetPanelProps) {
   const assets = state.kind === 'ready' ? state.assets : [];
@@ -292,10 +333,22 @@ function AssetPanel({
         添加资料
       </button>
 
-      <div className="flex shrink-0 items-center justify-between px-[17px] pt-3 pb-1.5 text-[10px] font-bold tracking-[0.09em] text-slate-500">
+      <div className="flex shrink-0 items-center justify-between px-[17px] pt-2.5 pb-1 text-[10px] font-bold tracking-[0.09em] text-slate-500">
         <span>全部内容</span>
-        <span className="text-[9px] font-medium tracking-normal text-slate-400/70">
-          最近使用 ↓
+        <span className="flex items-center gap-1.5">
+          <span className="text-[9px] font-medium tracking-normal text-slate-400/70">
+            最近使用 ↓
+          </span>
+          <button
+            type="button"
+            aria-label="刷新全部资料状态"
+            title="刷新全部资料状态"
+            disabled={busy || state.kind !== 'ready'}
+            onClick={onRefreshAll}
+            className="ui-icon-button grid size-7 place-items-center rounded-lg text-slate-400 disabled:opacity-40"
+          >
+            <RefreshIcon spinning={refreshingAll} />
+          </button>
         </span>
       </div>
 
@@ -348,7 +401,14 @@ function AssetPanel({
               {mediaLabel(asset.mediaType).slice(0, 4)}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-xs font-medium text-slate-200">
+              <span
+                className={[
+                  'block truncate text-xs font-medium',
+                  asset.contentLocator.availability === 'available'
+                    ? 'text-slate-200'
+                    : 'text-red-400',
+                ].join(' ')}
+              >
                 {asset.name}
               </span>
               <span className="mt-0.5 block truncate text-[10px] text-slate-500">
@@ -356,20 +416,19 @@ function AssetPanel({
               </span>
             </span>
             <span className="flex items-center gap-1">
-              <span
-                className="size-1.5 rounded-full"
-                title={availabilityLabels[asset.contentLocator.availability]}
-                style={{
-                  backgroundColor:
-                    availabilityColors[asset.contentLocator.availability],
-                }}
-              />
+              {asset.contentLocator.availability !== 'available' && (
+                <span
+                  className="size-1.5 rounded-full bg-red-400"
+                  title={availabilityLabels[asset.contentLocator.availability]}
+                  aria-label={availabilityLabels[asset.contentLocator.availability]}
+                />
+              )}
               <AssetActionsMenu
                 asset={asset}
                 disabled={busy}
                 onRename={() => onRename(asset)}
+                onReveal={() => onReveal(asset)}
                 onRelink={() => onRelink(asset)}
-                onRefresh={() => onRefresh(asset)}
                 onDelete={() => onDelete(asset)}
               />
             </span>
@@ -511,6 +570,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const [requestVersion, setRequestVersion] = useState(0);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshingAll, setRefreshingAll] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<AssetSummary | null>(null);
@@ -535,10 +595,18 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           setSelectedAssetId(selectInitialAssetId(assets));
         }
       } catch (loadError) {
+        const message = userMessageFromError(
+          loadError,
+          '无法加载 Project 资料，请重试。',
+        );
+
+        if (!message) return;
+
         console.error('加载 Project Asset 失败', loadError);
-        if (active) {
-          setLoadState({ kind: 'failed' });
-        }
+        if (!active) return;
+
+        setError(message);
+        setLoadState({ kind: 'failed' });
       }
     };
 
@@ -549,7 +617,13 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
       void window.learningCompanion
         .closeProject({ projectId: project.id })
         .catch((closeError: unknown) => {
-          console.error('卸载 Project Asset 失败', closeError);
+          const message = userMessageFromError(
+            closeError,
+            '无法正确关闭 Project。',
+          );
+          if (message) {
+            console.error(message, closeError);
+          }
         });
     };
   }, [project.id, requestVersion]);
@@ -587,8 +661,11 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         await operation();
         return true;
       } catch (mutationError) {
-        console.error(message, mutationError);
-        setError(message);
+        const userMessage = userMessageFromError(mutationError, message);
+        if (userMessage) {
+          console.error(userMessage, mutationError);
+          setError(userMessage);
+        }
         return false;
       } finally {
         mutationLockRef.current = false;
@@ -666,6 +743,16 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     }, '无法重新定位该 Asset。');
   };
 
+  const revealAssetInFolder = async (asset: AssetSummary) => {
+    await runMutation(
+      () =>
+        window.learningCompanion.revealAssetInFolder({
+          assetId: asset.id,
+        }),
+      '无法在文件夹中显示该 Asset。',
+    );
+  };
+
   const refreshAsset = async (asset: AssetSummary) => {
     await runMutation(async () => {
       const updated = await window.learningCompanion.refreshAsset({
@@ -676,6 +763,23 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
       }
       updateAssets((current) => replaceAsset(current, updated));
     }, '无法刷新文件状态。');
+  };
+
+  const refreshAllAssets = async () => {
+    setRefreshingAll(true);
+    try {
+      await runMutation(async () => {
+        const refreshed = await window.learningCompanion.refreshAllAssets({
+          projectId: project.id,
+        });
+        if (!isAssetSummaryList(refreshed)) {
+          throw new Error('Asset 批量刷新响应无效');
+        }
+        setLoadState({ kind: 'ready', assets: refreshed });
+      }, '无法刷新全部文件状态。');
+    } finally {
+      setRefreshingAll(false);
+    }
   };
 
   const deleteAsset = async () => {
@@ -750,17 +854,16 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
             </span>
           </span>
         </div>
-        {error && (
-          <div
-            role="alert"
-            className="flex max-w-xl items-center gap-3 rounded-full border border-rose-300/15 bg-rose-400/[0.07] px-4 py-2 text-[10px] text-rose-200"
+        <span title="设置功能即将开放">
+          <button
+            type="button"
+            aria-label="设置（即将开放）"
+            disabled
+            className="ui-icon-button grid size-[30px] place-items-center rounded-[10px] border border-white/10 text-slate-500 disabled:cursor-not-allowed disabled:opacity-55"
           >
-            <span className="truncate">{error}</span>
-            <button type="button" onClick={() => setError(null)}>
-              ×
-            </button>
-          </div>
-        )}
+            <SettingsIcon />
+          </button>
+        </span>
       </header>
 
       <section className="grid h-[calc(100vh-76px)] min-h-[560px] grid-cols-[minmax(220px,2fr)_minmax(560px,6fr)_minmax(220px,2fr)] gap-3">
@@ -768,6 +871,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           state={loadState}
           selectedAssetId={selectedAssetId}
           busy={busy}
+          refreshingAll={refreshingAll}
           dragging={dragging}
           onSelect={setSelectedAssetId}
           onAdd={() => void chooseAndAdd()}
@@ -776,8 +880,9 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
             setRequestVersion((current) => current + 1);
           }}
           onRename={setRenameTarget}
+          onReveal={(asset) => void revealAssetInFolder(asset)}
           onRelink={(asset) => void relinkAsset(asset)}
-          onRefresh={(asset) => void refreshAsset(asset)}
+          onRefreshAll={() => void refreshAllAssets()}
           onDelete={setDeleteTarget}
         />
         <ReaderPanel
@@ -810,7 +915,12 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           asset={renameTarget}
           busy={busy}
           error={error}
-          onClose={() => !busy && setRenameTarget(null)}
+          onClose={() => {
+            if (!busy) {
+              setRenameTarget(null);
+              setError(null);
+            }
+          }}
           onSubmit={(name) => void renameAsset(name)}
         />
       )}
@@ -827,7 +937,10 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setDeleteTarget(null)}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setError(null);
+                }}
                 className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs"
               >
                 取消
@@ -843,6 +956,10 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {error && !renameTarget && !deleteTarget && (
+        <ErrorDialog message={error} onClose={() => setError(null)} />
       )}
     </main>
   );

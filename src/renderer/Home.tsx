@@ -9,6 +9,7 @@ import {
 } from '../shared/app-preferences';
 import type { ProjectSummary } from '../shared/ipc';
 import { isProjectSummary, isProjectSummaryList } from '../shared/ipc';
+import { userMessageFromError } from '../shared/ipc-error';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { HomeToolbar } from './components/HomeToolbar';
 import { ProjectDialog, type ProjectDialogValues } from './components/ProjectDialog';
@@ -202,8 +203,11 @@ export function Home({ onOpenProject }: HomeProps) {
         await operation();
         return true;
       } catch (error) {
-        console.error(failureMessage, error);
-        setMutationError(failureMessage);
+        const userMessage = userMessageFromError(error, failureMessage);
+        if (userMessage) {
+          console.error(userMessage, error);
+          setMutationError(userMessage);
+        }
         return false;
       } finally {
         mutationLockRef.current = false;
