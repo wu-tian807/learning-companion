@@ -4,14 +4,22 @@ import {
   isAssetWorkbenchManifest,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
-import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
+import type {
+  WorkbenchBootstrap,
+  WorkbenchCommand,
+  WorkbenchCommandResult,
+} from '../../shared/workbench/protocol';
 import type { AssetSnapshot } from '../../shared/assets';
 
 export interface RendererWorkbenchViewProps {
   readonly asset: AssetSnapshot;
   readonly bootstrap: WorkbenchBootstrap;
+  readonly executeCommand: (
+    command: WorkbenchCommand,
+  ) => Promise<WorkbenchCommandResult>;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
+  readonly onError: (message: string) => void;
 }
 
 export interface RendererWorkbenchModule {

@@ -175,6 +175,22 @@ export function isPlainTextViewStatePayload(
   return isPlainTextViewState(value);
 }
 
+export function isPlainTextSaveResult(
+  value: JsonValue,
+): value is JsonValue & PlainTextSaveResult {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.revision) &&
+    isNonNegativeInteger(value.savedTime)
+  );
+}
+
+export function isPlainTextBackupResult(
+  value: JsonValue,
+): value is JsonValue & PlainTextBackupResult {
+  return isRecord(value) && isNonNegativeInteger(value.backedUpTime);
+}
+
 export function createPlainTextBufferCommand(
   type:
     | typeof plainTextCommands.syncBuffer

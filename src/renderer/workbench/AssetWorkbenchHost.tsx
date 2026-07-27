@@ -4,8 +4,11 @@ import type { AssetSnapshot } from '../../shared/assets';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
+  type WorkbenchCommand,
+  type WorkbenchCommandResult,
   type WorkbenchBootstrap,
 } from '../../shared/workbench/protocol';
+import { plainTextRendererWorkbenchModule } from '../../workbenches/plain-text/renderer';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
 import { RendererWorkbenchRegistry } from './renderer-workbench-registry';
@@ -23,6 +26,9 @@ type SettledWorkbenchHostState =
       readonly kind: 'ready';
       readonly assetKey: string;
       readonly bootstrap: WorkbenchBootstrap;
+      readonly executeCommand: (
+        command: WorkbenchCommand,
+      ) => Promise<WorkbenchCommandResult>;
     }
   | {
       readonly kind: 'failed';
@@ -33,6 +39,7 @@ type SettledWorkbenchHostState =
 const defaultRegistry = new RendererWorkbenchRegistry(
   unsupportedRendererWorkbenchModule,
 );
+defaultRegistry.register(plainTextRendererWorkbenchModule);
 
 export function AssetWorkbenchHost({
   asset,
@@ -54,6 +61,7 @@ export function AssetWorkbenchHost({
   useEffect(() => {
     let active = true;
     let openedSessionId: string | undefined;
+    let commandTail: Promise<void> = Promise.resolve();
 
     if (!assetId || !assetKey) {
       return () => {
@@ -69,6 +77,21 @@ export function AssetWorkbenchHost({
         }
 
         openedSessionId = bootstrap.sessionId;
+        const executeCommand = (
+          command: WorkbenchCommand,
+        ): Promise<WorkbenchCommandResult> => {
+          const execution = commandTail.then(() =>
+            window.learningCompanion.commandWorkbench({
+              sessionId: bootstrap.sessionId,
+              command,
+            }),
+          );
+          commandTail = execution.then(
+            () => undefined,
+            () => undefined,
+          );
+          return execution;
+        };
 
         if (!active) {
           await window.learningCompanion.closeWorkbench({
@@ -77,7 +100,12 @@ export function AssetWorkbenchHost({
           return;
         }
 
-        setSettledState({ kind: 'ready', assetKey, bootstrap });
+        setSettledState({
+          kind: 'ready',
+          assetKey,
+          bootstrap,
+          executeCommand,
+        });
       })
       .catch((openError: unknown) => {
         if (!active) {
@@ -102,8 +130,11 @@ export function AssetWorkbenchHost({
       active = false;
 
       if (openedSessionId) {
-        void window.learningCompanion
-          .closeWorkbench({ sessionId: openedSessionId })
+        const sessionId = openedSessionId;
+        void commandTail
+          .then(() =>
+            window.learningCompanion.closeWorkbench({ sessionId }),
+          )
           .catch((closeError: unknown) => {
             const message = userMessageFromError(
               closeError,
@@ -161,8 +192,10 @@ export function AssetWorkbenchHost({
         <View
           asset={asset}
           bootstrap={state.bootstrap}
+          executeCommand={state.executeCommand}
           onRelink={onRelink}
           onRefresh={onRefresh}
+          onError={onError}
         />
         <AttachmentHost attachments={[]} />
       </>

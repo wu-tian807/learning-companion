@@ -36,6 +36,7 @@ interface PlainTextSessionRuntime {
   bufferContent: string;
   viewState: PlainTextViewState | undefined;
   recovery: PlainTextRecoveryState | undefined;
+  recoveryTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 export interface PlainTextWorkbenchProviderDependencies {
@@ -139,6 +140,7 @@ export class PlainTextWorkbenchProvider
       bufferContent: source.content,
       viewState: state.viewState,
       recovery: state.recovery,
+      recoveryTimer: undefined,
     });
 
     return {
@@ -182,17 +184,20 @@ export class PlainTextWorkbenchProvider
       case plainTextCommands.syncBuffer: {
         const payload = this.requireBufferPayload(command.payload);
         this.updateRuntime(runtime, payload.content, payload.viewState);
+        this.scheduleRecovery(runtime);
         return createResult({ accepted: true });
       }
       case plainTextCommands.backup: {
         const payload = this.requireBufferPayload(command.payload);
         this.updateRuntime(runtime, payload.content, payload.viewState);
+        this.cancelScheduledRecovery(runtime);
         const backedUpTime = await this.persistRecovery(runtime);
         return createResult({ backedUpTime });
       }
       case plainTextCommands.save: {
         const payload = this.requireBufferPayload(command.payload);
         this.updateRuntime(runtime, payload.content, payload.viewState);
+        this.cancelScheduledRecovery(runtime);
         const result = await this.saveSource(runtime);
         return createResult({
           revision: result.revision,
@@ -211,6 +216,7 @@ export class PlainTextWorkbenchProvider
         return createResult({ saved: true });
       }
       case plainTextCommands.discardRecovery: {
+        this.cancelScheduledRecovery(runtime);
         runtime.recovery = undefined;
         runtime.bufferContent = runtime.source.content;
         await this.clearRecovery(runtime.assetId, runtime.viewState);
@@ -231,6 +237,7 @@ export class PlainTextWorkbenchProvider
     }
 
     try {
+      this.cancelScheduledRecovery(runtime);
       if (runtime.bufferContent !== runtime.source.content) {
         await this.persistRecovery(runtime);
       }
@@ -281,6 +288,28 @@ export class PlainTextWorkbenchProvider
   ): void {
     runtime.bufferContent = content;
     runtime.viewState = viewState;
+  }
+
+  private scheduleRecovery(runtime: PlainTextSessionRuntime): void {
+    this.cancelScheduledRecovery(runtime);
+
+    if (runtime.bufferContent === runtime.source.content) {
+      return;
+    }
+
+    runtime.recoveryTimer = setTimeout(() => {
+      runtime.recoveryTimer = undefined;
+      void this.persistRecovery(runtime).catch((error: unknown) => {
+        console.error('Plain Text Workbench 自动恢复快照保存失败', error);
+      });
+    }, 800);
+  }
+
+  private cancelScheduledRecovery(runtime: PlainTextSessionRuntime): void {
+    if (runtime.recoveryTimer) {
+      clearTimeout(runtime.recoveryTimer);
+      runtime.recoveryTimer = undefined;
+    }
   }
 
   private async persistRecovery(
