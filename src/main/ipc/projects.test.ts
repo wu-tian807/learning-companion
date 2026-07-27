@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
-import type { ProjectDatabaseApi } from '../projects/project-database';
 import { createProjectSnapshot } from '../projects/project';
 import type { ProjectServiceApi } from '../projects/project-service';
 import { registerProjectHandlers, removeProjectHandlers } from './projects';
@@ -45,42 +44,34 @@ function findHandler(channel: string): IpcHandler {
   };
 }
 
-function createDatabase() {
+function createService() {
   const project = createProjectSnapshot({
     id: 'project-1',
     name: '机器学习',
     icon: '🤖',
     createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
   });
-  const list = vi.fn(() => [project]);
-  const add = vi.fn(() => project);
-  const update = vi.fn(() => project);
-  const database: ProjectDatabaseApi = {
-    initialize: vi.fn(),
-    list,
-    get: vi.fn(() => project),
-    add,
-    update,
-    delete: vi.fn(),
-  };
+  const snapshot = { ...project, assetCount: 3 };
+  const listProjects = vi.fn(() => [snapshot]);
+  const createProject = vi.fn(() => snapshot);
+  const renameProject = vi.fn(() => snapshot);
+  const setProjectPinned = vi.fn(() => snapshot);
   const deleteProject = vi.fn();
-  const overview = { project, assetCount: 3 };
-  const listProjectOverviews = vi.fn(() => [overview]);
-  const getProjectOverview = vi.fn(() => overview);
   const projectService = {
-    deleteProjectCascade: deleteProject,
-    listProjectOverviews,
-    getProjectOverview,
+    listProjects,
+    createProject,
+    renameProject,
+    setProjectPinned,
+    deleteProject,
   } as unknown as ProjectServiceApi;
 
   return {
-    add,
-    database,
+    createProject,
     deleteProject,
-    getProjectOverview,
-    listProjectOverviews,
+    listProjects,
     projectService,
-    update,
+    renameProject,
+    setProjectPinned,
   };
 }
 
@@ -90,8 +81,8 @@ beforeEach(() => {
 
 describe('Project IPC handlers', () => {
   it('maps in-memory Projects to serializable summaries', async () => {
-    const { database, listProjectOverviews, projectService } = createDatabase();
-    registerProjectHandlers(database, projectService);
+    const { listProjects, projectService } = createService();
+    registerProjectHandlers(projectService);
 
     const result = await findHandler(IPC_CHANNELS.listProjects)({});
 
@@ -105,19 +96,18 @@ describe('Project IPC handlers', () => {
         pinned: false,
       },
     ]);
-    expect(listProjectOverviews).toHaveBeenCalledOnce();
+    expect(listProjects).toHaveBeenCalledOnce();
   });
 
-  it('forwards explicit mutation requests to the composed database API', async () => {
+  it('forwards explicit mutation requests only to ProjectService', async () => {
     const {
-      add,
-      database,
+      createProject,
       deleteProject,
-      getProjectOverview,
       projectService,
-      update,
-    } = createDatabase();
-    registerProjectHandlers(database, projectService);
+      renameProject,
+      setProjectPinned,
+    } = createService();
+    registerProjectHandlers(projectService);
 
     await findHandler(IPC_CHANNELS.createProject)({}, { name: '新 Project' });
     await findHandler(IPC_CHANNELS.renameProject)(
@@ -130,21 +120,20 @@ describe('Project IPC handlers', () => {
     );
     await findHandler(IPC_CHANNELS.deleteProject)({}, { id: 'project-1' });
 
-    expect(add).toHaveBeenCalledWith({ name: '新 Project' });
-    expect(update).toHaveBeenNthCalledWith(1, 'project-1', { name: '新标题' });
-    expect(update).toHaveBeenNthCalledWith(2, 'project-1', { pinned: true });
-    expect(getProjectOverview).toHaveBeenCalledTimes(3);
+    expect(createProject).toHaveBeenCalledWith({ name: '新 Project' });
+    expect(renameProject).toHaveBeenCalledWith('project-1', '新标题');
+    expect(setProjectPinned).toHaveBeenCalledWith('project-1', true);
     expect(deleteProject).toHaveBeenCalledWith('project-1');
   });
 
-  it('rejects malformed mutations before they reach ProjectDatabase', async () => {
-    const { add, database, projectService } = createDatabase();
-    registerProjectHandlers(database, projectService);
+  it('rejects malformed mutations before they reach ProjectService', async () => {
+    const { createProject, projectService } = createService();
+    registerProjectHandlers(projectService);
 
     await expect(
       findHandler(IPC_CHANNELS.createProject)({}, { name: '' }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
-    expect(add).not.toHaveBeenCalled();
+    expect(createProject).not.toHaveBeenCalled();
   });
 
   it('removes every Project handler', () => {

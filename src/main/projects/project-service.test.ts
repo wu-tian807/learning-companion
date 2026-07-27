@@ -17,6 +17,8 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
   const projectDatabase = {
     list: vi.fn(() => [project]),
     get: vi.fn((id: string) => (id === project.id ? project : undefined)),
+    add: vi.fn(() => project),
+    update: vi.fn(() => project),
     delete: vi.fn(() => calls.push('delete-project')),
   } as unknown as ProjectDatabaseApi;
   const assetService = {
@@ -47,18 +49,38 @@ describe('ProjectService', () => {
       workbenchSessions,
     );
 
-    expect(service.listProjectOverviews()).toEqual([
-      {
-        project: expect.objectContaining({ id: 'project' }),
-        assetCount: 3,
-      },
+    expect(service.listProjects()).toEqual([
+      expect.objectContaining({ id: 'project', assetCount: 3 }),
     ]);
-    expect(service.getProjectOverview('project')).toEqual({
-      project: expect.objectContaining({ id: 'project' }),
-      assetCount: 3,
-    });
-    expect(service.getProjectOverview('missing')).toBeUndefined();
+    expect(service.getProject('project')).toEqual(
+      expect.objectContaining({ id: 'project', assetCount: 3 }),
+    );
+    expect(service.getProject('missing')).toBeUndefined();
     expect(assetService.countByProjectIds).toHaveBeenCalledWith(['project']);
+  });
+
+  it('owns Project creation and mutation use cases', () => {
+    const { assetService, projectDatabase, workbenchSessions } =
+      createDependencies();
+    const service = new ProjectService(
+      projectDatabase,
+      assetService,
+      workbenchSessions,
+    );
+
+    expect(service.createProject({ name: '新 Project' })).toEqual(
+      expect.objectContaining({ id: 'project', assetCount: 0 }),
+    );
+    service.renameProject('project', '新标题');
+    service.setProjectPinned('project', true);
+
+    expect(projectDatabase.add).toHaveBeenCalledWith({ name: '新 Project' });
+    expect(projectDatabase.update).toHaveBeenCalledWith('project', {
+      name: '新标题',
+    });
+    expect(projectDatabase.update).toHaveBeenCalledWith('project', {
+      pinned: true,
+    });
   });
 
   it('opens a Project through AssetDatabase', async () => {
@@ -70,7 +92,7 @@ describe('ProjectService', () => {
       workbenchSessions,
     );
 
-    await expect(service.loadProjectWorkspace('project')).resolves.toEqual([]);
+    await expect(service.openProject('project')).resolves.toEqual([]);
     expect(workbenchSessions.closeActive).toHaveBeenCalledOnce();
     expect(assetService.loadFromProject).toHaveBeenCalledWith('project');
   });
@@ -83,7 +105,7 @@ describe('ProjectService', () => {
       current.workbenchSessions,
     );
 
-    await currentService.unloadProjectWorkspace('project');
+    await currentService.closeProject('project');
     expect(current.assetService.unloadProject).toHaveBeenCalledOnce();
 
     const empty = createDependencies();
@@ -93,7 +115,7 @@ describe('ProjectService', () => {
       empty.workbenchSessions,
     );
     await expect(
-      emptyService.unloadProjectWorkspace('project'),
+      emptyService.closeProject('project'),
     ).resolves.toBeUndefined();
 
     const other = createDependencies('other');
@@ -102,7 +124,7 @@ describe('ProjectService', () => {
       other.assetService,
       other.workbenchSessions,
     );
-    await expect(otherService.unloadProjectWorkspace('project')).rejects.toThrow(
+    await expect(otherService.closeProject('project')).rejects.toThrow(
       'PROJECT_CONTEXT_CHANGED',
     );
     expect(other.assetService.unloadProject).not.toHaveBeenCalled();
@@ -117,7 +139,7 @@ describe('ProjectService', () => {
       workbenchSessions,
     );
 
-    await service.deleteProjectCascade('project');
+    await service.deleteProject('project');
 
     expect(calls).toEqual([
       'close-workbench',
@@ -135,7 +157,7 @@ describe('ProjectService', () => {
       workbenchSessions,
     );
 
-    await service.deleteProjectCascade('project');
+    await service.deleteProject('project');
 
     expect(calls).toEqual(['delete-project']);
     expect(assetService.unloadProject).not.toHaveBeenCalled();
@@ -150,7 +172,7 @@ describe('ProjectService', () => {
       workbenchSessions,
     );
 
-    await expect(service.deleteProjectCascade('missing')).rejects.toThrow(
+    await expect(service.deleteProject('missing')).rejects.toThrow(
       'PROJECT_NOT_FOUND',
     );
     expect(assetService.unloadProject).not.toHaveBeenCalled();

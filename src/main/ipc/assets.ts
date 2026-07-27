@@ -54,7 +54,7 @@ export function registerAssetHandlers(
       throw invalidRequest();
     }
 
-    const loaded = await projectService.loadProjectWorkspace(request.projectId);
+    const loaded = await projectService.openProject(request.projectId);
     return loaded.map(toAssetSummary);
   });
 
@@ -63,7 +63,7 @@ export function registerAssetHandlers(
       throw invalidRequest();
     }
 
-    await projectService.unloadProjectWorkspace(request.projectId);
+    await projectService.closeProject(request.projectId);
   });
 
   registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {

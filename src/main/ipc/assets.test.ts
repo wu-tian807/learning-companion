@@ -100,8 +100,8 @@ function createDependencies() {
     getActiveProjectId: vi.fn(() => 'project'),
   } as unknown as AssetServiceApi;
   const projectService = {
-    loadProjectWorkspace: vi.fn(async () => [asset]),
-    unloadProjectWorkspace: vi.fn(),
+    openProject: vi.fn(async () => [asset]),
+    closeProject: vi.fn(),
   } as unknown as ProjectServiceApi;
   const assetFileService = {
     revealInFolder: vi.fn(),
@@ -143,10 +143,8 @@ describe('Asset IPC handlers', () => {
       {},
       { projectId: 'project' },
     );
-    expect(projectService.loadProjectWorkspace).toHaveBeenCalledWith('project');
-    expect(projectService.unloadProjectWorkspace).toHaveBeenCalledWith(
-      'project',
-    );
+    expect(projectService.openProject).toHaveBeenCalledWith('project');
+    expect(projectService.closeProject).toHaveBeenCalledWith('project');
   });
 
   it('selects multiple files and returns an empty list after cancellation', async () => {
@@ -254,7 +252,7 @@ describe('Asset IPC handlers', () => {
       ),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(assetService.addLocalFile).not.toHaveBeenCalled();
-    expect(projectService.loadProjectWorkspace).not.toHaveBeenCalled();
+    expect(projectService.openProject).not.toHaveBeenCalled();
   });
 
   it('removes every Asset handler', () => {

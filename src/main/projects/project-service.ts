@@ -1,23 +1,24 @@
 import type { AssetSnapshot } from '../../shared/assets';
+import {
+  cloneProjectSnapshot,
+  type Project,
+  type ProjectSnapshot,
+} from '../../shared/projects';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-manager';
+import type { CreateProjectInput } from './project';
 import type { ProjectDatabaseApi } from './project-database';
-import type { Project } from './project';
-
-export interface ProjectOverview {
-  readonly project: Project;
-  readonly assetCount: number;
-}
 
 export interface ProjectServiceApi {
-  listProjectOverviews(): readonly ProjectOverview[];
-  getProjectOverview(projectId: string): ProjectOverview | undefined;
-  loadProjectWorkspace(
-    projectId: string,
-  ): Promise<readonly AssetSnapshot[]>;
-  unloadProjectWorkspace(projectId: string): Promise<void>;
-  deleteProjectCascade(projectId: string): Promise<void>;
+  listProjects(): readonly ProjectSnapshot[];
+  getProject(projectId: string): ProjectSnapshot | undefined;
+  createProject(input: CreateProjectInput): ProjectSnapshot;
+  renameProject(projectId: string, name: string): ProjectSnapshot;
+  setProjectPinned(projectId: string, pinned: boolean): ProjectSnapshot;
+  openProject(projectId: string): Promise<readonly AssetSnapshot[]>;
+  closeProject(projectId: string): Promise<void>;
+  deleteProject(projectId: string): Promise<void>;
 }
 
 export class ProjectService implements ProjectServiceApi {
@@ -27,40 +28,55 @@ export class ProjectService implements ProjectServiceApi {
     private readonly workbenchSessions: WorkbenchSessionLifecycle,
   ) {}
 
-  listProjectOverviews(): readonly ProjectOverview[] {
+  listProjects(): readonly ProjectSnapshot[] {
     const projects = this.projectDatabase.list();
     const counts = this.assetService.countByProjectIds(
       projects.map(({ id }) => id),
     );
 
-    return projects.map((project) => ({
-      project,
-      assetCount: counts.get(project.id) ?? 0,
-    }));
+    return projects.map((project) =>
+      cloneProjectSnapshot({
+        ...project,
+        assetCount: counts.get(project.id) ?? 0,
+      }),
+    );
   }
 
-  getProjectOverview(projectId: string): ProjectOverview | undefined {
+  getProject(projectId: string): ProjectSnapshot | undefined {
     const project = this.projectDatabase.get(projectId);
 
     if (!project) {
       return undefined;
     }
 
-    return {
-      project,
+    return cloneProjectSnapshot({
+      ...project,
       assetCount:
         this.assetService.countByProjectIds([projectId]).get(projectId) ?? 0,
-    };
+    });
   }
 
-  async loadProjectWorkspace(
-    projectId: string,
-  ): Promise<readonly AssetSnapshot[]> {
+  createProject(input: CreateProjectInput): ProjectSnapshot {
+    const project = this.projectDatabase.add(input);
+    return cloneProjectSnapshot({ ...project, assetCount: 0 });
+  }
+
+  renameProject(projectId: string, name: string): ProjectSnapshot {
+    const project = this.projectDatabase.update(projectId, { name });
+    return this.withCurrentAssetCount(project);
+  }
+
+  setProjectPinned(projectId: string, pinned: boolean): ProjectSnapshot {
+    const project = this.projectDatabase.update(projectId, { pinned });
+    return this.withCurrentAssetCount(project);
+  }
+
+  async openProject(projectId: string): Promise<readonly AssetSnapshot[]> {
     await this.workbenchSessions.closeActive();
     return this.assetService.loadFromProject(projectId);
   }
 
-  async unloadProjectWorkspace(projectId: string): Promise<void> {
+  async closeProject(projectId: string): Promise<void> {
     const activeProjectId = this.assetService.getActiveProjectId();
 
     if (activeProjectId === undefined) {
@@ -76,7 +92,7 @@ export class ProjectService implements ProjectServiceApi {
     this.assetService.unloadProject();
   }
 
-  async deleteProjectCascade(projectId: string): Promise<void> {
+  async deleteProject(projectId: string): Promise<void> {
     if (!this.projectDatabase.get(projectId)) {
       throw new AppError('PROJECT_NOT_FOUND');
     }
@@ -87,5 +103,15 @@ export class ProjectService implements ProjectServiceApi {
     }
 
     this.projectDatabase.delete(projectId);
+  }
+
+  private withCurrentAssetCount(
+    project: Project,
+  ): ProjectSnapshot {
+    return cloneProjectSnapshot({
+      ...project,
+      assetCount:
+        this.assetService.countByProjectIds([project.id]).get(project.id) ?? 0,
+    });
   }
 }
