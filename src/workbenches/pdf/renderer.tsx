@@ -5,13 +5,13 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import 'pdfjs-dist/web/pdf_viewer.css';
 
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
   PdfDocumentSummary,
@@ -33,7 +33,7 @@ import {
   type PdfSidebar,
   type PdfWorkbenchViewState,
 } from './shared';
-import { PdfWorkbenchMenu } from './workbench-menu';
+import { createPdfRendererActions } from './renderer-actions';
 
 type PdfLoadState =
   | {
@@ -307,7 +307,6 @@ function PasswordPrompt({
 
 export function PdfWorkbenchView({
   bootstrap,
-  headerActionsTarget,
   executeCommand,
   onRelink,
   onRefresh,
@@ -656,38 +655,26 @@ export function PdfWorkbenchView({
     }
   };
 
-  const headerActions = useMemo(
-    () => (
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          aria-label="搜索 PDF"
-          aria-pressed={searchOpen}
-          disabled={!ready}
-          onClick={() => setSearchOpen((open) => !open)}
-          className="ui-icon-button grid h-[26px] min-w-[32px] place-items-center rounded-lg border border-white/[0.08] text-slate-400 disabled:cursor-not-allowed disabled:opacity-35"
-          title="搜索 PDF（⌘/Ctrl + F）"
-        >
-          <SearchIcon />
-        </button>
-        <PdfWorkbenchMenu
-          disabled={!ready}
-          readingMode={viewState.readingMode}
-          sidebar={viewState.sidebar}
-          hasOutline={outlineAvailable}
-          onReadingMode={setReadingMode}
-          onSidebar={setSidebar}
-          onPageWidth={() => setScaleMode('page-width')}
-          onPageFit={() => setScaleMode('page-fit')}
-          onActualSize={() => setScaleMode('actual-size')}
-          onRotateClockwise={() => adapterRef.current?.rotate(90)}
-          onRotateCounterclockwise={() =>
-            adapterRef.current?.rotate(-90)
-          }
-          onReveal={reveal}
-        />
-      </div>
-    ),
+  const rendererActions = useMemo(
+    () =>
+      createPdfRendererActions({
+        ready,
+        searchOpen,
+        readingMode: viewState.readingMode,
+        sidebar: viewState.sidebar,
+        hasOutline: outlineAvailable,
+        onToggleSearch: () =>
+          setSearchOpen((current) => !current),
+        onReadingMode: setReadingMode,
+        onSidebar: setSidebar,
+        onPageWidth: () => setScaleMode('page-width'),
+        onPageFit: () => setScaleMode('page-fit'),
+        onActualSize: () => setScaleMode('actual-size'),
+        onRotateClockwise: () => adapterRef.current?.rotate(90),
+        onRotateCounterclockwise: () =>
+          adapterRef.current?.rotate(-90),
+        onReveal: reveal,
+      }),
     [
       outlineAvailable,
       ready,
@@ -696,6 +683,7 @@ export function PdfWorkbenchView({
       viewState.sidebar,
     ],
   );
+  useWorkbenchContributions('builtin.pdf', rendererActions);
 
   if (!payload) {
     return (
@@ -739,9 +727,6 @@ export function PdfWorkbenchView({
           background: rgba(249, 115, 22, 0.42);
         }
       `}</style>
-
-      {headerActionsTarget &&
-        createPortal(headerActions, headerActionsTarget)}
 
       <div className="flex h-full min-h-0">
         {ready && viewState.sidebar !== 'closed' && (

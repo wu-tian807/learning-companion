@@ -51,7 +51,6 @@ function render(payload: WorkbenchBootstrap['payload']) {
       <MarkdownWorkbenchView
         asset={asset}
         bootstrap={createBootstrap(payload)}
-        headerActionsTarget={null}
         executeCommand={vi.fn(async () => ({
           payload: { saved: true, savedTime: 100 },
         }))}

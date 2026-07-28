@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { PdfWorkbenchView } from './renderer';
@@ -43,20 +44,21 @@ function createBootstrap(
 
 function render(payload: WorkbenchBootstrap['payload']) {
   return renderToStaticMarkup(
-    <PdfWorkbenchView
-      asset={asset}
-      bootstrap={createBootstrap(payload)}
-      headerActionsTarget={null}
-      executeCommand={vi.fn(async () => ({
-        payload: { saved: true, savedTime: 100 },
-      }))}
-      onRelink={vi.fn()}
-      onRefresh={vi.fn()}
-      onReveal={vi.fn()}
-      onSelectionChange={vi.fn()}
-      onOpenExternal={vi.fn(async () => undefined)}
-      onError={vi.fn()}
-    />,
+    <WorkbenchRuntimeProvider onError={vi.fn()}>
+      <PdfWorkbenchView
+        asset={asset}
+        bootstrap={createBootstrap(payload)}
+        executeCommand={vi.fn(async () => ({
+          payload: { saved: true, savedTime: 100 },
+        }))}
+        onRelink={vi.fn()}
+        onRefresh={vi.fn()}
+        onReveal={vi.fn()}
+        onSelectionChange={vi.fn()}
+        onOpenExternal={vi.fn(async () => undefined)}
+        onError={vi.fn()}
+      />
+    </WorkbenchRuntimeProvider>,
   );
 }
 

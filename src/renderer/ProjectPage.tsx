@@ -24,7 +24,7 @@ import {
   selectInitialAssetId,
 } from './asset-view';
 import { ErrorDialog } from './components/ErrorDialog';
-import { AssetWorkbenchHost } from './workbench/AssetWorkbenchHost';
+import { AssetWorkbenchHost } from './workbench/host/AssetWorkbenchHost';
 import { reduceWorkbenchSelection } from './workbench/workbench-selection-state';
 import { WorkbenchRuntimeProvider } from './workbench/runtime/WorkbenchRuntimeProvider';
 

@@ -1,31 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AssetSnapshot } from '../../shared/assets';
-import { userMessageFromError } from '../../shared/ipc-error';
+import type { AssetSnapshot } from '../../../shared/assets';
+import { userMessageFromError } from '../../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
   type WorkbenchCommand,
   type WorkbenchCommandResult,
   type WorkbenchBootstrap,
-} from '../../shared/workbench/protocol';
+} from '../../../shared/workbench/protocol';
 import type {
   WorkbenchSelectionEnvelope,
   WorkbenchSelectionSnapshot,
-} from '../../shared/workbench/selection';
-import { IMAGE_WORKBENCH_ID } from '../../workbenches/image/shared';
-import { MARKDOWN_WORKBENCH_ID } from '../../workbenches/markdown/shared';
-import { PDF_WORKBENCH_ID } from '../../workbenches/pdf/shared';
-import { PLAIN_TEXT_WORKBENCH_ID } from '../../workbenches/plain-text/shared';
-import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
+} from '../../../shared/workbench/selection';
+import { IMAGE_WORKBENCH_ID } from '../../../workbenches/image/shared';
+import { MARKDOWN_WORKBENCH_ID } from '../../../workbenches/markdown/shared';
+import { PDF_WORKBENCH_ID } from '../../../workbenches/pdf/shared';
+import { PLAIN_TEXT_WORKBENCH_ID } from '../../../workbenches/plain-text/shared';
+import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
-import { WorkbenchContextMenuHost } from './host/WorkbenchContextMenuHost';
-import { WorkbenchOverflowHost } from './host/WorkbenchOverflowHost';
+import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
+import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
 import {
   RendererWorkbenchRegistry,
   type RendererWorkbenchModule,
-} from './renderer-workbench-registry';
-import { WorkbenchLifecycleCoordinator } from './workbench-lifecycle';
-import { useWorkbenchRuntime } from './runtime/workbench-runtime-context';
+} from '../renderer-workbench-registry';
+import { WorkbenchLifecycleCoordinator } from '../workbench-lifecycle';
+import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
 
 interface AssetWorkbenchHostProps {
   readonly projectId: string;
@@ -62,28 +62,28 @@ const defaultRegistry = new RendererWorkbenchRegistry(
 );
 defaultRegistry.registerLoader(PLAIN_TEXT_WORKBENCH_ID, async () => {
   const { plainTextRendererWorkbenchModule } = await import(
-    '../../workbenches/plain-text/renderer'
+    '../../../workbenches/plain-text/renderer'
   );
 
   return plainTextRendererWorkbenchModule;
 });
 defaultRegistry.registerLoader(IMAGE_WORKBENCH_ID, async () => {
   const { imageRendererWorkbenchModule } = await import(
-    '../../workbenches/image/renderer'
+    '../../../workbenches/image/renderer'
   );
 
   return imageRendererWorkbenchModule;
 });
 defaultRegistry.registerLoader(MARKDOWN_WORKBENCH_ID, async () => {
   const { markdownRendererWorkbenchModule } = await import(
-    '../../workbenches/markdown/renderer'
+    '../../../workbenches/markdown/renderer'
   );
 
   return markdownRendererWorkbenchModule;
 });
 defaultRegistry.registerLoader(PDF_WORKBENCH_ID, async () => {
   const { default: pdfRendererWorkbenchModule } = await import(
-    '../../workbenches/pdf/renderer'
+    '../../../workbenches/pdf/renderer'
   );
 
   return pdfRendererWorkbenchModule;
@@ -103,8 +103,6 @@ export function AssetWorkbenchHost({
   const runtime = useWorkbenchRuntime();
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
-  const [headerActionsTarget, setHeaderActionsTarget] =
-    useState<HTMLDivElement | null>(null);
   const activeSessionIdRef = useRef<string | undefined>(undefined);
   const lifecycleRef = useRef(new WorkbenchLifecycleCoordinator());
   const assetId = asset?.id;
@@ -337,7 +335,6 @@ export function AssetWorkbenchHost({
         <View
           asset={asset}
           bootstrap={state.bootstrap}
-          headerActionsTarget={headerActionsTarget}
           executeCommand={state.executeCommand}
           onRelink={onRelink}
           onRefresh={onRefresh}
@@ -365,10 +362,6 @@ export function AssetWorkbenchHost({
             <span className="rounded-lg border border-white/[0.08] px-2 py-1 text-[10px] text-slate-400">
               {mediaLabel(asset.mediaType)}
             </span>
-            <div
-              ref={setHeaderActionsTarget}
-              className="flex shrink-0 items-center empty:hidden"
-            />
             <WorkbenchOverflowHost />
           </div>
         )}

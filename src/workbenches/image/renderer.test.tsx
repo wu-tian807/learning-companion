@@ -7,6 +7,7 @@ vi.mock('openseadragon', () => ({
 
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
+import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
 import { ImageWorkbenchView } from './renderer';
 import {
   cloneImageViewState,
@@ -47,20 +48,21 @@ function createBootstrap(
 
 function render(payload: WorkbenchBootstrap['payload']) {
   return renderToStaticMarkup(
-    <ImageWorkbenchView
-      asset={asset}
-      bootstrap={createBootstrap(payload)}
-      headerActionsTarget={null}
-      executeCommand={vi.fn(async () => ({
-        payload: { saved: true, savedTime: 100 },
-      }))}
-      onRelink={vi.fn()}
-      onRefresh={vi.fn()}
-      onReveal={vi.fn()}
-      onSelectionChange={vi.fn()}
-      onOpenExternal={vi.fn(async () => undefined)}
-      onError={vi.fn()}
-    />,
+    <WorkbenchRuntimeProvider onError={vi.fn()}>
+      <ImageWorkbenchView
+        asset={asset}
+        bootstrap={createBootstrap(payload)}
+        executeCommand={vi.fn(async () => ({
+          payload: { saved: true, savedTime: 100 },
+        }))}
+        onRelink={vi.fn()}
+        onRefresh={vi.fn()}
+        onReveal={vi.fn()}
+        onSelectionChange={vi.fn()}
+        onOpenExternal={vi.fn(async () => undefined)}
+        onError={vi.fn()}
+      />
+    </WorkbenchRuntimeProvider>,
   );
 }
 

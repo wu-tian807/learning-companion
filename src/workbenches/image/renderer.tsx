@@ -1,16 +1,17 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import OpenSeadragon from 'openseadragon';
 
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   cloneImageViewState,
@@ -23,7 +24,7 @@ import {
   type ImageWorkbenchViewMode,
   type ImageWorkbenchViewState,
 } from './shared';
-import { ImageWorkbenchMenu } from './workbench-menu';
+import { createImageRendererActions } from './renderer-actions';
 
 type ImageLoadState =
   | { readonly kind: 'loading' }
@@ -248,7 +249,6 @@ function RotateIcon() {
 
 export function ImageWorkbenchView({
   bootstrap,
-  headerActionsTarget,
   executeCommand,
   onRelink,
   onRefresh,
@@ -605,6 +605,22 @@ export function ImageWorkbenchView({
     updateLoadState,
   ]);
 
+  const ready = loadState.kind === 'ready';
+  const rendererActions = useMemo(
+    () =>
+      createImageRendererActions({
+        ready,
+        onFit: fit,
+        onActualSize: actualSize,
+        onRotateClockwise: () => rotate(90),
+        onRotateCounterclockwise: () => rotate(-90),
+        onReset: reset,
+        onReveal,
+      }),
+    [actualSize, fit, onReveal, ready, reset, rotate],
+  );
+  useWorkbenchContributions('builtin.image', rendererActions);
+
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -614,8 +630,6 @@ export function ImageWorkbenchView({
       </div>
     );
   }
-
-  const ready = loadState.kind === 'ready';
 
   return (
     <div
@@ -798,19 +812,6 @@ export function ImageWorkbenchView({
         </>
       )}
 
-      {headerActionsTarget &&
-        createPortal(
-          <ImageWorkbenchMenu
-            disabled={!ready}
-            onFit={fit}
-            onActualSize={actualSize}
-            onRotateClockwise={() => rotate(90)}
-            onRotateCounterclockwise={() => rotate(-90)}
-            onReset={reset}
-            onReveal={onReveal}
-          />,
-          headerActionsTarget,
-        )}
     </div>
   );
 }

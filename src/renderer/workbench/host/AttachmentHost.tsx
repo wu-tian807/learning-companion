@@ -1,4 +1,4 @@
-import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../../shared/workbench/attachment';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];
