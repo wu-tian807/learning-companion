@@ -8,6 +8,12 @@ import { AssetShellService } from './assets/asset-shell-service';
 import { AssetService } from './assets/asset-service';
 import { EmptyAttachmentService } from './attachments/attachment-service';
 import { ContentResolverRegistry } from './content/content-resolver-registry';
+import { ContentResourceService } from './content/content-resource-service';
+import {
+  registerContentProtocol,
+  registerContentSchemePrivileges,
+  removeContentProtocol,
+} from './content/register-content-protocol';
 import { LocalFileContentResolver } from './content/resolvers/local-file/local-file-content-resolver';
 import { registerHealthCheckHandler, removeHealthCheckHandler } from './ipc/health-check';
 import { registerAssetHandlers, removeAssetHandlers } from './ipc/assets';
@@ -30,6 +36,9 @@ import { PlainTextWorkbenchProvider } from '../workbenches/plain-text/main';
 import { UnsupportedWorkbenchProvider } from '../workbenches/unsupported/main';
 
 let databaseContext: DatabaseContext | undefined;
+let contentResourceService: ContentResourceService | undefined;
+
+registerContentSchemePrivileges();
 
 if (started) {
   app.quit();
@@ -43,6 +52,8 @@ void app.whenReady().then(async () => {
   const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
   const contentResolverRegistry = new ContentResolverRegistry();
   contentResolverRegistry.register(new LocalFileContentResolver());
+  contentResourceService = new ContentResourceService();
+  registerContentProtocol(contentResourceService);
   const assetService = new AssetService(
     assetDatabase,
     contentResolverRegistry,
@@ -103,6 +114,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  removeContentProtocol();
+  contentResourceService?.dispose();
+  contentResourceService = undefined;
   removeHealthCheckHandler();
   removeAssetHandlers();
   removeWorkbenchHandlers();
