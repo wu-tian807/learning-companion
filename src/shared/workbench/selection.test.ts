@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  isWorkbenchSelectionEnvelope,
   isWorkbenchSelectionSnapshot,
   type WorkbenchSelectionSnapshot,
 } from './selection';
@@ -24,22 +23,8 @@ const selection: WorkbenchSelectionSnapshot = {
 };
 
 describe('Workbench selection contract', () => {
-  it('accepts a content selection and its session envelope', () => {
+  it('accepts a content selection snapshot', () => {
     expect(isWorkbenchSelectionSnapshot(selection)).toBe(true);
-    expect(
-      isWorkbenchSelectionEnvelope({
-        assetId: 'asset-1',
-        sessionId: 'session-1',
-        selection,
-      }),
-    ).toBe(true);
-    expect(
-      isWorkbenchSelectionEnvelope({
-        assetId: 'asset-1',
-        sessionId: 'session-1',
-        selection: undefined,
-      }),
-    ).toBe(true);
   });
 
   it('rejects empty selections and asset-level targets', () => {
@@ -54,20 +39,4 @@ describe('Workbench selection contract', () => {
     ).toBe(false);
   });
 
-  it('rejects envelopes without asset or session identity', () => {
-    expect(
-      isWorkbenchSelectionEnvelope({
-        assetId: '',
-        sessionId: 'session-1',
-        selection,
-      }),
-    ).toBe(false);
-    expect(
-      isWorkbenchSelectionEnvelope({
-        assetId: 'asset-1',
-        sessionId: '',
-        selection,
-      }),
-    ).toBe(false);
-  });
 });

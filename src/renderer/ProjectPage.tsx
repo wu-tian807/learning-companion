@@ -17,15 +17,14 @@ import {
 } from '../shared/ipc';
 import { userMessageFromError } from '../shared/ipc-error';
 import type { ProjectSnapshot } from '../shared/projects';
-import type { WorkbenchSelectionEnvelope } from '../shared/workbench/selection';
 import {
   replaceAsset,
   selectAfterAssetDeletion,
   selectInitialAssetId,
 } from './asset-view';
 import { ErrorDialog } from './components/ErrorDialog';
+import { GenerationCenter } from './generation/GenerationCenter';
 import { AssetWorkbenchHost } from './workbench/host/AssetWorkbenchHost';
-import { reduceWorkbenchSelection } from './workbench/workbench-selection-state';
 import { WorkbenchRuntimeProvider } from './workbench/runtime/WorkbenchRuntimeProvider';
 
 interface ProjectPageProps {
@@ -452,41 +451,6 @@ function AssetPanel({
   );
 }
 
-function GenerationPanel({ asset }: { readonly asset: AssetSnapshot | undefined }) {
-  return (
-    <aside className="flex min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#20252c] shadow-[0_20px_50px_rgba(5,8,12,0.16)]">
-      <div className="flex h-[54px] items-center border-b border-white/[0.075] px-[17px]">
-        <h2 className="text-sm font-semibold">生成中心</h2>
-      </div>
-      <div className="p-3.5">
-        <p className="text-[11px] font-semibold text-slate-300">
-          生成新的 Asset
-        </p>
-        <div className="mt-2 grid grid-cols-2 gap-1.5">
-          {['思维导图', '学习提纲', '知识卡片', '摘要'].map((name) => (
-            <button
-              key={name}
-              type="button"
-              disabled
-              className="min-h-[70px] rounded-[11px] border border-white/[0.07] bg-indigo-300/[0.07] p-2.5 text-left text-[10px] text-slate-400"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-        <p className="mt-5 text-[11px] font-semibold text-slate-300">
-          当前 Asset 工具
-        </p>
-        <p className="mt-2 rounded-[10px] border border-white/[0.055] p-3 text-[10px] leading-5 text-slate-600">
-          {asset
-            ? `后续将为 ${mediaLabel(asset.mediaType)} 提供特定工具。`
-            : '选择 Asset 后显示对应工具。'}
-        </p>
-      </div>
-    </aside>
-  );
-}
-
 export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const [loadState, setLoadState] = useState<AssetLoadState>({
     kind: 'loading',
@@ -499,8 +463,6 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<AssetSnapshot | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssetSnapshot | null>(null);
-  const [, setWorkbenchSelection] =
-    useState<WorkbenchSelectionEnvelope>();
   const mutationLockRef = useRef(false);
   const projectLifecycleTaskRef = useRef<Promise<void>>(
     Promise.resolve(),
@@ -515,7 +477,6 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     [],
   );
   const selectAsset = useCallback((assetId: string | null) => {
-    setWorkbenchSelection(undefined);
     setSelectedAssetId(assetId);
   }, []);
 
@@ -595,15 +556,6 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     () => assets.find((asset) => asset.id === selectedAssetId),
     [assets, selectedAssetId],
   );
-  const handleWorkbenchSelection = useCallback(
-    (event: WorkbenchSelectionEnvelope) => {
-      setWorkbenchSelection((current) =>
-        reduceWorkbenchSelection(current, event, selectedAssetId ?? undefined),
-      );
-    },
-    [selectedAssetId],
-  );
-
   const updateAssets = useCallback(
     (operation: (assets: AssetSnapshot[]) => AssetSnapshot[]) => {
       setLoadState((current) =>
@@ -762,7 +714,6 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     const target = deleteTarget;
     const succeeded = await runMutation(async () => {
       await window.learningCompanion.deleteAsset({ assetId: target.id });
-      setWorkbenchSelection(undefined);
       setSelectedAssetId((selected) =>
         selectAfterAssetDeletion(assets, target.id, selected),
       );
@@ -874,11 +825,13 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
                 ? revealAssetInFolder(selectedAsset)
                 : Promise.resolve()
             }
-            onSelectionChange={handleWorkbenchSelection}
             onLifecycleTaskChange={handleWorkbenchLifecycleTask}
             onError={setError}
           />
-          <GenerationPanel asset={selectedAsset} />
+          <GenerationCenter
+            asset={selectedAsset}
+            mediaLabel={mediaLabel}
+          />
         </section>
       </WorkbenchRuntimeProvider>
 

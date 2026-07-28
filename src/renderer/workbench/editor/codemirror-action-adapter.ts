@@ -9,6 +9,7 @@ import { openSearchPanel } from '@codemirror/search';
 import type { EditorView } from '@codemirror/view';
 
 import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
+import type { WorkbenchInteractionSnapshot } from '../../../shared/workbench/interaction';
 import type { WorkbenchSelectionSnapshot } from '../../../shared/workbench/selection';
 import type { WorkbenchContextMenuWheelEvent } from '../runtime/workbench-runtime-store';
 import type {
@@ -96,6 +97,23 @@ export class CodeMirrorEditorActionAdapter
     };
   }
 
+  captureInteraction(): WorkbenchInteractionSnapshot {
+    const view = this.options.getView();
+
+    if (!view) {
+      return {};
+    }
+
+    const ranges = view.state.selection.ranges
+      .filter((range) => !range.empty)
+      .map((range) => ({
+        from: range.from,
+        to: range.to,
+      }));
+
+    return this.createInteraction(view.state.doc.toString(), ranges);
+  }
+
   captureContextMenu(
     clientX: number,
     clientY: number,
@@ -133,24 +151,17 @@ export class CodeMirrorEditorActionAdapter
     const nonEmptyRanges = this.frozenRanges.filter(
       (range) => range.from !== range.to,
     );
-    const text = nonEmptyRanges
-      .map((range) => source.slice(range.from, range.to))
-      .join('\n');
     const anchorRanges =
       nonEmptyRanges.length > 0
         ? nonEmptyRanges
         : this.frozenRanges.slice(0, 1);
-    const target = this.options.createTarget({
-      source,
-      ranges: anchorRanges,
-      text,
-    });
-    const selection: WorkbenchSelectionSnapshot | undefined = text
-      ? { text, target }
-      : undefined;
 
     return {
-      interaction: { target, selection },
+      interaction: this.createInteraction(
+        source,
+        anchorRanges,
+        true,
+      ),
       onWheel: (event) => this.scrollByWheel(event),
     };
   }
@@ -225,6 +236,36 @@ export class CodeMirrorEditorActionAdapter
       .filter((range) => range.from !== range.to)
       .map((range) => source.slice(range.from, range.to))
       .join('\n');
+  }
+
+  private createInteraction(
+    source: string,
+    ranges: readonly CodeMirrorSelectionRange[],
+    includeCollapsedTarget = false,
+  ): WorkbenchInteractionSnapshot {
+    const selectedRanges = ranges.filter(
+      (range) => range.from !== range.to,
+    );
+
+    if (selectedRanges.length === 0 && !includeCollapsedTarget) {
+      return {};
+    }
+
+    const targetRanges =
+      selectedRanges.length > 0 ? selectedRanges : ranges.slice(0, 1);
+    const text = selectedRanges
+      .map((range) => source.slice(range.from, range.to))
+      .join('\n');
+    const target = this.options.createTarget({
+      source,
+      ranges: targetRanges,
+      text,
+    });
+    const selection: WorkbenchSelectionSnapshot | undefined = text
+      ? { text, target }
+      : undefined;
+
+    return { target, selection };
   }
 
   private replaceFrozenRanges(

@@ -722,6 +722,12 @@ export function PlainTextWorkbenchView({
               const nextViewState = viewStateFromUpdate(update);
               viewStateRef.current = nextViewState;
               setCursor(cursorLabel(update));
+              if (update.selectionSet) {
+                runtime.publishInteraction(
+                  bootstrap.sessionId,
+                  editorActionAdapter.captureInteraction(),
+                );
+              }
             }}
           />
         </div>

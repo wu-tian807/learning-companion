@@ -9,7 +9,6 @@ import {
   type WorkbenchBootstrap,
 } from '../../../shared/workbench/protocol';
 import type {
-  WorkbenchSelectionEnvelope,
   WorkbenchSelectionSnapshot,
 } from '../../../shared/workbench/selection';
 import { IMAGE_WORKBENCH_ID } from '../../../workbenches/image/shared';
@@ -34,9 +33,6 @@ interface AssetWorkbenchHostProps {
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
-  readonly onSelectionChange: (
-    event: WorkbenchSelectionEnvelope,
-  ) => void;
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
 }
@@ -96,7 +92,6 @@ export function AssetWorkbenchHost({
   onRelink,
   onRefresh,
   onReveal,
-  onSelectionChange,
   onLifecycleTaskChange,
   onError,
 }: AssetWorkbenchHostProps) {
@@ -127,17 +122,12 @@ export function AssetWorkbenchHost({
         return;
       }
 
-      onSelectionChange({
-        assetId,
-        sessionId: readySessionId,
-        selection,
-      });
       runtime.publishInteraction(readySessionId, {
         target: selection?.target,
         selection,
       });
     },
-    [assetId, onSelectionChange, readySessionId, runtime],
+    [assetId, readySessionId, runtime],
   );
   const openExternal = useCallback(
     async (url: string) => {
@@ -175,13 +165,6 @@ export function AssetWorkbenchHost({
       openedSessionId = undefined;
       if (activeSessionIdRef.current === sessionId) {
         activeSessionIdRef.current = undefined;
-      }
-      if (assetId) {
-        onSelectionChange({
-          assetId,
-          sessionId,
-          selection: undefined,
-        });
       }
       runtime.publishInteraction(sessionId, {});
       // React may run the Host cleanup before the active View cleanup.
@@ -278,6 +261,10 @@ export function AssetWorkbenchHost({
 
     return () => {
       active = false;
+      if (openedSessionId) {
+        runtime.publishInteraction(openedSessionId, {});
+      }
+      runtime.closeContextMenu();
       void openingTask
         .then(closeOpenedSession)
         .catch(reportCloseError)
@@ -290,7 +277,6 @@ export function AssetWorkbenchHost({
     assetKey,
     onError,
     onLifecycleTaskChange,
-    onSelectionChange,
     projectId,
     runtime,
   ]);

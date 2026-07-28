@@ -1,4 +1,5 @@
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selection';
 import type { WorkbenchContextMenuWheelEvent } from '../../renderer/workbench/runtime/workbench-runtime-store';
 import type {
@@ -128,6 +129,28 @@ export class MarkdownEditorActionAdapter
     };
   }
 
+  captureInteraction(): WorkbenchInteractionSnapshot {
+    const editor = this.options.getEditor();
+    const element = editor?.getEditableElement();
+    const selection =
+      element?.ownerDocument.defaultView?.getSelection();
+
+    if (!element || !selection || selection.rangeCount === 0) {
+      return {};
+    }
+
+    const range = selection.getRangeAt(0);
+
+    if (
+      range.collapsed ||
+      !rangeBelongsToElement(range, element)
+    ) {
+      return {};
+    }
+
+    return createVisualInteraction(range.toString());
+  }
+
   captureContextMenu(
     clientX: number,
     clientY: number,
@@ -176,20 +199,11 @@ export class MarkdownEditorActionAdapter
       ? ''
       : capturedRange.toString();
 
-    const target = createVisualSelectionTarget(this.frozenText);
-    const selected: WorkbenchSelectionSnapshot | undefined =
-      this.frozenText
-        ? {
-            text: this.frozenText,
-            target,
-          }
-        : undefined;
-
     return {
-      interaction: {
-        target,
-        selection: selected,
-      },
+      interaction: createVisualInteraction(
+        this.frozenText,
+        true,
+      ),
       onWheel: (event) => this.scrollByWheel(event),
     };
   }
@@ -295,4 +309,23 @@ export class MarkdownEditorActionAdapter
           : 1;
     editor.scrollBy(event.deltaX * scale, event.deltaY * scale);
   }
+}
+
+function createVisualInteraction(
+  text: string,
+  includeEmptyTarget = false,
+): WorkbenchInteractionSnapshot {
+  if (!text && !includeEmptyTarget) {
+    return {};
+  }
+
+  const target = createVisualSelectionTarget(text);
+  const selection: WorkbenchSelectionSnapshot | undefined = text
+    ? {
+        text,
+        target,
+      }
+    : undefined;
+
+  return { target, selection };
 }

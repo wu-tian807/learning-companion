@@ -166,7 +166,13 @@ export class WorkbenchRuntime {
       return false;
     }
 
-    return this.store.getState().openContextMenu({
+    const state = this.store.getState();
+    state.publishInteraction({
+      ...identity,
+      ...interaction,
+    });
+
+    return state.openContextMenu({
       ...position,
       onWheel,
       invocation: createWorkbenchInvocationContext(

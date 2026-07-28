@@ -397,6 +397,8 @@ export class MarkdownEditorAdapter {
         'redo',
       ],
       toolbarConfig: { pin: true },
+      // Vditor 3.11.2 将该可选回调当作必填函数调用。
+      customWysiwygToolbar: () => undefined,
       link: {
         isOpen: false,
         click: (element) => {

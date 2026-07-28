@@ -20,6 +20,7 @@ export interface EditorContextMenuCapture {
 
 export interface EditorActionAdapter {
   getState(): EditorActionState;
+  captureInteraction(): WorkbenchInteractionSnapshot;
   captureContextMenu(
     clientX: number,
     clientY: number,

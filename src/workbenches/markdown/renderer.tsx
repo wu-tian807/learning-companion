@@ -610,10 +610,42 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         capture.onWheel,
       );
     };
+    const onSelectionChange = () => {
+      const selection =
+        element.ownerDocument.defaultView?.getSelection();
+
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+
+      if (
+        !element.contains(range.startContainer) ||
+        !element.contains(range.endContainer)
+      ) {
+        return;
+      }
+
+      runtime.publishInteraction(
+        bootstrap.sessionId,
+        wysiwygEditorActionAdapter.captureInteraction(),
+      );
+    };
 
     element.addEventListener('contextmenu', onContextMenu);
+    element.ownerDocument.addEventListener(
+      'selectionchange',
+      onSelectionChange,
+    );
+    onSelectionChange();
+
     return () => {
       element.removeEventListener('contextmenu', onContextMenu);
+      element.ownerDocument.removeEventListener(
+        'selectionchange',
+        onSelectionChange,
+      );
     };
   }, [
     bootstrap.sessionId,
@@ -666,6 +698,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           ...viewStateRef.current,
           viewMode: mode,
         };
+        runtime.publishInteraction(bootstrap.sessionId, {});
         applyViewState(next);
         await persistViewState(next);
 
@@ -680,9 +713,11 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [
       applyViewState,
+      bootstrap.sessionId,
       persistViewState,
       recovery,
       reportError,
+      runtime,
       syncSourceBuffer,
       syncWysiwygBuffer,
     ],
@@ -785,6 +820,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
   const onSourceUpdate = useCallback(
     (update: ViewUpdate) => {
+      if (update.selectionSet) {
+        runtime.publishInteraction(
+          bootstrap.sessionId,
+          sourceEditorActionAdapter.captureInteraction(),
+        );
+      }
+
       if (update.docChanged) {
         return;
       }
@@ -813,7 +855,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         sourceViewState: sourceState,
       });
     },
-    [runtime, scheduleViewStateSave],
+    [
+      bootstrap.sessionId,
+      runtime,
+      scheduleViewStateSave,
+      sourceEditorActionAdapter,
+    ],
   );
 
   const restoreRecovery = useCallback(async () => {
