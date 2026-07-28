@@ -26,6 +26,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { MarkdownEditorAdapter } from './markdown-editor-adapter';
@@ -50,9 +51,9 @@ import {
   type MarkdownWorkbenchViewState,
 } from './shared';
 import {
-  MarkdownSourceContextMenu,
-  MarkdownWorkbenchMenu,
-} from './workbench-menu';
+  createMarkdownRendererActions,
+} from './renderer-actions';
+import { MarkdownSourceContextMenu } from './source-context-menu';
 
 type VisualEditorState =
   | 'loading'
@@ -289,7 +290,6 @@ function MarkdownRecoveryDialog({
 export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const {
     bootstrap,
-    headerActionsTarget,
     executeCommand,
     onReveal,
     onOpenExternal,
@@ -978,6 +978,34 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [executeCommand, reportError],
   );
 
+  const rendererActions = useMemo(
+    () =>
+      createMarkdownRendererActions({
+        disabled: saving || Boolean(recovery),
+        encodingDisabled: dirty || Boolean(recovery),
+        encoding,
+        lineEnding,
+        viewState,
+        onSetEncoding: reopenWithEncoding,
+        onSetLineEnding: updateLineEnding,
+        onSetViewState: updateViewState,
+        onReveal,
+      }),
+    [
+      dirty,
+      encoding,
+      lineEnding,
+      onReveal,
+      recovery,
+      reopenWithEncoding,
+      saving,
+      updateLineEnding,
+      updateViewState,
+      viewState,
+    ],
+  );
+  useWorkbenchContributions('builtin.markdown', rendererActions);
+
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -988,59 +1016,41 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     );
   }
 
-  const headerActions = headerActionsTarget
-    ? createPortal(
-        <>
-          <div
-            role="group"
-            aria-label="Markdown 编辑模式"
-            className="flex h-[28px] items-center rounded-lg border border-white/[0.08] bg-black/10 p-0.5"
-          >
-            {(['wysiwyg', 'source'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                disabled={Boolean(recovery) || saving}
-                aria-pressed={viewState.viewMode === mode}
-                onClick={() => void switchMode(mode)}
-                className={`rounded-md px-2.5 py-1 text-[10px] transition ${
-                  viewState.viewMode === mode
-                    ? 'bg-white/[0.1] text-slate-100'
-                    : 'text-slate-500 hover:bg-white/[0.06] hover:text-slate-300'
-                } disabled:opacity-35`}
-              >
-                {mode === 'wysiwyg' ? '编辑' : '源码'}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            disabled={!dirty || saving || Boolean(recovery)}
-            onClick={() => void save()}
-            className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
-            title="保存 Markdown（⌘/Ctrl + S）"
-          >
-            {saving ? '保存中…' : '保存'}
-          </button>
-          <MarkdownWorkbenchMenu
-            disabled={saving || Boolean(recovery)}
-            encodingDisabled={dirty || Boolean(recovery)}
-            encoding={encoding}
-            lineEnding={lineEnding}
-            viewState={viewState}
-            onSetEncoding={reopenWithEncoding}
-            onSetLineEnding={updateLineEnding}
-            onSetViewState={updateViewState}
-            onReveal={onReveal}
-          />
-        </>,
-        headerActionsTarget,
-      )
-    : null;
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#171c22]">
-      {headerActions}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.065] bg-[#1d2229] px-3">
+        <div
+          role="group"
+          aria-label="Markdown 编辑模式"
+          className="flex h-[28px] items-center rounded-lg border border-white/[0.08] bg-black/10 p-0.5"
+        >
+          {(['wysiwyg', 'source'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              disabled={Boolean(recovery) || saving}
+              aria-pressed={viewState.viewMode === mode}
+              onClick={() => void switchMode(mode)}
+              className={`rounded-md px-2.5 py-1 text-[10px] transition ${
+                viewState.viewMode === mode
+                  ? 'bg-white/[0.1] text-slate-100'
+                  : 'text-slate-500 hover:bg-white/[0.06] hover:text-slate-300'
+              } disabled:opacity-35`}
+            >
+              {mode === 'wysiwyg' ? '编辑' : '源码'}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          disabled={!dirty || saving || Boolean(recovery)}
+          onClick={() => void save()}
+          className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
+          title="保存 Markdown（⌘/Ctrl + S）"
+        >
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
 
       <div className="relative min-h-0 flex-1">
         {viewState.viewMode === 'source' ? (

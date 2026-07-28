@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
   redo,
   redoDepth,
@@ -24,6 +23,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import {
@@ -42,7 +42,7 @@ import {
   type PlainTextViewOptions,
   type PlainTextViewState,
 } from './shared';
-import { PlainTextWorkbenchMenu } from './workbench-menu';
+import { createPlainTextRendererActions } from './renderer-actions';
 
 type BackupStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
 type ContextMenuState = { readonly x: number; readonly y: number } | null;
@@ -325,7 +325,6 @@ function PlainTextRecoveryDialog({
 
 export function PlainTextWorkbenchView({
   bootstrap,
-  headerActionsTarget,
   executeCommand,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -858,6 +857,32 @@ export function PlainTextWorkbenchView({
     return () => window.clearTimeout(timer);
   }, [cursor, dirty, executeCommand, payload, recovery, reportError]);
 
+  const rendererActions = useMemo(
+    () =>
+      createPlainTextRendererActions({
+        disabled: Boolean(recovery) || saving,
+        encodingDisabled: dirty,
+        encoding,
+        lineEnding,
+        viewOptions,
+        onSetEncoding: reopenWithEncoding,
+        onSetLineEnding: updateLineEnding,
+        onSetViewOptions: updateViewOptions,
+      }),
+    [
+      dirty,
+      encoding,
+      lineEnding,
+      recovery,
+      reopenWithEncoding,
+      saving,
+      updateLineEnding,
+      updateViewOptions,
+      viewOptions,
+    ],
+  );
+  useWorkbenchContributions('builtin.plain-text', rendererActions);
+
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -1174,20 +1199,6 @@ export function PlainTextWorkbenchView({
           onDiscard={() => void discardRecovery()}
         />
       )}
-      {headerActionsTarget &&
-        createPortal(
-          <PlainTextWorkbenchMenu
-            disabled={Boolean(recovery) || saving}
-            encodingDisabled={dirty}
-            encoding={encoding}
-            lineEnding={lineEnding}
-            viewOptions={viewOptions}
-            onSetEncoding={reopenWithEncoding}
-            onSetLineEnding={updateLineEnding}
-            onSetViewOptions={updateViewOptions}
-          />,
-          headerActionsTarget,
-        )}
     </div>
   );
 }
