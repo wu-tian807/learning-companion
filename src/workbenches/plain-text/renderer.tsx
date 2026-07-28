@@ -504,7 +504,6 @@ export function PlainTextWorkbenchView({
       }
 
       event.preventDefault();
-      event.stopPropagation();
 
       const position = resolveContextMenuPosition(
         event.clientX,
@@ -940,7 +939,7 @@ export function PlainTextWorkbenchView({
         <div
           ref={editorHostRef}
           className="relative h-full"
-          onContextMenuCapture={onContextMenu}
+          onContextMenu={onContextMenu}
         >
           <CodeMirror
             key={editorInstanceKey}
