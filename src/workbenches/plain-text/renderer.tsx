@@ -342,7 +342,7 @@ export function PlainTextWorkbenchView({
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
         capture.interaction,
-        capture.onWheel,
+        { onWheel: capture.onWheel },
       );
     },
     [

@@ -8,6 +8,7 @@ import {
   isCreateProjectRequest,
   isDeleteProjectRequest,
   isHealthCheckResponse,
+  isHtmlContextMenuEvent,
   isOpenExternalRequest,
   isProjectLifecycleRequest,
   isRelinkAssetRequest,
@@ -70,6 +71,34 @@ describe('external URL contract', () => {
     expect(isOpenExternalRequest({ url: ' https://example.com ' })).toBe(
       false,
     );
+  });
+});
+
+describe('HTML context menu event contract', () => {
+  it('accepts a safe event from an isolated frame', () => {
+    expect(
+      isHtmlContextMenuEvent({
+        x: 20,
+        y: 30,
+        frameUrl: 'learning-content://resource/session',
+        selectionText: '选中的内容',
+        linkUrl: 'https://example.com',
+        mediaType: 'image',
+        sourceUrl: 'https://example.com/image.png',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects unsafe links and unbounded coordinates', () => {
+    expect(
+      isHtmlContextMenuEvent({
+        x: -1,
+        y: 30,
+        frameUrl: 'learning-content://resource/session',
+        linkUrl: 'javascript:alert(1)',
+        mediaType: 'none',
+      }),
+    ).toBe(false);
   });
 });
 

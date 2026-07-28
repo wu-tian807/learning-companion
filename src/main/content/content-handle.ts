@@ -28,6 +28,7 @@ export interface WriteByteContentResult {
 export interface ContentHandle {
   readonly capabilities: ReadonlySet<ContentCapability>;
   readBytes?(): Promise<ResolvedByteContent>;
+  getByteLength?(): Promise<number>;
   openByteStream?(range?: ByteRange): Promise<ResolvedByteStream>;
   writeBytes?(
     request: WriteByteContentRequest,

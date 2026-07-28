@@ -38,8 +38,11 @@ import { SqliteWorkbenchStateRepository } from './workbench/workbench-state-repo
 import { createMainWindow } from './window';
 import { PlainTextWorkbenchProvider } from '../workbenches/plain-text/main';
 import { ImageWorkbenchProvider } from '../workbenches/image/main';
+import { HtmlWorkbenchProvider } from '../workbenches/html/main';
+import { EpubWorkbenchProvider } from '../workbenches/epub/main';
 import { MarkdownWorkbenchProvider } from '../workbenches/markdown/main';
 import { PdfWorkbenchProvider } from '../workbenches/pdf/main';
+import { VideoWorkbenchProvider } from '../workbenches/video/main';
 import { UnsupportedWorkbenchProvider } from '../workbenches/unsupported/main';
 
 let databaseContext: DatabaseContext | undefined;
@@ -119,6 +122,15 @@ void app.whenReady().then(async () => {
     ),
   );
   workbenchRegistry.register(
+    new HtmlWorkbenchProvider(contentResourceService),
+  );
+  workbenchRegistry.register(
+    new EpubWorkbenchProvider(
+      contentResourceService,
+      workbenchStateRepository,
+    ),
+  );
+  workbenchRegistry.register(
     new MarkdownWorkbenchProvider(
       workbenchStateRepository,
       workbenchStateDataRepository,
@@ -126,6 +138,12 @@ void app.whenReady().then(async () => {
   );
   workbenchRegistry.register(
     new PdfWorkbenchProvider(
+      contentResourceService,
+      workbenchStateRepository,
+    ),
+  );
+  workbenchRegistry.register(
+    new VideoWorkbenchProvider(
       contentResourceService,
       workbenchStateRepository,
     ),

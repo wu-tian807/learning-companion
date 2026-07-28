@@ -353,7 +353,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
         capture.interaction,
-        capture.onWheel,
+        { onWheel: capture.onWheel },
       );
     },
     [
@@ -607,7 +607,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
         capture.interaction,
-        capture.onWheel,
+        { onWheel: capture.onWheel },
       );
     };
     const onSelectionChange = () => {

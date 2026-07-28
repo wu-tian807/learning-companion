@@ -8,12 +8,19 @@ export const PLAIN_TEXT_ASSET_MEDIA_TYPE = 'text/plain';
 const mediaTypeByExtension = new Map<string, string>([
   ['.bmp', 'image/bmp'],
   ['.epub', 'application/epub+zip'],
+  ['.htm', 'text/html'],
+  ['.html', 'text/html'],
   ['.jpeg', 'image/jpeg'],
   ['.jpg', 'image/jpeg'],
+  ['.m4v', 'video/mp4'],
   ['.markdown', 'text/markdown'],
   ['.md', 'text/markdown'],
+  ['.mov', 'video/quicktime'],
+  ['.mp4', 'video/mp4'],
+  ['.ogv', 'video/ogg'],
   ['.pdf', 'application/pdf'],
   ['.png', 'image/png'],
+  ['.webm', 'video/webm'],
   ['.webp', 'image/webp'],
 ]);
 

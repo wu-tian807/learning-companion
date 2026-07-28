@@ -106,6 +106,19 @@ describe('LocalFileContentResolver', () => {
       new Response(streamed.stream).text(),
     ).resolves.toBe('streamed bytes');
     expect(streamed.byteLength).toBe(14);
+    await expect(handle.getByteLength!()).resolves.toBe(14);
+
+    const range = await handle.openByteStream!({
+      start: 3,
+      endExclusive: 9,
+    });
+    await expect(new Response(range.stream).text()).resolves.toBe(
+      'eamed ',
+    );
+    expect(range.byteLength).toBe(6);
+    await expect(
+      handle.openByteStream!({ start: 10, endExclusive: 20 }),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await handle.close();
   });
 

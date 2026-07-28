@@ -74,7 +74,7 @@ flowchart LR
 | Markdown | Vditor（WYSIWYG）+ CodeMirror 6（源码）+ unified / remark / rehype（后续解析、索引与导出） |
 | 纯文本 | 原生文本解析与虚拟列表 |
 | EPUB | epub.js |
-| 网页正文 | Mozilla Readability |
+| HTML | Chromium 原生渲染（隔离 iframe，保留脚本与外部资源） |
 | DOCX（后续） | Mammoth.js 或受控转换管线 |
 
 每份文档需要生成稳定的来源锚点，例如：
@@ -234,7 +234,8 @@ interface LLMProvider {
 - 所有文件路径在主进程校验并归一化。
 - 不允许远程网页直接调用本地 IPC。
 - Codex 使用 stdio，不默认启动 TCP/WebSocket 监听。
-- 外部内容视为不可信输入，进行 HTML 清理和 Prompt Injection 防护。
+- HTML 始终按原文运行在独立 iframe 沙箱中：允许文档自己的网络资源与脚本，
+  但不授予同源、顶层导航或 Learning Companion IPC 能力。
 - 文档问答默认使用只读 Codex Sandbox。
 
 ## 12. MVP 实施顺序

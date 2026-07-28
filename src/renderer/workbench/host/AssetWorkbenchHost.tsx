@@ -12,9 +12,12 @@ import type {
   WorkbenchSelectionSnapshot,
 } from '../../../shared/workbench/selection';
 import { IMAGE_WORKBENCH_ID } from '../../../workbenches/image/shared';
+import { HTML_WORKBENCH_ID } from '../../../workbenches/html/shared';
+import { EPUB_WORKBENCH_ID } from '../../../workbenches/epub/shared';
 import { MARKDOWN_WORKBENCH_ID } from '../../../workbenches/markdown/shared';
 import { PDF_WORKBENCH_ID } from '../../../workbenches/pdf/shared';
 import { PLAIN_TEXT_WORKBENCH_ID } from '../../../workbenches/plain-text/shared';
+import { VIDEO_WORKBENCH_ID } from '../../../workbenches/video/shared';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
@@ -70,6 +73,20 @@ defaultRegistry.registerLoader(IMAGE_WORKBENCH_ID, async () => {
 
   return imageRendererWorkbenchModule;
 });
+defaultRegistry.registerLoader(HTML_WORKBENCH_ID, async () => {
+  const { default: htmlRendererWorkbenchModule } = await import(
+    '../../../workbenches/html/renderer'
+  );
+
+  return htmlRendererWorkbenchModule;
+});
+defaultRegistry.registerLoader(EPUB_WORKBENCH_ID, async () => {
+  const { default: epubRendererWorkbenchModule } = await import(
+    '../../../workbenches/epub/renderer'
+  );
+
+  return epubRendererWorkbenchModule;
+});
 defaultRegistry.registerLoader(MARKDOWN_WORKBENCH_ID, async () => {
   const { markdownRendererWorkbenchModule } = await import(
     '../../../workbenches/markdown/renderer'
@@ -83,6 +100,13 @@ defaultRegistry.registerLoader(PDF_WORKBENCH_ID, async () => {
   );
 
   return pdfRendererWorkbenchModule;
+});
+defaultRegistry.registerLoader(VIDEO_WORKBENCH_ID, async () => {
+  const { default: videoRendererWorkbenchModule } = await import(
+    '../../../workbenches/video/renderer'
+  );
+
+  return videoRendererWorkbenchModule;
 });
 
 export function AssetWorkbenchHost({

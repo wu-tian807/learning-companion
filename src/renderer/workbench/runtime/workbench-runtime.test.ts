@@ -53,4 +53,21 @@ describe('WorkbenchRuntime', () => {
     ).toBe(false);
     expect(runtime.interactionContext()?.selection).toBeUndefined();
   });
+
+  it('preserves the pointer-capture policy for embedded content menus', () => {
+    const runtime = new WorkbenchRuntime(vi.fn());
+    runtime.activate(identity);
+
+    expect(
+      runtime.openContextMenu(
+        identity.sessionId,
+        { x: 20, y: 30 },
+        {},
+        { captureOutsidePointer: true },
+      ),
+    ).toBe(true);
+    expect(
+      runtime.store.getState().contextMenu?.captureOutsidePointer,
+    ).toBe(true);
+  });
 });

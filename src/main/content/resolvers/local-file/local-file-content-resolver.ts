@@ -37,6 +37,14 @@ export class LocalFileContentHandle implements ContentHandle {
 
   constructor(readonly path: string) {}
 
+  async getByteLength(): Promise<number> {
+    try {
+      return (await stat(this.path)).size;
+    } catch (error) {
+      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
+    }
+  }
+
   async readBytes(): Promise<ResolvedByteContent> {
     let content: Buffer;
 
@@ -55,13 +63,7 @@ export class LocalFileContentHandle implements ContentHandle {
   async openByteStream(
     range?: ByteRange,
   ): Promise<ResolvedByteStream> {
-    let byteLength: number;
-
-    try {
-      byteLength = (await stat(this.path)).size;
-    } catch (error) {
-      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
-    }
+    const totalByteLength = await this.getByteLength();
 
     if (
       range &&
@@ -69,7 +71,7 @@ export class LocalFileContentHandle implements ContentHandle {
         !Number.isSafeInteger(range.endExclusive) ||
         range.start < 0 ||
         range.endExclusive <= range.start ||
-        range.endExclusive > byteLength)
+        range.endExclusive > totalByteLength)
     ) {
       throw new AppError('INVALID_IPC_REQUEST');
     }
@@ -92,7 +94,7 @@ export class LocalFileContentHandle implements ContentHandle {
       stream: Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>,
       byteLength: range
         ? range.endExclusive - range.start
-        : byteLength,
+        : totalByteLength,
     };
   }
 

@@ -18,6 +18,7 @@ import type {
   AddLocalAssetsResult,
   AssetIdRequest,
   HealthCheckResponse,
+  HtmlContextMenuEvent,
   LearningCompanionApi,
   OpenExternalRequest,
   ProjectLifecycleRequest,
@@ -27,7 +28,10 @@ import type {
   SetProjectPinnedRequest,
   UpdateHomePreferencesRequest,
 } from '../shared/ipc';
-import { IPC_CHANNELS } from '../shared/ipc';
+import {
+  IPC_CHANNELS,
+  isHtmlContextMenuEvent,
+} from '../shared/ipc';
 
 async function invoke<Response>(
   channel: string,
@@ -104,6 +108,23 @@ const api: LearningCompanionApi = {
     ),
   closeWorkbench: (request: WorkbenchCloseRequest) =>
     invoke<void>(IPC_CHANNELS.closeWorkbench, request),
+  onHtmlContextMenu: (
+    listener: (event: HtmlContextMenuEvent) => void,
+  ) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      if (isHtmlContextMenuEvent(value)) {
+        listener(value);
+      }
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.htmlContextMenu, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.htmlContextMenu,
+        wrappedListener,
+      );
+    };
+  },
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 

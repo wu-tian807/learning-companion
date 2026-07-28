@@ -27,6 +27,11 @@ export interface WorkbenchContextMenuPosition {
   readonly y: number;
 }
 
+export interface WorkbenchContextMenuOptions {
+  readonly onWheel?: (event: WorkbenchContextMenuWheelEvent) => void;
+  readonly captureOutsidePointer?: boolean;
+}
+
 export type WorkbenchErrorReporter = (
   error: unknown,
   fallback: string,
@@ -158,7 +163,7 @@ export class WorkbenchRuntime {
     sessionId: string,
     position: WorkbenchContextMenuPosition,
     interaction: WorkbenchInteractionSnapshot,
-    onWheel?: (event: WorkbenchContextMenuWheelEvent) => void,
+    options: WorkbenchContextMenuOptions = {},
   ): boolean {
     const identity = this.store.getState().identity;
 
@@ -174,7 +179,7 @@ export class WorkbenchRuntime {
 
     return state.openContextMenu({
       ...position,
-      onWheel,
+      ...options,
       invocation: createWorkbenchInvocationContext(
         identity,
         'context-menu',

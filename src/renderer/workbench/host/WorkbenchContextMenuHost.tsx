@@ -1,4 +1,5 @@
 import {
+  type PointerEvent as ReactPointerEvent,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -29,6 +30,27 @@ function shouldClose(
   return (
     policy === 'always' ||
     (policy === 'on-success' && result === 'executed')
+  );
+}
+
+export function WorkbenchContextMenuDismissLayer({
+  onDismiss,
+}: {
+  readonly onDismiss: () => void;
+}) {
+  const dismiss = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onDismiss();
+  };
+
+  return (
+    <div
+      aria-hidden="true"
+      data-workbench-context-menu-dismiss-layer="true"
+      className="fixed inset-0 z-[89]"
+      onPointerDown={dismiss}
+    />
   );
 }
 
@@ -175,45 +197,52 @@ export function WorkbenchContextMenuHost() {
   );
 
   return createPortal(
-    <WorkbenchMenu
-      rootRef={rootRef}
-      ariaLabel="工作台右键菜单"
-      entries={entries}
-      busyActionIds={busyActionIds}
-      onWheel={(event) => {
-        const root = rootRef.current;
+    <>
+      {contextMenu.captureOutsidePointer ? (
+        <WorkbenchContextMenuDismissLayer
+          onDismiss={() => runtime.closeContextMenu()}
+        />
+      ) : null}
+      <WorkbenchMenu
+        rootRef={rootRef}
+        ariaLabel="工作台右键菜单"
+        entries={entries}
+        busyActionIds={busyActionIds}
+        onWheel={(event) => {
+          const root = rootRef.current;
 
-        if (root && root.scrollHeight > root.clientHeight) {
-          event.stopPropagation();
-          return;
-        }
+          if (root && root.scrollHeight > root.clientHeight) {
+            event.stopPropagation();
+            return;
+          }
 
-        if (contextMenu.onWheel) {
-          event.preventDefault();
-          contextMenu.onWheel({
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-            deltaMode: event.deltaMode,
-          });
-        }
-        runtime.closeContextMenu();
-      }}
-      onInvoke={(entry) => {
-        void runtime
-          .invoke(entry.action.id, contextMenu.invocation)
-          .then((result) => {
-            if (shouldClose(entry, result)) {
-              runtime.closeContextMenu();
-            }
-          });
-      }}
-      className="fixed z-[90] overflow-y-auto overscroll-contain"
-      style={{
-        left: position.x,
-        top: position.y,
-        maxHeight: resolveContextMenuMaximumHeight(viewport),
-      }}
-    />,
+          if (contextMenu.onWheel) {
+            event.preventDefault();
+            contextMenu.onWheel({
+              deltaX: event.deltaX,
+              deltaY: event.deltaY,
+              deltaMode: event.deltaMode,
+            });
+          }
+          runtime.closeContextMenu();
+        }}
+        onInvoke={(entry) => {
+          void runtime
+            .invoke(entry.action.id, contextMenu.invocation)
+            .then((result) => {
+              if (shouldClose(entry, result)) {
+                runtime.closeContextMenu();
+              }
+            });
+        }}
+        className="fixed z-[90] overflow-y-auto overscroll-contain"
+        style={{
+          left: position.x,
+          top: position.y,
+          maxHeight: resolveContextMenuMaximumHeight(viewport),
+        }}
+      />
+    </>,
     document.body,
   );
 }

@@ -12,18 +12,25 @@ function createStreamHandle(
 
   return {
     capabilities: new Set(['read-stream']),
-    openByteStream: vi.fn(async () => ({
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(bytes);
-          controller.close();
-        },
-        cancel() {
-          onCancel?.();
-        },
-      }),
-      byteLength: bytes.byteLength,
-    })),
+    getByteLength: vi.fn(async () => bytes.byteLength),
+    openByteStream: vi.fn(async (range) => {
+      const contentBytes = range
+        ? bytes.slice(range.start, range.endExclusive)
+        : bytes;
+
+      return {
+        stream: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(contentBytes);
+            controller.close();
+          },
+          cancel() {
+            onCancel?.();
+          },
+        }),
+        byteLength: contentBytes.byteLength,
+      };
+    }),
     close: vi.fn(async () => undefined),
   };
 }
@@ -81,9 +88,10 @@ describe('ContentResourceService', () => {
   it('serves HEAD metadata without a body', async () => {
     const cancel = vi.fn();
     const { service } = createService();
+    const handle = createStreamHandle('metadata', cancel);
     const url = service.register(
       'session-1',
-      createStreamHandle('metadata', cancel),
+      handle,
       'image/jpeg',
     );
 
@@ -94,8 +102,94 @@ describe('ContentResourceService', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/jpeg');
     expect(response.headers.get('Content-Length')).toBe('8');
+    expect(response.headers.get('Accept-Ranges')).toBe('bytes');
     expect(response.body).toBeNull();
-    expect(cancel).toHaveBeenCalledOnce();
+    expect(handle.getByteLength).toHaveBeenCalledOnce();
+    expect(handle.openByteStream).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('serves bounded, open-ended and suffix byte ranges', async () => {
+    const { service } = createService();
+    const handle = createStreamHandle('0123456789');
+    const url = service.register('session-1', handle, 'video/mp4');
+
+    const bounded = await service.handle(
+      new Request(url, { headers: { Range: 'bytes=2-5' } }),
+    );
+    const openEnded = await service.handle(
+      new Request(url, { headers: { Range: 'bytes=7-' } }),
+    );
+    const suffix = await service.handle(
+      new Request(url, { headers: { Range: 'bytes=-3' } }),
+    );
+
+    expect(bounded.status).toBe(206);
+    expect(bounded.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(bounded.headers.get('Content-Range')).toBe('bytes 2-5/10');
+    expect(bounded.headers.get('Content-Length')).toBe('4');
+    await expect(bounded.text()).resolves.toBe('2345');
+
+    expect(openEnded.status).toBe(206);
+    expect(openEnded.headers.get('Content-Range')).toBe(
+      'bytes 7-9/10',
+    );
+    await expect(openEnded.text()).resolves.toBe('789');
+
+    expect(suffix.status).toBe(206);
+    expect(suffix.headers.get('Content-Range')).toBe('bytes 7-9/10');
+    await expect(suffix.text()).resolves.toBe('789');
+    expect(handle.openByteStream).toHaveBeenNthCalledWith(1, {
+      start: 2,
+      endExclusive: 6,
+    });
+  });
+
+  it('clamps a byte range to EOF and supports ranged HEAD', async () => {
+    const { service } = createService();
+    const handle = createStreamHandle('0123456789');
+    const url = service.register('session-1', handle, 'video/webm');
+
+    const response = await service.handle(
+      new Request(url, {
+        method: 'HEAD',
+        headers: { Range: 'bytes=8-999' },
+      }),
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('Content-Range')).toBe('bytes 8-9/10');
+    expect(response.headers.get('Content-Length')).toBe('2');
+    expect(response.body).toBeNull();
+    expect(handle.openByteStream).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed, multiple and unsatisfiable ranges', async () => {
+    const { service } = createService();
+    const url = service.register(
+      'session-1',
+      createStreamHandle('0123456789'),
+      'video/mp4',
+    );
+
+    const malformed = await service.handle(
+      new Request(url, { headers: { Range: 'items=1-2' } }),
+    );
+    const multiple = await service.handle(
+      new Request(url, { headers: { Range: 'bytes=0-1,4-5' } }),
+    );
+    const backwards = await service.handle(
+      new Request(url, { headers: { Range: 'bytes=8-4' } }),
+    );
+    const beyondEnd = await service.handle(
+      new Request(url, { headers: { Range: 'bytes=10-' } }),
+    );
+
+    expect(malformed.status).toBe(416);
+    expect(multiple.status).toBe(416);
+    expect(backwards.status).toBe(416);
+    expect(beyondEnd.status).toBe(416);
+    expect(beyondEnd.headers.get('Content-Range')).toBe('bytes */10');
   });
 
   it('rejects unsupported methods and unknown tokens', async () => {

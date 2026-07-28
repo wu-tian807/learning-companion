@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../errors/app-error';
-import type { ContentHandle } from './content-handle';
+import type { ByteRange, ContentHandle } from './content-handle';
 
 export const CONTENT_RESOURCE_SCHEME = 'learning-content';
 export const CONTENT_RESOURCE_HOST = 'resource';
@@ -56,6 +56,99 @@ function createErrorResponse(status: number, message: string): Response {
     status,
     headers: createResponseHeaders('text/plain; charset=utf-8'),
   });
+}
+
+type ParsedByteRange =
+  | {
+      readonly kind: 'bounded';
+      readonly start: number;
+      readonly endInclusive: number;
+    }
+  | {
+      readonly kind: 'open';
+      readonly start: number;
+    }
+  | {
+      readonly kind: 'suffix';
+      readonly byteLength: number;
+    };
+
+function parseByteRangeHeader(value: string): ParsedByteRange | undefined {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim());
+
+  if (!match || (!match[1] && !match[2])) {
+    return undefined;
+  }
+
+  const first = match[1] ? Number(match[1]) : undefined;
+  const second = match[2] ? Number(match[2]) : undefined;
+
+  if (
+    (first !== undefined && !Number.isSafeInteger(first)) ||
+    (second !== undefined && !Number.isSafeInteger(second))
+  ) {
+    return undefined;
+  }
+
+  if (first === undefined) {
+    return second !== undefined && second > 0
+      ? { kind: 'suffix', byteLength: second }
+      : undefined;
+  }
+
+  if (second === undefined) {
+    return { kind: 'open', start: first };
+  }
+
+  return second >= first
+    ? { kind: 'bounded', start: first, endInclusive: second }
+    : undefined;
+}
+
+function resolveByteRange(
+  parsed: ParsedByteRange,
+  totalByteLength: number,
+): ByteRange | undefined {
+  if (
+    !Number.isSafeInteger(totalByteLength) ||
+    totalByteLength <= 0
+  ) {
+    return undefined;
+  }
+
+  if (parsed.kind === 'suffix') {
+    return {
+      start: Math.max(totalByteLength - parsed.byteLength, 0),
+      endExclusive: totalByteLength,
+    };
+  }
+
+  if (parsed.start >= totalByteLength) {
+    return undefined;
+  }
+
+  return {
+    start: parsed.start,
+    endExclusive:
+      parsed.kind === 'bounded'
+        ? Math.min(parsed.endInclusive + 1, totalByteLength)
+        : totalByteLength,
+  };
+}
+
+function createRangeNotSatisfiableResponse(
+  totalByteLength?: number,
+): Response {
+  const response = createErrorResponse(416, 'Range Not Satisfiable');
+
+  response.headers.set('Accept-Ranges', 'bytes');
+  if (totalByteLength !== undefined) {
+    response.headers.set(
+      'Content-Range',
+      `bytes */${totalByteLength}`,
+    );
+  }
+  return response;
 }
 
 function createAbortableStream(
@@ -244,22 +337,75 @@ export class ContentResourceService
     }
 
     try {
-      const resolved = await registration.handle.openByteStream();
-      const headers = createResponseHeaders(
-        registration.mediaType,
-        resolved.byteLength,
-      );
+      const rangeHeader = request.headers.get('Range');
+      const parsedRange = rangeHeader
+        ? parseByteRangeHeader(rangeHeader)
+        : undefined;
 
-      if (method === 'HEAD') {
-        await resolved.stream.cancel();
-        return new Response(null, { status: 200, headers });
+      if (rangeHeader && !parsedRange) {
+        return createRangeNotSatisfiableResponse();
       }
 
+      let totalByteLength: number | undefined;
+      let range: ByteRange | undefined;
+
+      if (parsedRange || (method === 'HEAD' && registration.handle.getByteLength)) {
+        if (registration.handle.getByteLength) {
+          totalByteLength = await registration.handle.getByteLength();
+        } else {
+          const fullStream =
+            await registration.handle.openByteStream();
+          totalByteLength = fullStream.byteLength;
+          await fullStream.stream.cancel();
+        }
+      }
+
+      if (parsedRange) {
+        range = resolveByteRange(parsedRange, totalByteLength!);
+        if (!range) {
+          return createRangeNotSatisfiableResponse(totalByteLength);
+        }
+      }
+
+      const headers = createResponseHeaders(
+        registration.mediaType,
+        range
+          ? range.endExclusive - range.start
+          : totalByteLength,
+      );
+      headers.set('Accept-Ranges', 'bytes');
+
+      if (range) {
+        headers.set(
+          'Content-Range',
+          `bytes ${range.start}-${range.endExclusive - 1}/${totalByteLength}`,
+        );
+      }
+
+      if (method === 'HEAD') {
+        if (totalByteLength === undefined) {
+          const resolved =
+            await registration.handle.openByteStream(range);
+          headers.set('Content-Length', String(resolved.byteLength));
+          await resolved.stream.cancel();
+        }
+        return new Response(null, {
+          status: range ? 206 : 200,
+          headers,
+        });
+      }
+
+      const resolved =
+        await registration.handle.openByteStream(range);
+      headers.set('Content-Length', String(resolved.byteLength));
       const stream = createAbortableStream(resolved.stream, [
         registration.abortController.signal,
         request.signal,
       ]);
-      return new Response(stream, { status: 200, headers });
+      return new Response(stream, {
+        status: range ? 206 : 200,
+        headers,
+      });
     } catch (error) {
       this.logger.error('[content-resource] 内容流打开失败', error);
       return createErrorResponse(

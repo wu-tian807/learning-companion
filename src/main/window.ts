@@ -1,6 +1,8 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 
+import { IPC_CHANNELS } from '../shared/ipc';
+import { createHtmlContextMenuEvent } from './html-context-menu';
 import { isAllowedMainWindowNavigation } from './navigation-policy';
 
 export function createMainWindow(): BrowserWindow {
@@ -40,6 +42,16 @@ export function createMainWindow(): BrowserWindow {
 
   mainWindow.webContents.on('will-navigate', guardNavigation);
   mainWindow.webContents.on('will-redirect', guardNavigation);
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const context = createHtmlContextMenuEvent(params);
+
+    if (context) {
+      mainWindow.webContents.send(
+        IPC_CHANNELS.htmlContextMenu,
+        context,
+      );
+    }
+  });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {

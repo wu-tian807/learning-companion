@@ -42,6 +42,27 @@ describe('Asset media type', () => {
     await expect(detectAssetMediaType('/tmp/book.epub')).resolves.toBe(
       'application/epub+zip',
     );
+    await expect(detectAssetMediaType('/tmp/page.HTML')).resolves.toBe(
+      'text/html',
+    );
+    await expect(detectAssetMediaType('/tmp/legacy.htm')).resolves.toBe(
+      'text/html',
+    );
+    await expect(detectAssetMediaType('/tmp/lesson.mp4')).resolves.toBe(
+      'video/mp4',
+    );
+    await expect(detectAssetMediaType('/tmp/lesson.M4V')).resolves.toBe(
+      'video/mp4',
+    );
+    await expect(detectAssetMediaType('/tmp/lesson.webm')).resolves.toBe(
+      'video/webm',
+    );
+    await expect(detectAssetMediaType('/tmp/lesson.ogv')).resolves.toBe(
+      'video/ogg',
+    );
+    await expect(detectAssetMediaType('/tmp/lesson.mov')).resolves.toBe(
+      'video/quicktime',
+    );
     await expect(detectAssetMediaType('/tmp/diagram.PNG')).resolves.toBe(
       'image/png',
     );

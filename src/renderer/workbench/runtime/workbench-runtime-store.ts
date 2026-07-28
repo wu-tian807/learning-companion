@@ -18,6 +18,7 @@ export interface WorkbenchContextMenuState {
   readonly y: number;
   readonly invocation: WorkbenchInvocationContext;
   readonly onWheel?: (event: WorkbenchContextMenuWheelEvent) => void;
+  readonly captureOutsidePointer?: boolean;
 }
 
 export interface WorkbenchContextMenuWheelEvent {
