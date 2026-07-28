@@ -1,6 +1,8 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -10,7 +12,12 @@ import {
   useWorkbenchRuntimeSelector,
 } from '../runtime/workbench-runtime-context';
 import { WorkbenchMenu } from '../ui/WorkbenchMenu';
-import { resolveContextMenuViewportPosition } from './context-menu-position';
+import {
+  type ContextMenuSize,
+  type ContextMenuViewport,
+  resolveContextMenuMaximumHeight,
+  resolveContextMenuViewportPosition,
+} from './context-menu-position';
 
 function shouldClose(
   entry: ResolvedWorkbenchContribution,
@@ -37,8 +44,53 @@ export function WorkbenchContextMenuHost() {
     (state) => state.busyActionIds,
   );
   const rootRef = useRef<HTMLDivElement>(null);
+  const [menuSize, setMenuSize] = useState<ContextMenuSize>({
+    width: 0,
+    height: 0,
+  });
   const entries = runtime.contributions('context-menu');
   void revision;
+
+  useLayoutEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const root = rootRef.current;
+
+    if (!root) {
+      return;
+    }
+
+    const measure = () => {
+      const bounds = root.getBoundingClientRect();
+
+      setMenuSize((current) => {
+        if (
+          current.width === bounds.width &&
+          current.height === bounds.height
+        ) {
+          return current;
+        }
+
+        return {
+          width: bounds.width,
+          height: bounds.height,
+        };
+      });
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(root);
+
+    return () => resizeObserver.disconnect();
+  }, [contextMenu, revision]);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -64,6 +116,14 @@ export function WorkbenchContextMenuHost() {
       passive: true,
     });
     window.addEventListener('resize', closeOnViewportChange);
+    window.visualViewport?.addEventListener(
+      'resize',
+      closeOnViewportChange,
+    );
+    window.visualViewport?.addEventListener(
+      'scroll',
+      closeOnViewportChange,
+    );
 
     return () => {
       document.removeEventListener('mousedown', closeOnOutsideClick);
@@ -74,6 +134,14 @@ export function WorkbenchContextMenuHost() {
         true,
       );
       window.removeEventListener('resize', closeOnViewportChange);
+      window.visualViewport?.removeEventListener(
+        'resize',
+        closeOnViewportChange,
+      );
+      window.visualViewport?.removeEventListener(
+        'scroll',
+        closeOnViewportChange,
+      );
     };
   }, [contextMenu, runtime]);
 
@@ -85,11 +153,25 @@ export function WorkbenchContextMenuHost() {
     return null;
   }
 
+  const visualViewport = window.visualViewport;
+  const viewport: ContextMenuViewport = visualViewport
+    ? {
+        left: visualViewport.offsetLeft,
+        top: visualViewport.offsetTop,
+        width: visualViewport.width,
+        height: visualViewport.height,
+      }
+    : {
+        left: 0,
+        top: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
   const position = resolveContextMenuViewportPosition(
     contextMenu.x,
     contextMenu.y,
-    window.innerWidth,
-    window.innerHeight,
+    menuSize,
+    viewport,
   );
 
   return createPortal(
@@ -99,6 +181,13 @@ export function WorkbenchContextMenuHost() {
       entries={entries}
       busyActionIds={busyActionIds}
       onWheel={(event) => {
+        const root = rootRef.current;
+
+        if (root && root.scrollHeight > root.clientHeight) {
+          event.stopPropagation();
+          return;
+        }
+
         if (contextMenu.onWheel) {
           event.preventDefault();
           contextMenu.onWheel({
@@ -118,10 +207,11 @@ export function WorkbenchContextMenuHost() {
             }
           });
       }}
-      className="fixed z-[90]"
+      className="fixed z-[90] overflow-y-auto overscroll-contain"
       style={{
         left: position.x,
         top: position.y,
+        maxHeight: resolveContextMenuMaximumHeight(viewport),
       }}
     />,
     document.body,

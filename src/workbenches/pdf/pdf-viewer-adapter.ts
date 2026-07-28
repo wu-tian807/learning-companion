@@ -452,6 +452,18 @@ export function normalizePdfSelectionText(value: string): string {
   return value.normalize('NFC').replace(/\s+/gu, ' ').trim();
 }
 
+export function arePdfSelectionTextsEquivalent(
+  indexedText: string,
+  selectedText: string,
+): boolean {
+  const removeWhitespace = (value: string) =>
+    value.normalize('NFC').replace(/\s+/gu, '');
+
+  return (
+    removeWhitespace(indexedText) === removeWhitespace(selectedText)
+  );
+}
+
 export function createPdfSelectionSnapshotFromSegments(
   documentIdentity: PdfDocumentIdentity,
   rawSegments: readonly PdfSelectionSegment[],
@@ -504,8 +516,7 @@ export function createPdfSelectionSnapshotFromSegments(
     .join('\n');
 
   if (
-    normalizePdfSelectionText(indexedText) !==
-    normalizePdfSelectionText(selectedText)
+    !arePdfSelectionTextsEquivalent(indexedText, selectedText)
   ) {
     return undefined;
   }

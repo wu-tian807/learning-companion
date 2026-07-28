@@ -29,6 +29,7 @@ vi.mock('pdfjs-dist/web/pdf_viewer.mjs', () => ({
 }));
 
 import {
+  arePdfSelectionTextsEquivalent,
   createPdfDocumentLoadingParameters,
   createPdfSelectionSnapshotFromSegments,
   isSafePdfExternalUrl,
@@ -102,10 +103,57 @@ describe('PDF selection indexing', () => {
     });
   });
 
+  it('accepts visual line breaks that are absent from the text index', () => {
+    const snapshot = createPdfSelectionSnapshotFromSegments(
+      identity,
+      [
+        {
+          pageNumber: 1,
+          pageText: '第一行第二行',
+          startOffset: 0,
+          endOffset: '第一行第二行'.length,
+        },
+      ],
+      '第一行\n第二行',
+      'continuous',
+    );
+
+    expect(snapshot).toMatchObject({
+      text: '第一行\n第二行',
+      target: {
+        anchorPayload: {
+          start: { pageNumber: 1, offset: 0 },
+          end: {
+            pageNumber: 1,
+            offset: '第一行第二行'.length,
+          },
+          quote: {
+            exact: '第一行\n第二行',
+          },
+        },
+      },
+    });
+  });
+
   it('allows whitespace rendering differences but rejects wrong mappings', () => {
     expect(
       normalizePdfSelectionText('  第一页\n\n 第二页  '),
     ).toBe('第一页 第二页');
+    expect(
+      arePdfSelectionTextsEquivalent(
+        '第一行第二行',
+        '第一行\n第二行',
+      ),
+    ).toBe(true);
+    expect(
+      arePdfSelectionTextsEquivalent(
+        'Learning Companion',
+        'LearningCompanion',
+      ),
+    ).toBe(true);
+    expect(
+      arePdfSelectionTextsEquivalent('正确文本', '错误文本'),
+    ).toBe(false);
     expect(
       createPdfSelectionSnapshotFromSegments(
         identity,
