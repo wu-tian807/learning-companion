@@ -125,6 +125,7 @@ export interface AddLocalAssetFailure {
 export interface AddLocalAssetsResult {
   added: AssetSnapshot[];
   failed: AddLocalAssetFailure[];
+  assets: AssetSnapshot[];
 }
 
 export interface RenameAssetRequest {
@@ -253,16 +254,27 @@ export function isAddLocalAssetsRequest(
 export function isAddLocalAssetsResult(
   value: unknown,
 ): value is AddLocalAssetsResult {
-  return (
-    isRecord(value) &&
-    isAssetSnapshotList(value.added) &&
-    Array.isArray(value.failed) &&
-    value.failed.every(
+  if (
+    !isRecord(value) ||
+    !isAssetSnapshotList(value.added) ||
+    !isAssetSnapshotList(value.assets) ||
+    !Array.isArray(value.failed) ||
+    !value.failed.every(
       (failure) =>
         isRecord(failure) &&
         isRequiredText(failure.path) &&
         isRequiredText(failure.message),
     )
+  ) {
+    return false;
+  }
+
+  const currentAssetIds = new Set(
+    value.assets.map((asset) => asset.id),
+  );
+
+  return value.added.every((asset) =>
+    currentAssetIds.has(asset.id),
   );
 }
 

@@ -149,7 +149,11 @@ void app.whenReady().then(async () => {
   registerExternalLinkHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectService);
-  registerAssetHandlers(assetService, assetShellService);
+  registerAssetHandlers(
+    assetService,
+    assetShellService,
+    settingsRepository,
+  );
   registerWorkbenchHandlers(workbenchSessionManager);
   createManagedMainWindow();
 

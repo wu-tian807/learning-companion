@@ -37,6 +37,21 @@ export function selectAfterAssetDeletion(
   return remaining[Math.min(deletedIndex, remaining.length - 1)]!.id;
 }
 
+export async function deleteAssetAfterWorkbenchClose(
+  selectedAssetId: string | null,
+  targetAssetId: string,
+  workbenchClosed: Promise<void>,
+  deselect: () => void,
+  deleteAsset: () => Promise<void>,
+): Promise<void> {
+  if (selectedAssetId === targetAssetId) {
+    deselect();
+    await workbenchClosed;
+  }
+
+  await deleteAsset();
+}
+
 export function replaceAsset(
   assets: readonly AssetSnapshot[],
   updatedAsset: AssetSnapshot,

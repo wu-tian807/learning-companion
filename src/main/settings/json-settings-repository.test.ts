@@ -38,8 +38,14 @@ describe('json settings repository', () => {
     const repository = new JsonSettingsRepository(join(directory, 'settings.json'));
 
     expect(() => repository.get()).toThrow('Settings Repository 尚未初始化');
+    expect(() => repository.getLastLocalAssetDirectory()).toThrow(
+      'Settings Repository 尚未初始化',
+    );
     await expect(
       repository.updateHomePreferences({ viewMode: 'list', sortMode: 'title' }),
+    ).rejects.toThrow('Settings Repository 尚未初始化');
+    await expect(
+      repository.updateLastLocalAssetDirectory(directory),
     ).rejects.toThrow('Settings Repository 尚未初始化');
   });
 
@@ -148,6 +154,34 @@ describe('json settings repository', () => {
     expect(restoredRepository.get()).toEqual(updated);
   });
 
+  it('persists the last local Asset directory without exposing it as renderer preferences', async () => {
+    const directory = await createTemporaryDirectory();
+    const settingsFile = join(directory, 'config', 'settings.json');
+    const assetDirectory = join(directory, 'course-materials');
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+
+    await repository.updateLastLocalAssetDirectory(assetDirectory);
+
+    expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
+    expect(repository.getLastLocalAssetDirectory()).toBe(
+      assetDirectory,
+    );
+    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
+      ...DEFAULT_APP_PREFERENCES,
+      fileDialogs: {
+        lastLocalAssetDirectory: assetDirectory,
+      },
+    });
+
+    const restoredRepository = new JsonSettingsRepository(settingsFile);
+    await restoredRepository.initialize();
+    expect(restoredRepository.get()).toEqual(DEFAULT_APP_PREFERENCES);
+    expect(restoredRepository.getLastLocalAssetDirectory()).toBe(
+      assetDirectory,
+    );
+  });
+
   it('keeps the last successful in-memory state when writing fails', async () => {
     const directory = await createTemporaryDirectory();
     const blockedDirectory = join(directory, 'blocked');
@@ -178,8 +212,11 @@ describe('json settings repository', () => {
       viewMode: 'grid',
       sortMode: 'title',
     });
+    const assetDirectory = join(directory, 'assets');
+    const directoryUpdate =
+      repository.updateLastLocalAssetDirectory(assetDirectory);
 
-    await Promise.all([firstUpdate, secondUpdate]);
+    await Promise.all([firstUpdate, secondUpdate, directoryUpdate]);
 
     expect(repository.get()).toEqual({
       schemaVersion: 1,
@@ -188,6 +225,11 @@ describe('json settings repository', () => {
         sortMode: 'title',
       },
     });
-    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual(repository.get());
+    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
+      ...repository.get(),
+      fileDialogs: {
+        lastLocalAssetDirectory: assetDirectory,
+      },
+    });
   });
 });

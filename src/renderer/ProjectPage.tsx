@@ -18,6 +18,7 @@ import {
 import { userMessageFromError } from '../shared/ipc-error';
 import type { ProjectSnapshot } from '../shared/projects';
 import {
+  deleteAssetAfterWorkbenchClose,
   replaceAsset,
   selectAfterAssetDeletion,
   selectInitialAssetId,
@@ -62,8 +63,13 @@ function mediaLabel(mediaType: string): string {
     'image/jpeg': 'JPEG',
     'image/png': 'PNG',
     'image/webp': 'WebP',
+    'text/html': 'HTML',
     'text/markdown': 'Markdown',
     'text/plain': '纯文本',
+    'video/mp4': 'MP4',
+    'video/ogg': 'Ogg 视频',
+    'video/quicktime': 'QuickTime',
+    'video/webm': 'WebM',
   };
 
   return labels[mediaType] ?? mediaType;
@@ -594,38 +600,54 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     [],
   );
 
+  const importPaths = useCallback(
+    async (paths: string[]) => {
+      const result: AddLocalAssetsResult =
+        await window.learningCompanion.addLocalAssets({ paths });
+
+      if (!isAddLocalAssetsResult(result)) {
+        throw new Error('批量添加 Asset 响应无效');
+      }
+
+      // Main owns the authoritative Asset map. Replacing from its complete
+      // snapshot also repairs Renderer drift after a long-lived file dialog.
+      setLoadState({ kind: 'ready', assets: result.assets });
+
+      if (result.added[0]) {
+        selectAsset(result.added[0].id);
+      }
+      if (result.failed.length > 0) {
+        setError(
+          `已添加 ${result.added.length} 项，${result.failed.length} 项失败：${result.failed[0]!.message}`,
+        );
+      }
+    },
+    [selectAsset],
+  );
+
   const addPaths = useCallback(
     async (paths: string[]) => {
       if (paths.length === 0) {
         return;
       }
 
-      await runMutation(async () => {
-        const result: AddLocalAssetsResult =
-          await window.learningCompanion.addLocalAssets({ paths });
-
-        if (!isAddLocalAssetsResult(result)) {
-          throw new Error('批量添加 Asset 响应无效');
-        }
-
-        updateAssets((current) => [...current, ...result.added]);
-
-        if (result.added[0]) {
-          selectAsset(result.added[0].id);
-        }
-        if (result.failed.length > 0) {
-          setError(
-            `已添加 ${result.added.length} 项，${result.failed.length} 项失败：${result.failed[0]!.message}`,
-          );
-        }
-      }, '添加资料失败，请重试。');
+      await runMutation(
+        () => importPaths(paths),
+        '添加资料失败，请重试。',
+      );
     },
-    [runMutation, selectAsset, updateAssets],
+    [importPaths, runMutation],
   );
 
   const chooseAndAdd = async () => {
-    const paths = await window.learningCompanion.selectLocalAssetFiles();
-    await addPaths(paths);
+    await runMutation(async () => {
+      const paths =
+        await window.learningCompanion.selectLocalAssetFiles();
+
+      if (paths.length > 0) {
+        await importPaths(paths);
+      }
+    }, '添加资料失败，请重试。');
   };
 
   const renameAsset = async (name: string) => {
@@ -712,18 +734,35 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     }
 
     const target = deleteTarget;
+    const selectedBeforeDeletion = selectedAssetId;
+    const nextSelectedAssetId = selectAfterAssetDeletion(
+      assets,
+      target.id,
+      selectedBeforeDeletion,
+    );
+    const activeWorkbenchClosed =
+      workbenchLifecycleTaskRef.current;
     const succeeded = await runMutation(async () => {
-      await window.learningCompanion.deleteAsset({ assetId: target.id });
-      setSelectedAssetId((selected) =>
-        selectAfterAssetDeletion(assets, target.id, selected),
+      await deleteAssetAfterWorkbenchClose(
+        selectedBeforeDeletion,
+        target.id,
+        activeWorkbenchClosed,
+        () => selectAsset(null),
+        () =>
+          window.learningCompanion.deleteAsset({
+            assetId: target.id,
+          }),
       );
       updateAssets((current) =>
         current.filter((asset) => asset.id !== target.id),
       );
+      selectAsset(nextSelectedAssetId);
     }, '无法删除该 Asset。');
 
     if (succeeded) {
       setDeleteTarget(null);
+    } else if (selectedBeforeDeletion === target.id) {
+      selectAsset(target.id);
     }
   };
 

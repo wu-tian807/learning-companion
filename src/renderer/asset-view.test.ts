@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetSnapshot } from '../shared/assets';
 import {
+  deleteAssetAfterWorkbenchClose,
   replaceAsset,
   selectAfterAssetDeletion,
   selectInitialAssetId,
@@ -70,6 +71,47 @@ describe('Asset view state', () => {
     expect(selectAfterAssetDeletion(assets, 'c', 'c')).toBe('b');
     expect(selectAfterAssetDeletion(assets, 'b', 'a')).toBe('a');
     expect(selectAfterAssetDeletion([assets[0]!], 'a', 'a')).toBeNull();
+  });
+
+  it('deselects and waits for the current Workbench before deleting its Asset', async () => {
+    let releaseWorkbench!: () => void;
+    const workbenchClosed = new Promise<void>((resolve) => {
+      releaseWorkbench = resolve;
+    });
+    const deselect = vi.fn();
+    const deleteAsset = vi.fn(async () => undefined);
+    const deletion = deleteAssetAfterWorkbenchClose(
+      'asset',
+      'asset',
+      workbenchClosed,
+      deselect,
+      deleteAsset,
+    );
+
+    await Promise.resolve();
+    expect(deselect).toHaveBeenCalledOnce();
+    expect(deleteAsset).not.toHaveBeenCalled();
+
+    releaseWorkbench();
+    await deletion;
+    expect(deleteAsset).toHaveBeenCalledOnce();
+  });
+
+  it('does not disturb another active Workbench when deleting a background Asset', async () => {
+    const deselect = vi.fn();
+    const deleteAsset = vi.fn(async () => undefined);
+
+    await expect(
+      deleteAssetAfterWorkbenchClose(
+        'selected',
+        'background',
+        new Promise<void>(() => undefined),
+        deselect,
+        deleteAsset,
+      ),
+    ).resolves.toBeUndefined();
+    expect(deselect).not.toHaveBeenCalled();
+    expect(deleteAsset).toHaveBeenCalledOnce();
   });
 
   it('replaces only the matching Asset snapshot', () => {

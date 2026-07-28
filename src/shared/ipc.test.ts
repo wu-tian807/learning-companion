@@ -116,14 +116,51 @@ describe('Asset contracts', () => {
   });
 
   it('rejects malformed batch addition results', () => {
-    expect(isAddLocalAssetsResult({ added: [], failed: [] })).toBe(true);
+    const asset = {
+      id: 'asset',
+      projectId: 'project',
+      name: '资料',
+      mediaType: 'text/plain',
+      contentRef: {
+        kind: 'local-file',
+        path: '/tmp/a.txt',
+      },
+      contentStatus: {
+        availability: 'available',
+        checkedTime: 100,
+      },
+      createdTime: 100,
+      lastUsedTime: 100,
+    };
+
+    expect(
+      isAddLocalAssetsResult({
+        added: [asset],
+        failed: [],
+        assets: [asset],
+      }),
+    ).toBe(true);
+    expect(
+      isAddLocalAssetsResult({
+        added: [asset],
+        failed: [],
+        assets: [],
+      }),
+    ).toBe(false);
     expect(
       isAddLocalAssetsResult({
         added: [],
         failed: [{ path: '/tmp/a.md', message: '' }],
+        assets: [],
       }),
     ).toBe(false);
-    expect(isAddLocalAssetsResult({ added: [null], failed: [] })).toBe(false);
+    expect(
+      isAddLocalAssetsResult({
+        added: [null],
+        failed: [],
+        assets: [],
+      }),
+    ).toBe(false);
   });
 });
 

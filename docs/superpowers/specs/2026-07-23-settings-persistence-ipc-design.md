@@ -43,6 +43,27 @@ interface AppPreferences {
 
 Main 只能在 `app.whenReady()` 后读取 `app.getPath('userData')`，再调用 `createAppPaths()`。Renderer 永远不会收到绝对路径。
 
+### Main-only 文件选择器记忆
+
+文件选择器最近使用的本地目录属于跨 Project、跨重启的应用级
+交互状态，继续保存在同一份 `settings.json`，不进入 SQLite，也不使用
+Renderer `localStorage`。
+
+持久化文件允许增加以下可选字段：
+
+```json
+{
+  "fileDialogs": {
+    "lastLocalAssetDirectory": "D:\\Resources\\..."
+  }
+}
+```
+
+该字段只由 Main 进程的 `SettingsRepository` 读写，不属于通过
+`settings:get` 返回的 `AppPreferences`，因此 Renderer 不会获得用户的
+绝对目录。用户成功选中文件后立即更新目录；目录记忆写入失败只记录
+警告，不得让本次文件选择或 Asset 导入失败。
+
 ## Settings Repository
 
 ### 接口
@@ -54,6 +75,8 @@ interface SettingsRepository {
   initialize(): Promise<void>;
   get(): AppPreferences;
   updateHomePreferences(home: HomePreferences): Promise<AppPreferences>;
+  getLastLocalAssetDirectory(): string | undefined;
+  updateLastLocalAssetDirectory(directory: string): Promise<void>;
 }
 ```
 

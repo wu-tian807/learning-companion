@@ -140,10 +140,15 @@ interface AddLocalAssetsResult {
     path: string;
     message: string;
   }>;
+  assets: AssetSummary[];
 }
 ```
 
 单个失败不回滚已经成功添加的 Asset。路径顺序和返回结果顺序保持一致。同一路径允许创建多个独立 Asset，沿用当前数据库模型。
+
+`assets` 是 Main 当前 Asset Map 的完整快照。Renderer 在批量操作完成后
+用它替换本地列表，而不是只做乐观追加，避免长时间停留在原生文件
+选择器或开发期热重载造成的前后端列表漂移。
 
 ## Project 删除 IPC
 

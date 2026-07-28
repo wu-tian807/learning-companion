@@ -1,4 +1,5 @@
 import { dialog, ipcMain } from 'electron';
+import { dirname } from 'node:path';
 
 import {
   IPC_CHANNELS,
@@ -12,6 +13,7 @@ import {
 import type { AssetShellServiceApi } from '../assets/asset-shell-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
+import type { SettingsRepository } from '../settings/settings-repository';
 import { registerIpcHandler } from './register-handler';
 
 function invalidRequest(): Error {
@@ -21,13 +23,29 @@ function invalidRequest(): Error {
 export function registerAssetHandlers(
   assetService: AssetServiceApi,
   assetShellService: AssetShellServiceApi,
+  settingsRepository: SettingsRepository,
 ): void {
   registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {
+    const defaultPath =
+      settingsRepository.getLastLocalAssetDirectory();
     const result = await dialog.showOpenDialog({
+      ...(defaultPath ? { defaultPath } : {}),
       properties: ['openFile', 'multiSelections'],
     });
 
-    return result.canceled ? [] : result.filePaths;
+    if (result.canceled || result.filePaths.length === 0) {
+      return [];
+    }
+
+    try {
+      await settingsRepository.updateLastLocalAssetDirectory(
+        dirname(result.filePaths[0]!),
+      );
+    } catch (error) {
+      console.warn('文件选择器最近目录保存失败。', error);
+    }
+
+    return result.filePaths;
   });
 
   registerIpcHandler(
@@ -37,7 +55,11 @@ export function registerAssetHandlers(
         throw invalidRequest();
       }
 
-      const result: AddLocalAssetsResult = { added: [], failed: [] };
+      const result: AddLocalAssetsResult = {
+        added: [],
+        failed: [],
+        assets: [],
+      };
 
       for (const path of request.paths) {
         try {
@@ -54,6 +76,7 @@ export function registerAssetHandlers(
         }
       }
 
+      result.assets.push(...assetService.list());
       return result;
     },
   );
