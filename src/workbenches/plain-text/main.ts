@@ -1,7 +1,9 @@
-import type {
-  ResolvedTextContent,
-  WriteTextContentResult,
-} from '../../main/content/content-handle';
+import {
+  DefaultTextContentAdapter,
+  type TextContentAdapter,
+  type ResolvedTextContent,
+  type WriteTextContentResult,
+} from '../../main/content/text-content';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchStateDataRepository } from '../../main/workbench/workbench-state-data-repository';
@@ -52,6 +54,7 @@ interface PlainTextSessionRuntime {
 
 export interface PlainTextWorkbenchProviderDependencies {
   readonly now: () => number;
+  readonly textContentAdapter: TextContentAdapter;
 }
 
 function cloneViewOptions(
@@ -103,6 +106,7 @@ export class PlainTextWorkbenchProvider
   readonly manifest = plainTextWorkbenchManifest;
   private readonly sessions = new Map<string, PlainTextSessionRuntime>();
   private readonly now: () => number;
+  private readonly textContentAdapter: TextContentAdapter;
 
   constructor(
     private readonly stateRepository: WorkbenchStateRepository,
@@ -110,6 +114,8 @@ export class PlainTextWorkbenchProvider
     dependencies: Partial<PlainTextWorkbenchProviderDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
+    this.textContentAdapter =
+      dependencies.textContentAdapter ?? new DefaultTextContentAdapter();
   }
 
   async open(context: Parameters<MainWorkbenchProvider['open']>[0]) {
@@ -117,8 +123,8 @@ export class PlainTextWorkbenchProvider
 
     if (
       context.selectionReason !== 'matched' ||
-      !handle?.readText ||
-      !handle.writeText
+      !handle?.readBytes ||
+      !handle.writeBytes
     ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
@@ -127,7 +133,7 @@ export class PlainTextWorkbenchProvider
       throw new AppError('REGISTRATION_CONFLICT');
     }
 
-    const source = await handle.readText();
+    const source = await this.textContentAdapter.read(handle);
     let state = this.readState(context.state);
     let recoveryContent: string | undefined;
 
@@ -304,11 +310,11 @@ export class PlainTextWorkbenchProvider
           throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
         }
 
-        const source = await runtime.handle.readText?.({
+        const source = await this.textContentAdapter.read(runtime.handle, {
           encoding: command.payload.encoding,
         });
 
-        if (!source || !isPlainTextEncoding(source.encoding)) {
+        if (!isPlainTextEncoding(source.encoding)) {
           throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
         }
 
@@ -508,13 +514,7 @@ export class PlainTextWorkbenchProvider
   private async saveSource(
     runtime: PlainTextSessionRuntime,
   ): Promise<WriteTextContentResult> {
-    const writeText = runtime.handle.writeText;
-
-    if (!writeText) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-
-    const result = await writeText.call(runtime.handle, {
+    const result = await this.textContentAdapter.write(runtime.handle, {
       content: runtime.bufferContent,
       encoding: runtime.source.encoding,
       lineEnding: runtime.currentLineEnding,

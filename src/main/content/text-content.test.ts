@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ContentHandle } from './content-handle';
 import {
+  DefaultTextContentAdapter,
+  createTextRevision,
   decodeTextContent,
   detectTextLineEnding,
   encodeTextContent,
@@ -30,5 +33,39 @@ describe('Text content codec', () => {
       hasByteOrderMark: true,
     });
     expect(encoded).toEqual(source);
+  });
+
+  it('adapts a generic byte handle to text reads and writes', async () => {
+    let bytes = Buffer.from('\ufeff第一行\r\n第二行');
+    let revision = createTextRevision(bytes);
+    const handle: ContentHandle = {
+      capabilities: new Set(['read-bytes', 'write-bytes']),
+      readBytes: async () => ({ content: bytes, revision }),
+      writeBytes: async (request) => {
+        expect(request.expectedRevision).toBe(revision);
+        bytes = Buffer.from(request.content);
+        revision = createTextRevision(bytes);
+        return { revision };
+      },
+      close: async () => undefined,
+    };
+    const adapter = new DefaultTextContentAdapter();
+
+    const resolved = await adapter.read(handle);
+    expect(resolved).toMatchObject({
+      content: '第一行\n第二行',
+      encoding: 'utf-8',
+      lineEnding: 'crlf',
+      hasByteOrderMark: true,
+    });
+
+    const saved = await adapter.write(handle, {
+      ...resolved,
+      content: '更新后\n内容',
+      expectedRevision: resolved.revision,
+    });
+
+    expect(saved.revision).toBe(revision);
+    expect(bytes.toString('utf8')).toBe('\ufeff更新后\r\n内容');
   });
 });

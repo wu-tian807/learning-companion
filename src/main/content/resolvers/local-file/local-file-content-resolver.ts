@@ -1,49 +1,43 @@
-import { readFile } from 'node:fs/promises';
+import { createReadStream, type ReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 
 import writeFileAtomic from 'write-file-atomic';
 
 import type { ContentCapability } from '../../../../shared/workbench/manifest';
-import {
-  createTextEncodingDetector,
-  detectTextEncoding,
-  TEXT_CONTENT_SAMPLE_SIZE,
-} from '../../../assets/asset-text-encoding';
 import {
   DefaultLocalFileContentInspector,
   type LocalFileContentInspector,
 } from './local-file-content-inspector';
 import { AppError } from '../../../errors/app-error';
 import type {
+  ByteRange,
   ContentHandle,
-  ReadTextContentRequest,
-  ResolvedTextContent,
-  WriteTextContentRequest,
-  WriteTextContentResult,
+  ResolvedByteContent,
+  ResolvedByteStream,
+  WriteByteContentRequest,
+  WriteByteContentResult,
 } from '../../content-handle';
+import { createContentRevision } from '../../content-revision';
 import {
   LOCAL_FILE_CONTENT_KIND,
 } from '../../content-ref';
 import type { ContentResolver } from '../../content-resolver-registry';
-import {
-  createTextRevision,
-  decodeTextContent,
-  encodeTextContent,
-} from '../../text-content';
 
-const localTextContentCapabilities = new Set<ContentCapability>([
-  'read-text',
-  'write-text',
+const localFileContentCapabilities = new Set<ContentCapability>([
+  'read-bytes',
+  'read-stream',
+  'write-bytes',
 ]);
 
 export class LocalFileContentHandle implements ContentHandle {
   readonly capabilities: ReadonlySet<ContentCapability> =
-    localTextContentCapabilities;
+    localFileContentCapabilities;
+  private readonly activeStreams = new Set<ReadStream>();
 
   constructor(readonly path: string) {}
 
-  async readText(
-    request: ReadTextContentRequest = {},
-  ): Promise<ResolvedTextContent> {
+  async readBytes(): Promise<ResolvedByteContent> {
     let content: Buffer;
 
     try {
@@ -52,31 +46,59 @@ export class LocalFileContentHandle implements ContentHandle {
       throw new AppError('ASSET_UNAVAILABLE', { cause: error });
     }
 
-    const encoding =
-      request.encoding ??
-      detectTextEncoding(
-        content.subarray(0, TEXT_CONTENT_SAMPLE_SIZE),
-      );
+    return {
+      content,
+      revision: createContentRevision(content),
+    };
+  }
 
-    if (!encoding) {
-      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+  async openByteStream(
+    range?: ByteRange,
+  ): Promise<ResolvedByteStream> {
+    let byteLength: number;
+
+    try {
+      byteLength = (await stat(this.path)).size;
+    } catch (error) {
+      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
     }
 
     if (
-      request.encoding &&
-      detectTextEncoding(content, [
-        createTextEncodingDetector(request.encoding),
-      ]) !== request.encoding
+      range &&
+      (!Number.isSafeInteger(range.start) ||
+        !Number.isSafeInteger(range.endExclusive) ||
+        range.start < 0 ||
+        range.endExclusive <= range.start ||
+        range.endExclusive > byteLength)
     ) {
-      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+      throw new AppError('INVALID_IPC_REQUEST');
     }
 
-    return decodeTextContent(content, encoding);
+    const nodeStream = createReadStream(this.path, {
+      ...(range
+        ? {
+            start: range.start,
+            end: range.endExclusive - 1,
+          }
+        : {}),
+    });
+    this.activeStreams.add(nodeStream);
+    const release = () => {
+      this.activeStreams.delete(nodeStream);
+    };
+    nodeStream.once('close', release);
+
+    return {
+      stream: Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>,
+      byteLength: range
+        ? range.endExclusive - range.start
+        : byteLength,
+    };
   }
 
-  async writeText(
-    request: WriteTextContentRequest,
-  ): Promise<WriteTextContentResult> {
+  async writeBytes(
+    request: WriteByteContentRequest,
+  ): Promise<WriteByteContentResult> {
     let current: Buffer;
 
     try {
@@ -85,23 +107,26 @@ export class LocalFileContentHandle implements ContentHandle {
       throw new AppError('ASSET_UNAVAILABLE', { cause: error });
     }
 
-    if (createTextRevision(current) !== request.expectedRevision) {
+    if (createContentRevision(current) !== request.expectedRevision) {
       throw new AppError('CONTENT_CHANGED_EXTERNALLY');
     }
 
-    const encoded = encodeTextContent(request);
+    const content = Buffer.from(request.content);
 
     try {
-      await writeFileAtomic(this.path, encoded);
+      await writeFileAtomic(this.path, content);
     } catch (error) {
       throw new AppError('CONTENT_WRITE_FAILED', { cause: error });
     }
 
-    return { revision: createTextRevision(encoded) };
+    return { revision: createContentRevision(content) };
   }
 
   async close(): Promise<void> {
-    return undefined;
+    for (const stream of this.activeStreams) {
+      stream.destroy();
+    }
+    this.activeStreams.clear();
   }
 }
 

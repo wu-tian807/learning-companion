@@ -46,13 +46,13 @@ describe('WorkbenchRegistry', () => {
     const plainText = createProvider(
       'plain-text',
       ['text/plain'],
-      ['read-text'],
+      ['read-bytes'],
     );
     const registry = new WorkbenchRegistry(fallback);
     registry.register(plainText);
 
     expect(
-      registry.select('text/plain', createHandle(['read-text'])),
+      registry.select('text/plain', createHandle(['read-bytes'])),
     ).toEqual({
       provider: plainText,
       reason: 'matched',

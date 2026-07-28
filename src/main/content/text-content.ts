@@ -1,19 +1,57 @@
-import { createHash } from 'node:crypto';
-
 import iconv from 'iconv-lite';
 
+import {
+  createTextEncodingDetector,
+  detectTextEncoding,
+  TEXT_CONTENT_SAMPLE_SIZE,
+} from '../assets/asset-text-encoding';
 import { AppError } from '../errors/app-error';
 import type {
-  ResolvedTextContent,
-  TextEncoding,
-  TextLineEnding,
-  WriteTextContentRequest,
+  ContentHandle,
+  WriteByteContentResult,
 } from './content-handle';
+import { createContentRevision } from './content-revision';
 
 const UTF8_BYTE_ORDER_MARK = Buffer.from([0xef, 0xbb, 0xbf]);
 
+export type TextLineEnding = 'lf' | 'crlf';
+export type TextEncoding = 'utf-8' | 'gbk';
+
+export interface ReadTextContentRequest {
+  readonly encoding?: TextEncoding;
+}
+
+export interface ResolvedTextContent {
+  readonly content: string;
+  readonly encoding: TextEncoding;
+  readonly lineEnding: TextLineEnding;
+  readonly hasByteOrderMark: boolean;
+  readonly revision: string;
+}
+
+export interface WriteTextContentRequest {
+  readonly content: string;
+  readonly encoding: TextEncoding;
+  readonly lineEnding: TextLineEnding;
+  readonly hasByteOrderMark: boolean;
+  readonly expectedRevision: string;
+}
+
+export type WriteTextContentResult = WriteByteContentResult;
+
+export interface TextContentAdapter {
+  read(
+    handle: ContentHandle,
+    request?: ReadTextContentRequest,
+  ): Promise<ResolvedTextContent>;
+  write(
+    handle: ContentHandle,
+    request: WriteTextContentRequest,
+  ): Promise<WriteTextContentResult>;
+}
+
 export function createTextRevision(content: Uint8Array): string {
-  return createHash('sha256').update(content).digest('hex');
+  return createContentRevision(content);
 }
 
 export function detectTextLineEnding(content: string): TextLineEnding {
@@ -85,4 +123,54 @@ export function encodeTextContent(
   }
 
   return encoded;
+}
+
+export class DefaultTextContentAdapter implements TextContentAdapter {
+  async read(
+    handle: ContentHandle,
+    request: ReadTextContentRequest = {},
+  ): Promise<ResolvedTextContent> {
+    if (!handle.readBytes) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const resolved = await handle.readBytes();
+    const encoding =
+      request.encoding ??
+      detectTextEncoding(
+        resolved.content.subarray(0, TEXT_CONTENT_SAMPLE_SIZE),
+      );
+
+    if (!encoding) {
+      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+    }
+
+    if (
+      request.encoding &&
+      detectTextEncoding(resolved.content, [
+        createTextEncodingDetector(request.encoding),
+      ]) !== request.encoding
+    ) {
+      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+    }
+
+    return {
+      ...decodeTextContent(resolved.content, encoding),
+      revision: resolved.revision,
+    };
+  }
+
+  async write(
+    handle: ContentHandle,
+    request: WriteTextContentRequest,
+  ): Promise<WriteTextContentResult> {
+    if (!handle.writeBytes) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    return handle.writeBytes({
+      content: encodeTextContent(request),
+      expectedRevision: request.expectedRevision,
+    });
+  }
 }

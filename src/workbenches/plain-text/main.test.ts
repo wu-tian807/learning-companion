@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAssetSnapshot } from '../../main/assets/asset';
 import type {
   ContentHandle,
-  ReadTextContentRequest,
-  ResolvedTextContent,
-  WriteTextContentRequest,
+  WriteByteContentRequest,
 } from '../../main/content/content-handle';
+import {
+  encodeTextContent,
+  type ResolvedTextContent,
+} from '../../main/content/text-content';
 import {
   createAssetContentStatus,
   createLocalFileContentRef,
@@ -66,36 +68,29 @@ class MemoryDataRepository implements WorkbenchStateDataRepository {
 }
 
 function createHandle(initial: ResolvedTextContent) {
-  let current = initial;
-  const readText = vi.fn(
-    async (request?: ReadTextContentRequest): Promise<ResolvedTextContent> => ({
-      ...current,
-      encoding: request?.encoding ?? current.encoding,
-    }),
-  );
-  const writeText = vi.fn(async (request: WriteTextContentRequest) => {
-    if (request.expectedRevision !== current.revision) {
+  let currentContent = encodeTextContent(initial);
+  let currentRevision = initial.revision;
+  const readBytes = vi.fn(async () => ({
+    content: currentContent,
+    revision: currentRevision,
+  }));
+  const writeBytes = vi.fn(async (request: WriteByteContentRequest) => {
+    if (request.expectedRevision !== currentRevision) {
       throw new Error('revision mismatch');
     }
 
-    current = {
-      ...current,
-      content: request.content,
-      encoding: request.encoding,
-      lineEnding: request.lineEnding,
-      hasByteOrderMark: request.hasByteOrderMark,
-      revision: `revision-${writeText.mock.calls.length}`,
-    };
-    return { revision: current.revision };
+    currentContent = Buffer.from(request.content);
+    currentRevision = `revision-${writeBytes.mock.calls.length}`;
+    return { revision: currentRevision };
   });
   const handle: ContentHandle = {
-    capabilities: new Set(['read-text', 'write-text']),
-    readText,
-    writeText,
+    capabilities: new Set(['read-bytes', 'write-bytes']),
+    readBytes,
+    writeBytes,
     close: vi.fn(async () => undefined),
   };
 
-  return { handle, readText, writeText };
+  return { handle, readBytes, writeBytes };
 }
 
 function createContext(
@@ -223,13 +218,13 @@ describe('PlainTextWorkbenchProvider', () => {
     });
   });
 
-  it('saves through ContentHandle and clears recovery data', async () => {
+  it('saves through the byte ContentHandle and clears recovery data', async () => {
     const states = new MemoryStateRepository();
     const data = new MemoryDataRepository();
     const provider = new PlainTextWorkbenchProvider(states, data, {
       now: () => 300,
     });
-    const { handle, writeText } = createHandle(source);
+    const { handle, writeBytes } = createHandle(source);
     const context = createContext('session', handle, undefined);
     await provider.open(context);
     await provider.command(
@@ -254,12 +249,16 @@ describe('PlainTextWorkbenchProvider', () => {
       revision: 'revision-1',
       savedTime: 300,
     });
-    expect(writeText).toHaveBeenCalledWith(
+    expect(writeBytes).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: '正式保存',
         expectedRevision: 'revision-0',
       }),
     );
+    expect(
+      new TextDecoder().decode(
+        writeBytes.mock.calls[0]?.[0].content,
+      ),
+    ).toBe('正式保存');
     await expect(
       data.get(
         'asset',
@@ -363,11 +362,11 @@ describe('PlainTextWorkbenchProvider', () => {
     });
   });
 
-  it('saves a line-ending-only change through ContentHandle', async () => {
+  it('saves a line-ending-only change through the byte ContentHandle', async () => {
     const states = new MemoryStateRepository();
     const data = new MemoryDataRepository();
     const provider = new PlainTextWorkbenchProvider(states, data);
-    const { handle, writeText } = createHandle(source);
+    const { handle, writeBytes } = createHandle(source);
     const context = createContext('session', handle, undefined);
     await provider.open(context);
     await provider.command(context, {
@@ -384,12 +383,11 @@ describe('PlainTextWorkbenchProvider', () => {
       }),
     );
 
-    expect(writeText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: source.content,
-        lineEnding: 'crlf',
-      }),
-    );
+    expect(
+      new TextDecoder().decode(
+        writeBytes.mock.calls[0]?.[0].content,
+      ),
+    ).toBe(source.content);
     expect(
       (await states.get('asset', PLAIN_TEXT_WORKBENCH_ID))?.payload,
     ).not.toHaveProperty('recovery');
@@ -436,19 +434,21 @@ describe('PlainTextWorkbenchProvider', () => {
     const states = new MemoryStateRepository();
     const data = new MemoryDataRepository();
     const provider = new PlainTextWorkbenchProvider(states, data);
-    const { handle, readText } = createHandle(source);
-    readText.mockImplementation(
-      async (request?: ReadTextContentRequest) =>
-        request?.encoding === 'gbk'
-          ? {
-              content: '以 GBK 打开',
-              encoding: 'gbk',
-              lineEnding: 'crlf',
-              hasByteOrderMark: false,
-              revision: 'revision-gbk',
-            }
-          : source,
-    );
+    const { handle, readBytes } = createHandle(source);
+    readBytes
+      .mockResolvedValueOnce({
+        content: encodeTextContent(source),
+        revision: source.revision,
+      })
+      .mockResolvedValueOnce({
+        content: encodeTextContent({
+          content: '以 GBK 打开',
+          encoding: 'gbk',
+          lineEnding: 'crlf',
+          hasByteOrderMark: false,
+        }),
+        revision: 'revision-gbk',
+      });
     const context = createContext('session', handle, undefined);
     await provider.open(context);
 
@@ -457,11 +457,11 @@ describe('PlainTextWorkbenchProvider', () => {
       payload: { encoding: 'gbk' },
     });
 
-    expect(readText).toHaveBeenLastCalledWith({ encoding: 'gbk' });
+    expect(readBytes).toHaveBeenCalledTimes(2);
     expect(result.payload).toEqual({
       content: '以 GBK 打开',
       encoding: 'gbk',
-      lineEnding: 'crlf',
+      lineEnding: 'lf',
       hasByteOrderMark: false,
       revision: 'revision-gbk',
     });
@@ -471,7 +471,7 @@ describe('PlainTextWorkbenchProvider', () => {
     const states = new MemoryStateRepository();
     const data = new MemoryDataRepository();
     const provider = new PlainTextWorkbenchProvider(states, data);
-    const { handle, readText } = createHandle(source);
+    const { handle, readBytes } = createHandle(source);
     const context = createContext('session', handle, undefined);
     await provider.open(context);
     await provider.command(
@@ -491,6 +491,6 @@ describe('PlainTextWorkbenchProvider', () => {
     ).rejects.toMatchObject({
       code: 'CONTENT_HAS_UNSAVED_CHANGES',
     });
-    expect(readText).toHaveBeenCalledOnce();
+    expect(readBytes).toHaveBeenCalledOnce();
   });
 });

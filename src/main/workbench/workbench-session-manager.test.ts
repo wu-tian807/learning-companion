@@ -74,7 +74,7 @@ function createAssetService(
     const handle =
       availability === 'available'
         ? {
-            capabilities: new Set<ContentCapability>(['read-text']),
+            capabilities: new Set<ContentCapability>(['read-bytes']),
             close: vi.fn(async () => undefined),
           }
         : undefined;
@@ -128,7 +128,7 @@ describe('WorkbenchSessionManager', () => {
     const plainText = createProvider(
       'plain-text',
       ['text/plain'],
-      ['read-text'],
+      ['read-bytes'],
     );
     const { handles, service } = createAssetService();
     const manager = createManager(service, fallback, plainText);

@@ -1,9 +1,8 @@
 export const WORKBENCH_PROTOCOL_VERSION = 1;
 
 export const contentCapabilities = [
-  'read-text',
-  'write-text',
   'read-bytes',
+  'read-stream',
   'write-bytes',
   'watch',
 ] as const;

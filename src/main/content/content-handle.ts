@@ -1,42 +1,37 @@
 import type { ContentCapability } from '../../shared/workbench/manifest';
 
-export type TextLineEnding = 'lf' | 'crlf';
-export type TextEncoding = 'utf-8' | 'gbk';
-
-export interface ReadTextContentRequest {
-  readonly encoding?: TextEncoding;
+export interface ByteRange {
+  readonly start: number;
+  readonly endExclusive: number;
 }
 
-export interface ResolvedTextContent {
-  readonly content: string;
-  readonly encoding: TextEncoding;
-  readonly lineEnding: TextLineEnding;
-  readonly hasByteOrderMark: boolean;
+export interface ResolvedByteContent {
+  readonly content: Uint8Array;
   readonly revision: string;
 }
 
-export interface WriteTextContentRequest {
-  readonly content: string;
-  readonly encoding: TextEncoding;
-  readonly lineEnding: TextLineEnding;
-  readonly hasByteOrderMark: boolean;
+export interface ResolvedByteStream {
+  readonly stream: ReadableStream<Uint8Array>;
+  readonly byteLength: number;
+  readonly revision?: string;
+}
+
+export interface WriteByteContentRequest {
+  readonly content: Uint8Array;
   readonly expectedRevision: string;
 }
 
-export interface WriteTextContentResult {
+export interface WriteByteContentResult {
   readonly revision: string;
 }
 
 export interface ContentHandle {
   readonly capabilities: ReadonlySet<ContentCapability>;
-  readText?(
-    request?: ReadTextContentRequest,
-  ): Promise<ResolvedTextContent>;
-  writeText?(
-    request: WriteTextContentRequest,
-  ): Promise<WriteTextContentResult>;
-  readBytes?(): Promise<Uint8Array>;
-  writeBytes?(content: Uint8Array): Promise<void>;
+  readBytes?(): Promise<ResolvedByteContent>;
+  openByteStream?(range?: ByteRange): Promise<ResolvedByteStream>;
+  writeBytes?(
+    request: WriteByteContentRequest,
+  ): Promise<WriteByteContentResult>;
   close(): Promise<void>;
 }
 

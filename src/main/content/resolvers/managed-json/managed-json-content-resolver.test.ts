@@ -12,31 +12,35 @@ function createRepository(): ManagedJsonContentRepository {
 }
 
 describe('ManagedJsonContentResolver', () => {
-  it('reads managed JSON as UTF-8', async () => {
+  it('reads managed JSON as generic UTF-8 bytes', async () => {
     const resolver = new ManagedJsonContentResolver(createRepository());
     const resolved = await resolver.resolve(
       createManagedJsonContentRef('content-1'),
     );
 
-    await expect(
-      resolved.handle!.readText!({ encoding: 'utf-8' }),
-    ).resolves.toMatchObject({
-      content: '{"title":"测试内容"}',
-      encoding: 'utf-8',
-      lineEnding: 'lf',
-    });
+    const content = await resolved.handle!.readBytes!();
+
+    expect(new TextDecoder().decode(content.content)).toBe(
+      '{"title":"测试内容"}',
+    );
   });
 
-  it('rejects an encoding that managed JSON cannot provide', async () => {
-    const resolver = new ManagedJsonContentResolver(createRepository());
+  it('validates and writes managed JSON through the generic byte contract', async () => {
+    const repository = createRepository();
+    const resolver = new ManagedJsonContentResolver(repository);
     const resolved = await resolver.resolve(
       createManagedJsonContentRef('content-1'),
     );
+    const current = await resolved.handle!.readBytes!();
 
     await expect(
-      resolved.handle!.readText!({ encoding: 'gbk' }),
-    ).rejects.toMatchObject({
-      code: 'CONTENT_ENCODING_UNSUPPORTED',
+      resolved.handle!.writeBytes!({
+        content: new TextEncoder().encode('{"title":"新内容"}'),
+        expectedRevision: current.revision,
+      }),
+    ).resolves.toHaveProperty('revision');
+    expect(repository.set).toHaveBeenCalledWith('content-1', {
+      title: '新内容',
     });
   });
 });

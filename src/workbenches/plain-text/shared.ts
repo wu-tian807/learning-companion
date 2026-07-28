@@ -22,7 +22,7 @@ export const plainTextWorkbenchManifest: AssetWorkbenchManifest = {
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['text/plain'],
-  requiredContentCapabilities: ['read-text', 'write-text'],
+  requiredContentCapabilities: ['read-bytes', 'write-bytes'],
   supportedAnchorTypes: [],
 };
 

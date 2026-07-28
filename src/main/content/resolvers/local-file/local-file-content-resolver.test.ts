@@ -13,6 +13,7 @@ import {
   createLocalFileContentRef,
   createManagedJsonContentRef,
 } from '../../content-ref';
+import { DefaultTextContentAdapter } from '../../text-content';
 import { LocalFileContentResolver } from './local-file-content-resolver';
 
 const temporaryDirectories: string[] = [];
@@ -88,18 +89,39 @@ describe('LocalFileContentResolver', () => {
     ).rejects.toThrow('INVALID_EXTENSION_DEFINITION');
   });
 
-  it('reads and atomically writes UTF-8 text without changing its line endings', async () => {
+  it('exposes generic byte and stream access for available files', async () => {
+    const path = await createTemporaryFile(
+      'resource.bin',
+      Buffer.from('streamed bytes'),
+    );
+    const resolver = new LocalFileContentResolver();
+    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const handle = resolved.handle!;
+
+    await expect(handle.readBytes!()).resolves.toMatchObject({
+      content: Buffer.from('streamed bytes'),
+    });
+    const streamed = await handle.openByteStream!();
+    await expect(
+      new Response(streamed.stream).text(),
+    ).resolves.toBe('streamed bytes');
+    expect(streamed.byteLength).toBe(14);
+    await handle.close();
+  });
+
+  it('reads and atomically writes UTF-8 text through the text adapter without changing its line endings', async () => {
     const path = await createTemporaryFile(
       'notes.txt',
       Buffer.from('\ufeff第一行\r\n第二行\r\n'),
     );
     const resolver = new LocalFileContentResolver();
     const resolved = await resolver.resolve(createLocalFileContentRef(path));
-    const handle = resolved.handle;
+    const handle = resolved.handle!;
+    const adapter = new DefaultTextContentAdapter();
 
-    expect(handle?.readText).toBeTypeOf('function');
-    expect(handle?.writeText).toBeTypeOf('function');
-    const content = await handle!.readText!();
+    expect(handle.readBytes).toBeTypeOf('function');
+    expect(handle.writeBytes).toBeTypeOf('function');
+    const content = await adapter.read(handle);
     expect(content).toMatchObject({
       content: '第一行\n第二行\n',
       encoding: 'utf-8',
@@ -107,7 +129,7 @@ describe('LocalFileContentResolver', () => {
       hasByteOrderMark: true,
     });
 
-    const saved = await handle!.writeText!({
+    const saved = await adapter.write(handle, {
       ...content,
       content: '第一行\n新增内容\n',
       expectedRevision: content.revision,
@@ -126,7 +148,8 @@ describe('LocalFileContentResolver', () => {
     );
     const resolver = new LocalFileContentResolver();
     const resolved = await resolver.resolve(createLocalFileContentRef(path));
-    const content = await resolved.handle!.readText!({
+    const adapter = new DefaultTextContentAdapter();
+    const content = await adapter.read(resolved.handle!, {
       encoding: 'gbk',
     });
 
@@ -136,7 +159,7 @@ describe('LocalFileContentResolver', () => {
       lineEnding: 'crlf',
     });
     await expect(
-      resolved.handle!.writeText!({
+      adapter.write(resolved.handle!, {
         ...content,
         content: '无法保存 emoji 😀',
         expectedRevision: content.revision,
@@ -153,9 +176,10 @@ describe('LocalFileContentResolver', () => {
     );
     const resolver = new LocalFileContentResolver();
     const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const adapter = new DefaultTextContentAdapter();
 
     await expect(
-      resolved.handle!.readText!({ encoding: 'utf-8' }),
+      adapter.read(resolved.handle!, { encoding: 'utf-8' }),
     ).rejects.toMatchObject({
       code: 'CONTENT_ENCODING_UNSUPPORTED',
     });
@@ -168,12 +192,13 @@ describe('LocalFileContentResolver', () => {
     );
     const resolver = new LocalFileContentResolver();
     const resolved = await resolver.resolve(createLocalFileContentRef(path));
-    const content = await resolved.handle!.readText!();
+    const adapter = new DefaultTextContentAdapter();
+    const content = await adapter.read(resolved.handle!);
 
     await writeFile(path, '外部修改');
 
     await expect(
-      resolved.handle!.writeText!({
+      adapter.write(resolved.handle!, {
         ...content,
         content: '编辑器修改',
         expectedRevision: content.revision,

@@ -13,7 +13,7 @@ describe('AssetWorkbenchManifest', () => {
         version: 1,
         protocolVersion: WORKBENCH_PROTOCOL_VERSION,
         supportedMediaTypes: ['text/markdown'],
-        requiredContentCapabilities: ['read-text'],
+        requiredContentCapabilities: ['read-bytes'],
         supportedAnchorTypes: ['markdown.text-range'],
       }),
     ).toBe(true);
@@ -36,7 +36,7 @@ describe('AssetWorkbenchManifest', () => {
         version: 1,
         protocolVersion: WORKBENCH_PROTOCOL_VERSION,
         supportedMediaTypes: ['text/markdown'],
-        requiredContentCapabilities: ['read-text', 'read-text'],
+        requiredContentCapabilities: ['read-bytes', 'read-bytes'],
         supportedAnchorTypes: [],
       }),
     ).toBe(false);

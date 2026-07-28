@@ -1,15 +1,13 @@
-import { createHash } from 'node:crypto';
-
 import type { ContentCapability } from '../../../../shared/workbench/manifest';
 import type { JsonValue } from '../../../../shared/workbench/protocol';
 import { AppError } from '../../../errors/app-error';
 import type {
   ContentHandle,
-  ReadTextContentRequest,
-  ResolvedTextContent,
-  WriteTextContentRequest,
-  WriteTextContentResult,
+  ResolvedByteContent,
+  WriteByteContentRequest,
+  WriteByteContentResult,
 } from '../../content-handle';
+import { createContentRevision } from '../../content-revision';
 import {
   createAssetContentStatus,
   createManagedJsonContentRef,
@@ -19,8 +17,8 @@ import type { ContentResolver } from '../../content-resolver-registry';
 import type { ManagedJsonContentRepository } from './managed-json-content-repository';
 
 const managedJsonCapabilities = new Set<ContentCapability>([
-  'read-text',
-  'write-text',
+  'read-bytes',
+  'write-bytes',
 ]);
 
 class ManagedJsonContentHandle implements ContentHandle {
@@ -32,13 +30,7 @@ class ManagedJsonContentHandle implements ContentHandle {
     private readonly repository: ManagedJsonContentRepository,
   ) {}
 
-  async readText(
-    request: ReadTextContentRequest = {},
-  ): Promise<ResolvedTextContent> {
-    if (request.encoding && request.encoding !== 'utf-8') {
-      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
-    }
-
+  async readBytes(): Promise<ResolvedByteContent> {
     const value = await this.repository.get(this.contentId);
 
     if (value === undefined) {
@@ -46,38 +38,38 @@ class ManagedJsonContentHandle implements ContentHandle {
     }
 
     const content = JSON.stringify(value);
+    const bytes = new TextEncoder().encode(content);
 
     return {
-      content,
-      encoding: 'utf-8',
-      lineEnding: 'lf',
-      hasByteOrderMark: false,
-      revision: createHash('sha256').update(content).digest('hex'),
+      content: bytes,
+      revision: createContentRevision(bytes),
     };
   }
 
-  async writeText(
-    request: WriteTextContentRequest,
-  ): Promise<WriteTextContentResult> {
-    const current = await this.readText();
+  async writeBytes(
+    request: WriteByteContentRequest,
+  ): Promise<WriteByteContentResult> {
+    const current = await this.readBytes();
 
     if (current.revision !== request.expectedRevision) {
       throw new AppError('CONTENT_CHANGED_EXTERNALLY');
     }
 
     let value: JsonValue;
+    let content: string;
 
     try {
-      value = JSON.parse(request.content) as JsonValue;
+      content = new TextDecoder('utf-8', { fatal: true }).decode(
+        request.content,
+      );
+      value = JSON.parse(content) as JsonValue;
     } catch (error) {
       throw new AppError('INVALID_IPC_REQUEST', { cause: error });
     }
 
     await this.repository.set(this.contentId, value);
     return {
-      revision: createHash('sha256')
-        .update(request.content)
-        .digest('hex'),
+      revision: createContentRevision(request.content),
     };
   }
 
