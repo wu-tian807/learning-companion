@@ -3,10 +3,17 @@
   "productName": "Learning Companion",
   "version": "0.1.0",
   "description": "本地优先的 AI 学习助手桌面应用",
+  "author": "wu-tian807",
   "main": ".vite/build/main.js",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "overrides": {
+      "@electron/packager@18.4.4>extract-zip": "npm:@electron-internal/extract-zip@1.0.4",
+      "epubjs@0.3.93>@xmldom/xmldom": "0.8.13"
+    }
+  },
   "scripts": {
     "dev": "electron-forge start",
     "start": "electron-forge start",
@@ -25,6 +32,7 @@
     "better-sqlite3": "13.0.1",
     "drizzle-orm": "0.45.2",
     "electron-squirrel-startup": "1.0.1",
+    "epubjs": "0.3.93",
     "iconv-lite": "^0.7.3",
     "openseadragon": "^6.0.2",
     "pdfjs-dist": "6.1.200",

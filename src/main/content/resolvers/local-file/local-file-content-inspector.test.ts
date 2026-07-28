@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -77,7 +77,7 @@ describe('LocalFileContentInspector', () => {
       checkedTime: Date.parse('2026-07-24T02:00:00.000Z'),
     });
 
-    expect(inspection.contentRef.path).toBe('/tmp/notes.md');
+    expect(inspection.contentRef.path).toBe(normalize('/tmp/notes.md'));
     expect(inspection.contentStatus.checkedTime).toBe(
       Date.parse('2026-07-24T02:00:00.000Z'),
     );
