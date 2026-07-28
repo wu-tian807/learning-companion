@@ -8,6 +8,8 @@ import type {
 } from '../../shared/workbench/protocol';
 
 export const PLAIN_TEXT_WORKBENCH_ID = 'builtin.plain-text';
+export const PLAIN_TEXT_RANGE_ANCHOR_TYPE =
+  'plain-text.text-range';
 export const PLAIN_TEXT_STATE_SCHEMA_VERSION = 2;
 export const PLAIN_TEXT_STATE_SCHEMA_VERSION_V1 = 1;
 export const PLAIN_TEXT_RECOVERY_DATA_KEY = 'recovery-content';
@@ -23,7 +25,7 @@ export const plainTextWorkbenchManifest: AssetWorkbenchManifest = {
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['text/plain'],
   requiredContentCapabilities: ['read-bytes', 'write-bytes'],
-  supportedAnchorTypes: [],
+  supportedAnchorTypes: [PLAIN_TEXT_RANGE_ANCHOR_TYPE],
 };
 
 export type PlainTextLineEnding = 'lf' | 'crlf';

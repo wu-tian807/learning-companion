@@ -17,6 +17,13 @@ export interface WorkbenchContextMenuState {
   readonly x: number;
   readonly y: number;
   readonly invocation: WorkbenchInvocationContext;
+  readonly onWheel?: (event: WorkbenchContextMenuWheelEvent) => void;
+}
+
+export interface WorkbenchContextMenuWheelEvent {
+  readonly deltaX: number;
+  readonly deltaY: number;
+  readonly deltaMode: number;
 }
 
 export interface WorkbenchRuntimeState {

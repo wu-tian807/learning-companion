@@ -20,7 +20,7 @@ const identity: WorkbenchRuntimeIdentity = {
 
 function bundle(
   execute: WorkbenchActionBundle['actions'][number]['execute'],
-  enabled = true,
+  enabled: WorkbenchActionBundle['actions'][number]['enabled'] = true,
 ): WorkbenchActionBundle {
   return {
     actions: [
@@ -124,6 +124,35 @@ describe('Workbench action invocation', () => {
       ),
     ).resolves.toBe('disabled');
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('re-evaluates dynamic action state when invoked', async () => {
+    let enabled = false;
+    const execute = vi.fn();
+    const registry = new WorkbenchActionRegistry();
+    const store = createWorkbenchRuntimeStore();
+    store.getState().activate(identity);
+    registry.register(
+      'builtin.plain-text',
+      bundle(execute, () => enabled),
+    );
+    const invoker = new WorkbenchActionInvoker(registry, store, {
+      reportError: vi.fn(),
+    });
+    const invocation = createWorkbenchInvocationContext(
+      identity,
+      'context-menu',
+      {},
+    );
+
+    await expect(
+      invoker.invoke('plain-text.copy', invocation),
+    ).resolves.toBe('disabled');
+    enabled = true;
+    await expect(
+      invoker.invoke('plain-text.copy', invocation),
+    ).resolves.toBe('executed');
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('reports action failures and clears busy state', async () => {

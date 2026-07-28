@@ -5,27 +5,23 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  redo,
-  redoDepth,
-  selectAll,
-  undo,
-  undoDepth,
-} from '@codemirror/commands';
+import { createEditorActionPreset } from '../../renderer/workbench/actions/editor-action-preset';
+import { CodeMirrorEditorActionAdapter } from '../../renderer/workbench/editor/codemirror-action-adapter';
 import CodeMirror, {
   EditorView,
   type ReactCodeMirrorRef,
   type ViewUpdate,
 } from '@uiw/react-codemirror';
-import { openSearchPanel } from '@codemirror/search';
 
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
 import {
   createPlainTextBufferCommand,
   createPlainTextViewStateCommand,
@@ -37,6 +33,7 @@ import {
   isPlainTextWorkbenchPayload,
   plainTextCommands,
   plainTextWorkbenchManifest,
+  PLAIN_TEXT_RANGE_ANCHOR_TYPE,
   type PlainTextEncoding,
   type PlainTextLineEnding,
   type PlainTextViewOptions,
@@ -45,13 +42,6 @@ import {
 import { createPlainTextRendererActions } from './renderer-actions';
 
 type BackupStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
-type ContextMenuState = { readonly x: number; readonly y: number } | null;
-
-type ContextMenuSelectionState = {
-  readonly hasSelection: boolean;
-  readonly canUndo: boolean;
-  readonly canRedo: boolean;
-};
 
 const plainTextEditorTheme = EditorView.theme(
   {
@@ -142,30 +132,6 @@ const plainTextEditorTheme = EditorView.theme(
   { dark: true },
 );
 
-function isMacPlatform(): boolean {
-  return /Mac/i.test(navigator.platform);
-}
-
-function resolveContextMenuPosition(
-  clientX: number,
-  clientY: number,
-  host: HTMLDivElement,
-  menuWidth = 224,
-  menuHeight = 286,
-): { x: number; y: number } {
-  const bounds = host.getBoundingClientRect();
-  const nextX = Math.min(
-    Math.max(0, clientX - bounds.left - 6),
-    Math.max(8, bounds.width - menuWidth - 6),
-  );
-  const nextY = Math.min(
-    Math.max(0, clientY - bounds.top - 4),
-    Math.max(8, bounds.height - menuHeight - 4),
-  );
-
-  return { x: nextX, y: nextY };
-}
-
 function viewStateFromUpdate(update: ViewUpdate): PlainTextViewState {
   const selection = update.state.selection.main;
 
@@ -174,65 +140,6 @@ function viewStateFromUpdate(update: ViewUpdate): PlainTextViewState {
     head: selection.head,
     scrollTop: Math.max(0, update.view.scrollDOM.scrollTop),
   };
-}
-
-function hasSelection(editor: EditorView | undefined): boolean {
-  if (!editor) {
-    return false;
-  }
-
-  return editor.state.selection.ranges.some((range) => !range.empty);
-}
-
-function selectedText(editor: EditorView | undefined): string {
-  if (!editor) {
-    return '';
-  }
-
-  return editor.state.selection.ranges
-    .filter((range) => !range.empty)
-    .map((range) => editor.state.doc.sliceString(range.from, range.to))
-    .join('\n');
-}
-
-function replaceSelectionText(
-  editor: EditorView | undefined,
-  replacement: string,
-): boolean {
-  if (!editor) {
-    return false;
-  }
-
-  const nonEmptyRanges = editor.state.selection.ranges.filter(
-    (range) => !range.empty,
-  );
-  if (nonEmptyRanges.length === 0) {
-    return false;
-  }
-
-  editor.dispatch({
-    changes: nonEmptyRanges.map((selectionRange) => ({
-      from: selectionRange.from,
-      to: selectionRange.to,
-      insert: replacement,
-    })),
-  });
-
-  return true;
-}
-
-function insertTextAtSelection(editor: EditorView | undefined, text: string): void {
-  if (!editor) {
-    return;
-  }
-
-  editor.dispatch({
-    changes: editor.state.selection.ranges.map((selectionRange) => ({
-      from: selectionRange.from,
-      to: selectionRange.to,
-      insert: text,
-    })),
-  });
 }
 
 function cursorLabel(update: ViewUpdate): string {
@@ -328,6 +235,7 @@ export function PlainTextWorkbenchView({
   executeCommand,
   onError,
 }: RendererWorkbenchViewProps) {
+  const runtime = useWorkbenchRuntime();
   const payload = isPlainTextWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -360,17 +268,6 @@ export function PlainTextWorkbenchView({
   const [backupStatus, setBackupStatus] =
     useState<BackupStatus>('idle');
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
-  const [contextMenuState, setContextMenuState] =
-    useState<ContextMenuState>(null);
-  const [contextMenuBusy, setContextMenuBusy] = useState(false);
-  const [contextMenuSelectionState, setContextMenuSelectionState] =
-    useState<ContextMenuSelectionState>({
-      hasSelection: false,
-      canUndo: false,
-      canRedo: false,
-    });
-  const editorHostRef = useRef<HTMLDivElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
   const dirty =
     content !== savedContent || lineEnding !== savedLineEnding;
   const extensions = useMemo(() => {
@@ -404,162 +301,67 @@ export function PlainTextWorkbenchView({
     [lineEnding],
   );
 
-  const updateContextMenuSelectionState = useCallback(() => {
-    const editor = editorRef.current?.view;
-    const state = editor?.state;
-    const nextState = {
-      hasSelection: hasSelection(editor),
-      canUndo: state !== undefined && undoDepth(state) > 0,
-      canRedo: state !== undefined && redoDepth(state) > 0,
-    };
-    setContextMenuSelectionState((currentState) =>
-      currentState.hasSelection === nextState.hasSelection &&
-      currentState.canUndo === nextState.canUndo &&
-      currentState.canRedo === nextState.canRedo
-        ? currentState
-        : nextState,
-    );
-  }, []);
-
-  const closeContextMenu = useCallback(() => {
-    setContextMenuState(null);
-  }, []);
-
-  useEffect(() => {
-    if (!contextMenuState) {
-      return;
-    }
-
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!contextMenuRef.current?.contains(event.target as Node)) {
-        closeContextMenu();
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeContextMenu();
-      }
-    };
-    const closeOnScroll = () => {
-      closeContextMenu();
-    };
-
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-    window.addEventListener('scroll', closeOnScroll, { passive: true });
-    window.addEventListener('resize', closeOnScroll);
-
-    const editor = editorRef.current?.view;
-    const scrollDom = editor?.scrollDOM;
-    scrollDom?.addEventListener('scroll', closeOnScroll, { passive: true });
-
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-      window.removeEventListener('scroll', closeOnScroll);
-      window.removeEventListener('resize', closeOnScroll);
-      scrollDom?.removeEventListener('scroll', closeOnScroll);
-    };
-  }, [closeContextMenu, contextMenuState]);
-
-  const clipboardCopyText = useCallback(async (text: string) => {
-    if (!navigator.clipboard?.writeText) {
-      throw new Error('当前环境不支持写入剪贴板');
-    }
-
-    await navigator.clipboard.writeText(text);
-  }, []);
-
-  const clipboardReadText = useCallback(async () => {
-    if (!navigator.clipboard?.readText) {
-      throw new Error('当前环境不支持读取剪贴板');
-    }
-
-    return navigator.clipboard.readText();
-  }, []);
-
-  const withContextMenuBusy = useCallback(
-    async (callback: () => Promise<void> | void) => {
-      setContextMenuBusy(true);
-      try {
-        await callback();
-      } catch (error: unknown) {
-        const message = userMessageFromError(
-          error,
-          '文本编辑器快捷操作失败，请重试。',
-        );
-        if (message) {
-          console.error(message, error);
-          onError(message);
-        }
-      } finally {
-        setContextMenuBusy(false);
-      }
-    },
-    [onError],
+  const editorActionAdapter = useMemo(
+    () =>
+      new CodeMirrorEditorActionAdapter({
+        getView: () => editorRef.current?.view,
+        isEditable: () => !recovery,
+        createTarget: ({ source, ranges }) =>
+          createTextRangeTarget(
+            PLAIN_TEXT_RANGE_ANCHOR_TYPE,
+            source,
+            ranges.map((range) => ({
+              start: range.from,
+              end: range.to,
+            })),
+          ),
+      }),
+    [recovery],
+  );
+  const editorActions = useMemo(
+    () => createEditorActionPreset(editorActionAdapter),
+    [editorActionAdapter],
+  );
+  useWorkbenchContributions(
+    'builtin.plain-text.editor',
+    editorActions,
   );
 
   const onContextMenu = useCallback(
-    (event: MouseEvent, editorView: EditorView) => {
-      const editor = editorView;
-      const host = editorHostRef.current;
-      if (!editor || !host || recovery) {
+    (event: MouseEvent) => {
+      if (recovery) {
         return;
       }
 
       event.preventDefault();
-
-      const position = resolveContextMenuPosition(
+      const capture = editorActionAdapter.captureContextMenu(
         event.clientX,
         event.clientY,
-        host,
       );
-      const clickedPosition = (
-        editor as EditorView & {
-          posAtCoords?: (position: {
-            x: number;
-            y: number;
-          }) => number | null;
-        }
-      ).posAtCoords?.({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      if (typeof clickedPosition === 'number') {
-        const contains = editor.state.selection.ranges.some(
-          (selectionRange) =>
-            clickedPosition >= selectionRange.from &&
-            clickedPosition <= selectionRange.to,
-        );
-        if (!contains) {
-          editor.dispatch({
-            selection: { anchor: clickedPosition, head: clickedPosition },
-          });
-        }
-      }
-
-      const viewState = editor.state;
-      const hasCurrentSelection = hasSelection(editor);
-      setContextMenuState(position);
-      setContextMenuSelectionState({
-        hasSelection: hasCurrentSelection,
-        canUndo: undoDepth(viewState) > 0,
-        canRedo: redoDepth(viewState) > 0,
-      });
+      runtime.openContextMenu(
+        bootstrap.sessionId,
+        { x: event.clientX, y: event.clientY },
+        capture.interaction,
+        capture.onWheel,
+      );
     },
-    [recovery],
+    [
+      bootstrap.sessionId,
+      editorActionAdapter,
+      recovery,
+      runtime,
+    ],
   );
 
   const contextMenuExtension = useMemo(
     () =>
       EditorView.domEventHandlers({
-        contextmenu: (event, view) => {
+        contextmenu: (event) => {
           if (recovery) {
             return false;
           }
 
-          onContextMenu(event as MouseEvent, view);
+          onContextMenu(event as MouseEvent);
           return true;
         },
       }),
@@ -569,130 +371,6 @@ export function PlainTextWorkbenchView({
     () => [...extensions, contextMenuExtension],
     [contextMenuExtension, extensions],
   );
-
-  const onContextMenuUndo = useCallback(() => {
-    void withContextMenuBusy(async () => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      closeContextMenu();
-      undo(editor);
-      updateContextMenuSelectionState();
-    });
-  }, [closeContextMenu, updateContextMenuSelectionState, withContextMenuBusy]);
-
-  const onContextMenuRedo = useCallback(() => {
-    void withContextMenuBusy(async () => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      closeContextMenu();
-      redo(editor);
-      updateContextMenuSelectionState();
-    });
-  }, [closeContextMenu, updateContextMenuSelectionState, withContextMenuBusy]);
-
-  const onContextMenuCopy = useCallback(() => {
-    void withContextMenuBusy(async () => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      const text = selectedText(editor);
-      if (!text) {
-        return;
-      }
-
-      await clipboardCopyText(text);
-      closeContextMenu();
-    });
-  }, [closeContextMenu, clipboardCopyText, withContextMenuBusy]);
-
-  const onContextMenuCut = useCallback(() => {
-    if (recovery) {
-      return;
-    }
-
-    void withContextMenuBusy(async () => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      const text = selectedText(editor);
-      if (!text) {
-        return;
-      }
-
-      await clipboardCopyText(text);
-      replaceSelectionText(editor, '');
-      updateContextMenuSelectionState();
-      closeContextMenu();
-    });
-  }, [
-    closeContextMenu,
-    clipboardCopyText,
-    updateContextMenuSelectionState,
-    withContextMenuBusy,
-    recovery,
-  ]);
-
-  const onContextMenuPaste = useCallback(() => {
-    if (recovery) {
-      return;
-    }
-
-    void withContextMenuBusy(async () => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      const text = await clipboardReadText();
-      insertTextAtSelection(editor, text);
-      updateContextMenuSelectionState();
-      closeContextMenu();
-    });
-  }, [
-    closeContextMenu,
-    clipboardReadText,
-    updateContextMenuSelectionState,
-    withContextMenuBusy,
-    recovery,
-  ]);
-
-  const onContextMenuFind = useCallback(() => {
-    void withContextMenuBusy(async () => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      const panelOpened = openSearchPanel(editor);
-      if (!panelOpened) {
-        throw new Error('当前编辑器不支持搜索');
-      }
-      closeContextMenu();
-    });
-  }, [closeContextMenu, withContextMenuBusy]);
-
-  const onContextMenuSelectAll = useCallback(() => {
-    void withContextMenuBusy(() => {
-      const editor = editorRef.current?.view;
-      if (!editor) {
-        return;
-      }
-
-      selectAll(editor);
-      closeContextMenu();
-      updateContextMenuSelectionState();
-    });
-  }, [closeContextMenu, updateContextMenuSelectionState, withContextMenuBusy]);
 
   const updateViewOptions = useCallback(
     async (nextViewOptions: PlainTextViewOptions) => {
@@ -985,10 +663,7 @@ export function PlainTextWorkbenchView({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div
-          ref={editorHostRef}
-          className="relative h-full"
-        >
+        <div className="relative h-full">
           <CodeMirror
             key={editorInstanceKey}
             ref={editorRef}
@@ -1020,7 +695,6 @@ export function PlainTextWorkbenchView({
               const head = Math.min(initial.head, length);
 
               view.dispatch({ selection: { anchor, head } });
-              updateContextMenuSelectionState();
               requestAnimationFrame(() => {
                 view.scrollDOM.scrollTop = initial.scrollTop;
               });
@@ -1031,7 +705,6 @@ export function PlainTextWorkbenchView({
               viewStateRef.current = nextViewState;
               setContent(value);
               setCursor(cursorLabel(update));
-              updateContextMenuSelectionState();
               void executeCommand(
                 createPlainTextBufferCommand(
                   plainTextCommands.syncBuffer,
@@ -1049,138 +722,9 @@ export function PlainTextWorkbenchView({
               const nextViewState = viewStateFromUpdate(update);
               viewStateRef.current = nextViewState;
               setCursor(cursorLabel(update));
-              updateContextMenuSelectionState();
             }}
           />
         </div>
-        {contextMenuState && (
-          <div
-            ref={contextMenuRef}
-            style={{ left: contextMenuState.x, top: contextMenuState.y }}
-            className="absolute z-40 flex w-56 flex-col rounded-xl border border-white/[0.12] bg-[#292e36] p-1.5 text-[11px] text-slate-200 shadow-[0_18px_45px_rgba(0,0,0,0.42)]"
-            onWheel={(event) => {
-              const scrollDom = editorRef.current?.view?.scrollDOM;
-              if (!scrollDom) {
-                return;
-              }
-
-              event.preventDefault();
-              const scale =
-                event.deltaMode === WheelEvent.DOM_DELTA_LINE
-                  ? 24
-                  : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-                    ? scrollDom.clientHeight
-                    : 1;
-              scrollDom.scrollBy({
-                left: event.deltaX * scale,
-                top: event.deltaY * scale,
-              });
-              closeContextMenu();
-            }}
-          >
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={
-                contextMenuBusy || !contextMenuSelectionState.canUndo
-              }
-              onClick={onContextMenuUndo}
-            >
-              <span>撤销</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + Z`}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={
-                contextMenuBusy || !contextMenuSelectionState.canRedo
-              }
-              onClick={onContextMenuRedo}
-            >
-              <span>重做</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + Y`}
-              </span>
-            </button>
-
-            <div className="my-1 h-px bg-white/[0.08]" />
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={
-                contextMenuBusy ||
-                !contextMenuSelectionState.hasSelection ||
-                Boolean(recovery)
-              }
-              onClick={onContextMenuCut}
-            >
-              <span>剪切</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + X`}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={
-                contextMenuBusy || !contextMenuSelectionState.hasSelection
-              }
-              onClick={onContextMenuCopy}
-            >
-              <span>复制</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + C`}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={contextMenuBusy || Boolean(recovery)}
-              onClick={onContextMenuPaste}
-            >
-              <span>粘贴</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + V`}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2"
-              disabled={contextMenuBusy}
-              onClick={onContextMenuSelectAll}
-            >
-              <span>全选</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + A`}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item flex w-full items-center justify-between rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={contextMenuBusy}
-              onClick={onContextMenuFind}
-            >
-              <span>查找</span>
-              <span className="text-slate-500">
-                {`${isMacPlatform() ? '⌘' : 'Ctrl'} + F`}
-              </span>
-            </button>
-
-            <div className="my-1 h-px bg-white/[0.08]" />
-            <p className="px-3 pt-1.5 pb-1 text-[10px] font-medium tracking-wide text-slate-500">
-              AI 扩展（预留）
-            </p>
-            <button
-              type="button"
-              disabled
-              className="ui-menu-item flex w-full items-center rounded-lg px-3 py-2 text-slate-500"
-            >
-              工作台 AI 动作（待接入）
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-white/[0.055] bg-[#1b2027] px-3 text-[10px] text-slate-600">

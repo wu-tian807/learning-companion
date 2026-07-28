@@ -1,6 +1,11 @@
-import type { CSSProperties, Ref } from 'react';
+import type {
+  CSSProperties,
+  Ref,
+  WheelEventHandler,
+} from 'react';
 
 import type { ResolvedWorkbenchContribution } from '../runtime/workbench-action-registry';
+import { isWorkbenchActionEnabled } from '../actions/workbench-action';
 import {
   formatWorkbenchShortcut,
   groupWorkbenchMenuEntries,
@@ -16,6 +21,7 @@ export interface WorkbenchMenuProps {
   readonly className?: string;
   readonly style?: CSSProperties;
   readonly rootRef?: Ref<HTMLDivElement>;
+  readonly onWheel?: WheelEventHandler<HTMLDivElement>;
 }
 
 function entryRole(
@@ -38,6 +44,7 @@ export function WorkbenchMenu({
   className = '',
   style,
   rootRef,
+  onWheel,
 }: WorkbenchMenuProps) {
   const groups = groupWorkbenchMenuEntries(entries);
   const itemClass =
@@ -49,6 +56,7 @@ export function WorkbenchMenu({
       role="menu"
       aria-label={ariaLabel}
       style={style}
+      onWheel={onWheel}
       className={[
         'w-60 rounded-xl border border-white/[0.12] bg-[#292e36] p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.5)]',
         className,
@@ -67,7 +75,8 @@ export function WorkbenchMenu({
           {group.entries.map((entry) => {
             const presentation = entry.contribution.presentation;
             const busy = busyActionIds.has(entry.action.id);
-            const disabled = !entry.action.enabled || busy;
+            const disabled =
+              !isWorkbenchActionEnabled(entry.action) || busy;
             const checked =
               presentation.kind === 'checkbox' ||
               presentation.kind === 'radio'

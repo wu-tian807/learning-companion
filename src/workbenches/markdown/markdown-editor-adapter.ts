@@ -504,6 +504,55 @@ export class MarkdownEditorAdapter {
     this.editor.focus();
   }
 
+  getEditableElement(): HTMLElement | undefined {
+    return this.editor.vditor.wysiwyg?.element;
+  }
+
+  canUndo(): boolean {
+    return this.isToolbarActionEnabled('undo');
+  }
+
+  canRedo(): boolean {
+    return this.isToolbarActionEnabled('redo');
+  }
+
+  undo(): void {
+    this.editor.vditor.undo?.undo(this.editor.vditor);
+  }
+
+  redo(): void {
+    this.editor.vditor.undo?.redo(this.editor.vditor);
+  }
+
+  deleteSelection(): void {
+    this.editor.deleteValue();
+  }
+
+  insertPlainText(value: string): void {
+    if (!document.execCommand('insertText', false, value)) {
+      throw new Error('Markdown 编辑器无法插入剪贴板文字');
+    }
+  }
+
+  selectAll(): void {
+    const element = this.getEditableElement();
+
+    if (!element) {
+      throw new Error('Markdown 可视化编辑器尚未准备完成');
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    element.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  scrollBy(left: number, top: number): void {
+    this.getScrollElement()?.scrollBy({ left, top });
+  }
+
   setOutlineVisible(visible: boolean): void {
     const state = this.editor.vditor;
     state.options.outline = {
@@ -550,6 +599,16 @@ export class MarkdownEditorAdapter {
 
   private getScrollElement(): HTMLElement | undefined {
     return this.editor.vditor.wysiwyg?.element;
+  }
+
+  private isToolbarActionEnabled(action: 'undo' | 'redo'): boolean {
+    const element =
+      this.editor.vditor.toolbar?.elements?.[action]?.firstElementChild;
+
+    return (
+      element instanceof HTMLElement &&
+      !element.classList.contains('vditor-menu--disabled')
+    );
   }
 
   private markBlockedImages(): void {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  areMarkdownSourceViewStatesEqual,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
@@ -21,7 +22,24 @@ describe('Markdown Workbench shared protocol', () => {
     expect(
       markdownWorkbenchManifest.requiredContentCapabilities,
     ).toEqual(['read-bytes', 'write-bytes']);
-    expect(markdownWorkbenchManifest.supportedAnchorTypes).toEqual([]);
+    expect(markdownWorkbenchManifest.supportedAnchorTypes).toEqual([
+      'markdown.source-range',
+      'markdown.visual-selection',
+    ]);
+  });
+
+  it('recognizes unchanged source editor view state', () => {
+    const state = { anchor: 2, head: 5, scrollTop: 120 };
+
+    expect(areMarkdownSourceViewStatesEqual(state, { ...state })).toBe(
+      true,
+    );
+    expect(
+      areMarkdownSourceViewStatesEqual(state, {
+        ...state,
+        scrollTop: 121,
+      }),
+    ).toBe(false);
   });
 
   it('validates persisted state and bootstrap recovery metadata', () => {

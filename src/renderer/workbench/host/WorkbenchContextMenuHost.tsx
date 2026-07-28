@@ -59,7 +59,8 @@ export function WorkbenchContextMenuHost() {
 
     document.addEventListener('mousedown', closeOnOutsideClick);
     document.addEventListener('keydown', closeOnEscape);
-    window.addEventListener('scroll', closeOnViewportChange, {
+    document.addEventListener('scroll', closeOnViewportChange, {
+      capture: true,
       passive: true,
     });
     window.addEventListener('resize', closeOnViewportChange);
@@ -67,7 +68,11 @@ export function WorkbenchContextMenuHost() {
     return () => {
       document.removeEventListener('mousedown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
-      window.removeEventListener('scroll', closeOnViewportChange);
+      document.removeEventListener(
+        'scroll',
+        closeOnViewportChange,
+        true,
+      );
       window.removeEventListener('resize', closeOnViewportChange);
     };
   }, [contextMenu, runtime]);
@@ -93,6 +98,17 @@ export function WorkbenchContextMenuHost() {
       ariaLabel="工作台右键菜单"
       entries={entries}
       busyActionIds={busyActionIds}
+      onWheel={(event) => {
+        if (contextMenu.onWheel) {
+          event.preventDefault();
+          contextMenu.onWheel({
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            deltaMode: event.deltaMode,
+          });
+        }
+        runtime.closeContextMenu();
+      }}
       onInvoke={(entry) => {
         void runtime
           .invoke(entry.action.id, contextMenu.invocation)

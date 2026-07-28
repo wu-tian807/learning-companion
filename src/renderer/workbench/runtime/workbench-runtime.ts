@@ -19,6 +19,7 @@ import {
   createWorkbenchRuntimeStore,
   type WorkbenchRuntimeIdentity,
   type WorkbenchRuntimeStore,
+  type WorkbenchContextMenuWheelEvent,
 } from './workbench-runtime-store';
 
 export interface WorkbenchContextMenuPosition {
@@ -157,6 +158,7 @@ export class WorkbenchRuntime {
     sessionId: string,
     position: WorkbenchContextMenuPosition,
     interaction: WorkbenchInteractionSnapshot,
+    onWheel?: (event: WorkbenchContextMenuWheelEvent) => void,
   ): boolean {
     const identity = this.store.getState().identity;
 
@@ -166,6 +168,7 @@ export class WorkbenchRuntime {
 
     return this.store.getState().openContextMenu({
       ...position,
+      onWheel,
       invocation: createWorkbenchInvocationContext(
         identity,
         'context-menu',

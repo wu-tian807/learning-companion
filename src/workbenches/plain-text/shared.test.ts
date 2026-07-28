@@ -9,6 +9,7 @@ import {
   isPlainTextWorkbenchPayload,
   isPlainTextWorkbenchStateV1,
   isPlainTextWorkbenchStateV2,
+  plainTextWorkbenchManifest,
   plainTextCommands,
 } from './shared';
 
@@ -86,5 +87,11 @@ describe('Plain Text shared protocol', () => {
     expect(isPlainTextLineEndingPayload({ lineEnding: 'cr' })).toBe(false);
     expect(isPlainTextEncodingPayload({ encoding: 'gbk' })).toBe(true);
     expect(isPlainTextEncodingPayload({ encoding: 'latin1' })).toBe(false);
+  });
+
+  it('declares text range anchors for editor interactions', () => {
+    expect(plainTextWorkbenchManifest.supportedAnchorTypes).toEqual([
+      'plain-text.text-range',
+    ]);
   });
 });

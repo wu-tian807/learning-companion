@@ -8,6 +8,10 @@ import type {
 } from '../../shared/workbench/protocol';
 
 export const MARKDOWN_WORKBENCH_ID = 'builtin.markdown';
+export const MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE =
+  'markdown.source-range';
+export const MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE =
+  'markdown.visual-selection';
 export const MARKDOWN_STATE_SCHEMA_VERSION = 1;
 export const MARKDOWN_RECOVERY_DATA_KEY = 'recovery-content';
 
@@ -21,6 +25,17 @@ export type MarkdownSourceViewState = {
   readonly head: number;
   readonly scrollTop: number;
 };
+
+export function areMarkdownSourceViewStatesEqual(
+  left: MarkdownSourceViewState | undefined,
+  right: MarkdownSourceViewState,
+): boolean {
+  return (
+    left?.anchor === right.anchor &&
+    left.head === right.head &&
+    left.scrollTop === right.scrollTop
+  );
+}
 
 export type MarkdownWorkbenchViewState = {
   readonly viewMode: MarkdownViewMode;
@@ -123,7 +138,10 @@ export const markdownWorkbenchManifest: AssetWorkbenchManifest = {
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['text/markdown'],
   requiredContentCapabilities: ['read-bytes', 'write-bytes'],
-  supportedAnchorTypes: [],
+  supportedAnchorTypes: [
+    MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+    MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
+  ],
 };
 
 export const markdownCommands = {

@@ -6,15 +6,7 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  redo,
-  redoDepth,
-  selectAll,
-  undo,
-  undoDepth,
-} from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
-import { openSearchPanel } from '@codemirror/search';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 import CodeMirror, {
   type ReactCodeMirrorRef,
@@ -22,6 +14,9 @@ import CodeMirror, {
 import 'vditor/dist/index.css';
 import './markdown-workbench.css';
 
+import { createEditorActionPreset } from '../../renderer/workbench/actions/editor-action-preset';
+import { CodeMirrorEditorActionAdapter } from '../../renderer/workbench/editor/codemirror-action-adapter';
+import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
@@ -29,8 +24,11 @@ import type {
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { MarkdownEditorActionAdapter } from './markdown-editor-action-adapter';
 import { MarkdownEditorAdapter } from './markdown-editor-adapter';
 import {
+  areMarkdownSourceViewStatesEqual,
   cloneMarkdownWorkbenchViewState,
   createMarkdownSaveViewStateCommand,
   createMarkdownSyncSourceCommand,
@@ -43,6 +41,7 @@ import {
   isMarkdownWorkbenchPayload,
   markdownCommands,
   markdownWorkbenchManifest,
+  MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
   type MarkdownBufferSyncResult,
   type MarkdownEditMode,
   type MarkdownEncoding,
@@ -53,22 +52,11 @@ import {
 import {
   createMarkdownRendererActions,
 } from './renderer-actions';
-import { MarkdownSourceContextMenu } from './source-context-menu';
 
 type VisualEditorState =
   | 'loading'
   | 'ready'
   | 'failed';
-
-type SourceContextMenuState =
-  | {
-      readonly x: number;
-      readonly y: number;
-      readonly hasSelection: boolean;
-      readonly canUndo: boolean;
-      readonly canRedo: boolean;
-    }
-  | undefined;
 
 const markdownSourceTheme = EditorView.theme(
   {
@@ -154,64 +142,6 @@ function cursorLabel(update: ViewUpdate): string {
   return `第 ${line.number} 行，第 ${head - line.from + 1} 列`;
 }
 
-function selectedSourceText(editor: EditorView | undefined): string {
-  if (!editor) {
-    return '';
-  }
-
-  return editor.state.selection.ranges
-    .filter((range) => !range.empty)
-    .map((range) => editor.state.doc.sliceString(range.from, range.to))
-    .join('\n');
-}
-
-function replaceSourceSelection(
-  editor: EditorView | undefined,
-  replacement: string,
-  requireSelection: boolean,
-): boolean {
-  if (!editor) {
-    return false;
-  }
-
-  const ranges = requireSelection
-    ? editor.state.selection.ranges.filter((range) => !range.empty)
-    : editor.state.selection.ranges;
-
-  if (ranges.length === 0) {
-    return false;
-  }
-
-  editor.dispatch({
-    changes: ranges.map((range) => ({
-      from: range.from,
-      to: range.to,
-      insert: replacement,
-    })),
-  });
-  return true;
-}
-
-function resolveSourceContextMenuPosition(
-  event: MouseEvent,
-  host: HTMLElement,
-): { x: number; y: number } {
-  const bounds = host.getBoundingClientRect();
-  const menuWidth = 224;
-  const menuHeight = 308;
-
-  return {
-    x: Math.min(
-      Math.max(8, event.clientX - bounds.left),
-      Math.max(8, bounds.width - menuWidth - 8),
-    ),
-    y: Math.min(
-      Math.max(8, event.clientY - bounds.top),
-      Math.max(8, bounds.height - menuHeight - 8),
-    ),
-  };
-}
-
 function formatEncoding(encoding: MarkdownEncoding): string {
   return encoding === 'utf-8' ? 'UTF-8' : 'GBK';
 }
@@ -288,6 +218,7 @@ function MarkdownRecoveryDialog({
 }
 
 export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
+  const runtime = useWorkbenchRuntime();
   const {
     bootstrap,
     executeCommand,
@@ -307,7 +238,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       outlineVisible: false,
     } satisfies MarkdownWorkbenchViewState);
   const sourceEditorRef = useRef<ReactCodeMirrorRef>(null);
-  const sourceEditorHostRef = useRef<HTMLDivElement>(null);
   const wysiwygHostRef = useRef<HTMLDivElement>(null);
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
@@ -346,10 +276,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [sourceEditorKey, setSourceEditorKey] = useState(0);
   const [wysiwygEditorKey, setWysiwygEditorKey] = useState(0);
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
-  const [sourceContextMenu, setSourceContextMenu] =
-    useState<SourceContextMenuState>();
-  const [sourceContextMenuBusy, setSourceContextMenuBusy] =
-    useState(false);
   const dirty =
     workingBuffer !== diskSource || lineEnding !== savedLineEnding;
 
@@ -375,56 +301,74 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     return extensions;
   }, [viewState.wordWrap]);
 
-  const openSourceContextMenu = useCallback(
-    (event: MouseEvent, editor: EditorView) => {
-      const host = sourceEditorHostRef.current;
+  const sourceEditorActionAdapter = useMemo(
+    () =>
+      new CodeMirrorEditorActionAdapter({
+        getView: () => sourceEditorRef.current?.view,
+        isEditable: () => !recovery,
+        createTarget: ({ source, ranges }) =>
+          createTextRangeTarget(
+            MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+            source,
+            ranges.map((range) => ({
+              start: range.from,
+              end: range.to,
+            })),
+          ),
+      }),
+    [recovery],
+  );
+  const wysiwygEditorActionAdapter = useMemo(
+    () =>
+      new MarkdownEditorActionAdapter({
+        getEditor: () => wysiwygAdapterRef.current,
+      }),
+    [],
+  );
+  const activeEditorActionAdapter =
+    viewState.viewMode === 'source'
+      ? sourceEditorActionAdapter
+      : wysiwygEditorActionAdapter;
+  const editorActions = useMemo(
+    () => createEditorActionPreset(activeEditorActionAdapter),
+    [activeEditorActionAdapter],
+  );
+  useWorkbenchContributions(
+    'builtin.markdown.editor',
+    editorActions,
+  );
 
-      if (!host || recovery) {
+  const openSourceContextMenu = useCallback(
+    (event: MouseEvent) => {
+      if (recovery) {
         return;
       }
 
       event.preventDefault();
-      const clickedPosition = editor.posAtCoords({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      if (clickedPosition !== null) {
-        const clickedInsideSelection = editor.state.selection.ranges.some(
-          (range) =>
-            !range.empty &&
-            clickedPosition >= range.from &&
-            clickedPosition <= range.to,
-        );
-
-        if (!clickedInsideSelection) {
-          editor.dispatch({
-            selection: {
-              anchor: clickedPosition,
-              head: clickedPosition,
-            },
-          });
-        }
-      }
-
-      const position = resolveSourceContextMenuPosition(event, host);
-      setSourceContextMenu({
-        ...position,
-        hasSelection: editor.state.selection.ranges.some(
-          (range) => !range.empty,
-        ),
-        canUndo: undoDepth(editor.state) > 0,
-        canRedo: redoDepth(editor.state) > 0,
-      });
+      const capture = sourceEditorActionAdapter.captureContextMenu(
+        event.clientX,
+        event.clientY,
+      );
+      runtime.openContextMenu(
+        bootstrap.sessionId,
+        { x: event.clientX, y: event.clientY },
+        capture.interaction,
+        capture.onWheel,
+      );
     },
-    [recovery],
+    [
+      bootstrap.sessionId,
+      recovery,
+      runtime,
+      sourceEditorActionAdapter,
+    ],
   );
 
   const sourceContextMenuExtension = useMemo(
     () =>
       EditorView.domEventHandlers({
-        contextmenu: (event, editor) => {
-          openSourceContextMenu(event as MouseEvent, editor);
+        contextmenu: (event) => {
+          openSourceContextMenu(event as MouseEvent);
           return true;
         },
       }),
@@ -579,6 +523,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           return;
         }
 
+        runtime.closeContextMenu();
         scheduleViewStateSave({
           ...viewStateRef.current,
           viewMode: 'wysiwyg',
@@ -628,10 +573,55 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     payload,
     recovery,
     reportError,
+    runtime,
     scheduleViewStateSave,
     syncWysiwygBuffer,
     viewState.viewMode,
     wysiwygEditorKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      recovery ||
+      viewState.viewMode !== 'wysiwyg' ||
+      visualEditorState !== 'ready'
+    ) {
+      return;
+    }
+
+    const element =
+      wysiwygAdapterRef.current?.getEditableElement();
+
+    if (!element) {
+      return;
+    }
+
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      const capture =
+        wysiwygEditorActionAdapter.captureContextMenu(
+          event.clientX,
+          event.clientY,
+        );
+      runtime.openContextMenu(
+        bootstrap.sessionId,
+        { x: event.clientX, y: event.clientY },
+        capture.interaction,
+        capture.onWheel,
+      );
+    };
+
+    element.addEventListener('contextmenu', onContextMenu);
+    return () => {
+      element.removeEventListener('contextmenu', onContextMenu);
+    };
+  }, [
+    bootstrap.sessionId,
+    recovery,
+    runtime,
+    visualEditorState,
+    viewState.viewMode,
+    wysiwygEditorActionAdapter,
   ]);
 
   const updateViewState = useCallback(
@@ -800,49 +790,30 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       }
 
       if (update.viewportChanged || update.geometryChanged) {
-        setSourceContextMenu(undefined);
+        runtime.closeContextMenu();
       }
       const sourceState = sourceViewStateFromUpdate(update);
       setCursor(cursorLabel(update));
+      const currentSourceState =
+        viewStateRef.current.sourceViewState;
+
+      if (
+        viewStateRef.current.viewMode === 'source' &&
+        areMarkdownSourceViewStatesEqual(
+          currentSourceState,
+          sourceState,
+        )
+      ) {
+        return;
+      }
+
       scheduleViewStateSave({
         ...viewStateRef.current,
         viewMode: 'source',
         sourceViewState: sourceState,
       });
     },
-    [scheduleViewStateSave],
-  );
-
-  const runSourceContextMenuAction = useCallback(
-    async (operation: (editor: EditorView) => Promise<void> | void) => {
-      const editor = sourceEditorRef.current?.view;
-
-      if (!editor) {
-        return;
-      }
-
-      setSourceContextMenuBusy(true);
-      try {
-        await operation(editor);
-        setSourceContextMenu(undefined);
-      } catch (error) {
-        reportError(error, 'Markdown 源码编辑操作失败。');
-      } finally {
-        setSourceContextMenuBusy(false);
-      }
-    },
-    [reportError],
-  );
-
-  const copySourceSelection = useCallback(
-    async (editor: EditorView) => {
-      const text = selectedSourceText(editor);
-
-      if (text) {
-        await navigator.clipboard.writeText(text);
-      }
-    },
-    [],
+    [runtime, scheduleViewStateSave],
   );
 
   const restoreRecovery = useCallback(async () => {
@@ -1054,10 +1025,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
       <div className="relative min-h-0 flex-1">
         {viewState.viewMode === 'source' ? (
-          <div
-            ref={sourceEditorHostRef}
-            className="relative h-full min-h-0 overflow-hidden"
-          >
+          <div className="relative h-full min-h-0 overflow-hidden">
             <CodeMirror
               key={sourceEditorKey}
               ref={sourceEditorRef}
@@ -1097,48 +1065,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
               onUpdate={onSourceUpdate}
               className="h-full min-h-0 overflow-hidden"
             />
-            {sourceContextMenu && (
-              <MarkdownSourceContextMenu
-                {...sourceContextMenu}
-                busy={sourceContextMenuBusy}
-                onClose={() => setSourceContextMenu(undefined)}
-                onUndo={() =>
-                  void runSourceContextMenuAction((editor) => {
-                    undo(editor);
-                  })
-                }
-                onRedo={() =>
-                  void runSourceContextMenuAction((editor) => {
-                    redo(editor);
-                  })
-                }
-                onCut={() =>
-                  void runSourceContextMenuAction(async (editor) => {
-                    await copySourceSelection(editor);
-                    replaceSourceSelection(editor, '', true);
-                  })
-                }
-                onCopy={() =>
-                  void runSourceContextMenuAction(copySourceSelection)
-                }
-                onPaste={() =>
-                  void runSourceContextMenuAction(async (editor) => {
-                    const text = await navigator.clipboard.readText();
-                    replaceSourceSelection(editor, text, false);
-                  })
-                }
-                onFind={() =>
-                  void runSourceContextMenuAction((editor) => {
-                    openSearchPanel(editor);
-                  })
-                }
-                onSelectAll={() =>
-                  void runSourceContextMenuAction((editor) => {
-                    selectAll(editor);
-                  })
-                }
-              />
-            )}
           </div>
         ) : (
           <div

@@ -3,6 +3,7 @@ import type {
   WorkbenchInvocationContext,
   WorkbenchInvocationOrigin,
 } from '../../../shared/workbench/interaction';
+import { isWorkbenchActionEnabled } from '../actions/workbench-action';
 import type { WorkbenchActionRegistry } from './workbench-action-registry';
 import type {
   WorkbenchRuntimeIdentity,
@@ -76,7 +77,7 @@ export class WorkbenchActionInvoker {
     if (!action) {
       return 'missing';
     }
-    if (!action.enabled) {
+    if (!isWorkbenchActionEnabled(action)) {
       return 'disabled';
     }
     if (state.busyActionIds.has(actionId)) {
