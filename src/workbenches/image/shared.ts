@@ -1,3 +1,4 @@
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -9,6 +10,8 @@ import type {
 
 export const IMAGE_WORKBENCH_ID = 'builtin.image';
 export const IMAGE_STATE_SCHEMA_VERSION = 1;
+export const IMAGE_VIEWPORT_ANCHOR_TYPE = 'image.viewport';
+export const IMAGE_VIEWPORT_ANCHOR_VERSION = 1;
 
 export const imageWorkbenchManifest: AssetWorkbenchManifest = {
   id: IMAGE_WORKBENCH_ID,
@@ -21,7 +24,7 @@ export const imageWorkbenchManifest: AssetWorkbenchManifest = {
     'image/bmp',
   ],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [],
+  supportedAnchorTypes: [IMAGE_VIEWPORT_ANCHOR_TYPE],
 };
 
 export type ImageWorkbenchViewMode = 'fit' | 'actual-size' | 'manual';
@@ -159,5 +162,16 @@ export function createImageSaveViewStateCommand(
     payload: {
       viewState: cloneImageViewState(viewState),
     },
+  };
+}
+
+export function createImageViewportTarget(
+  viewState: ImageWorkbenchViewState,
+): ContentAnchorTarget {
+  return {
+    scope: 'content',
+    anchorType: IMAGE_VIEWPORT_ANCHOR_TYPE,
+    anchorVersion: IMAGE_VIEWPORT_ANCHOR_VERSION,
+    anchorPayload: cloneImageViewState(viewState),
   };
 }

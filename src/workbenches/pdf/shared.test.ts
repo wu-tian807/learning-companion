@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createPdfDocumentIdentity,
+  createPdfPageTarget,
   createPdfSaveViewStateCommand,
   createPdfTextRangeAnchor,
   createPdfTextRangeTarget,
   DEFAULT_PDF_WORKBENCH_STATE,
   isPdfDocumentIdentity,
+  isPdfPageAnchorV1,
   isPdfSaveViewStatePayload,
   isPdfSaveViewStateResult,
   isPdfTextRangeAnchorV1,
@@ -27,6 +29,7 @@ describe('PDF Workbench shared protocol', () => {
     ]);
     expect(pdfWorkbenchManifest.supportedAnchorTypes).toEqual([
       'pdf.text-range',
+      'pdf.page',
     ]);
   });
 
@@ -93,6 +96,19 @@ describe('PDF Workbench shared protocol', () => {
 });
 
 describe('PDF text range anchor', () => {
+  it('creates a current-page target for page-scoped actions', () => {
+    const target = createPdfPageTarget(7);
+
+    expect(target).toEqual({
+      scope: 'content',
+      anchorType: 'pdf.page',
+      anchorVersion: 1,
+      anchorPayload: { pageNumber: 7 },
+    });
+    expect(isPdfPageAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isPdfPageAnchorV1({ pageNumber: 0 })).toBe(false);
+  });
+
   it('normalizes PDF.js fingerprints into a stable document identity', () => {
     expect(createPdfDocumentIdentity(['original', null])).toEqual({
       fingerprint: 'original',

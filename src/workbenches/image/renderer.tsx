@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import OpenSeadragon from 'openseadragon';
 
@@ -12,10 +13,12 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
+import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   cloneImageViewState,
   createImageSaveViewStateCommand,
+  createImageViewportTarget,
   DEFAULT_IMAGE_VIEW_STATE,
   imageWorkbenchManifest,
   isImageSaveViewStateResult,
@@ -255,6 +258,7 @@ export function ImageWorkbenchView({
   onReveal,
   onError,
 }: RendererWorkbenchViewProps) {
+  const runtime = useWorkbenchRuntime();
   const payload = isImageWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -621,6 +625,22 @@ export function ImageWorkbenchView({
   );
   useWorkbenchContributions('builtin.image', rendererActions);
 
+  const openContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const target = createImageViewportTarget(
+        latestViewStateRef.current,
+      );
+
+      runtime.openContextMenu(
+        bootstrap.sessionId,
+        { x: event.clientX, y: event.clientY },
+        { target },
+      );
+    },
+    [bootstrap.sessionId, runtime],
+  );
+
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -636,6 +656,7 @@ export function ImageWorkbenchView({
       tabIndex={0}
       className="relative h-full min-h-0 overflow-hidden bg-[radial-gradient(circle_at_50%_45%,rgba(79,88,112,0.16),transparent_54%),#12161b] outline-none"
       onPointerDown={(event) => event.currentTarget.focus()}
+      onContextMenuCapture={openContextMenu}
       onKeyDown={(event) => {
         if (!ready) {
           return;

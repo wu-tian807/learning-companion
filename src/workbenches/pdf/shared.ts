@@ -12,6 +12,8 @@ export const PDF_WORKBENCH_ID = 'builtin.pdf';
 export const PDF_STATE_SCHEMA_VERSION = 1;
 export const PDF_TEXT_RANGE_ANCHOR_TYPE = 'pdf.text-range';
 export const PDF_TEXT_RANGE_ANCHOR_VERSION = 1;
+export const PDF_PAGE_ANCHOR_TYPE = 'pdf.page';
+export const PDF_PAGE_ANCHOR_VERSION = 1;
 
 export const pdfWorkbenchManifest: AssetWorkbenchManifest = {
   id: PDF_WORKBENCH_ID,
@@ -19,7 +21,10 @@ export const pdfWorkbenchManifest: AssetWorkbenchManifest = {
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['application/pdf'],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [PDF_TEXT_RANGE_ANCHOR_TYPE],
+  supportedAnchorTypes: [
+    PDF_TEXT_RANGE_ANCHOR_TYPE,
+    PDF_PAGE_ANCHOR_TYPE,
+  ],
 };
 
 export type PdfReadingMode = 'continuous' | 'paged';
@@ -76,6 +81,10 @@ export interface PdfTextRangeAnchorV1 {
     readonly prefix: string;
     readonly suffix: string;
   };
+}
+
+export interface PdfPageAnchorV1 {
+  readonly pageNumber: number;
 }
 
 export const DEFAULT_PDF_WORKBENCH_STATE:
@@ -316,6 +325,27 @@ export function createPdfTextRangeTarget(
     anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE,
     anchorVersion: PDF_TEXT_RANGE_ANCHOR_VERSION,
     anchorPayload: createPdfTextRangeAnchor(anchor),
+  };
+}
+
+export function isPdfPageAnchorV1(
+  value: unknown,
+): value is PdfPageAnchorV1 {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.pageNumber) &&
+    Number(value.pageNumber) >= 1
+  );
+}
+
+export function createPdfPageTarget(
+  pageNumber: number,
+): ContentAnchorTarget {
+  return {
+    scope: 'content',
+    anchorType: PDF_PAGE_ANCHOR_TYPE,
+    anchorVersion: PDF_PAGE_ANCHOR_VERSION,
+    anchorPayload: { pageNumber },
   };
 }
 

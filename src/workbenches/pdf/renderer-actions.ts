@@ -18,6 +18,8 @@ export interface PdfRendererActionsOptions {
   readonly onActualSize: () => void;
   readonly onRotateClockwise: () => void;
   readonly onRotateCounterclockwise: () => void;
+  readonly hasSelection: () => boolean;
+  readonly onCopySelection: (text: string) => Promise<void> | void;
   readonly onReveal: () => Promise<void> | void;
 }
 
@@ -35,6 +37,8 @@ export function createPdfRendererActions({
   onActualSize,
   onRotateClockwise,
   onRotateCounterclockwise,
+  hasSelection,
+  onCopySelection,
   onReveal,
 }: PdfRendererActionsOptions): WorkbenchActionBundle {
   const notReadyReason = ready ? undefined : 'PDF 尚未加载完成';
@@ -94,6 +98,25 @@ export function createPdfRendererActions({
         id: 'pdf.reveal',
         enabled: true,
         execute: onReveal,
+      },
+      {
+        id: 'pdf.copy-selection',
+        enabled: hasSelection,
+        execute: (context) => {
+          if (context.selection?.text) {
+            return onCopySelection(context.selection.text);
+          }
+        },
+      },
+      {
+        id: 'pdf.ai.explain-selection',
+        enabled: false,
+        execute: () => undefined,
+      },
+      {
+        id: 'pdf.ai.summarize-page',
+        enabled: false,
+        execute: () => undefined,
       },
     ],
     contributions: [
@@ -229,6 +252,94 @@ export function createPdfRendererActions({
         surface: 'overflow',
         group: '60-file',
         order: 0,
+        presentation: {
+          kind: 'action',
+          label: '在文件夹中显示',
+        },
+      },
+      {
+        id: 'pdf.copy-selection.context-menu',
+        actionId: 'pdf.copy-selection',
+        surface: 'context-menu',
+        group: '10-selection',
+        order: 10,
+        presentation: {
+          kind: 'action',
+          label: '复制选中内容',
+          shortcut: 'Mod+C',
+          disabledReason: '请先在 PDF 中选择文本',
+        },
+      },
+      {
+        id: 'pdf.scale.page-width.context-menu',
+        actionId: 'pdf.scale.page-width',
+        surface: 'context-menu',
+        group: '20-view',
+        groupLabel: 'PDF 视图',
+        order: 10,
+        presentation: {
+          kind: 'action',
+          label: '适应宽度',
+          disabledReason: notReadyReason,
+        },
+      },
+      {
+        id: 'pdf.scale.page-fit.context-menu',
+        actionId: 'pdf.scale.page-fit',
+        surface: 'context-menu',
+        group: '20-view',
+        order: 20,
+        presentation: {
+          kind: 'action',
+          label: '适应整页',
+          disabledReason: notReadyReason,
+        },
+      },
+      {
+        id: 'pdf.rotate.clockwise.context-menu',
+        actionId: 'pdf.rotate.clockwise',
+        surface: 'context-menu',
+        group: '20-view',
+        order: 30,
+        presentation: {
+          kind: 'action',
+          label: '顺时针旋转',
+          disabledReason: notReadyReason,
+        },
+      },
+      {
+        id: 'pdf.ai.explain-selection.context-menu',
+        actionId: 'pdf.ai.explain-selection',
+        surface: 'context-menu',
+        group: '80-ai',
+        groupLabel: 'PDF AI',
+        order: 10,
+        presentation: {
+          kind: 'generation-tool',
+          label: '解释选中内容',
+          description: '连同页码和 PDF 文字锚点一起提交',
+          disabledReason: '等待 PDF AI 工具接入',
+        },
+      },
+      {
+        id: 'pdf.ai.summarize-page.context-menu',
+        actionId: 'pdf.ai.summarize-page',
+        surface: 'context-menu',
+        group: '80-ai',
+        order: 20,
+        presentation: {
+          kind: 'generation-tool',
+          label: '总结当前页',
+          description: '以当前 PDF 页作为生成上下文',
+          disabledReason: '等待 PDF AI 工具接入',
+        },
+      },
+      {
+        id: 'pdf.reveal.context-menu',
+        actionId: 'pdf.reveal',
+        surface: 'context-menu',
+        group: '90-file',
+        order: 10,
         presentation: {
           kind: 'action',
           label: '在文件夹中显示',

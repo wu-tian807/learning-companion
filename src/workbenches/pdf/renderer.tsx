@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import 'pdfjs-dist/web/pdf_viewer.css';
 
@@ -12,6 +13,7 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
+import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
   PdfDocumentSummary,
@@ -23,6 +25,7 @@ import type {
 } from './pdf-viewer-adapter';
 import {
   clonePdfWorkbenchState,
+  createPdfPageTarget,
   createPdfSaveViewStateCommand,
   DEFAULT_PDF_WORKBENCH_STATE,
   isPdfSaveViewStateResult,
@@ -315,6 +318,7 @@ export function PdfWorkbenchView({
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
+  const runtime = useWorkbenchRuntime();
   const payload = isPdfWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -647,13 +651,31 @@ export function PdfWorkbenchView({
     adapterRef.current?.setScaleMode(mode);
     setScaleMenuOpen(false);
   };
-  const reveal = async () => {
+  const reveal = useCallback(async () => {
     try {
       await onReveal();
     } catch (error) {
-      reportRendererError(error, '无法在文件夹中显示 PDF。', onError);
+      reportRendererError(
+        error,
+        '无法在文件夹中显示 PDF。',
+        onError,
+      );
     }
-  };
+  }, [onError, onReveal]);
+  const copySelection = useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        reportRendererError(
+          error,
+          '无法复制 PDF 选中内容。',
+          onError,
+        );
+      }
+    },
+    [onError],
+  );
 
   const rendererActions = useMemo(
     () =>
@@ -673,17 +695,41 @@ export function PdfWorkbenchView({
         onRotateClockwise: () => adapterRef.current?.rotate(90),
         onRotateCounterclockwise: () =>
           adapterRef.current?.rotate(-90),
+        hasSelection: () =>
+          Boolean(runtime.interactionContext()?.selection?.text),
+        onCopySelection: copySelection,
         onReveal: reveal,
       }),
     [
+      copySelection,
       outlineAvailable,
       ready,
+      reveal,
+      runtime,
       searchOpen,
       viewState.readingMode,
       viewState.sidebar,
     ],
   );
   useWorkbenchContributions('builtin.pdf', rendererActions);
+
+  const openContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const current = runtime.interactionContext();
+      const selection = current?.selection;
+      const target =
+        selection?.target ??
+        createPdfPageTarget(viewState.pageNumber);
+
+      runtime.openContextMenu(
+        bootstrap.sessionId,
+        { x: event.clientX, y: event.clientY },
+        { target, selection },
+      );
+    },
+    [bootstrap.sessionId, runtime, viewState.pageNumber],
+  );
 
   if (!payload) {
     return (
@@ -705,6 +751,7 @@ export function PdfWorkbenchView({
       ref={rootRef}
       className="learning-pdf-workbench relative h-full min-h-0 overflow-hidden bg-[#151a20]"
       aria-label="PDF 阅读工作台"
+      onContextMenuCapture={openContextMenu}
     >
       <style>{`
         .learning-pdf-workbench .pdfViewer {

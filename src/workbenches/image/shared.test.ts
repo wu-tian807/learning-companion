@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createImageSaveViewStateCommand,
+  createImageViewportTarget,
   DEFAULT_IMAGE_VIEW_STATE,
   imageCommands,
   imageWorkbenchManifest,
@@ -22,6 +23,9 @@ describe('Image Workbench shared protocol', () => {
     ]);
     expect(imageWorkbenchManifest.requiredContentCapabilities).toEqual([
       'read-stream',
+    ]);
+    expect(imageWorkbenchManifest.supportedAnchorTypes).toEqual([
+      'image.viewport',
     ]);
   });
 
@@ -81,5 +85,14 @@ describe('Image Workbench shared protocol', () => {
     expect(
       isImageSaveViewStateResult({ saved: true, savedTime: 100 }),
     ).toBe(true);
+  });
+
+  it('captures the visible image viewport as an AI-ready target', () => {
+    expect(createImageViewportTarget(DEFAULT_IMAGE_VIEW_STATE)).toEqual({
+      scope: 'content',
+      anchorType: 'image.viewport',
+      anchorVersion: 1,
+      anchorPayload: DEFAULT_IMAGE_VIEW_STATE,
+    });
   });
 });

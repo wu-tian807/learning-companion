@@ -2,7 +2,7 @@
 
 > 日期：2026-07-28
 >
-> 状态：已确认，等待实施计划
+> 状态：已实施；2026-07-28 扩展到媒体特化右键菜单
 
 ## 1. 背景
 
@@ -45,7 +45,7 @@ Vditor、PDF.js 和图片查看器的内部能力差异很大，不能通过一�
 - 真实 LLM 或 Codex 调用；
 - 真实的思维导图、摘要、知识卡片生成；
 - 生成任务队列和历史记录；
-- PDF、图片和音视频的完整右键菜单；
+- 把 PDF、HTML、图片和音视频强行套入 Editor Action Preset；
 - 第三方 Workbench 插件加载；
 - 任意 React 节点形式的菜单扩展。
 
@@ -160,6 +160,12 @@ Workbench 不再直接渲染外部菜单。它只注册 Action、Contribution，
 
 右键菜单打开时必须冻结 Interaction Context。点击菜单造成编辑器失焦
 后，Action 仍然使用打开菜单时的选区和锚点。
+
+查看器类 Workbench 同样使用 Runtime 提供的菜单宿主，但菜单内容由各自
+声明：PDF 面向页码与文字选区，HTML 面向原始 DOM 的选区、链接和媒体，
+图片面向视野，视频面向时间点与画面。它们不复用文本编辑器的
+撤销、剪切、粘贴等通用预设。沙箱 HTML 的右键上下文由主进程只读捕获，
+经白名单事件传给 Renderer；HTML 本身仍不能访问 Preload 或应用 IPC。
 
 ### 6.3 生成中心
 
@@ -492,6 +498,8 @@ src/
 - 为 Markdown WYSIWYG 添加相同基础右键菜单；
 - 让纯文本和 Markdown 发布标准选区；
 - 将 PDF 已有选区接入 Runtime；
+- 为 PDF、HTML、图片和视频注册各自的右键菜单 Contribution；
+- 为 HTML 沙箱、PDF 当前页、图片视野和视频时间点冻结媒体特化锚点；
 - 删除 `headerActionsTarget`；
 - 删除 Workbench 菜单 Portal 和四个 `workbench-menu.tsx`；
 - 保持现有保存、恢复、编码、阅读状态和图片操作行为。
@@ -541,6 +549,7 @@ src/
 - 四个内置 Workbench 不再接收 `headerActionsTarget`。
 - 四个旧 `workbench-menu.tsx` 被删除。
 - 三个编辑面共用同一右键菜单组件和 Editor Action Preset。
+- PDF、HTML、图片和视频共用菜单宿主，但不共用 Editor Action Preset。
 - 纯文本和 Markdown 源码共用 CodeMirror Adapter。
 - Workbench 卸载后 Registry 中没有其 Action 或 Contribution。
 - 右键 Action 使用打开菜单时的稳定选区。
