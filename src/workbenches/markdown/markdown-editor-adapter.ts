@@ -29,6 +29,130 @@ export const MARKDOWN_PREVIEW_RENDER_POLICY = Object.freeze({
   media: Object.freeze({ enable: false }),
 });
 
+interface MarkdownParserFeatureController {
+  SetYamlFrontMatter?(enabled: boolean): void;
+}
+
+const YAML_FRONT_MATTER_DELIMITER = /^---[ \t]*$/;
+const YAML_FRONT_MATTER_CANDIDATE = /^---(?:[^-]|$)/;
+
+export type MarkdownParserFeatureMode =
+  | 'inactive'
+  | 'render'
+  | 'literal-fallback';
+
+export interface MarkdownParserFeatureDecision {
+  readonly feature: string;
+  readonly mode: MarkdownParserFeatureMode;
+  readonly reason?:
+    | 'malformed-opener'
+    | 'unterminated'
+    | 'renderer-unavailable';
+}
+
+interface MarkdownParserFeatureGuard {
+  readonly feature: string;
+  isRendererAvailable(controller: MarkdownParserFeatureController): boolean;
+  inspect(
+    markdown: string,
+    rendererAvailable: boolean,
+  ): MarkdownParserFeatureDecision;
+  configure(
+    controller: MarkdownParserFeatureController,
+    decision: MarkdownParserFeatureDecision,
+  ): void;
+}
+
+type MarkdownDelimitedFeatureInspection =
+  | 'inactive'
+  | 'malformed-opener'
+  | 'unterminated'
+  | 'complete';
+
+function decideDelimitedMarkdownFeature(
+  feature: string,
+  inspection: MarkdownDelimitedFeatureInspection,
+  rendererAvailable: boolean,
+): MarkdownParserFeatureDecision {
+  if (inspection === 'inactive') {
+    return { feature, mode: 'inactive' };
+  }
+
+  if (inspection === 'malformed-opener' || inspection === 'unterminated') {
+    return {
+      feature,
+      mode: 'literal-fallback',
+      reason: inspection,
+    };
+  }
+
+  return rendererAvailable
+    ? { feature, mode: 'render' }
+    : {
+        feature,
+        mode: 'literal-fallback',
+        reason: 'renderer-unavailable',
+      };
+}
+
+function inspectYamlFrontMatter(
+  markdown: string,
+): MarkdownDelimitedFeatureInspection {
+  const lines = markdown.split(/\r\n|\n|\r/);
+  const firstLine = lines[0] ?? '';
+
+  if (!YAML_FRONT_MATTER_CANDIDATE.test(firstLine)) {
+    return 'inactive';
+  }
+
+  if (!YAML_FRONT_MATTER_DELIMITER.test(firstLine)) {
+    return 'malformed-opener';
+  }
+
+  const closed = lines
+    .slice(1)
+    .some((line) => YAML_FRONT_MATTER_DELIMITER.test(line));
+
+  return closed ? 'complete' : 'unterminated';
+}
+
+// Optional extensions that can consume the rest of a document belong here.
+// Each feature validates its own grammar and renderer capability before it is
+// enabled; core Markdown blocks are intentionally left to the Markdown parser.
+const MARKDOWN_PARSER_FEATURE_GUARDS: readonly MarkdownParserFeatureGuard[] =
+  Object.freeze([
+    {
+      feature: 'yaml-front-matter',
+      isRendererAvailable: (controller) =>
+        typeof controller.SetYamlFrontMatter === 'function',
+      inspect: (markdown, rendererAvailable) =>
+        decideDelimitedMarkdownFeature(
+          'yaml-front-matter',
+          inspectYamlFrontMatter(markdown),
+          rendererAvailable,
+        ),
+      configure: (controller, decision) => {
+        controller.SetYamlFrontMatter?.(decision.mode === 'render');
+      },
+    },
+  ]);
+
+export function configureMarkdownParserForDocument(
+  controller: MarkdownParserFeatureController,
+  markdown: string,
+): readonly MarkdownParserFeatureDecision[] {
+  return Object.freeze(
+    MARKDOWN_PARSER_FEATURE_GUARDS.map((guard) => {
+      const decision = guard.inspect(
+        markdown,
+        guard.isRendererAvailable(controller),
+      );
+      guard.configure(controller, decision);
+      return Object.freeze(decision);
+    }),
+  );
+}
+
 export function isMarkdownNetworkRendererAllowed(
   language: string,
 ): boolean {
@@ -362,7 +486,10 @@ export class MarkdownEditorAdapter {
     };
 
     this.editor = new Vditor(options.host, {
-      value: options.initialValue,
+      // Lute must be configured before it sees the document. Otherwise a
+      // malformed leading "---..." is treated as an unterminated YAML block
+      // and consumes every following Markdown node.
+      value: '',
       mode: 'wysiwyg',
       height: '100%',
       minHeight: 0,
@@ -453,6 +580,7 @@ export class MarkdownEditorAdapter {
         }
 
         this.editor.disabledCache();
+        this.applyValue(options.initialValue);
         this.setOutlineVisible(options.outlineVisible);
         const scrollElement = this.getScrollElement();
         scrollElement?.addEventListener('scroll', this.scrollListener, {
@@ -494,7 +622,7 @@ export class MarkdownEditorAdapter {
 
   setValue(value: string): void {
     const release = this.inputGate.suppress();
-    this.editor.setValue(value, true);
+    this.applyValue(value);
     queueMicrotask(() => {
       if (!this.destroyed) {
         release();
@@ -611,6 +739,15 @@ export class MarkdownEditorAdapter {
       element instanceof HTMLElement &&
       !element.classList.contains('vditor-menu--disabled')
     );
+  }
+
+  private applyValue(value: string): void {
+    configureMarkdownParserForDocument(
+      this.editor.vditor
+        .lute as unknown as MarkdownParserFeatureController,
+      value,
+    );
+    this.editor.setValue(value, true);
   }
 
   private markBlockedImages(): void {
