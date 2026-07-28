@@ -548,6 +548,40 @@ export function PlainTextWorkbenchView({
     [recovery],
   );
 
+  const onEditorWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const editor = editorRef.current?.view;
+    if (!editor || recovery) {
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    const scrollDOM = editor.scrollDOM;
+    if (!scrollDOM) {
+      return;
+    }
+
+    if (event.deltaY === 0 && event.deltaX === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const canScrollY = event.deltaY !== 0 && scrollDOM.scrollHeight > scrollDOM.clientHeight;
+    const canScrollX = event.deltaX !== 0 && scrollDOM.scrollWidth > scrollDOM.clientWidth;
+    if (!canScrollY && !canScrollX) {
+      return;
+    }
+
+    scrollDOM.scrollBy({
+      top: event.deltaY,
+      left: canScrollX ? event.deltaX : 0,
+      behavior: 'auto',
+    });
+  }, [recovery]);
+
   const onContextMenuUndo = useCallback(() => {
     void withContextMenuBusy(async () => {
       const editor = editorRef.current?.view;
@@ -941,6 +975,7 @@ export function PlainTextWorkbenchView({
           ref={editorHostRef}
           className="relative h-full"
           onContextMenuCapture={onContextMenu}
+          onWheelCapture={onEditorWheel}
         >
           <CodeMirror
             key={editorInstanceKey}
