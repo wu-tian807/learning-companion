@@ -42,6 +42,21 @@ describe('Asset media type', () => {
     await expect(detectAssetMediaType('/tmp/book.epub')).resolves.toBe(
       'application/epub+zip',
     );
+    await expect(detectAssetMediaType('/tmp/diagram.PNG')).resolves.toBe(
+      'image/png',
+    );
+    await expect(detectAssetMediaType('/tmp/photo.jpeg')).resolves.toBe(
+      'image/jpeg',
+    );
+    await expect(detectAssetMediaType('/tmp/photo.JPG')).resolves.toBe(
+      'image/jpeg',
+    );
+    await expect(detectAssetMediaType('/tmp/scan.bmp')).resolves.toBe(
+      'image/bmp',
+    );
+    await expect(detectAssetMediaType('/tmp/chart.webp')).resolves.toBe(
+      'image/webp',
+    );
   });
 
   it('falls back to plain text for UTF-8, GBK and empty files', async () => {

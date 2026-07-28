@@ -33,6 +33,7 @@ import { SqliteWorkbenchStateDataRepository } from './workbench/workbench-state-
 import { SqliteWorkbenchStateRepository } from './workbench/workbench-state-repository';
 import { createMainWindow } from './window';
 import { PlainTextWorkbenchProvider } from '../workbenches/plain-text/main';
+import { ImageWorkbenchProvider } from '../workbenches/image/main';
 import { UnsupportedWorkbenchProvider } from '../workbenches/unsupported/main';
 
 let databaseContext: DatabaseContext | undefined;
@@ -71,6 +72,12 @@ void app.whenReady().then(async () => {
     new PlainTextWorkbenchProvider(
       workbenchStateRepository,
       workbenchStateDataRepository,
+    ),
+  );
+  workbenchRegistry.register(
+    new ImageWorkbenchProvider(
+      contentResourceService,
+      workbenchStateRepository,
     ),
   );
   const workbenchSessionManager = new WorkbenchSessionManager(

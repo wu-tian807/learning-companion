@@ -6,10 +6,15 @@ export const UNKNOWN_ASSET_MEDIA_TYPE = 'application/octet-stream';
 export const PLAIN_TEXT_ASSET_MEDIA_TYPE = 'text/plain';
 
 const mediaTypeByExtension = new Map<string, string>([
+  ['.bmp', 'image/bmp'],
   ['.epub', 'application/epub+zip'],
+  ['.jpeg', 'image/jpeg'],
+  ['.jpg', 'image/jpeg'],
   ['.markdown', 'text/markdown'],
   ['.md', 'text/markdown'],
   ['.pdf', 'application/pdf'],
+  ['.png', 'image/png'],
+  ['.webp', 'image/webp'],
 ]);
 
 function requireFileName(path: string): string {
