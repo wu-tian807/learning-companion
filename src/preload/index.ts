@@ -19,6 +19,7 @@ import type {
   AssetIdRequest,
   HealthCheckResponse,
   LearningCompanionApi,
+  OpenExternalRequest,
   ProjectLifecycleRequest,
   RelinkAssetRequest,
   RenameAssetRequest,
@@ -53,6 +54,8 @@ async function invoke<Response>(
 
 const api: LearningCompanionApi = {
   healthCheck: () => invoke<HealthCheckResponse>(IPC_CHANNELS.healthCheck),
+  openExternal: (request: OpenExternalRequest) =>
+    invoke<void>(IPC_CHANNELS.openExternal, request),
   getAppPreferences: () =>
     invoke<AppPreferences>(IPC_CHANNELS.getAppPreferences),
   updateHomePreferences: (request: UpdateHomePreferencesRequest) =>

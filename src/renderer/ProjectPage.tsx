@@ -17,6 +17,7 @@ import {
 } from '../shared/ipc';
 import { userMessageFromError } from '../shared/ipc-error';
 import type { ProjectSnapshot } from '../shared/projects';
+import type { WorkbenchSelectionEnvelope } from '../shared/workbench/selection';
 import {
   replaceAsset,
   selectAfterAssetDeletion,
@@ -24,6 +25,7 @@ import {
 } from './asset-view';
 import { ErrorDialog } from './components/ErrorDialog';
 import { AssetWorkbenchHost } from './workbench/AssetWorkbenchHost';
+import { reduceWorkbenchSelection } from './workbench/workbench-selection-state';
 
 interface ProjectPageProps {
   readonly project: ProjectSnapshot;
@@ -496,13 +498,38 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<AssetSnapshot | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssetSnapshot | null>(null);
+  const [, setWorkbenchSelection] =
+    useState<WorkbenchSelectionEnvelope>();
   const mutationLockRef = useRef(false);
+  const projectLifecycleTaskRef = useRef<Promise<void>>(
+    Promise.resolve(),
+  );
+  const workbenchLifecycleTaskRef = useRef<Promise<void>>(
+    Promise.resolve(),
+  );
+  const handleWorkbenchLifecycleTask = useCallback(
+    (task: Promise<void>) => {
+      workbenchLifecycleTaskRef.current = task;
+    },
+    [],
+  );
+  const selectAsset = useCallback((assetId: string | null) => {
+    setWorkbenchSelection(undefined);
+    setSelectedAssetId(assetId);
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const previousProjectLifecycle = projectLifecycleTaskRef.current;
 
     const open = async () => {
       try {
+        await previousProjectLifecycle;
+
+        if (!active) {
+          return;
+        }
+
         const assets = await window.learningCompanion.openProject({
           projectId: project.id,
         });
@@ -513,7 +540,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
 
         if (active) {
           setLoadState({ kind: 'ready', assets });
-          setSelectedAssetId(selectInitialAssetId(assets));
+          selectAsset(selectInitialAssetId(assets));
         }
       } catch (loadError) {
         const message = userMessageFromError(
@@ -531,12 +558,21 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
       }
     };
 
-    void open();
+    const openingTask = open();
 
     return () => {
       active = false;
-      void window.learningCompanion
-        .closeProject({ projectId: project.id })
+      const workbenchLifecycleTask =
+        workbenchLifecycleTaskRef.current;
+      const closingTask = Promise.allSettled([
+        openingTask,
+        workbenchLifecycleTask,
+      ])
+        .then(() =>
+          window.learningCompanion.closeProject({
+            projectId: project.id,
+          }),
+        )
         .catch((closeError: unknown) => {
           const message = userMessageFromError(
             closeError,
@@ -546,8 +582,9 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
             console.error(message, closeError);
           }
         });
+      projectLifecycleTaskRef.current = closingTask;
     };
-  }, [project.id, requestVersion]);
+  }, [project.id, requestVersion, selectAsset]);
 
   const assets = useMemo(
     () => (loadState.kind === 'ready' ? loadState.assets : []),
@@ -556,6 +593,14 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedAssetId),
     [assets, selectedAssetId],
+  );
+  const handleWorkbenchSelection = useCallback(
+    (event: WorkbenchSelectionEnvelope) => {
+      setWorkbenchSelection((current) =>
+        reduceWorkbenchSelection(current, event, selectedAssetId ?? undefined),
+      );
+    },
+    [selectedAssetId],
   );
 
   const updateAssets = useCallback(
@@ -613,7 +658,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         updateAssets((current) => [...current, ...result.added]);
 
         if (result.added[0]) {
-          setSelectedAssetId(result.added[0].id);
+          selectAsset(result.added[0].id);
         }
         if (result.failed.length > 0) {
           setError(
@@ -622,7 +667,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         }
       }, '添加资料失败，请重试。');
     },
-    [runMutation, updateAssets],
+    [runMutation, selectAsset, updateAssets],
   );
 
   const chooseAndAdd = async () => {
@@ -716,6 +761,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
     const target = deleteTarget;
     const succeeded = await runMutation(async () => {
       await window.learningCompanion.deleteAsset({ assetId: target.id });
+      setWorkbenchSelection(undefined);
       setSelectedAssetId((selected) =>
         selectAfterAssetDeletion(assets, target.id, selected),
       );
@@ -799,7 +845,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           busy={busy}
           refreshingAll={refreshingAll}
           dragging={dragging}
-          onSelect={setSelectedAssetId}
+          onSelect={selectAsset}
           onAdd={() => void chooseAndAdd()}
           onRetry={() => {
             setLoadState({ kind: 'loading' });
@@ -825,6 +871,8 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
               ? revealAssetInFolder(selectedAsset)
               : Promise.resolve()
           }
+          onSelectionChange={handleWorkbenchSelection}
+          onLifecycleTaskChange={handleWorkbenchLifecycleTask}
           onError={setError}
         />
         <GenerationPanel asset={selectedAsset} />

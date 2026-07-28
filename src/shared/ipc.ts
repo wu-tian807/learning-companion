@@ -19,6 +19,7 @@ import type {
 
 export const IPC_CHANNELS = {
   healthCheck: 'app:health-check',
+  openExternal: 'app:open-external',
   getAppPreferences: 'settings:get',
   updateHomePreferences: 'settings:update-home',
   listProjects: 'project:list',
@@ -52,6 +53,7 @@ export interface HealthCheckResponse {
 
 export interface LearningCompanionApi {
   healthCheck: () => Promise<HealthCheckResponse>;
+  openExternal: (request: OpenExternalRequest) => Promise<void>;
   getAppPreferences: () => Promise<AppPreferences>;
   updateHomePreferences: (
     request: UpdateHomePreferencesRequest,
@@ -87,6 +89,10 @@ export interface LearningCompanionApi {
 
 export interface CreateProjectRequest {
   name: string;
+}
+
+export interface OpenExternalRequest {
+  url: string;
 }
 
 export interface RenameProjectRequest {
@@ -164,6 +170,32 @@ export function isHealthCheckResponse(value: unknown): value is HealthCheckRespo
     typeof candidate.timestamp === 'string' &&
     !Number.isNaN(Date.parse(candidate.timestamp))
   );
+}
+
+export function isOpenExternalRequest(
+  value: unknown,
+): value is OpenExternalRequest {
+  if (
+    !isRecord(value) ||
+    typeof value.url !== 'string' ||
+    value.url.length === 0 ||
+    value.url.length > 8_192 ||
+    value.url !== value.url.trim()
+  ) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value.url);
+
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.username.length === 0 &&
+      url.password.length === 0
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

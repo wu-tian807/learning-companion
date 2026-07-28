@@ -16,6 +16,10 @@ import {
 } from './content/register-content-protocol';
 import { LocalFileContentResolver } from './content/resolvers/local-file/local-file-content-resolver';
 import { registerHealthCheckHandler, removeHealthCheckHandler } from './ipc/health-check';
+import {
+  registerExternalLinkHandler,
+  removeExternalLinkHandler,
+} from './ipc/external-links';
 import { registerAssetHandlers, removeAssetHandlers } from './ipc/assets';
 import { registerProjectHandlers, removeProjectHandlers } from './ipc/projects';
 import { registerSettingsHandlers, removeSettingsHandlers } from './ipc/settings';
@@ -34,10 +38,44 @@ import { SqliteWorkbenchStateRepository } from './workbench/workbench-state-repo
 import { createMainWindow } from './window';
 import { PlainTextWorkbenchProvider } from '../workbenches/plain-text/main';
 import { ImageWorkbenchProvider } from '../workbenches/image/main';
+import { MarkdownWorkbenchProvider } from '../workbenches/markdown/main';
+import { PdfWorkbenchProvider } from '../workbenches/pdf/main';
 import { UnsupportedWorkbenchProvider } from '../workbenches/unsupported/main';
 
 let databaseContext: DatabaseContext | undefined;
 let contentResourceService: ContentResourceService | undefined;
+let workbenchSessionManager: WorkbenchSessionManager | undefined;
+let workbenchCloseTask: Promise<void> | undefined;
+let quitWorkbenchCleanupComplete = false;
+let quitWorkbenchCleanupStarted = false;
+
+function closeActiveWorkbench(): Promise<void> {
+  if (!workbenchSessionManager) {
+    return Promise.resolve();
+  }
+  if (workbenchCloseTask) {
+    return workbenchCloseTask;
+  }
+
+  const task = workbenchSessionManager.closeActive();
+  const trackedTask = task.finally(() => {
+    if (workbenchCloseTask === trackedTask) {
+      workbenchCloseTask = undefined;
+    }
+  });
+  workbenchCloseTask = trackedTask;
+  return workbenchCloseTask;
+}
+
+function createManagedMainWindow(): void {
+  const mainWindow = createMainWindow();
+
+  mainWindow.on('closed', () => {
+    void closeActiveWorkbench().catch((error: unknown) => {
+      console.error('关闭窗口时释放资料工作台失败', error);
+    });
+  });
+}
 
 registerContentSchemePrivileges();
 
@@ -80,7 +118,19 @@ void app.whenReady().then(async () => {
       workbenchStateRepository,
     ),
   );
-  const workbenchSessionManager = new WorkbenchSessionManager(
+  workbenchRegistry.register(
+    new MarkdownWorkbenchProvider(
+      workbenchStateRepository,
+      workbenchStateDataRepository,
+    ),
+  );
+  workbenchRegistry.register(
+    new PdfWorkbenchProvider(
+      contentResourceService,
+      workbenchStateRepository,
+    ),
+  );
+  workbenchSessionManager = new WorkbenchSessionManager(
     assetService,
     workbenchRegistry,
     new EmptyAttachmentService(),
@@ -96,19 +146,24 @@ void app.whenReady().then(async () => {
   projectDatabase.initialize();
 
   registerHealthCheckHandler();
+  registerExternalLinkHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectService);
   registerAssetHandlers(assetService, assetShellService);
   registerWorkbenchHandlers(workbenchSessionManager);
-  createMainWindow();
+  createManagedMainWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      createManagedMainWindow();
     }
   });
-}).catch((error: unknown) => {
+}).catch(async (error: unknown) => {
   console.error('应用初始化失败', error);
+  await closeActiveWorkbench().catch((closeError: unknown) => {
+    console.error('初始化失败后的工作台清理失败', closeError);
+  });
+  workbenchSessionManager = undefined;
   databaseContext?.close();
   databaseContext = undefined;
   app.quit();
@@ -120,15 +175,39 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('before-quit', (event) => {
+  if (
+    quitWorkbenchCleanupComplete ||
+    quitWorkbenchCleanupStarted ||
+    !workbenchSessionManager
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  quitWorkbenchCleanupStarted = true;
+  void closeActiveWorkbench()
+    .catch((error: unknown) => {
+      console.error('应用退出前保存资料工作台失败', error);
+    })
+    .finally(() => {
+      quitWorkbenchCleanupComplete = true;
+      quitWorkbenchCleanupStarted = false;
+      app.quit();
+    });
+});
+
 app.on('will-quit', () => {
   removeContentProtocol();
   contentResourceService?.dispose();
   contentResourceService = undefined;
   removeHealthCheckHandler();
+  removeExternalLinkHandler();
   removeAssetHandlers();
   removeWorkbenchHandlers();
   removeSettingsHandlers();
   removeProjectHandlers();
+  workbenchSessionManager = undefined;
   databaseContext?.close();
   databaseContext = undefined;
 });

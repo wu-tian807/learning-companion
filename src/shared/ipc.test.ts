@@ -8,6 +8,7 @@ import {
   isCreateProjectRequest,
   isDeleteProjectRequest,
   isHealthCheckResponse,
+  isOpenExternalRequest,
   isProjectLifecycleRequest,
   isRelinkAssetRequest,
   isRenameAssetRequest,
@@ -42,6 +43,33 @@ describe('health check contract', () => {
         timestamp: 'not-a-date',
       }),
     ).toBe(false);
+  });
+});
+
+describe('external URL contract', () => {
+  it('accepts credential-free HTTP and HTTPS URLs', () => {
+    expect(
+      isOpenExternalRequest({ url: 'https://example.com/guide?q=pdf#page-2' }),
+    ).toBe(true);
+    expect(
+      isOpenExternalRequest({ url: 'http://localhost:4173/document' }),
+    ).toBe(true);
+  });
+
+  it('rejects unsupported protocols, credentials, and malformed URLs', () => {
+    expect(isOpenExternalRequest({ url: 'file:///tmp/private.txt' })).toBe(
+      false,
+    );
+    expect(
+      isOpenExternalRequest({ url: 'javascript:alert(document.cookie)' }),
+    ).toBe(false);
+    expect(
+      isOpenExternalRequest({ url: 'https://user:secret@example.com' }),
+    ).toBe(false);
+    expect(isOpenExternalRequest({ url: 'not a URL' })).toBe(false);
+    expect(isOpenExternalRequest({ url: ' https://example.com ' })).toBe(
+      false,
+    );
   });
 });
 

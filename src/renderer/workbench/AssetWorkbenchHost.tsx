@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -8,7 +8,13 @@ import {
   type WorkbenchCommandResult,
   type WorkbenchBootstrap,
 } from '../../shared/workbench/protocol';
+import type {
+  WorkbenchSelectionEnvelope,
+  WorkbenchSelectionSnapshot,
+} from '../../shared/workbench/selection';
 import { IMAGE_WORKBENCH_ID } from '../../workbenches/image/shared';
+import { MARKDOWN_WORKBENCH_ID } from '../../workbenches/markdown/shared';
+import { PDF_WORKBENCH_ID } from '../../workbenches/pdf/shared';
 import { PLAIN_TEXT_WORKBENCH_ID } from '../../workbenches/plain-text/shared';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
@@ -16,6 +22,7 @@ import {
   RendererWorkbenchRegistry,
   type RendererWorkbenchModule,
 } from './renderer-workbench-registry';
+import { WorkbenchLifecycleCoordinator } from './workbench-lifecycle';
 
 interface AssetWorkbenchHostProps {
   readonly asset: AssetSnapshot | undefined;
@@ -23,6 +30,10 @@ interface AssetWorkbenchHostProps {
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
+  readonly onSelectionChange: (
+    event: WorkbenchSelectionEnvelope,
+  ) => void;
+  readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
 }
 
@@ -59,6 +70,20 @@ defaultRegistry.registerLoader(IMAGE_WORKBENCH_ID, async () => {
 
   return imageRendererWorkbenchModule;
 });
+defaultRegistry.registerLoader(MARKDOWN_WORKBENCH_ID, async () => {
+  const { markdownRendererWorkbenchModule } = await import(
+    '../../workbenches/markdown/renderer'
+  );
+
+  return markdownRendererWorkbenchModule;
+});
+defaultRegistry.registerLoader(PDF_WORKBENCH_ID, async () => {
+  const { default: pdfRendererWorkbenchModule } = await import(
+    '../../workbenches/pdf/renderer'
+  );
+
+  return pdfRendererWorkbenchModule;
+});
 
 export function AssetWorkbenchHost({
   asset,
@@ -66,12 +91,16 @@ export function AssetWorkbenchHost({
   onRelink,
   onRefresh,
   onReveal,
+  onSelectionChange,
+  onLifecycleTaskChange,
   onError,
 }: AssetWorkbenchHostProps) {
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
   const [headerActionsTarget, setHeaderActionsTarget] =
     useState<HTMLDivElement | null>(null);
+  const activeSessionIdRef = useRef<string | undefined>(undefined);
+  const lifecycleRef = useRef(new WorkbenchLifecycleCoordinator());
   const assetId = asset?.id;
   const checkedTime = asset?.contentStatus.checkedTime;
   const mediaType = asset?.mediaType;
@@ -79,11 +108,55 @@ export function AssetWorkbenchHost({
     assetId && checkedTime !== undefined && mediaType
       ? `${assetId}:${checkedTime}:${mediaType}`
       : undefined;
+  const readySessionId =
+    settledState?.kind === 'ready' &&
+    settledState.assetKey === assetKey
+      ? settledState.bootstrap.sessionId
+      : undefined;
+  const reportSelection = useCallback(
+    (selection: WorkbenchSelectionSnapshot | undefined) => {
+      if (
+        !assetId ||
+        !readySessionId ||
+        activeSessionIdRef.current !== readySessionId
+      ) {
+        return;
+      }
+
+      onSelectionChange({
+        assetId,
+        sessionId: readySessionId,
+        selection,
+      });
+    },
+    [assetId, onSelectionChange, readySessionId],
+  );
+  const openExternal = useCallback(
+    async (url: string) => {
+      try {
+        await window.learningCompanion.openExternal({ url });
+      } catch (openError) {
+        const message = userMessageFromError(
+          openError,
+          '无法打开外部链接。',
+        );
+
+        if (message) {
+          onError(message);
+        }
+      }
+    },
+    [onError],
+  );
 
   useEffect(() => {
     let active = true;
     let openedSessionId: string | undefined;
     let commandTail: Promise<void> = Promise.resolve();
+    const lease = lifecycleRef.current.acquire();
+
+    onLifecycleTaskChange(lease.completed);
+
     const closeOpenedSession = async () => {
       const sessionId = openedSessionId;
 
@@ -92,6 +165,19 @@ export function AssetWorkbenchHost({
       }
 
       openedSessionId = undefined;
+      if (activeSessionIdRef.current === sessionId) {
+        activeSessionIdRef.current = undefined;
+      }
+      if (assetId) {
+        onSelectionChange({
+          assetId,
+          sessionId,
+          selection: undefined,
+        });
+      }
+      // React may run the Host cleanup before the active View cleanup.
+      // Yield once so a View can synchronously enqueue its final state command.
+      await Promise.resolve();
       await commandTail;
       await window.learningCompanion.closeWorkbench({ sessionId });
     };
@@ -105,15 +191,17 @@ export function AssetWorkbenchHost({
       }
     };
 
-    if (!assetId || !assetKey) {
-      return () => {
-        active = false;
-      };
-    }
+    const openingTask = (async () => {
+      await lease.previous;
 
-    void window.learningCompanion
-      .openWorkbench({ assetId })
-      .then(async (bootstrap) => {
+      if (!active || !assetId || !assetKey) {
+        return;
+      }
+
+      try {
+        const bootstrap =
+          await window.learningCompanion.openWorkbench({ assetId });
+
         if (!isWorkbenchBootstrap(bootstrap)) {
           throw new Error('Workbench Bootstrap 响应无效');
         }
@@ -139,10 +227,10 @@ export function AssetWorkbenchHost({
         };
 
         if (!active) {
-          await closeOpenedSession();
           return;
         }
 
+        activeSessionIdRef.current = bootstrap.sessionId;
         setSettledState({
           kind: 'ready',
           assetKey,
@@ -150,9 +238,8 @@ export function AssetWorkbenchHost({
           module,
           executeCommand,
         });
-      })
-      .catch((openError: unknown) => {
-        void closeOpenedSession().catch(reportCloseError);
+      } catch (openError: unknown) {
+        await closeOpenedSession().catch(reportCloseError);
 
         if (!active) {
           return;
@@ -170,13 +257,25 @@ export function AssetWorkbenchHost({
         console.error('打开资料工作台失败', openError);
         setSettledState({ kind: 'failed', assetKey, message });
         onError(message);
-      });
+      }
+    })();
 
     return () => {
       active = false;
-      void closeOpenedSession().catch(reportCloseError);
+      void openingTask
+        .then(closeOpenedSession)
+        .catch(reportCloseError)
+        .finally(() => {
+          lease.release();
+        });
     };
-  }, [assetId, assetKey, onError]);
+  }, [
+    assetId,
+    assetKey,
+    onError,
+    onLifecycleTaskChange,
+    onSelectionChange,
+  ]);
 
   const state =
     assetKey === undefined
@@ -212,6 +311,7 @@ export function AssetWorkbenchHost({
     );
   } else if (asset && state.kind === 'ready') {
     const View = state.module.View;
+
     content = (
       <>
         <View
@@ -222,6 +322,8 @@ export function AssetWorkbenchHost({
           onRelink={onRelink}
           onRefresh={onRefresh}
           onReveal={onReveal}
+          onSelectionChange={reportSelection}
+          onOpenExternal={openExternal}
           onError={onError}
         />
         <AttachmentHost attachments={[]} />
