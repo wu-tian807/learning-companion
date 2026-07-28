@@ -31,7 +31,8 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "vditor": "3.11.2",
-    "write-file-atomic": "^8.0.0"
+    "write-file-atomic": "^8.0.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@electron-forge/cli": "7.11.2",
