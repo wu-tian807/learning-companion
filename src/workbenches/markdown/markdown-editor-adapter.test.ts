@@ -13,17 +13,17 @@ import {
 } from './markdown-editor-adapter';
 
 describe('MarkdownEditorInputGate', () => {
-  it('blocks delayed initialization input until round-trip review finishes', () => {
+  it('blocks delayed input until editor initialization finishes', () => {
     const gate = new MarkdownEditorInputGate();
 
     expect(gate.canForward()).toBe(false);
-    gate.completeRoundTrip();
+    gate.completeInitialization();
     expect(gate.canForward()).toBe(true);
   });
 
   it('keeps programmatic setValue input suppressed independently', () => {
     const gate = new MarkdownEditorInputGate();
-    gate.completeRoundTrip();
+    gate.completeInitialization();
     const release = gate.suppress();
 
     expect(gate.canForward()).toBe(false);

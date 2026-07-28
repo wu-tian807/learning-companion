@@ -21,7 +21,6 @@ import {
   isMarkdownEncoding,
   isMarkdownEncodingPayload,
   isMarkdownLineEndingPayload,
-  isMarkdownSaveNormalizedPayload,
   isMarkdownSourceBufferPayload,
   isMarkdownWorkbenchStateV1,
   isMarkdownWorkbenchViewStatePayload,
@@ -33,7 +32,6 @@ import {
   markdownWorkbenchManifest,
   type MarkdownEditMode,
   type MarkdownLineEnding,
-  type MarkdownNormalizationState,
   type MarkdownRecoveryState,
   type MarkdownWorkbenchStateV1,
   type MarkdownWorkbenchViewState,
@@ -50,7 +48,6 @@ interface MarkdownSessionRuntime {
   workingBuffer: string;
   currentLineEnding: MarkdownLineEnding;
   lastEditMode: MarkdownEditMode;
-  normalizationState: MarkdownNormalizationState;
   viewState: MarkdownWorkbenchViewState;
   recovery: MarkdownRecoveryState | undefined;
   recoveryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -77,7 +74,6 @@ function cloneRecoveryState(
     lineEnding: recovery.lineEnding,
     hasByteOrderMark: recovery.hasByteOrderMark,
     editedFrom: recovery.editedFrom,
-    normalizationPending: recovery.normalizationPending,
     updatedTime: recovery.updatedTime,
   };
 }
@@ -178,7 +174,6 @@ export class MarkdownWorkbenchProvider
       workingBuffer: source.content,
       currentLineEnding: source.lineEnding,
       lastEditMode: viewState.viewMode,
-      normalizationState: 'clean',
       viewState,
       recovery: state.recovery,
       recoveryTimer: undefined,
@@ -202,8 +197,6 @@ export class MarkdownWorkbenchProvider
                 lineEnding: state.recovery.lineEnding,
                 hasByteOrderMark: state.recovery.hasByteOrderMark,
                 editedFrom: state.recovery.editedFrom,
-                normalizationPending:
-                  state.recovery.normalizationPending,
                 updatedTime: state.recovery.updatedTime,
                 sourceChanged:
                   state.recovery.baseRevision !== source.revision,
@@ -248,7 +241,6 @@ export class MarkdownWorkbenchProvider
         runtime.workingBuffer = command.payload.content;
         runtime.currentLineEnding = command.payload.lineEnding;
         runtime.lastEditMode = 'wysiwyg';
-        runtime.normalizationState = 'requires-confirmation';
         runtime.viewState = {
           ...runtime.viewState,
           viewMode: 'wysiwyg',
@@ -269,28 +261,6 @@ export class MarkdownWorkbenchProvider
       }
       case markdownCommands.save: {
         if (command.payload !== undefined) {
-          throw new AppError('INVALID_IPC_REQUEST');
-        }
-
-        if (
-          this.isDirty(runtime) &&
-          runtime.normalizationState === 'requires-confirmation'
-        ) {
-          await this.scheduleRecovery(runtime);
-          throw new AppError(
-            'MARKDOWN_NORMALIZATION_REVIEW_REQUIRED',
-          );
-        }
-
-        try {
-          return this.createSaveResult(await this.saveSource(runtime));
-        } catch (error) {
-          await this.scheduleRecovery(runtime);
-          throw error;
-        }
-      }
-      case markdownCommands.saveNormalized: {
-        if (!isMarkdownSaveNormalizedPayload(command.payload)) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
@@ -350,7 +320,6 @@ export class MarkdownWorkbenchProvider
         runtime.source = source;
         runtime.workingBuffer = source.content;
         runtime.currentLineEnding = source.lineEnding;
-        runtime.normalizationState = 'clean';
 
         return createResult({
           diskSource: source.content,
@@ -369,7 +338,6 @@ export class MarkdownWorkbenchProvider
         runtime.workingBuffer = runtime.source.content;
         runtime.currentLineEnding = runtime.source.lineEnding;
         runtime.lastEditMode = runtime.viewState.viewMode;
-        runtime.normalizationState = 'clean';
         runtime.recovery = undefined;
         await this.clearRecovery(runtime.assetId, runtime.viewState);
         return createResult({ discarded: true });
@@ -430,11 +398,6 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
         return;
-      case markdownCommands.saveNormalized:
-        if (!isMarkdownSaveNormalizedPayload(command.payload)) {
-          throw new AppError('INVALID_IPC_REQUEST');
-        }
-        return;
       case markdownCommands.saveViewState:
         if (!isMarkdownWorkbenchViewStatePayload(command.payload)) {
           throw new AppError('INVALID_IPC_REQUEST');
@@ -481,7 +444,6 @@ export class MarkdownWorkbenchProvider
     return createResult({
       accepted: true,
       dirty: this.isDirty(runtime),
-      normalizationState: runtime.normalizationState,
     });
   }
 
@@ -507,7 +469,6 @@ export class MarkdownWorkbenchProvider
     this.cancelScheduledRecovery(runtime);
 
     if (!this.isDirty(runtime)) {
-      runtime.normalizationState = 'clean';
       if (runtime.recovery) {
         runtime.recovery = undefined;
         await this.clearRecovery(runtime.assetId, runtime.viewState);
@@ -543,7 +504,6 @@ export class MarkdownWorkbenchProvider
     runtime: MarkdownSessionRuntime,
   ): Promise<number> {
     if (!this.isDirty(runtime)) {
-      runtime.normalizationState = 'clean';
       runtime.recovery = undefined;
       await this.clearRecovery(runtime.assetId, runtime.viewState);
       return this.now();
@@ -557,8 +517,6 @@ export class MarkdownWorkbenchProvider
       lineEnding: runtime.currentLineEnding,
       hasByteOrderMark: runtime.source.hasByteOrderMark,
       editedFrom: runtime.lastEditMode,
-      normalizationPending:
-        runtime.normalizationState === 'requires-confirmation',
       updatedTime,
     };
 
@@ -578,7 +536,6 @@ export class MarkdownWorkbenchProvider
     runtime: MarkdownSessionRuntime,
   ): Promise<WriteTextContentResult> {
     if (!this.isDirty(runtime)) {
-      runtime.normalizationState = 'clean';
       runtime.recovery = undefined;
       await this.clearRecovery(runtime.assetId, runtime.viewState);
       return { revision: runtime.source.revision };
@@ -597,7 +554,6 @@ export class MarkdownWorkbenchProvider
       lineEnding: runtime.currentLineEnding,
       revision: result.revision,
     };
-    runtime.normalizationState = 'clean';
     runtime.recovery = undefined;
     await this.clearRecovery(runtime.assetId, runtime.viewState);
     return result;

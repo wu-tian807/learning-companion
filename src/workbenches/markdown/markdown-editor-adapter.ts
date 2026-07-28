@@ -1,17 +1,12 @@
 import Vditor from 'vditor';
 
-export interface MarkdownEditorReadyState {
-  readonly serializedValue: string;
-  readonly roundTripSafe: boolean;
-}
-
 export interface MarkdownEditorAdapterOptions {
   readonly host: HTMLElement;
   readonly initialValue: string;
   readonly initialScrollTop: number;
   readonly outlineVisible: boolean;
   readonly resourceBaseUrl?: string;
-  readonly onReady: (state: MarkdownEditorReadyState) => void;
+  readonly onReady: () => void;
   readonly onInput: (value: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpenExternal: (url: string) => void;
@@ -41,19 +36,19 @@ export function isMarkdownNetworkRendererAllowed(
 }
 
 export class MarkdownEditorInputGate {
-  private roundTripComplete = false;
+  private initializationComplete = false;
   private suppressionDepth = 0;
 
   canForward(destroyed = false): boolean {
     return (
-      this.roundTripComplete &&
+      this.initializationComplete &&
       this.suppressionDepth === 0 &&
       !destroyed
     );
   }
 
-  completeRoundTrip(): void {
-    this.roundTripComplete = true;
+  completeInitialization(): void {
+    this.initializationComplete = true;
   }
 
   suppress(): () => void {
@@ -334,7 +329,6 @@ export function sanitizeMarkdownRenderedHtml(html: string): string {
 
 export class MarkdownEditorAdapter {
   private readonly editor: Vditor;
-  private readonly initialValue: string;
   private readonly onInput: (value: string) => void;
   private readonly onScroll: (scrollTop: number) => void;
   private readonly scrollListener: () => void;
@@ -361,7 +355,6 @@ export class MarkdownEditorAdapter {
     options: MarkdownEditorAdapterOptions,
     resourceBaseUrl: string,
   ) {
-    this.initialValue = options.initialValue;
     this.onInput = options.onInput;
     this.onScroll = options.onScroll;
     this.scrollListener = () => {
@@ -483,15 +476,8 @@ export class MarkdownEditorAdapter {
           }
 
           this.setScrollTop(options.initialScrollTop);
-          const serializedValue = this.editor.getValue();
-          const roundTripSafe = serializedValue === this.initialValue;
-
-          if (!roundTripSafe) {
-            this.editor.disabled();
-          }
-
-          this.inputGate.completeRoundTrip();
-          options.onReady({ serializedValue, roundTripSafe });
+          this.inputGate.completeInitialization();
+          options.onReady();
         });
       },
       esc: () => {
@@ -515,11 +501,6 @@ export class MarkdownEditorAdapter {
   }
 
   focus(): void {
-    this.editor.focus();
-  }
-
-  enableEditing(): void {
-    this.editor.enable();
     this.editor.focus();
   }
 

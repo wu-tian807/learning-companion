@@ -15,9 +15,6 @@ export type MarkdownViewMode = 'wysiwyg' | 'source';
 export type MarkdownEditMode = MarkdownViewMode;
 export type MarkdownEncoding = 'utf-8' | 'gbk';
 export type MarkdownLineEnding = 'lf' | 'crlf';
-export type MarkdownNormalizationState =
-  | 'clean'
-  | 'requires-confirmation';
 
 export type MarkdownSourceViewState = {
   readonly anchor: number;
@@ -40,7 +37,6 @@ export type MarkdownRecoveryState = {
   readonly lineEnding: MarkdownLineEnding;
   readonly hasByteOrderMark: boolean;
   readonly editedFrom: MarkdownEditMode;
-  readonly normalizationPending: boolean;
   readonly updatedTime: number;
 };
 
@@ -55,7 +51,6 @@ export type MarkdownRecoveryBootstrap = {
   readonly lineEnding: MarkdownLineEnding;
   readonly hasByteOrderMark: boolean;
   readonly editedFrom: MarkdownEditMode;
-  readonly normalizationPending: boolean;
   readonly updatedTime: number;
   readonly sourceChanged: boolean;
 };
@@ -85,7 +80,6 @@ export type MarkdownWysiwygBufferPayload = {
 export type MarkdownBufferSyncResult = {
   readonly accepted: true;
   readonly dirty: boolean;
-  readonly normalizationState: MarkdownNormalizationState;
 };
 
 export type MarkdownSaveResult = {
@@ -100,10 +94,6 @@ export type MarkdownBackupResult = {
 export type MarkdownSaveViewStateResult = {
   readonly saved: true;
   readonly savedTime: number;
-};
-
-export type MarkdownSaveNormalizedPayload = {
-  readonly confirmed: true;
 };
 
 export type MarkdownLineEndingResult = {
@@ -141,7 +131,6 @@ export const markdownCommands = {
   syncWysiwygBuffer: 'markdown:sync-wysiwyg-buffer',
   backup: 'markdown:backup',
   save: 'markdown:save',
-  saveNormalized: 'markdown:save-normalized',
   saveViewState: 'markdown:save-view-state',
   setLineEnding: 'markdown:set-line-ending',
   reopenWithEncoding: 'markdown:reopen-with-encoding',
@@ -184,12 +173,6 @@ export function isMarkdownEditMode(
   return value === 'wysiwyg' || value === 'source';
 }
 
-export function isMarkdownNormalizationState(
-  value: unknown,
-): value is MarkdownNormalizationState {
-  return value === 'clean' || value === 'requires-confirmation';
-}
-
 export function isMarkdownSourceViewState(
   value: unknown,
 ): value is MarkdownSourceViewState {
@@ -226,7 +209,6 @@ export function isMarkdownRecoveryState(
     isMarkdownLineEnding(value.lineEnding) &&
     typeof value.hasByteOrderMark === 'boolean' &&
     isMarkdownEditMode(value.editedFrom) &&
-    typeof value.normalizationPending === 'boolean' &&
     isNonNegativeInteger(value.updatedTime)
   );
 }
@@ -266,7 +248,6 @@ export function isMarkdownWorkbenchPayload(
         isMarkdownLineEnding(recovery.lineEnding) &&
         typeof recovery.hasByteOrderMark === 'boolean' &&
         isMarkdownEditMode(recovery.editedFrom) &&
-        typeof recovery.normalizationPending === 'boolean' &&
         isNonNegativeInteger(recovery.updatedTime) &&
         typeof recovery.sourceChanged === 'boolean'))
   );
@@ -302,8 +283,7 @@ export function isMarkdownBufferSyncResult(
   return (
     isRecord(value) &&
     value.accepted === true &&
-    typeof value.dirty === 'boolean' &&
-    isMarkdownNormalizationState(value.normalizationState)
+    typeof value.dirty === 'boolean'
   );
 }
 
@@ -331,12 +311,6 @@ export function isMarkdownSaveViewStateResult(
     value.saved === true &&
     isNonNegativeInteger(value.savedTime)
   );
-}
-
-export function isMarkdownSaveNormalizedPayload(
-  value: JsonValue | undefined,
-): value is JsonValue & MarkdownSaveNormalizedPayload {
-  return isRecord(value) && value.confirmed === true;
 }
 
 export function isMarkdownWorkbenchViewStatePayload(
@@ -433,13 +407,6 @@ export function createMarkdownSyncWysiwygCommand(
       lineEnding: payload.lineEnding,
       wysiwygScrollTop: payload.wysiwygScrollTop,
     },
-  };
-}
-
-export function createMarkdownSaveNormalizedCommand(): WorkbenchCommand {
-  return {
-    type: markdownCommands.saveNormalized,
-    payload: { confirmed: true },
   };
 }
 

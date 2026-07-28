@@ -14,7 +14,6 @@ export type AppErrorCode =
   | 'CONTENT_ENCODING_UNSUPPORTED'
   | 'CONTENT_ENCODING_LOSS'
   | 'CONTENT_WRITE_FAILED'
-  | 'MARKDOWN_NORMALIZATION_REVIEW_REQUIRED'
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
@@ -113,13 +112,6 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '无法写入文件，请检查文件权限后重试。',
     retryable: true,
     logLevel: 'warn',
-  },
-  MARKDOWN_NORMALIZATION_REVIEW_REQUIRED: {
-    kind: 'user',
-    userMessage:
-      '可视化编辑可能调整 Markdown 源码格式，请先查看差异并明确确认后再保存。',
-    retryable: false,
-    logLevel: 'silent',
   },
   ASSET_MEDIA_TYPE_MISMATCH: {
     kind: 'user',

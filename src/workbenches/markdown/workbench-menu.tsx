@@ -12,7 +12,6 @@ interface MarkdownWorkbenchMenuProps {
   readonly encoding: MarkdownEncoding;
   readonly lineEnding: MarkdownLineEnding;
   readonly viewState: MarkdownWorkbenchViewState;
-  readonly normalizationPending: boolean;
   readonly onSetEncoding: (encoding: MarkdownEncoding) => Promise<void>;
   readonly onSetLineEnding: (
     lineEnding: MarkdownLineEnding,
@@ -20,7 +19,6 @@ interface MarkdownWorkbenchMenuProps {
   readonly onSetViewState: (
     state: MarkdownWorkbenchViewState,
   ) => Promise<void>;
-  readonly onReviewNormalization: () => void;
   readonly onReveal: () => Promise<void> | void;
 }
 
@@ -177,11 +175,9 @@ export function MarkdownWorkbenchMenu({
   encoding,
   lineEnding,
   viewState,
-  normalizationPending,
   onSetEncoding,
   onSetLineEnding,
   onSetViewState,
-  onReviewNormalization,
   onReveal,
 }: MarkdownWorkbenchMenuProps) {
   const [open, setOpen] = useState(false);
@@ -299,26 +295,6 @@ export function MarkdownWorkbenchMenu({
               {viewState.wordWrap ? '✓' : ''}
             </span>
           </button>
-
-          {normalizationPending && (
-            <>
-              <div className="my-1 h-px bg-white/[0.08]" />
-              <button
-                type="button"
-                role="menuitem"
-                disabled={busy}
-                onClick={() =>
-                  void run(() => {
-                    onReviewNormalization();
-                  }, true)
-                }
-                className={itemClass}
-              >
-                <span>查看源码规范化差异</span>
-                <span className="text-amber-200">!</span>
-              </button>
-            </>
-          )}
 
           <div className="my-1 h-px bg-white/[0.08]" />
           <p className="px-3 pt-1.5 pb-1 text-[10px] font-medium tracking-wide text-slate-500">

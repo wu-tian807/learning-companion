@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  createMarkdownSaveNormalizedCommand,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
   isMarkdownBufferSyncResult,
-  isMarkdownSaveNormalizedPayload,
   isMarkdownSourceBufferPayload,
   isMarkdownWorkbenchPayload,
   isMarkdownWorkbenchStateV1,
@@ -42,7 +40,6 @@ describe('Markdown Workbench shared protocol', () => {
           lineEnding: 'lf',
           hasByteOrderMark: false,
           editedFrom: 'wysiwyg',
-          normalizationPending: true,
           updatedTime: 100,
         },
       }),
@@ -62,7 +59,6 @@ describe('Markdown Workbench shared protocol', () => {
           lineEnding: 'lf',
           hasByteOrderMark: false,
           editedFrom: 'wysiwyg',
-          normalizationPending: true,
           updatedTime: 100,
           sourceChanged: false,
         },
@@ -79,7 +75,12 @@ describe('Markdown Workbench shared protocol', () => {
         ...DEFAULT_MARKDOWN_WORKBENCH_STATE,
         recovery: {
           dataKey: 'recovery-content',
-          normalizationPending: 'yes',
+          baseRevision: 'revision-0',
+          encoding: 'utf-8',
+          lineEnding: 'lf',
+          hasByteOrderMark: false,
+          editedFrom: 'wysiwyg',
+          updatedTime: -1,
         },
       }),
     ).toBe(false);
@@ -111,32 +112,17 @@ describe('Markdown Workbench shared protocol', () => {
     expect(isMarkdownSourceBufferPayload(wysiwyg.payload)).toBe(false);
   });
 
-  it('requires an explicit literal confirmation for normalized saves', () => {
-    const command = createMarkdownSaveNormalizedCommand();
-
-    expect(command).toEqual({
-      type: markdownCommands.saveNormalized,
-      payload: { confirmed: true },
-    });
-    expect(isMarkdownSaveNormalizedPayload(command.payload)).toBe(true);
-    expect(
-      isMarkdownSaveNormalizedPayload({ confirmed: false }),
-    ).toBe(false);
-  });
-
-  it('validates normalization-aware sync results', () => {
+  it('validates buffer sync results', () => {
     expect(
       isMarkdownBufferSyncResult({
         accepted: true,
         dirty: true,
-        normalizationState: 'requires-confirmation',
       }),
     ).toBe(true);
     expect(
       isMarkdownBufferSyncResult({
         accepted: true,
-        dirty: false,
-        normalizationState: 'unknown',
+        dirty: 'yes',
       }),
     ).toBe(false);
   });

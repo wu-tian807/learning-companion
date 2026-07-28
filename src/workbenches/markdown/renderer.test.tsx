@@ -79,7 +79,9 @@ describe('MarkdownWorkbenchView', () => {
     expect(markup).toContain(
       'aria-label="Markdown 可视化编辑器"',
     );
+    expect(markup).toContain('learning-markdown-workbench');
     expect(markup).toContain('正在启动 Markdown 可视化编辑器');
+    expect(markup).not.toContain('无法无损往返');
     expect(markup).toContain('UTF-8');
     expect(markup).not.toContain('/tmp/private/notes.md');
   });

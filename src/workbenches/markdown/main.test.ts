@@ -24,7 +24,6 @@ import type {
 } from '../../main/workbench/workbench-state-repository';
 import { MarkdownWorkbenchProvider } from './main';
 import {
-  createMarkdownSaveNormalizedCommand,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
@@ -178,7 +177,6 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(synced.payload).toEqual({
       accepted: true,
       dirty: true,
-      normalizationState: 'clean',
     });
     const saved = await provider.command(context, {
       type: markdownCommands.save,
@@ -198,7 +196,7 @@ describe('MarkdownWorkbenchProvider', () => {
     ).toBe('# Source 修改\n');
   });
 
-  it('requires explicit confirmation for every WYSIWYG edit', async () => {
+  it('allows a WYSIWYG edit through the ordinary save command', async () => {
     const provider = new MarkdownWorkbenchProvider(
       new MemoryStateRepository(),
       new MemoryDataRepository(),
@@ -219,19 +217,10 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(synced.payload).toEqual({
       accepted: true,
       dirty: true,
-      normalizationState: 'requires-confirmation',
     });
-    await expect(
-      provider.command(context, { type: markdownCommands.save }),
-    ).rejects.toMatchObject({
-      code: 'MARKDOWN_NORMALIZATION_REVIEW_REQUIRED',
+    const saved = await provider.command(context, {
+      type: markdownCommands.save,
     });
-    expect(writeBytes).not.toHaveBeenCalled();
-
-    const saved = await provider.command(
-      context,
-      createMarkdownSaveNormalizedCommand(),
-    );
 
     expect(saved.payload).toEqual({
       revision: 'revision-1',
@@ -240,7 +229,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(writeBytes).toHaveBeenCalledOnce();
   });
 
-  it('does not clear WYSIWYG confirmation after switching to Source', async () => {
+  it('keeps the latest buffer when switching from WYSIWYG to Source', async () => {
     const provider = new MarkdownWorkbenchProvider(
       new MemoryStateRepository(),
       new MemoryDataRepository(),
@@ -266,34 +255,18 @@ describe('MarkdownWorkbenchProvider', () => {
       }),
     );
 
-    expect(sourceSync.payload).toMatchObject({
-      normalizationState: 'requires-confirmation',
+    expect(sourceSync.payload).toEqual({
+      accepted: true,
+      dirty: true,
     });
     await expect(
       provider.command(context, { type: markdownCommands.save }),
-    ).rejects.toMatchObject({
-      code: 'MARKDOWN_NORMALIZATION_REVIEW_REQUIRED',
+    ).resolves.toMatchObject({
+      payload: { revision: 'revision-1' },
     });
   });
 
-  it('rejects a normalized save without literal confirmation', async () => {
-    const provider = new MarkdownWorkbenchProvider(
-      new MemoryStateRepository(),
-      new MemoryDataRepository(),
-    );
-    const { handle } = createHandle(source);
-    const context = createContext('session', handle);
-    await provider.open(context);
-
-    await expect(
-      provider.command(context, {
-        type: markdownCommands.saveNormalized,
-        payload: { confirmed: false },
-      }),
-    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
-  });
-
-  it('persists the latest recovery and normalization flag on close', async () => {
+  it('persists the latest recovery on close', async () => {
     const states = new MemoryStateRepository();
     const data = new MemoryDataRepository();
     const provider = new MarkdownWorkbenchProvider(states, data, {
@@ -322,7 +295,6 @@ describe('MarkdownWorkbenchProvider', () => {
         dataKey: MARKDOWN_RECOVERY_DATA_KEY,
         baseRevision: 'revision-0',
         editedFrom: 'wysiwyg',
-        normalizationPending: true,
         lineEnding: 'crlf',
         updatedTime: 500,
       },
@@ -353,7 +325,6 @@ describe('MarkdownWorkbenchProvider', () => {
           lineEnding: 'lf',
           hasByteOrderMark: false,
           editedFrom: 'wysiwyg',
-          normalizationPending: true,
           updatedTime: 600,
         },
       },
@@ -379,7 +350,6 @@ describe('MarkdownWorkbenchProvider', () => {
       recovery: {
         content: '# 恢复内容\n',
         sourceChanged: true,
-        normalizationPending: true,
       },
     });
   });
@@ -518,7 +488,7 @@ describe('MarkdownWorkbenchProvider', () => {
     }
   });
 
-  it('keeps recovery scheduled when an ordinary WYSIWYG save is rejected', async () => {
+  it('clears scheduled recovery after an ordinary WYSIWYG save', async () => {
     vi.useFakeTimers();
     try {
       const states = new MemoryStateRepository();
@@ -533,7 +503,7 @@ describe('MarkdownWorkbenchProvider', () => {
       await provider.command(
         context,
         createMarkdownSyncWysiwygCommand({
-          content: '# 需要确认\n',
+          content: '# 直接保存\n',
           lineEnding: 'lf',
           wysiwygScrollTop: 0,
         }),
@@ -541,30 +511,21 @@ describe('MarkdownWorkbenchProvider', () => {
 
       await expect(
         provider.command(context, { type: markdownCommands.save }),
-      ).rejects.toMatchObject({
-        code: 'MARKDOWN_NORMALIZATION_REVIEW_REQUIRED',
+      ).resolves.toMatchObject({
+        payload: { revision: 'revision-1' },
       });
       await vi.advanceTimersByTimeAsync(1);
 
       expect(
         (await states.get('asset', MARKDOWN_WORKBENCH_ID))?.payload,
-      ).toMatchObject({
-        recovery: {
-          normalizationPending: true,
-          updatedTime: 900,
-        },
-      });
-      expect(
-        new TextDecoder().decode(
-          (
-            await data.get(
-              'asset',
-              MARKDOWN_WORKBENCH_ID,
-              MARKDOWN_RECOVERY_DATA_KEY,
-            )
-          )?.data,
+      ).not.toHaveProperty('recovery');
+      await expect(
+        data.get(
+          'asset',
+          MARKDOWN_WORKBENCH_ID,
+          MARKDOWN_RECOVERY_DATA_KEY,
         ),
-      ).toBe('# 需要确认\n');
+      ).resolves.toBeUndefined();
     } finally {
       vi.useRealTimers();
     }

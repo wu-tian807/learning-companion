@@ -48,26 +48,6 @@ describe('App error policy', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('requires explicit review before saving normalized Markdown', () => {
-    const logger = createLogger();
-
-    expect(
-      handleAppError(
-        'workbench:command',
-        new AppError('MARKDOWN_NORMALIZATION_REVIEW_REQUIRED'),
-        logger,
-      ),
-    ).toEqual({
-      code: 'MARKDOWN_NORMALIZATION_REVIEW_REQUIRED',
-      kind: 'user',
-      message:
-        '可视化编辑可能调整 Markdown 源码格式，请先查看差异并明确确认后再保存。',
-      retryable: false,
-    });
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
-  });
-
   it('uses a safe fallback and logs unknown errors', () => {
     const logger = createLogger();
     const original = new Error('SQLite 原始错误');

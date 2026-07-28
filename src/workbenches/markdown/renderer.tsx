@@ -19,8 +19,8 @@ import { EditorView, type ViewUpdate } from '@codemirror/view';
 import CodeMirror, {
   type ReactCodeMirrorRef,
 } from '@uiw/react-codemirror';
-import DiffMatchPatch from 'diff-match-patch';
 import 'vditor/dist/index.css';
+import './markdown-workbench.css';
 
 import type {
   RendererWorkbenchModule,
@@ -28,13 +28,9 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
-import {
-  MarkdownEditorAdapter,
-  type MarkdownEditorReadyState,
-} from './markdown-editor-adapter';
+import { MarkdownEditorAdapter } from './markdown-editor-adapter';
 import {
   cloneMarkdownWorkbenchViewState,
-  createMarkdownSaveNormalizedCommand,
   createMarkdownSaveViewStateCommand,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
@@ -50,7 +46,6 @@ import {
   type MarkdownEditMode,
   type MarkdownEncoding,
   type MarkdownLineEnding,
-  type MarkdownNormalizationState,
   type MarkdownSourceViewState,
   type MarkdownWorkbenchViewState,
 } from './shared';
@@ -61,9 +56,7 @@ import {
 
 type VisualEditorState =
   | 'loading'
-  | 'safe'
-  | 'requires-opt-in'
-  | 'enabled-after-opt-in'
+  | 'ready'
   | 'failed';
 
 type SourceContextMenuState =
@@ -234,7 +227,6 @@ function requireValidResult<T extends WorkbenchCommandResult['payload']>(
 
 interface MarkdownRecoveryDialogProps {
   readonly sourceChanged: boolean;
-  readonly normalizationPending: boolean;
   readonly updatedTime: number;
   readonly busy: boolean;
   readonly onRestore: () => void;
@@ -243,7 +235,6 @@ interface MarkdownRecoveryDialogProps {
 
 function MarkdownRecoveryDialog({
   sourceChanged,
-  normalizationPending,
   updatedTime,
   busy,
   onRestore,
@@ -272,11 +263,6 @@ function MarkdownRecoveryDialog({
             原文件在备份后发生过变化。恢复只会进入编辑器，不会立即覆盖磁盘文件。
           </p>
         )}
-        {normalizationPending && (
-          <p className="mt-3 rounded-xl border border-indigo-300/15 bg-indigo-300/[0.06] px-3 py-2.5 text-xs leading-5 text-indigo-100/75">
-            这份恢复内容来自可视化编辑，保存前仍需要检查源码规范化差异。
-          </p>
-        )}
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
@@ -293,100 +279,6 @@ function MarkdownRecoveryDialog({
             className="ui-primary-button rounded-full bg-slate-50 px-5 py-2 text-xs font-semibold text-slate-900 disabled:opacity-45"
           >
             恢复编辑内容
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface MarkdownNormalizationDialogProps {
-  readonly diskSource: string;
-  readonly workingBuffer: string;
-  readonly saving: boolean;
-  readonly onCancel: () => void;
-  readonly onInspectSource: () => void;
-  readonly onConfirm: () => void;
-}
-
-function MarkdownNormalizationDialog({
-  diskSource,
-  workingBuffer,
-  saving,
-  onCancel,
-  onInspectSource,
-  onConfirm,
-}: MarkdownNormalizationDialogProps) {
-  const diffs = useMemo(() => {
-    const differ = new DiffMatchPatch();
-    differ.Diff_Timeout = 1.5;
-    const result = differ.diff_main(diskSource, workingBuffer, true);
-    differ.diff_cleanupSemantic(result);
-    return result;
-  }, [diskSource, workingBuffer]);
-
-  return (
-    <div className="fixed inset-0 z-[85] grid place-items-center bg-slate-950/75 p-6 backdrop-blur-sm">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="markdown-normalization-title"
-        className="flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl border border-white/[0.12] bg-[#242a32] shadow-[0_28px_90px_rgba(0,0,0,0.6)]"
-      >
-        <div className="border-b border-white/[0.08] px-5 py-4">
-          <h2
-            id="markdown-normalization-title"
-            className="text-base font-semibold text-slate-100"
-          >
-            检查 Markdown 源码变化
-          </h2>
-          <p className="mt-1.5 text-xs leading-5 text-slate-400">
-            可视化编辑器会重新序列化整份文档。红色为磁盘源码中将被删除的内容，绿色为准备写入的内容。
-          </p>
-        </div>
-        <div
-          aria-label="Markdown 源码差异"
-          className="min-h-0 flex-1 overflow-auto bg-[#171c22] p-5 font-mono text-xs leading-5 whitespace-pre-wrap"
-        >
-          {diffs.map(([operation, text], index) => (
-            <span
-              key={`${operation}:${index}`}
-              className={
-                operation === DiffMatchPatch.DIFF_INSERT
-                  ? 'bg-emerald-400/15 text-emerald-100'
-                  : operation === DiffMatchPatch.DIFF_DELETE
-                    ? 'bg-rose-400/15 text-rose-100 line-through decoration-rose-300/60'
-                    : 'text-slate-400'
-              }
-            >
-              {text}
-            </span>
-          ))}
-        </div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-white/[0.08] px-5 py-4">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onCancel}
-            className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300 disabled:opacity-45"
-          >
-            返回编辑
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onInspectSource}
-            className="ui-control rounded-full border border-indigo-300/20 px-4 py-2 text-xs text-indigo-100 disabled:opacity-45"
-          >
-            切到源码检查
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onConfirm}
-            className="ui-primary-button rounded-full bg-slate-50 px-5 py-2 text-xs font-semibold text-slate-900 disabled:opacity-45"
-          >
-            {saving ? '正在保存…' : '接受变化并保存'}
           </button>
         </div>
       </div>
@@ -446,15 +338,11 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [viewState, setViewState] = useState<MarkdownWorkbenchViewState>(
     initialViewState,
   );
-  const [normalizationState, setNormalizationState] =
-    useState<MarkdownNormalizationState>('clean');
   const [visualEditorState, setVisualEditorState] =
     useState<VisualEditorState>('loading');
   const [recovery, setRecovery] = useState(payload?.recovery);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [normalizationDialogOpen, setNormalizationDialogOpen] =
-    useState(false);
   const [sourceEditorKey, setSourceEditorKey] = useState(0);
   const [wysiwygEditorKey, setWysiwygEditorKey] = useState(0);
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
@@ -608,7 +496,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         throw new Error('Markdown Workbench Buffer 同步响应无效');
       }
 
-      setNormalizationState(result.payload.normalizationState);
       return result.payload;
     },
     [],
@@ -666,14 +553,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       initialValue: workingBufferRef.current,
       initialScrollTop: viewStateRef.current.wysiwygScrollTop,
       outlineVisible: viewStateRef.current.outlineVisible,
-      onReady: ({ roundTripSafe }: MarkdownEditorReadyState) => {
+      onReady: () => {
         if (!active) {
           return;
         }
 
-        setVisualEditorState(
-          roundTripSafe ? 'safe' : 'requires-opt-in',
-        );
+        setVisualEditorState('ready');
       },
       onInput: (value) => {
         if (!active) {
@@ -685,7 +570,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         workingBufferRef.current = value;
         wysiwygEditedSinceMountRef.current = true;
         setWorkingBuffer(value);
-        setNormalizationState('requires-confirmation');
         void syncWysiwygBuffer(value, scrollTop).catch((error) => {
           reportError(error, '无法同步 Markdown 可视化编辑内容。');
         });
@@ -836,14 +720,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     return {
       accepted: true as const,
       dirty,
-      normalizationState,
     };
-  }, [
-    dirty,
-    normalizationState,
-    syncSourceBuffer,
-    syncWysiwygBuffer,
-  ]);
+  }, [dirty, syncSourceBuffer, syncWysiwygBuffer]);
 
   const save = useCallback(async () => {
     if (!dirty || saving || recovery) {
@@ -852,14 +730,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
     setSaving(true);
     try {
-      const syncResult = await flushCurrentBuffer();
-
-      if (
-        syncResult.normalizationState === 'requires-confirmation'
-      ) {
-        setNormalizationDialogOpen(true);
-        return;
-      }
+      await flushCurrentBuffer();
 
       const result = await executeCommand({
         type: markdownCommands.save,
@@ -871,7 +742,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       );
       setDiskSource(workingBufferRef.current);
       setSavedLineEnding(lineEndingRef.current);
-      setNormalizationState('clean');
+      wysiwygEditedSinceMountRef.current = false;
     } catch (error) {
       reportError(error, '无法保存 Markdown 文件。');
     } finally {
@@ -885,30 +756,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     reportError,
     saving,
   ]);
-
-  const saveNormalized = useCallback(async () => {
-    setSaving(true);
-    try {
-      await flushCurrentBuffer();
-      const result = await executeCommand(
-        createMarkdownSaveNormalizedCommand(),
-      );
-      requireValidResult(
-        result,
-        isMarkdownSaveResult,
-        'Markdown Workbench 规范化保存响应无效',
-      );
-      setDiskSource(workingBufferRef.current);
-      setSavedLineEnding(lineEndingRef.current);
-      setNormalizationState('clean');
-      setNormalizationDialogOpen(false);
-      wysiwygEditedSinceMountRef.current = false;
-    } catch (error) {
-      reportError(error, '无法保存 Markdown 文件。');
-    } finally {
-      setSaving(false);
-    }
-  }, [executeCommand, flushCurrentBuffer, reportError]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1009,18 +856,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       lineEndingRef.current = recovery.lineEnding;
       setWorkingBuffer(recovery.content);
       setLineEnding(recovery.lineEnding);
-      setNormalizationState(
-        recovery.normalizationPending
-          ? 'requires-confirmation'
-          : 'clean',
-      );
 
-      if (recovery.normalizationPending) {
-        await syncWysiwygBuffer(
-          recovery.content,
-          viewStateRef.current.wysiwygScrollTop,
-        );
-      } else if (recovery.editedFrom === 'source') {
+      if (recovery.editedFrom === 'source') {
         await syncSourceBuffer(
           recovery.content,
           viewStateRef.current.sourceViewState ?? {
@@ -1128,7 +965,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         setEncoding(result.payload.encoding);
         setLineEnding(result.payload.lineEnding);
         setSavedLineEnding(result.payload.lineEnding);
-        setNormalizationState('clean');
         if (viewStateRef.current.viewMode === 'source') {
           setSourceEditorKey((current) => current + 1);
         } else {
@@ -1141,11 +977,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [executeCommand, reportError],
   );
-
-  const enableVisualEditing = useCallback(() => {
-    wysiwygAdapterRef.current?.enableEditing();
-    setVisualEditorState('enabled-after-opt-in');
-  }, []);
 
   if (!payload) {
     return (
@@ -1189,11 +1020,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
             title="保存 Markdown（⌘/Ctrl + S）"
           >
-            {saving
-              ? '保存中…'
-              : normalizationState === 'requires-confirmation' && dirty
-                ? '检查并保存'
-                : '保存'}
+            {saving ? '保存中…' : '保存'}
           </button>
           <MarkdownWorkbenchMenu
             disabled={saving || Boolean(recovery)}
@@ -1201,15 +1028,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             encoding={encoding}
             lineEnding={lineEnding}
             viewState={viewState}
-            normalizationPending={
-              normalizationState === 'requires-confirmation' && dirty
-            }
             onSetEncoding={reopenWithEncoding}
             onSetLineEnding={updateLineEnding}
             onSetViewState={updateViewState}
-            onReviewNormalization={() =>
-              setNormalizationDialogOpen(true)
-            }
             onReveal={onReveal}
           />
         </>,
@@ -1317,7 +1138,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             <div
               key={wysiwygEditorKey}
               ref={wysiwygHostRef}
-              className="h-full min-h-0 [&_.vditor]:h-full [&_.vditor]:border-0 [&_.vditor]:bg-[#1b2027] [&_.vditor-content]:min-h-0 [&_.vditor-content]:bg-[#1b2027] [&_.vditor-outline]:border-white/[0.08] [&_.vditor-outline]:bg-[#20262e] [&_.vditor-toolbar]:border-white/[0.08] [&_.vditor-toolbar]:bg-[#222831] [&_.vditor-wysiwyg]:bg-[#1b2027] [&_.vditor-wysiwyg]:text-slate-200 [&_img[data-blocked-source='true']]:min-h-12 [&_img[data-blocked-source='true']]:rounded-lg [&_img[data-blocked-source='true']]:border [&_img[data-blocked-source='true']]:border-amber-300/20 [&_img[data-blocked-source='true']]:bg-amber-300/[0.05] [&_img[data-blocked-source='true']]:p-2 [&_img[data-blocked-source='true']]:text-amber-200/70"
+              className="learning-markdown-workbench h-full min-h-0 [&_.vditor]:h-full [&_.vditor]:border-0 [&_.vditor]:bg-[#1b2027] [&_.vditor-content]:min-h-0 [&_.vditor-content]:bg-[#1b2027] [&_.vditor-outline]:border-white/[0.08] [&_.vditor-outline]:bg-[#20262e] [&_.vditor-toolbar]:border-white/[0.08] [&_.vditor-toolbar]:bg-[#222831] [&_.vditor-wysiwyg]:bg-[#1b2027] [&_img[data-blocked-source='true']]:min-h-12 [&_img[data-blocked-source='true']]:rounded-lg [&_img[data-blocked-source='true']]:border [&_img[data-blocked-source='true']]:border-amber-300/20 [&_img[data-blocked-source='true']]:bg-amber-300/[0.05] [&_img[data-blocked-source='true']]:p-2 [&_img[data-blocked-source='true']]:text-amber-200/70"
             />
 
             {visualEditorState === 'loading' && (
@@ -1341,20 +1162,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
                 </div>
               </div>
             )}
-            {visualEditorState === 'requires-opt-in' && (
-              <div className="absolute right-4 bottom-4 left-4 z-20 flex items-center justify-between gap-4 rounded-xl border border-amber-300/15 bg-[#2d2c27]/95 px-4 py-3 shadow-xl backdrop-blur">
-                <p className="text-xs leading-5 text-amber-100/80">
-                  这份源码无法无损往返可视化编辑器。当前保持只读；启用编辑后，保存前必须检查源码差异。
-                </p>
-                <button
-                  type="button"
-                  onClick={enableVisualEditing}
-                  className="ui-control shrink-0 rounded-full border border-amber-200/20 px-4 py-2 text-xs text-amber-50"
-                >
-                  以可视化模式编辑
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1365,47 +1172,17 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           {lineEnding.toUpperCase()} ·{' '}
           {viewState.viewMode === 'wysiwyg' ? 'WYSIWYG' : '源码'}
         </span>
-        <span
-          className={
-            normalizationState === 'requires-confirmation' && dirty
-              ? 'text-amber-300/75'
-              : undefined
-          }
-        >
-          {normalizationState === 'requires-confirmation' && dirty
-            ? '保存前需要检查源码规范化'
-            : viewState.viewMode === 'source'
-              ? cursor
-              : visualEditorState === 'enabled-after-opt-in'
-                ? '已启用可视化编辑'
-                : ''}
-        </span>
+        <span>{viewState.viewMode === 'source' ? cursor : ''}</span>
       </div>
 
       {recovery &&
         createPortal(
           <MarkdownRecoveryDialog
             sourceChanged={recovery.sourceChanged}
-            normalizationPending={recovery.normalizationPending}
             updatedTime={recovery.updatedTime}
             busy={recoveryBusy}
             onRestore={() => void restoreRecovery()}
             onDiscard={() => void discardRecovery()}
-          />,
-          document.body,
-        )}
-      {normalizationDialogOpen &&
-        createPortal(
-          <MarkdownNormalizationDialog
-            diskSource={diskSource}
-            workingBuffer={workingBuffer}
-            saving={saving}
-            onCancel={() => setNormalizationDialogOpen(false)}
-            onInspectSource={() => {
-              setNormalizationDialogOpen(false);
-              void switchMode('source');
-            }}
-            onConfirm={() => void saveNormalized()}
           />,
           document.body,
         )}

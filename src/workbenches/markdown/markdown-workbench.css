@@ -1,0 +1,41 @@
+.learning-markdown-workbench .vditor-wysiwyg pre.vditor-reset {
+  color: #dce4ee;
+  caret-color: #f8fafc;
+  opacity: 1;
+}
+
+.learning-markdown-workbench .vditor-reset p,
+.learning-markdown-workbench .vditor-reset li,
+.learning-markdown-workbench .vditor-reset td,
+.learning-markdown-workbench .vditor-reset th {
+  color: #dce4ee;
+}
+
+.learning-markdown-workbench .vditor-reset h1,
+.learning-markdown-workbench .vditor-reset h2,
+.learning-markdown-workbench .vditor-reset h3,
+.learning-markdown-workbench .vditor-reset h4,
+.learning-markdown-workbench .vditor-reset h5,
+.learning-markdown-workbench .vditor-reset h6,
+.learning-markdown-workbench .vditor-reset strong {
+  color: #f8fafc;
+}
+
+.learning-markdown-workbench .vditor-reset blockquote,
+.learning-markdown-workbench .vditor-reset blockquote p {
+  color: #b9c4d1;
+}
+
+.learning-markdown-workbench .vditor-reset a {
+  color: #93c5fd;
+}
+
+.learning-markdown-workbench .vditor-reset code,
+.learning-markdown-workbench .vditor-reset kbd {
+  color: #e2e8f0;
+}
+
+.learning-markdown-workbench .vditor-reset ::selection {
+  color: #f8fafc;
+  background: rgb(99 102 241 / 38%);
+}
