@@ -181,6 +181,41 @@ describe('WorkbenchSessionManager', () => {
     ).rejects.toThrow('WORKBENCH_SESSION_EXPIRED');
   });
 
+  it('waits for an in-flight command before closing its provider', async () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const plainText = createProvider(
+      'plain-text',
+      ['text/plain'],
+      ['read-bytes'],
+    );
+    const { service } = createAssetService();
+    const manager = createManager(service, fallback, plainText);
+    let finishCommand!: () => void;
+    const commandGate = new Promise<void>((resolve) => {
+      finishCommand = resolve;
+    });
+
+    vi.mocked(plainText.command).mockImplementation(
+      async (_context, command) => {
+        await commandGate;
+        return { payload: { command: command.type } };
+      },
+    );
+    await manager.open('asset');
+
+    const command = manager.command('session', { type: 'edit' });
+    const closing = manager.close('session');
+    await Promise.resolve();
+    expect(plainText.close).not.toHaveBeenCalled();
+
+    finishCommand();
+    await expect(command).resolves.toEqual({
+      payload: { command: 'edit' },
+    });
+    await closing;
+    expect(plainText.close).toHaveBeenCalledOnce();
+  });
+
   it('releases a pending open superseded by closeActive', async () => {
     const fallback = createProvider('fallback', ['*/*']);
     const snapshot = createAssetRuntime();

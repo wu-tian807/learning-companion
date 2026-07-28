@@ -97,6 +97,38 @@ describe('ProjectService', () => {
     expect(assetService.loadFromProject).toHaveBeenCalledWith('project');
   });
 
+  it('serializes Project close and replacement open lifecycles', async () => {
+    const {
+      assetService,
+      projectDatabase,
+      workbenchSessions,
+    } = createDependencies('project');
+    const service = new ProjectService(
+      projectDatabase,
+      assetService,
+      workbenchSessions,
+    );
+    let finishClose!: () => void;
+    const closeGate = new Promise<void>((resolve) => {
+      finishClose = resolve;
+    });
+
+    vi.mocked(workbenchSessions.closeActive)
+      .mockImplementationOnce(async () => closeGate)
+      .mockResolvedValueOnce(undefined);
+
+    const closing = service.closeProject('project');
+    const opening = service.openProject('project');
+    await Promise.resolve();
+    expect(assetService.loadFromProject).not.toHaveBeenCalled();
+
+    finishClose();
+    await closing;
+    await opening;
+    expect(assetService.unloadProject).toHaveBeenCalledOnce();
+    expect(assetService.loadFromProject).toHaveBeenCalledWith('project');
+  });
+
   it('closes only the currently loaded Project', async () => {
     const current = createDependencies('project');
     const currentService = new ProjectService(

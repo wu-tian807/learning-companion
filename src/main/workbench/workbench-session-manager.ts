@@ -39,6 +39,10 @@ export class WorkbenchSessionManager
   implements WorkbenchSessionManagerApi
 {
   private activeSession: AssetWorkbenchSession | undefined;
+  private readonly pendingCommands = new Map<
+    string,
+    Set<Promise<WorkbenchCommandResult>>
+  >();
   private lifecycleVersion = 0;
   private readonly createId: () => string;
 
@@ -135,10 +139,25 @@ export class WorkbenchSessionManager
       throw new AppError('WORKBENCH_SESSION_EXPIRED');
     }
 
-    return session.provider.command(
+    const execution = session.provider.command(
       toWorkbenchProviderContext(session),
       command,
     );
+    const pending =
+      this.pendingCommands.get(session.id) ??
+      new Set<Promise<WorkbenchCommandResult>>();
+
+    pending.add(execution);
+    this.pendingCommands.set(session.id, pending);
+
+    try {
+      return await execution;
+    } finally {
+      pending.delete(execution);
+      if (pending.size === 0) {
+        this.pendingCommands.delete(session.id);
+      }
+    }
   }
 
   async close(sessionId: string): Promise<void> {
@@ -180,6 +199,13 @@ export class WorkbenchSessionManager
     session: AssetWorkbenchSession,
     context: WorkbenchProviderContext = toWorkbenchProviderContext(session),
   ): Promise<void> {
+    const pendingCommands = this.pendingCommands.get(session.id);
+
+    if (pendingCommands) {
+      await Promise.allSettled([...pendingCommands]);
+      this.pendingCommands.delete(session.id);
+    }
+
     const results = await Promise.allSettled([
       session.provider.close(context),
       session.content.handle?.close() ?? Promise.resolve(),

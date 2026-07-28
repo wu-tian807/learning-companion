@@ -22,6 +22,8 @@ export interface ProjectServiceApi {
 }
 
 export class ProjectService implements ProjectServiceApi {
+  private lifecycleTail: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly projectDatabase: ProjectDatabaseApi,
     private readonly assetService: AssetServiceApi,
@@ -72,37 +74,43 @@ export class ProjectService implements ProjectServiceApi {
   }
 
   async openProject(projectId: string): Promise<readonly AssetSnapshot[]> {
-    await this.workbenchSessions.closeActive();
-    return this.assetService.loadFromProject(projectId);
+    return this.enqueueLifecycle(async () => {
+      await this.workbenchSessions.closeActive();
+      return this.assetService.loadFromProject(projectId);
+    });
   }
 
   async closeProject(projectId: string): Promise<void> {
-    const activeProjectId = this.assetService.getActiveProjectId();
+    await this.enqueueLifecycle(async () => {
+      const activeProjectId = this.assetService.getActiveProjectId();
 
-    if (activeProjectId === undefined) {
+      if (activeProjectId === undefined) {
+        await this.workbenchSessions.closeActive();
+        return;
+      }
+
+      if (activeProjectId !== projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
+
       await this.workbenchSessions.closeActive();
-      return;
-    }
-
-    if (activeProjectId !== projectId) {
-      throw new AppError('PROJECT_CONTEXT_CHANGED');
-    }
-
-    await this.workbenchSessions.closeActive();
-    this.assetService.unloadProject();
+      this.assetService.unloadProject();
+    });
   }
 
   async deleteProject(projectId: string): Promise<void> {
-    if (!this.projectDatabase.get(projectId)) {
-      throw new AppError('PROJECT_NOT_FOUND');
-    }
+    await this.enqueueLifecycle(async () => {
+      if (!this.projectDatabase.get(projectId)) {
+        throw new AppError('PROJECT_NOT_FOUND');
+      }
 
-    if (this.assetService.getActiveProjectId() === projectId) {
-      await this.workbenchSessions.closeActive();
-      this.assetService.unloadProject();
-    }
+      if (this.assetService.getActiveProjectId() === projectId) {
+        await this.workbenchSessions.closeActive();
+        this.assetService.unloadProject();
+      }
 
-    this.projectDatabase.delete(projectId);
+      this.projectDatabase.delete(projectId);
+    });
   }
 
   private withCurrentAssetCount(
@@ -113,5 +121,14 @@ export class ProjectService implements ProjectServiceApi {
       assetCount:
         this.assetService.countByProjectIds([project.id]).get(project.id) ?? 0,
     });
+  }
+
+  private enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.lifecycleTail.then(operation);
+    this.lifecycleTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 }
