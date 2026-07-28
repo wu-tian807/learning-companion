@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -70,7 +69,6 @@ const plainTextEditorTheme = EditorView.theme(
       fontFamily:
         '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
       lineHeight: '1.72',
-      scrollBehavior: 'smooth',
       scrollbarWidth: 'thin',
       scrollbarColor: 'rgba(170, 180, 205, 0.75) rgba(20, 25, 32, 0.35)',
       overscrollBehavior: 'contain',
@@ -410,11 +408,18 @@ export function PlainTextWorkbenchView({
   const updateContextMenuSelectionState = useCallback(() => {
     const editor = editorRef.current?.view;
     const state = editor?.state;
-    setContextMenuSelectionState({
+    const nextState = {
       hasSelection: hasSelection(editor),
       canUndo: state !== undefined && undoDepth(state) > 0,
       canRedo: state !== undefined && redoDepth(state) > 0,
-    });
+    };
+    setContextMenuSelectionState((currentState) =>
+      currentState.hasSelection === nextState.hasSelection &&
+      currentState.canUndo === nextState.canUndo &&
+      currentState.canRedo === nextState.canRedo
+        ? currentState
+        : nextState,
+    );
   }, []);
 
   const closeContextMenu = useCallback(() => {
@@ -496,8 +501,8 @@ export function PlainTextWorkbenchView({
   );
 
   const onContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      const editor = editorRef.current?.view;
+    (event: MouseEvent, editorView: EditorView) => {
+      const editor = editorView;
       const host = editorHostRef.current;
       if (!editor || !host || recovery) {
         return;
@@ -545,6 +550,25 @@ export function PlainTextWorkbenchView({
       });
     },
     [recovery],
+  );
+
+  const contextMenuExtension = useMemo(
+    () =>
+      EditorView.domEventHandlers({
+        contextmenu: (event, view) => {
+          if (recovery) {
+            return false;
+          }
+
+          onContextMenu(event as MouseEvent, view);
+          return true;
+        },
+      }),
+    [onContextMenu, recovery],
+  );
+  const editorExtensions = useMemo(
+    () => [...extensions, contextMenuExtension],
+    [contextMenuExtension, extensions],
   );
 
   const onContextMenuUndo = useCallback(() => {
@@ -939,15 +963,15 @@ export function PlainTextWorkbenchView({
         <div
           ref={editorHostRef}
           className="relative h-full"
-          onContextMenu={onContextMenu}
         >
           <CodeMirror
             key={editorInstanceKey}
             ref={editorRef}
+            className="h-full min-h-0"
             value={content}
             height="100%"
             theme="none"
-            extensions={extensions}
+            extensions={editorExtensions}
             basicSetup={{
               lineNumbers: viewOptions.lineNumbers,
               highlightActiveLineGutter: true,
@@ -1009,6 +1033,25 @@ export function PlainTextWorkbenchView({
             ref={contextMenuRef}
             style={{ left: contextMenuState.x, top: contextMenuState.y }}
             className="absolute z-40 flex w-56 flex-col rounded-xl border border-white/[0.12] bg-[#292e36] p-1.5 text-[11px] text-slate-200 shadow-[0_18px_45px_rgba(0,0,0,0.42)]"
+            onWheel={(event) => {
+              const scrollDom = editorRef.current?.view?.scrollDOM;
+              if (!scrollDom) {
+                return;
+              }
+
+              event.preventDefault();
+              const scale =
+                event.deltaMode === WheelEvent.DOM_DELTA_LINE
+                  ? 24
+                  : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+                    ? scrollDom.clientHeight
+                    : 1;
+              scrollDom.scrollBy({
+                left: event.deltaX * scale,
+                top: event.deltaY * scale,
+              });
+              closeContextMenu();
+            }}
           >
             <button
               type="button"
