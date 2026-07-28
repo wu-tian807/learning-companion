@@ -20,6 +20,7 @@ export interface RendererWorkbenchViewProps {
   ) => Promise<WorkbenchCommandResult>;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
+  readonly onReveal: () => Promise<void> | void;
   readonly onError: (message: string) => void;
 }
 

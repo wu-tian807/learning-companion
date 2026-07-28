@@ -48,6 +48,11 @@ export interface ImageSaveViewStatePayload {
   readonly viewState: ImageWorkbenchViewState;
 }
 
+export interface ImageSaveViewStateResult {
+  readonly saved: true;
+  readonly savedTime: number;
+}
+
 export const DEFAULT_IMAGE_VIEW_STATE: ImageWorkbenchViewState =
   Object.freeze({
     mode: 'fit',
@@ -132,6 +137,18 @@ export function isImageSaveViewStatePayload(
   value: unknown,
 ): value is JsonValue & ImageSaveViewStatePayload {
   return isRecord(value) && isImageWorkbenchViewState(value.viewState);
+}
+
+export function isImageSaveViewStateResult(
+  value: unknown,
+): value is JsonValue & ImageSaveViewStateResult {
+  return (
+    isRecord(value) &&
+    value.saved === true &&
+    typeof value.savedTime === 'number' &&
+    Number.isSafeInteger(value.savedTime) &&
+    value.savedTime >= 0
+  );
 }
 
 export function createImageSaveViewStateCommand(

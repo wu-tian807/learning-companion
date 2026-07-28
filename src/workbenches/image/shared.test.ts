@@ -6,6 +6,7 @@ import {
   imageCommands,
   imageWorkbenchManifest,
   isImageSaveViewStatePayload,
+  isImageSaveViewStateResult,
   isImageWorkbenchPayload,
   isImageWorkbenchStateV1,
   isImageWorkbenchViewState,
@@ -77,5 +78,8 @@ describe('Image Workbench shared protocol', () => {
 
     expect(command.type).toBe(imageCommands.saveViewState);
     expect(isImageSaveViewStatePayload(command.payload)).toBe(true);
+    expect(
+      isImageSaveViewStateResult({ saved: true, savedTime: 100 }),
+    ).toBe(true);
   });
 });

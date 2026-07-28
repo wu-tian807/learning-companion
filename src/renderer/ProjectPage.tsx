@@ -56,6 +56,10 @@ function mediaLabel(mediaType: string): string {
     'application/epub+zip': 'EPUB',
     'application/octet-stream': '未知',
     'application/pdf': 'PDF',
+    'image/bmp': 'BMP',
+    'image/jpeg': 'JPEG',
+    'image/png': 'PNG',
+    'image/webp': 'WebP',
     'text/markdown': 'Markdown',
     'text/plain': '纯文本',
   };
@@ -816,6 +820,11 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
           onRefresh={() => {
             if (selectedAsset) void refreshAsset(selectedAsset);
           }}
+          onReveal={() =>
+            selectedAsset
+              ? revealAssetInFolder(selectedAsset)
+              : Promise.resolve()
+          }
           onError={setError}
         />
         <GenerationPanel asset={selectedAsset} />

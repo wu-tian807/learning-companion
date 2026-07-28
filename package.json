@@ -25,6 +25,7 @@
     "drizzle-orm": "0.45.2",
     "electron-squirrel-startup": "1.0.1",
     "iconv-lite": "^0.7.3",
+    "openseadragon": "^6.0.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "write-file-atomic": "^8.0.0"

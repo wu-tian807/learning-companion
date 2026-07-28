@@ -8,6 +8,7 @@ import {
   type WorkbenchCommandResult,
   type WorkbenchBootstrap,
 } from '../../shared/workbench/protocol';
+import { IMAGE_WORKBENCH_ID } from '../../workbenches/image/shared';
 import { PLAIN_TEXT_WORKBENCH_ID } from '../../workbenches/plain-text/shared';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
@@ -21,6 +22,7 @@ interface AssetWorkbenchHostProps {
   readonly mediaLabel: (mediaType: string) => string;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
+  readonly onReveal: () => Promise<void> | void;
   readonly onError: (message: string) => void;
 }
 
@@ -50,12 +52,20 @@ defaultRegistry.registerLoader(PLAIN_TEXT_WORKBENCH_ID, async () => {
 
   return plainTextRendererWorkbenchModule;
 });
+defaultRegistry.registerLoader(IMAGE_WORKBENCH_ID, async () => {
+  const { imageRendererWorkbenchModule } = await import(
+    '../../workbenches/image/renderer'
+  );
+
+  return imageRendererWorkbenchModule;
+});
 
 export function AssetWorkbenchHost({
   asset,
   mediaLabel,
   onRelink,
   onRefresh,
+  onReveal,
   onError,
 }: AssetWorkbenchHostProps) {
   const [settledState, setSettledState] =
@@ -211,6 +221,7 @@ export function AssetWorkbenchHost({
           executeCommand={state.executeCommand}
           onRelink={onRelink}
           onRefresh={onRefresh}
+          onReveal={onReveal}
           onError={onError}
         />
         <AttachmentHost attachments={[]} />
