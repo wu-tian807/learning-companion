@@ -51,6 +51,7 @@ export interface WorkbenchContribution {
   readonly actionId: string;
   readonly surface: WorkbenchSurface;
   readonly group: string;
+  readonly groupLabel?: string;
   readonly order: number;
   readonly presentation: WorkbenchContributionPresentation;
 }

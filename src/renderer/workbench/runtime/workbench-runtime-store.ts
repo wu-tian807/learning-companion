@@ -24,6 +24,7 @@ export interface WorkbenchRuntimeState {
   readonly interaction: WorkbenchInteractionSnapshot;
   readonly contextMenu?: WorkbenchContextMenuState;
   readonly busyActionIds: ReadonlySet<string>;
+  readonly contributionRevision: number;
   activate(identity: WorkbenchRuntimeIdentity): void;
   deactivate(sessionId?: string): void;
   publishInteraction(
@@ -32,6 +33,7 @@ export interface WorkbenchRuntimeState {
   openContextMenu(state: WorkbenchContextMenuState): boolean;
   closeContextMenu(): void;
   setActionBusy(actionId: string, busy: boolean): void;
+  bumpContributions(): void;
 }
 
 export type WorkbenchRuntimeStore = StoreApi<WorkbenchRuntimeState>;
@@ -40,6 +42,7 @@ export function createWorkbenchRuntimeStore(): WorkbenchRuntimeStore {
   return createStore<WorkbenchRuntimeState>((set, get) => ({
     interaction: {},
     busyActionIds: new Set<string>(),
+    contributionRevision: 0,
     activate(identity) {
       set({
         identity,
@@ -109,6 +112,11 @@ export function createWorkbenchRuntimeStore(): WorkbenchRuntimeStore {
         busyActionIds.delete(actionId);
       }
       set({ busyActionIds });
+    },
+    bumpContributions() {
+      set((state) => ({
+        contributionRevision: state.contributionRevision + 1,
+      }));
     },
   }));
 }

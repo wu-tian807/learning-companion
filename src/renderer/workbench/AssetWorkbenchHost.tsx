@@ -18,13 +18,17 @@ import { PDF_WORKBENCH_ID } from '../../workbenches/pdf/shared';
 import { PLAIN_TEXT_WORKBENCH_ID } from '../../workbenches/plain-text/shared';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
+import { WorkbenchContextMenuHost } from './host/WorkbenchContextMenuHost';
+import { WorkbenchOverflowHost } from './host/WorkbenchOverflowHost';
 import {
   RendererWorkbenchRegistry,
   type RendererWorkbenchModule,
 } from './renderer-workbench-registry';
 import { WorkbenchLifecycleCoordinator } from './workbench-lifecycle';
+import { useWorkbenchRuntime } from './runtime/workbench-runtime-context';
 
 interface AssetWorkbenchHostProps {
+  readonly projectId: string;
   readonly asset: AssetSnapshot | undefined;
   readonly mediaLabel: (mediaType: string) => string;
   readonly onRelink: () => void;
@@ -86,6 +90,7 @@ defaultRegistry.registerLoader(PDF_WORKBENCH_ID, async () => {
 });
 
 export function AssetWorkbenchHost({
+  projectId,
   asset,
   mediaLabel,
   onRelink,
@@ -95,6 +100,7 @@ export function AssetWorkbenchHost({
   onLifecycleTaskChange,
   onError,
 }: AssetWorkbenchHostProps) {
+  const runtime = useWorkbenchRuntime();
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
   const [headerActionsTarget, setHeaderActionsTarget] =
@@ -128,8 +134,12 @@ export function AssetWorkbenchHost({
         sessionId: readySessionId,
         selection,
       });
+      runtime.publishInteraction(readySessionId, {
+        target: selection?.target,
+        selection,
+      });
     },
-    [assetId, onSelectionChange, readySessionId],
+    [assetId, onSelectionChange, readySessionId, runtime],
   );
   const openExternal = useCallback(
     async (url: string) => {
@@ -175,10 +185,12 @@ export function AssetWorkbenchHost({
           selection: undefined,
         });
       }
+      runtime.publishInteraction(sessionId, {});
       // React may run the Host cleanup before the active View cleanup.
       // Yield once so a View can synchronously enqueue its final state command.
       await Promise.resolve();
       await commandTail;
+      runtime.deactivate(sessionId);
       await window.learningCompanion.closeWorkbench({ sessionId });
     };
     const reportCloseError = (closeError: unknown) => {
@@ -230,6 +242,12 @@ export function AssetWorkbenchHost({
           return;
         }
 
+        runtime.activate({
+          projectId,
+          assetId,
+          workbenchId: bootstrap.workbenchId,
+          sessionId: bootstrap.sessionId,
+        });
         activeSessionIdRef.current = bootstrap.sessionId;
         setSettledState({
           kind: 'ready',
@@ -275,6 +293,8 @@ export function AssetWorkbenchHost({
     onError,
     onLifecycleTaskChange,
     onSelectionChange,
+    projectId,
+    runtime,
   ]);
 
   const state =
@@ -349,10 +369,12 @@ export function AssetWorkbenchHost({
               ref={setHeaderActionsTarget}
               className="flex shrink-0 items-center empty:hidden"
             />
+            <WorkbenchOverflowHost />
           </div>
         )}
       </div>
       <div className="min-h-0 flex-1">{content}</div>
+      <WorkbenchContextMenuHost />
     </article>
   );
 }

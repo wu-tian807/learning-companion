@@ -26,6 +26,7 @@ import {
 import { ErrorDialog } from './components/ErrorDialog';
 import { AssetWorkbenchHost } from './workbench/AssetWorkbenchHost';
 import { reduceWorkbenchSelection } from './workbench/workbench-selection-state';
+import { WorkbenchRuntimeProvider } from './workbench/runtime/WorkbenchRuntimeProvider';
 
 interface ProjectPageProps {
   readonly project: ProjectSnapshot;
@@ -838,45 +839,48 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         </span>
       </header>
 
-      <section className="grid h-[calc(100vh-76px)] min-h-[560px] grid-cols-[minmax(220px,2fr)_minmax(560px,6fr)_minmax(220px,2fr)] gap-3">
-        <AssetPanel
-          state={loadState}
-          selectedAssetId={selectedAssetId}
-          busy={busy}
-          refreshingAll={refreshingAll}
-          dragging={dragging}
-          onSelect={selectAsset}
-          onAdd={() => void chooseAndAdd()}
-          onRetry={() => {
-            setLoadState({ kind: 'loading' });
-            setRequestVersion((current) => current + 1);
-          }}
-          onRename={setRenameTarget}
-          onReveal={(asset) => void revealAssetInFolder(asset)}
-          onRelink={(asset) => void relinkAsset(asset)}
-          onRefreshAll={() => void refreshAllAssets()}
-          onDelete={setDeleteTarget}
-        />
-        <AssetWorkbenchHost
-          asset={selectedAsset}
-          mediaLabel={mediaLabel}
-          onRelink={() => {
-            if (selectedAsset) void relinkAsset(selectedAsset);
-          }}
-          onRefresh={() => {
-            if (selectedAsset) void refreshAsset(selectedAsset);
-          }}
-          onReveal={() =>
-            selectedAsset
-              ? revealAssetInFolder(selectedAsset)
-              : Promise.resolve()
-          }
-          onSelectionChange={handleWorkbenchSelection}
-          onLifecycleTaskChange={handleWorkbenchLifecycleTask}
-          onError={setError}
-        />
-        <GenerationPanel asset={selectedAsset} />
-      </section>
+      <WorkbenchRuntimeProvider onError={setError}>
+        <section className="grid h-[calc(100vh-76px)] min-h-[560px] grid-cols-[minmax(220px,2fr)_minmax(560px,6fr)_minmax(220px,2fr)] gap-3">
+          <AssetPanel
+            state={loadState}
+            selectedAssetId={selectedAssetId}
+            busy={busy}
+            refreshingAll={refreshingAll}
+            dragging={dragging}
+            onSelect={selectAsset}
+            onAdd={() => void chooseAndAdd()}
+            onRetry={() => {
+              setLoadState({ kind: 'loading' });
+              setRequestVersion((current) => current + 1);
+            }}
+            onRename={setRenameTarget}
+            onReveal={(asset) => void revealAssetInFolder(asset)}
+            onRelink={(asset) => void relinkAsset(asset)}
+            onRefreshAll={() => void refreshAllAssets()}
+            onDelete={setDeleteTarget}
+          />
+          <AssetWorkbenchHost
+            projectId={project.id}
+            asset={selectedAsset}
+            mediaLabel={mediaLabel}
+            onRelink={() => {
+              if (selectedAsset) void relinkAsset(selectedAsset);
+            }}
+            onRefresh={() => {
+              if (selectedAsset) void refreshAsset(selectedAsset);
+            }}
+            onReveal={() =>
+              selectedAsset
+                ? revealAssetInFolder(selectedAsset)
+                : Promise.resolve()
+            }
+            onSelectionChange={handleWorkbenchSelection}
+            onLifecycleTaskChange={handleWorkbenchLifecycleTask}
+            onError={setError}
+          />
+          <GenerationPanel asset={selectedAsset} />
+        </section>
+      </WorkbenchRuntimeProvider>
 
       {dragging && (
         <div className="pointer-events-none fixed inset-4 z-40 grid place-items-center rounded-[22px] border-2 border-dashed border-indigo-300/50 bg-[#171b22]/80 backdrop-blur-sm">
