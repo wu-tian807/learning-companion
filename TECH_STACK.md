@@ -2,7 +2,7 @@
 
 > 状态：当前推荐方案
 >
-> 更新日期：2026-07-22
+> 更新日期：2026-07-28
 
 ## 1. 产品目标
 
@@ -71,7 +71,7 @@ flowchart LR
 | 文档类型 | 技术选择 |
 |---|---|
 | PDF | PDF.js |
-| Markdown | unified / remark / rehype |
+| Markdown | Vditor（WYSIWYG）+ CodeMirror 6（源码）+ unified / remark / rehype（后续解析、索引与导出） |
 | 纯文本 | 原生文本解析与虚拟列表 |
 | EPUB | epub.js |
 | 网页正文 | Mozilla Readability |
