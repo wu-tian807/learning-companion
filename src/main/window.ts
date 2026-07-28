@@ -1,6 +1,8 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 
+import { isAllowedMainWindowNavigation } from './navigation-policy';
+
 export function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -21,10 +23,23 @@ export function createMainWindow(): BrowserWindow {
     mainWindow.show();
   });
 
-  mainWindow.webContents.on('will-navigate', (event) => {
-    event.preventDefault();
-  });
+  const guardNavigation = (event: {
+    readonly url: string;
+    preventDefault(): void;
+  }) => {
+    const allowed = isAllowedMainWindowNavigation(
+      mainWindow.webContents.getURL(),
+      event.url,
+      MAIN_WINDOW_VITE_DEV_SERVER_URL || undefined,
+    );
 
+    if (!allowed) {
+      event.preventDefault();
+    }
+  };
+
+  mainWindow.webContents.on('will-navigate', guardNavigation);
+  mainWindow.webContents.on('will-redirect', guardNavigation);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
