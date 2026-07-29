@@ -78,6 +78,7 @@ describe('VideoWorkbenchView', () => {
     expect(markup).toContain('aria-label="视频播放器"');
     expect(markup).toContain('controls=""');
     expect(markup).toContain('learning-content://resource/token');
+    expect(markup).not.toContain('标记当前时间');
     expect(markup).not.toContain('/tmp/private/lesson.mp4');
   });
 

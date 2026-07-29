@@ -31,7 +31,7 @@ import {
 
 type AudioLoadState =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'ready'; readonly duration: number }
+  | { readonly kind: 'ready' }
   | { readonly kind: 'failed'; readonly message: string };
 
 const SAVE_DELAY_MS = 750;
@@ -40,21 +40,6 @@ const AUDIO_METADATA_TIMEOUT_MS = 15_000;
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return '00:00';
-  }
-
-  const wholeSeconds = Math.floor(seconds);
-  const hours = Math.floor(wholeSeconds / 3600);
-  const minutes = Math.floor((wholeSeconds % 3600) / 60);
-  const remainder = wholeSeconds % 60;
-
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
-    : `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
 }
 
 export function audioErrorMessage(
@@ -121,7 +106,6 @@ export function AudioWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
-  onInteractionChange,
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
@@ -233,10 +217,7 @@ export function AudioWorkbenchView({
       }
       setCurrentTime(audio.currentTime);
       setPlaybackRateState(audio.playbackRate);
-      setLoadState({
-        kind: 'ready',
-        duration: Number.isFinite(audio.duration) ? audio.duration : 0,
-      });
+      setLoadState({ kind: 'ready' });
     };
     const onErrorEvent = () => {
       clearMetadataTimeout();
@@ -293,21 +274,7 @@ export function AudioWorkbenchView({
     };
   }, [captureAndScheduleSave, payload, persistViewState]);
 
-  const duration =
-    loadState.kind === 'ready' ? loadState.duration : undefined;
   const ready = loadState.kind === 'ready';
-  const markCurrentTime = useCallback(() => {
-    const audio = audioRef.current;
-
-    if (!audio || !hasLoadedAudioMetadata(audio)) {
-      return;
-    }
-    const seconds = captureAudioState(audio).currentTime;
-    onInteractionChange({
-      focus: createAudioTimeRangeTarget(seconds),
-      inputs: [],
-    });
-  }, [onInteractionChange]);
   const togglePlayback = useCallback(async () => {
     const audio = audioRef.current;
 
@@ -350,12 +317,10 @@ export function AudioWorkbenchView({
         ready,
         playbackRate,
         onTogglePlayback: togglePlayback,
-        onMarkCurrentTime: markCurrentTime,
         onPlaybackRate: setPlaybackRate,
         onReveal: reveal,
       }),
     [
-      markCurrentTime,
       playbackRate,
       ready,
       reveal,
@@ -390,19 +355,6 @@ export function AudioWorkbenchView({
     },
     [setPlaybackRate],
   );
-  const typeLabel = useMemo(() => {
-    const labels: Record<string, string> = {
-      'audio/mpeg': 'MP3',
-      'audio/wav': 'WAV',
-      'audio/mp4': 'M4A',
-      'audio/aac': 'AAC',
-      'audio/flac': 'FLAC',
-      'audio/ogg': 'Ogg / Opus',
-      'audio/webm': 'WebM Audio',
-    };
-    return labels[bootstrap.mediaType] ?? bootstrap.mediaType;
-  }, [bootstrap.mediaType]);
-
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -459,26 +411,10 @@ export function AudioWorkbenchView({
             </select>
           </label>
         </div>
-        <div className="mx-auto mt-1.5 flex max-w-3xl items-center justify-between gap-3">
-          <span className="text-[10px] tabular-nums text-slate-600">
-            {formatTime(currentTime)}
-            {duration !== undefined ? ` / ${formatTime(duration)}` : ''}
-            {' · '}
-            {typeLabel}
-          </span>
-          <button
-            type="button"
-            disabled={!ready}
-            onClick={markCurrentTime}
-            className="ui-control rounded-lg border border-white/[0.08] px-2.5 py-1 text-[10px] text-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            标记当前时间
-          </button>
-        </div>
       </div>
 
       {loadState.kind === 'loading' && (
-        <div className="pointer-events-none absolute inset-0 bottom-24 grid place-items-center bg-[#11151a]/68">
+        <div className="pointer-events-none absolute inset-0 bottom-16 grid place-items-center bg-[#11151a]/68">
           <div className="flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-[#20262e]/80 px-4 py-2 text-xs text-slate-400 shadow-xl backdrop-blur-sm">
             <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
             正在读取音频信息…
@@ -487,7 +423,7 @@ export function AudioWorkbenchView({
       )}
 
       {loadState.kind === 'failed' && (
-        <div className="absolute inset-0 bottom-24 grid place-items-center bg-[#11151a]/94 p-8 text-center">
+        <div className="absolute inset-0 bottom-16 grid place-items-center bg-[#11151a]/94 p-8 text-center">
           <div>
             <p className="text-sm font-medium text-slate-200">
               无法播放这个音频

@@ -79,6 +79,7 @@ describe('AudioWorkbenchView', () => {
     expect(markup).toContain('controls=""');
     expect(markup).toContain('音频转写、章节和逐句学习内容');
     expect(markup).toContain('learning-content://resource/token');
+    expect(markup).not.toContain('标记当前时间');
     expect(markup).not.toContain('/tmp/private/lesson.mp3');
   });
 

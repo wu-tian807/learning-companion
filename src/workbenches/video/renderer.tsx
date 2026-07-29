@@ -28,7 +28,7 @@ import {
 
 type VideoLoadState =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'ready'; readonly duration: number }
+  | { readonly kind: 'ready' }
   | { readonly kind: 'failed'; readonly message: string };
 
 const SAVE_DELAY_MS = 750;
@@ -37,21 +37,6 @@ const VIDEO_METADATA_TIMEOUT_MS = 15_000;
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return '00:00';
-  }
-
-  const wholeSeconds = Math.floor(seconds);
-  const hours = Math.floor(wholeSeconds / 3600);
-  const minutes = Math.floor((wholeSeconds % 3600) / 60);
-  const remainder = wholeSeconds % 60;
-
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
-    : `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
 }
 
 export function mediaErrorMessage(
@@ -96,7 +81,6 @@ export function VideoWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
-  onInteractionChange,
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
@@ -202,10 +186,7 @@ export function VideoWorkbenchView({
           : Math.min(viewState.currentTime, video.duration);
       }
       setCurrentTime(video.currentTime);
-      setLoadState({
-        kind: 'ready',
-        duration: Number.isFinite(video.duration) ? video.duration : 0,
-      });
+      setLoadState({ kind: 'ready' });
     };
     const onErrorEvent = () => {
       clearMetadataTimeout();
@@ -266,21 +247,7 @@ export function VideoWorkbenchView({
     };
   }, [captureAndScheduleSave, payload, persistViewState]);
 
-  const duration =
-    loadState.kind === 'ready' ? loadState.duration : undefined;
   const ready = loadState.kind === 'ready';
-  const markCurrentTime = useCallback(() => {
-    const video = videoRef.current;
-
-    if (!video || !hasLoadedVideoMetadata(video)) {
-      return;
-    }
-    const seconds = captureVideoState(video).currentTime;
-    onInteractionChange({
-      focus: createVideoTimeRangeTarget(seconds),
-      inputs: [],
-    });
-  }, [onInteractionChange]);
   const togglePlayback = useCallback(async () => {
     const video = videoRef.current;
 
@@ -310,10 +277,9 @@ export function VideoWorkbenchView({
       createVideoRendererActions({
         ready,
         onTogglePlayback: togglePlayback,
-        onMarkCurrentTime: markCurrentTime,
         onReveal: reveal,
       }),
-    [markCurrentTime, ready, reveal, togglePlayback],
+    [ready, reveal, togglePlayback],
   );
   useWorkbenchContributions('builtin.video', rendererActions);
 
@@ -336,16 +302,6 @@ export function VideoWorkbenchView({
     },
     [bootstrap.sessionId, currentTime, runtime],
   );
-  const typeLabel = useMemo(() => {
-    const labels: Record<string, string> = {
-      'video/mp4': 'MP4',
-      'video/webm': 'WebM',
-      'video/ogg': 'Ogg',
-      'video/quicktime': 'QuickTime',
-    };
-    return labels[bootstrap.mediaType] ?? bootstrap.mediaType;
-  }, [bootstrap.mediaType]);
-
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -373,25 +329,8 @@ export function VideoWorkbenchView({
         />
       </div>
 
-      <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-t border-white/[0.07] bg-[#171c22] px-3">
-        <span className="text-[11px] tabular-nums text-slate-500">
-          {formatTime(currentTime)}
-          {duration !== undefined ? ` / ${formatTime(duration)}` : ''}
-          {' · '}
-          {typeLabel}
-        </span>
-        <button
-          type="button"
-          disabled={!ready}
-          onClick={markCurrentTime}
-          className="ui-control rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          标记当前时间
-        </button>
-      </div>
-
       {loadState.kind === 'loading' && (
-        <div className="pointer-events-none absolute inset-0 bottom-11 grid place-items-center bg-[#0d1116]/68">
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#0d1116]/68">
           <div className="flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-[#20262e]/80 px-4 py-2 text-xs text-slate-400 shadow-xl backdrop-blur-sm">
             <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
             正在读取视频信息…
@@ -400,7 +339,7 @@ export function VideoWorkbenchView({
       )}
 
       {loadState.kind === 'failed' && (
-        <div className="absolute inset-0 bottom-11 grid place-items-center bg-[#0d1116]/92 p-8 text-center">
+        <div className="absolute inset-0 grid place-items-center bg-[#0d1116]/92 p-8 text-center">
           <div>
             <p className="text-sm font-medium text-slate-200">
               无法播放这个视频

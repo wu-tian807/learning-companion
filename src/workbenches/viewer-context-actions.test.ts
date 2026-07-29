@@ -131,16 +131,20 @@ describe('viewer Workbench context action bundles', () => {
     const bundle = createVideoRendererActions({
       ready: true,
       onTogglePlayback: vi.fn(),
-      onMarkCurrentTime: vi.fn(),
       onReveal: vi.fn(),
     });
 
     expectWorkbenchSpecificContextMenu(bundle, [
       '播放 / 暂停',
-      '标记当前时间',
       '解释当前画面',
       '从这里生成学习笔记',
     ]);
+    expect(contextLabels(bundle)).not.toContain('标记当前时间');
+    expect(
+      bundle.contributions
+        .filter((entry) => entry.surface === 'overflow')
+        .map((entry) => entry.presentation.label),
+    ).not.toContain('标记当前时间');
   });
 
   it('keeps audio commands timeline- and transcript-oriented', () => {
@@ -148,17 +152,21 @@ describe('viewer Workbench context action bundles', () => {
       ready: true,
       playbackRate: 1,
       onTogglePlayback: vi.fn(),
-      onMarkCurrentTime: vi.fn(),
       onPlaybackRate: vi.fn(),
       onReveal: vi.fn(),
     });
 
     expectWorkbenchSpecificContextMenu(bundle, [
       '播放 / 暂停',
-      '标记当前时间',
       '解释这一段',
       '从这里生成学习笔记',
     ]);
+    expect(contextLabels(bundle)).not.toContain('标记当前时间');
+    expect(
+      bundle.contributions
+        .filter((entry) => entry.surface === 'overflow')
+        .map((entry) => entry.presentation.label),
+    ).not.toContain('标记当前时间');
     expect(
       bundle.contributions
         .filter((entry) => entry.surface === 'generation-center')

@@ -5,7 +5,6 @@ export interface AudioRendererActionsOptions {
   readonly ready: boolean;
   readonly playbackRate: number;
   readonly onTogglePlayback: () => Promise<void> | void;
-  readonly onMarkCurrentTime: () => void;
   readonly onPlaybackRate: (rate: number) => void;
   readonly onReveal: () => Promise<void> | void;
 }
@@ -14,7 +13,6 @@ export function createAudioRendererActions({
   ready,
   playbackRate,
   onTogglePlayback,
-  onMarkCurrentTime,
   onPlaybackRate,
   onReveal,
 }: AudioRendererActionsOptions): WorkbenchActionBundle {
@@ -31,11 +29,6 @@ export function createAudioRendererActions({
         id: 'audio.toggle-playback',
         enabled: ready,
         execute: onTogglePlayback,
-      },
-      {
-        id: 'audio.mark-current-time',
-        enabled: ready,
-        execute: onMarkCurrentTime,
       },
       ...playbackRateActions,
       {
@@ -55,18 +48,6 @@ export function createAudioRendererActions({
       },
     ],
     contributions: [
-      {
-        id: 'audio.mark-current-time.overflow',
-        actionId: 'audio.mark-current-time',
-        surface: 'overflow',
-        group: '10-timeline',
-        order: 10,
-        presentation: {
-          kind: 'action',
-          label: '标记当前时间',
-          disabledReason,
-        },
-      },
       ...AUDIO_PLAYBACK_RATES.map((rate, index) => ({
         id: `audio.playback-rate.${rate}.overflow`,
         actionId: `audio.playback-rate.${rate}`,
@@ -104,18 +85,6 @@ export function createAudioRendererActions({
         presentation: {
           kind: 'action',
           label: '播放 / 暂停',
-          disabledReason,
-        },
-      },
-      {
-        id: 'audio.mark-current-time.context-menu',
-        actionId: 'audio.mark-current-time',
-        surface: 'context-menu',
-        group: '10-playback',
-        order: 20,
-        presentation: {
-          kind: 'action',
-          label: '标记当前时间',
           disabledReason,
         },
       },

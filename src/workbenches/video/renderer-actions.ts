@@ -3,14 +3,12 @@ import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/wor
 export interface VideoRendererActionsOptions {
   readonly ready: boolean;
   readonly onTogglePlayback: () => Promise<void> | void;
-  readonly onMarkCurrentTime: () => void;
   readonly onReveal: () => Promise<void> | void;
 }
 
 export function createVideoRendererActions({
   ready,
   onTogglePlayback,
-  onMarkCurrentTime,
   onReveal,
 }: VideoRendererActionsOptions): WorkbenchActionBundle {
   const disabledReason = ready ? undefined : '视频尚未载入完成';
@@ -21,11 +19,6 @@ export function createVideoRendererActions({
         id: 'video.toggle-playback',
         enabled: ready,
         execute: onTogglePlayback,
-      },
-      {
-        id: 'video.mark-current-time',
-        enabled: ready,
-        execute: onMarkCurrentTime,
       },
       {
         id: 'video.reveal',
@@ -44,18 +37,6 @@ export function createVideoRendererActions({
       },
     ],
     contributions: [
-      {
-        id: 'video.mark-current-time.overflow',
-        actionId: 'video.mark-current-time',
-        surface: 'overflow',
-        group: '10-timeline',
-        order: 10,
-        presentation: {
-          kind: 'action',
-          label: '标记当前时间',
-          disabledReason,
-        },
-      },
       {
         id: 'video.reveal.overflow',
         actionId: 'video.reveal',
@@ -77,18 +58,6 @@ export function createVideoRendererActions({
         presentation: {
           kind: 'action',
           label: '播放 / 暂停',
-          disabledReason,
-        },
-      },
-      {
-        id: 'video.mark-current-time.context-menu',
-        actionId: 'video.mark-current-time',
-        surface: 'context-menu',
-        group: '10-playback',
-        order: 20,
-        presentation: {
-          kind: 'action',
-          label: '标记当前时间',
           disabledReason,
         },
       },
