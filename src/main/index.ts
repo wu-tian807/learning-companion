@@ -37,6 +37,7 @@ import { SqliteWorkbenchStateDataRepository } from './workbench/workbench-state-
 import { SqliteWorkbenchStateRepository } from './workbench/workbench-state-repository';
 import { createMainWindow } from './window';
 import { PlainTextWorkbenchProvider } from '../workbenches/plain-text/main';
+import { AudioWorkbenchProvider } from '../workbenches/audio/main';
 import { ImageWorkbenchProvider } from '../workbenches/image/main';
 import { HtmlWorkbenchProvider } from '../workbenches/html/main';
 import { EpubWorkbenchProvider } from '../workbenches/epub/main';
@@ -113,6 +114,12 @@ void app.whenReady().then(async () => {
     new PlainTextWorkbenchProvider(
       workbenchStateRepository,
       workbenchStateDataRepository,
+    ),
+  );
+  workbenchRegistry.register(
+    new AudioWorkbenchProvider(
+      contentResourceService,
+      workbenchStateRepository,
     ),
   );
   workbenchRegistry.register(

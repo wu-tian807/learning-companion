@@ -63,6 +63,36 @@ describe('Asset media type', () => {
     await expect(detectAssetMediaType('/tmp/lesson.mov')).resolves.toBe(
       'video/quicktime',
     );
+    await expect(detectAssetMediaType('/tmp/lecture.mp3')).resolves.toBe(
+      'audio/mpeg',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.WAV')).resolves.toBe(
+      'audio/wav',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.wave')).resolves.toBe(
+      'audio/wav',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.m4a')).resolves.toBe(
+      'audio/mp4',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.aac')).resolves.toBe(
+      'audio/aac',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.flac')).resolves.toBe(
+      'audio/flac',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.ogg')).resolves.toBe(
+      'audio/ogg',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.oga')).resolves.toBe(
+      'audio/ogg',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.opus')).resolves.toBe(
+      'audio/ogg',
+    );
+    await expect(detectAssetMediaType('/tmp/lecture.weba')).resolves.toBe(
+      'audio/webm',
+    );
     await expect(detectAssetMediaType('/tmp/diagram.PNG')).resolves.toBe(
       'image/png',
     );

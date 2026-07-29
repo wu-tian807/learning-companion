@@ -4,6 +4,7 @@ import {
   isWorkbenchActionEnabled,
   type WorkbenchActionBundle,
 } from '../renderer/workbench/actions/workbench-action';
+import { createAudioRendererActions } from './audio/renderer-actions';
 import { createHtmlRendererActions } from './html/renderer-actions';
 import { createImageRendererActions } from './image/renderer-actions';
 import { createPdfRendererActions } from './pdf/renderer-actions';
@@ -139,6 +140,32 @@ describe('viewer Workbench context action bundles', () => {
       '标记当前时间',
       '解释当前画面',
       '从这里生成学习笔记',
+    ]);
+  });
+
+  it('keeps audio commands timeline- and transcript-oriented', () => {
+    const bundle = createAudioRendererActions({
+      ready: true,
+      playbackRate: 1,
+      onTogglePlayback: vi.fn(),
+      onMarkCurrentTime: vi.fn(),
+      onPlaybackRate: vi.fn(),
+      onReveal: vi.fn(),
+    });
+
+    expectWorkbenchSpecificContextMenu(bundle, [
+      '播放 / 暂停',
+      '标记当前时间',
+      '解释这一段',
+      '从这里生成学习笔记',
+    ]);
+    expect(
+      bundle.contributions
+        .filter((entry) => entry.surface === 'generation-center')
+        .map((entry) => entry.presentation.label),
+    ).toEqual([
+      '解释当前音频片段',
+      '生成音频学习笔记',
     ]);
   });
 });

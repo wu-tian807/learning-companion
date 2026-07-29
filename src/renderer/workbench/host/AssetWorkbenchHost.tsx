@@ -11,6 +11,7 @@ import {
 import type {
   WorkbenchSelectionSnapshot,
 } from '../../../shared/workbench/selection';
+import { AUDIO_WORKBENCH_ID } from '../../../workbenches/audio/shared';
 import { IMAGE_WORKBENCH_ID } from '../../../workbenches/image/shared';
 import { HTML_WORKBENCH_ID } from '../../../workbenches/html/shared';
 import { EPUB_WORKBENCH_ID } from '../../../workbenches/epub/shared';
@@ -59,6 +60,13 @@ type SettledWorkbenchHostState =
 const defaultRegistry = new RendererWorkbenchRegistry(
   unsupportedRendererWorkbenchModule,
 );
+defaultRegistry.registerLoader(AUDIO_WORKBENCH_ID, async () => {
+  const { default: audioRendererWorkbenchModule } = await import(
+    '../../../workbenches/audio/renderer'
+  );
+
+  return audioRendererWorkbenchModule;
+});
 defaultRegistry.registerLoader(PLAIN_TEXT_WORKBENCH_ID, async () => {
   const { plainTextRendererWorkbenchModule } = await import(
     '../../../workbenches/plain-text/renderer'
