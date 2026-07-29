@@ -33,6 +33,14 @@ import { ProjectService } from './projects/project-service';
 import { JsonSettingsRepository } from './settings/json-settings-repository';
 import { WorkbenchRegistry } from './workbench/workbench-registry';
 import { WorkbenchSessionManager } from './workbench/workbench-session-manager';
+import {
+  createCoreWorkbenchFacilityDefinitionRegistry,
+} from '../shared/workbench/facilities/core-facilities';
+import { MainFacilityAdapterRegistry } from './workbench/interaction/main-facility-adapter-registry';
+import { SandboxContextMenuFacilityAdapter } from './workbench/interaction/adapters/sandbox-context-menu-facility-adapter';
+import { SandboxTextSelectionFacilityAdapter } from './workbench/interaction/adapters/sandbox-text-selection-facility-adapter';
+import { SandboxFrameInteractionBridge } from './workbench/interaction/sandbox-frame-interaction-bridge';
+import { WorkbenchTransportBindingRegistry } from './workbench/interaction/workbench-transport-binding-registry';
 import { SqliteWorkbenchStateDataRepository } from './workbench/workbench-state-data-repository';
 import { SqliteWorkbenchStateRepository } from './workbench/workbench-state-repository';
 import { createMainWindow } from './window';
@@ -49,6 +57,9 @@ import { UnsupportedWorkbenchProvider } from '../workbenches/unsupported/main';
 let databaseContext: DatabaseContext | undefined;
 let contentResourceService: ContentResourceService | undefined;
 let workbenchSessionManager: WorkbenchSessionManager | undefined;
+let sandboxFrameInteractionBridge:
+  | SandboxFrameInteractionBridge
+  | undefined;
 let workbenchCloseTask: Promise<void> | undefined;
 let quitWorkbenchCleanupComplete = false;
 let quitWorkbenchCleanupStarted = false;
@@ -72,7 +83,9 @@ function closeActiveWorkbench(): Promise<void> {
 }
 
 function createManagedMainWindow(): void {
-  const mainWindow = createMainWindow();
+  const mainWindow = createMainWindow(
+    sandboxFrameInteractionBridge,
+  );
 
   mainWindow.on('closed', () => {
     void closeActiveWorkbench().catch((error: unknown) => {
@@ -102,8 +115,29 @@ void app.whenReady().then(async () => {
     contentResolverRegistry,
   );
   const assetShellService = new AssetShellService(assetService);
+  const workbenchFacilityRegistry =
+    createCoreWorkbenchFacilityDefinitionRegistry();
+  const transportBindingRegistry =
+    new WorkbenchTransportBindingRegistry(
+      workbenchFacilityRegistry,
+    );
+  const mainFacilityAdapterRegistry =
+    new MainFacilityAdapterRegistry(workbenchFacilityRegistry);
+  mainFacilityAdapterRegistry.register(
+    new SandboxContextMenuFacilityAdapter(),
+  );
+  mainFacilityAdapterRegistry.register(
+    new SandboxTextSelectionFacilityAdapter(),
+  );
+  sandboxFrameInteractionBridge =
+    new SandboxFrameInteractionBridge(
+      transportBindingRegistry,
+      mainFacilityAdapterRegistry,
+      workbenchFacilityRegistry,
+    );
   const workbenchRegistry = new WorkbenchRegistry(
     new UnsupportedWorkbenchProvider(),
+    workbenchFacilityRegistry,
   );
   const workbenchStateRepository = new SqliteWorkbenchStateRepository(
     databaseContext,
@@ -160,6 +194,7 @@ void app.whenReady().then(async () => {
     workbenchRegistry,
     new EmptyAttachmentService(),
     workbenchStateRepository,
+    { transportBindingRegistry },
   );
   const projectService = new ProjectService(
     projectDatabase,
@@ -193,6 +228,8 @@ void app.whenReady().then(async () => {
     console.error('初始化失败后的工作台清理失败', closeError);
   });
   workbenchSessionManager = undefined;
+  sandboxFrameInteractionBridge?.dispose();
+  sandboxFrameInteractionBridge = undefined;
   databaseContext?.close();
   databaseContext = undefined;
   app.quit();
@@ -236,6 +273,8 @@ app.on('will-quit', () => {
   removeWorkbenchHandlers();
   removeSettingsHandlers();
   removeProjectHandlers();
+  sandboxFrameInteractionBridge?.dispose();
+  sandboxFrameInteractionBridge = undefined;
   workbenchSessionManager = undefined;
   databaseContext?.close();
   databaseContext = undefined;

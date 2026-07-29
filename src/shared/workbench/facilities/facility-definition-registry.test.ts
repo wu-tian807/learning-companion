@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
+  CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
   createCoreWorkbenchFacilityDefinitionRegistry,
   createTextSelectionInputFacilityDeclaration,
@@ -64,6 +65,33 @@ describe('WorkbenchFacilityDefinitionRegistry', () => {
           options: { capture: 'unknown.transport' },
         },
       ]),
+    ).toBe(false);
+  });
+
+  it('validates sandbox transport binding payloads separately', () => {
+    const registry =
+      createCoreWorkbenchFacilityDefinitionRegistry();
+
+    expect(
+      registry.validateBinding(
+        CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+        1,
+        { rootUrl: 'learning-content://resource/token' },
+      ),
+    ).toBe(true);
+    expect(
+      registry.validateBinding(
+        CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+        1,
+        { rootUrl: 'https://example.com/resource/token' },
+      ),
+    ).toBe(false);
+    expect(
+      registry.validateBinding(
+        CORE_RENDERER_TRANSPORT_FACILITY_ID,
+        1,
+        {},
+      ),
     ).toBe(false);
   });
 

@@ -14,6 +14,7 @@ import type {
 } from './workbench-session';
 import { toWorkbenchProviderContext } from './workbench-session';
 import type { WorkbenchRegistry } from './workbench-registry';
+import type { WorkbenchTransportBindingRegistryApi } from './interaction/workbench-transport-binding-registry';
 import type { WorkbenchStateRepository } from './workbench-state-repository';
 
 export interface WorkbenchSessionLifecycle {
@@ -33,6 +34,7 @@ export interface WorkbenchSessionManagerApi
 
 export interface WorkbenchSessionManagerDependencies {
   readonly createId: () => string;
+  readonly transportBindingRegistry: WorkbenchTransportBindingRegistryApi;
 }
 
 export class WorkbenchSessionManager
@@ -45,6 +47,13 @@ export class WorkbenchSessionManager
   >();
   private lifecycleVersion = 0;
   private readonly createId: () => string;
+  private readonly transportBindingRegistry:
+    | WorkbenchTransportBindingRegistryApi
+    | undefined;
+  private readonly transportBindingDisposers = new Map<
+    string,
+    () => void
+  >();
 
   constructor(
     private readonly assetService: AssetServiceApi,
@@ -54,6 +63,8 @@ export class WorkbenchSessionManager
     dependencies: Partial<WorkbenchSessionManagerDependencies> = {},
   ) {
     this.createId = dependencies.createId ?? randomUUID;
+    this.transportBindingRegistry =
+      dependencies.transportBindingRegistry;
   }
 
   async open(assetId: string): Promise<WorkbenchBootstrap> {
@@ -110,6 +121,32 @@ export class WorkbenchSessionManager
     if (this.lifecycleVersion !== openVersion) {
       await this.disposeSession(session, context);
       throw new AppError('OPERATION_SUPERSEDED');
+    }
+
+    const transportBindings = result.transportBindings ?? [];
+
+    try {
+      if (
+        transportBindings.length > 0 &&
+        !this.transportBindingRegistry
+      ) {
+        throw new AppError('SERVICE_NOT_READY');
+      }
+
+      const disposeBindings =
+        this.transportBindingRegistry?.registerSession(
+          session.id,
+          session.provider.manifest,
+          transportBindings,
+        ) ?? (() => undefined);
+
+      this.transportBindingDisposers.set(
+        session.id,
+        disposeBindings,
+      );
+    } catch (error) {
+      await this.disposeSession(session, context);
+      throw error;
     }
 
     this.activeSession = session;
@@ -206,6 +243,17 @@ export class WorkbenchSessionManager
       this.pendingCommands.delete(session.id);
     }
 
+    let bindingFailure: unknown;
+    const disposeBindings =
+      this.transportBindingDisposers.get(session.id);
+    this.transportBindingDisposers.delete(session.id);
+
+    try {
+      disposeBindings?.();
+    } catch (error) {
+      bindingFailure = error;
+    }
+
     const results = await Promise.allSettled([
       session.provider.close(context),
       session.content.handle?.close() ?? Promise.resolve(),
@@ -215,6 +263,9 @@ export class WorkbenchSessionManager
         result.status === 'rejected',
     );
 
+    if (bindingFailure !== undefined) {
+      throw bindingFailure;
+    }
     if (failure) {
       throw failure.reason;
     }

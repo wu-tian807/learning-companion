@@ -272,6 +272,12 @@ interface WorkbenchFacilityDefinition<
   readonly validateEvent?: (
     value: JsonValue,
   ) => value is TEvent;
+  readonly validateInput?: (
+    value: JsonValue,
+  ) => boolean;
+  readonly validateBinding?: (
+    value: JsonValue,
+  ) => boolean;
   readonly inputCardinality?: 'one' | 'many';
   readonly validateDependencies?: (
     options: TOptions,

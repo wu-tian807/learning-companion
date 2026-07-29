@@ -32,6 +32,7 @@ import {
   IPC_CHANNELS,
   isHtmlContextMenuEvent,
 } from '../shared/ipc';
+import { subscribeWorkbenchFacilityEvents } from './workbench-facility-events';
 
 async function invoke<Response>(
   channel: string,
@@ -108,6 +109,8 @@ const api: LearningCompanionApi = {
     ),
   closeWorkbench: (request: WorkbenchCloseRequest) =>
     invoke<void>(IPC_CHANNELS.closeWorkbench, request),
+  onWorkbenchFacilityEvent: (listener) =>
+    subscribeWorkbenchFacilityEvents(ipcRenderer, listener),
   onHtmlContextMenu: (
     listener: (event: HtmlContextMenuEvent) => void,
   ) => {

@@ -16,6 +16,7 @@ import type {
   WorkbenchCommandResult,
   WorkbenchOpenRequest,
 } from './workbench/protocol';
+import type { WorkbenchFacilityEvent } from './workbench/facilities/facility-event';
 
 export const IPC_CHANNELS = {
   healthCheck: 'app:health-check',
@@ -40,6 +41,7 @@ export const IPC_CHANNELS = {
   openWorkbench: 'workbench:open',
   commandWorkbench: 'workbench:command',
   closeWorkbench: 'workbench:close',
+  workbenchFacilityEvent: 'workbench:facility-event',
   htmlContextMenu: 'workbench:html-context-menu',
 } as const;
 
@@ -107,6 +109,9 @@ export interface LearningCompanionApi {
     request: WorkbenchCommandRequest,
   ) => Promise<WorkbenchCommandResult>;
   closeWorkbench: (request: WorkbenchCloseRequest) => Promise<void>;
+  onWorkbenchFacilityEvent: (
+    listener: (event: WorkbenchFacilityEvent) => void,
+  ) => () => void;
   onHtmlContextMenu: (
     listener: (event: HtmlContextMenuEvent) => void,
   ) => () => void;

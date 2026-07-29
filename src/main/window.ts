@@ -4,8 +4,14 @@ import path from 'node:path';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { createHtmlContextMenuEvent } from './html-context-menu';
 import { isAllowedMainWindowNavigation } from './navigation-policy';
+import type { SandboxFrameInteractionBridge } from './workbench/interaction/sandbox-frame-interaction-bridge';
 
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow(
+  interactionBridge?: Pick<
+    SandboxFrameInteractionBridge,
+    'attach'
+  >,
+): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -51,6 +57,12 @@ export function createMainWindow(): BrowserWindow {
         context,
       );
     }
+  });
+  const detachInteractionBridge = interactionBridge?.attach(
+    mainWindow.webContents,
+  );
+  mainWindow.once('closed', () => {
+    detachInteractionBridge?.();
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 

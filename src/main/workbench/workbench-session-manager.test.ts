@@ -7,6 +7,12 @@ import {
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
 import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+  CORE_FACILITY_VERSION,
+  CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+} from '../../shared/workbench/facilities/core-facilities';
+import type { WorkbenchTransportBindingRegistryApi } from './interaction/workbench-transport-binding-registry';
+import {
   createAssetContentStatus,
   createLocalFileContentRef,
   type AssetContentAvailability,
@@ -107,6 +113,7 @@ function createManager(
   assetService: AssetServiceApi,
   fallback: MainWorkbenchProvider,
   provider?: MainWorkbenchProvider,
+  transportBindingRegistry?: WorkbenchTransportBindingRegistryApi,
 ) {
   const registry = new WorkbenchRegistry(fallback);
 
@@ -119,7 +126,12 @@ function createManager(
     registry,
     new EmptyAttachmentService(),
     new EmptyWorkbenchStateRepository(),
-    { createId: () => 'session' },
+    {
+      createId: () => 'session',
+      ...(transportBindingRegistry
+        ? { transportBindingRegistry }
+        : {}),
+    },
   );
 }
 
@@ -250,6 +262,139 @@ describe('WorkbenchSessionManager', () => {
 
     await expect(opening).rejects.toThrow('OPERATION_SUPERSEDED');
     expect(close).toHaveBeenCalledOnce();
+    expect(manager.getActiveSessionId()).toBeUndefined();
+  });
+
+  it('registers provider transport bindings for exactly the session lifetime', async () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const closeOrder: string[] = [];
+    const baseProvider = createProvider(
+      'sandbox-reader',
+      ['text/plain'],
+      ['read-bytes'],
+    );
+    const provider: MainWorkbenchProvider = {
+      ...baseProvider,
+      manifest: {
+        ...baseProvider.manifest,
+        facilities: [
+          {
+            id: CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+            version: CORE_FACILITY_VERSION,
+          },
+          {
+            id: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+            version: CORE_FACILITY_VERSION,
+            options: {
+              capture:
+                CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+            },
+          },
+        ],
+      },
+      open: vi.fn(async () => ({
+        payload: { ready: true },
+        transportBindings: [
+          {
+            transportId:
+              CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+            transportVersion: CORE_FACILITY_VERSION,
+            facilities: [
+              {
+                id: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+                version: CORE_FACILITY_VERSION,
+              },
+            ],
+            payload: {
+              rootUrl: 'learning-content://resource/token',
+            },
+          },
+        ],
+      })),
+      close: vi.fn(async () => {
+        closeOrder.push('provider');
+      }),
+    };
+    const disposeBindings = vi.fn(() => {
+      closeOrder.push('binding');
+    });
+    const transportBindingRegistry = {
+      registerSession: vi.fn(() => disposeBindings),
+      disposeSession: vi.fn(),
+    };
+    const { service } = createAssetService();
+    const manager = createManager(
+      service,
+      fallback,
+      provider,
+      transportBindingRegistry,
+    );
+
+    await manager.open('asset');
+    expect(
+      transportBindingRegistry.registerSession,
+    ).toHaveBeenCalledWith(
+      'session',
+      provider.manifest,
+      expect.arrayContaining([
+        expect.objectContaining({
+          transportId:
+            CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+        }),
+      ]),
+    );
+
+    await manager.close('session');
+
+    expect(disposeBindings).toHaveBeenCalledOnce();
+    expect(closeOrder).toEqual(['binding', 'provider']);
+  });
+
+  it('rolls back the provider and content handle when binding registration fails', async () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const provider = createProvider(
+      'sandbox-reader',
+      ['text/plain'],
+      ['read-bytes'],
+    );
+    vi.mocked(provider.open).mockResolvedValue({
+      payload: { ready: true },
+      transportBindings: [
+        {
+          transportId:
+            CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+          transportVersion: CORE_FACILITY_VERSION,
+          facilities: [
+            {
+              id: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+              version: CORE_FACILITY_VERSION,
+            },
+          ],
+          payload: {
+            rootUrl: 'learning-content://resource/token',
+          },
+        },
+      ],
+    });
+    const transportBindingRegistry = {
+      registerSession: vi.fn(() => {
+        throw new Error('binding invalid');
+      }),
+      disposeSession: vi.fn(),
+    };
+    const { handles, service } = createAssetService();
+    const manager = createManager(
+      service,
+      fallback,
+      provider,
+      transportBindingRegistry,
+    );
+
+    await expect(manager.open('asset')).rejects.toThrow(
+      'binding invalid',
+    );
+    expect(provider.close).toHaveBeenCalledOnce();
+    expect(handles[0]?.close).toHaveBeenCalledOnce();
     expect(manager.getActiveSessionId()).toBeUndefined();
   });
 });

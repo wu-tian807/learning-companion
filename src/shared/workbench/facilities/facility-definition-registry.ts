@@ -24,6 +24,8 @@ export class WorkbenchFacilityDefinitionRegistry {
         typeof definition.validateEvent !== 'function') ||
       (definition.validateInput !== undefined &&
         typeof definition.validateInput !== 'function') ||
+      (definition.validateBinding !== undefined &&
+        typeof definition.validateBinding !== 'function') ||
       (definition.validateDependencies !== undefined &&
         typeof definition.validateDependencies !== 'function') ||
       (definition.inputCardinality !== undefined &&
@@ -32,6 +34,8 @@ export class WorkbenchFacilityDefinitionRegistry {
       (definition.role !== 'input' &&
         (definition.inputCardinality !== undefined ||
           definition.validateInput !== undefined)) ||
+      (definition.role !== 'transport' &&
+        definition.validateBinding !== undefined) ||
       (definition.role === 'input' &&
         (definition.inputCardinality === undefined ||
           definition.validateInput === undefined))
@@ -128,5 +132,15 @@ export class WorkbenchFacilityDefinitionRegistry {
     const definition = this.get(id, version);
 
     return definition?.validateInput?.(payload) ?? false;
+  }
+
+  validateBinding(
+    id: string,
+    version: number,
+    payload: JsonValue,
+  ): boolean {
+    const definition = this.get(id, version);
+
+    return definition?.validateBinding?.(payload) ?? false;
   }
 }

@@ -4,6 +4,7 @@ import type {
   WorkbenchCommand,
   WorkbenchCommandResult,
 } from '../../shared/workbench/protocol';
+import type { WorkbenchTransportBinding } from '../../shared/workbench/facilities/transport-binding';
 import type { Asset } from '../assets/asset';
 import type { ResolvedAssetContent } from '../content/content-ref';
 import type { WorkbenchStateRecord } from './workbench-state-repository';
@@ -25,6 +26,7 @@ export interface WorkbenchProviderContext {
 
 export interface WorkbenchProviderOpenResult {
   readonly payload: JsonValue;
+  readonly transportBindings?: readonly WorkbenchTransportBinding[];
 }
 
 export interface MainWorkbenchProvider {
