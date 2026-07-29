@@ -54,6 +54,9 @@ export function registerAssetHandlers(
       if (!isAddLocalAssetsRequest(request)) {
         throw invalidRequest();
       }
+      if (assetService.getActiveProjectId() !== request.projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
 
       const result: AddLocalAssetsResult = {
         added: [],
@@ -63,8 +66,18 @@ export function registerAssetHandlers(
 
       for (const path of request.paths) {
         try {
-          result.added.push(await assetService.addLocalFile(path));
+          result.added.push(
+            await assetService.addLocalFile(request.projectId, path),
+          );
         } catch (error) {
+          if (
+            error instanceof AppError &&
+            (error.code === 'PROJECT_CONTEXT_CHANGED' ||
+              error.code === 'OPERATION_SUPERSEDED')
+          ) {
+            throw error;
+          }
+
           const handled = handleAppError(
             `${IPC_CHANNELS.addLocalAssets}:${path}`,
             error,
@@ -76,6 +89,9 @@ export function registerAssetHandlers(
         }
       }
 
+      if (assetService.getActiveProjectId() !== request.projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
       result.assets.push(...assetService.list());
       return result;
     },

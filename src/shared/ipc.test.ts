@@ -122,9 +122,12 @@ describe('project mutation contracts', () => {
 describe('Asset contracts', () => {
   it('accepts Asset requests', () => {
     expect(isProjectLifecycleRequest({ projectId: 'project' })).toBe(true);
-    expect(isAddLocalAssetsRequest({ paths: ['/tmp/a.md', '/tmp/b.pdf'] })).toBe(
-      true,
-    );
+    expect(
+      isAddLocalAssetsRequest({
+        projectId: 'project',
+        paths: ['/tmp/a.md', '/tmp/b.pdf'],
+      }),
+    ).toBe(true);
     expect(
       isRenameAssetRequest({ assetId: 'asset', name: '新标题' }),
     ).toBe(true);
@@ -136,7 +139,18 @@ describe('Asset contracts', () => {
 
   it('rejects malformed Asset requests', () => {
     expect(isProjectLifecycleRequest({ projectId: '' })).toBe(false);
-    expect(isAddLocalAssetsRequest({ paths: [] })).toBe(false);
+    expect(
+      isAddLocalAssetsRequest({ projectId: 'project', paths: [] }),
+    ).toBe(false);
+    expect(
+      isAddLocalAssetsRequest({ paths: ['/tmp/a.md'] }),
+    ).toBe(false);
+    expect(
+      isAddLocalAssetsRequest({
+        projectId: '',
+        paths: ['/tmp/a.md'],
+      }),
+    ).toBe(false);
     expect(isRenameAssetRequest({ assetId: 'asset', name: '' })).toBe(false);
     expect(isRelinkAssetRequest({ assetId: '', path: '/tmp/new.md' })).toBe(
       false,

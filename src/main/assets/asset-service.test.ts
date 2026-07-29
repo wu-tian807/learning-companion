@@ -139,7 +139,10 @@ describe('AssetService', () => {
       createDefaultName: vi.fn(() => '资料'),
     });
 
-    const created = await service.addLocalFile('/tmp/资料.txt');
+    const created = await service.addLocalFile(
+      'project',
+      '/tmp/资料.txt',
+    );
 
     expect(database.add).toHaveBeenCalledWith({
       name: '资料',
@@ -254,12 +257,27 @@ describe('AssetService', () => {
       detectMediaType: vi.fn(async () => 'text/plain'),
     });
 
-    const addition = service.addLocalFile('/tmp/notes.txt');
+    const addition = service.addLocalFile(
+      'project',
+      '/tmp/notes.txt',
+    );
     await vi.waitFor(() => expect(finishResolve).toBeTypeOf('function'));
     service.unloadProject();
     finishResolve?.();
 
     await expect(addition).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
+    expect(database.add).not.toHaveBeenCalled();
+  });
+
+  it('rejects an addition for a Project other than the active Project', async () => {
+    const database = createDatabase([]);
+    const { registry, resolver } = createResolver();
+    const service = new AssetService(database, registry);
+
+    await expect(
+      service.addLocalFile('another-project', '/tmp/notes.txt'),
+    ).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
+    expect(resolver.resolve).not.toHaveBeenCalled();
     expect(database.add).not.toHaveBeenCalled();
   });
 });

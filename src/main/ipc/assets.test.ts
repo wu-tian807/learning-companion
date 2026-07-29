@@ -86,7 +86,7 @@ function createDependencies() {
   const asset = createAsset();
   const currentAssets = [asset];
   const assetService = {
-    addLocalFile: vi.fn(async (path: string) => {
+    addLocalFile: vi.fn(async (_projectId: string, path: string) => {
       if (path.includes('failed')) {
         throw new AppError('ASSET_UNAVAILABLE');
       }
@@ -231,7 +231,10 @@ describe('Asset IPC handlers', () => {
     await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)(
         {},
-        { paths: ['/tmp/a.md', '/tmp/failed.md', '/tmp/b.md'] },
+        {
+          projectId: 'project',
+          paths: ['/tmp/a.md', '/tmp/failed.md', '/tmp/b.md'],
+        },
       ),
     ).resolves.toMatchObject({
       added: [
@@ -251,7 +254,64 @@ describe('Asset IPC handlers', () => {
       ],
     });
     expect(assetService.addLocalFile).toHaveBeenCalledTimes(3);
+    expect(assetService.addLocalFile).toHaveBeenNthCalledWith(
+      1,
+      'project',
+      '/tmp/a.md',
+    );
     expect(assetService.list).toHaveBeenCalledOnce();
+  });
+
+  it('stops a batch instead of treating a Project switch as a file failure', async () => {
+    const { assetService, assetShellService, settingsRepository } =
+      createDependencies();
+    vi.mocked(assetService.addLocalFile).mockRejectedValueOnce(
+      new AppError('PROJECT_CONTEXT_CHANGED'),
+    );
+    registerAssetHandlers(
+      assetService,
+      assetShellService,
+      settingsRepository,
+    );
+
+    await expect(
+      findHandler(IPC_CHANNELS.addLocalAssets)(
+        {},
+        {
+          projectId: 'project',
+          paths: ['/tmp/a.md', '/tmp/b.md'],
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'PROJECT_CONTEXT_CHANGED',
+      kind: 'cancelled',
+    });
+    expect(assetService.addLocalFile).toHaveBeenCalledOnce();
+    expect(assetService.list).not.toHaveBeenCalled();
+  });
+
+  it('rejects a batch that targets a Project other than the active Project', async () => {
+    const { assetService, assetShellService, settingsRepository } =
+      createDependencies();
+    registerAssetHandlers(
+      assetService,
+      assetShellService,
+      settingsRepository,
+    );
+
+    await expect(
+      findHandler(IPC_CHANNELS.addLocalAssets)(
+        {},
+        {
+          projectId: 'another-project',
+          paths: ['/tmp/a.md'],
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'PROJECT_CONTEXT_CHANGED',
+      kind: 'cancelled',
+    });
+    expect(assetService.addLocalFile).not.toHaveBeenCalled();
   });
 
   it('forwards Asset mutations to the current Project container', async () => {
@@ -305,7 +365,10 @@ describe('Asset IPC handlers', () => {
     );
 
     await expect(
-      findHandler(IPC_CHANNELS.addLocalAssets)({}, { paths: [] }),
+      findHandler(IPC_CHANNELS.addLocalAssets)(
+        {},
+        { projectId: 'project', paths: [] },
+      ),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await expect(
       findHandler(IPC_CHANNELS.renameAsset)(

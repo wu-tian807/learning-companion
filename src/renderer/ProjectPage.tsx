@@ -603,7 +603,10 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const importPaths = useCallback(
     async (paths: string[]) => {
       const result: AddLocalAssetsResult =
-        await window.learningCompanion.addLocalAssets({ paths });
+        await window.learningCompanion.addLocalAssets({
+          projectId: project.id,
+          paths,
+        });
 
       if (!isAddLocalAssetsResult(result)) {
         throw new Error('批量添加 Asset 响应无效');
@@ -622,7 +625,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         );
       }
     },
-    [selectAsset],
+    [project.id, selectAsset],
   );
 
   const addPaths = useCallback(

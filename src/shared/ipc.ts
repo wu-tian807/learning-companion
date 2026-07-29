@@ -140,6 +140,7 @@ export interface ProjectLifecycleRequest {
 }
 
 export interface AddLocalAssetsRequest {
+  projectId: string;
   paths: string[];
 }
 
@@ -300,6 +301,7 @@ export function isAddLocalAssetsRequest(
 ): value is AddLocalAssetsRequest {
   return (
     isRecord(value) &&
+    isRequiredText(value.projectId) &&
     Array.isArray(value.paths) &&
     value.paths.length > 0 &&
     value.paths.length <= ASSET_BATCH_MAX_SIZE &&

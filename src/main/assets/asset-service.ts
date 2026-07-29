@@ -25,7 +25,7 @@ export interface AssetServiceApi {
   getActiveProjectId(): string | undefined;
   list(): readonly AssetSnapshot[];
   get(assetId: string): AssetSnapshot | undefined;
-  addLocalFile(path: string): Promise<AssetSnapshot>;
+  addLocalFile(projectId: string, path: string): Promise<AssetSnapshot>;
   update(assetId: string, changes: UpdateAssetInput): AssetSnapshot;
   delete(assetId: string): void;
   refresh(assetId: string): Promise<AssetSnapshot>;
@@ -125,8 +125,11 @@ export class AssetService implements AssetServiceApi {
     return snapshot ? cloneAssetSnapshot(snapshot) : undefined;
   }
 
-  async addLocalFile(path: string): Promise<AssetSnapshot> {
-    const projectId = this.requireActiveProjectId();
+  async addLocalFile(
+    projectId: string,
+    path: string,
+  ): Promise<AssetSnapshot> {
+    this.requireExpectedProject(projectId);
     const lifecycleVersion = this.lifecycleVersion;
     const contentRef = createLocalFileContentRef(path);
     const resolved = await this.resolverRegistry.resolve(contentRef);
@@ -308,6 +311,12 @@ export class AssetService implements AssetServiceApi {
     }
 
     return projectId;
+  }
+
+  private requireExpectedProject(projectId: string): void {
+    if (this.requireActiveProjectId() !== projectId) {
+      throw new AppError('PROJECT_CONTEXT_CHANGED');
+    }
   }
 
   private find(assetId: string): AssetSnapshot {
