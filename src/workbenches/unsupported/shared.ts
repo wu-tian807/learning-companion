@@ -13,6 +13,7 @@ export const unsupportedWorkbenchManifest: AssetWorkbenchManifest = {
   supportedMediaTypes: ['*/*'],
   requiredContentCapabilities: [],
   supportedAnchorTypes: [],
+  facilities: [],
 };
 
 export type UnsupportedWorkbenchReason =

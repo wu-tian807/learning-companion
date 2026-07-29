@@ -4,6 +4,8 @@ import {
   isAssetWorkbenchManifest,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
+import type { WorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/facility-definition-registry';
 import type {
   WorkbenchBootstrap,
   WorkbenchCommand,
@@ -43,7 +45,12 @@ export class RendererWorkbenchRegistry {
     Promise<RendererWorkbenchModule>
   >();
 
-  constructor(private readonly fallbackModule: RendererWorkbenchModule) {
+  constructor(
+    private readonly fallbackModule: RendererWorkbenchModule,
+    private readonly facilityRegistry:
+      WorkbenchFacilityDefinitionRegistry =
+        createCoreWorkbenchFacilityDefinitionRegistry(),
+  ) {
     this.validateModule(fallbackModule);
     this.modules.set(fallbackModule.manifest.id, fallbackModule);
   }
@@ -125,6 +132,13 @@ export class RendererWorkbenchRegistry {
   private validateModule(module: RendererWorkbenchModule): void {
     if (!isAssetWorkbenchManifest(module.manifest)) {
       throw new Error('Renderer Workbench Manifest 无效');
+    }
+    if (
+      !this.facilityRegistry.validateDeclarations(
+        module.manifest.facilities,
+      )
+    ) {
+      throw new Error('Renderer Workbench Facility 声明无效');
     }
   }
 }

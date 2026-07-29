@@ -21,6 +21,7 @@ function createProvider(
     supportedMediaTypes,
     requiredContentCapabilities,
     supportedAnchorTypes: [],
+    facilities: [],
   };
 
   return {

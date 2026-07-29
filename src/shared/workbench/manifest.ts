@@ -1,3 +1,9 @@
+import {
+  isWorkbenchFacilityDeclaration,
+  workbenchFacilityKey,
+  type WorkbenchFacilityDeclaration,
+} from './facilities/facility-declaration';
+
 export const WORKBENCH_PROTOCOL_VERSION = 1;
 
 export const contentCapabilities = [
@@ -16,6 +22,7 @@ export interface AssetWorkbenchManifest {
   readonly supportedMediaTypes: readonly string[];
   readonly requiredContentCapabilities: readonly ContentCapability[];
   readonly supportedAnchorTypes: readonly string[];
+  readonly facilities: readonly WorkbenchFacilityDeclaration[];
 }
 
 function hasUniqueValues(values: readonly string[]): boolean {
@@ -60,6 +67,13 @@ export function isAssetWorkbenchManifest(
     hasUniqueValues(candidate.requiredContentCapabilities) &&
     Array.isArray(candidate.supportedAnchorTypes) &&
     candidate.supportedAnchorTypes.every(isRequiredText) &&
-    hasUniqueValues(candidate.supportedAnchorTypes)
+    hasUniqueValues(candidate.supportedAnchorTypes) &&
+    Array.isArray(candidate.facilities) &&
+    candidate.facilities.every(isWorkbenchFacilityDeclaration) &&
+    hasUniqueValues(
+      candidate.facilities.map((facility) =>
+        workbenchFacilityKey(facility.id, facility.version),
+      ),
+    )
   );
 }

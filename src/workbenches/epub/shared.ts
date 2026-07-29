@@ -3,6 +3,12 @@ import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import {
+  CORE_RENDERER_TRANSPORT_FACILITY_ID,
+  createContextMenuSurfaceFacilityDeclaration,
+  createTextSelectionInputFacilityDeclaration,
+  rendererTransportFacilityDeclaration,
+} from '../../shared/workbench/facilities/core-facilities';
 import type {
   JsonValue,
   WorkbenchCommand,
@@ -20,6 +26,15 @@ export const epubWorkbenchManifest: AssetWorkbenchManifest = {
   supportedMediaTypes: ['application/epub+zip'],
   requiredContentCapabilities: ['read-stream'],
   supportedAnchorTypes: [EPUB_CFI_RANGE_ANCHOR_TYPE],
+  facilities: [
+    rendererTransportFacilityDeclaration,
+    createContextMenuSurfaceFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+    createTextSelectionInputFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+  ],
 };
 
 export type EpubFlow = 'paginated' | 'scrolled-doc';

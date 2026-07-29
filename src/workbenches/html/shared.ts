@@ -3,6 +3,13 @@ import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import {
+  CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+  createContextMenuSurfaceFacilityDeclaration,
+  createTextSelectionInputFacilityDeclaration,
+  overflowSurfaceFacilityDeclaration,
+  sandboxFrameTransportFacilityDeclaration,
+} from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
 export const HTML_WORKBENCH_ID = 'builtin.html';
@@ -20,6 +27,16 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest = {
   supportedAnchorTypes: [
     HTML_QUOTE_ANCHOR_TYPE,
     HTML_LINK_ANCHOR_TYPE,
+  ],
+  facilities: [
+    sandboxFrameTransportFacilityDeclaration,
+    overflowSurfaceFacilityDeclaration,
+    createContextMenuSurfaceFacilityDeclaration(
+      CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+    ),
+    createTextSelectionInputFacilityDeclaration(
+      CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+    ),
   ],
 };
 

@@ -3,6 +3,12 @@ import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import {
+  CORE_RENDERER_TRANSPORT_FACILITY_ID,
+  createContextMenuSurfaceFacilityDeclaration,
+  overflowSurfaceFacilityDeclaration,
+  rendererTransportFacilityDeclaration,
+} from '../../shared/workbench/facilities/core-facilities';
 import type {
   JsonValue,
   WorkbenchCommand,
@@ -25,6 +31,13 @@ export const videoWorkbenchManifest: AssetWorkbenchManifest = {
   ],
   requiredContentCapabilities: ['read-stream'],
   supportedAnchorTypes: [VIDEO_TIME_RANGE_ANCHOR_TYPE],
+  facilities: [
+    rendererTransportFacilityDeclaration,
+    overflowSurfaceFacilityDeclaration,
+    createContextMenuSurfaceFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+  ],
 };
 
 export interface VideoWorkbenchViewState {

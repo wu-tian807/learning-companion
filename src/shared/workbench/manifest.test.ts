@@ -15,6 +15,7 @@ describe('AssetWorkbenchManifest', () => {
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: ['read-bytes'],
         supportedAnchorTypes: ['markdown.text-range'],
+        facilities: [],
       }),
     ).toBe(true);
   });
@@ -28,6 +29,7 @@ describe('AssetWorkbenchManifest', () => {
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: [],
         supportedAnchorTypes: [],
+        facilities: [],
       }),
     ).toBe(false);
     expect(
@@ -38,6 +40,34 @@ describe('AssetWorkbenchManifest', () => {
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: ['read-bytes', 'read-bytes'],
         supportedAnchorTypes: [],
+        facilities: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects invalid or duplicate facility declarations', () => {
+    const base = {
+      id: 'builtin.markdown',
+      version: 1,
+      protocolVersion: WORKBENCH_PROTOCOL_VERSION,
+      supportedMediaTypes: ['text/markdown'],
+      requiredContentCapabilities: [],
+      supportedAnchorTypes: [],
+    };
+
+    expect(
+      isAssetWorkbenchManifest({
+        ...base,
+        facilities: [{ id: 'invalid', version: 1 }],
+      }),
+    ).toBe(false);
+    expect(
+      isAssetWorkbenchManifest({
+        ...base,
+        facilities: [
+          { id: 'core.transport.renderer', version: 1 },
+          { id: 'core.transport.renderer', version: 1 },
+        ],
       }),
     ).toBe(false);
   });

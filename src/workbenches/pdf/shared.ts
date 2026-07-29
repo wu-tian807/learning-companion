@@ -3,6 +3,13 @@ import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import {
+  CORE_RENDERER_TRANSPORT_FACILITY_ID,
+  createContextMenuSurfaceFacilityDeclaration,
+  createTextSelectionInputFacilityDeclaration,
+  overflowSurfaceFacilityDeclaration,
+  rendererTransportFacilityDeclaration,
+} from '../../shared/workbench/facilities/core-facilities';
 import type {
   JsonValue,
   WorkbenchCommand,
@@ -24,6 +31,16 @@ export const pdfWorkbenchManifest: AssetWorkbenchManifest = {
   supportedAnchorTypes: [
     PDF_TEXT_RANGE_ANCHOR_TYPE,
     PDF_PAGE_ANCHOR_TYPE,
+  ],
+  facilities: [
+    rendererTransportFacilityDeclaration,
+    overflowSurfaceFacilityDeclaration,
+    createContextMenuSurfaceFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+    createTextSelectionInputFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
   ],
 };
 

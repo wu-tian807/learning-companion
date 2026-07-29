@@ -2,6 +2,10 @@ import {
   isAssetWorkbenchManifest,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import {
+  createCoreWorkbenchFacilityDefinitionRegistry,
+} from '../../shared/workbench/facilities/core-facilities';
+import type { WorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/facility-definition-registry';
 import { hasContentCapabilities } from '../content/content-handle';
 import { AppError } from '../errors/app-error';
 import type {
@@ -31,7 +35,12 @@ function matchesMediaType(
 export class WorkbenchRegistry {
   private readonly providers = new Map<string, MainWorkbenchProvider>();
 
-  constructor(private readonly fallbackProvider: MainWorkbenchProvider) {
+  constructor(
+    private readonly fallbackProvider: MainWorkbenchProvider,
+    private readonly facilityRegistry:
+      WorkbenchFacilityDefinitionRegistry =
+        createCoreWorkbenchFacilityDefinitionRegistry(),
+  ) {
     this.validateProvider(fallbackProvider);
     this.providers.set(fallbackProvider.manifest.id, fallbackProvider);
   }
@@ -86,6 +95,13 @@ export class WorkbenchRegistry {
 
   private validateProvider(provider: MainWorkbenchProvider): void {
     if (!isAssetWorkbenchManifest(provider.manifest)) {
+      throw new AppError('INVALID_EXTENSION_DEFINITION');
+    }
+    if (
+      !this.facilityRegistry.validateDeclarations(
+        provider.manifest.facilities,
+      )
+    ) {
       throw new AppError('INVALID_EXTENSION_DEFINITION');
     }
   }
