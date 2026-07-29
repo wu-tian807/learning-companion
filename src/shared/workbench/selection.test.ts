@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createTextSelectionInput,
+  findTextSelectionInput,
+  interactionFromTextSelection,
   isWorkbenchSelectionSnapshot,
   type WorkbenchSelectionSnapshot,
 } from './selection';
@@ -25,6 +28,12 @@ const selection: WorkbenchSelectionSnapshot = {
 describe('Workbench selection contract', () => {
   it('accepts a content selection snapshot', () => {
     expect(isWorkbenchSelectionSnapshot(selection)).toBe(true);
+    const input = createTextSelectionInput(selection);
+    const interaction = interactionFromTextSelection(selection);
+
+    expect(input.type).toBe('core.input.text-selection');
+    expect(interaction.focus).toEqual(selection.target);
+    expect(findTextSelectionInput(interaction)).toEqual(selection);
   });
 
   it('rejects empty selections and asset-level targets', () => {
@@ -38,5 +47,4 @@ describe('Workbench selection contract', () => {
       }),
     ).toBe(false);
   });
-
 });

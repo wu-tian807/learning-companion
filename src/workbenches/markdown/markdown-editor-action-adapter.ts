@@ -1,6 +1,9 @@
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
-import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selection';
+import {
+  interactionFromTextSelection,
+  type WorkbenchSelectionSnapshot,
+} from '../../shared/workbench/selection';
 import type { WorkbenchContextMenuWheelEvent } from '../../renderer/workbench/runtime/workbench-runtime-store';
 import type {
   EditorActionAdapter,
@@ -136,7 +139,7 @@ export class MarkdownEditorActionAdapter
       element?.ownerDocument.defaultView?.getSelection();
 
     if (!element || !selection || selection.rangeCount === 0) {
-      return {};
+      return { inputs: [] };
     }
 
     const range = selection.getRangeAt(0);
@@ -145,7 +148,7 @@ export class MarkdownEditorActionAdapter
       range.collapsed ||
       !rangeBelongsToElement(range, element)
     ) {
-      return {};
+      return { inputs: [] };
     }
 
     return createVisualInteraction(range.toString());
@@ -316,7 +319,7 @@ function createVisualInteraction(
   includeEmptyTarget = false,
 ): WorkbenchInteractionSnapshot {
   if (!text && !includeEmptyTarget) {
-    return {};
+    return { inputs: [] };
   }
 
   const target = createVisualSelectionTarget(text);
@@ -327,5 +330,5 @@ function createVisualInteraction(
       }
     : undefined;
 
-  return { target, selection };
+  return interactionFromTextSelection(selection, target);
 }

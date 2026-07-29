@@ -22,13 +22,19 @@ export class WorkbenchFacilityDefinitionRegistry {
       typeof definition.validateOptions !== 'function' ||
       (definition.validateEvent !== undefined &&
         typeof definition.validateEvent !== 'function') ||
+      (definition.validateInput !== undefined &&
+        typeof definition.validateInput !== 'function') ||
       (definition.validateDependencies !== undefined &&
         typeof definition.validateDependencies !== 'function') ||
       (definition.inputCardinality !== undefined &&
         definition.inputCardinality !== 'one' &&
         definition.inputCardinality !== 'many') ||
       (definition.role !== 'input' &&
-        definition.inputCardinality !== undefined)
+        (definition.inputCardinality !== undefined ||
+          definition.validateInput !== undefined)) ||
+      (definition.role === 'input' &&
+        (definition.inputCardinality === undefined ||
+          definition.validateInput === undefined))
     ) {
       throw new Error('Workbench Facility Definition 无效');
     }
@@ -112,5 +118,15 @@ export class WorkbenchFacilityDefinitionRegistry {
     const definition = this.get(id, version);
 
     return definition?.validateEvent?.(payload) ?? false;
+  }
+
+  validateInput(
+    id: string,
+    version: number,
+    payload: JsonValue,
+  ): boolean {
+    const definition = this.get(id, version);
+
+    return definition?.validateInput?.(payload) ?? false;
   }
 }

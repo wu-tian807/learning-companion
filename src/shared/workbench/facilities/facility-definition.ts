@@ -19,6 +19,7 @@ export interface WorkbenchFacilityDefinition {
     value: JsonValue | undefined,
   ) => boolean;
   readonly validateEvent?: (value: JsonValue) => boolean;
+  readonly validateInput?: (value: JsonValue) => boolean;
   readonly inputCardinality?: 'one' | 'many';
   readonly validateDependencies?: (
     options: JsonValue | undefined,
@@ -31,12 +32,13 @@ export interface TypedWorkbenchFacilityDefinition<
   TEvent extends JsonValue,
 > extends Omit<
     WorkbenchFacilityDefinition,
-    'validateOptions' | 'validateEvent'
+    'validateOptions' | 'validateEvent' | 'validateInput'
   > {
   readonly validateOptions: (
     value: JsonValue | undefined,
   ) => value is TOptions;
   readonly validateEvent?: (value: JsonValue) => value is TEvent;
+  readonly validateInput?: (value: JsonValue) => boolean;
 }
 
 export function defineWorkbenchFacility<

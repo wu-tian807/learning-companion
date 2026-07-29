@@ -1,4 +1,5 @@
 import type { AssetSnapshot } from '../../shared/assets';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import { isWorkbenchActionEnabled } from '../workbench/actions/workbench-action';
 import {
   useWorkbenchRuntime,
@@ -46,7 +47,9 @@ export function GenerationCenter({
             'generation-tool',
         )
     : [];
-  const selection = connected ? interaction.selection : undefined;
+  const selection = connected
+    ? findTextSelectionInput(interaction)
+    : undefined;
   const selectionSummary = selection
     ? summarizeSelection(selection.text)
     : undefined;

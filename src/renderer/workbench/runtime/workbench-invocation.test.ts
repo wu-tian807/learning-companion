@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { WorkbenchActionBundle } from '../actions/workbench-action';
+import { findTextSelectionInput } from '../../../shared/workbench/selection';
 import { WorkbenchActionRegistry } from './workbench-action-registry';
 import {
   createWorkbenchInvocationContext,
@@ -37,15 +38,19 @@ function bundle(
 describe('Workbench action invocation', () => {
   it('creates an immutable interaction snapshot', () => {
     const interaction = {
-      selection: {
-        text: '冻结内容',
-        target: {
+      inputs: [
+        {
+          type: 'core.input.text-selection',
+          version: 1,
+          payload: { text: '冻结内容' },
+          target: {
           scope: 'content' as const,
           anchorType: 'text.range',
           anchorVersion: 1,
           anchorPayload: { start: 0, end: 4 },
         },
-      },
+        },
+      ],
     };
     const invocation = createWorkbenchInvocationContext(
       identity,
@@ -53,11 +58,12 @@ describe('Workbench action invocation', () => {
       interaction,
     );
 
-    interaction.selection.text = '后来修改';
+    interaction.inputs[0].payload.text = '后来修改';
 
-    expect(invocation.selection?.text).toBe('冻结内容');
+    expect(findTextSelectionInput(invocation)?.text).toBe('冻结内容');
     expect(Object.isFrozen(invocation)).toBe(true);
-    expect(Object.isFrozen(invocation.selection)).toBe(true);
+    expect(Object.isFrozen(invocation.inputs)).toBe(true);
+    expect(Object.isFrozen(invocation.inputs[0].payload)).toBe(true);
   });
 
   it('executes active actions and isolates duplicate clicks', async () => {
@@ -78,7 +84,7 @@ describe('Workbench action invocation', () => {
     const invocation = createWorkbenchInvocationContext(
       identity,
       'context-menu',
-      {},
+      { inputs: [] },
     );
 
     const first = invoker.invoke('plain-text.copy', invocation);
@@ -109,7 +115,7 @@ describe('Workbench action invocation', () => {
         createWorkbenchInvocationContext(
           { ...identity, sessionId: 'stale-session' },
           'context-menu',
-          {},
+          { inputs: [] },
         ),
       ),
     ).resolves.toBe('stale');
@@ -119,7 +125,7 @@ describe('Workbench action invocation', () => {
         createWorkbenchInvocationContext(
           identity,
           'context-menu',
-          {},
+          { inputs: [] },
         ),
       ),
     ).resolves.toBe('disabled');
@@ -142,7 +148,7 @@ describe('Workbench action invocation', () => {
     const invocation = createWorkbenchInvocationContext(
       identity,
       'context-menu',
-      {},
+      { inputs: [] },
     );
 
     await expect(
@@ -176,7 +182,7 @@ describe('Workbench action invocation', () => {
         createWorkbenchInvocationContext(
           identity,
           'context-menu',
-          {},
+          { inputs: [] },
         ),
       ),
     ).resolves.toBe('failed');

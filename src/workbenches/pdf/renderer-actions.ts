@@ -1,4 +1,5 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import type {
   PdfReadingMode,
   PdfSidebar,
@@ -103,8 +104,10 @@ export function createPdfRendererActions({
         id: 'pdf.copy-selection',
         enabled: hasSelection,
         execute: (context) => {
-          if (context.selection?.text) {
-            return onCopySelection(context.selection.text);
+          const selection = findTextSelectionInput(context);
+
+          if (selection?.text) {
+            return onCopySelection(selection.text);
           }
         },
       },

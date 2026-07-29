@@ -96,7 +96,7 @@ export function VideoWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
-  onSelectionChange,
+  onInteractionChange,
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
@@ -276,11 +276,11 @@ export function VideoWorkbenchView({
       return;
     }
     const seconds = captureVideoState(video).currentTime;
-    onSelectionChange({
-      text: `视频时间 ${formatTime(seconds)}`,
-      target: createVideoTimeRangeTarget(seconds),
+    onInteractionChange({
+      focus: createVideoTimeRangeTarget(seconds),
+      inputs: [],
     });
-  }, [onSelectionChange]);
+  }, [onInteractionChange]);
   const togglePlayback = useCallback(async () => {
     const video = videoRef.current;
 
@@ -328,7 +328,10 @@ export function VideoWorkbenchView({
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        { target: createVideoTimeRangeTarget(seconds) },
+        {
+          focus: createVideoTimeRangeTarget(seconds),
+          inputs: [],
+        },
       );
     },
     [bootstrap.sessionId, currentTime, runtime],

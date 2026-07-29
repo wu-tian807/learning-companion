@@ -12,8 +12,8 @@ function createAdapter(
 ): EditorActionAdapter {
   return {
     getState: () => state,
-    captureInteraction: () => ({}),
-    captureContextMenu: () => ({ interaction: {} }),
+    captureInteraction: () => ({ inputs: [] }),
+    captureContextMenu: () => ({ interaction: { inputs: [] } }),
     undo: vi.fn(),
     redo: vi.fn(),
     cut: vi.fn(),

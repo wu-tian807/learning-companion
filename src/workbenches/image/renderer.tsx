@@ -635,7 +635,7 @@ export function ImageWorkbenchView({
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        { target },
+        { focus: target, inputs: [] },
       );
     },
     [bootstrap.sessionId, runtime],

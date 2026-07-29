@@ -5,6 +5,7 @@ import type {
   WorkbenchInteractionSnapshot,
   WorkbenchInvocationContext,
 } from '../../../shared/workbench/interaction';
+import { EMPTY_WORKBENCH_INTERACTION } from '../../../shared/workbench/interaction';
 
 export interface WorkbenchRuntimeIdentity {
   readonly projectId: string;
@@ -48,13 +49,13 @@ export type WorkbenchRuntimeStore = StoreApi<WorkbenchRuntimeState>;
 
 export function createWorkbenchRuntimeStore(): WorkbenchRuntimeStore {
   return createStore<WorkbenchRuntimeState>((set, get) => ({
-    interaction: {},
+    interaction: EMPTY_WORKBENCH_INTERACTION,
     busyActionIds: new Set<string>(),
     contributionRevision: 0,
     activate(identity) {
       set({
         identity,
-        interaction: {},
+        interaction: EMPTY_WORKBENCH_INTERACTION,
         contextMenu: undefined,
         busyActionIds: new Set<string>(),
       });
@@ -68,7 +69,7 @@ export function createWorkbenchRuntimeStore(): WorkbenchRuntimeStore {
 
       set({
         identity: undefined,
-        interaction: {},
+        interaction: EMPTY_WORKBENCH_INTERACTION,
         contextMenu: undefined,
         busyActionIds: new Set<string>(),
       });
@@ -88,8 +89,8 @@ export function createWorkbenchRuntimeStore(): WorkbenchRuntimeStore {
 
       set({
         interaction: {
-          target: context.target,
-          selection: context.selection,
+          focus: context.focus,
+          inputs: context.inputs,
         },
       });
       return true;

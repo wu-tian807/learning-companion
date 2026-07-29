@@ -121,7 +121,7 @@ export function AudioWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
-  onSelectionChange,
+  onInteractionChange,
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
@@ -303,11 +303,11 @@ export function AudioWorkbenchView({
       return;
     }
     const seconds = captureAudioState(audio).currentTime;
-    onSelectionChange({
-      text: `音频时间 ${formatTime(seconds)}`,
-      target: createAudioTimeRangeTarget(seconds),
+    onInteractionChange({
+      focus: createAudioTimeRangeTarget(seconds),
+      inputs: [],
     });
-  }, [onSelectionChange]);
+  }, [onInteractionChange]);
   const togglePlayback = useCallback(async () => {
     const audio = audioRef.current;
 
@@ -376,7 +376,10 @@ export function AudioWorkbenchView({
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        { target: createAudioTimeRangeTarget(seconds) },
+        {
+          focus: createAudioTimeRangeTarget(seconds),
+          inputs: [],
+        },
       );
     },
     [bootstrap.sessionId, currentTime, runtime],

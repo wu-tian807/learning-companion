@@ -11,7 +11,7 @@ import type {
   WorkbenchCommand,
   WorkbenchCommandResult,
 } from '../../shared/workbench/protocol';
-import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selection';
+import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import type { AssetSnapshot } from '../../shared/assets';
 
 export interface RendererWorkbenchViewProps {
@@ -23,8 +23,8 @@ export interface RendererWorkbenchViewProps {
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
-  readonly onSelectionChange: (
-    selection: WorkbenchSelectionSnapshot | undefined,
+  readonly onInteractionChange: (
+    interaction: WorkbenchInteractionSnapshot,
   ) => void;
   readonly onOpenExternal: (url: string) => Promise<void>;
   readonly onError: (message: string) => void;

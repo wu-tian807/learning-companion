@@ -81,6 +81,8 @@ describe('WorkbenchFacilityDefinitionRegistry', () => {
         value,
       ): value is typeof value & { readonly x: number } =>
         isRecord(value) && typeof value.x === 'number',
+      validateInput: (value) =>
+        isRecord(value) && typeof value.x === 'number',
     });
     const dispose = registry.register(definition);
 

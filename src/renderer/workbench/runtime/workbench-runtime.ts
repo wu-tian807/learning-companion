@@ -4,6 +4,18 @@ import type {
   WorkbenchInvocationContext,
   WorkbenchInvocationOrigin,
 } from '../../../shared/workbench/interaction';
+import { isWorkbenchInteractionSnapshot } from '../../../shared/workbench/interaction';
+import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+  CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
+  CORE_OVERFLOW_SURFACE_FACILITY_ID,
+  createCoreWorkbenchFacilityDefinitionRegistry,
+} from '../../../shared/workbench/facilities/core-facilities';
+import type { WorkbenchFacilityDefinitionRegistry } from '../../../shared/workbench/facilities/facility-definition-registry';
+import {
+  isAssetWorkbenchManifest,
+  type AssetWorkbenchManifest,
+} from '../../../shared/workbench/manifest';
 import type { WorkbenchActionBundle } from '../actions/workbench-action';
 import type { WorkbenchSurface } from '../actions/workbench-contribution';
 import {
@@ -42,8 +54,14 @@ export class WorkbenchRuntime {
   private readonly registry = new WorkbenchActionRegistry();
   private readonly invoker: WorkbenchActionInvoker;
   private reportError: WorkbenchErrorReporter;
+  private activeManifest: AssetWorkbenchManifest | undefined;
 
-  constructor(reportError: WorkbenchErrorReporter) {
+  constructor(
+    reportError: WorkbenchErrorReporter,
+    private readonly facilityRegistry:
+      WorkbenchFacilityDefinitionRegistry =
+        createCoreWorkbenchFacilityDefinitionRegistry(),
+  ) {
     this.reportError = reportError;
     this.store = createWorkbenchRuntimeStore();
     this.invoker = new WorkbenchActionInvoker(
@@ -60,19 +78,34 @@ export class WorkbenchRuntime {
     this.reportError = reportError;
   }
 
-  activate(identity: WorkbenchRuntimeIdentity): void {
+  activate(
+    identity: WorkbenchRuntimeIdentity,
+    manifest: AssetWorkbenchManifest,
+  ): void {
+    if (
+      !isAssetWorkbenchManifest(manifest) ||
+      manifest.id !== identity.workbenchId ||
+      !this.facilityRegistry.validateDeclarations(
+        manifest.facilities,
+      )
+    ) {
+      throw new Error('Workbench Runtime Manifest 无效');
+    }
+
     const current = this.store.getState().identity;
 
     if (
       current?.projectId === identity.projectId &&
       current.assetId === identity.assetId &&
       current.workbenchId === identity.workbenchId &&
-      current.sessionId === identity.sessionId
+      current.sessionId === identity.sessionId &&
+      this.activeManifest === manifest
     ) {
       return;
     }
 
     this.registry.clear();
+    this.activeManifest = manifest;
     this.store.getState().activate(identity);
     this.store.getState().bumpContributions();
   }
@@ -85,6 +118,7 @@ export class WorkbenchRuntime {
     }
 
     this.registry.clear();
+    this.activeManifest = undefined;
     this.store.getState().deactivate(sessionId);
     this.store.getState().bumpContributions();
   }
@@ -93,6 +127,7 @@ export class WorkbenchRuntime {
     ownerId: string,
     bundle: WorkbenchActionBundle,
   ): () => void {
+    this.requireValidContributionFacilities(bundle);
     const dispose = this.registry.register(ownerId, bundle);
     this.store.getState().bumpContributions();
     let active = true;
@@ -120,7 +155,11 @@ export class WorkbenchRuntime {
   ): boolean {
     const identity = this.store.getState().identity;
 
-    if (!identity || identity.sessionId !== sessionId) {
+    if (
+      !identity ||
+      identity.sessionId !== sessionId ||
+      !this.validateInteraction(interaction)
+    ) {
       return false;
     }
 
@@ -167,7 +206,12 @@ export class WorkbenchRuntime {
   ): boolean {
     const identity = this.store.getState().identity;
 
-    if (!identity || identity.sessionId !== sessionId) {
+    if (
+      !identity ||
+      identity.sessionId !== sessionId ||
+      !this.hasFacility(CORE_CONTEXT_MENU_SURFACE_FACILITY_ID) ||
+      !this.validateInteraction(interaction)
+    ) {
       return false;
     }
 
@@ -208,5 +252,96 @@ export class WorkbenchRuntime {
     invocation: WorkbenchInvocationContext,
   ): Promise<WorkbenchActionInvocationResult> {
     return this.invoker.invoke(actionId, invocation);
+  }
+
+  private validateInteraction(
+    interaction: WorkbenchInteractionSnapshot,
+  ): boolean {
+    const manifest = this.activeManifest;
+
+    if (!manifest || !isWorkbenchInteractionSnapshot(interaction)) {
+      return false;
+    }
+
+    const isSupportedTarget = (
+      target: WorkbenchInteractionSnapshot['focus'],
+    ): boolean =>
+      target === undefined ||
+      manifest.supportedAnchorTypes.includes(target.anchorType);
+
+    if (!isSupportedTarget(interaction.focus)) {
+      return false;
+    }
+
+    const counts = new Map<string, number>();
+
+    for (const input of interaction.inputs) {
+      const declaration = manifest.facilities.find(
+        (facility) =>
+          facility.id === input.type &&
+          facility.version === input.version,
+      );
+      const definition = this.facilityRegistry.get(
+        input.type,
+        input.version,
+      );
+
+      if (
+        !declaration ||
+        definition?.role !== 'input' ||
+        !isSupportedTarget(input.target) ||
+        !this.facilityRegistry.validateInput(
+          input.type,
+          input.version,
+          input.payload,
+        )
+      ) {
+        return false;
+      }
+
+      const key = `${input.type}@${input.version}`;
+      const count = (counts.get(key) ?? 0) + 1;
+
+      if (definition.inputCardinality === 'one' && count > 1) {
+        return false;
+      }
+      counts.set(key, count);
+    }
+
+    return true;
+  }
+
+  private hasFacility(id: string, version = 1): boolean {
+    return (
+      this.activeManifest?.facilities.some(
+        (facility) =>
+          facility.id === id && facility.version === version,
+      ) ?? false
+    );
+  }
+
+  private requireValidContributionFacilities(
+    bundle: WorkbenchActionBundle,
+  ): void {
+    const requiredFacilityBySurface: Readonly<
+      Record<WorkbenchSurface, string>
+    > = {
+      overflow: CORE_OVERFLOW_SURFACE_FACILITY_ID,
+      'context-menu': CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+      'generation-center':
+        CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
+    };
+
+    for (const contribution of bundle.contributions) {
+      if (
+        !this.hasFacility(
+          requiredFacilityBySurface[contribution.surface],
+        )
+      ) {
+        throw new Error(
+          `Workbench 未声明 ${contribution.surface} Facility`,
+        );
+      }
+    }
   }
 }

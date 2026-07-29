@@ -223,6 +223,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     bootstrap,
     executeCommand,
     onReveal,
+    onInteractionChange,
     onOpenExternal,
     onError,
   } = props;
@@ -610,7 +611,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         { onWheel: capture.onWheel },
       );
     };
-    const onSelectionChange = () => {
+    const publishSelection = () => {
       const selection =
         element.ownerDocument.defaultView?.getSelection();
 
@@ -627,8 +628,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         return;
       }
 
-      runtime.publishInteraction(
-        bootstrap.sessionId,
+      onInteractionChange(
         wysiwygEditorActionAdapter.captureInteraction(),
       );
     };
@@ -636,19 +636,20 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     element.addEventListener('contextmenu', onContextMenu);
     element.ownerDocument.addEventListener(
       'selectionchange',
-      onSelectionChange,
+      publishSelection,
     );
-    onSelectionChange();
+    publishSelection();
 
     return () => {
       element.removeEventListener('contextmenu', onContextMenu);
       element.ownerDocument.removeEventListener(
         'selectionchange',
-        onSelectionChange,
+        publishSelection,
       );
     };
   }, [
     bootstrap.sessionId,
+    onInteractionChange,
     recovery,
     runtime,
     visualEditorState,
@@ -698,7 +699,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           ...viewStateRef.current,
           viewMode: mode,
         };
-        runtime.publishInteraction(bootstrap.sessionId, {});
+        onInteractionChange({ inputs: [] });
         applyViewState(next);
         await persistViewState(next);
 
@@ -714,6 +715,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [
       applyViewState,
       bootstrap.sessionId,
+      onInteractionChange,
       persistViewState,
       recovery,
       reportError,
@@ -821,8 +823,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const onSourceUpdate = useCallback(
     (update: ViewUpdate) => {
       if (update.selectionSet) {
-        runtime.publishInteraction(
-          bootstrap.sessionId,
+        onInteractionChange(
           sourceEditorActionAdapter.captureInteraction(),
         );
       }
@@ -856,7 +857,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       });
     },
     [
-      bootstrap.sessionId,
+      onInteractionChange,
       runtime,
       scheduleViewStateSave,
       sourceEditorActionAdapter,

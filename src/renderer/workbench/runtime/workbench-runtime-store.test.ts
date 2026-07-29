@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { WorkbenchInteractionContext } from '../../../shared/workbench/interaction';
+import { findTextSelectionInput } from '../../../shared/workbench/selection';
 import { createWorkbenchRuntimeStore } from './workbench-runtime-store';
 
 const identity = {
@@ -15,15 +16,19 @@ function context(
 ): WorkbenchInteractionContext {
   return {
     ...identity,
-    selection: {
-      text: '选区',
-      target: {
+    inputs: [
+      {
+        type: 'core.input.text-selection',
+        version: 1,
+        payload: { text: '选区' },
+        target: {
         scope: 'content',
         anchorType: 'pdf.text-range',
         anchorVersion: 1,
         anchorPayload: { pageNumber: 1 },
       },
-    },
+      },
+    ],
     ...overrides,
   };
 }
@@ -34,13 +39,17 @@ describe('Workbench runtime store', () => {
     store.getState().activate(identity);
 
     expect(store.getState().publishInteraction(context())).toBe(true);
-    expect(store.getState().interaction.selection?.text).toBe('选区');
+    expect(
+      findTextSelectionInput(store.getState().interaction)?.text,
+    ).toBe('选区');
     expect(
       store
         .getState()
         .publishInteraction(context({ sessionId: 'stale-session' })),
     ).toBe(false);
-    expect(store.getState().interaction.selection?.text).toBe('选区');
+    expect(
+      findTextSelectionInput(store.getState().interaction)?.text,
+    ).toBe('选区');
   });
 
   it('clears interaction, menu and busy state on activation change', () => {
@@ -55,7 +64,7 @@ describe('Workbench runtime store', () => {
       sessionId: 'session-2',
     });
 
-    expect(store.getState().interaction).toEqual({});
+    expect(store.getState().interaction).toEqual({ inputs: [] });
     expect(store.getState().contextMenu).toBeUndefined();
     expect(store.getState().busyActionIds.size).toBe(0);
   });
@@ -74,6 +83,7 @@ describe('Workbench runtime store', () => {
           ...identity,
           origin: 'context-menu',
           sessionId: 'stale-session',
+          inputs: [],
         },
       }),
     ).toBe(false);

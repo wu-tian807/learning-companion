@@ -324,6 +324,8 @@ Registry、Runtime 和测试按以下规则检查：
   契约错误；
 - 没有声明 `core.surface.context-menu` 时，注册 `context-menu`
   Contribution 或调用 `openContextMenu()` 是契约错误；
+- 没有声明 `core.surface.generation-center` 时，注册
+  `generation-center` Contribution 是契约错误；
 - 发布某类 Input 前，Workbench 必须声明对应 Input Facility；
 - Facility Options 指向的 Transport 必须同时存在；
 - 声明沙箱 Transport 时，Main Provider 必须为当前 Session 提供对应

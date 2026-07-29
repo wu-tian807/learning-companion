@@ -8,9 +8,10 @@ import {
   type WorkbenchCommandResult,
   type WorkbenchBootstrap,
 } from '../../../shared/workbench/protocol';
-import type {
-  WorkbenchSelectionSnapshot,
-} from '../../../shared/workbench/selection';
+import {
+  EMPTY_WORKBENCH_INTERACTION,
+  type WorkbenchInteractionSnapshot,
+} from '../../../shared/workbench/interaction';
 import { AUDIO_WORKBENCH_ID } from '../../../workbenches/audio/shared';
 import { IMAGE_WORKBENCH_ID } from '../../../workbenches/image/shared';
 import { HTML_WORKBENCH_ID } from '../../../workbenches/html/shared';
@@ -144,8 +145,8 @@ export function AssetWorkbenchHost({
     settledState.assetKey === assetKey
       ? settledState.bootstrap.sessionId
       : undefined;
-  const reportSelection = useCallback(
-    (selection: WorkbenchSelectionSnapshot | undefined) => {
+  const reportInteraction = useCallback(
+    (interaction: WorkbenchInteractionSnapshot) => {
       if (
         !assetId ||
         !readySessionId ||
@@ -154,10 +155,7 @@ export function AssetWorkbenchHost({
         return;
       }
 
-      runtime.publishInteraction(readySessionId, {
-        target: selection?.target,
-        selection,
-      });
+      runtime.publishInteraction(readySessionId, interaction);
     },
     [assetId, readySessionId, runtime],
   );
@@ -198,7 +196,10 @@ export function AssetWorkbenchHost({
       if (activeSessionIdRef.current === sessionId) {
         activeSessionIdRef.current = undefined;
       }
-      runtime.publishInteraction(sessionId, {});
+      runtime.publishInteraction(
+        sessionId,
+        EMPTY_WORKBENCH_INTERACTION,
+      );
       // React may run the Host cleanup before the active View cleanup.
       // Yield once so a View can synchronously enqueue its final state command.
       await Promise.resolve();
@@ -255,12 +256,15 @@ export function AssetWorkbenchHost({
           return;
         }
 
-        runtime.activate({
-          projectId,
-          assetId,
-          workbenchId: bootstrap.workbenchId,
-          sessionId: bootstrap.sessionId,
-        });
+        runtime.activate(
+          {
+            projectId,
+            assetId,
+            workbenchId: bootstrap.workbenchId,
+            sessionId: bootstrap.sessionId,
+          },
+          module.manifest,
+        );
         activeSessionIdRef.current = bootstrap.sessionId;
         setSettledState({
           kind: 'ready',
@@ -294,7 +298,10 @@ export function AssetWorkbenchHost({
     return () => {
       active = false;
       if (openedSessionId) {
-        runtime.publishInteraction(openedSessionId, {});
+        runtime.publishInteraction(
+          openedSessionId,
+          EMPTY_WORKBENCH_INTERACTION,
+        );
       }
       runtime.closeContextMenu();
       void openingTask
@@ -357,7 +364,7 @@ export function AssetWorkbenchHost({
           onRelink={onRelink}
           onRefresh={onRefresh}
           onReveal={onReveal}
-          onSelectionChange={reportSelection}
+          onInteractionChange={reportInteraction}
           onOpenExternal={openExternal}
           onError={onError}
         />

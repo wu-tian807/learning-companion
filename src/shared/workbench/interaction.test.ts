@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isWorkbenchInteractionInput,
   isWorkbenchInteractionContext,
   isWorkbenchInteractionSnapshot,
   isWorkbenchInvocationContext,
@@ -23,8 +24,15 @@ describe('Workbench interaction contract', () => {
       assetId: 'asset-1',
       workbenchId: 'builtin.pdf',
       sessionId: 'session-1',
-      target: selection.target,
-      selection,
+      focus: selection.target,
+      inputs: [
+        {
+          type: 'core.input.text-selection',
+          version: 1,
+          target: selection.target,
+          payload: { text: selection.text },
+        },
+      ],
     };
 
     expect(isWorkbenchInteractionSnapshot(context)).toBe(true);
@@ -40,7 +48,8 @@ describe('Workbench interaction contract', () => {
   it('rejects asset-level targets and invalid invocation origins', () => {
     expect(
       isWorkbenchInteractionSnapshot({
-        target: { scope: 'asset' },
+        focus: { scope: 'asset' },
+        inputs: [],
       }),
     ).toBe(false);
     expect(
@@ -50,6 +59,7 @@ describe('Workbench interaction contract', () => {
         workbenchId: 'builtin.pdf',
         sessionId: 'session-1',
         origin: 'toolbar',
+        inputs: [],
       }),
     ).toBe(false);
   });
@@ -61,6 +71,30 @@ describe('Workbench interaction contract', () => {
         assetId: '',
         workbenchId: 'builtin.pdf',
         sessionId: 'session-1',
+        inputs: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('accepts extensible inputs and rejects invalid input envelopes', () => {
+    expect(
+      isWorkbenchInteractionInput({
+        type: 'test.input.region-selection',
+        version: 1,
+        target: selection.target,
+        payload: {
+          x: 0.2,
+          y: 0.3,
+          width: 0.4,
+          height: 0.1,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isWorkbenchInteractionInput({
+        type: 'region',
+        version: 1,
+        payload: {},
       }),
     ).toBe(false);
   });

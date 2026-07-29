@@ -14,6 +14,7 @@ import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import type { HtmlContextMenuEvent } from '../../shared/ipc';
 import { userMessageFromError } from '../../shared/ipc-error';
+import { interactionFromTextSelection } from '../../shared/workbench/selection';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
   createHtmlLinkTarget,
@@ -67,7 +68,7 @@ export function HtmlWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
-  onSelectionChange,
+  onInteractionChange,
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -99,11 +100,11 @@ export function HtmlWorkbenchView({
 
   const reload = useCallback(() => {
     contextRef.current = undefined;
-    onSelectionChange(undefined);
+    onInteractionChange({ inputs: [] });
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
     setFrameRevision((current) => current + 1);
-  }, [onSelectionChange]);
+  }, [onInteractionChange]);
 
   const reveal = useCallback(async () => {
     try {
@@ -155,27 +156,32 @@ export function HtmlWorkbenchView({
           ? createHtmlLinkTarget(context.linkUrl)
           : undefined);
 
-      onSelectionChange(selection);
+      const interaction = interactionFromTextSelection(
+        selection,
+        target,
+      );
+
+      onInteractionChange(interaction);
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: context.x, y: context.y },
-        { target, selection },
+        interaction,
         { captureOutsidePointer: true },
       );
     });
   }, [
     bootstrap.sessionId,
-    onSelectionChange,
+    onInteractionChange,
     payload,
     runtime,
   ]);
 
   useEffect(() => {
     contextRef.current = undefined;
-    onSelectionChange(undefined);
+    onInteractionChange({ inputs: [] });
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
-  }, [onSelectionChange, payload?.contentUrl]);
+  }, [onInteractionChange, payload?.contentUrl]);
 
   if (!payload) {
     return (

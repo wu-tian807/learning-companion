@@ -10,7 +10,10 @@ import type { EditorView } from '@codemirror/view';
 
 import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
 import type { WorkbenchInteractionSnapshot } from '../../../shared/workbench/interaction';
-import type { WorkbenchSelectionSnapshot } from '../../../shared/workbench/selection';
+import {
+  interactionFromTextSelection,
+  type WorkbenchSelectionSnapshot,
+} from '../../../shared/workbench/selection';
 import type { WorkbenchContextMenuWheelEvent } from '../runtime/workbench-runtime-store';
 import type {
   EditorActionAdapter,
@@ -101,7 +104,7 @@ export class CodeMirrorEditorActionAdapter
     const view = this.options.getView();
 
     if (!view) {
-      return {};
+      return { inputs: [] };
     }
 
     const ranges = view.state.selection.ranges
@@ -248,7 +251,7 @@ export class CodeMirrorEditorActionAdapter
     );
 
     if (selectedRanges.length === 0 && !includeCollapsedTarget) {
-      return {};
+      return { inputs: [] };
     }
 
     const targetRanges =
@@ -265,7 +268,7 @@ export class CodeMirrorEditorActionAdapter
       ? { text, target }
       : undefined;
 
-    return { target, selection };
+    return interactionFromTextSelection(selection, target);
   }
 
   private replaceFrozenRanges(

@@ -58,7 +58,7 @@ function render(payload: WorkbenchBootstrap['payload']) {
         onRelink={vi.fn()}
         onRefresh={vi.fn()}
         onReveal={vi.fn()}
-        onSelectionChange={vi.fn()}
+        onInteractionChange={vi.fn()}
         onOpenExternal={vi.fn(async () => undefined)}
         onError={vi.fn()}
       />

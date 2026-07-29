@@ -233,6 +233,7 @@ function PlainTextRecoveryDialog({
 export function PlainTextWorkbenchView({
   bootstrap,
   executeCommand,
+  onInteractionChange,
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
@@ -723,8 +724,7 @@ export function PlainTextWorkbenchView({
               viewStateRef.current = nextViewState;
               setCursor(cursorLabel(update));
               if (update.selectionSet) {
-                runtime.publishInteraction(
-                  bootstrap.sessionId,
+                onInteractionChange(
                   editorActionAdapter.captureInteraction(),
                 );
               }

@@ -54,6 +54,7 @@
    - `core.transport.sandbox-frame@1`
    - `core.surface.overflow@1`
    - `core.surface.context-menu@1`
+   - `core.surface.generation-center@1`
    - `core.input.text-selection@1`
 5. Main 和 Renderer Workbench Registry 注入同类 Definition Registry。
 6. 所有内置 Manifest 明确声明自身 Facilities。

@@ -18,6 +18,7 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { userMessageFromError } from '../../shared/ipc-error';
+import { interactionFromTextSelection } from '../../shared/workbench/selection';
 import {
   hasExplicitUrlScheme,
   isExternalNetworkUrl,
@@ -195,7 +196,7 @@ export function EpubWorkbenchView({
   executeCommand,
   onRelink,
   onRefresh,
-  onSelectionChange,
+  onInteractionChange,
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -394,13 +395,15 @@ export function EpubWorkbenchView({
         'selected',
         (cfiRange: string, contents: Contents) => {
           const anchor = createCfiSelectionAnchor(cfiRange, contents);
-          onSelectionChange(
-            anchor
-              ? {
-                  text: anchor.quote.exact,
-                  target: createEpubCfiRangeTarget(anchor),
-                }
-              : undefined,
+          onInteractionChange(
+            interactionFromTextSelection(
+              anchor
+                ? {
+                    text: anchor.quote.exact,
+                    target: createEpubCfiRangeTarget(anchor),
+                  }
+                : undefined,
+            ),
           );
         },
       );
@@ -444,7 +447,7 @@ export function EpubWorkbenchView({
         saveTimerRef.current = undefined;
       }
       void persistViewState(viewStateRef.current);
-      onSelectionChange(undefined);
+      onInteractionChange({ inputs: [] });
       renditionRef.current = undefined;
       bookRef.current = undefined;
       book?.destroy();
@@ -452,7 +455,7 @@ export function EpubWorkbenchView({
     };
   }, [
     onOpenExternal,
-    onSelectionChange,
+    onInteractionChange,
     payload,
     persistViewState,
     updateViewState,

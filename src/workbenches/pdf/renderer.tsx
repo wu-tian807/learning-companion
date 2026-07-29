@@ -15,6 +15,10 @@ import type {
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
+import {
+  findTextSelectionInput,
+  interactionFromTextSelection,
+} from '../../shared/workbench/selection';
 import type {
   PdfDocumentSummary,
   PdfFindStatus,
@@ -314,7 +318,7 @@ export function PdfWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
-  onSelectionChange,
+  onInteractionChange,
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -460,7 +464,9 @@ export function PdfWorkbenchView({
             },
             onSelectionChange(selection) {
               if (active) {
-                onSelectionChange(selection);
+                onInteractionChange(
+                  interactionFromTextSelection(selection),
+                );
               }
             },
             onFindStatusChange(status) {
@@ -510,7 +516,7 @@ export function PdfWorkbenchView({
     return () => {
       active = false;
       readyRef.current = false;
-      onSelectionChange(undefined);
+      onInteractionChange({ inputs: [] });
 
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
@@ -533,7 +539,7 @@ export function PdfWorkbenchView({
   }, [
     onError,
     onOpenExternal,
-    onSelectionChange,
+    onInteractionChange,
     payload,
     persistViewState,
     scheduleViewStateSave,
@@ -695,8 +701,13 @@ export function PdfWorkbenchView({
         onRotateClockwise: () => adapterRef.current?.rotate(90),
         onRotateCounterclockwise: () =>
           adapterRef.current?.rotate(-90),
-        hasSelection: () =>
-          Boolean(runtime.interactionContext()?.selection?.text),
+        hasSelection: () => {
+          const current = runtime.interactionContext();
+
+          return Boolean(
+            current && findTextSelectionInput(current)?.text,
+          );
+        },
         onCopySelection: copySelection,
         onReveal: reveal,
       }),
@@ -717,15 +728,17 @@ export function PdfWorkbenchView({
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       const current = runtime.interactionContext();
-      const selection = current?.selection;
-      const target =
+      const selection = current
+        ? findTextSelectionInput(current)
+        : undefined;
+      const focus =
         selection?.target ??
         createPdfPageTarget(viewState.pageNumber);
 
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        { target, selection },
+        interactionFromTextSelection(selection, focus),
       );
     },
     [bootstrap.sessionId, runtime, viewState.pageNumber],

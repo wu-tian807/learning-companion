@@ -2,10 +2,8 @@ import {
   isAssetAttachmentTarget,
   type ContentAnchorTarget,
 } from './anchor';
-import {
-  isWorkbenchSelectionSnapshot,
-  type WorkbenchSelectionSnapshot,
-} from './selection';
+import { isJsonValue, type JsonValue } from './protocol';
+import { isWorkbenchFacilityId } from './facilities/facility-declaration';
 
 export const workbenchInvocationOrigins = [
   'overflow',
@@ -16,10 +14,22 @@ export const workbenchInvocationOrigins = [
 export type WorkbenchInvocationOrigin =
   (typeof workbenchInvocationOrigins)[number];
 
-export interface WorkbenchInteractionSnapshot {
+export interface WorkbenchInteractionInput {
+  readonly type: string;
+  readonly version: number;
   readonly target?: ContentAnchorTarget;
-  readonly selection?: WorkbenchSelectionSnapshot;
+  readonly payload: JsonValue;
 }
+
+export interface WorkbenchInteractionSnapshot {
+  readonly focus?: ContentAnchorTarget;
+  readonly inputs: readonly WorkbenchInteractionInput[];
+}
+
+export const EMPTY_WORKBENCH_INTERACTION: WorkbenchInteractionSnapshot =
+  Object.freeze({
+    inputs: Object.freeze([]),
+  });
 
 export interface WorkbenchInteractionContext
   extends WorkbenchInteractionSnapshot {
@@ -61,11 +71,29 @@ export function isWorkbenchInteractionSnapshot(
   }
 
   return (
+    (value.focus === undefined ||
+      (isAssetAttachmentTarget(value.focus) &&
+        value.focus.scope === 'content')) &&
+    Array.isArray(value.inputs) &&
+    value.inputs.every(isWorkbenchInteractionInput)
+  );
+}
+
+export function isWorkbenchInteractionInput(
+  value: unknown,
+): value is WorkbenchInteractionInput {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isWorkbenchFacilityId(value.type) &&
+    Number.isSafeInteger(value.version) &&
+    Number(value.version) > 0 &&
     (value.target === undefined ||
       (isAssetAttachmentTarget(value.target) &&
         value.target.scope === 'content')) &&
-    (value.selection === undefined ||
-      isWorkbenchSelectionSnapshot(value.selection))
+    isJsonValue(value.payload)
   );
 }
 
