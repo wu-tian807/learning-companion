@@ -17,23 +17,32 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
+import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
-import { interactionFromTextSelection } from '../../shared/workbench/selection';
+import {
+  interactionFromTextSelection,
+  type WorkbenchSelectionSnapshot,
+} from '../../shared/workbench/selection';
+import {
+  captureEpubSelectionSnapshot,
+  createEpubSelectionSnapshot,
+  resolveEpubContextMenuPosition,
+} from './epub-interaction';
 import {
   hasExplicitUrlScheme,
   isExternalNetworkUrl,
   secureEpubDocument,
   toSafeExternalUrl,
 } from './epub-security';
+import { createEpubRendererActions } from './renderer-actions';
 import {
   cloneEpubViewState,
-  createEpubCfiRangeTarget,
   createEpubSaveViewStateCommand,
   DEFAULT_EPUB_VIEW_STATE,
   epubWorkbenchManifest,
   isEpubSaveViewStateResult,
   isEpubWorkbenchPayload,
-  type EpubCfiRangeAnchorV1,
   type EpubTheme,
   type EpubWorkbenchViewState,
 } from './shared';
@@ -72,41 +81,6 @@ function flattenNavigation(
     },
     ...flattenNavigation(item.subitems ?? [], depth + 1),
   ]);
-}
-
-function createCfiSelectionAnchor(
-  cfiRange: string,
-  contents: Contents,
-): EpubCfiRangeAnchorV1 | undefined {
-  let range: Range;
-
-  try {
-    range = contents.range(cfiRange);
-  } catch {
-    return undefined;
-  }
-
-  const exact = range.toString();
-  if (!exact.trim() || exact.length > 16_384) {
-    return undefined;
-  }
-
-  const root = contents.document.body ?? contents.document.documentElement;
-  const prefixRange = contents.document.createRange();
-  prefixRange.selectNodeContents(root);
-  prefixRange.setEnd(range.startContainer, range.startOffset);
-  const suffixRange = contents.document.createRange();
-  suffixRange.selectNodeContents(root);
-  suffixRange.setStart(range.endContainer, range.endOffset);
-
-  return {
-    cfiRange,
-    quote: {
-      exact,
-      prefix: prefixRange.toString().slice(-128),
-      suffix: suffixRange.toString().slice(0, 128),
-    },
-  };
 }
 
 function themeRules(theme: EpubTheme): object {
@@ -196,10 +170,12 @@ export function EpubWorkbenchView({
   executeCommand,
   onRelink,
   onRefresh,
+  onReveal,
   onInteractionChange,
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
+  const runtime = useWorkbenchRuntime();
   const payload = isEpubWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -207,6 +183,9 @@ export function EpubWorkbenchView({
   const renditionRef = useRef<Rendition | undefined>(undefined);
   const bookRef = useRef<Book | undefined>(undefined);
   const saveTimerRef = useRef<number | undefined>(undefined);
+  const selectionRef = useRef<
+    WorkbenchSelectionSnapshot | undefined
+  >(undefined);
   const viewStateRef = useRef<EpubWorkbenchViewState>(
     payload?.viewState ?? cloneEpubViewState(DEFAULT_EPUB_VIEW_STATE),
   );
@@ -221,6 +200,7 @@ export function EpubWorkbenchView({
   });
   const [navigation, setNavigation] = useState<FlatNavItem[]>([]);
   const [progress, setProgress] = useState<number>();
+  const [readerRevision, setReaderRevision] = useState(0);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -270,6 +250,48 @@ export function EpubWorkbenchView({
     [persistViewState],
   );
 
+  const reload = useCallback(() => {
+    selectionRef.current = undefined;
+    onInteractionChange({ inputs: [] });
+    runtime.closeContextMenu();
+    setReaderRevision((current) => current + 1);
+  }, [onInteractionChange, runtime]);
+
+  const reveal = useCallback(async () => {
+    try {
+      await onReveal();
+    } catch (error) {
+      reportError(error, '无法在文件夹中显示 EPUB 文件。');
+    }
+  }, [onReveal, reportError]);
+
+  const copySelection = useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        reportError(error, '无法复制 EPUB 选中内容。');
+      }
+    },
+    [reportError],
+  );
+
+  const rendererActions = useMemo(
+    () =>
+      createEpubRendererActions({
+        ready: loadState.kind === 'ready',
+        hasSelection: () => selectionRef.current !== undefined,
+        onCopySelection: copySelection,
+        onReload: reload,
+        onReveal: reveal,
+      }),
+    [copySelection, loadState.kind, reload, reveal],
+  );
+  useWorkbenchContributions(
+    'builtin.epub.viewer',
+    rendererActions,
+  );
+
   useEffect(() => {
     const host = viewerHostRef.current;
     if (!payload || !host) {
@@ -280,6 +302,7 @@ export function EpubWorkbenchView({
     let disposed = false;
     let book: Book | undefined;
     let rendition: Rendition | undefined;
+    const contentCleanups: Array<() => void> = [];
     host.replaceChildren();
     setLoadState({ kind: 'loading' });
     setProgress(undefined);
@@ -371,7 +394,41 @@ export function EpubWorkbenchView({
             void onOpenExternal(externalUrl);
           }
         };
+        const contextMenuHandler = (event: MouseEvent) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const selection =
+            captureEpubSelectionSnapshot(contents);
+          const interaction =
+            interactionFromTextSelection(selection);
+          selectionRef.current = selection;
+          onInteractionChange(interaction);
+          runtime.openContextMenu(
+            bootstrap.sessionId,
+            resolveEpubContextMenuPosition(event, contents),
+            interaction,
+            { captureOutsidePointer: true },
+          );
+        };
         contents.document.addEventListener('click', clickHandler, true);
+        contents.document.addEventListener(
+          'contextmenu',
+          contextMenuHandler,
+          true,
+        );
+        contentCleanups.push(() => {
+          contents.document.removeEventListener(
+            'click',
+            clickHandler,
+            true,
+          );
+          contents.document.removeEventListener(
+            'contextmenu',
+            contextMenuHandler,
+            true,
+          );
+        });
       });
       rendition.on('relocated', (location: Location) => {
         if (disposed || !location?.start?.cfi) {
@@ -394,16 +451,13 @@ export function EpubWorkbenchView({
       rendition.on(
         'selected',
         (cfiRange: string, contents: Contents) => {
-          const anchor = createCfiSelectionAnchor(cfiRange, contents);
+          const selection = createEpubSelectionSnapshot(
+            cfiRange,
+            contents,
+          );
+          selectionRef.current = selection;
           onInteractionChange(
-            interactionFromTextSelection(
-              anchor
-                ? {
-                    text: anchor.quote.exact,
-                    target: createEpubCfiRangeTarget(anchor),
-                  }
-                : undefined,
-            ),
+            interactionFromTextSelection(selection),
           );
         },
       );
@@ -447,7 +501,11 @@ export function EpubWorkbenchView({
         saveTimerRef.current = undefined;
       }
       void persistViewState(viewStateRef.current);
+      selectionRef.current = undefined;
       onInteractionChange({ inputs: [] });
+      for (const cleanup of contentCleanups) {
+        cleanup();
+      }
       renditionRef.current = undefined;
       bookRef.current = undefined;
       book?.destroy();
@@ -458,6 +516,9 @@ export function EpubWorkbenchView({
     onInteractionChange,
     payload,
     persistViewState,
+    readerRevision,
+    runtime,
+    bootstrap.sessionId,
     updateViewState,
     viewState.flow,
   ]);
