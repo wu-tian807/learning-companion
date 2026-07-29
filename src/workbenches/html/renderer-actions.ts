@@ -1,8 +1,10 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action';
-import type { HtmlContextMenuEvent } from '../../shared/ipc';
+import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
 
 export interface HtmlRendererActionsOptions {
-  readonly getContext: () => HtmlContextMenuEvent | undefined;
+  readonly getContext: () =>
+    | CoreContextMenuFacilityEvent
+    | undefined;
   readonly onCopySelection: (text: string) => Promise<void> | void;
   readonly onOpenLink: (url: string) => Promise<void> | void;
   readonly onReload: () => void;

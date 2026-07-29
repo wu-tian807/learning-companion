@@ -166,7 +166,7 @@ function isTextSelectionFacilityOptions(
   );
 }
 
-function isTextSelectionFacilityEvent(
+export function isCoreTextSelectionFacilityEvent(
   value: JsonValue,
 ): value is JsonValue & CoreTextSelectionFacilityEvent {
   return (
@@ -182,7 +182,7 @@ function isTextSelectionFacilityEvent(
   );
 }
 
-function isContextMenuFacilityEvent(
+export function isCoreContextMenuFacilityEvent(
   value: JsonValue,
 ): value is JsonValue & CoreContextMenuFacilityEvent {
   if (
@@ -283,7 +283,7 @@ const contextMenuSurfaceDefinition = defineWorkbenchFacility({
   version: CORE_FACILITY_VERSION,
   role: 'surface',
   validateOptions: isCaptureFacilityOptions,
-  validateEvent: isContextMenuFacilityEvent,
+  validateEvent: isCoreContextMenuFacilityEvent,
   validateDependencies: capturesDeclaredTransport,
 });
 
@@ -299,7 +299,7 @@ const textSelectionInputDefinition = defineWorkbenchFacility({
   version: CORE_FACILITY_VERSION,
   role: 'input',
   validateOptions: isTextSelectionFacilityOptions,
-  validateEvent: isTextSelectionFacilityEvent,
+  validateEvent: isCoreTextSelectionFacilityEvent,
   validateInput: isTextSelectionInputPayload,
   inputCardinality: 'one',
   validateDependencies: capturesDeclaredTransport,

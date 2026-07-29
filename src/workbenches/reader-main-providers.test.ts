@@ -21,6 +21,11 @@ import {
   EPUB_WORKBENCH_ID,
 } from './epub/shared';
 import { HtmlWorkbenchProvider } from './html/main';
+import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+  CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+  CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
+} from '../shared/workbench/facilities/core-facilities';
 
 class MemoryStateRepository implements WorkbenchStateRepository {
   readonly records = new Map<string, WorkbenchStateRecord>();
@@ -124,6 +129,26 @@ describe('stream reader main providers', () => {
       payload: {
         contentUrl: `learning-content://resource/${context.sessionId}`,
       },
+      transportBindings: [
+        {
+          transportId:
+            CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+          transportVersion: 1,
+          facilities: [
+            {
+              id: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+              version: 1,
+            },
+            {
+              id: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
+              version: 1,
+            },
+          ],
+          payload: {
+            rootUrl: `learning-content://resource/${context.sessionId}`,
+          },
+        },
+      ],
     });
     expect(resources.register).toHaveBeenCalledWith(
       context.sessionId,

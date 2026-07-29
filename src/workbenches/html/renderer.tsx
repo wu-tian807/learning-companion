@@ -12,13 +12,11 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
-import type { HtmlContextMenuEvent } from '../../shared/ipc';
 import { userMessageFromError } from '../../shared/ipc-error';
-import { interactionFromTextSelection } from '../../shared/workbench/selection';
+import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
+import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
-  createHtmlLinkTarget,
-  createHtmlQuoteTarget,
   htmlWorkbenchManifest,
   isHtmlWorkbenchPayload,
 } from './shared';
@@ -76,7 +74,9 @@ export function HtmlWorkbenchView({
   const payload = isHtmlWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
-  const contextRef = useRef<HtmlContextMenuEvent | undefined>(
+  const contextRef = useRef<
+    CoreContextMenuFacilityEvent | undefined
+  >(
     undefined,
   );
   const [frameRevision, setFrameRevision] = useState(0);
@@ -138,37 +138,32 @@ export function HtmlWorkbenchView({
       return;
     }
 
-    return window.learningCompanion.onHtmlContextMenu((context) => {
-      contextRef.current = context;
+    return window.learningCompanion.onWorkbenchFacilityEvent(
+      (event) => {
+        const mapped = mapHtmlWorkbenchFacilityEvent(
+          event,
+          bootstrap.sessionId,
+        );
 
-      const selection = context.selectionText
-        ? {
-            text: context.selectionText,
-            target: createHtmlQuoteTarget(
-              context.selectionText,
-              context.frameUrl,
-            ),
-          }
-        : undefined;
-      const target =
-        selection?.target ??
-        (context.linkUrl
-          ? createHtmlLinkTarget(context.linkUrl)
-          : undefined);
+        if (!mapped) {
+          return;
+        }
 
-      const interaction = interactionFromTextSelection(
-        selection,
-        target,
-      );
+        if (mapped.kind === 'selection') {
+          onInteractionChange(mapped.interaction);
+          return;
+        }
 
-      onInteractionChange(interaction);
-      runtime.openContextMenu(
-        bootstrap.sessionId,
-        { x: context.x, y: context.y },
-        interaction,
-        { captureOutsidePointer: true },
-      );
-    });
+        contextRef.current = mapped.context;
+        onInteractionChange(mapped.interaction);
+        runtime.openContextMenu(
+          bootstrap.sessionId,
+          mapped.position,
+          mapped.interaction,
+          { captureOutsidePointer: true },
+        );
+      },
+    );
   }, [
     bootstrap.sessionId,
     onInteractionChange,

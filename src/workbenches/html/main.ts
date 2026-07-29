@@ -2,6 +2,12 @@ import type { ContentResourceServiceApi } from '../../main/content/content-resou
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
+import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+  CORE_FACILITY_VERSION,
+  CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+  CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
+} from '../../shared/workbench/facilities/core-facilities';
 import { htmlWorkbenchManifest } from './shared';
 
 export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
@@ -36,6 +42,24 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
 
     return {
       payload: { contentUrl },
+      transportBindings: [
+        {
+          transportId:
+            CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+          transportVersion: CORE_FACILITY_VERSION,
+          facilities: [
+            {
+              id: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+              version: CORE_FACILITY_VERSION,
+            },
+            {
+              id: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
+              version: CORE_FACILITY_VERSION,
+            },
+          ],
+          payload: { rootUrl: contentUrl },
+        },
+      ],
     };
   }
 

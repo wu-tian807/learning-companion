@@ -1,8 +1,6 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 
-import { IPC_CHANNELS } from '../shared/ipc';
-import { createHtmlContextMenuEvent } from './html-context-menu';
 import { isAllowedMainWindowNavigation } from './navigation-policy';
 import type { SandboxFrameInteractionBridge } from './workbench/interaction/sandbox-frame-interaction-bridge';
 
@@ -48,16 +46,6 @@ export function createMainWindow(
 
   mainWindow.webContents.on('will-navigate', guardNavigation);
   mainWindow.webContents.on('will-redirect', guardNavigation);
-  mainWindow.webContents.on('context-menu', (_event, params) => {
-    const context = createHtmlContextMenuEvent(params);
-
-    if (context) {
-      mainWindow.webContents.send(
-        IPC_CHANNELS.htmlContextMenu,
-        context,
-      );
-    }
-  });
   const detachInteractionBridge = interactionBridge?.attach(
     mainWindow.webContents,
   );

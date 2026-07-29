@@ -42,32 +42,9 @@ export const IPC_CHANNELS = {
   commandWorkbench: 'workbench:command',
   closeWorkbench: 'workbench:close',
   workbenchFacilityEvent: 'workbench:facility-event',
-  htmlContextMenu: 'workbench:html-context-menu',
 } as const;
 
 export const ASSET_BATCH_MAX_SIZE = 512;
-export const HTML_CONTEXT_SELECTION_MAX_LENGTH = 16_384;
-
-export const htmlContextMediaTypes = [
-  'none',
-  'image',
-  'audio',
-  'video',
-  'canvas',
-] as const;
-
-export type HtmlContextMediaType =
-  (typeof htmlContextMediaTypes)[number];
-
-export interface HtmlContextMenuEvent {
-  readonly x: number;
-  readonly y: number;
-  readonly frameUrl: string;
-  readonly selectionText?: string;
-  readonly linkUrl?: string;
-  readonly mediaType: HtmlContextMediaType;
-  readonly sourceUrl?: string;
-}
 
 export interface HealthCheckResponse {
   status: 'ok';
@@ -111,9 +88,6 @@ export interface LearningCompanionApi {
   closeWorkbench: (request: WorkbenchCloseRequest) => Promise<void>;
   onWorkbenchFacilityEvent: (
     listener: (event: WorkbenchFacilityEvent) => void,
-  ) => () => void;
-  onHtmlContextMenu: (
-    listener: (event: HtmlContextMenuEvent) => void,
   ) => () => void;
   getPathForFile: (file: File) => string;
 }
@@ -229,36 +203,6 @@ export function isOpenExternalRequest(
   } catch {
     return false;
   }
-}
-
-export function isHtmlContextMenuEvent(
-  value: unknown,
-): value is HtmlContextMenuEvent {
-  return (
-    isRecord(value) &&
-    Number.isSafeInteger(value.x) &&
-    Number(value.x) >= 0 &&
-    Number(value.x) <= 1_000_000 &&
-    Number.isSafeInteger(value.y) &&
-    Number(value.y) >= 0 &&
-    Number(value.y) <= 1_000_000 &&
-    isRequiredText(value.frameUrl, 8_192) &&
-    (value.selectionText === undefined ||
-      (isRequiredText(
-        value.selectionText,
-        HTML_CONTEXT_SELECTION_MAX_LENGTH,
-      ) &&
-        value.selectionText.length <=
-          HTML_CONTEXT_SELECTION_MAX_LENGTH)) &&
-    (value.linkUrl === undefined ||
-      isOpenExternalRequest({ url: value.linkUrl })) &&
-    typeof value.mediaType === 'string' &&
-    htmlContextMediaTypes.includes(
-      value.mediaType as HtmlContextMediaType,
-    ) &&
-    (value.sourceUrl === undefined ||
-      isOpenExternalRequest({ url: value.sourceUrl }))
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

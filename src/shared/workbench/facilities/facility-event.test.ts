@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
   CORE_FACILITY_VERSION,
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
   createCoreWorkbenchFacilityDefinitionRegistry,
@@ -47,6 +48,40 @@ describe('Workbench Facility Event', () => {
           facilityId: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
           facilityVersion: CORE_FACILITY_VERSION,
           payload: { text: 42 },
+        },
+        registry,
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects unsafe context menu URLs and coordinates', () => {
+    const registry =
+      createCoreWorkbenchFacilityDefinitionRegistry();
+    const validEvent = {
+      sessionId: 'session-1',
+      facilityId: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+      facilityVersion: CORE_FACILITY_VERSION,
+      payload: {
+        x: 20,
+        y: 30,
+        frameUrl: 'learning-content://resource/token',
+        linkUrl: 'https://example.com/chapter',
+        mediaType: 'none',
+      },
+    };
+
+    expect(
+      isKnownWorkbenchFacilityEvent(validEvent, registry),
+    ).toBe(true);
+    expect(
+      isKnownWorkbenchFacilityEvent(
+        {
+          ...validEvent,
+          payload: {
+            ...validEvent.payload,
+            x: -1,
+            linkUrl: 'javascript:alert(1)',
+          },
         },
         registry,
       ),
