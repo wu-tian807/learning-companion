@@ -152,6 +152,10 @@ startExternalLibraryInstallation(
 platform/architecture 的 Package 时返回该状态，而不是让整个列表请求失败；
 该状态不能开始安装，也不被当作安装失败通知。
 
+`ExternalLibrarySnapshot.expectedSize` 相应改为可选，但只有 `unsupported`
+允许缺省；其余状态仍必须携带当前平台 Package 的正整数体积。UI 在 unsupported
+状态显示“当前平台无可下载包”，不能借用其他平台的体积误导用户。
+
 ## 6. Renderer 外部运行时状态
 
 新增：
