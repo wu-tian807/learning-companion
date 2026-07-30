@@ -11,9 +11,11 @@ import {
 import {
   createAppSetupSnapshot,
   CURRENT_ONBOARDING_VERSION,
+  EXTERNAL_LIBRARY_ONBOARDING_VERSION,
   isCompletedOnboardingVersion,
   type AppSetupSnapshot,
 } from '../../shared/app-setup';
+import { isAgentProviderId } from '../../shared/agent-providers';
 import type { SettingsRepository } from './settings-repository';
 
 export interface SettingsLogger {
@@ -31,6 +33,7 @@ interface StoredSettingsState {
   readonly defaultProjectWorkspace: string;
   readonly externalLibrariesPath: string;
   readonly completedOnboardingVersion: number;
+  readonly selectedAgentProviderId: string | null;
 }
 
 interface DeserializedSettings {
@@ -53,9 +56,17 @@ function createStoredSettingsState(
   defaultProjectWorkspace: string,
   externalLibrariesPath: string,
   completedOnboardingVersion: number,
+  selectedAgentProviderId: string | null,
 ): StoredSettingsState {
   if (!isCompletedOnboardingVersion(completedOnboardingVersion)) {
     throw new Error('Settings 首次运行引导版本无效');
+  }
+
+  if (
+    selectedAgentProviderId !== null &&
+    !isAgentProviderId(selectedAgentProviderId)
+  ) {
+    throw new Error('Settings Agent Provider 无效');
   }
 
   return Object.freeze({
@@ -63,6 +74,7 @@ function createStoredSettingsState(
     defaultProjectWorkspace,
     externalLibrariesPath,
     completedOnboardingVersion,
+    selectedAgentProviderId,
   });
 }
 
@@ -107,6 +119,7 @@ export class JsonSettingsRepository implements SettingsRepository {
       this.fallbackProjectWorkspace,
       this.fallbackExternalLibrariesPath,
       0,
+      null,
     );
   }
 
@@ -125,7 +138,7 @@ export class JsonSettingsRepository implements SettingsRepository {
           await this.persist(this.state);
         } catch (error) {
           this.logger.warn(
-            'Settings 路径默认值迁移保存失败，将继续使用内存默认值。',
+            'Settings 默认字段迁移保存失败，将继续使用内存默认值。',
             error,
           );
         }
@@ -136,6 +149,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         this.fallbackProjectWorkspace,
         this.fallbackExternalLibrariesPath,
         0,
+        null,
       );
 
       if (!isFileNotFoundError(error)) {
@@ -164,6 +178,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         this.state.defaultProjectWorkspace,
         this.state.externalLibrariesPath,
         this.state.completedOnboardingVersion,
+        this.state.selectedAgentProviderId,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -177,12 +192,37 @@ export class JsonSettingsRepository implements SettingsRepository {
 
   getAppSetup(): AppSetupSnapshot {
     this.requireInitialized();
-    return createAppSetupSnapshot(
-      this.state.completedOnboardingVersion,
-    );
+    return createAppSetupSnapshot(this.state.completedOnboardingVersion);
   }
 
-  async completeCurrentOnboarding(): Promise<AppSetupSnapshot> {
+  async completeExternalLibraryOnboarding(): Promise<AppSetupSnapshot> {
+    this.requireInitialized();
+    const writeTask = this.writeQueue.then(async () => {
+      if (
+        this.state.completedOnboardingVersion >=
+        EXTERNAL_LIBRARY_ONBOARDING_VERSION
+      ) {
+        return;
+      }
+
+      const nextState = createStoredSettingsState(
+        this.state.preferences,
+        this.state.defaultProjectWorkspace,
+        this.state.externalLibrariesPath,
+        EXTERNAL_LIBRARY_ONBOARDING_VERSION,
+        this.state.selectedAgentProviderId,
+      );
+      await this.persist(nextState);
+      this.state = nextState;
+    });
+
+    this.writeQueue = writeTask.catch(() => undefined);
+    await writeTask;
+
+    return this.getAppSetup();
+  }
+
+  async completeAgentProviderOnboarding(): Promise<AppSetupSnapshot> {
     this.requireInitialized();
     const writeTask = this.writeQueue.then(async () => {
       if (
@@ -197,6 +237,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         this.state.defaultProjectWorkspace,
         this.state.externalLibrariesPath,
         CURRENT_ONBOARDING_VERSION,
+        this.state.selectedAgentProviderId,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -226,6 +267,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         normalizedDirectory,
         this.state.externalLibrariesPath,
         this.state.completedOnboardingVersion,
+        this.state.selectedAgentProviderId,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -253,6 +295,41 @@ export class JsonSettingsRepository implements SettingsRepository {
         this.state.defaultProjectWorkspace,
         normalizedDirectory,
         this.state.completedOnboardingVersion,
+        this.state.selectedAgentProviderId,
+      );
+      await this.persist(nextState);
+      this.state = nextState;
+    });
+
+    this.writeQueue = writeTask.catch(() => undefined);
+    await writeTask;
+  }
+
+  getSelectedAgentProviderId(): string | null {
+    this.requireInitialized();
+    return this.state.selectedAgentProviderId;
+  }
+
+  async updateSelectedAgentProviderId(
+    providerId: string,
+  ): Promise<void> {
+    this.requireInitialized();
+
+    if (!isAgentProviderId(providerId)) {
+      throw new Error('Settings Agent Provider 无效');
+    }
+
+    const writeTask = this.writeQueue.then(async () => {
+      if (this.state.selectedAgentProviderId === providerId) {
+        return;
+      }
+
+      const nextState = createStoredSettingsState(
+        this.state.preferences,
+        this.state.defaultProjectWorkspace,
+        this.state.externalLibrariesPath,
+        this.state.completedOnboardingVersion,
+        providerId,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -267,11 +344,13 @@ export class JsonSettingsRepository implements SettingsRepository {
       readonly defaultProjectWorkspace: string;
       readonly externalLibrariesPath: string;
       readonly completedOnboardingVersion: number;
+      readonly selectedAgentProviderId: string | null;
     } = {
       ...state.preferences,
       defaultProjectWorkspace: state.defaultProjectWorkspace,
       externalLibrariesPath: state.externalLibrariesPath,
       completedOnboardingVersion: state.completedOnboardingVersion,
+      selectedAgentProviderId: state.selectedAgentProviderId,
     };
 
     return `${JSON.stringify(stored, null, 2)}\n`;
@@ -287,6 +366,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     let defaultProjectWorkspace = this.fallbackProjectWorkspace;
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
     let completedOnboardingVersion = 0;
+    let selectedAgentProviderId: string | null = null;
 
     if ('defaultProjectWorkspace' in value) {
       if (typeof value.defaultProjectWorkspace !== 'string') {
@@ -320,17 +400,48 @@ export class JsonSettingsRepository implements SettingsRepository {
       completedOnboardingVersion = value.completedOnboardingVersion;
     }
 
+    if ('completedAgentProviderOnboardingVersion' in value) {
+      if (
+        !isCompletedOnboardingVersion(
+          value.completedAgentProviderOnboardingVersion,
+        )
+      ) {
+        throw new Error('Settings AI Provider 首次引导版本无效');
+      }
+
+      if (value.completedAgentProviderOnboardingVersion > 0) {
+        completedOnboardingVersion = Math.max(
+          completedOnboardingVersion,
+          CURRENT_ONBOARDING_VERSION,
+        );
+      }
+    }
+
+    if ('selectedAgentProviderId' in value) {
+      if (
+        value.selectedAgentProviderId !== null &&
+        !isAgentProviderId(value.selectedAgentProviderId)
+      ) {
+        throw new Error('Settings Agent Provider 无效');
+      }
+
+      selectedAgentProviderId = value.selectedAgentProviderId;
+    }
+
     return {
       state: createStoredSettingsState(
         value,
         defaultProjectWorkspace,
         externalLibrariesPath,
         completedOnboardingVersion,
+        selectedAgentProviderId,
       ),
       needsMigration:
         !('defaultProjectWorkspace' in value) ||
         !('externalLibrariesPath' in value) ||
-        !('completedOnboardingVersion' in value),
+        !('completedOnboardingVersion' in value) ||
+        'completedAgentProviderOnboardingVersion' in value ||
+        !('selectedAgentProviderId' in value),
     };
   }
 

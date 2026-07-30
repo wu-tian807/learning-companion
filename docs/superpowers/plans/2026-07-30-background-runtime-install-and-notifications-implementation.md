@@ -133,19 +133,22 @@ pnpm typecheck
 
 步骤：
 
-1. 定义 `CURRENT_ONBOARDING_VERSION = 1` 和不可变 `AppSetupSnapshot`。
-2. Snapshot 同时返回 current、completed 和派生的 `requiresOnboarding`。
+1. 首版定义 External Library 引导版本 `1`；Provider 接入后统一当前版本提升为
+   `2`，继续使用不可变 `AppSetupSnapshot`。
+2. Snapshot 同时返回 current、completed、派生的 `pendingOnboardingStep` 和
+   `requiresOnboarding`。
 3. `settings.json` 顶层增加 `completedOnboardingVersion`：
    - 缺失时按 0 读取；
    - 已存在旧设置时自动补写；
    - 非负安全整数有效；
    - 高于当前版本时不降级；
    - 新文件仍保持按需创建。
-4. SettingsRepository 增加 `getAppSetup()` 和
-   `completeCurrentOnboarding()`；Renderer 不传任意版本号。
-5. 增加 `settings:get-app-setup` 与
-   `settings:complete-current-onboarding` IPC。
-6. Preload 只暴露读取和完成当前版本两个白名单方法。
+4. SettingsRepository 增加 `getAppSetup()`、
+   `completeExternalLibraryOnboarding()` 和
+   `completeAgentProviderOnboarding()`；Renderer 不传任意版本号。
+5. 增加 `settings:get-app-setup`、External Library 与 Agent Provider 两个固定
+   完成步骤的 IPC。
+6. Preload 只暴露读取和完成固定步骤的白名单方法。
 7. 验证写入队列仍串行，Home、Workspace 和 External Library Path 字段不丢失。
 
 测试：

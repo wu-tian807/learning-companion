@@ -31,6 +31,8 @@ export type AppErrorCode =
   | 'CODEX_PROTOCOL_ERROR'
   | 'CODEX_REQUEST_FAILED'
   | 'CODEX_TURN_ACTIVE'
+  | 'AGENT_PROVIDER_NOT_FOUND'
+  | 'AGENT_PROVIDER_AUTH_REQUIRED'
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
@@ -226,6 +228,18 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   CODEX_TURN_ACTIVE: {
     kind: 'user',
     userMessage: '当前对话仍在处理中，请等待完成或先停止。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  AGENT_PROVIDER_NOT_FOUND: {
+    kind: 'internal',
+    userMessage: '所选 AI Provider 不可用，请刷新后重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  AGENT_PROVIDER_AUTH_REQUIRED: {
+    kind: 'user',
+    userMessage: '请先完成该 AI Provider 的登录验证。',
     retryable: true,
     logLevel: 'silent',
   },

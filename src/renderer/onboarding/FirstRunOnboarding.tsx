@@ -32,12 +32,12 @@ import {
 const RECOMMENDED_LIBRARY_ID = 'libreoffice';
 
 export interface FirstRunOnboardingApi {
-  completeCurrentOnboarding(): Promise<AppSetupSnapshot>;
+  completeExternalLibraryOnboarding(): Promise<AppSetupSnapshot>;
 }
 
 const defaultApi: FirstRunOnboardingApi = {
-  completeCurrentOnboarding: () =>
-    window.learningCompanion.completeCurrentOnboarding(),
+  completeExternalLibraryOnboarding: () =>
+    window.learningCompanion.completeExternalLibraryOnboarding(),
 };
 
 interface FirstRunOnboardingProps {
@@ -148,7 +148,8 @@ export function FirstRunOnboarding({
             .startInstallation(RECOMMENDED_LIBRARY_ID);
         },
         completeOnboarding: async () => {
-          const setup = await api.completeCurrentOnboarding();
+          const setup =
+            await api.completeExternalLibraryOnboarding();
 
           if (!isAppSetupSnapshot(setup)) {
             throw new Error('首次运行引导状态响应无效');

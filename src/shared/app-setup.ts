@@ -1,8 +1,14 @@
-export const CURRENT_ONBOARDING_VERSION = 1 as const;
+export const EXTERNAL_LIBRARY_ONBOARDING_VERSION = 1 as const;
+export const CURRENT_ONBOARDING_VERSION = 2 as const;
+
+export type AppOnboardingStep =
+  | 'external-library'
+  | 'agent-provider';
 
 export interface AppSetupSnapshot {
   readonly currentOnboardingVersion: typeof CURRENT_ONBOARDING_VERSION;
   readonly completedOnboardingVersion: number;
+  readonly pendingOnboardingStep: AppOnboardingStep | null;
   readonly requiresOnboarding: boolean;
 }
 
@@ -23,11 +29,19 @@ export function createAppSetupSnapshot(
     throw new Error('首次运行引导版本无效');
   }
 
+  const pendingOnboardingStep =
+    completedOnboardingVersion <
+    EXTERNAL_LIBRARY_ONBOARDING_VERSION
+      ? 'external-library'
+      : completedOnboardingVersion < CURRENT_ONBOARDING_VERSION
+        ? 'agent-provider'
+        : null;
+
   return Object.freeze({
     currentOnboardingVersion: CURRENT_ONBOARDING_VERSION,
     completedOnboardingVersion,
-    requiresOnboarding:
-      completedOnboardingVersion < CURRENT_ONBOARDING_VERSION,
+    pendingOnboardingStep,
+    requiresOnboarding: pendingOnboardingStep !== null,
   });
 }
 
@@ -40,11 +54,23 @@ export function isAppSetupSnapshot(
 
   const candidate = value as Partial<AppSetupSnapshot>;
 
+  if (
+    candidate.currentOnboardingVersion !==
+      CURRENT_ONBOARDING_VERSION ||
+    !isCompletedOnboardingVersion(
+      candidate.completedOnboardingVersion,
+    )
+  ) {
+    return false;
+  }
+
+  const expected = createAppSetupSnapshot(
+    candidate.completedOnboardingVersion,
+  );
+
   return (
-    candidate.currentOnboardingVersion === CURRENT_ONBOARDING_VERSION &&
-    isCompletedOnboardingVersion(candidate.completedOnboardingVersion) &&
-    candidate.requiresOnboarding ===
-      (candidate.completedOnboardingVersion <
-        CURRENT_ONBOARDING_VERSION)
+    candidate.pendingOnboardingStep ===
+      expected.pendingOnboardingStep &&
+    candidate.requiresOnboarding === expected.requiresOnboarding
   );
 }

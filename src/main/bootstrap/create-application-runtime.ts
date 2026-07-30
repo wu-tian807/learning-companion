@@ -1,3 +1,6 @@
+import { homedir } from 'node:os';
+
+import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
 import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
 import { AssetArtifactRegistry } from '../artifacts/asset-artifact-registry';
@@ -41,6 +44,7 @@ import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main
 import {
   ApplicationRuntime,
 } from './application-runtime';
+import { createAgentProviderService } from './create-agent-provider-service';
 import { createCodexRuntime } from './create-codex-runtime';
 import { createExternalLibraryRuntime } from './create-external-library-runtime';
 import { registerApplicationIpc } from './register-application-ipc';
@@ -70,8 +74,12 @@ export async function createApplicationRuntime({
 
   try {
     const appPaths = createAppPaths(userDataPath);
+    const codexHomePath = await resolveCodexHomePath({
+      managedCodexHomePath: appPaths.codexHomeDirectory,
+      userHomePath: homedir(),
+    });
     const codexRuntimeService = createCodexRuntime({
-      codexHomePath: appPaths.codexHomeDirectory,
+      codexHomePath,
       isPackaged,
       resourcesPath,
     });
@@ -85,6 +93,10 @@ export async function createApplicationRuntime({
       },
     );
     await settingsRepository.initialize();
+    const agentProviderService = createAgentProviderService(
+      settingsRepository,
+      codexRuntimeService,
+    );
     externalLibraryService = await createExternalLibraryRuntime(
       settingsRepository,
     );
@@ -172,6 +184,7 @@ export async function createApplicationRuntime({
       settingsRepository,
     );
     disposeIpc = registerApplicationIpc({
+      agentProviderService,
       assetService,
       externalLibraryService,
       projectService,
@@ -180,6 +193,7 @@ export async function createApplicationRuntime({
     });
 
     return new ApplicationRuntime({
+      agentProviderService,
       databaseContext,
       codexRuntimeService,
       contentResourceService,

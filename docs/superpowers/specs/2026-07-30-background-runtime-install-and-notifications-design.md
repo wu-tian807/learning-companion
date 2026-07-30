@@ -335,14 +335,20 @@ SettingsRepository 增加专用方法，Renderer 不能提交任意版本号：
 interface AppSetupSnapshot {
   readonly currentOnboardingVersion: number;
   readonly completedOnboardingVersion: number;
+  readonly pendingOnboardingStep:
+    | 'external-library'
+    | 'agent-provider'
+    | null;
   readonly requiresOnboarding: boolean;
 }
 
 getAppSetup(): AppSetupSnapshot;
-completeCurrentOnboarding(): Promise<AppSetupSnapshot>;
+completeExternalLibraryOnboarding(): Promise<AppSetupSnapshot>;
+completeAgentProviderOnboarding(): Promise<AppSetupSnapshot>;
 ```
 
-对应 IPC 只允许读取状态和完成当前版本。
+对应 IPC 只允许读取状态和完成固定步骤。Provider 接入后，两步共享同一个递增的
+`completedOnboardingVersion`，Renderer 仍不能提交任意版本号。
 
 ### 8.3 引导流程
 

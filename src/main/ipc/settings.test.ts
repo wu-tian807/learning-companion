@@ -55,23 +55,30 @@ function createRepository() {
     },
   }));
   const getAppSetup = vi.fn(() => createAppSetupSnapshot(0));
-  const completeCurrentOnboarding = vi.fn(async () =>
+  const completeExternalLibraryOnboarding = vi.fn(async () =>
     createAppSetupSnapshot(1),
+  );
+  const completeAgentProviderOnboarding = vi.fn(async () =>
+    createAppSetupSnapshot(2),
   );
   const repository: SettingsRepository = {
     initialize: vi.fn(async () => undefined),
     get,
     updateHomePreferences,
     getAppSetup,
-    completeCurrentOnboarding,
+    completeExternalLibraryOnboarding,
+    completeAgentProviderOnboarding,
     getDefaultProjectWorkspace: vi.fn(() => '/tmp/projects'),
     updateDefaultProjectWorkspace: vi.fn(async () => undefined),
     getExternalLibrariesPath: vi.fn(() => '/tmp/external-libraries'),
     updateExternalLibrariesPath: vi.fn(async () => undefined),
+    getSelectedAgentProviderId: vi.fn(() => null),
+    updateSelectedAgentProviderId: vi.fn(async () => undefined),
   };
 
   return {
-    completeCurrentOnboarding,
+    completeExternalLibraryOnboarding,
+    completeAgentProviderOnboarding,
     get,
     getAppSetup,
     repository,
@@ -116,9 +123,10 @@ describe('settings IPC handlers', () => {
     });
   });
 
-  it('reads and completes only the current onboarding version', async () => {
+  it('reads and advances the unified onboarding steps', async () => {
     const {
-      completeCurrentOnboarding,
+      completeExternalLibraryOnboarding,
+      completeAgentProviderOnboarding,
       getAppSetup,
       repository,
     } = createRepository();
@@ -128,16 +136,34 @@ describe('settings IPC handlers', () => {
       findHandler(IPC_CHANNELS.getAppSetup)({}),
     ).resolves.toMatchObject({
       completedOnboardingVersion: 0,
+      pendingOnboardingStep: 'external-library',
       requiresOnboarding: true,
     });
     await expect(
-      findHandler(IPC_CHANNELS.completeCurrentOnboarding)({}),
+      findHandler(
+        IPC_CHANNELS.completeExternalLibraryOnboarding,
+      )({}),
     ).resolves.toMatchObject({
       completedOnboardingVersion: 1,
-      requiresOnboarding: false,
+      pendingOnboardingStep: 'agent-provider',
+      requiresOnboarding: true,
     });
     expect(getAppSetup).toHaveBeenCalledOnce();
-    expect(completeCurrentOnboarding).toHaveBeenCalledOnce();
+    expect(
+      completeExternalLibraryOnboarding,
+    ).toHaveBeenCalledOnce();
+    await expect(
+      findHandler(
+        IPC_CHANNELS.completeAgentProviderOnboarding,
+      )({}),
+    ).resolves.toMatchObject({
+      completedOnboardingVersion: 2,
+      pendingOnboardingStep: null,
+      requiresOnboarding: false,
+    });
+    expect(
+      completeAgentProviderOnboarding,
+    ).toHaveBeenCalledOnce();
   });
 
   it('rejects malformed updates before reaching the repository', async () => {
@@ -166,7 +192,10 @@ describe('settings IPC handlers', () => {
       IPC_CHANNELS.getAppSetup,
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
-      IPC_CHANNELS.completeCurrentOnboarding,
+      IPC_CHANNELS.completeExternalLibraryOnboarding,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.completeAgentProviderOnboarding,
     );
   });
 });

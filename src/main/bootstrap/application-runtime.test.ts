@@ -9,6 +9,7 @@ function createResources(
   closeActive: () => Promise<void> = async () => undefined,
 ) {
   return {
+    agentProviderService: {},
     databaseContext: { close: vi.fn() },
     codexRuntimeService: {
       shutdown: vi.fn(async () => undefined),
@@ -83,6 +84,9 @@ describe('ApplicationRuntime', () => {
     );
     expect(runtime.codexRuntime).toBe(
       resources.codexRuntimeService,
+    );
+    expect(runtime.agentProviders).toBe(
+      resources.agentProviderService,
     );
     runtime.dispose();
     runtime.dispose();

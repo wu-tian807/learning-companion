@@ -4,15 +4,19 @@ import {
   isAppSetupSnapshot,
   type AppSetupSnapshot,
 } from '../shared/app-setup';
-import { userMessageFromError } from '../shared/ipc-error';
+import {
+  isAgentProviderSetupSnapshot,
+  type AgentProviderSetupSnapshot,
+} from '../shared/agent-providers';
 import type { ProjectSnapshot } from '../shared/projects';
 import { Home } from './Home';
 import { ProjectPage } from './ProjectPage';
+import { AgentProviderSetupDialog } from './agents/AgentProviderSetupDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { ExternalLibraryRuntimeController } from './external-libraries/ExternalLibraryRuntimeController';
 import { NotificationHost } from './notifications/NotificationHost';
-import { AppSetupGate } from './onboarding/AppSetupGate';
 import { FirstRunOnboarding } from './onboarding/FirstRunOnboarding';
+import { notifySetupReadFailure } from './onboarding/setup-read-failure-notification';
 import type { SettingsTarget } from './settings/settings-target';
 
 type AppPage =
@@ -29,33 +33,29 @@ async function readAppSetup(): Promise<AppSetupSnapshot> {
   return setup;
 }
 
+async function readAgentProviderSetup(): Promise<AgentProviderSetupSnapshot> {
+  const setup = await window.learningCompanion.getAgentProviderSetup({
+    refreshCredentials: true,
+  });
+
+  if (!isAgentProviderSetupSnapshot(setup)) {
+    throw new Error('Agent Provider 设置状态响应无效');
+  }
+
+  return setup;
+}
+
 export function App() {
   const [page, setPage] = useState<AppPage>({ kind: 'home' });
   const [settingsTarget, setSettingsTarget] =
     useState<SettingsTarget | null>(null);
   const [appSetup, setAppSetup] =
     useState<AppSetupSnapshot | null>(null);
-  const [setupLoading, setSetupLoading] = useState(true);
-  const [setupLoadError, setSetupLoadError] =
-    useState<string | null>(null);
+  const [agentProviderSetup, setAgentProviderSetup] =
+    useState<AgentProviderSetupSnapshot | null>(null);
   const openSettings = useCallback((target: SettingsTarget) => {
     setSettingsTarget(target);
   }, []);
-  const loadAppSetup = useCallback(async () => {
-    try {
-      setAppSetup(await readAppSetup());
-    } catch (error) {
-      setSetupLoadError(
-        userMessageFromError(
-          error,
-          '无法读取首次运行设置，请重试。',
-        ) ?? '无法读取首次运行设置，请重试。',
-      );
-    } finally {
-      setSetupLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     let active = true;
 
@@ -67,17 +67,7 @@ export function App() {
       })
       .catch((error: unknown) => {
         if (active) {
-          setSetupLoadError(
-            userMessageFromError(
-              error,
-              '无法读取首次运行设置，请重试。',
-            ) ?? '无法读取首次运行设置，请重试。',
-          );
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setSetupLoading(false);
+          notifySetupReadFailure('app-onboarding', error);
         }
       });
 
@@ -85,6 +75,33 @@ export function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !appSetup ||
+      appSetup.pendingOnboardingStep !== 'agent-provider'
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    void readAgentProviderSetup()
+      .then((setup) => {
+        if (active) {
+          setAgentProviderSetup(setup);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          notifySetupReadFailure('agent-provider', error);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [appSetup]);
 
   return (
     <>
@@ -111,23 +128,25 @@ export function App() {
       )}
       {settingsTarget && (
         <SettingsDialog
+          key={
+            settingsTarget.section === 'external-libraries'
+              ? `${settingsTarget.section}:${settingsTarget.libraryId ?? ''}`
+              : settingsTarget.section
+          }
           target={settingsTarget}
           onClose={() => setSettingsTarget(null)}
         />
       )}
-      <AppSetupGate
-        loading={setupLoading}
-        error={setupLoadError}
-        onRetry={() => {
-          setSetupLoading(true);
-          setSetupLoadError(null);
-          void loadAppSetup();
-        }}
-      />
-      {!setupLoading &&
-        !setupLoadError &&
-        appSetup?.requiresOnboarding && (
-          <FirstRunOnboarding onCompleted={setAppSetup} />
+      {appSetup?.pendingOnboardingStep === 'external-library' && (
+        <FirstRunOnboarding onCompleted={setAppSetup} />
+      )}
+      {appSetup?.pendingOnboardingStep === 'agent-provider' &&
+        agentProviderSetup && (
+          <AgentProviderSetupDialog
+            setup={agentProviderSetup}
+            onSetupChange={setAgentProviderSetup}
+            onCompleted={setAppSetup}
+          />
         )}
       <NotificationHost />
     </>

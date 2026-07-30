@@ -677,10 +677,20 @@ NotificationStore / NotificationHost
 安装成功默认显示 5 秒通知；安装失败显示持久通知，并可定位到对应的 Settings
 组件卡片。通知只存在 Renderer 内存，不写入 settings 或 SQLite。
 
-`settings.json` 使用 `completedOnboardingVersion` 记录首次设置版本。首次运行会
-介绍推荐的文档处理组件、预计体积和安装位置，用户可以开始后台安装、更改位置或
-暂不安装。完成选择后不再重复阻塞启动；未来引导结构变化时通过提升当前版本重新
-触发，而不是增加多个布尔字段。
+`settings.json` 只使用 `completedOnboardingVersion` 记录统一首次设置流程。
+版本 `0` 先介绍推荐的文档处理组件、预计体积和安装位置，用户可以开始后台安装、
+更改位置或暂不安装；完成后进入版本 `1` 的 AI Provider 登录与选择步骤；选择或
+跳过后写入版本 `2`，整套引导不再重复阻塞启动。未来引导结构变化时继续提升统一
+版本，而不是为每个步骤增加独立布尔或版本字段。
+
+首次引导状态只是展示决策，不是打开 Project 的安全前置条件。Renderer 无法读取
+该状态时采用 fail-open：继续进入应用、显示非阻塞通知，并在下次启动重新检查；
+不提供无法修复 Main/Preload 失配的全屏“无限重试”页面。
+
+Provider 选择仍独立保存在 `selectedAgentProviderId`，登录凭证不进入 settings
+或 SQLite。AI Provider 步骤完成后，不会因 Provider 未选择或凭证失效重复弹出；
+重新登录和切换由设置中心的 `AI Provider` 页签承担。旧版
+`completedAgentProviderOnboardingVersion` 只在读取时用于迁移，随后从文件移除。
 
 设置项 `externalLibrariesPath` 默认位于：
 
@@ -989,7 +999,9 @@ Electron Main
 ```
 
 用户不需要预装 Codex Desktop 或 CLI。默认登录方式是 ChatGPT OAuth，不要求
-OpenAI API Key。实际模型和额度通过 App Server 动态读取，不在客户端硬编码。
+OpenAI API Key。若本机已有有效的显式 `CODEX_HOME` 或 `~/.codex` 登录，
+内置 Runtime 会直接复用；否则使用应用管理目录完成登录。实际模型和额度通过
+App Server 动态读取，不在客户端硬编码。
 
 不采用：
 
@@ -1240,14 +1252,19 @@ Home 的创建和编辑界面都展示 Workspace：
 - 可跳过、可选择安装位置的首次运行推荐组件引导；
 - LibreOffice 26.2.5 的 macOS / Windows 固定安装清单；
 - Asset Artifact 文件空间、SQLite 索引和生命周期清理；
-- DOC/DOCX/PPT/PPTX 转 PDF 的 Office Workbench。
+- DOC/DOCX/PPT/PPTX 转 PDF 的 Office Workbench；
+- 固定版本、随应用打包且可复用已有登录的 Codex Runtime；
+- Provider Registry、Codex Provider、凭证状态检查和 App Server 托管登录；
+- `settings.json` 中用统一首次引导版本串联 External Library 与 AI Provider、
+  独立保存 Provider 选择且不保存凭证的 AI 设置流程；
+- 设置中心的 `AI Provider` 页签。
 
 以下方向已经确认但尚未实施：
 
 - Workspace Missing 的 Home 状态与重新定位入口；
 - 文件型 Attachment 正文；
 - SQLite FTS5；
-- Codex Runtime、Provider、Lane 和 Thread Ref；
+- Agent Lane、Provider Thread Ref 与 AI 工作区 UI；
 - AgentContextProjection；
 - Agent Editing Session；
 - Memory；

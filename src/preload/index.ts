@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { AppPreferences } from "../shared/app-preferences";
 import type { AppSetupSnapshot } from "../shared/app-setup";
+import type {
+  AgentProviderLoginChallenge,
+  AgentProviderSetupSnapshot,
+} from "../shared/agent-providers";
 import type { AssetSnapshot } from "../shared/assets";
 import type {
   ExternalLibraryMigrationResult,
@@ -19,6 +23,9 @@ import type {
 import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
+  AgentProviderIdRequest,
+  AgentProviderSetupRequest,
+  CancelAgentProviderLoginRequest,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
   MigrateExternalLibrariesRequest,
@@ -75,8 +82,36 @@ const api: LearningCompanionApi = {
     invoke<AppPreferences>(IPC_CHANNELS.updateHomePreferences, request),
   getAppSetup: () =>
     invoke<AppSetupSnapshot>(IPC_CHANNELS.getAppSetup),
-  completeCurrentOnboarding: () =>
-    invoke<AppSetupSnapshot>(IPC_CHANNELS.completeCurrentOnboarding),
+  completeExternalLibraryOnboarding: () =>
+    invoke<AppSetupSnapshot>(
+      IPC_CHANNELS.completeExternalLibraryOnboarding,
+    ),
+  completeAgentProviderOnboarding: () =>
+    invoke<AppSetupSnapshot>(
+      IPC_CHANNELS.completeAgentProviderOnboarding,
+    ),
+  getAgentProviderSetup: (request?: AgentProviderSetupRequest) =>
+    invoke<AgentProviderSetupSnapshot>(
+      IPC_CHANNELS.getAgentProviderSetup,
+      request,
+    ),
+  startAgentProviderLogin: (request: AgentProviderIdRequest) =>
+    invoke<AgentProviderLoginChallenge>(
+      IPC_CHANNELS.startAgentProviderLogin,
+      request,
+    ),
+  cancelAgentProviderLogin: (
+    request: CancelAgentProviderLoginRequest,
+  ) =>
+    invoke<void>(
+      IPC_CHANNELS.cancelAgentProviderLogin,
+      request,
+    ),
+  selectAgentProvider: (request: AgentProviderIdRequest) =>
+    invoke<AgentProviderSetupSnapshot>(
+      IPC_CHANNELS.selectAgentProvider,
+      request,
+    ),
   listExternalLibraries: () =>
     invoke<ExternalLibrarySnapshot[]>(IPC_CHANNELS.listExternalLibraries),
   refreshExternalLibrary: (request: ExternalLibraryIdRequest) =>

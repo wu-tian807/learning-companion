@@ -6,9 +6,12 @@ export interface SettingsRepository {
   get(): AppPreferences;
   updateHomePreferences(home: HomePreferences): Promise<AppPreferences>;
   getAppSetup(): AppSetupSnapshot;
-  completeCurrentOnboarding(): Promise<AppSetupSnapshot>;
+  completeExternalLibraryOnboarding(): Promise<AppSetupSnapshot>;
+  completeAgentProviderOnboarding(): Promise<AppSetupSnapshot>;
   getDefaultProjectWorkspace(): string;
   updateDefaultProjectWorkspace(directory: string): Promise<void>;
   getExternalLibrariesPath(): string;
   updateExternalLibrariesPath(directory: string): Promise<void>;
+  getSelectedAgentProviderId(): string | null;
+  updateSelectedAgentProviderId(providerId: string): Promise<void>;
 }

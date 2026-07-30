@@ -33,7 +33,7 @@ function createChild(): TestChild {
 }
 
 describe('CodexAppServerConnectionFactory', () => {
-  it('starts app-server with an isolated application-owned home', async () => {
+  it('starts app-server with the selected home and no API credentials', async () => {
     const temporaryDirectory = await mkdtemp(
       join(tmpdir(), 'learning-companion-codex-'),
     );

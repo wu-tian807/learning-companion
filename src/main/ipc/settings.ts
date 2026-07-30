@@ -10,8 +10,13 @@ export function registerSettingsHandlers(repository: SettingsRepository): void {
   registerIpcHandler(IPC_CHANNELS.getAppSetup, () =>
     repository.getAppSetup(),
   );
-  registerIpcHandler(IPC_CHANNELS.completeCurrentOnboarding, () =>
-    repository.completeCurrentOnboarding(),
+  registerIpcHandler(
+    IPC_CHANNELS.completeExternalLibraryOnboarding,
+    () => repository.completeExternalLibraryOnboarding(),
+  );
+  registerIpcHandler(
+    IPC_CHANNELS.completeAgentProviderOnboarding,
+    () => repository.completeAgentProviderOnboarding(),
   );
 
   registerIpcHandler(
@@ -30,5 +35,10 @@ export function removeSettingsHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.getAppPreferences);
   ipcMain.removeHandler(IPC_CHANNELS.updateHomePreferences);
   ipcMain.removeHandler(IPC_CHANNELS.getAppSetup);
-  ipcMain.removeHandler(IPC_CHANNELS.completeCurrentOnboarding);
+  ipcMain.removeHandler(
+    IPC_CHANNELS.completeExternalLibraryOnboarding,
+  );
+  ipcMain.removeHandler(
+    IPC_CHANNELS.completeAgentProviderOnboarding,
+  );
 }

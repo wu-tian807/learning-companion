@@ -47,7 +47,7 @@ const AUTH_ENVIRONMENT_VARIABLES = [
   'OPENAI_BASE_URL',
 ] as const;
 
-function createIsolatedEnvironment(
+function createRuntimeEnvironment(
   source: NodeJS.ProcessEnv,
   codexHomePath: string,
 ): NodeJS.ProcessEnv {
@@ -111,7 +111,7 @@ export class CodexAppServerConnectionFactory
       ['app-server', '--listen', 'stdio://'],
       {
         cwd: this.options.codexHomePath,
-        env: createIsolatedEnvironment(
+        env: createRuntimeEnvironment(
           this.dependencies.environment,
           this.options.codexHomePath,
         ),

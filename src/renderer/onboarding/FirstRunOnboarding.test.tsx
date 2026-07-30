@@ -62,7 +62,7 @@ describe('FirstRunOnboarding', () => {
     const markup = renderToStaticMarkup(
       <FirstRunOnboarding
         store={createStore(createSnapshot('not-installed'))}
-        api={{ completeCurrentOnboarding: vi.fn() }}
+        api={{ completeExternalLibraryOnboarding: vi.fn() }}
         onCompleted={vi.fn()}
       />,
     );
@@ -79,7 +79,7 @@ describe('FirstRunOnboarding', () => {
     const markup = renderToStaticMarkup(
       <FirstRunOnboarding
         store={createStore(createSnapshot('downloading'))}
-        api={{ completeCurrentOnboarding: vi.fn() }}
+        api={{ completeExternalLibraryOnboarding: vi.fn() }}
         onCompleted={vi.fn()}
       />,
     );
@@ -93,7 +93,7 @@ describe('FirstRunOnboarding', () => {
     const markup = renderToStaticMarkup(
       <FirstRunOnboarding
         store={createStore(createSnapshot('unsupported'))}
-        api={{ completeCurrentOnboarding: vi.fn() }}
+        api={{ completeExternalLibraryOnboarding: vi.fn() }}
         onCompleted={vi.fn()}
       />,
     );

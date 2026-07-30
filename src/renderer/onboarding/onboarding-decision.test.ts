@@ -25,7 +25,10 @@ describe('runOnboardingDecision', () => {
 
     expect(order).toEqual(['start', 'complete']);
     expect(result.installationAccepted).toBe(true);
-    expect(result.setup.requiresOnboarding).toBe(false);
+    expect(result.setup).toMatchObject({
+      pendingOnboardingStep: 'agent-provider',
+      requiresOnboarding: true,
+    });
   });
 
   it('skips installation when the user explicitly continues without it', async () => {

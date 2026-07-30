@@ -1,6 +1,11 @@
 import type { AppPreferences, HomePreferences } from "./app-preferences";
 import { isHomePreferences } from "./app-preferences";
 import type { AppSetupSnapshot } from "./app-setup";
+import type {
+  AgentProviderLoginChallenge,
+  AgentProviderSetupSnapshot,
+} from "./agent-providers";
+import { isAgentProviderId } from "./agent-providers";
 import {
   ASSET_NAME_MAX_LENGTH,
   isAssetSnapshotList,
@@ -32,7 +37,14 @@ export const IPC_CHANNELS = {
   getAppPreferences: "settings:get",
   updateHomePreferences: "settings:update-home",
   getAppSetup: "settings:get-app-setup",
-  completeCurrentOnboarding: "settings:complete-current-onboarding",
+  completeExternalLibraryOnboarding:
+    "settings:complete-external-library-onboarding",
+  completeAgentProviderOnboarding:
+    "settings:complete-agent-provider-onboarding",
+  getAgentProviderSetup: "agent-provider:get-setup",
+  startAgentProviderLogin: "agent-provider:start-login",
+  cancelAgentProviderLogin: "agent-provider:cancel-login",
+  selectAgentProvider: "agent-provider:select",
   listExternalLibraries: "external-library:list",
   refreshExternalLibrary: "external-library:refresh",
   startExternalLibraryInstallation: "external-library:install",
@@ -82,7 +94,20 @@ export interface LearningCompanionApi {
     request: UpdateHomePreferencesRequest,
   ) => Promise<AppPreferences>;
   getAppSetup: () => Promise<AppSetupSnapshot>;
-  completeCurrentOnboarding: () => Promise<AppSetupSnapshot>;
+  completeExternalLibraryOnboarding: () => Promise<AppSetupSnapshot>;
+  completeAgentProviderOnboarding: () => Promise<AppSetupSnapshot>;
+  getAgentProviderSetup: (
+    request?: AgentProviderSetupRequest,
+  ) => Promise<AgentProviderSetupSnapshot>;
+  startAgentProviderLogin: (
+    request: AgentProviderIdRequest,
+  ) => Promise<AgentProviderLoginChallenge>;
+  cancelAgentProviderLogin: (
+    request: CancelAgentProviderLoginRequest,
+  ) => Promise<void>;
+  selectAgentProvider: (
+    request: AgentProviderIdRequest,
+  ) => Promise<AgentProviderSetupSnapshot>;
   listExternalLibraries: () => Promise<ExternalLibrarySnapshot[]>;
   refreshExternalLibrary: (
     request: ExternalLibraryIdRequest,
@@ -160,6 +185,19 @@ export interface ChangeProjectWorkspaceRequest {
 
 export interface OpenExternalRequest {
   url: string;
+}
+
+export interface AgentProviderSetupRequest {
+  refreshCredentials?: boolean;
+}
+
+export interface AgentProviderIdRequest {
+  providerId: string;
+}
+
+export interface CancelAgentProviderLoginRequest {
+  providerId: string;
+  loginId: string;
 }
 
 export interface RenameProjectRequest {
@@ -423,6 +461,33 @@ export function isRelinkAssetRequest(
     isRecord(value) &&
     isRequiredText(value.assetId) &&
     isRequiredText(value.path)
+  );
+}
+
+export function isAgentProviderSetupRequest(
+  value: unknown,
+): value is AgentProviderSetupRequest {
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      (value.refreshCredentials === undefined ||
+        typeof value.refreshCredentials === "boolean"))
+  );
+}
+
+export function isAgentProviderIdRequest(
+  value: unknown,
+): value is AgentProviderIdRequest {
+  return isRecord(value) && isAgentProviderId(value.providerId);
+}
+
+export function isCancelAgentProviderLoginRequest(
+  value: unknown,
+): value is CancelAgentProviderLoginRequest {
+  return (
+    isRecord(value) &&
+    isAgentProviderId(value.providerId) &&
+    isRequiredText(value.loginId, 256)
   );
 }
 

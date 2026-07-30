@@ -97,4 +97,19 @@ describe('SettingsDialog', () => {
     expect(markup).toContain('ring-indigo-300/10');
     expect(markup).toContain('重新安装');
   });
+
+  it('exposes AI Provider as a settings tab', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsDialog
+        store={createStore()}
+        target={{ section: 'agent-providers' }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('常规');
+    expect(markup).toContain('AI Provider');
+    expect(markup).toContain('选择用于 AI 功能的账号');
+    expect(markup).not.toContain('外部组件位置');
+  });
 });

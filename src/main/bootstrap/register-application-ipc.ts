@@ -1,5 +1,10 @@
+import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
+import {
+  registerAgentProviderHandlers,
+  removeAgentProviderHandlers,
+} from '../ipc/agent-providers';
 import {
   registerAssetHandlers,
   removeAssetHandlers,
@@ -33,6 +38,7 @@ import type { SettingsRepository } from '../settings/settings-repository';
 import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
 
 export interface ApplicationIpcServices {
+  readonly agentProviderService: AgentProviderServiceApi;
   readonly assetService: AssetServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly projectService: ProjectServiceApi;
@@ -45,6 +51,10 @@ export interface ApplicationIpcRegistrations {
   readonly removeHealthCheck: () => void;
   readonly registerExternalLink: () => void;
   readonly removeExternalLink: () => void;
+  readonly registerAgentProviders: (
+    service: AgentProviderServiceApi,
+  ) => void;
+  readonly removeAgentProviders: () => void;
   readonly registerExternalLibraries: (
     service: ExternalLibraryServiceApi,
   ) => void;
@@ -66,6 +76,8 @@ const defaultRegistrations: ApplicationIpcRegistrations = {
   removeHealthCheck: removeHealthCheckHandler,
   registerExternalLink: registerExternalLinkHandler,
   removeExternalLink: removeExternalLinkHandler,
+  registerAgentProviders: registerAgentProviderHandlers,
+  removeAgentProviders: removeAgentProviderHandlers,
   registerExternalLibraries: registerExternalLibraryHandlers,
   removeExternalLibraries: removeExternalLibraryHandlers,
   registerSettings: registerSettingsHandlers,
@@ -112,6 +124,13 @@ export function registerApplicationIpc(
     register(
       registrations.registerExternalLink,
       registrations.removeExternalLink,
+    );
+    register(
+      () =>
+        registrations.registerAgentProviders(
+          services.agentProviderService,
+        ),
+      registrations.removeAgentProviders,
     );
     register(
       () =>

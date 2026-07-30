@@ -67,8 +67,11 @@ function createSettings(rootPath: string): SettingsRepository {
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
     updateHomePreferences: vi.fn(async () => DEFAULT_APP_PREFERENCES),
     getAppSetup: vi.fn(() => createAppSetupSnapshot(0)),
-    completeCurrentOnboarding: vi.fn(async () =>
+    completeExternalLibraryOnboarding: vi.fn(async () =>
       createAppSetupSnapshot(1),
+    ),
+    completeAgentProviderOnboarding: vi.fn(async () =>
+      createAppSetupSnapshot(2),
     ),
     getDefaultProjectWorkspace: vi.fn(() => dirname(rootPath)),
     updateDefaultProjectWorkspace: vi.fn(async () => undefined),
@@ -76,6 +79,8 @@ function createSettings(rootPath: string): SettingsRepository {
     updateExternalLibrariesPath: vi.fn(async (nextRootPath: string) => {
       currentRootPath = nextRootPath;
     }),
+    getSelectedAgentProviderId: vi.fn(() => null),
+    updateSelectedAgentProviderId: vi.fn(async () => undefined),
   };
 }
 

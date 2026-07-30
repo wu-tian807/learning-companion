@@ -222,11 +222,33 @@ Codex App Server 是官方面向富客户端的接口，负责认证、Conversat
 
 首次使用流程：
 
-1. 启动应用管理的 Runtime；
-2. 调用 `account/read`；
-3. 未登录时发起 App Server 托管的 ChatGPT 登录；
-4. 登录完成后读取 `planType`、模型列表和额度；
-5. 至少创建当前 Project 所需的 Lane Thread 时才真正消耗 Agent 资源。
+1. 使用应用内置的固定版本 Runtime；
+2. 优先复用显式 `CODEX_HOME`、已登录的应用管理目录或用户 `~/.codex`；
+3. 调用 `account/read` 验证凭证；
+4. 未登录时发起 App Server 托管的 ChatGPT 登录；
+5. 登录完成后读取 `planType`、模型列表和额度；
+6. 至少创建当前 Project 所需的 Lane Thread 时才真正消耗 Agent 资源。
+
+当前首次 AI 设置已经按上述边界落地：
+
+- `AgentProviderRegistry` 当前只注册 `codex`，但选择和凭证状态协议不依赖
+  Codex DTO；
+- 统一首次设置按 `External Library → AI Provider` 顺序推进，应用只在进入
+  AI Provider 步骤后读取凭证；
+- 未认证 Provider 只提供登录入口，不提供选择按钮；
+- Renderer 显示认证成功后，Main 在保存选择前仍会强制刷新并再次验证凭证；
+- `settings.json` 使用统一的 `completedOnboardingVersion`：`0` 表示等待
+  External Library 步骤，`1` 表示等待 AI Provider 步骤，`2` 表示整套首次设置
+  已完成；Provider 选择另存为 `selectedAgentProviderId`，登录 Token 不进入
+  应用设置或 SQLite；
+- Codex 使用 App Server 的 `account/read`、`account/login/start` 和托管浏览器
+  回调完成登录与 Token 刷新；
+- 用户选择或跳过后即完成本版首次提示，之后通过右上角设置中的
+  `AI Provider` 页签重新登录或切换，不因未选择或凭证失效而反复阻塞启动。
+- 旧版 `completedAgentProviderOnboardingVersion` 仅作为迁移输入；读取后折叠到
+  统一版本并从 `settings.json` 移除。
+- 首次引导或 Provider 状态读取失败时不阻止进入应用，只显示非阻塞通知；用户可
+  稍后从设置重试，未完成的引导版本在下次启动继续检查。
 
 Codex 当前向 Free 计划提供基础可用能力，但模型、额度和实际功能以账号和
 Workspace 返回结果为准：
@@ -236,9 +258,9 @@ Workspace 返回结果为准：
 产品文案使用“使用 ChatGPT 账号登录”，不承诺不限量，也不把“有账号”误写为
 “必然拥有某个固定模型”。
 
-是否显式复用用户机器上已经存在的 `CODEX_HOME`，属于后续安全与迁移设计，
-不是首版可用性的依赖。无论机器上是否存在外部 Codex 状态，应用都必须能够
-完成自己的登录流程；不得静默复制 Token。
+应用不复制 Token。若显式 `CODEX_HOME` 或用户 `~/.codex/auth.json` 已存在，
+内置 Runtime 直接使用该 Home，并由 App Server 验证账号；若不存在，则使用
+`userData/agent-runtimes/codex/home`，通过相同的托管流程完成应用内登录。
 
 ### 6.3 CodexRuntimeService
 
@@ -246,7 +268,7 @@ Workspace 返回结果为准：
 `stopped / starting / ready / stopping / failed` 状态，负责：
 
 - 懒启动固定版本的内置 Codex Runtime；
-- 使用应用独立的 `CODEX_HOME`，不继承外部 Codex 登录目录；
+- 解析并使用已有认证的 Codex Home，没有时回退应用管理目录；
 - 完成 `initialize` / `initialized` 握手；
 - 复用一条 stdio JSONL RPC 连接并分发 Notification 和 Server Request；
 - 合并并发启动，处理进程退出、请求超时、关闭和下次重启；
@@ -269,9 +291,10 @@ Server 仍由 Codex 配置和 MCP 生命周期管理；二者不能在应用领�
 App Server Experimental API，因此 Runtime 必须固定版本并在升级时重新生成或
 核对协议 Schema。
 
-Runtime 二进制位于安装包的 ASAR 外部资源中；认证和 Thread 数据位于 Electron
-`userData/agent-runtimes/codex/home`。应用启动只构造 Service，不启动进程；首次
-调用 AI 能力时才解析二进制、创建目录和启动 App Server。
+Runtime 二进制位于安装包的 ASAR 外部资源中；认证和 Thread 数据位于解析出的
+Codex Home。没有外部认证状态时使用 Electron
+`userData/agent-runtimes/codex/home`。应用启动只构造 Service，不启动进程；
+首次调用 AI 能力时才解析二进制、创建目录和启动 App Server。
 
 ## 7. Chat / Work 与行为模式
 
@@ -500,7 +523,6 @@ Codex v1 至少满足：
 以下问题留给各自实现设计，不应被误认为已有结论：
 
 - Codex Runtime 的具体打包产物、升级和完整性校验方式；
-- 是否以及如何显式复用已有 `CODEX_HOME`；
 - Provider Thread Ref 的最终数据库表结构；
 - 全局 Memory 条目的 Schema、检索算法和删除审计；
 - 结构化 HTML 重做时的补丁、版本和 Attachment 重定位协议；

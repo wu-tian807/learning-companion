@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_APP_PREFERENCES } from '../../shared/app-preferences';
+import {
+  CURRENT_ONBOARDING_VERSION,
+  EXTERNAL_LIBRARY_ONBOARDING_VERSION,
+} from '../../shared/app-setup';
 import { JsonSettingsRepository } from './json-settings-repository';
 
 const temporaryDirectories: string[] = [];
@@ -47,17 +51,26 @@ describe('json settings repository', () => {
     expect(() => repository.getExternalLibrariesPath()).toThrow(
       'Settings Repository 尚未初始化',
     );
+    expect(() => repository.getSelectedAgentProviderId()).toThrow(
+      'Settings Repository 尚未初始化',
+    );
     await expect(
       repository.updateHomePreferences({ viewMode: 'list', sortMode: 'title' }),
     ).rejects.toThrow('Settings Repository 尚未初始化');
-    await expect(repository.completeCurrentOnboarding()).rejects.toThrow(
-      'Settings Repository 尚未初始化',
-    );
+    await expect(
+      repository.completeExternalLibraryOnboarding(),
+    ).rejects.toThrow('Settings Repository 尚未初始化');
+    await expect(
+      repository.completeAgentProviderOnboarding(),
+    ).rejects.toThrow('Settings Repository 尚未初始化');
     await expect(
       repository.updateDefaultProjectWorkspace(directory),
     ).rejects.toThrow('Settings Repository 尚未初始化');
     await expect(
       repository.updateExternalLibrariesPath(directory),
+    ).rejects.toThrow('Settings Repository 尚未初始化');
+    await expect(
+      repository.updateSelectedAgentProviderId('codex'),
     ).rejects.toThrow('Settings Repository 尚未初始化');
   });
 
@@ -75,8 +88,10 @@ describe('json settings repository', () => {
     expect(repository.getExternalLibrariesPath()).toBe(
       join(directory, 'config'),
     );
+    expect(repository.getSelectedAgentProviderId()).toBeNull();
     expect(repository.getAppSetup()).toMatchObject({
       completedOnboardingVersion: 0,
+      pendingOnboardingStep: 'external-library',
       requiresOnboarding: true,
     });
     await expect(readFile(settingsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
@@ -117,6 +132,7 @@ describe('json settings repository', () => {
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath: join(directory, 'config'),
       completedOnboardingVersion: 0,
+      selectedAgentProviderId: null,
     });
   });
 
@@ -151,6 +167,20 @@ describe('json settings repository', () => {
           sortMode: 'newest',
         },
         completedOnboardingVersion: -1,
+      }),
+    ],
+    [
+      'invalid Agent Provider onboarding version',
+      JSON.stringify({
+        ...DEFAULT_APP_PREFERENCES,
+        completedAgentProviderOnboardingVersion: -1,
+      }),
+    ],
+    [
+      'invalid Agent Provider',
+      JSON.stringify({
+        ...DEFAULT_APP_PREFERENCES,
+        selectedAgentProviderId: '../codex',
       }),
     ],
   ])('warns and restores defaults for %s', async (_caseName, content) => {
@@ -195,6 +225,7 @@ describe('json settings repository', () => {
           defaultProjectWorkspace: join(directory, 'config'),
           externalLibrariesPath: join(directory, 'config'),
           completedOnboardingVersion: 0,
+          selectedAgentProviderId: null,
         },
         null,
         2,
@@ -231,6 +262,7 @@ describe('json settings repository', () => {
       defaultProjectWorkspace,
       externalLibrariesPath: join(directory, 'config'),
       completedOnboardingVersion: 0,
+      selectedAgentProviderId: null,
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -270,6 +302,7 @@ describe('json settings repository', () => {
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath,
       completedOnboardingVersion: 0,
+      selectedAgentProviderId: null,
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -279,7 +312,7 @@ describe('json settings repository', () => {
     );
   });
 
-  it('completes the current onboarding version without losing other settings', async () => {
+  it('completes the external-library step without losing other settings', async () => {
     const directory = await createTemporaryDirectory();
     const settingsFile = join(directory, 'config', 'settings.json');
     const repository = new JsonSettingsRepository(settingsFile);
@@ -289,12 +322,15 @@ describe('json settings repository', () => {
       sortMode: 'title',
     });
 
-    const completed = await repository.completeCurrentOnboarding();
+    const completed =
+      await repository.completeExternalLibraryOnboarding();
 
     expect(completed).toEqual({
-      currentOnboardingVersion: 1,
-      completedOnboardingVersion: 1,
-      requiresOnboarding: false,
+      currentOnboardingVersion: CURRENT_ONBOARDING_VERSION,
+      completedOnboardingVersion:
+        EXTERNAL_LIBRARY_ONBOARDING_VERSION,
+      pendingOnboardingStep: 'agent-provider',
+      requiresOnboarding: true,
     });
     expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
       schemaVersion: 1,
@@ -304,7 +340,9 @@ describe('json settings repository', () => {
       },
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath: join(directory, 'config'),
-      completedOnboardingVersion: 1,
+      completedOnboardingVersion:
+        EXTERNAL_LIBRARY_ONBOARDING_VERSION,
+      selectedAgentProviderId: null,
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -321,23 +359,28 @@ describe('json settings repository', () => {
         ...DEFAULT_APP_PREFERENCES,
         defaultProjectWorkspace: directory,
         externalLibrariesPath: directory,
-        completedOnboardingVersion: 2,
+        completedOnboardingVersion:
+          CURRENT_ONBOARDING_VERSION + 1,
+        selectedAgentProviderId: null,
       }),
       'utf8',
     );
     const repository = new JsonSettingsRepository(settingsFile);
     await repository.initialize();
 
-    const completed = await repository.completeCurrentOnboarding();
+    const completed =
+      await repository.completeAgentProviderOnboarding();
 
     expect(completed).toMatchObject({
-      completedOnboardingVersion: 2,
+      completedOnboardingVersion:
+        CURRENT_ONBOARDING_VERSION + 1,
+      pendingOnboardingStep: null,
       requiresOnboarding: false,
     });
     expect(
       JSON.parse(await readFile(settingsFile, 'utf8'))
         .completedOnboardingVersion,
-    ).toBe(2);
+    ).toBe(CURRENT_ONBOARDING_VERSION + 1);
   });
 
   it('keeps the last successful in-memory state when writing fails', async () => {
@@ -353,10 +396,16 @@ describe('json settings repository', () => {
         sortMode: 'oldest',
       }),
     ).rejects.toBeDefined();
-    await expect(repository.completeCurrentOnboarding()).rejects.toBeDefined();
+    await expect(
+      repository.completeExternalLibraryOnboarding(),
+    ).rejects.toBeDefined();
+    await expect(
+      repository.completeAgentProviderOnboarding(),
+    ).rejects.toBeDefined();
     expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
     expect(repository.getAppSetup()).toMatchObject({
       completedOnboardingVersion: 0,
+      pendingOnboardingStep: 'external-library',
       requiresOnboarding: true,
     });
   });
@@ -381,12 +430,15 @@ describe('json settings repository', () => {
     const externalLibrariesPath = join(directory, 'external-libraries');
     const externalLibrariesUpdate =
       repository.updateExternalLibrariesPath(externalLibrariesPath);
+    const providerUpdate =
+      repository.updateSelectedAgentProviderId('codex');
 
     await Promise.all([
       firstUpdate,
       secondUpdate,
       directoryUpdate,
       externalLibrariesUpdate,
+      providerUpdate,
     ]);
 
     expect(repository.get()).toEqual({
@@ -401,6 +453,112 @@ describe('json settings repository', () => {
       defaultProjectWorkspace,
       externalLibrariesPath,
       completedOnboardingVersion: 0,
+      selectedAgentProviderId: 'codex',
     });
   });
+
+  it('persists the selected Agent Provider without storing credentials', async () => {
+    const directory = await createTemporaryDirectory();
+    const settingsFile = join(directory, 'settings.json');
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+
+    await repository.updateSelectedAgentProviderId('codex');
+
+    expect(repository.getSelectedAgentProviderId()).toBe('codex');
+    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toMatchObject({
+      selectedAgentProviderId: 'codex',
+    });
+
+    const restored = new JsonSettingsRepository(settingsFile);
+    await restored.initialize();
+    expect(restored.getSelectedAgentProviderId()).toBe('codex');
+  });
+
+  it('records both onboarding steps in one version field', async () => {
+    const directory = await createTemporaryDirectory();
+    const settingsFile = join(directory, 'settings.json');
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+    await repository.completeExternalLibraryOnboarding();
+
+    const completed =
+      await repository.completeAgentProviderOnboarding();
+
+    expect(completed).toMatchObject({
+      completedOnboardingVersion: CURRENT_ONBOARDING_VERSION,
+      pendingOnboardingStep: null,
+      requiresOnboarding: false,
+    });
+    const persisted = JSON.parse(
+      await readFile(settingsFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(persisted).toMatchObject({
+      completedOnboardingVersion: CURRENT_ONBOARDING_VERSION,
+    });
+    expect(
+      'completedAgentProviderOnboardingVersion' in persisted,
+    ).toBe(false);
+
+    const restored = new JsonSettingsRepository(settingsFile);
+    await restored.initialize();
+    expect(restored.getAppSetup()).toEqual(completed);
+  });
+
+  it.each([
+    {
+      legacyProviderVersion: 0,
+      expectedVersion: EXTERNAL_LIBRARY_ONBOARDING_VERSION,
+      expectedStep: 'agent-provider',
+    },
+    {
+      legacyProviderVersion: 1,
+      expectedVersion: CURRENT_ONBOARDING_VERSION,
+      expectedStep: null,
+    },
+  ])(
+    'migrates legacy Provider onboarding version $legacyProviderVersion into the unified flow',
+    async ({
+      legacyProviderVersion,
+      expectedVersion,
+      expectedStep,
+    }) => {
+      const directory = await createTemporaryDirectory();
+      const settingsFile = join(directory, 'settings.json');
+      await writeFile(
+        settingsFile,
+        JSON.stringify({
+          ...DEFAULT_APP_PREFERENCES,
+          defaultProjectWorkspace: directory,
+          externalLibrariesPath: directory,
+          completedOnboardingVersion:
+            EXTERNAL_LIBRARY_ONBOARDING_VERSION,
+          completedAgentProviderOnboardingVersion:
+            legacyProviderVersion,
+          selectedAgentProviderId: null,
+        }),
+        'utf8',
+      );
+      const repository = new JsonSettingsRepository(settingsFile);
+
+      await repository.initialize();
+
+      expect(repository.getAppSetup()).toMatchObject({
+        completedOnboardingVersion: expectedVersion,
+        pendingOnboardingStep: expectedStep,
+        requiresOnboarding: expectedStep !== null,
+      });
+      const persisted = JSON.parse(
+        await readFile(settingsFile, 'utf8'),
+      ) as Record<string, unknown>;
+
+      expect(persisted.completedOnboardingVersion).toBe(
+        expectedVersion,
+      );
+      expect(
+        'completedAgentProviderOnboardingVersion' in persisted,
+      ).toBe(false);
+    },
+  );
 });

@@ -1,5 +1,6 @@
 import type { DatabaseContext } from '../database/database-context';
 import type { ContentResourceService } from '../content/content-resource-service';
+import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { CodexRuntimeServiceApi } from '../agents/codex/codex-runtime-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
@@ -7,6 +8,7 @@ import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-
 
 export interface ApplicationRuntimeResources {
   readonly databaseContext: DatabaseContext;
+  readonly agentProviderService: AgentProviderServiceApi;
   readonly codexRuntimeService: CodexRuntimeServiceApi;
   readonly contentResourceService: ContentResourceService;
   readonly externalLibraryService: ExternalLibraryServiceApi;
@@ -31,6 +33,10 @@ export class ApplicationRuntime {
 
   get codexRuntime(): CodexRuntimeServiceApi {
     return this.resources.codexRuntimeService;
+  }
+
+  get agentProviders(): AgentProviderServiceApi {
+    return this.resources.agentProviderService;
   }
 
   closeActiveWorkbench(): Promise<void> {

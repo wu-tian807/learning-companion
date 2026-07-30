@@ -12,6 +12,8 @@ function createRegistrations(): ApplicationIpcRegistrations {
     removeHealthCheck: vi.fn(),
     registerExternalLink: vi.fn(),
     removeExternalLink: vi.fn(),
+    registerAgentProviders: vi.fn(),
+    removeAgentProviders: vi.fn(),
     registerExternalLibraries: vi.fn(),
     removeExternalLibraries: vi.fn(),
     registerSettings: vi.fn(),
@@ -26,6 +28,7 @@ function createRegistrations(): ApplicationIpcRegistrations {
 }
 
 const services: ApplicationIpcServices = {
+  agentProviderService: {} as never,
   assetService: {} as never,
   externalLibraryService: {} as never,
   projectService: {} as never,
@@ -41,6 +44,9 @@ describe('registerApplicationIpc', () => {
     expect(
       registrations.registerExternalLibraries,
     ).toHaveBeenCalledWith(services.externalLibraryService);
+    expect(registrations.registerAgentProviders).toHaveBeenCalledWith(
+      services.agentProviderService,
+    );
     expect(registrations.registerSettings).toHaveBeenCalledWith(
       services.settingsRepository,
     );
@@ -63,6 +69,7 @@ describe('registerApplicationIpc', () => {
       registrations.removeProjects,
       registrations.removeSettings,
       registrations.removeExternalLibraries,
+      registrations.removeAgentProviders,
       registrations.removeExternalLink,
       registrations.removeHealthCheck,
     ];
@@ -90,6 +97,7 @@ describe('registerApplicationIpc', () => {
     expect(
       registrations.removeExternalLibraries,
     ).toHaveBeenCalledOnce();
+    expect(registrations.removeAgentProviders).toHaveBeenCalledOnce();
     expect(registrations.removeExternalLink).toHaveBeenCalledOnce();
     expect(registrations.removeHealthCheck).toHaveBeenCalledOnce();
     expect(registrations.removeSettings).not.toHaveBeenCalled();

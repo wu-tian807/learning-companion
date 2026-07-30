@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   createHealthCheckResponse,
+  isAgentProviderIdRequest,
+  isAgentProviderSetupRequest,
+  isCancelAgentProviderLoginRequest,
   isAddLocalAssetsRequest,
   isAddLocalAssetsResult,
   isAssetIdRequest,
@@ -314,6 +317,33 @@ describe("Asset contracts", () => {
         deletedAssetIds: ["same"],
         failed: [{ assetId: "same", message: "失败" }],
         assets: [],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("Agent Provider contract", () => {
+  it("validates setup, login, cancel, and selection requests", () => {
+    expect(isAgentProviderSetupRequest(undefined)).toBe(true);
+    expect(
+      isAgentProviderSetupRequest({ refreshCredentials: true }),
+    ).toBe(true);
+    expect(isAgentProviderSetupRequest({ refreshCredentials: "yes" })).toBe(
+      false,
+    );
+
+    expect(isAgentProviderIdRequest({ providerId: "codex" })).toBe(true);
+    expect(isAgentProviderIdRequest({ providerId: "../codex" })).toBe(false);
+    expect(
+      isCancelAgentProviderLoginRequest({
+        providerId: "codex",
+        loginId: "login-1",
+      }),
+    ).toBe(true);
+    expect(
+      isCancelAgentProviderLoginRequest({
+        providerId: "codex",
+        loginId: "",
       }),
     ).toBe(false);
   });

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ExternalLibraryMigrationConflictDialog } from '../external-libraries/ExternalLibraryMigrationConflictDialog';
@@ -9,6 +9,7 @@ import {
 import {
   formatExternalLibrarySize,
 } from '../external-libraries/external-library-view';
+import { AgentProviderSettingsSection } from './AgentProviderSettingsSection';
 import { ExternalLibrariesSettingsSection } from './ExternalLibrariesSettingsSection';
 import { GeneralSettingsSection } from './GeneralSettingsSection';
 import type { SettingsTarget } from './settings-target';
@@ -93,6 +94,13 @@ export function SettingsDialog({
   target,
   store = externalLibraryStore,
 }: SettingsDialogProps) {
+  const [activeSection, setActiveSection] = useState<
+    'general' | 'agent-providers'
+  >(
+    target?.section === 'agent-providers'
+      ? 'agent-providers'
+      : 'general',
+  );
   const {
     libraries,
     loading,
@@ -173,9 +181,6 @@ export function SettingsDialog({
             >
               设置
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              管理可选的本地处理组件及其存储位置
-            </p>
           </div>
           <button
             type="button"
@@ -188,41 +193,77 @@ export function SettingsDialog({
           </button>
         </header>
 
+        <nav
+          aria-label="设置分类"
+          className="flex gap-1 border-b border-white/[0.08] px-6 py-2"
+        >
+          {[
+            ['general', '常规'],
+            ['agent-providers', 'AI Provider'],
+          ].map(([section, label]) => (
+            <button
+              key={section}
+              type="button"
+              aria-current={
+                activeSection === section ? 'page' : undefined
+              }
+              onClick={() =>
+                setActiveSection(
+                  section as 'general' | 'agent-providers',
+                )
+              }
+              className={`ui-control rounded-lg px-3 py-2 text-xs ${
+                activeSection === section
+                  ? 'bg-white/[0.08] text-slate-100'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
         <div className="overflow-y-auto px-6 py-5">
-          <GeneralSettingsSection
-            rootPath={rootPath}
-            loading={loading}
-            changeDisabled={
-              loading ||
-              migrationPending ||
-              hasActiveTask ||
-              !rootPath
-            }
-            onSelectDirectory={() => {
-              void selectMigrationTarget();
-            }}
-          />
+          {activeSection === 'general' ? (
+            <>
+              <GeneralSettingsSection
+                rootPath={rootPath}
+                loading={loading}
+                changeDisabled={
+                  loading ||
+                  migrationPending ||
+                  hasActiveTask ||
+                  !rootPath
+                }
+                onSelectDirectory={() => {
+                  void selectMigrationTarget();
+                }}
+              />
 
-          <div className="my-5 h-px bg-white/[0.08]" />
+              <div className="my-5 h-px bg-white/[0.08]" />
 
-          <ExternalLibrariesSettingsSection
-            libraries={libraries}
-            loading={loading}
-            loadError={loadError}
-            migrationPending={migrationPending}
-            hasActiveTask={hasActiveTask}
-            requestPendingById={requestPendingById}
-            target={target}
-            targetedLibraryRef={targetedLibraryRef}
-            onInstall={setPendingInstall}
-            onRemove={setPendingRemove}
-            onCancel={(library) => {
-              void cancelInstallation(library);
-            }}
-            onReload={() => {
-              void reload();
-            }}
-          />
+              <ExternalLibrariesSettingsSection
+                libraries={libraries}
+                loading={loading}
+                loadError={loadError}
+                migrationPending={migrationPending}
+                hasActiveTask={hasActiveTask}
+                requestPendingById={requestPendingById}
+                target={target}
+                targetedLibraryRef={targetedLibraryRef}
+                onInstall={setPendingInstall}
+                onRemove={setPendingRemove}
+                onCancel={(library) => {
+                  void cancelInstallation(library);
+                }}
+                onReload={() => {
+                  void reload();
+                }}
+              />
+            </>
+          ) : (
+            <AgentProviderSettingsSection />
+          )}
         </div>
 
         {pendingInstall &&
