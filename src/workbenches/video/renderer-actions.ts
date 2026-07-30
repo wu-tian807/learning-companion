@@ -1,4 +1,4 @@
-import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action';
+import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
 
 export interface VideoRendererActionsOptions {
   readonly ready: boolean;

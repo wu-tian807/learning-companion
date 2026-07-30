@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { WorkbenchActionBundle } from '../actions/workbench-action';
+import type { WorkbenchActionBundle } from '../actions/workbench-action-bundle';
 import { findTextSelectionInput } from '../../../shared/workbench/selection';
 import { WorkbenchActionRegistry } from './workbench-action-registry';
 import {

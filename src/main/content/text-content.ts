@@ -4,7 +4,8 @@ import {
   createTextEncodingDetector,
   detectTextEncoding,
   TEXT_CONTENT_SAMPLE_SIZE,
-} from '../assets/asset-text-encoding';
+  type TextEncoding,
+} from './text-encoding';
 import { AppError } from '../errors/app-error';
 import type {
   ContentHandle,
@@ -15,7 +16,7 @@ import { createContentRevision } from './content-revision';
 const UTF8_BYTE_ORDER_MARK = Buffer.from([0xef, 0xbb, 0xbf]);
 
 export type TextLineEnding = 'lf' | 'crlf';
-export type TextEncoding = 'utf-8' | 'gbk';
+export type { TextEncoding } from './text-encoding';
 
 export interface ReadTextContentRequest {
   readonly encoding?: TextEncoding;

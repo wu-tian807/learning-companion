@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import type { WorkbenchActionBundle } from '../actions/workbench-action';
+import type { WorkbenchActionBundle } from '../actions/workbench-action-bundle';
 import { useWorkbenchRuntime } from './workbench-runtime-context';
 
 export function useWorkbenchContributions(

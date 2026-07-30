@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createTextEncodingDetector,
   detectTextEncoding,
-} from './asset-text-encoding';
+} from './text-encoding';
 
-describe('Asset text encoding', () => {
+describe('Text encoding', () => {
   it('prefers UTF-8 and falls back to GBK', () => {
     expect(detectTextEncoding(Buffer.from('中文 UTF-8'))).toBe('utf-8');
     expect(

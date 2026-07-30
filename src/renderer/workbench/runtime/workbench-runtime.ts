@@ -16,7 +16,7 @@ import {
   isAssetWorkbenchManifest,
   type AssetWorkbenchManifest,
 } from '../../../shared/workbench/manifest';
-import type { WorkbenchActionBundle } from '../actions/workbench-action';
+import type { WorkbenchActionBundle } from '../actions/workbench-action-bundle';
 import type { WorkbenchSurface } from '../actions/workbench-contribution';
 import {
   WorkbenchActionRegistry,

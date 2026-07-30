@@ -1,4 +1,4 @@
-import type { WorkbenchActionBundle } from './workbench-action';
+import type { WorkbenchActionBundle } from './workbench-action-bundle';
 import type { EditorActionAdapter } from '../editor/editor-action-adapter';
 
 export function createEditorActionPreset(

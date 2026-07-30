@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises';
 
-import type { TextEncoding } from '../content/text-content';
+export type TextEncoding = 'utf-8' | 'gbk';
 
 export const TEXT_CONTENT_SAMPLE_SIZE = 64 * 1024;
 

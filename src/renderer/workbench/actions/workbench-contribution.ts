@@ -1,5 +1,3 @@
-import type { WorkbenchActionClosePolicy } from './workbench-action';
-
 export const workbenchSurfaces = [
   'overflow',
   'context-menu',
@@ -7,6 +5,11 @@ export const workbenchSurfaces = [
 ] as const;
 
 export type WorkbenchSurface = (typeof workbenchSurfaces)[number];
+
+export type WorkbenchActionClosePolicy =
+  | 'always'
+  | 'on-success'
+  | 'never';
 
 interface WorkbenchPresentationBase {
   readonly label: string;

@@ -1,6 +1,6 @@
 import { basename, extname } from 'node:path';
 
-import { detectFileTextEncoding } from './asset-text-encoding';
+import { detectFileTextEncoding } from '../content/text-encoding';
 
 export const UNKNOWN_ASSET_MEDIA_TYPE = 'application/octet-stream';
 export const PLAIN_TEXT_ASSET_MEDIA_TYPE = 'text/plain';

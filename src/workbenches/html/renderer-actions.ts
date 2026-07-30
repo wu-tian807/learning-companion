@@ -1,4 +1,4 @@
-import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action';
+import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
 import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
 
 export interface HtmlRendererActionsOptions {

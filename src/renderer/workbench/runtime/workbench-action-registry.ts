@@ -1,7 +1,5 @@
-import type {
-  WorkbenchAction,
-  WorkbenchActionBundle,
-} from '../actions/workbench-action';
+import type { WorkbenchAction } from '../actions/workbench-action';
+import type { WorkbenchActionBundle } from '../actions/workbench-action-bundle';
 import type {
   WorkbenchContribution,
   WorkbenchSurface,

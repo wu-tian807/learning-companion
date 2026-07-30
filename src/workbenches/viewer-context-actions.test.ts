@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   isWorkbenchActionEnabled,
-  type WorkbenchActionBundle,
 } from '../renderer/workbench/actions/workbench-action';
+import type { WorkbenchActionBundle } from '../renderer/workbench/actions/workbench-action-bundle';
 import { createAudioRendererActions } from './audio/renderer-actions';
 import { createHtmlRendererActions } from './html/renderer-actions';
 import { createImageRendererActions } from './image/renderer-actions';
