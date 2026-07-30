@@ -1,5 +1,6 @@
 import type { AppPreferences, HomePreferences } from "./app-preferences";
 import { isHomePreferences } from "./app-preferences";
+import type { AppSetupSnapshot } from "./app-setup";
 import {
   ASSET_NAME_MAX_LENGTH,
   isAssetSnapshotList,
@@ -30,6 +31,8 @@ export const IPC_CHANNELS = {
   openExternal: "app:open-external",
   getAppPreferences: "settings:get",
   updateHomePreferences: "settings:update-home",
+  getAppSetup: "settings:get-app-setup",
+  completeCurrentOnboarding: "settings:complete-current-onboarding",
   listExternalLibraries: "external-library:list",
   refreshExternalLibrary: "external-library:refresh",
   startExternalLibraryInstallation: "external-library:install",
@@ -78,6 +81,8 @@ export interface LearningCompanionApi {
   updateHomePreferences: (
     request: UpdateHomePreferencesRequest,
   ) => Promise<AppPreferences>;
+  getAppSetup: () => Promise<AppSetupSnapshot>;
+  completeCurrentOnboarding: () => Promise<AppSetupSnapshot>;
   listExternalLibraries: () => Promise<ExternalLibrarySnapshot[]>;
   refreshExternalLibrary: (
     request: ExternalLibraryIdRequest,

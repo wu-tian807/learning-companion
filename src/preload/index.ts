@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { AppPreferences } from "../shared/app-preferences";
+import type { AppSetupSnapshot } from "../shared/app-setup";
 import type { AssetSnapshot } from "../shared/assets";
 import type {
   ExternalLibraryMigrationResult,
@@ -70,6 +71,10 @@ const api: LearningCompanionApi = {
     invoke<AppPreferences>(IPC_CHANNELS.getAppPreferences),
   updateHomePreferences: (request: UpdateHomePreferencesRequest) =>
     invoke<AppPreferences>(IPC_CHANNELS.updateHomePreferences, request),
+  getAppSetup: () =>
+    invoke<AppSetupSnapshot>(IPC_CHANNELS.getAppSetup),
+  completeCurrentOnboarding: () =>
+    invoke<AppSetupSnapshot>(IPC_CHANNELS.completeCurrentOnboarding),
   listExternalLibraries: () =>
     invoke<ExternalLibrarySnapshot[]>(IPC_CHANNELS.listExternalLibraries),
   refreshExternalLibrary: (request: ExternalLibraryIdRequest) =>

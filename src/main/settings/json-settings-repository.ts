@@ -8,6 +8,12 @@ import {
   type AppPreferences,
   type HomePreferences,
 } from '../../shared/app-preferences';
+import {
+  createAppSetupSnapshot,
+  CURRENT_ONBOARDING_VERSION,
+  isCompletedOnboardingVersion,
+  type AppSetupSnapshot,
+} from '../../shared/app-setup';
 import type { SettingsRepository } from './settings-repository';
 
 export interface SettingsLogger {
@@ -24,6 +30,7 @@ interface StoredSettingsState {
   readonly preferences: AppPreferences;
   readonly defaultProjectWorkspace: string;
   readonly externalLibrariesPath: string;
+  readonly completedOnboardingVersion: number;
 }
 
 interface DeserializedSettings {
@@ -45,11 +52,17 @@ function createStoredSettingsState(
   preferences: AppPreferences,
   defaultProjectWorkspace: string,
   externalLibrariesPath: string,
+  completedOnboardingVersion: number,
 ): StoredSettingsState {
+  if (!isCompletedOnboardingVersion(completedOnboardingVersion)) {
+    throw new Error('Settings 首次运行引导版本无效');
+  }
+
   return Object.freeze({
     preferences: clonePreferences(preferences),
     defaultProjectWorkspace,
     externalLibrariesPath,
+    completedOnboardingVersion,
   });
 }
 
@@ -93,6 +106,7 @@ export class JsonSettingsRepository implements SettingsRepository {
       DEFAULT_APP_PREFERENCES,
       this.fallbackProjectWorkspace,
       this.fallbackExternalLibrariesPath,
+      0,
     );
   }
 
@@ -121,6 +135,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         DEFAULT_APP_PREFERENCES,
         this.fallbackProjectWorkspace,
         this.fallbackExternalLibrariesPath,
+        0,
       );
 
       if (!isFileNotFoundError(error)) {
@@ -148,6 +163,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         nextPreferences,
         this.state.defaultProjectWorkspace,
         this.state.externalLibrariesPath,
+        this.state.completedOnboardingVersion,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -157,6 +173,39 @@ export class JsonSettingsRepository implements SettingsRepository {
     await writeTask;
 
     return clonePreferences(this.state.preferences);
+  }
+
+  getAppSetup(): AppSetupSnapshot {
+    this.requireInitialized();
+    return createAppSetupSnapshot(
+      this.state.completedOnboardingVersion,
+    );
+  }
+
+  async completeCurrentOnboarding(): Promise<AppSetupSnapshot> {
+    this.requireInitialized();
+    const writeTask = this.writeQueue.then(async () => {
+      if (
+        this.state.completedOnboardingVersion >=
+        CURRENT_ONBOARDING_VERSION
+      ) {
+        return;
+      }
+
+      const nextState = createStoredSettingsState(
+        this.state.preferences,
+        this.state.defaultProjectWorkspace,
+        this.state.externalLibrariesPath,
+        CURRENT_ONBOARDING_VERSION,
+      );
+      await this.persist(nextState);
+      this.state = nextState;
+    });
+
+    this.writeQueue = writeTask.catch(() => undefined);
+    await writeTask;
+
+    return this.getAppSetup();
   }
 
   getDefaultProjectWorkspace(): string {
@@ -176,6 +225,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         this.state.preferences,
         normalizedDirectory,
         this.state.externalLibrariesPath,
+        this.state.completedOnboardingVersion,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -202,6 +252,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         this.state.preferences,
         this.state.defaultProjectWorkspace,
         normalizedDirectory,
+        this.state.completedOnboardingVersion,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -215,10 +266,12 @@ export class JsonSettingsRepository implements SettingsRepository {
     const stored: AppPreferences & {
       readonly defaultProjectWorkspace: string;
       readonly externalLibrariesPath: string;
+      readonly completedOnboardingVersion: number;
     } = {
       ...state.preferences,
       defaultProjectWorkspace: state.defaultProjectWorkspace,
       externalLibrariesPath: state.externalLibrariesPath,
+      completedOnboardingVersion: state.completedOnboardingVersion,
     };
 
     return `${JSON.stringify(stored, null, 2)}\n`;
@@ -233,6 +286,7 @@ export class JsonSettingsRepository implements SettingsRepository {
 
     let defaultProjectWorkspace = this.fallbackProjectWorkspace;
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
+    let completedOnboardingVersion = 0;
 
     if ('defaultProjectWorkspace' in value) {
       if (typeof value.defaultProjectWorkspace !== 'string') {
@@ -254,15 +308,29 @@ export class JsonSettingsRepository implements SettingsRepository {
       );
     }
 
+    if ('completedOnboardingVersion' in value) {
+      if (
+        !isCompletedOnboardingVersion(
+          value.completedOnboardingVersion,
+        )
+      ) {
+        throw new Error('Settings 首次运行引导版本无效');
+      }
+
+      completedOnboardingVersion = value.completedOnboardingVersion;
+    }
+
     return {
       state: createStoredSettingsState(
         value,
         defaultProjectWorkspace,
         externalLibrariesPath,
+        completedOnboardingVersion,
       ),
       needsMigration:
         !('defaultProjectWorkspace' in value) ||
-        !('externalLibrariesPath' in value),
+        !('externalLibrariesPath' in value) ||
+        !('completedOnboardingVersion' in value),
     };
   }
 

@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_APP_PREFERENCES } from "../../shared/app-preferences";
+import { createAppSetupSnapshot } from "../../shared/app-setup";
 import type { SettingsRepository } from "../settings/settings-repository";
 import { ExternalLibraryDownloader } from "./external-library-downloader";
 import { ExternalLibraryInstallationStore } from "./external-library-installation-store";
@@ -65,6 +66,10 @@ function createSettings(rootPath: string): SettingsRepository {
     initialize: vi.fn(async () => undefined),
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
     updateHomePreferences: vi.fn(async () => DEFAULT_APP_PREFERENCES),
+    getAppSetup: vi.fn(() => createAppSetupSnapshot(0)),
+    completeCurrentOnboarding: vi.fn(async () =>
+      createAppSetupSnapshot(1),
+    ),
     getDefaultProjectWorkspace: vi.fn(() => dirname(rootPath)),
     updateDefaultProjectWorkspace: vi.fn(async () => undefined),
     getExternalLibrariesPath: vi.fn(() => currentRootPath),

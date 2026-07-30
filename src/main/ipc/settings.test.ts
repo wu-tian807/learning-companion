@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_APP_PREFERENCES } from '../../shared/app-preferences';
+import { createAppSetupSnapshot } from '../../shared/app-setup';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
 import type { SettingsRepository } from '../settings/settings-repository';
@@ -53,17 +54,29 @@ function createRepository() {
       sortMode: 'title' as const,
     },
   }));
+  const getAppSetup = vi.fn(() => createAppSetupSnapshot(0));
+  const completeCurrentOnboarding = vi.fn(async () =>
+    createAppSetupSnapshot(1),
+  );
   const repository: SettingsRepository = {
     initialize: vi.fn(async () => undefined),
     get,
     updateHomePreferences,
+    getAppSetup,
+    completeCurrentOnboarding,
     getDefaultProjectWorkspace: vi.fn(() => '/tmp/projects'),
     updateDefaultProjectWorkspace: vi.fn(async () => undefined),
     getExternalLibrariesPath: vi.fn(() => '/tmp/external-libraries'),
     updateExternalLibrariesPath: vi.fn(async () => undefined),
   };
 
-  return { get, repository, updateHomePreferences };
+  return {
+    completeCurrentOnboarding,
+    get,
+    getAppSetup,
+    repository,
+    updateHomePreferences,
+  };
 }
 
 beforeEach(() => {
@@ -103,6 +116,30 @@ describe('settings IPC handlers', () => {
     });
   });
 
+  it('reads and completes only the current onboarding version', async () => {
+    const {
+      completeCurrentOnboarding,
+      getAppSetup,
+      repository,
+    } = createRepository();
+    registerSettingsHandlers(repository);
+
+    await expect(
+      findHandler(IPC_CHANNELS.getAppSetup)({}),
+    ).resolves.toMatchObject({
+      completedOnboardingVersion: 0,
+      requiresOnboarding: true,
+    });
+    await expect(
+      findHandler(IPC_CHANNELS.completeCurrentOnboarding)({}),
+    ).resolves.toMatchObject({
+      completedOnboardingVersion: 1,
+      requiresOnboarding: false,
+    });
+    expect(getAppSetup).toHaveBeenCalledOnce();
+    expect(completeCurrentOnboarding).toHaveBeenCalledOnce();
+  });
+
   it('rejects malformed updates before reaching the repository', async () => {
     const { repository, updateHomePreferences } = createRepository();
     registerSettingsHandlers(repository);
@@ -124,6 +161,12 @@ describe('settings IPC handlers', () => {
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.updateHomePreferences,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.getAppSetup,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.completeCurrentOnboarding,
     );
   });
 });

@@ -7,6 +7,12 @@ import { registerIpcHandler } from './register-handler';
 
 export function registerSettingsHandlers(repository: SettingsRepository): void {
   registerIpcHandler(IPC_CHANNELS.getAppPreferences, () => repository.get());
+  registerIpcHandler(IPC_CHANNELS.getAppSetup, () =>
+    repository.getAppSetup(),
+  );
+  registerIpcHandler(IPC_CHANNELS.completeCurrentOnboarding, () =>
+    repository.completeCurrentOnboarding(),
+  );
 
   registerIpcHandler(
     IPC_CHANNELS.updateHomePreferences,
@@ -23,4 +29,6 @@ export function registerSettingsHandlers(repository: SettingsRepository): void {
 export function removeSettingsHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.getAppPreferences);
   ipcMain.removeHandler(IPC_CHANNELS.updateHomePreferences);
+  ipcMain.removeHandler(IPC_CHANNELS.getAppSetup);
+  ipcMain.removeHandler(IPC_CHANNELS.completeCurrentOnboarding);
 }

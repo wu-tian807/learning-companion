@@ -38,6 +38,9 @@ describe('json settings repository', () => {
     const repository = new JsonSettingsRepository(join(directory, 'settings.json'));
 
     expect(() => repository.get()).toThrow('Settings Repository 尚未初始化');
+    expect(() => repository.getAppSetup()).toThrow(
+      'Settings Repository 尚未初始化',
+    );
     expect(() => repository.getDefaultProjectWorkspace()).toThrow(
       'Settings Repository 尚未初始化',
     );
@@ -47,6 +50,9 @@ describe('json settings repository', () => {
     await expect(
       repository.updateHomePreferences({ viewMode: 'list', sortMode: 'title' }),
     ).rejects.toThrow('Settings Repository 尚未初始化');
+    await expect(repository.completeCurrentOnboarding()).rejects.toThrow(
+      'Settings Repository 尚未初始化',
+    );
     await expect(
       repository.updateDefaultProjectWorkspace(directory),
     ).rejects.toThrow('Settings Repository 尚未初始化');
@@ -69,6 +75,10 @@ describe('json settings repository', () => {
     expect(repository.getExternalLibrariesPath()).toBe(
       join(directory, 'config'),
     );
+    expect(repository.getAppSetup()).toMatchObject({
+      completedOnboardingVersion: 0,
+      requiresOnboarding: true,
+    });
     await expect(readFile(settingsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
@@ -106,6 +116,7 @@ describe('json settings repository', () => {
       },
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath: join(directory, 'config'),
+      completedOnboardingVersion: 0,
     });
   });
 
@@ -129,6 +140,17 @@ describe('json settings repository', () => {
           viewMode: 'grid',
           sortMode: 'newest',
         },
+      }),
+    ],
+    [
+      'invalid onboarding version',
+      JSON.stringify({
+        schemaVersion: 1,
+        home: {
+          viewMode: 'grid',
+          sortMode: 'newest',
+        },
+        completedOnboardingVersion: -1,
       }),
     ],
   ])('warns and restores defaults for %s', async (_caseName, content) => {
@@ -172,6 +194,7 @@ describe('json settings repository', () => {
           ...updated,
           defaultProjectWorkspace: join(directory, 'config'),
           externalLibrariesPath: join(directory, 'config'),
+          completedOnboardingVersion: 0,
         },
         null,
         2,
@@ -207,6 +230,7 @@ describe('json settings repository', () => {
       ...DEFAULT_APP_PREFERENCES,
       defaultProjectWorkspace,
       externalLibrariesPath: join(directory, 'config'),
+      completedOnboardingVersion: 0,
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -245,6 +269,7 @@ describe('json settings repository', () => {
       ...DEFAULT_APP_PREFERENCES,
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath,
+      completedOnboardingVersion: 0,
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -252,6 +277,67 @@ describe('json settings repository', () => {
     expect(restoredRepository.getExternalLibrariesPath()).toBe(
       externalLibrariesPath,
     );
+  });
+
+  it('completes the current onboarding version without losing other settings', async () => {
+    const directory = await createTemporaryDirectory();
+    const settingsFile = join(directory, 'config', 'settings.json');
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+    await repository.updateHomePreferences({
+      viewMode: 'list',
+      sortMode: 'title',
+    });
+
+    const completed = await repository.completeCurrentOnboarding();
+
+    expect(completed).toEqual({
+      currentOnboardingVersion: 1,
+      completedOnboardingVersion: 1,
+      requiresOnboarding: false,
+    });
+    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
+      schemaVersion: 1,
+      home: {
+        viewMode: 'list',
+        sortMode: 'title',
+      },
+      defaultProjectWorkspace: join(directory, 'config'),
+      externalLibrariesPath: join(directory, 'config'),
+      completedOnboardingVersion: 1,
+    });
+
+    const restoredRepository = new JsonSettingsRepository(settingsFile);
+    await restoredRepository.initialize();
+    expect(restoredRepository.getAppSetup()).toEqual(completed);
+  });
+
+  it('does not lower an onboarding version written by a newer app', async () => {
+    const directory = await createTemporaryDirectory();
+    const settingsFile = join(directory, 'settings.json');
+    await writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...DEFAULT_APP_PREFERENCES,
+        defaultProjectWorkspace: directory,
+        externalLibrariesPath: directory,
+        completedOnboardingVersion: 2,
+      }),
+      'utf8',
+    );
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+
+    const completed = await repository.completeCurrentOnboarding();
+
+    expect(completed).toMatchObject({
+      completedOnboardingVersion: 2,
+      requiresOnboarding: false,
+    });
+    expect(
+      JSON.parse(await readFile(settingsFile, 'utf8'))
+        .completedOnboardingVersion,
+    ).toBe(2);
   });
 
   it('keeps the last successful in-memory state when writing fails', async () => {
@@ -267,7 +353,12 @@ describe('json settings repository', () => {
         sortMode: 'oldest',
       }),
     ).rejects.toBeDefined();
+    await expect(repository.completeCurrentOnboarding()).rejects.toBeDefined();
     expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
+    expect(repository.getAppSetup()).toMatchObject({
+      completedOnboardingVersion: 0,
+      requiresOnboarding: true,
+    });
   });
 
   it('serializes concurrent updates in invocation order', async () => {
@@ -309,6 +400,7 @@ describe('json settings repository', () => {
       ...repository.get(),
       defaultProjectWorkspace,
       externalLibrariesPath,
+      completedOnboardingVersion: 0,
     });
   });
 });
