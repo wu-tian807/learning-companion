@@ -6,7 +6,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -64,9 +64,20 @@ afterEach(async () => {
 describe('ExternalLibraryPathManager', () => {
   it('creates the default external library root under Documents', () => {
     expect(
-      createDefaultExternalLibrariesRoot('/Users/student/Documents'),
+      createDefaultExternalLibrariesRoot(
+        '/Users/student/Documents',
+        posix,
+      ),
     ).toBe(
       '/Users/student/Documents/Learning Companion/externalLib',
+    );
+    expect(
+      createDefaultExternalLibrariesRoot(
+        'C:\\Users\\student\\Documents',
+        win32,
+      ),
+    ).toBe(
+      'C:\\Users\\student\\Documents\\Learning Companion\\externalLib',
     );
   });
 

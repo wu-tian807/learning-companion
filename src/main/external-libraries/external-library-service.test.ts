@@ -230,7 +230,7 @@ describe("ExternalLibraryService", () => {
     await vi.waitFor(() => expect(executableFromEvent).toBeDefined());
 
     await expect(executableFromEvent).resolves.toContain(
-      "LibreOffice.app/Contents/MacOS/soffice",
+      join("LibreOffice.app", "Contents", "MacOS", "soffice"),
     );
   });
 

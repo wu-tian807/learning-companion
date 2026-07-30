@@ -10,28 +10,29 @@ import {
 } from 'node:fs/promises';
 import {
   dirname,
-  isAbsolute,
   join,
-  normalize,
-  parse,
-  relative,
   resolve,
-  sep,
 } from 'node:path';
 
 import { AppError } from '../errors/app-error';
+import { isPathInside } from '../filesystem/file-system-path-rules';
 import type {
   ExternalLibraryDefinition,
   ExternalLibraryPackageDefinition,
 } from './external-library-definition';
+import {
+  requireExternalLibraryRootPath,
+  requireSafeDirectorySegment,
+  resolveExternalLibraryInstallationPaths,
+  type ExternalLibraryInstallationPaths,
+} from './external-library-paths';
+
+export {
+  createDefaultExternalLibrariesRoot,
+  type ExternalLibraryInstallationPaths,
+} from './external-library-paths';
 
 export const EXTERNAL_LIBRARY_STAGING_DIRECTORY = '.staging';
-
-export interface ExternalLibraryInstallationPaths {
-  readonly rootPath: string;
-  readonly installationDirectory: string;
-  readonly runtimeDirectory: string;
-}
 
 export interface ExternalLibraryPathManagerApi {
   normalizeRootPath(rootPath: string): string;
@@ -83,34 +84,6 @@ export interface ExternalLibraryPathManagerDependencies {
   readonly createId: () => string;
 }
 
-function requireAbsoluteDirectoryPath(path: string): string {
-  const normalized = normalize(path.trim());
-
-  if (
-    normalized.length === 0 ||
-    !isAbsolute(normalized) ||
-    normalized === parse(normalized).root
-  ) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return normalized;
-}
-
-function requireSafeDirectorySegment(value: string): string {
-  const normalized = value.trim();
-
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(normalized) ||
-    normalized === '.' ||
-    normalized === '..'
-  ) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return normalized;
-}
-
 function requireManagedDirectorySegment(value: string): string {
   const normalized = value.trim();
 
@@ -123,17 +96,6 @@ function requireManagedDirectorySegment(value: string): string {
   }
 
   return normalized;
-}
-
-function isPathInside(root: string, target: string): boolean {
-  const relativePath = relative(root, target);
-
-  return (
-    relativePath === '' ||
-    (!relativePath.startsWith(`..${sep}`) &&
-      relativePath !== '..' &&
-      !isAbsolute(relativePath))
-  );
 }
 
 function isFileSystemError(error: unknown, code: string): boolean {
@@ -157,7 +119,7 @@ async function ensureManagedDirectory(
   rootPath: string,
   segments: readonly string[],
 ): Promise<string> {
-  const root = requireAbsoluteDirectoryPath(rootPath);
+  const root = requireExternalLibraryRootPath(rootPath);
   const realRoot = await realpath(root);
   let current = root;
 
@@ -187,16 +149,6 @@ async function ensureManagedDirectory(
   return current;
 }
 
-export function createDefaultExternalLibrariesRoot(
-  documentsDirectory: string,
-): string {
-  return join(
-    requireAbsoluteDirectoryPath(documentsDirectory),
-    'Learning Companion',
-    'externalLib',
-  );
-}
-
 export class ExternalLibraryPathManager
   implements ExternalLibraryPathManagerApi
 {
@@ -209,7 +161,7 @@ export class ExternalLibraryPathManager
   }
 
   normalizeRootPath(rootPath: string): string {
-    return requireAbsoluteDirectoryPath(rootPath);
+    return requireExternalLibraryRootPath(rootPath);
   }
 
   resolveInstallationPaths(
@@ -217,34 +169,18 @@ export class ExternalLibraryPathManager
     definition: ExternalLibraryDefinition,
     packageDefinition: ExternalLibraryPackageDefinition,
   ): ExternalLibraryInstallationPaths {
-    const root = requireAbsoluteDirectoryPath(rootPath);
-    const libraryId = requireSafeDirectorySegment(definition.id);
-    const version = requireSafeDirectorySegment(definition.version);
-    const platform = requireSafeDirectorySegment(
-      packageDefinition.platform,
+    return resolveExternalLibraryInstallationPaths(
+      rootPath,
+      definition,
+      packageDefinition,
     );
-    const architecture = requireSafeDirectorySegment(
-      packageDefinition.architecture,
-    );
-    const installationDirectory = join(
-      root,
-      libraryId,
-      version,
-      `${platform}-${architecture}`,
-    );
-
-    return Object.freeze({
-      rootPath: root,
-      installationDirectory,
-      runtimeDirectory: join(installationDirectory, 'runtime'),
-    });
   }
 
   async createStagingDirectory(
     rootPath: string,
     libraryId: string,
   ): Promise<string> {
-    const root = requireAbsoluteDirectoryPath(rootPath);
+    const root = requireExternalLibraryRootPath(rootPath);
     const normalizedLibraryId = requireSafeDirectorySegment(libraryId);
     await ensureDirectory(root);
     const stagingRoot = await ensureManagedDirectory(root, [
@@ -394,7 +330,7 @@ export class ExternalLibraryPathManager
     readonly sourceInstallationDirectory: string;
   }): Promise<ExternalLibraryMigrationStaging> {
     const sourceInstallationDirectory =
-      requireAbsoluteDirectoryPath(
+      requireExternalLibraryRootPath(
         input.sourceInstallationDirectory,
       );
     const sourceStats = await lstat(sourceInstallationDirectory);
@@ -490,7 +426,7 @@ export class ExternalLibraryPathManager
     rootPath: string,
     stagingDirectory: string,
   ): Promise<void> {
-    const root = requireAbsoluteDirectoryPath(rootPath);
+    const root = requireExternalLibraryRootPath(rootPath);
     const stagingRoot = join(root, EXTERNAL_LIBRARY_STAGING_DIRECTORY);
     const target = resolve(stagingDirectory);
 

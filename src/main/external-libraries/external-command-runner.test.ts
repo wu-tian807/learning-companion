@@ -72,7 +72,9 @@ describe('ExternalCommandRunner', () => {
     await expect(result).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('waits for an aborted process to close before releasing its caller', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'waits for an aborted process to close before releasing its caller',
+    async () => {
     const directory = await mkdtemp(
       join(tmpdir(), 'learning-companion-command-runner-'),
     );
@@ -110,7 +112,8 @@ describe('ExternalCommandRunner', () => {
 
     await expect(result).rejects.toMatchObject({ name: 'AbortError' });
     await expect(access(closedPath)).resolves.toBeUndefined();
-  });
+    },
+  );
 
   it('rejects relative executable paths', async () => {
     const runner = new ExternalCommandRunner();

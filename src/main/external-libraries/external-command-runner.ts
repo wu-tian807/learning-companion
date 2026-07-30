@@ -6,6 +6,10 @@ import { isAbsolute } from 'node:path';
 import type { Readable } from 'node:stream';
 
 import { AppError } from '../errors/app-error';
+import {
+  ExternalProcessTerminator,
+  type ExternalProcessTerminatorApi,
+} from './external-process-terminator';
 
 export const DEFAULT_COMMAND_OUTPUT_LIMIT = 64 * 1024;
 export const DEFAULT_COMMAND_TERMINATION_GRACE_MS = 5_000;
@@ -55,25 +59,15 @@ function appendLimited(
 type ControlledChildProcess =
   ChildProcessByStdio<null, Readable, Readable>;
 
-function terminate(child: ControlledChildProcess): void {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-
-  child.kill('SIGTERM');
-}
-
-function forceTerminate(child: ControlledChildProcess): void {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-
-  child.kill('SIGKILL');
-}
-
 export class ExternalCommandRunner
   implements ExternalCommandRunnerApi
 {
+  constructor(
+    private readonly processTerminator:
+      ExternalProcessTerminatorApi =
+        new ExternalProcessTerminator(),
+  ) {}
+
   run(request: ExternalCommandRequest): Promise<ExternalCommandResult> {
     if (
       !isAbsolute(request.command) ||
@@ -158,9 +152,9 @@ export class ExternalCommandRunner
         }
 
         terminationError = error;
-        terminate(child);
+        this.processTerminator.terminate(child, false);
         forceTerminationTimer = setTimeout(() => {
-          forceTerminate(child);
+          this.processTerminator.terminate(child, true);
         }, DEFAULT_COMMAND_TERMINATION_GRACE_MS);
       };
       const handleAbort = () => {

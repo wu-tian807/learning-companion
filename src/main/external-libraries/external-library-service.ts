@@ -1,8 +1,5 @@
-import { isAbsolute, join, relative, sep } from "node:path";
-
 import {
   cloneExternalLibrarySnapshot,
-  type ExternalLibraryMigrationConflict,
   type ExternalLibraryMigrationConflictResolution,
   type ExternalLibraryMigrationResult,
   type ExternalLibrarySnapshot,
@@ -18,11 +15,12 @@ import type {
 } from "./external-library-definition";
 import type { ExternalLibraryDownloaderApi } from "./external-library-downloader";
 import {
-  createExternalLibraryInstallationMarker,
   type ExternalLibraryInstallationInspection,
   ExternalLibraryInstallationStore,
 } from "./external-library-installation-store";
+import { ExternalLibraryInstallationWorkflow } from "./external-library-installation-workflow";
 import type { ExternalLibraryInstallerRegistryApi } from "./external-library-installer";
+import { ExternalLibraryMigrationWorkflow } from "./external-library-migration-workflow";
 import type { ExternalLibraryPathManagerApi } from "./external-library-path-manager";
 import type { ExternalLibraryRegistryApi } from "./external-library-registry";
 
@@ -58,18 +56,6 @@ interface ActiveInstallation {
   readonly promise: Promise<ExternalLibrarySnapshot>;
 }
 
-interface MigrationEntry {
-  readonly definition: ExternalLibraryDefinition;
-  readonly packageDefinition: ExternalLibraryPackageDefinition;
-  readonly sourceInspection: ExternalLibraryInstallationInspection;
-  readonly targetInspection: ExternalLibraryInstallationInspection;
-}
-
-interface StagedMigrationEntry extends MigrationEntry {
-  readonly stagingDirectory: string;
-  readonly stagingInstallationDirectory: string;
-}
-
 function resolveCurrentPlatform(): ExternalLibraryPlatform {
   if (process.platform === "darwin" || process.platform === "win32") {
     return process.platform;
@@ -94,17 +80,6 @@ function errorCode(error: unknown): string {
   return error instanceof AppError ? error.code : "INTERNAL_ERROR";
 }
 
-function isPathInside(rootPath: string, targetPath: string): boolean {
-  const relativePath = relative(rootPath, targetPath);
-
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith(`..${sep}`) &&
-      relativePath !== ".." &&
-      !isAbsolute(relativePath))
-  );
-}
-
 export class ExternalLibraryService implements ExternalLibraryServiceApi {
   private readonly snapshots = new Map<string, ExternalLibrarySnapshot>();
   private readonly listeners = new Set<ExternalLibraryListener>();
@@ -113,6 +88,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   private readonly architecture: ExternalLibraryArchitecture;
   private readonly now: () => number;
   private readonly logger: Pick<Console, "warn">;
+  private readonly installationWorkflow:
+    ExternalLibraryInstallationWorkflow;
+  private readonly migrationWorkflow: ExternalLibraryMigrationWorkflow;
   private initializationTask: Promise<void> | undefined;
   private migrationTask: Promise<ExternalLibraryMigrationResult> | undefined;
   private initialized = false;
@@ -122,8 +100,8 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     private readonly registry: ExternalLibraryRegistryApi,
     private readonly pathManager: ExternalLibraryPathManagerApi,
     private readonly installationStore: ExternalLibraryInstallationStore,
-    private readonly downloader: ExternalLibraryDownloaderApi,
-    private readonly installers: ExternalLibraryInstallerRegistryApi,
+    downloader: ExternalLibraryDownloaderApi,
+    installers: ExternalLibraryInstallerRegistryApi,
     dependencies: Partial<ExternalLibraryServiceDependencies> = {},
   ) {
     this.platform = dependencies.platform ?? resolveCurrentPlatform();
@@ -131,6 +109,20 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       dependencies.architecture ?? resolveCurrentArchitecture();
     this.now = dependencies.now ?? Date.now;
     this.logger = dependencies.logger ?? console;
+    this.installationWorkflow = new ExternalLibraryInstallationWorkflow({
+      pathManager,
+      installationStore,
+      downloader,
+      installers,
+      now: this.now,
+      logger: this.logger,
+    });
+    this.migrationWorkflow = new ExternalLibraryMigrationWorkflow({
+      settings,
+      pathManager,
+      installationStore,
+      logger: this.logger,
+    });
   }
 
   async initialize(): Promise<void> {
@@ -488,332 +480,68 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   ): Promise<ExternalLibrarySnapshot> {
     const packageDefinition = this.selectPackage(definition);
     const rootPath = this.settings.getExternalLibrariesPath();
-    const stagingDirectory = await this.pathManager.createStagingDirectory(
+    const inspection = await this.installationWorkflow.run({
       rootPath,
-      definition.id,
-    );
-
-    try {
-      this.updateSnapshot(definition, "downloading", {
-        progress: {
-          completedBytes: 0,
-          totalBytes: packageDefinition.expectedSize,
-        },
-      });
-      const packagePath = join(
-        stagingDirectory,
-        `package.${packageDefinition.packageType}.partial`,
-      );
-      const downloaded = await this.downloader.download({
-        packageDefinition,
-        destinationPath: packagePath,
-        signal,
-        onProgress: (progress) => {
-          this.updateSnapshot(definition, "downloading", { progress });
-        },
-        onVerifying: () => {
-          this.updateSnapshot(definition, "verifying");
-        },
-      });
-      this.updateSnapshot(definition, "installing");
-      const stagingInstallationDirectory = join(
-        stagingDirectory,
-        "installation",
-      );
-      const installer = this.installers.require(packageDefinition.packageType);
-      await installer.install(
-        {
-          packagePath: downloaded.packagePath,
-          stagingInstallationDirectory,
-          packageDefinition,
-        },
-        signal,
-      );
-
-      if (signal.aborted) {
-        throw new DOMException(
-          "External library installation cancelled",
-          "AbortError",
-        );
-      }
-
-      await this.installationStore.write(
-        stagingInstallationDirectory,
-        createExternalLibraryInstallationMarker({
+      definition,
+      packageDefinition,
+      signal,
+      onStage: (stage) => {
+        this.updateSnapshot(
           definition,
-          packageDefinition,
-          installedTime: this.now(),
-        }),
-      );
-      const paths = await this.pathManager.commitInstallation({
-        rootPath,
-        definition,
-        packageDefinition,
-        stagingDirectory,
-        stagingInstallationDirectory,
-      });
-      const inspection = await this.installationStore.inspect(
-        paths.installationDirectory,
-        definition,
-        packageDefinition,
-      );
+          stage.status,
+          stage.status === "downloading"
+            ? { progress: stage.progress }
+            : {},
+        );
+      },
+    });
 
-      if (inspection.status !== "available") {
-        throw new AppError("EXTERNAL_LIBRARY_INSTALL_FAILED");
-      }
-
-      return this.applyInspection(definition, packageDefinition, inspection);
-    } finally {
-      await this.pathManager
-        .cleanupStagingDirectory(rootPath, stagingDirectory)
-        .catch((error: unknown) => {
-          this.logger.warn("清理外部运行时 staging 失败", error);
-        });
-    }
+    return this.applyInspection(
+      definition,
+      packageDefinition,
+      inspection,
+    );
   }
 
   private async performMigration(
     targetRootPath: string,
     conflictResolution?: ExternalLibraryMigrationConflictResolution,
   ): Promise<ExternalLibraryMigrationResult> {
-    const sourceRootPath = this.pathManager.normalizeRootPath(
-      this.settings.getExternalLibrariesPath(),
-    );
-    const normalizedTargetRootPath =
-      this.pathManager.normalizeRootPath(targetRootPath);
-
-    if (sourceRootPath === normalizedTargetRootPath) {
-      return Object.freeze({
-        status: "completed",
-        rootPath: normalizedTargetRootPath,
-        conflicts: Object.freeze([]),
-        libraries: Object.freeze([...this.list()]),
-      });
-    }
-    if (
-      isPathInside(sourceRootPath, normalizedTargetRootPath) ||
-      isPathInside(normalizedTargetRootPath, sourceRootPath)
-    ) {
-      throw new AppError("EXTERNAL_LIBRARY_MIGRATION_FAILED");
-    }
-
-    const entryTasks: Promise<MigrationEntry>[] = [];
-
-    for (const definition of this.registry.list()) {
+    const definitions = this.registry.list().flatMap((definition) => {
       const packageDefinition = this.findPackage(definition);
 
-      if (!packageDefinition) {
-        continue;
-      }
+      return packageDefinition
+        ? [{ definition, packageDefinition }]
+        : [];
+    });
+    const outcome = await this.migrationWorkflow.run({
+      targetRootPath,
+      conflictResolution,
+      definitions,
+      onMigrating: (definition) => {
+        this.updateSnapshot(definition, "migrating");
+      },
+      refreshDefinitions: async () => {
+        let firstError: unknown;
 
-      entryTasks.push(
-        (async (): Promise<MigrationEntry> => {
-          const sourcePaths = this.pathManager.resolveInstallationPaths(
-            sourceRootPath,
-            definition,
-            packageDefinition,
-          );
-          const targetPaths = this.pathManager.resolveInstallationPaths(
-            normalizedTargetRootPath,
-            definition,
-            packageDefinition,
-          );
-          const [sourceInspection, targetInspection] =
-            await Promise.all([
-              this.installationStore.inspect(
-                sourcePaths.installationDirectory,
-                definition,
-                packageDefinition,
-              ),
-              this.installationStore.inspect(
-                targetPaths.installationDirectory,
-                definition,
-                packageDefinition,
-              ),
-            ]);
-
-          return {
-            definition,
-            packageDefinition,
-            sourceInspection,
-            targetInspection,
-          };
-        })(),
-      );
-    }
-
-    const entries = await Promise.all(entryTasks);
-    const conflicts: ExternalLibraryMigrationConflict[] =
-      entries.flatMap((entry) => {
-        if (
-          entry.sourceInspection.status !== "available" ||
-          entry.targetInspection.status === "not-installed"
-        ) {
-          return [];
+        for (const definition of this.registry.list()) {
+          try {
+            await this.refreshDefinition(definition);
+          } catch (error) {
+            firstError ??= error;
+          }
         }
 
-        return [
-          Object.freeze({
-            libraryId: entry.definition.id,
-            displayName: entry.definition.displayName,
-            targetPath: this.pathManager.resolveInstallationPaths(
-              normalizedTargetRootPath,
-              entry.definition,
-              entry.packageDefinition,
-            ).installationDirectory,
-            targetStatus: entry.targetInspection.status,
-          }),
-        ];
-      });
-
-    if (conflicts.length > 0 && conflictResolution === undefined) {
-      return Object.freeze({
-        status: "conflict",
-        rootPath: normalizedTargetRootPath,
-        conflicts: Object.freeze(conflicts),
-        libraries: Object.freeze([...this.list()]),
-      });
-    }
-
-    for (const entry of entries) {
-      this.updateSnapshot(entry.definition, "migrating");
-    }
-
-    const stagedEntries: StagedMigrationEntry[] = [];
-    const committedEntries: StagedMigrationEntry[] = [];
-    let settingsUpdated = false;
-
-    try {
-      for (const entry of entries) {
-        if (
-          entry.sourceInspection.status !== "available" ||
-          (entry.targetInspection.status !== "not-installed" &&
-            conflictResolution === "keep-target")
-        ) {
-          continue;
+        if (firstError !== undefined) {
+          throw firstError;
         }
+      },
+    });
 
-        const sourcePaths = this.pathManager.resolveInstallationPaths(
-          sourceRootPath,
-          entry.definition,
-          entry.packageDefinition,
-        );
-        const staging =
-          await this.pathManager.stageInstallationMigration({
-            targetRootPath: normalizedTargetRootPath,
-            libraryId: entry.definition.id,
-            sourceInstallationDirectory:
-              sourcePaths.installationDirectory,
-          });
-        const stagedEntry = {
-          ...entry,
-          ...staging,
-        };
-        stagedEntries.push(stagedEntry);
-        const inspection = await this.installationStore.inspect(
-          staging.stagingInstallationDirectory,
-          entry.definition,
-          entry.packageDefinition,
-        );
-
-        if (inspection.status !== "available") {
-          throw new AppError("EXTERNAL_LIBRARY_MIGRATION_FAILED");
-        }
-      }
-
-      for (const entry of stagedEntries) {
-        await this.pathManager.commitInstallation({
-          rootPath: normalizedTargetRootPath,
-          definition: entry.definition,
-          packageDefinition: entry.packageDefinition,
-          stagingDirectory: entry.stagingDirectory,
-          stagingInstallationDirectory:
-            entry.stagingInstallationDirectory,
-          replaceExisting:
-            entry.targetInspection.status !== "not-installed",
-        });
-        committedEntries.push(entry);
-      }
-
-      await this.settings.updateExternalLibrariesPath(
-        normalizedTargetRootPath,
-      );
-      settingsUpdated = true;
-
-      for (const definition of this.registry.list()) {
-        await this.refreshDefinition(definition);
-      }
-
-      await Promise.all(
-        committedEntries.map(async (entry) => {
-          await this.pathManager
-            .removeInstallation(
-              sourceRootPath,
-              entry.definition,
-              entry.packageDefinition,
-            )
-            .catch((error: unknown) => {
-              this.logger.warn(
-                `清理旧外部运行时失败：${entry.definition.id}`,
-                error,
-              );
-            });
-        }),
-      );
-
-      return Object.freeze({
-        status: "completed",
-        rootPath: normalizedTargetRootPath,
-        conflicts: Object.freeze(conflicts),
-        libraries: Object.freeze([...this.list()]),
-      });
-    } catch (error) {
-      if (!settingsUpdated) {
-        for (const entry of committedEntries.reverse()) {
-          await this.pathManager
-            .rollbackInstallationCommit({
-              rootPath: normalizedTargetRootPath,
-              definition: entry.definition,
-              packageDefinition: entry.packageDefinition,
-              stagingDirectory: entry.stagingDirectory,
-            })
-            .catch((rollbackError: unknown) => {
-              this.logger.warn(
-                `回滚外部运行时迁移失败：${entry.definition.id}`,
-                rollbackError,
-              );
-            });
-        }
-      }
-
-      for (const definition of this.registry.list()) {
-        await this.refreshDefinition(definition).catch(() => undefined);
-      }
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError("EXTERNAL_LIBRARY_MIGRATION_FAILED", {
-        cause: error,
-      });
-    } finally {
-      await Promise.all(
-        stagedEntries.map((entry) =>
-          this.pathManager
-            .cleanupStagingDirectory(
-              normalizedTargetRootPath,
-              entry.stagingDirectory,
-            )
-            .catch((error: unknown) => {
-              this.logger.warn(
-                `清理外部运行时迁移 staging 失败：${entry.definition.id}`,
-                error,
-              );
-            }),
-        ),
-      );
-    }
+    return Object.freeze({
+      ...outcome,
+      libraries: Object.freeze([...this.list()]),
+    });
   }
 
   private selectPackage(
