@@ -59,6 +59,8 @@ function createRepository() {
     updateHomePreferences,
     getDefaultProjectWorkspace: vi.fn(() => '/tmp/projects'),
     updateDefaultProjectWorkspace: vi.fn(async () => undefined),
+    getExternalLibrariesPath: vi.fn(() => '/tmp/external-libraries'),
+    updateExternalLibrariesPath: vi.fn(async () => undefined),
   };
 
   return { get, repository, updateHomePreferences };

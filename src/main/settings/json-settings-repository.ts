@@ -17,11 +17,13 @@ export interface SettingsLogger {
 interface JsonSettingsRepositoryOptions {
   readonly logger?: SettingsLogger;
   readonly defaultProjectWorkspace?: string;
+  readonly defaultExternalLibrariesPath?: string;
 }
 
 interface StoredSettingsState {
   readonly preferences: AppPreferences;
   readonly defaultProjectWorkspace: string;
+  readonly externalLibrariesPath: string;
 }
 
 interface DeserializedSettings {
@@ -42,10 +44,12 @@ function clonePreferences(preferences: AppPreferences): AppPreferences {
 function createStoredSettingsState(
   preferences: AppPreferences,
   defaultProjectWorkspace: string,
+  externalLibrariesPath: string,
 ): StoredSettingsState {
   return Object.freeze({
     preferences: clonePreferences(preferences),
     defaultProjectWorkspace,
+    externalLibrariesPath,
   });
 }
 
@@ -71,6 +75,7 @@ export class JsonSettingsRepository implements SettingsRepository {
   private readonly settingsFile: string;
   private readonly logger: SettingsLogger;
   private readonly fallbackProjectWorkspace: string;
+  private readonly fallbackExternalLibrariesPath: string;
   private state: StoredSettingsState;
   private initialized = false;
   private writeQueue: Promise<void> = Promise.resolve();
@@ -81,9 +86,13 @@ export class JsonSettingsRepository implements SettingsRepository {
     this.fallbackProjectWorkspace = normalizeDirectory(
       options.defaultProjectWorkspace ?? dirname(settingsFile),
     );
+    this.fallbackExternalLibrariesPath = normalizeDirectory(
+      options.defaultExternalLibrariesPath ?? dirname(settingsFile),
+    );
     this.state = createStoredSettingsState(
       DEFAULT_APP_PREFERENCES,
       this.fallbackProjectWorkspace,
+      this.fallbackExternalLibrariesPath,
     );
   }
 
@@ -102,7 +111,7 @@ export class JsonSettingsRepository implements SettingsRepository {
           await this.persist(this.state);
         } catch (error) {
           this.logger.warn(
-            'Settings 默认 Project 工作区迁移保存失败，将继续使用内存默认值。',
+            'Settings 路径默认值迁移保存失败，将继续使用内存默认值。',
             error,
           );
         }
@@ -111,6 +120,7 @@ export class JsonSettingsRepository implements SettingsRepository {
       this.state = createStoredSettingsState(
         DEFAULT_APP_PREFERENCES,
         this.fallbackProjectWorkspace,
+        this.fallbackExternalLibrariesPath,
       );
 
       if (!isFileNotFoundError(error)) {
@@ -137,6 +147,7 @@ export class JsonSettingsRepository implements SettingsRepository {
       const nextState = createStoredSettingsState(
         nextPreferences,
         this.state.defaultProjectWorkspace,
+        this.state.externalLibrariesPath,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -164,6 +175,33 @@ export class JsonSettingsRepository implements SettingsRepository {
       const nextState = createStoredSettingsState(
         this.state.preferences,
         normalizedDirectory,
+        this.state.externalLibrariesPath,
+      );
+      await this.persist(nextState);
+      this.state = nextState;
+    });
+
+    this.writeQueue = writeTask.catch(() => undefined);
+    await writeTask;
+  }
+
+  getExternalLibrariesPath(): string {
+    this.requireInitialized();
+    return this.state.externalLibrariesPath;
+  }
+
+  async updateExternalLibrariesPath(directory: string): Promise<void> {
+    this.requireInitialized();
+    const normalizedDirectory = normalizeDirectory(directory);
+    const writeTask = this.writeQueue.then(async () => {
+      if (this.state.externalLibrariesPath === normalizedDirectory) {
+        return;
+      }
+
+      const nextState = createStoredSettingsState(
+        this.state.preferences,
+        this.state.defaultProjectWorkspace,
+        normalizedDirectory,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -176,9 +214,11 @@ export class JsonSettingsRepository implements SettingsRepository {
   private serialize(state: StoredSettingsState): string {
     const stored: AppPreferences & {
       readonly defaultProjectWorkspace: string;
+      readonly externalLibrariesPath: string;
     } = {
       ...state.preferences,
       defaultProjectWorkspace: state.defaultProjectWorkspace,
+      externalLibrariesPath: state.externalLibrariesPath,
     };
 
     return `${JSON.stringify(stored, null, 2)}\n`;
@@ -192,6 +232,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     }
 
     let defaultProjectWorkspace = this.fallbackProjectWorkspace;
+    let externalLibrariesPath = this.fallbackExternalLibrariesPath;
 
     if ('defaultProjectWorkspace' in value) {
       if (typeof value.defaultProjectWorkspace !== 'string') {
@@ -203,12 +244,25 @@ export class JsonSettingsRepository implements SettingsRepository {
       );
     }
 
+    if ('externalLibrariesPath' in value) {
+      if (typeof value.externalLibrariesPath !== 'string') {
+        throw new Error('Settings 外部运行时目录无效');
+      }
+
+      externalLibrariesPath = normalizeDirectory(
+        value.externalLibrariesPath,
+      );
+    }
+
     return {
       state: createStoredSettingsState(
         value,
         defaultProjectWorkspace,
+        externalLibrariesPath,
       ),
-      needsMigration: !('defaultProjectWorkspace' in value),
+      needsMigration:
+        !('defaultProjectWorkspace' in value) ||
+        !('externalLibrariesPath' in value),
     };
   }
 

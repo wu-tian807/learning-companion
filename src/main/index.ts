@@ -6,6 +6,9 @@ import { initializeDatabase } from './database/initialize-database';
 import { AssetDatabase } from './assets/asset-database';
 import { AssetService } from './assets/asset-service';
 import { EmptyAttachmentService } from './attachments/attachment-service';
+import {
+  createDefaultExternalLibrariesRoot,
+} from './external-libraries/external-library-path-manager';
 import { ContentResolverRegistry } from './content/content-resolver-registry';
 import { ContentResourceService } from './content/content-resource-service';
 import {
@@ -111,6 +114,8 @@ void app.whenReady().then(async () => {
     {
       defaultProjectWorkspace:
         createDefaultProjectWorkspaceRoot(app.getPath('documents')),
+      defaultExternalLibrariesPath:
+        createDefaultExternalLibrariesRoot(app.getPath('documents')),
     },
   );
   await settingsRepository.initialize();

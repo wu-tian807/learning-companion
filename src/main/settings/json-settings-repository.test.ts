@@ -41,11 +41,17 @@ describe('json settings repository', () => {
     expect(() => repository.getDefaultProjectWorkspace()).toThrow(
       'Settings Repository 尚未初始化',
     );
+    expect(() => repository.getExternalLibrariesPath()).toThrow(
+      'Settings Repository 尚未初始化',
+    );
     await expect(
       repository.updateHomePreferences({ viewMode: 'list', sortMode: 'title' }),
     ).rejects.toThrow('Settings Repository 尚未初始化');
     await expect(
       repository.updateDefaultProjectWorkspace(directory),
+    ).rejects.toThrow('Settings Repository 尚未初始化');
+    await expect(
+      repository.updateExternalLibrariesPath(directory),
     ).rejects.toThrow('Settings Repository 尚未初始化');
   });
 
@@ -58,6 +64,9 @@ describe('json settings repository', () => {
 
     expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
     expect(repository.getDefaultProjectWorkspace()).toBe(
+      join(directory, 'config'),
+    );
+    expect(repository.getExternalLibrariesPath()).toBe(
       join(directory, 'config'),
     );
     await expect(readFile(settingsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
@@ -96,6 +105,7 @@ describe('json settings repository', () => {
         sortMode: 'oldest',
       },
       defaultProjectWorkspace: join(directory, 'config'),
+      externalLibrariesPath: join(directory, 'config'),
     });
   });
 
@@ -161,6 +171,7 @@ describe('json settings repository', () => {
         {
           ...updated,
           defaultProjectWorkspace: join(directory, 'config'),
+          externalLibrariesPath: join(directory, 'config'),
         },
         null,
         2,
@@ -195,6 +206,7 @@ describe('json settings repository', () => {
     expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
       ...DEFAULT_APP_PREFERENCES,
       defaultProjectWorkspace,
+      externalLibrariesPath: join(directory, 'config'),
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -202,6 +214,43 @@ describe('json settings repository', () => {
     expect(restoredRepository.get()).toEqual(DEFAULT_APP_PREFERENCES);
     expect(restoredRepository.getDefaultProjectWorkspace()).toBe(
       defaultProjectWorkspace,
+    );
+  });
+
+  it('persists a custom external libraries path', async () => {
+    const directory = await createTemporaryDirectory();
+    const settingsFile = join(directory, 'config', 'settings.json');
+    const externalLibrariesPath = join(
+      directory,
+      'External Disk',
+      'Learning Companion',
+      'externalLib',
+    );
+    const repository = new JsonSettingsRepository(settingsFile, {
+      defaultExternalLibrariesPath: join(
+        directory,
+        'Documents',
+        'Learning Companion',
+        'externalLib',
+      ),
+    });
+    await repository.initialize();
+
+    await repository.updateExternalLibrariesPath(externalLibrariesPath);
+
+    expect(repository.getExternalLibrariesPath()).toBe(
+      externalLibrariesPath,
+    );
+    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
+      ...DEFAULT_APP_PREFERENCES,
+      defaultProjectWorkspace: join(directory, 'config'),
+      externalLibrariesPath,
+    });
+
+    const restoredRepository = new JsonSettingsRepository(settingsFile);
+    await restoredRepository.initialize();
+    expect(restoredRepository.getExternalLibrariesPath()).toBe(
+      externalLibrariesPath,
     );
   });
 
@@ -238,8 +287,16 @@ describe('json settings repository', () => {
     const defaultProjectWorkspace = join(directory, 'projects');
     const directoryUpdate =
       repository.updateDefaultProjectWorkspace(defaultProjectWorkspace);
+    const externalLibrariesPath = join(directory, 'external-libraries');
+    const externalLibrariesUpdate =
+      repository.updateExternalLibrariesPath(externalLibrariesPath);
 
-    await Promise.all([firstUpdate, secondUpdate, directoryUpdate]);
+    await Promise.all([
+      firstUpdate,
+      secondUpdate,
+      directoryUpdate,
+      externalLibrariesUpdate,
+    ]);
 
     expect(repository.get()).toEqual({
       schemaVersion: 1,
@@ -251,6 +308,7 @@ describe('json settings repository', () => {
     expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
       ...repository.get(),
       defaultProjectWorkspace,
+      externalLibrariesPath,
     });
   });
 });
