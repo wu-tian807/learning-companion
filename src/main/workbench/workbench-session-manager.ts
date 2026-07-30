@@ -41,6 +41,7 @@ export class WorkbenchSessionManager
   implements WorkbenchSessionManagerApi
 {
   private activeSession: AssetWorkbenchSession | undefined;
+  private pendingOpenController: AbortController | undefined;
   private readonly pendingCommands = new Map<
     string,
     Set<Promise<WorkbenchCommandResult>>
@@ -68,6 +69,9 @@ export class WorkbenchSessionManager
   }
 
   async open(assetId: string): Promise<WorkbenchBootstrap> {
+    this.pendingOpenController?.abort();
+    const abortController = new AbortController();
+    this.pendingOpenController = abortController;
     const openVersion = this.lifecycleVersion + 1;
     this.lifecycleVersion = openVersion;
     await this.disposeActiveSession();
@@ -101,6 +105,7 @@ export class WorkbenchSessionManager
       state,
       selectionReason: selection.reason,
       provider: selection.provider,
+      abortController,
     };
     const context = toWorkbenchProviderContext(session);
 
@@ -150,6 +155,9 @@ export class WorkbenchSessionManager
     }
 
     this.activeSession = session;
+    if (this.pendingOpenController === abortController) {
+      this.pendingOpenController = undefined;
+    }
 
     return {
       sessionId: session.id,
@@ -210,6 +218,9 @@ export class WorkbenchSessionManager
   }
 
   async closeActive(): Promise<void> {
+    this.pendingOpenController?.abort();
+    this.pendingOpenController = undefined;
+
     if (!this.activeSession) {
       this.lifecycleVersion += 1;
       return;
@@ -236,6 +247,7 @@ export class WorkbenchSessionManager
     session: AssetWorkbenchSession,
     context: WorkbenchProviderContext = toWorkbenchProviderContext(session),
   ): Promise<void> {
+    session.abortController?.abort();
     const pendingCommands = this.pendingCommands.get(session.id);
 
     if (pendingCommands) {

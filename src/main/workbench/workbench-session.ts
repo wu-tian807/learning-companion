@@ -22,6 +22,7 @@ export interface WorkbenchProviderContext {
   readonly attachments: readonly AssetAttachment[];
   readonly state: WorkbenchStateRecord | undefined;
   readonly selectionReason: WorkbenchSelectionReason;
+  readonly signal?: AbortSignal;
 }
 
 export interface WorkbenchProviderOpenResult {
@@ -50,6 +51,7 @@ export interface AssetWorkbenchSession {
   readonly state: WorkbenchStateRecord | undefined;
   readonly selectionReason: WorkbenchSelectionReason;
   readonly provider: MainWorkbenchProvider;
+  readonly abortController?: AbortController;
 }
 
 export function toWorkbenchProviderContext(
@@ -62,5 +64,6 @@ export function toWorkbenchProviderContext(
     attachments: session.attachments,
     state: session.state,
     selectionReason: session.selectionReason,
+    signal: session.abortController?.signal,
   };
 }

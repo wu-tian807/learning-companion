@@ -265,6 +265,40 @@ describe('WorkbenchSessionManager', () => {
     expect(manager.getActiveSessionId()).toBeUndefined();
   });
 
+  it('aborts provider preparation when a pending open is closed', async () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const provider = createProvider(
+      'slow-reader',
+      ['text/plain'],
+      ['read-bytes'],
+    );
+    const { service } = createAssetService();
+    const manager = createManager(service, fallback, provider);
+    vi.mocked(provider.open).mockImplementation(
+      async (context) =>
+        new Promise((_resolvePromise, rejectPromise) => {
+          context.signal?.addEventListener(
+            'abort',
+            () =>
+              rejectPromise(
+                new DOMException('cancelled', 'AbortError'),
+              ),
+            { once: true },
+          );
+        }),
+    );
+
+    const opening = manager.open('asset');
+    await vi.waitFor(() =>
+      expect(provider.open).toHaveBeenCalledOnce(),
+    );
+    await manager.closeActive();
+
+    await expect(opening).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+  });
+
   it('registers provider transport bindings for exactly the session lifetime', async () => {
     const fallback = createProvider('fallback', ['*/*']);
     const closeOrder: string[] = [];
