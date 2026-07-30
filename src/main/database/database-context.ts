@@ -1,11 +1,13 @@
 import type Database from 'better-sqlite3';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
+import type * as assetArtifactSchema from './schema/asset-artifacts';
 import type * as assetSchema from './schema/assets';
 import type * as projectSchema from './schema/projects';
 import type * as workbenchStateSchema from './schema/workbench-state';
 
-type LearningCompanionSchema = typeof assetSchema &
+type LearningCompanionSchema = typeof assetArtifactSchema &
+  typeof assetSchema &
   typeof projectSchema &
   typeof workbenchStateSchema;
 

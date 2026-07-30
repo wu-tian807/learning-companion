@@ -11,6 +11,8 @@ import { recreateAssetsMigration } from './migrations/0003-recreate-assets';
 import { createWorkbenchStateMigration } from './migrations/0004-create-workbench-state';
 import { addProjectWorkspaceMigration } from './migrations/0005-add-project-workspace';
 import { migrateLocalFileContentRefsMigration } from './migrations/0006-migrate-local-file-content-refs';
+import { createAssetArtifactsMigration } from './migrations/0007-create-asset-artifacts';
+import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetSchema from './schema/assets';
 import * as projectSchema from './schema/projects';
 import * as workbenchStateSchema from './schema/workbench-state';
@@ -27,10 +29,12 @@ const migrations: readonly DatabaseMigration[] = [
   createWorkbenchStateMigration,
   addProjectWorkspaceMigration,
   migrateLocalFileContentRefsMigration,
+  createAssetArtifactsMigration,
 ];
 const schema = {
   ...projectSchema,
   ...assetSchema,
+  ...assetArtifactSchema,
   ...workbenchStateSchema,
 };
 

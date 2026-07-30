@@ -30,7 +30,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(6);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(7);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -40,6 +40,7 @@ describe('initializeDatabase', () => {
         .map(({ name }) => name);
 
       expect(tableNames).toEqual([
+        'asset_artifacts',
         'assets',
         'projects',
         'workbench_state_data',
@@ -52,6 +53,13 @@ describe('initializeDatabase', () => {
           )
           .get(),
       ).toEqual({ name: 'assets_project_id_index' });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'asset_artifacts_asset_id_index'",
+          )
+          .get(),
+      ).toEqual({ name: 'asset_artifacts_asset_id_index' });
     } finally {
       context.close();
     }
@@ -66,7 +74,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        6,
+        7,
       );
     } finally {
       secondContext.close();
@@ -90,7 +98,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(6);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(7);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -158,7 +166,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(6);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(7);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -232,6 +240,31 @@ describe('initializeDatabase', () => {
         1_753_171_200_000,
         1_753_171_200_000,
       );
+      context.sqlite
+        .prepare(
+          `INSERT INTO asset_artifacts (
+            asset_id,
+            producer_id,
+            artifact_key,
+            relative_path,
+            media_type,
+            source_revision,
+            producer_version,
+            artifact_revision,
+            updated_time
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          'asset',
+          'builtin.office.preview',
+          'preview',
+          '.learning-companion/artifacts/asset/preview.pdf',
+          'application/pdf',
+          'source-revision',
+          'producer-version',
+          'artifact-revision',
+          1_753_171_200_000,
+        );
       expect(() =>
         insertAsset.run(
           'invalid-kind',
@@ -265,6 +298,13 @@ describe('initializeDatabase', () => {
           .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM assets')
           .get(),
       ).toEqual({ count: 0 });
+      expect(
+        context.sqlite
+          .prepare<[], { count: number }>(
+            'SELECT COUNT(*) AS count FROM asset_artifacts',
+          )
+          .get(),
+      ).toEqual({ count: 0 });
     } finally {
       context.close();
     }
@@ -277,6 +317,7 @@ describe('initializeDatabase', () => {
     legacyContext.sqlite.exec(`
       DROP TRIGGER assets_content_ref_insert_guard;
       DROP TRIGGER assets_content_ref_update_guard;
+      DROP TABLE asset_artifacts;
     `);
     legacyContext.sqlite
       .prepare(
