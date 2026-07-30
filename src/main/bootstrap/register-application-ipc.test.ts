@@ -1,0 +1,97 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  registerApplicationIpc,
+  type ApplicationIpcRegistrations,
+  type ApplicationIpcServices,
+} from './register-application-ipc';
+
+function createRegistrations(): ApplicationIpcRegistrations {
+  return {
+    registerHealthCheck: vi.fn(),
+    removeHealthCheck: vi.fn(),
+    registerExternalLink: vi.fn(),
+    removeExternalLink: vi.fn(),
+    registerExternalLibraries: vi.fn(),
+    removeExternalLibraries: vi.fn(),
+    registerSettings: vi.fn(),
+    removeSettings: vi.fn(),
+    registerProjects: vi.fn(),
+    removeProjects: vi.fn(),
+    registerAssets: vi.fn(),
+    removeAssets: vi.fn(),
+    registerWorkbench: vi.fn(),
+    removeWorkbench: vi.fn(),
+  };
+}
+
+const services: ApplicationIpcServices = {
+  assetService: {} as never,
+  externalLibraryService: {} as never,
+  projectService: {} as never,
+  settingsRepository: {} as never,
+  workbenchSessionManager: {} as never,
+};
+
+describe('registerApplicationIpc', () => {
+  it('registers all handlers and disposes them in reverse order', () => {
+    const registrations = createRegistrations();
+    const dispose = registerApplicationIpc(services, registrations);
+
+    expect(
+      registrations.registerExternalLibraries,
+    ).toHaveBeenCalledWith(services.externalLibraryService);
+    expect(registrations.registerSettings).toHaveBeenCalledWith(
+      services.settingsRepository,
+    );
+    expect(registrations.registerProjects).toHaveBeenCalledWith(
+      services.projectService,
+    );
+    expect(registrations.registerAssets).toHaveBeenCalledWith(
+      services.assetService,
+    );
+    expect(registrations.registerWorkbench).toHaveBeenCalledWith(
+      services.workbenchSessionManager,
+    );
+
+    dispose();
+    dispose();
+
+    const removals = [
+      registrations.removeWorkbench,
+      registrations.removeAssets,
+      registrations.removeProjects,
+      registrations.removeSettings,
+      registrations.removeExternalLibraries,
+      registrations.removeExternalLink,
+      registrations.removeHealthCheck,
+    ];
+
+    for (const [index, removal] of removals.entries()) {
+      const removalMock = vi.mocked(removal);
+      expect(removalMock).toHaveBeenCalledOnce();
+      if (index > 0) {
+        expect(removalMock).toHaveBeenCalledAfter(
+          vi.mocked(removals[index - 1]),
+        );
+      }
+    }
+  });
+
+  it('removes earlier handlers when registration fails', () => {
+    const registrations = createRegistrations();
+    vi.mocked(registrations.registerSettings).mockImplementation(() => {
+      throw new Error('registration failed');
+    });
+
+    expect(() =>
+      registerApplicationIpc(services, registrations),
+    ).toThrow('registration failed');
+    expect(
+      registrations.removeExternalLibraries,
+    ).toHaveBeenCalledOnce();
+    expect(registrations.removeExternalLink).toHaveBeenCalledOnce();
+    expect(registrations.removeHealthCheck).toHaveBeenCalledOnce();
+    expect(registrations.removeSettings).not.toHaveBeenCalled();
+  });
+});

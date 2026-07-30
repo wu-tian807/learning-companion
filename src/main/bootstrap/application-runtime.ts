@@ -1,0 +1,69 @@
+import type { DatabaseContext } from '../database/database-context';
+import type { ContentResourceService } from '../content/content-resource-service';
+import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
+import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
+import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
+
+export interface ApplicationRuntimeResources {
+  readonly databaseContext: DatabaseContext;
+  readonly contentResourceService: ContentResourceService;
+  readonly externalLibraryService: ExternalLibraryServiceApi;
+  readonly sandboxFrameInteractionBridge: SandboxFrameInteractionBridge;
+  readonly workbenchSessionManager: WorkbenchSessionManagerApi;
+  readonly disposeContentProtocol: () => void;
+  readonly disposeIpc: () => void;
+}
+
+export class ApplicationRuntime {
+  private workbenchCloseTask: Promise<void> | undefined;
+  private shutdownTask: Promise<void> | undefined;
+  private disposed = false;
+
+  constructor(
+    private readonly resources: ApplicationRuntimeResources,
+  ) {}
+
+  get interactionBridge(): SandboxFrameInteractionBridge {
+    return this.resources.sandboxFrameInteractionBridge;
+  }
+
+  closeActiveWorkbench(): Promise<void> {
+    if (this.workbenchCloseTask) {
+      return this.workbenchCloseTask;
+    }
+
+    const task = this.resources.workbenchSessionManager.closeActive();
+    const trackedTask = task.finally(() => {
+      if (this.workbenchCloseTask === trackedTask) {
+        this.workbenchCloseTask = undefined;
+      }
+    });
+    this.workbenchCloseTask = trackedTask;
+    return trackedTask;
+  }
+
+  shutdown(): Promise<void> {
+    if (this.shutdownTask) {
+      return this.shutdownTask;
+    }
+
+    this.shutdownTask = Promise.all([
+      this.closeActiveWorkbench(),
+      this.resources.externalLibraryService.shutdown(),
+    ]).then(() => undefined);
+    return this.shutdownTask;
+  }
+
+  dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+
+    this.disposed = true;
+    this.resources.disposeContentProtocol();
+    this.resources.contentResourceService.dispose();
+    this.resources.disposeIpc();
+    this.resources.sandboxFrameInteractionBridge.dispose();
+    this.resources.databaseContext.close();
+  }
+}
