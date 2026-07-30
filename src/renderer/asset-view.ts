@@ -35,18 +35,49 @@ export function selectAfterAssetDeletion(
   deletedAssetId: string,
   selectedAssetId: string | null,
 ): string | null {
-  if (selectedAssetId !== deletedAssetId) {
+  return selectAfterAssetsDeletion(
+    assets,
+    [deletedAssetId],
+    selectedAssetId,
+  );
+}
+
+export function selectAfterAssetsDeletion(
+  assets: readonly AssetSnapshot[],
+  deletedAssetIds: readonly string[],
+  selectedAssetId: string | null,
+): string | null {
+  const deleted = new Set(deletedAssetIds);
+
+  if (!selectedAssetId || !deleted.has(selectedAssetId)) {
     return selectedAssetId;
   }
 
-  const deletedIndex = assets.findIndex((asset) => asset.id === deletedAssetId);
-  const remaining = assets.filter((asset) => asset.id !== deletedAssetId);
+  const selectedIndex = assets.findIndex(
+    (asset) => asset.id === selectedAssetId,
+  );
 
-  if (remaining.length === 0) {
-    return null;
+  for (
+    let index = selectedIndex + 1;
+    index < assets.length;
+    index += 1
+  ) {
+    const candidate = assets[index]!;
+
+    if (!deleted.has(candidate.id)) {
+      return candidate.id;
+    }
   }
 
-  return remaining[Math.min(deletedIndex, remaining.length - 1)]!.id;
+  for (let index = selectedIndex - 1; index >= 0; index -= 1) {
+    const candidate = assets[index]!;
+
+    if (!deleted.has(candidate.id)) {
+      return candidate.id;
+    }
+  }
+
+  return null;
 }
 
 export async function deleteAssetAfterWorkbenchClose(
@@ -56,12 +87,31 @@ export async function deleteAssetAfterWorkbenchClose(
   deselect: () => void,
   deleteAsset: () => Promise<void>,
 ): Promise<void> {
-  if (selectedAssetId === targetAssetId) {
+  return deleteAssetsAfterWorkbenchClose(
+    selectedAssetId,
+    [targetAssetId],
+    workbenchClosed,
+    deselect,
+    deleteAsset,
+  );
+}
+
+export async function deleteAssetsAfterWorkbenchClose(
+  selectedAssetId: string | null,
+  targetAssetIds: readonly string[],
+  workbenchClosed: Promise<void>,
+  deselect: () => void,
+  deleteAssets: () => Promise<void>,
+): Promise<void> {
+  if (
+    selectedAssetId &&
+    new Set(targetAssetIds).has(selectedAssetId)
+  ) {
     deselect();
     await workbenchClosed;
   }
 
-  await deleteAsset();
+  await deleteAssets();
 }
 
 export function replaceAsset(

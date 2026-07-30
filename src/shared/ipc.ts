@@ -55,7 +55,7 @@ export const IPC_CHANNELS = {
   addLocalAssets: "asset:add-local-files",
   renameAsset: "asset:rename",
   relinkAsset: "asset:relink",
-  deleteAsset: "asset:delete",
+  deleteAssets: "asset:delete-many",
   refreshAsset: "asset:refresh",
   refreshAllAssets: "asset:refresh-all",
   revealAssetInFolder: "asset:reveal-in-folder",
@@ -125,7 +125,9 @@ export interface LearningCompanionApi {
   ) => Promise<AddLocalAssetsResult>;
   renameAsset: (request: RenameAssetRequest) => Promise<AssetSnapshot>;
   relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSnapshot>;
-  deleteAsset: (request: AssetIdRequest) => Promise<void>;
+  deleteAssets: (
+    request: DeleteAssetsRequest,
+  ) => Promise<DeleteAssetsResult>;
   refreshAsset: (request: AssetIdRequest) => Promise<AssetSnapshot>;
   refreshAllAssets: (
     request: ProjectLifecycleRequest,
@@ -203,6 +205,22 @@ export interface RenameAssetRequest {
 export interface RelinkAssetRequest {
   assetId: string;
   path: string;
+}
+
+export interface DeleteAssetsRequest {
+  projectId: string;
+  assetIds: string[];
+}
+
+export interface DeleteAssetFailure {
+  assetId: string;
+  message: string;
+}
+
+export interface DeleteAssetsResult {
+  deletedAssetIds: string[];
+  failed: DeleteAssetFailure[];
+  assets: AssetSnapshot[];
 }
 
 export interface AssetIdRequest {
@@ -405,6 +423,59 @@ export function isRelinkAssetRequest(
     isRecord(value) &&
     isRequiredText(value.assetId) &&
     isRequiredText(value.path)
+  );
+}
+
+export function isDeleteAssetsRequest(
+  value: unknown,
+): value is DeleteAssetsRequest {
+  if (
+    !isRecord(value) ||
+    !isRequiredText(value.projectId) ||
+    !Array.isArray(value.assetIds) ||
+    value.assetIds.length === 0 ||
+    value.assetIds.length > ASSET_BATCH_MAX_SIZE ||
+    !value.assetIds.every((assetId) => isRequiredText(assetId))
+  ) {
+    return false;
+  }
+
+  return new Set(value.assetIds).size === value.assetIds.length;
+}
+
+export function isDeleteAssetsResult(
+  value: unknown,
+): value is DeleteAssetsResult {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.deletedAssetIds) ||
+    !value.deletedAssetIds.every((assetId) =>
+      isRequiredText(assetId),
+    ) ||
+    !Array.isArray(value.failed) ||
+    !value.failed.every(
+      (failure) =>
+        isRecord(failure) &&
+        isRequiredText(failure.assetId) &&
+        isRequiredText(failure.message),
+    ) ||
+    !isAssetSnapshotList(value.assets)
+  ) {
+    return false;
+  }
+
+  const deletedAssetIds = new Set(value.deletedAssetIds);
+  const failedAssetIds = new Set(
+    value.failed.map((failure) => failure.assetId),
+  );
+
+  return (
+    deletedAssetIds.size === value.deletedAssetIds.length &&
+    failedAssetIds.size === value.failed.length &&
+    [...deletedAssetIds].every(
+      (assetId) => !failedAssetIds.has(assetId),
+    ) &&
+    value.assets.every((asset) => !deletedAssetIds.has(asset.id))
   );
 }
 

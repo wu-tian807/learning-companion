@@ -8,6 +8,8 @@ import {
   isCreateProjectRequest,
   isChangeProjectWorkspaceRequest,
   isDeleteProjectRequest,
+  isDeleteAssetsRequest,
+  isDeleteAssetsResult,
   isExternalLibraryIdRequest,
   isMigrateExternalLibrariesRequest,
   isHealthCheckResponse,
@@ -174,6 +176,12 @@ describe("Asset contracts", () => {
       isRelinkAssetRequest({ assetId: "asset", path: "/tmp/new.md" }),
     ).toBe(true);
     expect(isAssetIdRequest({ assetId: "asset" })).toBe(true);
+    expect(
+      isDeleteAssetsRequest({
+        projectId: "project",
+        assetIds: ["asset-a", "asset-b"],
+      }),
+    ).toBe(true);
   });
 
   it("rejects malformed Asset requests", () => {
@@ -200,6 +208,18 @@ describe("Asset contracts", () => {
       false,
     );
     expect(isAssetIdRequest(null)).toBe(false);
+    expect(
+      isDeleteAssetsRequest({
+        projectId: "project",
+        assetIds: [],
+      }),
+    ).toBe(false);
+    expect(
+      isDeleteAssetsRequest({
+        projectId: "project",
+        assetIds: ["asset", "asset"],
+      }),
+    ).toBe(false);
   });
 
   it("rejects malformed batch addition results", () => {
@@ -246,6 +266,53 @@ describe("Asset contracts", () => {
       isAddLocalAssetsResult({
         added: [null],
         failed: [],
+        assets: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("validates batch deletion results", () => {
+    const remainingAsset = {
+      id: "remaining",
+      projectId: "project",
+      name: "资料",
+      mediaType: "text/plain",
+      contentRef: {
+        kind: "local-file",
+        base: "absolute",
+        path: "/tmp/a.txt",
+      },
+      contentStatus: {
+        availability: "available",
+        checkedTime: 100,
+      },
+      createdTime: 100,
+      lastUsedTime: 100,
+    };
+
+    expect(
+      isDeleteAssetsResult({
+        deletedAssetIds: ["deleted"],
+        failed: [
+          {
+            assetId: "remaining",
+            message: "正在使用",
+          },
+        ],
+        assets: [remainingAsset],
+      }),
+    ).toBe(true);
+    expect(
+      isDeleteAssetsResult({
+        deletedAssetIds: ["remaining"],
+        failed: [],
+        assets: [remainingAsset],
+      }),
+    ).toBe(false);
+    expect(
+      isDeleteAssetsResult({
+        deletedAssetIds: ["same"],
+        failed: [{ assetId: "same", message: "失败" }],
         assets: [],
       }),
     ).toBe(false);

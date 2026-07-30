@@ -143,10 +143,32 @@ export function ProjectPage({
           <ProjectAssetPanel
             state={session.loadState}
             selectedAssetId={session.selectedAssetId}
+            selectionMode={assetOperations.selection.active}
+            selectedAssetIds={
+              assetOperations.selection.selectedAssetIds
+            }
+            allAssetsSelected={
+              assetOperations.selection.allSelected
+            }
             busy={assetOperations.busy}
             refreshingAll={assetOperations.refreshingAll}
             dragging={dragging}
             onSelect={session.selectAsset}
+            onEnterSelectionMode={
+              assetOperations.selection.enter
+            }
+            onExitSelectionMode={assetOperations.selection.exit}
+            onToggleSelection={assetOperations.selection.toggle}
+            onToggleAll={assetOperations.selection.toggleAll}
+            onDeleteSelected={() => {
+              if (
+                assetOperations.selection.selectedAssets.length > 0
+              ) {
+                assetOperations.setDeleteTargets(
+                  assetOperations.selection.selectedAssets,
+                );
+              }
+            }}
             onCopyAdd={() =>
               void assetOperations.chooseAndAdd('copy')
             }
@@ -164,7 +186,9 @@ export function ProjectPage({
             onRefreshAll={() =>
               void assetOperations.refreshAllAssets()
             }
-            onDelete={assetOperations.setDeleteTarget}
+            onDelete={(asset) =>
+              assetOperations.setDeleteTargets([asset])
+            }
           />
           <AssetWorkbenchHost
             projectId={project.id}
@@ -234,22 +258,22 @@ export function ProjectPage({
         />
       )}
 
-      {assetOperations.deleteTarget && (
+      {assetOperations.deleteTargets && (
         <AssetDeleteDialog
-          asset={assetOperations.deleteTarget}
+          assets={assetOperations.deleteTargets}
           busy={assetOperations.busy}
           error={error}
           onClose={() => {
-            assetOperations.setDeleteTarget(null);
+            assetOperations.setDeleteTargets(null);
             setError(null);
           }}
-          onConfirm={() => void assetOperations.deleteAsset()}
+          onConfirm={() => void assetOperations.deleteAssets()}
         />
       )}
 
       {error &&
         !assetOperations.renameTarget &&
-        !assetOperations.deleteTarget && (
+        !assetOperations.deleteTargets && (
           <ErrorDialog
             message={error}
             onClose={() => setError(null)}

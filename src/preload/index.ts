@@ -25,6 +25,8 @@ import type {
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
   AssetIdRequest,
+  DeleteAssetsRequest,
+  DeleteAssetsResult,
   HealthCheckResponse,
   LearningCompanionApi,
   OpenExternalRequest,
@@ -134,8 +136,8 @@ const api: LearningCompanionApi = {
     invoke<AssetSnapshot>(IPC_CHANNELS.renameAsset, request),
   relinkAsset: (request: RelinkAssetRequest) =>
     invoke<AssetSnapshot>(IPC_CHANNELS.relinkAsset, request),
-  deleteAsset: (request: AssetIdRequest) =>
-    invoke<void>(IPC_CHANNELS.deleteAsset, request),
+  deleteAssets: (request: DeleteAssetsRequest) =>
+    invoke<DeleteAssetsResult>(IPC_CHANNELS.deleteAssets, request),
   refreshAsset: (request: AssetIdRequest) =>
     invoke<AssetSnapshot>(IPC_CHANNELS.refreshAsset, request),
   refreshAllAssets: (request: ProjectLifecycleRequest) =>

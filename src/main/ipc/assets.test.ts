@@ -230,7 +230,10 @@ describe('Asset IPC handlers', () => {
       {},
       { assetId: 'asset', path: '/tmp/new.md' },
     );
-    await findHandler(IPC_CHANNELS.deleteAsset)({}, { assetId: 'asset' });
+    await findHandler(IPC_CHANNELS.deleteAssets)(
+      {},
+      { projectId: 'project', assetIds: ['asset'] },
+    );
     await findHandler(IPC_CHANNELS.refreshAsset)({}, { assetId: 'asset' });
     await findHandler(IPC_CHANNELS.refreshAllAssets)(
       {},
@@ -254,6 +257,61 @@ describe('Asset IPC handlers', () => {
     expect(assetService.revealInFolder).toHaveBeenCalledWith('asset');
   });
 
+  it('returns partial success details from a batch deletion', async () => {
+    const { assetService } = createDependencies();
+    vi.mocked(assetService.delete).mockImplementation(
+      async (assetId: string) => {
+        if (assetId === 'failed') {
+          throw new AppError('ASSET_UNAVAILABLE');
+        }
+      },
+    );
+    registerAssetHandlers(assetService);
+
+    await expect(
+      findHandler(IPC_CHANNELS.deleteAssets)(
+        {},
+        {
+          projectId: 'project',
+          assetIds: ['deleted', 'failed'],
+        },
+      ),
+    ).resolves.toMatchObject({
+      deletedAssetIds: ['deleted'],
+      failed: [
+        {
+          assetId: 'failed',
+          message: '所选文件当前不可用，请检查文件是否存在以及访问权限。',
+        },
+      ],
+    });
+    expect(assetService.delete).toHaveBeenNthCalledWith(1, 'deleted');
+    expect(assetService.delete).toHaveBeenNthCalledWith(2, 'failed');
+    expect(assetService.list).toHaveBeenCalledOnce();
+  });
+
+  it('stops a batch deletion when its Project changes', async () => {
+    const { assetService } = createDependencies();
+    vi.mocked(assetService.delete).mockRejectedValueOnce(
+      new AppError('PROJECT_CONTEXT_CHANGED'),
+    );
+    registerAssetHandlers(assetService);
+
+    await expect(
+      findHandler(IPC_CHANNELS.deleteAssets)(
+        {},
+        {
+          projectId: 'project',
+          assetIds: ['asset'],
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'PROJECT_CONTEXT_CHANGED',
+      kind: 'cancelled',
+    });
+    expect(assetService.list).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed requests before reaching the domain layer', async () => {
     const { assetService } = createDependencies();
     registerAssetHandlers(assetService);
@@ -267,6 +325,12 @@ describe('Asset IPC handlers', () => {
         { projectId: 'project', paths: [] },
       ),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
+      findHandler(IPC_CHANNELS.deleteAssets)(
+        {},
+        { projectId: 'project', assetIds: [] },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
   });
 
   it('removes every Asset handler', () => {
@@ -277,7 +341,7 @@ describe('Asset IPC handlers', () => {
       IPC_CHANNELS.addLocalAssets,
       IPC_CHANNELS.renameAsset,
       IPC_CHANNELS.relinkAsset,
-      IPC_CHANNELS.deleteAsset,
+      IPC_CHANNELS.deleteAssets,
       IPC_CHANNELS.refreshAsset,
       IPC_CHANNELS.refreshAllAssets,
       IPC_CHANNELS.revealAssetInFolder,

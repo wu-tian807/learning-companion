@@ -4,10 +4,12 @@ import {
   IPC_CHANNELS,
   isAddLocalAssetsRequest,
   isAssetIdRequest,
+  isDeleteAssetsRequest,
   isProjectLifecycleRequest,
   isRelinkAssetRequest,
   isRenameAssetRequest,
   type AddLocalAssetsResult,
+  type DeleteAssetsResult,
 } from '../../shared/ipc';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
@@ -103,13 +105,54 @@ export function registerAssetHandlers(
     },
   );
 
-  registerIpcHandler(IPC_CHANNELS.deleteAsset, async (_event, request: unknown) => {
-    if (!isAssetIdRequest(request)) {
-      throw invalidRequest();
-    }
+  registerIpcHandler(
+    IPC_CHANNELS.deleteAssets,
+    async (_event, request: unknown): Promise<DeleteAssetsResult> => {
+      if (!isDeleteAssetsRequest(request)) {
+        throw invalidRequest();
+      }
+      if (assetService.getActiveProjectId() !== request.projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
 
-    await assetService.delete(request.assetId);
-  });
+      const result: DeleteAssetsResult = {
+        deletedAssetIds: [],
+        failed: [],
+        assets: [],
+      };
+
+      for (const assetId of request.assetIds) {
+        try {
+          await assetService.delete(assetId);
+          result.deletedAssetIds.push(assetId);
+        } catch (error) {
+          if (
+            error instanceof AppError &&
+            (error.code === 'PROJECT_CONTEXT_CHANGED' ||
+              error.code === 'OPERATION_SUPERSEDED')
+          ) {
+            throw error;
+          }
+
+          const handled = handleAppError(
+            `${IPC_CHANNELS.deleteAssets}:${assetId}`,
+            error,
+          );
+          result.failed.push({
+            assetId,
+            message:
+              handled.message ?? '无法移除该资料，请稍后重试。',
+          });
+        }
+      }
+
+      if (assetService.getActiveProjectId() !== request.projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
+      result.assets.push(...assetService.list());
+      return result;
+    },
+  );
 
   registerIpcHandler(
     IPC_CHANNELS.refreshAsset,
@@ -154,7 +197,7 @@ export function removeAssetHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.addLocalAssets);
   ipcMain.removeHandler(IPC_CHANNELS.renameAsset);
   ipcMain.removeHandler(IPC_CHANNELS.relinkAsset);
-  ipcMain.removeHandler(IPC_CHANNELS.deleteAsset);
+  ipcMain.removeHandler(IPC_CHANNELS.deleteAssets);
   ipcMain.removeHandler(IPC_CHANNELS.refreshAsset);
   ipcMain.removeHandler(IPC_CHANNELS.refreshAllAssets);
   ipcMain.removeHandler(IPC_CHANNELS.revealAssetInFolder);

@@ -16,15 +16,18 @@ import {
 } from '../../shared/assets';
 import {
   isAddLocalAssetsResult,
+  isDeleteAssetsResult,
   type AddLocalAssetsResult,
+  type DeleteAssetsResult,
 } from '../../shared/ipc';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
-  deleteAssetAfterWorkbenchClose,
+  deleteAssetsAfterWorkbenchClose,
   replaceAsset,
-  selectAfterAssetDeletion,
+  selectAfterAssetsDeletion,
 } from '../asset-view';
 import type { AssetLoadState } from './project-asset-view';
+import { useAssetSelection } from './use-asset-selection';
 
 interface UseProjectAssetsOptions {
   readonly projectId: string;
@@ -50,8 +53,9 @@ export function useProjectAssets({
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [renameTarget, setRenameTarget] =
     useState<AssetSnapshot | null>(null);
-  const [deleteTarget, setDeleteTarget] =
-    useState<AssetSnapshot | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<
+    readonly AssetSnapshot[] | null
+  >(null);
   const mutationLockRef = useRef(false);
   const assets = useMemo(
     () => (loadState.kind === 'ready' ? loadState.assets : []),
@@ -61,6 +65,7 @@ export function useProjectAssets({
     () => assets.find((asset) => asset.id === selectedAssetId),
     [assets, selectedAssetId],
   );
+  const selection = useAssetSelection(assets);
   const updateAssets = useCallback(
     (operation: (assets: AssetSnapshot[]) => AssetSnapshot[]) => {
       setLoadState((current) =>
@@ -234,41 +239,76 @@ export function useProjectAssets({
     }
   };
 
-  const deleteAsset = async () => {
-    if (!deleteTarget) {
+  const deleteAssets = async () => {
+    if (!deleteTargets || deleteTargets.length === 0) {
       return;
     }
 
-    const target = deleteTarget;
+    const targets = deleteTargets;
+    const targetIds = targets.map((asset) => asset.id);
     const selectedBeforeDeletion = selectedAssetId;
-    const nextSelectedAssetId = selectAfterAssetDeletion(
-      assets,
-      target.id,
-      selectedBeforeDeletion,
-    );
     const activeWorkbenchClosed =
       workbenchLifecycleTaskRef.current;
+    let receivedResult = false;
     const succeeded = await runMutation(async () => {
-      await deleteAssetAfterWorkbenchClose(
+      let result: DeleteAssetsResult | undefined;
+
+      await deleteAssetsAfterWorkbenchClose(
         selectedBeforeDeletion,
-        target.id,
+        targetIds,
         activeWorkbenchClosed,
         () => selectAsset(null),
-        () =>
-          window.learningCompanion.deleteAsset({
-            assetId: target.id,
-          }),
+        async () => {
+          result = await window.learningCompanion.deleteAssets({
+            projectId,
+            assetIds: targetIds,
+          });
+        },
       );
-      updateAssets((current) =>
-        current.filter((asset) => asset.id !== target.id),
-      );
-      selectAsset(nextSelectedAssetId);
-    }, '无法删除该 Asset。');
 
-    if (succeeded) {
-      setDeleteTarget(null);
-    } else if (selectedBeforeDeletion === target.id) {
-      selectAsset(target.id);
+      if (!isDeleteAssetsResult(result)) {
+        throw new Error('批量删除 Asset 响应无效');
+      }
+
+      receivedResult = true;
+      setLoadState({ kind: 'ready', assets: result.assets });
+      selectAsset(
+        selectAfterAssetsDeletion(
+          assets,
+          result.deletedAssetIds,
+          selectedBeforeDeletion,
+        ),
+      );
+
+      if (result.failed.length === 0) {
+        setDeleteTargets(null);
+        selection.exit();
+        return;
+      }
+
+      const failedIds = new Set(
+        result.failed.map((failure) => failure.assetId),
+      );
+      const retryTargets = result.assets.filter((asset) =>
+        failedIds.has(asset.id),
+      );
+      const firstFailure = result.failed[0]!;
+      setError(
+        `已移除 ${result.deletedAssetIds.length} 项，${result.failed.length} 项失败：${firstFailure.message}`,
+      );
+      selection.replace(retryTargets.map((asset) => asset.id));
+      setDeleteTargets(
+        retryTargets.length > 0 ? retryTargets : null,
+      );
+    }, '无法移除所选 Asset。');
+
+    if (
+      !succeeded &&
+      !receivedResult &&
+      selectedBeforeDeletion &&
+      targetIds.includes(selectedBeforeDeletion)
+    ) {
+      selectAsset(selectedBeforeDeletion);
     }
   };
 
@@ -279,8 +319,9 @@ export function useProjectAssets({
     refreshingAll,
     renameTarget,
     setRenameTarget,
-    deleteTarget,
-    setDeleteTarget,
+    deleteTargets,
+    setDeleteTargets,
+    selection,
     addPaths,
     chooseAndAdd,
     renameAsset,
@@ -288,6 +329,6 @@ export function useProjectAssets({
     revealAssetInFolder,
     refreshAsset,
     refreshAllAssets,
-    deleteAsset,
+    deleteAssets,
   };
 }

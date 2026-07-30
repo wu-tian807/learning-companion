@@ -29,10 +29,18 @@ describe('ProjectAssetPanel', () => {
       <ProjectAssetPanel
         state={{ kind: 'loading' }}
         selectedAssetId={null}
+        selectionMode={false}
+        selectedAssetIds={new Set()}
+        allAssetsSelected={false}
         busy={false}
         refreshingAll={false}
         dragging={false}
         onSelect={vi.fn()}
+        onEnterSelectionMode={vi.fn()}
+        onExitSelectionMode={vi.fn()}
+        onToggleSelection={vi.fn()}
+        onToggleAll={vi.fn()}
+        onDeleteSelected={vi.fn()}
         onCopyAdd={vi.fn()}
         onLinkAdd={vi.fn()}
         onRetry={vi.fn()}
@@ -53,10 +61,18 @@ describe('ProjectAssetPanel', () => {
       <ProjectAssetPanel
         state={{ kind: 'ready', assets: [createAsset()] }}
         selectedAssetId="asset"
+        selectionMode={false}
+        selectedAssetIds={new Set()}
+        allAssetsSelected={false}
         busy={false}
         refreshingAll={false}
         dragging={false}
         onSelect={vi.fn()}
+        onEnterSelectionMode={vi.fn()}
+        onExitSelectionMode={vi.fn()}
+        onToggleSelection={vi.fn()}
+        onToggleAll={vi.fn()}
+        onDeleteSelected={vi.fn()}
         onCopyAdd={vi.fn()}
         onLinkAdd={vi.fn()}
         onRetry={vi.fn()}
@@ -72,5 +88,40 @@ describe('ProjectAssetPanel', () => {
     expect(markup).toContain('未知');
     expect(markup).toContain('外部');
     expect(markup).toContain('文件缺失');
+  });
+
+  it('replaces row menus with selection controls in selection mode', () => {
+    const markup = renderToStaticMarkup(
+      <ProjectAssetPanel
+        state={{ kind: 'ready', assets: [createAsset()] }}
+        selectedAssetId="asset"
+        selectionMode
+        selectedAssetIds={new Set(['asset'])}
+        allAssetsSelected
+        busy={false}
+        refreshingAll={false}
+        dragging={false}
+        onSelect={vi.fn()}
+        onEnterSelectionMode={vi.fn()}
+        onExitSelectionMode={vi.fn()}
+        onToggleSelection={vi.fn()}
+        onToggleAll={vi.fn()}
+        onDeleteSelected={vi.fn()}
+        onCopyAdd={vi.fn()}
+        onLinkAdd={vi.fn()}
+        onRetry={vi.fn()}
+        onRename={vi.fn()}
+        onReveal={vi.fn()}
+        onRelink={vi.fn()}
+        onRefreshAll={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('选择资料');
+    expect(markup).toContain('已选 1 项');
+    expect(markup).toContain('取消全选');
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).not.toContain('的更多操作');
   });
 });

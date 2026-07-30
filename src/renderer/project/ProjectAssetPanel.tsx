@@ -27,13 +27,69 @@ function RefreshIcon({ spinning = false }: { readonly spinning?: boolean }) {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg
+      className="size-3.5"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4.5 6.5h11M8 3.5h4l1 3H7l1-3Z" />
+      <path d="m6 6.5.7 10h6.6l.7-10M8.5 9v4.5M11.5 9v4.5" />
+    </svg>
+  );
+}
+
+function SelectionCheckbox({
+  checked,
+}: {
+  readonly checked: boolean;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={[
+        'grid size-[18px] shrink-0 place-items-center rounded-[5px] border transition-colors',
+        checked
+          ? 'border-indigo-300/70 bg-indigo-400 text-slate-950'
+          : 'border-white/20 bg-black/10 text-transparent',
+      ].join(' ')}
+    >
+      <svg
+        className="size-3"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="m3.5 8 3 3 6-6" />
+      </svg>
+    </span>
+  );
+}
+
 interface ProjectAssetPanelProps {
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
+  readonly selectionMode: boolean;
+  readonly selectedAssetIds: ReadonlySet<string>;
+  readonly allAssetsSelected: boolean;
   readonly busy: boolean;
   readonly refreshingAll: boolean;
   readonly dragging: boolean;
   readonly onSelect: (assetId: string) => void;
+  readonly onEnterSelectionMode: () => void;
+  readonly onExitSelectionMode: () => void;
+  readonly onToggleSelection: (assetId: string) => void;
+  readonly onToggleAll: () => void;
+  readonly onDeleteSelected: () => void;
   readonly onCopyAdd: () => void;
   readonly onLinkAdd: () => void;
   readonly onRetry: () => void;
@@ -47,10 +103,18 @@ interface ProjectAssetPanelProps {
 export function ProjectAssetPanel({
   state,
   selectedAssetId,
+  selectionMode,
+  selectedAssetIds,
+  allAssetsSelected,
   busy,
   refreshingAll,
   dragging,
   onSelect,
+  onEnterSelectionMode,
+  onExitSelectionMode,
+  onToggleSelection,
+  onToggleAll,
+  onDeleteSelected,
   onCopyAdd,
   onLinkAdd,
   onRetry,
@@ -61,6 +125,7 @@ export function ProjectAssetPanel({
   onDelete,
 }: ProjectAssetPanelProps) {
   const assets = state.kind === 'ready' ? state.assets : [];
+  const selectedCount = selectedAssetIds.size;
 
   return (
     <aside
@@ -73,35 +138,89 @@ export function ProjectAssetPanel({
       ].join(' ')}
     >
       <div className="flex h-[54px] shrink-0 items-center justify-between border-b border-white/[0.075] px-[17px]">
-        <h2 className="text-sm font-semibold text-slate-100">Assets</h2>
-        <span className="text-[11px] text-slate-500">
-          {state.kind === 'ready' ? `${assets.length} 项` : '—'}
+        <h2 className="text-sm font-semibold text-slate-100">
+          {selectionMode ? '选择资料' : 'Assets'}
+        </h2>
+        <span className="flex items-center gap-2">
+          <span className="text-[11px] text-slate-500">
+            {selectionMode
+              ? `已选 ${selectedCount} 项`
+              : state.kind === 'ready'
+                ? `${assets.length} 项`
+                : '—'}
+          </span>
+          {state.kind === 'ready' && assets.length > 0 && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={
+                selectionMode
+                  ? onExitSelectionMode
+                  : onEnterSelectionMode
+              }
+              className="ui-control rounded-md px-1.5 py-1 text-[10px] font-medium text-indigo-200 disabled:opacity-40"
+            >
+              {selectionMode ? '完成' : '选择'}
+            </button>
+          )}
         </span>
       </div>
 
-      <AssetImportSplitButton
-        disabled={busy || state.kind !== 'ready'}
-        onCopy={onCopyAdd}
-        onLink={onLinkAdd}
-      />
-
-      <div className="flex shrink-0 items-center justify-between px-[17px] pt-2.5 pb-1 text-[10px] font-bold tracking-[0.09em] text-slate-500">
-        <span>全部内容</span>
-        <span className="flex items-center gap-1.5">
-          <span className="text-[9px] font-medium tracking-normal text-slate-400/70">
-            最近使用 ↓
-          </span>
+      {selectionMode ? (
+        <div className="mx-3.5 mt-3.5 flex h-[39px] shrink-0 items-center justify-between rounded-[11px] border border-white/[0.08] bg-black/10 px-2">
           <button
             type="button"
-            aria-label="刷新全部资料状态"
-            title="刷新全部资料状态"
-            disabled={busy || state.kind !== 'ready'}
-            onClick={onRefreshAll}
-            className="ui-icon-button grid size-7 place-items-center rounded-lg text-slate-400 disabled:opacity-40"
+            aria-pressed={allAssetsSelected}
+            disabled={busy || assets.length === 0}
+            onClick={onToggleAll}
+            className="ui-control flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 disabled:opacity-40"
           >
-            <RefreshIcon spinning={refreshingAll} />
+            <SelectionCheckbox checked={allAssetsSelected} />
+            {allAssetsSelected ? '取消全选' : '全选'}
           </button>
+          <button
+            type="button"
+            disabled={busy || selectedCount === 0}
+            onClick={onDeleteSelected}
+            className="ui-danger-button flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-rose-300 disabled:opacity-35"
+          >
+            <TrashIcon />
+            移除
+          </button>
+        </div>
+      ) : (
+        <AssetImportSplitButton
+          disabled={busy || state.kind !== 'ready'}
+          onCopy={onCopyAdd}
+          onLink={onLinkAdd}
+        />
+      )}
+
+      <div className="flex shrink-0 items-center justify-between px-[17px] pt-2.5 pb-1 text-[10px] font-bold tracking-[0.09em] text-slate-500">
+        <span>
+          {selectionMode ? '选择要移除的资料' : '全部内容'}
         </span>
+        {selectionMode ? (
+          <span className="text-[9px] font-medium tracking-normal text-slate-500">
+            {selectedCount}/{assets.length}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            <span className="text-[9px] font-medium tracking-normal text-slate-400/70">
+              最近使用 ↓
+            </span>
+            <button
+              type="button"
+              aria-label="刷新全部资料状态"
+              title="刷新全部资料状态"
+              disabled={busy || state.kind !== 'ready'}
+              onClick={onRefreshAll}
+              className="ui-icon-button grid size-7 place-items-center rounded-lg text-slate-400 disabled:opacity-40"
+            >
+              <RefreshIcon spinning={refreshingAll} />
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -132,25 +251,40 @@ export function ProjectAssetPanel({
             </p>
           </div>
         )}
-        {assets.map((asset) => (
-          <div
-            key={asset.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect(asset.id)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onSelect(asset.id);
-              }
-            }}
-            className={[
-              'my-0.5 grid w-full grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[11px] border p-2.5 text-left',
-              asset.id === selectedAssetId
-                ? 'border-indigo-300/15 bg-indigo-500/[0.12]'
-                : 'border-transparent hover:bg-white/[0.035]',
-            ].join(' ')}
-          >
+        {assets.map((asset) => {
+          const checked = selectedAssetIds.has(asset.id);
+          const activate = () => {
+            if (selectionMode) {
+              onToggleSelection(asset.id);
+            } else {
+              onSelect(asset.id);
+            }
+          };
+
+          return (
+            <div
+              key={asset.id}
+              role="button"
+              tabIndex={0}
+              aria-pressed={selectionMode ? checked : undefined}
+              onClick={activate}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  activate();
+                }
+              }}
+              className={[
+                'my-0.5 grid w-full grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[11px] border p-2.5 text-left',
+                selectionMode
+                  ? checked
+                    ? 'border-indigo-300/25 bg-indigo-500/[0.16]'
+                    : 'border-transparent hover:bg-white/[0.035]'
+                  : asset.id === selectedAssetId
+                    ? 'border-indigo-300/15 bg-indigo-500/[0.12]'
+                    : 'border-transparent hover:bg-white/[0.035]',
+              ].join(' ')}
+            >
             <span className="grid size-[34px] place-items-center rounded-[9px] bg-white/[0.055] text-[10px] font-semibold text-slate-300">
               {assetMediaLabel(asset.mediaType).slice(0, 4)}
             </span>
@@ -192,17 +326,22 @@ export function ProjectAssetPanel({
                   }
                 />
               )}
-              <AssetActionsMenu
-                asset={asset}
-                disabled={busy}
-                onRename={() => onRename(asset)}
-                onReveal={() => onReveal(asset)}
-                onRelink={() => onRelink(asset)}
-                onDelete={() => onDelete(asset)}
-              />
+              {selectionMode ? (
+                <SelectionCheckbox checked={checked} />
+              ) : (
+                <AssetActionsMenu
+                  asset={asset}
+                  disabled={busy}
+                  onRename={() => onRename(asset)}
+                  onReveal={() => onReveal(asset)}
+                  onRelink={() => onRelink(asset)}
+                  onDelete={() => onDelete(asset)}
+                />
+              )}
             </span>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </aside>
   );
