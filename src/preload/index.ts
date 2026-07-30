@@ -2,7 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { AppPreferences } from "../shared/app-preferences";
 import type { AssetSnapshot } from "../shared/assets";
-import type { ExternalLibrarySnapshot } from "../shared/external-libraries";
+import type {
+  ExternalLibraryMigrationResult,
+  ExternalLibrarySnapshot,
+} from "../shared/external-libraries";
 import { isIpcResult, type IpcErrorPayload } from "../shared/ipc-error";
 import type { ProjectSnapshot } from "../shared/projects";
 import type {
@@ -17,6 +20,7 @@ import type {
   ChangeProjectWorkspaceRequest,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
+  MigrateExternalLibrariesRequest,
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
   AssetIdRequest,
@@ -83,6 +87,17 @@ const api: LearningCompanionApi = {
   removeExternalLibrary: (request: ExternalLibraryIdRequest) =>
     invoke<ExternalLibrarySnapshot>(
       IPC_CHANNELS.removeExternalLibrary,
+      request,
+    ),
+  selectExternalLibrariesDirectory: () =>
+    invoke<string | undefined>(
+      IPC_CHANNELS.selectExternalLibrariesDirectory,
+    ),
+  migrateExternalLibraries: (
+    request: MigrateExternalLibrariesRequest,
+  ) =>
+    invoke<ExternalLibraryMigrationResult>(
+      IPC_CHANNELS.migrateExternalLibraries,
       request,
     ),
   onExternalLibraryChanged: (listener) =>

@@ -1,6 +1,10 @@
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain } from "electron";
 
-import { IPC_CHANNELS, isExternalLibraryIdRequest } from "../../shared/ipc";
+import {
+  IPC_CHANNELS,
+  isExternalLibraryIdRequest,
+  isMigrateExternalLibrariesRequest,
+} from "../../shared/ipc";
 import { AppError } from "../errors/app-error";
 import type { ExternalLibraryServiceApi } from "../external-libraries/external-library-service";
 import { registerIpcHandler } from "./register-handler";
@@ -9,6 +13,7 @@ let removeSubscription: (() => void) | undefined;
 
 export interface ExternalLibraryHandlerDependencies {
   readonly broadcast: (channel: string, value: unknown) => void;
+  readonly selectDirectory: () => Promise<string | undefined>;
 }
 
 const defaultDependencies: ExternalLibraryHandlerDependencies = {
@@ -18,6 +23,15 @@ const defaultDependencies: ExternalLibraryHandlerDependencies = {
         window.webContents.send(channel, value);
       }
     }
+  },
+  async selectDirectory() {
+    const result = await dialog.showOpenDialog({
+      title: "选择外部组件存储位置",
+      buttonLabel: "迁移到这里",
+      properties: ["openDirectory", "createDirectory"],
+    });
+
+    return result.canceled ? undefined : result.filePaths[0];
   },
 };
 
@@ -63,6 +77,23 @@ export function registerExternalLibraryHandlers(
     (_event, request: unknown) =>
       service.remove(requireRequest(request).libraryId),
   );
+  registerIpcHandler(
+    IPC_CHANNELS.selectExternalLibrariesDirectory,
+    () => dependencies.selectDirectory(),
+  );
+  registerIpcHandler(
+    IPC_CHANNELS.migrateExternalLibraries,
+    (_event, request: unknown) => {
+      if (!isMigrateExternalLibrariesRequest(request)) {
+        throw new AppError("INVALID_IPC_REQUEST");
+      }
+
+      return service.migrate(
+        request.targetPath,
+        request.conflictResolution,
+      );
+    },
+  );
 }
 
 export function removeExternalLibraryHandlers(): void {
@@ -73,4 +104,8 @@ export function removeExternalLibraryHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.installExternalLibrary);
   ipcMain.removeHandler(IPC_CHANNELS.cancelExternalLibrary);
   ipcMain.removeHandler(IPC_CHANNELS.removeExternalLibrary);
+  ipcMain.removeHandler(
+    IPC_CHANNELS.selectExternalLibrariesDirectory,
+  );
+  ipcMain.removeHandler(IPC_CHANNELS.migrateExternalLibraries);
 }

@@ -9,6 +9,7 @@ import {
   isChangeProjectWorkspaceRequest,
   isDeleteProjectRequest,
   isExternalLibraryIdRequest,
+  isMigrateExternalLibrariesRequest,
   isHealthCheckResponse,
   isOpenExternalRequest,
   isProjectLifecycleRequest,
@@ -84,6 +85,31 @@ describe("external library contract", () => {
     ).toBe(true);
     expect(isExternalLibraryIdRequest({ libraryId: "../runtime" })).toBe(false);
     expect(isExternalLibraryIdRequest({ libraryId: "" })).toBe(false);
+  });
+
+  it("accepts only absolute migration targets and known resolutions", () => {
+    expect(
+      isMigrateExternalLibrariesRequest({
+        targetPath: "/Users/student/External Libraries",
+      }),
+    ).toBe(true);
+    expect(
+      isMigrateExternalLibrariesRequest({
+        targetPath: "C:\\External Libraries",
+        conflictResolution: "replace-target",
+      }),
+    ).toBe(true);
+    expect(
+      isMigrateExternalLibrariesRequest({
+        targetPath: "relative",
+      }),
+    ).toBe(false);
+    expect(
+      isMigrateExternalLibrariesRequest({
+        targetPath: "/tmp/runtime",
+        conflictResolution: "overwrite",
+      }),
+    ).toBe(false);
   });
 });
 

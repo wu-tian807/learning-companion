@@ -6,7 +6,11 @@ import {
   type LocalAssetImportMode,
   type AssetSnapshot,
 } from "./assets";
-import type { ExternalLibrarySnapshot } from "./external-libraries";
+import type {
+  ExternalLibraryMigrationConflictResolution,
+  ExternalLibraryMigrationResult,
+  ExternalLibrarySnapshot,
+} from "./external-libraries";
 import {
   isAbsoluteFileSystemPath,
   PROJECT_NAME_MAX_LENGTH,
@@ -31,6 +35,8 @@ export const IPC_CHANNELS = {
   installExternalLibrary: "external-library:install",
   cancelExternalLibrary: "external-library:cancel",
   removeExternalLibrary: "external-library:remove",
+  selectExternalLibrariesDirectory: "external-library:select-directory",
+  migrateExternalLibraries: "external-library:migrate",
   externalLibraryChanged: "external-library:changed",
   listProjects: "project:list",
   createProject: "project:create",
@@ -83,6 +89,10 @@ export interface LearningCompanionApi {
   removeExternalLibrary: (
     request: ExternalLibraryIdRequest,
   ) => Promise<ExternalLibrarySnapshot>;
+  selectExternalLibrariesDirectory: () => Promise<string | undefined>;
+  migrateExternalLibraries: (
+    request: MigrateExternalLibrariesRequest,
+  ) => Promise<ExternalLibraryMigrationResult>;
   onExternalLibraryChanged: (
     listener: (snapshot: ExternalLibrarySnapshot) => void,
   ) => () => void;
@@ -196,6 +206,11 @@ export interface AssetIdRequest {
 
 export interface ExternalLibraryIdRequest {
   libraryId: string;
+}
+
+export interface MigrateExternalLibrariesRequest {
+  targetPath: string;
+  conflictResolution?: ExternalLibraryMigrationConflictResolution;
 }
 
 export type UpdateHomePreferencesRequest = HomePreferences;
@@ -399,6 +414,18 @@ export function isExternalLibraryIdRequest(
     isRecord(value) &&
     isRequiredText(value.libraryId, 128) &&
     /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.libraryId)
+  );
+}
+
+export function isMigrateExternalLibrariesRequest(
+  value: unknown,
+): value is MigrateExternalLibrariesRequest {
+  return (
+    isRecord(value) &&
+    isAbsoluteFileSystemPath(value.targetPath) &&
+    (value.conflictResolution === undefined ||
+      value.conflictResolution === "keep-target" ||
+      value.conflictResolution === "replace-target")
   );
 }
 

@@ -28,6 +28,24 @@ export interface ExternalLibrarySnapshot {
   readonly errorCode?: string;
 }
 
+export type ExternalLibraryMigrationConflictResolution =
+  | 'keep-target'
+  | 'replace-target';
+
+export interface ExternalLibraryMigrationConflict {
+  readonly libraryId: string;
+  readonly displayName: string;
+  readonly targetPath: string;
+  readonly targetStatus: 'available' | 'invalid';
+}
+
+export interface ExternalLibraryMigrationResult {
+  readonly status: 'conflict' | 'completed';
+  readonly rootPath: string;
+  readonly conflicts: readonly ExternalLibraryMigrationConflict[];
+  readonly libraries: readonly ExternalLibrarySnapshot[];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

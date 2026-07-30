@@ -25,6 +25,7 @@ interface Harness {
   readonly pathManager: ExternalLibraryPathManager;
   readonly installationStore: ExternalLibraryInstallationStore;
   readonly installer: ExternalLibraryInstaller;
+  readonly settings: SettingsRepository;
   readonly service: ExternalLibraryService;
 }
 
@@ -54,14 +55,18 @@ function createDefinition(content: Uint8Array) {
 }
 
 function createSettings(rootPath: string): SettingsRepository {
+  let currentRootPath = rootPath;
+
   return {
     initialize: vi.fn(async () => undefined),
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
     updateHomePreferences: vi.fn(async () => DEFAULT_APP_PREFERENCES),
     getDefaultProjectWorkspace: vi.fn(() => dirname(rootPath)),
     updateDefaultProjectWorkspace: vi.fn(async () => undefined),
-    getExternalLibrariesPath: vi.fn(() => rootPath),
-    updateExternalLibrariesPath: vi.fn(async () => undefined),
+    getExternalLibrariesPath: vi.fn(() => currentRootPath),
+    updateExternalLibrariesPath: vi.fn(async (nextRootPath: string) => {
+      currentRootPath = nextRootPath;
+    }),
   };
 }
 
@@ -111,8 +116,9 @@ async function createHarness(input?: {
           }),
       ),
     });
+  const settings = createSettings(rootPath);
   const service = new ExternalLibraryService(
-    createSettings(rootPath),
+    settings,
     registry,
     pathManager,
     installationStore,
@@ -132,6 +138,7 @@ async function createHarness(input?: {
     pathManager,
     installationStore,
     installer,
+    settings,
     service,
   };
 }
@@ -332,5 +339,121 @@ describe("ExternalLibraryService", () => {
     await expect(access(installed.installationPath!)).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("migrates a verified installation and switches settings last", async () => {
+    const harness = await createHarness();
+    await harness.service.initialize();
+    const installed = await harness.service.install("libreoffice");
+    const targetRootPath = join(dirname(harness.rootPath), "moved");
+
+    const result = await harness.service.migrate(targetRootPath);
+
+    expect(result).toMatchObject({
+      status: "completed",
+      rootPath: targetRootPath,
+      libraries: [{ status: "available", rootPath: targetRootPath }],
+    });
+    expect(harness.settings.getExternalLibrariesPath()).toBe(
+      targetRootPath,
+    );
+    await expect(access(installed.installationPath!)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      access(await harness.service.requireExecutable("libreoffice")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reports a target conflict before changing either root", async () => {
+    const harness = await createHarness();
+    await harness.service.initialize();
+    const installed = await harness.service.install("libreoffice");
+    const targetRootPath = join(dirname(harness.rootPath), "occupied");
+    const definition = harness.registry.require("libreoffice");
+    const packageDefinition = harness.registry.selectPackage(
+      definition.id,
+      "darwin",
+      "arm64",
+    );
+    const targetPaths = harness.pathManager.resolveInstallationPaths(
+      targetRootPath,
+      definition,
+      packageDefinition,
+    );
+    await mkdir(targetPaths.installationDirectory, { recursive: true });
+    await writeFile(
+      join(targetPaths.installationDirectory, "unknown.txt"),
+      "keep",
+    );
+
+    const result = await harness.service.migrate(targetRootPath);
+
+    expect(result).toMatchObject({
+      status: "conflict",
+      conflicts: [
+        {
+          libraryId: "libreoffice",
+          targetStatus: "invalid",
+        },
+      ],
+    });
+    expect(harness.settings.getExternalLibrariesPath()).toBe(
+      harness.rootPath,
+    );
+    await expect(
+      access(installed.installationPath!),
+    ).resolves.toBeUndefined();
+    await expect(
+      access(join(targetPaths.installationDirectory, "unknown.txt")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("replaces a confirmed target conflict transactionally", async () => {
+    const harness = await createHarness();
+    await harness.service.initialize();
+    await harness.service.install("libreoffice");
+    const targetRootPath = join(dirname(harness.rootPath), "replace");
+    const definition = harness.registry.require("libreoffice");
+    const packageDefinition = harness.registry.selectPackage(
+      definition.id,
+      "darwin",
+      "arm64",
+    );
+    const targetPaths = harness.pathManager.resolveInstallationPaths(
+      targetRootPath,
+      definition,
+      packageDefinition,
+    );
+    await mkdir(targetPaths.installationDirectory, { recursive: true });
+    await writeFile(
+      join(targetPaths.installationDirectory, "unknown.txt"),
+      "replace me",
+    );
+
+    const result = await harness.service.migrate(
+      targetRootPath,
+      "replace-target",
+    );
+
+    expect(result.status).toBe("completed");
+    await expect(
+      access(join(targetPaths.installationDirectory, "unknown.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      access(await harness.service.requireExecutable("libreoffice")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects nested roots before copying data", async () => {
+    const harness = await createHarness();
+    await harness.service.initialize();
+
+    await expect(
+      harness.service.migrate(join(harness.rootPath, "nested")),
+    ).rejects.toThrow("EXTERNAL_LIBRARY_MIGRATION_FAILED");
+    expect(harness.settings.getExternalLibrariesPath()).toBe(
+      harness.rootPath,
+    );
   });
 });

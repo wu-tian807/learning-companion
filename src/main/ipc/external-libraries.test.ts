@@ -80,6 +80,12 @@ function createService() {
     install: vi.fn(async () => createSnapshot("available")),
     cancel: vi.fn(),
     remove: vi.fn(async () => snapshot),
+    migrate: vi.fn(async (rootPath: string) => ({
+      status: "completed" as const,
+      rootPath,
+      conflicts: [],
+      libraries: [snapshot],
+    })),
     requireExecutable: vi.fn(async () => "/tmp/soffice"),
     subscribe: vi.fn((nextListener: ExternalLibraryListener) => {
       listener = nextListener;
@@ -131,10 +137,57 @@ describe("ExternalLibrary IPC handlers", () => {
     expect(service.install).not.toHaveBeenCalled();
   });
 
+  it("selects and migrates the external library root", async () => {
+    const { service } = createService();
+    const selectDirectory = vi.fn(
+      async () => "/Users/student/External Libraries",
+    );
+    registerExternalLibraryHandlers(service, {
+      broadcast: vi.fn(),
+      selectDirectory,
+    });
+
+    await expect(
+      findHandler(
+        IPC_CHANNELS.selectExternalLibrariesDirectory,
+      )(),
+    ).resolves.toBe("/Users/student/External Libraries");
+    await expect(
+      findHandler(IPC_CHANNELS.migrateExternalLibraries)({
+        targetPath: "/Users/student/External Libraries",
+        conflictResolution: "replace-target",
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      rootPath: "/Users/student/External Libraries",
+    });
+    expect(service.migrate).toHaveBeenCalledWith(
+      "/Users/student/External Libraries",
+      "replace-target",
+    );
+  });
+
+  it("rejects an invalid migration path", async () => {
+    const { service } = createService();
+    registerExternalLibraryHandlers(service);
+
+    await expect(
+      findHandler(IPC_CHANNELS.migrateExternalLibraries)({
+        targetPath: "../runtime",
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_IPC_REQUEST",
+    });
+    expect(service.migrate).not.toHaveBeenCalled();
+  });
+
   it("broadcasts service snapshots and removes every handler", () => {
     const { service, emit, unsubscribe } = createService();
     const broadcast = vi.fn();
-    registerExternalLibraryHandlers(service, { broadcast });
+    registerExternalLibraryHandlers(service, {
+      broadcast,
+      selectDirectory: vi.fn(async () => undefined),
+    });
     const snapshot = createSnapshot("downloading");
 
     emit(snapshot);
@@ -146,6 +199,6 @@ describe("ExternalLibrary IPC handlers", () => {
 
     removeExternalLibraryHandlers();
     expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(electronMocks.removeHandler).toHaveBeenCalledTimes(5);
+    expect(electronMocks.removeHandler).toHaveBeenCalledTimes(7);
   });
 });

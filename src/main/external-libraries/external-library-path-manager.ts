@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  cp,
   lstat,
   mkdir,
   mkdtemp,
@@ -8,6 +9,7 @@ import {
   rm,
 } from 'node:fs/promises';
 import {
+  dirname,
   isAbsolute,
   join,
   normalize,
@@ -32,6 +34,7 @@ export interface ExternalLibraryInstallationPaths {
 }
 
 export interface ExternalLibraryPathManagerApi {
+  normalizeRootPath(rootPath: string): string;
   resolveInstallationPaths(
     rootPath: string,
     definition: ExternalLibraryDefinition,
@@ -47,7 +50,19 @@ export interface ExternalLibraryPathManagerApi {
     readonly packageDefinition: ExternalLibraryPackageDefinition;
     readonly stagingDirectory: string;
     readonly stagingInstallationDirectory: string;
+    readonly replaceExisting?: boolean;
   }): Promise<ExternalLibraryInstallationPaths>;
+  stageInstallationMigration(input: {
+    readonly targetRootPath: string;
+    readonly libraryId: string;
+    readonly sourceInstallationDirectory: string;
+  }): Promise<ExternalLibraryMigrationStaging>;
+  rollbackInstallationCommit(input: {
+    readonly rootPath: string;
+    readonly definition: ExternalLibraryDefinition;
+    readonly packageDefinition: ExternalLibraryPackageDefinition;
+    readonly stagingDirectory: string;
+  }): Promise<void>;
   cleanupStagingDirectory(
     rootPath: string,
     stagingDirectory: string,
@@ -57,6 +72,11 @@ export interface ExternalLibraryPathManagerApi {
     definition: ExternalLibraryDefinition,
     packageDefinition: ExternalLibraryPackageDefinition,
   ): Promise<void>;
+}
+
+export interface ExternalLibraryMigrationStaging {
+  readonly stagingDirectory: string;
+  readonly stagingInstallationDirectory: string;
 }
 
 export interface ExternalLibraryPathManagerDependencies {
@@ -188,6 +208,10 @@ export class ExternalLibraryPathManager
     this.createId = dependencies.createId ?? randomUUID;
   }
 
+  normalizeRootPath(rootPath: string): string {
+    return requireAbsoluteDirectoryPath(rootPath);
+  }
+
   resolveInstallationPaths(
     rootPath: string,
     definition: ExternalLibraryDefinition,
@@ -238,6 +262,7 @@ export class ExternalLibraryPathManager
     readonly packageDefinition: ExternalLibraryPackageDefinition;
     readonly stagingDirectory: string;
     readonly stagingInstallationDirectory: string;
+    readonly replaceExisting?: boolean;
   }): Promise<ExternalLibraryInstallationPaths> {
     const paths = this.resolveInstallationPaths(
       input.rootPath,
@@ -287,9 +312,42 @@ export class ExternalLibraryPathManager
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
+    await ensureManagedDirectory(root, [
+      input.definition.id,
+      input.definition.version,
+    ]);
+    const replacedInstallationDirectory = join(
+      stagingDirectory,
+      '.replaced-installation',
+    );
+    let replacedExisting = false;
+
     try {
-      await lstat(paths.installationDirectory);
-      throw new AppError('EXTERNAL_LIBRARY_CONFLICT');
+      const installationStats = await lstat(
+        paths.installationDirectory,
+      );
+
+      if (!input.replaceExisting) {
+        throw new AppError('EXTERNAL_LIBRARY_CONFLICT');
+      }
+      if (installationStats.isSymbolicLink()) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      const realRoot = await realpath(root);
+      const realInstallationParent = await realpath(
+        dirname(paths.installationDirectory),
+      );
+
+      if (!isPathInside(realRoot, realInstallationParent)) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      await rename(
+        paths.installationDirectory,
+        replacedInstallationDirectory,
+      );
+      replacedExisting = true;
     } catch (error) {
       if (
         error instanceof AppError ||
@@ -298,11 +356,6 @@ export class ExternalLibraryPathManager
         throw error;
       }
     }
-
-    await ensureManagedDirectory(root, [
-      input.definition.id,
-      input.definition.version,
-    ]);
 
     try {
       await rename(
@@ -315,15 +368,122 @@ export class ExternalLibraryPathManager
           .then(() => true)
           .catch(() => false)
       ) {
-        throw new AppError('EXTERNAL_LIBRARY_CONFLICT', {
-          cause: error,
-        });
+        await rm(paths.installationDirectory, {
+          recursive: true,
+          force: true,
+        }).catch(() => undefined);
+      }
+      if (replacedExisting) {
+        await rename(
+          replacedInstallationDirectory,
+          paths.installationDirectory,
+        ).catch(() => undefined);
       }
 
-      throw error;
+      throw new AppError('EXTERNAL_LIBRARY_CONFLICT', {
+        cause: error,
+      });
     }
 
     return paths;
+  }
+
+  async stageInstallationMigration(input: {
+    readonly targetRootPath: string;
+    readonly libraryId: string;
+    readonly sourceInstallationDirectory: string;
+  }): Promise<ExternalLibraryMigrationStaging> {
+    const sourceInstallationDirectory =
+      requireAbsoluteDirectoryPath(
+        input.sourceInstallationDirectory,
+      );
+    const sourceStats = await lstat(sourceInstallationDirectory);
+
+    if (!sourceStats.isDirectory() || sourceStats.isSymbolicLink()) {
+      throw new AppError('EXTERNAL_LIBRARY_MIGRATION_FAILED');
+    }
+
+    const stagingDirectory = await this.createStagingDirectory(
+      input.targetRootPath,
+      input.libraryId,
+    );
+    const stagingInstallationDirectory = join(
+      stagingDirectory,
+      'installation',
+    );
+
+    try {
+      await cp(
+        sourceInstallationDirectory,
+        stagingInstallationDirectory,
+        {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+          preserveTimestamps: true,
+          dereference: false,
+          verbatimSymlinks: true,
+        },
+      );
+    } catch (error) {
+      await this.cleanupStagingDirectory(
+        input.targetRootPath,
+        stagingDirectory,
+      ).catch(() => undefined);
+      throw new AppError('EXTERNAL_LIBRARY_MIGRATION_FAILED', {
+        cause: error,
+      });
+    }
+
+    return Object.freeze({
+      stagingDirectory,
+      stagingInstallationDirectory,
+    });
+  }
+
+  async rollbackInstallationCommit(input: {
+    readonly rootPath: string;
+    readonly definition: ExternalLibraryDefinition;
+    readonly packageDefinition: ExternalLibraryPackageDefinition;
+    readonly stagingDirectory: string;
+  }): Promise<void> {
+    const paths = this.resolveInstallationPaths(
+      input.rootPath,
+      input.definition,
+      input.packageDefinition,
+    );
+    const stagingDirectory = resolve(input.stagingDirectory);
+    const stagingRoot = join(
+      paths.rootPath,
+      EXTERNAL_LIBRARY_STAGING_DIRECTORY,
+    );
+
+    if (
+      stagingDirectory === stagingRoot ||
+      !isPathInside(stagingRoot, stagingDirectory)
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const replacedInstallationDirectory = join(
+      stagingDirectory,
+      '.replaced-installation',
+    );
+    await rm(paths.installationDirectory, {
+      recursive: true,
+      force: true,
+    });
+
+    try {
+      await rename(
+        replacedInstallationDirectory,
+        paths.installationDirectory,
+      );
+    } catch (error) {
+      if (!isFileSystemError(error, 'ENOENT')) {
+        throw error;
+      }
+    }
   }
 
   async cleanupStagingDirectory(
