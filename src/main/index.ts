@@ -73,15 +73,7 @@ import { WorkbenchTransportBindingRegistry } from "./workbench/interaction/workb
 import { SqliteWorkbenchStateDataRepository } from "./workbench/workbench-state-data-repository";
 import { SqliteWorkbenchStateRepository } from "./workbench/workbench-state-repository";
 import { createMainWindow } from "./window";
-import { PlainTextWorkbenchProvider } from "../workbenches/plain-text/main";
-import { AudioWorkbenchProvider } from "../workbenches/audio/main";
-import { ImageWorkbenchProvider } from "../workbenches/image/main";
-import { HtmlWorkbenchProvider } from "../workbenches/html/main";
-import { EpubWorkbenchProvider } from "../workbenches/epub/main";
-import { MarkdownWorkbenchProvider } from "../workbenches/markdown/main";
-import { PdfWorkbenchProvider } from "../workbenches/pdf/main";
-import { OfficeWorkbenchProvider } from "../workbenches/office/main";
-import { VideoWorkbenchProvider } from "../workbenches/video/main";
+import { registerMainWorkbenches } from "../workbenches/catalog/register-main-workbenches";
 import { UnsupportedWorkbenchProvider } from "../workbenches/unsupported/main";
 
 let databaseContext: DatabaseContext | undefined;
@@ -226,60 +218,14 @@ void app
     const workbenchStateDataRepository = new SqliteWorkbenchStateDataRepository(
       databaseContext,
     );
-    workbenchRegistry.register(
-      new PlainTextWorkbenchProvider(
-        workbenchStateRepository,
-        workbenchStateDataRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new AudioWorkbenchProvider(
-        contentResourceService,
-        workbenchStateRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new ImageWorkbenchProvider(
-        contentResourceService,
-        workbenchStateRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new HtmlWorkbenchProvider(contentResourceService),
-    );
-    workbenchRegistry.register(
-      new EpubWorkbenchProvider(
-        contentResourceService,
-        workbenchStateRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new MarkdownWorkbenchProvider(
-        workbenchStateRepository,
-        workbenchStateDataRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new PdfWorkbenchProvider(
-        contentResourceService,
-        workbenchStateRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new OfficeWorkbenchProvider(
-        artifactService,
-        contentResourceService,
-        externalLibraryService,
-        projectDatabase,
-        workbenchStateRepository,
-      ),
-    );
-    workbenchRegistry.register(
-      new VideoWorkbenchProvider(
-        contentResourceService,
-        workbenchStateRepository,
-      ),
-    );
+    registerMainWorkbenches(workbenchRegistry, {
+      artifactService,
+      contentResourceService,
+      externalLibraryService,
+      projectLookup: projectDatabase,
+      stateRepository: workbenchStateRepository,
+      stateDataRepository: workbenchStateDataRepository,
+    });
     workbenchSessionManager = new WorkbenchSessionManager(
       assetService,
       workbenchRegistry,

@@ -12,15 +12,7 @@ import {
   EMPTY_WORKBENCH_INTERACTION,
   type WorkbenchInteractionSnapshot,
 } from '../../../shared/workbench/interaction';
-import { AUDIO_WORKBENCH_ID } from '../../../workbenches/audio/shared';
-import { IMAGE_WORKBENCH_ID } from '../../../workbenches/image/shared';
-import { HTML_WORKBENCH_ID } from '../../../workbenches/html/shared';
-import { EPUB_WORKBENCH_ID } from '../../../workbenches/epub/shared';
-import { MARKDOWN_WORKBENCH_ID } from '../../../workbenches/markdown/shared';
-import { PDF_WORKBENCH_ID } from '../../../workbenches/pdf/shared';
-import { OFFICE_WORKBENCH_ID } from '../../../workbenches/office/shared';
-import { PLAIN_TEXT_WORKBENCH_ID } from '../../../workbenches/plain-text/shared';
-import { VIDEO_WORKBENCH_ID } from '../../../workbenches/video/shared';
+import { registerRendererWorkbenches } from '../../../workbenches/catalog/register-renderer-workbenches';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
@@ -63,69 +55,7 @@ type SettledWorkbenchHostState =
 const defaultRegistry = new RendererWorkbenchRegistry(
   unsupportedRendererWorkbenchModule,
 );
-defaultRegistry.registerLoader(AUDIO_WORKBENCH_ID, async () => {
-  const { default: audioRendererWorkbenchModule } = await import(
-    '../../../workbenches/audio/renderer'
-  );
-
-  return audioRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(PLAIN_TEXT_WORKBENCH_ID, async () => {
-  const { plainTextRendererWorkbenchModule } = await import(
-    '../../../workbenches/plain-text/renderer'
-  );
-
-  return plainTextRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(IMAGE_WORKBENCH_ID, async () => {
-  const { imageRendererWorkbenchModule } = await import(
-    '../../../workbenches/image/renderer'
-  );
-
-  return imageRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(HTML_WORKBENCH_ID, async () => {
-  const { default: htmlRendererWorkbenchModule } = await import(
-    '../../../workbenches/html/renderer'
-  );
-
-  return htmlRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(EPUB_WORKBENCH_ID, async () => {
-  const { default: epubRendererWorkbenchModule } = await import(
-    '../../../workbenches/epub/renderer'
-  );
-
-  return epubRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(MARKDOWN_WORKBENCH_ID, async () => {
-  const { markdownRendererWorkbenchModule } = await import(
-    '../../../workbenches/markdown/renderer'
-  );
-
-  return markdownRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(PDF_WORKBENCH_ID, async () => {
-  const { default: pdfRendererWorkbenchModule } = await import(
-    '../../../workbenches/pdf/renderer'
-  );
-
-  return pdfRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(OFFICE_WORKBENCH_ID, async () => {
-  const { default: officeRendererWorkbenchModule } = await import(
-    '../../../workbenches/office/renderer'
-  );
-
-  return officeRendererWorkbenchModule;
-});
-defaultRegistry.registerLoader(VIDEO_WORKBENCH_ID, async () => {
-  const { default: videoRendererWorkbenchModule } = await import(
-    '../../../workbenches/video/renderer'
-  );
-
-  return videoRendererWorkbenchModule;
-});
+registerRendererWorkbenches(defaultRegistry);
 
 export function AssetWorkbenchHost({
   projectId,
