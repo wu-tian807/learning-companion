@@ -21,6 +21,11 @@ export type AppErrorCode =
   | 'PROJECT_WORKSPACE_UNAVAILABLE'
   | 'PROJECT_WORKSPACE_CONFLICT'
   | 'FILE_IMPORT_FAILED'
+  | 'EXTERNAL_LIBRARY_NOT_INSTALLED'
+  | 'EXTERNAL_LIBRARY_INSTALL_FAILED'
+  | 'EXTERNAL_LIBRARY_INTEGRITY_FAILED'
+  | 'EXTERNAL_LIBRARY_CONFLICT'
+  | 'EXTERNAL_LIBRARY_MIGRATION_FAILED'
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
@@ -155,6 +160,36 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   FILE_IMPORT_FAILED: {
     kind: 'user',
     userMessage: '资料复制失败，请检查源文件和 Project 工作区权限。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  EXTERNAL_LIBRARY_NOT_INSTALLED: {
+    kind: 'user',
+    userMessage: '所需的外部组件尚未安装。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  EXTERNAL_LIBRARY_INSTALL_FAILED: {
+    kind: 'user',
+    userMessage: '外部组件安装失败，请检查网络、磁盘空间和目录权限后重试。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  EXTERNAL_LIBRARY_INTEGRITY_FAILED: {
+    kind: 'user',
+    userMessage: '外部组件下载校验失败，已丢弃不可信文件，请重试。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  EXTERNAL_LIBRARY_CONFLICT: {
+    kind: 'user',
+    userMessage: '目标目录中存在无法识别的同名组件，请先处理目录冲突。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  EXTERNAL_LIBRARY_MIGRATION_FAILED: {
+    kind: 'user',
+    userMessage: '外部组件迁移没有完成，应用仍将使用原目录。',
     retryable: true,
     logLevel: 'warn',
   },
