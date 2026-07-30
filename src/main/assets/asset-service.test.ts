@@ -24,10 +24,11 @@ function createAsset(
   id = 'asset',
   path = '/tmp/notes.md',
   mediaType = 'text/markdown',
+  projectId = 'project',
 ): Asset {
   return createAssetSnapshot({
     id,
-    projectId: 'project',
+    projectId,
     name: '学习笔记',
     mediaType,
     contentRef: createAbsoluteLocalFileContentRef(path),
@@ -37,26 +38,20 @@ function createAsset(
 }
 
 function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
-  let activeProjectId: string | undefined = 'project';
   const assetMap = new Map(
     initialAssets.map((asset) => [asset.id, cloneAsset(asset)]),
   );
   const database = {
-    loadFromProject: vi.fn(async (projectId: string) => {
-      activeProjectId = projectId;
-      return [...assetMap.values()].map(cloneAsset);
-    }),
+    listByProject: vi.fn((projectId: string) =>
+      [...assetMap.values()]
+        .filter((asset) => asset.projectId === projectId)
+        .map(cloneAsset),
+    ),
     countByProjectIds: vi.fn(() => new Map([['project', assetMap.size]])),
-    unloadProject: vi.fn(() => {
-      activeProjectId = undefined;
-    }),
-    getActiveProjectId: vi.fn(() => activeProjectId),
-    list: vi.fn(() => [...assetMap.values()].map(cloneAsset)),
-    get: vi.fn((assetId: string) => assetMap.get(assetId)),
-    add: vi.fn((input) => {
+    add: vi.fn((projectId: string, input) => {
       const asset = createAssetSnapshot({
         id: 'created',
-        projectId: activeProjectId ?? 'project',
+        projectId,
         ...input,
         createdTime: Date.parse('2026-07-27T02:00:00.000Z'),
         lastUsedTime: Date.parse('2026-07-27T02:00:00.000Z'),
@@ -64,19 +59,21 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
       assetMap.set(asset.id, asset);
       return cloneAsset(asset);
     }),
-    update: vi.fn((assetId: string, changes) => {
+    update: vi.fn((_projectId: string, assetId: string, changes) => {
       const current = assetMap.get(assetId)!;
       const next = createAssetSnapshot({ ...current, ...changes });
       assetMap.set(assetId, next);
       return cloneAsset(next);
     }),
-    updateContentRef: vi.fn((assetId: string, contentRef) => {
-      const current = assetMap.get(assetId)!;
-      const next = createAssetSnapshot({ ...current, contentRef });
-      assetMap.set(assetId, next);
-      return cloneAsset(next);
-    }),
-    delete: vi.fn((assetId: string) => {
+    updateContentRef: vi.fn(
+      (_projectId: string, assetId: string, contentRef) => {
+        const current = assetMap.get(assetId)!;
+        const next = createAssetSnapshot({ ...current, contentRef });
+        assetMap.set(assetId, next);
+        return cloneAsset(next);
+      },
+    ),
+    delete: vi.fn((_projectId: string, assetId: string) => {
       assetMap.delete(assetId);
     }),
   } as unknown as AssetDatabaseApi;
@@ -131,14 +128,14 @@ function createService(
 ): AssetService {
   const projectLookup = {
     get: (projectId: string) =>
-      projectId === 'project'
+      projectId === 'project' || projectId === 'project-two'
         ? {
-            id: 'project',
+            id: projectId,
             name: 'Project',
             icon: '📘',
             createdTime: 0,
             pinned: false,
-            workspacePath: '/tmp/project',
+            workspacePath: `/tmp/${projectId}`,
           }
         : undefined,
   } as ProjectLookup;
@@ -181,6 +178,74 @@ describe('AssetService', () => {
     expect(handles).toHaveLength(0);
   });
 
+  it('stays inactive when runtime resolution fails during loading', async () => {
+    const database = createDatabase();
+    const registry = new ContentResolverRegistry();
+    registry.register({
+      kind: 'local-file',
+      resolve: async () => {
+        throw new Error('resolve failed');
+      },
+    });
+    const service = createService(database, registry);
+
+    await expect(service.loadFromProject('project')).rejects.toThrow(
+      'resolve failed',
+    );
+    expect(service.getActiveProjectId()).toBeUndefined();
+    expect(() => service.list()).toThrow('SERVICE_NOT_READY');
+  });
+
+  it('does not let a superseded load replace the newer Project', async () => {
+    const database = createDatabase([
+      createAsset(
+        'asset-one',
+        '/tmp/one.md',
+        'text/markdown',
+        'project',
+      ),
+      createAsset(
+        'asset-two',
+        '/tmp/two.md',
+        'text/markdown',
+        'project-two',
+      ),
+    ]);
+    let releaseFirstResolve: (() => void) | undefined;
+    const registry = new ContentResolverRegistry();
+    registry.register({
+      kind: 'local-file',
+      resolve: async (ref) => {
+        if (ref.path === '/tmp/one.md') {
+          await new Promise<void>((resolve) => {
+            releaseFirstResolve = resolve;
+          });
+        }
+
+        return {
+          contentRef: ref,
+          contentStatus: createAssetContentStatus(
+            'missing',
+            Date.parse('2026-07-27T03:00:00.000Z'),
+          ),
+        };
+      },
+    });
+    const service = createService(database, registry);
+
+    const firstLoad = service.loadFromProject('project');
+    await vi.waitFor(() =>
+      expect(releaseFirstResolve).toBeTypeOf('function'),
+    );
+    const secondLoad = await service.loadFromProject('project-two');
+    releaseFirstResolve?.();
+
+    await expect(firstLoad).rejects.toThrow('OPERATION_SUPERSEDED');
+    expect(secondLoad.map(({ id }) => id)).toEqual(['asset-two']);
+    expect(service.getActiveProjectId()).toBe('project-two');
+    expect(service.list().map(({ id }) => id)).toEqual(['asset-two']);
+  });
+
   it('imports an available local file with derived metadata', async () => {
     const database = createDatabase([]);
     const { handles, registry } = createResolver();
@@ -188,17 +253,21 @@ describe('AssetService', () => {
       detectMediaType: vi.fn(async () => 'text/plain'),
       createDefaultName: vi.fn(() => '资料'),
     });
+    await service.loadFromProject('project');
 
     const created = await service.addLocalFile(
       'project',
       '/tmp/资料.txt',
     );
 
-    expect(database.add).toHaveBeenCalledWith({
-      name: '资料',
-      mediaType: 'text/plain',
-      contentRef: createAbsoluteLocalFileContentRef('/tmp/资料.txt'),
-    });
+    expect(database.add).toHaveBeenCalledWith(
+      'project',
+      {
+        name: '资料',
+        mediaType: 'text/plain',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/资料.txt'),
+      },
+    );
     expect(created).toMatchObject({
       id: 'created',
       name: '资料',
@@ -243,6 +312,7 @@ describe('AssetService', () => {
       '/tmp/new-notes.md',
     );
     expect(database.updateContentRef).toHaveBeenCalledWith(
+      'project',
       'asset',
       createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
     );
@@ -306,6 +376,7 @@ describe('AssetService', () => {
     const service = createService(database, registry, {
       detectMediaType: vi.fn(async () => 'text/plain'),
     });
+    await service.loadFromProject('project');
 
     const addition = service.addLocalFile(
       'project',
@@ -323,6 +394,7 @@ describe('AssetService', () => {
     const database = createDatabase([]);
     const { registry, resolver } = createResolver();
     const service = createService(database, registry);
+    await service.loadFromProject('project');
 
     await expect(
       service.addLocalFile('another-project', '/tmp/notes.txt'),
@@ -349,6 +421,6 @@ describe('AssetService', () => {
       'asset',
       '/tmp/project',
     );
-    expect(database.delete).toHaveBeenCalledWith('asset');
+    expect(database.delete).toHaveBeenCalledWith('project', 'asset');
   });
 });

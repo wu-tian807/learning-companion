@@ -183,7 +183,7 @@ void app
       new AssetArtifactFileManager(),
       artifactRegistry,
     );
-    const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
+    const assetDatabase = new AssetDatabase(databaseContext);
     const contentResolverRegistry = new ContentResolverRegistry();
     contentResolverRegistry.register(
       new LocalFileContentResolver(workspaceManager),

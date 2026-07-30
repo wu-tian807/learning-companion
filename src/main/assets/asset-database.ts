@@ -9,7 +9,6 @@ import { isAssetContentRef } from '../../shared/assets';
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
 import { AppError } from '../errors/app-error';
-import type { ProjectLookup } from '../projects/project-database';
 import {
   cloneAsset,
   createAssetSnapshot,
@@ -19,16 +18,20 @@ import {
 } from './asset';
 
 export interface AssetDatabaseApi {
-  loadFromProject(projectId: string): Promise<readonly Asset[]>;
+  listByProject(projectId: string): readonly Asset[];
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number>;
-  unloadProject(): void;
-  getActiveProjectId(): string | undefined;
-  list(): readonly Asset[];
-  get(assetId: string): Asset | undefined;
-  add(input: CreateAssetInput): Asset;
-  update(assetId: string, changes: UpdateAssetInput): Asset;
-  updateContentRef(assetId: string, contentRef: AssetContentRef): Asset;
-  delete(assetId: string): void;
+  add(projectId: string, input: CreateAssetInput): Asset;
+  update(
+    projectId: string,
+    assetId: string,
+    changes: UpdateAssetInput,
+  ): Asset;
+  updateContentRef(
+    projectId: string,
+    assetId: string,
+    contentRef: AssetContentRef,
+  ): Asset;
+  delete(projectId: string, assetId: string): void;
 }
 
 export interface AssetDatabaseDependencies {
@@ -51,14 +54,27 @@ function requireId(value: string, field: string): string {
   return normalized;
 }
 
+function createAssetFromRow(row: typeof assets.$inferSelect): Asset {
+  if (!isAssetContentRef(row.contentRef)) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  return createAssetSnapshot({
+    id: row.id,
+    projectId: row.projectId,
+    name: row.name,
+    mediaType: row.mediaType,
+    contentRef: row.contentRef,
+    createdTime: row.createdTime,
+    lastUsedTime: row.lastUsedTime,
+  });
+}
+
 export class AssetDatabase implements AssetDatabaseApi {
-  private activeProjectId: string | undefined;
-  private assetMap = new Map<string, Asset>();
   private readonly dependencies: AssetDatabaseDependencies;
 
   constructor(
     private readonly context: DatabaseContext,
-    private readonly projectLookup: ProjectLookup,
     dependencies: Partial<AssetDatabaseDependencies> = {},
   ) {
     this.dependencies = {
@@ -67,47 +83,28 @@ export class AssetDatabase implements AssetDatabaseApi {
     };
   }
 
-  async loadFromProject(projectId: string): Promise<readonly Asset[]> {
+  listByProject(projectId: string): readonly Asset[] {
     const normalizedProjectId = requireId(projectId, 'projectId');
-    const project = this.projectLookup.get(normalizedProjectId);
-
-    if (!project) {
-      throw new AppError('PROJECT_NOT_FOUND');
-    }
-
     const rows = this.context.db
       .select()
       .from(assets)
       .where(eq(assets.projectId, normalizedProjectId))
       .all();
-    const nextAssetMap = new Map<string, Asset>();
+    const assetIds = new Set<string>();
+    const result: Asset[] = [];
 
     for (const row of rows) {
-      if (!isAssetContentRef(row.contentRef)) {
+      const asset = createAssetFromRow(row);
+
+      if (assetIds.has(asset.id)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
-      const asset = createAssetSnapshot({
-        id: row.id,
-        projectId: row.projectId,
-        name: row.name,
-        mediaType: row.mediaType,
-        contentRef: row.contentRef,
-        createdTime: row.createdTime,
-        lastUsedTime: row.lastUsedTime,
-      });
-
-      if (nextAssetMap.has(asset.id)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
-      nextAssetMap.set(asset.id, asset);
+      assetIds.add(asset.id);
+      result.push(asset);
     }
 
-    this.activeProjectId = normalizedProjectId;
-    this.assetMap = nextAssetMap;
-
-    return this.list();
+    return result.map(cloneAsset);
   }
 
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number> {
@@ -141,42 +138,18 @@ export class AssetDatabase implements AssetDatabaseApi {
     return counts;
   }
 
-  unloadProject(): void {
-    this.assetMap.clear();
-    this.activeProjectId = undefined;
-  }
-
-  getActiveProjectId(): string | undefined {
-    return this.activeProjectId;
-  }
-
-  list(): readonly Asset[] {
-    this.requireActiveProjectId();
-    return [...this.assetMap.values()].map(cloneAsset);
-  }
-
-  get(assetId: string): Asset | undefined {
-    this.requireActiveProjectId();
-    const asset = this.assetMap.get(assetId);
-    return asset ? cloneAsset(asset) : undefined;
-  }
-
-  add(input: CreateAssetInput): Asset {
-    const projectId = this.requireActiveProjectId();
+  add(projectId: string, input: CreateAssetInput): Asset {
+    const normalizedProjectId = requireId(projectId, 'projectId');
     const now = this.dependencies.now();
     const asset = createAssetSnapshot({
       id: this.dependencies.createId(),
-      projectId,
+      projectId: normalizedProjectId,
       name: input.name,
       mediaType: input.mediaType,
       contentRef: input.contentRef,
       createdTime: now,
       lastUsedTime: now,
     });
-
-    if (this.assetMap.has(asset.id)) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
 
     const result = this.context.db
       .insert(assets)
@@ -195,14 +168,18 @@ export class AssetDatabase implements AssetDatabaseApi {
       throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
-    this.assetMap.set(asset.id, asset);
     return cloneAsset(asset);
   }
 
-  update(assetId: string, changes: UpdateAssetInput): Asset {
+  update(
+    projectId: string,
+    assetId: string,
+    changes: UpdateAssetInput,
+  ): Asset {
     this.validateUpdate(changes);
-    const projectId = this.requireActiveProjectId();
-    const currentAsset = this.find(assetId);
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedAssetId = requireId(assetId, 'assetId');
+    const currentAsset = this.find(normalizedProjectId, normalizedAssetId);
     const nextAsset = createAssetSnapshot({
       ...currentAsset,
       name: changes.name ?? currentAsset.name,
@@ -214,20 +191,29 @@ export class AssetDatabase implements AssetDatabaseApi {
         name: nextAsset.name,
         lastUsedTime: nextAsset.lastUsedTime,
       })
-      .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
+      .where(
+        and(
+          eq(assets.id, normalizedAssetId),
+          eq(assets.projectId, normalizedProjectId),
+        ),
+      )
       .run();
 
     if (result.changes !== 1) {
       throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
-    this.assetMap.set(assetId, nextAsset);
     return cloneAsset(nextAsset);
   }
 
-  updateContentRef(assetId: string, contentRef: AssetContentRef): Asset {
-    const projectId = this.requireActiveProjectId();
-    const currentAsset = this.find(assetId);
+  updateContentRef(
+    projectId: string,
+    assetId: string,
+    contentRef: AssetContentRef,
+  ): Asset {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedAssetId = requireId(assetId, 'assetId');
+    const currentAsset = this.find(normalizedProjectId, normalizedAssetId);
 
     if (
       currentAsset.contentRef.kind !== contentRef.kind
@@ -242,49 +228,55 @@ export class AssetDatabase implements AssetDatabaseApi {
     const result = this.context.db
       .update(assets)
       .set({ contentRef })
-      .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
+      .where(
+        and(
+          eq(assets.id, normalizedAssetId),
+          eq(assets.projectId, normalizedProjectId),
+        ),
+      )
       .run();
 
     if (result.changes !== 1) {
       throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
-    this.assetMap.set(assetId, nextAsset);
     return cloneAsset(nextAsset);
   }
 
-  delete(assetId: string): void {
-    const projectId = this.requireActiveProjectId();
-    this.find(assetId);
+  delete(projectId: string, assetId: string): void {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedAssetId = requireId(assetId, 'assetId');
+    this.find(normalizedProjectId, normalizedAssetId);
 
     const result = this.context.db
       .delete(assets)
-      .where(and(eq(assets.id, assetId), eq(assets.projectId, projectId)))
+      .where(
+        and(
+          eq(assets.id, normalizedAssetId),
+          eq(assets.projectId, normalizedProjectId),
+        ),
+      )
       .run();
 
     if (result.changes !== 1) {
       throw new AppError('DATABASE_WRITE_CONFLICT');
     }
-
-    this.assetMap.delete(assetId);
   }
 
-  private requireActiveProjectId(): string {
-    if (!this.activeProjectId) {
-      throw new AppError('SERVICE_NOT_READY');
-    }
+  private find(projectId: string, assetId: string): Asset {
+    const row = this.context.db
+      .select()
+      .from(assets)
+      .where(
+        and(eq(assets.id, assetId), eq(assets.projectId, projectId)),
+      )
+      .get();
 
-    return this.activeProjectId;
-  }
-
-  private find(assetId: string): Asset {
-    const asset = this.assetMap.get(assetId);
-
-    if (!asset) {
+    if (!row) {
       throw new AppError('ASSET_NOT_FOUND');
     }
 
-    return asset;
+    return createAssetFromRow(row);
   }
 
   private validateUpdate(changes: UpdateAssetInput): void {

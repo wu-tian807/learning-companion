@@ -72,6 +72,7 @@ function createSnapshot(
 }
 
 export class AssetService implements AssetServiceApi {
+  private activeProjectId: string | undefined;
   private runtimeMap = new Map<string, AssetSnapshot>();
   private lifecycleVersion = 0;
   private readonly dependencies: AssetServiceDependencies;
@@ -99,18 +100,19 @@ export class AssetService implements AssetServiceApi {
   ): Promise<readonly AssetSnapshot[]> {
     const loadVersion = this.lifecycleVersion + 1;
     this.lifecycleVersion = loadVersion;
-    const assets = await this.assetDatabase.loadFromProject(projectId);
+    this.activeProjectId = undefined;
+    this.runtimeMap.clear();
+    const context = this.createResolveContext(projectId);
+    const assets = this.assetDatabase.listByProject(projectId);
     const resolved = await Promise.all(
-      assets.map((asset) => this.resolveRuntimeSnapshot(asset)),
+      assets.map((asset) => this.resolveRuntimeSnapshot(asset, context)),
     );
 
-    if (
-      this.lifecycleVersion !== loadVersion ||
-      this.assetDatabase.getActiveProjectId() !== projectId
-    ) {
+    if (this.lifecycleVersion !== loadVersion) {
       throw new AppError('OPERATION_SUPERSEDED');
     }
 
+    this.activeProjectId = projectId;
     this.runtimeMap = new Map(
       resolved.map((snapshot) => [snapshot.id, snapshot]),
     );
@@ -126,12 +128,12 @@ export class AssetService implements AssetServiceApi {
 
   unloadProject(): void {
     this.lifecycleVersion += 1;
+    this.activeProjectId = undefined;
     this.runtimeMap.clear();
-    this.assetDatabase.unloadProject();
   }
 
   getActiveProjectId(): string | undefined {
-    return this.assetDatabase.getActiveProjectId();
+    return this.activeProjectId;
   }
 
   list(): readonly AssetSnapshot[] {
@@ -211,7 +213,7 @@ export class AssetService implements AssetServiceApi {
         resolved.location.absolutePath,
       );
       this.requireUnchangedProject(lifecycleVersion, projectId);
-      const asset = this.assetDatabase.add({
+      const asset = this.assetDatabase.add(projectId, {
         name: this.dependencies.createDefaultName(
           resolved.location.absolutePath,
         ),
@@ -237,8 +239,13 @@ export class AssetService implements AssetServiceApi {
   }
 
   update(assetId: string, changes: UpdateAssetInput): AssetSnapshot {
+    const projectId = this.requireActiveProjectId();
     const current = this.find(assetId);
-    const asset = this.assetDatabase.update(assetId, changes);
+    const asset = this.assetDatabase.update(
+      projectId,
+      assetId,
+      changes,
+    );
     const snapshot = cloneAssetSnapshot({
       ...asset,
       contentStatus: current.contentStatus,
@@ -262,7 +269,7 @@ export class AssetService implements AssetServiceApi {
       project.workspacePath,
     );
     this.requireUnchangedProject(lifecycleVersion, projectId);
-    this.assetDatabase.delete(assetId);
+    this.assetDatabase.delete(projectId, assetId);
     this.runtimeMap.delete(assetId);
   }
 
@@ -380,6 +387,7 @@ export class AssetService implements AssetServiceApi {
         resolved.contentRef.path === current.contentRef.path
           ? current
           : this.assetDatabase.updateContentRef(
+              projectId,
               assetId,
               resolved.contentRef,
             );
@@ -428,10 +436,11 @@ export class AssetService implements AssetServiceApi {
 
   private async resolveRuntimeSnapshot(
     asset: Asset,
+    context: ContentResolveContext,
   ): Promise<AssetSnapshot> {
     const resolved = await this.resolverRegistry.resolve(
       asset.contentRef,
-      this.createResolveContext(asset.projectId),
+      context,
     );
 
     try {
@@ -442,7 +451,7 @@ export class AssetService implements AssetServiceApi {
   }
 
   private requireActiveProjectId(): string {
-    const projectId = this.assetDatabase.getActiveProjectId();
+    const projectId = this.activeProjectId;
 
     if (!projectId) {
       throw new AppError('SERVICE_NOT_READY');
@@ -486,7 +495,7 @@ export class AssetService implements AssetServiceApi {
   ): void {
     if (
       this.lifecycleVersion !== lifecycleVersion ||
-      this.assetDatabase.getActiveProjectId() !== projectId
+      this.activeProjectId !== projectId
     ) {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }

@@ -12,7 +12,6 @@ import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { assets } from '../database/schema/assets';
 import { projects } from '../database/schema/projects';
-import { ProjectDatabase } from '../projects/project-database';
 import {
   AssetDatabase,
   type AssetDatabaseDependencies,
@@ -72,9 +71,7 @@ function createDatabase(
   context: DatabaseContext,
   dependencies: Partial<AssetDatabaseDependencies> = {},
 ): AssetDatabase {
-  const projectDatabase = new ProjectDatabase(context);
-  projectDatabase.initialize();
-  return new AssetDatabase(context, projectDatabase, dependencies);
+  return new AssetDatabase(context, dependencies);
 }
 
 afterEach(async () => {
@@ -100,16 +97,16 @@ describe('AssetDatabase', () => {
     });
     const database = createDatabase(context);
 
-    await database.loadFromProject('project');
-
-    expect(database.get('asset')).toMatchObject({
-      id: 'asset',
-      contentRef: {
-        kind: 'local-file',
-        base: 'absolute',
-        path: '/tmp/missing.md',
-      },
-    });
+    expect(database.listByProject('project')).toEqual([
+      expect.objectContaining({
+        id: 'asset',
+        contentRef: {
+          kind: 'local-file',
+          base: 'absolute',
+          path: '/tmp/missing.md',
+        },
+      }),
+    ]);
   });
 
   it('rejects ContentRef JSON that violates the shared contract', async () => {
@@ -136,12 +133,12 @@ describe('AssetDatabase', () => {
     context.sqlite.pragma('ignore_check_constraints = OFF');
     const database = createDatabase(context);
 
-    await expect(database.loadFromProject('project')).rejects.toThrow(
+    expect(() => database.listByProject('project')).toThrow(
       'DATA_INTEGRITY_ERROR',
     );
   });
 
-  it('keeps one active Project Map and unloads it', async () => {
+  it('queries Projects independently without retaining active state', async () => {
     const context = await createContext();
     addProject(context, 'project-a');
     addProject(context, 'project-b');
@@ -157,16 +154,15 @@ describe('AssetDatabase', () => {
     });
     const database = createDatabase(context);
 
-    await database.loadFromProject('project-a');
-    expect(database.list().map(({ id }) => id)).toEqual(['asset-a']);
-
-    await database.loadFromProject('project-b');
-    expect(database.list().map(({ id }) => id)).toEqual(['asset-b']);
-    expect(database.get('asset-a')).toBeUndefined();
-
-    database.unloadProject();
-    expect(database.getActiveProjectId()).toBeUndefined();
-    expect(() => database.list()).toThrow('SERVICE_NOT_READY');
+    expect(
+      database.listByProject('project-a').map(({ id }) => id),
+    ).toEqual(['asset-a']);
+    expect(
+      database.listByProject('project-b').map(({ id }) => id),
+    ).toEqual(['asset-b']);
+    expect(
+      database.listByProject('project-a').map(({ id }) => id),
+    ).toEqual(['asset-a']);
   });
 
   it('adds, updates and deletes Asset data through SQLite', async () => {
@@ -176,15 +172,16 @@ describe('AssetDatabase', () => {
       createId: () => 'asset',
       now: () => Date.parse('2026-07-27T02:00:00.000Z'),
     });
-    await database.loadFromProject('project');
-
-    const created = database.add({
+    const created = database.add('project', {
       name: '学习笔记',
       mediaType: 'text/markdown',
       contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.md'),
     });
-    const renamed = database.update(created.id, { name: '新标题' });
+    const renamed = database.update('project', created.id, {
+      name: '新标题',
+    });
     const relinked = database.updateContentRef(
+      'project',
       created.id,
       createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
     );
@@ -204,8 +201,8 @@ describe('AssetDatabase', () => {
       },
     });
 
-    database.delete(created.id);
-    expect(database.list()).toEqual([]);
+    database.delete('project', created.id);
+    expect(database.listByProject('project')).toEqual([]);
     expect(context.db.select().from(assets).all()).toEqual([]);
   });
 
@@ -215,9 +212,7 @@ describe('AssetDatabase', () => {
     const database = createDatabase(context, {
       createId: () => 'generated',
     });
-    await database.loadFromProject('project');
-
-    const created = database.add({
+    const created = database.add('project', {
       name: '生成讲义',
       mediaType: 'text/markdown',
       contentRef: createProjectWorkspaceContentRef(
@@ -263,27 +258,25 @@ describe('AssetDatabase', () => {
       ['project-b', 1],
       ['project-empty', 0],
     ]);
-    expect(database.getActiveProjectId()).toBeUndefined();
   });
 
-  it('requires an initialized Project lookup and an active Project', async () => {
+  it('scopes writes to the explicit Project ID', async () => {
     const context = await createContext();
-    addProject(context, 'project');
-    const uninitializedProjects = new ProjectDatabase(context);
-    const uninitialized = new AssetDatabase(context, uninitializedProjects);
-
-    await expect(uninitialized.loadFromProject('project')).rejects.toThrow(
-      'SERVICE_NOT_READY',
-    );
-
+    addProject(context, 'project-a');
+    addProject(context, 'project-b');
+    insertAsset(context, {
+      id: 'asset',
+      projectId: 'project-a',
+      path: '/tmp/asset.txt',
+    });
     const database = createDatabase(context);
-    expect(() => database.get('asset')).toThrow('SERVICE_NOT_READY');
+
     expect(() =>
-      database.add({
-        name: 'Asset',
-        mediaType: 'text/plain',
-        contentRef: createAbsoluteLocalFileContentRef('/tmp/asset.txt'),
-      }),
-    ).toThrow('SERVICE_NOT_READY');
+      database.update('project-b', 'asset', { name: '错误项目' }),
+    ).toThrow('ASSET_NOT_FOUND');
+    expect(() => database.delete('project-b', 'asset')).toThrow(
+      'ASSET_NOT_FOUND',
+    );
+    expect(database.listByProject('project-a')).toHaveLength(1);
   });
 });
