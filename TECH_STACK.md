@@ -465,8 +465,8 @@ Project。它接收显式 `workspacePath`，负责：
 - 打开 Project Workspace；
 - 定位已解析 Asset 文件。
 
-现有 `AssetShellService` 将被吸收并退役；`lastLocalAssetDirectory` 也会被
-`Project.workspacePath` 取代。
+原 `AssetShellService` 已由该 Manager 吸收并退役；
+`lastLocalAssetDirectory` 已由 `Project.workspacePath` 取代。
 
 ### 10.3 Resolver
 
@@ -1014,13 +1014,22 @@ Home 的创建和编辑界面都展示 Workspace：
 
 ## 22. 已确认但尚未实施
 
-- `Project.workspacePath`；
-- `settings.defaultProjectWorkspace`；
-- `ProjectWorkspaceManager`；
+以下 Workspace 基座已经落地：
+
+- `Project.workspacePath` 与旧 Project 自动迁移；
+- `settings.defaultProjectWorkspace`，默认位于 Documents；
+- 无状态 `ProjectWorkspaceManager`；
 - 相对/绝对双形态 `LocalFileContentRef`；
-- `managed-json` 退役；
-- 默认复制导入与显式外部链接；
+- `managed-json` 生产契约和 Resolver 退役；
+- 外部文件默认复制导入，领域接口支持显式链接；
 - Project Workspace 创建、编辑、切换和打开；
+- Add Asset 使用当前 Project Workspace 作为文件选择起点；
+- Project 和 Asset 移除记录时不删除真实文件。
+
+以下方向已经确认但尚未实施：
+
+- “链接外部文件”的 Renderer 交互入口；
+- Workspace Missing 的 Home 状态与重新定位入口；
 - 文件型 Attachment 正文；
 - SQLite FTS5；
 - Codex Runtime、Provider、Lane 和 Thread Ref；

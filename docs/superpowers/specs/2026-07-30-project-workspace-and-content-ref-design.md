@@ -1,6 +1,6 @@
 # Project Workspace 与文件型 ContentRef 设计
 
-> 状态：已接受
+> 状态：已实施（Workspace Missing 的 Home 状态与外部链接 UI 入口待后续补充）
 >
 > 决策日期：2026-07-30
 >
