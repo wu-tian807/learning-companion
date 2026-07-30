@@ -8,6 +8,7 @@ import type { Readable } from 'node:stream';
 import { AppError } from '../errors/app-error';
 
 export const DEFAULT_COMMAND_OUTPUT_LIMIT = 64 * 1024;
+export const DEFAULT_COMMAND_TERMINATION_GRACE_MS = 5_000;
 
 export interface ExternalCommandResult {
   readonly stdout: string;
@@ -62,6 +63,14 @@ function terminate(child: ControlledChildProcess): void {
   child.kill('SIGTERM');
 }
 
+function forceTerminate(child: ControlledChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  child.kill('SIGKILL');
+}
+
 export class ExternalCommandRunner
   implements ExternalCommandRunnerApi
 {
@@ -87,6 +96,8 @@ export class ExternalCommandRunner
       let stdout = '';
       let stderr = '';
       let child: ControlledChildProcess;
+      let terminationError: unknown;
+      let forceTerminationTimer: ReturnType<typeof setTimeout> | undefined;
 
       try {
         child = spawn(request.command, [...request.args], {
@@ -115,6 +126,9 @@ export class ExternalCommandRunner
 
       const cleanup = () => {
         clearTimeout(timeout);
+        if (forceTerminationTimer) {
+          clearTimeout(forceTerminationTimer);
+        }
         request.signal?.removeEventListener('abort', handleAbort);
       };
       const finish = (
@@ -138,20 +152,28 @@ export class ExternalCommandRunner
           rejectPromise(result.error);
         }
       };
-      const handleAbort = () => {
+      const requestTermination = (error: unknown) => {
+        if (terminationError !== undefined) {
+          return;
+        }
+
+        terminationError = error;
         terminate(child);
-        finish({ ok: false, error: createAbortError() });
+        forceTerminationTimer = setTimeout(() => {
+          forceTerminate(child);
+        }, DEFAULT_COMMAND_TERMINATION_GRACE_MS);
+      };
+      const handleAbort = () => {
+        requestTermination(createAbortError());
       };
       const timeout = setTimeout(() => {
-        terminate(child);
-        finish({
-          ok: false,
-          error: new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
+        requestTermination(
+          new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
             cause: new Error(
               `External command timed out after ${timeoutMs}ms`,
             ),
           }),
-        });
+        );
       }, timeoutMs);
 
       request.signal?.addEventListener('abort', handleAbort, {
@@ -163,12 +185,19 @@ export class ExternalCommandRunner
       child.once('error', (error) => {
         finish({
           ok: false,
-          error: new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
-            cause: error,
-          }),
+          error:
+            terminationError ??
+            new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
+              cause: error,
+            }),
         });
       });
       child.once('close', (code, signal) => {
+        if (terminationError !== undefined) {
+          finish({ ok: false, error: terminationError });
+          return;
+        }
+
         if (code === 0) {
           finish({ ok: true });
           return;
