@@ -47,7 +47,8 @@ Project / Asset
     纯数据，不持有数据库、文件系统或 Electron 行为
 
 Database
-    SQLite 持久化 + 受控内存 Map
+    SQLite 持久化适配
+    是否维护内存索引由具体领域契约决定
 
 Service
     领域编排、生命周期串行化和运行时状态
@@ -102,11 +103,12 @@ flowchart LR
     PS["ProjectService<br/>Project 生命周期"]
     AS["AssetService<br/>Asset 业务与 Runtime Map"]
     PDB["ProjectDatabase<br/>全量 Project Map"]
-    ADB["AssetDatabase<br/>当前 Project Asset Map"]
+    ADB["AssetDatabase<br/>无状态 SQLite CRUD"]
     PWM["ProjectWorkspaceManager<br/>无状态路径与文件操作"]
 
     WSM["WorkbenchSessionManager<br/>活动 Workbench Session"]
     WR["WorkbenchRegistry<br/>选择 Main Provider"]
+    WC["Builtin Workbench Catalog<br/>统一双端注册声明"]
     CR["ContentResolverRegistry<br/>解析 ContentRef"]
     RS["ContentResourceService<br/>受控流式资源"]
     RR["Renderer Workbench Registry<br/>选择 React Workbench"]
@@ -142,6 +144,8 @@ flowchart LR
 
     WSM --> AS
     WSM --> WR
+    WC --> WR
+    WC --> RR
     CR --> FILES
     WR --> RS
     WR --> ARTS
@@ -198,6 +202,12 @@ Main 负责：
 - Codex Runtime 和 App Server；
 - IPC 参数校验和统一错误；
 - 所有可信写入。
+
+`src/main/index.ts` 只保留 Electron 生命周期、窗口创建与退出协调。
+`src/main/bootstrap/create-application-runtime.ts` 负责装配 Database、Repository、
+Service、Registry、Workbench 和 External Runtime；`ApplicationRuntime` 持有
+应用级对象图，并集中负责 Workbench 关闭任务合并、后台任务停机和资源释放。
+IPC 注册与清理位于独立的 `register-application-ipc.ts`，不再散落在入口文件中。
 
 ### 5.2 Preload
 
@@ -322,6 +332,11 @@ UI 原则：
 - 错误使用可见模态反馈，不能只记录 Main Console；
 - Workbench 可以声明是否接入右键、选区、Overflow 和生成中心。
 
+Home、Project 和 Settings 按 Feature 目录组织。页面组件只组合布局与子组件；
+Project 会话、Asset 操作、Home 偏好与项目 CRUD、External Runtime 设置等有状态
+编排分别进入专用 Hook。仓库根部的旧组件路径仅保留薄重导出，避免迁移期间扩大
+调用方改动。
+
 ## 8. Project、Asset 与数据行为分离
 
 ### 8.1 Project
@@ -355,21 +370,26 @@ Asset
     createdTime / lastUsedTime
 
 AssetDatabase
-    当前 Project 的 Asset Map
-    SQLite CRUD
+    按显式 projectId 查询和写入
+    无状态 SQLite CRUD
 
 AssetService
+    唯一活动 projectId
     带 availability 的 Runtime Map
     导入、刷新、Relink、删除、内容解析
 ```
 
 Project 打开时加载该 Project 的 Asset；离开时卸载。当前只维护一个活动
-Project 的 Asset Runtime Map，未来多窗口或后台任务明确需要后再扩展。
+Project 的 Asset Runtime Map，且该状态只属于 `AssetService`。加载时先让旧
+Project 失活，在临时集合中完成数据库查询和 ContentRef 解析，全部成功且未被
+更新请求替代后再原子提交；失败不会留下半加载状态。`AssetDatabase` 不保存
+活动 Project，也不缓存 Runtime Snapshot。未来多窗口或后台任务明确需要后再
+扩展。
 
 ### 8.3 命名约定
 
 - `*.ts` 数据文件：纯数据、校验、创建和克隆；
-- `*Database`：SQLite 与持久化支持的内存 Map；
+- `*Database`：SQLite 持久化边界；是否维护内存索引必须由领域契约明确；
 - `*Service`：领域编排，并可以持有运行时或生命周期状态；
 - `ProjectWorkspaceManager`：无状态 Workspace 操作；
 - `*Registry`：按稳定 ID 注册定义；
@@ -737,6 +757,13 @@ Workbench 内部功能可以完全不同。公共框架只固定生命周期、�
 
 ### 13.2 Registry 与 Session
 
+- `src/workbenches/catalog/builtin-workbenches.ts` 是内置 Workbench ID、Manifest
+  和双端注册描述的唯一目录；
+- Main Provider 和 Renderer Loader 分别由 Catalog 注册，Catalog 本身不把双端
+  可执行代码打入同一模块；
+- Renderer Loader 继续动态导入具体实现，避免 Vditor 等重型依赖进入应用启动
+  路径；
+- `unsupported` 是独立 Fallback，不作为普通内置项进入 Catalog；
 - `WorkbenchRegistry` 按 `mediaType` 和 Content Capability 选择 Provider；
 - 一个 `mediaType` 当前只选择一个内置 Workbench；
 - Registry 为未来多个 Provider 和用户选择保留边界；
@@ -851,11 +878,13 @@ Attachment 是依附于 Asset 的学习沉淀，例如：
 
 ```text
 id / projectId / assetId / typeId / typeVersion
-target / createdTime / updatedTime
+target / metadata / createdTime / updatedTime
 ```
 
-正文内容保存为 Project Workspace 文件。任意大 JSON `payload` 不得成为隐藏的
-内容数据库。
+`metadata` 仅用于小型、可校验的 JSON 索引信息。可选正文通过
+`content = { ref, mediaType }` 引用 Project Workspace 内的相对文件；Attachment
+正文不允许引用外部绝对路径。任意大 JSON `payload` 不得成为隐藏的内容数据库。
+当前只收敛了共享数据契约，Attachment 表、Service 和真实 CRUD 仍待后续设计。
 
 ### 16.2 Anchor
 
@@ -1125,7 +1154,8 @@ Home 的创建和编辑界面都展示 Workspace：
 
 - 共享数据校验和 Clone；
 - SQLite Migration、外键和 CRUD；
-- Project / Asset 内存 Map 同步；
+- Project 内存 Map 与 Asset 无状态持久化适配；
+- AssetService 活动 Project、原子加载和并发替代；
 - Service 生命周期和并发替代；
 - ContentRef 路径解析；
 - Windows / POSIX 路径策略；
@@ -1138,9 +1168,12 @@ Home 的创建和编辑界面都展示 Workspace：
 - Asset Artifact 命中、失效、生成并发与生命周期清理；
 - Office Provider 状态与 PDF 文档视图复用；
 - Workbench Provider、Adapter 和 Renderer；
+- Workbench Catalog 双端注册完整性与 Manifest 一致性；
+- ApplicationRuntime 装配、关闭任务合并与逆序释放；
 - Sandbox 交互桥；
 - IPC 校验与错误归类；
-- Renderer 关键状态转换；
+- Renderer Feature Hook、静态渲染与关键状态转换；
+- 生产源码静态依赖图循环检测；
 - better-sqlite3 原生模块开发与打包 Smoke Test。
 
 测试必须覆盖：
@@ -1159,6 +1192,12 @@ Home 的创建和编辑界面都展示 Workspace：
 
 以下已确认基座已经落地：
 
+- `AssetDatabase` 无状态 SQLite CRUD 与 `AssetService` 单一 Runtime Map；
+- Attachment `metadata + workspace content ref` 共享契约；
+- 内置 Workbench Catalog 及 Main / Renderer 双端注册；
+- Main Bootstrap、`ApplicationRuntime` 与集中 IPC 装配；
+- Home、Project、Settings Feature 目录与职责 Hook；
+- 文本编码和 Workbench Action 模块循环依赖消除；
 - `Project.workspacePath` 与旧 Project 自动迁移；
 - `settings.defaultProjectWorkspace`，默认位于 Documents；
 - 无状态 `ProjectWorkspaceManager`；
@@ -1202,9 +1241,11 @@ Home 的创建和编辑界面都展示 Workspace：
 
 核心边界：
 
-> Project 和 Asset 是纯数据；Database 维护 SQLite 与内存 Map；Service 编排领域
-> 生命周期；ProjectWorkspaceManager 无状态管理路径；ContentRef 只引用内容；
-> Workbench 通过 ContentHandle 工作；Agent 只读原件并通过审查会话提出修改。
+> Project 和 Asset 是纯数据；ProjectDatabase 维护全量 Project Map，
+> AssetDatabase 是无状态 SQLite 适配器，AssetService 独占活动 Asset Runtime
+> Map；Service 编排领域生命周期；ProjectWorkspaceManager 无状态管理路径；
+> ContentRef 只引用内容；Workbench 通过 ContentHandle 工作；Agent 只读原件并
+> 通过审查会话提出修改。
 
 在完成真实 MVP 和性能验证前：
 
@@ -1224,3 +1265,4 @@ Home 的创建和编辑界面都展示 Workspace：
 - `docs/superpowers/specs/2026-07-30-external-library-runtime-design.md`
 - `docs/superpowers/specs/2026-07-30-asset-artifacts-office-preview-design.md`
 - `docs/superpowers/specs/2026-07-30-background-runtime-install-and-notifications-design.md`
+- `docs/superpowers/specs/2026-07-30-architecture-boundary-convergence-design.md`

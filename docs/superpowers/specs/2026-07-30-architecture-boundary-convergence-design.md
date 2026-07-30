@@ -1,6 +1,6 @@
 # 架构边界收敛重构设计
 
-> 状态：设计已确认，待实施
+> 状态：已实施，待人工验收
 >
 > 决策日期：2026-07-30
 >
@@ -368,7 +368,7 @@ workbench-contribution.ts
 pnpm check
 pnpm smoke:native
 pnpm package
-pnpm verify
+pnpm verify:package:native
 ```
 
 与 Native Module 或 Electron 打包相关的测试继续在完整重构结束后执行。各细粒度
@@ -389,5 +389,6 @@ pnpm verify
 9. 重构：拆分 Settings 页面职责；
 10. 文档：同步 `TECH_STACK.md` 与模块结构。
 
-本轮设计提交后先等待用户审阅。实施完成后也不自动 Push，待本地人工验收通过再由
-用户决定是否推送。
+本轮重构已经按上述边界实施。生产源码依赖图审计结果为 225 个文件、791 条相对
+依赖边、0 个循环依赖。实施完成后不自动 Push，待本地人工验收通过再由用户决定
+是否推送。

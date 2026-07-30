@@ -1,5 +1,7 @@
 # 架构边界收敛重构实施计划
 
+> 状态：已实施，待人工验收
+>
 > 对应设计：
 > `docs/superpowers/specs/2026-07-30-architecture-boundary-convergence-design.md`
 >
