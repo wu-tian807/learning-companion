@@ -8,6 +8,11 @@ export const PLAIN_TEXT_ASSET_MEDIA_TYPE = 'text/plain';
 const mediaTypeByExtension = new Map<string, string>([
   ['.aac', 'audio/aac'],
   ['.bmp', 'image/bmp'],
+  ['.doc', 'application/msword'],
+  [
+    '.docx',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ],
   ['.epub', 'application/epub+zip'],
   ['.flac', 'audio/flac'],
   ['.htm', 'text/html'],
@@ -27,6 +32,11 @@ const mediaTypeByExtension = new Map<string, string>([
   ['.opus', 'audio/ogg'],
   ['.pdf', 'application/pdf'],
   ['.png', 'image/png'],
+  ['.ppt', 'application/vnd.ms-powerpoint'],
+  [
+    '.pptx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ],
   ['.wav', 'audio/wav'],
   ['.wave', 'audio/wav'],
   ['.weba', 'audio/webm'],

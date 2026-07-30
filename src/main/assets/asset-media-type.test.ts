@@ -108,6 +108,18 @@ describe('Asset media type', () => {
     await expect(detectAssetMediaType('/tmp/chart.webp')).resolves.toBe(
       'image/webp',
     );
+    await expect(detectAssetMediaType('/tmp/lesson.doc')).resolves.toBe(
+      'application/msword',
+    );
+    await expect(detectAssetMediaType('/tmp/lesson.DOCX')).resolves.toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    await expect(detectAssetMediaType('/tmp/slides.ppt')).resolves.toBe(
+      'application/vnd.ms-powerpoint',
+    );
+    await expect(detectAssetMediaType('/tmp/slides.PPTX')).resolves.toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    );
   });
 
   it('falls back to plain text for UTF-8, GBK and empty files', async () => {
