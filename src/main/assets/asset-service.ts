@@ -13,6 +13,7 @@ import type {
   ContentResolverRegistry,
 } from '../content/content-resolver-registry';
 import { AppError } from '../errors/app-error';
+import type { AssetArtifactCleanupApi } from '../artifacts/asset-artifact-service';
 import type { ProjectLookup } from '../projects/project-database';
 import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
 import type { UpdateAssetInput } from './asset';
@@ -37,7 +38,11 @@ export interface AssetServiceApi {
     mode?: LocalAssetImportMode,
   ): Promise<AssetSnapshot>;
   update(assetId: string, changes: UpdateAssetInput): AssetSnapshot;
-  delete(assetId: string): void;
+  delete(assetId: string): Promise<void>;
+  cleanupProjectArtifacts(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void>;
   refresh(assetId: string): Promise<AssetSnapshot>;
   refreshAll(): Promise<readonly AssetSnapshot[]>;
   relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
@@ -49,6 +54,7 @@ export interface AssetServiceDependencies {
   readonly detectMediaType: typeof detectAssetMediaType;
   readonly createDefaultName: typeof createDefaultAssetName;
   readonly isRelinkMediaCompatible: typeof isAssetRelinkMediaCompatible;
+  readonly artifactCleanup?: AssetArtifactCleanupApi;
 }
 
 function createSnapshot(
@@ -84,6 +90,7 @@ export class AssetService implements AssetServiceApi {
       isRelinkMediaCompatible:
         dependencies.isRelinkMediaCompatible ??
         isAssetRelinkMediaCompatible,
+      artifactCleanup: dependencies.artifactCleanup,
     };
   }
 
@@ -240,10 +247,33 @@ export class AssetService implements AssetServiceApi {
     return cloneAssetSnapshot(snapshot);
   }
 
-  delete(assetId: string): void {
+  async delete(assetId: string): Promise<void> {
+    const projectId = this.requireActiveProjectId();
+    const lifecycleVersion = this.lifecycleVersion;
     this.find(assetId);
+    const project = this.projectLookup.get(projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+
+    await this.dependencies.artifactCleanup?.removeByAsset(
+      assetId,
+      project.workspacePath,
+    );
+    this.requireUnchangedProject(lifecycleVersion, projectId);
     this.assetDatabase.delete(assetId);
     this.runtimeMap.delete(assetId);
+  }
+
+  async cleanupProjectArtifacts(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    await this.dependencies.artifactCleanup?.removeByProject(
+      projectId,
+      workspacePath,
+    );
   }
 
   async refresh(assetId: string): Promise<AssetSnapshot> {

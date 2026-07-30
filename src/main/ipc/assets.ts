@@ -103,12 +103,12 @@ export function registerAssetHandlers(
     },
   );
 
-  registerIpcHandler(IPC_CHANNELS.deleteAsset, (_event, request: unknown) => {
+  registerIpcHandler(IPC_CHANNELS.deleteAsset, async (_event, request: unknown) => {
     if (!isAssetIdRequest(request)) {
       throw invalidRequest();
     }
 
-    assetService.delete(request.assetId);
+    await assetService.delete(request.assetId);
   });
 
   registerIpcHandler(

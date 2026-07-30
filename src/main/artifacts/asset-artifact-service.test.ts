@@ -271,4 +271,58 @@ describe('AssetArtifactService', () => {
     ).rejects.toThrow('DATA_INTEGRITY_ERROR');
     expect(harness.database.listByAsset('asset')).toEqual([]);
   });
+
+  it('removes generated files and indexes with the Asset lifecycle', async () => {
+    const harness = await createHarness(
+      createProducer(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, '%PDF-1.7\ncleanup');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+    );
+    const generated = await harness.service.getOrCreate(
+      createRequest(harness),
+    );
+
+    await harness.service.removeByAsset('asset', harness.workspacePath);
+
+    await expect(access(generated.absolutePath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    expect(harness.database.listByAsset('asset')).toEqual([]);
+  });
+
+  it('cancels active generation before removing Project artifacts', async () => {
+    let generationStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolvePromise) => {
+      generationStarted = resolvePromise;
+    });
+    const harness = await createHarness(
+      createProducer(async (_request, signal) => {
+        generationStarted!();
+        await new Promise<void>((_resolvePromise, rejectPromise) => {
+          signal.addEventListener(
+            'abort',
+            () => rejectPromise(new DOMException('cancelled', 'AbortError')),
+            { once: true },
+          );
+        });
+        throw new Error('unreachable');
+      }),
+    );
+    const generation = harness.service.getOrCreate(createRequest(harness));
+    await started;
+
+    await harness.service.removeByProject(
+      'project',
+      harness.workspacePath,
+    );
+
+    await expect(generation).rejects.toMatchObject({ name: 'AbortError' });
+    expect(harness.database.listByProject('project')).toEqual([]);
+  });
 });

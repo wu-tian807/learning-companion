@@ -40,12 +40,19 @@ export interface AssetArtifactServiceApi {
   ): Promise<ResolvedAssetArtifact>;
 }
 
+export interface AssetArtifactCleanupApi {
+  removeByAsset(assetId: string, workspacePath: string): Promise<void>;
+  removeByProject(projectId: string, workspacePath: string): Promise<void>;
+}
+
 export interface AssetArtifactServiceDependencies {
   readonly now: () => number;
   readonly logger: Pick<Console, 'warn'>;
 }
 
 interface ActiveGenerationTask {
+  readonly assetId: string;
+  readonly workspacePath: string;
   readonly fingerprint: string;
   readonly controller: AbortController;
   readonly promise: Promise<ResolvedAssetArtifact>;
@@ -133,7 +140,7 @@ function createTaskFingerprint(
 }
 
 export class AssetArtifactService
-  implements AssetArtifactServiceApi
+  implements AssetArtifactServiceApi, AssetArtifactCleanupApi
 {
   private readonly activeTasks = new Map<string, ActiveGenerationTask>();
   private readonly now: () => number;
@@ -199,6 +206,8 @@ export class AssetArtifactService
       }
     });
     Object.assign(task, {
+      assetId: normalized.assetId,
+      workspacePath: normalized.workspacePath,
       fingerprint,
       controller,
       promise,
@@ -208,6 +217,42 @@ export class AssetArtifactService
     this.activeTasks.set(taskKey, task);
 
     return this.consumeTask(task, signal);
+  }
+
+  async removeByAsset(
+    assetId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const normalizedAssetId = requireText(assetId);
+    const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
+    await this.cancelTasks(
+      (task) => task.assetId === normalizedAssetId,
+    );
+    const artifacts = this.database.listByAsset(normalizedAssetId);
+
+    await this.removeArtifactFiles(
+      artifacts,
+      normalizedWorkspacePath,
+    );
+    this.database.deleteByAsset(normalizedAssetId);
+  }
+
+  async removeByProject(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const normalizedProjectId = requireText(projectId);
+    const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
+    await this.cancelTasks(
+      (task) => task.workspacePath === normalizedWorkspacePath,
+    );
+    const artifacts = this.database.listByProject(normalizedProjectId);
+
+    await this.removeArtifactFiles(
+      artifacts,
+      normalizedWorkspacePath,
+    );
+    this.database.deleteByProject(normalizedProjectId);
   }
 
   private async resolveCached(
@@ -410,5 +455,32 @@ export class AssetArtifactService
         },
       );
     });
+  }
+
+  private async cancelTasks(
+    predicate: (task: ActiveGenerationTask) => boolean,
+  ): Promise<void> {
+    const tasks = [...this.activeTasks.values()].filter(predicate);
+
+    for (const task of tasks) {
+      task.controller.abort();
+    }
+
+    await Promise.allSettled(tasks.map(({ promise }) => promise));
+  }
+
+  private async removeArtifactFiles(
+    artifacts: readonly AssetArtifact[],
+    workspacePath: string,
+  ): Promise<void> {
+    await Promise.all(
+      artifacts.map(async (artifact) => {
+        await this.fileManager
+          .removeArtifactFile(workspacePath, artifact.relativePath)
+          .catch((error: unknown) => {
+            this.logger.warn('清理 Asset Artifact 文件失败', error);
+          });
+      }),
+    );
   }
 }

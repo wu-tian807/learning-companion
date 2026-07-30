@@ -42,6 +42,9 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     loadFromProject: vi.fn(async () => []),
     getActiveProjectId: vi.fn(() => activeProjectId),
     unloadProject: vi.fn(() => calls.push('unload-assets')),
+    cleanupProjectArtifacts: vi.fn(async () => {
+      calls.push('cleanup-artifacts');
+    }),
   } as unknown as AssetServiceApi;
   const workbenchSessions = {
     closeActive: vi.fn(async () => {
@@ -167,7 +170,15 @@ describe('ProjectService', () => {
     ).resolves.toEqual(
       expect.objectContaining({ workspacePath: '/tmp/projects/moved' }),
     );
-    expect(calls).toEqual(['close-workbench', 'unload-assets']);
+    expect(calls).toEqual([
+      'close-workbench',
+      'unload-assets',
+      'cleanup-artifacts',
+    ]);
+    expect(assetService.cleanupProjectArtifacts).toHaveBeenCalledWith(
+      'project',
+      '/tmp/projects/project',
+    );
     expect(projectDatabase.updateWorkspace).toHaveBeenCalledWith(
       'project',
       '/tmp/projects/moved',
@@ -194,6 +205,7 @@ describe('ProjectService', () => {
     expect(calls).toEqual([
       'close-workbench',
       'unload-assets',
+      'cleanup-artifacts',
       'delete-project',
     ]);
   });

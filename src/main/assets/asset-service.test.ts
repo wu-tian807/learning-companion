@@ -330,4 +330,25 @@ describe('AssetService', () => {
     expect(resolver.resolve).not.toHaveBeenCalled();
     expect(database.add).not.toHaveBeenCalled();
   });
+
+  it('cleans managed Artifacts before deleting an Asset', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const artifactCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+    const service = createService(database, registry, {
+      artifactCleanup,
+    });
+    await service.loadFromProject('project');
+
+    await service.delete('asset');
+
+    expect(artifactCleanup.removeByAsset).toHaveBeenCalledWith(
+      'asset',
+      '/tmp/project',
+    );
+    expect(database.delete).toHaveBeenCalledWith('asset');
+  });
 });

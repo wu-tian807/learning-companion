@@ -107,11 +107,56 @@ describe('AssetArtifactDatabase', () => {
       }),
     ).toEqual(updated);
     expect(database.listByAsset('asset')).toEqual([updated]);
+    expect(database.listByProject('project')).toEqual([updated]);
     expect(context.db.select().from(assetArtifacts).all()).toHaveLength(1);
 
-    database.delete(updated);
+    database.deleteByAsset('asset');
 
     expect(database.listByAsset('asset')).toEqual([]);
+  });
+
+  it('deletes only Artifact records that belong to the selected Project', async () => {
+    const context = await createContext();
+    const database = new AssetArtifactDatabase(context);
+    context.db
+      .insert(projects)
+      .values({
+        id: 'another-project',
+        name: 'Another Project',
+        icon: '📗',
+        workspacePath: '/tmp/another-project',
+        createdTime: 1,
+        pinned: false,
+      })
+      .run();
+    context.db
+      .insert(assets)
+      .values({
+        id: 'another-asset',
+        projectId: 'another-project',
+        name: 'Another Asset',
+        mediaType: 'application/pdf',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/book.pdf'),
+        createdTime: 1,
+        lastUsedTime: 1,
+      })
+      .run();
+    const current = database.upsert(createArtifact());
+    const another = database.upsert(
+      createArtifact({
+        assetId: 'another-asset',
+        relativePath:
+          '.learning-companion/artifacts/another-asset/builtin.office.preview/b.pdf',
+      }),
+    );
+
+    expect(database.listByProject('project')).toEqual([current]);
+    expect(database.listByProject('another-project')).toEqual([another]);
+
+    database.deleteByProject('project');
+
+    expect(database.listByProject('project')).toEqual([]);
+    expect(database.listByProject('another-project')).toEqual([another]);
   });
 
   it('maps invalid persisted data to a data integrity error', async () => {

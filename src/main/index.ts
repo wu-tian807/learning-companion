@@ -195,6 +195,7 @@ void app
       contentResolverRegistry,
       projectDatabase,
       workspaceManager,
+      { artifactCleanup: artifactService },
     );
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();

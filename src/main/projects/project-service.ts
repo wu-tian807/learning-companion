@@ -170,6 +170,10 @@ export class ProjectService implements ProjectServiceApi {
       }
 
       try {
+        await this.assetService.cleanupProjectArtifacts(
+          projectId,
+          currentProject.workspacePath,
+        );
         const updated = this.projectDatabase.updateWorkspace(
           projectId,
           preparation.workspacePath,
@@ -224,7 +228,9 @@ export class ProjectService implements ProjectServiceApi {
 
   async deleteProject(projectId: string): Promise<void> {
     await this.enqueueLifecycle(async () => {
-      if (!this.projectDatabase.get(projectId)) {
+      const project = this.projectDatabase.get(projectId);
+
+      if (!project) {
         throw new AppError('PROJECT_NOT_FOUND');
       }
 
@@ -233,6 +239,10 @@ export class ProjectService implements ProjectServiceApi {
         this.assetService.unloadProject();
       }
 
+      await this.assetService.cleanupProjectArtifacts(
+        projectId,
+        project.workspacePath,
+      );
       this.projectDatabase.delete(projectId);
     });
   }

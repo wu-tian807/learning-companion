@@ -1,7 +1,8 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import type { DatabaseContext } from '../database/database-context';
 import { assetArtifacts } from '../database/schema/asset-artifacts';
+import { assets } from '../database/schema/assets';
 import { AppError } from '../errors/app-error';
 import {
   cloneAssetArtifact,
@@ -13,12 +14,15 @@ import {
 export interface AssetArtifactDatabaseApi {
   get(key: AssetArtifactKey): AssetArtifact | undefined;
   listByAsset(assetId: string): readonly AssetArtifact[];
+  listByProject(projectId: string): readonly AssetArtifact[];
   upsert(artifact: AssetArtifact): AssetArtifact;
   delete(key: AssetArtifactKey): void;
+  deleteByAsset(assetId: string): void;
+  deleteByProject(projectId: string): void;
 }
 
-function requireAssetId(assetId: string): string {
-  const normalized = assetId.trim();
+function requireId(value: string): string {
+  const normalized = value.trim();
 
   if (normalized.length === 0) {
     throw new AppError('DATA_INTEGRITY_ERROR');
@@ -59,8 +63,27 @@ export class AssetArtifactDatabase implements AssetArtifactDatabaseApi {
     return this.context.db
       .select()
       .from(assetArtifacts)
-      .where(eq(assetArtifacts.assetId, requireAssetId(assetId)))
+      .where(eq(assetArtifacts.assetId, requireId(assetId)))
       .orderBy(
+        asc(assetArtifacts.producerId),
+        asc(assetArtifacts.artifactKey),
+      )
+      .all()
+      .map(mapRow);
+  }
+
+  listByProject(projectId: string): readonly AssetArtifact[] {
+    const projectAssetIds = this.context.db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.projectId, requireId(projectId)));
+
+    return this.context.db
+      .select()
+      .from(assetArtifacts)
+      .where(inArray(assetArtifacts.assetId, projectAssetIds))
+      .orderBy(
+        asc(assetArtifacts.assetId),
         asc(assetArtifacts.producerId),
         asc(assetArtifacts.artifactKey),
       )
@@ -115,6 +138,25 @@ export class AssetArtifactDatabase implements AssetArtifactDatabaseApi {
           eq(assetArtifacts.artifactKey, normalizedKey.artifactKey),
         ),
       )
+      .run();
+  }
+
+  deleteByAsset(assetId: string): void {
+    this.context.db
+      .delete(assetArtifacts)
+      .where(eq(assetArtifacts.assetId, requireId(assetId)))
+      .run();
+  }
+
+  deleteByProject(projectId: string): void {
+    const projectAssetIds = this.context.db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.projectId, requireId(projectId)));
+
+    this.context.db
+      .delete(assetArtifacts)
+      .where(inArray(assetArtifacts.assetId, projectAssetIds))
       .run();
   }
 
