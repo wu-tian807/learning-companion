@@ -74,7 +74,9 @@ deleteProjectCascade(projectId)
 
 删除的不是当前 Project 时，不卸载其他 Project 的 Asset Map。
 
-不向 Renderer 暴露“批量删除某 Project 的 Asset”接口，避免前端编排两个可能部分成功的删除请求。
+Renderer 不得循环调用单项删除来编排批量操作。批量删除使用一次
+`deleteAssets` IPC，由 Main 校验当前 Project、顺序执行并返回完整列表快照和
+逐项失败结果。
 
 ## Asset IPC
 
@@ -87,11 +89,13 @@ selectLocalAssetFiles(): Promise<string[]>
 addLocalAssets({ paths }): Promise<AddLocalAssetsResult>
 renameAsset({ assetId, name }): Promise<AssetSummary>
 relinkAsset({ assetId, path }): Promise<AssetSummary>
-deleteAsset({ assetId }): Promise<void>
+deleteAssets({ projectId, assetIds }): Promise<DeleteAssetsResult>
 refreshAsset({ assetId }): Promise<AssetSummary>
 ```
 
-除 `openProject` 外，Asset 操作只针对 `AssetDatabase` 当前已加载的 Project，调用方不能自行传入或覆盖 `projectId`。
+单项 Asset 操作只针对当前已加载的 Project。文件选择、批量添加、批量删除和
+批量刷新额外携带发起时的 `projectId`，Main 必须将它与当前 Project 比较，
+用于拒绝文件选择器、确认框或异步任务期间发生的 Project 切换。
 
 `AssetSummary` 包含：
 
@@ -149,6 +153,39 @@ interface AddLocalAssetsResult {
 `assets` 是 Main 当前 Asset Map 的完整快照。Renderer 在批量操作完成后
 用它替换本地列表，而不是只做乐观追加，避免长时间停留在原生文件
 选择器或开发期热重载造成的前后端列表漂移。
+
+## 批量删除
+
+左栏采用显式选择模式，不在日常浏览状态永久显示复选框：
+
+- 点击“选择”进入，单项菜单替换为复选框；
+- 点击整行只切换选择，不打开 Workbench；
+- 顶部提供全选、已选数量、移除和完成；
+- 取消确认后保留当前选择；
+- 成功后退出选择模式；部分失败时只保留失败项，允许重试。
+
+Renderer 只发起一次：
+
+```ts
+deleteAssets({ projectId, assetIds })
+```
+
+Main 使用部分成功语义，顺序执行以避免并发清理同一 Project 的 Artifact：
+
+```ts
+interface DeleteAssetsResult {
+  deletedAssetIds: string[];
+  failed: Array<{
+    assetId: string;
+    message: string;
+  }>;
+  assets: AssetSummary[];
+}
+```
+
+若当前 Workbench 的 Asset 位于待删除集合，Renderer 先取消选择并等待
+Workbench 完整关闭，再调用批量 IPC。`PROJECT_CONTEXT_CHANGED` 和
+`OPERATION_SUPERSEDED` 会终止整批操作；普通单项错误不会回滚已经成功的删除。
 
 ## Project 删除 IPC
 
@@ -222,6 +259,8 @@ ProjectPage 卸载或返回 Home
 - 选中状态来自当前 Asset ID。
 
 每个 Asset 提供重命名、Relink、刷新状态和删除入口。删除需要确认。
+批量删除通过显式选择模式进入；普通浏览状态不常驻复选框，避免与“点击打开
+Asset”产生歧义。
 
 ### 中间阅读器
 
@@ -253,6 +292,7 @@ ProjectPage 卸载或返回 Home
 - SQLite 外键级联删除 Project Asset。
 - Asset IPC 请求校验和响应序列化。
 - 批量添加的全成功、部分成功和全部失败。
+- 批量删除的全成功、部分成功、Project 切换中止和请求校验。
 - 文件选择器取消、多选和错误。
 
 ### Renderer
@@ -261,6 +301,7 @@ ProjectPage 卸载或返回 Home
 - 初始选择规则。
 - 添加、拖拽、重命名、Relink、刷新和删除状态更新。
 - 当前项删除后的相邻选择。
+- 选择模式、全选、批量确认和部分失败后保留失败项。
 - 不可用状态和不支持媒体提示。
 - 卸载时关闭 Project，并忽略迟到响应。
 
@@ -268,7 +309,6 @@ ProjectPage 卸载或返回 Home
 
 - 文件夹递归导入。
 - URL 或网页拖拽导入。
-- 批量选择和批量删除 Asset。
 - 跨 Project 移动或复制 Asset。
 - 重复路径去重。
 - PDF、Markdown、EPUB 等具体阅读器。

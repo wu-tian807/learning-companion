@@ -240,6 +240,39 @@ Workspace 返回结果为准：
 不是首版可用性的依赖。无论机器上是否存在外部 Codex 状态，应用都必须能够
 完成自己的登录流程；不得静默复制 Token。
 
+### 6.3 CodexRuntimeService
+
+`CodexRuntimeService` 是 Electron Main 中的应用级有状态 Service。它持有
+`stopped / starting / ready / stopping / failed` 状态，负责：
+
+- 懒启动固定版本的内置 Codex Runtime；
+- 使用应用独立的 `CODEX_HOME`，不继承外部 Codex 登录目录；
+- 完成 `initialize` / `initialized` 握手；
+- 复用一条 stdio JSONL RPC 连接并分发 Notification 和 Server Request；
+- 合并并发启动，处理进程退出、请求超时、关闭和下次重启；
+- 提供账号、模型、额度、Skill、MCP 状态、Thread 和 Turn 基础能力；
+- 将 Turn 的 Assistant Delta、Item、工具调用、审批、用户输入请求、错误和
+  完成事件暴露为异步生成器。
+
+策略的配置时机不能统一塞进“发送消息”：
+
+| 时机 | 能力 |
+| --- | --- |
+| Runtime | 登录、模型、额度、Skill/MCP 发现 |
+| Thread 创建/恢复 | Base/Developer Instructions、Dynamic Tools、默认工作目录、默认权限和 Codex Config Override |
+| Turn | 文本、图片、音频、Skill/Mention、当前 Asset 上下文、模型/推理强度、路径权限和结构化输出 Schema |
+| 流式 Server Request | 命令/文件审批、权限申请、用户问题、MCP Elicitation 和 Dynamic Tool 执行 |
+
+Learning Companion 自定义工具优先使用 App Server Dynamic Tools。外部 MCP
+Server 仍由 Codex 配置和 MCP 生命周期管理；二者不能在应用领域层被混成同一种
+“工具开关”。Dynamic Tools、细粒度 Permissions 和 Additional Context 当前属于
+App Server Experimental API，因此 Runtime 必须固定版本并在升级时重新生成或
+核对协议 Schema。
+
+Runtime 二进制位于安装包的 ASAR 外部资源中；认证和 Thread 数据位于 Electron
+`userData/agent-runtimes/codex/home`。应用启动只构造 Service，不启动进程；首次
+调用 AI 能力时才解析二进制、创建目录和启动 App Server。
+
 ## 7. Chat / Work 与行为模式
 
 不在 Provider 层实现 `chatMode` / `workMode` 开关。

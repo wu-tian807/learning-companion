@@ -498,7 +498,11 @@ Project。它接收显式 `workspacePath`，负责：
 - 定位已解析 Asset 文件。
 
 原 `AssetShellService` 已由该 Manager 吸收并退役；
-`lastLocalAssetDirectory` 已由 `Project.workspacePath` 取代。
+跨重启持久化的 `lastLocalAssetDirectory` 已由
+`Project.workspacePath` 加 Main 进程内的按 Workspace 最近目录 Store 取代。
+纯路径校验、Workspace portable path 转换和默认目录布局位于
+`project-workspace-paths.ts`；它们通过显式 `path.posix` / `path.win32`
+策略测试，不依赖执行测试的宿主平台。
 
 ### 10.3 Resolver
 
@@ -561,8 +565,10 @@ learning-content://resource/<opaque-token>
 
 ### 11.1 Add Asset
 
-Add Asset 文件选择器使用当前 `Project.workspacePath` 作为 `defaultPath`，并携带
-发起操作时的 `projectId`。
+Add Asset 文件选择器第一次使用当前 `Project.workspacePath` 作为
+`defaultPath`，成功选择后在 Main 进程内按 Workspace 记住所在目录；该记忆
+不写入数据库或设置文件，应用退出后清空。请求始终携带发起操作时的
+`projectId`。
 
 - Workspace 内文件：直接保存相对引用；
 - Workspace 外文件：默认复制到 `assets/imported`；
@@ -605,6 +611,8 @@ Workbench 中显示更完整的错误和 Relink 操作。
 - Workspace 切换会清理旧 Workspace 中属于该 Project 的 Artifact；
 - Artifact 清理会先取消并等待进行中的生成任务；
 - UI 使用“从 Learning Companion 中移除”；
+- 左栏通过显式选择模式支持全选和批量移除，日常浏览状态不常驻复选框；
+- 批量移除由单次 Main IPC 顺序执行，返回成功项、失败项和完整 Asset 快照；
 - 物理删除后续作为独立、二次确认的废纸篓操作。
 
 ## 12. External Runtime 与 Asset Artifact
@@ -621,10 +629,16 @@ ExternalLibraryRegistry
     注册应用内可信 Definition
 
 ExternalLibraryService
-    发现、下载、校验、安装、删除、迁移和实时状态
+    公开 API、任务互斥、Snapshot 和订阅
+
+ExternalLibraryInstallationWorkflow / ExternalLibraryMigrationWorkflow
+    下载安装事务，以及冲突分析、迁移、设置切换和回滚事务
 
 ExternalLibraryPathManager
     受控路径、staging、跨盘复制、校验、提交和回滚
+
+ExternalLibraryPaths
+    可独立按 POSIX / Windows 策略验证的纯路径布局
 
 ExternalLibraryInstaller
     macOS DMG / Windows MSI 平台安装细节
@@ -638,6 +652,11 @@ ExternalLibraryInstallationStore
 取消下载；只有用户明确取消或应用退出才会触发任务收尾。重复开始同一组件时复用
 现有任务，不启动第二次下载。当前平台没有匹配安装包时返回稳定的
 `unsupported` 状态，不把它误报成安装失败。
+
+外部命令只有在原进程发出 `close` 后才释放调用者。POSIX 使用
+`SIGTERM` 加宽限期后的 `SIGKILL`；Windows 通过绝对路径调用
+`taskkill.exe /PID ... /T /F` 终止完整子进程树，并由 Windows-only
+真实父子进程集成测试验证。
 
 Renderer 端按以下职责分层：
 
@@ -763,6 +782,8 @@ Workbench 内部功能可以完全不同。公共框架只固定生命周期、�
   可执行代码打入同一模块；
 - Renderer Loader 继续动态导入具体实现，避免 Vditor 等重型依赖进入应用启动
   路径；
+- 每个 Workbench View 位于独立错误边界内，第三方 Renderer 异常必须降级为
+  可重试错误界面，不能卸载整个应用 Renderer；
 - `unsupported` 是独立 Fallback，不作为普通内置项进入 Catalog；
 - `WorkbenchRegistry` 按 `mediaType` 和 Content Capability 选择 Provider；
 - 一个 `mediaType` 当前只选择一个内置 Workbench；
@@ -861,6 +882,9 @@ Manifest 声明 Facility ID、版本和选项。Definition Registry 校验：
 
 Markdown 后续解析、索引和导出优先使用 unified / remark / rehype。LaTeX 与
 Mermaid 必须作为 Markdown Workbench 的正式能力设计，而不是临时字符串替换。
+Vditor 的图标与 Mermaid Runtime 由单一 Loader 去重；脚本标签存在不代表
+Runtime Ready。Adapter 只有在 Vditor `after` 和首个布局帧完成后才对外可用，
+初始化支持 Abort、超时和重试，StrictMode 的旧实例只拥有自己的子宿主节点。
 
 ## 16. Attachment、Anchor 与 Relation
 
@@ -1200,15 +1224,16 @@ Home 的创建和编辑界面都展示 Workspace：
 - 文本编码和 Workbench Action 模块循环依赖消除；
 - `Project.workspacePath` 与旧 Project 自动迁移；
 - `settings.defaultProjectWorkspace`，默认位于 Documents；
-- 无状态 `ProjectWorkspaceManager`；
+- 不持有领域状态的 `ProjectWorkspaceManager`，以及独立的进程内文件选择目录 Store；
 - 相对/绝对双形态 `LocalFileContentRef`；
 - `managed-json` 生产契约和 Resolver 退役；
 - 外部文件默认复制导入，领域接口支持显式链接；
 - Project Workspace 创建、编辑、切换和打开；
-- Add Asset 使用当前 Project Workspace 作为文件选择起点；
+- Add Asset 首次使用当前 Project Workspace，随后按 Workspace 记忆最近目录；
 - “添加资料”默认复制、拖拽复制，以及低频“链接外部文件”入口；
 - Asset 列表根据 `ContentRef` 显示“外部”等来源徽标；
 - Project 和 Asset 移除记录时不删除真实资料文件；
+- Asset 左栏显式多选及 Main 编排的部分成功批量移除；
 - 通用 External Runtime 管理、设置 UI 与安全迁移；
 - Main 持有的后台安装任务与 Renderer 全局 External Library Store；
 - 通用全局通知设施与 External Runtime 通知 Adapter；

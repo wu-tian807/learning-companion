@@ -313,8 +313,13 @@ Manager 的方法接收显式路径，不依赖 `ProjectDatabase`，从而保持
 
 退役：
 
-- `lastLocalAssetDirectory` 设置；
+- 跨重启持久化的 `lastLocalAssetDirectory` 设置；
 - `AssetShellService` 及其独立注册。
+
+文件选择器仍保留 Main 进程内的临时目录记忆：以 `workspacePath`
+为作用域，第一次从 Project Workspace 打开，成功选择文件后记住该文件目录，
+应用退出后自然清空。该状态由独立的内存 Store 持有，不进入 SQLite、
+`settings.json` 或 Renderer。
 
 仍然独立：
 
@@ -392,7 +397,7 @@ interface CreateProjectInput {
 
 ## 10. Add Asset 与拖放
 
-文件选择器必须携带发起操作时的 `projectId`，并使用：
+文件选择器必须携带发起操作时的 `projectId`。每个 Workspace 第一次使用：
 
 ```ts
 dialog.showOpenDialog({
@@ -400,6 +405,9 @@ dialog.showOpenDialog({
   properties: ['openFile', 'multiSelections'],
 });
 ```
+
+成功选中文件后，Main 进程内存 Store 记录第一个文件所在目录；同一 Workspace
+后续打开从该目录继续，不同 Workspace 的记录互不影响。
 
 ### 10.1 Workspace 内文件
 
@@ -565,6 +573,7 @@ Attachment 不在本阶段实现，但后续必须遵守：
 - 已有目录不被覆盖；
 - marker 冲突；
 - 文件选择器 defaultPath；
+- 文件选择器按 Workspace 记忆最近一次成功选择目录；
 - 批量复制；
 - 重名处理；
 - 打开 Workspace；
@@ -588,7 +597,7 @@ Attachment 不在本阶段实现，但后续必须遵守：
 - 路径选择取消；
 - 更换 Workspace 的风险确认；
 - Add Asset 携带 `projectId`；
-- 文件选择器以 Workspace 为默认路径；
+- 文件选择器首次以 Workspace 为默认路径，随后使用该 Workspace 的内存记忆；
 - Workspace Missing 的 UI 状态；
 - Project 与 Asset 两种文件管理器操作不混淆。
 
@@ -599,12 +608,15 @@ Attachment 不在本阶段实现，但后续必须遵守：
 - `Project` / `Asset`：纯数据；
 - `ProjectDatabase` / `AssetDatabase`：SQLite 与内存 Map；
 - `ProjectService` / `AssetService`：领域编排和运行时状态；
-- `ProjectWorkspaceManager`：无状态路径与文件系统操作；
+- `ProjectWorkspaceManager`：不保存领域状态的路径与文件系统操作；
+- `InMemoryFileDialogDirectoryStore`：按 Workspace 保存进程内文件选择目录；
 - `ContentResolver`：把持久化引用解析为运行时内容；
 - `ContentHandle`：面向 Workbench 的能力句柄；
 - `Repository`：按稳定键保存和读取特定记录。
 
-“Manager 无状态、Service 有状态”是本次 Project/Asset 数据层的局部命名约定。
+“Manager 不持有领域状态、Service 持有领域运行时状态”是本次
+Project/Asset 数据层的局部命名约定。文件选择器目录属于短期 UI 状态，
+因此放入独立 Store，而不把 Workspace Manager 改成 Service。
 现有 `WorkbenchSessionManager` 按“管理活动 Session 生命周期”的既有语义保留，
 不在本次无关改造中重命名。
 
