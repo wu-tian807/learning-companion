@@ -339,9 +339,11 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   async requireExecutable(libraryId: string): Promise<string> {
     await this.initialize();
     const definition = this.registry.require(libraryId);
+    const currentSnapshot = this.snapshots.get(definition.id);
     if (
       this.migrationTask ||
-      this.activeInstallations.has(definition.id)
+      (this.activeInstallations.has(definition.id) &&
+        currentSnapshot?.status !== "available")
     ) {
       throw new AppError("EXTERNAL_LIBRARY_NOT_INSTALLED");
     }

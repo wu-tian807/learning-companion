@@ -186,6 +186,26 @@ describe("ExternalLibraryService", () => {
     expect(harness.installer.install).toHaveBeenCalledOnce();
   });
 
+  it("exposes the executable to an available-status listener", async () => {
+    const harness = await createHarness();
+    await harness.service.initialize();
+    let executableFromEvent: Promise<string> | undefined;
+    let requested = false;
+    harness.service.subscribe((snapshot) => {
+      if (snapshot.status === "available" && !requested) {
+        requested = true;
+        executableFromEvent =
+          harness.service.requireExecutable("libreoffice");
+      }
+    });
+
+    await harness.service.install("libreoffice");
+
+    await expect(executableFromEvent).resolves.toContain(
+      "LibreOffice.app/Contents/MacOS/soffice",
+    );
+  });
+
   it("reuses an installed runtime across Service instances", async () => {
     const first = await createHarness();
     await first.service.initialize();
