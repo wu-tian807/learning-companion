@@ -15,7 +15,8 @@ export function ProjectList({
   projects,
   onOpenProject,
   actionsDisabled = false,
-  onRename,
+  onEdit,
+  onOpenWorkspace,
   onTogglePinned,
   onDelete,
 }: ProjectListProps) {
@@ -84,7 +85,8 @@ export function ProjectList({
                   <ProjectActionsMenu
                     project={project}
                     disabled={actionsDisabled}
-                    onRename={onRename}
+                    onEdit={onEdit}
+                    onOpenWorkspace={onOpenWorkspace}
                     onTogglePinned={onTogglePinned}
                     onDelete={onDelete}
                   />

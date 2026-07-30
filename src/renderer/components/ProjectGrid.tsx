@@ -23,7 +23,8 @@ export function ProjectGrid({
   projects,
   onOpenProject,
   actionsDisabled = false,
-  onRename,
+  onEdit,
+  onOpenWorkspace,
   onTogglePinned,
   onDelete,
 }: ProjectGridProps) {
@@ -58,7 +59,8 @@ export function ProjectGrid({
             <ProjectActionsMenu
               project={project}
               disabled={actionsDisabled}
-              onRename={onRename}
+              onEdit={onEdit}
+              onOpenWorkspace={onOpenWorkspace}
               onTogglePinned={onTogglePinned}
               onDelete={onDelete}
             />

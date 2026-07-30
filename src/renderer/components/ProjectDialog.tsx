@@ -4,26 +4,40 @@ import { PROJECT_NAME_MAX_LENGTH } from '../../shared/projects';
 
 export interface ProjectDialogValues {
   name: string;
+  workspacePath?: string;
 }
 
 interface ProjectDialogProps {
-  mode: 'create' | 'rename';
+  mode: 'create' | 'edit';
   initialName?: string;
+  initialWorkspacePath?: string;
   busy: boolean;
   error: string | null;
   onClose: () => void;
+  onSelectWorkspace: () => Promise<string | undefined>;
+  onOpenWorkspace?: () => Promise<void>;
   onSubmit: (values: ProjectDialogValues) => void;
 }
 
 export function ProjectDialog({
   mode,
   initialName = '',
+  initialWorkspacePath,
   busy,
   error,
   onClose,
+  onSelectWorkspace,
+  onOpenWorkspace,
   onSubmit,
 }: ProjectDialogProps) {
   const [name, setName] = useState(initialName);
+  const [workspacePath, setWorkspacePath] = useState(
+    initialWorkspacePath,
+  );
+  const [selectingWorkspace, setSelectingWorkspace] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(
+    null,
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,10 +64,41 @@ export function ProjectDialog({
     }
 
     setValidationError(null);
-    onSubmit({ name: normalizedName });
+    onSubmit({ name: normalizedName, workspacePath });
   };
 
-  const title = mode === 'create' ? '新建 Project' : '编辑标题';
+  const title = mode === 'create' ? '新建 Project' : '编辑 Project';
+  const selectWorkspace = async () => {
+    setSelectingWorkspace(true);
+    setWorkspaceError(null);
+
+    try {
+      const selected = await onSelectWorkspace();
+
+      if (selected) {
+        setWorkspacePath(selected);
+      }
+    } catch (selectionError) {
+      console.error('选择 Project Workspace 失败', selectionError);
+      setWorkspaceError('无法选择工作区，请重试。');
+    } finally {
+      setSelectingWorkspace(false);
+    }
+  };
+  const openWorkspace = async () => {
+    if (!onOpenWorkspace) {
+      return;
+    }
+
+    setWorkspaceError(null);
+
+    try {
+      await onOpenWorkspace();
+    } catch (openError) {
+      console.error('打开 Project Workspace 失败', openError);
+      setWorkspaceError('无法打开当前工作区，请检查目录是否可用。');
+    }
+  };
 
   return (
     <div
@@ -77,8 +122,8 @@ export function ProjectDialog({
             </h2>
             <p className="mt-1 text-xs text-slate-500">
               {mode === 'create'
-                ? '先创建一个空 Project，之后再添加学习资料。'
-                : '只修改当前 Project 的显示名称。'}
+                ? '资料与生成内容会整理到 Project 工作区中。'
+                : '可修改标题或更换 Project 工作区。'}
             </p>
           </div>
           <button
@@ -112,9 +157,59 @@ export function ProjectDialog({
             />
           </label>
 
-          {(validationError ?? error) && (
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-slate-400">
+                Project 工作区
+              </span>
+              <div className="flex items-center gap-2">
+                {mode === 'edit' && onOpenWorkspace && (
+                  <button
+                    type="button"
+                    disabled={busy || selectingWorkspace}
+                    onClick={() => {
+                      void openWorkspace();
+                    }}
+                    className="ui-control rounded-full px-2.5 py-1 text-[11px] text-slate-400 disabled:opacity-40"
+                  >
+                    打开
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy || selectingWorkspace}
+                  onClick={() => {
+                    void selectWorkspace();
+                  }}
+                  className="ui-control rounded-full border border-white/[0.12] px-3 py-1 text-[11px] text-slate-300 disabled:opacity-40"
+                >
+                  {selectingWorkspace
+                    ? '选择中…'
+                    : workspacePath
+                      ? '更换'
+                      : '选择'}
+                </button>
+              </div>
+            </div>
+            <div className="min-h-12 rounded-xl border border-white/[0.08] bg-black/15 px-3 py-2.5 text-xs leading-5 text-slate-400">
+              {workspacePath ??
+                '未手动选择时，将在 Documents 的默认位置自动创建。'}
+            </div>
+            {mode === 'create' && workspacePath && (
+              <button
+                type="button"
+                disabled={busy || selectingWorkspace}
+                onClick={() => setWorkspacePath(undefined)}
+                className="mt-2 text-[11px] text-slate-500 transition hover:text-slate-300"
+              >
+                恢复默认位置
+              </button>
+            )}
+          </div>
+
+          {(validationError ?? workspaceError ?? error) && (
             <p role="alert" className="mt-3 text-xs text-rose-300">
-              {validationError ?? error}
+              {validationError ?? workspaceError ?? error}
             </p>
           )}
 

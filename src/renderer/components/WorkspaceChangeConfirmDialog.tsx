@@ -1,20 +1,18 @@
 import { useEffect, useRef } from 'react';
 
-interface ConfirmDialogProps {
-  projectName: string;
-  busy: boolean;
-  error: string | null;
-  onClose: () => void;
-  onConfirm: () => void;
+interface WorkspaceChangeConfirmDialogProps {
+  readonly busy: boolean;
+  readonly error: string | null;
+  readonly onClose: () => void;
+  readonly onConfirm: () => void;
 }
 
-export function ConfirmDialog({
-  projectName,
+export function WorkspaceChangeConfirmDialog({
   busy,
   error,
   onClose,
   onConfirm,
-}: ConfirmDialogProps) {
+}: WorkspaceChangeConfirmDialogProps) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -31,26 +29,26 @@ export function ConfirmDialog({
   }, [busy, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-[2px]"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) {
-          onClose();
-        }
-      }}
-    >
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-6 backdrop-blur-[2px]">
       <div
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="delete-dialog-title"
-        aria-describedby="delete-dialog-description"
+        aria-labelledby="workspace-change-title"
+        aria-describedby="workspace-change-description"
         className="w-full max-w-md rounded-[20px] border border-white/[0.12] bg-[#282d35] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.5)]"
       >
-        <h2 id="delete-dialog-title" className="text-xl font-semibold text-slate-100">
-          从应用中移除 Project？
+        <h2
+          id="workspace-change-title"
+          className="text-xl font-semibold text-slate-100"
+        >
+          更换 Project 工作区？
         </h2>
-        <p id="delete-dialog-description" className="mt-3 text-sm leading-6 text-slate-400">
-          “{projectName}”及其 Asset 记录将从应用中删除，本地原文件不会被删除。
+        <p
+          id="workspace-change-description"
+          className="mt-3 text-sm leading-6 text-slate-400"
+        >
+          更换工作区不会移动任何文件。使用相对路径的资料会改为从新目录读取，
+          找不到的资料将被标记为失效；外部文件链接不受影响。
         </p>
 
         {error && (
@@ -73,9 +71,9 @@ export function ConfirmDialog({
             type="button"
             disabled={busy}
             onClick={onConfirm}
-            className="ui-danger-button h-10 min-w-24 rounded-full bg-rose-500 px-5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+            className="ui-primary-button h-10 min-w-24 rounded-full bg-slate-50 px-5 text-sm font-semibold text-slate-900 disabled:cursor-wait disabled:opacity-60"
           >
-            {busy ? '移除中…' : '确认移除'}
+            {busy ? '更换中…' : '确认更换'}
           </button>
         </div>
       </div>

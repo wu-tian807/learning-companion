@@ -18,6 +18,7 @@ import { HomeToolbar } from './components/HomeToolbar';
 import { ProjectDialog, type ProjectDialogValues } from './components/ProjectDialog';
 import { ProjectGrid } from './components/ProjectGrid';
 import { ProjectList } from './components/ProjectList';
+import { WorkspaceChangeConfirmDialog } from './components/WorkspaceChangeConfirmDialog';
 import { filterAndSortProjects } from './project-view';
 
 type ProjectLoadState =
@@ -28,7 +29,12 @@ type ProjectLoadState =
 type ProjectEditorState =
   | { kind: 'closed' }
   | { kind: 'create' }
-  | { kind: 'rename'; project: ProjectSnapshot };
+  | { kind: 'edit'; project: ProjectSnapshot };
+
+interface PendingWorkspaceChange {
+  readonly project: ProjectSnapshot;
+  readonly values: ProjectDialogValues;
+}
 
 interface HomeProps {
   readonly onOpenProject: (project: ProjectSnapshot) => void;
@@ -84,6 +90,8 @@ export function Home({ onOpenProject }: HomeProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editorState, setEditorState] = useState<ProjectEditorState>({ kind: 'closed' });
   const [deleteTarget, setDeleteTarget] = useState<ProjectSnapshot | null>(null);
+  const [pendingWorkspaceChange, setPendingWorkspaceChange] =
+    useState<PendingWorkspaceChange | null>(null);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -292,9 +300,15 @@ export function Home({ onOpenProject }: HomeProps) {
     }
   }, []);
 
-  const createProject = async ({ name }: ProjectDialogValues) => {
+  const createProject = async ({
+    name,
+    workspacePath,
+  }: ProjectDialogValues) => {
     const succeeded = await runMutation(async () => {
-      const createdProject = await window.learningCompanion.createProject({ name });
+      const createdProject = await window.learningCompanion.createProject({
+        name,
+        ...(workspacePath ? { workspacePath } : {}),
+      });
 
       if (!isProjectSnapshot(createdProject)) {
         throw new Error('Project 创建响应格式无效');
@@ -308,28 +322,65 @@ export function Home({ onOpenProject }: HomeProps) {
     }
   };
 
-  const renameProject = async ({ name }: ProjectDialogValues) => {
-    if (editorState.kind !== 'rename') {
-      return;
-    }
-
-    const targetId = editorState.project.id;
+  const saveProject = async (
+    project: ProjectSnapshot,
+    values: ProjectDialogValues,
+  ) => {
     const succeeded = await runMutation(async () => {
-      const renamedProject = await window.learningCompanion.renameProject({
-        id: targetId,
-        name,
-      });
+      let updatedProject = project;
 
-      if (!isProjectSnapshot(renamedProject)) {
-        throw new Error('Project 重命名响应格式无效');
+      if (
+        values.workspacePath &&
+        values.workspacePath !== project.workspacePath
+      ) {
+        updatedProject =
+          await window.learningCompanion.changeProjectWorkspace({
+            projectId: project.id,
+            workspacePath: values.workspacePath,
+          });
+
+        if (!isProjectSnapshot(updatedProject)) {
+          throw new Error('Project 工作区更新响应格式无效');
+        }
       }
 
-      updateProject(renamedProject);
-    }, '无法保存标题，请重试。');
+      if (values.name !== updatedProject.name) {
+        updatedProject = await window.learningCompanion.renameProject({
+          id: project.id,
+          name: values.name,
+        });
+
+        if (!isProjectSnapshot(updatedProject)) {
+          throw new Error('Project 重命名响应格式无效');
+        }
+      }
+
+      updateProject(updatedProject);
+    }, '无法保存 Project，请重试。');
 
     if (succeeded) {
       setEditorState({ kind: 'closed' });
+      setPendingWorkspaceChange(null);
     }
+  };
+
+  const editProject = async (values: ProjectDialogValues) => {
+    if (editorState.kind !== 'edit') {
+      return;
+    }
+
+    if (
+      values.workspacePath &&
+      values.workspacePath !== editorState.project.workspacePath
+    ) {
+      setPendingWorkspaceChange({
+        project: editorState.project,
+        values,
+      });
+      return;
+    }
+
+    await saveProject(editorState.project, values);
   };
 
   const toggleProjectPinned = async (project: ProjectSnapshot) => {
@@ -376,9 +427,18 @@ export function Home({ onOpenProject }: HomeProps) {
   };
 
   const actionHandlers = {
-    onRename: (project: ProjectSnapshot) => {
+    onEdit: (project: ProjectSnapshot) => {
       setMutationError(null);
-      setEditorState({ kind: 'rename', project });
+      setEditorState({ kind: 'edit', project });
+    },
+    onOpenWorkspace: (project: ProjectSnapshot) => {
+      void runMutation(
+        () =>
+          window.learningCompanion.openProjectWorkspace({
+            projectId: project.id,
+          }),
+        '无法打开 Project 工作区。',
+      );
     },
     onTogglePinned: (project: ProjectSnapshot) => {
       void toggleProjectPinned(project);
@@ -409,7 +469,10 @@ export function Home({ onOpenProject }: HomeProps) {
           />
         </header>
 
-        {pageError && editorState.kind === 'closed' && !deleteTarget && (
+        {pageError &&
+          editorState.kind === 'closed' &&
+          !deleteTarget &&
+          !pendingWorkspaceChange && (
           <div
             role="alert"
             className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-4 py-3 text-xs text-rose-200"
@@ -500,21 +563,54 @@ export function Home({ onOpenProject }: HomeProps) {
           busy={mutationBusy}
           error={mutationError}
           onClose={closeEditor}
+          onSelectWorkspace={() =>
+            window.learningCompanion.selectProjectWorkspace({})
+          }
           onSubmit={(values) => {
             void createProject(values);
           }}
         />
       )}
 
-      {editorState.kind === 'rename' && (
+      {editorState.kind === 'edit' && (
         <ProjectDialog
-          mode="rename"
+          mode="edit"
           initialName={editorState.project.name}
+          initialWorkspacePath={editorState.project.workspacePath}
           busy={mutationBusy}
           error={mutationError}
           onClose={closeEditor}
+          onSelectWorkspace={() =>
+            window.learningCompanion.selectProjectWorkspace({
+              projectId: editorState.project.id,
+            })
+          }
+          onOpenWorkspace={() =>
+            window.learningCompanion.openProjectWorkspace({
+              projectId: editorState.project.id,
+            })
+          }
           onSubmit={(values) => {
-            void renameProject(values);
+            void editProject(values);
+          }}
+        />
+      )}
+
+      {pendingWorkspaceChange && (
+        <WorkspaceChangeConfirmDialog
+          busy={mutationBusy}
+          error={mutationError}
+          onClose={() => {
+            if (!mutationLockRef.current) {
+              setPendingWorkspaceChange(null);
+              setMutationError(null);
+            }
+          }}
+          onConfirm={() => {
+            void saveProject(
+              pendingWorkspaceChange.project,
+              pendingWorkspaceChange.values,
+            );
           }}
         />
       )}

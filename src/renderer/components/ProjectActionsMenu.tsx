@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProjectSnapshot } from '../../shared/projects';
 
 export interface ProjectActionHandlers {
-  onRename: (project: ProjectSnapshot) => void;
+  onEdit: (project: ProjectSnapshot) => void;
+  onOpenWorkspace: (project: ProjectSnapshot) => void;
   onTogglePinned: (project: ProjectSnapshot) => void;
   onDelete: (project: ProjectSnapshot) => void;
 }
@@ -26,7 +27,8 @@ function MoreIcon() {
 export function ProjectActionsMenu({
   project,
   disabled = false,
-  onRename,
+  onEdit,
+  onOpenWorkspace,
   onTogglePinned,
   onDelete,
 }: ProjectActionsMenuProps) {
@@ -94,10 +96,18 @@ export function ProjectActionsMenu({
           <button
             type="button"
             role="menuitem"
-            onClick={() => run(onRename)}
+            onClick={() => run(onEdit)}
             className="ui-menu-item flex w-full items-center rounded-lg px-3 py-2 text-left text-slate-200"
           >
-            编辑标题
+            编辑 Project
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => run(onOpenWorkspace)}
+            className="ui-menu-item flex w-full items-center rounded-lg px-3 py-2 text-left text-slate-200"
+          >
+            在文件夹中打开
           </button>
           <button
             type="button"
@@ -114,7 +124,7 @@ export function ProjectActionsMenu({
             onClick={() => run(onDelete)}
             className="ui-menu-item ui-menu-item-danger flex w-full items-center rounded-lg px-3 py-2 text-left text-rose-300"
           >
-            删除
+            从应用中移除
           </button>
         </div>
       )}
