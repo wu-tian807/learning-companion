@@ -1,58 +1,65 @@
-import type { AppPreferences, HomePreferences } from './app-preferences';
-import { isHomePreferences } from './app-preferences';
+import type { AppPreferences, HomePreferences } from "./app-preferences";
+import { isHomePreferences } from "./app-preferences";
 import {
   ASSET_NAME_MAX_LENGTH,
   isAssetSnapshotList,
   type LocalAssetImportMode,
   type AssetSnapshot,
-} from './assets';
+} from "./assets";
+import type { ExternalLibrarySnapshot } from "./external-libraries";
 import {
   isAbsoluteFileSystemPath,
   PROJECT_NAME_MAX_LENGTH,
   type ProjectSnapshot,
-} from './projects';
+} from "./projects";
 import type {
   WorkbenchBootstrap,
   WorkbenchCloseRequest,
   WorkbenchCommandRequest,
   WorkbenchCommandResult,
   WorkbenchOpenRequest,
-} from './workbench/protocol';
-import type { WorkbenchFacilityEvent } from './workbench/facilities/facility-event';
+} from "./workbench/protocol";
+import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-event";
 
 export const IPC_CHANNELS = {
-  healthCheck: 'app:health-check',
-  openExternal: 'app:open-external',
-  getAppPreferences: 'settings:get',
-  updateHomePreferences: 'settings:update-home',
-  listProjects: 'project:list',
-  createProject: 'project:create',
-  selectProjectWorkspace: 'project:select-workspace',
-  changeProjectWorkspace: 'project:change-workspace',
-  openProjectWorkspace: 'project:open-workspace',
-  renameProject: 'project:rename',
-  setProjectPinned: 'project:set-pinned',
-  deleteProject: 'project:delete',
-  openProject: 'project:open',
-  closeProject: 'project:close',
-  selectLocalAssetFiles: 'asset:select-local-files',
-  addLocalAssets: 'asset:add-local-files',
-  renameAsset: 'asset:rename',
-  relinkAsset: 'asset:relink',
-  deleteAsset: 'asset:delete',
-  refreshAsset: 'asset:refresh',
-  refreshAllAssets: 'asset:refresh-all',
-  revealAssetInFolder: 'asset:reveal-in-folder',
-  openWorkbench: 'workbench:open',
-  commandWorkbench: 'workbench:command',
-  closeWorkbench: 'workbench:close',
-  workbenchFacilityEvent: 'workbench:facility-event',
+  healthCheck: "app:health-check",
+  openExternal: "app:open-external",
+  getAppPreferences: "settings:get",
+  updateHomePreferences: "settings:update-home",
+  listExternalLibraries: "external-library:list",
+  refreshExternalLibrary: "external-library:refresh",
+  installExternalLibrary: "external-library:install",
+  cancelExternalLibrary: "external-library:cancel",
+  removeExternalLibrary: "external-library:remove",
+  externalLibraryChanged: "external-library:changed",
+  listProjects: "project:list",
+  createProject: "project:create",
+  selectProjectWorkspace: "project:select-workspace",
+  changeProjectWorkspace: "project:change-workspace",
+  openProjectWorkspace: "project:open-workspace",
+  renameProject: "project:rename",
+  setProjectPinned: "project:set-pinned",
+  deleteProject: "project:delete",
+  openProject: "project:open",
+  closeProject: "project:close",
+  selectLocalAssetFiles: "asset:select-local-files",
+  addLocalAssets: "asset:add-local-files",
+  renameAsset: "asset:rename",
+  relinkAsset: "asset:relink",
+  deleteAsset: "asset:delete",
+  refreshAsset: "asset:refresh",
+  refreshAllAssets: "asset:refresh-all",
+  revealAssetInFolder: "asset:reveal-in-folder",
+  openWorkbench: "workbench:open",
+  commandWorkbench: "workbench:command",
+  closeWorkbench: "workbench:close",
+  workbenchFacilityEvent: "workbench:facility-event",
 } as const;
 
 export const ASSET_BATCH_MAX_SIZE = 512;
 
 export interface HealthCheckResponse {
-  status: 'ok';
+  status: "ok";
   appVersion: string;
   platform: NodeJS.Platform;
   timestamp: string;
@@ -65,6 +72,20 @@ export interface LearningCompanionApi {
   updateHomePreferences: (
     request: UpdateHomePreferencesRequest,
   ) => Promise<AppPreferences>;
+  listExternalLibraries: () => Promise<ExternalLibrarySnapshot[]>;
+  refreshExternalLibrary: (
+    request: ExternalLibraryIdRequest,
+  ) => Promise<ExternalLibrarySnapshot>;
+  installExternalLibrary: (
+    request: ExternalLibraryIdRequest,
+  ) => Promise<ExternalLibrarySnapshot>;
+  cancelExternalLibrary: (request: ExternalLibraryIdRequest) => Promise<void>;
+  removeExternalLibrary: (
+    request: ExternalLibraryIdRequest,
+  ) => Promise<ExternalLibrarySnapshot>;
+  onExternalLibraryChanged: (
+    listener: (snapshot: ExternalLibrarySnapshot) => void,
+  ) => () => void;
   listProjects: () => Promise<ProjectSnapshot[]>;
   createProject: (request: CreateProjectRequest) => Promise<ProjectSnapshot>;
   selectProjectWorkspace: (
@@ -73,11 +94,11 @@ export interface LearningCompanionApi {
   changeProjectWorkspace: (
     request: ChangeProjectWorkspaceRequest,
   ) => Promise<ProjectSnapshot>;
-  openProjectWorkspace: (
-    request: ProjectLifecycleRequest,
-  ) => Promise<void>;
+  openProjectWorkspace: (request: ProjectLifecycleRequest) => Promise<void>;
   renameProject: (request: RenameProjectRequest) => Promise<ProjectSnapshot>;
-  setProjectPinned: (request: SetProjectPinnedRequest) => Promise<ProjectSnapshot>;
+  setProjectPinned: (
+    request: SetProjectPinnedRequest,
+  ) => Promise<ProjectSnapshot>;
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
   openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
   closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
@@ -95,9 +116,7 @@ export interface LearningCompanionApi {
     request: ProjectLifecycleRequest,
   ) => Promise<AssetSnapshot[]>;
   revealAssetInFolder: (request: AssetIdRequest) => Promise<void>;
-  openWorkbench: (
-    request: WorkbenchOpenRequest,
-  ) => Promise<WorkbenchBootstrap>;
+  openWorkbench: (request: WorkbenchOpenRequest) => Promise<WorkbenchBootstrap>;
   commandWorkbench: (
     request: WorkbenchCommandRequest,
   ) => Promise<WorkbenchCommandResult>;
@@ -175,6 +194,10 @@ export interface AssetIdRequest {
   assetId: string;
 }
 
+export interface ExternalLibraryIdRequest {
+  libraryId: string;
+}
+
 export type UpdateHomePreferencesRequest = HomePreferences;
 
 export function createHealthCheckResponse(
@@ -183,25 +206,27 @@ export function createHealthCheckResponse(
   now = new Date(),
 ): HealthCheckResponse {
   return {
-    status: 'ok',
+    status: "ok",
     appVersion,
     platform,
     timestamp: now.toISOString(),
   };
 }
 
-export function isHealthCheckResponse(value: unknown): value is HealthCheckResponse {
-  if (typeof value !== 'object' || value === null) {
+export function isHealthCheckResponse(
+  value: unknown,
+): value is HealthCheckResponse {
+  if (typeof value !== "object" || value === null) {
     return false;
   }
 
   const candidate = value as Partial<HealthCheckResponse>;
 
   return (
-    candidate.status === 'ok' &&
-    typeof candidate.appVersion === 'string' &&
-    typeof candidate.platform === 'string' &&
-    typeof candidate.timestamp === 'string' &&
+    candidate.status === "ok" &&
+    typeof candidate.appVersion === "string" &&
+    typeof candidate.platform === "string" &&
+    typeof candidate.timestamp === "string" &&
     !Number.isNaN(Date.parse(candidate.timestamp))
   );
 }
@@ -211,7 +236,7 @@ export function isOpenExternalRequest(
 ): value is OpenExternalRequest {
   if (
     !isRecord(value) ||
-    typeof value.url !== 'string' ||
+    typeof value.url !== "string" ||
     value.url.length === 0 ||
     value.url.length > 8_192 ||
     value.url !== value.url.trim()
@@ -223,7 +248,7 @@ export function isOpenExternalRequest(
     const url = new URL(value.url);
 
     return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      (url.protocol === "http:" || url.protocol === "https:") &&
       url.username.length === 0 &&
       url.password.length === 0
     );
@@ -233,18 +258,20 @@ export function isOpenExternalRequest(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function isRequiredText(value: unknown, maxLength?: number): value is string {
   return (
-    typeof value === 'string' &&
+    typeof value === "string" &&
     value.trim().length > 0 &&
     (maxLength === undefined || [...value].length <= maxLength)
   );
 }
 
-export function isCreateProjectRequest(value: unknown): value is CreateProjectRequest {
+export function isCreateProjectRequest(
+  value: unknown,
+): value is CreateProjectRequest {
   return (
     isRecord(value) &&
     isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH) &&
@@ -272,7 +299,9 @@ export function isChangeProjectWorkspaceRequest(
   );
 }
 
-export function isRenameProjectRequest(value: unknown): value is RenameProjectRequest {
+export function isRenameProjectRequest(
+  value: unknown,
+): value is RenameProjectRequest {
   return (
     isRecord(value) &&
     isRequiredText(value.id) &&
@@ -283,10 +312,16 @@ export function isRenameProjectRequest(value: unknown): value is RenameProjectRe
 export function isSetProjectPinnedRequest(
   value: unknown,
 ): value is SetProjectPinnedRequest {
-  return isRecord(value) && isRequiredText(value.id) && typeof value.pinned === 'boolean';
+  return (
+    isRecord(value) &&
+    isRequiredText(value.id) &&
+    typeof value.pinned === "boolean"
+  );
 }
 
-export function isDeleteProjectRequest(value: unknown): value is DeleteProjectRequest {
+export function isDeleteProjectRequest(
+  value: unknown,
+): value is DeleteProjectRequest {
   return isRecord(value) && isRequiredText(value.id);
 }
 
@@ -306,9 +341,7 @@ export function isAddLocalAssetsRequest(
     value.paths.length > 0 &&
     value.paths.length <= ASSET_BATCH_MAX_SIZE &&
     value.paths.every((path) => isRequiredText(path)) &&
-    (value.mode === undefined ||
-      value.mode === 'copy' ||
-      value.mode === 'link')
+    (value.mode === undefined || value.mode === "copy" || value.mode === "link")
   );
 }
 
@@ -330,13 +363,9 @@ export function isAddLocalAssetsResult(
     return false;
   }
 
-  const currentAssetIds = new Set(
-    value.assets.map((asset) => asset.id),
-  );
+  const currentAssetIds = new Set(value.assets.map((asset) => asset.id));
 
-  return value.added.every((asset) =>
-    currentAssetIds.has(asset.id),
-  );
+  return value.added.every((asset) => currentAssetIds.has(asset.id));
 }
 
 export function isRenameAssetRequest(
@@ -361,6 +390,16 @@ export function isRelinkAssetRequest(
 
 export function isAssetIdRequest(value: unknown): value is AssetIdRequest {
   return isRecord(value) && isRequiredText(value.assetId);
+}
+
+export function isExternalLibraryIdRequest(
+  value: unknown,
+): value is ExternalLibraryIdRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.libraryId, 128) &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.libraryId)
+  );
 }
 
 export function isUpdateHomePreferencesRequest(
