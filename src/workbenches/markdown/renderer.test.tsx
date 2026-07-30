@@ -21,6 +21,7 @@ const asset: AssetSnapshot = {
   mediaType: 'text/markdown',
   contentRef: {
     kind: 'local-file',
+    base: 'absolute',
     path: '/tmp/private/notes.md',
   },
   contentStatus: {

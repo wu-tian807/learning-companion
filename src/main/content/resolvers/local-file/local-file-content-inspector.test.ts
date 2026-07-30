@@ -38,10 +38,7 @@ describe('LocalFileContentInspector', () => {
     });
 
     await expect(inspector.inspect(filePath)).resolves.toEqual({
-      contentRef: {
-        kind: 'local-file',
-        path: filePath,
-      },
+      absolutePath: filePath,
       contentStatus: {
         availability: 'available',
         checkedTime: Date.parse('2026-07-24T02:00:00.000Z'),
@@ -77,7 +74,7 @@ describe('LocalFileContentInspector', () => {
       checkedTime: Date.parse('2026-07-24T02:00:00.000Z'),
     });
 
-    expect(inspection.contentRef.path).toBe(normalize('/tmp/notes.md'));
+    expect(inspection.absolutePath).toBe(normalize('/tmp/notes.md'));
     expect(inspection.contentStatus.checkedTime).toBe(
       Date.parse('2026-07-24T02:00:00.000Z'),
     );

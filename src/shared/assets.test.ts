@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   cloneAsset,
   cloneAssetSnapshot,
-  createLocalFileContentRef,
-  createManagedJsonContentRef,
+  createAbsoluteLocalFileContentRef,
+  createProjectWorkspaceContentRef,
   isAsset,
   isAssetContentRef,
   isAssetSnapshot,
@@ -18,6 +18,7 @@ const asset = {
   mediaType: 'text/markdown',
   contentRef: {
     kind: 'local-file',
+    base: 'absolute',
     path: '/tmp/notes.md',
   },
   createdTime: 1_753_168_400_000,
@@ -25,17 +26,17 @@ const asset = {
 } as const;
 
 describe('Asset shared contract', () => {
-  it('validates both supported ContentRef variants', () => {
+  it('validates absolute and Project Workspace file references', () => {
     expect(isAssetContentRef(asset.contentRef)).toBe(true);
-    expect(isAssetContentRef({ kind: 'managed-json', contentId: 'mindmap' })).toBe(
-      true,
-    );
-    expect(createLocalFileContentRef(' /tmp/notes.md ')).toEqual(
+    expect(createAbsoluteLocalFileContentRef(' /tmp/notes.md ')).toEqual(
       asset.contentRef,
     );
-    expect(createManagedJsonContentRef(' mindmap ')).toEqual({
-      kind: 'managed-json',
-      contentId: 'mindmap',
+    expect(
+      createProjectWorkspaceContentRef('assets/imported/notes.md'),
+    ).toEqual({
+      kind: 'local-file',
+      base: 'project-workspace',
+      path: 'assets/imported/notes.md',
     });
   });
 
@@ -65,9 +66,26 @@ describe('Asset shared contract', () => {
   });
 
   it('rejects malformed content, media and runtime status', () => {
-    expect(isAssetContentRef({ kind: 'local-file', path: '' })).toBe(false);
     expect(
-      isAssetContentRef({ kind: 'managed-json', contentId: '' }),
+      isAssetContentRef({
+        kind: 'local-file',
+        base: 'absolute',
+        path: '',
+      }),
+    ).toBe(false);
+    expect(
+      isAssetContentRef({
+        kind: 'local-file',
+        base: 'project-workspace',
+        path: '../outside.md',
+      }),
+    ).toBe(false);
+    expect(
+      isAssetContentRef({
+        kind: 'local-file',
+        base: 'project-workspace',
+        path: 'assets\\notes.md',
+      }),
     ).toBe(false);
     expect(isAssetContentRef({ kind: 'remote-url', url: 'https://x.test' })).toBe(
       false,

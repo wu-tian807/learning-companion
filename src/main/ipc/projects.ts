@@ -2,10 +2,12 @@ import { ipcMain } from 'electron';
 
 import {
   IPC_CHANNELS,
+  isChangeProjectWorkspaceRequest,
   isCreateProjectRequest,
   isDeleteProjectRequest,
   isProjectLifecycleRequest,
   isRenameProjectRequest,
+  isSelectProjectWorkspaceRequest,
   isSetProjectPinnedRequest,
 } from '../../shared/ipc';
 import type { ProjectServiceApi } from '../projects/project-service';
@@ -45,13 +47,52 @@ export function registerProjectHandlers(
     },
   );
 
-  registerIpcHandler(IPC_CHANNELS.createProject, (_event, request: unknown) => {
-    if (!isCreateProjectRequest(request)) {
-      throw invalidRequest();
-    }
+  registerIpcHandler(
+    IPC_CHANNELS.createProject,
+    async (_event, request: unknown) => {
+      if (!isCreateProjectRequest(request)) {
+        throw invalidRequest();
+      }
 
-    return projectService.createProject(request);
-  });
+      return projectService.createProject(request);
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.selectProjectWorkspace,
+    async (_event, request: unknown) => {
+      if (!isSelectProjectWorkspaceRequest(request)) {
+        throw invalidRequest();
+      }
+
+      return projectService.selectProjectWorkspace(request.projectId);
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.changeProjectWorkspace,
+    async (_event, request: unknown) => {
+      if (!isChangeProjectWorkspaceRequest(request)) {
+        throw invalidRequest();
+      }
+
+      return projectService.changeProjectWorkspace(
+        request.projectId,
+        request.workspacePath,
+      );
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.openProjectWorkspace,
+    async (_event, request: unknown) => {
+      if (!isProjectLifecycleRequest(request)) {
+        throw invalidRequest();
+      }
+
+      await projectService.openProjectWorkspace(request.projectId);
+    },
+  );
 
   registerIpcHandler(IPC_CHANNELS.renameProject, (_event, request: unknown) => {
     if (!isRenameProjectRequest(request)) {
@@ -83,6 +124,9 @@ export function removeProjectHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.openProject);
   ipcMain.removeHandler(IPC_CHANNELS.closeProject);
   ipcMain.removeHandler(IPC_CHANNELS.createProject);
+  ipcMain.removeHandler(IPC_CHANNELS.selectProjectWorkspace);
+  ipcMain.removeHandler(IPC_CHANNELS.changeProjectWorkspace);
+  ipcMain.removeHandler(IPC_CHANNELS.openProjectWorkspace);
   ipcMain.removeHandler(IPC_CHANNELS.renameProject);
   ipcMain.removeHandler(IPC_CHANNELS.setProjectPinned);
   ipcMain.removeHandler(IPC_CHANNELS.deleteProject);

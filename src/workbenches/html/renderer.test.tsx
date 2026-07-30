@@ -16,7 +16,11 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '课程页面',
   mediaType: 'text/html',
-  contentRef: { kind: 'local-file', path: '/private/lesson.html' },
+  contentRef: {
+    kind: 'local-file',
+    base: 'absolute',
+    path: '/private/lesson.html',
+  },
   contentStatus: { availability: 'available', checkedTime: 100 },
   createdTime: 100,
   lastUsedTime: 100,

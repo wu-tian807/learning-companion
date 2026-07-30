@@ -24,6 +24,7 @@ function asset(
     mediaType: 'text/markdown',
     contentRef: {
       kind: 'local-file',
+      base: 'absolute',
       path: `/tmp/${id}.md`,
     },
     contentStatus: {

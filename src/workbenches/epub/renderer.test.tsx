@@ -16,7 +16,11 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '电子书',
   mediaType: 'application/epub+zip',
-  contentRef: { kind: 'local-file', path: '/private/book.epub' },
+  contentRef: {
+    kind: 'local-file',
+    base: 'absolute',
+    path: '/private/book.epub',
+  },
   contentStatus: { availability: 'available', checkedTime: 100 },
   createdTime: 100,
   lastUsedTime: 100,

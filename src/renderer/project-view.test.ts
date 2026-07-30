@@ -21,6 +21,7 @@ function createProject(
     createdTime,
     assetCount: 0,
     pinned,
+    workspacePath: `/tmp/projects/${id}`,
   };
 }
 

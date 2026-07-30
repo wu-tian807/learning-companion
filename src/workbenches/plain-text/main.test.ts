@@ -11,7 +11,7 @@ import {
 } from '../../main/content/text-content';
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
+  createAbsoluteLocalFileContentRef,
 } from '../../main/content/content-ref';
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
@@ -103,7 +103,7 @@ function createContext(
     projectId: 'project',
     name: '资料',
     mediaType: 'text/plain',
-    contentRef: createLocalFileContentRef('/tmp/notes.txt'),
+    contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.txt'),
     createdTime: 100,
     lastUsedTime: 100,
   });

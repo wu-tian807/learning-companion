@@ -13,6 +13,7 @@ import type {
 } from '../shared/workbench/protocol';
 import type {
   CreateProjectRequest,
+  ChangeProjectWorkspaceRequest,
   DeleteProjectRequest,
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
@@ -21,6 +22,7 @@ import type {
   LearningCompanionApi,
   OpenExternalRequest,
   ProjectLifecycleRequest,
+  SelectProjectWorkspaceRequest,
   RelinkAssetRequest,
   RenameAssetRequest,
   RenameProjectRequest,
@@ -69,6 +71,18 @@ const api: LearningCompanionApi = {
   listProjects: () => invoke<ProjectSnapshot[]>(IPC_CHANNELS.listProjects),
   createProject: (request: CreateProjectRequest) =>
     invoke<ProjectSnapshot>(IPC_CHANNELS.createProject, request),
+  selectProjectWorkspace: (request: SelectProjectWorkspaceRequest) =>
+    invoke<string | undefined>(
+      IPC_CHANNELS.selectProjectWorkspace,
+      request,
+    ),
+  changeProjectWorkspace: (request: ChangeProjectWorkspaceRequest) =>
+    invoke<ProjectSnapshot>(
+      IPC_CHANNELS.changeProjectWorkspace,
+      request,
+    ),
+  openProjectWorkspace: (request: ProjectLifecycleRequest) =>
+    invoke<void>(IPC_CHANNELS.openProjectWorkspace, request),
   renameProject: (request: RenameProjectRequest) =>
     invoke<ProjectSnapshot>(IPC_CHANNELS.renameProject, request),
   setProjectPinned: (request: SetProjectPinnedRequest) =>
@@ -79,8 +93,8 @@ const api: LearningCompanionApi = {
     invoke<AssetSnapshot[]>(IPC_CHANNELS.openProject, request),
   closeProject: (request: ProjectLifecycleRequest) =>
     invoke<void>(IPC_CHANNELS.closeProject, request),
-  selectLocalAssetFiles: () =>
-    invoke<string[]>(IPC_CHANNELS.selectLocalAssetFiles),
+  selectLocalAssetFiles: (request: ProjectLifecycleRequest) =>
+    invoke<string[]>(IPC_CHANNELS.selectLocalAssetFiles, request),
   addLocalAssets: (request: AddLocalAssetsRequest) =>
     invoke<AddLocalAssetsResult>(
       IPC_CHANNELS.addLocalAssets,

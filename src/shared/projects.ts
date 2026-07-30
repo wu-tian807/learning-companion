@@ -7,6 +7,7 @@ export interface Project {
   readonly icon: string;
   readonly createdTime: number;
   readonly pinned: boolean;
+  readonly workspacePath: string;
 }
 
 export interface ProjectSnapshot extends Project {
@@ -28,6 +29,20 @@ function isRequiredText(
   );
 }
 
+export function isAbsoluteFileSystemPath(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const path = value.trim();
+
+  return (
+    path.startsWith('/') ||
+    /^[A-Za-z]:[\\/]/u.test(path) ||
+    /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]+/u.test(path)
+  );
+}
+
 export function isUnixMilliseconds(value: unknown): value is number {
   return (
     typeof value === 'number' &&
@@ -43,7 +58,8 @@ export function isProject(value: unknown): value is Project {
     isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH) &&
     isRequiredText(value.icon, PROJECT_ICON_MAX_CODE_POINTS) &&
     isUnixMilliseconds(value.createdTime) &&
-    typeof value.pinned === 'boolean'
+    typeof value.pinned === 'boolean' &&
+    isAbsoluteFileSystemPath(value.workspacePath)
   );
 }
 
@@ -74,6 +90,7 @@ export function cloneProject(project: Project): Project {
     icon: project.icon.trim(),
     createdTime: project.createdTime,
     pinned: project.pinned,
+    workspacePath: project.workspacePath.trim(),
   });
 }
 

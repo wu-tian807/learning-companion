@@ -30,7 +30,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(4);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(6);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -66,7 +66,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        4,
+        6,
       );
     } finally {
       secondContext.close();
@@ -90,7 +90,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(4);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(6);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -158,7 +158,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(4);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(6);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -195,9 +195,18 @@ describe('initializeDatabase', () => {
     try {
       context.sqlite
         .prepare(
-          'INSERT INTO projects (id, name, icon, created_time, pinned) VALUES (?, ?, ?, ?, ?)',
+          `INSERT INTO projects (
+            id, name, icon, created_time, pinned, workspace_path
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .run('project', 'Project', '📘', 1_753_171_200_000, 0);
+        .run(
+          'project',
+          'Project',
+          '📘',
+          1_753_171_200_000,
+          0,
+          '/tmp/projects/project',
+        );
       const insertAsset = context.sqlite.prepare(
         `INSERT INTO assets (
           id,
@@ -215,7 +224,11 @@ describe('initializeDatabase', () => {
         'project',
         '资料',
         'application/pdf',
-        JSON.stringify({ kind: 'local-file', path: '/tmp/example.pdf' }),
+        JSON.stringify({
+          kind: 'local-file',
+          base: 'absolute',
+          path: '/tmp/example.pdf',
+        }),
         1_753_171_200_000,
         1_753_171_200_000,
       );
@@ -252,6 +265,85 @@ describe('initializeDatabase', () => {
           .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM assets')
           .get(),
       ).toEqual({ count: 0 });
+    } finally {
+      context.close();
+    }
+  });
+
+  it('migrates legacy local refs and removes retired managed JSON Assets', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacyContext = initializeDatabase(databaseFile);
+
+    legacyContext.sqlite.exec(`
+      DROP TRIGGER assets_content_ref_insert_guard;
+      DROP TRIGGER assets_content_ref_update_guard;
+    `);
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'project',
+        'Project',
+        '📘',
+        1_753_171_200_000,
+        0,
+        '/tmp/projects/project',
+      );
+    const insertAsset = legacyContext.sqlite.prepare(
+      `INSERT INTO assets (
+        id, project_id, name, media_type, content_ref, created_time,
+        last_used_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertAsset.run(
+      'local',
+      'project',
+      '旧本地资料',
+      'text/plain',
+      JSON.stringify({ kind: 'local-file', path: '/tmp/legacy.txt' }),
+      1_753_171_200_000,
+      1_753_171_200_000,
+    );
+    insertAsset.run(
+      'managed',
+      'project',
+      '旧托管内容',
+      'application/json',
+      JSON.stringify({ kind: 'managed-json', contentId: 'legacy' }),
+      1_753_171_200_000,
+      1_753_171_200_000,
+    );
+    legacyContext.sqlite.pragma('user_version = 5');
+    legacyContext.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(
+        context.sqlite
+          .prepare<[], { id: string; contentRef: string }>(
+            `SELECT id, content_ref AS contentRef
+             FROM assets
+             ORDER BY id`,
+          )
+          .all()
+          .map((row) => ({
+            id: row.id,
+            contentRef: JSON.parse(row.contentRef),
+          })),
+      ).toEqual([
+        {
+          id: 'local',
+          contentRef: {
+            kind: 'local-file',
+            base: 'absolute',
+            path: '/tmp/legacy.txt',
+          },
+        },
+      ]);
     } finally {
       context.close();
     }

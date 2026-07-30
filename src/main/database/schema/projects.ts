@@ -6,6 +6,7 @@ export const projects = sqliteTable('projects', {
   icon: text('icon').notNull(),
   createdTime: integer('created_time').notNull(),
   pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+  workspacePath: text('workspace_path').notNull(),
 });
 
 export type ProjectRow = typeof projects.$inferSelect;

@@ -18,6 +18,7 @@ const asset: AssetSnapshot = {
   mediaType: 'application/pdf',
   contentRef: {
     kind: 'local-file',
+    base: 'absolute',
     path: '/tmp/private/learning.pdf',
   },
   contentStatus: {

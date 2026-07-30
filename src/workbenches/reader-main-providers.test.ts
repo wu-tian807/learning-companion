@@ -4,7 +4,7 @@ import { createAssetSnapshot } from '../main/assets/asset';
 import type { ContentResourceServiceApi } from '../main/content/content-resource-service';
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
+  createAbsoluteLocalFileContentRef,
 } from '../main/content/content-ref';
 import type {
   MainWorkbenchProvider,
@@ -58,7 +58,7 @@ function createContext(
   mediaType: string,
   extension: string,
 ): WorkbenchProviderContext {
-  const contentRef = createLocalFileContentRef(`/tmp/asset.${extension}`);
+  const contentRef = createAbsoluteLocalFileContentRef(`/tmp/asset.${extension}`);
   const asset = createAssetSnapshot({
     id: `asset-${extension}`,
     projectId: 'project',

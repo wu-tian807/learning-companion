@@ -4,16 +4,14 @@ import { isAbsolute, normalize } from 'node:path';
 
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
   type AssetAvailability,
   type AssetContentStatus,
-  type LocalFileContentRef,
 } from '../../../../shared/assets';
 
 export type LocalFileAvailability = AssetAvailability;
 
 export interface LocalFileContentInspection {
-  readonly contentRef: LocalFileContentRef;
+  readonly absolutePath: string;
   readonly contentStatus: AssetContentStatus;
 }
 
@@ -55,9 +53,7 @@ export function createLocalFileContentInspection(
   input: LocalFileContentInspectionInput,
 ): LocalFileContentInspection {
   return Object.freeze({
-    contentRef: createLocalFileContentRef(
-      normalizeLocalFilePath(input.path),
-    ),
+    absolutePath: normalizeLocalFilePath(input.path),
     contentStatus: createAssetContentStatus(
       input.availability,
       input.checkedTime,

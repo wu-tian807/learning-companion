@@ -6,6 +6,7 @@ import {
   type AssetSnapshot,
 } from './assets';
 import {
+  isAbsoluteFileSystemPath,
   PROJECT_NAME_MAX_LENGTH,
   type ProjectSnapshot,
 } from './projects';
@@ -25,6 +26,9 @@ export const IPC_CHANNELS = {
   updateHomePreferences: 'settings:update-home',
   listProjects: 'project:list',
   createProject: 'project:create',
+  selectProjectWorkspace: 'project:select-workspace',
+  changeProjectWorkspace: 'project:change-workspace',
+  openProjectWorkspace: 'project:open-workspace',
   renameProject: 'project:rename',
   setProjectPinned: 'project:set-pinned',
   deleteProject: 'project:delete',
@@ -62,12 +66,23 @@ export interface LearningCompanionApi {
   ) => Promise<AppPreferences>;
   listProjects: () => Promise<ProjectSnapshot[]>;
   createProject: (request: CreateProjectRequest) => Promise<ProjectSnapshot>;
+  selectProjectWorkspace: (
+    request: SelectProjectWorkspaceRequest,
+  ) => Promise<string | undefined>;
+  changeProjectWorkspace: (
+    request: ChangeProjectWorkspaceRequest,
+  ) => Promise<ProjectSnapshot>;
+  openProjectWorkspace: (
+    request: ProjectLifecycleRequest,
+  ) => Promise<void>;
   renameProject: (request: RenameProjectRequest) => Promise<ProjectSnapshot>;
   setProjectPinned: (request: SetProjectPinnedRequest) => Promise<ProjectSnapshot>;
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
   openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
   closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
-  selectLocalAssetFiles: () => Promise<string[]>;
+  selectLocalAssetFiles: (
+    request: ProjectLifecycleRequest,
+  ) => Promise<string[]>;
   addLocalAssets: (
     request: AddLocalAssetsRequest,
   ) => Promise<AddLocalAssetsResult>;
@@ -94,6 +109,16 @@ export interface LearningCompanionApi {
 
 export interface CreateProjectRequest {
   name: string;
+  workspacePath?: string;
+}
+
+export interface SelectProjectWorkspaceRequest {
+  projectId?: string;
+}
+
+export interface ChangeProjectWorkspaceRequest {
+  projectId: string;
+  workspacePath: string;
 }
 
 export interface OpenExternalRequest {
@@ -121,6 +146,7 @@ export interface ProjectLifecycleRequest {
 export interface AddLocalAssetsRequest {
   projectId: string;
   paths: string[];
+  mode?: 'copy' | 'link';
 }
 
 export interface AddLocalAssetFailure {
@@ -218,7 +244,31 @@ function isRequiredText(value: unknown, maxLength?: number): value is string {
 }
 
 export function isCreateProjectRequest(value: unknown): value is CreateProjectRequest {
-  return isRecord(value) && isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH);
+  return (
+    isRecord(value) &&
+    isRequiredText(value.name, PROJECT_NAME_MAX_LENGTH) &&
+    (value.workspacePath === undefined ||
+      isAbsoluteFileSystemPath(value.workspacePath))
+  );
+}
+
+export function isSelectProjectWorkspaceRequest(
+  value: unknown,
+): value is SelectProjectWorkspaceRequest {
+  return (
+    isRecord(value) &&
+    (value.projectId === undefined || isRequiredText(value.projectId))
+  );
+}
+
+export function isChangeProjectWorkspaceRequest(
+  value: unknown,
+): value is ChangeProjectWorkspaceRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    isAbsoluteFileSystemPath(value.workspacePath)
+  );
 }
 
 export function isRenameProjectRequest(value: unknown): value is RenameProjectRequest {
@@ -254,7 +304,10 @@ export function isAddLocalAssetsRequest(
     Array.isArray(value.paths) &&
     value.paths.length > 0 &&
     value.paths.length <= ASSET_BATCH_MAX_SIZE &&
-    value.paths.every((path) => isRequiredText(path))
+    value.paths.every((path) => isRequiredText(path)) &&
+    (value.mode === undefined ||
+      value.mode === 'copy' ||
+      value.mode === 'link')
   );
 }
 

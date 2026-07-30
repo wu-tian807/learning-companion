@@ -4,7 +4,6 @@ import started from 'electron-squirrel-startup';
 import type { DatabaseContext } from './database/database-context';
 import { initializeDatabase } from './database/initialize-database';
 import { AssetDatabase } from './assets/asset-database';
-import { AssetShellService } from './assets/asset-shell-service';
 import { AssetService } from './assets/asset-service';
 import { EmptyAttachmentService } from './attachments/attachment-service';
 import { ContentResolverRegistry } from './content/content-resolver-registry';
@@ -30,6 +29,11 @@ import {
 import { createAppPaths } from './paths/app-paths';
 import { ProjectDatabase } from './projects/project-database';
 import { ProjectService } from './projects/project-service';
+import { migrateProjectWorkspaces } from './projects/migrate-project-workspaces';
+import {
+  createDefaultProjectWorkspaceRoot,
+  ProjectWorkspaceManager,
+} from './projects/project-workspace-manager';
 import { JsonSettingsRepository } from './settings/json-settings-repository';
 import { WorkbenchRegistry } from './workbench/workbench-registry';
 import { WorkbenchSessionManager } from './workbench/workbench-session-manager';
@@ -102,19 +106,36 @@ if (started) {
 
 void app.whenReady().then(async () => {
   const appPaths = createAppPaths(app.getPath('userData'));
-  const settingsRepository = new JsonSettingsRepository(appPaths.settingsFile);
+  const settingsRepository = new JsonSettingsRepository(
+    appPaths.settingsFile,
+    {
+      defaultProjectWorkspace:
+        createDefaultProjectWorkspaceRoot(app.getPath('documents')),
+    },
+  );
+  await settingsRepository.initialize();
   databaseContext = initializeDatabase(appPaths.databaseFile);
+  const workspaceManager = new ProjectWorkspaceManager();
+  await migrateProjectWorkspaces(
+    databaseContext,
+    settingsRepository.getDefaultProjectWorkspace(),
+    workspaceManager,
+  );
   const projectDatabase = new ProjectDatabase(databaseContext);
+  projectDatabase.initialize();
   const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
   const contentResolverRegistry = new ContentResolverRegistry();
-  contentResolverRegistry.register(new LocalFileContentResolver());
+  contentResolverRegistry.register(
+    new LocalFileContentResolver(workspaceManager),
+  );
   contentResourceService = new ContentResourceService();
   registerContentProtocol(contentResourceService);
   const assetService = new AssetService(
     assetDatabase,
     contentResolverRegistry,
+    projectDatabase,
+    workspaceManager,
   );
-  const assetShellService = new AssetShellService(assetService);
   const workbenchFacilityRegistry =
     createCoreWorkbenchFacilityDefinitionRegistry();
   const transportBindingRegistry =
@@ -200,20 +221,15 @@ void app.whenReady().then(async () => {
     projectDatabase,
     assetService,
     workbenchSessionManager,
+    workspaceManager,
+    settingsRepository,
   );
-
-  await settingsRepository.initialize();
-  projectDatabase.initialize();
 
   registerHealthCheckHandler();
   registerExternalLinkHandler();
   registerSettingsHandlers(settingsRepository);
   registerProjectHandlers(projectService);
-  registerAssetHandlers(
-    assetService,
-    assetShellService,
-    settingsRepository,
-  );
+  registerAssetHandlers(assetService);
   registerWorkbenchHandlers(workbenchSessionManager);
   createManagedMainWindow();
 

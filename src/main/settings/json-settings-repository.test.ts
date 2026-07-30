@@ -38,14 +38,14 @@ describe('json settings repository', () => {
     const repository = new JsonSettingsRepository(join(directory, 'settings.json'));
 
     expect(() => repository.get()).toThrow('Settings Repository 尚未初始化');
-    expect(() => repository.getLastLocalAssetDirectory()).toThrow(
+    expect(() => repository.getDefaultProjectWorkspace()).toThrow(
       'Settings Repository 尚未初始化',
     );
     await expect(
       repository.updateHomePreferences({ viewMode: 'list', sortMode: 'title' }),
     ).rejects.toThrow('Settings Repository 尚未初始化');
     await expect(
-      repository.updateLastLocalAssetDirectory(directory),
+      repository.updateDefaultProjectWorkspace(directory),
     ).rejects.toThrow('Settings Repository 尚未初始化');
   });
 
@@ -57,6 +57,9 @@ describe('json settings repository', () => {
     await repository.initialize();
 
     expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
+    expect(repository.getDefaultProjectWorkspace()).toBe(
+      join(directory, 'config'),
+    );
     await expect(readFile(settingsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
@@ -85,6 +88,14 @@ describe('json settings repository', () => {
         viewMode: 'list',
         sortMode: 'oldest',
       },
+    });
+    expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
+      schemaVersion: 1,
+      home: {
+        viewMode: 'list',
+        sortMode: 'oldest',
+      },
+      defaultProjectWorkspace: join(directory, 'config'),
     });
   });
 
@@ -146,7 +157,14 @@ describe('json settings repository', () => {
       },
     });
     expect(await readFile(settingsFile, 'utf8')).toBe(
-      `${JSON.stringify(updated, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          ...updated,
+          defaultProjectWorkspace: join(directory, 'config'),
+        },
+        null,
+        2,
+      )}\n`,
     );
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
@@ -154,31 +172,36 @@ describe('json settings repository', () => {
     expect(restoredRepository.get()).toEqual(updated);
   });
 
-  it('persists the last local Asset directory without exposing it as renderer preferences', async () => {
+  it('persists the default Project Workspace without exposing it as renderer preferences', async () => {
     const directory = await createTemporaryDirectory();
     const settingsFile = join(directory, 'config', 'settings.json');
-    const assetDirectory = join(directory, 'course-materials');
+    const defaultProjectWorkspace = join(
+      directory,
+      'Documents',
+      'Learning Companion',
+      'Projects',
+    );
     const repository = new JsonSettingsRepository(settingsFile);
     await repository.initialize();
 
-    await repository.updateLastLocalAssetDirectory(assetDirectory);
+    await repository.updateDefaultProjectWorkspace(
+      defaultProjectWorkspace,
+    );
 
     expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
-    expect(repository.getLastLocalAssetDirectory()).toBe(
-      assetDirectory,
+    expect(repository.getDefaultProjectWorkspace()).toBe(
+      defaultProjectWorkspace,
     );
     expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
       ...DEFAULT_APP_PREFERENCES,
-      fileDialogs: {
-        lastLocalAssetDirectory: assetDirectory,
-      },
+      defaultProjectWorkspace,
     });
 
     const restoredRepository = new JsonSettingsRepository(settingsFile);
     await restoredRepository.initialize();
     expect(restoredRepository.get()).toEqual(DEFAULT_APP_PREFERENCES);
-    expect(restoredRepository.getLastLocalAssetDirectory()).toBe(
-      assetDirectory,
+    expect(restoredRepository.getDefaultProjectWorkspace()).toBe(
+      defaultProjectWorkspace,
     );
   });
 
@@ -212,9 +235,9 @@ describe('json settings repository', () => {
       viewMode: 'grid',
       sortMode: 'title',
     });
-    const assetDirectory = join(directory, 'assets');
+    const defaultProjectWorkspace = join(directory, 'projects');
     const directoryUpdate =
-      repository.updateLastLocalAssetDirectory(assetDirectory);
+      repository.updateDefaultProjectWorkspace(defaultProjectWorkspace);
 
     await Promise.all([firstUpdate, secondUpdate, directoryUpdate]);
 
@@ -227,9 +250,7 @@ describe('json settings repository', () => {
     });
     expect(JSON.parse(await readFile(settingsFile, 'utf8'))).toEqual({
       ...repository.get(),
-      fileDialogs: {
-        lastLocalAssetDirectory: assetDirectory,
-      },
+      defaultProjectWorkspace,
     });
   });
 });

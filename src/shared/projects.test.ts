@@ -15,6 +15,7 @@ const project = {
   icon: '📘',
   createdTime: 1_753_168_400_000,
   pinned: false,
+  workspacePath: '/tmp/learning-companion/project',
 };
 
 describe('Project shared contract', () => {
@@ -41,6 +42,9 @@ describe('Project shared contract', () => {
     expect(isProject({ ...project, icon: '' })).toBe(false);
     expect(isProject({ ...project, createdTime: -1 })).toBe(false);
     expect(isProject({ ...project, createdTime: 1.5 })).toBe(false);
+    expect(isProject({ ...project, workspacePath: 'relative/path' })).toBe(
+      false,
+    );
     expect(isProjectSnapshot({ ...project, assetCount: -1 })).toBe(false);
     expect(isProjectSnapshotList([{ ...project, assetCount: 0 }, null])).toBe(
       false,

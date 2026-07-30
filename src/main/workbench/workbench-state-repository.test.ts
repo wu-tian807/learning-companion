@@ -35,7 +35,11 @@ async function createContext(): Promise<DatabaseContext> {
       'project',
       '资料',
       'text/plain',
-      JSON.stringify({ kind: 'local-file', path: '/tmp/notes.txt' }),
+      JSON.stringify({
+        kind: 'local-file',
+        base: 'absolute',
+        path: '/tmp/notes.txt',
+      }),
       1_753_171_200_000,
       1_753_171_200_000,
     );

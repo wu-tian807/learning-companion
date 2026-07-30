@@ -57,8 +57,8 @@ function createRepository() {
     initialize: vi.fn(async () => undefined),
     get,
     updateHomePreferences,
-    getLastLocalAssetDirectory: vi.fn(() => undefined),
-    updateLastLocalAssetDirectory: vi.fn(async () => undefined),
+    getDefaultProjectWorkspace: vi.fn(() => '/tmp/projects'),
+    updateDefaultProjectWorkspace: vi.fn(async () => undefined),
   };
 
   return { get, repository, updateHomePreferences };

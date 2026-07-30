@@ -232,7 +232,7 @@ function AssetActionsMenu({
             onClick={() => run(onDelete)}
             className="ui-menu-item ui-menu-item-danger block w-full rounded-lg px-3 py-2 text-left text-rose-300"
           >
-            删除
+            从 Project 中移除
           </button>
         </div>
       )}
@@ -652,7 +652,9 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   const chooseAndAdd = async () => {
     await runMutation(async () => {
       const paths =
-        await window.learningCompanion.selectLocalAssetFiles();
+        await window.learningCompanion.selectLocalAssetFiles({
+          projectId: project.id,
+        });
 
       if (paths.length > 0) {
         await importPaths(paths);
@@ -682,7 +684,9 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   };
 
   const relinkAsset = async (asset: AssetSnapshot) => {
-    const [path] = await window.learningCompanion.selectLocalAssetFiles();
+    const [path] = await window.learningCompanion.selectLocalAssetFiles({
+      projectId: project.id,
+    });
     if (!path) {
       return;
     }
@@ -915,9 +919,9 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6 backdrop-blur-[2px]">
           <div className="w-full max-w-md rounded-[20px] border border-white/[0.12] bg-[#282d35] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.5)]">
-            <h2 className="text-lg font-semibold">删除 Asset？</h2>
+            <h2 className="text-lg font-semibold">从 Project 中移除 Asset？</h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              “{deleteTarget.name}”将从当前 Project 中删除，本地原文件不会被删除。
+              “{deleteTarget.name}”的记录将从当前 Project 中移除，本地原文件不会被删除。
             </p>
             {error && <p className="mt-3 text-xs text-rose-300">{error}</p>}
             <div className="mt-6 flex justify-end gap-2">
@@ -938,7 +942,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
                 onClick={() => void deleteAsset()}
                 className="ui-danger-button rounded-full bg-rose-500 px-5 py-2 text-xs font-semibold"
               >
-                {busy ? '删除中…' : '确认删除'}
+                {busy ? '移除中…' : '确认移除'}
               </button>
             </div>
           </div>

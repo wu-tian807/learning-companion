@@ -1,20 +1,27 @@
 import { isUnixMilliseconds } from './projects';
+import { isAbsoluteFileSystemPath } from './projects';
 
 export const ASSET_NAME_MAX_LENGTH = 160;
 export const LOCAL_FILE_CONTENT_KIND = 'local-file';
-export const MANAGED_JSON_CONTENT_KIND = 'managed-json';
+export const PROJECT_WORKSPACE_CONTENT_BASE = 'project-workspace';
+export const ABSOLUTE_CONTENT_BASE = 'absolute';
 
-export interface LocalFileContentRef {
+export interface ProjectWorkspaceLocalFileContentRef {
   readonly kind: typeof LOCAL_FILE_CONTENT_KIND;
+  readonly base: typeof PROJECT_WORKSPACE_CONTENT_BASE;
   readonly path: string;
 }
 
-export interface ManagedJsonContentRef {
-  readonly kind: typeof MANAGED_JSON_CONTENT_KIND;
-  readonly contentId: string;
+export interface AbsoluteLocalFileContentRef {
+  readonly kind: typeof LOCAL_FILE_CONTENT_KIND;
+  readonly base: typeof ABSOLUTE_CONTENT_BASE;
+  readonly path: string;
 }
 
-export type AssetContentRef = LocalFileContentRef | ManagedJsonContentRef;
+export type LocalFileContentRef =
+  | ProjectWorkspaceLocalFileContentRef
+  | AbsoluteLocalFileContentRef;
+export type AssetContentRef = LocalFileContentRef;
 export type AssetContentKind = AssetContentRef['kind'];
 
 export type AssetAvailability =
@@ -64,6 +71,29 @@ function isMediaType(value: unknown): value is string {
   );
 }
 
+export function isPortableWorkspaceRelativePath(
+  value: unknown,
+): value is string {
+  if (
+    !isRequiredText(value) ||
+    value.includes('\0') ||
+    value.includes('\\') ||
+    value.startsWith('/') ||
+    /^[A-Za-z]:/u.test(value)
+  ) {
+    return false;
+  }
+
+  const segments = value.split('/');
+
+  return segments.every(
+    (segment) =>
+      segment.length > 0 &&
+      segment !== '.' &&
+      segment !== '..',
+  );
+}
+
 export function isAssetAvailability(
   value: unknown,
 ): value is AssetAvailability {
@@ -80,15 +110,16 @@ export function isAssetContentRef(value: unknown): value is AssetContentRef {
     return false;
   }
 
-  if (value.kind === LOCAL_FILE_CONTENT_KIND) {
-    return isRequiredText(value.path);
+  if (value.kind !== LOCAL_FILE_CONTENT_KIND) {
+    return false;
   }
 
-  if (value.kind === MANAGED_JSON_CONTENT_KIND) {
-    return isRequiredText(value.contentId);
-  }
-
-  return false;
+  return (
+    (value.base === PROJECT_WORKSPACE_CONTENT_BASE &&
+      isPortableWorkspaceRelativePath(value.path)) ||
+    (value.base === ABSOLUTE_CONTENT_BASE &&
+      isAbsoluteFileSystemPath(value.path))
+  );
 }
 
 export function isAssetContentStatus(
@@ -126,29 +157,33 @@ export function isAssetSnapshotList(value: unknown): value is AssetSnapshot[] {
   return Array.isArray(value) && value.every(isAssetSnapshot);
 }
 
-export function createLocalFileContentRef(path: string): LocalFileContentRef {
+export function createProjectWorkspaceContentRef(
+  path: string,
+): ProjectWorkspaceLocalFileContentRef {
   const contentRef = {
     kind: LOCAL_FILE_CONTENT_KIND,
+    base: PROJECT_WORKSPACE_CONTENT_BASE,
     path: path.trim(),
   } as const;
 
   if (!isAssetContentRef(contentRef)) {
-    throw new Error('LocalFileContentRef 数据无效');
+    throw new Error('Project Workspace ContentRef 数据无效');
   }
 
   return Object.freeze(contentRef);
 }
 
-export function createManagedJsonContentRef(
-  contentId: string,
-): ManagedJsonContentRef {
+export function createAbsoluteLocalFileContentRef(
+  path: string,
+): AbsoluteLocalFileContentRef {
   const contentRef = {
-    kind: MANAGED_JSON_CONTENT_KIND,
-    contentId: contentId.trim(),
+    kind: LOCAL_FILE_CONTENT_KIND,
+    base: ABSOLUTE_CONTENT_BASE,
+    path: path.trim(),
   } as const;
 
   if (!isAssetContentRef(contentRef)) {
-    throw new Error('ManagedJsonContentRef 数据无效');
+    throw new Error('Absolute LocalFileContentRef 数据无效');
   }
 
   return Object.freeze(contentRef);
@@ -157,12 +192,11 @@ export function createManagedJsonContentRef(
 export function cloneAssetContentRef(
   contentRef: AssetContentRef,
 ): AssetContentRef {
-  switch (contentRef.kind) {
-    case LOCAL_FILE_CONTENT_KIND:
-      return createLocalFileContentRef(contentRef.path);
-    case MANAGED_JSON_CONTENT_KIND:
-      return createManagedJsonContentRef(contentRef.contentId);
+  if (contentRef.base === PROJECT_WORKSPACE_CONTENT_BASE) {
+    return createProjectWorkspaceContentRef(contentRef.path);
   }
+
+  return createAbsoluteLocalFileContentRef(contentRef.path);
 }
 
 export function cloneAssetContentStatus(

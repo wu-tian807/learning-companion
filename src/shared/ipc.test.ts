@@ -6,6 +6,7 @@ import {
   isAddLocalAssetsResult,
   isAssetIdRequest,
   isCreateProjectRequest,
+  isChangeProjectWorkspaceRequest,
   isDeleteProjectRequest,
   isHealthCheckResponse,
   isOpenExternalRequest,
@@ -14,6 +15,7 @@ import {
   isRenameAssetRequest,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
+  isSelectProjectWorkspaceRequest,
   isUpdateHomePreferencesRequest,
 } from './ipc';
 
@@ -76,6 +78,21 @@ describe('external URL contract', () => {
 describe('project mutation contracts', () => {
   it('accepts valid mutation requests', () => {
     expect(isCreateProjectRequest({ name: '新 Project' })).toBe(true);
+    expect(
+      isCreateProjectRequest({
+        name: '新 Project',
+        workspacePath: '/tmp/projects/new',
+      }),
+    ).toBe(true);
+    expect(
+      isSelectProjectWorkspaceRequest({ projectId: 'project-1' }),
+    ).toBe(true);
+    expect(
+      isChangeProjectWorkspaceRequest({
+        projectId: 'project-1',
+        workspacePath: '/tmp/projects/moved',
+      }),
+    ).toBe(true);
     expect(isRenameProjectRequest({ id: 'project-1', name: '新标题' })).toBe(true);
     expect(isSetProjectPinnedRequest({ id: 'project-1', pinned: true })).toBe(true);
     expect(isDeleteProjectRequest({ id: 'project-1' })).toBe(true);
@@ -84,6 +101,12 @@ describe('project mutation contracts', () => {
   it('rejects malformed mutation requests', () => {
     expect(isCreateProjectRequest({ name: '' })).toBe(false);
     expect(isCreateProjectRequest({ icon: '📘' })).toBe(false);
+    expect(
+      isCreateProjectRequest({
+        name: '新 Project',
+        workspacePath: 'relative/path',
+      }),
+    ).toBe(false);
     expect(isRenameProjectRequest({ id: '', name: '新标题' })).toBe(false);
     expect(isSetProjectPinnedRequest({ id: 'project-1', pinned: 'yes' })).toBe(false);
     expect(isDeleteProjectRequest(null)).toBe(false);
@@ -137,6 +160,7 @@ describe('Asset contracts', () => {
       mediaType: 'text/plain',
       contentRef: {
         kind: 'local-file',
+        base: 'absolute',
         path: '/tmp/a.txt',
       },
       contentStatus: {

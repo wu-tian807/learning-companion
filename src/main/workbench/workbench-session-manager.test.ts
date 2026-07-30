@@ -14,7 +14,7 @@ import {
 import type { WorkbenchTransportBindingRegistryApi } from './interaction/workbench-transport-binding-registry';
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
+  createAbsoluteLocalFileContentRef,
   type AssetContentAvailability,
   type ResolvedAssetContent,
 } from '../content/content-ref';
@@ -52,7 +52,7 @@ function createProvider(
 }
 
 function createAssetRuntime(): AssetSnapshot {
-  const contentRef = createLocalFileContentRef('/tmp/notes.txt');
+  const contentRef = createAbsoluteLocalFileContentRef('/tmp/notes.txt');
   const status = createAssetContentStatus(
     'available',
     Date.parse('2026-07-27T01:00:00.000Z'),

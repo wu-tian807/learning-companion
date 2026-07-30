@@ -20,9 +20,11 @@ import type {
 } from '../../content-handle';
 import { createContentRevision } from '../../content-revision';
 import {
+  cloneAssetContentRef,
   LOCAL_FILE_CONTENT_KIND,
 } from '../../content-ref';
 import type { ContentResolver } from '../../content-resolver-registry';
+import type { ProjectWorkspaceManagerApi } from '../../../projects/project-workspace-manager';
 
 const localFileContentCapabilities = new Set<ContentCapability>([
   'read-bytes',
@@ -136,23 +138,35 @@ export class LocalFileContentResolver implements ContentResolver {
   readonly kind = LOCAL_FILE_CONTENT_KIND;
 
   constructor(
+    private readonly workspaceManager: ProjectWorkspaceManagerApi,
     private readonly inspector: LocalFileContentInspector =
       new DefaultLocalFileContentInspector(),
   ) {}
 
-  async resolve(ref: Parameters<ContentResolver['resolve']>[0]) {
+  async resolve(
+    ref: Parameters<ContentResolver['resolve']>[0],
+    context: Parameters<ContentResolver['resolve']>[1],
+  ) {
     if (ref.kind !== LOCAL_FILE_CONTENT_KIND) {
       throw new AppError('INVALID_EXTENSION_DEFINITION');
     }
 
-    const inspection = await this.inspector.inspect(ref.path);
+    const absolutePath = await this.workspaceManager.resolveLocalFile(
+      context.projectWorkspace,
+      ref,
+    );
+    const inspection = await this.inspector.inspect(absolutePath);
 
     return {
-      contentRef: inspection.contentRef,
+      contentRef: cloneAssetContentRef(ref),
       contentStatus: inspection.contentStatus,
+      location: {
+        kind: 'local-file' as const,
+        absolutePath: inspection.absolutePath,
+      },
       handle:
         inspection.contentStatus.availability === 'available'
-          ? new LocalFileContentHandle(inspection.contentRef.path)
+          ? new LocalFileContentHandle(inspection.absolutePath)
           : undefined,
     };
   }

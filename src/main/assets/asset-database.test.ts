@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  createLocalFileContentRef,
-  createManagedJsonContentRef,
+  createAbsoluteLocalFileContentRef,
+  createProjectWorkspaceContentRef,
 } from '../content/content-ref';
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
@@ -40,6 +40,7 @@ function addProject(context: DatabaseContext, id: string): void {
       icon: '📘',
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       pinned: false,
+      workspacePath: `/tmp/projects/${id}`,
     })
     .run();
 }
@@ -60,7 +61,7 @@ function insertAsset(
       projectId: input.projectId,
       name: input.name ?? input.id,
       mediaType: 'text/markdown',
-      contentRef: createLocalFileContentRef(input.path),
+      contentRef: createAbsoluteLocalFileContentRef(input.path),
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
     })
@@ -105,6 +106,7 @@ describe('AssetDatabase', () => {
       id: 'asset',
       contentRef: {
         kind: 'local-file',
+        base: 'absolute',
         path: '/tmp/missing.md',
       },
     });
@@ -114,6 +116,7 @@ describe('AssetDatabase', () => {
     const context = await createContext();
     addProject(context, 'project');
     context.sqlite.pragma('ignore_check_constraints = ON');
+    context.sqlite.exec('DROP TRIGGER assets_content_ref_insert_guard');
     context.sqlite
       .prepare(
         `INSERT INTO assets (
@@ -178,12 +181,12 @@ describe('AssetDatabase', () => {
     const created = database.add({
       name: '学习笔记',
       mediaType: 'text/markdown',
-      contentRef: createLocalFileContentRef('/tmp/notes.md'),
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.md'),
     });
     const renamed = database.update(created.id, { name: '新标题' });
     const relinked = database.updateContentRef(
       created.id,
-      createLocalFileContentRef('/tmp/new-notes.md'),
+      createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
     );
 
     expect(renamed.name).toBe('新标题');
@@ -196,6 +199,7 @@ describe('AssetDatabase', () => {
       name: '新标题',
       contentRef: {
         kind: 'local-file',
+        base: 'absolute',
         path: '/tmp/new-notes.md',
       },
     });
@@ -205,23 +209,26 @@ describe('AssetDatabase', () => {
     expect(context.db.select().from(assets).all()).toEqual([]);
   });
 
-  it('stores every ContentRef variant known by the shared contract', async () => {
+  it('stores Project Workspace relative ContentRefs', async () => {
     const context = await createContext();
     addProject(context, 'project');
     const database = createDatabase(context, {
-      createId: () => 'mindmap',
+      createId: () => 'generated',
     });
     await database.loadFromProject('project');
 
     const created = database.add({
-      name: '思维导图',
-      mediaType: 'application/vnd.learning-companion.mindmap+json',
-      contentRef: createManagedJsonContentRef('mindmap-content'),
+      name: '生成讲义',
+      mediaType: 'text/markdown',
+      contentRef: createProjectWorkspaceContentRef(
+        'assets/generated/讲义.md',
+      ),
     });
 
     expect(created.contentRef).toEqual({
-      kind: 'managed-json',
-      contentId: 'mindmap-content',
+      kind: 'local-file',
+      base: 'project-workspace',
+      path: 'assets/generated/讲义.md',
     });
     expect(context.db.select().from(assets).get()?.contentRef).toEqual(
       created.contentRef,
@@ -275,7 +282,7 @@ describe('AssetDatabase', () => {
       database.add({
         name: 'Asset',
         mediaType: 'text/plain',
-        contentRef: createLocalFileContentRef('/tmp/asset.txt'),
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/asset.txt'),
       }),
     ).toThrow('SERVICE_NOT_READY');
   });

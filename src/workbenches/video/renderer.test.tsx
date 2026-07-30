@@ -22,6 +22,7 @@ const asset: AssetSnapshot = {
   mediaType: 'video/mp4',
   contentRef: {
     kind: 'local-file',
+    base: 'absolute',
     path: '/tmp/private/lesson.mp4',
   },
   contentStatus: {

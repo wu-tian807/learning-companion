@@ -22,6 +22,7 @@ const asset: AssetSnapshot = {
   mediaType: 'image/png',
   contentRef: {
     kind: 'local-file',
+    base: 'absolute',
     path: '/tmp/private/diagram.png',
   },
   contentStatus: {

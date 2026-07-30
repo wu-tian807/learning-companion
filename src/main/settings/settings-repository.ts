@@ -4,6 +4,6 @@ export interface SettingsRepository {
   initialize(): Promise<void>;
   get(): AppPreferences;
   updateHomePreferences(home: HomePreferences): Promise<AppPreferences>;
-  getLastLocalAssetDirectory(): string | undefined;
-  updateLastLocalAssetDirectory(directory: string): Promise<void>;
+  getDefaultProjectWorkspace(): string;
+  updateDefaultProjectWorkspace(directory: string): Promise<void>;
 }

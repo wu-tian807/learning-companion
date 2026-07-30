@@ -51,6 +51,7 @@ describe('ProjectDatabase', () => {
         icon: '📚',
         createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
         pinned: true,
+        workspacePath: '/tmp/projects/persisted',
       })
       .run();
     const database = new ProjectDatabase(context);
@@ -65,24 +66,31 @@ describe('ProjectDatabase', () => {
         icon: '📚',
         createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
         pinned: true,
+        workspacePath: '/tmp/projects/persisted',
       },
     ]);
   });
 
   it('writes add, update and delete operations through to SQLite', async () => {
     const context = await createContext();
-    const database = new ProjectDatabase(context, {
-      createId: () => 'created-project',
-      now: () => Date.parse('2026-07-23T02:00:00.000Z'),
-      defaultIcon: () => '🧭',
-    });
+    const database = new ProjectDatabase(context);
     database.initialize();
 
-    const created = database.add({ name: '  新 Project  ' });
+    const created = database.add({
+      id: 'created-project',
+      name: '  新 Project  ',
+      icon: '🧭',
+      createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
+      workspacePath: '/tmp/projects/created-project',
+    });
     const updated = database.update(created.id, {
       name: '新标题',
       pinned: true,
     });
+    const moved = database.updateWorkspace(
+      created.id,
+      '/tmp/projects/moved-project',
+    );
 
     expect(updated).toMatchObject({
       id: 'created-project',
@@ -90,6 +98,7 @@ describe('ProjectDatabase', () => {
       icon: '🧭',
       pinned: true,
     });
+    expect(moved.workspacePath).toBe('/tmp/projects/moved-project');
     expect(context.db.select().from(projects).all()).toEqual([
       {
         id: 'created-project',
@@ -97,6 +106,7 @@ describe('ProjectDatabase', () => {
         icon: '🧭',
         createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
         pinned: true,
+        workspacePath: '/tmp/projects/moved-project',
       },
     ]);
 
@@ -109,12 +119,15 @@ describe('ProjectDatabase', () => {
   it('restores Projects from SQLite after reopening the database', async () => {
     const databaseFile = await createDatabaseFile();
     const firstContext = openContext(databaseFile);
-    const firstDatabase = new ProjectDatabase(firstContext, {
-      createId: () => 'persisted',
-      now: () => Date.parse('2026-07-23T02:00:00.000Z'),
-    });
+    const firstDatabase = new ProjectDatabase(firstContext);
     firstDatabase.initialize();
-    firstDatabase.add({ name: '跨启动 Project' });
+    firstDatabase.add({
+      id: 'persisted',
+      name: '跨启动 Project',
+      icon: '📘',
+      createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
+      workspacePath: '/tmp/projects/persisted',
+    });
     firstContext.close();
 
     const secondContext = openContext(databaseFile);
@@ -128,18 +141,22 @@ describe('ProjectDatabase', () => {
         icon: '📘',
         createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
         pinned: false,
+        workspacePath: '/tmp/projects/persisted',
       },
     ]);
   });
 
   it('does not expose its Project object references', async () => {
     const context = await createContext();
-    const database = new ProjectDatabase(context, {
-      createId: () => 'isolated',
-      now: () => Date.parse('2026-07-23T02:00:00.000Z'),
-    });
+    const database = new ProjectDatabase(context);
     database.initialize();
-    const created = database.add({ name: '隔离测试' });
+    const created = database.add({
+      id: 'isolated',
+      name: '隔离测试',
+      icon: '📘',
+      createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
+      workspacePath: '/tmp/projects/isolated',
+    });
 
     expect(database.get(created.id)).not.toBe(created);
     expect(database.list()[0]).not.toBe(created);
@@ -150,11 +167,15 @@ describe('ProjectDatabase', () => {
 
   it('keeps the previous Map value when a database write fails', async () => {
     const context = await createContext();
-    const database = new ProjectDatabase(context, {
-      createId: () => 'stable',
-    });
+    const database = new ProjectDatabase(context);
     database.initialize();
-    database.add({ name: '旧标题' });
+    database.add({
+      id: 'stable',
+      name: '旧标题',
+      icon: '📘',
+      createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
+      workspacePath: '/tmp/projects/stable',
+    });
     context.sqlite.exec('DROP TABLE projects');
 
     expect(() => database.update('stable', { name: '新标题' })).toThrow();

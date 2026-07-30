@@ -16,15 +16,17 @@ export interface SettingsLogger {
 
 interface JsonSettingsRepositoryOptions {
   readonly logger?: SettingsLogger;
+  readonly defaultProjectWorkspace?: string;
 }
 
 interface StoredSettingsState {
   readonly preferences: AppPreferences;
-  readonly lastLocalAssetDirectory?: string;
+  readonly defaultProjectWorkspace: string;
 }
 
-interface StoredFileDialogSettings {
-  readonly lastLocalAssetDirectory?: string;
+interface DeserializedSettings {
+  readonly state: StoredSettingsState;
+  readonly needsMigration: boolean;
 }
 
 function clonePreferences(preferences: AppPreferences): AppPreferences {
@@ -39,27 +41,19 @@ function clonePreferences(preferences: AppPreferences): AppPreferences {
 
 function createStoredSettingsState(
   preferences: AppPreferences,
-  lastLocalAssetDirectory?: string,
+  defaultProjectWorkspace: string,
 ): StoredSettingsState {
   return Object.freeze({
     preferences: clonePreferences(preferences),
-    lastLocalAssetDirectory,
+    defaultProjectWorkspace,
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  );
 }
 
 function normalizeDirectory(directory: string): string {
   const value = directory.trim();
 
   if (value.length === 0 || !isAbsolute(value)) {
-    throw new Error('文件选择器最近目录必须是绝对路径');
+    throw new Error('默认 Project 工作区必须是绝对路径');
   }
 
   return normalize(value);
@@ -76,13 +70,21 @@ function isFileNotFoundError(error: unknown): boolean {
 export class JsonSettingsRepository implements SettingsRepository {
   private readonly settingsFile: string;
   private readonly logger: SettingsLogger;
-  private state = createStoredSettingsState(DEFAULT_APP_PREFERENCES);
+  private readonly fallbackProjectWorkspace: string;
+  private state: StoredSettingsState;
   private initialized = false;
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(settingsFile: string, options: JsonSettingsRepositoryOptions = {}) {
     this.settingsFile = settingsFile;
     this.logger = options.logger ?? console;
+    this.fallbackProjectWorkspace = normalizeDirectory(
+      options.defaultProjectWorkspace ?? dirname(settingsFile),
+    );
+    this.state = createStoredSettingsState(
+      DEFAULT_APP_PREFERENCES,
+      this.fallbackProjectWorkspace,
+    );
   }
 
   async initialize(): Promise<void> {
@@ -92,9 +94,24 @@ export class JsonSettingsRepository implements SettingsRepository {
 
     try {
       const content = await readFile(this.settingsFile, 'utf8');
-      this.state = this.deserialize(content);
+      const restored = this.deserialize(content);
+      this.state = restored.state;
+
+      if (restored.needsMigration) {
+        try {
+          await this.persist(this.state);
+        } catch (error) {
+          this.logger.warn(
+            'Settings 默认 Project 工作区迁移保存失败，将继续使用内存默认值。',
+            error,
+          );
+        }
+      }
     } catch (error) {
-      this.state = createStoredSettingsState(DEFAULT_APP_PREFERENCES);
+      this.state = createStoredSettingsState(
+        DEFAULT_APP_PREFERENCES,
+        this.fallbackProjectWorkspace,
+      );
 
       if (!isFileNotFoundError(error)) {
         this.logger.warn('Settings 读取失败，已恢复默认设置。', error);
@@ -119,7 +136,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     const writeTask = this.writeQueue.then(async () => {
       const nextState = createStoredSettingsState(
         nextPreferences,
-        this.state.lastLocalAssetDirectory,
+        this.state.defaultProjectWorkspace,
       );
       await this.persist(nextState);
       this.state = nextState;
@@ -131,18 +148,16 @@ export class JsonSettingsRepository implements SettingsRepository {
     return clonePreferences(this.state.preferences);
   }
 
-  getLastLocalAssetDirectory(): string | undefined {
+  getDefaultProjectWorkspace(): string {
     this.requireInitialized();
-    return this.state.lastLocalAssetDirectory;
+    return this.state.defaultProjectWorkspace;
   }
 
-  async updateLastLocalAssetDirectory(directory: string): Promise<void> {
+  async updateDefaultProjectWorkspace(directory: string): Promise<void> {
     this.requireInitialized();
     const normalizedDirectory = normalizeDirectory(directory);
     const writeTask = this.writeQueue.then(async () => {
-      if (
-        this.state.lastLocalAssetDirectory === normalizedDirectory
-      ) {
+      if (this.state.defaultProjectWorkspace === normalizedDirectory) {
         return;
       }
 
@@ -160,50 +175,41 @@ export class JsonSettingsRepository implements SettingsRepository {
 
   private serialize(state: StoredSettingsState): string {
     const stored: AppPreferences & {
-      readonly fileDialogs?: StoredFileDialogSettings;
+      readonly defaultProjectWorkspace: string;
     } = {
       ...state.preferences,
-      ...(state.lastLocalAssetDirectory
-        ? {
-            fileDialogs: {
-              lastLocalAssetDirectory:
-                state.lastLocalAssetDirectory,
-            },
-          }
-        : {}),
+      defaultProjectWorkspace: state.defaultProjectWorkspace,
     };
 
     return `${JSON.stringify(stored, null, 2)}\n`;
   }
 
-  private deserialize(content: string): StoredSettingsState {
+  private deserialize(content: string): DeserializedSettings {
     const value: unknown = JSON.parse(content);
 
     if (!isAppPreferences(value)) {
       throw new Error('Settings 数据结构或版本无效');
     }
 
-    let lastLocalAssetDirectory: string | undefined;
+    let defaultProjectWorkspace = this.fallbackProjectWorkspace;
 
-    if ('fileDialogs' in value) {
-      if (!isRecord(value.fileDialogs)) {
-        throw new Error('Settings 文件选择器数据结构无效');
+    if ('defaultProjectWorkspace' in value) {
+      if (typeof value.defaultProjectWorkspace !== 'string') {
+        throw new Error('Settings 默认 Project 工作区无效');
       }
 
-      const directory = value.fileDialogs.lastLocalAssetDirectory;
-
-      if (directory !== undefined) {
-        if (typeof directory !== 'string') {
-          throw new Error('Settings 文件选择器最近目录无效');
-        }
-        lastLocalAssetDirectory = normalizeDirectory(directory);
-      }
+      defaultProjectWorkspace = normalizeDirectory(
+        value.defaultProjectWorkspace,
+      );
     }
 
-    return createStoredSettingsState(
-      value,
-      lastLocalAssetDirectory,
-    );
+    return {
+      state: createStoredSettingsState(
+        value,
+        defaultProjectWorkspace,
+      ),
+      needsMigration: !('defaultProjectWorkspace' in value),
+    };
   }
 
   private async persist(state: StoredSettingsState): Promise<void> {

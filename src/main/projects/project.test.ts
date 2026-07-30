@@ -9,6 +9,7 @@ describe('Project', () => {
       name: '  机器学习基础  ',
       icon: '  🤖  ',
       createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
+      workspacePath: '  /tmp/projects/machine-learning  ',
     });
 
     expect(project).toEqual({
@@ -17,6 +18,7 @@ describe('Project', () => {
       icon: '🤖',
       createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
       pinned: false,
+      workspacePath: '/tmp/projects/machine-learning',
     });
     expect(Object.isFrozen(project)).toBe(true);
   });
@@ -28,6 +30,7 @@ describe('Project', () => {
       icon: '🤖',
       createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
       pinned: true,
+      workspacePath: '/tmp/projects/machine-learning',
     });
     const clone = cloneProject(project);
 
@@ -42,6 +45,7 @@ describe('Project', () => {
         name: '机器学习基础',
         icon: '🤖',
         createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
+        workspacePath: '/tmp/projects/machine-learning',
       }),
     ).toThrow('Project 数据无效');
 
@@ -51,6 +55,7 @@ describe('Project', () => {
         name: '机器学习基础',
         icon: '🤖',
         createdTime: Number.NaN,
+        workspacePath: '/tmp/projects/machine-learning',
       }),
     ).toThrow('Project 数据无效');
 
@@ -61,6 +66,17 @@ describe('Project', () => {
         icon: '🤖',
         createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
         pinned: 'yes' as never,
+        workspacePath: '/tmp/projects/machine-learning',
+      }),
+    ).toThrow('Project 数据无效');
+
+    expect(() =>
+      createProjectSnapshot({
+        id: 'machine-learning',
+        name: '机器学习基础',
+        icon: '🤖',
+        createdTime: Date.parse('2026-07-22T08:00:00.000Z'),
+        workspacePath: 'relative/project',
       }),
     ).toThrow('Project 数据无效');
   });

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { AssetSnapshot } from '../../shared/assets';
 import {
   cloneProjectSnapshot,
@@ -7,28 +9,62 @@ import {
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-manager';
+import type { SettingsRepository } from '../settings/settings-repository';
 import type { CreateProjectInput } from './project';
 import type { ProjectDatabaseApi } from './project-database';
+import type {
+  ProjectWorkspaceManagerApi,
+  WorkspacePreparation,
+} from './project-workspace-manager';
 
 export interface ProjectServiceApi {
   listProjects(): readonly ProjectSnapshot[];
   getProject(projectId: string): ProjectSnapshot | undefined;
-  createProject(input: CreateProjectInput): ProjectSnapshot;
+  createProject(input: CreateProjectInput): Promise<ProjectSnapshot>;
   renameProject(projectId: string, name: string): ProjectSnapshot;
   setProjectPinned(projectId: string, pinned: boolean): ProjectSnapshot;
+  selectProjectWorkspace(
+    projectId?: string,
+  ): Promise<string | undefined>;
+  changeProjectWorkspace(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<ProjectSnapshot>;
+  openProjectWorkspace(projectId: string): Promise<void>;
   openProject(projectId: string): Promise<readonly AssetSnapshot[]>;
   closeProject(projectId: string): Promise<void>;
   deleteProject(projectId: string): Promise<void>;
 }
 
+export interface ProjectServiceDependencies {
+  readonly createId: () => string;
+  readonly now: () => number;
+  readonly defaultIcon: () => string;
+}
+
+const defaultDependencies: ProjectServiceDependencies = {
+  createId: randomUUID,
+  now: Date.now,
+  defaultIcon: () => '📘',
+};
+
 export class ProjectService implements ProjectServiceApi {
   private lifecycleTail: Promise<void> = Promise.resolve();
+  private readonly dependencies: ProjectServiceDependencies;
 
   constructor(
     private readonly projectDatabase: ProjectDatabaseApi,
     private readonly assetService: AssetServiceApi,
     private readonly workbenchSessions: WorkbenchSessionLifecycle,
-  ) {}
+    private readonly workspaceManager: ProjectWorkspaceManagerApi,
+    private readonly settingsRepository: SettingsRepository,
+    dependencies: Partial<ProjectServiceDependencies> = {},
+  ) {
+    this.dependencies = {
+      ...defaultDependencies,
+      ...dependencies,
+    };
+  }
 
   listProjects(): readonly ProjectSnapshot[] {
     const projects = this.projectDatabase.list();
@@ -58,9 +94,36 @@ export class ProjectService implements ProjectServiceApi {
     });
   }
 
-  createProject(input: CreateProjectInput): ProjectSnapshot {
-    const project = this.projectDatabase.add(input);
-    return cloneProjectSnapshot({ ...project, assetCount: 0 });
+  async createProject(input: CreateProjectInput): Promise<ProjectSnapshot> {
+    return this.enqueueLifecycle(async () => {
+      const projectId = this.dependencies.createId();
+      const workspacePath =
+        input.workspacePath ??
+        (await this.workspaceManager.createDefaultWorkspacePath(
+          this.settingsRepository.getDefaultProjectWorkspace(),
+          projectId,
+          input.name,
+        ));
+      const preparation = await this.workspaceManager.prepareWorkspace({
+        projectId,
+        workspacePath,
+      });
+
+      try {
+        const project = this.projectDatabase.add({
+          id: projectId,
+          name: input.name,
+          icon: this.dependencies.defaultIcon(),
+          createdTime: this.dependencies.now(),
+          workspacePath: preparation.workspacePath,
+        });
+
+        return cloneProjectSnapshot({ ...project, assetCount: 0 });
+      } catch (error) {
+        await this.rollbackPreparation(preparation);
+        throw error;
+      }
+    });
   }
 
   renameProject(projectId: string, name: string): ProjectSnapshot {
@@ -71,6 +134,67 @@ export class ProjectService implements ProjectServiceApi {
   setProjectPinned(projectId: string, pinned: boolean): ProjectSnapshot {
     const project = this.projectDatabase.update(projectId, { pinned });
     return this.withCurrentAssetCount(project);
+  }
+
+  async selectProjectWorkspace(
+    projectId?: string,
+  ): Promise<string | undefined> {
+    const defaultPath = projectId
+      ? this.requireProject(projectId).workspacePath
+      : this.settingsRepository.getDefaultProjectWorkspace();
+
+    return this.workspaceManager.selectWorkspace(defaultPath);
+  }
+
+  async changeProjectWorkspace(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<ProjectSnapshot> {
+    return this.enqueueLifecycle(async () => {
+      const currentProject = this.requireProject(projectId);
+      const preparation = await this.workspaceManager.prepareWorkspace({
+        projectId,
+        workspacePath,
+      });
+
+      if (preparation.workspacePath === currentProject.workspacePath) {
+        return this.withCurrentAssetCount(currentProject);
+      }
+
+      const wasActive =
+        this.assetService.getActiveProjectId() === projectId;
+
+      if (wasActive) {
+        await this.workbenchSessions.closeActive();
+        this.assetService.unloadProject();
+      }
+
+      try {
+        const updated = this.projectDatabase.updateWorkspace(
+          projectId,
+          preparation.workspacePath,
+        );
+
+        if (wasActive) {
+          await this.assetService.loadFromProject(projectId);
+        }
+
+        return this.withCurrentAssetCount(updated);
+      } catch (error) {
+        await this.restoreProjectWorkspace(
+          currentProject,
+          preparation,
+          wasActive,
+        );
+        throw error;
+      }
+    });
+  }
+
+  async openProjectWorkspace(projectId: string): Promise<void> {
+    await this.workspaceManager.openWorkspace(
+      this.requireProject(projectId).workspacePath,
+    );
   }
 
   async openProject(projectId: string): Promise<readonly AssetSnapshot[]> {
@@ -121,6 +245,51 @@ export class ProjectService implements ProjectServiceApi {
       assetCount:
         this.assetService.countByProjectIds([project.id]).get(project.id) ?? 0,
     });
+  }
+
+  private requireProject(projectId: string): Project {
+    const project = this.projectDatabase.get(projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+
+    return project;
+  }
+
+  private async rollbackPreparation(
+    preparation: WorkspacePreparation,
+  ): Promise<void> {
+    await this.workspaceManager
+      .rollbackPreparation(preparation)
+      .catch((rollbackError: unknown) => {
+        console.error('回滚 Project Workspace 失败', rollbackError);
+      });
+  }
+
+  private async restoreProjectWorkspace(
+    project: Project,
+    preparation: WorkspacePreparation,
+    wasActive: boolean,
+  ): Promise<void> {
+    try {
+      const current = this.projectDatabase.get(project.id);
+
+      if (current && current.workspacePath !== project.workspacePath) {
+        this.projectDatabase.updateWorkspace(
+          project.id,
+          project.workspacePath,
+        );
+      }
+
+      await this.rollbackPreparation(preparation);
+
+      if (wasActive) {
+        await this.assetService.loadFromProject(project.id);
+      }
+    } catch (rollbackError) {
+      console.error('恢复原 Project Workspace 失败', rollbackError);
+    }
   }
 
   private enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {

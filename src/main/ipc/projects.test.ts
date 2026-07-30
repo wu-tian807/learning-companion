@@ -50,10 +50,16 @@ function createService() {
     name: '机器学习',
     icon: '🤖',
     createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
+    workspacePath: '/tmp/projects/project-1',
   });
   const snapshot = { ...project, assetCount: 3 };
   const listProjects = vi.fn(() => [snapshot]);
-  const createProject = vi.fn(() => snapshot);
+  const createProject = vi.fn(async () => snapshot);
+  const selectProjectWorkspace = vi.fn(
+    async () => '/tmp/projects/selected',
+  );
+  const changeProjectWorkspace = vi.fn(async () => snapshot);
+  const openProjectWorkspace = vi.fn(async () => undefined);
   const renameProject = vi.fn(() => snapshot);
   const setProjectPinned = vi.fn(() => snapshot);
   const deleteProject = vi.fn();
@@ -64,6 +70,9 @@ function createService() {
     openProject,
     closeProject,
     createProject,
+    selectProjectWorkspace,
+    changeProjectWorkspace,
+    openProjectWorkspace,
     renameProject,
     setProjectPinned,
     deleteProject,
@@ -71,12 +80,15 @@ function createService() {
 
   return {
     closeProject,
+    changeProjectWorkspace,
     createProject,
     deleteProject,
     listProjects,
     projectService,
     openProject,
+    openProjectWorkspace,
     renameProject,
+    selectProjectWorkspace,
     setProjectPinned,
   };
 }
@@ -100,6 +112,7 @@ describe('Project IPC handlers', () => {
         createdTime: Date.parse('2026-07-23T02:00:00.000Z'),
         assetCount: 3,
         pinned: false,
+        workspacePath: '/tmp/projects/project-1',
       },
     ]);
     expect(listProjects).toHaveBeenCalledOnce();
@@ -108,14 +121,32 @@ describe('Project IPC handlers', () => {
   it('forwards explicit mutation requests only to ProjectService', async () => {
     const {
       createProject,
+      changeProjectWorkspace,
       deleteProject,
       projectService,
       renameProject,
       setProjectPinned,
+      selectProjectWorkspace,
+      openProjectWorkspace,
     } = createService();
     registerProjectHandlers(projectService);
 
     await findHandler(IPC_CHANNELS.createProject)({}, { name: '新 Project' });
+    await findHandler(IPC_CHANNELS.selectProjectWorkspace)(
+      {},
+      { projectId: 'project-1' },
+    );
+    await findHandler(IPC_CHANNELS.changeProjectWorkspace)(
+      {},
+      {
+        projectId: 'project-1',
+        workspacePath: '/tmp/projects/selected',
+      },
+    );
+    await findHandler(IPC_CHANNELS.openProjectWorkspace)(
+      {},
+      { projectId: 'project-1' },
+    );
     await findHandler(IPC_CHANNELS.renameProject)(
       {},
       { id: 'project-1', name: '新标题' },
@@ -127,6 +158,12 @@ describe('Project IPC handlers', () => {
     await findHandler(IPC_CHANNELS.deleteProject)({}, { id: 'project-1' });
 
     expect(createProject).toHaveBeenCalledWith({ name: '新 Project' });
+    expect(selectProjectWorkspace).toHaveBeenCalledWith('project-1');
+    expect(changeProjectWorkspace).toHaveBeenCalledWith(
+      'project-1',
+      '/tmp/projects/selected',
+    );
+    expect(openProjectWorkspace).toHaveBeenCalledWith('project-1');
     expect(renameProject).toHaveBeenCalledWith('project-1', '新标题');
     expect(setProjectPinned).toHaveBeenCalledWith('project-1', true);
     expect(deleteProject).toHaveBeenCalledWith('project-1');
@@ -176,6 +213,15 @@ describe('Project IPC handlers', () => {
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.createProject,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.selectProjectWorkspace,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.changeProjectWorkspace,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.openProjectWorkspace,
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.renameProject,

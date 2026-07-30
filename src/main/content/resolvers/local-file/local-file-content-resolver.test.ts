@@ -10,13 +10,27 @@ import {
   type LocalFileContentInspector,
 } from './local-file-content-inspector';
 import {
-  createLocalFileContentRef,
-  createManagedJsonContentRef,
+  createAbsoluteLocalFileContentRef,
+  createProjectWorkspaceContentRef,
 } from '../../content-ref';
+import type { ProjectWorkspaceManagerApi } from '../../../projects/project-workspace-manager';
 import { DefaultTextContentAdapter } from '../../text-content';
 import { LocalFileContentResolver } from './local-file-content-resolver';
 
 const temporaryDirectories: string[] = [];
+const resolveContext = {
+  projectId: 'project',
+  projectWorkspace: '/tmp/project',
+};
+const workspaceManager = {
+  resolveLocalFile: async (
+    workspacePath: string,
+    ref: ReturnType<typeof createAbsoluteLocalFileContentRef>,
+  ) =>
+    ref.base === 'absolute'
+      ? ref.path
+      : join(workspacePath, ref.path),
+} as ProjectWorkspaceManagerApi;
 
 async function createTemporaryFile(
   name: string,
@@ -50,10 +64,14 @@ describe('LocalFileContentResolver', () => {
         }),
       ),
     };
-    const resolver = new LocalFileContentResolver(inspector);
+    const resolver = new LocalFileContentResolver(
+      workspaceManager,
+      inspector,
+    );
 
     const resolved = await resolver.resolve(
-      createLocalFileContentRef('/tmp/notes.md'),
+      createAbsoluteLocalFileContentRef('/tmp/notes.md'),
+      resolveContext,
     );
 
     expect(resolved.contentStatus.availability).toBe('available');
@@ -71,22 +89,45 @@ describe('LocalFileContentResolver', () => {
         }),
       ),
     };
-    const resolver = new LocalFileContentResolver(inspector);
+    const resolver = new LocalFileContentResolver(
+      workspaceManager,
+      inspector,
+    );
 
     const resolved = await resolver.resolve(
-      createLocalFileContentRef('/tmp/missing.md'),
+      createAbsoluteLocalFileContentRef('/tmp/missing.md'),
+      resolveContext,
     );
 
     expect(resolved.contentStatus.availability).toBe('missing');
     expect(resolved.handle).toBeUndefined();
   });
 
-  it('rejects a ref belonging to another Resolver kind', async () => {
-    const resolver = new LocalFileContentResolver();
+  it('resolves a Project Workspace reference before inspecting it', async () => {
+    const inspect = vi.fn(async (path: string) =>
+      createLocalFileContentInspection({
+        path,
+        availability: 'missing',
+        checkedTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      }),
+    );
+    const resolver = new LocalFileContentResolver(workspaceManager, {
+      inspect,
+    });
 
-    await expect(
-      resolver.resolve(createManagedJsonContentRef('content')),
-    ).rejects.toThrow('INVALID_EXTENSION_DEFINITION');
+    const resolved = await resolver.resolve(
+      createProjectWorkspaceContentRef('assets/imported/content.txt'),
+      resolveContext,
+    );
+
+    expect(inspect).toHaveBeenCalledWith(
+      '/tmp/project/assets/imported/content.txt',
+    );
+    expect(resolved.contentRef).toEqual({
+      kind: 'local-file',
+      base: 'project-workspace',
+      path: 'assets/imported/content.txt',
+    });
   });
 
   it('exposes generic byte and stream access for available files', async () => {
@@ -94,8 +135,11 @@ describe('LocalFileContentResolver', () => {
       'resource.bin',
       Buffer.from('streamed bytes'),
     );
-    const resolver = new LocalFileContentResolver();
-    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const resolver = new LocalFileContentResolver(workspaceManager);
+    const resolved = await resolver.resolve(
+      createAbsoluteLocalFileContentRef(path),
+      resolveContext,
+    );
     const handle = resolved.handle!;
 
     await expect(handle.readBytes!()).resolves.toMatchObject({
@@ -127,8 +171,11 @@ describe('LocalFileContentResolver', () => {
       'notes.txt',
       Buffer.from('\ufeff第一行\r\n第二行\r\n'),
     );
-    const resolver = new LocalFileContentResolver();
-    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const resolver = new LocalFileContentResolver(workspaceManager);
+    const resolved = await resolver.resolve(
+      createAbsoluteLocalFileContentRef(path),
+      resolveContext,
+    );
     const handle = resolved.handle!;
     const adapter = new DefaultTextContentAdapter();
 
@@ -159,8 +206,11 @@ describe('LocalFileContentResolver', () => {
       'gbk.txt',
       iconv.encode('中文内容\r\n', 'gbk'),
     );
-    const resolver = new LocalFileContentResolver();
-    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const resolver = new LocalFileContentResolver(workspaceManager);
+    const resolved = await resolver.resolve(
+      createAbsoluteLocalFileContentRef(path),
+      resolveContext,
+    );
     const adapter = new DefaultTextContentAdapter();
     const content = await adapter.read(resolved.handle!, {
       encoding: 'gbk',
@@ -187,8 +237,11 @@ describe('LocalFileContentResolver', () => {
       'invalid-utf8.txt',
       Buffer.from([0xff, 0xfe, 0xfd]),
     );
-    const resolver = new LocalFileContentResolver();
-    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const resolver = new LocalFileContentResolver(workspaceManager);
+    const resolved = await resolver.resolve(
+      createAbsoluteLocalFileContentRef(path),
+      resolveContext,
+    );
     const adapter = new DefaultTextContentAdapter();
 
     await expect(
@@ -203,8 +256,11 @@ describe('LocalFileContentResolver', () => {
       'external-change.txt',
       Buffer.from('原始内容'),
     );
-    const resolver = new LocalFileContentResolver();
-    const resolved = await resolver.resolve(createLocalFileContentRef(path));
+    const resolver = new LocalFileContentResolver(workspaceManager);
+    const resolved = await resolver.resolve(
+      createAbsoluteLocalFileContentRef(path),
+      resolveContext,
+    );
     const adapter = new DefaultTextContentAdapter();
     const content = await adapter.read(resolved.handle!);
 

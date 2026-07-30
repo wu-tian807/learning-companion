@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLocalFileContentRef } from '../content/content-ref';
+import { createAbsoluteLocalFileContentRef } from '../content/content-ref';
 import { cloneAsset, createAssetSnapshot } from './asset';
 
 function createValidAsset() {
@@ -9,7 +9,7 @@ function createValidAsset() {
     projectId: 'project',
     name: '学习资料',
     mediaType: 'application/pdf',
-    contentRef: createLocalFileContentRef('/tmp/paper.pdf'),
+    contentRef: createAbsoluteLocalFileContentRef('/tmp/paper.pdf'),
     createdTime: Date.parse('2026-07-24T01:00:00.000Z'),
     lastUsedTime: Date.parse('2026-07-24T01:00:00.000Z'),
   });

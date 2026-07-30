@@ -9,10 +9,12 @@ export interface ProjectInput {
   readonly icon: string;
   readonly createdTime: number;
   readonly pinned?: boolean;
+  readonly workspacePath: string;
 }
 
 export interface CreateProjectInput {
   readonly name: string;
+  readonly workspacePath?: string;
 }
 
 export interface UpdateProjectInput {
@@ -28,6 +30,7 @@ export function createProjectSnapshot(input: ProjectInput): Project {
     icon: input.icon,
     createdTime: input.createdTime,
     pinned: input.pinned ?? false,
+    workspacePath: input.workspacePath,
   });
 }
 

@@ -22,6 +22,7 @@ const asset: AssetSnapshot = {
   mediaType: 'audio/mpeg',
   contentRef: {
     kind: 'local-file',
+    base: 'absolute',
     path: '/tmp/private/lesson.mp3',
   },
   contentStatus: {

@@ -4,16 +4,21 @@ import type { ContentCapability } from '../../shared/workbench/manifest';
 import type { ContentHandle } from '../content/content-handle';
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
+  createAbsoluteLocalFileContentRef,
   type AssetContentAvailability,
 } from '../content/content-ref';
 import {
   ContentResolverRegistry,
   type ContentResolver,
 } from '../content/content-resolver-registry';
+import type { ProjectLookup } from '../projects/project-database';
+import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
 import { cloneAsset, createAssetSnapshot, type Asset } from './asset';
 import type { AssetDatabaseApi } from './asset-database';
-import { AssetService } from './asset-service';
+import {
+  AssetService,
+  type AssetServiceDependencies,
+} from './asset-service';
 
 function createAsset(
   id = 'asset',
@@ -25,7 +30,7 @@ function createAsset(
     projectId: 'project',
     name: '学习笔记',
     mediaType,
-    contentRef: createLocalFileContentRef(path),
+    contentRef: createAbsoluteLocalFileContentRef(path),
     createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
     lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
   });
@@ -105,6 +110,10 @@ function createResolver(
           currentAvailability,
           Date.parse('2026-07-27T03:00:00.000Z'),
         ),
+        location: {
+          kind: 'local-file' as const,
+          absolutePath: ref.path,
+        },
         handle,
       };
     }),
@@ -115,11 +124,52 @@ function createResolver(
   return { handles, registry, resolver };
 }
 
+function createService(
+  database: AssetDatabaseApi,
+  registry: ContentResolverRegistry,
+  dependencies: Partial<AssetServiceDependencies> = {},
+): AssetService {
+  const projectLookup = {
+    get: (projectId: string) =>
+      projectId === 'project'
+        ? {
+            id: 'project',
+            name: 'Project',
+            icon: '📘',
+            createdTime: 0,
+            pinned: false,
+            workspacePath: '/tmp/project',
+          }
+        : undefined,
+  } as ProjectLookup;
+  const workspaceManager = {
+    validateWorkspace: async () => undefined,
+    copyImportedFile: async (_workspacePath: string, path: string) => ({
+      contentRef: createAbsoluteLocalFileContentRef(path),
+    }),
+    classifyLocalFile: async (_workspacePath: string, path: string) =>
+      createAbsoluteLocalFileContentRef(path),
+    resolveLocalFile: async (_workspacePath: string, ref: Asset['contentRef']) =>
+      ref.path,
+    removeImportedFile: async () => undefined,
+    selectAssetFiles: async () => [],
+    revealFile: vi.fn(),
+  } as unknown as ProjectWorkspaceManagerApi;
+
+  return new AssetService(
+    database,
+    registry,
+    projectLookup,
+    workspaceManager,
+    dependencies,
+  );
+}
+
 describe('AssetService', () => {
   it('loads runtime status while keeping Asset pure data', async () => {
     const database = createDatabase();
     const { handles, registry } = createResolver(() => 'missing');
-    const service = new AssetService(database, registry);
+    const service = createService(database, registry);
 
     const loaded = await service.loadFromProject('project');
 
@@ -134,7 +184,7 @@ describe('AssetService', () => {
   it('imports an available local file with derived metadata', async () => {
     const database = createDatabase([]);
     const { handles, registry } = createResolver();
-    const service = new AssetService(database, registry, {
+    const service = createService(database, registry, {
       detectMediaType: vi.fn(async () => 'text/plain'),
       createDefaultName: vi.fn(() => '资料'),
     });
@@ -147,7 +197,7 @@ describe('AssetService', () => {
     expect(database.add).toHaveBeenCalledWith({
       name: '资料',
       mediaType: 'text/plain',
-      contentRef: createLocalFileContentRef('/tmp/资料.txt'),
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/资料.txt'),
     });
     expect(created).toMatchObject({
       id: 'created',
@@ -162,7 +212,7 @@ describe('AssetService', () => {
     let availability: AssetContentAvailability = 'available';
     const database = createDatabase();
     const { registry } = createResolver(() => availability);
-    const service = new AssetService(database, registry);
+    const service = createService(database, registry);
     await service.loadFromProject('project');
     availability = 'missing';
 
@@ -177,7 +227,7 @@ describe('AssetService', () => {
     const database = createDatabase();
     const { registry } = createResolver();
     const isRelinkMediaCompatible = vi.fn(async () => true);
-    const service = new AssetService(database, registry, {
+    const service = createService(database, registry, {
       isRelinkMediaCompatible,
     });
     await service.loadFromProject('project');
@@ -194,17 +244,17 @@ describe('AssetService', () => {
     );
     expect(database.updateContentRef).toHaveBeenCalledWith(
       'asset',
-      createLocalFileContentRef('/tmp/new-notes.md'),
+      createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
     );
     expect(relinked.contentRef).toEqual(
-      createLocalFileContentRef('/tmp/new-notes.md'),
+      createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
     );
   });
 
   it('does not persist a media-incompatible relink', async () => {
     const database = createDatabase();
     const { registry } = createResolver();
-    const service = new AssetService(database, registry, {
+    const service = createService(database, registry, {
       isRelinkMediaCompatible: vi.fn(async () => false),
     });
     await service.loadFromProject('project');
@@ -218,7 +268,7 @@ describe('AssetService', () => {
   it('hands an open ContentHandle to the Workbench caller', async () => {
     const database = createDatabase();
     const { handles, registry } = createResolver();
-    const service = new AssetService(database, registry);
+    const service = createService(database, registry);
     await service.loadFromProject('project');
 
     const resolved = await service.resolveContent('asset');
@@ -253,7 +303,7 @@ describe('AssetService', () => {
         };
       },
     });
-    const service = new AssetService(database, registry, {
+    const service = createService(database, registry, {
       detectMediaType: vi.fn(async () => 'text/plain'),
     });
 
@@ -272,7 +322,7 @@ describe('AssetService', () => {
   it('rejects an addition for a Project other than the active Project', async () => {
     const database = createDatabase([]);
     const { registry, resolver } = createResolver();
-    const service = new AssetService(database, registry);
+    const service = createService(database, registry);
 
     await expect(
       service.addLocalFile('another-project', '/tmp/notes.txt'),

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { eq } from 'drizzle-orm';
 
 import type { DatabaseContext } from '../database/database-context';
@@ -8,8 +6,8 @@ import { AppError } from '../errors/app-error';
 import {
   cloneProject,
   createProjectSnapshot,
-  type CreateProjectInput,
   type Project,
+  type ProjectInput,
   type UpdateProjectInput,
 } from './project';
 
@@ -20,22 +18,11 @@ export interface ProjectLookup {
 export interface ProjectDatabaseApi extends ProjectLookup {
   initialize(): void;
   list(): readonly Project[];
-  add(input: CreateProjectInput): Project;
+  add(input: ProjectInput): Project;
   update(id: string, changes: UpdateProjectInput): Project;
+  updateWorkspace(id: string, workspacePath: string): Project;
   delete(id: string): void;
 }
-
-export interface ProjectDatabaseDependencies {
-  readonly createId: () => string;
-  readonly now: () => number;
-  readonly defaultIcon: () => string;
-}
-
-const defaultDependencies: ProjectDatabaseDependencies = {
-  createId: randomUUID,
-  now: Date.now,
-  defaultIcon: () => '📘',
-};
 
 const mutableProjectFields = new Set<keyof UpdateProjectInput>([
   'name',
@@ -46,17 +33,10 @@ const mutableProjectFields = new Set<keyof UpdateProjectInput>([
 export class ProjectDatabase implements ProjectDatabaseApi {
   private projectMap = new Map<string, Project>();
   private initialized = false;
-  private readonly dependencies: ProjectDatabaseDependencies;
 
   constructor(
     private readonly context: DatabaseContext,
-    dependencies: Partial<ProjectDatabaseDependencies> = {},
-  ) {
-    this.dependencies = {
-      ...defaultDependencies,
-      ...dependencies,
-    };
-  }
+  ) {}
 
   initialize(): void {
     if (this.initialized) {
@@ -91,15 +71,9 @@ export class ProjectDatabase implements ProjectDatabaseApi {
     return project ? cloneProject(project) : undefined;
   }
 
-  add(input: CreateProjectInput): Project {
+  add(input: ProjectInput): Project {
     this.requireInitialized();
-
-    const project = createProjectSnapshot({
-      id: this.dependencies.createId(),
-      name: input.name,
-      icon: this.dependencies.defaultIcon(),
-      createdTime: this.dependencies.now(),
-    });
+    const project = createProjectSnapshot(input);
 
     if (this.projectMap.has(project.id)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
@@ -134,6 +108,27 @@ export class ProjectDatabase implements ProjectDatabaseApi {
         icon: nextProject.icon,
         pinned: nextProject.pinned,
       })
+      .where(eq(projects.id, id))
+      .run();
+
+    if (result.changes !== 1) {
+      throw new AppError('DATABASE_WRITE_CONFLICT');
+    }
+
+    this.projectMap.set(id, nextProject);
+    return cloneProject(nextProject);
+  }
+
+  updateWorkspace(id: string, workspacePath: string): Project {
+    this.requireInitialized();
+    const currentProject = this.find(id);
+    const nextProject = createProjectSnapshot({
+      ...currentProject,
+      workspacePath,
+    });
+    const result = this.context.db
+      .update(projects)
+      .set({ workspacePath: nextProject.workspacePath })
       .where(eq(projects.id, id))
       .run();
 

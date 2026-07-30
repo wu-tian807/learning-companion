@@ -7,7 +7,15 @@ import type {
 
 export interface ContentResolver {
   readonly kind: AssetContentKind;
-  resolve(ref: AssetContentRef): Promise<ResolvedAssetContent>;
+  resolve(
+    ref: AssetContentRef,
+    context: ContentResolveContext,
+  ): Promise<ResolvedAssetContent>;
+}
+
+export interface ContentResolveContext {
+  readonly projectId: string;
+  readonly projectWorkspace: string;
 }
 
 export class ContentResolverRegistry {
@@ -25,13 +33,16 @@ export class ContentResolverRegistry {
     return this.resolvers.has(kind);
   }
 
-  async resolve(ref: AssetContentRef): Promise<ResolvedAssetContent> {
+  async resolve(
+    ref: AssetContentRef,
+    context: ContentResolveContext,
+  ): Promise<ResolvedAssetContent> {
     const resolver = this.resolvers.get(ref.kind);
 
     if (!resolver) {
       throw new AppError('CONTENT_RESOLVER_NOT_FOUND');
     }
 
-    return resolver.resolve(ref);
+    return resolver.resolve(ref, context);
   }
 }

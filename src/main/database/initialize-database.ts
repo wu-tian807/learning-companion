@@ -9,6 +9,8 @@ import { createProjectsMigration } from './migrations/0001-create-projects';
 import { createAssetsMigration } from './migrations/0002-create-assets';
 import { recreateAssetsMigration } from './migrations/0003-recreate-assets';
 import { createWorkbenchStateMigration } from './migrations/0004-create-workbench-state';
+import { addProjectWorkspaceMigration } from './migrations/0005-add-project-workspace';
+import { migrateLocalFileContentRefsMigration } from './migrations/0006-migrate-local-file-content-refs';
 import * as assetSchema from './schema/assets';
 import * as projectSchema from './schema/projects';
 import * as workbenchStateSchema from './schema/workbench-state';
@@ -23,6 +25,8 @@ const migrations: readonly DatabaseMigration[] = [
   createAssetsMigration,
   recreateAssetsMigration,
   createWorkbenchStateMigration,
+  addProjectWorkspaceMigration,
+  migrateLocalFileContentRefsMigration,
 ];
 const schema = {
   ...projectSchema,

@@ -18,6 +18,9 @@ export type AppErrorCode =
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
   | 'PROJECT_NOT_FOUND'
+  | 'PROJECT_WORKSPACE_UNAVAILABLE'
+  | 'PROJECT_WORKSPACE_CONFLICT'
+  | 'FILE_IMPORT_FAILED'
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
@@ -134,6 +137,24 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   PROJECT_NOT_FOUND: {
     kind: 'user',
     userMessage: '该 Project 已经不存在，请返回首页刷新。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  PROJECT_WORKSPACE_UNAVAILABLE: {
+    kind: 'user',
+    userMessage: 'Project 工作区不可用，请检查目录是否存在以及读写权限。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  PROJECT_WORKSPACE_CONFLICT: {
+    kind: 'user',
+    userMessage: '所选目录已绑定到另一个 Project，请选择其他目录。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  FILE_IMPORT_FAILED: {
+    kind: 'user',
+    userMessage: '资料复制失败，请检查源文件和 Project 工作区权限。',
     retryable: true,
     logLevel: 'warn',
   },

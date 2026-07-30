@@ -4,12 +4,16 @@ import {
   type AssetSnapshot,
 } from '../../shared/assets';
 import {
-  createLocalFileContentRef,
   LOCAL_FILE_CONTENT_KIND,
   type ResolvedAssetContent,
 } from '../content/content-ref';
-import type { ContentResolverRegistry } from '../content/content-resolver-registry';
+import type {
+  ContentResolveContext,
+  ContentResolverRegistry,
+} from '../content/content-resolver-registry';
 import { AppError } from '../errors/app-error';
+import type { ProjectLookup } from '../projects/project-database';
+import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
 import type { UpdateAssetInput } from './asset';
 import type { AssetDatabaseApi } from './asset-database';
 import {
@@ -25,14 +29,22 @@ export interface AssetServiceApi {
   getActiveProjectId(): string | undefined;
   list(): readonly AssetSnapshot[];
   get(assetId: string): AssetSnapshot | undefined;
-  addLocalFile(projectId: string, path: string): Promise<AssetSnapshot>;
+  selectLocalFiles(projectId: string): Promise<readonly string[]>;
+  addLocalFile(
+    projectId: string,
+    path: string,
+    mode?: LocalAssetImportMode,
+  ): Promise<AssetSnapshot>;
   update(assetId: string, changes: UpdateAssetInput): AssetSnapshot;
   delete(assetId: string): void;
   refresh(assetId: string): Promise<AssetSnapshot>;
   refreshAll(): Promise<readonly AssetSnapshot[]>;
   relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
   resolveContent(assetId: string): Promise<ResolvedAssetContent>;
+  revealInFolder(assetId: string): Promise<void>;
 }
+
+export type LocalAssetImportMode = 'copy' | 'link';
 
 export interface AssetServiceDependencies {
   readonly detectMediaType: typeof detectAssetMediaType;
@@ -62,6 +74,8 @@ export class AssetService implements AssetServiceApi {
   constructor(
     private readonly assetDatabase: AssetDatabaseApi,
     private readonly resolverRegistry: ContentResolverRegistry,
+    private readonly projectLookup: ProjectLookup,
+    private readonly workspaceManager: ProjectWorkspaceManagerApi,
     dependencies: Partial<AssetServiceDependencies> = {},
   ) {
     this.dependencies = {
@@ -125,16 +139,53 @@ export class AssetService implements AssetServiceApi {
     return snapshot ? cloneAssetSnapshot(snapshot) : undefined;
   }
 
+  async selectLocalFiles(
+    projectId: string,
+  ): Promise<readonly string[]> {
+    const project = this.projectLookup.get(projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+
+    await this.workspaceManager.validateWorkspace({
+      projectId,
+      workspacePath: project.workspacePath,
+    });
+    return this.workspaceManager.selectAssetFiles(project.workspacePath);
+  }
+
   async addLocalFile(
     projectId: string,
     path: string,
+    mode: LocalAssetImportMode = 'copy',
   ): Promise<AssetSnapshot> {
     this.requireExpectedProject(projectId);
     const lifecycleVersion = this.lifecycleVersion;
-    const contentRef = createLocalFileContentRef(path);
-    const resolved = await this.resolverRegistry.resolve(contentRef);
+    const context = this.createResolveContext(projectId);
+    await this.workspaceManager.validateWorkspace({
+      projectId,
+      workspacePath: context.projectWorkspace,
+    });
+    const imported =
+      mode === 'copy'
+        ? await this.workspaceManager.copyImportedFile(
+            context.projectWorkspace,
+            path,
+          )
+        : {
+            contentRef: await this.workspaceManager.classifyLocalFile(
+              context.projectWorkspace,
+              path,
+            ),
+          };
+    let resolved: ResolvedAssetContent | undefined;
 
     try {
+      resolved = await this.resolverRegistry.resolve(
+        imported.contentRef,
+        context,
+      );
       this.requireUnchangedProject(lifecycleVersion, projectId);
 
       if (resolved.contentStatus.availability !== 'available') {
@@ -143,16 +194,21 @@ export class AssetService implements AssetServiceApi {
 
       const normalizedRef = resolved.contentRef;
 
-      if (normalizedRef.kind !== LOCAL_FILE_CONTENT_KIND) {
+      if (
+        normalizedRef.kind !== LOCAL_FILE_CONTENT_KIND ||
+        !resolved.location
+      ) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
       const mediaType = await this.dependencies.detectMediaType(
-        normalizedRef.path,
+        resolved.location.absolutePath,
       );
       this.requireUnchangedProject(lifecycleVersion, projectId);
       const asset = this.assetDatabase.add({
-        name: this.dependencies.createDefaultName(normalizedRef.path),
+        name: this.dependencies.createDefaultName(
+          resolved.location.absolutePath,
+        ),
         mediaType,
         contentRef: normalizedRef,
       });
@@ -160,8 +216,17 @@ export class AssetService implements AssetServiceApi {
       this.runtimeMap.set(asset.id, snapshot);
 
       return cloneAssetSnapshot(snapshot);
+    } catch (error) {
+      if (imported.copiedAbsolutePath) {
+        await this.workspaceManager
+          .removeImportedFile(imported.copiedAbsolutePath)
+          .catch((cleanupError: unknown) => {
+            console.error('清理导入失败的 Asset 文件失败', cleanupError);
+          });
+      }
+      throw error;
     } finally {
-      await resolved.handle?.close();
+      await resolved?.handle?.close();
     }
   }
 
@@ -186,7 +251,10 @@ export class AssetService implements AssetServiceApi {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
     const current = this.find(assetId);
-    const resolved = await this.resolverRegistry.resolve(current.contentRef);
+    const resolved = await this.resolverRegistry.resolve(
+      current.contentRef,
+      this.createResolveContext(projectId),
+    );
 
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
@@ -206,6 +274,7 @@ export class AssetService implements AssetServiceApi {
       current.map(async (snapshot) => {
         const content = await this.resolverRegistry.resolve(
           snapshot.contentRef,
+          this.createResolveContext(projectId),
         );
 
         try {
@@ -235,8 +304,15 @@ export class AssetService implements AssetServiceApi {
       throw new AppError('FEATURE_NOT_SUPPORTED');
     }
 
-    const contentRef = createLocalFileContentRef(newPath);
-    const resolved = await this.resolverRegistry.resolve(contentRef);
+    const context = this.createResolveContext(projectId);
+    const contentRef = await this.workspaceManager.classifyLocalFile(
+      context.projectWorkspace,
+      newPath,
+    );
+    const resolved = await this.resolverRegistry.resolve(
+      contentRef,
+      context,
+    );
 
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
@@ -245,16 +321,25 @@ export class AssetService implements AssetServiceApi {
         throw new AppError('ASSET_UNAVAILABLE');
       }
 
-      if (resolved.contentRef.kind !== LOCAL_FILE_CONTENT_KIND) {
+      if (
+        resolved.contentRef.kind !== LOCAL_FILE_CONTENT_KIND ||
+        !resolved.location
+      ) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
+      const currentPath = await this.workspaceManager.resolveLocalFile(
+        context.projectWorkspace,
+        current.contentRef,
+      );
+
       if (
-        resolved.contentRef.path !== current.contentRef.path &&
+        (resolved.contentRef.base !== current.contentRef.base ||
+          resolved.contentRef.path !== current.contentRef.path) &&
         !(await this.dependencies.isRelinkMediaCompatible(
           current.mediaType,
-          current.contentRef.path,
-          resolved.contentRef.path,
+          currentPath,
+          resolved.location.absolutePath,
         ))
       ) {
         throw new AppError('ASSET_MEDIA_TYPE_MISMATCH');
@@ -262,6 +347,7 @@ export class AssetService implements AssetServiceApi {
 
       this.requireUnchangedProject(lifecycleVersion, projectId);
       const asset =
+        resolved.contentRef.base === current.contentRef.base &&
         resolved.contentRef.path === current.contentRef.path
           ? current
           : this.assetDatabase.updateContentRef(
@@ -280,7 +366,10 @@ export class AssetService implements AssetServiceApi {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
     const asset = this.find(assetId);
-    const resolved = await this.resolverRegistry.resolve(asset.contentRef);
+    const resolved = await this.resolverRegistry.resolve(
+      asset.contentRef,
+      this.createResolveContext(projectId),
+    );
 
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
@@ -291,10 +380,30 @@ export class AssetService implements AssetServiceApi {
     }
   }
 
+  async revealInFolder(assetId: string): Promise<void> {
+    const resolved = await this.resolveContent(assetId);
+
+    try {
+      if (
+        resolved.contentStatus.availability !== 'available' ||
+        !resolved.location
+      ) {
+        throw new AppError('ASSET_UNAVAILABLE');
+      }
+
+      this.workspaceManager.revealFile(resolved.location.absolutePath);
+    } finally {
+      await resolved.handle?.close();
+    }
+  }
+
   private async resolveRuntimeSnapshot(
     asset: Asset,
   ): Promise<AssetSnapshot> {
-    const resolved = await this.resolverRegistry.resolve(asset.contentRef);
+    const resolved = await this.resolverRegistry.resolve(
+      asset.contentRef,
+      this.createResolveContext(asset.projectId),
+    );
 
     try {
       return createSnapshot(asset, resolved);
@@ -317,6 +426,19 @@ export class AssetService implements AssetServiceApi {
     if (this.requireActiveProjectId() !== projectId) {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
+  }
+
+  private createResolveContext(projectId: string): ContentResolveContext {
+    const project = this.projectLookup.get(projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+
+    return {
+      projectId,
+      projectWorkspace: project.workspacePath,
+    };
   }
 
   private find(assetId: string): AssetSnapshot {

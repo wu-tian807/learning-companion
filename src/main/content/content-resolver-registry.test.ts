@@ -3,8 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ContentCapability } from '../../shared/workbench/manifest';
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
-  createManagedJsonContentRef,
+  createAbsoluteLocalFileContentRef,
 } from './content-ref';
 import {
   ContentResolverRegistry,
@@ -12,8 +11,13 @@ import {
 } from './content-resolver-registry';
 
 describe('ContentResolverRegistry', () => {
+  const context = {
+    projectId: 'project',
+    projectWorkspace: '/tmp/project',
+  };
+
   it('dispatches a content ref to its registered kind', async () => {
-    const ref = createLocalFileContentRef('/tmp/notes.md');
+    const ref = createAbsoluteLocalFileContentRef('/tmp/notes.md');
     const resolve = vi.fn(async () => ({
       contentRef: ref,
       contentStatus: createAssetContentStatus(
@@ -33,11 +37,11 @@ describe('ContentResolverRegistry', () => {
 
     registry.register(resolver);
 
-    await expect(registry.resolve(ref)).resolves.toMatchObject({
+    await expect(registry.resolve(ref, context)).resolves.toMatchObject({
       contentRef: ref,
       contentStatus: { availability: 'available' },
     });
-    expect(resolve).toHaveBeenCalledWith(ref);
+    expect(resolve).toHaveBeenCalledWith(ref, context);
     expect(registry.has('local-file')).toBe(true);
   });
 
@@ -54,8 +58,12 @@ describe('ContentResolverRegistry', () => {
     registry.register(resolver);
 
     expect(() => registry.register(resolver)).toThrow('REGISTRATION_CONFLICT');
+    const unknownRegistry = new ContentResolverRegistry();
     await expect(
-      registry.resolve(createManagedJsonContentRef('content')),
+      unknownRegistry.resolve(
+        createAbsoluteLocalFileContentRef('/tmp/content'),
+        context,
+      ),
     ).rejects.toThrow('CONTENT_RESOLVER_NOT_FOUND');
   });
 });

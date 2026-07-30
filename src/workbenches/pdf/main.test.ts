@@ -5,7 +5,7 @@ import type { ContentHandle } from '../../main/content/content-handle';
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import {
   createAssetContentStatus,
-  createLocalFileContentRef,
+  createAbsoluteLocalFileContentRef,
 } from '../../main/content/content-ref';
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
@@ -63,7 +63,7 @@ function createContext(
     readonly selectionReason?: WorkbenchProviderContext['selectionReason'];
   } = {},
 ): WorkbenchProviderContext {
-  const contentRef = createLocalFileContentRef('/tmp/learning.pdf');
+  const contentRef = createAbsoluteLocalFileContentRef('/tmp/learning.pdf');
   const asset = createAssetSnapshot({
     id: 'asset',
     projectId: 'project',

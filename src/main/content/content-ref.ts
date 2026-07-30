@@ -8,23 +8,31 @@ import type {
 export interface ResolvedAssetContent {
   readonly contentRef: AssetContentRef;
   readonly contentStatus: AssetContentStatus;
+  readonly location?: ResolvedLocalFileLocation;
   readonly handle?: ContentHandle;
 }
 
+export interface ResolvedLocalFileLocation {
+  readonly kind: 'local-file';
+  readonly absolutePath: string;
+}
+
 export {
+  ABSOLUTE_CONTENT_BASE,
   cloneAssetContentRef,
   cloneAssetContentStatus,
+  createAbsoluteLocalFileContentRef,
   createAssetContentStatus,
-  createLocalFileContentRef,
-  createManagedJsonContentRef,
+  createProjectWorkspaceContentRef,
   LOCAL_FILE_CONTENT_KIND,
-  MANAGED_JSON_CONTENT_KIND,
+  PROJECT_WORKSPACE_CONTENT_BASE,
 } from '../../shared/assets';
 export type {
+  AbsoluteLocalFileContentRef,
   AssetAvailability as AssetContentAvailability,
   AssetContentKind,
   AssetContentRef,
   AssetContentStatus,
   LocalFileContentRef,
-  ManagedJsonContentRef,
+  ProjectWorkspaceLocalFileContentRef,
 } from '../../shared/assets';

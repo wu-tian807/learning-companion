@@ -1,5 +1,4 @@
-import { dialog, ipcMain } from 'electron';
-import { dirname } from 'node:path';
+import { ipcMain } from 'electron';
 
 import {
   IPC_CHANNELS,
@@ -10,10 +9,8 @@ import {
   isRenameAssetRequest,
   type AddLocalAssetsResult,
 } from '../../shared/ipc';
-import type { AssetShellServiceApi } from '../assets/asset-shell-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
-import type { SettingsRepository } from '../settings/settings-repository';
 import { registerIpcHandler } from './register-handler';
 
 function invalidRequest(): Error {
@@ -22,31 +19,17 @@ function invalidRequest(): Error {
 
 export function registerAssetHandlers(
   assetService: AssetServiceApi,
-  assetShellService: AssetShellServiceApi,
-  settingsRepository: SettingsRepository,
 ): void {
-  registerIpcHandler(IPC_CHANNELS.selectLocalAssetFiles, async () => {
-    const defaultPath =
-      settingsRepository.getLastLocalAssetDirectory();
-    const result = await dialog.showOpenDialog({
-      ...(defaultPath ? { defaultPath } : {}),
-      properties: ['openFile', 'multiSelections'],
-    });
+  registerIpcHandler(
+    IPC_CHANNELS.selectLocalAssetFiles,
+    async (_event, request: unknown) => {
+      if (!isProjectLifecycleRequest(request)) {
+        throw invalidRequest();
+      }
 
-    if (result.canceled || result.filePaths.length === 0) {
-      return [];
-    }
-
-    try {
-      await settingsRepository.updateLastLocalAssetDirectory(
-        dirname(result.filePaths[0]!),
-      );
-    } catch (error) {
-      console.warn('文件选择器最近目录保存失败。', error);
-    }
-
-    return result.filePaths;
-  });
+      return assetService.selectLocalFiles(request.projectId);
+    },
+  );
 
   registerIpcHandler(
     IPC_CHANNELS.addLocalAssets,
@@ -67,7 +50,11 @@ export function registerAssetHandlers(
       for (const path of request.paths) {
         try {
           result.added.push(
-            await assetService.addLocalFile(request.projectId, path),
+            await assetService.addLocalFile(
+              request.projectId,
+              path,
+              request.mode,
+            ),
           );
         } catch (error) {
           if (
@@ -152,12 +139,12 @@ export function registerAssetHandlers(
 
   registerIpcHandler(
     IPC_CHANNELS.revealAssetInFolder,
-    (_event, request: unknown) => {
+    async (_event, request: unknown) => {
       if (!isAssetIdRequest(request)) {
         throw invalidRequest();
       }
 
-      assetShellService.revealInFolder(request.assetId);
+      await assetService.revealInFolder(request.assetId);
     },
   );
 }

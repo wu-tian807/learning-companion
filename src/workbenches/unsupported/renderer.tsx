@@ -14,10 +14,7 @@ export function UnsupportedWorkbenchView({
   onRefresh,
 }: RendererWorkbenchViewProps) {
   const availability = bootstrap.availability;
-  const contentLocation =
-    asset.contentRef.kind === 'local-file'
-      ? asset.contentRef.path
-      : asset.contentRef.contentId;
+  const contentLocation = asset.contentRef.path;
 
   if (availability === 'available') {
     const payload = isUnsupportedWorkbenchPayload(bootstrap.payload)
