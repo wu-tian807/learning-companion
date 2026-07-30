@@ -48,8 +48,9 @@ export function NotificationStack({
 export function NotificationHost({
   store = notificationStore,
 }: NotificationHostProps) {
-  const notifications = useStore(store, (state) =>
-    state.notifications.slice(0, 3),
+  const notifications = useStore(
+    store,
+    (state) => state.notifications,
   );
 
   return <NotificationStack notifications={notifications} store={store} />;
