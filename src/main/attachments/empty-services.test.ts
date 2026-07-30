@@ -10,8 +10,8 @@ const attachment: AssetAttachment = {
   assetId: 'asset',
   typeId: 'user-note',
   typeVersion: 1,
-  payload: { text: '笔记' },
   target: { scope: 'asset' },
+  metadata: { text: '笔记' },
   createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
   updatedTime: Date.parse('2026-07-27T01:00:00.000Z'),
 };

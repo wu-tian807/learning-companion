@@ -4,7 +4,7 @@ import { AppError } from '../errors/app-error';
 export interface AttachmentTypeDefinition {
   readonly typeId: string;
   readonly version: number;
-  isPayload(value: JsonValue): boolean;
+  isMetadata(value: JsonValue): boolean;
 }
 
 function definitionKey(typeId: string, version: number): string {

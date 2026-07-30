@@ -10,7 +10,7 @@ describe('Attachment and Anchor registries', () => {
     const attachment = {
       typeId: 'user-note',
       version: 1,
-      isPayload: () => true,
+      isMetadata: () => true,
     };
     const anchor = {
       anchorType: 'markdown.text-range',
@@ -31,7 +31,7 @@ describe('Attachment and Anchor registries', () => {
     const definition = {
       typeId: 'highlight',
       version: 1,
-      isPayload: () => true,
+      isMetadata: () => true,
     };
 
     attachments.register(definition);
