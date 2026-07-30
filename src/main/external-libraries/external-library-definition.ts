@@ -6,15 +6,31 @@ export type ExternalLibraryPlatform = 'darwin' | 'win32';
 export type ExternalLibraryArchitecture = 'arm64' | 'x64';
 export type ExternalLibraryPackageType = 'dmg' | 'msi';
 
-export interface ExternalLibraryPackageDefinition {
+interface ExternalLibraryPackageDefinitionBase {
   readonly platform: ExternalLibraryPlatform;
   readonly architecture: ExternalLibraryArchitecture;
-  readonly packageType: ExternalLibraryPackageType;
   readonly downloadUrl: string;
   readonly sha256: string;
-  readonly expectedSize?: number;
+  readonly expectedSize: number;
   readonly executableRelativePath: string;
 }
+
+export interface ExternalLibraryDmgPackageDefinition
+  extends ExternalLibraryPackageDefinitionBase {
+  readonly platform: 'darwin';
+  readonly packageType: 'dmg';
+  readonly payloadRelativePath: string;
+}
+
+export interface ExternalLibraryMsiPackageDefinition
+  extends ExternalLibraryPackageDefinitionBase {
+  readonly platform: 'win32';
+  readonly packageType: 'msi';
+}
+
+export type ExternalLibraryPackageDefinition =
+  | ExternalLibraryDmgPackageDefinition
+  | ExternalLibraryMsiPackageDefinition;
 
 export interface ExternalLibraryDefinition {
   readonly id: string;
@@ -81,17 +97,17 @@ export function isExternalLibraryPackageDefinition(
     !isHttpsUrl(value.downloadUrl) ||
     typeof value.sha256 !== 'string' ||
     !/^[a-f0-9]{64}$/u.test(value.sha256) ||
-    !isPortableWorkspaceRelativePath(value.executableRelativePath)
+    !isPortableWorkspaceRelativePath(value.executableRelativePath) ||
+    typeof value.expectedSize !== 'number' ||
+    !Number.isSafeInteger(value.expectedSize) ||
+    value.expectedSize <= 0 ||
+    (value.packageType === 'dmg' &&
+      !isPortableWorkspaceRelativePath(value.payloadRelativePath))
   ) {
     return false;
   }
 
-  return (
-    value.expectedSize === undefined ||
-    (typeof value.expectedSize === 'number' &&
-      Number.isSafeInteger(value.expectedSize) &&
-      value.expectedSize > 0)
-  );
+  return true;
 }
 
 export function isExternalLibraryDefinition(
@@ -126,17 +142,27 @@ export function isExternalLibraryDefinition(
 function clonePackage(
   value: ExternalLibraryPackageDefinition,
 ): ExternalLibraryPackageDefinition {
-  return Object.freeze({
+  const base = {
     platform: value.platform,
     architecture: value.architecture,
-    packageType: value.packageType,
     downloadUrl: value.downloadUrl.trim(),
     sha256: value.sha256,
-    ...(value.expectedSize === undefined
-      ? {}
-      : { expectedSize: value.expectedSize }),
+    expectedSize: value.expectedSize,
     executableRelativePath: value.executableRelativePath,
-  });
+  } as const;
+
+  return value.packageType === 'dmg'
+    ? Object.freeze({
+        ...base,
+        packageType: 'dmg',
+        platform: 'darwin',
+        payloadRelativePath: value.payloadRelativePath,
+      })
+    : Object.freeze({
+        ...base,
+        packageType: 'msi',
+        platform: 'win32',
+      });
 }
 
 export function cloneExternalLibraryDefinition(

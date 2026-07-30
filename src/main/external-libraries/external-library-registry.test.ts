@@ -23,6 +23,7 @@ function createDefinition() {
         expectedSize: 300_000_000,
         executableRelativePath:
           'LibreOffice.app/Contents/MacOS/soffice',
+        payloadRelativePath: 'LibreOffice.app',
       },
       {
         platform: 'win32' as const,
@@ -30,6 +31,7 @@ function createDefinition() {
         packageType: 'msi' as const,
         downloadUrl: 'https://download.example/libreoffice.msi',
         sha256: 'b'.repeat(64),
+        expectedSize: 300_000_000,
         executableRelativePath: 'program/soffice.exe',
       },
     ],

@@ -25,8 +25,10 @@ function createDefinition() {
     packageType: 'dmg' as const,
     downloadUrl: 'https://download.example/libreoffice.dmg',
     sha256: 'a'.repeat(64),
+    expectedSize: 300_000_000,
     executableRelativePath:
       'LibreOffice.app/Contents/MacOS/soffice',
+    payloadRelativePath: 'LibreOffice.app',
   };
   return {
     definition: {
