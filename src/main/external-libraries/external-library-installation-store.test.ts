@@ -51,7 +51,7 @@ async function createInstallationDirectory(): Promise<string> {
     join(tmpdir(), 'learning-companion-runtime-store-'),
   );
   temporaryDirectories.push(directory);
-  return directory;
+  return join(directory, 'installation');
 }
 
 afterEach(async () => {
@@ -76,6 +76,7 @@ describe('ExternalLibraryInstallationStore', () => {
     await writeFile(executablePath, '#!/bin/sh\nexit 0\n');
     await chmod(executablePath, 0o755);
     const store = new ExternalLibraryInstallationStore();
+    await mkdir(installationDirectory, { recursive: true });
     const marker = createExternalLibraryInstallationMarker({
       definition,
       packageDefinition,
@@ -110,6 +111,18 @@ describe('ExternalLibraryInstallationStore', () => {
         packageDefinition,
       ),
     ).resolves.toEqual({ status: 'not-installed' });
+
+    await mkdir(installationDirectory);
+    await expect(
+      store.inspect(
+        installationDirectory,
+        definition,
+        packageDefinition,
+      ),
+    ).resolves.toEqual({
+      status: 'invalid',
+      reason: 'marker-invalid',
+    });
 
     await writeFile(
       join(installationDirectory, 'installation.json'),

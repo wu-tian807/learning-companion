@@ -31,6 +31,7 @@ export interface ExternalLibraryDownloaderApi {
     readonly onProgress?: (
       progress: ExternalLibraryDownloadProgress,
     ) => void;
+    readonly onVerifying?: () => void;
   }): Promise<ExternalLibraryDownloadResult>;
 }
 
@@ -114,6 +115,7 @@ export class ExternalLibraryDownloader
     readonly onProgress?: (
       progress: ExternalLibraryDownloadProgress,
     ) => void;
+    readonly onVerifying?: () => void;
   }): Promise<ExternalLibraryDownloadResult> {
     const destinationPath = requireDestinationPath(
       input.destinationPath,
@@ -192,6 +194,7 @@ export class ExternalLibraryDownloader
         });
       }
 
+      input.onVerifying?.();
       const sha256 = hash.digest('hex');
 
       if (

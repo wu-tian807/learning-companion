@@ -202,7 +202,19 @@ export class ExternalLibraryInstallationStore {
       );
     } catch (error) {
       if (isFileNotFoundError(error)) {
-        return Object.freeze({ status: 'not-installed' });
+        try {
+          await lstat(installationDirectory);
+          return Object.freeze({
+            status: 'invalid',
+            reason: 'marker-invalid',
+          });
+        } catch (directoryError) {
+          if (isFileNotFoundError(directoryError)) {
+            return Object.freeze({ status: 'not-installed' });
+          }
+
+          throw directoryError;
+        }
       }
 
       if (error instanceof SyntaxError) {
