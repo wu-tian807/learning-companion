@@ -14,6 +14,12 @@ import {
   externalLibraryStore,
   type ExternalLibraryStore,
 } from '../external-libraries/external-library-store';
+import {
+  externalLibraryProgressPercent,
+  externalLibraryStatusLabels,
+  formatExternalLibrarySize,
+  isExternalLibraryActive,
+} from '../external-libraries/external-library-view';
 import type { SettingsTarget } from '../settings/settings-target';
 import { ErrorDialog } from './ErrorDialog';
 
@@ -21,32 +27,6 @@ interface SettingsDialogProps {
   readonly onClose: () => void;
   readonly target?: SettingsTarget;
   readonly store?: ExternalLibraryStore;
-}
-
-const activeStatuses = new Set<ExternalLibrarySnapshot['status']>([
-  'discovering',
-  'downloading',
-  'verifying',
-  'installing',
-  'migrating',
-]);
-
-const statusLabels: Record<ExternalLibrarySnapshot['status'], string> = {
-  'not-installed': '尚未安装',
-  discovering: '正在检查',
-  downloading: '正在下载',
-  verifying: '正在校验',
-  installing: '正在安装',
-  available: '可用',
-  invalid: '安装异常',
-  migrating: '正在迁移',
-  failed: '操作失败',
-  unsupported: '当前平台暂不支持',
-};
-
-function formatExternalLibrarySize(bytes: number): string {
-  const megabytes = bytes / (1024 * 1024);
-  return `${megabytes >= 100 ? megabytes.toFixed(0) : megabytes.toFixed(1)} MB`;
 }
 
 function CloseIcon() {
@@ -170,7 +150,7 @@ export function SettingsDialog({
   const targetedLibraryRef = useRef<HTMLElement>(null);
   const rootPath = libraries[0]?.rootPath;
   const hasActiveTask = useMemo(
-    () => libraries.some(({ status }) => activeStatuses.has(status)),
+    () => libraries.some(({ status }) => isExternalLibraryActive(status)),
     [libraries],
   );
   const pendingConfirmationRequest =
@@ -414,17 +394,12 @@ export function SettingsDialog({
 
             {!loading &&
               libraries.map((library) => {
-                const active = activeStatuses.has(library.status);
+                const active = isExternalLibraryActive(library.status);
                 const targeted =
                   target?.section === 'external-libraries' &&
                   target.libraryId === library.id;
-                const progress = library.progress
-                  ? Math.round(
-                      (library.progress.completedBytes /
-                        library.progress.totalBytes) *
-                        100,
-                    )
-                  : undefined;
+                const progress =
+                  externalLibraryProgressPercent(library);
 
                 return (
                   <article
@@ -455,7 +430,7 @@ export function SettingsDialog({
                                   : 'bg-white/[0.06] text-slate-400'
                             }`}
                           >
-                            {statusLabels[library.status]}
+                            {externalLibraryStatusLabels[library.status]}
                           </span>
                         </div>
                         <p className="mt-2 text-xs leading-5 text-slate-500">
@@ -539,7 +514,7 @@ export function SettingsDialog({
                           />
                         </div>
                         <p className="mt-2 text-[11px] text-slate-500">
-                          {statusLabels[library.status]}
+                          {externalLibraryStatusLabels[library.status]}
                           {progress === undefined ? '' : ` · ${progress}%`}
                         </p>
                       </div>
