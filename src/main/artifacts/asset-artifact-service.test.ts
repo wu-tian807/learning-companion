@@ -165,9 +165,19 @@ describe('AssetArtifactService', () => {
     );
     const harness = await createHarness(createProducer(produce));
 
+    await expect(
+      harness.service.getCached(createRequest(harness)),
+    ).resolves.toBeUndefined();
     const first = await harness.service.getOrCreate(
       createRequest(harness),
     );
+    await expect(
+      harness.service.getCached(createRequest(harness)),
+    ).resolves.toMatchObject({
+      artifact: first.artifact,
+      absolutePath: first.absolutePath,
+      cacheHit: true,
+    });
     const cached = await harness.service.getOrCreate(
       createRequest(harness),
     );

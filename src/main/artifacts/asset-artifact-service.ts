@@ -31,6 +31,9 @@ export interface ResolvedAssetArtifact {
 }
 
 export interface AssetArtifactServiceApi {
+  getCached(
+    request: AssetArtifactRequest,
+  ): Promise<ResolvedAssetArtifact | undefined>;
   getOrCreate(
     request: AssetArtifactRequest,
     signal?: AbortSignal,
@@ -144,6 +147,14 @@ export class AssetArtifactService
   ) {
     this.now = dependencies.now ?? Date.now;
     this.logger = dependencies.logger ?? console;
+  }
+
+  async getCached(
+    request: AssetArtifactRequest,
+  ): Promise<ResolvedAssetArtifact | undefined> {
+    const normalized = normalizeRequest(request);
+    const producer = this.registry.require(normalized.producerId);
+    return this.resolveCached(normalized, producer);
   }
 
   async getOrCreate(
