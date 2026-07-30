@@ -237,6 +237,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     if (current.status === "available") {
       return current;
     }
+    if (current.status === "unsupported") {
+      throw new AppError("FEATURE_NOT_SUPPORTED");
+    }
     if (current.status === "invalid") {
       throw new AppError("EXTERNAL_LIBRARY_CONFLICT");
     }
@@ -296,6 +299,10 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
           throw error;
         }
       });
+    }
+
+    if (!this.findPackage(definition)) {
+      return this.refreshDefinition(definition);
     }
 
     const packageDefinition = this.selectPackage(definition);
@@ -368,6 +375,11 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
 
   private async initializeDefinitions(): Promise<void> {
     for (const definition of this.registry.list()) {
+      if (!this.findPackage(definition)) {
+        this.updateSnapshot(definition, "unsupported");
+        continue;
+      }
+
       this.updateSnapshot(definition, "discovering");
 
       try {
@@ -383,7 +395,12 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   private async refreshDefinition(
     definition: ExternalLibraryDefinition,
   ): Promise<ExternalLibrarySnapshot> {
-    const packageDefinition = this.selectPackage(definition);
+    const packageDefinition = this.findPackage(definition);
+
+    if (!packageDefinition) {
+      return this.updateSnapshot(definition, "unsupported");
+    }
+
     const inspection = await this.inspect(definition, packageDefinition);
     return this.applyInspection(definition, packageDefinition, inspection);
   }
@@ -545,41 +562,52 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       throw new AppError("EXTERNAL_LIBRARY_MIGRATION_FAILED");
     }
 
-    const entries = await Promise.all(
-      this.registry.list().map(async (definition): Promise<MigrationEntry> => {
-        const packageDefinition = this.selectPackage(definition);
-        const sourcePaths = this.pathManager.resolveInstallationPaths(
-          sourceRootPath,
-          definition,
-          packageDefinition,
-        );
-        const targetPaths = this.pathManager.resolveInstallationPaths(
-          normalizedTargetRootPath,
-          definition,
-          packageDefinition,
-        );
-        const [sourceInspection, targetInspection] =
-          await Promise.all([
-            this.installationStore.inspect(
-              sourcePaths.installationDirectory,
-              definition,
-              packageDefinition,
-            ),
-            this.installationStore.inspect(
-              targetPaths.installationDirectory,
-              definition,
-              packageDefinition,
-            ),
-          ]);
+    const entryTasks: Promise<MigrationEntry>[] = [];
 
-        return {
-          definition,
-          packageDefinition,
-          sourceInspection,
-          targetInspection,
-        };
-      }),
-    );
+    for (const definition of this.registry.list()) {
+      const packageDefinition = this.findPackage(definition);
+
+      if (!packageDefinition) {
+        continue;
+      }
+
+      entryTasks.push(
+        (async (): Promise<MigrationEntry> => {
+          const sourcePaths = this.pathManager.resolveInstallationPaths(
+            sourceRootPath,
+            definition,
+            packageDefinition,
+          );
+          const targetPaths = this.pathManager.resolveInstallationPaths(
+            normalizedTargetRootPath,
+            definition,
+            packageDefinition,
+          );
+          const [sourceInspection, targetInspection] =
+            await Promise.all([
+              this.installationStore.inspect(
+                sourcePaths.installationDirectory,
+                definition,
+                packageDefinition,
+              ),
+              this.installationStore.inspect(
+                targetPaths.installationDirectory,
+                definition,
+                packageDefinition,
+              ),
+            ]);
+
+          return {
+            definition,
+            packageDefinition,
+            sourceInspection,
+            targetInspection,
+          };
+        })(),
+      );
+    }
+
+    const entries = await Promise.all(entryTasks);
     const conflicts: ExternalLibraryMigrationConflict[] =
       entries.flatMap((entry) => {
         if (
@@ -612,8 +640,8 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       });
     }
 
-    for (const definition of this.registry.list()) {
-      this.updateSnapshot(definition, "migrating");
+    for (const entry of entries) {
+      this.updateSnapshot(entry.definition, "migrating");
     }
 
     const stagedEntries: StagedMigrationEntry[] = [];
@@ -763,6 +791,16 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     );
   }
 
+  private findPackage(
+    definition: ExternalLibraryDefinition,
+  ): ExternalLibraryPackageDefinition | undefined {
+    return this.registry.findPackage(
+      definition.id,
+      this.platform,
+      this.architecture,
+    );
+  }
+
   private updateSnapshot(
     definition: ExternalLibraryDefinition,
     status: ExternalLibraryStatus,
@@ -771,12 +809,22 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       "installationPath" | "progress" | "errorCode"
     > = {},
   ): ExternalLibrarySnapshot {
-    const packageDefinition = this.selectPackage(definition);
+    const packageDefinition = this.findPackage(definition);
+
+    if (
+      (status === "unsupported" && packageDefinition) ||
+      (status !== "unsupported" && !packageDefinition)
+    ) {
+      throw new AppError("DATA_INTEGRITY_ERROR");
+    }
+
     const snapshot = cloneExternalLibrarySnapshot({
       id: definition.id,
       displayName: definition.displayName,
       version: definition.version,
-      expectedSize: packageDefinition.expectedSize,
+      ...(packageDefinition
+        ? { expectedSize: packageDefinition.expectedSize }
+        : {}),
       rootPath: this.settings.getExternalLibrariesPath(),
       status,
       ...(changes.installationPath === undefined

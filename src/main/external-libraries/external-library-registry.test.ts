@@ -57,6 +57,9 @@ describe('ExternalLibraryRegistry', () => {
     expect(Object.isFrozen(definition)).toBe(true);
     expect(Object.isFrozen(definition.packages)).toBe(true);
     expect(packageDefinition.packageType).toBe('dmg');
+    expect(
+      registry.findPackage('libreoffice', 'win32', 'arm64'),
+    ).toBeUndefined();
   });
 
   it('rejects duplicate, insecure and ambiguous Definitions', () => {

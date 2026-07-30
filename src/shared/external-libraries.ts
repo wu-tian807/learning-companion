@@ -9,7 +9,8 @@ export type ExternalLibraryStatus =
   | 'available'
   | 'invalid'
   | 'migrating'
-  | 'failed';
+  | 'failed'
+  | 'unsupported';
 
 export interface ExternalLibraryProgress {
   readonly completedBytes: number;
@@ -20,7 +21,7 @@ export interface ExternalLibrarySnapshot {
   readonly id: string;
   readonly displayName: string;
   readonly version: string;
-  readonly expectedSize: number;
+  readonly expectedSize?: number;
   readonly rootPath: string;
   readonly status: ExternalLibraryStatus;
   readonly installationPath?: string;
@@ -66,7 +67,8 @@ export function isExternalLibraryStatus(
     value === 'available' ||
     value === 'invalid' ||
     value === 'migrating' ||
-    value === 'failed'
+    value === 'failed' ||
+    value === 'unsupported'
   );
 }
 
@@ -78,11 +80,18 @@ export function isExternalLibrarySnapshot(
     !isRequiredText(value.id) ||
     !isRequiredText(value.displayName) ||
     !isRequiredText(value.version) ||
-    typeof value.expectedSize !== 'number' ||
-    !Number.isSafeInteger(value.expectedSize) ||
-    value.expectedSize <= 0 ||
     !isAbsoluteFileSystemPath(value.rootPath) ||
     !isExternalLibraryStatus(value.status)
+  ) {
+    return false;
+  }
+
+  if (
+    value.status === 'unsupported'
+      ? value.expectedSize !== undefined
+      : typeof value.expectedSize !== 'number' ||
+        !Number.isSafeInteger(value.expectedSize) ||
+        value.expectedSize <= 0
   ) {
     return false;
   }
@@ -125,7 +134,9 @@ export function cloneExternalLibrarySnapshot(
     id: value.id.trim(),
     displayName: value.displayName.trim(),
     version: value.version.trim(),
-    expectedSize: value.expectedSize,
+    ...(value.expectedSize === undefined
+      ? {}
+      : { expectedSize: value.expectedSize }),
     rootPath: value.rootPath.trim(),
     status: value.status,
     ...(value.installationPath === undefined

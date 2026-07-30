@@ -16,6 +16,10 @@ import {
 import { ExternalLibraryPathManager } from "./external-library-path-manager";
 import { ExternalLibraryRegistry } from "./external-library-registry";
 import { ExternalLibraryService } from "./external-library-service";
+import type {
+  ExternalLibraryArchitecture,
+  ExternalLibraryPlatform,
+} from "./external-library-definition";
 
 const temporaryDirectories: string[] = [];
 
@@ -72,6 +76,8 @@ function createSettings(rootPath: string): SettingsRepository {
 
 async function createHarness(input?: {
   readonly downloader?: ConstructorParameters<typeof ExternalLibraryService>[4];
+  readonly platform?: ExternalLibraryPlatform;
+  readonly architecture?: ExternalLibraryArchitecture;
 }): Promise<Harness> {
   const directory = await mkdtemp(
     join(tmpdir(), "learning-companion-runtime-service-"),
@@ -125,8 +131,8 @@ async function createHarness(input?: {
     downloader,
     installers,
     {
-      platform: "darwin",
-      architecture: "arm64",
+      platform: input?.platform ?? "darwin",
+      architecture: input?.architecture ?? "arm64",
       now: () => 10,
       logger: { warn: vi.fn() },
     },
@@ -282,6 +288,50 @@ describe("ExternalLibraryService", () => {
       access(join(paths.installationDirectory, "unknown.txt")),
     ).resolves.toBeUndefined();
     expect(harness.installer.install).not.toHaveBeenCalled();
+  });
+
+  it("exposes unsupported platforms without failing discovery or migration", async () => {
+    const harness = await createHarness({
+      platform: "win32",
+      architecture: "arm64",
+    });
+    const statuses: string[] = [];
+    harness.service.subscribe((snapshot) => {
+      statuses.push(snapshot.status);
+    });
+
+    await harness.service.initialize();
+
+    expect(harness.service.list()).toEqual([
+      {
+        id: "libreoffice",
+        displayName: "LibreOffice",
+        version: "25.2.5.2",
+        rootPath: harness.rootPath,
+        status: "unsupported",
+      },
+    ]);
+    expect(statuses).toEqual(["unsupported"]);
+    await expect(
+      harness.service.install("libreoffice"),
+    ).rejects.toThrow("FEATURE_NOT_SUPPORTED");
+    await expect(
+      harness.service.requireExecutable("libreoffice"),
+    ).rejects.toThrow("FEATURE_NOT_SUPPORTED");
+
+    const targetRootPath = join(dirname(harness.rootPath), "unsupported");
+    const result = await harness.service.migrate(targetRootPath);
+
+    expect(result).toMatchObject({
+      status: "completed",
+      rootPath: targetRootPath,
+      libraries: [
+        {
+          status: "unsupported",
+          rootPath: targetRootPath,
+        },
+      ],
+    });
   });
 
   it("deduplicates installation and supports cancellation", async () => {

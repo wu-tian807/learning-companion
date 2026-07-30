@@ -12,6 +12,11 @@ export interface ExternalLibraryRegistryApi {
   list(): readonly ExternalLibraryDefinition[];
   get(libraryId: string): ExternalLibraryDefinition | undefined;
   require(libraryId: string): ExternalLibraryDefinition;
+  findPackage(
+    libraryId: string,
+    platform: ExternalLibraryPlatform,
+    architecture: ExternalLibraryArchitecture,
+  ): ExternalLibraryPackageDefinition | undefined;
   selectPackage(
     libraryId: string,
     platform: ExternalLibraryPlatform,
@@ -71,11 +76,10 @@ export class ExternalLibraryRegistry
     platform: ExternalLibraryPlatform,
     architecture: ExternalLibraryArchitecture,
   ): ExternalLibraryPackageDefinition {
-    const definition = this.require(libraryId);
-    const packageDefinition = definition.packages.find(
-      (candidate) =>
-        candidate.platform === platform &&
-        candidate.architecture === architecture,
+    const packageDefinition = this.findPackage(
+      libraryId,
+      platform,
+      architecture,
     );
 
     if (!packageDefinition) {
@@ -83,5 +87,17 @@ export class ExternalLibraryRegistry
     }
 
     return packageDefinition;
+  }
+
+  findPackage(
+    libraryId: string,
+    platform: ExternalLibraryPlatform,
+    architecture: ExternalLibraryArchitecture,
+  ): ExternalLibraryPackageDefinition | undefined {
+    return this.require(libraryId).packages.find(
+      (candidate) =>
+        candidate.platform === platform &&
+        candidate.architecture === architecture,
+    );
   }
 }

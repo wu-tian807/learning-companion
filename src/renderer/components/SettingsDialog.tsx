@@ -30,6 +30,7 @@ const statusLabels: Record<ExternalLibrarySnapshot['status'], string> = {
   invalid: '安装异常',
   migrating: '正在迁移',
   failed: '操作失败',
+  unsupported: '当前平台暂不支持',
 };
 
 function formatExternalLibrarySize(bytes: number): string {
@@ -544,10 +545,11 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                           转换为可分页、可选中文字的 PDF 预览。
                         </p>
                         <p className="mt-1 text-[11px] text-slate-600">
-                          官方安装包约{' '}
-                          {formatExternalLibrarySize(
-                            library.expectedSize,
-                          )}
+                          {library.expectedSize === undefined
+                            ? '当前平台没有可下载的安装包'
+                            : `官方安装包约 ${formatExternalLibrarySize(
+                                library.expectedSize,
+                              )}`}
                         </p>
                       </div>
 
@@ -578,7 +580,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                               取消
                             </button>
                           ) : null
-                        ) : (
+                        ) : library.status === 'unsupported' ? null : (
                           <button
                             type="button"
                             disabled={operationBusy || hasActiveTask}
@@ -628,7 +630,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           )}
         </div>
 
-        {pendingInstall && (
+        {pendingInstall && pendingInstall.expectedSize !== undefined && (
           <ConfirmationPanel
             title={`安装 ${pendingInstall.displayName}？`}
             description={`将从官方网站下载约 ${formatExternalLibrarySize(

@@ -48,4 +48,31 @@ describe('ExternalLibrarySnapshot', () => {
       }),
     ).toBe(false);
   });
+
+  it('allows a missing package size only for unsupported platforms', () => {
+    const unsupported = cloneExternalLibrarySnapshot({
+      id: 'libreoffice',
+      displayName: 'LibreOffice',
+      version: '1',
+      rootPath: '/externalLib',
+      status: 'unsupported',
+    });
+
+    expect(unsupported).not.toHaveProperty('expectedSize');
+    expect(
+      isExternalLibrarySnapshot({
+        ...unsupported,
+        expectedSize: 10,
+      }),
+    ).toBe(false);
+    expect(
+      isExternalLibrarySnapshot({
+        id: 'libreoffice',
+        displayName: 'LibreOffice',
+        version: '1',
+        rootPath: '/externalLib',
+        status: 'not-installed',
+      }),
+    ).toBe(false);
+  });
 });
