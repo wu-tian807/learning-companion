@@ -1,15 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useStore } from 'zustand';
 
 import {
-  isExternalLibrarySnapshot,
   type ExternalLibraryMigrationConflict,
   type ExternalLibraryMigrationConflictResolution,
   type ExternalLibrarySnapshot,
 } from '../../shared/external-libraries';
 import { userMessageFromError } from '../../shared/ipc-error';
+import {
+  ExternalLibraryMigrationConflictDialog,
+} from '../external-libraries/ExternalLibraryMigrationConflictDialog';
+import {
+  externalLibraryStore,
+  type ExternalLibraryStore,
+} from '../external-libraries/external-library-store';
+import type { SettingsTarget } from '../settings/settings-target';
+import { ErrorDialog } from './ErrorDialog';
 
 interface SettingsDialogProps {
   readonly onClose: () => void;
+  readonly target?: SettingsTarget;
+  readonly store?: ExternalLibraryStore;
 }
 
 const activeStatuses = new Set<ExternalLibrarySnapshot['status']>([
@@ -36,21 +47,6 @@ const statusLabels: Record<ExternalLibrarySnapshot['status'], string> = {
 function formatExternalLibrarySize(bytes: number): string {
   const megabytes = bytes / (1024 * 1024);
   return `${megabytes >= 100 ? megabytes.toFixed(0) : megabytes.toFixed(1)} MB`;
-}
-
-function updateLibrary(
-  libraries: readonly ExternalLibrarySnapshot[],
-  snapshot: ExternalLibrarySnapshot,
-): ExternalLibrarySnapshot[] {
-  const index = libraries.findIndex(({ id }) => id === snapshot.id);
-
-  if (index < 0) {
-    return [...libraries, snapshot];
-  }
-
-  return libraries.map((library, libraryIndex) =>
-    libraryIndex === index ? snapshot : library,
-  );
 }
 
 function CloseIcon() {
@@ -137,72 +133,29 @@ function ConfirmationPanel({
   );
 }
 
-interface MigrationConflictPanelProps {
-  readonly targetPath: string;
-  readonly conflicts: readonly ExternalLibraryMigrationConflict[];
-  readonly busy: boolean;
-  readonly onCancel: () => void;
-  readonly onResolve: (
-    resolution: ExternalLibraryMigrationConflictResolution,
-  ) => void;
-}
-
-function MigrationConflictPanel({
-  targetPath,
-  conflicts,
-  busy,
-  onCancel,
-  onResolve,
-}: MigrationConflictPanelProps) {
-  return (
-    <div className="absolute inset-0 z-10 grid place-items-center rounded-[22px] bg-[#20242b]/94 p-6 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-[18px] border border-amber-200/15 bg-[#2a2f37] p-5 shadow-2xl">
-        <h3 className="text-base font-semibold text-slate-100">
-          目标位置已有同名组件
-        </h3>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          {conflicts.map(({ displayName }) => displayName).join('、')}
-          的目标目录已经存在。保留目标会跳过这些组件，并留下原目录中的文件；替换目标会使用当前已验证的组件。
-        </p>
-        <p className="mt-3 break-all rounded-xl bg-black/15 px-3 py-2 text-[11px] leading-5 text-slate-500">
-          {targetPath}
-        </p>
-        <div className="mt-6 flex flex-wrap justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-            className="ui-control h-9 rounded-full border border-white/[0.12] px-4 text-xs text-slate-300 disabled:opacity-40"
-          >
-            取消迁移
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onResolve('keep-target')}
-            className="ui-control h-9 rounded-full border border-white/[0.12] px-4 text-xs text-slate-200 disabled:opacity-40"
-          >
-            保留目标并跳过
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onResolve('replace-target')}
-            className="ui-primary-button h-9 rounded-full bg-slate-50 px-4 text-xs font-semibold text-slate-900 disabled:opacity-50"
-          >
-            {busy ? '迁移中…' : '替换目标'}
-          </button>
-        </div>
-      </div>
-    </div>
+export function SettingsDialog({
+  onClose,
+  target,
+  store = externalLibraryStore,
+}: SettingsDialogProps) {
+  const librariesById = useStore(
+    store,
+    (state) => state.librariesById,
   );
-}
-
-export function SettingsDialog({ onClose }: SettingsDialogProps) {
-  const [libraries, setLibraries] = useState<
-    readonly ExternalLibrarySnapshot[]
-  >([]);
-  const [loading, setLoading] = useState(true);
+  const loading = useStore(store, (state) => state.loading);
+  const loadError = useStore(store, (state) => state.loadError);
+  const requestPendingById = useStore(
+    store,
+    (state) => state.requestPendingById,
+  );
+  const migrationPending = useStore(
+    store,
+    (state) => state.migrationPending,
+  );
+  const libraries = useMemo(
+    () => [...librariesById.values()],
+    [librariesById],
+  );
   const [error, setError] = useState<string | null>(null);
   const [pendingInstall, setPendingInstall] =
     useState<ExternalLibrarySnapshot | null>(null);
@@ -214,64 +167,36 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [migrationConflicts, setMigrationConflicts] = useState<
     readonly ExternalLibraryMigrationConflict[]
   >([]);
-  const [operationBusy, setOperationBusy] = useState(false);
+  const targetedLibraryRef = useRef<HTMLElement>(null);
   const rootPath = libraries[0]?.rootPath;
   const hasActiveTask = useMemo(
     () => libraries.some(({ status }) => activeStatuses.has(status)),
     [libraries],
   );
+  const pendingConfirmationRequest =
+    (pendingInstall !== null &&
+      requestPendingById.has(pendingInstall.id)) ||
+    (pendingRemove !== null &&
+      requestPendingById.has(pendingRemove.id));
+  const blockingBusy = migrationPending || pendingConfirmationRequest;
 
   useEffect(() => {
-    let active = true;
-    const dispose = window.learningCompanion.onExternalLibraryChanged(
-      (snapshot) => {
-        if (active) {
-          setLibraries((current) => updateLibrary(current, snapshot));
-        }
-      },
-    );
-
-    void window.learningCompanion
-      .listExternalLibraries()
-      .then((snapshots) => {
-        if (
-          !Array.isArray(snapshots) ||
-          !snapshots.every(isExternalLibrarySnapshot)
-        ) {
-          throw new Error('外部组件状态响应无效');
-        }
-
-        if (active) {
-          setLibraries(snapshots);
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (active) {
-          setError(
-            userMessageFromError(
-              loadError,
-              '无法读取外部组件状态，请重试。',
-            ) ?? null,
-          );
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
+    if (
+      target?.section === 'external-libraries' &&
+      target.libraryId &&
+      librariesById.has(target.libraryId)
+    ) {
+      targetedLibraryRef.current?.scrollIntoView({
+        block: 'center',
       });
-
-    return () => {
-      active = false;
-      dispose();
-    };
-  }, []);
+    }
+  }, [librariesById, target]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (
         event.key === 'Escape' &&
-        !operationBusy &&
+        !blockingBusy &&
         !pendingInstall &&
         !pendingRemove &&
         migrationConflicts.length === 0
@@ -285,55 +210,45 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
   }, [
     migrationConflicts.length,
     onClose,
-    operationBusy,
+    blockingBusy,
     pendingInstall,
     pendingRemove,
   ]);
 
-  const runLibraryMutation = async (
-    operation: () => Promise<ExternalLibrarySnapshot>,
-    fallbackMessage: string,
+  const installLibrary = async (
+    library: ExternalLibrarySnapshot,
   ) => {
-    setOperationBusy(true);
     setError(null);
 
     try {
-      const snapshot = await operation();
-
-      if (!isExternalLibrarySnapshot(snapshot)) {
-        throw new Error('外部组件状态响应无效');
-      }
-
-      setLibraries((current) => updateLibrary(current, snapshot));
+      await store.getState().startInstallation(library.id);
+      setPendingInstall(null);
     } catch (operationError) {
       setError(
-        userMessageFromError(operationError, fallbackMessage) ?? null,
+        userMessageFromError(
+          operationError,
+          '外部组件安装请求失败，请重试。',
+        ) ?? null,
       );
-    } finally {
-      setOperationBusy(false);
     }
   };
 
-  const installLibrary = (library: ExternalLibrarySnapshot) => {
-    setPendingInstall(null);
-    void runLibraryMutation(
-      () =>
-        window.learningCompanion.startExternalLibraryInstallation({
-          libraryId: library.id,
-        }),
-      '外部组件安装失败，请重试。',
-    );
-  };
+  const removeLibrary = async (
+    library: ExternalLibrarySnapshot,
+  ) => {
+    setError(null);
 
-  const removeLibrary = (library: ExternalLibrarySnapshot) => {
-    setPendingRemove(null);
-    void runLibraryMutation(
-      () =>
-        window.learningCompanion.removeExternalLibrary({
-          libraryId: library.id,
-        }),
-      '无法移除外部组件，请重试。',
-    );
+    try {
+      await store.getState().removeLibrary(library.id);
+      setPendingRemove(null);
+    } catch (operationError) {
+      setError(
+        userMessageFromError(
+          operationError,
+          '无法移除外部组件，请重试。',
+        ) ?? null,
+      );
+    }
   };
 
   const cancelInstallation = async (
@@ -342,9 +257,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     setError(null);
 
     try {
-      await window.learningCompanion.cancelExternalLibrary({
-        libraryId: library.id,
-      });
+      await store.getState().cancelInstallation(library.id);
     } catch (cancelError) {
       setError(
         userMessageFromError(
@@ -359,15 +272,13 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     targetPath: string,
     conflictResolution?: ExternalLibraryMigrationConflictResolution,
   ) => {
-    setOperationBusy(true);
     setError(null);
 
     try {
-      const result =
-        await window.learningCompanion.migrateExternalLibraries({
-          targetPath,
-          conflictResolution,
-        });
+      const result = await store.getState().migrateLibraries(
+        targetPath,
+        conflictResolution,
+      );
 
       if (result.status === 'conflict') {
         setMigrationTarget(result.rootPath);
@@ -375,7 +286,6 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
         return;
       }
 
-      setLibraries(result.libraries);
       setMigrationTarget(null);
       setMigrationConflicts([]);
     } catch (migrationError) {
@@ -385,8 +295,6 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           '外部组件迁移失败，应用仍将使用原位置。',
         ) ?? null,
       );
-    } finally {
-      setOperationBusy(false);
     }
   };
 
@@ -394,8 +302,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     setError(null);
 
     try {
-      const selected =
-        await window.learningCompanion.selectExternalLibrariesDirectory();
+      const selected = await store.getState().selectDirectory();
 
       if (selected) {
         await migrate(selected);
@@ -416,7 +323,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
       onMouseDown={(event) => {
         if (
           event.target === event.currentTarget &&
-          !operationBusy &&
+          !blockingBusy &&
           !pendingInstall &&
           !pendingRemove &&
           migrationConflicts.length === 0
@@ -446,7 +353,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           <button
             type="button"
             aria-label="关闭设置"
-            disabled={operationBusy}
+            disabled={blockingBusy}
             onClick={onClose}
             className="ui-icon-button grid size-9 place-items-center rounded-full text-slate-500 disabled:opacity-40"
           >
@@ -468,7 +375,10 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               <button
                 type="button"
                 disabled={
-                  loading || operationBusy || hasActiveTask || !rootPath
+                  loading ||
+                  migrationPending ||
+                  hasActiveTask ||
+                  !rootPath
                 }
                 onClick={() => {
                   void selectMigrationTarget();
@@ -505,6 +415,9 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             {!loading &&
               libraries.map((library) => {
                 const active = activeStatuses.has(library.status);
+                const targeted =
+                  target?.section === 'external-libraries' &&
+                  target.libraryId === library.id;
                 const progress = library.progress
                   ? Math.round(
                       (library.progress.completedBytes /
@@ -516,7 +429,12 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                 return (
                   <article
                     key={library.id}
-                    className="mt-4 rounded-2xl border border-white/[0.09] bg-white/[0.025] p-4.5"
+                    ref={targeted ? targetedLibraryRef : undefined}
+                    className={`mt-4 rounded-2xl border bg-white/[0.025] p-4.5 transition ${
+                      targeted
+                        ? 'border-indigo-300/35 ring-2 ring-indigo-300/10'
+                        : 'border-white/[0.09]'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
@@ -558,7 +476,11 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                         library.status === 'invalid' ? (
                           <button
                             type="button"
-                            disabled={operationBusy || hasActiveTask}
+                            disabled={
+                              migrationPending ||
+                              hasActiveTask ||
+                              requestPendingById.has(library.id)
+                            }
                             onClick={() => setPendingRemove(library)}
                             className="ui-control h-9 rounded-full border border-white/[0.1] px-3.5 text-xs text-slate-400 disabled:opacity-40"
                           >
@@ -572,18 +494,25 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                           library.status === 'installing' ? (
                             <button
                               type="button"
+                              disabled={requestPendingById.has(library.id)}
                               onClick={() => {
                                 void cancelInstallation(library);
                               }}
-                              className="ui-control h-9 rounded-full border border-white/[0.1] px-3.5 text-xs text-slate-300"
+                              className="ui-control h-9 rounded-full border border-white/[0.1] px-3.5 text-xs text-slate-300 disabled:opacity-40"
                             >
-                              取消
+                              {requestPendingById.has(library.id)
+                                ? '取消中…'
+                                : '取消'}
                             </button>
                           ) : null
                         ) : library.status === 'unsupported' ? null : (
                           <button
                             type="button"
-                            disabled={operationBusy || hasActiveTask}
+                            disabled={
+                              migrationPending ||
+                              hasActiveTask ||
+                              requestPendingById.has(library.id)
+                            }
                             onClick={() => setPendingInstall(library)}
                             className="ui-primary-button h-9 rounded-full bg-slate-50 px-4 text-xs font-semibold text-slate-900 disabled:opacity-40"
                           >
@@ -620,13 +549,23 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               })}
           </section>
 
-          {error && (
-            <p
+          {loadError && (
+            <div
               role="alert"
-              className="mt-4 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-3.5 py-3 text-xs leading-5 text-rose-200"
+              className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-3.5 py-3 text-xs leading-5 text-rose-200"
             >
-              {error}
-            </p>
+              <span>{loadError}</span>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  void store.getState().reload();
+                }}
+                className="ui-control h-8 shrink-0 rounded-full border border-rose-200/15 px-3 text-xs disabled:opacity-40"
+              >
+                重试
+              </button>
+            </div>
           )}
         </div>
 
@@ -637,9 +576,11 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               pendingInstall.expectedSize,
             )} 的安装包，并安装到“${pendingInstall.rootPath}”。如需更换磁盘，请先取消并使用“更换位置”。`}
             confirmLabel="下载并安装"
-            busy={operationBusy}
+            busy={requestPendingById.has(pendingInstall.id)}
             onCancel={() => setPendingInstall(null)}
-            onConfirm={() => installLibrary(pendingInstall)}
+            onConfirm={() => {
+              void installLibrary(pendingInstall);
+            }}
           />
         )}
 
@@ -649,17 +590,19 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             description="这只会删除应用管理的外部组件，不会删除 Project、资料或已经生成的预览缓存。需要时可以重新下载。"
             confirmLabel="确认移除"
             danger
-            busy={operationBusy}
+            busy={requestPendingById.has(pendingRemove.id)}
             onCancel={() => setPendingRemove(null)}
-            onConfirm={() => removeLibrary(pendingRemove)}
+            onConfirm={() => {
+              void removeLibrary(pendingRemove);
+            }}
           />
         )}
 
         {migrationTarget && migrationConflicts.length > 0 && (
-          <MigrationConflictPanel
+          <ExternalLibraryMigrationConflictDialog
             targetPath={migrationTarget}
             conflicts={migrationConflicts}
-            busy={operationBusy}
+            busy={migrationPending}
             onCancel={() => {
               setMigrationTarget(null);
               setMigrationConflicts([]);
@@ -670,6 +613,9 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           />
         )}
       </section>
+      {error && (
+        <ErrorDialog message={error} onClose={() => setError(null)} />
+      )}
     </div>
   );
 }

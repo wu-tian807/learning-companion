@@ -48,6 +48,18 @@ export interface ExternalLibraryRendererState {
 export type ExternalLibraryStore =
   StoreApi<ExternalLibraryRendererState>;
 
+export interface ExternalLibraryStoreInitialState {
+  readonly librariesById?: ReadonlyMap<
+    string,
+    ExternalLibrarySnapshot
+  >;
+  readonly initialized?: boolean;
+  readonly loading?: boolean;
+  readonly loadError?: string;
+  readonly requestPendingById?: ReadonlySet<string>;
+  readonly migrationPending?: boolean;
+}
+
 export interface ExternalLibraryRendererApi {
   listExternalLibraries(): Promise<ExternalLibrarySnapshot[]>;
   refreshExternalLibrary(request: {
@@ -129,6 +141,7 @@ function requireMigrationResult(
 
 export function createExternalLibraryStore(
   api: ExternalLibraryRendererApi = defaultApi,
+  initialState: ExternalLibraryStoreInitialState = {},
 ): ExternalLibraryStore {
   const revisions = new Map<string, number>();
   const transitionListeners =
@@ -267,11 +280,16 @@ export function createExternalLibraryStore(
   };
 
   const store = createStore<ExternalLibraryRendererState>(() => ({
-    librariesById: new Map(),
-    initialized: false,
-    loading: false,
-    requestPendingById: new Set(),
-    migrationPending: false,
+    librariesById: new Map(initialState.librariesById ?? []),
+    initialized: initialState.initialized ?? false,
+    loading: initialState.loading ?? false,
+    ...(initialState.loadError
+      ? { loadError: initialState.loadError }
+      : {}),
+    requestPendingById: new Set(
+      initialState.requestPendingById ?? [],
+    ),
+    migrationPending: initialState.migrationPending ?? false,
 
     connect(listener) {
       if (listener) {

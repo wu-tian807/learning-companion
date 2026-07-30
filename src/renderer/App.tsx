@@ -44,7 +44,10 @@ export function App() {
         />
       )}
       {settingsTarget && (
-        <SettingsDialog onClose={() => setSettingsTarget(null)} />
+        <SettingsDialog
+          target={settingsTarget}
+          onClose={() => setSettingsTarget(null)}
+        />
       )}
       <NotificationHost />
     </>
