@@ -1,12 +1,17 @@
 import Vditor from 'vditor';
 
+import {
+  markdownRuntimeLoader,
+  type MarkdownRuntimeLoaderApi,
+} from './markdown-runtime-loader';
+
 export interface MarkdownEditorAdapterOptions {
   readonly host: HTMLElement;
   readonly initialValue: string;
   readonly initialScrollTop: number;
   readonly outlineVisible: boolean;
   readonly resourceBaseUrl?: string;
-  readonly onReady: () => void;
+  readonly readyTimeoutMs?: number;
   readonly onInput: (value: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpenExternal: (url: string) => void;
@@ -14,16 +19,28 @@ export interface MarkdownEditorAdapterOptions {
   readonly signal?: AbortSignal;
 }
 
-type MermaidRuntime = {
-  initialize(options: Record<string, unknown>): void;
-};
+type VditorOptions = NonNullable<
+  ConstructorParameters<typeof Vditor>[1]
+>;
 
-type StrictMermaidRuntime = MermaidRuntime & {
-  __learningCompanionStrict?: true;
-};
+export interface MarkdownEditorAdapterDependencies {
+  readonly runtimeLoader: MarkdownRuntimeLoaderApi;
+  readonly createEditor: (
+    host: HTMLElement,
+    options: VditorOptions,
+  ) => Vditor;
+  readonly requestFrame: (callback: FrameRequestCallback) => number;
+  readonly cancelFrame: (handle: number) => void;
+}
 
-let mermaidRuntimePromise: Promise<void> | undefined;
-let iconRuntimePromise: Promise<void> | undefined;
+const DEFAULT_READY_TIMEOUT_MS = 10_000;
+
+const defaultEditorDependencies: MarkdownEditorAdapterDependencies = {
+  runtimeLoader: markdownRuntimeLoader,
+  createEditor: (host, options) => new Vditor(host, options),
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (handle) => cancelAnimationFrame(handle),
+};
 
 export const MARKDOWN_PREVIEW_RENDER_POLICY = Object.freeze({
   media: Object.freeze({ enable: false }),
@@ -200,169 +217,6 @@ export function resolveVditorResourceBaseUrl(
   return trimTrailingSlash(new URL('vendor/vditor/', baseUri).toString());
 }
 
-function getMermaidRuntime(): StrictMermaidRuntime | undefined {
-  const candidate = (
-    globalThis as typeof globalThis & {
-      mermaid?: StrictMermaidRuntime;
-    }
-  ).mermaid;
-
-  return candidate;
-}
-
-function enforceStrictMermaidRuntime(): void {
-  const runtime = getMermaidRuntime();
-
-  if (!runtime || runtime.__learningCompanionStrict) {
-    return;
-  }
-
-  const initialize = runtime.initialize.bind(runtime);
-  runtime.initialize = (options) => {
-    const flowchart =
-      typeof options.flowchart === 'object' &&
-      options.flowchart !== null &&
-      !Array.isArray(options.flowchart)
-        ? (options.flowchart as Record<string, unknown>)
-        : {};
-
-    initialize({
-      ...options,
-      securityLevel: 'strict',
-      flowchart: {
-        ...flowchart,
-        htmlLabels: false,
-      },
-    });
-  };
-  runtime.__learningCompanionStrict = true;
-}
-
-function installPlantUmlNetworkGuard(): void {
-  const scriptId = 'vditorPlantumlScript';
-
-  if (!document.getElementById(scriptId)) {
-    const marker = document.createElement('meta');
-    marker.id = scriptId;
-    document.head.appendChild(marker);
-  }
-
-  (
-    globalThis as typeof globalThis & {
-      plantumlEncoder?: { encode(value: string): string };
-    }
-  ).plantumlEncoder = {
-    encode() {
-      throw new Error(
-        'PlantUML 网络渲染在 Learning Companion 中已禁用',
-      );
-    },
-  };
-}
-
-function loadLocalIconRuntime(resourceBaseUrl: string): Promise<void> {
-  if (document.getElementById('vditorIconScript')) {
-    return Promise.resolve();
-  }
-
-  if (document.getElementById('vditor-icon-bold')) {
-    const marker = document.createElement('meta');
-    marker.id = 'vditorIconScript';
-    document.head.appendChild(marker);
-    return Promise.resolve();
-  }
-
-  if (iconRuntimePromise) {
-    return iconRuntimePromise;
-  }
-
-  iconRuntimePromise = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.id = 'vditorIconScript';
-    script.async = true;
-    script.src = `${trimTrailingSlash(resourceBaseUrl)}/dist/js/icons/ant.js`;
-    script.addEventListener(
-      'load',
-      () => {
-        iconRuntimePromise = undefined;
-        resolve();
-      },
-      { once: true },
-    );
-    script.addEventListener(
-      'error',
-      () => {
-        script.remove();
-        iconRuntimePromise = undefined;
-        reject(new Error('Vditor 本地图标资源加载失败'));
-      },
-      { once: true },
-    );
-    document.head.appendChild(script);
-  });
-
-  return iconRuntimePromise;
-}
-
-function loadLocalMermaidRuntime(resourceBaseUrl: string): Promise<void> {
-  if (getMermaidRuntime()) {
-    enforceStrictMermaidRuntime();
-    return Promise.resolve();
-  }
-
-  if (mermaidRuntimePromise) {
-    return mermaidRuntimePromise;
-  }
-
-  mermaidRuntimePromise = new Promise<void>((resolve, reject) => {
-    const scriptId = 'vditorMermaidScript';
-    const existing = document.getElementById(
-      scriptId,
-    ) as HTMLScriptElement | null;
-    const finish = () => {
-      if (!getMermaidRuntime()) {
-        reject(new Error('Mermaid 本地运行资源加载失败'));
-        return;
-      }
-
-      enforceStrictMermaidRuntime();
-      resolve();
-    };
-
-    if (existing) {
-      if (getMermaidRuntime()) {
-        finish();
-      } else {
-        existing.addEventListener('load', finish, { once: true });
-        existing.addEventListener(
-          'error',
-          () => reject(new Error('Mermaid 本地运行资源加载失败')),
-          { once: true },
-        );
-      }
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = scriptId;
-    script.async = true;
-    script.src = `${trimTrailingSlash(resourceBaseUrl)}/dist/js/mermaid/mermaid.min.js?v=11.6.0`;
-    script.addEventListener('load', finish, { once: true });
-    script.addEventListener(
-      'error',
-      () => {
-        script.remove();
-        mermaidRuntimePromise = undefined;
-        reject(new Error('Mermaid 本地运行资源加载失败'));
-      },
-      { once: true },
-    );
-    document.head.appendChild(script);
-  });
-
-  return mermaidRuntimePromise;
-}
-
 export function isSafeMarkdownExternalLink(value: string): boolean {
   try {
     const url = new URL(value);
@@ -452,40 +306,69 @@ export function sanitizeMarkdownRenderedHtml(html: string): string {
 }
 
 export class MarkdownEditorAdapter {
-  private readonly editor: Vditor;
+  private editor!: Vditor;
+  private readonly dependencies: MarkdownEditorAdapterDependencies;
   private readonly onInput: (value: string) => void;
   private readonly onScroll: (scrollTop: number) => void;
   private readonly scrollListener: () => void;
   private readonly inputGate = new MarkdownEditorInputGate();
+  private readonly readyTask: Promise<void>;
+  private resolveReady!: () => void;
+  private rejectReady!: (error: unknown) => void;
   private blockedImageObserver: MutationObserver | undefined;
+  private readyFrame: number | undefined;
+  private readySettled = false;
   private destroyed = false;
 
   static async create(
     options: MarkdownEditorAdapterOptions,
+    dependencies: Partial<MarkdownEditorAdapterDependencies> = {},
   ): Promise<MarkdownEditorAdapter> {
     const resourceBaseUrl =
       options.resourceBaseUrl ?? resolveVditorResourceBaseUrl();
-    options.signal?.throwIfAborted();
-    await Promise.all([
-      loadLocalIconRuntime(resourceBaseUrl),
-      loadLocalMermaidRuntime(resourceBaseUrl),
-    ]);
-    options.signal?.throwIfAborted();
-    installPlantUmlNetworkGuard();
-    return new MarkdownEditorAdapter(options, resourceBaseUrl);
+    const resolvedDependencies = {
+      ...defaultEditorDependencies,
+      ...dependencies,
+    };
+    await resolvedDependencies.runtimeLoader.load(
+      resourceBaseUrl,
+      options.signal,
+    );
+    const adapter = new MarkdownEditorAdapter(
+      options,
+      resourceBaseUrl,
+      resolvedDependencies,
+    );
+
+    try {
+      await adapter.waitUntilReady(
+        options.signal,
+        options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
+      );
+      return adapter;
+    } catch (error) {
+      adapter.destroy();
+      throw error;
+    }
   }
 
   private constructor(
     options: MarkdownEditorAdapterOptions,
     resourceBaseUrl: string,
+    dependencies: MarkdownEditorAdapterDependencies,
   ) {
+    this.dependencies = dependencies;
     this.onInput = options.onInput;
     this.onScroll = options.onScroll;
     this.scrollListener = () => {
       this.onScroll(this.getScrollTop());
     };
+    this.readyTask = new Promise<void>((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
 
-    this.editor = new Vditor(options.host, {
+    this.editor = this.dependencies.createEditor(options.host, {
       // Lute must be configured before it sees the document. Otherwise a
       // malformed leading "---..." is treated as an unterminated YAML block
       // and consumes every following Markdown node.
@@ -575,45 +458,138 @@ export class MarkdownEditorAdapter {
         this.onInput(value);
       },
       after: () => {
-        if (this.destroyed) {
-          return;
-        }
-
-        this.editor.disabledCache();
-        this.applyValue(options.initialValue);
-        this.setOutlineVisible(options.outlineVisible);
-        const scrollElement = this.getScrollElement();
-        scrollElement?.addEventListener('scroll', this.scrollListener, {
-          passive: true,
-        });
-        this.markBlockedImages();
-        this.blockedImageObserver = new MutationObserver(() => {
-          this.markBlockedImages();
-        });
-        const wysiwygElement = this.editor.vditor.wysiwyg?.element;
-        if (wysiwygElement) {
-          this.blockedImageObserver.observe(wysiwygElement, {
-            attributes: true,
-            attributeFilter: ['src', 'srcset', 'data-src'],
-            childList: true,
-            subtree: true,
-          });
-        }
-
-        requestAnimationFrame(() => {
-          if (this.destroyed) {
-            return;
-          }
-
-          this.setScrollTop(options.initialScrollTop);
-          this.inputGate.completeInitialization();
-          options.onReady();
+        queueMicrotask(() => {
+          this.completeInitialization(options);
         });
       },
       esc: () => {
         this.editor.blur();
       },
     });
+  }
+
+  private async waitUntilReady(
+    signal: AbortSignal | undefined,
+    timeoutMs: number,
+  ): Promise<void> {
+    if (
+      !Number.isSafeInteger(timeoutMs) ||
+      timeoutMs <= 0
+    ) {
+      throw new Error('Markdown 可视化编辑器 Ready 超时配置无效');
+    }
+    if (signal?.aborted) {
+      throw new DOMException(
+        'Markdown editor initialization cancelled',
+        'AbortError',
+      );
+    }
+
+    let onAbort: (() => void) | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      await Promise.race([
+        this.readyTask,
+        new Promise<never>((_resolvePromise, rejectPromise) => {
+          timeout = setTimeout(() => {
+            rejectPromise(
+              new Error('Markdown 可视化编辑器初始化超时'),
+            );
+          }, timeoutMs);
+        }),
+        ...(signal
+          ? [
+              new Promise<never>(
+                (_resolvePromise, rejectPromise) => {
+                  onAbort = () =>
+                    rejectPromise(
+                      new DOMException(
+                        'Markdown editor initialization cancelled',
+                        'AbortError',
+                      ),
+                    );
+                  signal.addEventListener('abort', onAbort, {
+                    once: true,
+                  });
+                },
+              ),
+            ]
+          : []),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      if (signal && onAbort) {
+        signal.removeEventListener('abort', onAbort);
+      }
+    }
+  }
+
+  private completeInitialization(
+    options: MarkdownEditorAdapterOptions,
+  ): void {
+    if (this.destroyed || this.readySettled) {
+      return;
+    }
+
+    try {
+      this.editor.disabledCache();
+      this.applyValue(options.initialValue);
+      this.setOutlineVisible(options.outlineVisible);
+      const scrollElement = this.getScrollElement();
+      scrollElement?.addEventListener('scroll', this.scrollListener, {
+        passive: true,
+      });
+      this.markBlockedImages();
+      this.blockedImageObserver = new MutationObserver(() => {
+        try {
+          this.markBlockedImages();
+        } catch (error) {
+          options.onError(error);
+        }
+      });
+      const wysiwygElement = this.editor.vditor.wysiwyg?.element;
+      if (wysiwygElement) {
+        this.blockedImageObserver.observe(wysiwygElement, {
+          attributes: true,
+          attributeFilter: ['src', 'srcset', 'data-src'],
+          childList: true,
+          subtree: true,
+        });
+      }
+
+      this.readyFrame = this.dependencies.requestFrame(() => {
+        this.readyFrame = undefined;
+        if (this.destroyed || this.readySettled) {
+          return;
+        }
+
+        try {
+          this.setScrollTop(options.initialScrollTop);
+          this.inputGate.completeInitialization();
+          this.settleReady();
+        } catch (error) {
+          this.settleReady(error);
+        }
+      });
+    } catch (error) {
+      this.settleReady(error);
+    }
+  }
+
+  private settleReady(error?: unknown): void {
+    if (this.readySettled) {
+      return;
+    }
+
+    this.readySettled = true;
+    if (error === undefined) {
+      this.resolveReady();
+    } else {
+      this.rejectReady(error);
+    }
   }
 
   getValue(): string {
@@ -710,6 +686,16 @@ export class MarkdownEditorAdapter {
     }
 
     this.destroyed = true;
+    if (this.readyFrame !== undefined) {
+      this.dependencies.cancelFrame(this.readyFrame);
+      this.readyFrame = undefined;
+    }
+    this.settleReady(
+      new DOMException(
+        'Markdown editor initialization cancelled',
+        'AbortError',
+      ),
+    );
     this.blockedImageObserver?.disconnect();
     this.blockedImageObserver = undefined;
     this.getScrollElement()?.removeEventListener(
@@ -717,14 +703,6 @@ export class MarkdownEditorAdapter {
       this.scrollListener,
     );
     this.editor.destroy();
-    if (
-      !document.getElementById('vditorIconScript') &&
-      document.getElementById('vditor-icon-bold')
-    ) {
-      const marker = document.createElement('meta');
-      marker.id = 'vditorIconScript';
-      document.head.appendChild(marker);
-    }
   }
 
   private getScrollElement(): HTMLElement | undefined {

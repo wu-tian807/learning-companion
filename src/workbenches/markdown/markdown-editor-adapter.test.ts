@@ -1,5 +1,12 @@
 import { createRequire } from 'node:module';
-import { describe, expect, it, vi } from 'vitest';
+import type Vditor from 'vditor';
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 vi.mock('vditor', () => ({
   default: vi.fn(),
@@ -11,12 +18,109 @@ import {
   isMarkdownNetworkRendererAllowed,
   isSafeMarkdownExternalLink,
   MARKDOWN_PREVIEW_RENDER_POLICY,
+  MarkdownEditorAdapter,
+  type MarkdownEditorAdapterDependencies,
   MarkdownEditorInputGate,
 } from './markdown-editor-adapter';
 
 interface TestLuteParser {
   Md2VditorDOM(markdown: string): string;
   SetYamlFrontMatter(enabled: boolean): void;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function createEditorHarness(input?: {
+  readonly initializationError?: Error;
+}) {
+  let after: (() => void) | undefined;
+  let frame: FrameRequestCallback | undefined;
+  const editableElement = {
+    scrollTop: 0,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    querySelectorAll: vi.fn(() => []),
+    scrollBy: vi.fn(),
+  } as unknown as HTMLElement;
+  const editor = {
+    disabledCache: vi.fn(() => {
+      if (input?.initializationError) {
+        throw input.initializationError;
+      }
+    }),
+    setValue: vi.fn(),
+    getValue: vi.fn(() => '# value'),
+    focus: vi.fn(),
+    blur: vi.fn(),
+    destroy: vi.fn(),
+    deleteValue: vi.fn(),
+    vditor: {
+      lute: {
+        SetYamlFrontMatter: vi.fn(),
+      },
+      options: {},
+      outline: {
+        toggle: vi.fn(),
+      },
+      wysiwyg: {
+        element: editableElement,
+      },
+      toolbar: {
+        elements: {},
+      },
+      undo: {},
+    },
+  } as unknown as Vditor;
+  const dependencies: Partial<MarkdownEditorAdapterDependencies> = {
+    runtimeLoader: {
+      load: vi.fn(async () => undefined),
+    },
+    createEditor: vi.fn((_host, options) => {
+      after = options.after;
+      return editor;
+    }),
+    requestFrame: vi.fn((callback) => {
+      frame = callback;
+      return 7;
+    }),
+    cancelFrame: vi.fn(),
+  };
+
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe() {}
+      disconnect() {}
+      takeRecords(): MutationRecord[] {
+        return [];
+      }
+    },
+  );
+
+  return {
+    dependencies,
+    editor,
+    triggerAfter: () => after?.(),
+    triggerFrame: () => frame?.(0),
+  };
+}
+
+function createEditorOptions(signal?: AbortSignal) {
+  return {
+    host: {} as HTMLElement,
+    initialValue: '# 初始内容',
+    initialScrollTop: 12,
+    outlineVisible: false,
+    resourceBaseUrl: 'learning://vendor/vditor',
+    readyTimeoutMs: 1_000,
+    onInput: vi.fn(),
+    onScroll: vi.fn(),
+    onOpenExternal: vi.fn(),
+    onError: vi.fn(),
+    signal,
+  };
 }
 
 function createTestLuteParser(): TestLuteParser {
@@ -215,5 +319,92 @@ describe('MarkdownEditorInputGate', () => {
     });
     expect(isMarkdownNetworkRendererAllowed('plantuml')).toBe(false);
     expect(isMarkdownNetworkRendererAllowed('mermaid')).toBe(true);
+  });
+});
+
+describe('MarkdownEditorAdapter initialization lifecycle', () => {
+  it('resolves create only after Vditor after and the ready frame', async () => {
+    const harness = createEditorHarness();
+    const creation = MarkdownEditorAdapter.create(
+      createEditorOptions(),
+      harness.dependencies,
+    );
+    let settled = false;
+    void creation.then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+
+    harness.triggerAfter();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    harness.triggerFrame();
+
+    const adapter = await creation;
+    expect(settled).toBe(true);
+    expect(harness.editor.setValue).toHaveBeenCalledWith(
+      '# 初始内容',
+      true,
+    );
+    adapter.destroy();
+  });
+
+  it('destroys a pending editor when its initialization is aborted', async () => {
+    const controller = new AbortController();
+    const harness = createEditorHarness();
+    const creation = MarkdownEditorAdapter.create(
+      createEditorOptions(controller.signal),
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+    harness.triggerAfter();
+    await Promise.resolve();
+
+    controller.abort();
+
+    await expect(creation).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(harness.dependencies.cancelFrame).toHaveBeenCalledWith(7);
+    expect(harness.editor.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('turns an asynchronous Vditor initialization error into a rejected create', async () => {
+    const failure = new Error('Vditor after failed');
+    const harness = createEditorHarness({
+      initializationError: failure,
+    });
+    const creation = MarkdownEditorAdapter.create(
+      createEditorOptions(),
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+
+    harness.triggerAfter();
+
+    await expect(creation).rejects.toBe(failure);
+    expect(harness.editor.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('fails visibly instead of waiting forever when Vditor never becomes ready', async () => {
+    const harness = createEditorHarness();
+    const creation = MarkdownEditorAdapter.create(
+      {
+        ...createEditorOptions(),
+        readyTimeoutMs: 10,
+      },
+      harness.dependencies,
+    );
+
+    await expect(creation).rejects.toThrow(
+      'Markdown 可视化编辑器初始化超时',
+    );
+    expect(harness.editor.destroy).toHaveBeenCalledOnce();
   });
 });

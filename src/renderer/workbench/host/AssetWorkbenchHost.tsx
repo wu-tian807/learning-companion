@@ -17,6 +17,7 @@ import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsuppo
 import { AttachmentHost } from './AttachmentHost';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
 import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
+import { WorkbenchViewErrorBoundary } from './WorkbenchViewErrorBoundary';
 import {
   RendererWorkbenchRegistry,
   type RendererWorkbenchModule,
@@ -297,18 +298,20 @@ export function AssetWorkbenchHost({
 
     content = (
       <>
-        <View
-          asset={asset}
-          bootstrap={state.bootstrap}
-          executeCommand={state.executeCommand}
-          onRelink={onRelink}
-          onRefresh={onRefresh}
-          onReveal={onReveal}
-          onOpenSettings={onOpenSettings}
-          onInteractionChange={reportInteraction}
-          onOpenExternal={openExternal}
-          onError={onError}
-        />
+        <WorkbenchViewErrorBoundary onError={onError}>
+          <View
+            asset={asset}
+            bootstrap={state.bootstrap}
+            executeCommand={state.executeCommand}
+            onRelink={onRelink}
+            onRefresh={onRefresh}
+            onReveal={onReveal}
+            onOpenSettings={onOpenSettings}
+            onInteractionChange={reportInteraction}
+            onOpenExternal={openExternal}
+            onError={onError}
+          />
+        </WorkbenchViewErrorBoundary>
         <AttachmentHost attachments={[]} />
       </>
     );

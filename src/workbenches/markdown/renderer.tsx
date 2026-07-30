@@ -243,6 +243,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
   );
+  const wysiwygInitializationRef = useRef(0);
   const workingBufferRef = useRef(payload?.diskSource ?? '');
   const lineEndingRef = useRef<MarkdownLineEnding>(
     payload?.lineEnding ?? 'lf',
@@ -488,25 +489,27 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     }
 
     let active = true;
+    const initialization = ++wysiwygInitializationRef.current;
     const abortController = new AbortController();
     setVisualEditorState('loading');
     wysiwygEditedSinceMountRef.current = false;
     const host = wysiwygHostRef.current;
+    const editorHost = document.createElement('div');
+    editorHost.style.height = '100%';
+    editorHost.style.minHeight = '0';
+    host.replaceChildren(editorHost);
+    let ownedAdapter: MarkdownEditorAdapter | undefined;
 
     void MarkdownEditorAdapter.create({
-      host,
+      host: editorHost,
       initialValue: workingBufferRef.current,
       initialScrollTop: viewStateRef.current.wysiwygScrollTop,
       outlineVisible: viewStateRef.current.outlineVisible,
-      onReady: () => {
-        if (!active) {
-          return;
-        }
-
-        setVisualEditorState('ready');
-      },
       onInput: (value) => {
-        if (!active) {
+        if (
+          !active ||
+          wysiwygInitializationRef.current !== initialization
+        ) {
           return;
         }
 
@@ -520,7 +523,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         });
       },
       onScroll: (scrollTop) => {
-        if (!active) {
+        if (
+          !active ||
+          wysiwygInitializationRef.current !== initialization
+        ) {
           return;
         }
 
@@ -542,21 +548,28 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       signal: abortController.signal,
     })
       .then((adapter) => {
-        if (!active) {
+        ownedAdapter = adapter;
+        if (
+          !active ||
+          wysiwygInitializationRef.current !== initialization
+        ) {
           adapter.destroy();
           return;
         }
 
         wysiwygAdapterRef.current = adapter;
+        setVisualEditorState('ready');
       })
       .catch((error) => {
         if (
           !active ||
+          wysiwygInitializationRef.current !== initialization ||
           (error instanceof DOMException && error.name === 'AbortError')
         ) {
           return;
         }
 
+        editorHost.replaceChildren();
         setVisualEditorState('failed');
         reportError(error, '无法启动 Markdown 可视化编辑器。');
       });
@@ -564,10 +577,11 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     return () => {
       active = false;
       abortController.abort();
-      const adapter = wysiwygAdapterRef.current;
-      wysiwygAdapterRef.current = undefined;
-      adapter?.destroy();
-      host.replaceChildren();
+      if (wysiwygAdapterRef.current === ownedAdapter) {
+        wysiwygAdapterRef.current = undefined;
+      }
+      ownedAdapter?.destroy();
+      editorHost.remove();
     };
   }, [
     onOpenExternal,
@@ -1136,13 +1150,26 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
                   <p className="text-sm text-rose-300">
                     可视化编辑器加载失败
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => void switchMode('source')}
-                    className="ui-control mt-4 rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
-                  >
-                    使用源码模式
-                  </button>
+                  <div className="mt-4 flex justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setWysiwygEditorKey(
+                          (current) => current + 1,
+                        )
+                      }
+                      className="ui-primary-button rounded-full bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-900"
+                    >
+                      重试
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void switchMode('source')}
+                      className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
+                    >
+                      使用源码模式
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
