@@ -26,6 +26,7 @@ export type AppErrorCode =
   | 'EXTERNAL_LIBRARY_INTEGRITY_FAILED'
   | 'EXTERNAL_LIBRARY_CONFLICT'
   | 'EXTERNAL_LIBRARY_MIGRATION_FAILED'
+  | 'OFFICE_PREVIEW_FAILED'
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
@@ -190,6 +191,13 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   EXTERNAL_LIBRARY_MIGRATION_FAILED: {
     kind: 'user',
     userMessage: '外部组件迁移没有完成，应用仍将使用原目录。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  OFFICE_PREVIEW_FAILED: {
+    kind: 'user',
+    userMessage:
+      'Office 预览生成失败。原文件没有被修改，请检查文件是否损坏后重试。',
     retryable: true,
     logLevel: 'warn',
   },
