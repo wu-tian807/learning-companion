@@ -18,6 +18,7 @@ import { HTML_WORKBENCH_ID } from '../../../workbenches/html/shared';
 import { EPUB_WORKBENCH_ID } from '../../../workbenches/epub/shared';
 import { MARKDOWN_WORKBENCH_ID } from '../../../workbenches/markdown/shared';
 import { PDF_WORKBENCH_ID } from '../../../workbenches/pdf/shared';
+import { OFFICE_WORKBENCH_ID } from '../../../workbenches/office/shared';
 import { PLAIN_TEXT_WORKBENCH_ID } from '../../../workbenches/plain-text/shared';
 import { VIDEO_WORKBENCH_ID } from '../../../workbenches/video/shared';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
@@ -110,6 +111,13 @@ defaultRegistry.registerLoader(PDF_WORKBENCH_ID, async () => {
   );
 
   return pdfRendererWorkbenchModule;
+});
+defaultRegistry.registerLoader(OFFICE_WORKBENCH_ID, async () => {
+  const { default: officeRendererWorkbenchModule } = await import(
+    '../../../workbenches/office/renderer'
+  );
+
+  return officeRendererWorkbenchModule;
 });
 defaultRegistry.registerLoader(VIDEO_WORKBENCH_ID, async () => {
   const { default: videoRendererWorkbenchModule } = await import(

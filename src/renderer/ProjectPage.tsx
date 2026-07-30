@@ -63,6 +63,12 @@ function mediaLabel(mediaType: string): string {
     'application/epub+zip': 'EPUB',
     'application/octet-stream': '未知',
     'application/pdf': 'PDF',
+    'application/msword': 'Word',
+    'application/vnd.ms-powerpoint': 'PowerPoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      'PowerPoint',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      'Word',
     'audio/aac': 'AAC',
     'audio/flac': 'FLAC',
     'audio/mp4': 'M4A',

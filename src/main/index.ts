@@ -5,6 +5,11 @@ import type { DatabaseContext } from "./database/database-context";
 import { initializeDatabase } from "./database/initialize-database";
 import { AssetDatabase } from "./assets/asset-database";
 import { AssetService } from "./assets/asset-service";
+import { AssetArtifactDatabase } from "./artifacts/asset-artifact-database";
+import { AssetArtifactFileManager } from "./artifacts/asset-artifact-file-manager";
+import { AssetArtifactRegistry } from "./artifacts/asset-artifact-registry";
+import { AssetArtifactService } from "./artifacts/asset-artifact-service";
+import { LibreOfficePreviewProducer } from "./artifacts/producers/libreoffice-preview-producer";
 import { EmptyAttachmentService } from "./attachments/attachment-service";
 import {
   createDefaultExternalLibrariesRoot,
@@ -75,6 +80,7 @@ import { HtmlWorkbenchProvider } from "../workbenches/html/main";
 import { EpubWorkbenchProvider } from "../workbenches/epub/main";
 import { MarkdownWorkbenchProvider } from "../workbenches/markdown/main";
 import { PdfWorkbenchProvider } from "../workbenches/pdf/main";
+import { OfficeWorkbenchProvider } from "../workbenches/office/main";
 import { VideoWorkbenchProvider } from "../workbenches/video/main";
 import { UnsupportedWorkbenchProvider } from "../workbenches/unsupported/main";
 
@@ -168,6 +174,15 @@ void app
     );
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
+    const artifactRegistry = new AssetArtifactRegistry();
+    artifactRegistry.register(
+      new LibreOfficePreviewProducer(externalLibraryService),
+    );
+    const artifactService = new AssetArtifactService(
+      new AssetArtifactDatabase(databaseContext),
+      new AssetArtifactFileManager(),
+      artifactRegistry,
+    );
     const assetDatabase = new AssetDatabase(databaseContext, projectDatabase);
     const contentResolverRegistry = new ContentResolverRegistry();
     contentResolverRegistry.register(
@@ -246,6 +261,15 @@ void app
     workbenchRegistry.register(
       new PdfWorkbenchProvider(
         contentResourceService,
+        workbenchStateRepository,
+      ),
+    );
+    workbenchRegistry.register(
+      new OfficeWorkbenchProvider(
+        artifactService,
+        contentResourceService,
+        externalLibraryService,
+        projectDatabase,
         workbenchStateRepository,
       ),
     );
