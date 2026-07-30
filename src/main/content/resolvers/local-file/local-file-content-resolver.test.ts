@@ -121,7 +121,12 @@ describe('LocalFileContentResolver', () => {
     );
 
     expect(inspect).toHaveBeenCalledWith(
-      '/tmp/project/assets/imported/content.txt',
+      join(
+        resolveContext.projectWorkspace,
+        'assets',
+        'imported',
+        'content.txt',
+      ),
     );
     expect(resolved.contentRef).toEqual({
       kind: 'local-file',

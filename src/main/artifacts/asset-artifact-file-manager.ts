@@ -25,7 +25,7 @@ import {
   isPathInside,
   resolvePortableWorkspacePath,
   toPortableRelativePath,
-} from '../projects/project-workspace-manager';
+} from '../projects/project-workspace-paths';
 import type { AssetArtifact } from './asset-artifact';
 
 export const ASSET_ARTIFACTS_DIRECTORY =

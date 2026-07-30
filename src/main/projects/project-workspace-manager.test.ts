@@ -344,4 +344,45 @@ describe('ProjectWorkspaceManager', () => {
     expect(openPath).toHaveBeenCalledWith(workspacePath);
     expect(showItemInFolder).toHaveBeenCalledWith(selectedFile);
   });
+
+  it('remembers the last successful Asset directory per Workspace in memory', async () => {
+    const firstWorkspace = join(tmpdir(), 'first-project');
+    const secondWorkspace = join(tmpdir(), 'second-project');
+    const selectedDirectory = join(tmpdir(), 'learning-materials');
+    const selectedFile = join(selectedDirectory, 'chapter.md');
+    const showOpenDialog = vi
+      .fn()
+      .mockResolvedValueOnce({
+        canceled: false,
+        filePaths: [selectedFile],
+      })
+      .mockResolvedValueOnce({
+        canceled: true,
+        filePaths: [],
+      })
+      .mockResolvedValueOnce({
+        canceled: true,
+        filePaths: [],
+      });
+    const manager = new ProjectWorkspaceManager({
+      showOpenDialog,
+    });
+
+    await manager.selectAssetFiles(firstWorkspace);
+    await manager.selectAssetFiles(firstWorkspace);
+    await manager.selectAssetFiles(secondWorkspace);
+
+    expect(showOpenDialog).toHaveBeenNthCalledWith(1, {
+      defaultPath: firstWorkspace,
+      properties: ['openFile', 'multiSelections'],
+    });
+    expect(showOpenDialog).toHaveBeenNthCalledWith(2, {
+      defaultPath: selectedDirectory,
+      properties: ['openFile', 'multiSelections'],
+    });
+    expect(showOpenDialog).toHaveBeenNthCalledWith(3, {
+      defaultPath: secondWorkspace,
+      properties: ['openFile', 'multiSelections'],
+    });
+  });
 });

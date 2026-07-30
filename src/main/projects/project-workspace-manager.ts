@@ -14,14 +14,9 @@ import {
 } from 'node:fs/promises';
 import {
   basename,
-  extname,
-  isAbsolute,
+  dirname,
   join,
-  normalize,
-  parse,
   relative,
-  resolve,
-  sep,
 } from 'node:path';
 
 import { dialog, shell } from 'electron';
@@ -32,6 +27,26 @@ import {
   type LocalFileContentRef,
 } from '../../shared/assets';
 import { AppError } from '../errors/app-error';
+import {
+  InMemoryFileDialogDirectoryStore,
+  type FileDialogDirectoryStoreApi,
+} from '../filesystem/file-dialog-directory-store';
+import {
+  createConflictFreeFileName,
+  isPathInside,
+  requireAbsoluteWorkspaceDirectoryPath,
+  requireAbsoluteWorkspaceFilePath,
+  resolvePortableWorkspacePath,
+  sanitizeProjectDirectoryName,
+  toPortableRelativePath,
+} from './project-workspace-paths';
+
+export {
+  createDefaultProjectWorkspaceRoot,
+  isPathInside,
+  resolvePortableWorkspacePath,
+  toPortableRelativePath,
+} from './project-workspace-paths';
 
 export const PROJECT_WORKSPACE_SCHEMA_VERSION = 1;
 export const PROJECT_WORKSPACE_METADATA_DIRECTORY = '.learning-companion';
@@ -99,12 +114,16 @@ export interface ProjectWorkspaceManagerDependencies {
   readonly stat: typeof stat;
   readonly writeFile: typeof writeFile;
   readonly createId: () => string;
+  readonly fileDialogDirectories: FileDialogDirectoryStoreApi;
   readonly showOpenDialog: typeof dialog.showOpenDialog;
   readonly openPath: typeof shell.openPath;
   readonly showItemInFolder: typeof shell.showItemInFolder;
 }
 
-const defaultDependencies: ProjectWorkspaceManagerDependencies = {
+const defaultDependencies: Omit<
+  ProjectWorkspaceManagerDependencies,
+  'fileDialogDirectories'
+> = {
   access,
   copyFile,
   link,
@@ -121,30 +140,6 @@ const defaultDependencies: ProjectWorkspaceManagerDependencies = {
   showItemInFolder: (path) => shell.showItemInFolder(path),
 };
 
-function requireAbsoluteDirectoryPath(path: string): string {
-  const normalizedPath = normalize(path.trim());
-
-  if (normalizedPath.length === 0 || !isAbsolute(normalizedPath)) {
-    throw new AppError('PROJECT_WORKSPACE_UNAVAILABLE');
-  }
-
-  if (normalizedPath === parse(normalizedPath).root) {
-    throw new AppError('PROJECT_WORKSPACE_UNAVAILABLE');
-  }
-
-  return normalizedPath;
-}
-
-function requireAbsoluteFilePath(path: string): string {
-  const normalizedPath = normalize(path.trim());
-
-  if (normalizedPath.length === 0 || !isAbsolute(normalizedPath)) {
-    throw new AppError('ASSET_UNAVAILABLE');
-  }
-
-  return normalizedPath;
-}
-
 function isFileNotFoundError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -152,71 +147,6 @@ function isFileNotFoundError(error: unknown): boolean {
     ((error as NodeJS.ErrnoException).code === 'ENOENT' ||
       (error as NodeJS.ErrnoException).code === 'ENOTDIR')
   );
-}
-
-export interface FileSystemPathRules {
-  readonly isAbsolute: (path: string) => boolean;
-  readonly relative: (from: string, to: string) => string;
-  readonly resolve: (...paths: string[]) => string;
-  readonly sep: string;
-}
-
-const currentPlatformPathRules: FileSystemPathRules = {
-  isAbsolute,
-  relative,
-  resolve,
-  sep,
-};
-
-export function isPathInside(
-  root: string,
-  target: string,
-  pathRules: FileSystemPathRules = currentPlatformPathRules,
-): boolean {
-  const relativePath = pathRules.relative(root, target);
-
-  return (
-    relativePath === '' ||
-    (!relativePath.startsWith(`..${pathRules.sep}`) &&
-      relativePath !== '..' &&
-      !pathRules.isAbsolute(relativePath))
-  );
-}
-
-export function toPortableRelativePath(path: string): string {
-  return path.split('\\').join('/');
-}
-
-export function resolvePortableWorkspacePath(
-  workspacePath: string,
-  portableRelativePath: string,
-  pathRules: FileSystemPathRules = currentPlatformPathRules,
-): string {
-  const candidate = pathRules.resolve(
-    workspacePath,
-    portableRelativePath.split('/').join(pathRules.sep),
-  );
-
-  if (!isPathInside(workspacePath, candidate, pathRules)) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return candidate;
-}
-
-function sanitizeProjectDirectoryName(name: string): string {
-  const withoutControlCharacters = [...name.trim()]
-    .map((character) =>
-      character.codePointAt(0)! < 0x20 ? '-' : character,
-    )
-    .join('');
-  const sanitized = withoutControlCharacters
-    .trim()
-    .replace(/[<>:"/\\|?*]/gu, '-')
-    .replace(/[.\s]+$/u, '')
-    .slice(0, 80);
-
-  return sanitized.length > 0 ? sanitized : '未命名 Project';
 }
 
 function createMarkerContent(projectId: string): string {
@@ -252,29 +182,6 @@ function parseMarker(content: string): WorkspaceMarker {
   };
 }
 
-function createConflictFreeFileName(
-  originalName: string,
-  suffix: number,
-): string {
-  if (suffix === 1) {
-    return originalName;
-  }
-
-  const extension = extname(originalName);
-  const stem = basename(originalName, extension);
-  return `${stem} (${suffix})${extension}`;
-}
-
-export function createDefaultProjectWorkspaceRoot(
-  documentsDirectory: string,
-): string {
-  return join(
-    requireAbsoluteDirectoryPath(documentsDirectory),
-    'Learning Companion',
-    'Projects',
-  );
-}
-
 export class ProjectWorkspaceManager
   implements ProjectWorkspaceManagerApi
 {
@@ -286,6 +193,9 @@ export class ProjectWorkspaceManager
     this.dependencies = {
       ...defaultDependencies,
       ...dependencies,
+      fileDialogDirectories:
+        dependencies.fileDialogDirectories ??
+        new InMemoryFileDialogDirectoryStore(),
     };
   }
 
@@ -294,7 +204,9 @@ export class ProjectWorkspaceManager
     projectId: string,
     projectName: string,
   ): Promise<string> {
-    const root = requireAbsoluteDirectoryPath(defaultWorkspaceRoot);
+    const root = requireAbsoluteWorkspaceDirectoryPath(
+      defaultWorkspaceRoot,
+    );
     const directoryName = sanitizeProjectDirectoryName(projectName);
 
     for (let suffix = 1; suffix <= 10_000; suffix += 1) {
@@ -335,7 +247,9 @@ export class ProjectWorkspaceManager
     readonly workspacePath: string;
   }): Promise<WorkspacePreparation> {
     const projectId = input.projectId.trim();
-    const workspacePath = requireAbsoluteDirectoryPath(input.workspacePath);
+    const workspacePath = requireAbsoluteWorkspaceDirectoryPath(
+      input.workspacePath,
+    );
 
     if (projectId.length === 0) {
       throw new AppError('INVALID_IPC_REQUEST');
@@ -452,7 +366,7 @@ export class ProjectWorkspaceManager
     readonly workspacePath: string;
   }): Promise<void> {
     const projectId = input.projectId.trim();
-    const workspacePath = requireAbsoluteDirectoryPath(
+    const workspacePath = requireAbsoluteWorkspaceDirectoryPath(
       input.workspacePath,
     );
 
@@ -505,7 +419,7 @@ export class ProjectWorkspaceManager
 
   async selectWorkspace(defaultPath: string): Promise<string | undefined> {
     const result = await this.dependencies.showOpenDialog({
-      defaultPath: requireAbsoluteDirectoryPath(defaultPath),
+      defaultPath: requireAbsoluteWorkspaceDirectoryPath(defaultPath),
       properties: ['openDirectory', 'createDirectory'],
     });
 
@@ -513,28 +427,44 @@ export class ProjectWorkspaceManager
       return undefined;
     }
 
-    return requireAbsoluteDirectoryPath(result.filePaths[0]!);
+    return requireAbsoluteWorkspaceDirectoryPath(result.filePaths[0]!);
   }
 
   async selectAssetFiles(
     workspacePath: string,
   ): Promise<readonly string[]> {
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
+    const memoryScope = `project-assets:${normalizedWorkspace}`;
     const result = await this.dependencies.showOpenDialog({
-      defaultPath: requireAbsoluteDirectoryPath(workspacePath),
+      defaultPath:
+        this.dependencies.fileDialogDirectories.get(memoryScope) ??
+        normalizedWorkspace,
       properties: ['openFile', 'multiSelections'],
     });
 
-    return result.canceled
-      ? []
-      : result.filePaths.map(requireAbsoluteFilePath);
+    if (result.canceled || result.filePaths.length === 0) {
+      return [];
+    }
+
+    const selectedFiles = result.filePaths.map((path) =>
+      requireAbsoluteWorkspaceFilePath(path),
+    );
+    this.dependencies.fileDialogDirectories.remember(
+      memoryScope,
+      dirname(selectedFiles[0]!),
+    );
+    return selectedFiles;
   }
 
   async classifyLocalFile(
     workspacePath: string,
     absolutePath: string,
   ): Promise<LocalFileContentRef> {
-    const normalizedWorkspace = requireAbsoluteDirectoryPath(workspacePath);
-    const normalizedFile = requireAbsoluteFilePath(absolutePath);
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
+    const normalizedFile =
+      requireAbsoluteWorkspaceFilePath(absolutePath);
     const realFile = await this.dependencies.realpath(normalizedFile);
     let realWorkspace: string;
 
@@ -564,10 +494,11 @@ export class ProjectWorkspaceManager
     ref: LocalFileContentRef,
   ): Promise<string> {
     if (ref.base === 'absolute') {
-      return requireAbsoluteFilePath(ref.path);
+      return requireAbsoluteWorkspaceFilePath(ref.path);
     }
 
-    const normalizedWorkspace = requireAbsoluteDirectoryPath(workspacePath);
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
     const candidate = resolvePortableWorkspacePath(
       normalizedWorkspace,
       ref.path,
@@ -601,8 +532,10 @@ export class ProjectWorkspaceManager
     workspacePath: string,
     sourcePath: string,
   ): Promise<ImportedLocalFile> {
-    const normalizedWorkspace = requireAbsoluteDirectoryPath(workspacePath);
-    const normalizedSource = requireAbsoluteFilePath(sourcePath);
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
+    const normalizedSource =
+      requireAbsoluteWorkspaceFilePath(sourcePath);
     const classified = await this.classifyLocalFile(
       normalizedWorkspace,
       normalizedSource,
@@ -674,13 +607,17 @@ export class ProjectWorkspaceManager
   }
 
   async removeImportedFile(absolutePath: string): Promise<void> {
-    await this.dependencies.rm(requireAbsoluteFilePath(absolutePath), {
+    await this.dependencies.rm(
+      requireAbsoluteWorkspaceFilePath(absolutePath),
+      {
       force: true,
-    });
+      },
+    );
   }
 
   async openWorkspace(workspacePath: string): Promise<void> {
-    const normalizedWorkspace = requireAbsoluteDirectoryPath(workspacePath);
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
     const errorMessage = await this.dependencies.openPath(normalizedWorkspace);
 
     if (errorMessage.length > 0) {
@@ -692,7 +629,7 @@ export class ProjectWorkspaceManager
 
   revealFile(absolutePath: string): void {
     this.dependencies.showItemInFolder(
-      requireAbsoluteFilePath(absolutePath),
+      requireAbsoluteWorkspaceFilePath(absolutePath),
     );
   }
 
