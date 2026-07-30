@@ -10,6 +10,7 @@ import {
   isAssetSnapshot,
   isAssetSnapshotList,
   type AssetSnapshot,
+  type LocalAssetImportMode,
 } from '../shared/assets';
 import {
   isAddLocalAssetsResult,
@@ -24,6 +25,8 @@ import {
   selectInitialAssetId,
 } from './asset-view';
 import { ErrorDialog } from './components/ErrorDialog';
+import { AssetImportSplitButton } from './components/AssetImportSplitButton';
+import { AssetSourceBadge } from './components/AssetSourceBadge';
 import { GenerationCenter } from './generation/GenerationCenter';
 import { AssetWorkbenchHost } from './workbench/host/AssetWorkbenchHost';
 import { WorkbenchRuntimeProvider } from './workbench/runtime/WorkbenchRuntimeProvider';
@@ -305,7 +308,8 @@ interface AssetPanelProps {
   readonly refreshingAll: boolean;
   readonly dragging: boolean;
   readonly onSelect: (assetId: string) => void;
-  readonly onAdd: () => void;
+  readonly onCopyAdd: () => void;
+  readonly onLinkAdd: () => void;
   readonly onRetry: () => void;
   readonly onRename: (asset: AssetSnapshot) => void;
   readonly onReveal: (asset: AssetSnapshot) => void;
@@ -321,7 +325,8 @@ function AssetPanel({
   refreshingAll,
   dragging,
   onSelect,
-  onAdd,
+  onCopyAdd,
+  onLinkAdd,
   onRetry,
   onRename,
   onReveal,
@@ -348,15 +353,11 @@ function AssetPanel({
         </span>
       </div>
 
-      <button
-        type="button"
+      <AssetImportSplitButton
         disabled={busy || state.kind !== 'ready'}
-        onClick={onAdd}
-        className="ui-control mx-3.5 mt-3.5 flex shrink-0 items-center justify-center gap-2 rounded-[11px] border border-dashed border-indigo-200/20 bg-indigo-400/[0.045] px-3 py-2.5 text-xs font-medium text-indigo-100/85 disabled:opacity-45"
-      >
-        <span aria-hidden="true">＋</span>
-        添加资料
-      </button>
+        onCopy={onCopyAdd}
+        onLink={onLinkAdd}
+      />
 
       <div className="flex shrink-0 items-center justify-between px-[17px] pt-2.5 pb-1 text-[10px] font-bold tracking-[0.09em] text-slate-500">
         <span>全部内容</span>
@@ -436,8 +437,15 @@ function AssetPanel({
               >
                 {asset.name}
               </span>
-              <span className="mt-0.5 block truncate text-[10px] text-slate-500">
-                {mediaLabel(asset.mediaType)} · {formatLastUsed(asset.lastUsedTime)}
+              <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-slate-500">
+                <span className="truncate">
+                  {mediaLabel(asset.mediaType)}
+                </span>
+                <AssetSourceBadge contentRef={asset.contentRef} />
+                <span className="shrink-0 text-slate-600">·</span>
+                <span className="truncate">
+                  {formatLastUsed(asset.lastUsedTime)}
+                </span>
               </span>
             </span>
             <span className="flex items-center gap-1">
@@ -608,11 +616,12 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   );
 
   const importPaths = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[], mode: LocalAssetImportMode) => {
       const result: AddLocalAssetsResult =
         await window.learningCompanion.addLocalAssets({
           projectId: project.id,
           paths,
+          mode,
         });
 
       if (!isAddLocalAssetsResult(result)) {
@@ -636,20 +645,20 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
   );
 
   const addPaths = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[], mode: LocalAssetImportMode = 'copy') => {
       if (paths.length === 0) {
         return;
       }
 
       await runMutation(
-        () => importPaths(paths),
+        () => importPaths(paths, mode),
         '添加资料失败，请重试。',
       );
     },
     [importPaths, runMutation],
   );
 
-  const chooseAndAdd = async () => {
+  const chooseAndAdd = async (mode: LocalAssetImportMode) => {
     await runMutation(async () => {
       const paths =
         await window.learningCompanion.selectLocalAssetFiles({
@@ -657,7 +666,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         });
 
       if (paths.length > 0) {
-        await importPaths(paths);
+        await importPaths(paths, mode);
       }
     }, '添加资料失败，请重试。');
   };
@@ -806,7 +815,7 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
         const paths = Array.from(event.dataTransfer.files)
           .map((file) => window.learningCompanion.getPathForFile(file))
           .filter((path) => path.length > 0);
-        void addPaths(paths);
+        void addPaths(paths, 'copy');
       }}
     >
       <header className="flex h-[46px] items-center justify-between px-2 pb-1.5">
@@ -852,7 +861,8 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
             refreshingAll={refreshingAll}
             dragging={dragging}
             onSelect={selectAsset}
-            onAdd={() => void chooseAndAdd()}
+            onCopyAdd={() => void chooseAndAdd('copy')}
+            onLinkAdd={() => void chooseAndAdd('link')}
             onRetry={() => {
               setLoadState({ kind: 'loading' });
               setRequestVersion((current) => current + 1);

@@ -5,6 +5,7 @@ export const ASSET_NAME_MAX_LENGTH = 160;
 export const LOCAL_FILE_CONTENT_KIND = 'local-file';
 export const PROJECT_WORKSPACE_CONTENT_BASE = 'project-workspace';
 export const ABSOLUTE_CONTENT_BASE = 'absolute';
+export type LocalAssetImportMode = 'copy' | 'link';
 
 export interface ProjectWorkspaceLocalFileContentRef {
   readonly kind: typeof LOCAL_FILE_CONTENT_KIND;

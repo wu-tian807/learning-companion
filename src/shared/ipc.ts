@@ -3,6 +3,7 @@ import { isHomePreferences } from './app-preferences';
 import {
   ASSET_NAME_MAX_LENGTH,
   isAssetSnapshotList,
+  type LocalAssetImportMode,
   type AssetSnapshot,
 } from './assets';
 import {
@@ -146,7 +147,7 @@ export interface ProjectLifecycleRequest {
 export interface AddLocalAssetsRequest {
   projectId: string;
   paths: string[];
-  mode?: 'copy' | 'link';
+  mode?: LocalAssetImportMode;
 }
 
 export interface AddLocalAssetFailure {

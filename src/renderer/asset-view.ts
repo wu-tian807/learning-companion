@@ -1,4 +1,16 @@
-import type { AssetSnapshot } from '../shared/assets';
+import type {
+  AssetContentRef,
+  AssetSnapshot,
+} from '../shared/assets';
+
+export function assetSourceBadgeLabel(
+  contentRef: AssetContentRef,
+): string | undefined {
+  return contentRef.kind === 'local-file' &&
+    contentRef.base === 'absolute'
+    ? '外部'
+    : undefined;
+}
 
 export function selectInitialAssetId(
   assets: readonly AssetSnapshot[],

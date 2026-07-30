@@ -120,6 +120,7 @@ describe('Asset contracts', () => {
       isAddLocalAssetsRequest({
         projectId: 'project',
         paths: ['/tmp/a.md', '/tmp/b.pdf'],
+        mode: 'link',
       }),
     ).toBe(true);
     expect(
@@ -143,6 +144,13 @@ describe('Asset contracts', () => {
       isAddLocalAssetsRequest({
         projectId: '',
         paths: ['/tmp/a.md'],
+      }),
+    ).toBe(false);
+    expect(
+      isAddLocalAssetsRequest({
+        projectId: 'project',
+        paths: ['/tmp/a.md'],
+        mode: 'move',
       }),
     ).toBe(false);
     expect(isRenameAssetRequest({ assetId: 'asset', name: '' })).toBe(false);

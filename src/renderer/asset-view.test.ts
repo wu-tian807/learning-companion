@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetSnapshot } from '../shared/assets';
 import {
+  assetSourceBadgeLabel,
   deleteAssetAfterWorkbenchClose,
   replaceAsset,
   selectAfterAssetDeletion,
@@ -37,6 +38,23 @@ function asset(
 }
 
 describe('Asset view state', () => {
+  it('labels only local files outside the Project Workspace as external', () => {
+    expect(
+      assetSourceBadgeLabel({
+        kind: 'local-file',
+        base: 'absolute',
+        path: '/tmp/external.md',
+      }),
+    ).toBe('外部');
+    expect(
+      assetSourceBadgeLabel({
+        kind: 'local-file',
+        base: 'project-workspace',
+        path: 'assets/imported/internal.md',
+      }),
+    ).toBeUndefined();
+  });
+
   it('selects the most recently used available Asset first', () => {
     const assets = [
       asset('older', 'available', timestamp('2026-07-27T01:00:00.000Z')),

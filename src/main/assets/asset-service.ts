@@ -2,6 +2,7 @@ import {
   cloneAssetSnapshot,
   type Asset,
   type AssetSnapshot,
+  type LocalAssetImportMode,
 } from '../../shared/assets';
 import {
   LOCAL_FILE_CONTENT_KIND,
@@ -43,8 +44,6 @@ export interface AssetServiceApi {
   resolveContent(assetId: string): Promise<ResolvedAssetContent>;
   revealInFolder(assetId: string): Promise<void>;
 }
-
-export type LocalAssetImportMode = 'copy' | 'link';
 
 export interface AssetServiceDependencies {
   readonly detectMediaType: typeof detectAssetMediaType;

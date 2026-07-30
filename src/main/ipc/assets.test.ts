@@ -151,6 +151,33 @@ describe('Asset IPC handlers', () => {
     );
   });
 
+  it('forwards the external link mode to every Asset addition', async () => {
+    const { assetService } = createDependencies();
+    registerAssetHandlers(assetService);
+
+    await findHandler(IPC_CHANNELS.addLocalAssets)(
+      {},
+      {
+        projectId: 'project',
+        paths: ['/tmp/a.md', '/tmp/b.md'],
+        mode: 'link',
+      },
+    );
+
+    expect(assetService.addLocalFile).toHaveBeenNthCalledWith(
+      1,
+      'project',
+      '/tmp/a.md',
+      'link',
+    );
+    expect(assetService.addLocalFile).toHaveBeenNthCalledWith(
+      2,
+      'project',
+      '/tmp/b.md',
+      'link',
+    );
+  });
+
   it('stops a batch when its Project context changes', async () => {
     const { assetService } = createDependencies();
     vi.mocked(assetService.addLocalFile).mockRejectedValueOnce(
