@@ -1024,11 +1024,12 @@ Home 的创建和编辑界面都展示 Workspace：
 - 外部文件默认复制导入，领域接口支持显式链接；
 - Project Workspace 创建、编辑、切换和打开；
 - Add Asset 使用当前 Project Workspace 作为文件选择起点；
+- “添加资料”默认复制、拖拽复制，以及低频“链接外部文件”入口；
+- Asset 列表根据 `ContentRef` 显示“外部”等来源徽标；
 - Project 和 Asset 移除记录时不删除真实文件。
 
 以下方向已经确认但尚未实施：
 
-- “链接外部文件”的 Renderer 交互入口；
 - Workspace Missing 的 Home 状态与重新定位入口；
 - 文件型 Attachment 正文；
 - SQLite FTS5；
