@@ -32,6 +32,8 @@ void app
     runtime = await createApplicationRuntime({
       userDataPath: app.getPath('userData'),
       documentsPath: app.getPath('documents'),
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
     });
     createManagedMainWindow();
 

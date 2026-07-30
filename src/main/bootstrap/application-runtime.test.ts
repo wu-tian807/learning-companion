@@ -10,6 +10,9 @@ function createResources(
 ) {
   return {
     databaseContext: { close: vi.fn() },
+    codexRuntimeService: {
+      shutdown: vi.fn(async () => undefined),
+    },
     contentResourceService: { dispose: vi.fn() },
     externalLibraryService: {
       shutdown: vi.fn(async () => undefined),
@@ -64,6 +67,9 @@ describe('ApplicationRuntime', () => {
     expect(
       resources.externalLibraryService.shutdown,
     ).toHaveBeenCalledOnce();
+    expect(
+      resources.codexRuntimeService.shutdown,
+    ).toHaveBeenCalledOnce();
   });
 
   it('disposes application resources idempotently', () => {
@@ -74,6 +80,9 @@ describe('ApplicationRuntime', () => {
 
     expect(runtime.interactionBridge).toBe(
       resources.sandboxFrameInteractionBridge,
+    );
+    expect(runtime.codexRuntime).toBe(
+      resources.codexRuntimeService,
     );
     runtime.dispose();
     runtime.dispose();

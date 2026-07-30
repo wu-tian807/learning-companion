@@ -27,6 +27,10 @@ export type AppErrorCode =
   | 'EXTERNAL_LIBRARY_CONFLICT'
   | 'EXTERNAL_LIBRARY_MIGRATION_FAILED'
   | 'OFFICE_PREVIEW_FAILED'
+  | 'CODEX_RUNTIME_UNAVAILABLE'
+  | 'CODEX_PROTOCOL_ERROR'
+  | 'CODEX_REQUEST_FAILED'
+  | 'CODEX_TURN_ACTIVE'
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
@@ -200,6 +204,30 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
       'Office 预览生成失败。原文件没有被修改，请检查文件是否损坏后重试。',
     retryable: true,
     logLevel: 'warn',
+  },
+  CODEX_RUNTIME_UNAVAILABLE: {
+    kind: 'user',
+    userMessage: 'AI 服务暂时无法启动，请稍后重试。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  CODEX_PROTOCOL_ERROR: {
+    kind: 'internal',
+    userMessage: 'AI 服务通信异常，请重启应用后重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  CODEX_REQUEST_FAILED: {
+    kind: 'user',
+    userMessage: 'AI 请求没有完成，请稍后重试。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  CODEX_TURN_ACTIVE: {
+    kind: 'user',
+    userMessage: '当前对话仍在处理中，请等待完成或先停止。',
+    retryable: true,
+    logLevel: 'silent',
   },
   INVALID_IPC_REQUEST: {
     kind: 'internal',

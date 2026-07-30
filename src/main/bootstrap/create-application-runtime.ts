@@ -41,17 +41,22 @@ import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main
 import {
   ApplicationRuntime,
 } from './application-runtime';
+import { createCodexRuntime } from './create-codex-runtime';
 import { createExternalLibraryRuntime } from './create-external-library-runtime';
 import { registerApplicationIpc } from './register-application-ipc';
 
 export interface CreateApplicationRuntimeInput {
   readonly userDataPath: string;
   readonly documentsPath: string;
+  readonly isPackaged: boolean;
+  readonly resourcesPath: string;
 }
 
 export async function createApplicationRuntime({
   userDataPath,
   documentsPath,
+  isPackaged,
+  resourcesPath,
 }: CreateApplicationRuntimeInput): Promise<ApplicationRuntime> {
   let databaseContext: DatabaseContext | undefined;
   let contentResourceService: ContentResourceService | undefined;
@@ -65,6 +70,11 @@ export async function createApplicationRuntime({
 
   try {
     const appPaths = createAppPaths(userDataPath);
+    const codexRuntimeService = createCodexRuntime({
+      codexHomePath: appPaths.codexHomeDirectory,
+      isPackaged,
+      resourcesPath,
+    });
     const settingsRepository = new JsonSettingsRepository(
       appPaths.settingsFile,
       {
@@ -171,6 +181,7 @@ export async function createApplicationRuntime({
 
     return new ApplicationRuntime({
       databaseContext,
+      codexRuntimeService,
       contentResourceService,
       externalLibraryService,
       sandboxFrameInteractionBridge,

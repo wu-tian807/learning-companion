@@ -6,6 +6,8 @@ export interface AppPaths {
   readonly settingsFile: string;
   readonly dataDirectory: string;
   readonly databaseFile: string;
+  readonly agentRuntimesDirectory: string;
+  readonly codexHomeDirectory: string;
 }
 
 export function createAppPaths(userDataDirectory: string): AppPaths {
@@ -20,6 +22,10 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
   const normalizedUserDataDirectory = normalize(userDataDirectory);
   const configDirectory = join(normalizedUserDataDirectory, 'config');
   const dataDirectory = join(normalizedUserDataDirectory, 'data');
+  const agentRuntimesDirectory = join(
+    normalizedUserDataDirectory,
+    'agent-runtimes',
+  );
 
   return Object.freeze({
     userDataDirectory: normalizedUserDataDirectory,
@@ -27,5 +33,7 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
     settingsFile: join(configDirectory, 'settings.json'),
     dataDirectory,
     databaseFile: join(dataDirectory, 'learning-companion.sqlite3'),
+    agentRuntimesDirectory,
+    codexHomeDirectory: join(agentRuntimesDirectory, 'codex', 'home'),
   });
 }

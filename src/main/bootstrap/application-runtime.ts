@@ -1,11 +1,13 @@
 import type { DatabaseContext } from '../database/database-context';
 import type { ContentResourceService } from '../content/content-resource-service';
+import type { CodexRuntimeServiceApi } from '../agents/codex/codex-runtime-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
 
 export interface ApplicationRuntimeResources {
   readonly databaseContext: DatabaseContext;
+  readonly codexRuntimeService: CodexRuntimeServiceApi;
   readonly contentResourceService: ContentResourceService;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly sandboxFrameInteractionBridge: SandboxFrameInteractionBridge;
@@ -25,6 +27,10 @@ export class ApplicationRuntime {
 
   get interactionBridge(): SandboxFrameInteractionBridge {
     return this.resources.sandboxFrameInteractionBridge;
+  }
+
+  get codexRuntime(): CodexRuntimeServiceApi {
+    return this.resources.codexRuntimeService;
   }
 
   closeActiveWorkbench(): Promise<void> {
@@ -49,6 +55,7 @@ export class ApplicationRuntime {
 
     this.shutdownTask = Promise.all([
       this.closeActiveWorkbench(),
+      this.resources.codexRuntimeService.shutdown(),
       this.resources.externalLibraryService.shutdown(),
     ]).then(() => undefined);
     return this.shutdownTask;

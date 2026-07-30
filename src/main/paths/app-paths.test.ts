@@ -14,6 +14,16 @@ describe('app paths', () => {
       settingsFile: join(userDataDirectory, 'config', 'settings.json'),
       dataDirectory: join(userDataDirectory, 'data'),
       databaseFile: join(userDataDirectory, 'data', 'learning-companion.sqlite3'),
+      agentRuntimesDirectory: join(
+        userDataDirectory,
+        'agent-runtimes',
+      ),
+      codexHomeDirectory: join(
+        userDataDirectory,
+        'agent-runtimes',
+        'codex',
+        'home',
+      ),
     });
   });
 
