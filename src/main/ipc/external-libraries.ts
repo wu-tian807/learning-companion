@@ -62,9 +62,9 @@ export function registerExternalLibraryHandlers(
       service.refresh(requireRequest(request).libraryId),
   );
   registerIpcHandler(
-    IPC_CHANNELS.installExternalLibrary,
+    IPC_CHANNELS.startExternalLibraryInstallation,
     (_event, request: unknown) =>
-      service.install(requireRequest(request).libraryId),
+      service.startInstallation(requireRequest(request).libraryId),
   );
   registerIpcHandler(
     IPC_CHANNELS.cancelExternalLibrary,
@@ -101,7 +101,7 @@ export function removeExternalLibraryHandlers(): void {
   removeSubscription = undefined;
   ipcMain.removeHandler(IPC_CHANNELS.listExternalLibraries);
   ipcMain.removeHandler(IPC_CHANNELS.refreshExternalLibrary);
-  ipcMain.removeHandler(IPC_CHANNELS.installExternalLibrary);
+  ipcMain.removeHandler(IPC_CHANNELS.startExternalLibraryInstallation);
   ipcMain.removeHandler(IPC_CHANNELS.cancelExternalLibrary);
   ipcMain.removeHandler(IPC_CHANNELS.removeExternalLibrary);
   ipcMain.removeHandler(

@@ -157,6 +157,22 @@ afterEach(async () => {
   );
 });
 
+async function installAndWait(
+  harness: Harness,
+): Promise<ReturnType<ExternalLibraryService["list"]>[number]> {
+  const accepted =
+    await harness.service.startInstallation("libreoffice");
+
+  expect(accepted.status).toBe("downloading");
+  await vi.waitFor(() =>
+    expect(harness.service.list()).toMatchObject([
+      { status: "available" },
+    ]),
+  );
+
+  return harness.service.list()[0]!;
+}
+
 describe("ExternalLibraryService", () => {
   it("discovers, installs and exposes a verified executable", async () => {
     const harness = await createHarness();
@@ -170,7 +186,7 @@ describe("ExternalLibraryService", () => {
       { id: "libreoffice", status: "not-installed" },
     ]);
 
-    const installed = await harness.service.install("libreoffice");
+    const installed = await installAndWait(harness);
     const executablePath =
       await harness.service.requireExecutable("libreoffice");
 
@@ -205,7 +221,8 @@ describe("ExternalLibraryService", () => {
       }
     });
 
-    await harness.service.install("libreoffice");
+    await harness.service.startInstallation("libreoffice");
+    await vi.waitFor(() => expect(executableFromEvent).toBeDefined());
 
     await expect(executableFromEvent).resolves.toContain(
       "LibreOffice.app/Contents/MacOS/soffice",
@@ -215,7 +232,7 @@ describe("ExternalLibraryService", () => {
   it("reuses an installed runtime across Service instances", async () => {
     const first = await createHarness();
     await first.service.initialize();
-    await first.service.install("libreoffice");
+    await installAndWait(first);
 
     const definition = first.registry.require("libreoffice");
     const packageDefinition = first.registry.selectPackage(
@@ -281,9 +298,9 @@ describe("ExternalLibraryService", () => {
     expect(harness.service.list()).toMatchObject([
       { status: "invalid", errorCode: "marker-invalid" },
     ]);
-    await expect(harness.service.install("libreoffice")).rejects.toThrow(
-      "EXTERNAL_LIBRARY_CONFLICT",
-    );
+    await expect(
+      harness.service.startInstallation("libreoffice"),
+    ).rejects.toThrow("EXTERNAL_LIBRARY_CONFLICT");
     await expect(
       access(join(paths.installationDirectory, "unknown.txt")),
     ).resolves.toBeUndefined();
@@ -313,7 +330,7 @@ describe("ExternalLibraryService", () => {
     ]);
     expect(statuses).toEqual(["unsupported"]);
     await expect(
-      harness.service.install("libreoffice"),
+      harness.service.startInstallation("libreoffice"),
     ).rejects.toThrow("FEATURE_NOT_SUPPORTED");
     await expect(
       harness.service.requireExecutable("libreoffice"),
@@ -352,16 +369,42 @@ describe("ExternalLibraryService", () => {
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
 
-    const first = harness.service.install("libreoffice");
-    const second = harness.service.install("libreoffice");
+    const first =
+      await harness.service.startInstallation("libreoffice");
+    const second =
+      await harness.service.startInstallation("libreoffice");
     await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
     harness.service.cancel("libreoffice");
 
-    await expect(first).rejects.toMatchObject({ name: "AbortError" });
-    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    expect(first.status).toBe("downloading");
+    expect(second.status).toBe("downloading");
     await vi.waitFor(() =>
       expect(harness.service.list()).toMatchObject([
         { status: "not-installed" },
+      ]),
+    );
+  });
+
+  it("reports failures through snapshots after accepting the background task", async () => {
+    let rejectDownload: ((reason: Error) => void) | undefined;
+    const download = vi.fn(
+      async () =>
+        new Promise<never>((_resolvePromise, rejectPromise) => {
+          rejectDownload = rejectPromise;
+        }),
+    );
+    const harness = await createHarness({ downloader: { download } });
+    await harness.service.initialize();
+
+    const accepted =
+      await harness.service.startInstallation("libreoffice");
+
+    expect(accepted.status).toBe("downloading");
+    await vi.waitFor(() => expect(rejectDownload).toBeDefined());
+    rejectDownload!(new Error("network unavailable"));
+    await vi.waitFor(() =>
+      expect(harness.service.list()).toMatchObject([
+        { status: "failed", errorCode: "INTERNAL_ERROR" },
       ]),
     );
   });
@@ -383,14 +426,13 @@ describe("ExternalLibraryService", () => {
     );
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
-    const installation = harness.service.install("libreoffice");
+    const installation =
+      await harness.service.startInstallation("libreoffice");
     await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
 
     await harness.service.shutdown();
 
-    await expect(installation).rejects.toMatchObject({
-      name: "AbortError",
-    });
+    expect(installation.status).toBe("downloading");
     await vi.waitFor(() =>
       expect(harness.service.list()).toMatchObject([
         { status: "not-installed" },
@@ -401,7 +443,7 @@ describe("ExternalLibraryService", () => {
   it("removes only the selected versioned installation", async () => {
     const harness = await createHarness();
     await harness.service.initialize();
-    const installed = await harness.service.install("libreoffice");
+    const installed = await installAndWait(harness);
 
     const removed = await harness.service.remove("libreoffice");
 
@@ -414,7 +456,7 @@ describe("ExternalLibraryService", () => {
   it("migrates a verified installation and switches settings last", async () => {
     const harness = await createHarness();
     await harness.service.initialize();
-    const installed = await harness.service.install("libreoffice");
+    const installed = await installAndWait(harness);
     const targetRootPath = join(dirname(harness.rootPath), "moved");
 
     const result = await harness.service.migrate(targetRootPath);
@@ -438,7 +480,7 @@ describe("ExternalLibraryService", () => {
   it("reports a target conflict before changing either root", async () => {
     const harness = await createHarness();
     await harness.service.initialize();
-    const installed = await harness.service.install("libreoffice");
+    const installed = await installAndWait(harness);
     const targetRootPath = join(dirname(harness.rootPath), "occupied");
     const definition = harness.registry.require("libreoffice");
     const packageDefinition = harness.registry.selectPackage(
@@ -482,7 +524,7 @@ describe("ExternalLibraryService", () => {
   it("replaces a confirmed target conflict transactionally", async () => {
     const harness = await createHarness();
     await harness.service.initialize();
-    await harness.service.install("libreoffice");
+    await installAndWait(harness);
     const targetRootPath = join(dirname(harness.rootPath), "replace");
     const definition = harness.registry.require("libreoffice");
     const packageDefinition = harness.registry.selectPackage(

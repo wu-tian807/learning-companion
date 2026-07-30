@@ -32,7 +32,7 @@ export const IPC_CHANNELS = {
   updateHomePreferences: "settings:update-home",
   listExternalLibraries: "external-library:list",
   refreshExternalLibrary: "external-library:refresh",
-  installExternalLibrary: "external-library:install",
+  startExternalLibraryInstallation: "external-library:install",
   cancelExternalLibrary: "external-library:cancel",
   removeExternalLibrary: "external-library:remove",
   selectExternalLibrariesDirectory: "external-library:select-directory",
@@ -82,7 +82,7 @@ export interface LearningCompanionApi {
   refreshExternalLibrary: (
     request: ExternalLibraryIdRequest,
   ) => Promise<ExternalLibrarySnapshot>;
-  installExternalLibrary: (
+  startExternalLibraryInstallation: (
     request: ExternalLibraryIdRequest,
   ) => Promise<ExternalLibrarySnapshot>;
   cancelExternalLibrary: (request: ExternalLibraryIdRequest) => Promise<void>;

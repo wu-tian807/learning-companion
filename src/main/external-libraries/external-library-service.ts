@@ -35,7 +35,7 @@ export interface ExternalLibraryServiceApi {
   shutdown(): Promise<void>;
   list(): readonly ExternalLibrarySnapshot[];
   refresh(libraryId: string): Promise<ExternalLibrarySnapshot>;
-  install(libraryId: string): Promise<ExternalLibrarySnapshot>;
+  startInstallation(libraryId: string): Promise<ExternalLibrarySnapshot>;
   cancel(libraryId: string): void;
   remove(libraryId: string): Promise<ExternalLibrarySnapshot>;
   migrate(
@@ -213,7 +213,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     return this.refreshDefinition(definition);
   }
 
-  async install(libraryId: string): Promise<ExternalLibrarySnapshot> {
+  async startInstallation(
+    libraryId: string,
+  ): Promise<ExternalLibrarySnapshot> {
     await this.initialize();
     if (this.migrationTask) {
       throw new AppError("EXTERNAL_LIBRARY_CONFLICT");
@@ -222,7 +224,13 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     const active = this.activeInstallations.get(definition.id);
 
     if (active) {
-      return active.promise;
+      const snapshot = this.snapshots.get(definition.id);
+
+      if (!snapshot) {
+        throw new AppError("DATA_INTEGRITY_ERROR");
+      }
+
+      return cloneExternalLibrarySnapshot(snapshot);
     }
 
     const current = await this.refreshDefinition(definition);
@@ -231,7 +239,13 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     );
 
     if (installationStartedDuringRefresh) {
-      return installationStartedDuringRefresh.promise;
+      const snapshot = this.snapshots.get(definition.id);
+
+      if (!snapshot) {
+        throw new AppError("DATA_INTEGRITY_ERROR");
+      }
+
+      return cloneExternalLibrarySnapshot(snapshot);
     }
 
     if (current.status === "available") {
@@ -245,31 +259,39 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     }
 
     const controller = new AbortController();
+    this.updateSnapshot(definition, "downloading", {
+      progress: {
+        completedBytes: 0,
+        totalBytes: this.selectPackage(definition).expectedSize,
+      },
+    });
     const task = this.performInstallation(definition, controller.signal)
       .catch(async (error: unknown) => {
         if (isAbortError(error)) {
-          return Promise.reject(error);
+          try {
+            return await this.refreshDefinition(definition);
+          } catch (refreshError) {
+            this.logger.warn(
+              "取消安装后刷新外部运行时状态失败",
+              refreshError,
+            );
+            return this.updateSnapshot(definition, "failed", {
+              errorCode: errorCode(refreshError),
+            });
+          }
         }
 
-        this.updateSnapshot(definition, "failed", {
+        this.logger.warn(
+          `外部运行时后台安装失败：${definition.id}`,
+          error,
+        );
+        return this.updateSnapshot(definition, "failed", {
           errorCode: errorCode(error),
         });
-        throw error;
       })
-      .finally(async () => {
+      .finally(() => {
         if (this.activeInstallations.get(definition.id)?.promise === task) {
           this.activeInstallations.delete(definition.id);
-        }
-
-        if (controller.signal.aborted) {
-          await this.refreshDefinition(definition).catch(
-            (refreshError: unknown) => {
-              this.logger.warn(
-                "取消安装后刷新外部运行时状态失败",
-                refreshError,
-              );
-            },
-          );
         }
       });
     this.activeInstallations.set(definition.id, {
@@ -277,7 +299,20 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       promise: task,
     });
 
-    return task;
+    void task.catch((error: unknown) => {
+      this.logger.warn(
+        `外部运行时后台任务终态处理失败：${definition.id}`,
+        error,
+      );
+    });
+
+    const snapshot = this.snapshots.get(definition.id);
+
+    if (!snapshot) {
+      throw new AppError("DATA_INTEGRITY_ERROR");
+    }
+
+    return cloneExternalLibrarySnapshot(snapshot);
   }
 
   cancel(libraryId: string): void {

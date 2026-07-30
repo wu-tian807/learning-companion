@@ -77,9 +77,9 @@ const api: LearningCompanionApi = {
       IPC_CHANNELS.refreshExternalLibrary,
       request,
     ),
-  installExternalLibrary: (request: ExternalLibraryIdRequest) =>
+  startExternalLibraryInstallation: (request: ExternalLibraryIdRequest) =>
     invoke<ExternalLibrarySnapshot>(
-      IPC_CHANNELS.installExternalLibrary,
+      IPC_CHANNELS.startExternalLibraryInstallation,
       request,
     ),
   cancelExternalLibrary: (request: ExternalLibraryIdRequest) =>

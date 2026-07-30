@@ -318,7 +318,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     setPendingInstall(null);
     void runLibraryMutation(
       () =>
-        window.learningCompanion.installExternalLibrary({
+        window.learningCompanion.startExternalLibraryInstallation({
           libraryId: library.id,
         }),
       '外部组件安装失败，请重试。',

@@ -44,7 +44,7 @@ function createExternalLibraries(): ExternalLibraryServiceApi {
     shutdown: vi.fn(async () => undefined),
     list: vi.fn(() => []),
     refresh: vi.fn(),
-    install: vi.fn(),
+    startInstallation: vi.fn(),
     cancel: vi.fn(),
     remove: vi.fn(),
     migrate: vi.fn(),

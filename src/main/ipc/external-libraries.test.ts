@@ -77,7 +77,7 @@ function createService() {
     shutdown: vi.fn(async () => undefined),
     list: vi.fn(() => [snapshot]),
     refresh: vi.fn(async () => snapshot),
-    install: vi.fn(async () => createSnapshot("available")),
+    startInstallation: vi.fn(async () => createSnapshot("downloading")),
     cancel: vi.fn(),
     remove: vi.fn(async () => snapshot),
     migrate: vi.fn(async (rootPath: string) => ({
@@ -127,14 +127,29 @@ describe("ExternalLibrary IPC handlers", () => {
     registerExternalLibraryHandlers(service);
 
     await expect(
-      findHandler(IPC_CHANNELS.installExternalLibrary)({
+      findHandler(IPC_CHANNELS.startExternalLibraryInstallation)({
         libraryId: "../libreoffice",
       }),
     ).rejects.toMatchObject({
       code: "INVALID_IPC_REQUEST",
       kind: "internal",
     });
-    expect(service.install).not.toHaveBeenCalled();
+    expect(service.startInstallation).not.toHaveBeenCalled();
+  });
+
+  it("returns after the service accepts a background installation", async () => {
+    const { service } = createService();
+    registerExternalLibraryHandlers(service);
+
+    await expect(
+      findHandler(IPC_CHANNELS.startExternalLibraryInstallation)({
+        libraryId: "libreoffice",
+      }),
+    ).resolves.toMatchObject({
+      id: "libreoffice",
+      status: "downloading",
+    });
+    expect(service.startInstallation).toHaveBeenCalledWith("libreoffice");
   });
 
   it("selects and migrates the external library root", async () => {
