@@ -74,6 +74,7 @@ function createService() {
   const snapshot = createSnapshot();
   const service = {
     initialize: vi.fn(async () => undefined),
+    shutdown: vi.fn(async () => undefined),
     list: vi.fn(() => [snapshot]),
     refresh: vi.fn(async () => snapshot),
     install: vi.fn(async () => createSnapshot("available")),
