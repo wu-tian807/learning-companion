@@ -1,6 +1,6 @@
 # 外部运行时管理设计
 
-> 状态：已确认，待实施
+> 状态：第一阶段已实施，待 macOS / Windows 真机安装验收
 >
 > 决策日期：2026-07-30
 >
@@ -110,7 +110,6 @@ interface ExternalLibraryDefinition {
   readonly version: string;
   readonly installationFormatVersion: number;
   readonly packages: readonly ExternalLibraryPackage[];
-  readonly executableRelativePath: string;
   readonly sourceUrl: string;
   readonly licenseName: string;
   readonly licenseUrl: string;
@@ -118,11 +117,14 @@ interface ExternalLibraryDefinition {
 
 interface ExternalLibraryPackage {
   readonly platform: 'darwin' | 'win32';
-  readonly arch: 'arm64' | 'x64';
+  readonly architecture: 'arm64' | 'x64';
   readonly packageType: 'dmg' | 'msi';
   readonly downloadUrl: string;
   readonly sha256: string;
-  readonly expectedSize?: number;
+  readonly expectedSize: number;
+  readonly executableRelativePath: string;
+  readonly payloadRelativePath?: string;
+  readonly verifyCodeSignature?: boolean;
 }
 ```
 
@@ -155,14 +157,15 @@ interface ExternalLibrarySnapshot {
   readonly id: string;
   readonly displayName: string;
   readonly version: string;
+  readonly expectedSize: number;
+  readonly rootPath: string;
   readonly status: ExternalLibraryStatus;
-  readonly installedPath?: string;
+  readonly installationPath?: string;
   readonly progress?: {
-    readonly phase: string;
-    readonly completedBytes?: number;
-    readonly totalBytes?: number;
+    readonly completedBytes: number;
+    readonly totalBytes: number;
   };
-  readonly error?: AppErrorPayload;
+  readonly errorCode?: string;
 }
 ```
 

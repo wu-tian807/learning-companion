@@ -110,9 +110,12 @@ flowchart LR
     CR["ContentResolverRegistry<br/>解析 ContentRef"]
     RS["ContentResourceService<br/>受控流式资源"]
     RR["Renderer Workbench Registry<br/>选择 React Workbench"]
+    ARTS["AssetArtifactService<br/>派生缓存生成与生命周期"]
+    EXT["ExternalLibraryService<br/>可选运行时生命周期"]
 
     DB["SQLite"]
     FILES["Project Workspace<br/>Asset / Attachment 文件"]
+    ARTIFACTS["Project Workspace<br/>可重建 Artifact 文件"]
     OS["Electron / 操作系统"]
 
     AGENT["AgentProvider Registry"]
@@ -141,6 +144,11 @@ flowchart LR
     WSM --> WR
     CR --> FILES
     WR --> RS
+    WR --> ARTS
+    ARTS --> DB
+    ARTS --> ARTIFACTS
+    ARTS --> EXT
+    EXT --> OS
     RS --> RR
 
     IPC --> AGENT
@@ -410,7 +418,11 @@ readonly defaultProjectWorkspace: string;
 │   └── generated/
 ├── attachments/
 └── .learning-companion/
-    └── workspace.json
+    ├── workspace.json
+    ├── artifacts/
+    │   └── <assetId>/<producerId>/<revision>.<ext>
+    └── .staging/
+        └── artifacts/
 ```
 
 - `workspace.json` 只保存 Project ID 和格式版本；
@@ -567,18 +579,111 @@ Workbench 中显示更完整的错误和 Relink 操作。
 
 第一阶段：
 
-- 删除 Asset 只删除数据库记录；
-- 删除 Project 只删除数据库记录；
-- 不自动删除文件或 Workspace；
+- 删除 Asset 会删除数据库记录及其可重建 Artifact；
+- 删除 Project 会删除数据库记录及其可重建 Artifact；
+- 不自动删除原始 Asset 文件或整个 Workspace；
+- Workspace 切换会清理旧 Workspace 中属于该 Project 的 Artifact；
+- Artifact 清理会先取消并等待进行中的生成任务；
 - UI 使用“从 Learning Companion 中移除”；
 - 物理删除后续作为独立、二次确认的废纸篓操作。
 
-## 12. Workbench 架构
+## 12. External Runtime 与 Asset Artifact
+
+### 12.1 External Runtime
+
+大型可选依赖不进入基础安装包，由统一运行时框架按需安装：
+
+```text
+ExternalLibraryDefinition
+    固定 ID、版本、平台包、官方 URL、大小和 SHA-256
+
+ExternalLibraryRegistry
+    注册应用内可信 Definition
+
+ExternalLibraryService
+    发现、下载、校验、安装、删除、迁移和实时状态
+
+ExternalLibraryPathManager
+    受控路径、staging、跨盘复制、校验、提交和回滚
+
+ExternalLibraryInstaller
+    macOS DMG / Windows MSI 平台安装细节
+
+ExternalLibraryInstallationStore
+    installation.json 读写与完整性验证
+```
+
+设置项 `externalLibrariesPath` 默认位于：
+
+```text
+<Documents>/Learning Companion/externalLib
+```
+
+用户可以在设置中心更改路径。迁移采用“复制到 staging → 完整验证 → 提交目标
+→ 最后更新 settings → 清理旧目录”的顺序；同名冲突由用户选择保留目标或替换
+目标。Renderer 只获得运行时 ID、状态和进度，不能提供下载 URL、Hash、命令或
+可执行路径。
+
+当前首个 Definition 是 LibreOffice 26.2.5，固定支持：
+
+- macOS arm64；
+- macOS x64；
+- Windows x64。
+
+下载只接受 HTTPS 官方来源，并校验固定大小与 SHA-256。取消和超时会终止并等待
+子进程实际退出，再清理 staging，避免外部进程继续写入已释放目录。
+
+### 12.2 Asset Artifact
+
+Artifact 是隐藏、可重建、用户不直接编辑的技术派生物。Office 预览 PDF、
+缩略图、OCR 中间结果和媒体转码缓存都属于这一层。
+
+```text
+AssetArtifact
+    assetId / producerId / artifactKey
+    relativePath / mediaType
+    sourceRevision / producerVersion / artifactRevision
+    updatedTime
+```
+
+- 文件位于 Project Workspace 的 `.learning-companion/artifacts`；
+- SQLite `asset_artifacts` 表只保存索引；
+- Producer 先写隔离 staging，校验后再提交；
+- 相同稳定键的并发生成会合并；
+- 来源 Revision 或 Producer Version 变化会使缓存失效；
+- 有效缓存可以在生成 Runtime 已卸载后继续使用；
+- Asset 删除、Project 删除和 Workspace 切换会清理对应 Artifact；
+- 文件删除失败会记录警告，索引仍按领域生命周期清理。
+
+“机器生成”本身不决定它是不是 Artifact。用户确认并长期维护的思维导图、
+讲义或 Markdown 是正式 Asset；只有它们的布局缓存、缩略图或导出预览才可能是
+Artifact。
+
+### 12.3 Office 预览
+
+DOC、DOCX、PPT 和 PPTX 统一进入 `builtin.office` Workbench：
+
+```text
+Office Asset
+→ 计算流式 SHA-256 Source Revision
+→ 查询有效 PDF Artifact
+→ 缓存缺失时检查并按需安装 LibreOffice
+→ 隔离 LibreOffice UserInstallation 后无界面转换
+→ 校验 PDF 输出
+→ 通过 ContentResourceService 注册短期 URL
+→ 复用 PDF.js 文档视图
+```
+
+Office Workbench 只读，不修改原文件。它复用 PDF 的分页、缩放、滚动和文字层，
+但保留自己的 Workbench ID、状态键、命令和 `office.preview.*` Anchor 身份。
+界面明确区分需要安装、需要转换、转换中、失败和可阅读状态。
+
+## 13. Workbench 架构
 
 Workbench 是用户阅读、编辑、选择内容并接入 AI 的主要交互平台，不只是
 Preview。
 
-### 12.1 双端结构
+### 13.1 双端结构
 
 每个 Workbench 可以包含：
 
@@ -600,7 +705,7 @@ src/workbenches/<id>/
 Workbench 内部功能可以完全不同。公共框架只固定生命周期、能力、协议和交互
 设施，不把 PDF Viewer、Markdown Editor、Text Editor 写成同一种编辑器。
 
-### 12.2 Registry 与 Session
+### 13.2 Registry 与 Session
 
 - `WorkbenchRegistry` 按 `mediaType` 和 Content Capability 选择 Provider；
 - 一个 `mediaType` 当前只选择一个内置 Workbench；
@@ -609,7 +714,7 @@ Workbench 内部功能可以完全不同。公共框架只固定生命周期、�
 - 打开新 Session 前关闭旧 Provider、流、Transport Binding 和待完成命令；
 - 不支持或不可用内容进入 Unsupported Workbench。
 
-### 12.3 Workbench State
+### 13.3 Workbench State
 
 `workbench_states` 保存小型 JSON，例如：
 
@@ -628,11 +733,11 @@ assetId + workbenchId + dataKey → bytes
 它不是所有 Workbench 的强制要求。PDF 等 Workbench 可以只使用小型 State，
 也可以完全不保存正文数据。
 
-## 13. Workbench Interaction Facilities
+## 14. Workbench Interaction Facilities
 
 Workbench 可以声明是否接入公共交互设施，而不是 Host 根据 Workbench ID 写死。
 
-### 13.1 Facility 角色
+### 14.1 Facility 角色
 
 ```text
 transport
@@ -651,7 +756,7 @@ capture
     预留区域截图、录屏等未来输入
 ```
 
-### 13.2 当前设施
+### 14.2 当前设施
 
 - Renderer Transport；
 - Sandbox Frame Transport；
@@ -670,7 +775,7 @@ Manifest 声明 Facility ID、版本和选项。Definition Registry 校验：
 - Facility 依赖；
 - Input 基数。
 
-### 13.3 统一行为，不统一实现
+### 14.3 统一行为，不统一实现
 
 - 纯文本、Markdown、PDF、HTML 和 EPUB 可以各自实现文字选区；
 - HTML / EPUB 通过 Sandbox Frame Bridge 上报；
@@ -681,7 +786,7 @@ Manifest 声明 Facility ID、版本和选项。Definition Registry 校验：
 - AI 生成能力通过 Workbench Interaction Snapshot 获得输入，不读取 Renderer
   内部状态。
 
-## 14. 当前 Workbench 与依赖
+## 15. 当前 Workbench 与依赖
 
 | Workbench | 技术 | 定位 | 状态 |
 | --- | --- | --- | --- |
@@ -695,14 +800,14 @@ Manifest 声明 Facility ID、版本和选项。Definition Registry 校验：
 | Video | Chromium 原生 Media | 播放控制和进度恢复 | 已落地 |
 | Unsupported | 内置 Fallback | 不支持类型与不可用内容 | 已落地 |
 | Mind Map | React Flow / Markmap | 可编辑生成型 Asset | 已确定，待实现 |
-| Office | Mammoth 或受控转换 | 参考资料查看 | 暂缓 |
+| Office | LibreOffice 26.2.5 → PDF.js | DOC/DOCX/PPT/PPTX 只读预览与文字选择 | 已落地，待真机文件验收 |
 
 Markdown 后续解析、索引和导出优先使用 unified / remark / rehype。LaTeX 与
 Mermaid 必须作为 Markdown Workbench 的正式能力设计，而不是临时字符串替换。
 
-## 15. Attachment、Anchor 与 Relation
+## 16. Attachment、Anchor 与 Relation
 
-### 15.1 Attachment
+### 16.1 Attachment
 
 Attachment 是依附于 Asset 的学习沉淀，例如：
 
@@ -722,7 +827,7 @@ target / createdTime / updatedTime
 正文内容保存为 Project Workspace 文件。任意大 JSON `payload` 不得成为隐藏的
 内容数据库。
 
-### 15.2 Anchor
+### 16.2 Anchor
 
 Anchor 属于媒体内容语义，不属于某个 Renderer 实现：
 
@@ -738,7 +843,7 @@ image.region
 
 Workbench 负责解释、绘制和跳转；Anchor Registry 负责类型校验和版本迁移。
 
-### 15.3 Asset Relation
+### 16.3 Asset Relation
 
 独立可打开的生成结果是 Asset，而不是 Attachment。Relation 表达：
 
@@ -751,13 +856,14 @@ supersedes
 思维导图和讲义正文保存为 `assets/generated` 文件，数据库只保存 Asset 和关系
 元数据。
 
-## 16. SQLite 与检索
+## 17. SQLite 与检索
 
 | 领域 | 技术 | 状态 |
 | --- | --- | --- |
 | 数据库 | SQLite / better-sqlite3 | 已落地 |
 | ORM | Drizzle ORM | 已落地 |
 | Project / Asset | SQLite + 内存 Map | 已落地 |
+| Asset Artifact | Workspace 文件 + SQLite 索引 | 已落地 |
 | Workbench State | JSON / BLOB 表 | 已落地 |
 | Attachment / Anchor / Relation | SQLite 元数据 | 已确定，待实现 |
 | Provider Thread Ref | SQLite | 已确定，待实现 |
@@ -780,9 +886,9 @@ SQLite 不负责：
 - 保存完整 Codex Conversation；
 - 保存 ChatGPT Token 或 API Key。
 
-## 17. Codex 与 Agent Provider
+## 18. Codex 与 Agent Provider
 
-### 17.1 Provider 选择
+### 18.1 Provider 选择
 
 第一阶段只实现 Codex Provider，使用应用管理的 Codex Runtime 和 App Server：
 
@@ -811,7 +917,7 @@ OpenAI API Key。实际模型和额度通过 App Server 动态读取，不在客
 - 自建完整 Conversation Store；
 - 把 OpenCode 或 DeepSeek 伪装成 Codex 自定义 Provider。
 
-### 17.2 Provider 边界
+### 18.2 Provider 边界
 
 应用定义 Provider 无关的最小领域接口：
 
@@ -834,7 +940,7 @@ interface AgentProvider {
 Codex DTO 只存在于 Codex Adapter 中，不能泄漏到 Project、Asset、Workbench、
 Attachment 或 Memory。
 
-### 17.3 Project Agent Lane
+### 18.3 Project Agent Lane
 
 每个 Project 固定两个长期 Lane：
 
@@ -849,7 +955,7 @@ Thread Ref。切换 Asset 不创建新 Tutor Thread。
 Conversation、Compact 和完整消息历史由 Codex Runtime 管理；Learning Companion
 只保存 Thread Ref 和可丢弃的 UI 显示缓存。
 
-### 17.4 Turn Context
+### 18.4 Turn Context
 
 每一轮只组合必要现场：
 
@@ -864,7 +970,7 @@ laneId
 
 不无条件上传整个 Project。其他内容通过受控工具按需读取。
 
-### 17.5 AgentContextProjection
+### 18.5 AgentContextProjection
 
 Agent 不读取 SQLite。Main 把允许读取的结构化数据投影为本轮只读视图：
 
@@ -879,7 +985,7 @@ selected-content/
 Projection 不是第二份事实来源。Agent 可以使用通用读取和搜索能力，但看不到
 SQLite、其他 Project、应用设置或认证数据。
 
-### 17.6 Agent 编辑会话
+### 18.6 Agent 编辑会话
 
 Markdown、HTML 等可编辑 Asset 使用比 VS Code 更严格的 Editing Session：
 
@@ -901,7 +1007,7 @@ Markdown、HTML 等可编辑 Asset 使用比 VS Code 更严格的 Editing Sessio
 - 非可编辑 Asset 生成 Attachment Candidate 或 Generated Asset Draft；
 - Agent 无权直接操作 SQLite。
 
-## 18. Memory 与成本
+## 19. Memory 与成本
 
 Memory 位于全局层，不属于某个 Project、Asset、Lane 或 Provider。只保存跨学习
 场景仍有价值的稳定事实，例如长期目标、薄弱点和讲解偏好。
@@ -922,9 +1028,9 @@ Memory 位于全局层，不属于某个 Project、Asset、Lane 或 Provider。�
 - 模型和推理强度依据账号动态能力；
 - 额度耗尽不影响本地学习功能。
 
-## 19. 错误、并发和恢复
+## 20. 错误、并发和恢复
 
-### 19.1 AppError
+### 20.1 AppError
 
 Main 下层抛出结构化 `AppError`，IPC 顶层统一转换：
 
@@ -939,7 +1045,7 @@ internal
 - Internal Error 记录完整日志，并显示用户可理解的兜底信息；
 - Renderer 使用可见模态错误，不依赖右上角短暂 Toast。
 
-### 19.2 生命周期并发
+### 20.2 生命周期并发
 
 - `ProjectService` 使用串行生命周期队列；
 - `AssetService` 使用 lifecycle version 拒绝被替代的加载；
@@ -947,7 +1053,7 @@ internal
 - 文件选择和批量导入携带发起时的 `projectId`；
 - Workspace 切换先关闭 Workbench，再卸载和重载 Asset。
 
-### 19.3 恢复
+### 20.3 恢复
 
 - Settings 使用临时文件加 rename 原子保存；
 - Content 写入使用 Revision 和原子替换；
@@ -957,7 +1063,7 @@ internal
 - 数据损坏记录警告，在安全情况下恢复默认值；
 - 不静默覆盖无法解析或版本不兼容的数据。
 
-## 20. Project Workspace 切换
+## 21. Project Workspace 切换
 
 Home 的创建和编辑界面都展示 Workspace：
 
@@ -974,6 +1080,7 @@ Home 的创建和编辑界面都展示 Workspace：
 确认风险
 → 关闭活动 Workbench
 → 卸载当前 Asset
+→ 清理旧 Workspace 的可重建 Artifact
 → 更新 Project.workspacePath
 → 校验 Workspace marker
 → 重新加载 Asset
@@ -982,7 +1089,7 @@ Home 的创建和编辑界面都展示 Workspace：
 相对 Asset 在新根目录重新解析，文件不存在时变成 Missing；外部绝对 Asset 不受
 影响。切换不会移动文件，也不会重新计算媒体类型。
 
-## 21. 测试基线
+## 22. 测试基线
 
 测试层次：
 
@@ -994,6 +1101,9 @@ Home 的创建和编辑界面都展示 Workspace：
 - Windows / POSIX 路径策略；
 - Content Resolver 和 Revision；
 - Content Resource Byte Range；
+- External Runtime 下载校验、安装、迁移、取消和回滚；
+- Asset Artifact 命中、失效、生成并发与生命周期清理；
+- Office Provider 状态与 PDF 文档视图复用；
 - Workbench Provider、Adapter 和 Renderer；
 - Sandbox 交互桥；
 - IPC 校验与错误归类；
@@ -1012,9 +1122,9 @@ Home 的创建和编辑界面都展示 Workspace：
 - 不支持 Workbench 的 Fallback；
 - Sandbox Frame 不能访问 Main IPC。
 
-## 22. 已确认但尚未实施
+## 23. 已确认但尚未实施
 
-以下 Workspace 基座已经落地：
+以下已确认基座已经落地：
 
 - `Project.workspacePath` 与旧 Project 自动迁移；
 - `settings.defaultProjectWorkspace`，默认位于 Documents；
@@ -1026,7 +1136,11 @@ Home 的创建和编辑界面都展示 Workspace：
 - Add Asset 使用当前 Project Workspace 作为文件选择起点；
 - “添加资料”默认复制、拖拽复制，以及低频“链接外部文件”入口；
 - Asset 列表根据 `ContentRef` 显示“外部”等来源徽标；
-- Project 和 Asset 移除记录时不删除真实文件。
+- Project 和 Asset 移除记录时不删除真实资料文件；
+- 通用 External Runtime 管理、设置 UI 与安全迁移；
+- LibreOffice 26.2.5 的 macOS / Windows 固定安装清单；
+- Asset Artifact 文件空间、SQLite 索引和生命周期清理；
+- DOC/DOCX/PPT/PPTX 转 PDF 的 Office Workbench。
 
 以下方向已经确认但尚未实施：
 
@@ -1042,13 +1156,13 @@ Home 的创建和编辑界面都展示 Workspace：
 
 这些项目进入实现前仍需各自的实施计划和测试拆分，但不再重新讨论顶层方向。
 
-## 23. 当前决策摘要
+## 24. 当前决策摘要
 
 当前基线：
 
 > Electron + React + TypeScript + Vite + Tailwind CSS + Electron Forge +
 > SQLite/better-sqlite3 + Drizzle + 可注册 Workbench + 文件型 Project Workspace +
-> Codex App Server。
+> 可选 External Runtime + Asset Artifact + Codex App Server。
 
 核心边界：
 
@@ -1065,9 +1179,11 @@ Home 的创建和编辑界面都展示 Workspace：
 - 不把 ChatGPT Web 自动化作为产品能力；
 - 不让 Agent 直接操作 SQLite 或覆盖 Asset 原件。
 
-## 24. 关联设计文档
+## 25. 关联设计文档
 
 - `docs/superpowers/specs/2026-07-27-asset-workbench-architecture-design.md`
 - `docs/superpowers/specs/2026-07-29-workbench-interaction-facilities-design.md`
 - `docs/superpowers/specs/2026-07-30-codex-agent-runtime-and-lanes-design.md`
 - `docs/superpowers/specs/2026-07-30-project-workspace-and-content-ref-design.md`
+- `docs/superpowers/specs/2026-07-30-external-library-runtime-design.md`
+- `docs/superpowers/specs/2026-07-30-asset-artifacts-office-preview-design.md`

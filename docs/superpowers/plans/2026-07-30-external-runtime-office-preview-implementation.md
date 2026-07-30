@@ -1,5 +1,7 @@
 # 外部运行时、Asset Artifact 与 Office 预览实施计划
 
+> 状态：第一阶段代码已完成，待真实 LibreOffice 安装和 Office 文件人工验收
+
 > 依据：
 >
 > - `docs/superpowers/specs/2026-07-30-external-library-runtime-design.md`
