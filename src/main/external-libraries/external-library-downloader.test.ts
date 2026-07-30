@@ -36,6 +36,7 @@ function createPackage(content: Uint8Array) {
     executableRelativePath:
       'LibreOffice.app/Contents/MacOS/soffice',
     payloadRelativePath: 'LibreOffice.app',
+    verifyCodeSignature: true,
   };
 }
 

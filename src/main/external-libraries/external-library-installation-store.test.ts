@@ -29,6 +29,7 @@ function createDefinition() {
     executableRelativePath:
       'LibreOffice.app/Contents/MacOS/soffice',
     payloadRelativePath: 'LibreOffice.app',
+    verifyCodeSignature: true,
   };
   return {
     definition: {

@@ -20,6 +20,7 @@ export interface ExternalLibraryDmgPackageDefinition
   readonly platform: 'darwin';
   readonly packageType: 'dmg';
   readonly payloadRelativePath: string;
+  readonly verifyCodeSignature: boolean;
 }
 
 export interface ExternalLibraryMsiPackageDefinition
@@ -102,7 +103,8 @@ export function isExternalLibraryPackageDefinition(
     !Number.isSafeInteger(value.expectedSize) ||
     value.expectedSize <= 0 ||
     (value.packageType === 'dmg' &&
-      !isPortableWorkspaceRelativePath(value.payloadRelativePath))
+      (!isPortableWorkspaceRelativePath(value.payloadRelativePath) ||
+        typeof value.verifyCodeSignature !== 'boolean'))
   ) {
     return false;
   }
@@ -157,6 +159,7 @@ function clonePackage(
         packageType: 'dmg',
         platform: 'darwin',
         payloadRelativePath: value.payloadRelativePath,
+        verifyCodeSignature: value.verifyCodeSignature,
       })
     : Object.freeze({
         ...base,
