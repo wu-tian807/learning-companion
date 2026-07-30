@@ -613,6 +613,36 @@ ExternalLibraryInstallationStore
     installation.json 读写与完整性验证
 ```
 
+安装接口采用“任务接纳”语义：Main 创建并持有长期安装任务后立即返回
+`downloading` Snapshot。关闭 Settings、切换页面或卸载某个 Renderer 视图不会
+取消下载；只有用户明确取消或应用退出才会触发任务收尾。重复开始同一组件时复用
+现有任务，不启动第二次下载。当前平台没有匹配安装包时返回稳定的
+`unsupported` 状态，不把它误报成安装失败。
+
+Renderer 端按以下职责分层：
+
+```text
+ExternalLibraryStore
+    统一订阅 Snapshot、处理列表与事件竞争、暴露领域操作
+
+ExternalLibraryRuntimeController
+    应用根部常驻，把运行时状态迁移交给通知 Adapter
+
+Settings / FirstRunOnboarding
+    只消费 Store，不持有后台任务
+
+NotificationStore / NotificationHost
+    通用瞬时消息队列，不理解 LibreOffice
+```
+
+安装成功默认显示 5 秒通知；安装失败显示持久通知，并可定位到对应的 Settings
+组件卡片。通知只存在 Renderer 内存，不写入 settings 或 SQLite。
+
+`settings.json` 使用 `completedOnboardingVersion` 记录首次设置版本。首次运行会
+介绍推荐的文档处理组件、预计体积和安装位置，用户可以开始后台安装、更改位置或
+暂不安装。完成选择后不再重复阻塞启动；未来引导结构变化时通过提升当前版本重新
+触发，而不是增加多个布尔字段。
+
 设置项 `externalLibrariesPath` 默认位于：
 
 ```text
@@ -1102,6 +1132,9 @@ Home 的创建和编辑界面都展示 Workspace：
 - Content Resolver 和 Revision；
 - Content Resource Byte Range；
 - External Runtime 下载校验、安装、迁移、取消和回滚；
+- External Runtime 后台任务接纳、重复请求和 Renderer 状态竞争；
+- 全局通知去重、自动关闭、悬停暂停和持久错误；
+- 首次引导版本迁移、完成写入和各运行时状态分支；
 - Asset Artifact 命中、失效、生成并发与生命周期清理；
 - Office Provider 状态与 PDF 文档视图复用；
 - Workbench Provider、Adapter 和 Renderer；
@@ -1138,6 +1171,9 @@ Home 的创建和编辑界面都展示 Workspace：
 - Asset 列表根据 `ContentRef` 显示“外部”等来源徽标；
 - Project 和 Asset 移除记录时不删除真实资料文件；
 - 通用 External Runtime 管理、设置 UI 与安全迁移；
+- Main 持有的后台安装任务与 Renderer 全局 External Library Store；
+- 通用全局通知设施与 External Runtime 通知 Adapter；
+- 可跳过、可选择安装位置的首次运行推荐组件引导；
 - LibreOffice 26.2.5 的 macOS / Windows 固定安装清单；
 - Asset Artifact 文件空间、SQLite 索引和生命周期清理；
 - DOC/DOCX/PPT/PPTX 转 PDF 的 Office Workbench。
@@ -1187,3 +1223,4 @@ Home 的创建和编辑界面都展示 Workspace：
 - `docs/superpowers/specs/2026-07-30-project-workspace-and-content-ref-design.md`
 - `docs/superpowers/specs/2026-07-30-external-library-runtime-design.md`
 - `docs/superpowers/specs/2026-07-30-asset-artifacts-office-preview-design.md`
+- `docs/superpowers/specs/2026-07-30-background-runtime-install-and-notifications-design.md`

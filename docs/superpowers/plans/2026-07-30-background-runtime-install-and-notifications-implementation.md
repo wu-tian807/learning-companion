@@ -1,6 +1,6 @@
 # 后台运行时安装、全局通知与首次引导实施计划
 
-> 状态：待实施
+> 状态：已实施；自动化和打包验证通过，待真实后台下载安装人工验收
 >
 > 依据：
 >
@@ -474,3 +474,18 @@ pnpm verify:package:native
 
 完成后停在本地等待用户验收。用户明确确认后，再按项目规范执行
 `git pull --rebase` 和 push。
+
+## 实施结果
+
+- 阶段一至阶段六均已按独立提交完成；
+- `pnpm check` 通过：129 个测试文件、519 项测试；
+- `pnpm smoke:native`、`pnpm package` 和
+  `pnpm verify:package:native` 通过；
+- 已使用隔离 `userData` 启动打包版，确认首次引导可以展示；
+- 已确认“暂不安装”会进入 Home，并持久化
+  `completedOnboardingVersion: 1`；
+- 视觉验收时发现并修复了 Notification Host 的不稳定 Zustand Selector，
+  避免 React 19 生产构建触发无限渲染。
+
+尚需用户在真实环境验收长时间后台下载、关闭 Settings 后的连续进度、完成与失败
+通知、取消，以及目录迁移冲突流程。验收前不 push。
