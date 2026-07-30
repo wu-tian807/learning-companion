@@ -34,6 +34,7 @@ import { WorkbenchRuntimeProvider } from './workbench/runtime/WorkbenchRuntimePr
 interface ProjectPageProps {
   readonly project: ProjectSnapshot;
   readonly onBack: () => void;
+  readonly onOpenSettings: () => void;
 }
 
 type AssetLoadState =
@@ -472,7 +473,11 @@ function AssetPanel({
   );
 }
 
-export function ProjectPage({ project, onBack }: ProjectPageProps) {
+export function ProjectPage({
+  project,
+  onBack,
+  onOpenSettings,
+}: ProjectPageProps) {
   const [loadState, setLoadState] = useState<AssetLoadState>({
     kind: 'loading',
   });
@@ -840,16 +845,14 @@ export function ProjectPage({ project, onBack }: ProjectPageProps) {
             </span>
           </span>
         </div>
-        <span title="设置功能即将开放">
-          <button
-            type="button"
-            aria-label="设置（即将开放）"
-            disabled
-            className="ui-icon-button grid size-[30px] place-items-center rounded-[10px] border border-white/10 text-slate-500 disabled:cursor-not-allowed disabled:opacity-55"
-          >
-            <SettingsIcon />
-          </button>
-        </span>
+        <button
+          type="button"
+          aria-label="打开设置"
+          onClick={onOpenSettings}
+          className="ui-icon-button grid size-[30px] place-items-center rounded-[10px] border border-white/10 text-slate-400"
+        >
+          <SettingsIcon />
+        </button>
       </header>
 
       <WorkbenchRuntimeProvider onError={setError}>

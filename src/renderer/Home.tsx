@@ -38,6 +38,7 @@ interface PendingWorkspaceChange {
 
 interface HomeProps {
   readonly onOpenProject: (project: ProjectSnapshot) => void;
+  readonly onOpenSettings: () => void;
 }
 
 function copyHomePreferences(preferences: HomePreferences): HomePreferences {
@@ -81,7 +82,10 @@ function LoadingProjectList() {
   );
 }
 
-export function Home({ onOpenProject }: HomeProps) {
+export function Home({
+  onOpenProject,
+  onOpenSettings,
+}: HomeProps) {
   const [loadState, setLoadState] = useState<ProjectLoadState>({ kind: 'loading' });
   const [requestVersion, setRequestVersion] = useState(0);
   const [homePreferences, setHomePreferences] = useState<HomePreferences>(() =>
@@ -466,6 +470,7 @@ export function Home({ onOpenProject }: HomeProps) {
             onViewModeChange={changeViewMode}
             onSortModeChange={changeSortMode}
             onCreate={openCreateDialog}
+            onOpenSettings={onOpenSettings}
           />
         </header>
 

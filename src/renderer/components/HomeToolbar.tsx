@@ -10,6 +10,7 @@ interface HomeToolbarProps {
   onViewModeChange: (mode: ProjectViewMode) => void;
   onSortModeChange: (mode: ProjectSortMode) => void;
   onCreate: () => void;
+  onOpenSettings: () => void;
 }
 
 function SearchIcon() {
@@ -64,6 +65,24 @@ function CheckIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg
+      className="size-full"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="10" cy="10" r="2.5" />
+      <path d="M16.2 11.4v-2.8l-1.8-.5a5 5 0 0 0-.5-1.1l.9-1.7-2-2-1.7.9a5 5 0 0 0-1.1-.5L9.4 2H6.6l-.5 1.8a5 5 0 0 0-1.1.5l-1.7-.9-2 2 .9 1.7a5 5 0 0 0-.5 1.1L0 8.6v2.8l1.8.5a5 5 0 0 0 .5 1.1l-.9 1.7 2 2 1.7-.9a5 5 0 0 0 1.1.5l.5 1.8h2.8l.5-1.8a5 5 0 0 0 1.1-.5l1.7.9 2-2-.9-1.7a5 5 0 0 0 .5-1.1l1.8-.5Z" transform="translate(2 0) scale(.8 1)" />
+    </svg>
+  );
+}
+
 export function HomeToolbar({
   searchQuery,
   viewMode,
@@ -72,6 +91,7 @@ export function HomeToolbar({
   onViewModeChange,
   onSortModeChange,
   onCreate,
+  onOpenSettings,
 }: HomeToolbarProps) {
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -260,6 +280,17 @@ export function HomeToolbar({
         className="ui-primary-button h-11 rounded-full border border-white bg-slate-50 px-5 text-sm font-semibold text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
       >
         ＋ 新建 Project
+      </button>
+
+      <button
+        type="button"
+        aria-label="打开设置"
+        onClick={onOpenSettings}
+        className="ui-icon-button grid size-11 place-items-center rounded-full border border-white/[0.14] bg-black/10 text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+      >
+        <span className="size-[18px]">
+          <SettingsIcon />
+        </span>
       </button>
     </div>
   );
