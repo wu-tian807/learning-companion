@@ -20,6 +20,9 @@ import {
   interactionFromTextSelection,
 } from '../../shared/workbench/selection';
 import type {
+  WorkbenchInteractionSnapshot,
+} from '../../shared/workbench/interaction';
+import type {
   PdfDocumentSummary,
   PdfFindStatus,
   PdfOutlineItem,
@@ -123,6 +126,12 @@ function reportRendererError(
     console.error(message, error);
     onError(message);
   }
+}
+
+function identityInteraction(
+  interaction: WorkbenchInteractionSnapshot,
+): WorkbenchInteractionSnapshot {
+  return interaction;
 }
 
 function OutlineTree({
@@ -312,7 +321,17 @@ function PasswordPrompt({
   );
 }
 
-export function PdfWorkbenchView({
+interface PdfDocumentWorkbenchViewProps
+  extends RendererWorkbenchViewProps {
+  readonly contributionOwnerId: string;
+  readonly createSaveViewStateCommand?: typeof createPdfSaveViewStateCommand;
+  readonly isSaveViewStateResult?: typeof isPdfSaveViewStateResult;
+  readonly mapInteraction?: (
+    interaction: WorkbenchInteractionSnapshot,
+  ) => WorkbenchInteractionSnapshot;
+}
+
+export function PdfDocumentWorkbenchView({
   bootstrap,
   executeCommand,
   onRelink,
@@ -321,7 +340,12 @@ export function PdfWorkbenchView({
   onInteractionChange,
   onOpenExternal,
   onError,
-}: RendererWorkbenchViewProps) {
+  contributionOwnerId,
+  createSaveViewStateCommand =
+    createPdfSaveViewStateCommand,
+  isSaveViewStateResult = isPdfSaveViewStateResult,
+  mapInteraction = identityInteraction,
+}: PdfDocumentWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isPdfWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
@@ -364,10 +388,10 @@ export function PdfWorkbenchView({
     async (state: PdfWorkbenchViewState, version: number) => {
       try {
         const result = await executeCommand(
-          createPdfSaveViewStateCommand(state),
+          createSaveViewStateCommand(state),
         );
 
-        if (!isPdfSaveViewStateResult(result.payload)) {
+        if (!isSaveViewStateResult(result.payload)) {
           throw new Error('PDF Workbench 视图状态响应无效');
         }
         savedViewStateVersionRef.current = Math.max(
@@ -382,7 +406,12 @@ export function PdfWorkbenchView({
         );
       }
     },
-    [executeCommand, onError],
+    [
+      createSaveViewStateCommand,
+      executeCommand,
+      isSaveViewStateResult,
+      onError,
+    ],
   );
 
   const scheduleViewStateSave = useCallback(
@@ -465,7 +494,9 @@ export function PdfWorkbenchView({
             onSelectionChange(selection) {
               if (active) {
                 onInteractionChange(
-                  interactionFromTextSelection(selection),
+                  mapInteraction(
+                    interactionFromTextSelection(selection),
+                  ),
                 );
               }
             },
@@ -516,7 +547,7 @@ export function PdfWorkbenchView({
     return () => {
       active = false;
       readyRef.current = false;
-      onInteractionChange({ inputs: [] });
+      onInteractionChange(mapInteraction({ inputs: [] }));
 
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
@@ -540,6 +571,7 @@ export function PdfWorkbenchView({
     onError,
     onOpenExternal,
     onInteractionChange,
+    mapInteraction,
     payload,
     persistViewState,
     scheduleViewStateSave,
@@ -722,7 +754,10 @@ export function PdfWorkbenchView({
       viewState.sidebar,
     ],
   );
-  useWorkbenchContributions('builtin.pdf', rendererActions);
+  useWorkbenchContributions(
+    contributionOwnerId,
+    rendererActions,
+  );
 
   const openContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -735,13 +770,22 @@ export function PdfWorkbenchView({
         selection?.target ??
         createPdfPageTarget(viewState.pageNumber);
 
+      const interaction = mapInteraction(
+        interactionFromTextSelection(selection, focus),
+      );
+
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        interactionFromTextSelection(selection, focus),
+        interaction,
       );
     },
-    [bootstrap.sessionId, runtime, viewState.pageNumber],
+    [
+      bootstrap.sessionId,
+      mapInteraction,
+      runtime,
+      viewState.pageNumber,
+    ],
   );
 
   if (!payload) {
@@ -1097,6 +1141,17 @@ export function PdfWorkbenchView({
         </div>
       </div>
     </div>
+  );
+}
+
+export function PdfWorkbenchView(
+  props: RendererWorkbenchViewProps,
+) {
+  return (
+    <PdfDocumentWorkbenchView
+      {...props}
+      contributionOwnerId={pdfWorkbenchManifest.id}
+    />
   );
 }
 

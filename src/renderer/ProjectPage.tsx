@@ -891,6 +891,7 @@ export function ProjectPage({
                 ? revealAssetInFolder(selectedAsset)
                 : Promise.resolve()
             }
+            onOpenSettings={onOpenSettings}
             onLifecycleTaskChange={handleWorkbenchLifecycleTask}
             onError={setError}
           />

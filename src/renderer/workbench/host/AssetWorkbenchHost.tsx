@@ -38,6 +38,7 @@ interface AssetWorkbenchHostProps {
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
+  readonly onOpenSettings: () => void;
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
 }
@@ -125,6 +126,7 @@ export function AssetWorkbenchHost({
   onRelink,
   onRefresh,
   onReveal,
+  onOpenSettings,
   onLifecycleTaskChange,
   onError,
 }: AssetWorkbenchHostProps) {
@@ -364,6 +366,7 @@ export function AssetWorkbenchHost({
           onRelink={onRelink}
           onRefresh={onRefresh}
           onReveal={onReveal}
+          onOpenSettings={onOpenSettings}
           onInteractionChange={reportInteraction}
           onOpenExternal={openExternal}
           onError={onError}
