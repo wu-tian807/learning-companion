@@ -182,3 +182,14 @@
 - 不新增拖拽分隔条。
 - 不加入 `authored`。
 - 不执行 push，除非用户另行要求。
+
+## 2026-08-01 共享面板纠偏
+
+后续验收发现只复用 `AssetList` 仍会让两侧分别维护标题、计数、加载状态和排序，
+并实际造成左侧未跟随 `updatedTime` 重排。纠偏后的边界为：
+
+1. 新增 `AssetPanel`，统一拥有完整文件面板及排序行为；
+2. `ProjectAssetPanel` 只注入导入、刷新和批量选择控件；
+3. `GenerationCenter` 只注入生成工具区；
+4. `AssetList` 统一实现重排位移和新增淡入动画，并尊重减少动态效果设置；
+5. 左右侧都通过同一个 `AssetLoadState -> AssetPanel` 路径渲染，禁止分别排序。

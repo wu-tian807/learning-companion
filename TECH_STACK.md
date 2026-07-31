@@ -348,9 +348,12 @@ Project 页面采用 Workbench 优先的响应式布局：
 - 同一窗口模式内尊重手动展开状态，跨模式时恢复该模式默认状态；
 - 布局只属于 Renderer 内存，不写入 Settings，也不引入拖动分栏。
 
-`ProjectAssetPanel` 与 `GenerationCenter` 共享 `AssetList`、`AssetListItem` 和
-`AssetActionsMenu`。Asset 的相对时间使用统一低频时间刻度显示 `just now`、
-`N mins ago`、`N hrs ago` 或 `N days ago`，不回退到带年份的绝对日期。
+`ProjectAssetPanel` 与 `GenerationCenter` 都通过同一个 `AssetPanel` 渲染完整文件
+面板；标题、计数、加载/失败/空状态、按 `updatedTime` 降序排列和列表区域只有一份
+实现，两侧仅注入导入/多选控件或生成工具。`AssetList` 在顺序变化时通过 Web
+Animations 执行移动/插入动画，并尊重系统的减少动态效果设置。Asset 的相对时间
+使用统一低频时间刻度显示 `just now`、`N mins ago`、`N hrs ago` 或 `N days ago`，
+不回退到带年份的绝对日期。
 
 ## 8. Project、Asset 与数据行为分离
 

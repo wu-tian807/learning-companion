@@ -101,9 +101,10 @@ assets/
 ```mermaid
 flowchart LR
     PAGE["ProjectPage<br/>加载与分组全部 Asset"]
-    IMPORTED["ProjectAssetPanel<br/>导入资料外壳"]
+    IMPORTED["ProjectAssetPanel<br/>导入与多选配置"]
     WORKBENCH["AssetWorkbenchHost<br/>当前 Asset"]
-    GENERATION["GenerationCenter<br/>工具与生成内容外壳"]
+    GENERATION["GenerationCenter<br/>生成工具配置"]
+    PANEL["AssetPanel<br/>统一文件面板"]
     LIST["AssetList"]
     ITEM["AssetListItem"]
     MENU["AssetActionsMenu"]
@@ -111,24 +112,27 @@ flowchart LR
     PAGE -->|"creationKind = imported"| IMPORTED
     PAGE -->|"当前选中 Asset"| WORKBENCH
     PAGE -->|"creationKind = generated"| GENERATION
-    IMPORTED --> LIST
-    GENERATION --> LIST
+    IMPORTED --> PANEL
+    GENERATION --> PANEL
+    PANEL --> LIST
     LIST --> ITEM
     ITEM --> MENU
 ```
 
 共享边界为：
 
-- `AssetList`：负责列表状态、空状态和 Asset 集合渲染；
+- `AssetPanel`：负责完整侧栏外壳、标题与计数、加载/失败/空状态、按
+  `updatedTime` 降序排列、排序说明和列表区域；
+- `AssetList`：负责 Asset 集合渲染，以及新增和重排时的移动动画；
 - `AssetListItem`：负责媒体图标、名称、Availability、来源徽标、相对时间和选中态；
 - `AssetActionsMenu`：负责编辑标题、在文件夹中显示、重新定位和从 Project 移除；
 - `formatRelativeTime`：负责统一相对时间文案。
 
-两侧外壳保持不同：
+两侧只保留业务差异，并注入同一个 `AssetPanel`：
 
-- `ProjectAssetPanel` 继续拥有添加资料、批量选择和刷新全部资料；
-- `GenerationCenter` 拥有通用生成工具、当前 Workbench 贡献的专属工具和生成内容
-  列表。
+- `ProjectAssetPanel` 注入添加资料、批量选择和刷新全部资料控件；
+- `GenerationCenter` 注入通用生成工具和当前 Workbench 贡献的专属工具；
+- 标题栏、计数、加载状态、排序和 Asset 列表不得在两个适配层分别实现。
 
 右侧生成内容的 `...` 不复制 NotebookLM 的全量操作，而是直接使用与左侧相同的
 `AssetActionsMenu`。
@@ -215,15 +219,19 @@ ProjectPage 强制修改内部缩放模式。
 即使超过一年也继续显示天数，不回退到带年份的绝对日期。ProjectPage 维护一个
 低频时间刻度，使可见列表无需其他数据变化也能更新相对时间。
 
+`AssetPanel` 对左右两类 Asset 使用同一套 `updatedTime` 降序规则。已有行的位置
+变化使用 FLIP 风格的 Web Animations 位移动画，新插入行使用轻量淡入；系统启用
+“减少动态效果”时跳过动画。
+
 ## 11. 数据流
 
 ```text
 ProjectService.openProject
   -> AssetService 返回当前 Project 的全部 AssetSnapshot
   -> ProjectPage 按 creationKind 分组
-       -> importedAssets -> ProjectAssetPanel
-       -> generatedAssets -> GenerationCenter
-  -> 两侧 AssetListItem 点击
+       -> imported AssetLoadState -> ProjectAssetPanel -> AssetPanel
+       -> generated AssetLoadState -> GenerationCenter -> AssetPanel
+  -> 两侧共享 AssetListItem 点击
        -> 同一个 selectedAssetId
        -> AssetWorkbenchHost 打开对应 Workbench
 ```
@@ -266,7 +274,8 @@ Generation Service
 ### Renderer
 
 - ProjectPage 正确分组导入与生成 Asset；
-- 左右列表共用 `AssetListItem` 和 `AssetActionsMenu`；
+- 左右侧栏共用完整 `AssetPanel`、`AssetListItem` 和 `AssetActionsMenu`；
+- 两类 Asset 都由 `AssetPanel` 按 `updatedTime` 排序，并在顺序变化时平滑移动；
 - 点击任一列表的 Asset 都会更新同一个 Workbench；
 - GenerationCenter 不再渲染“当前资料上下文”；
 - 生成内容为空时显示空状态；

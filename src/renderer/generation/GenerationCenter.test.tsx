@@ -27,6 +27,7 @@ const generatedAsset: AssetSnapshot = {
 };
 
 const actions = {
+  onRetry: vi.fn(),
   onSelect: vi.fn(),
   onRename: vi.fn(),
   onReveal: vi.fn(),
@@ -40,7 +41,7 @@ describe('GenerationCenter', () => {
       <WorkbenchRuntimeProvider onError={() => undefined}>
         <GenerationCenter
           asset={undefined}
-          generatedAssets={[]}
+          state={{ kind: 'ready', assets: [] }}
           selectedAssetId={null}
           busy={false}
           now={now}
@@ -51,6 +52,9 @@ describe('GenerationCenter', () => {
     );
 
     expect(html).toContain('生成中心');
+    expect(html).toContain(
+      'data-asset-panel="project-generation-center"',
+    );
     expect(html).toContain('选择 Asset 后显示对应工具');
     expect(html).toContain('还没有生成内容');
     expect(html).not.toContain('当前资料上下文');
@@ -61,7 +65,7 @@ describe('GenerationCenter', () => {
       <WorkbenchRuntimeProvider onError={() => undefined}>
         <GenerationCenter
           asset={undefined}
-          generatedAssets={[generatedAsset]}
+          state={{ kind: 'ready', assets: [generatedAsset] }}
           selectedAssetId="generated"
           busy={false}
           now={now}

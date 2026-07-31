@@ -56,6 +56,9 @@ describe('ProjectAssetPanel', () => {
 
     expect(loading).toContain('正在加载资料');
     expect(loading).toContain('Project Assets');
+    expect(loading).toContain(
+      'data-asset-panel="project-assets-panel"',
+    );
   });
 
   it('renders media, source and availability from Asset snapshots', () => {

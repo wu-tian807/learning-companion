@@ -1,6 +1,6 @@
 import type { AssetSnapshot } from '../../shared/assets';
 import { AssetImportSplitButton } from '../components/AssetImportSplitButton';
-import { AssetList } from './AssetList';
+import { AssetPanel } from './AssetPanel';
 import { AssetSelectionCheckbox } from './AssetListItem';
 import type { AssetLoadState } from './project-asset-view';
 
@@ -91,151 +91,114 @@ export function ProjectAssetPanel({
   onRefreshAll,
   onDelete,
 }: ProjectAssetPanelProps) {
-  const assets = state.kind === 'ready' ? state.assets : [];
+  const assetCount = state.kind === 'ready' ? state.assets.length : 0;
   const selectedCount = selectedAssetIds.size;
 
   return (
-    <aside
+    <AssetPanel
       id="project-assets-panel"
-      aria-label="Project Assets"
-      className={[
-        'flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[17px] border bg-[#20252c] shadow-[0_20px_50px_rgba(5,8,12,0.16)] transition-colors',
-        dragging
-          ? 'border-indigo-300/45 bg-indigo-400/[0.08]'
-          : 'border-white/[0.055]',
-      ].join(' ')}
-    >
-      <div className="flex h-[54px] shrink-0 items-center justify-between border-b border-white/[0.075] px-[17px]">
-        <h2 className="text-sm font-semibold text-slate-100">
-          {selectionMode ? '选择资料' : 'Assets'}
-        </h2>
-        <span className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-500">
-            {selectionMode
-              ? `已选 ${selectedCount} 项`
-              : state.kind === 'ready'
-                ? `${assets.length} 项`
-                : '—'}
-          </span>
-          {state.kind === 'ready' && assets.length > 0 && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={
-                selectionMode
-                  ? onExitSelectionMode
-                  : onEnterSelectionMode
-              }
-              className="ui-control rounded-md px-1.5 py-1 text-[10px] font-medium text-indigo-200 disabled:opacity-40"
-            >
-              {selectionMode ? '完成' : '选择'}
-            </button>
-          )}
-        </span>
-      </div>
-
-      {selectionMode ? (
-        <div className="mx-3.5 mt-3.5 flex h-[39px] shrink-0 items-center justify-between rounded-[11px] border border-white/[0.08] bg-black/10 px-2">
+      ariaLabel="Project Assets"
+      title={selectionMode ? '选择资料' : 'Assets'}
+      state={state}
+      highlighted={dragging}
+      headerSummary={
+        selectionMode ? `已选 ${selectedCount} 项` : undefined
+      }
+      headerAction={
+        state.kind === 'ready' && assetCount > 0 ? (
           <button
             type="button"
-            aria-pressed={allAssetsSelected}
-            disabled={busy || assets.length === 0}
-            onClick={onToggleAll}
-            className="ui-control flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 disabled:opacity-40"
+            disabled={busy}
+            onClick={
+              selectionMode
+                ? onExitSelectionMode
+                : onEnterSelectionMode
+            }
+            className="ui-control rounded-md px-1.5 py-1 text-[10px] font-medium text-indigo-200 disabled:opacity-40"
           >
-            <AssetSelectionCheckbox checked={allAssetsSelected} />
-            {allAssetsSelected ? '取消全选' : '全选'}
+            {selectionMode ? '完成' : '选择'}
           </button>
-          <button
-            type="button"
-            disabled={busy || selectedCount === 0}
-            onClick={onDeleteSelected}
-            className="ui-danger-button flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-rose-300 disabled:opacity-35"
-          >
-            <TrashIcon />
-            移除
-          </button>
-        </div>
-      ) : (
-        <AssetImportSplitButton
-          disabled={busy || state.kind !== 'ready'}
-          onCopy={onCopyAdd}
-          onLink={onLinkAdd}
-        />
-      )}
-
-      <div className="flex shrink-0 items-center justify-between px-[17px] pt-2.5 pb-1 text-[10px] font-bold tracking-[0.09em] text-slate-500">
-        <span>
-          {selectionMode ? '选择要移除的资料' : '全部内容'}
-        </span>
-        {selectionMode ? (
-          <span className="text-[9px] font-medium tracking-normal text-slate-500">
-            {selectedCount}/{assets.length}
-          </span>
-        ) : (
-          <span className="flex items-center gap-1.5">
-            <span className="text-[9px] font-medium tracking-normal text-slate-400/70">
-              最近更新 ↓
-            </span>
+        ) : undefined
+      }
+      toolbar={
+        selectionMode ? (
+          <div className="mx-3.5 mt-3.5 flex h-[39px] items-center justify-between rounded-[11px] border border-white/[0.08] bg-black/10 px-2">
             <button
               type="button"
-              aria-label="刷新全部资料状态"
-              title="刷新全部资料状态"
-              disabled={busy || state.kind !== 'ready'}
-              onClick={onRefreshAll}
-              className="ui-icon-button grid size-7 place-items-center rounded-lg text-slate-400 disabled:opacity-40"
+              aria-pressed={allAssetsSelected}
+              disabled={busy || assetCount === 0}
+              onClick={onToggleAll}
+              className="ui-control flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 disabled:opacity-40"
             >
-              <RefreshIcon spinning={refreshingAll} />
+              <AssetSelectionCheckbox checked={allAssetsSelected} />
+              {allAssetsSelected ? '取消全选' : '全选'}
             </button>
-          </span>
-        )}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {state.kind === 'loading' && (
-          <p className="px-3 py-8 text-center text-xs text-slate-500">
-            正在加载资料…
-          </p>
-        )}
-        {state.kind === 'failed' && (
-          <div className="px-3 py-8 text-center">
-            <p className="text-xs text-rose-300">资料加载失败</p>
             <button
               type="button"
-              onClick={onRetry}
-              className="ui-control mt-3 rounded-full border border-white/10 px-3 py-1.5 text-[10px]"
+              disabled={busy || selectedCount === 0}
+              onClick={onDeleteSelected}
+              className="ui-danger-button flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-rose-300 disabled:opacity-35"
             >
-              重试
+              <TrashIcon />
+              移除
             </button>
           </div>
-        )}
-        {state.kind === 'ready' && (
-          <AssetList
-            assets={assets}
-            selectedAssetId={selectedAssetId}
-            selectionMode={selectionMode}
-            selectedAssetIds={selectedAssetIds}
-            busy={busy}
-            now={now}
-            emptyState={
-              <div className="px-3 py-10 text-center">
-                <p className="text-xs font-medium text-slate-400">
-                  还没有资料
-                </p>
-                <p className="mt-2 text-[10px] leading-5 text-slate-600">
-                  点击添加资料，或将本地文件拖到这里
-                </p>
-              </div>
-            }
-            onSelect={onSelect}
-            onToggleSelection={onToggleSelection}
-            onRename={onRename}
-            onReveal={onReveal}
-            onRelink={onRelink}
-            onDelete={onDelete}
+        ) : (
+          <AssetImportSplitButton
+            disabled={busy || state.kind !== 'ready'}
+            onCopy={onCopyAdd}
+            onLink={onLinkAdd}
           />
-        )}
-      </div>
-    </aside>
+        )
+      }
+      listTitle={
+        selectionMode ? '选择要移除的资料' : '全部内容'
+      }
+      listSummary={
+        selectionMode ? (
+          <span className="text-[9px] font-medium tracking-normal text-slate-500">
+            {selectedCount}/{assetCount}
+          </span>
+        ) : undefined
+      }
+      listAction={
+        selectionMode ? undefined : (
+          <button
+            type="button"
+            aria-label="刷新全部资料状态"
+            title="刷新全部资料状态"
+            disabled={busy || state.kind !== 'ready'}
+            onClick={onRefreshAll}
+            className="ui-icon-button grid size-7 place-items-center rounded-lg text-slate-400 disabled:opacity-40"
+          >
+            <RefreshIcon spinning={refreshingAll} />
+          </button>
+        )
+      }
+      loadingLabel="正在加载资料…"
+      failedLabel="资料加载失败"
+      emptyState={
+        <div className="px-3 py-10 text-center">
+          <p className="text-xs font-medium text-slate-400">
+            还没有资料
+          </p>
+          <p className="mt-2 text-[10px] leading-5 text-slate-600">
+            点击添加资料，或将本地文件拖到这里
+          </p>
+        </div>
+      }
+      selectedAssetId={selectedAssetId}
+      selectionMode={selectionMode}
+      selectedAssetIds={selectedAssetIds}
+      busy={busy}
+      now={now}
+      onRetry={onRetry}
+      onSelect={onSelect}
+      onToggleSelection={onToggleSelection}
+      onRename={onRename}
+      onReveal={onReveal}
+      onRelink={onRelink}
+      onDelete={onDelete}
+    />
   );
 }

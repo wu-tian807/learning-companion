@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import { AssetListItem } from './AssetListItem';
+import { useAssetOrderAnimation } from './use-asset-order-animation';
 
 export interface AssetListProps {
   readonly assets: readonly AssetSnapshot[];
@@ -34,6 +35,8 @@ export function AssetList({
   onRelink,
   onDelete,
 }: AssetListProps) {
+  const rowsRef = useAssetOrderAnimation(assets);
+
   if (assets.length === 0) {
     return emptyState ?? null;
   }
@@ -51,20 +54,31 @@ export function AssetList({
         };
 
         return (
-          <AssetListItem
+          <div
             key={asset.id}
-            asset={asset}
-            selected={asset.id === selectedAssetId}
-            selectionMode={selectionMode}
-            checked={checked}
-            busy={busy}
-            now={now}
-            onActivate={activate}
-            onRename={() => onRename(asset)}
-            onReveal={() => onReveal(asset)}
-            onRelink={() => onRelink(asset)}
-            onDelete={() => onDelete(asset)}
-          />
+            ref={(row) => {
+              if (row) {
+                rowsRef.current.set(asset.id, row);
+              } else {
+                rowsRef.current.delete(asset.id);
+              }
+            }}
+            data-asset-list-row={asset.id}
+          >
+            <AssetListItem
+              asset={asset}
+              selected={asset.id === selectedAssetId}
+              selectionMode={selectionMode}
+              checked={checked}
+              busy={busy}
+              now={now}
+              onActivate={activate}
+              onRename={() => onRename(asset)}
+              onReveal={() => onReveal(asset)}
+              onRelink={() => onRelink(asset)}
+              onDelete={() => onDelete(asset)}
+            />
+          </div>
         );
       })}
     </>

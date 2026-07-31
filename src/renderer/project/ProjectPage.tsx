@@ -19,8 +19,6 @@ import { ProjectAssetPanel } from './ProjectAssetPanel';
 import {
   assetMediaLabel,
   filterAssetLoadStateByCreationKind,
-  filterAssetsByCreationKind,
-  sortAssetsByUpdatedTime,
 } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
 import { useProjectLayout } from './use-project-layout';
@@ -78,19 +76,21 @@ export function ProjectPage({
       ),
     [session.loadState],
   );
-  const generatedAssets = useMemo(
+  const generatedAssetState = useMemo(
     () =>
-      sortAssetsByUpdatedTime(
-        filterAssetsByCreationKind(
-          assetOperations.assets,
-          'generated',
-        ),
+      filterAssetLoadStateByCreationKind(
+        session.loadState,
+        'generated',
       ),
-    [assetOperations.assets],
+    [session.loadState],
   );
   const importedAssetCount =
     importedAssetState.kind === 'ready'
       ? importedAssetState.assets.length
+      : 0;
+  const generatedAssetCount =
+    generatedAssetState.kind === 'ready'
+      ? generatedAssetState.assets.length
       : 0;
   const openProjectWorkspace = useCallback(async () => {
     setError(null);
@@ -197,7 +197,7 @@ export function ProjectPage({
             </h1>
             <span className="mt-0.5 block text-[10px] text-slate-500">
               {session.loadState.kind === 'ready'
-                ? `${importedAssetCount} 份资料 · ${generatedAssets.length} 个生成内容`
+                ? `${importedAssetCount} 份资料 · ${generatedAssetCount} 个生成内容`
                 : '正在读取资料'}
             </span>
           </span>
@@ -336,11 +336,12 @@ export function ProjectPage({
             >
               <GenerationCenter
                 asset={assetOperations.selectedAsset}
-                generatedAssets={generatedAssets}
+                state={generatedAssetState}
                 selectedAssetId={session.selectedAssetId}
                 busy={assetOperations.busy}
                 now={relativeTimeNow}
                 mediaLabel={assetMediaLabel}
+                onRetry={session.retry}
                 onSelect={session.selectAsset}
                 onRename={assetOperations.setRenameTarget}
                 onReveal={(asset) =>
