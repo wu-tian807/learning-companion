@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,7 @@ import {
   selectAfterAssetsDeletion,
 } from '../asset-view';
 import {
+  applyAssetChangedEvent,
   filterAssetsByCreationKind,
   type AssetLoadState,
 } from './project-asset-view';
@@ -82,6 +84,16 @@ export function useProjectAssets({
       );
     },
     [setLoadState],
+  );
+
+  useEffect(
+    () =>
+      window.learningCompanion.onAssetChanged((event) => {
+        setLoadState((current) =>
+          applyAssetChangedEvent(current, projectId, event),
+        );
+      }),
+    [projectId, setLoadState],
   );
   const runMutation = useCallback(
     async (operation: () => Promise<void>, message: string) => {

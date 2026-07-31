@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 
 import {
   IPC_CHANNELS,
@@ -15,13 +15,35 @@ import type { AssetServiceApi } from '../assets/asset-service';
 import { AppError, handleAppError } from '../errors/app-error';
 import { registerIpcHandler } from './register-handler';
 
+let removeSubscription: (() => void) | undefined;
+
+export interface AssetHandlerDependencies {
+  readonly broadcast: (channel: string, value: unknown) => void;
+}
+
+const defaultDependencies: AssetHandlerDependencies = {
+  broadcast(channel, value) {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(channel, value);
+      }
+    }
+  },
+};
+
 function invalidRequest(): Error {
   return new AppError('INVALID_IPC_REQUEST');
 }
 
 export function registerAssetHandlers(
   assetService: AssetServiceApi,
+  dependencies: AssetHandlerDependencies = defaultDependencies,
 ): void {
+  removeSubscription?.();
+  removeSubscription = assetService.subscribe((event) => {
+    dependencies.broadcast(IPC_CHANNELS.assetChanged, event);
+  });
+
   registerIpcHandler(
     IPC_CHANNELS.selectLocalAssetFiles,
     async (_event, request: unknown) => {
@@ -193,6 +215,8 @@ export function registerAssetHandlers(
 }
 
 export function removeAssetHandlers(): void {
+  removeSubscription?.();
+  removeSubscription = undefined;
   ipcMain.removeHandler(IPC_CHANNELS.selectLocalAssetFiles);
   ipcMain.removeHandler(IPC_CHANNELS.addLocalAssets);
   ipcMain.removeHandler(IPC_CHANNELS.renameAsset);

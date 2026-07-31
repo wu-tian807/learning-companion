@@ -9,6 +9,7 @@ import { isAgentProviderId } from "./agent-providers";
 import {
   ASSET_NAME_MAX_LENGTH,
   isAssetSnapshotList,
+  type AssetChangedEvent,
   type LocalAssetImportMode,
   type AssetSnapshot,
 } from "./assets";
@@ -73,6 +74,7 @@ export const IPC_CHANNELS = {
   refreshAsset: "asset:refresh",
   refreshAllAssets: "asset:refresh-all",
   revealAssetInFolder: "asset:reveal-in-folder",
+  assetChanged: "asset:changed",
   openWorkbench: "workbench:open",
   commandWorkbench: "workbench:command",
   closeWorkbench: "workbench:close",
@@ -164,6 +166,9 @@ export interface LearningCompanionApi {
     request: ProjectLifecycleRequest,
   ) => Promise<AssetSnapshot[]>;
   revealAssetInFolder: (request: AssetIdRequest) => Promise<void>;
+  onAssetChanged: (
+    listener: (event: AssetChangedEvent) => void,
+  ) => () => void;
   openWorkbench: (request: WorkbenchOpenRequest) => Promise<WorkbenchBootstrap>;
   commandWorkbench: (
     request: WorkbenchCommandRequest,

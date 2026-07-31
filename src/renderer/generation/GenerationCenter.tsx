@@ -175,7 +175,7 @@ export function GenerationCenter({
             生成内容
           </p>
           <span className="text-[9px] text-slate-500">
-            最近使用 ↓
+            最近更新 ↓
           </span>
         </div>
         <div className="mt-2">

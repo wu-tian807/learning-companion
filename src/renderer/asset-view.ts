@@ -19,14 +19,14 @@ export function selectInitialAssetId(
     return null;
   }
 
-  const byRecentUse = [...assets].sort(
+  const byRecentUpdate = [...assets].sort(
     (left, right) => right.updatedTime - left.updatedTime,
   );
 
   return (
-    byRecentUse.find(
+    byRecentUpdate.find(
       (asset) => asset.contentStatus.availability === 'available',
-    ) ?? byRecentUse[0]
+    ) ?? byRecentUpdate[0]
   ).id;
 }
 

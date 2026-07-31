@@ -58,7 +58,7 @@ describe('Asset view state', () => {
     ).toBeUndefined();
   });
 
-  it('selects the most recently used available Asset first', () => {
+  it('selects the most recently updated available Asset first', () => {
     const assets = [
       asset('older', 'available', timestamp('2026-07-27T01:00:00.000Z')),
       asset(

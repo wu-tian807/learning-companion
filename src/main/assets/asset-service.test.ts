@@ -356,6 +356,49 @@ describe('AssetService', () => {
     });
   });
 
+  it('publishes committed snapshots and supports removing listeners', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+    const listener = vi.fn();
+    const unsubscribe = service.subscribe(listener);
+
+    service.update('asset', { name: '第一次更新' });
+    unsubscribe();
+    service.update('asset', { name: '第二次更新' });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith({
+      projectId: 'project',
+      asset: expect.objectContaining({
+        id: 'asset',
+        name: '第一次更新',
+        updatedTime: SERVICE_NOW,
+      }),
+    });
+  });
+
+  it('does not roll back updates when an event listener fails', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+    service.subscribe(() => {
+      throw new Error('listener failed');
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const updated = service.update('asset', { name: '仍然成功' });
+
+    expect(updated.name).toBe('仍然成功');
+    expect(error).toHaveBeenCalledWith(
+      '发布 Asset 更新事件失败',
+      expect.any(Error),
+    );
+    error.mockRestore();
+  });
+
   it('skips normalized no-op updates', async () => {
     const database = createDatabase();
     const { registry } = createResolver();

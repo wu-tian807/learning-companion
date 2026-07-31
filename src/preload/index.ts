@@ -48,6 +48,7 @@ import { IPC_CHANNELS } from "../shared/ipc";
 import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
 import { subscribeExternalLibraryEvents } from "./external-library-events";
 import { subscribeAgentProviderEvents } from "./agent-provider-events";
+import { subscribeAssetEvents } from "./asset-events";
 
 async function invoke<Response>(
   channel: string,
@@ -185,6 +186,8 @@ const api: LearningCompanionApi = {
     invoke<AssetSnapshot[]>(IPC_CHANNELS.refreshAllAssets, request),
   revealAssetInFolder: (request: AssetIdRequest) =>
     invoke<void>(IPC_CHANNELS.revealAssetInFolder, request),
+  onAssetChanged: (listener) =>
+    subscribeAssetEvents(ipcRenderer, listener),
   openWorkbench: (request: WorkbenchOpenRequest) =>
     invoke<WorkbenchBootstrap>(IPC_CHANNELS.openWorkbench, request),
   commandWorkbench: (request: WorkbenchCommandRequest) =>

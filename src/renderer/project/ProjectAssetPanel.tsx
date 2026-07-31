@@ -175,7 +175,7 @@ export function ProjectAssetPanel({
         ) : (
           <span className="flex items-center gap-1.5">
             <span className="text-[9px] font-medium tracking-normal text-slate-400/70">
-              最近使用 ↓
+              最近更新 ↓
             </span>
             <button
               type="button"

@@ -1,6 +1,7 @@
 import {
   cloneAssetSnapshot,
   cloneAssetContentStatus,
+  type AssetChangedEvent,
   type AssetContentStatus,
   type Asset,
   type AssetSnapshot,
@@ -60,7 +61,10 @@ export interface AssetServiceApi {
   relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
   resolveContent(assetId: string): Promise<ResolvedAssetContent>;
   revealInFolder(assetId: string): Promise<void>;
+  subscribe(listener: AssetChangedListener): () => void;
 }
+
+export type AssetChangedListener = (event: AssetChangedEvent) => void;
 
 export interface AssetServiceDependencies {
   readonly detectMediaType: typeof detectAssetMediaType;
@@ -149,6 +153,7 @@ export class AssetService implements AssetServiceApi {
   private activeProjectId: string | undefined;
   private runtimeMap = new Map<string, AssetSnapshot>();
   private lifecycleVersion = 0;
+  private readonly listeners = new Set<AssetChangedListener>();
   private readonly dependencies: AssetServiceDependencies;
 
   constructor(
@@ -377,6 +382,7 @@ export class AssetService implements AssetServiceApi {
       contentStatus: nextContentStatus,
     });
     this.runtimeMap.set(assetId, snapshot);
+    this.publishChanged(snapshot);
     return cloneAssetSnapshot(snapshot);
   }
 
@@ -601,6 +607,13 @@ export class AssetService implements AssetServiceApi {
     }
   }
 
+  subscribe(listener: AssetChangedListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   private async resolveRuntimeSnapshot(
     asset: Asset,
     context: ContentResolveContext,
@@ -685,6 +698,21 @@ export class AssetService implements AssetServiceApi {
         operation,
         error,
       });
+    }
+  }
+
+  private publishChanged(snapshot: AssetSnapshot): void {
+    const event: AssetChangedEvent = Object.freeze({
+      projectId: snapshot.projectId,
+      asset: cloneAssetSnapshot(snapshot),
+    });
+
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error('发布 Asset 更新事件失败', error);
+      }
     }
   }
 

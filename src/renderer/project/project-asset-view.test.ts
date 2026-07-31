@@ -6,9 +6,10 @@ import {
   type AssetSnapshot,
 } from '../../shared/assets';
 import {
+  applyAssetChangedEvent,
   filterAssetLoadStateByCreationKind,
   filterAssetsByCreationKind,
-  sortAssetsByLastUsed,
+  sortAssetsByUpdatedTime,
 } from './project-asset-view';
 
 function createAsset(
@@ -58,14 +59,14 @@ describe('Project Asset view model', () => {
     });
   });
 
-  it('sorts generated content by last used time without mutating input', () => {
+  it('sorts generated content by updated time without mutating input', () => {
     const generated = filterAssetsByCreationKind(
       assets,
       'generated',
     );
 
     expect(
-      sortAssetsByLastUsed(generated).map((asset) => asset.id),
+      sortAssetsByUpdatedTime(generated).map((asset) => asset.id),
     ).toEqual(['generated-new', 'generated-old']);
     expect(generated.map((asset) => asset.id)).toEqual([
       'generated-old',
@@ -79,5 +80,32 @@ describe('Project Asset view model', () => {
     expect(
       filterAssetLoadStateByCreationKind(loading, 'imported'),
     ).toBe(loading);
+  });
+
+  it('applies only events for loaded Assets in the current Project', () => {
+    const state = { kind: 'ready', assets } as const;
+    const updated = createAsset('generated-old', 'generated', 400);
+
+    expect(
+      applyAssetChangedEvent(state, 'project', {
+        projectId: 'project',
+        asset: updated,
+      }),
+    ).toEqual({
+      kind: 'ready',
+      assets: [assets[0], updated, assets[2]],
+    });
+    expect(
+      applyAssetChangedEvent(state, 'project', {
+        projectId: 'another-project',
+        asset: { ...updated, projectId: 'another-project' },
+      }),
+    ).toBe(state);
+    expect(
+      applyAssetChangedEvent(state, 'project', {
+        projectId: 'project',
+        asset: createAsset('not-loaded', 'imported', 500),
+      }),
+    ).toBe(state);
   });
 });

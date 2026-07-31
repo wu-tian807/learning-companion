@@ -22,6 +22,9 @@ vi.mock('electron', () => ({
     handle: electronMocks.handle,
     removeHandler: electronMocks.removeHandler,
   },
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => []),
+  },
 }));
 
 type RegisteredIpcHandler = (event: unknown, request?: unknown) => unknown;
@@ -79,6 +82,7 @@ function createDependencies() {
   const asset = createAsset();
   const currentAssets = [asset];
   const assetService = {
+    subscribe: vi.fn(() => () => undefined),
     selectLocalFiles: vi.fn(async () => ['/tmp/a.md', '/tmp/b.pdf']),
     addLocalFile: vi.fn(
       async (_projectId: string, path: string) => {
@@ -109,6 +113,35 @@ beforeEach(() => {
 });
 
 describe('Asset IPC handlers', () => {
+  it('broadcasts Asset changes and removes its subscription', () => {
+    const { assetService } = createDependencies();
+    const broadcast = vi.fn();
+    const unsubscribe = vi.fn();
+    let listener:
+      | Parameters<AssetServiceApi['subscribe']>[0]
+      | undefined;
+    vi.mocked(assetService.subscribe).mockImplementation(
+      (nextListener) => {
+        listener = nextListener;
+        return unsubscribe;
+      },
+    );
+    registerAssetHandlers(assetService, { broadcast });
+    const event = {
+      projectId: 'project',
+      asset: createAsset(),
+    };
+
+    listener?.(event);
+
+    expect(broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.assetChanged,
+      event,
+    );
+    removeAssetHandlers();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
   it('selects files for the Project captured by the request', async () => {
     const { assetService } = createDependencies();
     registerAssetHandlers(assetService);

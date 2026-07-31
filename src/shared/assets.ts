@@ -52,6 +52,11 @@ export interface AssetSnapshot extends Asset {
   readonly contentStatus: AssetContentStatus;
 }
 
+export interface AssetChangedEvent {
+  readonly projectId: string;
+  readonly asset: AssetSnapshot;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -165,6 +170,17 @@ export function isAssetSnapshot(value: unknown): value is AssetSnapshot {
 
 export function isAssetSnapshotList(value: unknown): value is AssetSnapshot[] {
   return Array.isArray(value) && value.every(isAssetSnapshot);
+}
+
+export function isAssetChangedEvent(
+  value: unknown,
+): value is AssetChangedEvent {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    isAssetSnapshot(value.asset) &&
+    value.asset.projectId === value.projectId
+  );
 }
 
 export function createProjectWorkspaceContentRef(

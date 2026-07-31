@@ -1,4 +1,5 @@
 import type {
+  AssetChangedEvent,
   AssetCreationKind,
   AssetSnapshot,
 } from '../../shared/assets';
@@ -58,12 +59,34 @@ export function filterAssetsByCreationKind(
   );
 }
 
-export function sortAssetsByLastUsed(
+export function sortAssetsByUpdatedTime(
   assets: readonly AssetSnapshot[],
 ): AssetSnapshot[] {
   return [...assets].sort(
     (left, right) => right.updatedTime - left.updatedTime,
   );
+}
+
+export function applyAssetChangedEvent(
+  state: AssetLoadState,
+  projectId: string,
+  event: AssetChangedEvent,
+): AssetLoadState {
+  if (state.kind !== 'ready' || event.projectId !== projectId) {
+    return state;
+  }
+
+  const index = state.assets.findIndex(
+    (asset) => asset.id === event.asset.id,
+  );
+
+  if (index < 0) {
+    return state;
+  }
+
+  const assets = [...state.assets];
+  assets[index] = event.asset;
+  return { kind: 'ready', assets };
 }
 
 export function filterAssetLoadStateByCreationKind(

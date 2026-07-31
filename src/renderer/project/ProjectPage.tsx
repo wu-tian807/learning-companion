@@ -20,7 +20,7 @@ import {
   assetMediaLabel,
   filterAssetLoadStateByCreationKind,
   filterAssetsByCreationKind,
-  sortAssetsByLastUsed,
+  sortAssetsByUpdatedTime,
 } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
 import { useProjectLayout } from './use-project-layout';
@@ -80,7 +80,7 @@ export function ProjectPage({
   );
   const generatedAssets = useMemo(
     () =>
-      sortAssetsByLastUsed(
+      sortAssetsByUpdatedTime(
         filterAssetsByCreationKind(
           assetOperations.assets,
           'generated',

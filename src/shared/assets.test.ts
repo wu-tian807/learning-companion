@@ -8,6 +8,7 @@ import {
   isAsset,
   isAssetCreationKind,
   isAssetContentRef,
+  isAssetChangedEvent,
   isAssetSnapshot,
   isAssetSnapshotList,
 } from './assets';
@@ -72,6 +73,15 @@ describe('Asset shared contract', () => {
     expect(isAssetSnapshot(snapshot)).toBe(true);
     expect(isAssetSnapshotList([snapshot])).toBe(true);
     expect(cloneAssetSnapshot(snapshot)).toEqual(snapshot);
+    expect(
+      isAssetChangedEvent({ projectId: 'project', asset: snapshot }),
+    ).toBe(true);
+    expect(
+      isAssetChangedEvent({
+        projectId: 'another-project',
+        asset: snapshot,
+      }),
+    ).toBe(false);
   });
 
   it('rejects malformed content, media and runtime status', () => {
