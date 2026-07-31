@@ -16,6 +16,9 @@ interface AgentProviderCardProps {
 }
 
 function credentialLabel(provider: AgentProviderSnapshot): string {
+  if (provider.credential.status === 'checking') {
+    return '正在检查';
+  }
   if (provider.credential.status === 'authenticated') {
     return '已登录';
   }
@@ -26,6 +29,10 @@ function credentialLabel(provider: AgentProviderSnapshot): string {
 }
 
 function accountDescription(provider: AgentProviderSnapshot): string {
+  if (provider.credential.status === 'checking') {
+    return '正在检查登录状态…';
+  }
+
   if (provider.credential.status === 'unavailable') {
     return provider.credential.message;
   }
@@ -122,6 +129,10 @@ export function AgentProviderCard({
                   ? '等待登录…'
                   : provider.loginLabel}
             </button>
+          ) : credential.status === 'checking' ? (
+            <span className="px-2 py-2 text-xs text-slate-500">
+              正在检查…
+            </span>
           ) : (
             <button
               type="button"

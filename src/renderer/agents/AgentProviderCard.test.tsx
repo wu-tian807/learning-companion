@@ -10,6 +10,7 @@ const selectedProvider: AgentProviderSnapshot = {
   description: '使用 ChatGPT 账号运行 Codex。',
   loginLabel: '使用 ChatGPT 登录',
   selected: true,
+  refreshing: false,
   credential: {
     status: 'authenticated',
     account: {

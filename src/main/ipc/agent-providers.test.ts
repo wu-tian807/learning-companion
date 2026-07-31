@@ -50,6 +50,7 @@ function findHandler(channel: string) {
 function createService(): AgentProviderServiceApi {
   return {
     getSetup: vi.fn(async () => ({
+      revision: 0,
       selectedProviderId: null,
       activeProviderId: null,
       requiresSelection: true,
@@ -63,6 +64,7 @@ function createService(): AgentProviderServiceApi {
     })),
     cancelLogin: vi.fn(async () => undefined),
     selectProvider: vi.fn(async () => ({
+      revision: 1,
       selectedProviderId: 'codex',
       activeProviderId: 'codex',
       requiresSelection: false,

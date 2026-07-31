@@ -73,6 +73,7 @@ export class AgentProviderService
     );
 
     return Object.freeze({
+      revision: 0,
       selectedProviderId,
       activeProviderId: activeProvider?.id ?? null,
       requiresSelection: activeProvider === undefined,
@@ -133,6 +134,7 @@ export class AgentProviderService
       loginLabel: provider.loginLabel,
       selected: provider.id === selectedProviderId,
       credential,
+      refreshing: false,
     });
   }
 }

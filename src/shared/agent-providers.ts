@@ -1,4 +1,5 @@
 export type AgentProviderCredentialStatus =
+  | 'checking'
   | 'authenticated'
   | 'unauthenticated'
   | 'unavailable';
@@ -10,6 +11,9 @@ export interface AgentProviderAccountSnapshot {
 }
 
 export type AgentProviderCredentialSnapshot =
+  | {
+      readonly status: 'checking';
+    }
   | {
       readonly status: 'authenticated';
       readonly account: AgentProviderAccountSnapshot;
@@ -29,9 +33,12 @@ export interface AgentProviderSnapshot {
   readonly loginLabel: string;
   readonly selected: boolean;
   readonly credential: AgentProviderCredentialSnapshot;
+  readonly refreshing: boolean;
+  readonly refreshError?: string;
 }
 
 export interface AgentProviderSetupSnapshot {
+  readonly revision: number;
   readonly selectedProviderId: string | null;
   readonly activeProviderId: string | null;
   readonly requiresSelection: boolean;
@@ -89,6 +96,10 @@ export function isAgentProviderCredentialSnapshot(
     return false;
   }
 
+  if (value.status === 'checking') {
+    return value.account === undefined && value.message === undefined;
+  }
+
   if (value.status === 'authenticated') {
     return isAgentProviderAccountSnapshot(value.account);
   }
@@ -116,7 +127,11 @@ export function isAgentProviderSnapshot(
     typeof value.loginLabel === 'string' &&
     value.loginLabel.length > 0 &&
     typeof value.selected === 'boolean' &&
-    isAgentProviderCredentialSnapshot(value.credential)
+    isAgentProviderCredentialSnapshot(value.credential) &&
+    typeof value.refreshing === 'boolean' &&
+    (value.refreshError === undefined ||
+      (typeof value.refreshError === 'string' &&
+        value.refreshError.length > 0))
   );
 }
 
@@ -125,6 +140,8 @@ export function isAgentProviderSetupSnapshot(
 ): value is AgentProviderSetupSnapshot {
   if (
     !isRecord(value) ||
+    !Number.isSafeInteger(value.revision) ||
+    (value.revision as number) < 0 ||
     !(
       value.selectedProviderId === null ||
       isAgentProviderId(value.selectedProviderId)

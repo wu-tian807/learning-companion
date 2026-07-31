@@ -8,6 +8,7 @@ function setup(
   status: 'authenticated' | 'unauthenticated' | 'unavailable',
 ): AgentProviderSetupSnapshot {
   return {
+    revision: 0,
     selectedProviderId: null,
     activeProviderId: null,
     requiresSelection: true,
@@ -18,6 +19,7 @@ function setup(
         description: '使用 ChatGPT 账号额度运行内置 Codex Agent。',
         loginLabel: '使用 ChatGPT 登录',
         selected: false,
+        refreshing: false,
         credential:
           status === 'authenticated'
             ? {
