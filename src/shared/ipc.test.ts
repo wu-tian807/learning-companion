@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   createHealthCheckResponse,
   isAgentProviderIdRequest,
-  isAgentProviderSetupRequest,
   isCancelAgentProviderLoginRequest,
   isAddLocalAssetsRequest,
   isAddLocalAssetsResult,
@@ -323,15 +322,7 @@ describe("Asset contracts", () => {
 });
 
 describe("Agent Provider contract", () => {
-  it("validates setup, login, cancel, and selection requests", () => {
-    expect(isAgentProviderSetupRequest(undefined)).toBe(true);
-    expect(
-      isAgentProviderSetupRequest({ refreshCredentials: true }),
-    ).toBe(true);
-    expect(isAgentProviderSetupRequest({ refreshCredentials: "yes" })).toBe(
-      false,
-    );
-
+  it("validates refresh, login, cancel, and selection requests", () => {
     expect(isAgentProviderIdRequest({ providerId: "codex" })).toBe(true);
     expect(isAgentProviderIdRequest({ providerId: "../codex" })).toBe(false);
     expect(

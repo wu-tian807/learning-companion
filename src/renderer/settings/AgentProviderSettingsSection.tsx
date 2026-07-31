@@ -47,7 +47,7 @@ function LoadedAgentProviderSettings({
               void controller.selectProvider(provider.id);
             }}
             onRefresh={() => {
-              void controller.refresh();
+              void controller.refresh(provider.id);
             }}
             onReopenLogin={controller.reopenLogin}
           />
@@ -77,9 +77,7 @@ interface AgentProviderSettingsSectionProps {
 async function readSetup(
   api: AgentProviderSetupApi,
 ): Promise<AgentProviderSetupSnapshot> {
-  const setup = await api.getAgentProviderSetup({
-    refreshCredentials: true,
-  });
+  const setup = await api.getAgentProviderSetup();
 
   if (!isAgentProviderSetupSnapshot(setup)) {
     throw new Error('Agent Provider 设置状态响应无效');

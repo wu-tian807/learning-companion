@@ -42,6 +42,8 @@ export const IPC_CHANNELS = {
   completeAgentProviderOnboarding:
     "settings:complete-agent-provider-onboarding",
   getAgentProviderSetup: "agent-provider:get-setup",
+  refreshAgentProvider: "agent-provider:refresh",
+  agentProviderChanged: "agent-provider:changed",
   startAgentProviderLogin: "agent-provider:start-login",
   cancelAgentProviderLogin: "agent-provider:cancel-login",
   selectAgentProvider: "agent-provider:select",
@@ -96,9 +98,13 @@ export interface LearningCompanionApi {
   getAppSetup: () => Promise<AppSetupSnapshot>;
   completeExternalLibraryOnboarding: () => Promise<AppSetupSnapshot>;
   completeAgentProviderOnboarding: () => Promise<AppSetupSnapshot>;
-  getAgentProviderSetup: (
-    request?: AgentProviderSetupRequest,
+  getAgentProviderSetup: () => Promise<AgentProviderSetupSnapshot>;
+  refreshAgentProvider: (
+    request: AgentProviderIdRequest,
   ) => Promise<AgentProviderSetupSnapshot>;
+  onAgentProviderSetupChanged: (
+    listener: (snapshot: AgentProviderSetupSnapshot) => void,
+  ) => () => void;
   startAgentProviderLogin: (
     request: AgentProviderIdRequest,
   ) => Promise<AgentProviderLoginChallenge>;
@@ -185,10 +191,6 @@ export interface ChangeProjectWorkspaceRequest {
 
 export interface OpenExternalRequest {
   url: string;
-}
-
-export interface AgentProviderSetupRequest {
-  refreshCredentials?: boolean;
 }
 
 export interface AgentProviderIdRequest {
@@ -461,17 +463,6 @@ export function isRelinkAssetRequest(
     isRecord(value) &&
     isRequiredText(value.assetId) &&
     isRequiredText(value.path)
-  );
-}
-
-export function isAgentProviderSetupRequest(
-  value: unknown,
-): value is AgentProviderSetupRequest {
-  return (
-    value === undefined ||
-    (isRecord(value) &&
-      (value.refreshCredentials === undefined ||
-        typeof value.refreshCredentials === "boolean"))
   );
 }
 

@@ -14,6 +14,9 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => []),
+  },
   ipcMain: {
     handle: electronMocks.handle,
     removeHandler: electronMocks.removeHandler,
@@ -87,12 +90,13 @@ beforeEach(() => {
 });
 
 describe('Agent Provider IPC handlers', () => {
-  it('checks credentials and delegates Provider login and selection', async () => {
+  it('reads, refreshes, and delegates Provider login and selection', async () => {
     const service = createService();
     registerAgentProviderHandlers(service);
 
-    await findHandler(IPC_CHANNELS.getAgentProviderSetup)({
-      refreshCredentials: true,
+    await findHandler(IPC_CHANNELS.getAgentProviderSetup)();
+    await findHandler(IPC_CHANNELS.refreshAgentProvider)({
+      providerId: 'codex',
     });
     await findHandler(IPC_CHANNELS.startAgentProviderLogin)({
       providerId: 'codex',
@@ -105,7 +109,8 @@ describe('Agent Provider IPC handlers', () => {
       providerId: 'codex',
     });
 
-    expect(service.getSetup).toHaveBeenCalledWith(true);
+    expect(service.getSetup).toHaveBeenCalledWith();
+    expect(service.refreshProvider).toHaveBeenCalledWith('codex');
     expect(service.startLogin).toHaveBeenCalledWith('codex');
     expect(service.cancelLogin).toHaveBeenCalledWith(
       'codex',
@@ -119,6 +124,11 @@ describe('Agent Provider IPC handlers', () => {
     registerAgentProviderHandlers(service);
 
     await expect(
+      findHandler(IPC_CHANNELS.refreshAgentProvider)({
+        providerId: '../codex',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
       findHandler(IPC_CHANNELS.startAgentProviderLogin)({
         providerId: '../codex',
       }),
@@ -130,7 +140,39 @@ describe('Agent Provider IPC handlers', () => {
       }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(service.startLogin).not.toHaveBeenCalled();
+    expect(service.refreshProvider).not.toHaveBeenCalled();
     expect(service.cancelLogin).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts authoritative snapshots and releases the subscription', () => {
+    const service = createService();
+    const broadcast = vi.fn();
+    let listener:
+      | Parameters<AgentProviderServiceApi['subscribe']>[0]
+      | undefined;
+    vi.mocked(service.subscribe).mockImplementation((nextListener) => {
+      listener = nextListener;
+      return vi.fn();
+    });
+
+    registerAgentProviderHandlers(service, { broadcast });
+    const snapshot = {
+      revision: 2,
+      selectedProviderId: null,
+      activeProviderId: null,
+      requiresSelection: true,
+      providers: [],
+    };
+    listener?.(snapshot);
+
+    expect(broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.agentProviderChanged,
+      snapshot,
+    );
+    removeAgentProviderHandlers();
+    const remove = vi.mocked(service.subscribe).mock.results[0]
+      ?.value as ReturnType<AgentProviderServiceApi['subscribe']>;
+    expect(remove).toHaveBeenCalledOnce();
   });
 
   it('removes every Provider handler', () => {
@@ -138,6 +180,9 @@ describe('Agent Provider IPC handlers', () => {
 
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.getAgentProviderSetup,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.refreshAgentProvider,
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.startAgentProviderLogin,

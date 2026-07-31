@@ -55,9 +55,7 @@ export function useAgentProviderSetup({
 
     const poll = async () => {
       try {
-        const next = await api.getAgentProviderSetup({
-          refreshCredentials: true,
-        });
+        const next = await api.getAgentProviderSetup();
 
         if (!isAgentProviderSetupSnapshot(next)) {
           throw new Error('Agent Provider 状态响应无效');
@@ -103,13 +101,13 @@ export function useAgentProviderSetup({
     };
   }, [api, loginChallenge, onSetupChange]);
 
-  const refresh = async () => {
+  const refresh = async (providerId: string) => {
     setChecking(true);
     setError(null);
 
     try {
-      const next = await api.getAgentProviderSetup({
-        refreshCredentials: true,
+      const next = await api.refreshAgentProvider({
+        providerId,
       });
 
       if (!isAgentProviderSetupSnapshot(next)) {

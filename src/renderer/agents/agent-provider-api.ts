@@ -5,9 +5,13 @@ import type {
 import type { AppSetupSnapshot } from '../../shared/app-setup';
 
 export interface AgentProviderSetupApi {
-  getAgentProviderSetup(input?: {
-    readonly refreshCredentials?: boolean;
+  getAgentProviderSetup(): Promise<AgentProviderSetupSnapshot>;
+  refreshAgentProvider(input: {
+    readonly providerId: string;
   }): Promise<AgentProviderSetupSnapshot>;
+  onAgentProviderSetupChanged(
+    listener: (snapshot: AgentProviderSetupSnapshot) => void,
+  ): () => void;
   startAgentProviderLogin(input: {
     readonly providerId: string;
   }): Promise<AgentProviderLoginChallenge>;
@@ -23,8 +27,12 @@ export interface AgentProviderSetupApi {
 }
 
 export const defaultAgentProviderSetupApi: AgentProviderSetupApi = {
-  getAgentProviderSetup: (input) =>
-    window.learningCompanion.getAgentProviderSetup(input),
+  getAgentProviderSetup: () =>
+    window.learningCompanion.getAgentProviderSetup(),
+  refreshAgentProvider: (input) =>
+    window.learningCompanion.refreshAgentProvider(input),
+  onAgentProviderSetupChanged: (listener) =>
+    window.learningCompanion.onAgentProviderSetupChanged(listener),
   startAgentProviderLogin: (input) =>
     window.learningCompanion.startAgentProviderLogin(input),
   cancelAgentProviderLogin: (input) =>

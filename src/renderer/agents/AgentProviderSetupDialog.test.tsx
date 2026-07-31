@@ -42,6 +42,8 @@ function setup(
 
 const api = {
   getAgentProviderSetup: vi.fn(),
+  refreshAgentProvider: vi.fn(),
+  onAgentProviderSetupChanged: vi.fn(() => () => undefined),
   startAgentProviderLogin: vi.fn(),
   cancelAgentProviderLogin: vi.fn(),
   selectAgentProvider: vi.fn(),

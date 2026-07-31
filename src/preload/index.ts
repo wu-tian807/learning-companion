@@ -24,7 +24,6 @@ import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
   AgentProviderIdRequest,
-  AgentProviderSetupRequest,
   CancelAgentProviderLoginRequest,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
@@ -48,6 +47,7 @@ import type {
 import { IPC_CHANNELS } from "../shared/ipc";
 import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
 import { subscribeExternalLibraryEvents } from "./external-library-events";
+import { subscribeAgentProviderEvents } from "./agent-provider-events";
 
 async function invoke<Response>(
   channel: string,
@@ -90,11 +90,17 @@ const api: LearningCompanionApi = {
     invoke<AppSetupSnapshot>(
       IPC_CHANNELS.completeAgentProviderOnboarding,
     ),
-  getAgentProviderSetup: (request?: AgentProviderSetupRequest) =>
+  getAgentProviderSetup: () =>
     invoke<AgentProviderSetupSnapshot>(
       IPC_CHANNELS.getAgentProviderSetup,
+    ),
+  refreshAgentProvider: (request: AgentProviderIdRequest) =>
+    invoke<AgentProviderSetupSnapshot>(
+      IPC_CHANNELS.refreshAgentProvider,
       request,
     ),
+  onAgentProviderSetupChanged: (listener) =>
+    subscribeAgentProviderEvents(ipcRenderer, listener),
   startAgentProviderLogin: (request: AgentProviderIdRequest) =>
     invoke<AgentProviderLoginChallenge>(
       IPC_CHANNELS.startAgentProviderLogin,

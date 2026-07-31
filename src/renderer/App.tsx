@@ -34,9 +34,8 @@ async function readAppSetup(): Promise<AppSetupSnapshot> {
 }
 
 async function readAgentProviderSetup(): Promise<AgentProviderSetupSnapshot> {
-  const setup = await window.learningCompanion.getAgentProviderSetup({
-    refreshCredentials: true,
-  });
+  const setup =
+    await window.learningCompanion.getAgentProviderSetup();
 
   if (!isAgentProviderSetupSnapshot(setup)) {
     throw new Error('Agent Provider 设置状态响应无效');

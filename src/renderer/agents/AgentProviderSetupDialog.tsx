@@ -65,7 +65,7 @@ export function AgentProviderSetupDialog({
                   void controller.selectProvider(provider.id);
                 }}
                 onRefresh={() => {
-                  void controller.refresh();
+                  void controller.refresh(provider.id);
                 }}
                 onReopenLogin={controller.reopenLogin}
               />

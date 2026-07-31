@@ -1,26 +1,55 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 
 import {
   IPC_CHANNELS,
   isAgentProviderIdRequest,
-  isAgentProviderSetupRequest,
   isCancelAgentProviderLoginRequest,
 } from '../../shared/ipc';
 import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import { AppError } from '../errors/app-error';
 import { registerIpcHandler } from './register-handler';
 
+let removeSubscription: (() => void) | undefined;
+
+export interface AgentProviderHandlerDependencies {
+  readonly broadcast: (channel: string, value: unknown) => void;
+}
+
+const defaultDependencies: AgentProviderHandlerDependencies = {
+  broadcast(channel, value) {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(channel, value);
+      }
+    }
+  },
+};
+
 export function registerAgentProviderHandlers(
   service: AgentProviderServiceApi,
+  dependencies: AgentProviderHandlerDependencies =
+    defaultDependencies,
 ): void {
+  removeSubscription?.();
+  removeSubscription = service.subscribe((snapshot) => {
+    dependencies.broadcast(
+      IPC_CHANNELS.agentProviderChanged,
+      snapshot,
+    );
+  });
+
   registerIpcHandler(
     IPC_CHANNELS.getAgentProviderSetup,
+    () => service.getSetup(),
+  );
+  registerIpcHandler(
+    IPC_CHANNELS.refreshAgentProvider,
     (_event, request: unknown) => {
-      if (!isAgentProviderSetupRequest(request)) {
+      if (!isAgentProviderIdRequest(request)) {
         throw new AppError('INVALID_IPC_REQUEST');
       }
 
-      return service.getSetup(request?.refreshCredentials);
+      return service.refreshProvider(request.providerId);
     },
   );
 
@@ -59,7 +88,10 @@ export function registerAgentProviderHandlers(
 }
 
 export function removeAgentProviderHandlers(): void {
+  removeSubscription?.();
+  removeSubscription = undefined;
   ipcMain.removeHandler(IPC_CHANNELS.getAgentProviderSetup);
+  ipcMain.removeHandler(IPC_CHANNELS.refreshAgentProvider);
   ipcMain.removeHandler(IPC_CHANNELS.startAgentProviderLogin);
   ipcMain.removeHandler(IPC_CHANNELS.cancelAgentProviderLogin);
   ipcMain.removeHandler(IPC_CHANNELS.selectAgentProvider);
