@@ -2,7 +2,7 @@
 
 > 状态：当前基线
 >
-> 更新日期：2026-07-30
+> 更新日期：2026-07-31
 >
 > 本文同时记录已经落地的实现和已经确认但尚未实施的架构。表格中的“已落地”
 > 表示当前仓库已有生产代码；“已确定”表示技术方向已经确认，后续实现不得在
@@ -316,9 +316,9 @@ Fuses 校验。用户数据不属于应用包，因此不会进入 ASAR。
 | 局部客户端状态 | React State / Hooks | 已落地 |
 | 跨组件轻量状态 | Zustand | 已引入，按需使用 |
 | Agent Provider UI 投影 | Zustand Vanilla Store | 已落地 |
+| Project 响应式布局 | React Hook + Flex / Overlay | 已落地 |
 | 无障碍基础组件 | Radix UI / shadcn/ui | 已选，尚未全面引入 |
 | 动画 | Motion | 候选，按实际交互引入 |
-| 可调整多栏布局 | react-resizable-panels | 候选，响应式阶段引入 |
 
 不采用 Next.js。应用不需要 SSR 或服务端路由，Vite 与 Electron 的构建模型更
 直接。
@@ -337,6 +337,20 @@ Home、Project 和 Settings 按 Feature 目录组织。页面组件只组合布�
 Project 会话、Asset 操作、Home 偏好与项目 CRUD、External Runtime 设置等有状态
 编排分别进入专用 Hook。仓库根部的旧组件路径仅保留薄重导出，避免迁移期间扩大
 调用方改动。
+
+Project 页面采用 Workbench 优先的响应式布局：
+
+- 宽屏默认左右栏内联展开，并限制两侧最大宽度；
+- 中屏默认保留左侧资料栏，右侧生成中心以覆盖抽屉打开；
+- 小屏默认收起两栏，左右抽屉互斥；
+- 学习资料、生成中心、打开 Workspace 和设置四个图标入口始终存在；
+- 覆盖抽屉支持遮罩和 `Esc` 关闭，关闭后焦点返回对应入口；
+- 同一窗口模式内尊重手动展开状态，跨模式时恢复该模式默认状态；
+- 布局只属于 Renderer 内存，不写入 Settings，也不引入拖动分栏。
+
+`ProjectAssetPanel` 与 `GenerationCenter` 共享 `AssetList`、`AssetListItem` 和
+`AssetActionsMenu`。Asset 的相对时间使用统一低频时间刻度显示 `just now`、
+`N mins ago`、`N hrs ago` 或 `N days ago`，不回退到带年份的绝对日期。
 
 ## 8. Project、Asset 与数据行为分离
 
@@ -367,7 +381,7 @@ Map。`ProjectService` 只编排修改，不私自保存另一份 Workspace 状�
 
 ```text
 Asset
-    id / projectId / name / mediaType / contentRef
+    id / projectId / name / mediaType / creationKind / contentRef
     createdTime / lastUsedTime
 
 AssetDatabase
@@ -386,6 +400,25 @@ Project 失活，在临时集合中完成数据库查询和 ContentRef 解析，
 更新请求替代后再原子提交；失败不会留下半加载状态。`AssetDatabase` 不保存
 活动 Project，也不缓存 Runtime Snapshot。未来多窗口或后台任务明确需要后再
 扩展。
+
+`Asset.creationKind` 显式记录 Asset 的创建语义：
+
+```ts
+type AssetCreationKind = 'imported' | 'generated';
+```
+
+- `imported`：用户复制或链接进入 Project 的资料；
+- `generated`：应用生成并作为正式 Asset 管理的内容；
+- `copy | link` 描述文件导入方式，不替代 `creationKind`；
+- SQLite 字段是 UI 分类的事实来源，不能根据文件目录反向猜测；
+- 历史 Asset 通过数据库迁移统一补为 `imported`；
+- `authored` 暂不提前加入，等独立笔记系统确定其生命周期后再设计。
+
+ProjectPage 仍从 Main 获取当前 Project 的完整 Asset Snapshot 集合，只在
+Renderer 做只读投影：左侧展示 `imported`，右侧生成中心展示按
+`lastUsedTime` 降序排列的 `generated`。两侧点击使用同一个
+`selectedAssetId` 和 Workbench 生命周期，重命名、显示文件、Relink 与删除也
+复用同一套 Asset 操作。
 
 ### 8.3 命名约定
 
@@ -574,6 +607,7 @@ Add Asset 文件选择器第一次使用当前 `Project.workspacePath` 作为
 - Workspace 内文件：直接保存相对引用；
 - Workspace 外文件：默认复制到 `assets/imported`；
 - 用户明确选择“链接原文件”：保存绝对引用；
+- 所有用户导入路径显式写入 `creationKind: 'imported'`；
 - 批量选择和拖放使用相同策略；
 - 文件名冲突追加序号，不覆盖现有文件；
 - Project 已切换时拒绝完成旧导入请求。
@@ -950,6 +984,11 @@ supersedes
 思维导图和讲义正文保存为 `assets/generated` 文件，数据库只保存 Asset 和关系
 元数据。
 
+当前生成中心已经使用真实 `creationKind === 'generated'` Asset 列表，不再展示
+固定的“当前资料上下文”卡片，也不使用演示数据。通用生成按钮仍是占位能力；
+Workbench 专属生成操作继续通过 Generation Center Facility Contribution
+注册。真实生成服务和 Asset Relation 写入留在对应功能阶段实现。
+
 ## 17. SQLite 与检索
 
 | 领域 | 技术 | 状态 |
@@ -1243,6 +1282,8 @@ Home 的创建和编辑界面都展示 Workspace：
 - Sandbox 交互桥；
 - IPC 校验与错误归类；
 - Renderer Feature Hook、静态渲染与关键状态转换；
+- Asset 创建类型迁移、分类投影、共享列表与相对时间边界；
+- Project 宽/中/小布局默认状态、跨模式重置和小屏抽屉互斥；
 - 生产源码静态依赖图循环检测；
 - better-sqlite3 原生模块开发与打包 Smoke Test。
 
@@ -1292,7 +1333,11 @@ Home 的创建和编辑界面都展示 Workspace：
 - Main Provider 独立状态缓存、authoritative Snapshot 事件与 Renderer 状态投影；
 - `settings.json` 中用统一首次引导版本串联 External Library 与 AI Provider、
   独立保存 Provider 选择且不保存凭证的 AI 设置流程；
-- 设置中心的 `AI Provider` 页签。
+- 设置中心的 `AI Provider` 页签；
+- Asset `imported | generated` 创建类型、历史数据迁移与双栏分类；
+- 左右栏共享的 Asset 列表、操作菜单和相对时间；
+- Workbench 优先的 Project 响应式布局与覆盖式侧栏；
+- 生成中心真实 Generated Asset 列表。
 
 以下方向已经确认但尚未实施：
 
@@ -1304,7 +1349,8 @@ Home 的创建和编辑界面都展示 Workspace：
 - Agent Editing Session；
 - Memory；
 - Mind Map Workbench；
-- 响应式和可调整多栏布局。
+- 真实生成服务、Generated Asset 创建流程与 Asset Relation 写入；
+- 独立用户笔记系统，以及届时是否增加 `authored` 创建类型。
 
 这些项目进入实现前仍需各自的实施计划和测试拆分，但不再重新讨论顶层方向。
 
@@ -1343,3 +1389,4 @@ Home 的创建和编辑界面都展示 Workspace：
 - `docs/superpowers/specs/2026-07-30-asset-artifacts-office-preview-design.md`
 - `docs/superpowers/specs/2026-07-30-background-runtime-install-and-notifications-design.md`
 - `docs/superpowers/specs/2026-07-30-architecture-boundary-convergence-design.md`
+- `docs/superpowers/specs/2026-07-31-responsive-project-generation-center-design.md`
