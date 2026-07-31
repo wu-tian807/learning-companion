@@ -21,6 +21,28 @@ export class CodexAgentProvider implements AgentProviderApi {
 
   constructor(private readonly runtime: CodexRuntimeServiceApi) {}
 
+  subscribeCredentialInvalidation(
+    listener: () => void,
+  ): () => void {
+    return this.runtime.subscribe((event) => {
+      if (
+        event.type === 'state-changed' &&
+        (event.snapshot.phase === 'failed' ||
+          event.snapshot.phase === 'stopped')
+      ) {
+        listener();
+        return;
+      }
+
+      if (
+        event.type === 'notification' &&
+        event.notification.method.startsWith('account/')
+      ) {
+        listener();
+      }
+    });
+  }
+
   async getCredentialState(
     refreshCredentials = false,
   ): Promise<AgentProviderCredentialSnapshot> {

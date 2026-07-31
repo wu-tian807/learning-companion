@@ -56,6 +56,14 @@ function createService(): AgentProviderServiceApi {
       requiresSelection: true,
       providers: [],
     })),
+    refreshProvider: vi.fn(async () => ({
+      revision: 0,
+      selectedProviderId: null,
+      activeProviderId: null,
+      requiresSelection: true,
+      providers: [],
+    })),
+    subscribe: vi.fn(() => () => undefined),
     startLogin: vi.fn(async () => ({
       type: 'external-browser' as const,
       providerId: 'codex',
@@ -70,6 +78,7 @@ function createService(): AgentProviderServiceApi {
       requiresSelection: false,
       providers: [],
     })),
+    dispose: vi.fn(async () => undefined),
   };
 }
 

@@ -65,6 +65,12 @@ export async function createApplicationRuntime({
   let databaseContext: DatabaseContext | undefined;
   let contentResourceService: ContentResourceService | undefined;
   let externalLibraryService: ExternalLibraryService | undefined;
+  let agentProviderService:
+    | ReturnType<typeof createAgentProviderService>
+    | undefined;
+  let codexRuntimeService:
+    | ReturnType<typeof createCodexRuntime>
+    | undefined;
   let sandboxFrameInteractionBridge:
     | SandboxFrameInteractionBridge
     | undefined;
@@ -78,7 +84,7 @@ export async function createApplicationRuntime({
       managedCodexHomePath: appPaths.codexHomeDirectory,
       userHomePath: homedir(),
     });
-    const codexRuntimeService = createCodexRuntime({
+    codexRuntimeService = createCodexRuntime({
       codexHomePath,
       isPackaged,
       resourcesPath,
@@ -93,7 +99,7 @@ export async function createApplicationRuntime({
       },
     );
     await settingsRepository.initialize();
-    const agentProviderService = createAgentProviderService(
+    agentProviderService = createAgentProviderService(
       settingsRepository,
       codexRuntimeService,
     );
@@ -207,7 +213,9 @@ export async function createApplicationRuntime({
     await Promise.allSettled([
       workbenchSessionManager?.closeActive() ?? Promise.resolve(),
       externalLibraryService?.shutdown() ?? Promise.resolve(),
+      agentProviderService?.dispose() ?? Promise.resolve(),
     ]);
+    await codexRuntimeService?.shutdown().catch(() => undefined);
     disposeIpc();
     if (contentProtocolRegistered) {
       removeContentProtocol();

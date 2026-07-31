@@ -12,6 +12,9 @@ export interface AgentProviderApi {
   getCredentialState(
     refreshCredentials?: boolean,
   ): Promise<AgentProviderCredentialSnapshot>;
+  subscribeCredentialInvalidation?(
+    listener: () => void,
+  ): () => void;
   startLogin(): Promise<AgentProviderLoginChallenge>;
   cancelLogin(loginId: string): Promise<void>;
 }

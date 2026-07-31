@@ -59,9 +59,12 @@ export class ApplicationRuntime {
       return this.shutdownTask;
     }
 
+    const providerShutdown = this.resources.agentProviderService
+      .dispose()
+      .then(() => this.resources.codexRuntimeService.shutdown());
     this.shutdownTask = Promise.all([
       this.closeActiveWorkbench(),
-      this.resources.codexRuntimeService.shutdown(),
+      providerShutdown,
       this.resources.externalLibraryService.shutdown(),
     ]).then(() => undefined);
     return this.shutdownTask;

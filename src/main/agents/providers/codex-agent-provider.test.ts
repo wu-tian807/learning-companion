@@ -7,6 +7,7 @@ function createRuntime(
   overrides: Partial<CodexRuntimeServiceApi> = {},
 ): CodexRuntimeServiceApi {
   return {
+    subscribe: vi.fn(() => () => undefined),
     getAccount: vi.fn(async () => ({
       account: null,
       requiresOpenaiAuth: true,
@@ -67,5 +68,44 @@ describe('CodexAgentProvider', () => {
       url: 'https://chatgpt.com/login',
     });
     expect(startChatGptLogin).toHaveBeenCalledWith('browser');
+  });
+
+  it('invalidates credentials only for account and runtime availability events', () => {
+    let listener:
+      | Parameters<CodexRuntimeServiceApi['subscribe']>[0]
+      | undefined;
+    const runtime = createRuntime({
+      subscribe: vi.fn((nextListener) => {
+        listener = nextListener;
+        return () => undefined;
+      }),
+    });
+    const invalidated = vi.fn();
+    const provider = new CodexAgentProvider(runtime);
+
+    provider.subscribeCredentialInvalidation(invalidated);
+    listener?.({
+      type: 'notification',
+      notification: {
+        method: 'thread/started',
+        params: {},
+      },
+    });
+    listener?.({
+      type: 'notification',
+      notification: {
+        method: 'account/login/completed',
+        params: {},
+      },
+    });
+    listener?.({
+      type: 'state-changed',
+      snapshot: {
+        phase: 'failed',
+        failure: { message: 'closed' },
+      },
+    });
+
+    expect(invalidated).toHaveBeenCalledTimes(2);
   });
 });

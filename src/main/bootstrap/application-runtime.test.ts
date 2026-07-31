@@ -9,7 +9,9 @@ function createResources(
   closeActive: () => Promise<void> = async () => undefined,
 ) {
   return {
-    agentProviderService: {},
+    agentProviderService: {
+      dispose: vi.fn(async () => undefined),
+    },
     databaseContext: { close: vi.fn() },
     codexRuntimeService: {
       shutdown: vi.fn(async () => undefined),
@@ -71,6 +73,14 @@ describe('ApplicationRuntime', () => {
     expect(
       resources.codexRuntimeService.shutdown,
     ).toHaveBeenCalledOnce();
+    expect(
+      resources.agentProviderService.dispose,
+    ).toHaveBeenCalledOnce();
+    expect(
+      resources.agentProviderService.dispose.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      resources.codexRuntimeService.shutdown.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('disposes application resources idempotently', () => {
