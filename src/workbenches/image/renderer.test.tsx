@@ -20,6 +20,7 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '架构图',
   mediaType: 'image/png',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',

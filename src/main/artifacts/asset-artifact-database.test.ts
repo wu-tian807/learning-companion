@@ -45,6 +45,7 @@ async function createContext(): Promise<DatabaseContext> {
       name: '课程',
       mediaType:
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(
         join(directory, 'course.docx'),
       ),
@@ -136,6 +137,7 @@ describe('AssetArtifactDatabase', () => {
         projectId: 'another-project',
         name: 'Another Asset',
         mediaType: 'application/pdf',
+        creationKind: 'imported',
         contentRef: createAbsoluteLocalFileContentRef('/tmp/book.pdf'),
         createdTime: 1,
         lastUsedTime: 1,

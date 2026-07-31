@@ -25,6 +25,7 @@ function asset(
     projectId: 'project',
     name: id,
     mediaType: 'text/markdown',
+    creationKind: 'imported',
     contentRef: {
       kind: 'local-file',
       base: 'absolute',

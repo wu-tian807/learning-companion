@@ -20,6 +20,7 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '课程视频',
   mediaType: 'video/mp4',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',

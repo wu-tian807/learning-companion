@@ -64,6 +64,7 @@ function createContext(
     projectId: 'project',
     name: '阅读资料',
     mediaType,
+    creationKind: 'imported',
     contentRef,
     createdTime: 100,
     lastUsedTime: 100,

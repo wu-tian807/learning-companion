@@ -16,6 +16,7 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '电子书',
   mediaType: 'application/epub+zip',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',

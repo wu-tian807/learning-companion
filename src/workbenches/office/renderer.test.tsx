@@ -24,6 +24,7 @@ function createProps(): RendererWorkbenchViewProps {
       projectId: 'project',
       name: '课程',
       mediaType: 'application/msword',
+      creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef('/tmp/course.doc'),
       contentStatus: createAssetContentStatus('available', 1),
       createdTime: 1,

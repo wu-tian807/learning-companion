@@ -60,6 +60,7 @@ function insertAsset(
       projectId: input.projectId,
       name: input.name ?? input.id,
       mediaType: 'text/markdown',
+      creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(input.path),
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
@@ -100,6 +101,7 @@ describe('AssetDatabase', () => {
     expect(database.listByProject('project')).toEqual([
       expect.objectContaining({
         id: 'asset',
+        creationKind: 'imported',
         contentRef: {
           kind: 'local-file',
           base: 'absolute',
@@ -175,6 +177,7 @@ describe('AssetDatabase', () => {
     const created = database.add('project', {
       name: '学习笔记',
       mediaType: 'text/markdown',
+      creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.md'),
     });
     const renamed = database.update('project', created.id, {
@@ -194,6 +197,7 @@ describe('AssetDatabase', () => {
     expect(context.db.select().from(assets).get()).toMatchObject({
       id: 'asset',
       name: '新标题',
+      creationKind: 'imported',
       contentRef: {
         kind: 'local-file',
         base: 'absolute',
@@ -215,6 +219,7 @@ describe('AssetDatabase', () => {
     const created = database.add('project', {
       name: '生成讲义',
       mediaType: 'text/markdown',
+      creationKind: 'generated',
       contentRef: createProjectWorkspaceContentRef(
         'assets/generated/讲义.md',
       ),
@@ -225,6 +230,7 @@ describe('AssetDatabase', () => {
       base: 'project-workspace',
       path: 'assets/generated/讲义.md',
     });
+    expect(created.creationKind).toBe('generated');
     expect(context.db.select().from(assets).get()?.contentRef).toEqual(
       created.contentRef,
     );

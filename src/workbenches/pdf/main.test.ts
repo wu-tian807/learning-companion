@@ -69,6 +69,7 @@ function createContext(
     projectId: 'project',
     name: '学习资料',
     mediaType: options.mediaType ?? 'application/pdf',
+    creationKind: 'imported',
     contentRef,
     createdTime: 100,
     lastUsedTime: 100,

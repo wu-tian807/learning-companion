@@ -218,6 +218,7 @@ export class AssetService implements AssetServiceApi {
           resolved.location.absolutePath,
         ),
         mediaType,
+        creationKind: 'imported',
         contentRef: normalizedRef,
       });
       const snapshot = createSnapshot(asset, resolved);

@@ -58,6 +58,7 @@ function createContext(
     projectId: 'project',
     name: '课程视频',
     mediaType: options.mediaType ?? 'video/mp4',
+    creationKind: 'imported',
     contentRef,
     createdTime: 100,
     lastUsedTime: 100,

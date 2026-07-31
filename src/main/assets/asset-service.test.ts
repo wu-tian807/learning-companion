@@ -31,6 +31,7 @@ function createAsset(
     projectId,
     name: '学习笔记',
     mediaType,
+    creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef(path),
     createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
     lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
@@ -265,6 +266,7 @@ describe('AssetService', () => {
       {
         name: '资料',
         mediaType: 'text/plain',
+        creationKind: 'imported',
         contentRef: createAbsoluteLocalFileContentRef('/tmp/资料.txt'),
       },
     );

@@ -20,6 +20,7 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '课程音频',
   mediaType: 'audio/mpeg',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',

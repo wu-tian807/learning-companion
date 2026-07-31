@@ -230,6 +230,7 @@ describe("Asset contracts", () => {
       projectId: "project",
       name: "资料",
       mediaType: "text/plain",
+      creationKind: 'imported',
       contentRef: {
         kind: "local-file",
         base: "absolute",
@@ -279,6 +280,7 @@ describe("Asset contracts", () => {
       projectId: "project",
       name: "资料",
       mediaType: "text/plain",
+      creationKind: 'imported',
       contentRef: {
         kind: "local-file",
         base: "absolute",

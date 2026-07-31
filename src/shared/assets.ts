@@ -6,6 +6,7 @@ export const LOCAL_FILE_CONTENT_KIND = 'local-file';
 export const PROJECT_WORKSPACE_CONTENT_BASE = 'project-workspace';
 export const ABSOLUTE_CONTENT_BASE = 'absolute';
 export type LocalAssetImportMode = 'copy' | 'link';
+export type AssetCreationKind = 'imported' | 'generated';
 
 export interface ProjectWorkspaceLocalFileContentRef {
   readonly kind: typeof LOCAL_FILE_CONTENT_KIND;
@@ -41,6 +42,7 @@ export interface Asset {
   readonly projectId: string;
   readonly name: string;
   readonly mediaType: string;
+  readonly creationKind: AssetCreationKind;
   readonly contentRef: AssetContentRef;
   readonly createdTime: number;
   readonly lastUsedTime: number;
@@ -106,6 +108,12 @@ export function isAssetAvailability(
   );
 }
 
+export function isAssetCreationKind(
+  value: unknown,
+): value is AssetCreationKind {
+  return value === 'imported' || value === 'generated';
+}
+
 export function isAssetContentRef(value: unknown): value is AssetContentRef {
   if (!isRecord(value)) {
     return false;
@@ -140,6 +148,7 @@ export function isAsset(value: unknown): value is Asset {
     isRequiredText(value.projectId) &&
     isRequiredText(value.name, ASSET_NAME_MAX_LENGTH) &&
     isMediaType(value.mediaType) &&
+    isAssetCreationKind(value.creationKind) &&
     isAssetContentRef(value.contentRef) &&
     isUnixMilliseconds(value.createdTime) &&
     isUnixMilliseconds(value.lastUsedTime)
@@ -230,6 +239,7 @@ export function cloneAsset(asset: Asset): Asset {
     projectId: asset.projectId.trim(),
     name: asset.name.trim(),
     mediaType: asset.mediaType.trim(),
+    creationKind: asset.creationKind,
     contentRef: cloneAssetContentRef(asset.contentRef),
     createdTime: asset.createdTime,
     lastUsedTime: asset.lastUsedTime,

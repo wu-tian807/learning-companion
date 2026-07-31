@@ -16,6 +16,7 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '学习资料',
   mediaType: 'application/pdf',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',

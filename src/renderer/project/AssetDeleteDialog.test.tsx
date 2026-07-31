@@ -13,6 +13,7 @@ function createAsset(id: string, name: string): AssetSnapshot {
     projectId: 'project',
     name,
     mediaType: 'text/plain',
+    creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef(`/tmp/${id}.txt`),
     contentStatus: {
       availability: 'available',

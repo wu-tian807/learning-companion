@@ -58,6 +58,7 @@ function createContext(
     projectId: 'project',
     name: '课程音频',
     mediaType: options.mediaType ?? 'audio/mpeg',
+    creationKind: 'imported',
     contentRef,
     createdTime: 100,
     lastUsedTime: 100,

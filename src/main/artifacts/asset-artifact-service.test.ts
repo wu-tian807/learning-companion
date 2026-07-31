@@ -81,6 +81,7 @@ async function createHarness(
       projectId: 'project',
       name: '课程',
       mediaType: producer.id,
+      creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(sourcePath),
       createdTime: 1,
       lastUsedTime: 1,

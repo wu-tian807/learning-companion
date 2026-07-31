@@ -103,6 +103,7 @@ function createContext(
     projectId: 'project',
     name: '资料',
     mediaType: 'text/plain',
+    creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.txt'),
     createdTime: 100,
     lastUsedTime: 100,

@@ -30,7 +30,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(7);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(8);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -74,7 +74,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        7,
+        8,
       );
     } finally {
       secondContext.close();
@@ -98,7 +98,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(7);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(8);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -166,7 +166,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(7);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(8);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -190,6 +190,7 @@ describe('initializeDatabase', () => {
         'content_ref',
         'created_time',
         'last_used_time',
+        'creation_kind',
       ]);
     } finally {
       context.close();
@@ -280,6 +281,35 @@ describe('initializeDatabase', () => {
         ),
       ).toThrow();
       expect(() =>
+        context.sqlite
+          .prepare(
+            `INSERT INTO assets (
+              id,
+              project_id,
+              name,
+              media_type,
+              creation_kind,
+              content_ref,
+              created_time,
+              last_used_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            'invalid-creation-kind',
+            'project',
+            '非法创建类型',
+            'text/plain',
+            'authored',
+            JSON.stringify({
+              kind: 'local-file',
+              base: 'absolute',
+              path: '/tmp/authored.txt',
+            }),
+            1_753_171_200_000,
+            1_753_171_200_000,
+          ),
+      ).toThrow();
+      expect(() =>
         insertAsset.run(
           'invalid-json',
           'project',
@@ -318,6 +348,7 @@ describe('initializeDatabase', () => {
       DROP TRIGGER assets_content_ref_insert_guard;
       DROP TRIGGER assets_content_ref_update_guard;
       DROP TABLE asset_artifacts;
+      ALTER TABLE assets DROP COLUMN creation_kind;
     `);
     legacyContext.sqlite
       .prepare(
@@ -385,6 +416,15 @@ describe('initializeDatabase', () => {
           },
         },
       ]);
+      expect(
+        context.sqlite
+          .prepare<[], { creationKind: string }>(
+            `SELECT creation_kind AS creationKind
+             FROM assets
+             WHERE id = 'local'`,
+          )
+          .get(),
+      ).toEqual({ creationKind: 'imported' });
     } finally {
       context.close();
     }

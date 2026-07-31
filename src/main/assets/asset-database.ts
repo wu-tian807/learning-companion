@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { and, count, eq, inArray } from 'drizzle-orm';
 
+import type { AssetContentRef } from '../content/content-ref';
 import {
-  type AssetContentRef,
-} from '../content/content-ref';
-import { isAssetContentRef } from '../../shared/assets';
+  isAssetContentRef,
+  isAssetCreationKind,
+} from '../../shared/assets';
 import type { DatabaseContext } from '../database/database-context';
 import { assets } from '../database/schema/assets';
 import { AppError } from '../errors/app-error';
@@ -55,7 +56,10 @@ function requireId(value: string, field: string): string {
 }
 
 function createAssetFromRow(row: typeof assets.$inferSelect): Asset {
-  if (!isAssetContentRef(row.contentRef)) {
+  if (
+    !isAssetContentRef(row.contentRef) ||
+    !isAssetCreationKind(row.creationKind)
+  ) {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
 
@@ -64,6 +68,7 @@ function createAssetFromRow(row: typeof assets.$inferSelect): Asset {
     projectId: row.projectId,
     name: row.name,
     mediaType: row.mediaType,
+    creationKind: row.creationKind,
     contentRef: row.contentRef,
     createdTime: row.createdTime,
     lastUsedTime: row.lastUsedTime,
@@ -146,6 +151,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       projectId: normalizedProjectId,
       name: input.name,
       mediaType: input.mediaType,
+      creationKind: input.creationKind,
       contentRef: input.contentRef,
       createdTime: now,
       lastUsedTime: now,
@@ -158,6 +164,7 @@ export class AssetDatabase implements AssetDatabaseApi {
         projectId: asset.projectId,
         name: asset.name,
         mediaType: asset.mediaType,
+        creationKind: asset.creationKind,
         contentRef: asset.contentRef,
         createdTime: asset.createdTime,
         lastUsedTime: asset.lastUsedTime,

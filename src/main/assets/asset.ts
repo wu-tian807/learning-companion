@@ -1,6 +1,7 @@
 import {
   cloneAsset as cloneSharedAsset,
   type AssetContentRef,
+  type AssetCreationKind,
   type Asset,
 } from '../../shared/assets';
 
@@ -9,6 +10,7 @@ export interface AssetInput {
   readonly projectId: string;
   readonly name: string;
   readonly mediaType: string;
+  readonly creationKind: AssetCreationKind;
   readonly contentRef: AssetContentRef;
   readonly createdTime: number;
   readonly lastUsedTime: number;
@@ -17,6 +19,7 @@ export interface AssetInput {
 export interface CreateAssetInput {
   readonly name: string;
   readonly mediaType: string;
+  readonly creationKind: AssetCreationKind;
   readonly contentRef: AssetContentRef;
 }
 

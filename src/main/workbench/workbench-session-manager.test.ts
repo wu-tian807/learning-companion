@@ -64,6 +64,7 @@ function createAssetRuntime(): AssetSnapshot {
       projectId: 'project',
       name: '资料',
       mediaType: 'text/plain',
+      creationKind: 'imported',
       contentRef,
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
       lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),

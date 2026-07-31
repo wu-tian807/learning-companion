@@ -48,6 +48,7 @@ async function createHarness(input?: {
     name: '课程',
     mediaType:
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef(sourcePath),
     createdTime: 1,
     lastUsedTime: 1,

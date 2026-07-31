@@ -1,6 +1,9 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import type { AssetContentRef } from '../../../shared/assets';
+import type {
+  AssetContentRef,
+  AssetCreationKind,
+} from '../../../shared/assets';
 import { projects } from './projects';
 
 export const assets = sqliteTable(
@@ -12,6 +15,9 @@ export const assets = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     mediaType: text('media_type').notNull(),
+    creationKind: text('creation_kind')
+      .$type<AssetCreationKind>()
+      .notNull(),
     contentRef: text('content_ref', { mode: 'json' })
       .$type<AssetContentRef>()
       .notNull(),

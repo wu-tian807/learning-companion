@@ -19,6 +19,7 @@ const asset: AssetSnapshot = {
   projectId: 'project',
   name: '学习笔记',
   mediaType: 'text/markdown',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',

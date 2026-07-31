@@ -6,6 +6,7 @@ import {
   createAbsoluteLocalFileContentRef,
   createProjectWorkspaceContentRef,
   isAsset,
+  isAssetCreationKind,
   isAssetContentRef,
   isAssetSnapshot,
   isAssetSnapshotList,
@@ -16,6 +17,7 @@ const asset = {
   projectId: 'project',
   name: '学习笔记',
   mediaType: 'text/markdown',
+  creationKind: 'imported',
   contentRef: {
     kind: 'local-file',
     base: 'absolute',
@@ -49,6 +51,13 @@ describe('Asset shared contract', () => {
     expect(clone.contentRef).not.toBe(asset.contentRef);
     expect(Object.isFrozen(clone)).toBe(true);
     expect(Object.isFrozen(clone.contentRef)).toBe(true);
+  });
+
+  it('accepts only the supported Asset creation kinds', () => {
+    expect(isAssetCreationKind('imported')).toBe(true);
+    expect(isAssetCreationKind('generated')).toBe(true);
+    expect(isAssetCreationKind('authored')).toBe(false);
+    expect(isAsset({ ...asset, creationKind: 'authored' })).toBe(false);
   });
 
   it('validates Asset snapshots', () => {

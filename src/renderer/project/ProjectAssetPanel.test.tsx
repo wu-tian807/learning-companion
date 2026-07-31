@@ -13,6 +13,7 @@ function createAsset(): AssetSnapshot {
     projectId: 'project',
     name: '学习资料',
     mediaType: 'application/octet-stream',
+    creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef('/tmp/资料.bin'),
     contentStatus: {
       availability: 'missing',
