@@ -96,9 +96,10 @@ export function ProjectAssetPanel({
 
   return (
     <aside
+      id="project-assets-panel"
       aria-label="Project Assets"
       className={[
-        'flex min-w-0 flex-col overflow-hidden rounded-[17px] border bg-[#20252c] shadow-[0_20px_50px_rgba(5,8,12,0.16)] transition-colors',
+        'flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[17px] border bg-[#20252c] shadow-[0_20px_50px_rgba(5,8,12,0.16)] transition-colors',
         dragging
           ? 'border-indigo-300/45 bg-indigo-400/[0.08]'
           : 'border-white/[0.055]',

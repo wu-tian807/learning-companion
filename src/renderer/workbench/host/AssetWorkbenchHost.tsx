@@ -320,7 +320,7 @@ export function AssetWorkbenchHost({
   return (
     <article
       aria-label="Asset 资料工作台"
-      className="flex min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
+      className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
     >
       <div className="flex h-[54px] shrink-0 items-center justify-between gap-4 border-b border-white/[0.075] px-[17px]">
         <h2 className="truncate text-sm font-semibold text-slate-100">
