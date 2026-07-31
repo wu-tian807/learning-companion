@@ -108,7 +108,7 @@ export function AssetListItem({
           <AssetSourceBadge contentRef={asset.contentRef} />
           <span className="shrink-0 text-slate-600">·</span>
           <span className="truncate">
-            {formatRelativeTime(asset.lastUsedTime, now)}
+            {formatRelativeTime(asset.updatedTime, now)}
           </span>
         </span>
       </span>

@@ -387,10 +387,10 @@ export class AssetService implements AssetServiceApi {
         resolved.contentRef.base === current.contentRef.base &&
         resolved.contentRef.path === current.contentRef.path
           ? current
-          : this.assetDatabase.updateContentRef(
+          : this.assetDatabase.update(
               projectId,
               assetId,
-              resolved.contentRef,
+              { contentRef: resolved.contentRef },
             );
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(assetId, snapshot);

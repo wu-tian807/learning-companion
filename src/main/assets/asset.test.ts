@@ -12,7 +12,7 @@ function createValidAsset() {
     creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef('/tmp/paper.pdf'),
     createdTime: Date.parse('2026-07-24T01:00:00.000Z'),
-    lastUsedTime: Date.parse('2026-07-24T01:00:00.000Z'),
+    updatedTime: Date.parse('2026-07-24T01:00:00.000Z'),
   });
 }
 

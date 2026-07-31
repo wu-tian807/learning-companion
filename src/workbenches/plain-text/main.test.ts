@@ -106,7 +106,7 @@ function createContext(
     creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.txt'),
     createdTime: 100,
-    lastUsedTime: 100,
+    updatedTime: 100,
   });
 
   return {

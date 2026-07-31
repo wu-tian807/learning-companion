@@ -24,7 +24,7 @@ const asset = {
     path: '/tmp/notes.md',
   },
   createdTime: 1_753_168_400_000,
-  lastUsedTime: 1_753_172_000_000,
+  updatedTime: 1_753_172_000_000,
 } as const;
 
 describe('Asset shared contract', () => {

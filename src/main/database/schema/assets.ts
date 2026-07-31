@@ -22,7 +22,7 @@ export const assets = sqliteTable(
       .$type<AssetContentRef>()
       .notNull(),
     createdTime: integer('created_time').notNull(),
-    lastUsedTime: integer('last_used_time').notNull(),
+    updatedTime: integer('updated_time').notNull(),
   },
   (table) => [index('assets_project_id_index').on(table.projectId)],
 );

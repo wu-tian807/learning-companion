@@ -27,7 +27,7 @@ async function createContext(): Promise<DatabaseContext> {
     .prepare(
       `INSERT INTO assets (
         id, project_id, name, media_type, content_ref, created_time,
-        last_used_time
+        updated_time
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(

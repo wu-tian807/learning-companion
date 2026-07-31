@@ -20,7 +20,7 @@ export function selectInitialAssetId(
   }
 
   const byRecentUse = [...assets].sort(
-    (left, right) => right.lastUsedTime - left.lastUsedTime,
+    (left, right) => right.updatedTime - left.updatedTime,
   );
 
   return (

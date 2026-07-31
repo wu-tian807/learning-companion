@@ -34,7 +34,7 @@ function createAsset(
     creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef(path),
     createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
-    lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
+    updatedTime: Date.parse('2026-07-27T01:00:00.000Z'),
   });
 }
 
@@ -55,7 +55,7 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
         projectId,
         ...input,
         createdTime: Date.parse('2026-07-27T02:00:00.000Z'),
-        lastUsedTime: Date.parse('2026-07-27T02:00:00.000Z'),
+        updatedTime: Date.parse('2026-07-27T02:00:00.000Z'),
       });
       assetMap.set(asset.id, asset);
       return cloneAsset(asset);
@@ -66,14 +66,6 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
       assetMap.set(assetId, next);
       return cloneAsset(next);
     }),
-    updateContentRef: vi.fn(
-      (_projectId: string, assetId: string, contentRef) => {
-        const current = assetMap.get(assetId)!;
-        const next = createAssetSnapshot({ ...current, contentRef });
-        assetMap.set(assetId, next);
-        return cloneAsset(next);
-      },
-    ),
     delete: vi.fn((_projectId: string, assetId: string) => {
       assetMap.delete(assetId);
     }),
@@ -291,7 +283,6 @@ describe('AssetService', () => {
 
     expect(refreshed.contentStatus.availability).toBe('missing');
     expect(database.update).not.toHaveBeenCalled();
-    expect(database.updateContentRef).not.toHaveBeenCalled();
   });
 
   it('relinks only compatible available local files', async () => {
@@ -313,10 +304,12 @@ describe('AssetService', () => {
       '/tmp/notes.md',
       '/tmp/new-notes.md',
     );
-    expect(database.updateContentRef).toHaveBeenCalledWith(
+    expect(database.update).toHaveBeenCalledWith(
       'project',
       'asset',
-      createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
+      {
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
+      },
     );
     expect(relinked.contentRef).toEqual(
       createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
@@ -334,7 +327,7 @@ describe('AssetService', () => {
     await expect(
       service.relinkLocalFile('asset', '/tmp/book.pdf'),
     ).rejects.toThrow('ASSET_MEDIA_TYPE_MISMATCH');
-    expect(database.updateContentRef).not.toHaveBeenCalled();
+    expect(database.update).not.toHaveBeenCalled();
   });
 
   it('hands an open ContentHandle to the Workbench caller', async () => {

@@ -50,7 +50,7 @@ async function createContext(): Promise<DatabaseContext> {
         join(directory, 'course.docx'),
       ),
       createdTime: Date.parse('2026-07-30T01:00:00.000Z'),
-      lastUsedTime: Date.parse('2026-07-30T01:00:00.000Z'),
+      updatedTime: Date.parse('2026-07-30T01:00:00.000Z'),
     })
     .run();
   return context;
@@ -140,7 +140,7 @@ describe('AssetArtifactDatabase', () => {
         creationKind: 'imported',
         contentRef: createAbsoluteLocalFileContentRef('/tmp/book.pdf'),
         createdTime: 1,
-        lastUsedTime: 1,
+        updatedTime: 1,
       })
       .run();
     const current = database.upsert(createArtifact());

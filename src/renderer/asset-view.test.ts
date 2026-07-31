@@ -18,7 +18,7 @@ function timestamp(value: string): number {
 function asset(
   id: string,
   availability: AssetSnapshot['contentStatus']['availability'],
-  lastUsedTime: number,
+  updatedTime: number,
 ): AssetSnapshot {
   return {
     id,
@@ -36,7 +36,7 @@ function asset(
       checkedTime: timestamp('2026-07-27T01:00:00.000Z'),
     },
     createdTime: timestamp('2026-07-27T01:00:00.000Z'),
-    lastUsedTime,
+    updatedTime,
   };
 }
 

@@ -30,7 +30,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(8);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -74,7 +74,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        8,
+        9,
       );
     } finally {
       secondContext.close();
@@ -98,7 +98,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(8);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -166,7 +166,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(8);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -189,7 +189,7 @@ describe('initializeDatabase', () => {
         'media_type',
         'content_ref',
         'created_time',
-        'last_used_time',
+        'updated_time',
         'creation_kind',
       ]);
     } finally {
@@ -224,7 +224,7 @@ describe('initializeDatabase', () => {
           media_type,
           content_ref,
           created_time,
-          last_used_time
+          updated_time
         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
 
@@ -291,7 +291,7 @@ describe('initializeDatabase', () => {
               creation_kind,
               content_ref,
               created_time,
-              last_used_time
+              updated_time
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
@@ -349,6 +349,7 @@ describe('initializeDatabase', () => {
       DROP TRIGGER assets_content_ref_update_guard;
       DROP TABLE asset_artifacts;
       ALTER TABLE assets DROP COLUMN creation_kind;
+      ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time;
     `);
     legacyContext.sqlite
       .prepare(
@@ -425,6 +426,75 @@ describe('initializeDatabase', () => {
           )
           .get(),
       ).toEqual({ creationKind: 'imported' });
+    } finally {
+      context.close();
+    }
+  });
+
+  it('renames the legacy Asset time column without losing values', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacyContext = initializeDatabase(databaseFile);
+
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'project',
+        'Project',
+        '📘',
+        1_753_171_200_000,
+        0,
+        '/tmp/projects/project',
+      );
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO assets (
+          id, project_id, name, media_type, creation_kind, content_ref,
+          created_time, updated_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'asset',
+        'project',
+        '资料',
+        'text/plain',
+        'imported',
+        JSON.stringify({
+          kind: 'local-file',
+          base: 'absolute',
+          path: '/tmp/asset.txt',
+        }),
+        1_753_171_200_000,
+        1_753_257_600_000,
+      );
+    legacyContext.sqlite.exec(
+      'ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time',
+    );
+    legacyContext.sqlite.pragma('user_version = 8');
+    legacyContext.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
+      expect(
+        context.sqlite
+          .prepare<[], { updatedTime: number }>(
+            `SELECT updated_time AS updatedTime
+             FROM assets
+             WHERE id = 'asset'`,
+          )
+          .get(),
+      ).toEqual({ updatedTime: 1_753_257_600_000 });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(assets)')
+          .all()
+          .map(({ name }) => name),
+      ).not.toContain('last_used_time');
     } finally {
       context.close();
     }

@@ -14,7 +14,7 @@ import {
 function createAsset(
   id: string,
   creationKind: AssetCreationKind,
-  lastUsedTime: number,
+  updatedTime: number,
 ): AssetSnapshot {
   return {
     id,
@@ -27,10 +27,10 @@ function createAsset(
     ),
     contentStatus: {
       availability: 'available',
-      checkedTime: lastUsedTime,
+      checkedTime: updatedTime,
     },
-    createdTime: lastUsedTime,
-    lastUsedTime,
+    createdTime: updatedTime,
+    updatedTime,
   };
 }
 

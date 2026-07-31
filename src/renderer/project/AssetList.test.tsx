@@ -22,7 +22,7 @@ const asset: AssetSnapshot = {
     checkedTime: now,
   },
   createdTime: now - 2 * 24 * 60 * 60_000,
-  lastUsedTime: now - 2 * 24 * 60 * 60_000,
+  updatedTime: now - 2 * 24 * 60 * 60_000,
 };
 
 const actions = {

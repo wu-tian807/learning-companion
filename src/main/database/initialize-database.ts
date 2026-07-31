@@ -13,6 +13,7 @@ import { addProjectWorkspaceMigration } from './migrations/0005-add-project-work
 import { migrateLocalFileContentRefsMigration } from './migrations/0006-migrate-local-file-content-refs';
 import { createAssetArtifactsMigration } from './migrations/0007-create-asset-artifacts';
 import { addAssetCreationKindMigration } from './migrations/0008-add-asset-creation-kind';
+import { renameAssetUpdatedTimeMigration } from './migrations/0009-rename-asset-updated-time';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetSchema from './schema/assets';
 import * as projectSchema from './schema/projects';
@@ -32,6 +33,7 @@ const migrations: readonly DatabaseMigration[] = [
   migrateLocalFileContentRefsMigration,
   createAssetArtifactsMigration,
   addAssetCreationKindMigration,
+  renameAssetUpdatedTimeMigration,
 ];
 const schema = {
   ...projectSchema,

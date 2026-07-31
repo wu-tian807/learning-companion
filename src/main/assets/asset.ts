@@ -13,7 +13,7 @@ export interface AssetInput {
   readonly creationKind: AssetCreationKind;
   readonly contentRef: AssetContentRef;
   readonly createdTime: number;
-  readonly lastUsedTime: number;
+  readonly updatedTime: number;
 }
 
 export interface CreateAssetInput {
@@ -25,7 +25,8 @@ export interface CreateAssetInput {
 
 export interface UpdateAssetInput {
   readonly name?: string;
-  readonly lastUsedTime?: number;
+  readonly contentRef?: AssetContentRef;
+  readonly updatedTime?: number;
 }
 
 export function createAssetSnapshot(input: AssetInput): Asset {

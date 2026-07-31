@@ -66,7 +66,7 @@ function createAsset(
       creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(path),
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
-      lastUsedTime: Date.parse('2026-07-27T03:00:00.000Z'),
+      updatedTime: Date.parse('2026-07-27T03:00:00.000Z'),
     }),
     contentStatus: createAssetContentStatus(
       'available',

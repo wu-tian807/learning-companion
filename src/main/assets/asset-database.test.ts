@@ -63,7 +63,7 @@ function insertAsset(
       creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(input.path),
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
-      lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      updatedTime: Date.parse('2026-07-27T01:00:00.000Z'),
     })
     .run();
 }
@@ -120,7 +120,7 @@ describe('AssetDatabase', () => {
       .prepare(
         `INSERT INTO assets (
           id, project_id, name, media_type, content_ref, created_time,
-          last_used_time
+          updated_time
         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
@@ -183,11 +183,10 @@ describe('AssetDatabase', () => {
     const renamed = database.update('project', created.id, {
       name: '新标题',
     });
-    const relinked = database.updateContentRef(
-      'project',
-      created.id,
-      createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
-    );
+    const relinked = database.update('project', created.id, {
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
+      updatedTime: Date.parse('2026-07-27T03:00:00.000Z'),
+    });
 
     expect(renamed.name).toBe('新标题');
     expect(relinked).toMatchObject({
@@ -203,6 +202,7 @@ describe('AssetDatabase', () => {
         base: 'absolute',
         path: '/tmp/new-notes.md',
       },
+      updatedTime: Date.parse('2026-07-27T03:00:00.000Z'),
     });
 
     database.delete('project', created.id);

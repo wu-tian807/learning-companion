@@ -20,7 +20,7 @@ function createAsset(id: string, name: string): AssetSnapshot {
       checkedTime: 100,
     },
     createdTime: 100,
-    lastUsedTime: 100,
+    updatedTime: 100,
   };
 }
 

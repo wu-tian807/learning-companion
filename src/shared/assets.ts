@@ -45,7 +45,7 @@ export interface Asset {
   readonly creationKind: AssetCreationKind;
   readonly contentRef: AssetContentRef;
   readonly createdTime: number;
-  readonly lastUsedTime: number;
+  readonly updatedTime: number;
 }
 
 export interface AssetSnapshot extends Asset {
@@ -151,7 +151,7 @@ export function isAsset(value: unknown): value is Asset {
     isAssetCreationKind(value.creationKind) &&
     isAssetContentRef(value.contentRef) &&
     isUnixMilliseconds(value.createdTime) &&
-    isUnixMilliseconds(value.lastUsedTime)
+    isUnixMilliseconds(value.updatedTime)
   );
 }
 
@@ -242,7 +242,7 @@ export function cloneAsset(asset: Asset): Asset {
     creationKind: asset.creationKind,
     contentRef: cloneAssetContentRef(asset.contentRef),
     createdTime: asset.createdTime,
-    lastUsedTime: asset.lastUsedTime,
+    updatedTime: asset.updatedTime,
   });
 }
 

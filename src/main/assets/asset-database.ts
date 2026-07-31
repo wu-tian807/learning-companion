@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import { and, count, eq, inArray } from 'drizzle-orm';
 
-import type { AssetContentRef } from '../content/content-ref';
 import {
   isAssetContentRef,
   isAssetCreationKind,
@@ -27,11 +26,6 @@ export interface AssetDatabaseApi {
     assetId: string,
     changes: UpdateAssetInput,
   ): Asset;
-  updateContentRef(
-    projectId: string,
-    assetId: string,
-    contentRef: AssetContentRef,
-  ): Asset;
   delete(projectId: string, assetId: string): void;
 }
 
@@ -42,7 +36,8 @@ export interface AssetDatabaseDependencies {
 
 const mutableAssetFields = new Set<keyof UpdateAssetInput>([
   'name',
-  'lastUsedTime',
+  'contentRef',
+  'updatedTime',
 ]);
 
 function requireId(value: string, field: string): string {
@@ -71,7 +66,7 @@ function createAssetFromRow(row: typeof assets.$inferSelect): Asset {
     creationKind: row.creationKind,
     contentRef: row.contentRef,
     createdTime: row.createdTime,
-    lastUsedTime: row.lastUsedTime,
+    updatedTime: row.updatedTime,
   });
 }
 
@@ -154,7 +149,7 @@ export class AssetDatabase implements AssetDatabaseApi {
       creationKind: input.creationKind,
       contentRef: input.contentRef,
       createdTime: now,
-      lastUsedTime: now,
+      updatedTime: now,
     });
 
     const result = this.context.db
@@ -167,7 +162,7 @@ export class AssetDatabase implements AssetDatabaseApi {
         creationKind: asset.creationKind,
         contentRef: asset.contentRef,
         createdTime: asset.createdTime,
-        lastUsedTime: asset.lastUsedTime,
+        updatedTime: asset.updatedTime,
       })
       .run();
 
@@ -190,51 +185,16 @@ export class AssetDatabase implements AssetDatabaseApi {
     const nextAsset = createAssetSnapshot({
       ...currentAsset,
       name: changes.name ?? currentAsset.name,
-      lastUsedTime: changes.lastUsedTime ?? currentAsset.lastUsedTime,
+      contentRef: changes.contentRef ?? currentAsset.contentRef,
+      updatedTime: changes.updatedTime ?? currentAsset.updatedTime,
     });
     const result = this.context.db
       .update(assets)
       .set({
         name: nextAsset.name,
-        lastUsedTime: nextAsset.lastUsedTime,
+        contentRef: nextAsset.contentRef,
+        updatedTime: nextAsset.updatedTime,
       })
-      .where(
-        and(
-          eq(assets.id, normalizedAssetId),
-          eq(assets.projectId, normalizedProjectId),
-        ),
-      )
-      .run();
-
-    if (result.changes !== 1) {
-      throw new AppError('DATABASE_WRITE_CONFLICT');
-    }
-
-    return cloneAsset(nextAsset);
-  }
-
-  updateContentRef(
-    projectId: string,
-    assetId: string,
-    contentRef: AssetContentRef,
-  ): Asset {
-    const normalizedProjectId = requireId(projectId, 'projectId');
-    const normalizedAssetId = requireId(assetId, 'assetId');
-    const currentAsset = this.find(normalizedProjectId, normalizedAssetId);
-
-    if (
-      currentAsset.contentRef.kind !== contentRef.kind
-    ) {
-      throw new AppError('INVALID_IPC_REQUEST');
-    }
-
-    const nextAsset = createAssetSnapshot({
-      ...currentAsset,
-      contentRef,
-    });
-    const result = this.context.db
-      .update(assets)
-      .set({ contentRef })
       .where(
         and(
           eq(assets.id, normalizedAssetId),
@@ -294,7 +254,9 @@ export class AssetDatabase implements AssetDatabaseApi {
       keys.some(
         (key) => !mutableAssetFields.has(key as keyof UpdateAssetInput),
       ) ||
-      (changes.name === undefined && changes.lastUsedTime === undefined)
+      (changes.name === undefined &&
+        changes.contentRef === undefined &&
+        changes.updatedTime === undefined)
     ) {
       throw new AppError('INVALID_IPC_REQUEST');
     }

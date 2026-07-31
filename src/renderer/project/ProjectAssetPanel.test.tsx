@@ -20,7 +20,7 @@ function createAsset(): AssetSnapshot {
       checkedTime: Date.parse('2026-07-30T10:00:00.000Z'),
     },
     createdTime: Date.parse('2026-07-30T09:00:00.000Z'),
-    lastUsedTime: Date.parse('2026-07-30T10:00:00.000Z'),
+    updatedTime: Date.parse('2026-07-30T10:00:00.000Z'),
   };
 }
 

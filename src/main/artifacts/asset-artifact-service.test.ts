@@ -84,7 +84,7 @@ async function createHarness(
       creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(sourcePath),
       createdTime: 1,
-      lastUsedTime: 1,
+      updatedTime: 1,
     })
     .run();
   const database = new AssetArtifactDatabase(context);

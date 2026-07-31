@@ -67,7 +67,7 @@ function createAssetRuntime(): AssetSnapshot {
       creationKind: 'imported',
       contentRef,
       createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
-      lastUsedTime: Date.parse('2026-07-27T01:00:00.000Z'),
+      updatedTime: Date.parse('2026-07-27T01:00:00.000Z'),
     }),
     contentStatus: status,
   };

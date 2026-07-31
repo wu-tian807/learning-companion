@@ -28,7 +28,7 @@ function createProps(): RendererWorkbenchViewProps {
       contentRef: createAbsoluteLocalFileContentRef('/tmp/course.doc'),
       contentStatus: createAssetContentStatus('available', 1),
       createdTime: 1,
-      lastUsedTime: 1,
+      updatedTime: 1,
     },
     bootstrap: {
       sessionId: 'session',

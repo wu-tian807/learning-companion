@@ -51,7 +51,7 @@ async function createHarness(input?: {
     creationKind: 'imported',
     contentRef: createAbsoluteLocalFileContentRef(sourcePath),
     createdTime: 1,
-    lastUsedTime: 1,
+    updatedTime: 1,
   });
   const resolvedArtifact = {
     artifact: {

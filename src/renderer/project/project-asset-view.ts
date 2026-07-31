@@ -62,7 +62,7 @@ export function sortAssetsByLastUsed(
   assets: readonly AssetSnapshot[],
 ): AssetSnapshot[] {
   return [...assets].sort(
-    (left, right) => right.lastUsedTime - left.lastUsedTime,
+    (left, right) => right.updatedTime - left.updatedTime,
   );
 }
 
