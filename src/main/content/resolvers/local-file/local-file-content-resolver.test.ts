@@ -61,6 +61,7 @@ describe('LocalFileContentResolver', () => {
           path,
           availability: 'available',
           checkedTime: Date.parse('2026-07-27T01:00:00.000Z'),
+          modifiedTime: Date.parse('2026-07-26T01:00:00.000Z'),
         }),
       ),
     };
@@ -75,6 +76,9 @@ describe('LocalFileContentResolver', () => {
     );
 
     expect(resolved.contentStatus.availability).toBe('available');
+    expect(resolved.observedUpdatedTime).toBe(
+      Date.parse('2026-07-26T01:00:00.000Z'),
+    );
     expect(resolved.handle).toBeDefined();
     await resolved.handle?.close();
   });

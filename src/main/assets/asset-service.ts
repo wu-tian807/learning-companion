@@ -14,6 +14,7 @@ import type {
   ContentResolveContext,
   ContentResolverRegistry,
 } from '../content/content-resolver-registry';
+import { createTrackedContentHandle } from '../content/tracked-content-handle';
 import { AppError } from '../errors/app-error';
 import type { AssetArtifactCleanupApi } from '../artifacts/asset-artifact-service';
 import type { ProjectLookup } from '../projects/project-database';
@@ -71,6 +72,11 @@ export interface AssetServiceDependencies {
 
 export interface AssetServiceUpdateOptions {
   readonly contentStatus?: AssetContentStatus;
+}
+
+interface ResolvedRuntimeAsset {
+  readonly snapshot: AssetSnapshot;
+  readonly observedUpdatedTime?: number;
 }
 
 function isUnixMilliseconds(value: number): boolean {
@@ -183,8 +189,15 @@ export class AssetService implements AssetServiceApi {
 
     this.activeProjectId = projectId;
     this.runtimeMap = new Map(
-      resolved.map((snapshot) => [snapshot.id, snapshot]),
+      resolved.map(({ snapshot }) => [snapshot.id, snapshot]),
     );
+    for (const item of resolved) {
+      this.synchronizeObservedUpdatedTime(
+        item.snapshot.id,
+        item.observedUpdatedTime,
+        'loadFromProject',
+      );
+    }
 
     return this.list();
   }
@@ -408,9 +421,15 @@ export class AssetService implements AssetServiceApi {
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
       this.requireCurrentSnapshot(assetId, current);
-      return this.update(assetId, {}, {
+      this.update(assetId, {}, {
         contentStatus: resolved.contentStatus,
       });
+      this.synchronizeObservedUpdatedTime(
+        assetId,
+        resolved.observedUpdatedTime,
+        'refresh',
+      );
+      return this.findClone(assetId);
     } finally {
       await resolved.handle?.close();
     }
@@ -428,7 +447,10 @@ export class AssetService implements AssetServiceApi {
         );
 
         try {
-          return createSnapshot(snapshot, content);
+          return {
+            snapshot: createSnapshot(snapshot, content),
+            observedUpdatedTime: content.observedUpdatedTime,
+          } satisfies ResolvedRuntimeAsset;
         } finally {
           await content.handle?.close();
         }
@@ -438,10 +460,15 @@ export class AssetService implements AssetServiceApi {
     current.forEach((snapshot) =>
       this.requireCurrentSnapshot(snapshot.id, snapshot),
     );
-    for (const snapshot of resolved) {
-      this.update(snapshot.id, {}, {
-        contentStatus: snapshot.contentStatus,
+    for (const item of resolved) {
+      this.update(item.snapshot.id, {}, {
+        contentStatus: item.snapshot.contentStatus,
       });
+      this.synchronizeObservedUpdatedTime(
+        item.snapshot.id,
+        item.observedUpdatedTime,
+        'refreshAll',
+      );
     }
     return this.list();
   }
@@ -524,7 +551,33 @@ export class AssetService implements AssetServiceApi {
 
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
-      return resolved;
+      this.requireCurrentSnapshot(assetId, asset);
+      this.synchronizeObservedUpdatedTime(
+        assetId,
+        resolved.observedUpdatedTime,
+        'resolveContent',
+      );
+
+      if (!resolved.handle?.writeBytes) {
+        return resolved;
+      }
+
+      return {
+        ...resolved,
+        handle: createTrackedContentHandle(resolved.handle, {
+          onDidWrite: () => {
+            this.update(assetId, {
+              updatedTime: { mode: 'now' },
+            });
+          },
+          onTrackingError: (error) => {
+            console.warn('同步 Asset 内容更新时间失败', {
+              assetId,
+              error,
+            });
+          },
+        }),
+      };
     } catch (error) {
       await resolved.handle?.close();
       throw error;
@@ -551,14 +604,17 @@ export class AssetService implements AssetServiceApi {
   private async resolveRuntimeSnapshot(
     asset: Asset,
     context: ContentResolveContext,
-  ): Promise<AssetSnapshot> {
+  ): Promise<ResolvedRuntimeAsset> {
     const resolved = await this.resolverRegistry.resolve(
       asset.contentRef,
       context,
     );
 
     try {
-      return createSnapshot(asset, resolved);
+      return {
+        snapshot: createSnapshot(asset, resolved),
+        observedUpdatedTime: resolved.observedUpdatedTime,
+      };
     } finally {
       await resolved.handle?.close();
     }
@@ -601,6 +657,35 @@ export class AssetService implements AssetServiceApi {
     }
 
     return snapshot;
+  }
+
+  private findClone(assetId: string): AssetSnapshot {
+    return cloneAssetSnapshot(this.find(assetId));
+  }
+
+  private synchronizeObservedUpdatedTime(
+    assetId: string,
+    observedUpdatedTime: number | undefined,
+    operation: string,
+  ): void {
+    if (observedUpdatedTime === undefined) {
+      return;
+    }
+
+    try {
+      this.update(assetId, {
+        updatedTime: {
+          mode: 'observed',
+          observedTime: observedUpdatedTime,
+        },
+      });
+    } catch (error) {
+      console.warn('同步 Asset 文件修改时间失败', {
+        assetId,
+        operation,
+        error,
+      });
+    }
   }
 
   private requireCurrentSnapshot(

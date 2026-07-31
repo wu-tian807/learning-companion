@@ -8,6 +8,7 @@ import type {
 export interface ResolvedAssetContent {
   readonly contentRef: AssetContentRef;
   readonly contentStatus: AssetContentStatus;
+  readonly observedUpdatedTime?: number;
   readonly location?: ResolvedLocalFileLocation;
   readonly handle?: ContentHandle;
 }

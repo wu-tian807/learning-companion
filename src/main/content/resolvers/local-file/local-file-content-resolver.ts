@@ -160,6 +160,7 @@ export class LocalFileContentResolver implements ContentResolver {
     return {
       contentRef: cloneAssetContentRef(ref),
       contentStatus: inspection.contentStatus,
+      observedUpdatedTime: inspection.modifiedTime,
       location: {
         kind: 'local-file' as const,
         absolutePath: inspection.absolutePath,

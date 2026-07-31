@@ -13,12 +13,14 @@ export type LocalFileAvailability = AssetAvailability;
 export interface LocalFileContentInspection {
   readonly absolutePath: string;
   readonly contentStatus: AssetContentStatus;
+  readonly modifiedTime?: number;
 }
 
 export interface LocalFileContentInspectionInput {
   readonly path: string;
   readonly availability: LocalFileAvailability;
   readonly checkedTime: number;
+  readonly modifiedTime?: number;
 }
 
 export interface LocalFileContentInspector {
@@ -52,12 +54,24 @@ export function normalizeLocalFilePath(path: string): string {
 export function createLocalFileContentInspection(
   input: LocalFileContentInspectionInput,
 ): LocalFileContentInspection {
+  if (
+    input.modifiedTime !== undefined &&
+    (input.availability !== 'available' ||
+      !Number.isSafeInteger(input.modifiedTime) ||
+      input.modifiedTime < 0)
+  ) {
+    throw new Error('Asset 本地文件修改时间无效');
+  }
+
   return Object.freeze({
     absolutePath: normalizeLocalFilePath(input.path),
     contentStatus: createAssetContentStatus(
       input.availability,
       input.checkedTime,
     ),
+    ...(input.modifiedTime === undefined
+      ? {}
+      : { modifiedTime: input.modifiedTime }),
   });
 }
 
@@ -77,6 +91,14 @@ function availabilityFromError(error: unknown): LocalFileAvailability {
   }
 
   return 'inaccessible';
+}
+
+function normalizeModifiedTime(value: number): number | undefined {
+  const normalized = Math.trunc(value);
+
+  return Number.isSafeInteger(normalized) && normalized >= 0
+    ? normalized
+    : undefined;
 }
 
 export class DefaultLocalFileContentInspector
@@ -114,6 +136,7 @@ export class DefaultLocalFileContentInspector
         path: normalizedPath,
         availability: 'available',
         checkedTime,
+        modifiedTime: normalizeModifiedTime(fileStats.mtimeMs),
       });
     } catch (error) {
       return createLocalFileContentInspection({

@@ -37,13 +37,16 @@ describe('LocalFileContentInspector', () => {
       now: () => Date.parse('2026-07-24T02:00:00.000Z'),
     });
 
-    await expect(inspector.inspect(filePath)).resolves.toEqual({
+    const available = await inspector.inspect(filePath);
+
+    expect(available).toMatchObject({
       absolutePath: filePath,
       contentStatus: {
         availability: 'available',
         checkedTime: Date.parse('2026-07-24T02:00:00.000Z'),
       },
     });
+    expect(available.modifiedTime).toEqual(expect.any(Number));
     await expect(inspector.inspect(missingPath)).resolves.toMatchObject({
       contentStatus: { availability: 'missing' },
     });
@@ -72,11 +75,15 @@ describe('LocalFileContentInspector', () => {
       path: '/tmp/folder/../notes.md',
       availability: 'available',
       checkedTime: Date.parse('2026-07-24T02:00:00.000Z'),
+      modifiedTime: Date.parse('2026-07-24T01:00:00.000Z'),
     });
 
     expect(inspection.absolutePath).toBe(normalize('/tmp/notes.md'));
     expect(inspection.contentStatus.checkedTime).toBe(
       Date.parse('2026-07-24T02:00:00.000Z'),
+    );
+    expect(inspection.modifiedTime).toBe(
+      Date.parse('2026-07-24T01:00:00.000Z'),
     );
     expect(Object.isFrozen(inspection)).toBe(true);
   });
@@ -110,5 +117,13 @@ describe('LocalFileContentInspector', () => {
         checkedTime: Number.NaN,
       }),
     ).toThrow('AssetContentStatus 数据无效');
+    expect(() =>
+      createLocalFileContentInspection({
+        path: '/tmp/notes.md',
+        availability: 'available',
+        checkedTime: Date.now(),
+        modifiedTime: Number.NaN,
+      }),
+    ).toThrow('Asset 本地文件修改时间无效');
   });
 });

@@ -78,6 +78,7 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
 
 function createResolver(
   availability: () => AssetContentAvailability = () => 'available',
+  observedUpdatedTime: () => number | undefined = () => undefined,
 ) {
   const handles: Array<{ close: ReturnType<typeof vi.fn> }> = [];
   const resolver: ContentResolver = {
@@ -102,6 +103,7 @@ function createResolver(
           currentAvailability,
           Date.parse('2026-07-27T03:00:00.000Z'),
         ),
+        observedUpdatedTime: observedUpdatedTime(),
         location: {
           kind: 'local-file' as const,
           absolutePath: ref.path,
@@ -174,6 +176,52 @@ describe('AssetService', () => {
       contentStatus: { availability: 'missing' },
     });
     expect(handles).toHaveLength(0);
+  });
+
+  it('synchronizes an observed file modification time while loading', async () => {
+    const database = createDatabase();
+    const observedUpdatedTime = Date.parse(
+      '2026-07-27T03:00:00.000Z',
+    );
+    const { registry } = createResolver(
+      () => 'available',
+      () => observedUpdatedTime,
+    );
+    const service = createService(database, registry);
+
+    const loaded = await service.loadFromProject('project');
+
+    expect(database.update).toHaveBeenCalledWith('project', 'asset', {
+      updatedTime: observedUpdatedTime,
+    });
+    expect(loaded[0]?.updatedTime).toBe(observedUpdatedTime);
+  });
+
+  it('keeps Project loading successful when observed time synchronization fails', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver(
+      () => 'available',
+      () => Date.parse('2026-07-27T03:00:00.000Z'),
+    );
+    vi.mocked(database.update).mockImplementationOnce(() => {
+      throw new Error('metadata failed');
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const service = createService(database, registry);
+
+    const loaded = await service.loadFromProject('project');
+
+    expect(loaded[0]?.updatedTime).toBe(
+      Date.parse('2026-07-27T01:00:00.000Z'),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      '同步 Asset 文件修改时间失败',
+      expect.objectContaining({
+        assetId: 'asset',
+        operation: 'loadFromProject',
+      }),
+    );
+    warn.mockRestore();
   });
 
   it('stays inactive when runtime resolution fails during loading', async () => {
@@ -430,6 +478,87 @@ describe('AssetService', () => {
 
     await (resolved.handle as ContentHandle).close();
     expect(handles.at(-1)?.close).toHaveBeenCalledOnce();
+  });
+
+  it('tracks successful Workbench content writes through AssetService update', async () => {
+    const database = createDatabase();
+    const writeBytes = vi.fn(async () => ({ revision: 'after' }));
+    const close = vi.fn(async () => undefined);
+    const registry = new ContentResolverRegistry();
+    registry.register({
+      kind: 'local-file',
+      resolve: async (ref) => ({
+        contentRef: ref,
+        contentStatus: createAssetContentStatus(
+          'available',
+          Date.parse('2026-07-27T03:00:00.000Z'),
+        ),
+        handle: {
+          capabilities: new Set<ContentCapability>(['write-bytes']),
+          writeBytes,
+          close,
+        },
+      }),
+    });
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+    close.mockClear();
+
+    const resolved = await service.resolveContent('asset');
+    await expect(
+      resolved.handle?.writeBytes?.({
+        content: new Uint8Array([1]),
+        expectedRevision: 'before',
+      }),
+    ).resolves.toEqual({ revision: 'after' });
+
+    expect(database.update).toHaveBeenCalledWith('project', 'asset', {
+      updatedTime: SERVICE_NOW,
+    });
+    expect(service.get('asset')?.updatedTime).toBe(SERVICE_NOW);
+    await resolved.handle?.close();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('keeps content writes successful when their time synchronization fails', async () => {
+    const database = createDatabase();
+    const writeBytes = vi.fn(async () => ({ revision: 'after' }));
+    const registry = new ContentResolverRegistry();
+    registry.register({
+      kind: 'local-file',
+      resolve: async (ref) => ({
+        contentRef: ref,
+        contentStatus: createAssetContentStatus(
+          'available',
+          Date.parse('2026-07-27T03:00:00.000Z'),
+        ),
+        handle: {
+          capabilities: new Set<ContentCapability>(['write-bytes']),
+          writeBytes,
+          close: async () => undefined,
+        },
+      }),
+    });
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+    vi.mocked(database.update).mockImplementationOnce(() => {
+      throw new Error('metadata failed');
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const resolved = await service.resolveContent('asset');
+
+    await expect(
+      resolved.handle?.writeBytes?.({
+        content: new Uint8Array([1]),
+        expectedRevision: 'before',
+      }),
+    ).resolves.toEqual({ revision: 'after' });
+    expect(warn).toHaveBeenCalledWith(
+      '同步 Asset 内容更新时间失败',
+      expect.objectContaining({ assetId: 'asset' }),
+    );
+    warn.mockRestore();
   });
 
   it('does not let a stale refresh overwrite a newer update', async () => {
