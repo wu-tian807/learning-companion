@@ -10,9 +10,7 @@ import type { AgentProviderApi } from './agent-provider';
 import type { AgentProviderRegistry } from './agent-provider-registry';
 
 export interface AgentProviderServiceApi {
-  getSetup(
-    refreshCredentials?: boolean,
-  ): Promise<AgentProviderSetupSnapshot>;
+  getSetup(): Promise<AgentProviderSetupSnapshot>;
   refreshProvider(
     providerId: string,
   ): Promise<AgentProviderSetupSnapshot>;
