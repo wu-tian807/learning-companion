@@ -23,7 +23,20 @@ export interface CreateAssetInput {
   readonly contentRef: AssetContentRef;
 }
 
+export type AssetUpdateTiming =
+  | { readonly mode: 'now' }
+  | {
+      readonly mode: 'observed';
+      readonly observedTime: number;
+    };
+
 export interface UpdateAssetInput {
+  readonly name?: string;
+  readonly contentRef?: AssetContentRef;
+  readonly updatedTime?: AssetUpdateTiming;
+}
+
+export interface PersistAssetUpdateInput {
   readonly name?: string;
   readonly contentRef?: AssetContentRef;
   readonly updatedTime?: number;

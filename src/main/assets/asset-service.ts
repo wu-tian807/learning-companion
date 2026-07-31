@@ -1,5 +1,7 @@
 import {
   cloneAssetSnapshot,
+  cloneAssetContentStatus,
+  type AssetContentStatus,
   type Asset,
   type AssetSnapshot,
   type LocalAssetImportMode,
@@ -16,7 +18,12 @@ import { AppError } from '../errors/app-error';
 import type { AssetArtifactCleanupApi } from '../artifacts/asset-artifact-service';
 import type { ProjectLookup } from '../projects/project-database';
 import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
-import type { UpdateAssetInput } from './asset';
+import {
+  createAssetSnapshot,
+  type AssetUpdateTiming,
+  type PersistAssetUpdateInput,
+  type UpdateAssetInput,
+} from './asset';
 import type { AssetDatabaseApi } from './asset-database';
 import {
   createDefaultAssetName,
@@ -37,7 +44,11 @@ export interface AssetServiceApi {
     path: string,
     mode?: LocalAssetImportMode,
   ): Promise<AssetSnapshot>;
-  update(assetId: string, changes: UpdateAssetInput): AssetSnapshot;
+  update(
+    assetId: string,
+    changes: UpdateAssetInput,
+    options?: AssetServiceUpdateOptions,
+  ): AssetSnapshot;
   delete(assetId: string): Promise<void>;
   cleanupProjectArtifacts(
     projectId: string,
@@ -55,6 +66,63 @@ export interface AssetServiceDependencies {
   readonly createDefaultName: typeof createDefaultAssetName;
   readonly isRelinkMediaCompatible: typeof isAssetRelinkMediaCompatible;
   readonly artifactCleanup?: AssetArtifactCleanupApi;
+  readonly now: () => number;
+}
+
+export interface AssetServiceUpdateOptions {
+  readonly contentStatus?: AssetContentStatus;
+}
+
+function isUnixMilliseconds(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function isSameContentRef(
+  left: Asset['contentRef'],
+  right: Asset['contentRef'],
+): boolean {
+  return (
+    left.kind === right.kind &&
+    left.base === right.base &&
+    left.path === right.path
+  );
+}
+
+function isSameContentStatus(
+  left: AssetContentStatus,
+  right: AssetContentStatus,
+): boolean {
+  return (
+    left.availability === right.availability &&
+    left.checkedTime === right.checkedTime
+  );
+}
+
+function normalizeUpdateTiming(
+  currentUpdatedTime: number,
+  timing: AssetUpdateTiming | undefined,
+  hasDirectChange: boolean,
+  now: number,
+): number | undefined {
+  if (!isUnixMilliseconds(now)) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  if (!hasDirectChange && timing === undefined) {
+    return undefined;
+  }
+
+  let candidate = now;
+
+  if (!hasDirectChange && timing?.mode === 'observed') {
+    if (!isUnixMilliseconds(timing.observedTime)) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+
+    candidate = Math.min(timing.observedTime, now);
+  }
+
+  return Math.max(currentUpdatedTime, candidate);
 }
 
 function createSnapshot(
@@ -92,6 +160,7 @@ export class AssetService implements AssetServiceApi {
         dependencies.isRelinkMediaCompatible ??
         isAssetRelinkMediaCompatible,
       artifactCleanup: dependencies.artifactCleanup,
+      now: dependencies.now ?? Date.now,
     };
   }
 
@@ -239,17 +308,60 @@ export class AssetService implements AssetServiceApi {
     }
   }
 
-  update(assetId: string, changes: UpdateAssetInput): AssetSnapshot {
+  update(
+    assetId: string,
+    changes: UpdateAssetInput,
+    options: AssetServiceUpdateOptions = {},
+  ): AssetSnapshot {
     const projectId = this.requireActiveProjectId();
     const current = this.find(assetId);
-    const asset = this.assetDatabase.update(
-      projectId,
-      assetId,
-      changes,
+    const candidate = createAssetSnapshot({
+      ...current,
+      name: changes.name ?? current.name,
+      contentRef: changes.contentRef ?? current.contentRef,
+    });
+    const nameChanged = candidate.name !== current.name;
+    const contentRefChanged = !isSameContentRef(
+      candidate.contentRef,
+      current.contentRef,
     );
+    const updatedTime = normalizeUpdateTiming(
+      current.updatedTime,
+      changes.updatedTime,
+      nameChanged || contentRefChanged,
+      this.dependencies.now(),
+    );
+    const updatedTimeChanged =
+      updatedTime !== undefined && updatedTime !== current.updatedTime;
+    const nextContentStatus = options.contentStatus
+      ? cloneAssetContentStatus(options.contentStatus)
+      : current.contentStatus;
+    const contentStatusChanged = !isSameContentStatus(
+      nextContentStatus,
+      current.contentStatus,
+    );
+    const persistenceChanges: PersistAssetUpdateInput = {
+      ...(nameChanged ? { name: candidate.name } : {}),
+      ...(contentRefChanged ? { contentRef: candidate.contentRef } : {}),
+      ...(updatedTimeChanged ? { updatedTime } : {}),
+    };
+    const hasPersistenceChanges =
+      Object.keys(persistenceChanges).length > 0;
+
+    if (!hasPersistenceChanges && !contentStatusChanged) {
+      return cloneAssetSnapshot(current);
+    }
+
+    const asset = hasPersistenceChanges
+      ? this.assetDatabase.update(
+          projectId,
+          assetId,
+          persistenceChanges,
+        )
+      : current;
     const snapshot = cloneAssetSnapshot({
       ...asset,
-      contentStatus: current.contentStatus,
+      contentStatus: nextContentStatus,
     });
     this.runtimeMap.set(assetId, snapshot);
     return cloneAssetSnapshot(snapshot);
@@ -295,9 +407,10 @@ export class AssetService implements AssetServiceApi {
 
     try {
       this.requireUnchangedProject(lifecycleVersion, projectId);
-      const snapshot = createSnapshot(current, resolved);
-      this.runtimeMap.set(assetId, snapshot);
-      return cloneAssetSnapshot(snapshot);
+      this.requireCurrentSnapshot(assetId, current);
+      return this.update(assetId, {}, {
+        contentStatus: resolved.contentStatus,
+      });
     } finally {
       await resolved.handle?.close();
     }
@@ -322,10 +435,14 @@ export class AssetService implements AssetServiceApi {
       }),
     );
     this.requireUnchangedProject(lifecycleVersion, projectId);
-
-    this.runtimeMap = new Map(
-      resolved.map((snapshot) => [snapshot.id, snapshot]),
+    current.forEach((snapshot) =>
+      this.requireCurrentSnapshot(snapshot.id, snapshot),
     );
+    for (const snapshot of resolved) {
+      this.update(snapshot.id, {}, {
+        contentStatus: snapshot.contentStatus,
+      });
+    }
     return this.list();
   }
 
@@ -383,18 +500,14 @@ export class AssetService implements AssetServiceApi {
       }
 
       this.requireUnchangedProject(lifecycleVersion, projectId);
-      const asset =
-        resolved.contentRef.base === current.contentRef.base &&
-        resolved.contentRef.path === current.contentRef.path
-          ? current
-          : this.assetDatabase.update(
-              projectId,
-              assetId,
-              { contentRef: resolved.contentRef },
-            );
-      const snapshot = createSnapshot(asset, resolved);
-      this.runtimeMap.set(assetId, snapshot);
-      return cloneAssetSnapshot(snapshot);
+      this.requireCurrentSnapshot(assetId, current);
+      return this.update(
+        assetId,
+        isSameContentRef(resolved.contentRef, current.contentRef)
+          ? {}
+          : { contentRef: resolved.contentRef },
+        { contentStatus: resolved.contentStatus },
+      );
     } finally {
       await resolved.handle?.close();
     }
@@ -488,6 +601,15 @@ export class AssetService implements AssetServiceApi {
     }
 
     return snapshot;
+  }
+
+  private requireCurrentSnapshot(
+    assetId: string,
+    expected: AssetSnapshot,
+  ): void {
+    if (this.runtimeMap.get(assetId) !== expected) {
+      throw new AppError('OPERATION_SUPERSEDED');
+    }
   }
 
   private requireUnchangedProject(

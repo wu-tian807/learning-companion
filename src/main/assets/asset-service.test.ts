@@ -20,6 +20,8 @@ import {
   type AssetServiceDependencies,
 } from './asset-service';
 
+const SERVICE_NOW = Date.parse('2026-07-27T04:00:00.000Z');
+
 function createAsset(
   id = 'asset',
   path = '/tmp/notes.md',
@@ -151,7 +153,10 @@ function createService(
     registry,
     projectLookup,
     workspaceManager,
-    dependencies,
+    {
+      now: () => SERVICE_NOW,
+      ...dependencies,
+    },
   );
 }
 
@@ -285,6 +290,83 @@ describe('AssetService', () => {
     expect(database.update).not.toHaveBeenCalled();
   });
 
+  it('updates direct Asset changes and their time through one database write', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+
+    const updated = service.update('asset', { name: '新标题' });
+
+    expect(database.update).toHaveBeenCalledWith('project', 'asset', {
+      name: '新标题',
+      updatedTime: SERVICE_NOW,
+    });
+    expect(updated).toMatchObject({
+      name: '新标题',
+      updatedTime: SERVICE_NOW,
+    });
+  });
+
+  it('skips normalized no-op updates', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+
+    const unchanged = service.update('asset', {
+      name: ' 学习笔记 ',
+      updatedTime: {
+        mode: 'observed',
+        observedTime: Date.parse('2026-07-26T04:00:00.000Z'),
+      },
+    });
+
+    expect(database.update).not.toHaveBeenCalled();
+    expect(unchanged.updatedTime).toBe(
+      Date.parse('2026-07-27T01:00:00.000Z'),
+    );
+  });
+
+  it('clamps observed future times and never moves updated time backwards', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+
+    const updated = service.update('asset', {
+      updatedTime: {
+        mode: 'observed',
+        observedTime: Date.parse('2027-01-01T00:00:00.000Z'),
+      },
+    });
+    const unchanged = service.update('asset', {
+      updatedTime: {
+        mode: 'observed',
+        observedTime: Date.parse('2026-07-27T02:00:00.000Z'),
+      },
+    });
+
+    expect(updated.updatedTime).toBe(SERVICE_NOW);
+    expect(unchanged.updatedTime).toBe(SERVICE_NOW);
+    expect(database.update).toHaveBeenCalledOnce();
+  });
+
+  it('does not replace the runtime snapshot when persistence fails', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+    vi.mocked(database.update).mockImplementationOnce(() => {
+      throw new Error('write failed');
+    });
+
+    expect(() => service.update('asset', { name: '新标题' })).toThrow(
+      'write failed',
+    );
+    expect(service.get('asset')?.name).toBe('学习笔记');
+  });
+
   it('relinks only compatible available local files', async () => {
     const database = createDatabase();
     const { registry } = createResolver();
@@ -309,10 +391,15 @@ describe('AssetService', () => {
       'asset',
       {
         contentRef: createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
+        updatedTime: SERVICE_NOW,
       },
     );
     expect(relinked.contentRef).toEqual(
       createAbsoluteLocalFileContentRef('/tmp/new-notes.md'),
+    );
+    expect(relinked.updatedTime).toBe(SERVICE_NOW);
+    expect(relinked.contentStatus.checkedTime).toBe(
+      Date.parse('2026-07-27T03:00:00.000Z'),
     );
   });
 
@@ -343,6 +430,41 @@ describe('AssetService', () => {
 
     await (resolved.handle as ContentHandle).close();
     expect(handles.at(-1)?.close).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a stale refresh overwrite a newer update', async () => {
+    const database = createDatabase();
+    let resolveCount = 0;
+    let finishRefresh: (() => void) | undefined;
+    const registry = new ContentResolverRegistry();
+    registry.register({
+      kind: 'local-file',
+      resolve: async (ref) => {
+        resolveCount += 1;
+        if (resolveCount === 2) {
+          await new Promise<void>((resolve) => {
+            finishRefresh = resolve;
+          });
+        }
+        return {
+          contentRef: ref,
+          contentStatus: createAssetContentStatus(
+            'available',
+            Date.parse('2026-07-27T03:00:00.000Z') + resolveCount,
+          ),
+        };
+      },
+    });
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+
+    const refresh = service.refresh('asset');
+    await vi.waitFor(() => expect(finishRefresh).toBeTypeOf('function'));
+    service.update('asset', { name: '并发新标题' });
+    finishRefresh?.();
+
+    await expect(refresh).rejects.toThrow('OPERATION_SUPERSEDED');
+    expect(service.get('asset')?.name).toBe('并发新标题');
   });
 
   it('rejects a pending operation after the Project is unloaded', async () => {

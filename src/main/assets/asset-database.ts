@@ -14,7 +14,7 @@ import {
   createAssetSnapshot,
   type Asset,
   type CreateAssetInput,
-  type UpdateAssetInput,
+  type PersistAssetUpdateInput,
 } from './asset';
 
 export interface AssetDatabaseApi {
@@ -24,7 +24,7 @@ export interface AssetDatabaseApi {
   update(
     projectId: string,
     assetId: string,
-    changes: UpdateAssetInput,
+    changes: PersistAssetUpdateInput,
   ): Asset;
   delete(projectId: string, assetId: string): void;
 }
@@ -34,7 +34,7 @@ export interface AssetDatabaseDependencies {
   readonly now: () => number;
 }
 
-const mutableAssetFields = new Set<keyof UpdateAssetInput>([
+const mutableAssetFields = new Set<keyof PersistAssetUpdateInput>([
   'name',
   'contentRef',
   'updatedTime',
@@ -176,7 +176,7 @@ export class AssetDatabase implements AssetDatabaseApi {
   update(
     projectId: string,
     assetId: string,
-    changes: UpdateAssetInput,
+    changes: PersistAssetUpdateInput,
   ): Asset {
     this.validateUpdate(changes);
     const normalizedProjectId = requireId(projectId, 'projectId');
@@ -246,13 +246,14 @@ export class AssetDatabase implements AssetDatabaseApi {
     return createAssetFromRow(row);
   }
 
-  private validateUpdate(changes: UpdateAssetInput): void {
+  private validateUpdate(changes: PersistAssetUpdateInput): void {
     const keys = Object.keys(changes);
 
     if (
       keys.length === 0 ||
       keys.some(
-        (key) => !mutableAssetFields.has(key as keyof UpdateAssetInput),
+        (key) =>
+          !mutableAssetFields.has(key as keyof PersistAssetUpdateInput),
       ) ||
       (changes.name === undefined &&
         changes.contentRef === undefined &&
