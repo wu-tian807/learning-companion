@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
 import { AgentProviderSetupDialog } from './AgentProviderSetupDialog';
+import { createAgentProviderStore } from './agent-provider-store';
 
 function setup(
   status: 'authenticated' | 'unauthenticated' | 'unavailable',
@@ -55,10 +56,11 @@ describe('AgentProviderSetupDialog', () => {
   it('requires login before an unauthenticated Provider can be selected', () => {
     const markup = renderToStaticMarkup(
       <AgentProviderSetupDialog
-        setup={setup('unauthenticated')}
-        onSetupChange={vi.fn()}
         onCompleted={vi.fn()}
         api={api}
+        store={createAgentProviderStore(api, {
+          setup: setup('unauthenticated'),
+        })}
       />,
     );
 
@@ -73,10 +75,11 @@ describe('AgentProviderSetupDialog', () => {
   it('offers selection only after credential verification succeeds', () => {
     const markup = renderToStaticMarkup(
       <AgentProviderSetupDialog
-        setup={setup('authenticated')}
-        onSetupChange={vi.fn()}
         onCompleted={vi.fn()}
         api={api}
+        store={createAgentProviderStore(api, {
+          setup: setup('authenticated'),
+        })}
       />,
     );
 
@@ -88,10 +91,11 @@ describe('AgentProviderSetupDialog', () => {
   it('keeps an unavailable Provider retryable', () => {
     const markup = renderToStaticMarkup(
       <AgentProviderSetupDialog
-        setup={setup('unavailable')}
-        onSetupChange={vi.fn()}
         onCompleted={vi.fn()}
         api={api}
+        store={createAgentProviderStore(api, {
+          setup: setup('unavailable'),
+        })}
       />,
     );
 

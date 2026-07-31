@@ -4,10 +4,6 @@ import {
   isAppSetupSnapshot,
   type AppSetupSnapshot,
 } from '../shared/app-setup';
-import {
-  isAgentProviderSetupSnapshot,
-  type AgentProviderSetupSnapshot,
-} from '../shared/agent-providers';
 import type { ProjectSnapshot } from '../shared/projects';
 import { Home } from './Home';
 import { ProjectPage } from './ProjectPage';
@@ -33,25 +29,12 @@ async function readAppSetup(): Promise<AppSetupSnapshot> {
   return setup;
 }
 
-async function readAgentProviderSetup(): Promise<AgentProviderSetupSnapshot> {
-  const setup =
-    await window.learningCompanion.getAgentProviderSetup();
-
-  if (!isAgentProviderSetupSnapshot(setup)) {
-    throw new Error('Agent Provider 设置状态响应无效');
-  }
-
-  return setup;
-}
-
 export function App() {
   const [page, setPage] = useState<AppPage>({ kind: 'home' });
   const [settingsTarget, setSettingsTarget] =
     useState<SettingsTarget | null>(null);
   const [appSetup, setAppSetup] =
     useState<AppSetupSnapshot | null>(null);
-  const [agentProviderSetup, setAgentProviderSetup] =
-    useState<AgentProviderSetupSnapshot | null>(null);
   const openSettings = useCallback((target: SettingsTarget) => {
     setSettingsTarget(target);
   }, []);
@@ -74,33 +57,6 @@ export function App() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (
-      !appSetup ||
-      appSetup.pendingOnboardingStep !== 'agent-provider'
-    ) {
-      return;
-    }
-
-    let active = true;
-
-    void readAgentProviderSetup()
-      .then((setup) => {
-        if (active) {
-          setAgentProviderSetup(setup);
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          notifySetupReadFailure('agent-provider', error);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [appSetup]);
 
   return (
     <>
@@ -139,14 +95,9 @@ export function App() {
       {appSetup?.pendingOnboardingStep === 'external-library' && (
         <FirstRunOnboarding onCompleted={setAppSetup} />
       )}
-      {appSetup?.pendingOnboardingStep === 'agent-provider' &&
-        agentProviderSetup && (
-          <AgentProviderSetupDialog
-            setup={agentProviderSetup}
-            onSetupChange={setAgentProviderSetup}
-            onCompleted={setAppSetup}
-          />
-        )}
+      {appSetup?.pendingOnboardingStep === 'agent-provider' && (
+        <AgentProviderSetupDialog onCompleted={setAppSetup} />
+      )}
       <NotificationHost />
     </>
   );

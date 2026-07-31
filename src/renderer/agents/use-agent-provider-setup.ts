@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import {
   isAgentProviderLoginChallenge,
@@ -13,8 +13,6 @@ import {
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { AgentProviderSetupApi } from './agent-provider-api';
 
-const LOGIN_POLL_INTERVAL_MS = 1_200;
-
 function challengeUrl(
   challenge: AgentProviderLoginChallenge,
 ): string {
@@ -28,6 +26,9 @@ interface UseAgentProviderSetupInput {
   readonly onSetupChange: (setup: AgentProviderSetupSnapshot) => void;
   readonly onCompleted: (setup: AppSetupSnapshot) => void;
   readonly api: AgentProviderSetupApi;
+  readonly refreshProvider: (
+    providerId: string,
+  ) => Promise<AgentProviderSetupSnapshot>;
 }
 
 export function useAgentProviderSetup({
@@ -35,6 +36,7 @@ export function useAgentProviderSetup({
   onSetupChange,
   onCompleted,
   api,
+  refreshProvider,
 }: UseAgentProviderSetupInput) {
   const [loginChallenge, setLoginChallenge] = useState<
     AgentProviderLoginChallenge | undefined
@@ -42,79 +44,26 @@ export function useAgentProviderSetup({
   const [busyProviderId, setBusyProviderId] = useState<
     string | undefined
   >();
-  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!loginChallenge) {
-      return;
-    }
-
-    let active = true;
-    let timer: number | undefined;
-
-    const poll = async () => {
-      try {
-        const next = await api.getAgentProviderSetup();
-
-        if (!isAgentProviderSetupSnapshot(next)) {
-          throw new Error('Agent Provider 状态响应无效');
-        }
-        if (!active) {
-          return;
-        }
-
-        onSetupChange(next);
-        const provider = next.providers.find(
-          (candidate) =>
-            candidate.id === loginChallenge.providerId,
-        );
-
-        if (provider?.credential.status === 'authenticated') {
-          setLoginChallenge(undefined);
-          return;
-        }
-      } catch (pollError) {
-        if (!active) {
-          return;
-        }
-
-        setError(
-          userMessageFromError(
-            pollError,
-            '暂时无法验证登录状态，请重试。',
-          ) ?? '暂时无法验证登录状态，请重试。',
-        );
-        return;
-      }
-
-      timer = window.setTimeout(poll, LOGIN_POLL_INTERVAL_MS);
-    };
-
-    timer = window.setTimeout(poll, LOGIN_POLL_INTERVAL_MS);
-
-    return () => {
-      active = false;
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, [api, loginChallenge, onSetupChange]);
+  const currentLoginChallenge =
+    loginChallenge &&
+    setup.providers.find(
+      (candidate) =>
+        candidate.id === loginChallenge.providerId,
+    )?.credential.status !== 'authenticated'
+      ? loginChallenge
+      : undefined;
 
   const refresh = async (providerId: string) => {
-    setChecking(true);
     setError(null);
 
     try {
-      const next = await api.refreshAgentProvider({
-        providerId,
-      });
+      const next = await refreshProvider(providerId);
 
       if (!isAgentProviderSetupSnapshot(next)) {
         throw new Error('Agent Provider 状态响应无效');
       }
 
-      onSetupChange(next);
       const provider = loginChallenge
         ? next.providers.find(
             (candidate) =>
@@ -131,8 +80,6 @@ export function useAgentProviderSetup({
           '暂时无法检查 Provider 状态，请重试。',
         ) ?? '暂时无法检查 Provider 状态，请重试。',
       );
-    } finally {
-      setChecking(false);
     }
   };
 
@@ -203,12 +150,12 @@ export function useAgentProviderSetup({
   };
 
   const reopenLogin = () => {
-    if (!loginChallenge) {
+    if (!currentLoginChallenge) {
       return;
     }
 
     void api
-      .openExternal({ url: challengeUrl(loginChallenge) })
+      .openExternal({ url: challengeUrl(currentLoginChallenge) })
       .catch((openError) => {
         setError(
           userMessageFromError(
@@ -220,14 +167,16 @@ export function useAgentProviderSetup({
   };
 
   const dismiss = () => {
-    setBusyProviderId(loginChallenge?.providerId ?? 'onboarding');
+    setBusyProviderId(
+      currentLoginChallenge?.providerId ?? 'onboarding',
+    );
     setError(null);
 
-    void (loginChallenge
+    void (currentLoginChallenge
       ? api
           .cancelAgentProviderLogin({
-            providerId: loginChallenge.providerId,
-            loginId: loginChallenge.loginId,
+            providerId: currentLoginChallenge.providerId,
+            loginId: currentLoginChallenge.loginId,
           })
           .catch(() => undefined)
       : Promise.resolve())
@@ -255,9 +204,8 @@ export function useAgentProviderSetup({
 
   return {
     setup,
-    loginChallenge,
+    loginChallenge: currentLoginChallenge,
     busyProviderId,
-    checking,
     error,
     clearError: () => setError(null),
     refresh,

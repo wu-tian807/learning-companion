@@ -7,7 +7,6 @@ interface AgentProviderCardProps {
   readonly provider: AgentProviderSnapshot;
   readonly loginChallenge?: AgentProviderLoginChallenge;
   readonly busy: boolean;
-  readonly checking: boolean;
   readonly selectedActionLabel?: string;
   readonly onLogin: () => void;
   readonly onSelect: () => void;
@@ -56,7 +55,6 @@ export function AgentProviderCard({
   provider,
   loginChallenge,
   busy,
-  checking,
   selectedActionLabel,
   onLogin,
   onSelect,
@@ -66,6 +64,8 @@ export function AgentProviderCard({
   const credential = provider.credential;
   const awaitingLogin =
     loginChallenge?.providerId === provider.id;
+  const checking =
+    provider.refreshing || credential.status === 'checking';
 
   return (
     <article className="rounded-[18px] border border-white/[0.09] bg-white/[0.025] p-5">
@@ -91,6 +91,12 @@ export function AgentProviderCard({
                 已选择
               </span>
             )}
+            {provider.refreshing &&
+              credential.status !== 'checking' && (
+                <span className="text-[10px] text-slate-500">
+                  正在更新…
+                </span>
+              )}
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-400">
             {provider.description}
@@ -173,6 +179,23 @@ export function AgentProviderCard({
               {checking ? '正在检查…' : '立即检查登录状态'}
             </button>
           </div>
+        </div>
+      )}
+
+      {provider.refreshError && (
+        <div
+          role="status"
+          className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.04] px-3.5 py-3 text-xs leading-5 text-amber-100/80"
+        >
+          <span>{provider.refreshError}</span>
+          <button
+            type="button"
+            disabled={checking}
+            onClick={onRefresh}
+            className="ui-control h-8 shrink-0 rounded-full border border-amber-200/15 px-3 text-amber-100 disabled:opacity-40"
+          >
+            {checking ? '正在检查…' : '重新检查'}
+          </button>
         </div>
       )}
     </article>

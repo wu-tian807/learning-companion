@@ -1,33 +1,40 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useStore } from 'zustand';
 
-import {
-  isAgentProviderSetupSnapshot,
-  type AgentProviderSetupSnapshot,
-} from '../../shared/agent-providers';
-import { userMessageFromError } from '../../shared/ipc-error';
+import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
 import { AgentProviderCard } from '../agents/AgentProviderCard';
 import {
   defaultAgentProviderSetupApi,
   type AgentProviderSetupApi,
 } from '../agents/agent-provider-api';
+import {
+  agentProviderStore,
+  createAgentProviderStore,
+  type AgentProviderStore,
+} from '../agents/agent-provider-store';
 import { useAgentProviderSetup } from '../agents/use-agent-provider-setup';
 import { ErrorDialog } from '../components/ErrorDialog';
 
 interface LoadedAgentProviderSettingsProps {
-  readonly initialSetup: AgentProviderSetupSnapshot;
+  readonly setup: AgentProviderSetupSnapshot;
   readonly api: AgentProviderSetupApi;
+  readonly store: AgentProviderStore;
 }
 
 function LoadedAgentProviderSettings({
-  initialSetup,
+  setup,
   api,
+  store,
 }: LoadedAgentProviderSettingsProps) {
-  const [setup, setSetup] = useState(initialSetup);
   const controller = useAgentProviderSetup({
     setup,
-    onSetupChange: setSetup,
+    onSetupChange: (next) => {
+      store.getState().applySnapshot(next);
+    },
     onCompleted: () => undefined,
     api,
+    refreshProvider: (providerId) =>
+      store.getState().refreshProvider(providerId),
   });
 
   return (
@@ -39,7 +46,6 @@ function LoadedAgentProviderSettings({
             provider={provider}
             loginChallenge={controller.loginChallenge}
             busy={controller.busyProviderId === provider.id}
-            checking={controller.checking}
             onLogin={() => {
               void controller.startLogin(provider.id);
             }}
@@ -72,75 +78,34 @@ function LoadedAgentProviderSettings({
 
 interface AgentProviderSettingsSectionProps {
   readonly api?: AgentProviderSetupApi;
-}
-
-async function readSetup(
-  api: AgentProviderSetupApi,
-): Promise<AgentProviderSetupSnapshot> {
-  const setup = await api.getAgentProviderSetup();
-
-  if (!isAgentProviderSetupSnapshot(setup)) {
-    throw new Error('Agent Provider 设置状态响应无效');
-  }
-
-  return setup;
+  readonly store?: AgentProviderStore;
 }
 
 export function AgentProviderSettingsSection({
   api = defaultAgentProviderSetupApi,
+  store,
 }: AgentProviderSettingsSectionProps) {
-  const [setup, setSetup] =
-    useState<AgentProviderSetupSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      setSetup(await readSetup(api));
-    } catch (loadError) {
-      setError(
-        userMessageFromError(
-          loadError,
-          '无法读取 AI Provider 状态，请重试。',
-        ) ?? '无法读取 AI Provider 状态，请重试。',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
+  const resolvedStore = useMemo(
+    () =>
+      store ??
+      (api === defaultAgentProviderSetupApi
+        ? agentProviderStore
+        : createAgentProviderStore(api)),
+    [api, store],
+  );
+  const setup = useStore(resolvedStore, (state) => state.setup);
+  const loading = useStore(
+    resolvedStore,
+    (state) => state.loading,
+  );
+  const loadError = useStore(
+    resolvedStore,
+    (state) => state.loadError,
+  );
 
   useEffect(() => {
-    let active = true;
-
-    void readSetup(api)
-      .then((next) => {
-        if (active) {
-          setSetup(next);
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (active) {
-          setError(
-            userMessageFromError(
-              loadError,
-              '无法读取 AI Provider 状态，请重试。',
-            ) ?? '无法读取 AI Provider 状态，请重试。',
-          );
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [api]);
+    return resolvedStore.getState().connect();
+  }, [resolvedStore]);
 
   return (
     <section>
@@ -153,23 +118,22 @@ export function AgentProviderSettingsSection({
         </p>
       </div>
 
-      {loading && (
-        <div className="animate-pulse rounded-[18px] border border-white/[0.08] bg-white/[0.025] p-5">
-          <div className="h-4 w-24 rounded bg-white/[0.08]" />
-          <div className="mt-3 h-3 w-48 rounded bg-white/[0.05]" />
-        </div>
+      {loading && !setup && (
+        <p className="text-sm text-slate-400">
+          正在读取 Provider 列表…
+        </p>
       )}
 
-      {!loading && error && (
+      {loadError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-3.5 py-3 text-xs text-rose-200"
+          className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-rose-300/15 bg-rose-400/[0.05] px-3.5 py-3 text-xs text-rose-200"
         >
-          <span>{error}</span>
+          <span>{loadError}</span>
           <button
             type="button"
             onClick={() => {
-              void load();
+              void resolvedStore.getState().reload();
             }}
             className="ui-control h-8 shrink-0 rounded-full border border-rose-200/15 px-3"
           >
@@ -178,10 +142,11 @@ export function AgentProviderSettingsSection({
         </div>
       )}
 
-      {!loading && setup && (
+      {setup && (
         <LoadedAgentProviderSettings
-          initialSetup={setup}
+          setup={setup}
           api={api}
+          store={resolvedStore}
         />
       )}
     </section>
