@@ -1,4 +1,7 @@
-import type { AssetSnapshot } from '../../shared/assets';
+import type {
+  AssetCreationKind,
+  AssetSnapshot,
+} from '../../shared/assets';
 
 export type AssetLoadState =
   | { readonly kind: 'loading' }
@@ -44,4 +47,36 @@ export function assetMediaLabel(mediaType: string): string {
   };
 
   return labels[mediaType] ?? mediaType;
+}
+
+export function filterAssetsByCreationKind(
+  assets: readonly AssetSnapshot[],
+  creationKind: AssetCreationKind,
+): AssetSnapshot[] {
+  return assets.filter(
+    (asset) => asset.creationKind === creationKind,
+  );
+}
+
+export function sortAssetsByLastUsed(
+  assets: readonly AssetSnapshot[],
+): AssetSnapshot[] {
+  return [...assets].sort(
+    (left, right) => right.lastUsedTime - left.lastUsedTime,
+  );
+}
+
+export function filterAssetLoadStateByCreationKind(
+  state: AssetLoadState,
+  creationKind: AssetCreationKind,
+): AssetLoadState {
+  return state.kind === 'ready'
+    ? {
+        kind: 'ready',
+        assets: filterAssetsByCreationKind(
+          state.assets,
+          creationKind,
+        ),
+      }
+    : state;
 }

@@ -26,7 +26,10 @@ import {
   replaceAsset,
   selectAfterAssetsDeletion,
 } from '../asset-view';
-import type { AssetLoadState } from './project-asset-view';
+import {
+  filterAssetsByCreationKind,
+  type AssetLoadState,
+} from './project-asset-view';
 import { useAssetSelection } from './use-asset-selection';
 
 interface UseProjectAssetsOptions {
@@ -65,7 +68,11 @@ export function useProjectAssets({
     () => assets.find((asset) => asset.id === selectedAssetId),
     [assets, selectedAssetId],
   );
-  const selection = useAssetSelection(assets);
+  const importedAssets = useMemo(
+    () => filterAssetsByCreationKind(assets, 'imported'),
+    [assets],
+  );
+  const selection = useAssetSelection(importedAssets);
   const updateAssets = useCallback(
     (operation: (assets: AssetSnapshot[]) => AssetSnapshot[]) => {
       setLoadState((current) =>

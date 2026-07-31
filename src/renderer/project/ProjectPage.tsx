@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { ProjectSnapshot } from '../../shared/projects';
 import { ErrorDialog } from '../components/ErrorDialog';
@@ -8,7 +8,12 @@ import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeP
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
-import { assetMediaLabel } from './project-asset-view';
+import {
+  assetMediaLabel,
+  filterAssetLoadStateByCreationKind,
+  filterAssetsByCreationKind,
+  sortAssetsByLastUsed,
+} from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
@@ -70,6 +75,28 @@ export function ProjectPage({
     workbenchLifecycleTaskRef: session.workbenchLifecycleTaskRef,
     setError,
   });
+  const importedAssetState = useMemo(
+    () =>
+      filterAssetLoadStateByCreationKind(
+        session.loadState,
+        'imported',
+      ),
+    [session.loadState],
+  );
+  const generatedAssets = useMemo(
+    () =>
+      sortAssetsByLastUsed(
+        filterAssetsByCreationKind(
+          assetOperations.assets,
+          'generated',
+        ),
+      ),
+    [assetOperations.assets],
+  );
+  const importedAssetCount =
+    importedAssetState.kind === 'ready'
+      ? importedAssetState.assets.length
+      : 0;
 
   return (
     <main
@@ -125,7 +152,7 @@ export function ProjectPage({
             </h1>
             <span className="mt-0.5 block text-[10px] text-slate-500">
               {session.loadState.kind === 'ready'
-                ? `${assetOperations.assets.length} 个 Asset`
+                ? `${importedAssetCount} 份资料 · ${generatedAssets.length} 个生成内容`
                 : '正在读取资料'}
             </span>
           </span>
@@ -143,7 +170,7 @@ export function ProjectPage({
       <WorkbenchRuntimeProvider onError={setError}>
         <section className="grid h-[calc(100vh-76px)] min-h-[560px] grid-cols-[minmax(220px,2fr)_minmax(560px,6fr)_minmax(220px,2fr)] gap-3">
           <ProjectAssetPanel
-            state={session.loadState}
+            state={importedAssetState}
             selectedAssetId={session.selectedAssetId}
             selectionMode={assetOperations.selection.active}
             selectedAssetIds={
@@ -226,7 +253,22 @@ export function ProjectPage({
           />
           <GenerationCenter
             asset={assetOperations.selectedAsset}
+            generatedAssets={generatedAssets}
+            selectedAssetId={session.selectedAssetId}
+            busy={assetOperations.busy}
+            now={relativeTimeNow}
             mediaLabel={assetMediaLabel}
+            onSelect={session.selectAsset}
+            onRename={assetOperations.setRenameTarget}
+            onReveal={(asset) =>
+              void assetOperations.revealAssetInFolder(asset)
+            }
+            onRelink={(asset) =>
+              void assetOperations.relinkAsset(asset)
+            }
+            onDelete={(asset) =>
+              assetOperations.setDeleteTargets([asset])
+            }
           />
         </section>
       </WorkbenchRuntimeProvider>
