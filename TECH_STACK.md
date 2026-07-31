@@ -2,7 +2,7 @@
 
 > 状态：当前基线
 >
-> 更新日期：2026-07-31
+> 更新日期：2026-08-01
 >
 > 本文同时记录已经落地的实现和已经确认但尚未实施的架构。表格中的“已落地”
 > 表示当前仓库已有生产代码；“已确定”表示技术方向已经确认，后续实现不得在
@@ -382,7 +382,7 @@ Map。`ProjectService` 只编排修改，不私自保存另一份 Workspace 状�
 ```text
 Asset
     id / projectId / name / mediaType / creationKind / contentRef
-    createdTime / lastUsedTime
+    createdTime / updatedTime
 
 AssetDatabase
     按显式 projectId 查询和写入
@@ -401,6 +401,20 @@ Project 失活，在临时集合中完成数据库查询和 ContentRef 解析，
 活动 Project，也不缓存 Runtime Snapshot。未来多窗口或后台任务明确需要后再
 扩展。
 
+`Asset.updatedTime` 表示 Asset 聚合最近一次有效变化，不表示最近打开或阅读。
+名称、ContentRef、Workbench 正文和未来 Attachment 变化会更新时间；翻页、滚动、
+播放进度、Workbench State 和可重建 Artifact 不会更新时间。新建时
+`createdTime === updatedTime`，后续时间保持单调且不会被文件系统的未来时间污染。
+
+已有 Asset 的持久化字段变更统一经过 `AssetService.update()`：
+
+- Service 判断真实变化、解释 `now | observed` 并规范化时间；
+- `AssetDatabase.update()` 只接收名称、ContentRef 和最终数字时间；
+- Relink 不再直接调用独立 Database 方法；
+- 异步 Refresh 和 Relink 使用不可变 Snapshot 身份拒绝过期提交；
+- 数据库成功后才替换 Runtime Map 并发布完整 `AssetChangedEvent`；
+- Preload 只暴露校验后的 `onAssetChanged`，Renderer 按 Project 和 Asset ID 投影。
+
 `Asset.creationKind` 显式记录 Asset 的创建语义：
 
 ```ts
@@ -416,7 +430,7 @@ type AssetCreationKind = 'imported' | 'generated';
 
 ProjectPage 仍从 Main 获取当前 Project 的完整 Asset Snapshot 集合，只在
 Renderer 做只读投影：左侧展示 `imported`，右侧生成中心展示按
-`lastUsedTime` 降序排列的 `generated`。两侧点击使用同一个
+`updatedTime` 降序排列的 `generated`。两侧点击使用同一个
 `selectedAssetId` 和 Workbench 生命周期，重命名、显示文件、Relink 与删除也
 复用同一套 Asset 操作。
 
@@ -553,6 +567,7 @@ interface ContentResolveContext {
 
 - 原 ContentRef；
 - availability 和 checkedTime；
+- 内容来源观察到的可选更新时间；
 - Main 内可见的 resolved location；
 - 按能力开放的 ContentHandle。
 
@@ -578,6 +593,12 @@ watch
 → 外部内容已变化则拒绝覆盖
 → 原子替换
 ```
+
+`AssetService.resolveContent()` 会为可写 Handle 组合通用
+`TrackedContentHandle`。正文写入成功后由该装饰器自动更新 Asset 时间，Plain Text、
+Markdown 和未来可编辑 Workbench 不需要重复接入。正文已经写入但元数据同步失败时，
+保存仍保持成功；Main 记录警告，并在后续加载、刷新或解析时用文件 `mtimeMs` 修复。
+Resolver 和底层 LocalFile Handle 不依赖 AssetService。
 
 ### 10.5 受控内容协议
 
@@ -1215,6 +1236,7 @@ internal
 
 - `ProjectService` 使用串行生命周期队列；
 - `AssetService` 使用 lifecycle version 拒绝被替代的加载；
+- Asset 异步操作使用当前 Snapshot 身份拒绝覆盖更晚的字段更新；
 - Workbench Session 使用 sessionId 和 lifecycle version；
 - 文件选择和批量导入携带发起时的 `projectId`；
 - Workspace 切换先关闭 Workbench，再卸载和重载 Asset。
@@ -1263,6 +1285,9 @@ Home 的创建和编辑界面都展示 Workspace：
 - SQLite Migration、外键和 CRUD；
 - Project 内存 Map 与 Asset 无状态持久化适配；
 - AssetService 活动 Project、原子加载和并发替代；
+- Asset 更新时间迁移、单调规范化、mtime 修复和空操作；
+- TrackedContentHandle 写入成功回报与失败隔离；
+- AssetChanged Main 广播、Preload 校验和 Renderer Project 过滤；
 - Service 生命周期和并发替代；
 - ContentRef 路径解析；
 - Windows / POSIX 路径策略；
@@ -1304,6 +1329,7 @@ Home 的创建和编辑界面都展示 Workspace：
 以下已确认基座已经落地：
 
 - `AssetDatabase` 无状态 SQLite CRUD 与 `AssetService` 单一 Runtime Map；
+- `Asset.updatedTime`、统一 Service 更新入口、文件 mtime 同步与主动 Renderer 投影；
 - Attachment `metadata + workspace content ref` 共享契约；
 - 内置 Workbench Catalog 及 Main / Renderer 双端注册；
 - Main Bootstrap、`ApplicationRuntime` 与集中 IPC 装配；
@@ -1366,9 +1392,10 @@ Home 的创建和编辑界面都展示 Workspace：
 
 > Project 和 Asset 是纯数据；ProjectDatabase 维护全量 Project Map，
 > AssetDatabase 是无状态 SQLite 适配器，AssetService 独占活动 Asset Runtime
-> Map；Service 编排领域生命周期；ProjectWorkspaceManager 无状态管理路径；
-> ContentRef 只引用内容；Workbench 通过 ContentHandle 工作；Agent 只读原件并
-> 通过审查会话提出修改。
+> Map，并统一提交已有 Asset 的持久化字段变化；Service 编排领域生命周期；
+> ProjectWorkspaceManager 无状态管理路径；ContentRef 只引用内容；Workbench 通过
+> ContentHandle 工作，写入跟踪由上层装饰器组合；Agent 只读原件并通过审查会话提出
+> 修改。
 
 在完成真实 MVP 和性能验证前：
 
@@ -1390,3 +1417,4 @@ Home 的创建和编辑界面都展示 Workspace：
 - `docs/superpowers/specs/2026-07-30-background-runtime-install-and-notifications-design.md`
 - `docs/superpowers/specs/2026-07-30-architecture-boundary-convergence-design.md`
 - `docs/superpowers/specs/2026-07-31-responsive-project-generation-center-design.md`
+- `docs/superpowers/specs/2026-08-01-asset-updated-time-design.md`
