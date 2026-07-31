@@ -1,13 +1,8 @@
 import type { AssetSnapshot } from '../../shared/assets';
 import { AssetImportSplitButton } from '../components/AssetImportSplitButton';
-import { AssetSourceBadge } from '../components/AssetSourceBadge';
-import { AssetActionsMenu } from './AssetActionsMenu';
-import {
-  assetAvailabilityLabels,
-  assetMediaLabel,
-  formatAssetLastUsed,
-  type AssetLoadState,
-} from './project-asset-view';
+import { AssetList } from './AssetList';
+import { AssetSelectionCheckbox } from './AssetListItem';
+import type { AssetLoadState } from './project-asset-view';
 
 function RefreshIcon({ spinning = false }: { readonly spinning?: boolean }) {
   return (
@@ -45,36 +40,6 @@ function TrashIcon() {
   );
 }
 
-function SelectionCheckbox({
-  checked,
-}: {
-  readonly checked: boolean;
-}) {
-  return (
-    <span
-      aria-hidden="true"
-      className={[
-        'grid size-[18px] shrink-0 place-items-center rounded-[5px] border transition-colors',
-        checked
-          ? 'border-indigo-300/70 bg-indigo-400 text-slate-950'
-          : 'border-white/20 bg-black/10 text-transparent',
-      ].join(' ')}
-    >
-      <svg
-        className="size-3"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="m3.5 8 3 3 6-6" />
-      </svg>
-    </span>
-  );
-}
-
 interface ProjectAssetPanelProps {
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
@@ -84,6 +49,7 @@ interface ProjectAssetPanelProps {
   readonly busy: boolean;
   readonly refreshingAll: boolean;
   readonly dragging: boolean;
+  readonly now: number;
   readonly onSelect: (assetId: string) => void;
   readonly onEnterSelectionMode: () => void;
   readonly onExitSelectionMode: () => void;
@@ -109,6 +75,7 @@ export function ProjectAssetPanel({
   busy,
   refreshingAll,
   dragging,
+  now,
   onSelect,
   onEnterSelectionMode,
   onExitSelectionMode,
@@ -175,7 +142,7 @@ export function ProjectAssetPanel({
             onClick={onToggleAll}
             className="ui-control flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 disabled:opacity-40"
           >
-            <SelectionCheckbox checked={allAssetsSelected} />
+            <AssetSelectionCheckbox checked={allAssetsSelected} />
             {allAssetsSelected ? '取消全选' : '全选'}
           </button>
           <button
@@ -241,107 +208,32 @@ export function ProjectAssetPanel({
             </button>
           </div>
         )}
-        {state.kind === 'ready' && assets.length === 0 && (
-          <div className="px-3 py-10 text-center">
-            <p className="text-xs font-medium text-slate-400">
-              还没有资料
-            </p>
-            <p className="mt-2 text-[10px] leading-5 text-slate-600">
-              点击添加资料，或将本地文件拖到这里
-            </p>
-          </div>
-        )}
-        {assets.map((asset) => {
-          const checked = selectedAssetIds.has(asset.id);
-          const activate = () => {
-            if (selectionMode) {
-              onToggleSelection(asset.id);
-            } else {
-              onSelect(asset.id);
+        {state.kind === 'ready' && (
+          <AssetList
+            assets={assets}
+            selectedAssetId={selectedAssetId}
+            selectionMode={selectionMode}
+            selectedAssetIds={selectedAssetIds}
+            busy={busy}
+            now={now}
+            emptyState={
+              <div className="px-3 py-10 text-center">
+                <p className="text-xs font-medium text-slate-400">
+                  还没有资料
+                </p>
+                <p className="mt-2 text-[10px] leading-5 text-slate-600">
+                  点击添加资料，或将本地文件拖到这里
+                </p>
+              </div>
             }
-          };
-
-          return (
-            <div
-              key={asset.id}
-              role="button"
-              tabIndex={0}
-              aria-pressed={selectionMode ? checked : undefined}
-              onClick={activate}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  activate();
-                }
-              }}
-              className={[
-                'my-0.5 grid w-full grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[11px] border p-2.5 text-left',
-                selectionMode
-                  ? checked
-                    ? 'border-indigo-300/25 bg-indigo-500/[0.16]'
-                    : 'border-transparent hover:bg-white/[0.035]'
-                  : asset.id === selectedAssetId
-                    ? 'border-indigo-300/15 bg-indigo-500/[0.12]'
-                    : 'border-transparent hover:bg-white/[0.035]',
-              ].join(' ')}
-            >
-            <span className="grid size-[34px] place-items-center rounded-[9px] bg-white/[0.055] text-[10px] font-semibold text-slate-300">
-              {assetMediaLabel(asset.mediaType).slice(0, 4)}
-            </span>
-            <span className="min-w-0">
-              <span
-                className={[
-                  'block truncate text-xs font-medium',
-                  asset.contentStatus.availability === 'available'
-                    ? 'text-slate-200'
-                    : 'text-red-400',
-                ].join(' ')}
-              >
-                {asset.name}
-              </span>
-              <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-slate-500">
-                <span className="truncate">
-                  {assetMediaLabel(asset.mediaType)}
-                </span>
-                <AssetSourceBadge contentRef={asset.contentRef} />
-                <span className="shrink-0 text-slate-600">·</span>
-                <span className="truncate">
-                  {formatAssetLastUsed(asset.lastUsedTime)}
-                </span>
-              </span>
-            </span>
-            <span className="flex items-center gap-1">
-              {asset.contentStatus.availability !== 'available' && (
-                <span
-                  className="size-1.5 rounded-full bg-red-400"
-                  title={
-                    assetAvailabilityLabels[
-                      asset.contentStatus.availability
-                    ]
-                  }
-                  aria-label={
-                    assetAvailabilityLabels[
-                      asset.contentStatus.availability
-                    ]
-                  }
-                />
-              )}
-              {selectionMode ? (
-                <SelectionCheckbox checked={checked} />
-              ) : (
-                <AssetActionsMenu
-                  asset={asset}
-                  disabled={busy}
-                  onRename={() => onRename(asset)}
-                  onReveal={() => onReveal(asset)}
-                  onRelink={() => onRelink(asset)}
-                  onDelete={() => onDelete(asset)}
-                />
-              )}
-            </span>
-            </div>
-          );
-        })}
+            onSelect={onSelect}
+            onToggleSelection={onToggleSelection}
+            onRename={onRename}
+            onReveal={onReveal}
+            onRelink={onRelink}
+            onDelete={onDelete}
+          />
+        )}
       </div>
     </aside>
   );

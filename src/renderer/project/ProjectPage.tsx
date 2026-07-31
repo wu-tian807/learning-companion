@@ -11,6 +11,7 @@ import { ProjectAssetPanel } from './ProjectAssetPanel';
 import { assetMediaLabel } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
 import { useProjectSession } from './use-project-session';
+import { useRelativeTimeNow } from './use-relative-time-now';
 
 interface ProjectPageProps {
   readonly project: ProjectSnapshot;
@@ -58,6 +59,7 @@ export function ProjectPage({
 }: ProjectPageProps) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const relativeTimeNow = useRelativeTimeNow();
   const session = useProjectSession(project.id, setError);
   const assetOperations = useProjectAssets({
     projectId: project.id,
@@ -153,6 +155,7 @@ export function ProjectPage({
             busy={assetOperations.busy}
             refreshingAll={assetOperations.refreshingAll}
             dragging={dragging}
+            now={relativeTimeNow}
             onSelect={session.selectAsset}
             onEnterSelectionMode={
               assetOperations.selection.enter

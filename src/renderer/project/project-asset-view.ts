@@ -12,15 +12,6 @@ export const assetAvailabilityLabels = {
   invalid: '路径无效',
 } as const;
 
-export function formatAssetLastUsed(value: number): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
 export function assetMediaLabel(mediaType: string): string {
   const labels: Record<string, string> = {
     'application/epub+zip': 'EPUB',
