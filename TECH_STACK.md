@@ -315,6 +315,7 @@ Fuses 校验。用户数据不属于应用包，因此不会进入 ASAR。
 | 样式系统 | Tailwind CSS | 已落地 |
 | 局部客户端状态 | React State / Hooks | 已落地 |
 | 跨组件轻量状态 | Zustand | 已引入，按需使用 |
+| Agent Provider UI 投影 | Zustand Vanilla Store | 已落地 |
 | 无障碍基础组件 | Radix UI / shadcn/ui | 已选，尚未全面引入 |
 | 动画 | Motion | 候选，按实际交互引入 |
 | 可调整多栏布局 | react-resizable-panels | 候选，响应式阶段引入 |
@@ -1012,7 +1013,38 @@ App Server 动态读取，不在客户端硬编码。
 - 自建完整 Conversation Store；
 - 把 OpenCode 或 DeepSeek 伪装成 Codex 自定义 Provider。
 
-### 18.2 Provider 边界
+### 18.2 Provider 状态生命周期
+
+`AgentProviderService` 是应用级有状态 Service，按 Provider ID 独立保存最近一次
+凭证快照、刷新状态、刷新错误、并发任务和 generation。状态读取采用
+stale-while-revalidate：
+
+```text
+Renderer 读取设置
+→ Main 立即返回上一份完整 Snapshot
+→ Main 同时独立刷新每个 Provider
+→ 任一 Provider 状态变化
+→ Main 广播带单调 revision 的完整 authoritative Snapshot
+→ Renderer Store 忽略相同或更旧的 Snapshot
+```
+
+- 首次没有缓存时，Provider 使用 `checking` 状态；
+- 后续打开设置时立即显示已有卡片，不等待 Codex Runtime 查询完成；
+- 不同 Provider 的刷新任务互不等待，快速 Provider 可以先完成；
+- 同一 Provider 的并发刷新会合并；
+- 手动刷新只指定一个 Provider；
+- 有旧凭证时刷新失败会保留旧状态，并单独显示 `refreshError`；
+- Provider Runtime 可以主动发出凭证失效事件，触发 Main 重检；
+- OAuth 登录状态轮询属于 Main Service 生命周期，关闭或切换 Renderer 不会中断；
+- Renderer 不保存 TTL、后台任务或认证真相，也不自行轮询；
+- Renderer Zustand Store 先订阅事件再发起读取，并通过 `revision` 消除
+  “新事件被旧 IPC 响应覆盖”的竞争。
+
+IPC 只传完整 Snapshot 和 Provider 定向命令。设置页与首次引导共享同一个
+Renderer 投影，因此一个 Provider 的检查状态只影响自己的卡片，不会让整个
+Provider 列表进入统一骨架屏。
+
+### 18.3 Provider 边界
 
 应用定义 Provider 无关的最小领域接口：
 
@@ -1035,7 +1067,7 @@ interface AgentProvider {
 Codex DTO 只存在于 Codex Adapter 中，不能泄漏到 Project、Asset、Workbench、
 Attachment 或 Memory。
 
-### 18.3 Project Agent Lane
+### 18.4 Project Agent Lane
 
 每个 Project 固定两个长期 Lane：
 
@@ -1050,7 +1082,7 @@ Thread Ref。切换 Asset 不创建新 Tutor Thread。
 Conversation、Compact 和完整消息历史由 Codex Runtime 管理；Learning Companion
 只保存 Thread Ref 和可丢弃的 UI 显示缓存。
 
-### 18.4 Turn Context
+### 18.5 Turn Context
 
 每一轮只组合必要现场：
 
@@ -1065,7 +1097,7 @@ laneId
 
 不无条件上传整个 Project。其他内容通过受控工具按需读取。
 
-### 18.5 AgentContextProjection
+### 18.6 AgentContextProjection
 
 Agent 不读取 SQLite。Main 把允许读取的结构化数据投影为本轮只读视图：
 
@@ -1080,7 +1112,7 @@ selected-content/
 Projection 不是第二份事实来源。Agent 可以使用通用读取和搜索能力，但看不到
 SQLite、其他 Project、应用设置或认证数据。
 
-### 18.6 Agent 编辑会话
+### 18.7 Agent 编辑会话
 
 Markdown、HTML 等可编辑 Asset 使用比 VS Code 更严格的 Editing Session：
 
@@ -1201,6 +1233,8 @@ Home 的创建和编辑界面都展示 Workspace：
 - External Runtime 后台任务接纳、重复请求和 Renderer 状态竞争；
 - 全局通知去重、自动关闭、悬停暂停和持久错误；
 - 首次引导版本迁移、完成写入和各运行时状态分支；
+- Provider Main 缓存、独立刷新、登录轮询、失效事件和 stale completion；
+- Provider Renderer 先订阅后读取、revision 竞争和订阅引用计数；
 - Asset Artifact 命中、失效、生成并发与生命周期清理；
 - Office Provider 状态与 PDF 文档视图复用；
 - Workbench Provider、Adapter 和 Renderer；
@@ -1255,6 +1289,7 @@ Home 的创建和编辑界面都展示 Workspace：
 - DOC/DOCX/PPT/PPTX 转 PDF 的 Office Workbench；
 - 固定版本、随应用打包且可复用已有登录的 Codex Runtime；
 - Provider Registry、Codex Provider、凭证状态检查和 App Server 托管登录；
+- Main Provider 独立状态缓存、authoritative Snapshot 事件与 Renderer 状态投影；
 - `settings.json` 中用统一首次引导版本串联 External Library 与 AI Provider、
   独立保存 Provider 选择且不保存凭证的 AI 设置流程；
 - 设置中心的 `AI Provider` 页签。
