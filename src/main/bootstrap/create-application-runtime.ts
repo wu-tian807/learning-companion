@@ -5,6 +5,9 @@ import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
 import { AssetArtifactRegistry } from '../artifacts/asset-artifact-registry';
 import { AssetArtifactService } from '../artifacts/asset-artifact-service';
+import { AssetAssociationService } from '../asset-associations/asset-association-service';
+import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
+import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
 import { LibreOfficePreviewProducer } from '../artifacts/producers/libreoffice-preview-producer';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
@@ -36,7 +39,7 @@ import { MainFacilityAdapterRegistry } from '../workbench/interaction/main-facil
 import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
-import { WorkbenchSessionManager } from '../workbench/workbench-session-manager';
+import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { SqliteWorkbenchStateDataRepository } from '../workbench/workbench-state-data-repository';
 import { SqliteWorkbenchStateRepository } from '../workbench/workbench-state-repository';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
@@ -74,7 +77,7 @@ export async function createApplicationRuntime({
   let sandboxFrameInteractionBridge:
     | SandboxFrameInteractionBridge
     | undefined;
-  let workbenchSessionManager: WorkbenchSessionManager | undefined;
+  let workbenchSessionService: WorkbenchSessionService | undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -125,6 +128,12 @@ export async function createApplicationRuntime({
       artifactRegistry,
     );
     const assetDatabase = new AssetDatabase(databaseContext);
+    const associationService = new AssetAssociationService(
+      new AssetReferenceDatabase(databaseContext),
+      new AssetLinkDatabase(databaseContext),
+      projectDatabase,
+      assetDatabase,
+    );
     const contentResolverRegistry = new ContentResolverRegistry();
     contentResolverRegistry.register(
       new LocalFileContentResolver(workspaceManager),
@@ -137,7 +146,10 @@ export async function createApplicationRuntime({
       contentResolverRegistry,
       projectDatabase,
       workspaceManager,
-      { artifactCleanup: artifactService },
+      {
+        artifactCleanup: artifactService,
+        deletionObserver: associationService,
+      },
     );
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
@@ -175,7 +187,7 @@ export async function createApplicationRuntime({
       stateRepository: workbenchStateRepository,
       stateDataRepository: workbenchStateDataRepository,
     });
-    workbenchSessionManager = new WorkbenchSessionManager(
+    workbenchSessionService = new WorkbenchSessionService(
       assetService,
       workbenchRegistry,
       new EmptyAttachmentService(),
@@ -185,7 +197,8 @@ export async function createApplicationRuntime({
     const projectService = new ProjectService(
       projectDatabase,
       assetService,
-      workbenchSessionManager,
+      associationService,
+      workbenchSessionService,
       workspaceManager,
       settingsRepository,
     );
@@ -195,7 +208,7 @@ export async function createApplicationRuntime({
       externalLibraryService,
       projectService,
       settingsRepository,
-      workbenchSessionManager,
+      workbenchSessionService,
     });
 
     return new ApplicationRuntime({
@@ -205,13 +218,13 @@ export async function createApplicationRuntime({
       contentResourceService,
       externalLibraryService,
       sandboxFrameInteractionBridge,
-      workbenchSessionManager,
+      workbenchSessionService,
       disposeContentProtocol: removeContentProtocol,
       disposeIpc,
     });
   } catch (error) {
     await Promise.allSettled([
-      workbenchSessionManager?.closeActive() ?? Promise.resolve(),
+      workbenchSessionService?.closeActive() ?? Promise.resolve(),
       externalLibraryService?.shutdown() ?? Promise.resolve(),
       agentProviderService?.dispose() ?? Promise.resolve(),
     ]);

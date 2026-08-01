@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetServiceApi } from '../assets/asset-service';
+import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
 import type { SettingsRepository } from '../settings/settings-repository';
-import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-manager';
+import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
 import { createProjectSnapshot } from './project';
 import type { ProjectDatabaseApi } from './project-database';
 import { ProjectService } from './project-service';
@@ -39,13 +40,21 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
       (projectIds: readonly string[]) =>
         new Map(projectIds.map((projectId) => [projectId, 3])),
     ),
-    loadFromProject: vi.fn(async () => []),
+    loadFromProject: vi.fn(async () => {
+      calls.push('load-assets');
+      return [];
+    }),
     getActiveProjectId: vi.fn(() => activeProjectId),
     unloadProject: vi.fn(() => calls.push('unload-assets')),
     cleanupProjectArtifacts: vi.fn(async () => {
       calls.push('cleanup-artifacts');
     }),
   } as unknown as AssetServiceApi;
+  const associationService = {
+    loadFromProject: vi.fn(() => calls.push('load-associations')),
+    unloadProject: vi.fn(() => calls.push('unload-associations')),
+    getActiveProjectId: vi.fn(() => activeProjectId),
+  } as unknown as AssetAssociationServiceApi;
   const workbenchSessions = {
     closeActive: vi.fn(async () => {
       calls.push('close-workbench');
@@ -71,6 +80,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
   const service = new ProjectService(
     projectDatabase,
     assetService,
+    associationService,
     workbenchSessions,
     workspaceManager,
     settingsRepository,
@@ -83,6 +93,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
 
   return {
     assetService,
+    associationService,
     calls,
     projectDatabase,
     project: () => project,
@@ -172,8 +183,11 @@ describe('ProjectService', () => {
     );
     expect(calls).toEqual([
       'close-workbench',
+      'unload-associations',
       'unload-assets',
       'cleanup-artifacts',
+      'load-assets',
+      'load-associations',
     ]);
     expect(assetService.cleanupProjectArtifacts).toHaveBeenCalledWith(
       'project',
@@ -195,6 +209,12 @@ describe('ProjectService', () => {
       'project',
     );
     expect(current.assetService.unloadProject).toHaveBeenCalledOnce();
+    expect(
+      current.associationService.loadFromProject,
+    ).toHaveBeenCalledWith('project');
+    expect(
+      current.associationService.unloadProject,
+    ).toHaveBeenCalledOnce();
   });
 
   it('closes the active Workbench and Asset Map before deleting a Project', async () => {
@@ -204,9 +224,29 @@ describe('ProjectService', () => {
 
     expect(calls).toEqual([
       'close-workbench',
+      'unload-associations',
       'unload-assets',
       'cleanup-artifacts',
       'delete-project',
+    ]);
+  });
+
+  it('rolls back both Project-scoped services when association loading fails', async () => {
+    const current = createDependencies();
+    vi.mocked(current.associationService.loadFromProject).mockImplementationOnce(
+      () => {
+        throw new Error('association load failed');
+      },
+    );
+
+    await expect(current.service.openProject('project')).rejects.toThrow(
+      'association load failed',
+    );
+    expect(current.calls).toEqual([
+      'close-workbench',
+      'load-assets',
+      'unload-associations',
+      'unload-assets',
     ]);
   });
 

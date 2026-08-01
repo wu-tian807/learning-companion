@@ -35,7 +35,7 @@
 本轮不实现：
 
 - 思维导图、HTML 讲义或其他真实生成流程；
-- `assetLink` 和 Asset Relation 的实际写入；
+- `AssetReference`、`AssetLink` 与内容内关系 ID 绑定的实际写入；
 - NotebookLM 特有的导出、查看 Prompt 等菜单；
 - 侧栏宽度拖动；
 - Project 布局的 Settings 持久化；
@@ -93,8 +93,11 @@ assets/
 - 首版不提前加入没有对应功能和目录的 `authored` 类型。
 
 生成 Asset 仍使用现有 `contentRef`、Availability、Workbench 和 Asset 操作链路。
-未来思维导图节点的 `assetLink` 只保存目标 Asset ID，并可额外通过
-`derived-from` Relation 记录生成来源；该关系不属于本轮实现。
+后续通过 `AssetReference` 保存 generated Asset 的总体来源，通过 `AssetLink`
+保存 Asset 级目标，并在对应 content 中保存关系 ID 与具体位置绑定；该关系不属于
+本轮实现。
+具体结构和 Mind Map 节点 Anchor 以
+`2026-08-01-asset-link-mind-map-foundation-design.md` 为准。
 
 ## 6. 页面结构与组件边界
 

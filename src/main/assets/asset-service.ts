@@ -71,7 +71,12 @@ export interface AssetServiceDependencies {
   readonly createDefaultName: typeof createDefaultAssetName;
   readonly isRelinkMediaCompatible: typeof isAssetRelinkMediaCompatible;
   readonly artifactCleanup?: AssetArtifactCleanupApi;
+  readonly deletionObserver?: AssetDeletionObserver;
   readonly now: () => number;
+}
+
+export interface AssetDeletionObserver {
+  onAssetDeleted(projectId: string, assetId: string): void;
 }
 
 export interface AssetServiceUpdateOptions {
@@ -171,6 +176,7 @@ export class AssetService implements AssetServiceApi {
         dependencies.isRelinkMediaCompatible ??
         isAssetRelinkMediaCompatible,
       artifactCleanup: dependencies.artifactCleanup,
+      deletionObserver: dependencies.deletionObserver,
       now: dependencies.now ?? Date.now,
     };
   }
@@ -403,6 +409,18 @@ export class AssetService implements AssetServiceApi {
     this.requireUnchangedProject(lifecycleVersion, projectId);
     this.assetDatabase.delete(projectId, assetId);
     this.runtimeMap.delete(assetId);
+    try {
+      this.dependencies.deletionObserver?.onAssetDeleted(
+        projectId,
+        assetId,
+      );
+    } catch (error) {
+      console.error('同步 Asset Association 删除状态失败', {
+        projectId,
+        assetId,
+        error,
+      });
+    }
   }
 
   async cleanupProjectArtifacts(

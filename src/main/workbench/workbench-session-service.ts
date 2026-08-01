@@ -21,7 +21,7 @@ export interface WorkbenchSessionLifecycle {
   closeActive(): Promise<void>;
 }
 
-export interface WorkbenchSessionManagerApi
+export interface WorkbenchSessionServiceApi
   extends WorkbenchSessionLifecycle {
   open(assetId: string): Promise<WorkbenchBootstrap>;
   command(
@@ -32,13 +32,13 @@ export interface WorkbenchSessionManagerApi
   getActiveSessionId(): string | undefined;
 }
 
-export interface WorkbenchSessionManagerDependencies {
+export interface WorkbenchSessionServiceDependencies {
   readonly createId: () => string;
   readonly transportBindingRegistry: WorkbenchTransportBindingRegistryApi;
 }
 
-export class WorkbenchSessionManager
-  implements WorkbenchSessionManagerApi
+export class WorkbenchSessionService
+  implements WorkbenchSessionServiceApi
 {
   private activeSession: AssetWorkbenchSession | undefined;
   private pendingOpenController: AbortController | undefined;
@@ -61,7 +61,7 @@ export class WorkbenchSessionManager
     private readonly registry: WorkbenchRegistry,
     private readonly attachmentService: AttachmentServiceApi,
     private readonly stateRepository: WorkbenchStateRepository,
-    dependencies: Partial<WorkbenchSessionManagerDependencies> = {},
+    dependencies: Partial<WorkbenchSessionServiceDependencies> = {},
   ) {
     this.createId = dependencies.createId ?? randomUUID;
     this.transportBindingRegistry =

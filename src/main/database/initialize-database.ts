@@ -14,7 +14,11 @@ import { migrateLocalFileContentRefsMigration } from './migrations/0006-migrate-
 import { createAssetArtifactsMigration } from './migrations/0007-create-asset-artifacts';
 import { addAssetCreationKindMigration } from './migrations/0008-add-asset-creation-kind';
 import { renameAssetUpdatedTimeMigration } from './migrations/0009-rename-asset-updated-time';
+import { createAssetReferencesMigration } from './migrations/0010-create-asset-references';
+import { normalizeAssetAssociationsMigration } from './migrations/0011-normalize-asset-associations';
 import * as assetArtifactSchema from './schema/asset-artifacts';
+import * as assetLinkSchema from './schema/asset-links';
+import * as assetReferenceSchema from './schema/asset-references';
 import * as assetSchema from './schema/assets';
 import * as projectSchema from './schema/projects';
 import * as workbenchStateSchema from './schema/workbench-state';
@@ -34,11 +38,15 @@ const migrations: readonly DatabaseMigration[] = [
   createAssetArtifactsMigration,
   addAssetCreationKindMigration,
   renameAssetUpdatedTimeMigration,
+  createAssetReferencesMigration,
+  normalizeAssetAssociationsMigration,
 ];
 const schema = {
   ...projectSchema,
   ...assetSchema,
   ...assetArtifactSchema,
+  ...assetLinkSchema,
+  ...assetReferenceSchema,
   ...workbenchStateSchema,
 };
 

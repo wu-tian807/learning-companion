@@ -78,6 +78,29 @@ export function isJsonValue(value: unknown): value is JsonValue {
   );
 }
 
+export function cloneJsonValue(value: JsonValue): JsonValue {
+  if (!isJsonValue(value)) {
+    throw new Error('JsonValue 数据无效');
+  }
+
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(cloneJsonValue));
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          cloneJsonValue(entry),
+        ]),
+      ),
+    );
+  }
+
+  return value;
+}
+
 export function isWorkbenchOpenRequest(
   value: unknown,
 ): value is WorkbenchOpenRequest {

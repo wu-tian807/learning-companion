@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createProjectsMigration } from './migrations/0001-create-projects';
+import { createAssetReferencesMigration } from './migrations/0010-create-asset-references';
 import { initializeDatabase } from './initialize-database';
 
 const temporaryDirectories: string[] = [];
@@ -30,7 +31,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -41,6 +42,8 @@ describe('initializeDatabase', () => {
 
       expect(tableNames).toEqual([
         'asset_artifacts',
+        'asset_links',
+        'asset_references',
         'assets',
         'projects',
         'workbench_state_data',
@@ -60,6 +63,20 @@ describe('initializeDatabase', () => {
           )
           .get(),
       ).toEqual({ name: 'asset_artifacts_asset_id_index' });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'asset_references_asset_id_index'",
+          )
+          .get(),
+      ).toEqual({ name: 'asset_references_asset_id_index' });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'asset_links_asset_id_index'",
+          )
+          .get(),
+      ).toEqual({ name: 'asset_links_asset_id_index' });
     } finally {
       context.close();
     }
@@ -74,7 +91,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        9,
+        11,
       );
     } finally {
       secondContext.close();
@@ -98,7 +115,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -166,7 +183,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -347,6 +364,8 @@ describe('initializeDatabase', () => {
     legacyContext.sqlite.exec(`
       DROP TRIGGER assets_content_ref_insert_guard;
       DROP TRIGGER assets_content_ref_update_guard;
+      DROP TABLE asset_links;
+      DROP TABLE asset_references;
       DROP TABLE asset_artifacts;
       ALTER TABLE assets DROP COLUMN creation_kind;
       ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time;
@@ -470,16 +489,18 @@ describe('initializeDatabase', () => {
         1_753_171_200_000,
         1_753_257_600_000,
       );
-    legacyContext.sqlite.exec(
-      'ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time',
-    );
+    legacyContext.sqlite.exec(`
+      DROP TABLE asset_links;
+      DROP TABLE asset_references;
+      ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time;
+    `);
     legacyContext.sqlite.pragma('user_version = 8');
     legacyContext.close();
 
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(9);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -495,6 +516,122 @@ describe('initializeDatabase', () => {
           .all()
           .map(({ name }) => name),
       ).not.toContain('last_used_time');
+    } finally {
+      context.close();
+    }
+  });
+
+  it('upgrades version 10 associations without retaining format targets', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacyContext = initializeDatabase(databaseFile);
+
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run('project', 'Project', '📘', 1, 0, '/tmp/projects/project');
+    const insertAsset = legacyContext.sqlite.prepare(
+      `INSERT INTO assets (
+        id, project_id, name, media_type, creation_kind, content_ref,
+        created_time, updated_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const contentRef = JSON.stringify({
+      kind: 'local-file',
+      base: 'absolute',
+      path: '/tmp/asset.txt',
+    });
+    insertAsset.run(
+      'mindmap',
+      'project',
+      'Mind Map',
+      'application/json',
+      'generated',
+      contentRef,
+      1,
+      1,
+    );
+    insertAsset.run(
+      'pdf',
+      'project',
+      'PDF',
+      'application/pdf',
+      'imported',
+      contentRef,
+      1,
+      1,
+    );
+    legacyContext.sqlite.exec(`
+      DROP TABLE asset_links;
+      DROP TABLE asset_references;
+      ${createAssetReferencesMigration.sql}
+    `);
+    const insertReference = legacyContext.sqlite.prepare(
+      `INSERT INTO asset_references (
+        id, project_id, asset_id, source_asset_id, source_target,
+        created_time
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    insertReference.run(
+      'later',
+      'project',
+      'mindmap',
+      'pdf',
+      JSON.stringify({ scope: 'asset' }),
+      2,
+    );
+    insertReference.run(
+      'earlier',
+      'project',
+      'mindmap',
+      'pdf',
+      JSON.stringify({ scope: 'asset' }),
+      1,
+    );
+    insertReference.run(
+      'self',
+      'project',
+      'mindmap',
+      'mindmap',
+      JSON.stringify({ scope: 'asset' }),
+      0,
+    );
+    legacyContext.sqlite.pragma('user_version = 10');
+    legacyContext.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
+          .all()
+          .map(({ name }) => name),
+      ).toEqual([
+        'id',
+        'project_id',
+        'asset_id',
+        'source_asset_id',
+        'created_time',
+      ]);
+      expect(
+        context.sqlite
+          .prepare<[], { id: string; sourceAssetId: string }>(
+            `SELECT id, source_asset_id AS sourceAssetId
+             FROM asset_references`,
+          )
+          .all(),
+      ).toEqual([{ id: 'earlier', sourceAssetId: 'pdf' }]);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'asset_links'",
+          )
+          .get(),
+      ).toEqual({ name: 'asset_links' });
     } finally {
       context.close();
     }

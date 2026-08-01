@@ -21,7 +21,7 @@ function createResources(
       shutdown: vi.fn(async () => undefined),
     },
     sandboxFrameInteractionBridge: { dispose: vi.fn() },
-    workbenchSessionManager: {
+    workbenchSessionService: {
       closeActive: vi.fn(closeActive),
     },
     disposeContentProtocol: vi.fn(),
@@ -47,7 +47,7 @@ describe('ApplicationRuntime', () => {
 
     expect(second).toBe(first);
     expect(
-      resources.workbenchSessionManager.closeActive,
+      resources.workbenchSessionService.closeActive,
     ).toHaveBeenCalledOnce();
     finishClose?.();
     await first;
@@ -65,7 +65,7 @@ describe('ApplicationRuntime', () => {
     expect(second).toBe(first);
     await first;
     expect(
-      resources.workbenchSessionManager.closeActive,
+      resources.workbenchSessionService.closeActive,
     ).toHaveBeenCalledOnce();
     expect(
       resources.externalLibraryService.shutdown,

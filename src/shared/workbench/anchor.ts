@@ -1,6 +1,10 @@
-import { isJsonValue, type JsonValue } from './protocol';
+import {
+  cloneJsonValue,
+  isJsonValue,
+  type JsonValue,
+} from './protocol';
 
-export interface AssetTarget {
+export interface WholeAssetTarget {
   readonly scope: 'asset';
 }
 
@@ -11,11 +15,11 @@ export interface ContentAnchorTarget {
   readonly anchorPayload: JsonValue;
 }
 
-export type AssetAttachmentTarget = AssetTarget | ContentAnchorTarget;
+export type AssetTarget = WholeAssetTarget | ContentAnchorTarget;
 
-export function isAssetAttachmentTarget(
+export function isAssetTarget(
   value: unknown,
-): value is AssetAttachmentTarget {
+): value is AssetTarget {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -36,4 +40,21 @@ export function isAssetAttachmentTarget(
     candidate.anchorPayload !== undefined &&
     isJsonValue(candidate.anchorPayload)
   );
+}
+
+export function cloneAssetTarget(target: AssetTarget): AssetTarget {
+  if (!isAssetTarget(target)) {
+    throw new Error('AssetTarget 数据无效');
+  }
+
+  if (target.scope === 'asset') {
+    return Object.freeze({ scope: 'asset' });
+  }
+
+  return Object.freeze({
+    scope: 'content',
+    anchorType: target.anchorType.trim(),
+    anchorVersion: target.anchorVersion,
+    anchorPayload: cloneJsonValue(target.anchorPayload),
+  });
 }

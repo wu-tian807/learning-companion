@@ -6,7 +6,7 @@ import type {
   AssetAttachment,
   AssetAttachmentContent,
 } from '../../shared/workbench/attachment';
-import { isAssetAttachmentTarget } from '../../shared/workbench/anchor';
+import { isAssetTarget } from '../../shared/workbench/anchor';
 import { isJsonValue } from '../../shared/workbench/protocol';
 import { isUnixMilliseconds } from '../../shared/projects';
 
@@ -58,7 +58,7 @@ export function createAssetAttachment(
     throw new Error('AssetAttachment metadata 必须是 JSON 值');
   }
 
-  if (!isAssetAttachmentTarget(input.target)) {
+  if (!isAssetTarget(input.target)) {
     throw new Error('AssetAttachment target 无效');
   }
 

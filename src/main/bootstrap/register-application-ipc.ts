@@ -35,7 +35,7 @@ import {
 } from '../ipc/workbench';
 import type { ProjectServiceApi } from '../projects/project-service';
 import type { SettingsRepository } from '../settings/settings-repository';
-import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
+import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 
 export interface ApplicationIpcServices {
   readonly agentProviderService: AgentProviderServiceApi;
@@ -43,7 +43,7 @@ export interface ApplicationIpcServices {
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly projectService: ProjectServiceApi;
   readonly settingsRepository: SettingsRepository;
-  readonly workbenchSessionManager: WorkbenchSessionManagerApi;
+  readonly workbenchSessionService: WorkbenchSessionServiceApi;
 }
 
 export interface ApplicationIpcRegistrations {
@@ -66,7 +66,7 @@ export interface ApplicationIpcRegistrations {
   readonly registerAssets: (service: AssetServiceApi) => void;
   readonly removeAssets: () => void;
   readonly registerWorkbench: (
-    manager: WorkbenchSessionManagerApi,
+    service: WorkbenchSessionServiceApi,
   ) => void;
   readonly removeWorkbench: () => void;
 }
@@ -155,7 +155,7 @@ export function registerApplicationIpc(
     register(
       () =>
         registrations.registerWorkbench(
-          services.workbenchSessionManager,
+          services.workbenchSessionService,
         ),
       registrations.removeWorkbench,
     );

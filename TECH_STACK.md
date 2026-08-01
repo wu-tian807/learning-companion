@@ -102,11 +102,13 @@ flowchart LR
 
     PS["ProjectService<br/>Project 生命周期"]
     AS["AssetService<br/>Asset 业务与 Runtime Map"]
+    AAS["AssetAssociationService<br/>Reference / Link Runtime Map"]
     PDB["ProjectDatabase<br/>全量 Project Map"]
     ADB["AssetDatabase<br/>无状态 SQLite CRUD"]
+    AADB["Association Databases<br/>Reference / Link SQLite CRUD"]
     PWM["ProjectWorkspaceManager<br/>无状态路径与文件操作"]
 
-    WSM["WorkbenchSessionManager<br/>活动 Workbench Session"]
+    WSS["WorkbenchSessionService<br/>活动 Workbench Session"]
     WR["WorkbenchRegistry<br/>选择 Main Provider"]
     WC["Builtin Workbench Catalog<br/>统一双端注册声明"]
     CR["ContentResolverRegistry<br/>解析 ContentRef"]
@@ -126,24 +128,28 @@ flowchart LR
     UI --> PRELOAD --> IPC
     IPC --> PS
     IPC --> AS
-    IPC --> WSM
+    IPC --> WSS
 
     PS --> PDB
     PS --> AS
-    PS --> WSM
+    PS --> AAS
+    PS --> WSS
     PS --> PWM
 
     AS --> ADB
     AS --> CR
     AS --> PWM
+    AAS --> ADB
+    AAS --> AADB
 
     PDB --> DB
     ADB --> DB
+    AADB --> DB
     PWM --> FILES
     PWM --> OS
 
-    WSM --> AS
-    WSM --> WR
+    WSS --> AS
+    WSS --> WR
     WC --> WR
     WC --> RR
     CR --> FILES
@@ -448,9 +454,9 @@ Renderer 做只读投影：左侧展示 `imported`，右侧生成中心展示按
 - `*Provider`：某个可替换实现；
 - `*Adapter`：两个既有契约之间的翻译。
 
-“Manager 无状态、Service 有状态”是 Project/Asset 数据层的新局部约定。
-`WorkbenchSessionManager` 按“管理活动 Session 生命周期”的既有语义保留，
-不进行无关改名。
+“Manager 无状态、Service 可以持有领域运行时或生命周期状态”是
+Project/Asset 数据层的命名约定。活动 Workbench Session 由
+`WorkbenchSessionService` 维护，不再保留历史 `Manager` 例外。
 
 ## 9. 文件位置与 Project Workspace
 
@@ -857,7 +863,7 @@ Workbench 内部功能可以完全不同。公共框架只固定生命周期、�
 - `WorkbenchRegistry` 按 `mediaType` 和 Content Capability 选择 Provider；
 - 一个 `mediaType` 当前只选择一个内置 Workbench；
 - Registry 为未来多个 Provider 和用户选择保留边界；
-- `WorkbenchSessionManager` 维护唯一活动 Session；
+- `WorkbenchSessionService` 维护唯一活动 Session；
 - 打开新 Session 前关闭旧 Provider、流、Transport Binding 和待完成命令；
 - 不支持或不可用内容进入 Unsupported Workbench。
 
@@ -955,7 +961,7 @@ Vditor 的图标与 Mermaid Runtime 由单一 Loader 去重；脚本标签存在
 Runtime Ready。Adapter 只有在 Vditor `after` 和首个布局帧完成后才对外可用，
 初始化支持 Abort、超时和重试，StrictMode 的旧实例只拥有自己的子宿主节点。
 
-## 16. Attachment、Anchor 与 Relation
+## 16. Attachment、Anchor 与 Asset Association
 
 ### 16.1 Attachment
 
@@ -995,23 +1001,27 @@ image.region
 
 Workbench 负责解释、绘制和跳转；Anchor Registry 负责类型校验和版本迁移。
 
-### 16.3 Asset Relation
+### 16.3 AssetReference 与 AssetLink
 
-独立可打开的生成结果是 Asset，而不是 Attachment。Relation 表达：
+独立可打开的生成结果是 Asset，而不是 Attachment。通用关系拆成两个明确实体：
 
-```text
-derived-from
-references
-supersedes
-```
+- `AssetReference` 保存 generated Asset 总体参考的来源 Asset；
+- `AssetLink` 保存一个 Asset 链接或派生出的目标 Asset。
 
-思维导图和讲义正文保存为 `assets/generated` 文件，数据库只保存 Asset 和关系
-元数据。
+两者分别保存于 SQLite，并由 Project-scoped `AssetAssociationService` 在活动
+Project 打开时一次加载、关闭时卸载。关系表只保存 Asset 级有向边；Mind Map
+节点、PDF 页区、视频时间段等格式位置保存在对应 content 中，通过稳定的关系 ID
+匹配。
+
+思维导图和讲义正文保存为 `assets/generated` 文件。Mind Map v1 使用
+`nodeAssociations` 保存节点的 `referenceId + sourceTarget` 和 `linkIds`，失效关系
+不会阻止文档打开。
 
 当前生成中心已经使用真实 `creationKind === 'generated'` Asset 列表，不再展示
 固定的“当前资料上下文”卡片，也不使用演示数据。通用生成按钮仍是占位能力；
 Workbench 专属生成操作继续通过 Generation Center Facility Contribution
-注册。真实生成服务和 Asset Relation 写入留在对应功能阶段实现。
+注册。关系基础已经落地，真实生成服务与跨 SQLite/文件系统提交仍留在对应功能
+阶段实现。
 
 ## 17. SQLite 与检索
 
@@ -1378,7 +1388,7 @@ Home 的创建和编辑界面都展示 Workspace：
 - Agent Editing Session；
 - Memory；
 - Mind Map Workbench；
-- 真实生成服务、Generated Asset 创建流程与 Asset Relation 写入；
+- 真实生成服务、Generated Asset 创建流程与关系/content 绑定的原子提交；
 - 独立用户笔记系统，以及届时是否增加 `authored` 创建类型。
 
 这些项目进入实现前仍需各自的实施计划和测试拆分，但不再重新讨论顶层方向。

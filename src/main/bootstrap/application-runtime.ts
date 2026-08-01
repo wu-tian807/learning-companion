@@ -4,7 +4,7 @@ import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { CodexRuntimeServiceApi } from '../agents/codex/codex-runtime-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
-import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
+import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 
 export interface ApplicationRuntimeResources {
   readonly databaseContext: DatabaseContext;
@@ -13,7 +13,7 @@ export interface ApplicationRuntimeResources {
   readonly contentResourceService: ContentResourceService;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly sandboxFrameInteractionBridge: SandboxFrameInteractionBridge;
-  readonly workbenchSessionManager: WorkbenchSessionManagerApi;
+  readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly disposeContentProtocol: () => void;
   readonly disposeIpc: () => void;
 }
@@ -44,7 +44,7 @@ export class ApplicationRuntime {
       return this.workbenchCloseTask;
     }
 
-    const task = this.resources.workbenchSessionManager.closeActive();
+    const task = this.resources.workbenchSessionService.closeActive();
     const trackedTask = task.finally(() => {
       if (this.workbenchCloseTask === trackedTask) {
         this.workbenchCloseTask = undefined;

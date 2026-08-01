@@ -7,8 +7,9 @@ import {
   type ProjectSnapshot,
 } from '../../shared/projects';
 import type { AssetServiceApi } from '../assets/asset-service';
+import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
 import { AppError } from '../errors/app-error';
-import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-manager';
+import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { CreateProjectInput } from './project';
 import type { ProjectDatabaseApi } from './project-database';
@@ -55,6 +56,7 @@ export class ProjectService implements ProjectServiceApi {
   constructor(
     private readonly projectDatabase: ProjectDatabaseApi,
     private readonly assetService: AssetServiceApi,
+    private readonly associationService: AssetAssociationServiceApi,
     private readonly workbenchSessions: WorkbenchSessionLifecycle,
     private readonly workspaceManager: ProjectWorkspaceManagerApi,
     private readonly settingsRepository: SettingsRepository,
@@ -166,7 +168,7 @@ export class ProjectService implements ProjectServiceApi {
 
       if (wasActive) {
         await this.workbenchSessions.closeActive();
-        this.assetService.unloadProject();
+        this.unloadProjectRuntime();
       }
 
       try {
@@ -180,7 +182,7 @@ export class ProjectService implements ProjectServiceApi {
         );
 
         if (wasActive) {
-          await this.assetService.loadFromProject(projectId);
+          await this.loadProjectRuntime(projectId);
         }
 
         return this.withCurrentAssetCount(updated);
@@ -204,7 +206,7 @@ export class ProjectService implements ProjectServiceApi {
   async openProject(projectId: string): Promise<readonly AssetSnapshot[]> {
     return this.enqueueLifecycle(async () => {
       await this.workbenchSessions.closeActive();
-      return this.assetService.loadFromProject(projectId);
+      return this.loadProjectRuntime(projectId);
     });
   }
 
@@ -214,6 +216,7 @@ export class ProjectService implements ProjectServiceApi {
 
       if (activeProjectId === undefined) {
         await this.workbenchSessions.closeActive();
+        this.associationService.unloadProject();
         return;
       }
 
@@ -222,7 +225,7 @@ export class ProjectService implements ProjectServiceApi {
       }
 
       await this.workbenchSessions.closeActive();
-      this.assetService.unloadProject();
+      this.unloadProjectRuntime();
     });
   }
 
@@ -236,7 +239,7 @@ export class ProjectService implements ProjectServiceApi {
 
       if (this.assetService.getActiveProjectId() === projectId) {
         await this.workbenchSessions.closeActive();
-        this.assetService.unloadProject();
+        this.unloadProjectRuntime();
       }
 
       await this.assetService.cleanupProjectArtifacts(
@@ -295,11 +298,30 @@ export class ProjectService implements ProjectServiceApi {
       await this.rollbackPreparation(preparation);
 
       if (wasActive) {
-        await this.assetService.loadFromProject(project.id);
+        await this.loadProjectRuntime(project.id);
       }
     } catch (rollbackError) {
       console.error('恢复原 Project Workspace 失败', rollbackError);
     }
+  }
+
+  private async loadProjectRuntime(
+    projectId: string,
+  ): Promise<readonly AssetSnapshot[]> {
+    try {
+      const assets = await this.assetService.loadFromProject(projectId);
+      this.associationService.loadFromProject(projectId);
+      return assets;
+    } catch (error) {
+      this.associationService.unloadProject();
+      this.assetService.unloadProject();
+      throw error;
+    }
+  }
+
+  private unloadProjectRuntime(): void {
+    this.associationService.unloadProject();
+    this.assetService.unloadProject();
   }
 
   private enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {

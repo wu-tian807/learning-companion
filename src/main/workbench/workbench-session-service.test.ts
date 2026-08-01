@@ -22,7 +22,7 @@ import { createAssetSnapshot } from '../assets/asset';
 import type { AssetServiceApi } from '../assets/asset-service';
 import { EmptyAttachmentService } from '../attachments/attachment-service';
 import type { MainWorkbenchProvider } from './workbench-session';
-import { WorkbenchSessionManager } from './workbench-session-manager';
+import { WorkbenchSessionService } from './workbench-session-service';
 import { WorkbenchRegistry } from './workbench-registry';
 import { EmptyWorkbenchStateRepository } from './workbench-state-repository';
 
@@ -122,7 +122,7 @@ function createManager(
     registry.register(provider);
   }
 
-  return new WorkbenchSessionManager(
+  return new WorkbenchSessionService(
     assetService,
     registry,
     new EmptyAttachmentService(),
@@ -136,7 +136,7 @@ function createManager(
   );
 }
 
-describe('WorkbenchSessionManager', () => {
+describe('WorkbenchSessionService', () => {
   it('opens a matched provider, forwards commands and closes resources', async () => {
     const fallback = createProvider('fallback', ['*/*']);
     const plainText = createProvider(

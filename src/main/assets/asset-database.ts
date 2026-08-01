@@ -17,7 +17,11 @@ import {
   type PersistAssetUpdateInput,
 } from './asset';
 
-export interface AssetDatabaseApi {
+export interface AssetLookup {
+  get(projectId: string, assetId: string): Asset | undefined;
+}
+
+export interface AssetDatabaseApi extends AssetLookup {
   listByProject(projectId: string): readonly Asset[];
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number>;
   add(projectId: string, input: CreateAssetInput): Asset;
@@ -107,6 +111,23 @@ export class AssetDatabase implements AssetDatabaseApi {
     return result.map(cloneAsset);
   }
 
+  get(projectId: string, assetId: string): Asset | undefined {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedAssetId = requireId(assetId, 'assetId');
+    const row = this.context.db
+      .select()
+      .from(assets)
+      .where(
+        and(
+          eq(assets.id, normalizedAssetId),
+          eq(assets.projectId, normalizedProjectId),
+        ),
+      )
+      .get();
+
+    return row ? cloneAsset(createAssetFromRow(row)) : undefined;
+  }
+
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number> {
     const normalizedProjectIds = [
       ...new Set(
@@ -181,7 +202,7 @@ export class AssetDatabase implements AssetDatabaseApi {
     this.validateUpdate(changes);
     const normalizedProjectId = requireId(projectId, 'projectId');
     const normalizedAssetId = requireId(assetId, 'assetId');
-    const currentAsset = this.find(normalizedProjectId, normalizedAssetId);
+    const currentAsset = this.require(normalizedProjectId, normalizedAssetId);
     const nextAsset = createAssetSnapshot({
       ...currentAsset,
       name: changes.name ?? currentAsset.name,
@@ -213,7 +234,7 @@ export class AssetDatabase implements AssetDatabaseApi {
   delete(projectId: string, assetId: string): void {
     const normalizedProjectId = requireId(projectId, 'projectId');
     const normalizedAssetId = requireId(assetId, 'assetId');
-    this.find(normalizedProjectId, normalizedAssetId);
+    this.require(normalizedProjectId, normalizedAssetId);
 
     const result = this.context.db
       .delete(assets)
@@ -230,20 +251,14 @@ export class AssetDatabase implements AssetDatabaseApi {
     }
   }
 
-  private find(projectId: string, assetId: string): Asset {
-    const row = this.context.db
-      .select()
-      .from(assets)
-      .where(
-        and(eq(assets.id, assetId), eq(assets.projectId, projectId)),
-      )
-      .get();
+  private require(projectId: string, assetId: string): Asset {
+    const asset = this.get(projectId, assetId);
 
-    if (!row) {
+    if (!asset) {
       throw new AppError('ASSET_NOT_FOUND');
     }
 
-    return createAssetFromRow(row);
+    return asset;
   }
 
   private validateUpdate(changes: PersistAssetUpdateInput): void {

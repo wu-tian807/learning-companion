@@ -1,5 +1,5 @@
 import type { ProjectWorkspaceLocalFileContentRef } from '../assets';
-import type { AssetAttachmentTarget } from './anchor';
+import type { AssetTarget } from './anchor';
 import type { JsonValue } from './protocol';
 
 export interface AssetAttachmentContent {
@@ -13,7 +13,7 @@ export interface AssetAttachment {
   readonly assetId: string;
   readonly typeId: string;
   readonly typeVersion: number;
-  readonly target: AssetAttachmentTarget;
+  readonly target: AssetTarget;
   readonly metadata: JsonValue;
   readonly content?: AssetAttachmentContent;
   readonly createdTime: number;

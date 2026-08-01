@@ -1,5 +1,5 @@
 import {
-  isAssetAttachmentTarget,
+  isAssetTarget,
   type ContentAnchorTarget,
 } from './anchor';
 import {
@@ -32,7 +32,7 @@ export function isWorkbenchSelectionSnapshot(
   }
 
   return (
-    isAssetAttachmentTarget(value.target) &&
+    isAssetTarget(value.target) &&
     value.target.scope === 'content'
   );
 }

@@ -7,7 +7,7 @@ import {
   isWorkbenchOpenRequest,
 } from '../../shared/workbench/protocol';
 import { AppError } from '../errors/app-error';
-import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
+import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import { registerIpcHandler } from './register-handler';
 
 function invalidRequest(): Error {
@@ -15,7 +15,7 @@ function invalidRequest(): Error {
 }
 
 export function registerWorkbenchHandlers(
-  manager: WorkbenchSessionManagerApi,
+  service: WorkbenchSessionServiceApi,
 ): void {
   registerIpcHandler(
     IPC_CHANNELS.openWorkbench,
@@ -24,7 +24,7 @@ export function registerWorkbenchHandlers(
         throw invalidRequest();
       }
 
-      return manager.open(request.assetId);
+      return service.open(request.assetId);
     },
   );
 
@@ -35,7 +35,7 @@ export function registerWorkbenchHandlers(
         throw invalidRequest();
       }
 
-      return manager.command(request.sessionId, request.command);
+      return service.command(request.sessionId, request.command);
     },
   );
 
@@ -46,7 +46,7 @@ export function registerWorkbenchHandlers(
         throw invalidRequest();
       }
 
-      await manager.close(request.sessionId);
+      await service.close(request.sessionId);
     },
   );
 }

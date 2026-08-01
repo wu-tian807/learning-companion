@@ -699,8 +699,12 @@ describe('AssetService', () => {
       removeByAsset: vi.fn(async () => undefined),
       removeByProject: vi.fn(async () => undefined),
     };
+    const deletionObserver = {
+      onAssetDeleted: vi.fn(),
+    };
     const service = createService(database, registry, {
       artifactCleanup,
+      deletionObserver,
     });
     await service.loadFromProject('project');
 
@@ -711,5 +715,9 @@ describe('AssetService', () => {
       '/tmp/project',
     );
     expect(database.delete).toHaveBeenCalledWith('project', 'asset');
+    expect(deletionObserver.onAssetDeleted).toHaveBeenCalledWith(
+      'project',
+      'asset',
+    );
   });
 });

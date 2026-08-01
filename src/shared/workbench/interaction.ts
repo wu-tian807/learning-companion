@@ -1,5 +1,5 @@
 import {
-  isAssetAttachmentTarget,
+  isAssetTarget,
   type ContentAnchorTarget,
 } from './anchor';
 import { isJsonValue, type JsonValue } from './protocol';
@@ -72,7 +72,7 @@ export function isWorkbenchInteractionSnapshot(
 
   return (
     (value.focus === undefined ||
-      (isAssetAttachmentTarget(value.focus) &&
+      (isAssetTarget(value.focus) &&
         value.focus.scope === 'content')) &&
     Array.isArray(value.inputs) &&
     value.inputs.every(isWorkbenchInteractionInput)
@@ -91,7 +91,7 @@ export function isWorkbenchInteractionInput(
     Number.isSafeInteger(value.version) &&
     Number(value.version) > 0 &&
     (value.target === undefined ||
-      (isAssetAttachmentTarget(value.target) &&
+      (isAssetTarget(value.target) &&
         value.target.scope === 'content')) &&
     isJsonValue(value.payload)
   );

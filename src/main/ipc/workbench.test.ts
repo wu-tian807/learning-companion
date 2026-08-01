@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
-import type { WorkbenchSessionManagerApi } from '../workbench/workbench-session-manager';
+import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import {
   registerWorkbenchHandlers,
   removeWorkbenchHandlers,
@@ -63,7 +63,7 @@ function createManager() {
       payload: { command: command.type },
     })),
     close: vi.fn(async () => undefined),
-  } as unknown as WorkbenchSessionManagerApi;
+  } as unknown as WorkbenchSessionServiceApi;
 }
 
 beforeEach(() => {
@@ -71,7 +71,7 @@ beforeEach(() => {
 });
 
 describe('Workbench IPC handlers', () => {
-  it('forwards validated lifecycle requests to the manager', async () => {
+  it('forwards validated lifecycle requests to the service', async () => {
     const manager = createManager();
     registerWorkbenchHandlers(manager);
 
