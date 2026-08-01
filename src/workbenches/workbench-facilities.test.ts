@@ -7,6 +7,7 @@ import { epubWorkbenchManifest } from './epub/shared';
 import { htmlWorkbenchManifest } from './html/shared';
 import { imageWorkbenchManifest } from './image/shared';
 import { markdownWorkbenchManifest } from './markdown/shared';
+import { mindMapWorkbenchManifest } from './mindmap/shared';
 import { pdfWorkbenchManifest } from './pdf/shared';
 import { plainTextWorkbenchManifest } from './plain-text/shared';
 import { unsupportedWorkbenchManifest } from './unsupported/shared';
@@ -21,6 +22,7 @@ describe('built-in Workbench Facility matrix', () => {
     unsupportedWorkbenchManifest,
     plainTextWorkbenchManifest,
     markdownWorkbenchManifest,
+    mindMapWorkbenchManifest,
     pdfWorkbenchManifest,
     imageWorkbenchManifest,
     audioWorkbenchManifest,
@@ -60,6 +62,12 @@ describe('built-in Workbench Facility matrix', () => {
       'builtin.markdown': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.overflow',
+        'core.transport.renderer',
+      ],
+      'builtin.mindmap': [
+        'core.surface.context-menu',
+        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.renderer',
       ],

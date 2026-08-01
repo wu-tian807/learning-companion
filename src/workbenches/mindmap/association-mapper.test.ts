@@ -12,7 +12,7 @@ import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
   type MindMapDocumentV1,
-} from './shared';
+} from './document';
 
 function createDocument(): MindMapDocumentV1 {
   return {
@@ -25,29 +25,50 @@ function createDocument(): MindMapDocumentV1 {
         id: 'root',
         title: 'Root',
         focus: 'Root topic',
+        childIds: ['child'],
+      },
+      child: {
+        id: 'child',
+        title: 'Child',
+        focus: 'Child topic',
         childIds: [],
       },
     },
-    nodeAssociations: {
-      root: {
-        references: [
-          {
-            referenceId: 'reference',
-            sourceTarget: { scope: 'asset' },
-          },
-          {
-            referenceId: 'missing-reference',
-            sourceTarget: { scope: 'asset' },
-          },
-        ],
-        linkIds: ['link', 'foreign-link', 'missing-link'],
+    frames: {
+      chapter: {
+        id: 'chapter',
+        title: 'Chapter',
+        nodeIds: ['root', 'child'],
+      },
+    },
+    associations: {
+      nodes: {
+        root: {
+          references: [
+            {
+              referenceId: 'reference',
+              sourceTarget: { scope: 'asset' },
+            },
+            {
+              referenceId: 'missing-reference',
+              sourceTarget: { scope: 'asset' },
+            },
+          ],
+          linkIds: ['foreign-link'],
+        },
+      },
+      frames: {
+        chapter: {
+          references: [],
+          linkIds: ['link', 'missing-link'],
+        },
       },
     },
   };
 }
 
 describe('resolveMindMapAssociations', () => {
-  it('joins valid rows and reports stale or foreign bindings', () => {
+  it('joins sparse Node and Frame rows and reports stale bindings', () => {
     const references = new Map<string, AssetReference>([
       [
         'reference',
@@ -97,26 +118,31 @@ describe('resolveMindMapAssociations', () => {
     expect(resolved.byNode.root.references[0].reference.id).toBe(
       'reference',
     );
-    expect(resolved.byNode.root.links.map(({ id }) => id)).toEqual([
+    expect(resolved.byNode.child).toBeUndefined();
+    expect(resolved.byFrame.chapter.links.map(({ id }) => id)).toEqual([
       'link',
     ]);
     expect(resolved.staleBindings).toEqual([
       {
-        nodeId: 'root',
+        subjectKind: 'node',
+        subjectId: 'root',
         kind: 'reference',
         associationId: 'missing-reference',
       },
       {
-        nodeId: 'root',
+        subjectKind: 'node',
+        subjectId: 'root',
         kind: 'link',
         associationId: 'foreign-link',
       },
       {
-        nodeId: 'root',
+        subjectKind: 'frame',
+        subjectId: 'chapter',
         kind: 'link',
         associationId: 'missing-link',
       },
     ]);
     expect(Object.isFrozen(resolved)).toBe(true);
+    expect(Object.isFrozen(resolved.byFrame.chapter.links)).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ import type { WorkbenchActionBundle } from '../renderer/workbench/actions/workbe
 import { createAudioRendererActions } from './audio/renderer-actions';
 import { createHtmlRendererActions } from './html/renderer-actions';
 import { createImageRendererActions } from './image/renderer-actions';
+import { createMindMapRendererActions } from './mindmap/renderer-actions';
 import { createPdfRendererActions } from './pdf/renderer-actions';
 import { createVideoRendererActions } from './video/renderer-actions';
 
@@ -125,6 +126,28 @@ describe('viewer Workbench context action bundles', () => {
       '分析整张图片',
       '分析当前视野',
     ]);
+  });
+
+  it('keeps Mind Map commands node- and generation-oriented', () => {
+    const bundle = createMindMapRendererActions({
+      canToggleFocusedNode: () => true,
+      hasCollapsedNodes: () => false,
+      onFit: vi.fn(),
+      onToggleNode: vi.fn(),
+      onExpandAll: vi.fn(),
+      onReveal: vi.fn(),
+    });
+
+    expectWorkbenchSpecificContextMenu(bundle, [
+      '展开 / 收起子节点',
+      '围绕此节点提问',
+      '从此节点派生资料',
+    ]);
+    expect(
+      bundle.contributions
+        .filter((entry) => entry.surface === 'generation-center')
+        .map((entry) => entry.presentation.label),
+    ).toEqual(['生成讲义']);
   });
 
   it('keeps video commands timeline- and frame-oriented', () => {

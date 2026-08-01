@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import {
   createDefaultAssetName,
   detectAssetMediaType,
@@ -120,6 +121,9 @@ describe('Asset media type', () => {
     await expect(detectAssetMediaType('/tmp/slides.PPTX')).resolves.toBe(
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     );
+    await expect(
+      detectAssetMediaType('/tmp/course.MINDMAP'),
+    ).resolves.toBe(MIND_MAP_ASSET_MEDIA_TYPE);
   });
 
   it('falls back to plain text for UTF-8, GBK and empty files', async () => {
@@ -158,6 +162,9 @@ describe('Asset media type', () => {
   it('creates names by removing only the final extension', () => {
     expect(createDefaultAssetName('/tmp/attention.v2.pdf')).toBe(
       'attention.v2',
+    );
+    expect(createDefaultAssetName('/tmp/attention.mindmap')).toBe(
+      'attention',
     );
     expect(createDefaultAssetName('/tmp/LICENSE')).toBe('LICENSE');
     expect(createDefaultAssetName('/tmp/.gitignore')).toBe('.gitignore');

@@ -952,7 +952,7 @@ Manifest 声明 Facility ID、版本和选项。Definition Registry 校验：
 | Audio | Chromium 原生 Media | 播放控制和进度恢复 | 已落地 |
 | Video | Chromium 原生 Media | 播放控制和进度恢复 | 已落地 |
 | Unsupported | 内置 Fallback | 不支持类型与不可用内容 | 已落地 |
-| Mind Map | React Flow / Markmap | 可编辑生成型 Asset | 已确定，待实现 |
+| Mind Map | React Flow 12、Dagre 3 | 生成型 Asset 的树形预览、折叠、节点上下文 | 基础预览已落地，生成与编辑待接入 |
 | Office | LibreOffice 26.2.5 → PDF.js | DOC/DOCX/PPT/PPTX 只读预览与文字选择 | 已落地，待真机文件验收 |
 
 Markdown 后续解析、索引和导出优先使用 unified / remark / rehype。LaTeX 与
@@ -1013,9 +1013,13 @@ Project 打开时一次加载、关闭时卸载。关系表只保存 Asset 级�
 节点、PDF 页区、视频时间段等格式位置保存在对应 content 中，通过稳定的关系 ID
 匹配。
 
-思维导图和讲义正文保存为 `assets/generated` 文件。Mind Map v1 使用
-`nodeAssociations` 保存节点的 `referenceId + sourceTarget` 和 `linkIds`，失效关系
-不会阻止文档打开。
+思维导图和讲义正文保存为 `assets/generated` 文件。Mind Map v1 的 `nodes` 保持
+严格树结构，独立 `frames` 预留覆盖多个节点的生成范围；稀疏的
+`associations.nodes / associations.frames` 保存 `referenceId + sourceTarget` 和
+`linkIds`，失效关系不会阻止文档打开。节点折叠程度保存于 Workbench State，
+不进入 content。`MindMapContentAdapter` 在通用 `ContentHandle` 之上负责 UTF-8
+JSON、文档校验和 Revision 读写；Handle 生命周期仍由 Workbench Session 管理，
+不增加 `ContentHandleManager`。
 
 当前生成中心已经使用真实 `creationKind === 'generated'` Asset 列表，不再展示
 固定的“当前资料上下文”卡片，也不使用演示数据。通用生成按钮仍是占位能力；
@@ -1387,7 +1391,6 @@ Home 的创建和编辑界面都展示 Workspace：
 - AgentContextProjection；
 - Agent Editing Session；
 - Memory；
-- Mind Map Workbench；
 - 真实生成服务、Generated Asset 创建流程与关系/content 绑定的原子提交；
 - 独立用户笔记系统，以及届时是否增加 `authored` 创建类型。
 

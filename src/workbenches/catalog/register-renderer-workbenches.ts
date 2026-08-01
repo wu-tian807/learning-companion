@@ -22,6 +22,12 @@ const rendererLoaders: Readonly<
     );
     return markdownRendererWorkbenchModule;
   },
+  'builtin.mindmap': async () => {
+    const { mindMapRendererWorkbenchModule } = await import(
+      '../mindmap/renderer'
+    );
+    return mindMapRendererWorkbenchModule;
+  },
   'builtin.pdf': async () => {
     const { default: module } = await import('../pdf/renderer');
     return module;

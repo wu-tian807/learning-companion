@@ -1,48 +1,108 @@
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import {
-  cloneAssetTarget,
   isAssetTarget,
-  type AssetTarget,
-  type ContentAnchorTarget,
 } from '../../shared/workbench/anchor';
+import {
+  isAssetLink,
+  isAssetReference,
+} from '../../shared/asset-associations';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
+import {
+  CORE_RENDERER_TRANSPORT_FACILITY_ID,
+  createContextMenuSurfaceFacilityDeclaration,
+  generationCenterSurfaceFacilityDeclaration,
+  overflowSurfaceFacilityDeclaration,
+  rendererTransportFacilityDeclaration,
+} from '../../shared/workbench/facilities/core-facilities';
+import {
+  WORKBENCH_PROTOCOL_VERSION,
+  type AssetWorkbenchManifest,
+} from '../../shared/workbench/manifest';
+import {
+  isJsonValue,
+  type JsonValue,
+  type WorkbenchCommand,
+} from '../../shared/workbench/protocol';
+import type {
+  ResolvedMindMapAssociations,
+  ResolvedMindMapSubjectAssociations,
+  StaleMindMapAssociationBinding,
+} from './association-mapper';
+import {
+  isMindMapDocumentV1,
+  type MindMapDocumentV1,
+} from './document';
 
-export const MIND_MAP_MEDIA_TYPE =
-  'application/vnd.learning-companion.mindmap+json';
-export const MIND_MAP_DOCUMENT_FORMAT = 'learning-companion/mindmap';
-export const MIND_MAP_DOCUMENT_VERSION = 1;
+export const MIND_MAP_MEDIA_TYPE = MIND_MAP_ASSET_MEDIA_TYPE;
+export const MIND_MAP_WORKBENCH_ID = 'builtin.mindmap';
+export const MIND_MAP_STATE_SCHEMA_VERSION = 2;
 export const MIND_MAP_NODE_ANCHOR_TYPE = 'mindmap.node';
 export const MIND_MAP_NODE_ANCHOR_VERSION = 1;
+export const MIND_MAP_FRAME_ANCHOR_TYPE = 'mindmap.frame';
+export const MIND_MAP_FRAME_ANCHOR_VERSION = 1;
 
-export interface MindMapNodeV1 {
-  readonly id: string;
-  readonly title: string;
-  readonly focus: string;
-  readonly childIds: readonly string[];
-}
-
-export interface MindMapNodeReferenceBindingV1 {
-  readonly referenceId: string;
-  readonly sourceTarget: AssetTarget;
-}
-
-export interface MindMapNodeAssociationsV1 {
-  readonly references: readonly MindMapNodeReferenceBindingV1[];
-  readonly linkIds: readonly string[];
-}
-
-export interface MindMapDocumentV1 {
-  readonly format: typeof MIND_MAP_DOCUMENT_FORMAT;
-  readonly version: typeof MIND_MAP_DOCUMENT_VERSION;
-  readonly title: string;
-  readonly rootNodeId: string;
-  readonly nodes: Readonly<Record<string, MindMapNodeV1>>;
-  readonly nodeAssociations: Readonly<
-    Record<string, MindMapNodeAssociationsV1>
-  >;
-}
+export const mindMapWorkbenchManifest: AssetWorkbenchManifest = {
+  id: MIND_MAP_WORKBENCH_ID,
+  version: 1,
+  protocolVersion: WORKBENCH_PROTOCOL_VERSION,
+  supportedMediaTypes: [MIND_MAP_MEDIA_TYPE],
+  requiredContentCapabilities: ['read-bytes'],
+  supportedAnchorTypes: [
+    MIND_MAP_NODE_ANCHOR_TYPE,
+    MIND_MAP_FRAME_ANCHOR_TYPE,
+  ],
+  facilities: [
+    rendererTransportFacilityDeclaration,
+    overflowSurfaceFacilityDeclaration,
+    createContextMenuSurfaceFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+    generationCenterSurfaceFacilityDeclaration,
+  ],
+};
 
 export interface MindMapNodeAnchorPayloadV1 {
   readonly nodeId: string;
 }
+
+export interface MindMapFrameAnchorPayloadV1 {
+  readonly frameId: string;
+}
+
+export interface MindMapViewportV1 {
+  readonly x: number;
+  readonly y: number;
+  readonly zoom: number;
+}
+
+export interface MindMapWorkbenchViewStateV1 {
+  readonly collapsedNodeIds: readonly string[];
+  readonly viewport?: MindMapViewportV1;
+}
+
+export interface MindMapWorkbenchStateV1 {
+  readonly viewState: MindMapWorkbenchViewStateV1;
+}
+
+export interface MindMapWorkbenchPayload {
+  readonly document: MindMapDocumentV1;
+  readonly revision: string;
+  readonly associations: ResolvedMindMapAssociations;
+  readonly viewState: MindMapWorkbenchViewStateV1;
+}
+
+export interface MindMapSaveViewStatePayload {
+  readonly viewState: MindMapWorkbenchViewStateV1;
+}
+
+export interface MindMapSaveViewStateResult {
+  readonly saved: true;
+  readonly savedTime: number;
+}
+
+export const mindMapCommands = {
+  saveViewState: 'mindmap:save-view-state',
+} as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -53,207 +113,196 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function isRequiredText(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function isNormalizedId(value: unknown): value is string {
-  return isRequiredText(value) && value === value.trim();
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value === value.trim()
+  );
 }
 
-function isMindMapNodeV1(value: unknown): value is MindMapNodeV1 {
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isMindMapViewportV1(
+  value: unknown,
+): value is MindMapViewportV1 {
   return (
     isRecord(value) &&
-    isNormalizedId(value.id) &&
-    isRequiredText(value.title) &&
-    isRequiredText(value.focus) &&
-    Array.isArray(value.childIds) &&
-    value.childIds.every(isNormalizedId) &&
-    new Set(value.childIds).size === value.childIds.length
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.zoom) &&
+    value.zoom >= 0.05 &&
+    value.zoom <= 8
   );
 }
 
-function hasValidTree(
-  rootNodeId: string,
-  nodes: Readonly<Record<string, MindMapNodeV1>>,
-): boolean {
-  if (!Object.hasOwn(nodes, rootNodeId)) {
-    return false;
-  }
-
-  const parentCounts = new Map(
-    Object.keys(nodes).map((nodeId) => [nodeId, 0]),
-  );
-
-  for (const node of Object.values(nodes)) {
-    for (const childId of node.childIds) {
-      const parentCount = parentCounts.get(childId);
-
-      if (parentCount === undefined) {
-        return false;
-      }
-
-      parentCounts.set(childId, parentCount + 1);
-    }
-  }
-
-  for (const [nodeId, parentCount] of parentCounts) {
-    if (
-      (nodeId === rootNodeId && parentCount !== 0) ||
-      (nodeId !== rootNodeId && parentCount !== 1)
-    ) {
-      return false;
-    }
-  }
-
-  const visited = new Set<string>();
-  const pending = [rootNodeId];
-
-  while (pending.length > 0) {
-    const nodeId = pending.pop();
-
-    if (nodeId === undefined || visited.has(nodeId)) {
-      return false;
-    }
-
-    visited.add(nodeId);
-    pending.push(...nodes[nodeId].childIds);
-  }
-
-  return visited.size === Object.keys(nodes).length;
-}
-
-function isMindMapNodeReferenceBindingV1(
+function isResolvedMindMapSubjectAssociations(
   value: unknown,
-): value is MindMapNodeReferenceBindingV1 {
-  return (
-    isRecord(value) &&
-    isNormalizedId(value.referenceId) &&
-    isAssetTarget(value.sourceTarget)
-  );
-}
-
-function isMindMapNodeAssociationsV1(
-  value: unknown,
-): value is MindMapNodeAssociationsV1 {
+): value is ResolvedMindMapSubjectAssociations {
   return (
     isRecord(value) &&
     Array.isArray(value.references) &&
-    value.references.every(isMindMapNodeReferenceBindingV1) &&
-    Array.isArray(value.linkIds) &&
-    value.linkIds.every(isNormalizedId) &&
-    new Set(value.linkIds).size === value.linkIds.length
+    value.references.every(
+      (binding) =>
+        isRecord(binding) &&
+        isAssetReference(binding.reference) &&
+        isAssetTarget(binding.sourceTarget),
+    ) &&
+    Array.isArray(value.links) &&
+    value.links.every(isAssetLink)
   );
 }
 
-function hasValidNodeAssociations(
-  nodes: Readonly<Record<string, MindMapNodeV1>>,
-  nodeAssociations: Readonly<Record<string, MindMapNodeAssociationsV1>>,
-): boolean {
-  const nodeIds = Object.keys(nodes);
-  const associatedNodeIds = Object.keys(nodeAssociations);
+function isResolvedSubjectMap(
+  value: unknown,
+  subjects: Readonly<Record<string, unknown>>,
+): value is Readonly<Record<string, ResolvedMindMapSubjectAssociations>> {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(
+      ([subjectId, associations]) =>
+        Object.hasOwn(subjects, subjectId) &&
+        isResolvedMindMapSubjectAssociations(associations),
+    )
+  );
+}
 
-  if (
-    associatedNodeIds.length !== nodeIds.length ||
-    associatedNodeIds.some((nodeId) => !Object.hasOwn(nodes, nodeId))
-  ) {
-    return false;
+function isStaleMindMapAssociationBinding(
+  value: unknown,
+): value is StaleMindMapAssociationBinding {
+  return (
+    isRecord(value) &&
+    (value.subjectKind === 'node' || value.subjectKind === 'frame') &&
+    isNormalizedId(value.subjectId) &&
+    (value.kind === 'reference' || value.kind === 'link') &&
+    isNormalizedId(value.associationId)
+  );
+}
+
+function isResolvedMindMapAssociations(
+  value: unknown,
+  document: MindMapDocumentV1,
+): value is ResolvedMindMapAssociations {
+  return (
+    isRecord(value) &&
+    isResolvedSubjectMap(value.byNode, document.nodes) &&
+    isResolvedSubjectMap(value.byFrame, document.frames) &&
+    Array.isArray(value.staleBindings) &&
+    value.staleBindings.every((binding) => {
+      if (!isStaleMindMapAssociationBinding(binding)) {
+        return false;
+      }
+
+      return Object.hasOwn(
+        binding.subjectKind === 'node'
+          ? document.nodes
+          : document.frames,
+        binding.subjectId,
+      );
+    })
+  );
+}
+
+export function cloneMindMapWorkbenchViewState(
+  state: MindMapWorkbenchViewStateV1,
+): JsonValue & MindMapWorkbenchViewStateV1 {
+  if (!isMindMapWorkbenchViewState(state)) {
+    throw new Error('Mind Map Workbench 视图状态无效');
   }
 
-  return nodeIds.every((nodeId) =>
-    isMindMapNodeAssociationsV1(nodeAssociations[nodeId]),
-  );
+  return {
+    collapsedNodeIds: [...state.collapsedNodeIds],
+    ...(state.viewport
+      ? {
+          viewport: {
+            x: state.viewport.x,
+            y: state.viewport.y,
+            zoom: state.viewport.zoom,
+          },
+        }
+      : {}),
+  };
 }
 
-export function isMindMapDocumentV1(
+export function isMindMapWorkbenchViewState(
   value: unknown,
-): value is MindMapDocumentV1 {
+): value is MindMapWorkbenchViewStateV1 {
   if (
     !isRecord(value) ||
-    value.format !== MIND_MAP_DOCUMENT_FORMAT ||
-    value.version !== MIND_MAP_DOCUMENT_VERSION ||
-    !isRequiredText(value.title) ||
-    !isNormalizedId(value.rootNodeId) ||
-    !isRecord(value.nodes) ||
-    !isRecord(value.nodeAssociations)
+    !Array.isArray(value.collapsedNodeIds) ||
+    !value.collapsedNodeIds.every(isNormalizedId) ||
+    new Set(value.collapsedNodeIds).size !==
+      value.collapsedNodeIds.length
   ) {
     return false;
   }
 
-  const entries = Object.entries(value.nodes);
+  return (
+    value.viewport === undefined ||
+    isMindMapViewportV1(value.viewport)
+  );
+}
 
+export function isMindMapWorkbenchStateV1(
+  value: unknown,
+): value is MindMapWorkbenchStateV1 {
+  return (
+    isRecord(value) &&
+    isMindMapWorkbenchViewState(value.viewState)
+  );
+}
+
+export function isMindMapWorkbenchPayload(
+  value: unknown,
+): value is JsonValue & MindMapWorkbenchPayload {
   if (
-    entries.length === 0 ||
-    entries.some(
-      ([nodeId, node]) =>
-        !isNormalizedId(nodeId) ||
-        !isMindMapNodeV1(node) ||
-        node.id !== nodeId,
+    !isRecord(value) ||
+    !isMindMapDocumentV1(value.document) ||
+    !isNormalizedId(value.revision) ||
+    !isMindMapWorkbenchViewState(value.viewState) ||
+    !isResolvedMindMapAssociations(
+      value.associations,
+      value.document,
     )
   ) {
     return false;
   }
 
-  const nodes = value.nodes as Readonly<Record<string, MindMapNodeV1>>;
-  const nodeAssociations = value.nodeAssociations as Readonly<
-    Record<string, MindMapNodeAssociationsV1>
-  >;
+  return isJsonValue(value);
+}
 
+export function isMindMapSaveViewStatePayload(
+  value: unknown,
+): value is JsonValue & MindMapSaveViewStatePayload {
   return (
-    hasValidTree(value.rootNodeId, nodes) &&
-    hasValidNodeAssociations(nodes, nodeAssociations)
+    isRecord(value) &&
+    isMindMapWorkbenchViewState(value.viewState) &&
+    isJsonValue(value)
   );
 }
 
-export function cloneMindMapDocumentV1(
-  document: MindMapDocumentV1,
-): MindMapDocumentV1 {
-  if (!isMindMapDocumentV1(document)) {
-    throw new Error('MindMapDocumentV1 数据无效');
-  }
-
-  const nodes = Object.freeze(
-    Object.fromEntries(
-      Object.entries(document.nodes).map(([nodeId, node]) => [
-        nodeId,
-        Object.freeze({
-          id: node.id,
-          title: node.title.trim(),
-          focus: node.focus.trim(),
-          childIds: Object.freeze([...node.childIds]),
-        }),
-      ]),
-    ),
+export function isMindMapSaveViewStateResult(
+  value: unknown,
+): value is JsonValue & MindMapSaveViewStateResult {
+  return (
+    isRecord(value) &&
+    value.saved === true &&
+    Number.isSafeInteger(value.savedTime) &&
+    Number(value.savedTime) >= 0
   );
-  const nodeAssociations = Object.freeze(
-    Object.fromEntries(
-      Object.entries(document.nodeAssociations).map(
-        ([nodeId, associations]) => [
-          nodeId,
-          Object.freeze({
-            references: Object.freeze(
-              associations.references.map((binding) =>
-                Object.freeze({
-                  referenceId: binding.referenceId,
-                  sourceTarget: cloneAssetTarget(binding.sourceTarget),
-                }),
-              ),
-            ),
-            linkIds: Object.freeze([...associations.linkIds]),
-          }),
-        ],
-      ),
-    ),
-  );
+}
 
-  return Object.freeze({
-    format: MIND_MAP_DOCUMENT_FORMAT,
-    version: MIND_MAP_DOCUMENT_VERSION,
-    title: document.title.trim(),
-    rootNodeId: document.rootNodeId,
-    nodes,
-    nodeAssociations,
-  });
+export function createMindMapSaveViewStateCommand(
+  viewState: MindMapWorkbenchViewStateV1,
+): WorkbenchCommand {
+  return {
+    type: mindMapCommands.saveViewState,
+    payload: {
+      viewState: cloneMindMapWorkbenchViewState(viewState),
+    },
+  };
 }
 
 export function createMindMapNodeTarget(
@@ -268,6 +317,21 @@ export function createMindMapNodeTarget(
     anchorType: MIND_MAP_NODE_ANCHOR_TYPE,
     anchorVersion: MIND_MAP_NODE_ANCHOR_VERSION,
     anchorPayload: Object.freeze({ nodeId }),
+  });
+}
+
+export function createMindMapFrameTarget(
+  frameId: string,
+): ContentAnchorTarget {
+  if (!isNormalizedId(frameId)) {
+    throw new Error('Mind Map frameId 无效');
+  }
+
+  return Object.freeze({
+    scope: 'content',
+    anchorType: MIND_MAP_FRAME_ANCHOR_TYPE,
+    anchorVersion: MIND_MAP_FRAME_ANCHOR_VERSION,
+    anchorPayload: Object.freeze({ frameId }),
   });
 }
 
@@ -286,5 +350,23 @@ export function isMindMapNodeTarget(
     value.anchorVersion === MIND_MAP_NODE_ANCHOR_VERSION &&
     isRecord(value.anchorPayload) &&
     isNormalizedId(value.anchorPayload.nodeId)
+  );
+}
+
+export function isMindMapFrameTarget(
+  value: unknown,
+): value is ContentAnchorTarget & {
+  readonly anchorPayload: MindMapFrameAnchorPayloadV1;
+} {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value.scope === 'content' &&
+    value.anchorType === MIND_MAP_FRAME_ANCHOR_TYPE &&
+    value.anchorVersion === MIND_MAP_FRAME_ANCHOR_VERSION &&
+    isRecord(value.anchorPayload) &&
+    isNormalizedId(value.anchorPayload.frameId)
   );
 }

@@ -1,5 +1,6 @@
 import { basename, extname } from 'node:path';
 
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import { detectFileTextEncoding } from '../content/text-encoding';
 
 export const UNKNOWN_ASSET_MEDIA_TYPE = 'application/octet-stream';
@@ -23,6 +24,7 @@ const mediaTypeByExtension = new Map<string, string>([
   ['.m4v', 'video/mp4'],
   ['.markdown', 'text/markdown'],
   ['.md', 'text/markdown'],
+  ['.mindmap', MIND_MAP_ASSET_MEDIA_TYPE],
   ['.mov', 'video/quicktime'],
   ['.mp3', 'audio/mpeg'],
   ['.mp4', 'video/mp4'],
@@ -55,7 +57,8 @@ function requireFileName(path: string): string {
 }
 
 export async function detectAssetMediaType(path: string): Promise<string> {
-  const extension = extname(requireFileName(path)).toLowerCase();
+  const fileName = requireFileName(path);
+  const extension = extname(fileName).toLowerCase();
   const mappedMediaType = mediaTypeByExtension.get(extension);
 
   if (mappedMediaType) {

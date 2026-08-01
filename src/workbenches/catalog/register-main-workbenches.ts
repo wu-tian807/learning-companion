@@ -1,4 +1,5 @@
 import type { AssetArtifactServiceApi } from '../../main/artifacts/asset-artifact-service';
+import type { AssetAssociationServiceApi } from '../../main/asset-associations/asset-association-service';
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
@@ -11,6 +12,7 @@ import { EpubWorkbenchProvider } from '../epub/main';
 import { HtmlWorkbenchProvider } from '../html/main';
 import { ImageWorkbenchProvider } from '../image/main';
 import { MarkdownWorkbenchProvider } from '../markdown/main';
+import { MindMapWorkbenchProvider } from '../mindmap/main';
 import { OfficeWorkbenchProvider } from '../office/main';
 import { PdfWorkbenchProvider } from '../pdf/main';
 import { PlainTextWorkbenchProvider } from '../plain-text/main';
@@ -21,6 +23,7 @@ import {
 } from './builtin-workbenches';
 
 export interface MainWorkbenchRegistrationDependencies {
+  readonly associationService: AssetAssociationServiceApi;
   readonly artifactService: AssetArtifactServiceApi;
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
@@ -45,6 +48,11 @@ const providerFactories: Readonly<
     new MarkdownWorkbenchProvider(
       dependencies.stateRepository,
       dependencies.stateDataRepository,
+    ),
+  'builtin.mindmap': (dependencies) =>
+    new MindMapWorkbenchProvider(
+      dependencies.stateRepository,
+      dependencies.associationService,
     ),
   'builtin.pdf': (dependencies) =>
     new PdfWorkbenchProvider(

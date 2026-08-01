@@ -7,6 +7,7 @@ import {
 } from '../../shared/assets';
 import {
   applyAssetChangedEvent,
+  assetMediaLabel,
   filterAssetLoadStateByCreationKind,
   filterAssetsByCreationKind,
   sortAssetsByUpdatedTime,
@@ -41,6 +42,14 @@ describe('Project Asset view model', () => {
     createAsset('generated-old', 'generated', 200),
     createAsset('generated-new', 'generated', 300),
   ];
+
+  it('shows a concise label for Mind Map assets', () => {
+    expect(
+      assetMediaLabel(
+        'application/vnd.learning-companion.mindmap+json',
+      ),
+    ).toBe('Mind Map');
+  });
 
   it('groups Asset snapshots by their explicit creation kind', () => {
     expect(

@@ -3,6 +3,7 @@ import type {
   AssetCreationKind,
   AssetSnapshot,
 } from '../../shared/assets';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 
 export type AssetLoadState =
   | { readonly kind: 'loading' }
@@ -21,6 +22,7 @@ export function assetMediaLabel(mediaType: string): string {
     'application/epub+zip': 'EPUB',
     'application/octet-stream': '未知',
     'application/pdf': 'PDF',
+    [MIND_MAP_ASSET_MEDIA_TYPE]: 'Mind Map',
     'application/msword': 'Word',
     'application/vnd.ms-powerpoint': 'PowerPoint',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation':

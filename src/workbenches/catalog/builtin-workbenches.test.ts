@@ -29,6 +29,7 @@ describe('builtin Workbench catalog', () => {
     );
 
     registerMainWorkbenches(registry, {
+      associationService: {} as never,
       artifactService: {} as never,
       contentResourceService: {} as never,
       externalLibraryService: {} as never,

@@ -20,6 +20,10 @@ import {
   markdownWorkbenchManifest,
 } from '../markdown/shared';
 import {
+  MIND_MAP_WORKBENCH_ID,
+  mindMapWorkbenchManifest,
+} from '../mindmap/shared';
+import {
   OFFICE_WORKBENCH_ID,
   officeWorkbenchManifest,
 } from '../office/shared';
@@ -51,6 +55,10 @@ export const builtinWorkbenchCatalog = [
   {
     id: MARKDOWN_WORKBENCH_ID,
     manifest: markdownWorkbenchManifest,
+  },
+  {
+    id: MIND_MAP_WORKBENCH_ID,
+    manifest: mindMapWorkbenchManifest,
   },
   {
     id: PDF_WORKBENCH_ID,

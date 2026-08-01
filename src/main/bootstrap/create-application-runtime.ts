@@ -180,6 +180,7 @@ export async function createApplicationRuntime({
     const workbenchStateDataRepository =
       new SqliteWorkbenchStateDataRepository(databaseContext);
     registerMainWorkbenches(workbenchRegistry, {
+      associationService,
       artifactService,
       contentResourceService,
       externalLibraryService,

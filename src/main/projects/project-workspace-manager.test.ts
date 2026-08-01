@@ -301,6 +301,30 @@ describe('ProjectWorkspaceManager', () => {
     await expect(readFile(sourcePath, 'utf8')).resolves.toBe('# 讲义');
   });
 
+  it('keeps the Mind Map extension after resolving an import conflict', async () => {
+    const root = await createTemporaryDirectory();
+    const workspacePath = join(root, 'project');
+    const sourcePath = join(root, '课程.mindmap');
+    const manager = new ProjectWorkspaceManager();
+    await writeFile(sourcePath, '{"format":"learning-companion/mindmap"}');
+    await manager.prepareWorkspace({
+      projectId: 'project',
+      workspacePath,
+    });
+
+    await manager.copyImportedFile(workspacePath, sourcePath);
+    const second = await manager.copyImportedFile(
+      workspacePath,
+      sourcePath,
+    );
+
+    expect(second.contentRef).toEqual({
+      kind: 'local-file',
+      base: 'project-workspace',
+      path: 'assets/imported/课程 (2).mindmap',
+    });
+  });
+
   it('uses explicit Workspace paths for dialogs and shell operations', async () => {
     const projectsPath = join(tmpdir(), 'projects');
     const workspacePath = join(tmpdir(), 'project');
