@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -128,6 +129,37 @@ function RuntimeRequired({
         </div>
       </div>
     </div>
+  );
+}
+
+function OfficePdfPreview({
+  payload,
+  ...props
+}: RendererWorkbenchViewProps & {
+  readonly payload: OfficePreparePreviewResult;
+}) {
+  const pdfBootstrap = useMemo(
+    () => ({
+      ...props.bootstrap,
+      payload: {
+        contentUrl: payload.contentUrl,
+        viewState: clonePdfWorkbenchState(payload.viewState),
+      },
+    }),
+    [payload, props.bootstrap],
+  );
+
+  return (
+    <PdfDocumentWorkbenchView
+      {...props}
+      bootstrap={pdfBootstrap}
+      contributionOwnerId={officeWorkbenchManifest.id}
+      createSaveViewStateCommand={
+        createOfficeSaveViewStateCommand
+      }
+      isSaveViewStateResult={isOfficeSaveViewStateResult}
+      mapInteraction={mapOfficePreviewInteraction}
+    />
   );
 }
 
@@ -276,26 +308,13 @@ export function OfficeWorkbenchView({
   }
 
   return (
-    <PdfDocumentWorkbenchView
+    <OfficePdfPreview
       {...pdfProps}
-      bootstrap={{
-        ...bootstrap,
-        payload: {
-          contentUrl: state.payload.contentUrl,
-          viewState: clonePdfWorkbenchState(
-            state.payload.viewState,
-          ),
-        },
-      }}
+      bootstrap={bootstrap}
+      payload={state.payload}
       executeCommand={executeCommand}
       onOpenSettings={onOpenSettings}
       onError={onError}
-      contributionOwnerId={officeWorkbenchManifest.id}
-      createSaveViewStateCommand={
-        createOfficeSaveViewStateCommand
-      }
-      isSaveViewStateResult={isOfficeSaveViewStateResult}
-      mapInteraction={mapOfficePreviewInteraction}
     />
   );
 }
