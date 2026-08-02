@@ -2,7 +2,7 @@
 
 > 日期：2026-08-02
 >
-> 状态：第二版交互已确认，等待实施
+> 状态：第二版交互已实施
 
 ## 1. 背景
 
@@ -200,7 +200,8 @@ src/renderer/generation/
 └── mind-map-generation-draft.ts
 
 src/renderer/project/
-├── asset-selection-context.tsx
+├── asset-selection-context.ts
+├── AssetSelectionCoordinatorProvider.tsx
 ├── ProjectAssetPanel.tsx
 ├── ProjectPage.tsx
 ├── use-project-assets.ts

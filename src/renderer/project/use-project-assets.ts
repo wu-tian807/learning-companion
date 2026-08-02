@@ -391,10 +391,7 @@ export function useProjectAssets({
     renameTarget,
     setRenameTarget,
     deleteTargets: deleteRequest?.assets ?? null,
-    selections: {
-      imported: selection.imported,
-      generated: selection.generated,
-    },
+    selectionCoordinator: selection,
     addPaths,
     chooseAndAdd,
     renameAsset,

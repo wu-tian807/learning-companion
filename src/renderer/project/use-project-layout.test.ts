@@ -81,6 +81,27 @@ describe('Project responsive layout', () => {
     ).toEqual(small);
   });
 
+  it('opens the source panel idempotently and closes a small-screen generation overlay', () => {
+    const wide = createDefaultProjectLayoutState('wide');
+    const smallWithGenerationOpen = reduceProjectLayout(
+      createDefaultProjectLayoutState('small'),
+      { type: 'toggle-right' },
+    );
+
+    expect(
+      reduceProjectLayout(wide, { type: 'open-left' }),
+    ).toBe(wide);
+    expect(
+      reduceProjectLayout(smallWithGenerationOpen, {
+        type: 'open-left',
+      }),
+    ).toEqual({
+      mode: 'small',
+      leftOpen: true,
+      rightOpen: false,
+    });
+  });
+
   it('resets manual state when the window crosses a mode boundary', () => {
     const collapsedWide = reduceProjectLayout(
       createDefaultProjectLayoutState('wide'),

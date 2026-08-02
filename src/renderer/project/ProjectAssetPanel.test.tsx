@@ -5,8 +5,12 @@ import {
   createAbsoluteLocalFileContentRef,
   type AssetSnapshot,
 } from '../../shared/assets';
+import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
-import type { AssetSelection } from './use-asset-selection';
+import type {
+  AssetSelection,
+  AssetSelectionCoordinator,
+} from './use-asset-selection';
 
 function createAsset(): AssetSnapshot {
   return {
@@ -25,10 +29,13 @@ function createAsset(): AssetSnapshot {
   };
 }
 
-function createSelection(active = false): AssetSelection {
+function createSelection(
+  scope: 'imported' | 'generated',
+  active = false,
+): AssetSelection {
   const assets = active ? [createAsset()] : [];
   return {
-    scope: 'imported',
+    scope,
     active,
     selectedAssetIds: new Set(assets.map((asset) => asset.id)),
     selectedAssets: assets,
@@ -41,28 +48,40 @@ function createSelection(active = false): AssetSelection {
   };
 }
 
+function createCoordinator(
+  imported = createSelection('imported'),
+): AssetSelectionCoordinator {
+  return {
+    activeScope: imported.active ? 'imported' : null,
+    imported,
+    generated: createSelection('generated'),
+    clear: vi.fn(),
+  };
+}
+
 describe('ProjectAssetPanel', () => {
   it('keeps loading and empty states visible', () => {
     const loading = renderToStaticMarkup(
-      <ProjectAssetPanel
-        state={{ kind: 'loading' }}
-        selectedAssetId={null}
-        selection={createSelection()}
-        busy={false}
-        refreshingAll={false}
-        dragging={false}
-        now={Date.parse('2026-07-31T10:00:00.000Z')}
-        onSelect={vi.fn()}
-        onRemoveSelected={vi.fn()}
-        onCopyAdd={vi.fn()}
-        onLinkAdd={vi.fn()}
-        onRetry={vi.fn()}
-        onRename={vi.fn()}
-        onReveal={vi.fn()}
-        onRelink={vi.fn()}
-        onRefreshAll={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      <AssetSelectionCoordinatorProvider coordinator={createCoordinator()}>
+        <ProjectAssetPanel
+          state={{ kind: 'loading' }}
+          selectedAssetId={null}
+          busy={false}
+          refreshingAll={false}
+          dragging={false}
+          now={Date.parse('2026-07-31T10:00:00.000Z')}
+          onSelect={vi.fn()}
+          onRemoveSelected={vi.fn()}
+          onCopyAdd={vi.fn()}
+          onLinkAdd={vi.fn()}
+          onRetry={vi.fn()}
+          onRename={vi.fn()}
+          onReveal={vi.fn()}
+          onRelink={vi.fn()}
+          onRefreshAll={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </AssetSelectionCoordinatorProvider>,
     );
 
     expect(loading).toContain('正在加载资料');
@@ -74,25 +93,26 @@ describe('ProjectAssetPanel', () => {
 
   it('renders media, source and availability from Asset snapshots', () => {
     const markup = renderToStaticMarkup(
-      <ProjectAssetPanel
-        state={{ kind: 'ready', assets: [createAsset()] }}
-        selectedAssetId="asset"
-        selection={createSelection()}
-        busy={false}
-        refreshingAll={false}
-        dragging={false}
-        now={Date.parse('2026-07-31T10:00:00.000Z')}
-        onSelect={vi.fn()}
-        onRemoveSelected={vi.fn()}
-        onCopyAdd={vi.fn()}
-        onLinkAdd={vi.fn()}
-        onRetry={vi.fn()}
-        onRename={vi.fn()}
-        onReveal={vi.fn()}
-        onRelink={vi.fn()}
-        onRefreshAll={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      <AssetSelectionCoordinatorProvider coordinator={createCoordinator()}>
+        <ProjectAssetPanel
+          state={{ kind: 'ready', assets: [createAsset()] }}
+          selectedAssetId="asset"
+          busy={false}
+          refreshingAll={false}
+          dragging={false}
+          now={Date.parse('2026-07-31T10:00:00.000Z')}
+          onSelect={vi.fn()}
+          onRemoveSelected={vi.fn()}
+          onCopyAdd={vi.fn()}
+          onLinkAdd={vi.fn()}
+          onRetry={vi.fn()}
+          onRename={vi.fn()}
+          onReveal={vi.fn()}
+          onRelink={vi.fn()}
+          onRefreshAll={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </AssetSelectionCoordinatorProvider>,
     );
 
     expect(markup).toContain('学习资料');
@@ -103,25 +123,28 @@ describe('ProjectAssetPanel', () => {
 
   it('replaces row menus with selection controls in selection mode', () => {
     const markup = renderToStaticMarkup(
-      <ProjectAssetPanel
-        state={{ kind: 'ready', assets: [createAsset()] }}
-        selectedAssetId="asset"
-        selection={createSelection(true)}
-        busy={false}
-        refreshingAll={false}
-        dragging={false}
-        now={Date.parse('2026-07-31T10:00:00.000Z')}
-        onSelect={vi.fn()}
-        onRemoveSelected={vi.fn()}
-        onCopyAdd={vi.fn()}
-        onLinkAdd={vi.fn()}
-        onRetry={vi.fn()}
-        onRename={vi.fn()}
-        onReveal={vi.fn()}
-        onRelink={vi.fn()}
-        onRefreshAll={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      <AssetSelectionCoordinatorProvider
+        coordinator={createCoordinator(createSelection('imported', true))}
+      >
+        <ProjectAssetPanel
+          state={{ kind: 'ready', assets: [createAsset()] }}
+          selectedAssetId="asset"
+          busy={false}
+          refreshingAll={false}
+          dragging={false}
+          now={Date.parse('2026-07-31T10:00:00.000Z')}
+          onSelect={vi.fn()}
+          onRemoveSelected={vi.fn()}
+          onCopyAdd={vi.fn()}
+          onLinkAdd={vi.fn()}
+          onRetry={vi.fn()}
+          onRename={vi.fn()}
+          onReveal={vi.fn()}
+          onRelink={vi.fn()}
+          onRefreshAll={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </AssetSelectionCoordinatorProvider>,
     );
 
     expect(markup).toContain('Assets');

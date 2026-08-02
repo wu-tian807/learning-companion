@@ -1,9 +1,9 @@
 import type { AssetSnapshot } from '../../shared/assets';
 import { AssetImportSplitButton } from '../components/AssetImportSplitButton';
 import type {
-  AssetPanelSelectionModel,
   AssetSelectionScope,
 } from './asset-panel-selection';
+import { useAssetSelectionScope } from './asset-selection-context';
 import { AssetPanel } from './AssetPanel';
 import type { AssetLoadState } from './project-asset-view';
 
@@ -28,7 +28,6 @@ function RefreshIcon({ spinning = false }: { readonly spinning?: boolean }) {
 interface ProjectAssetPanelProps {
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
-  readonly selection: AssetPanelSelectionModel;
   readonly busy: boolean;
   readonly refreshingAll: boolean;
   readonly dragging: boolean;
@@ -51,7 +50,6 @@ interface ProjectAssetPanelProps {
 export function ProjectAssetPanel({
   state,
   selectedAssetId,
-  selection,
   busy,
   refreshingAll,
   dragging,
@@ -67,6 +65,8 @@ export function ProjectAssetPanel({
   onRefreshAll,
   onDelete,
 }: ProjectAssetPanelProps) {
+  const selection = useAssetSelectionScope('imported');
+
   return (
     <AssetPanel
       id="project-assets-panel"

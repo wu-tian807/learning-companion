@@ -1,10 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../shared/assets';
-import type {
-  AssetPanelSelectionModel,
-  AssetSelectionScope,
-} from '../project/asset-panel-selection';
+import type { AssetSelectionScope } from '../project/asset-panel-selection';
+import { useProjectAssetSelection } from '../project/asset-selection-context';
 import { AssetPanel } from '../project/AssetPanel';
 import type { AssetLoadState } from '../project/project-asset-view';
 import { isWorkbenchActionEnabled } from '../workbench/actions/workbench-action';
@@ -17,11 +15,9 @@ import type { MindMapGenerationDraft } from './mind-map-generation-draft';
 
 export interface GenerationCenterProps {
   readonly projectId: string;
-  readonly sourceAssets: readonly AssetSnapshot[];
   readonly asset: AssetSnapshot | undefined;
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
-  readonly selection: AssetPanelSelectionModel;
   readonly busy: boolean;
   readonly now: number;
   readonly mediaLabel: (mediaType: string) => string;
@@ -35,6 +31,7 @@ export interface GenerationCenterProps {
   readonly onReveal: (asset: AssetSnapshot) => void;
   readonly onRelink: (asset: AssetSnapshot) => void;
   readonly onDelete: (asset: AssetSnapshot) => void;
+  readonly onRevealSources: () => void;
   readonly onMindMapDraftReady?: (
     draft: MindMapGenerationDraft,
   ) => void;
@@ -65,11 +62,9 @@ const applicationTools = [
 
 export function GenerationCenter({
   projectId,
-  sourceAssets,
   asset,
   state,
   selectedAssetId,
-  selection,
   busy,
   now,
   mediaLabel,
@@ -80,12 +75,16 @@ export function GenerationCenter({
   onReveal,
   onRelink,
   onDelete,
+  onRevealSources,
   onMindMapDraftReady,
 }: GenerationCenterProps) {
   const [mindMapSourceAssets, setMindMapSourceAssets] = useState<
     readonly AssetSnapshot[] | null
   >(null);
   const mindMapButtonRef = useRef<HTMLButtonElement>(null);
+  const selectionCoordinator = useProjectAssetSelection();
+  const sourceSelection = selectionCoordinator.imported;
+  const generatedSelection = selectionCoordinator.generated;
   const runtime = useWorkbenchRuntime();
   const identity = useWorkbenchRuntimeSelector(
     (runtimeState) => runtimeState.identity,
@@ -138,7 +137,8 @@ export function GenerationCenter({
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             {applicationTools.map((tool) => {
               const isMindMap = tool.id === 'mind-map';
-              const disabled = !isMindMap || sourceAssets.length === 0;
+              const disabled = !isMindMap;
+              const sourceAssets = sourceSelection.selectedAssets;
 
               return (
                 <button
@@ -149,17 +149,21 @@ export function GenerationCenter({
                   disabled={disabled}
                   title={
                     isMindMap
-                      ? disabled
-                        ? '请先在左侧选择资料'
+                      ? sourceAssets.length === 0
+                        ? '至少选择一个 Asset'
                         : tool.description
                       : '生成能力尚未接入'
                   }
                   onClick={
                     isMindMap
                       ? () => {
-                          if (sourceAssets.length > 0) {
-                            setMindMapSourceAssets([...sourceAssets]);
+                          if (sourceAssets.length === 0) {
+                            sourceSelection.enter();
+                            onRevealSources();
+                            return;
                           }
+
+                          setMindMapSourceAssets([...sourceAssets]);
                         }
                       : undefined
                   }
@@ -246,7 +250,7 @@ export function GenerationCenter({
             </p>
           </div>
         }
-        selection={selection}
+        selection={generatedSelection}
         onRemoveSelected={onRemoveSelected}
         selectedAssetId={selectedAssetId}
         busy={busy}
@@ -266,6 +270,7 @@ export function GenerationCenter({
           onClose={closeMindMapDialog}
           onSubmit={(draft) => {
             onMindMapDraftReady?.(draft);
+            selectionCoordinator.clear();
             closeMindMapDialog();
           }}
         />

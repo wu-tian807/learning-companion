@@ -5,8 +5,13 @@ import {
   createProjectWorkspaceContentRef,
   type AssetSnapshot,
 } from '../../shared/assets';
+import { AssetSelectionCoordinatorProvider } from '../project/AssetSelectionCoordinatorProvider';
+import type { AssetLoadState } from '../project/project-asset-view';
+import type {
+  AssetSelection,
+  AssetSelectionCoordinator,
+} from '../project/use-asset-selection';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
-import type { AssetSelection } from '../project/use-asset-selection';
 import { GenerationCenter } from './GenerationCenter';
 
 const now = Date.parse('2026-07-31T10:00:00.000Z');
@@ -42,12 +47,16 @@ const actions = {
   onRelink: vi.fn(),
   onDelete: vi.fn(),
   onRemoveSelected: vi.fn(),
+  onRevealSources: vi.fn(),
 };
 
-function createSelection(active = false): AssetSelection {
-  const assets = active ? [generatedAsset] : [];
+function createSelection(
+  scope: 'imported' | 'generated',
+  assets: readonly AssetSnapshot[] = [],
+  active = assets.length > 0,
+): AssetSelection {
   return {
-    scope: 'generated',
+    scope,
     active,
     selectedAssetIds: new Set(assets.map((asset) => asset.id)),
     selectedAssets: assets,
@@ -60,24 +69,71 @@ function createSelection(active = false): AssetSelection {
   };
 }
 
-describe('GenerationCenter', () => {
-  it('renders an explicit empty state without an active Asset', () => {
-    const html = renderToStaticMarkup(
-      <WorkbenchRuntimeProvider onError={() => undefined}>
+function createCoordinator({
+  sourceAssets = [],
+  generatedSelection = createSelection('generated'),
+}: {
+  readonly sourceAssets?: readonly AssetSnapshot[];
+  readonly generatedSelection?: AssetSelection;
+} = {}): AssetSelectionCoordinator {
+  const importedSelection = createSelection(
+    'imported',
+    sourceAssets,
+  );
+
+  return {
+    activeScope: generatedSelection.active
+      ? 'generated'
+      : importedSelection.active
+        ? 'imported'
+        : null,
+    imported: importedSelection,
+    generated: generatedSelection,
+    clear: vi.fn(),
+  };
+}
+
+interface RenderGenerationCenterOptions {
+  readonly sourceAssets?: readonly AssetSnapshot[];
+  readonly generatedSelection?: AssetSelection;
+  readonly asset?: AssetSnapshot;
+  readonly state?: AssetLoadState;
+  readonly selectedAssetId?: string | null;
+}
+
+function renderGenerationCenter({
+  sourceAssets = [],
+  generatedSelection,
+  asset,
+  state = { kind: 'ready', assets: [] },
+  selectedAssetId = null,
+}: RenderGenerationCenterOptions = {}) {
+  return renderToStaticMarkup(
+    <WorkbenchRuntimeProvider onError={() => undefined}>
+      <AssetSelectionCoordinatorProvider
+        coordinator={createCoordinator({
+          sourceAssets,
+          ...(generatedSelection ? { generatedSelection } : {}),
+        })}
+      >
         <GenerationCenter
           projectId="project"
-          sourceAssets={[]}
-          asset={undefined}
-          state={{ kind: 'ready', assets: [] }}
-          selectedAssetId={null}
-          selection={createSelection()}
+          asset={asset}
+          state={state}
+          selectedAssetId={selectedAssetId}
           busy={false}
           now={now}
           mediaLabel={(mediaType) => mediaType}
           {...actions}
         />
-      </WorkbenchRuntimeProvider>,
-    );
+      </AssetSelectionCoordinatorProvider>
+    </WorkbenchRuntimeProvider>,
+  );
+}
+
+describe('GenerationCenter', () => {
+  it('renders an explicit empty state without an active Asset', () => {
+    const html = renderGenerationCenter();
 
     expect(html).toContain('生成中心');
     expect(html).toContain(
@@ -89,22 +145,10 @@ describe('GenerationCenter', () => {
   });
 
   it('renders real generated Assets through the shared list', () => {
-    const html = renderToStaticMarkup(
-      <WorkbenchRuntimeProvider onError={() => undefined}>
-        <GenerationCenter
-          projectId="project"
-          sourceAssets={[]}
-          asset={undefined}
-          state={{ kind: 'ready', assets: [generatedAsset] }}
-          selectedAssetId="generated"
-          selection={createSelection()}
-          busy={false}
-          now={now}
-          mediaLabel={(mediaType) => mediaType}
-          {...actions}
-        />
-      </WorkbenchRuntimeProvider>,
-    );
+    const html = renderGenerationCenter({
+      state: { kind: 'ready', assets: [generatedAsset] },
+      selectedAssetId: 'generated',
+    });
 
     expect(html).toContain('1 个内容');
     expect(html).toContain('机器学习知识导图');
@@ -113,22 +157,14 @@ describe('GenerationCenter', () => {
   });
 
   it('uses the shared selection controls and keeps generation tools visible', () => {
-    const html = renderToStaticMarkup(
-      <WorkbenchRuntimeProvider onError={() => undefined}>
-        <GenerationCenter
-          projectId="project"
-          sourceAssets={[sourceAsset]}
-          asset={undefined}
-          state={{ kind: 'ready', assets: [generatedAsset] }}
-          selectedAssetId="generated"
-          selection={createSelection(true)}
-          busy={false}
-          now={now}
-          mediaLabel={(mediaType) => mediaType}
-          {...actions}
-        />
-      </WorkbenchRuntimeProvider>,
-    );
+    const html = renderGenerationCenter({
+      state: { kind: 'ready', assets: [generatedAsset] },
+      selectedAssetId: 'generated',
+      generatedSelection: createSelection(
+        'generated',
+        [generatedAsset],
+      ),
+    });
 
     expect(html).toContain('通用生成工具');
     expect(html).toContain('完成');
@@ -138,54 +174,31 @@ describe('GenerationCenter', () => {
     expect(html).not.toContain('的更多操作');
   });
 
-  it('enables Mind Map only when imported sources are selected', () => {
-    const withoutSources = renderToStaticMarkup(
-      <WorkbenchRuntimeProvider onError={() => undefined}>
-        <GenerationCenter
-          projectId="project"
-          sourceAssets={[]}
-          asset={undefined}
-          state={{ kind: 'ready', assets: [] }}
-          selectedAssetId={null}
-          selection={createSelection()}
-          busy={false}
-          now={now}
-          mediaLabel={(mediaType) => mediaType}
-          {...actions}
-        />
-      </WorkbenchRuntimeProvider>,
-    );
-    const withSources = renderToStaticMarkup(
-      <WorkbenchRuntimeProvider onError={() => undefined}>
-        <GenerationCenter
-          projectId="project"
-          sourceAssets={[sourceAsset]}
-          asset={undefined}
-          state={{ kind: 'ready', assets: [] }}
-          selectedAssetId={null}
-          selection={createSelection()}
-          busy={false}
-          now={now}
-          mediaLabel={(mediaType) => mediaType}
-          {...actions}
-        />
-      </WorkbenchRuntimeProvider>,
-    );
-    const disabledMindMapButton = withoutSources.match(
+  it('keeps Mind Map actionable and explains when sources are missing', () => {
+    const withoutSources = renderGenerationCenter();
+    const withSources = renderGenerationCenter({
+      sourceAssets: [sourceAsset],
+    });
+    const mindMapButtonWithoutSources = withoutSources.match(
       /<button[^>]*data-generation-tool="mind-map"[^>]*>/,
     )?.[0];
-    const enabledMindMapButton = withSources.match(
+    const mindMapButtonWithSources = withSources.match(
       /<button[^>]*data-generation-tool="mind-map"[^>]*>/,
     )?.[0];
     const outlineButton = withSources.match(
       /<button[^>]*data-generation-tool="study-outline"[^>]*>/,
     )?.[0];
 
-    expect(disabledMindMapButton).toContain(' disabled=""');
-    expect(disabledMindMapButton).toContain(
-      '请先在左侧选择资料',
+    expect(mindMapButtonWithoutSources).not.toContain(
+      ' disabled=""',
     );
-    expect(enabledMindMapButton).not.toContain(' disabled=""');
+    expect(mindMapButtonWithoutSources).toContain(
+      '至少选择一个 Asset',
+    );
+    expect(mindMapButtonWithSources).not.toContain(' disabled=""');
+    expect(mindMapButtonWithSources).toContain(
+      '梳理主题与知识关系',
+    );
     expect(outlineButton).toContain(' disabled=""');
   });
 });

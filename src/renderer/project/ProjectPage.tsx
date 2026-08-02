@@ -13,6 +13,7 @@ import { GenerationCenter } from '../generation/GenerationCenter';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
+import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
@@ -217,7 +218,10 @@ export function ProjectPage({
       </header>
 
       <WorkbenchRuntimeProvider onError={setError}>
-        <section className="relative flex min-h-0 flex-1 gap-3">
+        <AssetSelectionCoordinatorProvider
+          coordinator={assetOperations.selectionCoordinator}
+        >
+          <section className="relative flex min-h-0 flex-1 gap-3">
           {openOverlay && (
             <button
               type="button"
@@ -238,7 +242,6 @@ export function ProjectPage({
               <ProjectAssetPanel
                 state={importedAssetState}
                 selectedAssetId={session.selectedAssetId}
-                selection={assetOperations.selections.imported}
                 busy={assetOperations.busy}
                 refreshingAll={assetOperations.refreshingAll}
                 dragging={dragging}
@@ -311,13 +314,9 @@ export function ProjectPage({
             >
               <GenerationCenter
                 projectId={project.id}
-                sourceAssets={
-                  assetOperations.selections.imported.selectedAssets
-                }
                 asset={assetOperations.selectedAsset}
                 state={generatedAssetState}
                 selectedAssetId={session.selectedAssetId}
-                selection={assetOperations.selections.generated}
                 busy={assetOperations.busy}
                 now={relativeTimeNow}
                 mediaLabel={assetMediaLabel}
@@ -334,10 +333,12 @@ export function ProjectPage({
                 onDelete={(asset) =>
                   assetOperations.requestDelete(null, [asset])
                 }
+                onRevealSources={layout.openLeft}
               />
             </div>
           )}
-        </section>
+          </section>
+        </AssetSelectionCoordinatorProvider>
       </WorkbenchRuntimeProvider>
 
       {dragging && (

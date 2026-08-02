@@ -18,6 +18,7 @@ type ProjectLayoutAction =
     }
   | { readonly type: 'toggle-left' }
   | { readonly type: 'toggle-right' }
+  | { readonly type: 'open-left' }
   | { readonly type: 'close-overlays' };
 
 export interface ProjectLayout extends ProjectLayoutState {
@@ -26,6 +27,7 @@ export interface ProjectLayout extends ProjectLayoutState {
   readonly openOverlay: 'left' | 'right' | null;
   readonly toggleLeft: () => void;
   readonly toggleRight: () => void;
+  readonly openLeft: () => void;
   readonly closeOverlays: () => void;
 }
 
@@ -89,6 +91,19 @@ export function reduceProjectLayout(
         rightOpen,
       };
     }
+    case 'open-left':
+      if (
+        state.leftOpen &&
+        (state.mode !== 'small' || !state.rightOpen)
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        leftOpen: true,
+        rightOpen: state.mode === 'small' ? false : state.rightOpen,
+      };
     case 'close-overlays':
       if (state.mode === 'wide') {
         return state;
@@ -145,6 +160,9 @@ export function useProjectLayout(): ProjectLayout {
   const toggleRight = useCallback(() => {
     dispatch({ type: 'toggle-right' });
   }, []);
+  const openLeft = useCallback(() => {
+    dispatch({ type: 'open-left' });
+  }, []);
   const closeOverlays = useCallback(() => {
     dispatch({ type: 'close-overlays' });
   }, []);
@@ -164,6 +182,7 @@ export function useProjectLayout(): ProjectLayout {
     openOverlay,
     toggleLeft,
     toggleRight,
+    openLeft,
     closeOverlays,
   };
 }
