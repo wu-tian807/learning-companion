@@ -32,7 +32,15 @@ import {
   filterAssetsByCreationKind,
   type AssetLoadState,
 } from './project-asset-view';
-import { useAssetSelection } from './use-asset-selection';
+import {
+  useAssetSelectionCoordinator,
+  type AssetSelectionScope,
+} from './use-asset-selection';
+
+interface AssetDeleteRequest {
+  readonly assets: readonly AssetSnapshot[];
+  readonly selectionScope: AssetSelectionScope | null;
+}
 
 interface UseProjectAssetsOptions {
   readonly projectId: string;
@@ -58,9 +66,8 @@ export function useProjectAssets({
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [renameTarget, setRenameTarget] =
     useState<AssetSnapshot | null>(null);
-  const [deleteTargets, setDeleteTargets] = useState<
-    readonly AssetSnapshot[] | null
-  >(null);
+  const [deleteRequest, setDeleteRequest] =
+    useState<AssetDeleteRequest | null>(null);
   const mutationLockRef = useRef(false);
   const assets = useMemo(
     () => (loadState.kind === 'ready' ? loadState.assets : []),
@@ -74,7 +81,15 @@ export function useProjectAssets({
     () => filterAssetsByCreationKind(assets, 'imported'),
     [assets],
   );
-  const selection = useAssetSelection(importedAssets);
+  const generatedAssets = useMemo(
+    () => filterAssetsByCreationKind(assets, 'generated'),
+    [assets],
+  );
+  const selection = useAssetSelectionCoordinator(
+    importedAssets,
+    generatedAssets,
+  );
+  const clearSelection = selection.clear;
   const updateAssets = useCallback(
     (operation: (assets: AssetSnapshot[]) => AssetSnapshot[]) => {
       setLoadState((current) =>
@@ -95,6 +110,9 @@ export function useProjectAssets({
       }),
     [projectId, setLoadState],
   );
+  useEffect(() => {
+    clearSelection();
+  }, [clearSelection, projectId]);
   const runMutation = useCallback(
     async (operation: () => Promise<void>, message: string) => {
       if (mutationLockRef.current) {
@@ -258,12 +276,35 @@ export function useProjectAssets({
     }
   };
 
+  const requestDelete = useCallback(
+    (
+      scope: AssetSelectionScope | null,
+      targets: readonly AssetSnapshot[],
+    ) => {
+      if (targets.length === 0 || mutationLockRef.current) {
+        return;
+      }
+
+      setDeleteRequest({
+        assets: [...targets],
+        selectionScope: scope,
+      });
+    },
+    [],
+  );
+  const cancelDelete = useCallback(() => {
+    if (!mutationLockRef.current) {
+      setDeleteRequest(null);
+    }
+  }, []);
+
   const deleteAssets = async () => {
-    if (!deleteTargets || deleteTargets.length === 0) {
+    if (!deleteRequest || deleteRequest.assets.length === 0) {
       return;
     }
 
-    const targets = deleteTargets;
+    const request = deleteRequest;
+    const targets = request.assets;
     const targetIds = targets.map((asset) => asset.id);
     const selectedBeforeDeletion = selectedAssetId;
     const activeWorkbenchClosed =
@@ -300,8 +341,10 @@ export function useProjectAssets({
       );
 
       if (result.failed.length === 0) {
-        setDeleteTargets(null);
-        selection.exit();
+        setDeleteRequest(null);
+        if (request.selectionScope) {
+          selection[request.selectionScope].exit();
+        }
         return;
       }
 
@@ -315,9 +358,18 @@ export function useProjectAssets({
       setError(
         `已移除 ${result.deletedAssetIds.length} 项，${result.failed.length} 项失败：${firstFailure.message}`,
       );
-      selection.replace(retryTargets.map((asset) => asset.id));
-      setDeleteTargets(
-        retryTargets.length > 0 ? retryTargets : null,
+      if (request.selectionScope) {
+        selection[request.selectionScope].replace(
+          retryTargets.map((asset) => asset.id),
+        );
+      }
+      setDeleteRequest(
+        retryTargets.length > 0
+          ? {
+              assets: retryTargets,
+              selectionScope: request.selectionScope,
+            }
+          : null,
       );
     }, '无法移除所选 Asset。');
 
@@ -338,9 +390,11 @@ export function useProjectAssets({
     refreshingAll,
     renameTarget,
     setRenameTarget,
-    deleteTargets,
-    setDeleteTargets,
-    selection,
+    deleteTargets: deleteRequest?.assets ?? null,
+    selections: {
+      imported: selection.imported,
+      generated: selection.generated,
+    },
     addPaths,
     chooseAndAdd,
     renameAsset,
@@ -348,6 +402,8 @@ export function useProjectAssets({
     revealAssetInFolder,
     refreshAsset,
     refreshAllAssets,
+    requestDelete,
+    cancelDelete,
     deleteAssets,
   };
 }

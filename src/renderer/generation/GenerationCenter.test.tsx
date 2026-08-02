@@ -6,6 +6,7 @@ import {
   type AssetSnapshot,
 } from '../../shared/assets';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
+import type { AssetSelection } from '../project/use-asset-selection';
 import { GenerationCenter } from './GenerationCenter';
 
 const now = Date.parse('2026-07-31T10:00:00.000Z');
@@ -33,7 +34,24 @@ const actions = {
   onReveal: vi.fn(),
   onRelink: vi.fn(),
   onDelete: vi.fn(),
+  onRemoveSelected: vi.fn(),
 };
+
+function createSelection(active = false): AssetSelection {
+  const assets = active ? [generatedAsset] : [];
+  return {
+    scope: 'generated',
+    active,
+    selectedAssetIds: new Set(assets.map((asset) => asset.id)),
+    selectedAssets: assets,
+    allSelected: active,
+    enter: vi.fn(),
+    exit: vi.fn(),
+    toggle: vi.fn(),
+    toggleAll: vi.fn(),
+    replace: vi.fn(),
+  };
+}
 
 describe('GenerationCenter', () => {
   it('renders an explicit empty state without an active Asset', () => {
@@ -43,6 +61,7 @@ describe('GenerationCenter', () => {
           asset={undefined}
           state={{ kind: 'ready', assets: [] }}
           selectedAssetId={null}
+          selection={createSelection()}
           busy={false}
           now={now}
           mediaLabel={(mediaType) => mediaType}
@@ -67,6 +86,7 @@ describe('GenerationCenter', () => {
           asset={undefined}
           state={{ kind: 'ready', assets: [generatedAsset] }}
           selectedAssetId="generated"
+          selection={createSelection()}
           busy={false}
           now={now}
           mediaLabel={(mediaType) => mediaType}
@@ -79,5 +99,29 @@ describe('GenerationCenter', () => {
     expect(html).toContain('机器学习知识导图');
     expect(html).toContain('2 days ago');
     expect(html).toContain('机器学习知识导图 的更多操作');
+  });
+
+  it('uses the shared selection controls and keeps generation tools visible', () => {
+    const html = renderToStaticMarkup(
+      <WorkbenchRuntimeProvider onError={() => undefined}>
+        <GenerationCenter
+          asset={undefined}
+          state={{ kind: 'ready', assets: [generatedAsset] }}
+          selectedAssetId="generated"
+          selection={createSelection(true)}
+          busy={false}
+          now={now}
+          mediaLabel={(mediaType) => mediaType}
+          {...actions}
+        />
+      </WorkbenchRuntimeProvider>,
+    );
+
+    expect(html).toContain('通用生成工具');
+    expect(html).toContain('完成');
+    expect(html).toContain('已选 1 项');
+    expect(html).toContain('取消全选');
+    expect(html).toContain('移除');
+    expect(html).not.toContain('的更多操作');
   });
 });

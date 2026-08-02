@@ -1,4 +1,8 @@
 import type { AssetSnapshot } from '../../shared/assets';
+import type {
+  AssetPanelSelectionModel,
+  AssetSelectionScope,
+} from '../project/asset-panel-selection';
 import { AssetPanel } from '../project/AssetPanel';
 import type { AssetLoadState } from '../project/project-asset-view';
 import { isWorkbenchActionEnabled } from '../workbench/actions/workbench-action';
@@ -11,11 +15,16 @@ export interface GenerationCenterProps {
   readonly asset: AssetSnapshot | undefined;
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
+  readonly selection: AssetPanelSelectionModel;
   readonly busy: boolean;
   readonly now: number;
   readonly mediaLabel: (mediaType: string) => string;
   readonly onRetry: () => void;
   readonly onSelect: (assetId: string) => void;
+  readonly onRemoveSelected: (
+    scope: AssetSelectionScope,
+    assets: readonly AssetSnapshot[],
+  ) => void;
   readonly onRename: (asset: AssetSnapshot) => void;
   readonly onReveal: (asset: AssetSnapshot) => void;
   readonly onRelink: (asset: AssetSnapshot) => void;
@@ -45,11 +54,13 @@ export function GenerationCenter({
   asset,
   state,
   selectedAssetId,
+  selection,
   busy,
   now,
   mediaLabel,
   onRetry,
   onSelect,
+  onRemoveSelected,
   onRename,
   onReveal,
   onRelink,
@@ -185,6 +196,8 @@ export function GenerationCenter({
           </p>
         </div>
       }
+      selection={selection}
+      onRemoveSelected={onRemoveSelected}
       selectedAssetId={selectedAssetId}
       busy={busy}
       now={now}

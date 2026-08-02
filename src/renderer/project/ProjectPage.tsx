@@ -238,38 +238,13 @@ export function ProjectPage({
               <ProjectAssetPanel
                 state={importedAssetState}
                 selectedAssetId={session.selectedAssetId}
-                selectionMode={assetOperations.selection.active}
-                selectedAssetIds={
-                  assetOperations.selection.selectedAssetIds
-                }
-                allAssetsSelected={
-                  assetOperations.selection.allSelected
-                }
+                selection={assetOperations.selections.imported}
                 busy={assetOperations.busy}
                 refreshingAll={assetOperations.refreshingAll}
                 dragging={dragging}
                 now={relativeTimeNow}
                 onSelect={session.selectAsset}
-                onEnterSelectionMode={
-                  assetOperations.selection.enter
-                }
-                onExitSelectionMode={
-                  assetOperations.selection.exit
-                }
-                onToggleSelection={
-                  assetOperations.selection.toggle
-                }
-                onToggleAll={assetOperations.selection.toggleAll}
-                onDeleteSelected={() => {
-                  if (
-                    assetOperations.selection.selectedAssets
-                      .length > 0
-                  ) {
-                    assetOperations.setDeleteTargets(
-                      assetOperations.selection.selectedAssets,
-                    );
-                  }
-                }}
+                onRemoveSelected={assetOperations.requestDelete}
                 onCopyAdd={() =>
                   void assetOperations.chooseAndAdd('copy')
                 }
@@ -288,7 +263,7 @@ export function ProjectPage({
                   void assetOperations.refreshAllAssets()
                 }
                 onDelete={(asset) =>
-                  assetOperations.setDeleteTargets([asset])
+                  assetOperations.requestDelete(null, [asset])
                 }
               />
             </div>
@@ -338,11 +313,13 @@ export function ProjectPage({
                 asset={assetOperations.selectedAsset}
                 state={generatedAssetState}
                 selectedAssetId={session.selectedAssetId}
+                selection={assetOperations.selections.generated}
                 busy={assetOperations.busy}
                 now={relativeTimeNow}
                 mediaLabel={assetMediaLabel}
                 onRetry={session.retry}
                 onSelect={session.selectAsset}
+                onRemoveSelected={assetOperations.requestDelete}
                 onRename={assetOperations.setRenameTarget}
                 onReveal={(asset) =>
                   void assetOperations.revealAssetInFolder(asset)
@@ -351,7 +328,7 @@ export function ProjectPage({
                   void assetOperations.relinkAsset(asset)
                 }
                 onDelete={(asset) =>
-                  assetOperations.setDeleteTargets([asset])
+                  assetOperations.requestDelete(null, [asset])
                 }
               />
             </div>
@@ -395,7 +372,7 @@ export function ProjectPage({
           busy={assetOperations.busy}
           error={error}
           onClose={() => {
-            assetOperations.setDeleteTargets(null);
+            assetOperations.cancelDelete();
             setError(null);
           }}
           onConfirm={() => void assetOperations.deleteAssets()}

@@ -6,6 +6,7 @@ import {
   type AssetSnapshot,
 } from '../../shared/assets';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
+import type { AssetSelection } from './use-asset-selection';
 
 function createAsset(): AssetSnapshot {
   return {
@@ -24,25 +25,35 @@ function createAsset(): AssetSnapshot {
   };
 }
 
+function createSelection(active = false): AssetSelection {
+  const assets = active ? [createAsset()] : [];
+  return {
+    scope: 'imported',
+    active,
+    selectedAssetIds: new Set(assets.map((asset) => asset.id)),
+    selectedAssets: assets,
+    allSelected: active,
+    enter: vi.fn(),
+    exit: vi.fn(),
+    toggle: vi.fn(),
+    toggleAll: vi.fn(),
+    replace: vi.fn(),
+  };
+}
+
 describe('ProjectAssetPanel', () => {
   it('keeps loading and empty states visible', () => {
     const loading = renderToStaticMarkup(
       <ProjectAssetPanel
         state={{ kind: 'loading' }}
         selectedAssetId={null}
-        selectionMode={false}
-        selectedAssetIds={new Set()}
-        allAssetsSelected={false}
+        selection={createSelection()}
         busy={false}
         refreshingAll={false}
         dragging={false}
         now={Date.parse('2026-07-31T10:00:00.000Z')}
         onSelect={vi.fn()}
-        onEnterSelectionMode={vi.fn()}
-        onExitSelectionMode={vi.fn()}
-        onToggleSelection={vi.fn()}
-        onToggleAll={vi.fn()}
-        onDeleteSelected={vi.fn()}
+        onRemoveSelected={vi.fn()}
         onCopyAdd={vi.fn()}
         onLinkAdd={vi.fn()}
         onRetry={vi.fn()}
@@ -66,19 +77,13 @@ describe('ProjectAssetPanel', () => {
       <ProjectAssetPanel
         state={{ kind: 'ready', assets: [createAsset()] }}
         selectedAssetId="asset"
-        selectionMode={false}
-        selectedAssetIds={new Set()}
-        allAssetsSelected={false}
+        selection={createSelection()}
         busy={false}
         refreshingAll={false}
         dragging={false}
         now={Date.parse('2026-07-31T10:00:00.000Z')}
         onSelect={vi.fn()}
-        onEnterSelectionMode={vi.fn()}
-        onExitSelectionMode={vi.fn()}
-        onToggleSelection={vi.fn()}
-        onToggleAll={vi.fn()}
-        onDeleteSelected={vi.fn()}
+        onRemoveSelected={vi.fn()}
         onCopyAdd={vi.fn()}
         onLinkAdd={vi.fn()}
         onRetry={vi.fn()}
@@ -101,19 +106,13 @@ describe('ProjectAssetPanel', () => {
       <ProjectAssetPanel
         state={{ kind: 'ready', assets: [createAsset()] }}
         selectedAssetId="asset"
-        selectionMode
-        selectedAssetIds={new Set(['asset'])}
-        allAssetsSelected
+        selection={createSelection(true)}
         busy={false}
         refreshingAll={false}
         dragging={false}
         now={Date.parse('2026-07-31T10:00:00.000Z')}
         onSelect={vi.fn()}
-        onEnterSelectionMode={vi.fn()}
-        onExitSelectionMode={vi.fn()}
-        onToggleSelection={vi.fn()}
-        onToggleAll={vi.fn()}
-        onDeleteSelected={vi.fn()}
+        onRemoveSelected={vi.fn()}
         onCopyAdd={vi.fn()}
         onLinkAdd={vi.fn()}
         onRetry={vi.fn()}
@@ -125,7 +124,10 @@ describe('ProjectAssetPanel', () => {
       />,
     );
 
-    expect(markup).toContain('选择资料');
+    expect(markup).toContain('Assets');
+    expect(markup).toContain('添加资料');
+    expect(markup).toContain('刷新全部资料状态');
+    expect(markup).toContain('完成');
     expect(markup).toContain('已选 1 项');
     expect(markup).toContain('取消全选');
     expect(markup).toContain('aria-pressed="true"');
