@@ -26,6 +26,13 @@ const generatedAsset: AssetSnapshot = {
   createdTime: now - 2 * 24 * 60 * 60_000,
   updatedTime: now - 2 * 24 * 60 * 60_000,
 };
+const sourceAsset: AssetSnapshot = {
+  ...generatedAsset,
+  id: 'source',
+  name: '机器学习课程讲义',
+  mediaType: 'application/pdf',
+  creationKind: 'imported',
+};
 
 const actions = {
   onRetry: vi.fn(),
@@ -58,6 +65,8 @@ describe('GenerationCenter', () => {
     const html = renderToStaticMarkup(
       <WorkbenchRuntimeProvider onError={() => undefined}>
         <GenerationCenter
+          projectId="project"
+          sourceAssets={[]}
           asset={undefined}
           state={{ kind: 'ready', assets: [] }}
           selectedAssetId={null}
@@ -83,6 +92,8 @@ describe('GenerationCenter', () => {
     const html = renderToStaticMarkup(
       <WorkbenchRuntimeProvider onError={() => undefined}>
         <GenerationCenter
+          projectId="project"
+          sourceAssets={[]}
           asset={undefined}
           state={{ kind: 'ready', assets: [generatedAsset] }}
           selectedAssetId="generated"
@@ -105,6 +116,8 @@ describe('GenerationCenter', () => {
     const html = renderToStaticMarkup(
       <WorkbenchRuntimeProvider onError={() => undefined}>
         <GenerationCenter
+          projectId="project"
+          sourceAssets={[sourceAsset]}
           asset={undefined}
           state={{ kind: 'ready', assets: [generatedAsset] }}
           selectedAssetId="generated"
@@ -123,5 +136,56 @@ describe('GenerationCenter', () => {
     expect(html).toContain('取消全选');
     expect(html).toContain('移除');
     expect(html).not.toContain('的更多操作');
+  });
+
+  it('enables Mind Map only when imported sources are selected', () => {
+    const withoutSources = renderToStaticMarkup(
+      <WorkbenchRuntimeProvider onError={() => undefined}>
+        <GenerationCenter
+          projectId="project"
+          sourceAssets={[]}
+          asset={undefined}
+          state={{ kind: 'ready', assets: [] }}
+          selectedAssetId={null}
+          selection={createSelection()}
+          busy={false}
+          now={now}
+          mediaLabel={(mediaType) => mediaType}
+          {...actions}
+        />
+      </WorkbenchRuntimeProvider>,
+    );
+    const withSources = renderToStaticMarkup(
+      <WorkbenchRuntimeProvider onError={() => undefined}>
+        <GenerationCenter
+          projectId="project"
+          sourceAssets={[sourceAsset]}
+          asset={undefined}
+          state={{ kind: 'ready', assets: [] }}
+          selectedAssetId={null}
+          selection={createSelection()}
+          busy={false}
+          now={now}
+          mediaLabel={(mediaType) => mediaType}
+          {...actions}
+        />
+      </WorkbenchRuntimeProvider>,
+    );
+    const disabledMindMapButton = withoutSources.match(
+      /<button[^>]*data-generation-tool="mind-map"[^>]*>/,
+    )?.[0];
+    const enabledMindMapButton = withSources.match(
+      /<button[^>]*data-generation-tool="mind-map"[^>]*>/,
+    )?.[0];
+    const outlineButton = withSources.match(
+      /<button[^>]*data-generation-tool="study-outline"[^>]*>/,
+    )?.[0];
+
+    expect(disabledMindMapButton).toContain(' disabled=""');
+    expect(disabledMindMapButton).toContain(
+      '请先在左侧选择资料',
+    );
+    expect(enabledMindMapButton).not.toContain(' disabled=""');
+    expect(outlineButton).toContain(' disabled=""');
   });
 });

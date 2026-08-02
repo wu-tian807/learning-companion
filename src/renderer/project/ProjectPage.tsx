@@ -310,6 +310,10 @@ export function ProjectPage({
               }
             >
               <GenerationCenter
+                projectId={project.id}
+                sourceAssets={
+                  assetOperations.selections.imported.selectedAssets
+                }
                 asset={assetOperations.selectedAsset}
                 state={generatedAssetState}
                 selectedAssetId={session.selectedAssetId}
