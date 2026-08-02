@@ -2,12 +2,13 @@
 
 > 日期：2026-08-02
 >
-> 状态：已实施
+> 状态：第二版交互已确认，等待实施
 
 ## 1. 背景
 
 生成中心已经展示真实的 generated Asset 列表，Mind Map 文件协议、Workbench、
-Anchor 和 Asset Association 基座也已经落地，但“思维导图”仍是禁用的占位工具。
+Anchor 和 Asset Association 基座也已经落地。第一版生成输入界面通过禁用按钮要求
+用户先选择来源；第二版把它调整为可点击的选择引导入口。
 
 完整生成流程还需要通用 Task、Codex Creator Lane、上下文 Projection、结构化输出
 校验、Generated Asset 提交和任务恢复。上述能力不在本轮提前实现。本轮只完成生成
@@ -16,10 +17,12 @@ Anchor 和 Asset Association 基座也已经落地，但“思维导图”仍是
 ## 2. 目标
 
 - 复用左侧 imported Asset 的现有显式选择状态；
-- 只有选择至少一份资料后，生成中心的“思维导图”工具才可使用；
-- 点击工具后固定当前来源快照，并在弹窗中再次确认；
+- “思维导图”工具始终可点击；
+- 未选择资料时，点击工具自动展开左侧资料栏并进入选择模式；
+- 选择来源后点击工具，固定当前来源快照并在弹窗中再次确认；
 - 收集可选的用户补充要求；
 - 构造不包含正文的 `MindMapGenerationDraft`；
+- 确认生成后退出并清空 imported Asset 选择状态；
 - 保持左右 AssetPanel 解耦，不增加第二套来源选择状态。
 
 ## 3. 非目标
@@ -81,19 +84,34 @@ interface MindMapGenerationDraft {
 
 ## 6. 选择状态与组件边界
 
-现有 Project-scoped `useAssetSelectionCoordinator` 继续作为唯一选择状态：
+现有 Project-scoped `useAssetSelectionCoordinator` 继续作为唯一选择状态，但不再
+通过 `ProjectPage` 逐层传递选择模型。新增 Project 范围的 React Context：
 
 ```text
 useAssetSelectionCoordinator
-  → imported.selectedAssets
-  → ProjectPage
-  → GenerationCenter.sourceAssets
-  → MindMapGenerationDialog
+  → AssetSelectionCoordinatorProvider
+      ├── ProjectAssetPanel
+      │   └── useAssetSelectionScope("imported")
+      └── GenerationCenter
+          ├── imported.selectedAssets
+          ├── imported.enter()
+          └── coordinator.clear()
 ```
 
-`ProjectPage` 只把 `assetOperations.selections.imported.selectedAssets` 作为只读
-`sourceAssets` 传给 `GenerationCenter`。GenerationCenter 不引用
-`ProjectAssetPanel`，左侧面板也不知道生成中心的存在。
+Provider 只覆盖当前 Project 页面，不能成为跨 Project 或应用级全局状态。
+`ProjectAssetPanel` 和 `GenerationCenter` 分别直接消费自己需要的选择投影，
+`ProjectPage` 不再传递 `selection` 或 `sourceAssets`。
+
+选择控制器对 Context 消费者提供：
+
+- `activeScope`：当前进入选择模式的面板；
+- `imported` / `generated`：各自的选择投影与 `enter`、`exit`、`toggle`、
+  `toggleAll` 能力；
+- `clear()`：退出任何选择模式并清空勾选。
+
+`GenerationCenter` 不引用 `ProjectAssetPanel`，左侧面板也不知道生成中心存在。
+展开左栏属于布局行为，不进入选择 Context。`ProjectPage` 只向
+`GenerationCenter` 提供 `onRevealSources` 页面布局回调。
 
 当前 `generated` 面板选择仍用于生成内容的批量操作。选择协调器继续保证同一时间
 只有一个 AssetPanel 进入选择模式；本轮不改变该规则。
@@ -101,35 +119,51 @@ useAssetSelectionCoordinator
 ## 7. 交互流程
 
 ```text
-左侧进入选择模式并勾选 imported Assets
-→ 思维导图按钮启用
-→ 点击按钮
+点击思维导图
+→ 如果未选择 imported Assets
+    → imported.enter()
+    → 展开左侧资料栏
+    → 不打开确认弹窗
+→ 用户勾选 imported Assets 后再次点击思维导图
 → 固定 selectedAssets 快照
 → 打开确认弹窗
 → 查看来源清单并填写可选补充要求
 → 点击确认生成
 → 构造 Draft
+→ 清空并退出选择模式
 → 关闭弹窗
 ```
 
-本轮确认后不创建 Task、不调用 IPC、不显示伪造进度、不创建假 Asset。左侧选择保持
-不变，方便用户继续调整并再次打开弹窗。
+本轮确认后不创建 Task、不调用 IPC、不显示伪造进度、不创建假 Asset。因为当前
+Draft 回调是同步边界，Draft 构造成功即清空选择。未来接入异步 GenerationTask 后，
+只能在 Main 成功创建任务后清空选择；创建失败时必须保留选择和用户输入。
+
+取消或关闭弹窗时不清空选择，方便用户返回左侧继续调整。
 
 如果弹窗打开后外部选择发生变化，已经打开的弹窗仍展示固定快照。后续真实提交时
 由 Main 根据 ID 重新验证 Asset；Renderer 快照不成为事实来源。
 
 ## 8. 工具状态
 
-“思维导图”工具的启用条件只有：
+“思维导图”工具始终保持可点击：
 
 ```text
-sourceAssets.length > 0
+selectedAssets.length === 0
+  → 悬浮提示“至少选择一个 Asset”
+  → 点击进入 imported 选择模式并展开左栏
+
+selectedAssets.length > 0
+  → 悬浮提示工具说明
+  → 点击打开确认弹窗
 ```
 
-- 未选择时禁用，提示“请先在左侧选择资料”；
-- 选择至少一项后启用；
+- 不使用 `disabled` 表达“尚未选择来源”；
 - 本轮不按 Availability 或媒体类型提前过滤；
 - 其他通用生成工具继续保持禁用占位状态。
+
+窄屏下左右覆盖栏保持互斥。为了让引导动作具备幂等语义，Project 布局控制器增加
+`openLeft()`，而不是复用可能把已打开侧栏关闭的 `toggleLeft()`。小屏执行
+`openLeft()` 时自动关闭右侧生成中心；宽屏和中屏只确保左栏处于展开状态。
 
 ## 9. 确认弹窗
 
@@ -166,11 +200,19 @@ src/renderer/generation/
 └── mind-map-generation-draft.ts
 
 src/renderer/project/
-└── ProjectPage.tsx
+├── asset-selection-context.tsx
+├── ProjectAssetPanel.tsx
+├── ProjectPage.tsx
+├── use-project-assets.ts
+├── use-project-layout.ts
+└── use-project-layout.test.ts
 ```
 
-- `ProjectPage`：传递 imported 选择快照和 `projectId`；
-- `GenerationCenter`：决定工具启用状态、打开弹窗并持有本次来源快照；
+- `asset-selection-context`：提供 Project-scoped 选择控制器及按 scope 读取 Hook；
+- `ProjectPage`：安装 Provider，并只传递 `projectId` 与展开左栏回调；
+- `ProjectAssetPanel`：直接读取 imported 选择模型；
+- `use-project-layout`：提供幂等的 `openLeft()`；
+- `GenerationCenter`：根据来源选择决定引导或打开弹窗，并持有本次来源快照；
 - `MindMapGenerationDialog`：维护补充要求并提交 Draft；
 - `mind-map-generation-draft.ts`：定义 Draft 及 ID 去重、输入规范化纯函数。
 
@@ -179,9 +221,12 @@ src/renderer/project/
 ## 11. 错误与边界
 
 - 空来源不能打开确认弹窗；
+- 未选择来源时重复点击工具不会退出左侧选择模式；
+- 小屏从右侧生成中心切换到左侧资料栏时，不能同时保留两个覆盖栏；
 - 重复 Asset ID 在 Draft 构造时去重；
 - 空白补充要求转为 `undefined`；
 - 弹窗关闭后清理本次输入和来源快照；
+- 只有确认生成才清空选择，取消和遮罩关闭均保留选择；
 - 弹窗打开期间来源 Snapshot 只用于展示，未来 Main 仍必须重新校验 ID；
 - 当前阶段没有异步失败、额度、登录或生成错误。
 
@@ -195,10 +240,17 @@ src/renderer/project/
 
 GenerationCenter 测试：
 
-- 静态渲染没有 imported 选择时工具禁用；
-- 静态渲染有选择时工具启用；
+- 没有 imported 选择时工具仍然启用，并显示引导 Tooltip；
+- 有选择时工具显示正常说明；
 - 其他通用工具仍禁用；
 - Dialog 打开状态显示固定来源数量。
+
+选择 Context 与布局测试：
+
+- imported / generated 消费者读取同一个协调器；
+- `clear()` 退出选择模式并清空勾选；
+- `openLeft()` 幂等打开左栏；
+- 小屏 `openLeft()` 同时关闭右侧覆盖栏。
 
 Dialog 测试：
 
@@ -213,11 +265,13 @@ Dialog 测试：
 
 ## 13. 验收标准
 
-- 左侧未选资料时，“思维导图”不可点击；
-- 选择任意 imported Asset 后，工具立即可点击；
+- 左侧未选资料时，“思维导图”仍可点击；
+- 未选择时点击工具会展开左栏并进入 imported 选择模式；
+- 未选择时悬浮工具显示“至少选择一个 Asset”；
 - 弹窗准确展示打开瞬间的来源数量与清单；
 - 补充要求可以为空或输入任意长度文本；
 - 确认后不出现假任务或假 Asset；
-- 左侧选择保持不变；
+- 确认生成后退出并清空选择；
+- 取消弹窗后选择保持不变；
 - 现有 generated Asset 列表和两侧批量选择行为不回归；
 - `pnpm check` 通过。
