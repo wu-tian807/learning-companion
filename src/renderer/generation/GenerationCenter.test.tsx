@@ -193,9 +193,15 @@ describe('GenerationCenter', () => {
       ' disabled=""',
     );
     expect(mindMapButtonWithoutSources).toContain(
-      '至少选择一个 Asset',
+      'aria-describedby="mind-map-source-tooltip"',
     );
+    expect(withoutSources).toContain('role="tooltip"');
+    expect(withoutSources).toContain('至少选择一个 Asset');
     expect(mindMapButtonWithSources).not.toContain(' disabled=""');
+    expect(mindMapButtonWithSources).not.toContain(
+      'aria-describedby',
+    );
+    expect(withSources).not.toContain('mind-map-source-tooltip');
     expect(mindMapButtonWithSources).toContain(
       '梳理主题与知识关系',
     );

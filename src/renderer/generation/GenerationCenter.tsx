@@ -141,41 +141,56 @@ export function GenerationCenter({
               const sourceAssets = sourceSelection.selectedAssets;
 
               return (
-                <button
-                  ref={isMindMap ? mindMapButtonRef : undefined}
-                  key={tool.id}
-                  type="button"
-                  data-generation-tool={tool.id}
-                  disabled={disabled}
-                  title={
-                    isMindMap
-                      ? sourceAssets.length === 0
-                        ? '至少选择一个 Asset'
-                        : tool.description
-                      : '生成能力尚未接入'
-                  }
-                  onClick={
-                    isMindMap
-                      ? () => {
-                          if (sourceAssets.length === 0) {
-                            sourceSelection.enter();
-                            onRevealSources();
-                            return;
-                          }
+                <div key={tool.id} className="group relative">
+                  <button
+                    ref={isMindMap ? mindMapButtonRef : undefined}
+                    type="button"
+                    data-generation-tool={tool.id}
+                    disabled={disabled}
+                    aria-describedby={
+                      isMindMap && sourceAssets.length === 0
+                        ? 'mind-map-source-tooltip'
+                        : undefined
+                    }
+                    title={
+                      isMindMap
+                        ? sourceAssets.length > 0
+                          ? tool.description
+                          : undefined
+                        : '生成能力尚未接入'
+                    }
+                    onClick={
+                      isMindMap
+                        ? () => {
+                            if (sourceAssets.length === 0) {
+                              sourceSelection.enter();
+                              onRevealSources();
+                              return;
+                            }
 
-                          setMindMapSourceAssets([...sourceAssets]);
-                        }
-                      : undefined
-                  }
-                  className="ui-control min-h-[76px] rounded-[11px] border border-white/[0.08] bg-indigo-300/[0.075] p-3 text-left hover:border-indigo-200/20 hover:bg-indigo-300/[0.12] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <span className="block text-[11px] font-semibold text-slate-300">
-                    {tool.label}
-                  </span>
-                  <span className="mt-1.5 block text-[9px] leading-4 text-slate-500">
-                    {tool.description}
-                  </span>
-                </button>
+                            setMindMapSourceAssets([...sourceAssets]);
+                          }
+                        : undefined
+                    }
+                    className="ui-control min-h-[76px] w-full rounded-[11px] border border-white/[0.08] bg-indigo-300/[0.075] p-3 text-left hover:border-indigo-200/20 hover:bg-indigo-300/[0.12] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <span className="block text-[11px] font-semibold text-slate-300">
+                      {tool.label}
+                    </span>
+                    <span className="mt-1.5 block text-[9px] leading-4 text-slate-500">
+                      {tool.description}
+                    </span>
+                  </button>
+                  {isMindMap && sourceAssets.length === 0 && (
+                    <span
+                      id="mind-map-source-tooltip"
+                      role="tooltip"
+                      className="pointer-events-none absolute top-[calc(100%-3px)] left-1/2 z-30 w-max -translate-x-1/2 rounded-md border border-white/10 bg-[#303640] px-2.5 py-1.5 text-[9px] font-medium text-slate-100 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                    >
+                      至少选择一个 Asset
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
