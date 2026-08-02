@@ -356,10 +356,12 @@ Project 页面采用 Workbench 优先的响应式布局：
 
 `ProjectAssetPanel` 与 `GenerationCenter` 都通过同一个 `AssetPanel` 渲染完整文件
 面板；标题、计数、加载/失败/空状态、按 `updatedTime` 降序排列和列表区域只有一份
-实现，两侧仅注入导入/多选控件或生成工具。`AssetList` 在顺序变化时通过 Web
-Animations 执行移动/插入动画，并尊重系统的减少动态效果设置。Asset 的相对时间
-使用统一低频时间刻度显示 `just now`、`N mins ago`、`N hrs ago` 或 `N days ago`，
-不回退到带年份的绝对日期。
+实现。选择/完成、复选框、全选、已选数量和批量移除也由 `AssetPanel` 统一渲染；
+两侧只注入始终保留的普通业务工具：左侧导入与刷新，右侧生成工具。Project-scoped
+选择协调器以 `imported | generated` Scope 保证同一时间只有一个面板进入选择模式，
+两个面板互不引用。`AssetList` 在顺序变化时通过 Web Animations 执行移动/插入动画，
+并尊重系统的减少动态效果设置。Asset 的相对时间使用统一低频时间刻度显示
+`just now`、`N mins ago`、`N hrs ago` 或 `N days ago`，不回退到带年份的绝对日期。
 
 ## 8. Project、Asset 与数据行为分离
 
@@ -676,7 +678,8 @@ Workbench 中显示更完整的错误和 Relink 操作。
 - Workspace 切换会清理旧 Workspace 中属于该 Project 的 Artifact；
 - Artifact 清理会先取消并等待进行中的生成任务；
 - UI 使用“从 Learning Companion 中移除”；
-- 左栏通过显式选择模式支持全选和批量移除，日常浏览状态不常驻复选框；
+- 所有 AssetPanel 通过同一显式选择模式支持全选和批量移除，日常浏览状态不常驻
+  复选框；同一时间只允许一个 Asset Scope 处于选择模式；
 - 批量移除由单次 Main IPC 顺序执行，返回成功项、失败项和完整 Asset 快照；
 - 物理删除后续作为独立、二次确认的废纸篓操作。
 
@@ -1363,7 +1366,7 @@ Home 的创建和编辑界面都展示 Workspace：
 - “添加资料”默认复制、拖拽复制，以及低频“链接外部文件”入口；
 - Asset 列表根据 `ContentRef` 显示“外部”等来源徽标；
 - Project 和 Asset 移除记录时不删除真实资料文件；
-- Asset 左栏显式多选及 Main 编排的部分成功批量移除；
+- 左右 AssetPanel 统一显式多选，以及 Main 编排的部分成功批量移除；
 - 通用 External Runtime 管理、设置 UI 与安全迁移；
 - Main 持有的后台安装任务与 Renderer 全局 External Library Store；
 - 通用全局通知设施与 External Runtime 通知 Adapter；
@@ -1378,7 +1381,7 @@ Home 的创建和编辑界面都展示 Workspace：
   独立保存 Provider 选择且不保存凭证的 AI 设置流程；
 - 设置中心的 `AI Provider` 页签；
 - Asset `imported | generated` 创建类型、历史数据迁移与双栏分类；
-- 左右栏共享的 Asset 列表、操作菜单和相对时间；
+- 左右栏共享完整 AssetPanel，包括选择、批量移除、列表、操作菜单和相对时间；
 - Workbench 优先的 Project 响应式布局与覆盖式侧栏；
 - 生成中心真实 Generated Asset 列表。
 
