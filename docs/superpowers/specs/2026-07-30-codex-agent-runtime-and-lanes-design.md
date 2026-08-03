@@ -1,5 +1,10 @@
 # Codex Agent Runtime、Agent Lane 与 Memory 方向
 
+> **AgentLane 部分已被取代：** 2026-08-03 后续评审取消了每个 Project 固定
+> Creator / Tutor Lane 的方案。新的 Workspace 基础层见
+> [Agent Workspace 管理设计与实施计划](./2026-08-03-agent-workspace-management-design.md)。
+> Codex Runtime、Provider 边界和原件受控修改原则仍然有效。
+
 > 状态：已接受
 >
 > 决策日期：2026-07-30

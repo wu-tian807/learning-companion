@@ -2,7 +2,7 @@
 
 > 状态：当前基线
 >
-> 更新日期：2026-08-01
+> 更新日期：2026-08-03
 >
 > 本文同时记录已经落地的实现和已经确认但尚未实施的架构。表格中的“已落地”
 > 表示当前仓库已有生产代码；“已确定”表示技术方向已经确认，后续实现不得在
@@ -1147,20 +1147,38 @@ interface AgentProvider {
 Codex DTO 只存在于 Codex Adapter 中，不能泄漏到 Project、Asset、Workbench、
 Attachment 或 Memory。
 
-### 18.4 Project Agent Lane
+### 18.4 Agent Workspace 与 Task Definition
 
-每个 Project 固定两个长期 Lane：
+不为每个 Project 固定创建 Creator / Tutor AgentLane。Prompt、Capability 和
+Workspace 访问需求由具体 Task Definition 声明，执行时解析为 Attempt / Session
+的不可变快照。
 
-| Lane | 责任 |
-| --- | --- |
-| `creator` | 生成和重做思维导图、提纲、讲义及其他 Project 级 Asset |
-| `tutor` | 围绕当前 Asset、选区和相关资料连续答疑并沉淀笔记 |
+Workspace 只描述身份、范围、位置和生命周期，不声明自己只读或可写：
 
-Lane 是产品语义，Provider Thread 是执行实现。每个 Lane 按 Provider 保存不透明
-Thread Ref。切换 Asset 不创建新 Tutor Thread。
+```text
+Global Agent Workspace
+    一个用户一个，保存未来允许 Agent 使用的长期偏好与记忆文件
 
-Conversation、Compact 和完整消息历史由 Codex Runtime 管理；Learning Companion
-只保存 Thread Ref 和可丢弃的 UI 显示缓存。
+Project Agent Workspace
+    一个 Project 可以有零个或多个，保存长期可复用的 Project 级 Agent 上下文
+
+Task Workspace
+    一个 Task Attempt 独占，保存 request / staging / result / control
+```
+
+Global 与 Project Agent Workspace 的 Marker 文件是元数据事实来源；首版不增加
+`agent_workspaces` SQLite 表。Task Workspace 由 Task / Attempt ID 派生，不进入
+长期 Workspace 列表。
+
+`AgentWorkspaceManager` 保持无状态，只负责路径派生、Marker、目录准备、原子
+Manifest 和严格范围清理。它不知道 Task 业务、Prompt、Capability、Provider 或
+权限。读写授权由 Task Definition 提出，经 Main 校验后冻结到执行快照。
+
+Agent 对长期 Workspace 的修改优先写入 Task staging，再由可信 Main 根据具体 Task
+规则校验并原子提交。Workspace 基础层不提供绕过领域边界的万能文件写入接口。
+
+Conversation、Compact 和完整消息历史仍由 Codex Runtime 管理；Learning Companion
+只保存 Provider Thread 的不透明引用和可丢弃 UI 显示缓存。
 
 ### 18.5 Turn Context
 
@@ -1168,7 +1186,7 @@ Conversation、Compact 和完整消息历史由 Codex Runtime 管理；Learning 
 
 ```text
 projectId
-laneId
+taskId / attemptId
 当前 assetId / workbenchId
 文字、页面、区域或时间选区
 用户显式引用的 Attachment
@@ -1216,7 +1234,8 @@ Markdown、HTML 等可编辑 Asset 使用比 VS Code 更严格的 Editing Sessio
 
 ## 19. Memory 与成本
 
-Memory 位于全局层，不属于某个 Project、Asset、Lane 或 Provider。只保存跨学习
+Memory 位于 Global Agent Workspace 的业务层，不属于某个 Project、Asset 或
+Provider。只保存跨学习
 场景仍有价值的稳定事实，例如长期目标、薄弱点和讲解偏好。
 
 - 完整 Conversation 不进入 Memory；
@@ -1390,7 +1409,7 @@ Home 的创建和编辑界面都展示 Workspace：
 - Workspace Missing 的 Home 状态与重新定位入口；
 - 文件型 Attachment 正文；
 - SQLite FTS5；
-- Agent Lane、Provider Thread Ref 与 AI 工作区 UI；
+- Agent Workspace 管理、Provider Thread Ref 与 AI 工作区 UI；
 - AgentContextProjection；
 - Agent Editing Session；
 - Memory；
@@ -1412,7 +1431,8 @@ Home 的创建和编辑界面都展示 Workspace：
 > Project 和 Asset 是纯数据；ProjectDatabase 维护全量 Project Map，
 > AssetDatabase 是无状态 SQLite 适配器，AssetService 独占活动 Asset Runtime
 > Map，并统一提交已有 Asset 的持久化字段变化；Service 编排领域生命周期；
-> ProjectWorkspaceManager 无状态管理路径；ContentRef 只引用内容；Workbench 通过
+> ProjectWorkspaceManager 无状态管理 Project 资料根，未来的 AgentWorkspaceManager
+> 无状态管理 Agent 上下文与执行空间；ContentRef 只引用内容；Workbench 通过
 > ContentHandle 工作，写入跟踪由上层装饰器组合；Agent 只读原件并通过审查会话提出
 > 修改。
 
@@ -1430,6 +1450,7 @@ Home 的创建和编辑界面都展示 Workspace：
 - `docs/superpowers/specs/2026-07-27-asset-workbench-architecture-design.md`
 - `docs/superpowers/specs/2026-07-29-workbench-interaction-facilities-design.md`
 - `docs/superpowers/specs/2026-07-30-codex-agent-runtime-and-lanes-design.md`
+- `docs/superpowers/specs/2026-08-03-agent-workspace-management-design.md`
 - `docs/superpowers/specs/2026-07-30-project-workspace-and-content-ref-design.md`
 - `docs/superpowers/specs/2026-07-30-external-library-runtime-design.md`
 - `docs/superpowers/specs/2026-07-30-asset-artifacts-office-preview-design.md`
