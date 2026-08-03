@@ -7,6 +7,13 @@
 > 作用：作为 Learning Companion 后续 AI 后端、会话映射、上下文注入、
 > Memory 和成本控制设计的上位约束。具体实现计划可以继续拆分，但不应在没有
 > 新决策记录的情况下偏离本文。
+>
+> 2026-08-03 修订：Lane 继续表示 Project 级角色分区，但不再等于连续 Session，
+> 也不直接拥有唯一 Provider Thread。Session 组合 Lane 策略，每个 Session 独占
+> Provider Thread；GenerationTask 可以通过多个 Session Attempt 完成。详细基数、
+> 工作区和权限以
+> [Agent Lane、Agent Session 与生成运行时设计](./2026-08-03-agent-lane-session-and-generation-runtime-design.md)
+> 为准。
 
 ## 1. 背景
 
@@ -24,7 +31,8 @@ Learning Companion 的主要 Workbench 已经能够承载 PDF、Markdown、纯�
 - 用户只需要一个可以正常登录的 ChatGPT 账号，Free 用户也应能完成基础任务；
 - Project 持有两个长期 Agent Lane，Asset 只是每一轮的动态上下文；
 - Provider 负责原生 Thread、历史和 Compact，应用不复制 Conversation；
-- 应用只维护 Thread 映射、学习资料、生成物、笔记 Attachment 和全局 Memory；
+- 应用维护 Lane、Session 与 Thread Ref 映射、学习资料、生成物、笔记 Attachment
+  和全局 Memory；
 - OpenCode 是后续第二套 Provider 的优先候选，但不进入 Codex v1。
 
 ## 2. 产品边界
@@ -37,7 +45,7 @@ Learning Companion 是学习工作台和系统事实来源，拥有：
 - 当前 Asset、文字选区、页码、区域、媒体时间点等交互上下文；
 - 笔记、生成物、版本和 Attachment；
 - 两个 Agent Lane 的产品语义；
-- Lane 到 Provider Thread 的映射；
+- Session 到 Provider Thread 的映射；
 - Provider 无关的全局 Memory；
 - AI 操作权限、确认流程和成本策略。
 
@@ -76,9 +84,12 @@ Codex v1 不做：
 Learning Companion
 ├── Project
 │   ├── creator Lane
-│   │   └── Provider Thread Ref
 │   └── tutor Lane
+├── Agent Sessions
+│   └── 每个 Session 组合一条 Lane
 │       └── Provider Thread Ref
+├── Generation Tasks
+│   └── 一个或多个 Session Attempts
 ├── Active Turn Context
 │   ├── current Asset
 │   ├── current Workbench
@@ -100,56 +111,51 @@ Learning Companion
 Provider Registry 从第一天保留扩展边界，但首版只注册 `codex`。不要为了尚未
 实现的 Provider 提前构造复杂的最低公分母协议。
 
-## 4. Agent Lane 与 Thread
+## 4. Agent Lane、Session 与 Thread
 
-### 4.1 Agent Lane 等于产品中的连续 Session
+### 4.1 Agent Lane 是角色分区
 
 每个 Project 固定拥有两个 Lane：
 
-| Lane | 角色 | 主要职责 |
-| --- | --- | --- |
+| Lane      | 角色                | 主要职责                                                              |
+| --------- | ------------------- | --------------------------------------------------------------------- |
 | `creator` | 主线管理者 / 生成者 | 管理学习主线，生成或重做思维导图、提纲、讲义和其他 Project 级学习资产 |
-| `tutor` | 资料讲解者 | 围绕当前打开的 Asset 和选区答疑、讲解、关联知识并沉淀笔记 |
+| `tutor`   | 资料讲解者          | 围绕当前打开的 Asset 和选区答疑、讲解、关联知识并沉淀笔记             |
 
-Lane 是 Project 级长期上下文，而不是当前 Asset 的子对象。用户切换 Asset 时，
-继续使用同一个 Tutor Lane；这样资料间的连续学习不会因为切换文件而丢失。
+Lane 是 Project 级长期角色、默认 Prompt、Capability 和共享工作区分区，而不是
+当前 Asset 的子对象，也不是 Session 的父对象。Session 通过 `laneId` 组合 Lane
+策略；多个 Session 可以同时引用同一 Lane，Lane 不保存活动 Session 指针。
 
-### 4.2 双字典映射
+### 4.2 Session 组合映射
 
-产品层使用 Lane 优先的双字典：
+产品层为每次独立执行创建 Session：
 
 ```ts
-type AgentLaneId = 'creator' | 'tutor';
-type AgentProviderId = 'codex' | string;
-
-type ProjectAgentThreads = Readonly<
-  Record<
-    AgentLaneId,
-    Readonly<Partial<Record<AgentProviderId, ProviderThreadRef>>>
-  >
->;
-
-interface ProviderThreadRef {
-  readonly providerId: AgentProviderId;
-  readonly threadId: string;
+interface AgentSession {
+  readonly id: string;
+  readonly projectId: string;
+  readonly laneId: string;
+  readonly providerId: string;
+  readonly providerThreadRef?: ProviderThreadRef;
 }
 ```
 
 含义是：
 
-- 产品中的一个 Lane 对用户表现为一个连续 Session；
-- 每个 Provider 可以为该 Lane 保留自己的原生 Thread；
-- 当前只有 `codex` 键；
-- 将来切换到 OpenCode 时，不需要把 Codex Thread 转写成另一家的 Session 格式；
-- 切回某 Provider 时，只恢复该 Provider 自己的 Thread。
+- Lane 只提供角色分区和默认策略；
+- 一个 Session 只组合一条 Lane；
+- 一个 Session 独占一个 Provider Thread，但可以运行多个 Turn；
+- GenerationTask 重试或 Provider 恢复失败时可以追加新的 Session Attempt；
+- Tutor 临时 Session 可以不属于 GenerationTask；
+- 将来切换 Provider 时创建新的 Session Attempt，不转写旧 Provider Conversation。
 
 不尝试在不同 Provider 之间迁移完整上下文。Provider 切换依靠全局 Memory、
 Project 资料和当前 Turn Context 获得必要背景，而不是伪造另一家的内部 Session。
 
 ### 4.3 应用不复制 Conversation
 
-Learning Companion 只持久化 `ProviderThreadRef`，不持久化 Provider 的完整
-消息序列作为恢复来源：
+Learning Companion 在 Session 索引中持久化 `ProviderThreadRef`，不持久化
+Provider 的完整消息序列作为恢复来源：
 
 - 恢复上下文依赖 `thread/resume`；
 - 长上下文压缩依赖 Codex 自己的 Compact；
@@ -159,7 +165,7 @@ Learning Companion 只持久化 `ProviderThreadRef`，不持久化 Provider 的�
 
 ## 5. 当前上下文与 Attachment
 
-Thread 是 Project 级的，但每一轮输入必须显式携带当前学习现场：
+Session Thread 是一次独立执行上下文，但每一轮输入仍必须显式携带当前学习现场：
 
 ```ts
 interface LearningTurnContext {
@@ -227,7 +233,7 @@ Codex App Server 是官方面向富客户端的接口，负责认证、Conversat
 3. 调用 `account/read` 验证凭证；
 4. 未登录时发起 App Server 托管的 ChatGPT 登录；
 5. 登录完成后读取 `planType`、模型列表和额度；
-6. 至少创建当前 Project 所需的 Lane Thread 时才真正消耗 Agent 资源。
+6. 只有创建实际 AgentSession 并发起 Turn 时才真正消耗 Agent 资源。
 
 当前首次 AI 设置已经按上述边界落地：
 
@@ -278,12 +284,12 @@ Workspace 返回结果为准：
 
 策略的配置时机不能统一塞进“发送消息”：
 
-| 时机 | 能力 |
-| --- | --- |
-| Runtime | 登录、模型、额度、Skill/MCP 发现 |
-| Thread 创建/恢复 | Base/Developer Instructions、Dynamic Tools、默认工作目录、默认权限和 Codex Config Override |
-| Turn | 文本、图片、音频、Skill/Mention、当前 Asset 上下文、模型/推理强度、路径权限和结构化输出 Schema |
-| 流式 Server Request | 命令/文件审批、权限申请、用户问题、MCP Elicitation 和 Dynamic Tool 执行 |
+| 时机                | 能力                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| Runtime             | 登录、模型、额度、Skill/MCP 发现                                                               |
+| Thread 创建/恢复    | Base/Developer Instructions、Dynamic Tools、默认工作目录、默认权限和 Codex Config Override     |
+| Turn                | 文本、图片、音频、Skill/Mention、当前 Asset 上下文、模型/推理强度、路径权限和结构化输出 Schema |
+| 流式 Server Request | 命令/文件审批、权限申请、用户问题、MCP Elicitation 和 Dynamic Tool 执行                        |
 
 Learning Companion 自定义工具优先使用 App Server Dynamic Tools。外部 MCP
 Server 仍由 Codex 配置和 MCP 生命周期管理；二者不能在应用领域层被混成同一种
@@ -367,7 +373,7 @@ interface MemoryPreferences {
 
 Codex v1 默认成本敏感：
 
-- 复用两个长期 Thread，不重复发送完整历史；
+- 同一 Session 内复用 Provider Thread 和 Compact，不在 Session 间复制完整历史；
 - 依赖 Codex Compact，而不是客户端重放 Conversation；
 - 只注入当前 Asset、选区、相关 Attachment 和少量相关 Memory；
 - 普通问答使用账号返回的推荐模型与较低或默认推理强度；
@@ -436,16 +442,17 @@ Codex 可以调用的自定义工具必须来自 Learning Companion 的受控能
 
 建议落点如下：
 
-| 数据 | 责任方 | 建议存储 |
-| --- | --- | --- |
-| Project、Asset、生成物 | Learning Companion | SQLite 与现有文件存储 |
-| Lane 定义和 Provider Thread Ref | Learning Companion | SQLite |
-| 当前选区和瞬时 Turn Context | Workbench Runtime | 内存 |
-| 笔记 Attachment 与稳定锚点 | Learning Companion | SQLite / 对应 Asset 数据 |
-| Conversation、Compact、Thread 内容 | Codex Runtime | Codex 原生存储 |
-| ChatGPT Token | Codex Runtime | Codex 认证存储 |
-| `autoCapture` 等全局偏好 | Learning Companion | `settings.json` |
-| 全局 Memory 条目 | Learning Companion | SQLite |
+| 数据                               | 责任方             | 建议存储                 |
+| ---------------------------------- | ------------------ | ------------------------ |
+| Project、Asset、生成物             | Learning Companion | SQLite 与现有文件存储    |
+| Lane 定义                          | Learning Companion | SQLite                   |
+| Session 索引和 Provider Thread Ref | Learning Companion | SQLite                   |
+| 当前选区和瞬时 Turn Context        | Workbench Runtime  | 内存                     |
+| 笔记 Attachment 与稳定锚点         | Learning Companion | SQLite / 对应 Asset 数据 |
+| Conversation、Compact、Thread 内容 | Codex Runtime      | Codex 原生存储           |
+| ChatGPT Token                      | Codex Runtime      | Codex 认证存储           |
+| `autoCapture` 等全局偏好           | Learning Companion | `settings.json`          |
+| 全局 Memory 条目                   | Learning Companion | SQLite                   |
 
 Token、API Key 和完整 Provider Conversation 不进入应用自己的
 `settings.json` 或业务数据库。
@@ -509,8 +516,10 @@ Codex v1 至少满足：
 - ChatGPT Free 账号可以完成登录并在其额度允许时发起基础 Turn；
 - 不要求 OpenAI API Key；
 - 每个 Project 恰有两个产品 Lane；
-- 切换 Asset 不会自动切换或新建 Tutor Thread；
-- 重启应用后能通过 Provider Thread Ref 恢复 Lane；
+- Lane 不保存活动 Session 或唯一 Provider Thread；
+- 每个 Session 独占 Provider Thread，并可运行多个 Turn；
+- 重启应用后能通过 Session 索引和 Provider Thread Ref 恢复执行上下文；
+- GenerationTask 可以保留多个有序 Session Attempt；
 - 应用数据库中没有完整 Conversation 副本；
 - 当前选区和 Attachment 能进入 Turn，且不会无条件上传整个 Project；
 - 额度信息可见，额度耗尽不会破坏非 AI 工作台；
@@ -523,7 +532,7 @@ Codex v1 至少满足：
 以下问题留给各自实现设计，不应被误认为已有结论：
 
 - Codex Runtime 的具体打包产物、升级和完整性校验方式；
-- Provider Thread Ref 的最终数据库表结构；
+- Session、GenerationTask Attempt 和 Provider Thread Ref 的最终数据库表结构；
 - 全局 Memory 条目的 Schema、检索算法和删除审计；
 - 结构化 HTML 重做时的补丁、版本和 Attachment 重定位协议；
 - 两个 Lane 在界面中的最终命名和切换交互；

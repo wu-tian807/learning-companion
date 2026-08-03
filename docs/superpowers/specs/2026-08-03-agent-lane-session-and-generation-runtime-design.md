@@ -35,15 +35,18 @@ MindMapGenerationDraft
 
 1. `AgentLane` 是 Project 下的长期角色和默认策略容器，不是 Agent 实例，
    也不等于 Provider Thread；
-2. 一个 Lane 可以同时或先后创建多个独立 `AgentSession`；
+2. Session 通过 `laneId` 组合一条 Lane 的角色分区和默认策略；多个 Session 可以
+   同时或先后引用同一 Lane，但 Lane 不拥有 Session 生命周期；
 3. 一个 Session 独占一个 Provider Thread，但可以包含多个 Turn；
 4. 所有 Session 都保留轻量持久化索引，不以“不落盘”定义临时会话；
-5. Lane 可以拥有共享物理工作区，Session 共享只读内容，但不能共享写入目录；
+5. Lane 定义共享物理工作区分区，Session 共享只读内容，但不能共享写入目录；
 6. Session 只获得本次明确授权的共享路径，不自动读取整个 Project；
 7. 当前固定 `@openai/codex 0.146.0`，没有必要时不升级 Runtime；
 8. 不实现已经退役的 `readOnlyAccess`，使用 Codex Permission Profiles；
 9. 必须先完成 Provider 无关的 Lane、Session 和 Workspace 领域层，最后才接
    Codex Adapter。
+10. 每次用户生成意图创建一个 `GenerationTask`；Task 可以通过多个 Session
+    Attempt 完成，但一次 Session Attempt 只服务一个 Task。
 
 相关设计：
 
@@ -66,15 +69,18 @@ flowchart TD
     SESSION_A["AgentSession A<br/>一次独立执行上下文"]
     SESSION_B["AgentSession B"]
     TASK["GenerationTask<br/>可恢复业务任务"]
+    ATTEMPT_A["GenerationTaskAttempt 1"]
+    ATTEMPT_B["GenerationTaskAttempt 2"]
     THREAD_A["ProviderThread A<br/>Provider 原生会话"]
     THREAD_B["ProviderThread B"]
     WORK_A["Session Workspace View A"]
     WORK_B["Session Workspace View B"]
 
     PROJECT --> LANE
-    LANE --> SESSION_A
-    LANE --> SESSION_B
-    TASK --> SESSION_A
+    SESSION_A -. "组合角色分区" .-> LANE
+    SESSION_B -. "组合角色分区" .-> LANE
+    TASK --> ATTEMPT_A --> SESSION_A
+    TASK --> ATTEMPT_B --> SESSION_B
     SESSION_A --> THREAD_A
     SESSION_B --> THREAD_B
     SESSION_A --> WORK_A
@@ -113,9 +119,11 @@ Lane：
 - 不保存唯一 Provider Thread Ref；
 - 不保存“当前 Session”；
 - 不拥有 GenerationTask 状态；
+- 不创建或销毁 Session；
+- 不拥有 Session 生命周期；
 - 不直接调用 Codex；
-- 可以同时拥有多个 Session；
-- 为 Session 提供默认 Prompt、Capability 和共享工作区位置。
+- 可以被多个 Session 同时组合引用；
+- 为引用它的 Session 提供默认 Prompt、Capability 和共享工作区分区。
 
 每个 Project 创建时确保存在 `creator` 和 `tutor` 两条 Lane。Lane ID 使用应用生成
 的稳定 ID，并对 `(projectId, kind)` 建立唯一约束。
@@ -143,7 +151,8 @@ interface AgentSession {
 
 关键约束：
 
-- 一个 Session 只属于一个 Lane；
+- 一个 Session 通过 `laneId` 组合且只组合一条 Lane；这是一条策略引用，不是
+  父子所有权；
 - 一个 Session 最多绑定一个 Provider Thread；
 - Provider Thread 创建后不可换 Provider；
 - 一个 Session 可以运行多个 Turn，用于生成、检查、自动修复或用户追问；
@@ -186,15 +195,15 @@ Runtime 维护。应用不复制完整 Conversation，也不解析 Thread ID。
 
 ### 2.5 GenerationTask
 
-`GenerationTask` 是可观察、可取消、可恢复的业务任务。它引用 Session，但不是
-Session 本身：
+`GenerationTask` 是可观察、可取消、可恢复的业务任务。它表达一次用户生成意图，
+而 Session 表达一次执行尝试：
 
 ```ts
 interface GenerationTask {
   readonly id: string;
   readonly projectId: string;
+  readonly laneId: string;
   readonly kind: string;
-  readonly agentSessionId: string;
   readonly status: GenerationTaskStatus;
   readonly additionalInstructions?: string;
   readonly resultAssetId?: string;
@@ -202,15 +211,30 @@ interface GenerationTask {
   readonly startedTime?: number;
   readonly completedTime?: number;
 }
+
+interface GenerationTaskAttempt {
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly attemptNumber: number;
+  readonly reason: "initial" | "retry" | "provider-recovery";
+  readonly createdTime: number;
+}
 ```
 
 关系固定为：
 
-- 一个 GenerationTask 首版只创建一个 AgentSession；
+- 一个 GenerationTask 创建时可以尚未拥有 Session；
+- 首次执行创建 Attempt 1 和一个 AgentSession；
+- 自动校验和修复在同一 Session 中增加 Provider Turn；
+- 原 Session 无法恢复、用户重试或未来切换 Provider 时，为原 Task 创建新的
+  Session Attempt；
+- 一个 Session Attempt 最多服务一个 GenerationTask；
 - 一个 AgentSession 可以运行多个 Provider Turn；
 - 不是所有 AgentSession 都必须对应 GenerationTask；
 - Tutor 临时回答可以只有 Session；
-- 生成正式 Asset、需要进度和重启恢复的操作必须有 Task。
+- 生成正式 Asset、需要进度和重启恢复的操作必须有 Task；
+- 用户修改来源或 Prompt 后再次生成属于新 Task；
+- 已成功结果执行“重新生成”也属于新 Task，而不是复活旧 Task。
 
 推荐 Task 状态：
 
@@ -225,6 +249,15 @@ queued
 
 任意非终态都可以进入 `failed`、`cancelled` 或 `interrupted`。Task 负责业务进度，
 Session 负责 Agent 执行生命周期，二者不得维护含义相同的重复字段。
+
+Lane、Task、Session 和 Thread 分别回答不同问题，因此不存在生命周期竞争：
+
+| 模型           | 回答的问题                      | 生命周期           |
+| -------------- | ------------------------------- | ------------------ |
+| AgentLane      | 使用哪个角色分区和默认策略      | Project 级长期存在 |
+| GenerationTask | 用户要求生成什么，业务是否完成  | 一次生成意图       |
+| AgentSession   | 这一次执行尝试如何运行          | 一次 Attempt       |
+| ProviderThread | Provider 如何保存本次执行上下文 | 跟随 Session       |
 
 ## 3. 数据与行为分离
 
@@ -273,7 +306,7 @@ AgentCapabilityRegistry / AgentCapabilityResolver
     注册能力，解析本次 Session 的有效 Capability Set
 
 GenerationTaskDatabase
-    Task、来源 Revision、状态和结果索引
+    Task、Attempt、来源 Revision、状态和结果索引
 
 GenerationTaskService
     任务状态机、Session 创建、取消、恢复和结果提交
@@ -291,17 +324,19 @@ SQLite 保存需要查询、关联和恢复的编排索引：
 agent_lanes
 agent_sessions
 generation_tasks
+generation_task_attempts
 generation_task_sources
 ```
 
 建议职责：
 
-| 数据                                                   | 存储                      |
-| ------------------------------------------------------ | ------------------------- |
-| Lane ID、Project、类型、Profile 引用                   | `agent_lanes`             |
-| Session 状态、Lane、Provider、Thread Ref、Manifest Ref | `agent_sessions`          |
-| Task 状态、种类、Session、结果 Asset、时间和错误       | `generation_tasks`        |
-| 来源 Asset ID 和固定 Revision                          | `generation_task_sources` |
+| 数据                                                   | 存储                       |
+| ------------------------------------------------------ | -------------------------- |
+| Lane ID、Project、类型、Profile 引用                   | `agent_lanes`              |
+| Session 状态、Lane、Provider、Thread Ref、Manifest Ref | `agent_sessions`           |
+| Task 状态、种类、Lane、结果 Asset、时间和错误          | `generation_tasks`         |
+| Task 与 Session 的 Attempt 次序和原因                  | `generation_task_attempts` |
+| 来源 Asset ID 和固定 Revision                          | `generation_task_sources`  |
 
 SQLite 是编排状态事实来源，但不保存完整 Prompt 正文、投影内容、Agent 输出文件或
 Provider Conversation。
@@ -669,6 +704,7 @@ sequenceDiagram
     Task->>Lane: require creator Lane
     Lane-->>Task: AgentLane
     Task->>Session: create durable Session
+    Task->>Task: 记录 GenerationTaskAttempt 1
     Session->>Projection: prepare selected Asset projections
     Projection-->>Session: readable projection refs
     Session->>Provider: startThread + startTurn
@@ -749,7 +785,8 @@ Renderer 不提交文件路径、Prompt Profile、Capability、Permission 或 Co
 - 实现创建、查询、状态转换、关闭和异常重启扫描；
 - Session 先使用假的 ProviderThreadRef 和假的 Manifest 测试生命周期。
 
-验收：多个 Session 可以属于同一 Lane，彼此状态完全隔离，所有索引可跨重启读取。
+验收：多个 Session 可以组合引用同一 Lane，彼此状态完全隔离，所有索引可跨重启
+读取；Lane 不保存活动 Session 指针。
 
 ### 阶段 3：Lane Workspace 与 Session Manifest
 
@@ -810,8 +847,10 @@ Renderer 不提交文件路径、Prompt Profile、Capability、Permission 或 Co
 
 ### 阶段 8：GenerationTask 领域与 Renderer 投影
 
-- 新增 Task 和 Task Source Migration；
+- 新增 Task、Task Attempt 和 Task Source Migration；
 - 实现状态机、取消、重试和重启恢复；
+- 首次执行创建 Attempt 1；原 Session 无法恢复或用户重试时创建下一 Attempt；
+- 自动校验修复继续使用当前 Session 的新 Turn，不创建冗余 Attempt；
 - Main 重新校验 `MindMapGenerationDraft`；
 - IPC 返回 Task Snapshot，不返回 Codex Event；
 - 生成中心同时展示运行 Task 和已提交 generated Asset；
@@ -861,7 +900,8 @@ Renderer 不提交文件路径、Prompt Profile、Capability、Permission 或 Co
 
 1. 共享 Asset Projection 使用 `assetId + revision` 懒生成缓存；
 2. 所有 Session 索引和 Manifest 默认保留，大文件独立清理；
-3. 一个 GenerationTask 首版严格对应一个 AgentSession；
+3. 每次用户生成意图对应一个 GenerationTask；Task 首次执行创建一个 Session，
+   重试或恢复失败时允许追加 Session Attempt；
 4. Mind Map v1 Session 禁止网络且只写 staging；
 5. Session Permission Profile 通过 Thread `configOverrides` 注入，不写用户全局
    `config.toml`；
