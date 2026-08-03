@@ -1149,33 +1149,16 @@ Attachment 或 Memory。
 
 ### 18.4 Agent Workspace 与 Task Definition
 
-不为每个 Project 固定创建 Creator / Tutor AgentLane。Prompt、Capability 和
-Workspace 访问需求由具体 Task Definition 声明，执行时解析为 Attempt / Session
-的不可变快照。
+不为每个 Project 固定创建 Creator / Tutor AgentLane，也不把 Workspace 基础设施
+分成 Global、Project 或 Task 类型。
 
-Workspace 只描述身份、范围、位置和生命周期，不声明自己只读或可写：
+`AgentWorkspaceManager` 是所有 Agent 业务共享的无状态路径基础设施。它只在一个
+配置根下安全解析和准备调用者指定的子目录，不生成业务 ID，不保存当前 Workspace，
+也不知道 Project、GenerationTask、用户提问、Prompt、Capability、权限或 Provider。
 
-```text
-Global Agent Workspace
-    一个用户一个，保存未来允许 Agent 使用的长期偏好与记忆文件
-
-Project Agent Workspace
-    一个 Project 可以有零个或多个，保存长期可复用的 Project 级 Agent 上下文
-
-Task Workspace
-    一个 Task Attempt 独占，保存 request / staging / result / control
-```
-
-Global 与 Project Agent Workspace 的 Marker 文件是元数据事实来源；首版不增加
-`agent_workspaces` SQLite 表。Task Workspace 由 Task / Attempt ID 派生，不进入
-长期 Workspace 列表。
-
-`AgentWorkspaceManager` 保持无状态，只负责路径派生、Marker、目录准备、原子
-Manifest 和严格范围清理。它不知道 Task 业务、Prompt、Capability、Provider 或
-权限。读写授权由 Task Definition 提出，经 Main 校验后冻结到执行快照。
-
-Agent 对长期 Workspace 的修改优先写入 Task staging，再由可信 Main 根据具体 Task
-规则校验并原子提交。Workspace 基础层不提供绕过领域边界的万能文件写入接口。
+生成中心、即时提问和未来其他功能自行规划命名空间。未来由 GenerationTask 保存
+一次具体业务输入和上下文引用，由 TaskDefinition 定义 Prompt、工具、上下文处理和
+目录规划，并调用 `AgentWorkspaceManager` 获得实际工作目录。
 
 Conversation、Compact 和完整消息历史仍由 Codex Runtime 管理；Learning Companion
 只保存 Provider Thread 的不透明引用和可丢弃 UI 显示缓存。
