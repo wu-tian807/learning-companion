@@ -96,64 +96,74 @@ Workspace 不知道 Mind Map、Tutor、Codex 或具体工具。后续 Task Defin
 
 ### 4.1 长期 AgentWorkspace
 
-```ts
-type AgentWorkspaceScope = 'global' | 'project';
+`AgentWorkspace` 使用可辨识联合类型，让 Scope 和 `projectId` 的约束直接进入
+TypeScript 类型系统，而不是依靠运行时检查一个可选字段：
 
-interface AgentWorkspace {
+```ts
+interface AgentWorkspaceBase {
   readonly id: string;
-  readonly scope: AgentWorkspaceScope;
-  readonly projectId?: string;
   readonly name: string;
-  readonly rootRef: AgentWorkspaceRootRef;
   readonly createdTime: number;
   readonly updatedTime: number;
 }
+
+interface GlobalAgentWorkspace extends AgentWorkspaceBase {
+  readonly scope: 'global';
+}
+
+interface ProjectAgentWorkspace extends AgentWorkspaceBase {
+  readonly scope: 'project';
+  readonly projectId: string;
+}
+
+type AgentWorkspace =
+  | GlobalAgentWorkspace
+  | ProjectAgentWorkspace;
 ```
 
 约束：
 
-- `global` 不允许存在 `projectId`；
-- `project` 必须存在 `projectId`；
+- `global` 类型没有 `projectId`；
+- `project` 类型必须拥有 `projectId`；
 - 当前每个用户只有一个 Global Workspace；
 - 每个 Project 可以有多个 Project Agent Workspace；
 - `AgentWorkspace` 不包含 `access`、Prompt、Capability、Provider 或 Thread；
 - Workspace 名称可修改，但 ID 和 Scope 不可修改；
 - Project Workspace 切换不改变 Agent Workspace ID。
 
-### 4.2 RootRef
+### 4.2 运行时路径解析输入
 
-持久化数据不保存 Project Agent Workspace 的绝对路径：
+`AgentWorkspace` 不保存绝对路径，也不再增加与 `scope/id` 重复的位置引用对象。
+Global Workspace 的绝对根来自 Settings；Project Agent Workspace 的绝对路径由当前
+`Project.workspacePath` 和 `workspace.id` 派生。
+
+调用方必须通过与 Workspace 类型对应的输入提供当前设备路径：
 
 ```ts
-type AgentWorkspaceRootRef =
+type ResolveAgentWorkspaceContentRootInput =
   | {
-      readonly kind: 'global-agent-workspace';
+      readonly workspace: GlobalAgentWorkspace;
+      readonly globalWorkspacePath: string;
     }
   | {
-      readonly kind: 'project-agent-workspace';
-      readonly workspaceId: string;
+      readonly workspace: ProjectAgentWorkspace;
+      readonly projectWorkspacePath: string;
+      readonly expectedProjectId: string;
     };
 ```
 
-实际路径通过显式上下文解析：
+`expectedProjectId` 是调用现场独立提供的安全断言，用于阻止调用方把某个 Project 的
+Workspace 放到另一个 Project 根目录解析；它不是持久化字段的第二份副本。
 
-```ts
-interface AgentWorkspaceResolveContext {
-  readonly globalWorkspacePath: string;
-  readonly projectWorkspacePath?: string;
-  readonly expectedProjectId?: string;
-}
-```
+因此类型层面只有“Global 且没有 `projectId`”和“Project 且必须有
+`projectId`”两种有效组合，不存在需要相互同步的第二套位置字段。
 
-Global Workspace 的绝对根目录来自 Settings；Project Agent Workspace 的绝对路径
-由当前 `Project.workspacePath` 和 `workspaceId` 派生。
-
-### 4.3 TaskWorkspaceLayout
+### 4.3 TaskWorkspaceHandle
 
 Task Workspace 是执行目录，不进入长期 Workspace 列表：
 
 ```ts
-interface TaskWorkspaceLayout {
+interface TaskWorkspaceHandle {
   readonly projectId: string;
   readonly taskId: string;
   readonly attemptId: string;
@@ -165,8 +175,13 @@ interface TaskWorkspaceLayout {
 }
 ```
 
-它由 `projectId + taskId + attemptId` 唯一派生。Task 和 Attempt 领域层以后保存
+它由 `projectId + taskId + attemptId` 唯一派生，表示 Manager 已经准备并校验过的
+当前进程运行时句柄，不持久化为长期 Workspace。Task 和 Attempt 领域层以后保存
 生命周期索引；Workspace Manager 只负责目录准备、检查和清理。
+
+Handle 中的 ID 用于审计和清理前重新校验，绝对路径是本次解析结果；它们只在当前
+进程中同时存在，不构成两个持久化事实来源。任何破坏性清理仍须根据 ID 和 Project
+根重新验证 `rootPath`，不能只相信 Handle 中传入的字符串。
 
 ### 4.4 权限不属于 Workspace
 
@@ -265,16 +280,14 @@ Project Agent Workspace 位于 Project Workspace 内，因此：
 ### 6.1 WorkspaceMarkerV1
 
 ```ts
-interface AgentWorkspaceMarkerV1 {
+type AgentWorkspaceMarkerV1 = AgentWorkspace & {
   readonly schemaVersion: 1;
-  readonly id: string;
-  readonly scope: 'global' | 'project';
-  readonly projectId?: string;
-  readonly name: string;
-  readonly createdTime: number;
-  readonly updatedTime: number;
-}
+};
 ```
+
+Marker 直接复用领域数据结构，只增加序列化版本，不再复制一套 `id/scope/projectId`
+字段声明。反序列化仍须在运行时验证联合类型约束，不能把未经检查的 JSON 直接断言
+为该类型。
 
 长期 Agent Workspace 的 Marker 文件是 Workspace 元数据事实来源。本阶段不新增
 SQLite `agent_workspaces` 表：
@@ -301,7 +314,7 @@ Manager 无状态，不维护当前 Project、当前 Task 或权限缓存：
 interface AgentWorkspaceManagerApi {
   prepareGlobalWorkspace(
     input: PrepareGlobalAgentWorkspaceInput,
-  ): Promise<AgentWorkspace>;
+  ): Promise<GlobalAgentWorkspace>;
 
   inspectGlobalWorkspace(
     globalWorkspacePath: string,
@@ -310,11 +323,11 @@ interface AgentWorkspaceManagerApi {
   listProjectWorkspaces(
     projectId: string,
     projectWorkspacePath: string,
-  ): Promise<readonly AgentWorkspace[]>;
+  ): Promise<readonly ProjectAgentWorkspace[]>;
 
   createProjectWorkspace(
     input: CreateProjectAgentWorkspaceInput,
-  ): Promise<AgentWorkspace>;
+  ): Promise<ProjectAgentWorkspace>;
 
   inspectProjectWorkspace(
     input: InspectProjectAgentWorkspaceInput,
@@ -322,24 +335,23 @@ interface AgentWorkspaceManagerApi {
 
   renameProjectWorkspace(
     input: RenameProjectAgentWorkspaceInput,
-  ): Promise<AgentWorkspace>;
+  ): Promise<ProjectAgentWorkspace>;
 
   resolveContentRoot(
-    workspace: AgentWorkspace,
-    context: AgentWorkspaceResolveContext,
+    input: ResolveAgentWorkspaceContentRootInput,
   ): string;
 
   prepareTaskWorkspace(
     input: PrepareTaskWorkspaceInput,
-  ): Promise<TaskWorkspaceLayout>;
+  ): Promise<TaskWorkspaceHandle>;
 
   writeTaskManifest(
-    layout: TaskWorkspaceLayout,
+    workspace: TaskWorkspaceHandle,
     manifest: unknown,
   ): Promise<void>;
 
   cleanupTaskWorkspace(
-    layout: TaskWorkspaceLayout,
+    workspace: TaskWorkspaceHandle,
   ): Promise<void>;
 }
 ```
@@ -479,7 +491,7 @@ Renderer IPC
 
 ### 提交 1：纯数据、Marker 与路径规则
 
-- 新增 `AgentWorkspace` 和 `TaskWorkspaceLayout`；
+- 新增可辨识联合类型 `AgentWorkspace` 和运行时 `TaskWorkspaceHandle`；
 - 新增 Marker V1 契约；
 - 新增 Global、Project、Task 目录派生；
 - 复用现有 `file-system-path-rules`；
@@ -548,10 +560,10 @@ Workspace 层完成后，下一层再选择是先实现 Task Definition 还是 G
 后续只能通过以下能力依赖 Workspace：
 
 ```text
-Workspace ID / RootRef
+Workspace ID / Scope
 Workspace Inspection
 安全 Content Root 解析
-Task Workspace Layout
+Task Workspace Handle
 原子 Manifest 写入
 严格范围清理
 ```
