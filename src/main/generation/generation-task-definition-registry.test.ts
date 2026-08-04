@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest';
+
+import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { GenerationTaskDefinitionRegistry } from './generation-task-definition-registry';
+
+function createDefinition() {
+  return createMindMapGenerationTaskDefinitionV1({
+    async commit() {
+      return { resultAssetId: 'asset-1' };
+    },
+  });
+}
+
+describe('GenerationTaskDefinitionRegistry', () => {
+  it('indexes definitions by stable id and version', () => {
+    const registry = new GenerationTaskDefinitionRegistry();
+    const definition = createDefinition();
+
+    registry.register(definition);
+
+    expect(registry.require(definition.id, definition.version)).toBe(
+      definition,
+    );
+    expect(registry.get(definition.id, definition.version + 1)).toBeUndefined();
+  });
+
+  it('rejects duplicate registration', () => {
+    const registry = new GenerationTaskDefinitionRegistry();
+    registry.register(createDefinition());
+
+    expect(() => registry.register(createDefinition())).toThrow(
+      'REGISTRATION_CONFLICT',
+    );
+  });
+});
