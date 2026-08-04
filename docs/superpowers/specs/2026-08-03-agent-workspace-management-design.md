@@ -6,6 +6,9 @@
 >
 > 目标：实现一个所有 Agent 业务都可以复用的安全工作目录 Manager。它不理解
 > GenerationTask、用户提问、Project、全局记忆、Prompt、工具或 Provider。
+>
+> 后续业务层已经落地，权威设计见
+> [GenerationTask、TaskDefinition 与 Mind Map 生成设计](./2026-08-04-mind-map-generation-task-definition-design.md)。
 
 ## 1. 结论
 
