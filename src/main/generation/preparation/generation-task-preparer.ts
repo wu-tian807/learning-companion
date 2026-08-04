@@ -1,0 +1,215 @@
+import { cloneJsonValue, type JsonValue } from '../../../shared/workbench/protocol';
+import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
+import { AppError } from '../../errors/app-error';
+import type { GenerationInstruction } from '../contracts/generation-instruction';
+import type { AnyTaskDefinition } from '../contracts/task-definition';
+import {
+  prepareAgentWorkspace,
+  type PreparedAgentWorkspaces,
+} from '../contracts/generation-workspace';
+import type { GenerationTaskSnapshot } from '../generation-task';
+import type { GenerationAssetReferencePreparerApi } from './generation-asset-reference-preparer';
+import type { GenerationPreparedManifestStoreApi } from './generation-prepared-manifest-store';
+import { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-store';
+import { appendAssetReferencesToUserMessage } from './generation-user-message-composer';
+import type { PreparedGenerationTask } from './prepared-generation-task';
+
+export { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-store';
+
+export interface GenerationTaskPreparerApi {
+  prepare(
+    task: GenerationTaskSnapshot,
+    definition: AnyTaskDefinition,
+    signal?: AbortSignal,
+  ): Promise<PreparedGenerationTask>;
+  restore(
+    task: GenerationTaskSnapshot,
+    definition: AnyTaskDefinition,
+    signal?: AbortSignal,
+  ): Promise<PreparedGenerationTask>;
+}
+
+function parseInstruction(
+  task: GenerationTaskSnapshot,
+  definition: AnyTaskDefinition,
+): GenerationInstruction {
+  const parsed = definition.instruction.parse(task.instruction);
+
+  if (!parsed.ok) {
+    throw new Error(
+      parsed.issues
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join('\n'),
+    );
+  }
+
+  return parsed.value;
+}
+
+function validateDefinitionIdentity(
+  task: GenerationTaskSnapshot,
+  definition: AnyTaskDefinition,
+): void {
+  if (
+    definition.id !== task.definitionId ||
+    definition.version !== task.definitionVersion
+  ) {
+    throw new AppError('INVALID_EXTENSION_DEFINITION');
+  }
+}
+
+function cloneAllowedTools(definition: AnyTaskDefinition) {
+  return Object.freeze(
+    definition.allowedTools.map((tool) => Object.freeze({ ...tool })),
+  );
+}
+
+export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
+  constructor(
+    private readonly workspaceManager: AgentWorkspaceManagerApi,
+    private readonly assetReferencePreparer: GenerationAssetReferencePreparerApi,
+    private readonly manifestStore: GenerationPreparedManifestStoreApi,
+  ) {}
+
+  async prepare(
+    task: GenerationTaskSnapshot,
+    definition: AnyTaskDefinition,
+    signal?: AbortSignal,
+  ): Promise<PreparedGenerationTask> {
+    signal?.throwIfAborted();
+    validateDefinitionIdentity(task, definition);
+    const instruction = parseInstruction(task, definition);
+    const workspaces = await this.prepareWorkspaces(task, definition);
+    const assetReferences = await this.assetReferencePreparer.prepare(
+      {
+        projectId: task.projectId,
+        schema: definition.assetReferenceSchema,
+        bindings: task.assetReferences,
+        primaryWorkspacePath: workspaces.primary.path,
+      },
+      signal,
+    );
+    const preparedData = definition.prepareExtension
+      ? await definition.prepareExtension.prepare({
+          taskId: task.id,
+          projectId: task.projectId,
+          instruction,
+          workspaces,
+          assetReferences,
+          ...(signal ? { signal } : {}),
+        })
+      : undefined;
+
+    signal?.throwIfAborted();
+    await this.manifestStore.write(
+      workspaces.primary.path,
+      task,
+      assetReferences,
+      preparedData,
+    );
+
+    return this.createPreparedRuntime(
+      task,
+      definition,
+      instruction,
+      workspaces,
+      assetReferences,
+      preparedData,
+    );
+  }
+
+  async restore(
+    task: GenerationTaskSnapshot,
+    definition: AnyTaskDefinition,
+    signal?: AbortSignal,
+  ): Promise<PreparedGenerationTask> {
+    signal?.throwIfAborted();
+    validateDefinitionIdentity(task, definition);
+
+    if (!task.prepared) {
+      throw new Error('GenerationTask 尚未完成 prepare');
+    }
+
+    const instruction = parseInstruction(task, definition);
+    const workspaces = await this.prepareWorkspaces(task, definition);
+    const manifest = await this.manifestStore.read(
+      workspaces.primary.path,
+      task.prepared.manifestRef,
+      task,
+    );
+    const assetReferences = await this.assetReferencePreparer.verify(
+      workspaces.primary.path,
+      definition.assetReferenceSchema,
+      manifest.assetReferences,
+      signal,
+    );
+
+    return this.createPreparedRuntime(
+      task,
+      definition,
+      instruction,
+      workspaces,
+      assetReferences,
+      manifest.preparedData,
+    );
+  }
+
+  private async prepareWorkspaces(
+    task: GenerationTaskSnapshot,
+    definition: AnyTaskDefinition,
+  ): Promise<PreparedAgentWorkspaces> {
+    const primary = await prepareAgentWorkspace(
+      this.workspaceManager,
+      definition.primaryWorkspaceConfig,
+      task.id,
+    );
+    const secondary = [];
+
+    for (const config of definition.secondaryWorkspaceConfigs) {
+      secondary.push(
+        await prepareAgentWorkspace(this.workspaceManager, config, task.id),
+      );
+    }
+
+    return Object.freeze({ primary, secondary: Object.freeze(secondary) });
+  }
+
+  private createPreparedRuntime(
+    task: GenerationTaskSnapshot,
+    definition: AnyTaskDefinition,
+    instruction: GenerationInstruction,
+    workspaces: PreparedAgentWorkspaces,
+    assetReferences: PreparedGenerationTask['assetReferences'],
+    preparedData: JsonValue | undefined,
+  ): PreparedGenerationTask {
+    const context = {
+      taskId: task.id,
+      projectId: task.projectId,
+      workspaces,
+      assetReferences,
+      ...(preparedData === undefined ? {} : { preparedData }),
+    };
+    const userMessage = appendAssetReferencesToUserMessage(
+      instruction.toUserMessage(context),
+      assetReferences,
+    );
+
+    return Object.freeze({
+      taskId: task.id,
+      projectId: task.projectId,
+      definitionId: task.definitionId,
+      definitionVersion: task.definitionVersion,
+      instruction,
+      systemInstruction: definition.systemInstruction,
+      userMessage,
+      allowedTools: cloneAllowedTools(definition),
+      workspaces,
+      assetReferences,
+      ...(preparedData === undefined
+        ? {}
+        : { preparedData: cloneJsonValue(preparedData) }),
+      outputContract: definition.outputContract,
+      manifestRef: GENERATION_PREPARED_MANIFEST_REF,
+    });
+  }
+}
