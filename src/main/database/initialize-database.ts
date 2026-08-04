@@ -16,10 +16,13 @@ import { addAssetCreationKindMigration } from './migrations/0008-add-asset-creat
 import { renameAssetUpdatedTimeMigration } from './migrations/0009-rename-asset-updated-time';
 import { createAssetReferencesMigration } from './migrations/0010-create-asset-references';
 import { normalizeAssetAssociationsMigration } from './migrations/0011-normalize-asset-associations';
+import { createGenerationTasksMigration } from './migrations/0012-create-generation-tasks';
+import { indexUnfinishedGenerationTasksMigration } from './migrations/0013-index-unfinished-generation-tasks';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
 import * as assetSchema from './schema/assets';
+import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
 import * as workbenchStateSchema from './schema/workbench-state';
 
@@ -40,6 +43,8 @@ const migrations: readonly DatabaseMigration[] = [
   renameAssetUpdatedTimeMigration,
   createAssetReferencesMigration,
   normalizeAssetAssociationsMigration,
+  createGenerationTasksMigration,
+  indexUnfinishedGenerationTasksMigration,
 ];
 const schema = {
   ...projectSchema,
@@ -47,6 +52,7 @@ const schema = {
   ...assetArtifactSchema,
   ...assetLinkSchema,
   ...assetReferenceSchema,
+  ...generationTaskSchema,
   ...workbenchStateSchema,
 };
 

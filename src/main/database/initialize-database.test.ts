@@ -31,7 +31,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -45,6 +45,7 @@ describe('initializeDatabase', () => {
         'asset_links',
         'asset_references',
         'assets',
+        'generation_tasks',
         'projects',
         'workbench_state_data',
         'workbench_states',
@@ -77,6 +78,15 @@ describe('initializeDatabase', () => {
           )
           .get(),
       ).toEqual({ name: 'asset_links_asset_id_index' });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'generation_tasks_unfinished_project_created_index'",
+          )
+          .get(),
+      ).toEqual({
+        name: 'generation_tasks_unfinished_project_created_index',
+      });
     } finally {
       context.close();
     }
@@ -91,10 +101,72 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        11,
+        13,
       );
     } finally {
       secondContext.close();
+    }
+  });
+
+  it('adds the unfinished GenerationTask index to a version 12 database without losing tasks', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacyContext = initializeDatabase(databaseFile);
+
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run('project', 'Project', '📘', 1, 0, '/tmp/projects/project');
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO generation_tasks (
+          id, project_id, definition_id, definition_version,
+          instruction_json, asset_references_json, metrics_json,
+          created_time, updated_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'task',
+        'project',
+        'mindmap.generate',
+        1,
+        JSON.stringify({ format: 'test', version: 1 }),
+        JSON.stringify({ sources: [] }),
+        JSON.stringify({
+          agentExecutions: [],
+          totalActiveDurationMs: 0,
+        }),
+        2,
+        2,
+      );
+    legacyContext.sqlite.exec(
+      'DROP INDEX generation_tasks_unfinished_project_created_index',
+    );
+    legacyContext.sqlite.pragma('user_version = 12');
+    legacyContext.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(
+        context.sqlite
+          .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
+          .all(),
+      ).toEqual([{ id: 'task' }]);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'generation_tasks_unfinished_project_created_index'",
+          )
+          .get(),
+      ).toEqual({
+        name: 'generation_tasks_unfinished_project_created_index',
+      });
+    } finally {
+      context.close();
     }
   });
 
@@ -115,7 +187,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -183,7 +255,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -364,6 +436,7 @@ describe('initializeDatabase', () => {
     legacyContext.sqlite.exec(`
       DROP TRIGGER assets_content_ref_insert_guard;
       DROP TRIGGER assets_content_ref_update_guard;
+      DROP TABLE generation_tasks;
       DROP TABLE asset_links;
       DROP TABLE asset_references;
       DROP TABLE asset_artifacts;
@@ -492,6 +565,7 @@ describe('initializeDatabase', () => {
     legacyContext.sqlite.exec(`
       DROP TABLE asset_links;
       DROP TABLE asset_references;
+      DROP TABLE generation_tasks;
       ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time;
     `);
     legacyContext.sqlite.pragma('user_version = 8');
@@ -500,7 +574,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -566,6 +640,7 @@ describe('initializeDatabase', () => {
     legacyContext.sqlite.exec(`
       DROP TABLE asset_links;
       DROP TABLE asset_references;
+      DROP TABLE generation_tasks;
       ${createAssetReferencesMigration.sql}
     `);
     const insertReference = legacyContext.sqlite.prepare(
@@ -604,7 +679,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
