@@ -106,8 +106,8 @@ flowchart LR
         PDFP["PdfWorkbenchProvider"]
         TEXT["TextContentAdapter"]
         RESOURCE["ContentResourceService"]
-        STATE["WorkbenchStateRepository"]
-        DATA["WorkbenchStateDataRepository"]
+        STATE["WorkbenchStateDatabase"]
+        DATA["WorkbenchStateDataDatabase"]
     end
 
     subgraph RENDERER["React Renderer"]

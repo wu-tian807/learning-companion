@@ -12,7 +12,7 @@ import type { GenerationTaskSnapshot } from './generation-task';
 import { GenerationAgentExecutor } from './generation-agent-executor';
 import { GenerationTaskExecution } from './generation-task-execution';
 import { GenerationTaskService } from './generation-task-service';
-import { GenerationTaskOutputStore } from './generation-task-output-store';
+import { GenerationTaskOutputFile } from './generation-task-output-file';
 import type { GenerationAgentRunner } from './generation-agent-runner';
 import type { GenerationTaskPreparerApi } from './preparation/generation-task-preparer';
 import type { PreparedGenerationTask } from './preparation/prepared-generation-task';
@@ -178,7 +178,7 @@ describe('GenerationTaskService', () => {
         database,
         preparer,
         new GenerationAgentExecutor(),
-        new GenerationTaskOutputStore(),
+        new GenerationTaskOutputFile(),
       ),
       {
         get: () => ({

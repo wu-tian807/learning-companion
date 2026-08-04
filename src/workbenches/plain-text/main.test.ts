@@ -16,12 +16,12 @@ import {
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateDataRecord,
-  WorkbenchStateDataRepository,
-} from '../../main/workbench/workbench-state-data-repository';
+  WorkbenchStateDataDatabaseApi,
+} from '../../main/workbench/workbench-state-data-database';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import {
   createPlainTextBufferCommand,
   DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
@@ -32,7 +32,7 @@ import {
 } from './shared';
 import { PlainTextWorkbenchProvider } from './main';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -48,7 +48,7 @@ class MemoryStateRepository implements WorkbenchStateRepository {
   }
 }
 
-class MemoryDataRepository implements WorkbenchStateDataRepository {
+class MemoryDataDatabase implements WorkbenchStateDataDatabaseApi {
   readonly records = new Map<string, WorkbenchStateDataRecord>();
 
   async get(assetId: string, workbenchId: string, dataKey: string) {
@@ -134,8 +134,8 @@ const viewState = { anchor: 2, head: 2, scrollTop: 12 };
 
 describe('PlainTextWorkbenchProvider', () => {
   it('persists an unsaved recovery snapshot when the session closes', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data, {
       now: () => 200,
     });
@@ -172,8 +172,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('offers a saved recovery snapshot on the next open', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data);
     const { handle } = createHandle(source);
     await states.save({
@@ -220,8 +220,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('saves through the byte ContentHandle and clears recovery data', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data, {
       now: () => 300,
     });
@@ -276,8 +276,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('persists Plain Text view options in V2 state', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data);
     const { handle } = createHandle(source);
     const context = createContext('session', handle, undefined);
@@ -309,8 +309,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('recovers a line-ending-only unsaved change', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data, {
       now: () => 400,
     });
@@ -364,8 +364,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('saves a line-ending-only change through the byte ContentHandle', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data);
     const { handle, writeBytes } = createHandle(source);
     const context = createContext('session', handle, undefined);
@@ -395,8 +395,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('clears a persisted recovery after returning to the saved format', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data);
     const { handle } = createHandle(source);
     const context = createContext('session', handle, undefined);
@@ -432,8 +432,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('reopens a clean source with the requested encoding', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data);
     const { handle, readBytes } = createHandle(source);
     readBytes
@@ -469,8 +469,8 @@ describe('PlainTextWorkbenchProvider', () => {
   });
 
   it('rejects encoding reopen while the editor is dirty', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new PlainTextWorkbenchProvider(states, data);
     const { handle, readBytes } = createHandle(source);
     const context = createContext('session', handle, undefined);

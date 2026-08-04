@@ -12,7 +12,7 @@ import {
   type GenerationAgentExecutor,
 } from './generation-agent-executor';
 import type { GenerationTaskDatabaseApi } from './generation-task-database';
-import type { GenerationTaskOutputStoreApi } from './generation-task-output-store';
+import type { GenerationTaskOutputFileApi } from './generation-task-output-file';
 import {
   GenerationTask,
   type GenerationTaskFailurePhase,
@@ -64,7 +64,7 @@ export class GenerationTaskExecution {
     private readonly database: GenerationTaskDatabaseApi,
     private readonly preparer: GenerationTaskPreparerApi,
     private readonly agentExecutor: GenerationAgentExecutor,
-    private readonly outputStore: GenerationTaskOutputStoreApi,
+    private readonly outputFile: GenerationTaskOutputFileApi,
     dependencies: Partial<GenerationTaskExecutionDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
@@ -202,7 +202,7 @@ export class GenerationTaskExecution {
     signal: AbortSignal,
   ): AsyncGenerator<GenerationTaskExecutionEvent, JsonValue> {
     if (task.getSnapshot().agentCompleted) {
-      return this.outputStore.read(task.getSnapshot(), prepared);
+      return this.outputFile.read(task.getSnapshot(), prepared);
     }
 
     yield { type: 'phase', phase: 'agent', state: 'started' };
@@ -212,7 +212,7 @@ export class GenerationTaskExecution {
       signal,
     );
     signal.throwIfAborted();
-    const outputRef = await this.outputStore.write(
+    const outputRef = await this.outputFile.write(
       prepared,
       completed.output,
     );

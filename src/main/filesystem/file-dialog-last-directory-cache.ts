@@ -1,10 +1,10 @@
-export interface FileDialogDirectoryStoreApi {
+export interface FileDialogLastDirectoryCacheApi {
   get(scope: string): string | undefined;
   remember(scope: string, directoryPath: string): void;
 }
 
-export class InMemoryFileDialogDirectoryStore
-  implements FileDialogDirectoryStoreApi
+export class InMemoryFileDialogLastDirectoryCache
+  implements FileDialogLastDirectoryCacheApi
 {
   private readonly directories = new Map<string, string>();
 

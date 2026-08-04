@@ -34,8 +34,8 @@ describe('builtin Workbench catalog', () => {
       contentResourceService: {} as never,
       externalLibraryService: {} as never,
       projectLookup: {} as never,
-      stateRepository: {} as never,
-      stateDataRepository: {} as never,
+      stateDatabase: {} as never,
+      stateDataDatabase: {} as never,
     });
 
     for (const entry of builtinWorkbenchCatalog) {

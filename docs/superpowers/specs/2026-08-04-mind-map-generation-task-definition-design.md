@@ -424,7 +424,7 @@ src/main/generation/
 ├── contracts/                         # 纯协议和状态校验
 ├── preparation/
 │   ├── generation-asset-reference-preparer.ts
-│   ├── generation-prepared-manifest-store.ts
+│   ├── generation-prepared-manifest-file.ts
 │   ├── generation-task-preparer.ts
 │   └── generation-user-message-composer.ts
 ├── generation-agent-executor.ts       # 同 Session 的输出校验/修复循环
@@ -432,7 +432,7 @@ src/main/generation/
 ├── generation-task.ts                 # 纯状态对象
 ├── generation-task-execution.ts       # 三阶段执行
 ├── generation-task-database.ts        # SQLite 映射
-├── generation-task-output-store.ts    # Agent 输出文件
+├── generation-task-output-file.ts     # Agent 输出文件
 ├── generation-task-service.ts         # Project 级活动 Task 集合
 └── generation-task-definition-registry.ts
 

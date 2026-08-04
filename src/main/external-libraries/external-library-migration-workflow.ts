@@ -11,8 +11,8 @@ import type {
 } from './external-library-definition';
 import type {
   ExternalLibraryInstallationInspection,
-  ExternalLibraryInstallationStore,
-} from './external-library-installation-store';
+  ExternalLibraryInstallationManifestFile,
+} from './external-library-installation-manifest-file';
 import type { ExternalLibraryPathManagerApi } from './external-library-path-manager';
 
 export interface ExternalLibraryMigrationDefinition {
@@ -29,7 +29,7 @@ export interface ExternalLibraryMigrationOutcome {
 export interface ExternalLibraryMigrationWorkflowDependencies {
   readonly settings: SettingsRepository;
   readonly pathManager: ExternalLibraryPathManagerApi;
-  readonly installationStore: ExternalLibraryInstallationStore;
+  readonly installationManifestFile: ExternalLibraryInstallationManifestFile;
   readonly logger: Pick<Console, 'warn'>;
 }
 
@@ -106,12 +106,12 @@ export class ExternalLibraryMigrationWorkflow {
             );
           const [sourceInspection, targetInspection] =
             await Promise.all([
-              this.dependencies.installationStore.inspect(
+              this.dependencies.installationManifestFile.inspect(
                 sourcePaths.installationDirectory,
                 definition,
                 packageDefinition,
               ),
-              this.dependencies.installationStore.inspect(
+              this.dependencies.installationManifestFile.inspect(
                 targetPaths.installationDirectory,
                 definition,
                 packageDefinition,
@@ -201,7 +201,7 @@ export class ExternalLibraryMigrationWorkflow {
         };
         stagedEntries.push(stagedEntry);
         const inspection =
-          await this.dependencies.installationStore.inspect(
+          await this.dependencies.installationManifestFile.inspect(
             staging.stagingInstallationDirectory,
             entry.definition,
             entry.packageDefinition,

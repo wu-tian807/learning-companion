@@ -12,8 +12,8 @@ import type {
 } from '../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../main/workbench/workbench-state-database';
 import { EpubWorkbenchProvider } from './epub/main';
 import {
   createEpubSaveViewStateCommand,
@@ -27,7 +27,7 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
 } from '../shared/workbench/facilities/core-facilities';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -92,7 +92,7 @@ async function verifyProvider(
   provider: MainWorkbenchProvider,
   context: WorkbenchProviderContext,
   resources: ContentResourceServiceApi,
-  states: MemoryStateRepository,
+  states: MemoryStateDatabase,
   workbenchId: string,
   command: Parameters<MainWorkbenchProvider['command']>[1],
 ) {
@@ -171,7 +171,7 @@ describe('stream reader main providers', () => {
 
   it('opens, persists and closes the EPUB provider', async () => {
     const resources = createResources();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new EpubWorkbenchProvider(resources, states, {
       now: () => 500,
     });

@@ -414,7 +414,7 @@ interface AssetRelation {
 - `AttachmentService`：加载和持久化 Attachment。
 - `AttachmentRegistry`：解释 Attachment payload。
 - `AnchorRegistry`：解释 Anchor payload。
-- `WorkbenchStateRepository`：存取工作台状态。
+- `WorkbenchStateDatabase`：存取工作台状态。
 - `AssetRelationService`：管理 Asset 关系。
 
 ### Renderer
@@ -453,7 +453,7 @@ src/
 │   │   ├── workbench-registry.ts
 │   │   ├── workbench-session.ts
 │   │   ├── workbench-session-manager.ts
-│   │   └── workbench-state-repository.ts
+│   │   └── workbench-state-database.ts
 │   └── relations/
 │       └── asset-relation-service.ts
 ├── shared/

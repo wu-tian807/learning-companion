@@ -101,7 +101,7 @@ flowchart LR
     WREG["Main WorkbenchRegistry"]
     AP["AudioWorkbenchProvider"]
     CRS["ContentResourceService"]
-    STATE["WorkbenchStateRepository"]
+    STATE["WorkbenchStateDatabase"]
     RREG["RendererWorkbenchRegistry"]
     VIEW["AudioWorkbenchView"]
 
@@ -134,7 +134,7 @@ Asset 扩展名映射增加：
 `AudioWorkbenchProvider` 依赖：
 
 - `ContentResourceServiceApi`；
-- `WorkbenchStateRepository`；
+- `WorkbenchStateDatabase`；
 - 可注入的 `now()`，用于测试保存时间。
 
 打开流程：
@@ -167,7 +167,7 @@ interface AudioWorkbenchStateV1 {
 }
 ```
 
-状态使用现有 `WorkbenchStateRepository`，键仍为：
+状态使用现有 `WorkbenchStateDatabase`，键仍为：
 
 ```text
 assetId + workbenchId

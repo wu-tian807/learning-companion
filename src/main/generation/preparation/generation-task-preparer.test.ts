@@ -11,7 +11,7 @@ import { GenerationTask } from '../generation-task';
 import { MindMapGenerationInstruction } from '../../../workbenches/mindmap/generation/mindmap-generation-instruction';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { GenerationAssetReferencePreparer } from './generation-asset-reference-preparer';
-import { GenerationPreparedManifestStore } from './generation-prepared-manifest-store';
+import { GenerationPreparedManifestFile } from './generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from './generation-task-preparer';
 
 const temporaryDirectories: string[] = [];
@@ -62,7 +62,7 @@ describe('GenerationTaskPreparer', () => {
     const preparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(workspaceRoot),
       new GenerationAssetReferencePreparer(assetService),
-      new GenerationPreparedManifestStore(),
+      new GenerationPreparedManifestFile(),
     );
     const definition = createMindMapGenerationTaskDefinitionV1({
       async commit() {

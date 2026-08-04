@@ -5,8 +5,8 @@ import type { ExternalLibraryServiceApi } from '../../main/external-libraries/ex
 import type { ProjectLookup } from '../../main/projects/project-database';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
-import type { WorkbenchStateDataRepository } from '../../main/workbench/workbench-state-data-repository';
-import type { WorkbenchStateRepository } from '../../main/workbench/workbench-state-repository';
+import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
+import type { WorkbenchStateDatabaseApi } from '../../main/workbench/workbench-state-database';
 import { AudioWorkbenchProvider } from '../audio/main';
 import { EpubWorkbenchProvider } from '../epub/main';
 import { HtmlWorkbenchProvider } from '../html/main';
@@ -28,8 +28,8 @@ export interface MainWorkbenchRegistrationDependencies {
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly projectLookup: ProjectLookup;
-  readonly stateRepository: WorkbenchStateRepository;
-  readonly stateDataRepository: WorkbenchStateDataRepository;
+  readonly stateDatabase: WorkbenchStateDatabaseApi;
+  readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
 }
 
 type MainWorkbenchProviderFactory = (
@@ -41,23 +41,23 @@ const providerFactories: Readonly<
 > = {
   'builtin.plain-text': (dependencies) =>
     new PlainTextWorkbenchProvider(
-      dependencies.stateRepository,
-      dependencies.stateDataRepository,
+      dependencies.stateDatabase,
+      dependencies.stateDataDatabase,
     ),
   'builtin.markdown': (dependencies) =>
     new MarkdownWorkbenchProvider(
-      dependencies.stateRepository,
-      dependencies.stateDataRepository,
+      dependencies.stateDatabase,
+      dependencies.stateDataDatabase,
     ),
   'builtin.mindmap': (dependencies) =>
     new MindMapWorkbenchProvider(
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
       dependencies.associationService,
     ),
   'builtin.pdf': (dependencies) =>
     new PdfWorkbenchProvider(
       dependencies.contentResourceService,
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
     ),
   'builtin.office': (dependencies) =>
     new OfficeWorkbenchProvider(
@@ -65,29 +65,29 @@ const providerFactories: Readonly<
       dependencies.contentResourceService,
       dependencies.externalLibraryService,
       dependencies.projectLookup,
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
     ),
   'builtin.html': (dependencies) =>
     new HtmlWorkbenchProvider(dependencies.contentResourceService),
   'builtin.epub': (dependencies) =>
     new EpubWorkbenchProvider(
       dependencies.contentResourceService,
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
     ),
   'builtin.image': (dependencies) =>
     new ImageWorkbenchProvider(
       dependencies.contentResourceService,
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
     ),
   'builtin.audio': (dependencies) =>
     new AudioWorkbenchProvider(
       dependencies.contentResourceService,
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
     ),
   'builtin.video': (dependencies) =>
     new VideoWorkbenchProvider(
       dependencies.contentResourceService,
-      dependencies.stateRepository,
+      dependencies.stateDatabase,
     ),
 };
 

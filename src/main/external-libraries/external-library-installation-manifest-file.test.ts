@@ -12,9 +12,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
-  ExternalLibraryInstallationStore,
+  ExternalLibraryInstallationManifestFile,
   createExternalLibraryInstallationMarker,
-} from './external-library-installation-store';
+} from './external-library-installation-manifest-file';
 
 const temporaryDirectories: string[] = [];
 
@@ -62,7 +62,7 @@ afterEach(async () => {
   );
 });
 
-describe('ExternalLibraryInstallationStore', () => {
+describe('ExternalLibraryInstallationManifestFile', () => {
   it('writes and validates an available installation', async () => {
     const installationDirectory =
       await createInstallationDirectory();
@@ -75,7 +75,7 @@ describe('ExternalLibraryInstallationStore', () => {
     await mkdir(dirname(executablePath), { recursive: true });
     await writeFile(executablePath, '#!/bin/sh\nexit 0\n');
     await chmod(executablePath, 0o755);
-    const store = new ExternalLibraryInstallationStore();
+    const manifestFile = new ExternalLibraryInstallationManifestFile();
     await mkdir(installationDirectory, { recursive: true });
     const marker = createExternalLibraryInstallationMarker({
       definition,
@@ -83,10 +83,10 @@ describe('ExternalLibraryInstallationStore', () => {
       installedTime: 1,
     });
 
-    await store.write(installationDirectory, marker);
+    await manifestFile.write(installationDirectory, marker);
 
     await expect(
-      store.inspect(
+      manifestFile.inspect(
         installationDirectory,
         definition,
         packageDefinition,
@@ -102,10 +102,10 @@ describe('ExternalLibraryInstallationStore', () => {
     const installationDirectory =
       await createInstallationDirectory();
     const { definition, packageDefinition } = createDefinition();
-    const store = new ExternalLibraryInstallationStore();
+    const manifestFile = new ExternalLibraryInstallationManifestFile();
 
     await expect(
-      store.inspect(
+      manifestFile.inspect(
         installationDirectory,
         definition,
         packageDefinition,
@@ -114,7 +114,7 @@ describe('ExternalLibraryInstallationStore', () => {
 
     await mkdir(installationDirectory);
     await expect(
-      store.inspect(
+      manifestFile.inspect(
         installationDirectory,
         definition,
         packageDefinition,
@@ -129,7 +129,7 @@ describe('ExternalLibraryInstallationStore', () => {
       '{broken',
     );
     await expect(
-      store.inspect(
+      manifestFile.inspect(
         installationDirectory,
         definition,
         packageDefinition,
@@ -139,7 +139,7 @@ describe('ExternalLibraryInstallationStore', () => {
       reason: 'marker-invalid',
     });
 
-    await store.write(
+    await manifestFile.write(
       installationDirectory,
       createExternalLibraryInstallationMarker({
         definition: { ...definition, version: 'different' },
@@ -148,7 +148,7 @@ describe('ExternalLibraryInstallationStore', () => {
       }),
     );
     await expect(
-      store.inspect(
+      manifestFile.inspect(
         installationDirectory,
         definition,
         packageDefinition,
@@ -163,8 +163,8 @@ describe('ExternalLibraryInstallationStore', () => {
     const installationDirectory =
       await createInstallationDirectory();
     const { definition, packageDefinition } = createDefinition();
-    const store = new ExternalLibraryInstallationStore();
-    await store.write(
+    const manifestFile = new ExternalLibraryInstallationManifestFile();
+    await manifestFile.write(
       installationDirectory,
       createExternalLibraryInstallationMarker({
         definition,
@@ -174,7 +174,7 @@ describe('ExternalLibraryInstallationStore', () => {
     );
 
     await expect(
-      store.inspect(
+      manifestFile.inspect(
         installationDirectory,
         definition,
         packageDefinition,
@@ -188,10 +188,10 @@ describe('ExternalLibraryInstallationStore', () => {
   it('refuses to persist an invalid installation marker', async () => {
     const installationDirectory =
       await createInstallationDirectory();
-    const store = new ExternalLibraryInstallationStore();
+    const manifestFile = new ExternalLibraryInstallationManifestFile();
 
     await expect(
-      store.write(installationDirectory, {
+      manifestFile.write(installationDirectory, {
         schemaVersion: 1,
         libraryId: '',
         libraryVersion: '1',

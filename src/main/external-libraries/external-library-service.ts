@@ -16,8 +16,8 @@ import type {
 import type { ExternalLibraryDownloaderApi } from "./external-library-downloader";
 import {
   type ExternalLibraryInstallationInspection,
-  ExternalLibraryInstallationStore,
-} from "./external-library-installation-store";
+  ExternalLibraryInstallationManifestFile,
+} from "./external-library-installation-manifest-file";
 import { ExternalLibraryInstallationWorkflow } from "./external-library-installation-workflow";
 import type { ExternalLibraryInstallerRegistryApi } from "./external-library-installer";
 import { ExternalLibraryMigrationWorkflow } from "./external-library-migration-workflow";
@@ -99,7 +99,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     private readonly settings: SettingsRepository,
     private readonly registry: ExternalLibraryRegistryApi,
     private readonly pathManager: ExternalLibraryPathManagerApi,
-    private readonly installationStore: ExternalLibraryInstallationStore,
+    private readonly installationManifestFile: ExternalLibraryInstallationManifestFile,
     downloader: ExternalLibraryDownloaderApi,
     installers: ExternalLibraryInstallerRegistryApi,
     dependencies: Partial<ExternalLibraryServiceDependencies> = {},
@@ -111,7 +111,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     this.logger = dependencies.logger ?? console;
     this.installationWorkflow = new ExternalLibraryInstallationWorkflow({
       pathManager,
-      installationStore,
+      installationManifestFile,
       downloader,
       installers,
       now: this.now,
@@ -120,7 +120,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     this.migrationWorkflow = new ExternalLibraryMigrationWorkflow({
       settings,
       pathManager,
-      installationStore,
+      installationManifestFile,
       logger: this.logger,
     });
   }
@@ -441,7 +441,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       definition,
       packageDefinition,
     );
-    return this.installationStore.inspect(
+    return this.installationManifestFile.inspect(
       paths.installationDirectory,
       definition,
       packageDefinition,

@@ -6,11 +6,11 @@ import {
 } from '../../main/content/text-content';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
-import type { WorkbenchStateDataRepository } from '../../main/workbench/workbench-state-data-repository';
+import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import type {
   JsonValue,
   WorkbenchCommandResult,
@@ -96,8 +96,8 @@ export class MarkdownWorkbenchProvider
   private readonly recoveryDebounceMs: number;
 
   constructor(
-    private readonly stateRepository: WorkbenchStateRepository,
-    private readonly dataRepository: WorkbenchStateDataRepository,
+    private readonly stateDatabase: WorkbenchStateDatabaseApi,
+    private readonly dataDatabase: WorkbenchStateDataDatabaseApi,
     dependencies: Partial<MarkdownWorkbenchProviderDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
@@ -134,7 +134,7 @@ export class MarkdownWorkbenchProvider
     let recoveryContent: string | undefined;
 
     if (state.recovery) {
-      const data = await this.dataRepository.get(
+      const data = await this.dataDatabase.get(
         context.asset.id,
         MARKDOWN_WORKBENCH_ID,
         state.recovery.dataKey,
@@ -520,7 +520,7 @@ export class MarkdownWorkbenchProvider
       updatedTime,
     };
 
-    await this.dataRepository.save({
+    await this.dataDatabase.save({
       assetId: runtime.assetId,
       workbenchId: MARKDOWN_WORKBENCH_ID,
       dataKey: MARKDOWN_RECOVERY_DATA_KEY,
@@ -572,7 +572,7 @@ export class MarkdownWorkbenchProvider
     assetId: string,
     viewState: MarkdownWorkbenchViewState,
   ): Promise<void> {
-    await this.dataRepository.delete(
+    await this.dataDatabase.delete(
       assetId,
       MARKDOWN_WORKBENCH_ID,
       MARKDOWN_RECOVERY_DATA_KEY,
@@ -593,7 +593,7 @@ export class MarkdownWorkbenchProvider
     assetId: string,
     state: MarkdownWorkbenchStateV1,
   ): Promise<void> {
-    await this.stateRepository.save({
+    await this.stateDatabase.save({
       assetId,
       workbenchId: MARKDOWN_WORKBENCH_ID,
       schemaVersion: MARKDOWN_STATE_SCHEMA_VERSION,

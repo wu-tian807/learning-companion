@@ -6,11 +6,11 @@ import {
 } from '../../main/content/text-content';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
-import type { WorkbenchStateDataRepository } from '../../main/workbench/workbench-state-data-repository';
+import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import type {
   JsonValue,
   WorkbenchCommandResult,
@@ -109,8 +109,8 @@ export class PlainTextWorkbenchProvider
   private readonly textContentAdapter: TextContentAdapter;
 
   constructor(
-    private readonly stateRepository: WorkbenchStateRepository,
-    private readonly dataRepository: WorkbenchStateDataRepository,
+    private readonly stateDatabase: WorkbenchStateDatabaseApi,
+    private readonly dataDatabase: WorkbenchStateDataDatabaseApi,
     dependencies: Partial<PlainTextWorkbenchProviderDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
@@ -138,7 +138,7 @@ export class PlainTextWorkbenchProvider
     let recoveryContent: string | undefined;
 
     if (state.recovery) {
-      const data = await this.dataRepository.get(
+      const data = await this.dataDatabase.get(
         context.asset.id,
         PLAIN_TEXT_WORKBENCH_ID,
         state.recovery.dataKey,
@@ -495,7 +495,7 @@ export class PlainTextWorkbenchProvider
       updatedTime,
     };
 
-    await this.dataRepository.save({
+    await this.dataDatabase.save({
       assetId: runtime.assetId,
       workbenchId: PLAIN_TEXT_WORKBENCH_ID,
       dataKey: PLAIN_TEXT_RECOVERY_DATA_KEY,
@@ -541,7 +541,7 @@ export class PlainTextWorkbenchProvider
     viewState: PlainTextViewState | undefined,
     viewOptions: PlainTextViewOptions,
   ): Promise<void> {
-    await this.dataRepository.delete(
+    await this.dataDatabase.delete(
       assetId,
       PLAIN_TEXT_WORKBENCH_ID,
       PLAIN_TEXT_RECOVERY_DATA_KEY,
@@ -553,7 +553,7 @@ export class PlainTextWorkbenchProvider
     assetId: string,
     state: PlainTextWorkbenchStateV2,
   ): Promise<void> {
-    await this.stateRepository.save({
+    await this.stateDatabase.save({
       assetId,
       workbenchId: PLAIN_TEXT_WORKBENCH_ID,
       schemaVersion: PLAIN_TEXT_STATE_SCHEMA_VERSION,

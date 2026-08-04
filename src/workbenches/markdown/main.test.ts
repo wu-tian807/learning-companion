@@ -16,12 +16,12 @@ import {
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateDataRecord,
-  WorkbenchStateDataRepository,
-} from '../../main/workbench/workbench-state-data-repository';
+  WorkbenchStateDataDatabaseApi,
+} from '../../main/workbench/workbench-state-data-database';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import { MarkdownWorkbenchProvider } from './main';
 import {
   createMarkdownSyncSourceCommand,
@@ -34,7 +34,7 @@ import {
   markdownCommands,
 } from './shared';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -50,7 +50,7 @@ class MemoryStateRepository implements WorkbenchStateRepository {
   }
 }
 
-class MemoryDataRepository implements WorkbenchStateDataRepository {
+class MemoryDataDatabase implements WorkbenchStateDataDatabaseApi {
   readonly records = new Map<string, WorkbenchStateDataRecord>();
 
   async get(assetId: string, workbenchId: string, dataKey: string) {
@@ -137,8 +137,8 @@ const sourceViewState = { anchor: 1, head: 3, scrollTop: 12 };
 describe('MarkdownWorkbenchProvider', () => {
   it('opens disk source with the default Markdown state', async () => {
     const provider = new MarkdownWorkbenchProvider(
-      new MemoryStateRepository(),
-      new MemoryDataRepository(),
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
     );
     const { handle } = createHandle(source);
 
@@ -158,8 +158,8 @@ describe('MarkdownWorkbenchProvider', () => {
   });
 
   it('allows a Source edit through the ordinary save command', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new MarkdownWorkbenchProvider(states, data, {
       now: () => 300,
     });
@@ -199,8 +199,8 @@ describe('MarkdownWorkbenchProvider', () => {
 
   it('allows a WYSIWYG edit through the ordinary save command', async () => {
     const provider = new MarkdownWorkbenchProvider(
-      new MemoryStateRepository(),
-      new MemoryDataRepository(),
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
       { now: () => 400 },
     );
     const { handle, writeBytes } = createHandle(source);
@@ -232,8 +232,8 @@ describe('MarkdownWorkbenchProvider', () => {
 
   it('keeps the latest buffer when switching from WYSIWYG to Source', async () => {
     const provider = new MarkdownWorkbenchProvider(
-      new MemoryStateRepository(),
-      new MemoryDataRepository(),
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
     );
     const { handle } = createHandle(source);
     const context = createContext('session', handle);
@@ -268,8 +268,8 @@ describe('MarkdownWorkbenchProvider', () => {
   });
 
   it('persists the latest recovery on close', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new MarkdownWorkbenchProvider(states, data, {
       now: () => 500,
     });
@@ -309,8 +309,8 @@ describe('MarkdownWorkbenchProvider', () => {
   });
 
   it('offers a persisted recovery without silently replacing disk source', async () => {
-    const states = new MemoryStateRepository();
-    const data = new MemoryDataRepository();
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
     const provider = new MarkdownWorkbenchProvider(states, data);
     const { handle } = createHandle(source);
     await states.save({
@@ -357,8 +357,8 @@ describe('MarkdownWorkbenchProvider', () => {
 
   it('falls back from invalid state and rejects invalid open context', async () => {
     const provider = new MarkdownWorkbenchProvider(
-      new MemoryStateRepository(),
-      new MemoryDataRepository(),
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
     );
     const { handle } = createHandle(source);
     const invalidState: WorkbenchStateRecord = {
@@ -388,8 +388,8 @@ describe('MarkdownWorkbenchProvider', () => {
   it('does not resurrect a stale recovery while an explicit save waits for persistence', async () => {
     vi.useFakeTimers();
     try {
-      const states = new MemoryStateRepository();
-      const data = new MemoryDataRepository();
+      const states = new MemoryStateDatabase();
+      const data = new MemoryDataDatabase();
       let releaseRecovery!: () => void;
       let reportRecoveryStarted!: () => void;
       const recoveryGate = new Promise<void>((resolve) => {
@@ -450,8 +450,8 @@ describe('MarkdownWorkbenchProvider', () => {
   it('keeps automatic recovery scheduled after an unsupported command', async () => {
     vi.useFakeTimers();
     try {
-      const states = new MemoryStateRepository();
-      const data = new MemoryDataRepository();
+      const states = new MemoryStateDatabase();
+      const data = new MemoryDataDatabase();
       const provider = new MarkdownWorkbenchProvider(states, data, {
         now: () => 800,
         recoveryDebounceMs: 1,
@@ -492,8 +492,8 @@ describe('MarkdownWorkbenchProvider', () => {
   it('clears scheduled recovery after an ordinary WYSIWYG save', async () => {
     vi.useFakeTimers();
     try {
-      const states = new MemoryStateRepository();
-      const data = new MemoryDataRepository();
+      const states = new MemoryStateDatabase();
+      const data = new MemoryDataDatabase();
       const provider = new MarkdownWorkbenchProvider(states, data, {
         now: () => 900,
         recoveryDebounceMs: 1,

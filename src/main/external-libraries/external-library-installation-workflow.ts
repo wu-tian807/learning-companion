@@ -10,8 +10,8 @@ import type { ExternalLibraryDownloaderApi } from './external-library-downloader
 import {
   createExternalLibraryInstallationMarker,
   type ExternalLibraryInstallationInspection,
-  type ExternalLibraryInstallationStore,
-} from './external-library-installation-store';
+  type ExternalLibraryInstallationManifestFile,
+} from './external-library-installation-manifest-file';
 import type { ExternalLibraryInstallerRegistryApi } from './external-library-installer';
 import type { ExternalLibraryPathManagerApi } from './external-library-path-manager';
 
@@ -26,7 +26,7 @@ export type ExternalLibraryInstallationStage =
 
 export interface ExternalLibraryInstallationWorkflowDependencies {
   readonly pathManager: ExternalLibraryPathManagerApi;
-  readonly installationStore: ExternalLibraryInstallationStore;
+  readonly installationManifestFile: ExternalLibraryInstallationManifestFile;
   readonly downloader: ExternalLibraryDownloaderApi;
   readonly installers: ExternalLibraryInstallerRegistryApi;
   readonly now: () => number;
@@ -114,7 +114,7 @@ export class ExternalLibraryInstallationWorkflow {
         throw createAbortError();
       }
 
-      await this.dependencies.installationStore.write(
+      await this.dependencies.installationManifestFile.write(
         stagingInstallationDirectory,
         createExternalLibraryInstallationMarker({
           definition,
@@ -131,7 +131,7 @@ export class ExternalLibraryInstallationWorkflow {
           stagingInstallationDirectory,
         });
       const inspection =
-        await this.dependencies.installationStore.inspect(
+        await this.dependencies.installationManifestFile.inspect(
           paths.installationDirectory,
           definition,
           packageDefinition,

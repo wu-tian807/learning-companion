@@ -180,7 +180,7 @@ src/main/external-libraries/
 ├── external-library-service.ts
 ├── external-library-path-manager.ts
 ├── external-library-installer.ts
-├── external-library-installation-store.ts
+├── external-library-installation-manifest-file.ts
 └── installers/
     ├── macos-dmg-installer.ts
     └── windows-msi-installer.ts
@@ -219,7 +219,7 @@ src/main/external-libraries/
 - 把内容安装到 staging；
 - 返回验证后的运行时目录。
 
-### ExternalLibraryInstallationStore
+### ExternalLibraryInstallationManifestFile
 
 - 读写 `installation.json`；
 - 验证安装标记与 Definition 是否一致；

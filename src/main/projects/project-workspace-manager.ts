@@ -28,9 +28,9 @@ import {
 } from '../../shared/assets';
 import { AppError } from '../errors/app-error';
 import {
-  InMemoryFileDialogDirectoryStore,
-  type FileDialogDirectoryStoreApi,
-} from '../filesystem/file-dialog-directory-store';
+  InMemoryFileDialogLastDirectoryCache,
+  type FileDialogLastDirectoryCacheApi,
+} from '../filesystem/file-dialog-last-directory-cache';
 import {
   createConflictFreeFileName,
   isPathInside,
@@ -114,7 +114,7 @@ export interface ProjectWorkspaceManagerDependencies {
   readonly stat: typeof stat;
   readonly writeFile: typeof writeFile;
   readonly createId: () => string;
-  readonly fileDialogDirectories: FileDialogDirectoryStoreApi;
+  readonly fileDialogLastDirectoryCache: FileDialogLastDirectoryCacheApi;
   readonly showOpenDialog: typeof dialog.showOpenDialog;
   readonly openPath: typeof shell.openPath;
   readonly showItemInFolder: typeof shell.showItemInFolder;
@@ -122,7 +122,7 @@ export interface ProjectWorkspaceManagerDependencies {
 
 const defaultDependencies: Omit<
   ProjectWorkspaceManagerDependencies,
-  'fileDialogDirectories'
+  'fileDialogLastDirectoryCache'
 > = {
   access,
   copyFile,
@@ -193,9 +193,9 @@ export class ProjectWorkspaceManager
     this.dependencies = {
       ...defaultDependencies,
       ...dependencies,
-      fileDialogDirectories:
-        dependencies.fileDialogDirectories ??
-        new InMemoryFileDialogDirectoryStore(),
+      fileDialogLastDirectoryCache:
+        dependencies.fileDialogLastDirectoryCache ??
+        new InMemoryFileDialogLastDirectoryCache(),
     };
   }
 
@@ -435,10 +435,10 @@ export class ProjectWorkspaceManager
   ): Promise<readonly string[]> {
     const normalizedWorkspace =
       requireAbsoluteWorkspaceDirectoryPath(workspacePath);
-    const memoryScope = `project-assets:${normalizedWorkspace}`;
+    const cacheScope = `project-assets:${normalizedWorkspace}`;
     const result = await this.dependencies.showOpenDialog({
       defaultPath:
-        this.dependencies.fileDialogDirectories.get(memoryScope) ??
+        this.dependencies.fileDialogLastDirectoryCache.get(cacheScope) ??
         normalizedWorkspace,
       properties: ['openFile', 'multiSelections'],
     });
@@ -450,8 +450,8 @@ export class ProjectWorkspaceManager
     const selectedFiles = result.filePaths.map((path) =>
       requireAbsoluteWorkspaceFilePath(path),
     );
-    this.dependencies.fileDialogDirectories.remember(
-      memoryScope,
+    this.dependencies.fileDialogLastDirectoryCache.remember(
+      cacheScope,
       dirname(selectedFiles[0]!),
     );
     return selectedFiles;

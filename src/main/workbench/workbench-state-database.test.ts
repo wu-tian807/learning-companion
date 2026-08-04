@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
-import { SqliteWorkbenchStateDataRepository } from './workbench-state-data-repository';
-import { SqliteWorkbenchStateRepository } from './workbench-state-repository';
+import { WorkbenchStateDataDatabase } from './workbench-state-data-database';
+import { WorkbenchStateDatabase } from './workbench-state-database';
 
 const temporaryDirectories: string[] = [];
 
@@ -57,7 +57,7 @@ afterEach(async () => {
 describe('Workbench state repositories', () => {
   it('upserts Workbench JSON state by Asset and Workbench', async () => {
     const context = await createContext();
-    const repository = new SqliteWorkbenchStateRepository(context);
+    const repository = new WorkbenchStateDatabase(context);
 
     try {
       await expect(
@@ -99,7 +99,7 @@ describe('Workbench state repositories', () => {
 
   it('stores opaque Workbench data without interpreting it', async () => {
     const context = await createContext();
-    const repository = new SqliteWorkbenchStateDataRepository(context);
+    const repository = new WorkbenchStateDataDatabase(context);
 
     try {
       await repository.save({
@@ -129,18 +129,18 @@ describe('Workbench state repositories', () => {
 
   it('cascades both state layers when the Asset is deleted', async () => {
     const context = await createContext();
-    const stateRepository = new SqliteWorkbenchStateRepository(context);
-    const dataRepository = new SqliteWorkbenchStateDataRepository(context);
+    const stateDatabase = new WorkbenchStateDatabase(context);
+    const dataDatabase = new WorkbenchStateDataDatabase(context);
 
     try {
-      await stateRepository.save({
+      await stateDatabase.save({
         assetId: 'asset',
         workbenchId: 'builtin.plain-text',
         schemaVersion: 1,
         payload: {},
         updatedTime: 100,
       });
-      await dataRepository.save({
+      await dataDatabase.save({
         assetId: 'asset',
         workbenchId: 'builtin.plain-text',
         dataKey: 'recovery-content',
@@ -151,10 +151,10 @@ describe('Workbench state repositories', () => {
       context.sqlite.prepare('DELETE FROM assets WHERE id = ?').run('asset');
 
       await expect(
-        stateRepository.get('asset', 'builtin.plain-text'),
+        stateDatabase.get('asset', 'builtin.plain-text'),
       ).resolves.toBeUndefined();
       await expect(
-        dataRepository.get(
+        dataDatabase.get(
           'asset',
           'builtin.plain-text',
           'recovery-content',

@@ -114,7 +114,7 @@ pnpm test -- src/main/artifacts
 
 - `src/main/external-libraries/external-library-definition.ts`
 - `src/main/external-libraries/external-library-registry.ts`
-- `src/main/external-libraries/external-library-installation-store.ts`
+- `src/main/external-libraries/external-library-installation-manifest-file.ts`
 - 对应测试
 
 步骤：

@@ -14,7 +14,7 @@ import type { PreparedGenerationTask } from './preparation/prepared-generation-t
 
 export const GENERATION_AGENT_OUTPUT_REF = 'control/agent-output.json';
 
-export interface GenerationTaskOutputStoreApi {
+export interface GenerationTaskOutputFileApi {
   write(
     prepared: PreparedGenerationTask,
     output: JsonValue,
@@ -25,12 +25,12 @@ export interface GenerationTaskOutputStoreApi {
   ): Promise<JsonValue>;
 }
 
-interface GenerationTaskOutputStoreDependencies {
+interface GenerationTaskOutputFileDependencies {
   readonly readFile: typeof readFile;
   readonly writeFileAtomic: typeof writeFileAtomic;
 }
 
-const defaultDependencies: GenerationTaskOutputStoreDependencies = {
+const defaultDependencies: GenerationTaskOutputFileDependencies = {
   readFile,
   writeFileAtomic,
 };
@@ -42,13 +42,13 @@ function absoluteWorkspacePath(
   return join(workspacePath, ...relativePath.split('/'));
 }
 
-export class GenerationTaskOutputStore
-  implements GenerationTaskOutputStoreApi
+export class GenerationTaskOutputFile
+  implements GenerationTaskOutputFileApi
 {
-  private readonly dependencies: GenerationTaskOutputStoreDependencies;
+  private readonly dependencies: GenerationTaskOutputFileDependencies;
 
   constructor(
-    dependencies: Partial<GenerationTaskOutputStoreDependencies> = {},
+    dependencies: Partial<GenerationTaskOutputFileDependencies> = {},
   ) {
     this.dependencies = { ...defaultDependencies, ...dependencies };
   }

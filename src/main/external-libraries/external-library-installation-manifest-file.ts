@@ -152,7 +152,7 @@ function markerMatches(
   );
 }
 
-export class ExternalLibraryInstallationStore {
+export class ExternalLibraryInstallationManifestFile {
   async write(
     installationDirectory: string,
     marker: ExternalLibraryInstallationMarker,

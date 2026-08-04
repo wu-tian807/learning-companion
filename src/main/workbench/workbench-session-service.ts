@@ -15,7 +15,7 @@ import type {
 import { toWorkbenchProviderContext } from './workbench-session';
 import type { WorkbenchRegistry } from './workbench-registry';
 import type { WorkbenchTransportBindingRegistryApi } from './interaction/workbench-transport-binding-registry';
-import type { WorkbenchStateRepository } from './workbench-state-repository';
+import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
 
 export interface WorkbenchSessionLifecycle {
   closeActive(): Promise<void>;
@@ -60,7 +60,7 @@ export class WorkbenchSessionService
     private readonly assetService: AssetServiceApi,
     private readonly registry: WorkbenchRegistry,
     private readonly attachmentService: AttachmentServiceApi,
-    private readonly stateRepository: WorkbenchStateRepository,
+    private readonly stateDatabase: WorkbenchStateDatabaseApi,
     dependencies: Partial<WorkbenchSessionServiceDependencies> = {},
   ) {
     this.createId = dependencies.createId ?? randomUUID;
@@ -94,7 +94,7 @@ export class WorkbenchSessionService
         : this.registry.fallback('content-unavailable');
     const [attachments, state] = await Promise.all([
       this.attachmentService.listByAsset(assetId),
-      this.stateRepository.get(assetId, selection.provider.manifest.id),
+      this.stateDatabase.get(assetId, selection.provider.manifest.id),
     ]);
     const session: AssetWorkbenchSession = {
       id: this.createId(),

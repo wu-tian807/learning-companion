@@ -14,7 +14,7 @@ export interface WorkbenchStateRecord {
   readonly updatedTime: number;
 }
 
-export interface WorkbenchStateRepository {
+export interface WorkbenchStateDatabaseApi {
   get(
     assetId: string,
     workbenchId: string,
@@ -48,8 +48,8 @@ function validateRecord(record: WorkbenchStateRecord): void {
   }
 }
 
-export class SqliteWorkbenchStateRepository
-  implements WorkbenchStateRepository {
+export class WorkbenchStateDatabase
+  implements WorkbenchStateDatabaseApi {
   constructor(private readonly context: DatabaseContext) {}
 
   async get(
@@ -115,8 +115,8 @@ export class SqliteWorkbenchStateRepository
   }
 }
 
-export class EmptyWorkbenchStateRepository
-  implements WorkbenchStateRepository {
+export class EmptyWorkbenchStateDatabase
+  implements WorkbenchStateDatabaseApi {
   async get(
     _assetId: string,
     _workbenchId: string,

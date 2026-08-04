@@ -13,8 +13,8 @@ import type {
   WorkbenchProviderContext,
 } from '../../main/workbench/workbench-session';
 import type {
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import {
   createAbsoluteLocalFileContentRef,
   createAssetContentStatus,
@@ -99,11 +99,11 @@ async function createHarness(input?: {
     }),
     subscribe: vi.fn(() => () => undefined),
   } satisfies ExternalLibraryServiceApi;
-  const stateRepository = {
+  const stateDatabase = {
     get: vi.fn(async () => undefined),
     save: vi.fn(async () => undefined),
     delete: vi.fn(async () => undefined),
-  } satisfies WorkbenchStateRepository;
+  } satisfies WorkbenchStateDatabaseApi;
   const provider = new OfficeWorkbenchProvider(
     artifacts,
     resources,
@@ -118,7 +118,7 @@ async function createHarness(input?: {
         workspacePath,
       })),
     },
-    stateRepository,
+    stateDatabase,
     { now: () => 10 },
   );
   const context: WorkbenchProviderContext = {
@@ -145,7 +145,7 @@ async function createHarness(input?: {
     externalLibraries,
     provider,
     resources,
-    stateRepository,
+    stateDatabase,
   };
 }
 
@@ -226,7 +226,7 @@ describe('OfficeWorkbenchProvider', () => {
       }),
     );
 
-    expect(harness.stateRepository.save).toHaveBeenCalledWith(
+    expect(harness.stateDatabase.save).toHaveBeenCalledWith(
       expect.objectContaining({
         assetId: 'asset',
         workbenchId: OFFICE_WORKBENCH_ID,

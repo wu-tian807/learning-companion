@@ -2,8 +2,8 @@ import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import type {
   JsonValue,
   WorkbenchCommandResult,
@@ -67,7 +67,7 @@ export class MindMapWorkbenchProvider implements MainWorkbenchProvider {
   private readonly now: () => number;
 
   constructor(
-    private readonly stateRepository: WorkbenchStateRepository,
+    private readonly stateDatabase: WorkbenchStateDatabaseApi,
     private readonly associationLookup: MindMapAssociationLookup,
     dependencies: Partial<MindMapWorkbenchProviderDependencies> = {},
   ) {
@@ -153,7 +153,7 @@ export class MindMapWorkbenchProvider implements MainWorkbenchProvider {
     }
 
     const savedTime = this.now();
-    await this.stateRepository.save({
+    await this.stateDatabase.save({
       assetId: context.asset.id,
       workbenchId: MIND_MAP_WORKBENCH_ID,
       schemaVersion: MIND_MAP_STATE_SCHEMA_VERSION,

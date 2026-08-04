@@ -9,12 +9,12 @@ import {
 } from '../contracts/generation-workspace';
 import type { GenerationTaskSnapshot } from '../generation-task';
 import type { GenerationAssetReferencePreparerApi } from './generation-asset-reference-preparer';
-import type { GenerationPreparedManifestStoreApi } from './generation-prepared-manifest-store';
-import { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-store';
+import type { GenerationPreparedManifestFileApi } from './generation-prepared-manifest-file';
+import { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-file';
 import { appendAssetReferencesToUserMessage } from './generation-user-message-composer';
 import type { PreparedGenerationTask } from './prepared-generation-task';
 
-export { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-store';
+export { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-file';
 
 export interface GenerationTaskPreparerApi {
   prepare(
@@ -68,7 +68,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   constructor(
     private readonly workspaceManager: AgentWorkspaceManagerApi,
     private readonly assetReferencePreparer: GenerationAssetReferencePreparerApi,
-    private readonly manifestStore: GenerationPreparedManifestStoreApi,
+    private readonly manifestFile: GenerationPreparedManifestFileApi,
   ) {}
 
   async prepare(
@@ -101,7 +101,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       : undefined;
 
     signal?.throwIfAborted();
-    await this.manifestStore.write(
+    await this.manifestFile.write(
       workspaces.primary.path,
       task,
       assetReferences,
@@ -132,7 +132,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
 
     const instruction = parseInstruction(task, definition);
     const workspaces = await this.prepareWorkspaces(task, definition);
-    const manifest = await this.manifestStore.read(
+    const manifest = await this.manifestFile.read(
       workspaces.primary.path,
       task.prepared.manifestRef,
       task,

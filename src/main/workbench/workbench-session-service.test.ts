@@ -24,7 +24,7 @@ import { EmptyAttachmentService } from '../attachments/attachment-service';
 import type { MainWorkbenchProvider } from './workbench-session';
 import { WorkbenchSessionService } from './workbench-session-service';
 import { WorkbenchRegistry } from './workbench-registry';
-import { EmptyWorkbenchStateRepository } from './workbench-state-repository';
+import { EmptyWorkbenchStateDatabase } from './workbench-state-database';
 
 function createProvider(
   id: string,
@@ -126,7 +126,7 @@ function createManager(
     assetService,
     registry,
     new EmptyAttachmentService(),
-    new EmptyWorkbenchStateRepository(),
+    new EmptyWorkbenchStateDatabase(),
     {
       createId: () => 'session',
       ...(transportBindingRegistry

@@ -3,8 +3,8 @@ import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import type {
   JsonValue,
   WorkbenchCommandResult,
@@ -42,7 +42,7 @@ export class ImageWorkbenchProvider implements MainWorkbenchProvider {
 
   constructor(
     private readonly resourceService: ContentResourceServiceApi,
-    private readonly stateRepository: WorkbenchStateRepository,
+    private readonly stateDatabase: WorkbenchStateDatabaseApi,
     dependencies: Partial<ImageWorkbenchProviderDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
@@ -99,7 +99,7 @@ export class ImageWorkbenchProvider implements MainWorkbenchProvider {
     }
 
     const savedTime = this.now();
-    await this.stateRepository.save({
+    await this.stateDatabase.save({
       assetId: context.asset.id,
       workbenchId: IMAGE_WORKBENCH_ID,
       schemaVersion: IMAGE_STATE_SCHEMA_VERSION,

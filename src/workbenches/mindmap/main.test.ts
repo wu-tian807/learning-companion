@@ -9,8 +9,8 @@ import {
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import type { MindMapAssociationLookup } from './association-mapper';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
@@ -27,7 +27,7 @@ import {
   MIND_MAP_WORKBENCH_ID,
 } from './shared';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -123,7 +123,7 @@ function createContext(
 
 describe('MindMapWorkbenchProvider', () => {
   it('opens a new document with every branch collapsed by default', async () => {
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new MindMapWorkbenchProvider(
       states,
       associationLookup,
@@ -152,7 +152,7 @@ describe('MindMapWorkbenchProvider', () => {
 
   it('restores only collapsible nodes from persisted state', async () => {
     const provider = new MindMapWorkbenchProvider(
-      new MemoryStateRepository(),
+      new MemoryStateDatabase(),
       associationLookup,
     );
     const context = createContext({
@@ -182,7 +182,7 @@ describe('MindMapWorkbenchProvider', () => {
 
   it('replaces the legacy expanded default with the collapsed default', async () => {
     const provider = new MindMapWorkbenchProvider(
-      new MemoryStateRepository(),
+      new MemoryStateDatabase(),
       associationLookup,
     );
     const context = createContext({
@@ -209,7 +209,7 @@ describe('MindMapWorkbenchProvider', () => {
   });
 
   it('persists validated collapsed nodes and viewport state', async () => {
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new MindMapWorkbenchProvider(
       states,
       associationLookup,
@@ -256,7 +256,7 @@ describe('MindMapWorkbenchProvider', () => {
 
   it('rejects invalid open contexts and stale sessions', async () => {
     const provider = new MindMapWorkbenchProvider(
-      new MemoryStateRepository(),
+      new MemoryStateDatabase(),
       associationLookup,
     );
     const invalid = createContext({

@@ -609,7 +609,7 @@ Attachment 不在本阶段实现，但后续必须遵守：
 - `ProjectDatabase` / `AssetDatabase`：SQLite 与内存 Map；
 - `ProjectService` / `AssetService`：领域编排和运行时状态；
 - `ProjectWorkspaceManager`：不保存领域状态的路径与文件系统操作；
-- `InMemoryFileDialogDirectoryStore`：按 Workspace 保存进程内文件选择目录；
+- `InMemoryFileDialogLastDirectoryCache`：按 Workspace 缓存进程内最后一次文件选择目录；
 - `ContentResolver`：把持久化引用解析为运行时内容；
 - `ContentHandle`：面向 Workbench 的能力句柄；
 - `Repository`：按稳定键保存和读取特定记录。

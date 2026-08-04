@@ -10,8 +10,8 @@ import {
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import { AudioWorkbenchProvider } from './main';
 import {
   AUDIO_STATE_SCHEMA_VERSION,
@@ -20,7 +20,7 @@ import {
   DEFAULT_AUDIO_VIEW_STATE,
 } from './shared';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -87,7 +87,7 @@ function createContext(
 describe('AudioWorkbenchProvider', () => {
   it('opens a scoped resource URL and restores persisted state', async () => {
     const resources = createResources();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new AudioWorkbenchProvider(resources, states);
     const viewState = {
       currentTime: 42,
@@ -120,7 +120,7 @@ describe('AudioWorkbenchProvider', () => {
 
   it('persists validated view state and revokes the session', async () => {
     const resources = createResources();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new AudioWorkbenchProvider(resources, states, {
       now: () => 300,
     });
@@ -155,7 +155,7 @@ describe('AudioWorkbenchProvider', () => {
     const resources = createResources();
     const provider = new AudioWorkbenchProvider(
       resources,
-      new MemoryStateRepository(),
+      new MemoryStateDatabase(),
     );
     const invalidState = createContext({
       state: {
@@ -178,7 +178,7 @@ describe('AudioWorkbenchProvider', () => {
     await expect(
       new AudioWorkbenchProvider(
         createResources(),
-        new MemoryStateRepository(),
+        new MemoryStateDatabase(),
       ).open(unsupported),
     ).rejects.toThrow('DATA_INTEGRITY_ERROR');
   });

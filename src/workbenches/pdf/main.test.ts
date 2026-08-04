@@ -10,8 +10,8 @@ import {
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import { PdfWorkbenchProvider } from './main';
 import {
   clonePdfWorkbenchState,
@@ -22,7 +22,7 @@ import {
   type PdfWorkbenchViewState,
 } from './shared';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -99,7 +99,7 @@ function createContext(
 describe('PdfWorkbenchProvider', () => {
   it('registers a temporary content URL and opens with default state', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new PdfWorkbenchProvider(resources, states);
     const context = createContext();
 
@@ -127,7 +127,7 @@ describe('PdfWorkbenchProvider', () => {
       sidebar: 'outline',
     };
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new PdfWorkbenchProvider(resources, states);
 
     await expect(
@@ -164,7 +164,7 @@ describe('PdfWorkbenchProvider', () => {
 
   it('persists validated PDF view state', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new PdfWorkbenchProvider(resources, states, {
       now: () => 300,
     });
@@ -199,7 +199,7 @@ describe('PdfWorkbenchProvider', () => {
 
   it('rejects non-PDF assets, unavailable content, and invalid commands', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new PdfWorkbenchProvider(resources, states);
 
     await expect(
@@ -241,7 +241,7 @@ describe('PdfWorkbenchProvider', () => {
 
   it('prevents duplicate sessions and revokes the URL exactly once', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new PdfWorkbenchProvider(resources, states);
     const context = createContext();
     await provider.open(context);

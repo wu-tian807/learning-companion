@@ -40,8 +40,8 @@ import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
-import { SqliteWorkbenchStateDataRepository } from '../workbench/workbench-state-data-repository';
-import { SqliteWorkbenchStateRepository } from '../workbench/workbench-state-repository';
+import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
+import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
@@ -176,17 +176,17 @@ export async function createApplicationRuntime({
       workbenchFacilityRegistry,
     );
     const workbenchStateRepository =
-      new SqliteWorkbenchStateRepository(databaseContext);
+      new WorkbenchStateDatabase(databaseContext);
     const workbenchStateDataRepository =
-      new SqliteWorkbenchStateDataRepository(databaseContext);
+      new WorkbenchStateDataDatabase(databaseContext);
     registerMainWorkbenches(workbenchRegistry, {
       associationService,
       artifactService,
       contentResourceService,
       externalLibraryService,
       projectLookup: projectDatabase,
-      stateRepository: workbenchStateRepository,
-      stateDataRepository: workbenchStateDataRepository,
+      stateDatabase: workbenchStateRepository,
+      stateDataDatabase: workbenchStateDataRepository,
     });
     workbenchSessionService = new WorkbenchSessionService(
       assetService,

@@ -133,7 +133,7 @@
 - `src/main/workbench/workbench-registry.ts`
 - `src/main/workbench/workbench-session.ts`
 - `src/main/workbench/workbench-session-manager.ts`
-- `src/main/workbench/workbench-state-repository.ts`
+- `src/main/workbench/workbench-state-database.ts`
 - `src/main/ipc/workbench.ts`
 - `src/workbenches/unsupported/shared.ts`
 - `src/workbenches/unsupported/main.ts`
@@ -155,7 +155,7 @@
    - 校验 Manifest；
    - 按 mediaType 和 Content Capability 选择；
    - 无匹配项时使用 Unsupported Provider。
-2. 实现空 `WorkbenchStateRepository`。
+2. 实现空 `WorkbenchStateDatabase`。
 3. 实现 `WorkbenchSessionManager`：
    - 一个活动 Session；
    - 打开、命令、关闭；

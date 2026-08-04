@@ -28,8 +28,8 @@ import type {
 } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import type {
   JsonValue,
   WorkbenchCommandResult,
@@ -85,7 +85,7 @@ export class OfficeWorkbenchProvider
     private readonly resources: ContentResourceServiceApi,
     private readonly externalLibraries: ExternalLibraryServiceApi,
     private readonly projects: ProjectLookup,
-    private readonly stateRepository: WorkbenchStateRepository,
+    private readonly stateDatabase: WorkbenchStateDatabaseApi,
     dependencies: Partial<OfficeWorkbenchProviderDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
@@ -227,7 +227,7 @@ export class OfficeWorkbenchProvider
       session.viewState = clonePdfWorkbenchState(
         command.payload.viewState,
       );
-      await this.stateRepository.save({
+      await this.stateDatabase.save({
         assetId: context.asset.id,
         workbenchId: OFFICE_WORKBENCH_ID,
         schemaVersion: OFFICE_STATE_SCHEMA_VERSION,

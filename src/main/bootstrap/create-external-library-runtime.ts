@@ -1,6 +1,6 @@
 import { libreOfficeDefinition } from '../external-libraries/definitions/libreoffice';
 import { ExternalLibraryDownloader } from '../external-libraries/external-library-downloader';
-import { ExternalLibraryInstallationStore } from '../external-libraries/external-library-installation-store';
+import { ExternalLibraryInstallationManifestFile } from '../external-libraries/external-library-installation-manifest-file';
 import { ExternalLibraryInstallerRegistry } from '../external-libraries/external-library-installer';
 import { ExternalLibraryPathManager } from '../external-libraries/external-library-path-manager';
 import { ExternalLibraryRegistry } from '../external-libraries/external-library-registry';
@@ -21,7 +21,7 @@ export async function createExternalLibraryRuntime(
     settingsRepository,
     registry,
     new ExternalLibraryPathManager(),
-    new ExternalLibraryInstallationStore(),
+    new ExternalLibraryInstallationManifestFile(),
     new ExternalLibraryDownloader(),
     installerRegistry,
   );

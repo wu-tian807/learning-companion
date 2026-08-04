@@ -32,7 +32,7 @@ export interface GenerationPreparedManifest {
   readonly preparedData?: JsonValue;
 }
 
-export interface GenerationPreparedManifestStoreApi {
+export interface GenerationPreparedManifestFileApi {
   write(
     primaryWorkspacePath: string,
     task: GenerationTaskSnapshot,
@@ -46,13 +46,13 @@ export interface GenerationPreparedManifestStoreApi {
   ): Promise<GenerationPreparedManifest>;
 }
 
-interface GenerationPreparedManifestStoreDependencies {
+interface GenerationPreparedManifestFileDependencies {
   readonly mkdir: typeof mkdir;
   readonly readFile: typeof readFile;
   readonly writeFileAtomic: typeof writeFileAtomic;
 }
 
-const defaultDependencies: GenerationPreparedManifestStoreDependencies = {
+const defaultDependencies: GenerationPreparedManifestFileDependencies = {
   mkdir,
   readFile,
   writeFileAtomic,
@@ -97,13 +97,13 @@ function createManifest(
   });
 }
 
-export class GenerationPreparedManifestStore
-  implements GenerationPreparedManifestStoreApi
+export class GenerationPreparedManifestFile
+  implements GenerationPreparedManifestFileApi
 {
-  private readonly dependencies: GenerationPreparedManifestStoreDependencies;
+  private readonly dependencies: GenerationPreparedManifestFileDependencies;
 
   constructor(
-    dependencies: Partial<GenerationPreparedManifestStoreDependencies> = {},
+    dependencies: Partial<GenerationPreparedManifestFileDependencies> = {},
   ) {
     this.dependencies = { ...defaultDependencies, ...dependencies };
   }

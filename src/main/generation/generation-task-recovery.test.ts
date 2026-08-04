@@ -13,7 +13,7 @@ import type {
   GenerationAgentRunner,
 } from './generation-agent-runner';
 import { GenerationTaskExecution } from './generation-task-execution';
-import { GenerationTaskOutputStore } from './generation-task-output-store';
+import { GenerationTaskOutputFile } from './generation-task-output-file';
 import { GenerationTaskService } from './generation-task-service';
 import type { GenerationTaskPreparerApi } from './preparation/generation-task-preparer';
 import type { PreparedGenerationTask } from './preparation/prepared-generation-task';
@@ -162,7 +162,7 @@ describe('GenerationTask recovery', () => {
           database,
           preparer,
           new GenerationAgentExecutor(),
-          new GenerationTaskOutputStore(),
+          new GenerationTaskOutputFile(),
         ),
         {
           get: () => ({

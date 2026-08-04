@@ -9,7 +9,7 @@ import { DEFAULT_APP_PREFERENCES } from "../../shared/app-preferences";
 import { createAppSetupSnapshot } from "../../shared/app-setup";
 import type { SettingsRepository } from "../settings/settings-repository";
 import { ExternalLibraryDownloader } from "./external-library-downloader";
-import { ExternalLibraryInstallationStore } from "./external-library-installation-store";
+import { ExternalLibraryInstallationManifestFile } from "./external-library-installation-manifest-file";
 import {
   ExternalLibraryInstallerRegistry,
   type ExternalLibraryInstaller,
@@ -28,7 +28,7 @@ interface Harness {
   readonly rootPath: string;
   readonly registry: ExternalLibraryRegistry;
   readonly pathManager: ExternalLibraryPathManager;
-  readonly installationStore: ExternalLibraryInstallationStore;
+  readonly installationManifestFile: ExternalLibraryInstallationManifestFile;
   readonly installer: ExternalLibraryInstaller;
   readonly settings: SettingsRepository;
   readonly service: ExternalLibraryService;
@@ -100,7 +100,7 @@ async function createHarness(input?: {
   const pathManager = new ExternalLibraryPathManager({
     createId: () => "job",
   });
-  const installationStore = new ExternalLibraryInstallationStore();
+  const installationManifestFile = new ExternalLibraryInstallationManifestFile();
   const install = vi.fn<ExternalLibraryInstaller["install"]>(
     async (request) => {
       const executablePath = join(
@@ -137,7 +137,7 @@ async function createHarness(input?: {
     settings,
     registry,
     pathManager,
-    installationStore,
+    installationManifestFile,
     downloader,
     installers,
     {
@@ -152,7 +152,7 @@ async function createHarness(input?: {
     rootPath,
     registry,
     pathManager,
-    installationStore,
+    installationManifestFile,
     installer,
     settings,
     service,
@@ -260,7 +260,7 @@ describe("ExternalLibraryService", () => {
       createSettings(first.rootPath),
       first.registry,
       first.pathManager,
-      first.installationStore,
+      first.installationManifestFile,
       {
         download: vi.fn(),
       },

@@ -10,8 +10,8 @@ import {
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
-  WorkbenchStateRepository,
-} from '../../main/workbench/workbench-state-repository';
+  WorkbenchStateDatabaseApi,
+} from '../../main/workbench/workbench-state-database';
 import {
   cloneImageViewState,
   createImageSaveViewStateCommand,
@@ -23,7 +23,7 @@ import {
 } from './shared';
 import { ImageWorkbenchProvider } from './main';
 
-class MemoryStateRepository implements WorkbenchStateRepository {
+class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
 
   async get(assetId: string, workbenchId: string) {
@@ -99,7 +99,7 @@ function createContext(
 describe('ImageWorkbenchProvider', () => {
   it('registers a resource URL and opens with the default view state', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new ImageWorkbenchProvider(resources, states);
     const context = createContext();
 
@@ -126,7 +126,7 @@ describe('ImageWorkbenchProvider', () => {
       rotation: 90,
     };
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new ImageWorkbenchProvider(resources, states);
     const valid = createContext({
       sessionId: 'valid',
@@ -161,7 +161,7 @@ describe('ImageWorkbenchProvider', () => {
 
   it('persists validated view state commands', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new ImageWorkbenchProvider(resources, states, {
       now: () => 300,
     });
@@ -196,7 +196,7 @@ describe('ImageWorkbenchProvider', () => {
 
   it('rejects invalid open contexts and command payloads', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new ImageWorkbenchProvider(resources, states);
     const missingCapability = createContext({
       handle: {
@@ -224,7 +224,7 @@ describe('ImageWorkbenchProvider', () => {
 
   it('revokes the temporary URL when the session closes', async () => {
     const resources = createResourceService();
-    const states = new MemoryStateRepository();
+    const states = new MemoryStateDatabase();
     const provider = new ImageWorkbenchProvider(resources, states);
     const context = createContext();
     await provider.open(context);
