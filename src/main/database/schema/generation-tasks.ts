@@ -24,6 +24,7 @@ export const generationTasks = sqliteTable(
       .notNull(),
     preparedTime: integer('prepared_time'),
     preparedManifestRef: text('prepared_manifest_ref'),
+    assignedProviderId: text('assigned_provider_id'),
     agentCompletedTime: integer('agent_completed_time'),
     agentSessionId: text('agent_session_id'),
     agentOutputRef: text('agent_output_ref'),

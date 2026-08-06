@@ -69,7 +69,32 @@ export class GenerationTask {
       return 'agent-completed';
     }
 
+    if (this.snapshot.assignedProviderId) {
+      return 'agent-assigned';
+    }
+
     return this.snapshot.prepared ? 'prepared' : 'created';
+  }
+
+  assignProvider(providerId: string, updatedTime: number): void {
+    this.requireActive();
+
+    if (!this.snapshot.prepared || this.snapshot.agentCompleted) {
+      throw new Error('GenerationTask Provider 分配顺序无效');
+    }
+
+    if (this.snapshot.assignedProviderId) {
+      if (this.snapshot.assignedProviderId !== providerId) {
+        throw new Error('GenerationTask 已固定到其他 Provider');
+      }
+      return;
+    }
+
+    this.replace({
+      ...this.snapshot,
+      assignedProviderId: providerId,
+      updatedTime,
+    });
   }
 
   recordPrepared(input: {
@@ -103,7 +128,12 @@ export class GenerationTask {
   }): void {
     this.requireActive();
 
-    if (!this.snapshot.prepared || this.snapshot.agentCompleted) {
+    if (
+      !this.snapshot.prepared ||
+      !this.snapshot.assignedProviderId ||
+      this.snapshot.agentCompleted ||
+      input.metrics.providerId !== this.snapshot.assignedProviderId
+    ) {
       throw new Error('GenerationTask agent checkpoint 顺序无效');
     }
 

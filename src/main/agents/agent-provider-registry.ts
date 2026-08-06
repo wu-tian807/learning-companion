@@ -1,13 +1,14 @@
 import { isAgentProviderId } from '../../shared/agent-providers';
 import { AppError } from '../errors/app-error';
-import type { AgentProviderApi } from './agent-provider';
+import type { AgentProvider } from './agent-provider';
 
 export class AgentProviderRegistry {
-  private readonly providers = new Map<string, AgentProviderApi>();
+  private readonly providers = new Map<string, AgentProvider>();
 
-  register(provider: AgentProviderApi): void {
+  register(provider: AgentProvider): void {
     if (
       !isAgentProviderId(provider.id) ||
+      provider.providerId !== provider.id ||
       provider.displayName.trim().length === 0
     ) {
       throw new AppError('INVALID_EXTENSION_DEFINITION');
@@ -20,11 +21,11 @@ export class AgentProviderRegistry {
     this.providers.set(provider.id, provider);
   }
 
-  list(): readonly AgentProviderApi[] {
+  list(): readonly AgentProvider[] {
     return [...this.providers.values()];
   }
 
-  require(providerId: string): AgentProviderApi {
+  require(providerId: string): AgentProvider {
     const provider = this.providers.get(providerId);
 
     if (!provider) {

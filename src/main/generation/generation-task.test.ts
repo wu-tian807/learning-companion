@@ -26,6 +26,8 @@ describe('GenerationTask', () => {
       durationMs: 10,
       updatedTime: 110,
     });
+    task.assignProvider('codex', 111);
+    expect(task.getStatus()).toBe('agent-assigned');
     task.recordAgentCompleted({
       checkpoint: {
         completedTime: 140,
@@ -61,6 +63,7 @@ describe('GenerationTask', () => {
 
     const snapshot = task.getSnapshot();
     expect(task.getStatus()).toBe('post-processed');
+    expect(snapshot.assignedProviderId).toBe('codex');
     expect(snapshot.agentCompleted?.sessionId).toBe('session-1');
     expect(snapshot.metrics).toMatchObject({
       prepareDurationMs: 10,
@@ -125,5 +128,26 @@ describe('GenerationTask', () => {
         updatedTime: 110,
       }),
     ).toThrow('checkpoint 顺序无效');
+  });
+
+  it('pins the first assigned Provider and rejects a later switch', () => {
+    const task = createTask();
+    task.recordPrepared({
+      checkpoint: {
+        completedTime: 105,
+        manifestRef: 'control/prepared-manifest.json',
+      },
+      durationMs: 5,
+      updatedTime: 105,
+    });
+
+    task.assignProvider('codex', 106);
+    task.assignProvider('codex', 107);
+
+    expect(task.getSnapshot().assignedProviderId).toBe('codex');
+    expect(task.getSnapshot().updatedTime).toBe(106);
+    expect(() => task.assignProvider('claude-code', 108)).toThrow(
+      '已固定到其他 Provider',
+    );
   });
 });

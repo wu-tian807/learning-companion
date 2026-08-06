@@ -50,6 +50,9 @@ function mapRow(
               manifestRef: row.preparedManifestRef!,
             },
           }),
+      ...(row.assignedProviderId === null
+        ? {}
+        : { assignedProviderId: row.assignedProviderId }),
       ...(row.agentCompletedTime === null
         ? {}
         : {
@@ -98,6 +101,7 @@ function toRow(task: GenerationTaskSnapshot) {
     assetReferences: snapshot.assetReferences,
     preparedTime: snapshot.prepared?.completedTime ?? null,
     preparedManifestRef: snapshot.prepared?.manifestRef ?? null,
+    assignedProviderId: snapshot.assignedProviderId ?? null,
     agentCompletedTime: snapshot.agentCompleted?.completedTime ?? null,
     agentSessionId: snapshot.agentCompleted?.sessionId ?? null,
     agentOutputRef: snapshot.agentCompleted?.outputRef ?? null,
@@ -183,6 +187,7 @@ export class GenerationTaskDatabase
         assetReferences: row.assetReferences,
         preparedTime: row.preparedTime,
         preparedManifestRef: row.preparedManifestRef,
+        assignedProviderId: row.assignedProviderId,
         agentCompletedTime: row.agentCompletedTime,
         agentSessionId: row.agentSessionId,
         agentOutputRef: row.agentOutputRef,

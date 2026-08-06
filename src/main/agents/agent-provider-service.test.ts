@@ -11,7 +11,7 @@ import type {
   AgentProviderSetupSnapshot,
 } from '../../shared/agent-providers';
 import type { SettingsRepository } from '../settings/settings-repository';
-import type { AgentProviderApi } from './agent-provider';
+import type { AgentProvider } from './agent-provider';
 import { AgentProviderRegistry } from './agent-provider-registry';
 import {
   AgentProviderService,
@@ -25,14 +25,14 @@ interface Deferred<T> {
 }
 
 type TestProvider = Omit<
-  AgentProviderApi,
+  AgentProvider,
   'getCredentialState' | 'startLogin' | 'cancelLogin'
 > & {
   readonly getCredentialState: MockedFunction<
-    AgentProviderApi['getCredentialState']
+    AgentProvider['getCredentialState']
   >;
-  readonly startLogin: MockedFunction<AgentProviderApi['startLogin']>;
-  readonly cancelLogin: MockedFunction<AgentProviderApi['cancelLogin']>;
+  readonly startLogin: MockedFunction<AgentProvider['startLogin']>;
+  readonly cancelLogin: MockedFunction<AgentProvider['cancelLogin']>;
   invalidate(): void;
   expectInvalidationDisposed(): void;
 };
@@ -78,7 +78,7 @@ function createProvider(
   let invalidationListener: (() => void) | undefined;
   const disposeInvalidation = vi.fn();
   const getCredentialState: MockedFunction<
-    AgentProviderApi['getCredentialState']
+    AgentProvider['getCredentialState']
   > =
     typeof credential === 'function'
       ? vi.fn(credential)
@@ -86,6 +86,7 @@ function createProvider(
 
   return {
     id,
+    providerId: id,
     displayName: id === 'codex' ? 'Codex' : 'Claude Code',
     description: `${id} Provider`,
     loginLabel: `登录 ${id}`,
@@ -97,6 +98,10 @@ function createProvider(
       url: 'https://example.com/login',
     })),
     cancelLogin: vi.fn(async () => undefined),
+    async *runTurn() {
+      yield* [] as never[];
+      throw new Error('not used');
+    },
     subscribeCredentialInvalidation: vi.fn((listener) => {
       invalidationListener = listener;
       return disposeInvalidation;
@@ -363,6 +368,33 @@ describe('AgentProviderService', () => {
       code: 'AGENT_PROVIDER_AUTH_REQUIRED',
     });
     expect(updateSelectedAgentProviderId).not.toHaveBeenCalled();
+  });
+
+  it('resolves the selected authenticated Provider and keeps explicit task assignments pinned', async () => {
+    const authenticated = {
+      status: 'authenticated' as const,
+      account: {},
+    };
+    const codex = createProvider('codex', authenticated);
+    const claude = createProvider('claude-code', authenticated);
+    const { service } = createService([codex, claude], 'codex');
+
+    await expect(service.resolveRunner()).resolves.toBe(codex);
+    await service.selectProvider('claude-code');
+    await expect(service.resolveRunner()).resolves.toBe(claude);
+    await expect(service.resolveRunner('codex')).resolves.toBe(codex);
+  });
+
+  it('requires a selected and authenticated Provider before resolving a runner', async () => {
+    const codex = createProvider('codex');
+    const { service } = createService([codex]);
+
+    await expect(service.resolveRunner()).rejects.toMatchObject({
+      code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
+    });
+    await expect(service.resolveRunner('codex')).rejects.toMatchObject({
+      code: 'AGENT_PROVIDER_AUTH_REQUIRED',
+    });
   });
 
   it('polls login in Main until the Provider becomes authenticated', async () => {

@@ -2,6 +2,7 @@ import type {
   AgentProviderCredentialSnapshot,
   AgentProviderLoginChallenge,
 } from '../../shared/agent-providers';
+import type { GenerationAgentRunner } from '../generation/generation-agent-runner';
 
 export interface AgentProviderApi {
   readonly id: string;
@@ -18,3 +19,7 @@ export interface AgentProviderApi {
   startLogin(): Promise<AgentProviderLoginChallenge>;
   cancelLogin(loginId: string): Promise<void>;
 }
+
+export interface AgentProvider
+  extends AgentProviderApi,
+    GenerationAgentRunner {}

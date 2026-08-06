@@ -5,7 +5,10 @@ import {
 } from '../../shared/workbench/protocol';
 import { AppError } from '../errors/app-error';
 import type { AnyTaskDefinition } from './contracts/task-definition';
-import type { GenerationAgentRunner } from './generation-agent-runner';
+import type {
+  GenerationAgentRunner,
+  GenerationAgentRunnerResolver,
+} from './generation-agent-runner';
 import {
   GenerationOutputValidationError,
   type GenerationAgentExecutionEvent,
@@ -73,7 +76,7 @@ export class GenerationTaskExecution {
   async *run(
     task: GenerationTask,
     definition: AnyTaskDefinition,
-    runner: GenerationAgentRunner,
+    runnerResolver: GenerationAgentRunnerResolver,
     signal: AbortSignal,
   ): AsyncGenerator<
     GenerationTaskExecutionEvent,
@@ -97,7 +100,7 @@ export class GenerationTaskExecution {
       const output = yield* this.ensureAgentCompleted(
         task,
         prepared,
-        runner,
+        runnerResolver,
         signal,
       );
 
@@ -198,13 +201,15 @@ export class GenerationTaskExecution {
   private async *ensureAgentCompleted(
     task: GenerationTask,
     prepared: PreparedGenerationTask,
-    runner: GenerationAgentRunner,
+    runnerResolver: GenerationAgentRunnerResolver,
     signal: AbortSignal,
   ): AsyncGenerator<GenerationTaskExecutionEvent, JsonValue> {
     if (task.getSnapshot().agentCompleted) {
       return this.outputFile.read(task.getSnapshot(), prepared);
     }
 
+    const runner = await this.resolveRunner(task, runnerResolver, signal);
+    signal.throwIfAborted();
     yield { type: 'phase', phase: 'agent', state: 'started' };
     const completed = yield* this.agentExecutor.run(
       prepared,
@@ -233,6 +238,31 @@ export class GenerationTaskExecution {
     this.database.update(task.getSnapshot());
     yield { type: 'phase', phase: 'agent', state: 'completed' };
     return completed.output;
+  }
+
+  private async resolveRunner(
+    task: GenerationTask,
+    resolver: GenerationAgentRunnerResolver,
+    signal: AbortSignal,
+  ): Promise<GenerationAgentRunner> {
+    const assignedProviderId = task.getSnapshot().assignedProviderId;
+    const runner = await resolver.resolveRunner(assignedProviderId);
+    signal.throwIfAborted();
+
+    if (
+      assignedProviderId !== undefined &&
+      runner.providerId !== assignedProviderId
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    if (assignedProviderId === undefined) {
+      const assignedTime = this.nextTaskTime(task, this.now());
+      task.assignProvider(runner.providerId, assignedTime);
+      this.database.update(task.getSnapshot());
+    }
+
+    return runner;
   }
 
   private persistFailure(

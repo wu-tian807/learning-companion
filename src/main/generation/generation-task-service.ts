@@ -7,7 +7,7 @@ import {
   validateGenerationAssetReferenceBindings,
   type GenerationAssetReferenceBindings,
 } from './contracts/generation-asset-reference';
-import type { GenerationAgentRunner } from './generation-agent-runner';
+import type { GenerationAgentRunnerResolver } from './generation-agent-runner';
 import type { GenerationTaskDatabaseApi } from './generation-task-database';
 import { GenerationTaskDefinitionRegistry } from './generation-task-definition-registry';
 import type {
@@ -40,7 +40,6 @@ export interface GenerationTaskServiceApi {
   create(request: CreateGenerationTaskRequest): GenerationTaskSnapshot;
   run(
     taskId: string,
-    runner: GenerationAgentRunner,
     signal?: AbortSignal,
   ): AsyncGenerator<GenerationTaskEvent, GenerationTaskRunResult>;
   cancel(taskId: string): void;
@@ -87,6 +86,7 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
     private readonly definitions: GenerationTaskDefinitionRegistry,
     private readonly execution: GenerationTaskExecution,
     private readonly projectLookup: ProjectLookup,
+    private readonly runnerResolver: GenerationAgentRunnerResolver,
     dependencies: Partial<GenerationTaskServiceDependencies> = {},
   ) {
     this.dependencies = { ...defaultDependencies, ...dependencies };
@@ -185,7 +185,6 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
 
   async *run(
     taskId: string,
-    runner: GenerationAgentRunner,
     signal?: AbortSignal,
   ): AsyncGenerator<GenerationTaskEvent, GenerationTaskRunResult> {
     const task = this.requireTask(taskId);
@@ -211,7 +210,7 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       const result = yield* this.execution.run(
         task,
         definition,
-        runner,
+        this.runnerResolver,
         runSignal,
       );
       runSignal.throwIfAborted();

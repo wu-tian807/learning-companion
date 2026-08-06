@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AgentSessionProjectLifecycle } from '../agents/sessions/agent-session-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
 import type { SettingsRepository } from '../settings/settings-repository';
@@ -55,6 +56,10 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     unloadProject: vi.fn(() => calls.push('unload-associations')),
     getActiveProjectId: vi.fn(() => activeProjectId),
   } as unknown as AssetAssociationServiceApi;
+  const agentSessions = {
+    loadFromProject: vi.fn(() => calls.push('load-agent-sessions')),
+    unloadProject: vi.fn(() => calls.push('unload-agent-sessions')),
+  } as AgentSessionProjectLifecycle;
   const workbenchSessions = {
     closeActive: vi.fn(async () => {
       calls.push('close-workbench');
@@ -81,6 +86,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     projectDatabase,
     assetService,
     associationService,
+    agentSessions,
     workbenchSessions,
     workspaceManager,
     settingsRepository,
@@ -93,6 +99,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
 
   return {
     assetService,
+    agentSessions,
     associationService,
     calls,
     projectDatabase,
@@ -183,11 +190,13 @@ describe('ProjectService', () => {
     );
     expect(calls).toEqual([
       'close-workbench',
+      'unload-agent-sessions',
       'unload-associations',
       'unload-assets',
       'cleanup-artifacts',
       'load-assets',
       'load-associations',
+      'load-agent-sessions',
     ]);
     expect(assetService.cleanupProjectArtifacts).toHaveBeenCalledWith(
       'project',
@@ -224,6 +233,7 @@ describe('ProjectService', () => {
 
     expect(calls).toEqual([
       'close-workbench',
+      'unload-agent-sessions',
       'unload-associations',
       'unload-assets',
       'cleanup-artifacts',
@@ -245,6 +255,7 @@ describe('ProjectService', () => {
     expect(current.calls).toEqual([
       'close-workbench',
       'load-assets',
+      'unload-agent-sessions',
       'unload-associations',
       'unload-assets',
     ]);

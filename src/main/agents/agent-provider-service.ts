@@ -5,8 +5,9 @@ import type {
   AgentProviderSnapshot,
 } from '../../shared/agent-providers';
 import { AppError } from '../errors/app-error';
+import type { GenerationAgentRunnerResolver } from '../generation/generation-agent-runner';
 import type { SettingsRepository } from '../settings/settings-repository';
-import type { AgentProviderApi } from './agent-provider';
+import type { AgentProvider } from './agent-provider';
 import type { AgentProviderRegistry } from './agent-provider-registry';
 
 export interface AgentProviderServiceApi {
@@ -75,7 +76,7 @@ function refreshFailureMessage(): string {
 }
 
 export class AgentProviderService
-  implements AgentProviderServiceApi
+  implements AgentProviderServiceApi, GenerationAgentRunnerResolver
 {
   private readonly dependencies: AgentProviderServiceDependencies;
   private readonly providerStates = new Map<
@@ -205,6 +206,26 @@ export class AgentProviderService
     return this.createSetupSnapshot();
   }
 
+  async resolveRunner(providerId?: string): Promise<AgentProvider> {
+    this.requireActive();
+    const resolvedProviderId =
+      providerId ?? this.settings.getSelectedAgentProviderId();
+
+    if (resolvedProviderId === null) {
+      throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
+    }
+
+    const provider = this.registry.require(resolvedProviderId);
+    await this.ensureRefresh(provider);
+    const state = this.requireProviderState(provider);
+
+    if (state.credential?.status !== 'authenticated') {
+      throw new AppError('AGENT_PROVIDER_AUTH_REQUIRED');
+    }
+
+    return provider;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) {
       return;
@@ -261,7 +282,7 @@ export class AgentProviderService
   }
 
   private requireProviderState(
-    provider: AgentProviderApi,
+    provider: AgentProvider,
   ): ProviderRuntimeState {
     let state = this.providerStates.get(provider.id);
 
@@ -274,7 +295,7 @@ export class AgentProviderService
   }
 
   private ensureRefresh(
-    provider: AgentProviderApi,
+    provider: AgentProvider,
   ): Promise<void> {
     const state = this.requireProviderState(provider);
 
@@ -305,7 +326,7 @@ export class AgentProviderService
   }
 
   private async checkCredential(
-    provider: AgentProviderApi,
+    provider: AgentProvider,
     state: ProviderRuntimeState,
     generation: number,
   ): Promise<void> {
@@ -357,7 +378,7 @@ export class AgentProviderService
     this.publish();
   }
 
-  private scheduleLoginPoll(provider: AgentProviderApi): void {
+  private scheduleLoginPoll(provider: AgentProvider): void {
     const observer = this.loginObservers.get(provider.id);
 
     if (!observer || this.disposed) {
@@ -371,7 +392,7 @@ export class AgentProviderService
   }
 
   private async pollLogin(
-    provider: AgentProviderApi,
+    provider: AgentProvider,
     loginId: string,
   ): Promise<void> {
     const observer = this.loginObservers.get(provider.id);
@@ -407,7 +428,7 @@ export class AgentProviderService
   }
 
   private async stopLoginObserver(
-    provider: AgentProviderApi,
+    provider: AgentProvider,
     cancel: boolean,
   ): Promise<void> {
     const observer = this.loginObservers.get(provider.id);
@@ -461,7 +482,7 @@ export class AgentProviderService
   }
 
   private createProviderSnapshot(
-    provider: AgentProviderApi,
+    provider: AgentProvider,
     selectedProviderId: string | null,
   ): AgentProviderSnapshot {
     const state = this.requireProviderState(provider);

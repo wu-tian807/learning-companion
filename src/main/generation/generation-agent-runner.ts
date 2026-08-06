@@ -58,3 +58,7 @@ export interface GenerationAgentRunner {
     request: GenerationAgentTurnRequest,
   ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult>;
 }
+
+export interface GenerationAgentRunnerResolver {
+  resolveRunner(providerId?: string): Promise<GenerationAgentRunner>;
+}

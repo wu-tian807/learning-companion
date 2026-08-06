@@ -8,6 +8,7 @@ import {
 } from '../../shared/projects';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
+import type { AgentSessionProjectLifecycle } from '../agents/sessions/agent-session-service';
 import { AppError } from '../errors/app-error';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
 import type { SettingsRepository } from '../settings/settings-repository';
@@ -57,6 +58,7 @@ export class ProjectService implements ProjectServiceApi {
     private readonly projectDatabase: ProjectDatabaseApi,
     private readonly assetService: AssetServiceApi,
     private readonly associationService: AssetAssociationServiceApi,
+    private readonly agentSessions: AgentSessionProjectLifecycle,
     private readonly workbenchSessions: WorkbenchSessionLifecycle,
     private readonly workspaceManager: ProjectWorkspaceManagerApi,
     private readonly settingsRepository: SettingsRepository,
@@ -216,6 +218,7 @@ export class ProjectService implements ProjectServiceApi {
 
       if (activeProjectId === undefined) {
         await this.workbenchSessions.closeActive();
+        this.agentSessions.unloadProject();
         this.associationService.unloadProject();
         return;
       }
@@ -311,8 +314,10 @@ export class ProjectService implements ProjectServiceApi {
     try {
       const assets = await this.assetService.loadFromProject(projectId);
       this.associationService.loadFromProject(projectId);
+      this.agentSessions.loadFromProject(projectId);
       return assets;
     } catch (error) {
+      this.agentSessions.unloadProject();
       this.associationService.unloadProject();
       this.assetService.unloadProject();
       throw error;
@@ -320,6 +325,7 @@ export class ProjectService implements ProjectServiceApi {
   }
 
   private unloadProjectRuntime(): void {
+    this.agentSessions.unloadProject();
     this.associationService.unloadProject();
     this.assetService.unloadProject();
   }

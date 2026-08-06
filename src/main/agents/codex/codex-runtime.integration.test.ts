@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,6 +36,90 @@ describe.runIf(
           account: null,
           requiresOpenaiAuth: true,
         });
+      } finally {
+        await service.shutdown();
+        await rm(temporaryDirectory, {
+          recursive: true,
+          force: true,
+        });
+      }
+    },
+    30_000,
+  );
+
+  it(
+    'creates a thread with an isolated permission profile',
+    async () => {
+      const temporaryDirectory = await mkdtemp(
+        join(tmpdir(), 'learning-companion-codex-permissions-'),
+      );
+      const workspacePath = join(temporaryDirectory, 'workspace');
+      await mkdir(workspacePath, { recursive: true });
+      const service = new CodexRuntimeService(
+        new CodexAppServerConnectionFactory({
+          executablePath: resolveCodexExecutablePath({
+            isPackaged: false,
+            resourcesPath: process.cwd(),
+          }),
+          codexHomePath: join(temporaryDirectory, 'home'),
+        }),
+      );
+      const profileId = 'lc-integration-read-only';
+      const skillGroups = await service.listSkills([workspacePath], true);
+      const disabledSkillPaths = [
+        ...new Set(
+          skillGroups.flatMap(({ skills }) =>
+            skills.map(({ path }) => path),
+          ),
+        ),
+      ];
+      const configuration = {
+        cwd: workspacePath,
+        runtimeWorkspaceRoots: [workspacePath],
+        approvalPolicy: 'never' as const,
+        permissions: profileId,
+        developerInstructions: 'Read only the supplied workspace.',
+        configOverrides: {
+          agents: { enabled: false },
+          allow_login_shell: false,
+          apps: { _default: { enabled: false } },
+          features: {
+            apps: false,
+            goals: false,
+            hooks: false,
+            memories: false,
+            multi_agent: false,
+            remote_plugin: false,
+            shell_tool: true,
+          },
+          tools: { view_image: false },
+          web_search: 'disabled',
+          ...(disabledSkillPaths.length > 0
+            ? {
+                skills: {
+                  config: disabledSkillPaths.map((path) => ({
+                    path,
+                    enabled: false,
+                  })),
+                },
+              }
+            : {}),
+          permissions: {
+            [profileId]: {
+              filesystem: {
+                ':minimal': 'read',
+                [workspacePath]: 'read',
+              },
+              network: { enabled: false },
+            },
+          },
+        },
+      };
+
+      try {
+        const created = await service.createThread(configuration);
+        expect(created.thread.id).toBeTruthy();
+        expect(created.model).toBeTruthy();
       } finally {
         await service.shutdown();
         await rm(temporaryDirectory, {

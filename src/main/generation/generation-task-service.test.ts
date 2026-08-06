@@ -21,6 +21,18 @@ import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindm
 
 const temporaryDirectories: string[] = [];
 
+async function drain<TEvent, TResult>(
+  generator: AsyncGenerator<TEvent, TResult>,
+): Promise<TResult> {
+  let next = await generator.next();
+
+  while (!next.done) {
+    next = await generator.next();
+  }
+
+  return next.value;
+}
+
 class MemoryGenerationTaskDatabase implements GenerationTaskDatabaseApi {
   readonly tasks = new Map<string, GenerationTaskSnapshot>();
 
@@ -170,6 +182,23 @@ describe('GenerationTaskService', () => {
       },
     };
     const database = new MemoryGenerationTaskDatabase();
+    const resolvedProviderIds: Array<string | undefined> = [];
+    let selectedRunner: GenerationAgentRunner = runner;
+    const runnerResolver = {
+      async resolveRunner(providerId?: string) {
+        resolvedProviderIds.push(providerId);
+
+        if (providerId === undefined) {
+          return selectedRunner;
+        }
+
+        if (providerId !== 'codex') {
+          throw new Error(`unexpected Provider: ${providerId}`);
+        }
+
+        return runner;
+      },
+    };
     let nextTaskNumber = 1;
     const service = new GenerationTaskService(
       database,
@@ -190,6 +219,7 @@ describe('GenerationTaskService', () => {
           workspacePath: primaryPath,
         }),
       },
+      runnerResolver,
       { createId: () => `task-${nextTaskNumber++}` },
     );
     service.loadFromProject('project-1');
@@ -201,7 +231,7 @@ describe('GenerationTaskService', () => {
       assetReferences: { sources: [{ assetId: 'asset-1' }] },
     });
     const events = [];
-    const execution = service.run(task.id, runner);
+    const execution = service.run(task.id);
     let next = await execution.next();
 
     while (!next.done) {
@@ -210,6 +240,8 @@ describe('GenerationTaskService', () => {
     }
 
     expect(requests).toEqual([{}, { sessionId: 'session-1' }]);
+    expect(resolvedProviderIds).toEqual([undefined]);
+    expect(database.get('task-1')?.assignedProviderId).toBe('codex');
     expect(
       events.filter(({ type }) => type === 'output-rejected'),
     ).toHaveLength(1);
@@ -246,10 +278,7 @@ describe('GenerationTaskService', () => {
       instruction: new MindMapGenerationInstruction().toSnapshot(),
       assetReferences: { sources: [{ assetId: 'asset-1' }] },
     });
-    const interruptedExecution = service.run(
-      completedWithoutReadingReturn.id,
-      runner,
-    );
+    const interruptedExecution = service.run(completedWithoutReadingReturn.id);
 
     while (true) {
       const event = await interruptedExecution.next();
@@ -272,6 +301,37 @@ describe('GenerationTaskService', () => {
       database.get(completedWithoutReadingReturn.id)?.postProcessed,
     ).toBeDefined();
     expect(service.list()).toEqual([]);
+
+    const retryable = service.create({
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new MindMapGenerationInstruction().toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+    });
+    selectedRunner = {
+      providerId: 'codex',
+      async *runTurn() {
+        yield* [] as never[];
+        throw new Error('simulated Agent interruption');
+      },
+    };
+
+    await expect(drain(service.run(retryable.id))).rejects.toThrow(
+      'simulated Agent interruption',
+    );
+    expect(database.get(retryable.id)?.assignedProviderId).toBe('codex');
+
+    selectedRunner = {
+      providerId: 'claude-code',
+      async *runTurn() {
+        yield* [] as never[];
+        throw new Error('switched Provider must not run this task');
+      },
+    };
+    await drain(service.run(retryable.id));
+    expect(resolvedProviderIds.slice(-2)).toEqual([undefined, 'codex']);
+    expect(database.get(retryable.id)?.postProcessed).toBeDefined();
 
     const cancelled = service.create({
       projectId: 'project-1',

@@ -3,6 +3,7 @@ import {
   isJsonValue,
   type JsonValue,
 } from '../../../shared/workbench/protocol';
+import { isAgentProviderId } from '../../../shared/agent-providers';
 import {
   cloneGenerationAssetReferenceBindings,
   type GenerationAssetReferenceBindings,
@@ -49,6 +50,7 @@ export interface GenerationTaskSnapshot {
   readonly instruction: JsonValue;
   readonly assetReferences: GenerationAssetReferenceBindings;
   readonly prepared?: GenerationTaskPreparedCheckpoint;
+  readonly assignedProviderId?: string;
   readonly agentCompleted?: GenerationTaskAgentCheckpoint;
   readonly postProcessed?: GenerationTaskPostProcessCheckpoint;
   readonly metrics: GenerationTaskMetrics;
@@ -61,6 +63,7 @@ export interface GenerationTaskSnapshot {
 export type GenerationTaskStatus =
   | 'created'
   | 'prepared'
+  | 'agent-assigned'
   | 'agent-completed'
   | 'post-processed'
   | 'failed'
@@ -202,6 +205,7 @@ export function cloneGenerationTaskSnapshot(
   const prepared = snapshot.prepared
     ? clonePreparedCheckpoint(snapshot.prepared)
     : undefined;
+  const assignedProviderId = snapshot.assignedProviderId;
   const agentCompleted = snapshot.agentCompleted
     ? cloneAgentCheckpoint(snapshot.agentCompleted)
     : undefined;
@@ -232,6 +236,9 @@ export function cloneGenerationTaskSnapshot(
     (failure &&
       (failure.failedTime < createdTime || postProcessed !== undefined)) ||
     (prepared && prepared.completedTime > updatedTime) ||
+    (assignedProviderId !== undefined &&
+      (!prepared || !isAgentProviderId(assignedProviderId))) ||
+    (agentCompleted && assignedProviderId === undefined) ||
     (agentCompleted && agentCompleted.completedTime > updatedTime) ||
     (postProcessed && postProcessed.completedTime > updatedTime) ||
     (cancelledTime !== undefined && cancelledTime > updatedTime) ||
@@ -247,9 +254,10 @@ export function cloneGenerationTaskSnapshot(
 
   if (
     agentCompleted &&
-    metrics.agentExecutions.at(-1)?.sessionId !== agentCompleted.sessionId
+    (metrics.agentExecutions.at(-1)?.sessionId !== agentCompleted.sessionId ||
+      metrics.agentExecutions.at(-1)?.providerId !== assignedProviderId)
   ) {
-    throw new Error('GenerationTask session metrics 数据不一致');
+    throw new Error('GenerationTask provider 或 session metrics 数据不一致');
   }
 
   return Object.freeze({
@@ -262,6 +270,7 @@ export function cloneGenerationTaskSnapshot(
       snapshot.assetReferences,
     ),
     ...(prepared ? { prepared } : {}),
+    ...(assignedProviderId === undefined ? {} : { assignedProviderId }),
     ...(agentCompleted ? { agentCompleted } : {}),
     ...(postProcessed ? { postProcessed } : {}),
     metrics,

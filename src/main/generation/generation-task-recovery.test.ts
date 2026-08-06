@@ -11,6 +11,7 @@ import { GenerationAgentExecutor } from './generation-agent-executor';
 import type {
   GenerationAgentEvent,
   GenerationAgentRunner,
+  GenerationAgentRunnerResolver,
 } from './generation-agent-runner';
 import { GenerationTaskExecution } from './generation-task-execution';
 import { GenerationTaskOutputFile } from './generation-task-output-file';
@@ -154,7 +155,7 @@ describe('GenerationTask recovery', () => {
         };
       },
     };
-    const createService = () =>
+    const createService = (runnerResolver: GenerationAgentRunnerResolver) =>
       new GenerationTaskService(
         database,
         registry,
@@ -174,9 +175,16 @@ describe('GenerationTask recovery', () => {
             workspacePath: primaryPath,
           }),
         },
+        runnerResolver,
         { createId: () => 'task-1' },
       );
-    const firstService = createService();
+    const firstResolverCalls: Array<string | undefined> = [];
+    const firstService = createService({
+      async resolveRunner(providerId?: string) {
+        firstResolverCalls.push(providerId);
+        return firstRunner;
+      },
+    });
     firstService.loadFromProject('project-1');
     const task = firstService.create({
       projectId: 'project-1',
@@ -186,11 +194,13 @@ describe('GenerationTask recovery', () => {
       assetReferences: { sources: [{ assetId: 'asset-1' }] },
     });
 
-    await expect(drain(firstService.run(task.id, firstRunner))).rejects.toThrow(
+    await expect(drain(firstService.run(task.id))).rejects.toThrow(
       'simulated commit interruption',
     );
     expect(firstRunnerCalls).toBe(1);
+    expect(firstResolverCalls).toEqual([undefined]);
     expect(database.get(task.id)).toMatchObject({
+      assignedProviderId: 'codex',
       agentCompleted: { sessionId: 'session-1' },
       failure: { phase: 'post-process' },
     });
@@ -204,11 +214,18 @@ describe('GenerationTask recovery', () => {
         throw new Error('Provider must not run after agent checkpoint');
       },
     };
-    const resumedService = createService();
+    let resumedResolverCalls = 0;
+    const resumedService = createService({
+      async resolveRunner() {
+        resumedResolverCalls += 1;
+        return resumedRunner;
+      },
+    });
     resumedService.loadFromProject('project-1');
-    const result = await drain(resumedService.run(task.id, resumedRunner));
+    const result = await drain(resumedService.run(task.id));
 
     expect(resumedRunnerCalls).toBe(0);
+    expect(resumedResolverCalls).toBe(0);
     expect(result).toMatchObject({
       result: { resultAssetId: 'mindmap-1' },
       sessionId: 'session-1',
@@ -217,7 +234,11 @@ describe('GenerationTask recovery', () => {
     expect(database.tasks.size).toBe(1);
     expect(database.get(task.id)?.postProcessed).toBeDefined();
 
-    const reloadedService = createService();
+    const reloadedService = createService({
+      async resolveRunner() {
+        return resumedRunner;
+      },
+    });
     expect(reloadedService.loadFromProject('project-1')).toEqual([]);
   });
 });

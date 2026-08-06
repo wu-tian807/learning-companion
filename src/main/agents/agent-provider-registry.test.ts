@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AgentProviderApi } from './agent-provider';
+import type { AgentProvider } from './agent-provider';
 import { AgentProviderRegistry } from './agent-provider-registry';
 
-function provider(id: string): AgentProviderApi {
+function provider(id: string): AgentProvider {
   return {
     id,
+    providerId: id,
     displayName: id,
     description: '',
     loginLabel: '登录',
@@ -14,6 +15,10 @@ function provider(id: string): AgentProviderApi {
     })),
     startLogin: vi.fn(),
     cancelLogin: vi.fn(),
+    async *runTurn() {
+      yield* [] as never[];
+      throw new Error('not used');
+    },
   };
 }
 

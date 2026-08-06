@@ -25,9 +25,13 @@ export interface ReplaceAgentSessionProviderRequest
   readonly expectedSessionId: string;
 }
 
-export interface AgentSessionServiceApi {
+export interface AgentSessionProjectLifecycle {
   loadFromProject(projectId: string): void;
   unloadProject(): void;
+}
+
+export interface AgentSessionServiceApi
+  extends AgentSessionProjectLifecycle {
   getActiveProjectId(): string | undefined;
   get(
     locator: AgentSessionLocator,

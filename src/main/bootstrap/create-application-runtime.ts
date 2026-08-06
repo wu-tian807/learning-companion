@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
+import { AgentSessionService } from '../agents/sessions/agent-session-service';
 import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
 import { AssetArtifactRegistry } from '../artifacts/asset-artifact-registry';
@@ -102,10 +103,6 @@ export async function createApplicationRuntime({
       },
     );
     await settingsRepository.initialize();
-    agentProviderService = createAgentProviderService(
-      settingsRepository,
-      codexRuntimeService,
-    );
     externalLibraryService = await createExternalLibraryRuntime(
       settingsRepository,
     );
@@ -118,6 +115,12 @@ export async function createApplicationRuntime({
     );
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
+    const agentSessionService = new AgentSessionService(projectDatabase);
+    agentProviderService = createAgentProviderService(
+      settingsRepository,
+      codexRuntimeService,
+      agentSessionService,
+    );
     const artifactRegistry = new AssetArtifactRegistry();
     artifactRegistry.register(
       new LibreOfficePreviewProducer(externalLibraryService),
@@ -199,6 +202,7 @@ export async function createApplicationRuntime({
       projectDatabase,
       assetService,
       associationService,
+      agentSessionService,
       workbenchSessionService,
       workspaceManager,
       settingsRepository,

@@ -56,6 +56,7 @@ describe('GenerationTaskDatabase', () => {
         durationMs: 10,
         updatedTime: 20,
       });
+      task.assignProvider('codex', 21);
       task.recordAgentCompleted({
         checkpoint: {
           completedTime: 30,

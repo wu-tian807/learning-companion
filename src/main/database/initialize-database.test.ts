@@ -31,7 +31,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -87,6 +87,14 @@ describe('initializeDatabase', () => {
       ).toEqual({
         name: 'generation_tasks_unfinished_project_created_index',
       });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            'PRAGMA table_info(generation_tasks)',
+          )
+          .all()
+          .map(({ name }) => name),
+      ).toContain('assigned_provider_id');
     } finally {
       context.close();
     }
@@ -101,7 +109,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        13,
+        14,
       );
     } finally {
       secondContext.close();
@@ -142,7 +150,8 @@ describe('initializeDatabase', () => {
         2,
       );
     legacyContext.sqlite.exec(
-      'DROP INDEX generation_tasks_unfinished_project_created_index',
+      `DROP INDEX generation_tasks_unfinished_project_created_index;
+       ALTER TABLE generation_tasks DROP COLUMN assigned_provider_id;`,
     );
     legacyContext.sqlite.pragma('user_version = 12');
     legacyContext.close();
@@ -150,7 +159,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -165,6 +174,82 @@ describe('initializeDatabase', () => {
       ).toEqual({
         name: 'generation_tasks_unfinished_project_created_index',
       });
+    } finally {
+      context.close();
+    }
+  });
+
+  it('backfills the assigned Provider when upgrading a version 13 GenerationTask', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacyContext = initializeDatabase(databaseFile);
+
+    legacyContext.sqlite.exec(
+      'ALTER TABLE generation_tasks DROP COLUMN assigned_provider_id;',
+    );
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run('project', 'Project', '📘', 1, 0, '/tmp/projects/project');
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO generation_tasks (
+          id, project_id, definition_id, definition_version,
+          instruction_json, asset_references_json,
+          prepared_time, prepared_manifest_ref,
+          agent_completed_time, agent_session_id, agent_output_ref,
+          metrics_json, created_time, updated_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'task',
+        'project',
+        'mindmap.generate',
+        1,
+        JSON.stringify({ format: 'test', version: 1 }),
+        JSON.stringify({ sources: [] }),
+        2,
+        'control/prepared-manifest.json',
+        4,
+        'session-1',
+        'control/agent-output.json',
+        JSON.stringify({
+          prepareDurationMs: 1,
+          agentExecutions: [
+            {
+              sessionId: 'session-1',
+              providerId: 'codex',
+              modelId: 'gpt-test',
+              startedTime: 2,
+              completedTime: 4,
+              activeDurationMs: 2,
+              turnCount: 1,
+              repairTurnCount: 0,
+            },
+          ],
+          totalActiveDurationMs: 3,
+        }),
+        1,
+        4,
+      );
+    legacyContext.sqlite.pragma('user_version = 13');
+    legacyContext.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
+      expect(
+        context.sqlite
+          .prepare<[], { assignedProviderId: string }>(
+            `SELECT assigned_provider_id AS assignedProviderId
+             FROM generation_tasks
+             WHERE id = 'task'`,
+          )
+          .get(),
+      ).toEqual({ assignedProviderId: 'codex' });
     } finally {
       context.close();
     }
@@ -187,7 +272,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -255,7 +340,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -574,7 +659,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -679,7 +764,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(13);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(14);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')

@@ -1,7 +1,7 @@
 # GenerationTask、TaskDefinition 与 Mind Map 生成设计
 
 日期：2026-08-04
-状态：Generation 与 Session 基础层已实现，真实 Provider Adapter 与生成 Asset 提交待接入
+状态：Generation、Session 与 Codex Provider Adapter 已实现，生成 Asset 提交与产品入口待接入
 
 ## 1. 最终结论
 
@@ -276,6 +276,7 @@ Task Snapshot 保存：
 ```text
 created
 prepared
+agent-assigned
 agent-completed
 post-processed
 failed
@@ -285,7 +286,7 @@ cancelled
 检查点必须单调：
 
 ```text
-prepared -> agentCompleted -> postProcessed
+prepared -> assignedProviderId -> agentCompleted -> postProcessed
 ```
 
 恢复规则：
@@ -293,6 +294,10 @@ prepared -> agentCompleted -> postProcessed
 - 没有 prepare checkpoint：执行完整 prepare；
 - 有 prepare checkpoint：从 manifest 恢复；
 - prepare 副本损坏且 Agent 尚未完成：允许重新 prepare 并替换 checkpoint；
+- 第一次真正进入 Agent 阶段时，解析当前设置中已认证的 Provider，并把
+  `assignedProviderId` 持久化；
+- Task 一旦固定 Provider，重试和崩溃恢复都按该 ID 解析 Runner。用户随后切换到 Claude Code
+  只影响新 Task，不会让旧 Task 偷换 Session；
 - Agent 已完成：直接读取 `agent-output.json`，不再次调用 Provider；
 - post-process 已完成：保留数据库历史记录，只从活动内存集合卸载；
 - post-process 必须以 `taskId` 做幂等键，防止“外部提交成功、checkpoint 尚未落库”时重复创建结果。
@@ -313,9 +318,13 @@ migration 12 新增 `generation_tasks`：
 - 成功后的内存卸载由已持久化 checkpoint 判断，不依赖流消费者继续读取最终返回值；
 - Project 删除时通过外键级联清理该 Project 的全部 Task 历史。
 
-当前 `loadFromProject()` 只恢复状态对象，不擅自启动 Provider。等 Session/Provider
-调度层接入后，它会为加载出的 Task 选择 Runner 并调用 `run()`；`run()` 会根据检查点自动
-从 prepare、Agent 或 post-process 的正确位置继续，而不是从头执行。
+migration 14 新增 `assigned_provider_id`，并从已有 Agent metrics 回填旧任务实际使用的
+Provider。该字段是执行开始前单独落库的恢复检查点，不依赖 Agent 成功返回。
+
+当前 `loadFromProject()` 只恢复状态对象，不擅自启动 Provider。调用 `run()` 后，
+`GenerationTaskService` 会通过 `AgentProviderService` 解析 Runner，并根据检查点从 prepare、
+Agent 或 post-process 的正确位置继续，而不是从头执行。未分配的 Task 使用当前设置中已认证的
+Provider；已分配 Task 使用自己的 `assignedProviderId`。
 
 Task Workspace 的自动回收尚未接入；需要先确定失败诊断保留期和崩溃恢复策略，再给
 `AgentWorkspaceManager` 增加安全清理能力。
@@ -371,6 +380,32 @@ request 已包含：
 6. 成功时聚合所有轮次 usage 和时间。
 
 它会拒绝修复过程中 Provider、Model 或 Session 偷换，避免 metrics 与上下文映射失真。
+
+### 10.1 Codex Adapter 的执行边界
+
+`CodexAgentProvider` 同时实现凭证能力与 `GenerationAgentRunner`，不再创建第二套
+“execution provider”。执行适配拆成四个协作边界：
+
+- request：把 Provider-neutral 请求编译成 Codex 输入、权限 Profile 与配置指纹；
+- environment：枚举并屏蔽用户环境中的 MCP 与 Skills；
+- thread coordinator：创建/恢复 Thread、维护 binding，并串行同一 Session 的 Turn；
+- response：映射流式文本、工具调用、结构化输出、真实 token usage、模型改道与时间。
+
+Session 配置指纹只包含任务声明的稳定能力，不包含当前机器枚举出的 MCP/Skill 清单。
+因此安装一个新 Skill 不会无意义地更换 Thread，但每次恢复仍会重新生成禁用配置。
+
+当前执行策略为：
+
+- `workspace.read` / `workspace.search` 启用只读命令能力；
+- `workspace.write` 只有在 Definition 声明且 Workspace 允许写时才授予写权限；
+- 网络、Web Search、MCP、Apps、Plugins、Skills、Hooks、Memory、Goals 与 Subagents 默认关闭；
+- 未支持的 required tool 在创建 Thread 前失败；Codex 若仍报告未声明工具调用则按协议错误失败；
+- `clientUserMessageId` 由 Task、消息与 Output Schema 稳定派生，进程重启后可复用已完成 Turn，
+  避免重复扣费；
+- 只有明确的 `no rollout found for thread id` 才替换失效 binding，网络和连接错误不会被误判成
+  Thread 丢失；
+- 同一个 `workspaceKey + instanceKey` 的 Turn 全程串行，支持未来 shared Workspace；
+- usage 只采信 Codex `thread/tokenUsage/updated`，恢复时无法取得的 usage 保持缺省。
 
 ## 11. `mindmap.generate@1`
 
@@ -443,7 +478,7 @@ src/main/generation/
 │   ├── generation-task-preparer.ts
 │   └── generation-user-message-composer.ts
 ├── generation-agent-executor.ts       # 同 Session 的输出校验/修复循环
-├── generation-agent-runner.ts         # 真实 Provider 待实现的端口
+├── generation-agent-runner.ts         # Provider Runner 与选择解析端口
 ├── generation-task.ts                 # 纯状态对象
 ├── generation-task-execution.ts       # 三阶段执行
 ├── generation-task-database.ts        # SQLite 映射
@@ -455,6 +490,13 @@ src/main/agents/sessions/
 ├── agent-session.ts                   # Locator、Provider binding 与领域不变量
 ├── agent-session-file.ts              # Project 元数据中的原子 session.json
 └── agent-session-service.ts           # Project 生命周期、懒缓存与串行写入
+
+src/main/agents/providers/
+├── codex-agent-provider.ts            # 凭证入口与 Runner 流式编排
+├── codex-generation-environment.ts    # 环境能力盘点与隔离
+├── codex-generation-request.ts        # 请求、权限与配置指纹编译
+├── codex-generation-response.ts       # Codex 事件和结果映射
+└── codex-thread-coordinator.ts         # Thread binding、恢复与 Turn 串行化
 
 src/workbenches/mindmap/generation/
 ├── mindmap-generation-instruction.ts
@@ -469,12 +511,9 @@ src/workbenches/mindmap/generation/
 
 以下内容不在本轮基础层中假装完成：
 
-- Codex Runtime 到 `GenerationAgentRunner` 的真实 Adapter；
-- 根据 Locator 与 Provider binding 创建/恢复真实 Provider Session；
-- Provider 选择与 Generation Center UI；
-- MCP、Skills 与 Provider 专属配置的最终解析；
+- Generation Center 的提交、取消与流式展示 UI；
+- TaskDefinition 声明式 MCP、Skills、自定义工具与模型参数的扩展映射；
 - generated Mind Map Asset 的真实 Committer；
 - 成功/失败 Task Workspace 的回收策略。
 
-下一步应先实现 Session/Provider Adapter，让 `mindmap.generate@1` 能得到真实结构化 Candidate；
-随后补 generated Asset Committer，形成第一条真正可见的 Mind Map 生成闭环。
+下一步应补 generated Asset Committer 与 Mind Map 入口，形成第一条真正可见的生成闭环。

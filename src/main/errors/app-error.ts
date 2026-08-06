@@ -32,6 +32,7 @@ export type AppErrorCode =
   | 'CODEX_REQUEST_FAILED'
   | 'CODEX_TURN_ACTIVE'
   | 'AGENT_PROVIDER_NOT_FOUND'
+  | 'AGENT_PROVIDER_SELECTION_REQUIRED'
   | 'AGENT_PROVIDER_AUTH_REQUIRED'
   | 'AGENT_SESSION_CONFLICT'
   | 'INVALID_IPC_REQUEST'
@@ -237,6 +238,12 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '所选 AI Provider 不可用，请刷新后重试。',
     retryable: true,
     logLevel: 'error',
+  },
+  AGENT_PROVIDER_SELECTION_REQUIRED: {
+    kind: 'user',
+    userMessage: '请先在设置中选择一个可用的 AI Provider。',
+    retryable: true,
+    logLevel: 'silent',
   },
   AGENT_PROVIDER_AUTH_REQUIRED: {
     kind: 'user',
