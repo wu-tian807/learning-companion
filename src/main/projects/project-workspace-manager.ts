@@ -34,6 +34,7 @@ import {
 import {
   createConflictFreeFileName,
   isPathInside,
+  PROJECT_WORKSPACE_METADATA_DIRECTORY,
   requireAbsoluteWorkspaceDirectoryPath,
   requireAbsoluteWorkspaceFilePath,
   resolvePortableWorkspacePath,
@@ -44,12 +45,12 @@ import {
 export {
   createDefaultProjectWorkspaceRoot,
   isPathInside,
+  PROJECT_WORKSPACE_METADATA_DIRECTORY,
   resolvePortableWorkspacePath,
   toPortableRelativePath,
 } from './project-workspace-paths';
 
 export const PROJECT_WORKSPACE_SCHEMA_VERSION = 1;
-export const PROJECT_WORKSPACE_METADATA_DIRECTORY = '.learning-companion';
 export const PROJECT_WORKSPACE_MARKER_FILE = 'workspace.json';
 
 export interface WorkspacePreparation {

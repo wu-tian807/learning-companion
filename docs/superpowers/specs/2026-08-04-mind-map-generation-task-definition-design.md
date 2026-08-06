@@ -1,7 +1,7 @@
 # GenerationTask、TaskDefinition 与 Mind Map 生成设计
 
 日期：2026-08-04
-状态：基础层已实现，真实 Provider、Session 与生成 Asset 提交待接入
+状态：Generation 与 Session 基础层已实现，真实 Provider Adapter 与生成 Asset 提交待接入
 
 ## 1. 最终结论
 
@@ -206,15 +206,30 @@ Session Locator 只由主 Workspace 产生：
 ```ts
 {
   projectId,
-  providerId,
   workspaceKey: primary.key,
   instanceKey: primary.scope === "shared" ? "shared" : taskId
 }
 ```
 
-真实 Session 层以后负责用 Locator 查找或创建 Provider Session。对 Codex 来说返回值会是
-thread id；对其他 Provider 可以是它自己的 session id。Generation 层只记录最终实际使用的
-`sessionId`，不保存或转换 Provider 内部对话内容。
+Locator 本身保持 Provider 无关。同一个 Locator 的 `session.json` 使用
+`providerBindings` 字典分别保存 Codex、Claude Code 等 Provider 的原生 Session ID，避免
+切换 Provider 时复制工作区身份。对 Codex 来说该 ID 是 thread id；对其他 Provider 可以是
+它自己的 session id。Generation 层只记录最终实际使用的 `sessionId`，不保存或转换
+Provider 内部对话内容。
+
+映射文件位于 Agent 可访问工作区之外：
+
+```text
+<project-workspace>/.learning-companion/agent-sessions/
+└── <workspaceKey>/
+    └── <instanceKey>/
+        └── session.json
+```
+
+`AgentSessionService` 随当前 Project 加载，按 Locator 懒读并缓存。对同一 Locator 的读写会
+串行执行；首次绑定是幂等操作，不允许静默覆盖已有 Provider Session。Provider 原生 Session
+无法恢复或配置不兼容时，调用方必须携带预期旧 `sessionId` 显式 compare-and-replace。
+`configurationFingerprint` 用来阻止系统提示词、工具或路径权限不兼容的 Thread 被误续用。
 
 ## 6. Workspace 文件布局
 
@@ -436,6 +451,11 @@ src/main/generation/
 ├── generation-task-service.ts         # Project 级活动 Task 集合
 └── generation-task-definition-registry.ts
 
+src/main/agents/sessions/
+├── agent-session.ts                   # Locator、Provider binding 与领域不变量
+├── agent-session-file.ts              # Project 元数据中的原子 session.json
+└── agent-session-service.ts           # Project 生命周期、懒缓存与串行写入
+
 src/workbenches/mindmap/generation/
 ├── mindmap-generation-instruction.ts
 ├── mindmap-generation-output.ts
@@ -450,7 +470,7 @@ src/workbenches/mindmap/generation/
 以下内容不在本轮基础层中假装完成：
 
 - Codex Runtime 到 `GenerationAgentRunner` 的真实 Adapter；
-- 根据 Locator 创建/恢复 AgentLane Session；
+- 根据 Locator 与 Provider binding 创建/恢复真实 Provider Session；
 - Provider 选择与 Generation Center UI；
 - MCP、Skills 与 Provider 专属配置的最终解析；
 - generated Mind Map Asset 的真实 Committer；

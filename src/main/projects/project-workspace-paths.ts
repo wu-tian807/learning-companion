@@ -9,6 +9,8 @@ import {
 
 export { isPathInside, type FileSystemPathRules };
 
+export const PROJECT_WORKSPACE_METADATA_DIRECTORY = '.learning-companion';
+
 export function requireAbsoluteWorkspaceDirectoryPath(
   path: string,
   pathRules: FileSystemPathRules = currentPlatformPathRules,

@@ -3,7 +3,7 @@
 > **已被取代：** 2026-08-03 后续评审取消了持久化 AgentLane。Workspace 成为独立
 > 基础层，Prompt、Capability 和 Workspace 访问需求改由具体 Task Definition
 > 声明。新的权威方案见
-> [Agent Workspace 管理设计与实施计划](./2026-08-03-agent-workspace-management-design.md)。
+> [GenerationTask、TaskDefinition 与 Mind Map 生成设计](./2026-08-04-mind-map-generation-task-definition-design.md)。
 > 本文仅保留为决策演进记录，不得作为实现依据。
 
 > 状态：设计草案，等待本轮评审确认

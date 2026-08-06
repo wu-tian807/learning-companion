@@ -1,4 +1,5 @@
 import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
+import { requireAgentWorkspaceKey } from '../../agents/workspaces/agent-workspace-paths';
 
 export type AgentWorkspaceScope = 'shared' | 'task';
 
@@ -23,30 +24,11 @@ export interface PreparedAgentWorkspaces {
   readonly secondary: readonly PreparedAgentWorkspace[];
 }
 
-export interface AgentSessionLocator {
-  readonly projectId: string;
-  readonly providerId: string;
-  readonly workspaceKey: string;
-  readonly instanceKey: string;
-}
-
-const workspaceKeyPattern = /^[a-z][a-z0-9-]{0,63}$/u;
-
 function requireText(value: string, field: string): string {
   const normalized = value.trim();
 
   if (normalized.length === 0) {
     throw new Error(`Agent workspace ${field} 不能为空`);
-  }
-
-  return normalized;
-}
-
-export function requireAgentWorkspaceKey(value: string): string {
-  const normalized = requireText(value, 'key');
-
-  if (!workspaceKeyPattern.test(normalized)) {
-    throw new Error('Agent workspace key 必须是扁平 kebab-case 主键');
   }
 
   return normalized;
@@ -104,21 +86,5 @@ export async function prepareAgentWorkspace(
     ...cloned,
     instanceKey: segments[1],
     path,
-  });
-}
-
-export function createAgentSessionLocator(input: {
-  readonly projectId: string;
-  readonly providerId: string;
-  readonly primaryWorkspace: PreparedAgentWorkspace;
-}): AgentSessionLocator {
-  return Object.freeze({
-    projectId: requireText(input.projectId, 'projectId'),
-    providerId: requireText(input.providerId, 'providerId'),
-    workspaceKey: requireAgentWorkspaceKey(input.primaryWorkspace.key),
-    instanceKey: requireText(
-      input.primaryWorkspace.instanceKey,
-      'instanceKey',
-    ),
   });
 }

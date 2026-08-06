@@ -7,9 +7,10 @@ import {
   isPathInside,
   type FileSystemPathRules,
 } from '../../filesystem/file-system-path-rules';
-
-const invalidPortableSegmentCharacters = /[<>:"/\\|?*]/u;
-const windowsReservedDeviceName = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+import {
+  requireAgentWorkspacePathSegment,
+  requireAgentWorkspaceRootPath,
+} from './agent-workspace-paths';
 
 export interface AgentWorkspaceManagerApi {
   resolve(segments: readonly string[]): string;
@@ -41,44 +42,6 @@ function isFileSystemError(
   );
 }
 
-function requireRootPath(
-  rootPath: string,
-  pathRules: FileSystemPathRules,
-): string {
-  const normalized = pathRules.normalize(rootPath.trim());
-
-  if (
-    normalized.length === 0 ||
-    !pathRules.isAbsolute(normalized) ||
-    normalized === pathRules.parse(normalized).root
-  ) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return normalized;
-}
-
-function requirePortablePathSegment(segment: string): string {
-  const containsControlCharacter = [...segment].some(
-    (character) => character.codePointAt(0)! < 0x20,
-  );
-
-  if (
-    segment.length === 0 ||
-    segment.trim() !== segment ||
-    segment === '.' ||
-    segment === '..' ||
-    segment.endsWith('.') ||
-    containsControlCharacter ||
-    invalidPortableSegmentCharacters.test(segment) ||
-    windowsReservedDeviceName.test(segment)
-  ) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return segment;
-}
-
 export class AgentWorkspaceManager
   implements AgentWorkspaceManagerApi
 {
@@ -93,7 +56,7 @@ export class AgentWorkspaceManager
       ...defaultDependencies,
       ...dependencies,
     };
-    this.rootPath = requireRootPath(
+    this.rootPath = requireAgentWorkspaceRootPath(
       rootPath,
       this.dependencies.pathRules,
     );
@@ -106,7 +69,7 @@ export class AgentWorkspaceManager
 
     const candidate = this.dependencies.pathRules.resolve(
       this.rootPath,
-      ...segments.map(requirePortablePathSegment),
+      ...segments.map(requireAgentWorkspacePathSegment),
     );
 
     if (!isPathInside(this.rootPath, candidate, this.dependencies.pathRules)) {

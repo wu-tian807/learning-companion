@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createAgentSessionLocator } from '../../agents/sessions/agent-session';
 import {
   cloneAgentWorkspaceConfig,
-  createAgentSessionLocator,
   prepareAgentWorkspace,
 } from './generation-workspace';
 
 describe('generation workspace contracts', () => {
-  it('maps a task-scoped primary workspace to a provider session locator', async () => {
+  it('maps a task-scoped primary workspace to a provider-neutral session locator', async () => {
     const manager = {
       resolve: vi.fn(),
       prepare: vi.fn(async (segments: readonly string[]) =>
@@ -31,12 +31,11 @@ describe('generation workspace contracts', () => {
     expect(
       createAgentSessionLocator({
         projectId: 'project-1',
-        providerId: 'codex',
-        primaryWorkspace: workspace,
+        workspaceKey: workspace.key,
+        instanceKey: workspace.instanceKey,
       }),
     ).toEqual({
       projectId: 'project-1',
-      providerId: 'codex',
       workspaceKey: 'generation-mindmap',
       instanceKey: 'task-1',
     });

@@ -33,6 +33,7 @@ export type AppErrorCode =
   | 'CODEX_TURN_ACTIVE'
   | 'AGENT_PROVIDER_NOT_FOUND'
   | 'AGENT_PROVIDER_AUTH_REQUIRED'
+  | 'AGENT_SESSION_CONFLICT'
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
@@ -242,6 +243,12 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '请先完成该 AI Provider 的登录验证。',
     retryable: true,
     logLevel: 'silent',
+  },
+  AGENT_SESSION_CONFLICT: {
+    kind: 'internal',
+    userMessage: 'AI 会话映射发生冲突，请重建会话后重试。',
+    retryable: true,
+    logLevel: 'error',
   },
   INVALID_IPC_REQUEST: {
     kind: 'internal',

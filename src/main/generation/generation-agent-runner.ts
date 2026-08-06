@@ -1,11 +1,9 @@
 import type { JsonValue } from '../../shared/workbench/protocol';
+import type { AgentSessionLocator } from '../agents/sessions/agent-session';
 import type { AgentUserMessage } from './contracts/agent-message';
 import type { GenerationTokenUsage } from './contracts/generation-metrics';
 import type { AllowedToolConfig } from './contracts/task-definition';
-import type {
-  AgentSessionLocator,
-  PreparedAgentWorkspaces,
-} from './contracts/generation-workspace';
+import type { PreparedAgentWorkspaces } from './contracts/generation-workspace';
 
 export type GenerationAgentEvent =
   | {

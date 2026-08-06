@@ -3,6 +3,7 @@ import {
   isJsonValue,
   type JsonValue,
 } from '../../shared/workbench/protocol';
+import { createAgentSessionLocator } from '../agents/sessions/agent-session';
 import { AppError } from '../errors/app-error';
 import type { AgentUserMessage } from './contracts/agent-message';
 import {
@@ -12,7 +13,6 @@ import {
   type GenerationTokenUsage,
 } from './contracts/generation-metrics';
 import type { GenerationValidationIssue } from './contracts/generation-validation';
-import { createAgentSessionLocator } from './contracts/generation-workspace';
 import type {
   GenerationAgentEvent,
   GenerationAgentRunner,
@@ -95,8 +95,8 @@ export class GenerationAgentExecutor {
     const providerId = requireProviderId(runner.providerId);
     const sessionLocator = createAgentSessionLocator({
       projectId: prepared.projectId,
-      providerId,
-      primaryWorkspace: prepared.workspaces.primary,
+      workspaceKey: prepared.workspaces.primary.key,
+      instanceKey: prepared.workspaces.primary.instanceKey,
     });
     let userMessage: AgentUserMessage = prepared.userMessage;
     let sessionId: string | undefined;
