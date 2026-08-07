@@ -98,7 +98,9 @@ interface TaskDefinition<
   id: string;
   version: number;
   systemInstruction: string;
-  allowedTools: readonly AllowedToolConfig[];
+  toolRequirements: readonly AgentToolRequirement[];
+  skills: readonly AgentSkillRequirement[];
+  mcpServers: readonly AgentMcpServerRequirement[];
   primaryWorkspaceConfig: AgentWorkspaceConfig;
   secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   assetReferenceSchema: GenerationAssetReferenceSchema;
@@ -119,6 +121,11 @@ Definition 可以声明额外 prepare 数据，但不要求调用方派生新的
 
 Registry 使用 `id + version` 定位 Definition。版本进入 Task Snapshot，因此应用升级后仍能找到
 创建任务时使用的协议。
+
+`toolRequirements`、`skills` 和 `mcpServers` 分别表达任务工具需求、方法上下文和外部
+MCP Server，都使用 required / optional 语义，但由 Provider Adapter 分别映射。
+`mindmap.generate@1` 当前三者均为空；Provider 根据它的 read-only Workspace 自动提供
+Workspace read / search，直到出现真实复用需求才增加任务专属能力。
 
 ## 4. AssetReference 输入
 
@@ -512,7 +519,8 @@ src/workbenches/mindmap/generation/
 以下内容不在本轮基础层中假装完成：
 
 - Generation Center 的提交、取消与流式展示 UI；
-- TaskDefinition 声明式 MCP、Skills、自定义工具与模型参数的扩展映射；
+- MCP 和模型参数的声明式扩展映射；自定义 Function Tool 与 Skills 的后续权威设计见
+  [Agent Function Tool、Skill 与 Codex 动态工具设计](./2026-08-07-agent-function-tools-and-skills-design.md)；
 - generated Mind Map Asset 的真实 Committer；
 - 成功/失败 Task Workspace 的回收策略。
 
