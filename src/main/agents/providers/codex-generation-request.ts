@@ -11,22 +11,25 @@ import type {
 } from '../codex/codex-runtime-types';
 import type { AgentSessionLocator } from '../sessions/agent-session';
 import type { CodexGenerationEnvironment } from './codex-generation-environment';
+import {
+  codexCapabilityFingerprintDescriptor,
+  type CodexGenerationCapabilitySelection,
+} from './codex-generation-capabilities';
+import {
+  isCodexWorkspaceGenerationTool,
+  type CodexGenerationToolSelection,
+} from './codex-function-tools';
 
 export const CODEX_AGENT_PROVIDER_ID = 'codex';
 
-const SUPPORTED_GENERATION_TOOLS = new Set([
-  'workspace.read',
-  'workspace.search',
-  'workspace.write',
-]);
-
-const CODEX_GENERATION_ADAPTER_VERSION = 2;
+const CODEX_GENERATION_ADAPTER_VERSION = 5;
 
 const CODEX_GENERATION_EXECUTION_POLICY = [
   'Learning Companion generation execution boundary:',
-  '- Use only the workspace roots supplied for this task and obey their filesystem permissions.',
+  '- Use only the workspace roots and Skill resources supplied for this task and obey their filesystem permissions.',
   '- Do not request broader filesystem or network access.',
-  '- Do not use MCP servers, apps/connectors, plugins, skills, hooks, memories, goals, or subagents.',
+  '- Use only the Skills and MCP servers explicitly supplied by Learning Companion for this task; do not discover or invoke ambient capabilities.',
+  '- Do not use apps/connectors, plugins, hooks, memories, goals, or subagents.',
   '- Return only an answer that conforms to the requested output schema.',
 ].join('\n');
 
@@ -61,41 +64,10 @@ function hashJson(value: JsonValue): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
-export function requireSupportedCodexGenerationTools(
-  request: GenerationAgentTurnRequest,
-): void {
-  for (const tool of request.allowedTools) {
-    if (
-      tool.availability === 'required' &&
-      !SUPPORTED_GENERATION_TOOLS.has(tool.id)
-    ) {
-      throw new AppError('FEATURE_NOT_SUPPORTED', {
-        cause: new Error(`Codex 不支持必需工具：${tool.id}`),
-      });
-    }
-  }
-}
-
 function collectReadableWorkspaces(request: GenerationAgentTurnRequest) {
   return [request.workspaces.primary, ...request.workspaces.secondary]
     .filter((workspace) => workspace.permissions.read)
     .sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function hasAllowedTool(
-  request: GenerationAgentTurnRequest,
-  toolId: string,
-): boolean {
-  return request.allowedTools.some(({ id }) => id === toolId);
-}
-
-function hasRequiredWorkspaceTool(
-  request: GenerationAgentTurnRequest,
-): boolean {
-  return request.allowedTools.some(
-    ({ id, availability }) =>
-      availability === 'required' && SUPPORTED_GENERATION_TOOLS.has(id),
-  );
 }
 
 export function codexGenerationSessionOperationKey(
@@ -120,8 +92,9 @@ export function createCodexClientUserMessageId(
 
 export function toCodexUserInput(
   request: GenerationAgentTurnRequest,
+  capabilities: CodexGenerationCapabilitySelection,
 ): readonly CodexTurnUserInput[] {
-  return request.userMessage.content.map((part) => {
+  const messageInput = request.userMessage.content.map((part) => {
     if (part.type === 'text') {
       return { type: 'text' as const, text: part.text };
     }
@@ -136,20 +109,44 @@ export function toCodexUserInput(
 
     return { type: 'localAudio' as const, path: part.path };
   });
+
+  if (capabilities.skills.length === 0) {
+    return messageInput;
+  }
+
+  return Object.freeze([
+    {
+      type: 'text' as const,
+      text: capabilities.skills.map(({ id }) => `$${id}`).join(' '),
+    },
+    ...capabilities.skills.map(({ id, path }) => ({
+      type: 'skill' as const,
+      name: id,
+      path,
+    })),
+    ...messageInput,
+  ]);
 }
 
 export function createCodexGenerationConfiguration(
   request: GenerationAgentTurnRequest,
   environment: CodexGenerationEnvironment,
+  tools: CodexGenerationToolSelection,
+  capabilities: CodexGenerationCapabilitySelection,
 ): CodexGenerationConfiguration {
-  requireSupportedCodexGenerationTools(request);
   const readableWorkspaces = collectReadableWorkspaces(request);
-  const workspaceToolEnabled = request.allowedTools.some(({ id }) =>
-    SUPPORTED_GENERATION_TOOLS.has(id),
+  const workspaceToolEnabled = tools.nativeToolIds.some(
+    isCodexWorkspaceGenerationTool,
   );
-  const workspaceWriteEnabled = hasAllowedTool(request, 'workspace.write');
+  const workspaceWriteEnabled = tools.nativeToolIds.includes(
+    'workspace.write',
+  );
 
-  if (hasRequiredWorkspaceTool(request) && readableWorkspaces.length === 0) {
+  if (
+    (workspaceToolEnabled && readableWorkspaces.length === 0) ||
+    (workspaceWriteEnabled &&
+      !readableWorkspaces.some(({ permissions }) => permissions.write))
+  ) {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
 
@@ -157,10 +154,23 @@ export function createCodexGenerationConfiguration(
     adapterVersion: CODEX_GENERATION_ADAPTER_VERSION,
     providerId: CODEX_AGENT_PROVIDER_ID,
     systemInstruction: request.systemInstruction,
-    allowedTools: request.allowedTools.map(({ id, availability }) => ({
-      id,
-      availability,
+    effectiveTools: tools.effectiveRequirements.map(
+      ({ id, availability }) => ({
+        id,
+        availability,
+      }),
+    ),
+    nativeToolIds: tools.nativeToolIds.map((id) => id),
+    functionTools: tools.functionTools.map((tool) => ({
+      id: tool.id,
+      version: tool.version,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      ...(tool.deferLoading === undefined
+        ? {}
+        : { deferLoading: tool.deferLoading }),
     })),
+    capabilities: codexCapabilityFingerprintDescriptor(capabilities),
     workspaces: readableWorkspaces.map((workspace) => ({
       key: workspace.key,
       instanceKey: workspace.instanceKey,
@@ -184,7 +194,31 @@ export function createCodexGenerationConfiguration(
           ])
         : [],
     ),
+    ...Object.fromEntries(
+      capabilities.skills.map(({ directoryPath }) => [
+        directoryPath,
+        'read',
+      ]),
+    ),
   };
+  const selectedMcpServerNames = new Set(
+    capabilities.mcpServers.map(({ wireName }) => wireName),
+  );
+  const mcpServers = Object.fromEntries([
+    ...environment.disabledMcpServers
+      .filter((name) => !selectedMcpServerNames.has(name))
+      .map((name) => [name, { enabled: false }] as const),
+    ...capabilities.mcpServers.map(({ wireName, config }) => [
+      wireName,
+      config,
+    ] as const),
+  ]);
+  const selectedSkillPaths = new Set(
+    capabilities.skills.map(({ path }) => path),
+  );
+  const disabledSkillPaths = environment.disabledSkillPaths.filter(
+    (path) => !selectedSkillPaths.has(path),
+  );
   const configOverrides: CodexJsonObject = {
     agents: { enabled: false },
     allow_login_shell: false,
@@ -206,20 +240,13 @@ export function createCodexGenerationConfiguration(
         network: { enabled: false },
       },
     },
-    ...(environment.disabledMcpServers.length > 0
-      ? {
-          mcp_servers: Object.fromEntries(
-            environment.disabledMcpServers.map((name) => [
-              name,
-              { enabled: false },
-            ]),
-          ),
-        }
+    ...(Object.keys(mcpServers).length > 0
+      ? { mcp_servers: mcpServers }
       : {}),
-    ...(environment.disabledSkillPaths.length > 0
+    ...(disabledSkillPaths.length > 0
       ? {
           skills: {
-            config: environment.disabledSkillPaths.map((path) => ({
+            config: disabledSkillPaths.map((path) => ({
               path,
               enabled: false,
             })),
@@ -240,7 +267,12 @@ export function createCodexGenerationConfiguration(
     fingerprint,
     profileId,
     runtimeWorkspaceRoots: Object.freeze(runtimeWorkspaceRoots),
-    threadInput: Object.freeze({ ...common }),
+    threadInput: Object.freeze({
+      ...common,
+      ...(tools.dynamicTools.length > 0
+        ? { dynamicTools: tools.dynamicTools }
+        : {}),
+    }),
     resumeInput: Object.freeze({ ...common, excludeTurns: false }),
   });
 }

@@ -16,7 +16,9 @@ import type {
 } from '../codex/codex-runtime-types';
 import type { AgentProviderSessionBinding } from '../sessions/agent-session';
 import type { AgentSessionServiceApi } from '../sessions/agent-session-service';
+import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import { CodexAgentProvider } from './codex-agent-provider';
+import { CODEX_FUNCTION_TOOL_NAMESPACE } from './codex-function-tools';
 
 function createRuntime(
   overrides: Partial<CodexRuntimeServiceApi> = {},
@@ -120,10 +122,9 @@ function createGenerationRequest(
       role: 'user',
       content: [{ type: 'text', text: 'Read sources and respond.' }],
     },
-    allowedTools: [
-      { id: 'workspace.read', availability: 'required' },
-      { id: 'workspace.search', availability: 'required' },
-    ],
+    toolRequirements: [],
+    skills: [],
+    mcpServers: [],
     workspaces: {
       primary: {
         key: 'generation-mindmap',
@@ -668,6 +669,329 @@ describe('CodexAgentProvider', () => {
     expect(startTurn).toHaveBeenCalledTimes(2);
   });
 
+  it('exposes a registered Provider default tool without a TaskDefinition declaration', async () => {
+    const functionTools = new AgentFunctionToolRegistry();
+    functionTools.register({
+      id: 'inspect_media',
+      version: 1,
+      description: 'Inspect media prepared in the task workspace.',
+      inputSchema: { type: 'object' },
+      deferLoading: true,
+      execute: vi.fn(async () => null),
+    });
+    const createThread = vi.fn(async () => selection('thread-1'));
+    const runtime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      createThread,
+      startTurn: vi.fn(async function* () {
+        yield {
+          type: 'turn-started' as const,
+          threadId: 'thread-1',
+          turn: { id: 'turn-1', status: 'inProgress' },
+        };
+        return {
+          threadId: 'thread-1',
+          turn: completedTurn('unused'),
+        };
+      }),
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const provider = new CodexAgentProvider(
+      runtime,
+      createSessions().service,
+      {
+        functionTools,
+        defaultTools: [
+          { id: 'inspect_media', availability: 'required' },
+        ],
+      },
+    );
+
+    await collectTurn(provider.runTurn(createGenerationRequest()));
+
+    expect(createThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dynamicTools: [
+          expect.objectContaining({
+            type: 'namespace',
+            tools: [
+              expect.objectContaining({
+                name: 'inspect_media',
+                deferLoading: true,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('registers and dispatches a Function Tool without owning the Agent Loop', async () => {
+    const execute = vi.fn(async () => ({ text: 'selected content' } as const));
+    const functionTools = new AgentFunctionToolRegistry();
+    functionTools.register({
+      id: 'read_asset_anchor',
+      version: 1,
+      description: 'Read one selected asset anchor.',
+      inputSchema: {
+        type: 'object',
+        properties: { assetId: { type: 'string' } },
+        required: ['assetId'],
+        additionalProperties: false,
+      },
+      execute,
+    });
+    const createThread = vi.fn(async () => selection('thread-1'));
+    const respondToServerRequest = vi.fn(async () => undefined);
+    const startTurn = vi.fn(async function* () {
+      yield {
+        type: 'turn-started' as const,
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'inProgress' },
+      };
+      yield {
+        type: 'item-started' as const,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          id: 'call-1',
+          type: 'dynamicToolCall',
+          namespace: CODEX_FUNCTION_TOOL_NAMESPACE,
+          tool: 'read_asset_anchor',
+          arguments: { assetId: 'asset-1' },
+          status: 'inProgress',
+        },
+      };
+      yield {
+        type: 'server-request' as const,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        request: {
+          requestId: 'request-1',
+          method: 'item/tool/call',
+          params: {
+            threadId: 'thread-1',
+            turnId: 'turn-1',
+            callId: 'call-1',
+            namespace: CODEX_FUNCTION_TOOL_NAMESPACE,
+            tool: 'read_asset_anchor',
+            arguments: { assetId: 'asset-1' },
+          },
+        },
+      };
+      yield {
+        type: 'item-completed' as const,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          id: 'call-1',
+          type: 'dynamicToolCall',
+          namespace: CODEX_FUNCTION_TOOL_NAMESPACE,
+          tool: 'read_asset_anchor',
+          arguments: { assetId: 'asset-1' },
+          status: 'completed',
+          success: true,
+        },
+      };
+      return {
+        threadId: 'thread-1',
+        turn: completedTurn('unused'),
+      };
+    });
+    const runtime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      createThread,
+      startTurn,
+      respondToServerRequest,
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const provider = new CodexAgentProvider(
+      runtime,
+      createSessions().service,
+      { functionTools },
+    );
+    const request = createGenerationRequest({
+      toolRequirements: [
+        { id: 'read_asset_anchor', availability: 'required' },
+      ],
+    });
+
+    const { events, result } = await collectTurn(provider.runTurn(request));
+
+    expect(events).toEqual([
+      { type: 'session-resolved', sessionId: 'thread-1' },
+      expect.objectContaining({
+        type: 'tool-call',
+        phase: 'started',
+        toolName: 'dynamic:read_asset_anchor',
+      }),
+      expect.objectContaining({
+        type: 'tool-call',
+        phase: 'completed',
+        toolName: 'dynamic:read_asset_anchor',
+      }),
+    ]);
+    expect(result.output).toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledWith(
+      { assetId: 'asset-1' },
+      expect.objectContaining({
+        taskId: 'task-1',
+        projectId: 'project',
+        workspaces: request.workspaces,
+      }),
+    );
+    expect(respondToServerRequest).toHaveBeenCalledWith('request-1', {
+      result: {
+        contentItems: [
+          { type: 'inputText', text: '{"text":"selected content"}' },
+        ],
+        success: true,
+      },
+    });
+    expect(createThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dynamicTools: [
+          expect.objectContaining({
+            type: 'namespace',
+            name: CODEX_FUNCTION_TOOL_NAMESPACE,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('injects application Skills and lets Codex execute selected MCP servers', async () => {
+    const skillPath = resolve('app-skills', 'pdf-reading', 'SKILL.md');
+    const createThread = vi.fn(async () => selection('thread-1'));
+    const startTurn = vi.fn(async function* () {
+      yield {
+        type: 'turn-started' as const,
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'inProgress' },
+      };
+      yield {
+        type: 'item-started' as const,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          id: 'mcp-1',
+          type: 'mcpToolCall',
+          server: 'learning_companion_document-tools',
+          tool: 'read_document',
+          arguments: { path: 'lesson.pdf' },
+          status: 'inProgress',
+        },
+      };
+      yield {
+        type: 'item-completed' as const,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          id: 'mcp-1',
+          type: 'mcpToolCall',
+          server: 'learning_companion_document-tools',
+          tool: 'read_document',
+          arguments: { path: 'lesson.pdf' },
+          status: 'completed',
+        },
+      };
+      return {
+        threadId: 'thread-1',
+        turn: completedTurn('unused'),
+      };
+    });
+    const runtime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      listMcpServers: vi.fn(async () => ({
+        data: [{ name: 'ambient-server', authStatus: null, tools: {} }],
+        nextCursor: null,
+      })),
+      createThread,
+      startTurn,
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const provider = new CodexAgentProvider(
+      runtime,
+      createSessions().service,
+      {
+        skills: {
+          get: vi.fn(async () => ({
+            id: 'pdf-reading',
+            version: 1,
+            description: 'Read PDF files efficiently.',
+            directoryPath: resolve('app-skills', 'pdf-reading'),
+            skillFilePath: skillPath,
+          })),
+        },
+        mcpServers: {
+          get: vi.fn(async () => ({
+            id: 'document-tools',
+            version: 1,
+            description: 'Document utilities.',
+            transport: {
+              type: 'stdio' as const,
+              command: 'document-mcp',
+            },
+            enabledTools: ['read_document'],
+          })),
+        },
+      },
+    );
+    const request = createGenerationRequest({
+      skills: [{ id: 'pdf-reading', availability: 'required' }],
+      mcpServers: [{ id: 'document-tools', availability: 'required' }],
+    });
+
+    const { events } = await collectTurn(provider.runTurn(request));
+
+    expect(events).toEqual([
+      { type: 'session-resolved', sessionId: 'thread-1' },
+      expect.objectContaining({
+        type: 'tool-call',
+        phase: 'started',
+        toolName: 'mcp:document-tools/read_document',
+      }),
+      expect.objectContaining({
+        type: 'tool-call',
+        phase: 'completed',
+        toolName: 'mcp:document-tools/read_document',
+      }),
+    ]);
+    expect(createThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        configOverrides: expect.objectContaining({
+          mcp_servers: {
+            'ambient-server': { enabled: false },
+            'learning_companion_document-tools': expect.objectContaining({
+              enabled: true,
+              required: true,
+              command: 'document-mcp',
+              enabled_tools: ['read_document'],
+            }),
+          },
+        }),
+      }),
+    );
+    expect(startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [
+          { type: 'text', text: '$pdf-reading' },
+          { type: 'skill', name: 'pdf-reading', path: skillPath },
+          { type: 'text', text: 'Read sources and respond.' },
+        ],
+      }),
+    );
+  });
+
   it('fails closed if Codex reports an undeclared tool call', async () => {
     const sessions = createSessions();
     const runtime = createRuntime({
@@ -721,7 +1045,7 @@ describe('CodexAgentProvider', () => {
     const provider = new CodexAgentProvider(runtime, sessions.service);
     const generator = provider.runTurn(
       createGenerationRequest({
-        allowedTools: [
+        toolRequirements: [
           { id: 'database.write', availability: 'required' },
         ],
       }),
@@ -731,6 +1055,23 @@ describe('CodexAgentProvider', () => {
     expect(createThread).not.toHaveBeenCalled();
     expect(runtime.listMcpServers).not.toHaveBeenCalled();
     expect(runtime.listSkills).not.toHaveBeenCalled();
+  });
+
+  it('fails before account and environment access when a required Skill or MCP definition is missing', async () => {
+    const createThread = vi.fn();
+    const runtime = createRuntime({ createThread });
+    const provider = new CodexAgentProvider(runtime, createSessions().service);
+    const generator = provider.runTurn(
+      createGenerationRequest({
+        skills: [{ id: 'missing-skill', availability: 'required' }],
+      }),
+    );
+
+    await expect(generator.next()).rejects.toThrow('FEATURE_NOT_SUPPORTED');
+    expect(runtime.getAccount).not.toHaveBeenCalled();
+    expect(runtime.listMcpServers).not.toHaveBeenCalled();
+    expect(runtime.listSkills).not.toHaveBeenCalled();
+    expect(createThread).not.toHaveBeenCalled();
   });
 });
 

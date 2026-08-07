@@ -1,6 +1,10 @@
 import { homedir } from 'node:os';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
+import { AgentFunctionToolRegistry } from '../agents/function-tools/agent-function-tool-registry';
+import { createAgentCapabilityPaths } from '../agents/capabilities/agent-capability-paths';
+import { AgentMcpService } from '../agents/mcp/agent-mcp-service';
+import { AgentSkillService } from '../agents/skills/agent-skill-service';
 import { AgentSessionService } from '../agents/sessions/agent-session-service';
 import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
@@ -116,10 +120,25 @@ export async function createApplicationRuntime({
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
     const agentSessionService = new AgentSessionService(projectDatabase);
+    const agentFunctionTools = new AgentFunctionToolRegistry();
+    const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
+    const agentSkills = new AgentSkillService(
+      agentCapabilityPaths.skillsPath,
+    );
+    const agentMcpServers = new AgentMcpService(
+      agentCapabilityPaths.mcpPath,
+    );
+    await Promise.all([
+      agentSkills.initialize(),
+      agentMcpServers.initialize(),
+    ]);
     agentProviderService = createAgentProviderService(
       settingsRepository,
       codexRuntimeService,
       agentSessionService,
+      agentFunctionTools,
+      agentSkills,
+      agentMcpServers,
     );
     const artifactRegistry = new AssetArtifactRegistry();
     artifactRegistry.register(

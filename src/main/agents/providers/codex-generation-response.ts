@@ -4,7 +4,6 @@ import {
 } from '../../../shared/workbench/protocol';
 import { AppError } from '../../errors/app-error';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
-import type { AllowedToolConfig } from '../../generation/contracts/task-definition';
 import type { GenerationAgentEvent } from '../../generation/generation-agent-runner';
 import type {
   CodexThreadItem,
@@ -13,6 +12,11 @@ import type {
   CodexTurnEvent,
 } from '../codex/codex-runtime-types';
 import { CodexRpcError } from '../codex/codex-rpc-connection';
+import {
+  CODEX_FUNCTION_TOOL_NAMESPACE,
+  findSelectedCodexFunctionTool,
+  type CodexGenerationToolSelection,
+} from './codex-function-tools';
 
 function optionalText(value: string | null | undefined): string | undefined {
   const normalized = value?.trim();
@@ -23,7 +27,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function toolName(item: CodexThreadItem): string | undefined {
+function toolName(
+  item: CodexThreadItem,
+  mcpServerIdsByWireName: ReadonlyMap<string, string>,
+): string | undefined {
   if (
     item.type === 'commandExecution' ||
     item.type === 'fileChange' ||
@@ -36,7 +43,7 @@ function toolName(item: CodexThreadItem): string | undefined {
   if (item.type === 'mcpToolCall') {
     const server = typeof item.server === 'string' ? item.server : 'unknown';
     const tool = typeof item.tool === 'string' ? item.tool : 'unknown';
-    return `mcp:${server}/${tool}`;
+    return `mcp:${mcpServerIdsByWireName.get(server) ?? server}/${tool}`;
   }
 
   if (item.type === 'dynamicToolCall') {
@@ -50,19 +57,39 @@ function toolName(item: CodexThreadItem): string | undefined {
 
 function isToolItemAllowed(
   item: CodexThreadItem,
-  allowedTools: readonly AllowedToolConfig[],
+  tools: CodexGenerationToolSelection,
+  mcpServerIdsByWireName: ReadonlyMap<string, string>,
 ): boolean {
-  const toolIds = new Set(allowedTools.map(({ id }) => id));
+  const nativeToolIds = new Set(tools.nativeToolIds);
 
   if (item.type === 'commandExecution') {
     return (
-      toolIds.has('workspace.read') ||
-      toolIds.has('workspace.search') ||
-      toolIds.has('workspace.write')
+      nativeToolIds.has('workspace.read') ||
+      nativeToolIds.has('workspace.search') ||
+      nativeToolIds.has('workspace.write')
     );
   }
 
-  return item.type === 'fileChange' && toolIds.has('workspace.write');
+  if (item.type === 'dynamicToolCall') {
+    return (
+      typeof item.tool === 'string' &&
+      findSelectedCodexFunctionTool(tools, item.tool) !== undefined &&
+      item.namespace === CODEX_FUNCTION_TOOL_NAMESPACE
+    );
+  }
+
+  if (item.type === 'mcpToolCall') {
+    return (
+      typeof item.server === 'string' &&
+      typeof item.tool === 'string' &&
+      mcpServerIdsByWireName.has(item.server)
+    );
+  }
+
+  return (
+    item.type === 'fileChange' &&
+    nativeToolIds.has('workspace.write')
+  );
 }
 
 function findAgentMessage(turn: CodexTurn): string | undefined {
@@ -116,15 +143,22 @@ export function isMissingCodexThreadError(error: unknown): boolean {
 
 export function toGenerationToolEvent(
   event: Extract<CodexTurnEvent, { type: 'item-started' | 'item-completed' }>,
-  allowedTools: readonly AllowedToolConfig[],
+  tools: CodexGenerationToolSelection,
+  mcpServerIdsByWireName: ReadonlyMap<string, string> = new Map(),
 ): GenerationAgentEvent | undefined {
-  const name = toolName(event.item);
+  const name = toolName(event.item, mcpServerIdsByWireName);
 
   if (!name) {
     return undefined;
   }
 
-  if (!isToolItemAllowed(event.item, allowedTools)) {
+  if (
+    !isToolItemAllowed(
+      event.item,
+      tools,
+      mcpServerIdsByWireName,
+    )
+  ) {
     throw new AppError('CODEX_PROTOCOL_ERROR', {
       cause: new Error(`Codex 使用了未声明的工具：${name}`),
     });

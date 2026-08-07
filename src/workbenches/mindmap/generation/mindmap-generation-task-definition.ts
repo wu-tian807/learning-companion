@@ -35,16 +35,9 @@ export function createMindMapGenerationTaskDefinitionV1(
     id: MIND_MAP_GENERATION_TASK_DEFINITION_ID,
     version: MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
     systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
-    allowedTools: Object.freeze([
-      Object.freeze({
-        id: 'workspace.read',
-        availability: 'required' as const,
-      }),
-      Object.freeze({
-        id: 'workspace.search',
-        availability: 'required' as const,
-      }),
-    ]),
+    toolRequirements: Object.freeze([]),
+    skills: Object.freeze([]),
+    mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'generation-mindmap',
       scope: 'task' as const,

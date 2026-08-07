@@ -96,7 +96,9 @@ describe('GenerationTask recovery', () => {
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
       userMessage: createTextAgentUserMessage('generate'),
-      allowedTools: definition.allowedTools,
+      toolRequirements: definition.toolRequirements,
+      skills: definition.skills,
+      mcpServers: definition.mcpServers,
       workspaces: {
         primary: {
           ...definition.primaryWorkspaceConfig,

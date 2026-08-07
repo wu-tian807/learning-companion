@@ -58,9 +58,17 @@ function validateDefinitionIdentity(
   }
 }
 
-function cloneAllowedTools(definition: AnyTaskDefinition) {
+function cloneToolRequirements(definition: AnyTaskDefinition) {
   return Object.freeze(
-    definition.allowedTools.map((tool) => Object.freeze({ ...tool })),
+    definition.toolRequirements.map((tool) => Object.freeze({ ...tool })),
+  );
+}
+
+function cloneCapabilityRequirements<
+  T extends { readonly id: string; readonly availability: 'required' | 'optional' },
+>(requirements: readonly T[]): readonly T[] {
+  return Object.freeze(
+    requirements.map((requirement) => Object.freeze({ ...requirement }) as T),
   );
 }
 
@@ -202,7 +210,9 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       instruction,
       systemInstruction: definition.systemInstruction,
       userMessage,
-      allowedTools: cloneAllowedTools(definition),
+      toolRequirements: cloneToolRequirements(definition),
+      skills: cloneCapabilityRequirements(definition.skills),
+      mcpServers: cloneCapabilityRequirements(definition.mcpServers),
       workspaces,
       assetReferences,
       ...(preparedData === undefined

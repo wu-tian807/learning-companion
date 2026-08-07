@@ -5,7 +5,6 @@ import type {
   CodexMcpServer,
   CodexSkill,
 } from '../codex/codex-runtime-types';
-import { requireSupportedCodexGenerationTools } from './codex-generation-request';
 
 export interface CodexGenerationEnvironment {
   readonly disabledMcpServers: readonly string[];
@@ -68,7 +67,6 @@ export async function inspectCodexGenerationEnvironment(
   runtime: CodexRuntimeServiceApi,
   request: GenerationAgentTurnRequest,
 ): Promise<CodexGenerationEnvironment> {
-  requireSupportedCodexGenerationTools(request);
   const [disabledMcpServers, skillGroups] = await Promise.all([
     listCodexMcpServerNames(runtime),
     runtime.listSkills(allWorkspacePaths(request), true),

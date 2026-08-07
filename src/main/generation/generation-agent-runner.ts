@@ -2,7 +2,11 @@ import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AgentSessionLocator } from '../agents/sessions/agent-session';
 import type { AgentUserMessage } from './contracts/agent-message';
 import type { GenerationTokenUsage } from './contracts/generation-metrics';
-import type { AllowedToolConfig } from './contracts/task-definition';
+import type {
+  AgentMcpServerRequirement,
+  AgentSkillRequirement,
+  AgentToolRequirement,
+} from './contracts/task-definition';
 import type { PreparedAgentWorkspaces } from './contracts/generation-workspace';
 
 export type GenerationAgentEvent =
@@ -33,7 +37,9 @@ export interface GenerationAgentTurnRequest {
   readonly sessionId?: string;
   readonly systemInstruction: string;
   readonly userMessage: AgentUserMessage;
-  readonly allowedTools: readonly AllowedToolConfig[];
+  readonly toolRequirements: readonly AgentToolRequirement[];
+  readonly skills: readonly AgentSkillRequirement[];
+  readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly workspaces: PreparedAgentWorkspaces;
   readonly outputSchema: JsonValue;
   readonly signal?: AbortSignal;

@@ -13,7 +13,17 @@ import type {
   PreparedAgentWorkspaces,
 } from './generation-workspace';
 
-export interface AllowedToolConfig {
+export interface AgentToolRequirement {
+  readonly id: string;
+  readonly availability: 'required' | 'optional';
+}
+
+export interface AgentSkillRequirement {
+  readonly id: string;
+  readonly availability: 'required' | 'optional';
+}
+
+export interface AgentMcpServerRequirement {
   readonly id: string;
   readonly availability: 'required' | 'optional';
 }
@@ -72,7 +82,9 @@ export interface TaskDefinition<
   readonly id: string;
   readonly version: number;
   readonly systemInstruction: string;
-  readonly allowedTools: readonly AllowedToolConfig[];
+  readonly toolRequirements: readonly AgentToolRequirement[];
+  readonly skills: readonly AgentSkillRequirement[];
+  readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;

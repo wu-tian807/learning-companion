@@ -7,6 +7,7 @@ import {
   type AgentWorkspaceConfig,
 } from './contracts/generation-workspace';
 import { cloneGenerationAssetReferenceSchema } from './contracts/generation-asset-reference';
+import { requireAgentCapabilityId } from '../agents/capabilities/agent-capability-id';
 
 type StoredTaskDefinition = TaskDefinition<
   GenerationInstruction,
@@ -72,7 +73,7 @@ function validateDefinition(
 
   cloneGenerationAssetReferenceSchema(definition.assetReferenceSchema);
 
-  const toolIds = definition.allowedTools.map(({ id, availability }) => {
+  const toolIds = definition.toolRequirements.map(({ id, availability }) => {
     const normalizedId = id.trim();
 
     if (
@@ -89,10 +90,32 @@ function validateDefinition(
     throw new AppError('INVALID_EXTENSION_DEFINITION');
   }
 
+  validateCapabilityRequirements(definition.skills);
+  validateCapabilityRequirements(definition.mcpServers);
+
   if (
     !Number.isSafeInteger(definition.outputContract.maxRepairTurns) ||
     definition.outputContract.maxRepairTurns < 0
   ) {
+    throw new AppError('INVALID_EXTENSION_DEFINITION');
+  }
+}
+
+function validateCapabilityRequirements(
+  requirements: readonly {
+    readonly id: string;
+    readonly availability: 'required' | 'optional';
+  }[],
+): void {
+  const ids = requirements.map(({ id, availability }) => {
+    if (availability !== 'required' && availability !== 'optional') {
+      throw new AppError('INVALID_EXTENSION_DEFINITION');
+    }
+
+    return requireAgentCapabilityId(id);
+  });
+
+  if (new Set(ids).size !== ids.length) {
     throw new AppError('INVALID_EXTENSION_DEFINITION');
   }
 }
