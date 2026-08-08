@@ -284,10 +284,10 @@
       position: relative;
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
-      grid-auto-rows: 96px;
-      gap: 14px;
-      min-height: calc(var(--rows, 5) * 110px);
-      padding: 12px;
+      grid-auto-rows: 104px;
+      gap: 24px 20px;
+      min-height: calc(var(--rows, 5) * 128px);
+      padding: 18px;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.035);
       border-radius: 13px;
@@ -313,6 +313,9 @@
       stroke: #4b5d73;
       stroke-width: 1.5;
       marker-end: url(#arrow);
+      transition:
+        stroke-width 150ms ease,
+        filter 150ms ease;
     }
 
     .edge-path.persist {
@@ -330,19 +333,76 @@
       marker-start: url(#arrow);
     }
 
-    .edge-label rect {
-      fill: #0d131b;
-      stroke: #2b3848;
-      stroke-width: 1;
-      rx: 6;
+    .edge-path.projected {
+      stroke-width: 1.8;
     }
 
-    .edge-label text {
-      fill: #8fa0b5;
+    .edge-path.selected {
+      stroke-width: 3;
+      filter: drop-shadow(0 0 5px rgba(120, 169, 255, 0.48));
+    }
+
+    .edge-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 16;
+      pointer-events: stroke;
+      cursor: pointer;
+    }
+
+    .edge-port {
+      fill: #0d131b;
+      stroke: #7890ad;
+      stroke-width: 2;
+    }
+
+    .edge-port.selected {
+      fill: #78a9ff;
+      stroke: #dce9ff;
+    }
+
+    .edge-control-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .edge-control {
+      position: absolute;
+      width: max-content;
+      max-width: 240px;
+      padding: 4px 7px;
+      overflow: hidden;
+      transform: translate(-50%, -50%);
+      border: 1px solid #2b3848;
+      border-radius: 6px;
+      color: #8fa0b5;
+      background: #0d131b;
+      cursor: pointer;
       font-size: 9px;
       font-weight: 600;
-      text-anchor: middle;
-      dominant-baseline: middle;
+      line-height: 1.25;
+      pointer-events: auto;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .edge-control:hover,
+    .edge-control[aria-pressed="true"] {
+      border-color: rgba(120, 169, 255, 0.66);
+      color: #dce9ff;
+      background: #162235;
+    }
+
+    .edge-control.cross-module::after {
+      margin-left: 5px;
+      color: var(--blue);
+      content: "↗";
+    }
+
+    .edge-control.cross-module {
+      white-space: normal;
     }
 
     .node {
@@ -379,12 +439,8 @@
         0 14px 30px rgba(0, 0, 0, 0.23);
     }
 
-    .node.boundary {
-      align-content: center;
-      border-style: dashed;
-      color: #b9c6d7;
-      background: rgba(13, 19, 27, 0.92);
-      box-shadow: none;
+    .mobile-relations {
+      display: none;
     }
 
     .node.planned {
@@ -504,6 +560,10 @@
       background: var(--purple);
     }
 
+    .inspector-status.relation i {
+      background: var(--blue);
+    }
+
     .inspector h3 {
       margin-bottom: 8px;
       font-size: 18px;
@@ -594,7 +654,7 @@
       line-height: 1.6;
     }
 
-    @media (max-width: 1060px) {
+    @media (max-width: 1480px) {
       .content {
         grid-template-columns: 1fr;
       }
@@ -604,7 +664,7 @@
       }
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 1060px) {
       .page {
         padding: 10px;
       }
@@ -639,6 +699,10 @@
         display: none;
       }
 
+      .edge-control-layer {
+        display: none;
+      }
+
       .node {
         width: 100%;
         min-height: 82px;
@@ -647,6 +711,31 @@
 
       .node:last-child {
         margin-bottom: 0;
+      }
+
+      .mobile-relations {
+        display: grid;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .mobile-relation {
+        width: 100%;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.025);
+        cursor: pointer;
+        font-size: 10px;
+        line-height: 1.45;
+        text-align: left;
+      }
+
+      .mobile-relation[aria-pressed="true"] {
+        border-color: rgba(120, 169, 255, 0.66);
+        color: var(--text);
+        background: var(--blue-soft);
       }
     }
 
@@ -670,7 +759,7 @@
       </div>
       <div class="baseline">
         源码核对：2026-08-09<br>
-        main 基线：984756d
+        main 基线：ab3c630
       </div>
     </header>
 
@@ -691,7 +780,7 @@
         </header>
         <div class="diagram-wrap">
           <div class="diagram-note">
-            <span>单击节点查看说明；双击节点，或使用右侧按钮进入下一层。</span>
+            <span>单击节点或关系说明查看详情；双击节点，或使用右侧按钮进入下一层。</span>
             <span class="status-legend" aria-label="实现状态">
               <span><i></i>已实现</span>
               <span><i class="partial"></i>接口已就绪</span>
@@ -712,10 +801,12 @@
                 </marker>
               </defs>
               <g id="edgePaths"></g>
-              <g id="edgeLabels"></g>
+              <g id="edgePorts"></g>
             </svg>
+            <div id="edgeControls" class="edge-control-layer"></div>
             <div id="nodeLayer" style="display: contents"></div>
           </div>
+          <div id="mobileRelations" class="mobile-relations" aria-label="当前视图关系"></div>
         </div>
       </section>
 
@@ -870,7 +961,7 @@
               summary: "打开当前 Asset 的 Workbench Session，按 Main 返回的 workbenchId 懒加载对应 Renderer View，并统一右键、选区和动作入口。",
               responsibilities: ["管理 View 生命周期。", "把 interaction 暴露给菜单和 Generation Surface。"],
               files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx", "src/renderer/workbench/runtime/workbench-runtime.ts"],
-              child: "workbench",
+              child: "renderer-workbench",
               col: 5,
               row: 3,
               span: 3
@@ -973,6 +1064,7 @@
               caption: "IPC_CHANNELS · DTO · WorkbenchBootstrap",
               summary: "两侧共同依赖的通道名、请求结构、事件结构和运行时校验，防止桥两端各自猜测协议。",
               files: ["src/shared/ipc.ts", "src/shared/workbench/protocol.ts"],
+              kind: "boundary",
               target: "shared",
               col: 4,
               row: 4,
@@ -1434,14 +1526,29 @@
           description: "Workbench 或 Generation prepare 请求模型友好表示；AssetArtifactService 负责缓存、去重、生成和清理，Producer 负责具体转换。",
           rows: 7,
           nodes: [
-            N("consumer", "Workbench / Generation Preparer", {
-              tag: "CONSUMER",
-              caption: "getCached / getOrCreate / materializeContent",
-              summary: "预览和 Agent 资料准备复用同一个 materializeContent 路径，不应各写一套 Office → PDF 转换。",
-              files: ["src/workbenches/office/main.ts", "src/main/generation/preparation/generation-asset-reference-preparer.ts"],
+            N("workbench-consumer", "← Workbench", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "materializeContent for preview",
+              summary: "Workbench 请求可复用预览表示，例如 Office Workbench 请求 PDF Artifact。",
+              files: ["src/workbenches/office/main.ts"],
+              kind: "boundary",
+              target: "workbench-extension",
+              preferredSide: "left",
               col: 1,
               row: 1,
-              span: 3
+              span: 1
+            }),
+            N("generation-consumer", "← Generation Preparer", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "materializeContent for agent input",
+              summary: "Generation prepare 请求同一个模型友好副本，不另写一条 Office 转换路径。",
+              files: ["src/main/generation/preparation/generation-asset-reference-preparer.ts"],
+              kind: "boundary",
+              target: "generation",
+              preferredSide: "left",
+              col: 1,
+              row: 3,
+              span: 1
             }),
             N("service", "AssetArtifactService", {
               tag: "APPLICATION SERVICE",
@@ -1521,7 +1628,8 @@
             })
           ],
           edges: [
-            { from: "consumer", to: "service", label: "request" },
+            { id: "artifact.workbench-consumer", from: "workbench-consumer", to: "service", label: "get or create", summary: "Workbench 通过 materializeContent 请求缓存或生成可重建 Artifact。" },
+            { id: "artifact.generation-consumer", from: "generation-consumer", to: "service", label: "prepare input", summary: "Generation prepare 与 Workbench 复用同一个 AssetArtifactService 和 Producer。" },
             { from: "service", to: "registry", label: "require producer" },
             { from: "registry", to: "producer", label: "produce" },
             { from: "producer", to: "external", label: "requireExecutable" },
@@ -1612,6 +1720,7 @@
               summary: "ContentRef 是可持久化指针，不等于已经打开的文件句柄。",
               keys: ["kind", "base", "path"],
               files: ["src/shared/assets.ts"],
+              kind: "boundary",
               target: "asset-extensions",
               col: 1,
               row: 2,
@@ -1685,99 +1794,180 @@
           ]
         },
 
-        workbench: {
-          parent: "main",
-          title: "Main 选择 Provider，Renderer 按同一契约加载 View",
-          kicker: "LEVEL 3 · WORKBENCH",
-          description: "两端注册表不会彼此扫描，也不会互相 import。它们都绑定同一份强类型 Manifest；Main 选择 Provider 后返回 ID 与版本，Renderer 按 ID 懒加载并完成契约握手。",
-          rows: 7,
+        "renderer-workbench": {
+          parent: "renderer",
+          title: "Renderer Workbench 只负责加载 View 与收集交互",
+          kicker: "LEVEL 3 · RENDERER WORKBENCH",
+          description: "当前视图只展示 Renderer 自己拥有的 Host、Registry、Runtime、Action 和媒体 View。可信生命周期通过边界关系进入 Preload，不再把 Main 节点画成 Renderer 内部节点。",
+          rows: 5,
           nodes: [
+            N("preload-port", "← Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "open · command · close · events",
+              summary: "Renderer 只通过 window.learningCompanion 接收 bootstrap、执行命令和关闭 Session。",
+              kind: "boundary",
+              target: "preload",
+              preferredSide: "left",
+              col: 1,
+              row: 1,
+              span: 1
+            }),
             N("host", "AssetWorkbenchHost", {
               tag: "RENDERER HOST",
-              caption: "selected Asset → openWorkbench",
+              caption: "selected Asset · bootstrap · View lifecycle",
               summary: "管理活动 Renderer View、命令队列和关闭顺序；拿到 bootstrap 后再加载对应模块。",
               files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx"],
-              col: 1,
+              col: 3,
               row: 1,
               span: 3
             }),
-            N("preload", "Preload / IPC", {
-              tag: "BOUNDARY",
-              caption: "open · command · close",
-              summary: "只传输 WorkbenchOpenRequest、Command 和 Bootstrap，不参与 Workbench 选择。",
-              kind: "boundary",
-              target: "preload",
-              col: 5,
+            N("registry", "RendererWorkbenchRegistry", {
+              tag: "LAZY MODULE REGISTRY",
+              caption: "workbenchId → typed async Renderer module",
+              summary: "按 bootstrap.workbenchId 懒加载 Renderer Module，并核对 Workbench 版本、协议版本与完整 Manifest。未知 ID 直接报注册错误；只有 Main 明确选中 builtin.unsupported 时才显示 Unsupported。",
+              files: ["src/renderer/workbench/renderer-workbench-registry.ts"],
+              col: 8,
               row: 1,
               span: 3
+            }),
+            N("runtime", "Workbench Runtime", {
+              tag: "RENDERER SESSION STATE",
+              caption: "commands · focus · selection · contributions",
+              summary: "为当前 View 提供命令执行、interaction snapshot 和 Action Contribution 的共享运行态。",
+              files: ["src/renderer/workbench/runtime/WorkbenchRuntimeProvider.tsx", "src/renderer/workbench/runtime/workbench-runtime-store.ts"],
+              col: 3,
+              row: 3,
+              span: 3
+            }),
+            N("view", "Renderer Workbench View", {
+              tag: "FEATURE UI",
+              caption: "bootstrap · media UI · interaction",
+              summary: "媒体特有 React View。它消费安全 payload，通过 runtime 发命令，并上报 selection/focus。",
+              files: ["src/workbenches/mindmap/renderer.tsx", "src/workbenches/pdf/renderer.tsx"],
+              target: "workbench-catalog",
+              col: 8,
+              row: 3,
+              span: 3
+            }),
+            N("actions", "Workbench Actions / Facilities", {
+              tag: "RENDERER EXTENSION",
+              caption: "context menu · overflow · generation surface",
+              summary: "媒体 feature 通过统一 Contribution 接入菜单、选区和生成入口，不在 View 内重复造宿主交互。",
+              files: ["src/renderer/workbench/actions/", "src/shared/workbench/facilities/"],
+              col: 3,
+              row: 5,
+              span: 3
+            }),
+            N("catalog-port", "→ Typed Workbench Manifest Catalog", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "stable ID · typed Manifest · renderer loader",
+              summary: "Catalog 把字面量 ID 和 Manifest 与 Renderer lazy loader 编译期绑定，加载时再做完整契约校验。",
+              kind: "boundary",
+              target: "workbench-catalog",
+              preferredSide: "right",
+              col: 12,
+              row: 3,
+              span: 1
+            })
+          ],
+          edges: [
+            { id: "workbench.renderer-ipc", from: "preload-port", to: "host", label: "bootstrap / commands", tone: "both", summary: "Renderer Host 通过 Preload 白名单接收 WorkbenchBootstrap，并发送 command/close 请求。" },
+            { from: "host", to: "registry", label: "bootstrap.workbenchId" },
+            { from: "host", to: "runtime", label: "mount session" },
+            { from: "registry", to: "view", label: "lazy load" },
+            { from: "runtime", to: "view", label: "commands / interaction", tone: "both" },
+            { from: "actions", to: "runtime", label: "contributions", tone: "contract" },
+            { id: "workbench.renderer-catalog", from: "catalog-port", to: "registry", label: "register typed loaders", tone: "contract", summary: "Typed catalog 在 Renderer 侧完整覆盖每个 workbenchId，并把 Manifest 与异步模块 loader 绑定。" }
+          ]
+        },
+
+        workbench: {
+          parent: "main",
+          title: "Main Workbench 只拥有可信 Session 与 Provider 选择",
+          kicker: "LEVEL 3 · MAIN WORKBENCH",
+          description: "当前视图只展示 Main 中的 Workbench 生命周期。Renderer、Preload、Content Runtime 与 Catalog 都以边界关系接入；点击关系说明即可查看流向，再按需打开目标模块。",
+          rows: 5,
+          nodes: [
+            N("preload-port", "← Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "WorkbenchOpenRequest · command · close",
+              summary: "Main handler 校验请求后把可信生命周期操作交给 WorkbenchSessionService。",
+              kind: "boundary",
+              target: "preload",
+              preferredSide: "left",
+              col: 1,
+              row: 1,
+              span: 1
+            }),
+            N("content-port", "← Content Runtime", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "ContentHandle · capabilities · close",
+              summary: "Content Runtime 解析 Asset.contentRef；Workbench Session 只消费已声明 capability 的 Handle。",
+              kind: "boundary",
+              target: "content",
+              preferredSide: "right",
+              col: 12,
+              row: 1,
+              span: 1
             }),
             N("session", "WorkbenchSessionService", {
               tag: "MAIN LIFECYCLE",
               caption: "resolve content · select · open · close",
               summary: "Main 中唯一活动 Workbench Session 的编排器。负责关闭旧 Handle、Provider 和 transport bindings。",
               files: ["src/main/workbench/workbench-session-service.ts"],
-              col: 9,
+              col: 4,
               row: 1,
-              span: 3
+              span: 5
             }),
             N("main-registry", "Main WorkbenchRegistry", {
               tag: "PROVIDER REGISTRY",
               caption: "priority + media specificity + capabilities",
-              summary: "使用 shared Manifest 选择 MainWorkbenchProvider。精确媒体类型优先于通配符；显式 priority 可覆盖默认顺序；同级冲突直接失败。",
+              summary: "使用 shared Manifest 选择 MainWorkbenchProvider。显式 selectionPriority 优先，再比较媒体类型精确度；同级冲突直接失败。",
               files: ["src/main/workbench/workbench-registry.ts"],
-              col: 9,
+              col: 4,
               row: 3,
-              span: 3
+              span: 5
+            }),
+            N("catalog-port", "← Typed Workbench Manifest Catalog", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "Manifest · typed Main Provider factory",
+              summary: "Catalog 将字面量 ID 与 Manifest 绑定；Main Factory 完整覆盖所有 ID，并在注册时核对 Provider 的完整契约。",
+              kind: "boundary",
+              target: "workbench-catalog",
+              preferredSide: "right",
+              col: 12,
+              row: 3,
+              span: 1
             }),
             N("bootstrap", "WorkbenchBootstrap", {
-              tag: "SHARED DTO",
+              tag: "MAIN OUTPUT DTO",
               caption: "ID · workbenchVersion · protocolVersion · payload",
               summary: "Main 选择结果的跨进程载体。Renderer 在挂载 View 前核对 ID、Workbench 版本和协议版本。",
               keys: ["sessionId", "workbenchId", "workbenchVersion", "protocolVersion", "assetId", "mediaType", "payload"],
               files: ["src/shared/workbench/protocol.ts"],
-              col: 5,
-              row: 4,
-              span: 3
+              col: 4,
+              row: 5,
+              span: 5
             }),
-            N("renderer-registry", "RendererWorkbenchRegistry", {
-              tag: "LAZY MODULE REGISTRY",
-              caption: "workbenchId → async Renderer module",
-              summary: "按 bootstrap.workbenchId 懒加载 Renderer Module，并核对完整 Manifest。未知 ID 立即报注册错误；只有 Main 明确选择 builtin.unsupported 时才显示 Unsupported。",
-              files: ["src/renderer/workbench/renderer-workbench-registry.ts"],
+            N("renderer-port", "→ Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "WorkbenchBootstrap response",
+              summary: "Main 把 WorkbenchBootstrap 返回 Preload；Renderer 使用其 ID 解析 lazy module，再执行版本和 Manifest 契约握手。",
+              kind: "boundary",
+              target: "preload",
+              preferredSide: "left",
               col: 1,
-              row: 4,
-              span: 3
-            }),
-            N("view", "Renderer Workbench View", {
-              tag: "FEATURE UI",
-              caption: "bootstrap · executeCommand · interaction",
-              summary: "媒体特有 React View。它消费安全 payload，通过 command 回 Main，并上报 selection/focus。",
-              files: ["src/workbenches/mindmap/renderer.tsx", "src/workbenches/pdf/renderer.tsx"],
-              child: "workbench-catalog",
-              col: 1,
-              row: 6,
-              span: 3
-            }),
-            N("catalog", "Typed Workbench Manifest Catalog", {
-              tag: "SHARED CONTRACT CATALOG",
-              caption: "同一 Manifest 约束 Main Factory 与 Renderer Loader",
-              summary: "Catalog 将字面量 ID 与 Manifest 绑定；两侧映射由 ID 泛型完整覆盖，注册时再校验实际 Provider / Module 的完整契约。",
-              files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
-              child: "workbench-catalog",
-              col: 7,
-              row: 6,
-              span: 4
+              row: 5,
+              span: 1
             })
           ],
           edges: [
-            { from: "host", to: "preload", label: "open(assetId)" },
-            { from: "preload", to: "session", label: "IPC handler" },
+            { id: "workbench.main-ipc", from: "preload-port", to: "session", label: "validated request", summary: "Preload/Main IPC handler 校验 Workbench 请求，并调用注入的 WorkbenchSessionService。" },
+            { id: "workbench.content-handle", from: "content-port", to: "session", label: "resolve handle", summary: "WorkbenchSessionService 从 Content Runtime 获取有生命周期的 ContentHandle，并在关闭 Session 时释放。" },
             { from: "session", to: "main-registry", label: "select" },
+            { id: "workbench.main-catalog", from: "catalog-port", to: "main-registry", label: "register providers", tone: "contract", summary: "Builtin catalog 在 Main 侧创建并注册具有稳定 workbenchId 的 Provider。" },
             { from: "main-registry", to: "bootstrap", label: "ID + versions" },
-            { from: "bootstrap", to: "renderer-registry", label: "contract handshake" },
-            { from: "renderer-registry", to: "view", label: "lazy load" },
-            { from: "catalog", to: "main-registry", label: "register providers", tone: "contract" },
-            { from: "catalog", to: "renderer-registry", label: "register loaders", tone: "contract" }
+            { id: "workbench.bootstrap-via-ipc", from: "bootstrap", to: "renderer-port", label: "contract handshake", tone: "both", summary: "WorkbenchBootstrap 经 Preload 返回后，Renderer 使用 ID 解析 lazy module，并核对 Workbench 版本、协议版本与 Manifest。" }
           ]
         },
 
@@ -1889,9 +2079,9 @@
               span: 2
             }),
             N("unsupported", "Unsupported", {
-              tag: "FALLBACK",
-              caption: "unsupported media / missing capability",
-              summary: "Main 与 Renderer 都有显式 fallback，避免未知媒体导致空白页面。",
+              tag: "EXPLICIT FALLBACK",
+              caption: "Main-selected unsupported media / capability",
+              summary: "Main 在媒体不支持或 capability 不足时明确选中 builtin.unsupported。Renderer 遇到未知 ID 会报错，不会静默回退。",
               files: ["src/workbenches/unsupported/"],
               child: "workbench-extension",
               col: 9,
@@ -2270,6 +2460,7 @@
               caption: "stable callKey · completedCalls · same session",
               summary: "每次成功 call 都立刻持久化 checkpoint。恢复时相同 callKey 直接复用，后续 repair 沿用同一 Provider Session。",
               files: ["src/main/generation/generation-task-agent-session.ts"],
+              kind: "boundary",
               target: "agent-runtime",
               col: 9,
               row: 5,
@@ -2424,6 +2615,7 @@
               caption: "requireExecutable(libraryId)",
               summary: "业务模块只请求已验证 executable。当前 Office Artifact Producer 使用 LibreOffice。",
               files: ["src/workbenches/office/main.ts", "src/workbenches/office/artifacts/libreoffice-preview-producer.ts"],
+              kind: "boundary",
               target: "workbench-extension",
               col: 1,
               row: 3,
@@ -2596,14 +2788,17 @@
 
       var state = {
         viewId: views[location.hash.slice(1)] ? location.hash.slice(1) : "overview",
-        selectedId: null
+        selection: null,
+        activeRelation: null
       };
 
       var diagram = document.getElementById("diagram");
       var nodeLayer = document.getElementById("nodeLayer");
       var edgeLayer = document.getElementById("edgeLayer");
       var edgePaths = document.getElementById("edgePaths");
-      var edgeLabels = document.getElementById("edgeLabels");
+      var edgePorts = document.getElementById("edgePorts");
+      var edgeControls = document.getElementById("edgeControls");
+      var mobileRelations = document.getElementById("mobileRelations");
       var inspectorContent = document.getElementById("inspectorContent");
       var breadcrumbs = document.getElementById("breadcrumbs");
       var backButton = document.getElementById("backButton");
@@ -2639,12 +2834,41 @@
         return trail;
       }
 
-      function navigate(viewId) {
+      function isDescendantView(viewId, ancestorViewId) {
+        var current = viewId;
+        var guard = new Set();
+
+        while (views[current] && !guard.has(current)) {
+          if (current === ancestorViewId) {
+            return true;
+          }
+          guard.add(current);
+          current = views[current].parent;
+        }
+        return false;
+      }
+
+      function shouldPreserveActiveRelation(viewId) {
+        return Boolean(
+          state.activeRelation &&
+          isDescendantView(state.activeRelation.originViewId, viewId)
+        );
+      }
+
+      function navigate(viewId, options) {
         if (!views[viewId]) {
           return;
         }
+        var preserveRelation = Boolean(
+          options && options.preserveRelation && state.activeRelation
+        );
         state.viewId = viewId;
-        state.selectedId = null;
+        state.selection = preserveRelation
+          ? { kind: "relation", id: state.activeRelation.id }
+          : null;
+        if (!preserveRelation) {
+          state.activeRelation = null;
+        }
         history.replaceState(null, "", "#" + viewId);
         render();
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -2670,7 +2894,9 @@
             button.setAttribute("aria-current", "page");
           } else {
             button.addEventListener("click", function () {
-              navigate(viewId);
+              navigate(viewId, {
+                preserveRelation: shouldPreserveActiveRelation(viewId)
+              });
             });
           }
           breadcrumbs.appendChild(button);
@@ -2679,23 +2905,260 @@
         backButton.disabled = state.viewId === "overview";
       }
 
-      function renderNodes(view) {
-        nodeLayer.innerHTML = "";
-        var selectedExists = view.nodes.some(function (node) {
-          return node.id === state.selectedId;
+      function visibleNodes(view) {
+        return view.nodes.filter(function (node) {
+          return node.kind !== "boundary";
         });
-        if (!selectedExists) {
-          state.selectedId = view.nodes[0] ? view.nodes[0].id : null;
-        }
+      }
 
-        view.nodes.forEach(function (node) {
+      function findNode(view, nodeId) {
+        return view.nodes.find(function (node) {
+          return node.id === nodeId;
+        });
+      }
+
+      function relationId(viewId, edge, index) {
+        return edge.id || [viewId, edge.from, edge.to, edge.label || index].join("::");
+      }
+
+      function baseRelations(viewId) {
+        var view = views[viewId];
+        return view.edges.map(function (edge, index) {
+          return {
+            id: relationId(viewId, edge, index),
+            viewId: viewId,
+            edge: edge,
+            from: findNode(view, edge.from),
+            to: findNode(view, edge.to),
+            projected: false,
+            active: null
+          };
+        }).filter(function (relation) {
+          return Boolean(relation.from && relation.to);
+        });
+      }
+
+      function boundarySideFromLayout(node, view) {
+        if (node.preferredSide) {
+          return node.preferredSide;
+        }
+        var x = (node.col - 1 + node.span / 2) / 12;
+        var y = (node.row - 1 + node.rowSpan / 2) / Math.max(view.rows, 1);
+        var candidates = [
+          { side: "left", distance: x },
+          { side: "right", distance: 1 - x },
+          { side: "top", distance: y },
+          { side: "bottom", distance: 1 - y }
+        ];
+        candidates.sort(function (left, right) {
+          return left.distance - right.distance;
+        });
+        return candidates[0].side;
+      }
+
+      function endpointDescriptor(viewId, node) {
+        var view = views[viewId];
+        if (node.kind === "boundary") {
+          return {
+            kind: node.target ? "view" : "external",
+            viewId: node.target || null,
+            nodeId: null,
+            ownerViewId: null,
+            title: node.title,
+            summary: node.summary,
+            files: node.files.slice(),
+            hint: {
+              col: node.col,
+              row: node.row,
+              span: node.span,
+              rowSpan: node.rowSpan,
+              preferredSide: boundarySideFromLayout(node, view)
+            }
+          };
+        }
+        return {
+          kind: "node",
+          viewId: null,
+          nodeId: node.id,
+          ownerViewId: viewId,
+          title: node.title,
+          summary: node.summary,
+          files: node.files.slice(),
+          hint: null
+        };
+      }
+
+      function relationIsCrossModule(relation) {
+        return relation.projected ||
+          relation.from.kind === "boundary" ||
+          relation.to.kind === "boundary";
+      }
+
+      function captureActiveRelation(relation) {
+        return {
+          id: relation.id,
+          originViewId: relation.viewId,
+          edge: Object.assign({}, relation.edge),
+          from: endpointDescriptor(relation.viewId, relation.from),
+          to: endpointDescriptor(relation.viewId, relation.to)
+        };
+      }
+
+      function directChildView(ancestorViewId, descendantViewId) {
+        var current = descendantViewId;
+        var guard = new Set();
+
+        while (views[current] && !guard.has(current)) {
+          guard.add(current);
+          if (views[current].parent === ancestorViewId) {
+            return current;
+          }
+          current = views[current].parent;
+        }
+        return null;
+      }
+
+      function moduleNodeForView(activeViewId, descendantViewId) {
+        var childViewId = directChildView(activeViewId, descendantViewId);
+        if (!childViewId) {
+          return null;
+        }
+        return views[activeViewId].nodes.find(function (node) {
+          return node.kind !== "boundary" && node.child === childViewId;
+        }) || null;
+      }
+
+      function projectedBoundary(descriptor, role, view) {
+        var hint = descriptor.hint || {};
+        var preferredSide = hint.preferredSide || (role === "from" ? "left" : "right");
+        return N("__boundary-" + role + "-" + (descriptor.viewId || descriptor.title), descriptor.title, {
+          tag: "CONTINUES OUTSIDE THIS VIEW",
+          caption: descriptor.summary,
+          summary: descriptor.summary,
+          files: descriptor.files,
+          kind: "boundary",
+          target: descriptor.viewId,
+          preferredSide: preferredSide,
+          col: hint.col || (preferredSide === "left" ? 1 : 12),
+          row: hint.row || Math.ceil(view.rows / 2),
+          span: hint.span || 1,
+          rowSpan: hint.rowSpan || 1
+        });
+      }
+
+      function projectEndpoint(descriptor, activeViewId, role) {
+        var view = views[activeViewId];
+        var descendantViewId = descriptor.kind === "node"
+          ? descriptor.ownerViewId
+          : descriptor.viewId;
+
+        if (descriptor.kind === "node" && descriptor.ownerViewId === activeViewId) {
+          return findNode(view, descriptor.nodeId);
+        }
+        if (
+          descendantViewId &&
+          descendantViewId !== activeViewId &&
+          isDescendantView(descendantViewId, activeViewId)
+        ) {
+          var moduleNode = moduleNodeForView(activeViewId, descendantViewId);
+          if (moduleNode) {
+            return moduleNode;
+          }
+        }
+        return projectedBoundary(descriptor, role, view);
+      }
+
+      function endpointKey(node) {
+        if (node.kind === "boundary") {
+          return "boundary:" + (node.target || node.title);
+        }
+        return "node:" + node.id;
+      }
+
+      function projectActiveRelation(viewId) {
+        var active = state.activeRelation;
+        if (!active || active.originViewId === viewId || !isDescendantView(active.originViewId, viewId)) {
+          return null;
+        }
+        var from = projectEndpoint(active.from, viewId, "from");
+        var to = projectEndpoint(active.to, viewId, "to");
+        if (!from || !to) {
+          return null;
+        }
+        if (from.kind === "boundary" && to.kind === "boundary") {
+          return null;
+        }
+        if (from.kind !== "boundary" && to.kind !== "boundary" && from.id === to.id) {
+          return null;
+        }
+        return {
+          id: active.id,
+          viewId: viewId,
+          edge: Object.assign({}, active.edge),
+          from: from,
+          to: to,
+          projected: true,
+          active: active
+        };
+      }
+
+      function relationsForView(viewId) {
+        var relations = baseRelations(viewId);
+        var projected = projectActiveRelation(viewId);
+        if (!projected) {
+          return relations;
+        }
+        var fromKey = endpointKey(projected.from);
+        var toKey = endpointKey(projected.to);
+        var matchIndex = relations.findIndex(function (relation) {
+          var exact = endpointKey(relation.from) === fromKey && endpointKey(relation.to) === toKey;
+          var reversible = projected.edge.tone === "both" || relation.edge.tone === "both";
+          var reversed = endpointKey(relation.from) === toKey && endpointKey(relation.to) === fromKey;
+          return exact || (reversible && reversed);
+        });
+        if (matchIndex >= 0) {
+          relations[matchIndex] = Object.assign({}, relations[matchIndex], {
+            id: projected.id,
+            projected: true,
+            active: projected.active
+          });
+        } else {
+          relations.push(projected);
+        }
+        return relations;
+      }
+
+      function ensureSelection(view, relations) {
+        var nodes = visibleNodes(view);
+        var selectionExists = state.selection && (
+          state.selection.kind === "node"
+            ? nodes.some(function (node) { return node.id === state.selection.id; })
+            : relations.some(function (relation) { return relation.id === state.selection.id; })
+        );
+        if (!selectionExists) {
+          state.selection = nodes[0]
+            ? { kind: "node", id: nodes[0].id }
+            : (relations[0] ? { kind: "relation", id: relations[0].id } : null);
+        }
+      }
+
+      function renderNodes(view, relations) {
+        nodeLayer.innerHTML = "";
+        ensureSelection(view, relations);
+
+        visibleNodes(view).forEach(function (node) {
           var button = document.createElement("button");
           button.type = "button";
           button.id = "node-" + node.id;
-          button.className = "node " + node.status + (node.kind === "boundary" ? " boundary" : "");
+          button.className = "node " + node.status;
           button.style.gridColumn = node.col + " / span " + node.span;
           button.style.gridRow = node.row + " / span " + node.rowSpan;
-          button.setAttribute("aria-pressed", node.id === state.selectedId ? "true" : "false");
+          button.setAttribute(
+            "aria-pressed",
+            state.selection && state.selection.kind === "node" && node.id === state.selection.id
+              ? "true"
+              : "false"
+          );
           button.innerHTML =
             '<span class="node-topline">' +
               '<span class="node-tag">' + escapeHtml(node.tag) + '</span>' +
@@ -2706,8 +3169,9 @@
             (node.child || node.target ? '<span class="node-enter" aria-hidden="true">↘</span>' : "");
 
           button.addEventListener("click", function () {
-            state.selectedId = node.id;
-            renderSelection(view);
+            state.selection = { kind: "node", id: node.id };
+            state.activeRelation = null;
+            render();
           });
           button.addEventListener("dblclick", function () {
             if (node.child || node.target) {
@@ -2718,15 +3182,7 @@
         });
       }
 
-      function renderSelection(view) {
-        var node = view.nodes.find(function (candidate) {
-          return candidate.id === state.selectedId;
-        }) || view.nodes[0];
-
-        Array.prototype.forEach.call(nodeLayer.querySelectorAll(".node"), function (button) {
-          button.setAttribute("aria-pressed", button.id === "node-" + node.id ? "true" : "false");
-        });
-
+      function nodeDetailSections(node) {
         var sections = "";
 
         if (node.responsibilities.length) {
@@ -2765,6 +3221,12 @@
             "</div></section>";
         }
 
+        return sections;
+      }
+
+      function renderNodeSelection(view, node) {
+        var sections = nodeDetailSections(node);
+
         var destination = node.child || node.target;
         var buttonLabel = node.child ? "进入该模块 →" : "打开相关模块 →";
         inspectorContent.innerHTML =
@@ -2785,6 +3247,130 @@
         }
       }
 
+      function cleanEndpointTitle(title) {
+        return String(title).replace(/^[←→]\s*/, "");
+      }
+
+      function relationSourceFiles(relation) {
+        var files = [];
+        var endpoints = relation.active
+          ? [relation.active.from, relation.active.to]
+          : [endpointDescriptor(relation.viewId, relation.from), endpointDescriptor(relation.viewId, relation.to)];
+        endpoints.forEach(function (endpoint) {
+          endpoint.files.forEach(function (file) {
+            if (files.indexOf(file) < 0) {
+              files.push(file);
+            }
+          });
+        });
+        return files;
+      }
+
+      function relationOriginalEndpoints(relation) {
+        if (relation.active) {
+          return { from: relation.active.from, to: relation.active.to };
+        }
+        return {
+          from: endpointDescriptor(relation.viewId, relation.from),
+          to: endpointDescriptor(relation.viewId, relation.to)
+        };
+      }
+
+      function relationDestination(relation) {
+        var endpoints = relationOriginalEndpoints(relation);
+        if (endpoints.to.kind !== "node" && endpoints.to.viewId) {
+          return endpoints.to.viewId;
+        }
+        if (endpoints.from.kind !== "node" && endpoints.from.viewId) {
+          return endpoints.from.viewId;
+        }
+        return null;
+      }
+
+      function relationSummary(relation) {
+        var endpoints = relationOriginalEndpoints(relation);
+        var boundaryEndpoint = relation.from.kind === "boundary" ? relation.from :
+          (relation.to.kind === "boundary" ? relation.to : null);
+        return (relation.active && relation.active.edge.summary) ||
+          relation.edge.summary ||
+          (boundaryEndpoint && boundaryEndpoint.summary) ||
+          cleanEndpointTitle(endpoints.from.title) + " 通过“" +
+            (relation.edge.label || "连接") + "”连接到 " +
+            cleanEndpointTitle(endpoints.to.title) + "。";
+      }
+
+      function renderRelationSelection(relation) {
+        var endpoints = relationOriginalEndpoints(relation);
+        var sourceTitle = cleanEndpointTitle(endpoints.from.title);
+        var targetTitle = cleanEndpointTitle(endpoints.to.title);
+        var crossModule = relationIsCrossModule(relation);
+        var files = relationSourceFiles(relation);
+        var currentProjection = cleanEndpointTitle(relation.from.title) + " → " +
+          cleanEndpointTitle(relation.to.title);
+        var sections =
+          '<section class="detail-section"><h4>连接到哪里</h4><ul>' +
+            "<li>" + escapeHtml(sourceTitle) + " → " + escapeHtml(targetTitle) + "</li>" +
+            (relation.projected
+              ? "<li>当前层投影：" + escapeHtml(currentProjection) + "</li>"
+              : "") +
+            "<li>关系 ID：<code>" + escapeHtml(relation.id) + "</code></li>" +
+          "</ul></section>";
+
+        if (files.length) {
+          sections +=
+            '<section class="detail-section"><h4>源码依据</h4><div class="source-list">' +
+            files.map(function (file) {
+              return "<code>" + escapeHtml(file) + "</code>";
+            }).join("") +
+            "</div></section>";
+        }
+
+        var destination = relationDestination(relation);
+        inspectorContent.innerHTML =
+          '<div class="inspector-status relation"><i></i>' +
+            (crossModule ? "跨模块关系" : "模块内关系") +
+          "</div>" +
+          "<h3>" + escapeHtml(relation.edge.label || (sourceTitle + " → " + targetTitle)) + "</h3>" +
+          '<p class="inspector-summary">' + escapeHtml(relationSummary(relation)) + "</p>" +
+          sections +
+          (destination
+            ? '<button id="enterButton" class="enter-button" type="button">打开目标模块 →</button>'
+            : "");
+
+        if (destination) {
+          document.getElementById("enterButton").addEventListener("click", function () {
+            navigate(destination);
+          });
+        }
+      }
+
+      function renderSelection(view, relations) {
+        Array.prototype.forEach.call(nodeLayer.querySelectorAll(".node"), function (button) {
+          var selected = state.selection && state.selection.kind === "node" &&
+            button.id === "node-" + state.selection.id;
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+        });
+
+        if (state.selection && state.selection.kind === "relation") {
+          var relation = relations.find(function (candidate) {
+            return candidate.id === state.selection.id;
+          });
+          if (relation) {
+            renderRelationSelection(relation);
+            return;
+          }
+        }
+
+        var node = visibleNodes(view).find(function (candidate) {
+          return state.selection && candidate.id === state.selection.id;
+        }) || visibleNodes(view)[0];
+        if (node) {
+          renderNodeSelection(view, node);
+        } else {
+          inspectorContent.innerHTML = '<p class="inspector-summary">当前视图没有可检查的节点。</p>';
+        }
+      }
+
       function anchorFor(element, other, bounds) {
         var box = element.getBoundingClientRect();
         var otherBox = other.getBoundingClientRect();
@@ -2799,15 +3385,96 @@
           return {
             x: dx >= 0 ? box.right - bounds.left : box.left - bounds.left,
             y: centerY,
-            side: "horizontal"
+            side: "horizontal",
+            edge: dx >= 0 ? "right" : "left"
           };
         }
 
         return {
           x: centerX,
           y: dy >= 0 ? box.bottom - bounds.top : box.top - bounds.top,
-          side: "vertical"
+          side: "vertical",
+          edge: dy >= 0 ? "bottom" : "top"
         };
+      }
+
+      function anchorForPoint(element, point, bounds) {
+        var box = element.getBoundingClientRect();
+        var centerX = box.left - bounds.left + box.width / 2;
+        var centerY = box.top - bounds.top + box.height / 2;
+        var dx = point.x - centerX;
+        var dy = point.y - centerY;
+
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          return {
+            x: dx >= 0 ? box.right - bounds.left : box.left - bounds.left,
+            y: centerY,
+            side: "horizontal",
+            edge: dx >= 0 ? "right" : "left"
+          };
+        }
+        return {
+          x: centerX,
+          y: dy >= 0 ? box.bottom - bounds.top : box.top - bounds.top,
+          side: "vertical",
+          edge: dy >= 0 ? "bottom" : "top"
+        };
+      }
+
+      function clamp(value, minimum, maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
+      }
+
+      function boundaryPointFor(node, view, bounds) {
+        var side = boundarySideFromLayout(node, view);
+        var normalizedX = (node.col - 1 + node.span / 2) / 12;
+        var normalizedY = (node.row - 1 + node.rowSpan / 2) / Math.max(view.rows, 1);
+        var x = clamp(normalizedX * bounds.width, 18, bounds.width - 18);
+        var y = clamp(normalizedY * bounds.height, 18, bounds.height - 18);
+        var inset = 2;
+
+        if (side === "left") {
+          return { x: inset, y: y, side: "horizontal", edge: "right" };
+        }
+        if (side === "right") {
+          return { x: bounds.width - inset, y: y, side: "horizontal", edge: "left" };
+        }
+        if (side === "top") {
+          return { x: x, y: inset, side: "vertical", edge: "bottom" };
+        }
+        return { x: x, y: bounds.height - inset, side: "vertical", edge: "top" };
+      }
+
+      function relationGeometry(relation, view, bounds) {
+        var fromBoundary = relation.from.kind === "boundary";
+        var toBoundary = relation.to.kind === "boundary";
+        if (fromBoundary && toBoundary) {
+          return null;
+        }
+        if (!fromBoundary && !toBoundary) {
+          var fromElement = document.getElementById("node-" + relation.from.id);
+          var toElement = document.getElementById("node-" + relation.to.id);
+          if (!fromElement || !toElement) {
+            return null;
+          }
+          return {
+            start: anchorFor(fromElement, toElement, bounds),
+            end: anchorFor(toElement, fromElement, bounds),
+            port: null
+          };
+        }
+
+        var boundaryNode = fromBoundary ? relation.from : relation.to;
+        var localNode = fromBoundary ? relation.to : relation.from;
+        var localElement = document.getElementById("node-" + localNode.id);
+        if (!localElement) {
+          return null;
+        }
+        var port = boundaryPointFor(boundaryNode, view, bounds);
+        var localAnchor = anchorForPoint(localElement, port, bounds);
+        return fromBoundary
+          ? { start: port, end: localAnchor, port: port }
+          : { start: localAnchor, end: port, port: port };
       }
 
       function pathBetween(start, end) {
@@ -2826,92 +3493,575 @@
           ", " + end.x + " " + end.y;
       }
 
-      function drawEdges() {
+      function moveAlongEdge(point, distance, bounds) {
+        var moved = { x: point.x, y: point.y };
+        if (point.edge === "left") {
+          moved.x -= distance;
+        } else if (point.edge === "right") {
+          moved.x += distance;
+        } else if (point.edge === "top") {
+          moved.y -= distance;
+        } else {
+          moved.y += distance;
+        }
+        moved.x = clamp(moved.x, 6, bounds.width - 6);
+        moved.y = clamp(moved.y, 6, bounds.height - 6);
+        return moved;
+      }
+
+      function coordinateKey(x, y) {
+        return x.toFixed(2) + "," + y.toFixed(2);
+      }
+
+      function uniqueCoordinates(values) {
+        return values
+          .sort(function (left, right) { return left - right; })
+          .filter(function (value, index, all) {
+            return index === 0 || Math.abs(value - all[index - 1]) > 0.5;
+          });
+      }
+
+      function pointInsideObstacle(point, obstacle) {
+        return point.x > obstacle.left && point.x < obstacle.right &&
+          point.y > obstacle.top && point.y < obstacle.bottom;
+      }
+
+      function segmentIsClear(start, end, obstacles) {
+        if (Math.abs(start.x - end.x) < 0.5) {
+          var verticalTop = Math.min(start.y, end.y);
+          var verticalBottom = Math.max(start.y, end.y);
+          return !obstacles.some(function (obstacle) {
+            return start.x > obstacle.left && start.x < obstacle.right &&
+              verticalBottom > obstacle.top && verticalTop < obstacle.bottom;
+          });
+        }
+        if (Math.abs(start.y - end.y) < 0.5) {
+          var horizontalLeft = Math.min(start.x, end.x);
+          var horizontalRight = Math.max(start.x, end.x);
+          return !obstacles.some(function (obstacle) {
+            return start.y > obstacle.top && start.y < obstacle.bottom &&
+              horizontalRight > obstacle.left && horizontalLeft < obstacle.right;
+          });
+        }
+        return false;
+      }
+
+      function simplifyRoute(points) {
+        var deduplicated = points.filter(function (point, index) {
+          return index === 0 || Math.abs(point.x - points[index - 1].x) > 0.5 ||
+            Math.abs(point.y - points[index - 1].y) > 0.5;
+        });
+        return deduplicated.filter(function (point, index) {
+          if (index === 0 || index === deduplicated.length - 1) {
+            return true;
+          }
+          var previous = deduplicated[index - 1];
+          var next = deduplicated[index + 1];
+          var sameHorizontal = Math.abs(previous.y - point.y) < 0.5 &&
+            Math.abs(point.y - next.y) < 0.5;
+          var sameVertical = Math.abs(previous.x - point.x) < 0.5 &&
+            Math.abs(point.x - next.x) < 0.5;
+          return !sameHorizontal && !sameVertical;
+        });
+      }
+
+      function roundedRoutePath(points) {
+        var route = simplifyRoute(points);
+        if (route.length < 2) {
+          return "";
+        }
+        var output = "M " + route[0].x + " " + route[0].y;
+        for (var index = 1; index < route.length - 1; index += 1) {
+          var previous = route[index - 1];
+          var current = route[index];
+          var next = route[index + 1];
+          var previousDistance = Math.hypot(
+            current.x - previous.x,
+            current.y - previous.y
+          );
+          var nextDistance = Math.hypot(
+            next.x - current.x,
+            next.y - current.y
+          );
+          var radius = Math.min(10, previousDistance / 2, nextDistance / 2);
+          var before = {
+            x: current.x + (previous.x - current.x) * radius / previousDistance,
+            y: current.y + (previous.y - current.y) * radius / previousDistance
+          };
+          var after = {
+            x: current.x + (next.x - current.x) * radius / nextDistance,
+            y: current.y + (next.y - current.y) * radius / nextDistance
+          };
+          output += " L " + before.x + " " + before.y +
+            " Q " + current.x + " " + current.y + " " + after.x + " " + after.y;
+        }
+        var last = route[route.length - 1];
+        return output + " L " + last.x + " " + last.y;
+      }
+
+      function routeBetween(geometry, bounds) {
+        var stubDistance = 9;
+        var startStub = moveAlongEdge(geometry.start, stubDistance, bounds);
+        var endStub = moveAlongEdge(geometry.end, stubDistance, bounds);
+        var obstaclePadding = 7;
+        var obstacles = Array.prototype.map.call(
+          nodeLayer.querySelectorAll(".node"),
+          function (node) {
+            var rectangle = localRectangle(node, bounds);
+            return {
+              left: clamp(rectangle.left - obstaclePadding, 4, bounds.width - 4),
+              right: clamp(rectangle.right + obstaclePadding, 4, bounds.width - 4),
+              top: clamp(rectangle.top - obstaclePadding, 4, bounds.height - 4),
+              bottom: clamp(rectangle.bottom + obstaclePadding, 4, bounds.height - 4)
+            };
+          }
+        );
+        var xStops = [6, bounds.width - 6, startStub.x, endStub.x];
+        var yStops = [6, bounds.height - 6, startStub.y, endStub.y];
+
+        obstacles.forEach(function (obstacle) {
+          xStops.push(obstacle.left, obstacle.right);
+          yStops.push(obstacle.top, obstacle.bottom);
+        });
+        xStops = uniqueCoordinates(xStops);
+        yStops = uniqueCoordinates(yStops);
+        xStops.slice(1).forEach(function (value, index) {
+          var previous = xStops[index];
+          if (value - previous > 24) {
+            xStops.push((previous + value) / 2);
+          }
+        });
+        yStops.slice(1).forEach(function (value, index) {
+          var previous = yStops[index];
+          if (value - previous > 24) {
+            yStops.push((previous + value) / 2);
+          }
+        });
+        xStops = uniqueCoordinates(xStops);
+        yStops = uniqueCoordinates(yStops);
+
+        var points = {};
+        var rows = {};
+        var columns = {};
+        xStops.forEach(function (x) {
+          yStops.forEach(function (y) {
+            var point = { x: x, y: y };
+            var isTerminal = coordinateKey(x, y) === coordinateKey(startStub.x, startStub.y) ||
+              coordinateKey(x, y) === coordinateKey(endStub.x, endStub.y);
+            if (!isTerminal && obstacles.some(function (obstacle) {
+              return pointInsideObstacle(point, obstacle);
+            })) {
+              return;
+            }
+            var key = coordinateKey(x, y);
+            points[key] = point;
+            (rows[y.toFixed(2)] || (rows[y.toFixed(2)] = [])).push(point);
+            (columns[x.toFixed(2)] || (columns[x.toFixed(2)] = [])).push(point);
+          });
+        });
+
+        var graph = {};
+        Object.keys(points).forEach(function (key) { graph[key] = []; });
+        function connect(left, right, direction) {
+          if (!segmentIsClear(left, right, obstacles)) {
+            return;
+          }
+          var leftKey = coordinateKey(left.x, left.y);
+          var rightKey = coordinateKey(right.x, right.y);
+          var distance = Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+          graph[leftKey].push({ key: rightKey, distance: distance, direction: direction });
+          graph[rightKey].push({ key: leftKey, distance: distance, direction: direction });
+        }
+        Object.keys(rows).forEach(function (key) {
+          var row = rows[key].sort(function (left, right) { return left.x - right.x; });
+          for (var index = 1; index < row.length; index += 1) {
+            connect(row[index - 1], row[index], "horizontal");
+          }
+        });
+        Object.keys(columns).forEach(function (key) {
+          var column = columns[key].sort(function (left, right) { return left.y - right.y; });
+          for (var index = 1; index < column.length; index += 1) {
+            connect(column[index - 1], column[index], "vertical");
+          }
+        });
+
+        var startKey = coordinateKey(startStub.x, startStub.y);
+        var endKey = coordinateKey(endStub.x, endStub.y);
+        var distances = {};
+        var previousStates = {};
+        var openStates = [{ key: startKey, direction: "start", cost: 0 }];
+        distances[startKey + "|start"] = 0;
+        var finalState = null;
+        while (openStates.length) {
+          openStates.sort(function (left, right) { return left.cost - right.cost; });
+          var current = openStates.shift();
+          var currentStateKey = current.key + "|" + current.direction;
+          if (current.cost !== distances[currentStateKey]) {
+            continue;
+          }
+          if (current.key === endKey) {
+            finalState = currentStateKey;
+            break;
+          }
+          (graph[current.key] || []).forEach(function (edge) {
+            var bendCost = current.direction !== "start" &&
+              current.direction !== edge.direction ? 28 : 0;
+            var nextCost = current.cost + edge.distance + bendCost;
+            var nextStateKey = edge.key + "|" + edge.direction;
+            if (distances[nextStateKey] === undefined || nextCost < distances[nextStateKey]) {
+              distances[nextStateKey] = nextCost;
+              previousStates[nextStateKey] = currentStateKey;
+              openStates.push({ key: edge.key, direction: edge.direction, cost: nextCost });
+            }
+          });
+        }
+
+        if (!finalState) {
+          var boundaryRoutes = [
+            [
+              startStub,
+              { x: startStub.x, y: 6 },
+              { x: endStub.x, y: 6 },
+              endStub
+            ],
+            [
+              startStub,
+              { x: startStub.x, y: bounds.height - 6 },
+              { x: endStub.x, y: bounds.height - 6 },
+              endStub
+            ],
+            [
+              startStub,
+              { x: 6, y: startStub.y },
+              { x: 6, y: endStub.y },
+              endStub
+            ],
+            [
+              startStub,
+              { x: bounds.width - 6, y: startStub.y },
+              { x: bounds.width - 6, y: endStub.y },
+              endStub
+            ]
+          ].filter(function (candidate) {
+            return candidate.every(function (point, index) {
+              return index === 0 || segmentIsClear(candidate[index - 1], point, obstacles);
+            });
+          }).sort(function (left, right) {
+            function lengthOf(candidate) {
+              return candidate.slice(1).reduce(function (total, point, index) {
+                return total + Math.abs(point.x - candidate[index].x) +
+                  Math.abs(point.y - candidate[index].y);
+              }, 0);
+            }
+            return lengthOf(left) - lengthOf(right);
+          });
+          if (boundaryRoutes.length) {
+            return {
+              pathData: roundedRoutePath([
+                { x: geometry.start.x, y: geometry.start.y }
+              ].concat(boundaryRoutes[0], [{ x: geometry.end.x, y: geometry.end.y }])),
+              fallback: false
+            };
+          }
+          return {
+            pathData: pathBetween(geometry.start, geometry.end),
+            fallback: true
+          };
+        }
+        var route = [];
+        var cursor = finalState;
+        while (cursor) {
+          route.push(points[cursor.split("|")[0]]);
+          cursor = previousStates[cursor];
+        }
+        route.reverse();
+        route.unshift({ x: geometry.start.x, y: geometry.start.y });
+        route.push({ x: geometry.end.x, y: geometry.end.y });
+        return {
+          pathData: roundedRoutePath(route),
+          fallback: false
+        };
+      }
+
+      function selectRelation(relation) {
+        state.selection = { kind: "relation", id: relation.id };
+        state.activeRelation = relationIsCrossModule(relation)
+          ? (relation.active || captureActiveRelation(relation))
+          : null;
+        render();
+      }
+
+      function relationControlLabel(relation) {
+        var label = relation.edge.label || "关系";
+        if (relation.from.kind === "boundary") {
+          return cleanEndpointTitle(relation.from.title) + " · " + label;
+        }
+        if (relation.to.kind === "boundary") {
+          return label + " · " + cleanEndpointTitle(relation.to.title);
+        }
+        return label;
+      }
+
+      function rectanglesOverlap(left, right, padding) {
+        return !(
+          left.right + padding <= right.left ||
+          left.left >= right.right + padding ||
+          left.bottom + padding <= right.top ||
+          left.top >= right.bottom + padding
+        );
+      }
+
+      function localRectangle(element, bounds) {
+        var box = element.getBoundingClientRect();
+        return {
+          left: box.left - bounds.left,
+          top: box.top - bounds.top,
+          right: box.right - bounds.left,
+          bottom: box.bottom - bounds.top,
+          width: box.width,
+          height: box.height
+        };
+      }
+
+      function placeEdgeControl(control, geometry, bounds, ownPath) {
+        var box = control.getBoundingClientRect();
+        var gap = 10;
+        var fractions = [0.5, 0.35, 0.65, 0.2, 0.8];
+        var candidates = [];
+        var pathLength = ownPath.getTotalLength();
+        var stepSize = 18;
+        for (var level = 0; level < 8; level += 1) {
+          fractions.forEach(function (fraction) {
+            var centerLength = pathLength * fraction;
+            var center = ownPath.getPointAtLength(centerLength);
+            var previous = ownPath.getPointAtLength(Math.max(0, centerLength - 3));
+            var next = ownPath.getPointAtLength(Math.min(pathLength, centerLength + 3));
+            var dx = next.x - previous.x;
+            var dy = next.y - previous.y;
+            var tangentLength = Math.max(1, Math.hypot(dx, dy));
+            var normalX = -dy / tangentLength;
+            var normalY = dx / tangentLength;
+            var halfExtent = Math.abs(normalX) * box.width / 2 +
+              Math.abs(normalY) * box.height / 2;
+            var distance = halfExtent + gap + level * stepSize;
+            candidates.push({
+              x: center.x + normalX * distance,
+              y: center.y + normalY * distance
+            });
+            candidates.push({
+              x: center.x - normalX * distance,
+              y: center.y - normalY * distance
+            });
+          });
+        }
+        var obstacles = Array.prototype.map.call(
+          nodeLayer.querySelectorAll(".node"),
+          function (node) { return localRectangle(node, bounds); }
+        ).concat(Array.prototype.map.call(
+          edgeControls.querySelectorAll(".edge-control:not([data-placing='true'])"),
+          function (label) { return localRectangle(label, bounds); }
+        ));
+        var pathPoints = [];
+        Array.prototype.forEach.call(edgePaths.querySelectorAll(".edge-path"), function (path) {
+          var length = path.getTotalLength();
+          for (var pointIndex = 1; pointIndex < 100; pointIndex += 1) {
+            pathPoints.push(path.getPointAtLength(length * pointIndex / 100));
+          }
+        });
+        var chosen = null;
+        var ranked = [];
+
+        candidates.some(function (candidate) {
+          var centerX = clamp(candidate.x, box.width / 2 + 8, bounds.width - box.width / 2 - 8);
+          var centerY = clamp(candidate.y, box.height / 2 + 8, bounds.height - box.height / 2 - 8);
+          var candidateBox = {
+            left: centerX - box.width / 2,
+            right: centerX + box.width / 2,
+            top: centerY - box.height / 2,
+            bottom: centerY + box.height / 2
+          };
+          var obstacleHits = obstacles.filter(function (obstacle) {
+            return rectanglesOverlap(candidateBox, obstacle, 6);
+          }).length;
+          var pathHits = pathPoints.filter(function (point) {
+            return point.x > candidateBox.left - 4 && point.x < candidateBox.right + 4 &&
+              point.y > candidateBox.top - 4 && point.y < candidateBox.bottom + 4;
+          }).length;
+          ranked.push({ x: centerX, y: centerY, score: obstacleHits * 100 + pathHits });
+          if (obstacleHits === 0 && pathHits === 0) {
+            chosen = { x: centerX, y: centerY };
+            return true;
+          }
+          return false;
+        });
+
+        if (!chosen) {
+          ranked.sort(function (left, right) { return left.score - right.score; });
+          chosen = ranked[0];
+          control.setAttribute("data-collision", "true");
+        } else {
+          control.removeAttribute("data-collision");
+        }
+        control.style.left = chosen.x + "px";
+        control.style.top = chosen.y + "px";
+        control.removeAttribute("data-placing");
+      }
+
+      function drawEdges(view, relations) {
         cancelAnimationFrame(edgeFrame);
         edgeFrame = requestAnimationFrame(function () {
-          var view = views[state.viewId];
           var bounds = diagram.getBoundingClientRect();
           var namespace = "http://www.w3.org/2000/svg";
           edgeLayer.setAttribute("viewBox", "0 0 " + bounds.width + " " + bounds.height);
           edgePaths.innerHTML = "";
-          edgeLabels.innerHTML = "";
+          edgePorts.innerHTML = "";
+          edgeControls.innerHTML = "";
+          var renderedRelations = [];
 
-          view.edges.forEach(function (edge) {
-            var from = document.getElementById("node-" + edge.from);
-            var to = document.getElementById("node-" + edge.to);
-            if (!from || !to) {
+          relations.forEach(function (relation) {
+            var geometry = relationGeometry(relation, view, bounds);
+            if (!geometry) {
               return;
             }
-
-            var start = anchorFor(from, to, bounds);
-            var end = anchorFor(to, from, bounds);
+            var selected = state.selection && state.selection.kind === "relation" &&
+              state.selection.id === relation.id;
+            var route = routeBetween(geometry, bounds);
+            var pathData = route.pathData;
             var path = document.createElementNS(namespace, "path");
-            path.setAttribute("d", pathBetween(start, end));
-            path.setAttribute("class", "edge-path " + (edge.tone || ""));
+            path.setAttribute("d", pathData);
+            path.setAttribute(
+              "class",
+              "edge-path " + (relation.edge.tone || "") +
+                (relation.projected ? " projected" : "") +
+                (selected ? " selected" : "")
+            );
+            path.setAttribute("data-relation-id", relation.id);
+            path.setAttribute("data-from", relation.from.id);
+            path.setAttribute("data-to", relation.to.id);
+            if (route.fallback) {
+              path.setAttribute("data-route-fallback", "true");
+            }
             edgePaths.appendChild(path);
 
-            if (!edge.label) {
-              return;
+            var hitPath = document.createElementNS(namespace, "path");
+            hitPath.setAttribute("d", pathData);
+            hitPath.setAttribute("class", "edge-hit");
+            hitPath.addEventListener("click", function () {
+              selectRelation(relation);
+            });
+            edgePaths.appendChild(hitPath);
+
+            if (geometry.port) {
+              var port = document.createElementNS(namespace, "circle");
+              port.setAttribute("cx", geometry.port.x);
+              port.setAttribute("cy", geometry.port.y);
+              port.setAttribute("r", selected ? "5" : "4");
+              port.setAttribute("class", "edge-port" + (selected ? " selected" : ""));
+              edgePorts.appendChild(port);
             }
 
-            var group = document.createElementNS(namespace, "g");
-            group.setAttribute("class", "edge-label");
-            var text = document.createElementNS(namespace, "text");
-            var x = (start.x + end.x) / 2;
-            var y = (start.y + end.y) / 2;
-            text.setAttribute("x", x);
-            text.setAttribute("y", y);
-            text.textContent = edge.label;
-            group.appendChild(text);
-            edgeLabels.appendChild(group);
-            var box = text.getBBox();
-            var rect = document.createElementNS(namespace, "rect");
-            rect.setAttribute("x", box.x - 6);
-            rect.setAttribute("y", box.y - 3);
-            rect.setAttribute("width", box.width + 12);
-            rect.setAttribute("height", box.height + 6);
-            group.insertBefore(rect, text);
+            renderedRelations.push({
+              relation: relation,
+              geometry: geometry,
+              path: path,
+              selected: selected
+            });
           });
+
+          renderedRelations.forEach(function (rendered) {
+            var relation = rendered.relation;
+            var control = document.createElement("button");
+            control.type = "button";
+            control.className = "edge-control" +
+              (relationIsCrossModule(relation) ? " cross-module" : "");
+            control.setAttribute("data-placing", "true");
+            control.setAttribute("data-relation-id", relation.id);
+            control.textContent = relationControlLabel(relation);
+            control.setAttribute("aria-pressed", rendered.selected ? "true" : "false");
+            control.setAttribute(
+              "aria-label",
+              "查看关系：" + cleanEndpointTitle(relation.from.title) + " 到 " +
+                cleanEndpointTitle(relation.to.title) + "，" + relationControlLabel(relation)
+            );
+            control.addEventListener("click", function () {
+              selectRelation(relation);
+            });
+            edgeControls.appendChild(control);
+            placeEdgeControl(control, rendered.geometry, bounds, rendered.path);
+          });
+        });
+      }
+
+      function renderMobileRelations(relations) {
+        mobileRelations.innerHTML = "";
+        relations.forEach(function (relation) {
+          var button = document.createElement("button");
+          var selected = state.selection && state.selection.kind === "relation" &&
+            state.selection.id === relation.id;
+          button.type = "button";
+          button.className = "mobile-relation";
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+          button.textContent = cleanEndpointTitle(relation.from.title) + " → " +
+            cleanEndpointTitle(relation.to.title) + " · " +
+            (relation.edge.label || "连接");
+          button.addEventListener("click", function () {
+            selectRelation(relation);
+          });
+          mobileRelations.appendChild(button);
         });
       }
 
       function render() {
         var view = views[state.viewId];
+        var relations = relationsForView(state.viewId);
         mapTitle.textContent = view.title;
         mapKicker.textContent = view.kicker;
         mapDescription.textContent = view.description;
         diagram.style.setProperty("--rows", String(view.rows));
         renderBreadcrumbs();
-        renderNodes(view);
-        renderSelection(view);
-        drawEdges();
+        renderNodes(view, relations);
+        renderSelection(view, relations);
+        renderMobileRelations(relations);
+        drawEdges(view, relations);
       }
 
       backButton.addEventListener("click", function () {
         var parent = views[state.viewId].parent;
         if (parent) {
-          navigate(parent);
+          navigate(parent, {
+            preserveRelation: shouldPreserveActiveRelation(parent)
+          });
         }
       });
 
       homeButton.addEventListener("click", function () {
-        navigate("overview");
+        navigate("overview", {
+          preserveRelation: shouldPreserveActiveRelation("overview")
+        });
       });
 
-      window.addEventListener("resize", drawEdges);
+      window.addEventListener("resize", function () {
+        drawEdges(views[state.viewId], relationsForView(state.viewId));
+      });
       window.addEventListener("hashchange", function () {
         var requested = location.hash.slice(1);
         if (views[requested] && requested !== state.viewId) {
           state.viewId = requested;
-          state.selectedId = null;
+          state.selection = null;
+          state.activeRelation = null;
           render();
         }
       });
 
       if ("ResizeObserver" in window) {
-        new ResizeObserver(drawEdges).observe(diagram);
+        new ResizeObserver(function () {
+          drawEdges(views[state.viewId], relationsForView(state.viewId));
+        }).observe(diagram);
       }
 
+      window.__HIERARCHICAL_MAP_AUDIT__ = Object.freeze({
+        viewIds: Object.freeze(Object.keys(views))
+      });
       render();
     })();
   </script>
