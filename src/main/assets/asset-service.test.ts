@@ -148,7 +148,7 @@ function createService(
       createAbsoluteLocalFileContentRef(path),
     resolveLocalFile: async (_workspacePath: string, ref: Asset['contentRef']) =>
       ref.path,
-    removeImportedFile: async () => undefined,
+    removeManagedAssetFile: async () => false,
     createGeneratedFile: async (
       workspacePath: string,
       fileName: string,
@@ -159,7 +159,6 @@ function createService(
       absolutePath: `${workspacePath}/assets/generated/${fileName}`,
       created: true,
     }),
-    removeGeneratedFile: async () => undefined,
     selectAssetFiles: async () => [],
     revealFile: vi.fn(),
     ...workspaceManagerOverrides,
@@ -549,12 +548,12 @@ describe('AssetService', () => {
       absolutePath: '/tmp/project/assets/generated/task-1.mindmap',
       created: true,
     }));
-    const removeGeneratedFile = vi.fn(async () => undefined);
+    const removeManagedAssetFile = vi.fn(async () => true);
     const service = createService(
       database,
       registry,
       { detectMediaType: vi.fn(async () => MIND_MAP_ASSET_MEDIA_TYPE) },
-      { createGeneratedFile, removeGeneratedFile },
+      { createGeneratedFile, removeManagedAssetFile },
     );
     await service.loadFromProject('project');
 
@@ -586,9 +585,85 @@ describe('AssetService', () => {
 
     await service.delete('created');
 
-    expect(removeGeneratedFile).toHaveBeenCalledWith(
+    expect(removeManagedAssetFile).toHaveBeenCalledWith(
       '/tmp/project',
       contentRef,
+    );
+  });
+
+  it('removes the Workspace-owned copy when deleting an imported Asset', async () => {
+    const copiedRef = createProjectWorkspaceContentRef(
+      'assets/imported/lecture.pdf',
+    );
+    const copiedAsset = createAssetSnapshot({
+      ...createAsset(),
+      contentRef: copiedRef,
+    });
+    const database = createDatabase([copiedAsset]);
+    const { registry } = createResolver();
+    const removeManagedAssetFile = vi.fn(async () => true);
+    const service = createService(database, registry, {}, {
+      removeManagedAssetFile,
+    });
+    await service.loadFromProject('project');
+
+    await service.delete('asset');
+
+    expect(removeManagedAssetFile).toHaveBeenCalledWith(
+      '/tmp/project',
+      copiedRef,
+    );
+  });
+
+  it('keeps the Asset record when its managed file cannot be removed', async () => {
+    const copiedRef = createProjectWorkspaceContentRef(
+      'assets/imported/locked.pdf',
+    );
+    const copiedAsset = createAssetSnapshot({
+      ...createAsset(),
+      contentRef: copiedRef,
+    });
+    const database = createDatabase([copiedAsset]);
+    const { registry } = createResolver();
+    const service = createService(database, registry, {}, {
+      removeManagedAssetFile: vi.fn(async () => {
+        throw new Error('file locked');
+      }),
+    });
+    await service.loadFromProject('project');
+
+    await expect(service.delete('asset')).rejects.toThrow('file locked');
+
+    expect(database.delete).not.toHaveBeenCalled();
+    expect(service.get('asset')).toBeDefined();
+  });
+
+  it('removes all persisted managed files before deleting a Project', async () => {
+    const copiedRef = createProjectWorkspaceContentRef(
+      'assets/imported/lecture.pdf',
+    );
+    const database = createDatabase([
+      createAssetSnapshot({ ...createAsset('copied'), contentRef: copiedRef }),
+      createAsset('linked', '/external/notes.md'),
+    ]);
+    const { registry } = createResolver();
+    const removeManagedAssetFile = vi.fn(async () => true);
+    const service = createService(database, registry, {}, {
+      removeManagedAssetFile,
+    });
+
+    await service.removeManagedFilesByProject('project', '/tmp/project');
+
+    expect(removeManagedAssetFile).toHaveBeenCalledTimes(2);
+    expect(removeManagedAssetFile).toHaveBeenNthCalledWith(
+      1,
+      '/tmp/project',
+      copiedRef,
+    );
+    expect(removeManagedAssetFile).toHaveBeenNthCalledWith(
+      2,
+      '/tmp/project',
+      createAbsoluteLocalFileContentRef('/external/notes.md'),
     );
   });
 

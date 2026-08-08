@@ -25,6 +25,7 @@ export type LocalFileContentRef =
   | AbsoluteLocalFileContentRef;
 export type AssetContentRef = LocalFileContentRef;
 export type AssetContentKind = AssetContentRef['kind'];
+export type ManagedProjectAssetDirectory = 'imported' | 'generated';
 
 export type AssetAvailability =
   | 'available'
@@ -134,6 +135,22 @@ export function isAssetContentRef(value: unknown): value is AssetContentRef {
     (value.base === ABSOLUTE_CONTENT_BASE &&
       isAbsoluteFileSystemPath(value.path))
   );
+}
+
+export function getManagedProjectAssetDirectory(
+  contentRef: AssetContentRef,
+): ManagedProjectAssetDirectory | undefined {
+  if (contentRef.base !== PROJECT_WORKSPACE_CONTENT_BASE) {
+    return undefined;
+  }
+  if (contentRef.path.startsWith('assets/imported/')) {
+    return 'imported';
+  }
+  if (contentRef.path.startsWith('assets/generated/')) {
+    return 'generated';
+  }
+
+  return undefined;
 }
 
 export function isAssetContentStatus(
