@@ -1,5 +1,5 @@
 import { open, lstat, mkdir, readdir } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { basename, extname, isAbsolute, join, normalize } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type {
@@ -9,7 +9,10 @@ import { ExternalCommandRunner } from '../../../main/external-libraries/external
 import type {
   ExternalLibraryServiceApi,
 } from '../../../main/external-libraries/external-library-service';
-import { LIBREOFFICE_LIBRARY_ID } from '../../../main/external-libraries/definitions/libreoffice';
+import {
+  LIBREOFFICE_LIBRARY_ID,
+  LIBREOFFICE_VERSION,
+} from '../../../main/external-libraries/definitions/libreoffice';
 import { AppError } from '../../../main/errors/app-error';
 import type {
   AssetArtifactProduceRequest,
@@ -21,7 +24,7 @@ export const LIBREOFFICE_PREVIEW_PRODUCER_ID =
   'builtin.office.preview';
 export const LIBREOFFICE_PREVIEW_ARTIFACT_KEY = 'preview';
 export const LIBREOFFICE_PREVIEW_PRODUCER_VERSION =
-  'office-preview@1+libreoffice@26.2.5';
+  `office-preview@1+libreoffice@${LIBREOFFICE_VERSION}`;
 
 const OFFICE_MEDIA_TYPES = new Set([
   'application/msword',
@@ -32,6 +35,22 @@ const OFFICE_MEDIA_TYPES = new Set([
 const CONVERSION_TIMEOUT_MS = 5 * 60 * 1000;
 const PDF_HEADER = new TextEncoder().encode('%PDF-');
 const PDF_EOF = new TextEncoder().encode('%%EOF');
+
+function previewFailure(detail: string): AppError {
+  return new AppError('OFFICE_PREVIEW_FAILED', {
+    cause: new Error(detail),
+  });
+}
+
+function commandDiagnostics(
+  stdout: string,
+  stderr: string,
+): string {
+  const normalizedStdout = stdout.trim() || '<empty>';
+  const normalizedStderr = stderr.trim() || '<empty>';
+
+  return `stdout:\n${normalizedStdout}\nstderr:\n${normalizedStderr}`;
+}
 
 function isAbortError(error: unknown): boolean {
   return (
@@ -73,7 +92,7 @@ async function validatePdf(path: string): Promise<void> {
     stats.isSymbolicLink() ||
     stats.size < PDF_HEADER.byteLength + PDF_EOF.byteLength
   ) {
-    throw new AppError('OFFICE_PREVIEW_FAILED');
+    throw previewFailure('LibreOffice produced an invalid PDF file');
   }
 
   const file = await open(path, 'r');
@@ -83,7 +102,7 @@ async function validatePdf(path: string): Promise<void> {
     await file.read(header, 0, header.byteLength, 0);
 
     if (!header.equals(PDF_HEADER)) {
-      throw new AppError('OFFICE_PREVIEW_FAILED');
+      throw previewFailure('LibreOffice output is missing the PDF header');
     }
 
     const tailLength = Math.min(stats.size, 4 * 1024);
@@ -96,7 +115,7 @@ async function validatePdf(path: string): Promise<void> {
     );
 
     if (!includesBytes(tail, PDF_EOF)) {
-      throw new AppError('OFFICE_PREVIEW_FAILED');
+      throw previewFailure('LibreOffice output is missing the PDF EOF marker');
     }
   } finally {
     await file.close();
@@ -145,12 +164,23 @@ export class LibreOfficePreviewProducer
   readonly id = LIBREOFFICE_PREVIEW_PRODUCER_ID;
   readonly version = LIBREOFFICE_PREVIEW_PRODUCER_VERSION;
   private readonly commandRunner: ExternalCommandRunnerApi;
+  private readonly profileDirectory: string;
   private queueTail: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly externalLibraries: ExternalLibraryServiceApi,
+    profileDirectory: string,
     dependencies: Partial<LibreOfficePreviewProducerDependencies> = {},
   ) {
+    const normalizedProfileDirectory = normalize(
+      profileDirectory.trim(),
+    );
+
+    if (!isAbsolute(normalizedProfileDirectory)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    this.profileDirectory = normalizedProfileDirectory;
     this.commandRunner =
       dependencies.commandRunner ?? new ExternalCommandRunner();
   }
@@ -205,15 +235,13 @@ export class LibreOfficePreviewProducer
         request.stagingDirectory,
         'output',
       );
-      const profileDirectory = join(
-        request.stagingDirectory,
-        'libreoffice-profile',
-      );
       await Promise.all([
         mkdir(outputDirectory, { recursive: true }),
-        mkdir(profileDirectory, { recursive: true }),
+        mkdir(this.profileDirectory, { recursive: true }),
       ]);
-      await this.commandRunner.run({
+      const profileArgument =
+        `-env:UserInstallation=${pathToFileURL(this.profileDirectory).href}`;
+      const commandResult = await this.commandRunner.run({
         command: executablePath,
         args: [
           '--headless',
@@ -221,7 +249,7 @@ export class LibreOfficePreviewProducer
           '--nodefault',
           '--nofirststartwizard',
           '--norestore',
-          `-env:UserInstallation=${pathToFileURL(profileDirectory).href}`,
+          profileArgument,
           '--convert-to',
           'pdf',
           '--outdir',
@@ -238,7 +266,13 @@ export class LibreOfficePreviewProducer
       );
 
       if (outputNames.length !== 1) {
-        throw new AppError('OFFICE_PREVIEW_FAILED');
+        throw previewFailure(
+          `LibreOffice produced ${outputNames.length} PDF files; expected exactly one.\n` +
+            `Conversion diagnostics:\n${commandDiagnostics(
+              commandResult.stdout,
+              commandResult.stderr,
+            )}`,
+        );
       }
 
       const filePath = join(outputDirectory, outputNames[0]);
@@ -250,7 +284,9 @@ export class LibreOfficePreviewProducer
       if (
         basename(filePath, extname(filePath)) !== expectedBaseName
       ) {
-        throw new AppError('OFFICE_PREVIEW_FAILED');
+        throw previewFailure(
+          `LibreOffice output name does not match the source: ${outputNames[0]}`,
+        );
       }
 
       await validatePdf(filePath);

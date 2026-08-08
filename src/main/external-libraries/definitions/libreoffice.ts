@@ -52,7 +52,10 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
         sha256:
           'f15ba07bfcb0186986cf3171063506f5d207c11f8cc051ba0d135209e9e915f9',
         expectedSize: 372_948_992,
-        executableRelativePath: 'program/soffice.exe',
+        // soffice.exe is a GUI launcher and may return before a headless
+        // conversion finishes. The console entry point waits for the worker
+        // process and exposes its conversion diagnostics.
+        executableRelativePath: 'program/soffice.com',
       }),
     ]),
   });

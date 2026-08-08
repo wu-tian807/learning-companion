@@ -33,4 +33,14 @@ describe('LibreOffice ExternalLibraryDefinition', () => {
       );
     }
   });
+
+  it('uses the blocking console entry point on Windows', () => {
+    const windowsPackage = libreOfficeDefinition.packages.find(
+      ({ platform }) => platform === 'win32',
+    );
+
+    expect(windowsPackage?.executableRelativePath).toBe(
+      'program/soffice.com',
+    );
+  });
 });

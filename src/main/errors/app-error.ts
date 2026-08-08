@@ -216,7 +216,7 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   OFFICE_PREVIEW_FAILED: {
     kind: 'user',
     userMessage:
-      'Office 预览生成失败。原文件没有被修改，请检查文件是否损坏后重试。',
+      'Office 预览生成失败，请重试。原文件没有被修改。',
     retryable: true,
     logLevel: 'warn',
   },

@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
 import { AgentFunctionToolRegistry } from '../agents/function-tools/agent-function-tool-registry';
@@ -28,6 +29,10 @@ import { LocalFileContentResolver } from '../content/resolvers/local-file/local-
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { createDefaultExternalLibrariesRoot } from '../external-libraries/external-library-path-manager';
+import {
+  LIBREOFFICE_LIBRARY_ID,
+  LIBREOFFICE_VERSION,
+} from '../external-libraries/definitions/libreoffice';
 import type { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { GenerationAgentExecutor } from '../generation/generation-agent-executor';
 import { GenerationTaskDatabase } from '../generation/generation-task-database';
@@ -158,7 +163,14 @@ export async function createApplicationRuntime({
     );
     const artifactRegistry = new AssetArtifactRegistry();
     artifactRegistry.register(
-      new LibreOfficePreviewProducer(externalLibraryService),
+      new LibreOfficePreviewProducer(
+        externalLibraryService,
+        join(
+          appPaths.externalLibraryProfilesDirectory,
+          LIBREOFFICE_LIBRARY_ID,
+          LIBREOFFICE_VERSION,
+        ),
+      ),
     );
     const artifactService = new AssetArtifactService(
       new AssetArtifactDatabase(databaseContext),
