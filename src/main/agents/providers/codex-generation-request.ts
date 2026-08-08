@@ -28,7 +28,7 @@ import {
 
 export const CODEX_AGENT_PROVIDER_ID = 'codex';
 
-const CODEX_GENERATION_ADAPTER_VERSION = 8;
+const CODEX_GENERATION_ADAPTER_VERSION = 10;
 
 const CODEX_GENERATION_EXECUTION_POLICY = [
   'Learning Companion generation execution boundary:',
@@ -265,7 +265,6 @@ export function createCodexGenerationConfiguration(
     },
     tools: { view_image: viewImageEnabled },
     web_search: 'disabled',
-    default_permissions: profileId,
     permissions: {
       [profileId]: {
         filesystem,
