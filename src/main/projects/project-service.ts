@@ -252,7 +252,23 @@ export class ProjectService implements ProjectServiceApi {
         projectId,
         project.workspacePath,
       );
+      await this.assetService.removeManagedFilesByProject(
+        projectId,
+        project.workspacePath,
+      );
       this.projectDatabase.delete(projectId);
+      await this.workspaceManager
+        .removeProjectWorkspace(projectId, project.workspacePath)
+        .catch((error: unknown) => {
+          // The Project is already removed from the source of truth. Surface
+          // cleanup failure in diagnostics without reporting a false delete
+          // failure to the renderer.
+          console.error('清理 Project Workspace 失败', {
+            projectId,
+            workspacePath: project.workspacePath,
+            error,
+          });
+        });
     });
   }
 

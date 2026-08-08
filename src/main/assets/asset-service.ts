@@ -60,6 +60,10 @@ export interface AssetServiceApi {
     projectId: string,
     workspacePath: string,
   ): Promise<void>;
+  removeManagedFilesByProject(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void>;
   refresh(assetId: string): Promise<AssetSnapshot>;
   refreshAll(): Promise<readonly AssetSnapshot[]>;
   relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
@@ -337,7 +341,10 @@ export class AssetService implements AssetServiceApi {
     } catch (error) {
       if (imported.copiedAbsolutePath) {
         await this.workspaceManager
-          .removeImportedFile(imported.copiedAbsolutePath)
+          .removeManagedAssetFile(
+            context.projectWorkspace,
+            imported.contentRef,
+          )
           .catch((cleanupError: unknown) => {
             console.error('清理导入失败的 Asset 文件失败', cleanupError);
           });
@@ -425,7 +432,7 @@ export class AssetService implements AssetServiceApi {
     } catch (error) {
       if (generated.created) {
         await this.workspaceManager
-          .removeGeneratedFile(
+          .removeManagedAssetFile(
             context.projectWorkspace,
             generated.contentRef,
           )
@@ -517,6 +524,11 @@ export class AssetService implements AssetServiceApi {
       project.workspacePath,
     );
     this.requireUnchangedProject(lifecycleVersion, projectId);
+    await this.workspaceManager.removeManagedAssetFile(
+      project.workspacePath,
+      current.contentRef,
+    );
+    this.requireUnchangedProject(lifecycleVersion, projectId);
     this.assetDatabase.delete(projectId, assetId);
     this.runtimeMap.delete(assetId);
     try {
@@ -532,17 +544,6 @@ export class AssetService implements AssetServiceApi {
       });
     }
 
-    if (current.creationKind === 'generated') {
-      await this.workspaceManager
-        .removeGeneratedFile(project.workspacePath, current.contentRef)
-        .catch((error: unknown) => {
-          console.error('清理 Generated Asset 文件失败', {
-            projectId,
-            assetId,
-            error,
-          });
-        });
-    }
   }
 
   async cleanupProjectArtifacts(
@@ -553,6 +554,27 @@ export class AssetService implements AssetServiceApi {
       projectId,
       workspacePath,
     );
+  }
+
+  async removeManagedFilesByProject(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const project = this.projectLookup.get(projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+    if (project.workspacePath !== workspacePath) {
+      throw new AppError('PROJECT_CONTEXT_CHANGED');
+    }
+
+    for (const asset of this.assetDatabase.listByProject(projectId)) {
+      await this.workspaceManager.removeManagedAssetFile(
+        workspacePath,
+        asset.contentRef,
+      );
+    }
   }
 
   async refresh(assetId: string): Promise<AssetSnapshot> {
