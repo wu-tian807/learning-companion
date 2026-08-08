@@ -99,7 +99,7 @@ describe('ProjectWorkspaceManager path rules', () => {
 });
 
 describe('ProjectWorkspaceManager', () => {
-  it('creates idempotent generated files and removes only managed output', async () => {
+  it('creates idempotent generated files and removes only managed Asset files', async () => {
     const root = await createTemporaryDirectory();
     const workspacePath = join(root, 'project');
     const manager = new ProjectWorkspaceManager();
@@ -132,20 +132,37 @@ describe('ProjectWorkspaceManager', () => {
     });
     expect(await readFile(created.absolutePath, 'utf8')).toBe('first');
 
-    await manager.removeGeneratedFile(
+    await expect(manager.removeManagedAssetFile(
       workspacePath,
       created.contentRef,
-    );
+    )).resolves.toBe(true);
     await expect(stat(created.absolutePath)).rejects.toMatchObject({
       code: 'ENOENT',
     });
+    const importedPath = join(
+      workspacePath,
+      'assets',
+      'imported',
+      'copied.pdf',
+    );
+    await writeFile(importedPath, 'copied');
     await expect(
-      manager.removeGeneratedFile(workspacePath, {
+      manager.removeManagedAssetFile(workspacePath, {
         kind: 'local-file',
         base: 'project-workspace',
-        path: 'assets/imported/source.md',
+        path: 'assets/imported/copied.pdf',
       }),
-    ).rejects.toThrow('DATA_INTEGRITY_ERROR');
+    ).resolves.toBe(true);
+    await expect(stat(importedPath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(
+      manager.removeManagedAssetFile(workspacePath, {
+        kind: 'local-file',
+        base: 'project-workspace',
+        path: 'notes/source.md',
+      }),
+    ).resolves.toBe(false);
   });
 
   it('rejects a filesystem root as a Project Workspace', async () => {
@@ -192,7 +209,11 @@ describe('ProjectWorkspaceManager', () => {
           'utf8',
         ),
       ),
-    ).toEqual({ schemaVersion: 1, projectId: 'project-a' });
+    ).toEqual({
+      schemaVersion: 1,
+      projectId: 'project-a',
+      ownsWorkspaceRoot: true,
+    });
 
     await expect(
       manager.prepareWorkspace({
@@ -348,6 +369,117 @@ describe('ProjectWorkspaceManager', () => {
       readFile(first.copiedAbsolutePath!, 'utf8'),
     ).resolves.toBe('# 讲义');
     await expect(readFile(sourcePath, 'utf8')).resolves.toBe('# 讲义');
+  });
+
+  it('removes an application-created Project Workspace as one owned unit', async () => {
+    const root = await createTemporaryDirectory();
+    const workspacePath = join(root, 'managed-project');
+    const manager = new ProjectWorkspaceManager();
+    await manager.prepareWorkspace({
+      projectId: 'managed-project',
+      workspacePath,
+    });
+    await writeFile(
+      join(workspacePath, 'assets', 'imported', 'copy.md'),
+      'copy',
+    );
+
+    await manager.removeProjectWorkspace('managed-project', workspacePath);
+
+    await expect(stat(workspacePath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('preserves unrelated files in a user-selected Workspace', async () => {
+    const root = await createTemporaryDirectory();
+    const workspacePath = join(root, 'existing-project');
+    const manager = new ProjectWorkspaceManager();
+    await mkdir(workspacePath);
+    const userFile = join(workspacePath, 'keep-me.md');
+    await writeFile(userFile, 'user content');
+    const preexistingImportedDirectory = join(
+      workspacePath,
+      'assets',
+      'imported',
+    );
+    await mkdir(preexistingImportedDirectory, { recursive: true });
+    const preexistingImportedFile = join(
+      preexistingImportedDirectory,
+      'also-keep-me.md',
+    );
+    await writeFile(preexistingImportedFile, 'preexisting content');
+    await manager.prepareWorkspace({
+      projectId: 'existing-project',
+      workspacePath,
+    });
+    await writeFile(
+      join(workspacePath, 'assets', 'imported', 'copy.md'),
+      'copy',
+    );
+
+    await manager.removeProjectWorkspace('existing-project', workspacePath);
+
+    await expect(readFile(userFile, 'utf8')).resolves.toBe('user content');
+    await expect(readFile(preexistingImportedFile, 'utf8')).resolves.toBe(
+      'preexisting content',
+    );
+    await expect(
+      stat(
+        join(
+          workspacePath,
+          '.learning-companion',
+          'workspace.json',
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('removes a legacy app-layout Workspace but preserves a legacy directory with user files', async () => {
+    const root = await createTemporaryDirectory();
+    const manager = new ProjectWorkspaceManager();
+    const managedWorkspace = join(root, 'legacy-managed');
+    await manager.prepareWorkspace({
+      projectId: 'legacy-managed',
+      workspacePath: managedWorkspace,
+    });
+    await writeFile(
+      join(
+        managedWorkspace,
+        '.learning-companion',
+        'workspace.json',
+      ),
+      JSON.stringify({ schemaVersion: 1, projectId: 'legacy-managed' }),
+    );
+
+    await manager.removeProjectWorkspace(
+      'legacy-managed',
+      managedWorkspace,
+    );
+    await expect(stat(managedWorkspace)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    const userWorkspace = join(root, 'legacy-user');
+    await mkdir(userWorkspace);
+    await writeFile(join(userWorkspace, 'keep.md'), 'keep');
+    await manager.prepareWorkspace({
+      projectId: 'legacy-user',
+      workspacePath: userWorkspace,
+    });
+    await writeFile(
+      join(
+        userWorkspace,
+        '.learning-companion',
+        'workspace.json',
+      ),
+      JSON.stringify({ schemaVersion: 1, projectId: 'legacy-user' }),
+    );
+
+    await manager.removeProjectWorkspace('legacy-user', userWorkspace);
+    await expect(readFile(join(userWorkspace, 'keep.md'), 'utf8')).resolves.toBe(
+      'keep',
+    );
   });
 
   it('keeps the Mind Map extension after resolving an import conflict', async () => {

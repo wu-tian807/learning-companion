@@ -120,7 +120,7 @@ interface AppSettings {
 - `assets/imported` 保存复制进入 Project 的资料；
 - `assets/generated` 保存应用或 Agent 生成的 Asset；
 - `attachments` 预留给笔记、AI 解释等正文文件；
-- `.learning-companion/workspace.json` 只记录 Workspace 标识和格式版本。
+- `.learning-companion/workspace.json` 记录 Workspace 标识、格式版本，以及根目录是否由应用创建。
 
 `workspace.json` 不是 Project、Asset 或 Attachment 的业务事实来源，不复制
 SQLite 的完整内容。它用于识别 Workspace 是否已经绑定其他 Project，以及未来
@@ -632,6 +632,8 @@ Project/Asset 数据层的局部命名约定。文件选择器目录属于短期
 - Registry 和 Resolver 扩展边界保留；
 - 切换 Workspace 后相对 Asset 正确 Available 或 Missing；
 - Project 与 Asset 的文件管理器行为符合各自语义；
-- 删除数据库对象不会自动删除真实文件；
+- 删除复制或生成的 Asset 时删除其应用托管副本，不删除链接的原文件；
+- 删除 Project 时，应用创建的 Workspace 整体删除；用户选择的已有目录只删除可由 ContentRef 证明归属的 Asset 副本及 Project marker；
+- 旧版 marker 没有目录归属字段时，仅当根目录完全符合标准应用布局才整体删除；出现任意用户文件或未知目录即保留根目录；
 - macOS 与 Windows 路径测试通过；
 - `pnpm check` 通过。

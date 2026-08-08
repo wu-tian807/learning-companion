@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   createAbsoluteLocalFileContentRef,
+  createProjectWorkspaceContentRef,
   type AssetSnapshot,
 } from '../../shared/assets';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
@@ -25,7 +26,7 @@ function createAsset(id: string, name: string): AssetSnapshot {
 }
 
 describe('AssetDeleteDialog', () => {
-  it('describes a single removal without deleting the source file', () => {
+  it('explains that deleting a linked Asset preserves its source file', () => {
     const markup = renderToStaticMarkup(
       <AssetDeleteDialog
         assets={[createAsset('a', '第一章')]}
@@ -38,8 +39,29 @@ describe('AssetDeleteDialog', () => {
 
     expect(markup).toContain('从 Project 中移除 Asset？');
     expect(markup).toContain('“第一章”的记录');
-    expect(markup).toContain('本地原文件不会被删除');
+    expect(markup).toContain('链接的本地原文件会保留');
     expect(markup).toContain('确认移除');
+  });
+
+  it('warns that a copied Asset file is deleted with its record', () => {
+    const copiedAsset = {
+      ...createAsset('copied', '复制讲义'),
+      contentRef: createProjectWorkspaceContentRef(
+        'assets/imported/copied.pdf',
+      ),
+    };
+    const markup = renderToStaticMarkup(
+      <AssetDeleteDialog
+        assets={[copiedAsset]}
+        busy={false}
+        error={null}
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('复制到 Project 或由应用生成的文件会一并删除');
+    expect(markup).toContain('链接的外部原文件会保留');
   });
 
   it('shows the selected count and a bounded preview for a batch', () => {

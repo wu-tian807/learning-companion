@@ -50,7 +50,7 @@ export function ConfirmDialog({
           从应用中移除 Project？
         </h2>
         <p id="delete-dialog-description" className="mt-3 text-sm leading-6 text-slate-400">
-          “{projectName}”及其 Asset 记录将从应用中删除，本地原文件不会被删除。
+          “{projectName}”及其 Asset 记录将被删除。应用创建的项目文件夹、复制资料和生成内容会一并删除；链接的外部原文件会保留。若使用已有目录，其他文件会保留。
         </p>
 
         {error && (
