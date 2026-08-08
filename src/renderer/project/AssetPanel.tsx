@@ -29,6 +29,7 @@ export interface AssetPanelProps extends AssetPanelListProps {
   readonly state: AssetLoadState;
   readonly highlighted?: boolean;
   readonly countLabel?: (count: number) => ReactNode;
+  readonly itemCount?: number;
   readonly toolbar?: ReactNode;
   readonly beforeList?: ReactNode;
   readonly beforeListClassName?: string;
@@ -36,6 +37,7 @@ export interface AssetPanelProps extends AssetPanelListProps {
   readonly listSummary?: ReactNode;
   readonly listAction?: ReactNode;
   readonly listBodyClassName?: string;
+  readonly listLeadingContent?: ReactNode;
   readonly loadingLabel: string;
   readonly failedLabel: string;
   readonly emptyState: ReactNode;
@@ -72,6 +74,7 @@ export function AssetPanel({
   state,
   highlighted = false,
   countLabel = (count) => `${count} 项`,
+  itemCount,
   toolbar,
   beforeList,
   beforeListClassName = '',
@@ -79,6 +82,7 @@ export function AssetPanel({
   listSummary,
   listAction,
   listBodyClassName = 'px-2 pb-3',
+  listLeadingContent,
   loadingLabel,
   failedLabel,
   emptyState,
@@ -103,9 +107,11 @@ export function AssetPanel({
   );
   const summary = selection.active
     ? `已选 ${selection.selectedAssets.length} 项`
-    : state.kind === 'ready'
-      ? countLabel(assets.length)
-      : '—';
+    : itemCount !== undefined
+      ? countLabel(itemCount)
+      : state.kind === 'ready'
+        ? countLabel(assets.length)
+        : '—';
   const canSelect = state.kind === 'ready' && assets.length > 0;
   const canToggleSelection = selection.active || canSelect;
 
@@ -204,6 +210,7 @@ export function AssetPanel({
         </div>
 
         <div className={listBodyClassName}>
+          {listLeadingContent}
           {state.kind === 'loading' && (
             <p className="px-3 py-8 text-center text-xs text-slate-500">
               {loadingLabel}

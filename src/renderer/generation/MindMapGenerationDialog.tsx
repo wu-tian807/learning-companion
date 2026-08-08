@@ -11,7 +11,9 @@ interface MindMapGenerationDialogProps {
   readonly sourceAssets: readonly AssetSnapshot[];
   readonly mediaLabel: (mediaType: string) => string;
   readonly onClose: () => void;
-  readonly onSubmit: (draft: MindMapGenerationDraft) => void;
+  readonly onSubmit: (
+    draft: MindMapGenerationDraft,
+  ) => Promise<void> | void;
 }
 
 export function MindMapGenerationDialog({
@@ -23,6 +25,7 @@ export function MindMapGenerationDialog({
 }: MindMapGenerationDialogProps) {
   const [additionalInstructions, setAdditionalInstructions] =
     useState('');
+  const [submitting, setSubmitting] = useState(false);
   const instructionsRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -57,13 +60,22 @@ export function MindMapGenerationDialog({
         className="flex max-h-[min(720px,calc(100vh-32px))] w-full max-w-xl flex-col overflow-hidden rounded-[20px] border border-white/[0.12] bg-[#282d35] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(
-            createMindMapGenerationDraft({
-              projectId,
-              sourceAssetIds: sourceAssets.map((asset) => asset.id),
-              additionalInstructions,
-            }),
-          );
+          if (submitting) {
+            return;
+          }
+
+          setSubmitting(true);
+          void Promise.resolve(
+            onSubmit(
+              createMindMapGenerationDraft({
+                projectId,
+                sourceAssetIds: sourceAssets.map((asset) => asset.id),
+                additionalInstructions,
+              }),
+            ),
+          )
+            .catch(() => undefined)
+            .finally(() => setSubmitting(false));
         }}
       >
         <div className="border-b border-white/[0.08] px-5 py-5 sm:px-6">
@@ -131,6 +143,7 @@ export function MindMapGenerationDialog({
         <div className="flex shrink-0 justify-end gap-2.5 border-t border-white/[0.08] px-5 py-4 sm:px-6">
           <button
             type="button"
+            disabled={submitting}
             onClick={onClose}
             className="ui-control h-10 rounded-full border border-white/[0.12] px-4 text-sm text-slate-300"
           >
@@ -138,9 +151,10 @@ export function MindMapGenerationDialog({
           </button>
           <button
             type="submit"
+            disabled={submitting}
             className="ui-primary-button h-10 rounded-full bg-slate-50 px-5 text-sm font-semibold text-slate-900"
           >
-            确认生成
+            {submitting ? '正在创建…' : '确认生成'}
           </button>
         </div>
       </form>

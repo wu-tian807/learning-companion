@@ -10,6 +10,8 @@ import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { GenerationCenter } from '../generation/GenerationCenter';
+import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
+import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
@@ -69,6 +71,38 @@ export function ProjectPage({
     workbenchLifecycleTaskRef: session.workbenchLifecycleTaskRef,
     setError,
   });
+  const {
+    mindMapTasks,
+    startMindMap,
+    retry: retryMindMapTask,
+    cancel: cancelMindMapTask,
+  } = useGenerationTasks({
+    projectId: project.id,
+    enabled: session.loadState.kind === 'ready',
+    onCompleted: async (resultAssetId) => {
+      await assetOperations.refreshAllAssets();
+      session.selectAsset(resultAssetId);
+    },
+    onError: setError,
+  });
+  const startMindMapGeneration = useCallback(
+    async (draft: MindMapGenerationDraft) => {
+      setError(null);
+      try {
+        await startMindMap(draft);
+      } catch (generationError) {
+        const message = userMessageFromError(
+          generationError,
+          '无法创建思维导图生成任务。',
+        );
+        if (message) {
+          setError(message);
+        }
+        throw generationError;
+      }
+    },
+    [startMindMap],
+  );
   const importedAssetState = useMemo(
     () =>
       filterAssetLoadStateByCreationKind(
@@ -334,6 +368,10 @@ export function ProjectPage({
                   assetOperations.requestDelete(null, [asset])
                 }
                 onRevealSources={layout.openLeft}
+                onMindMapDraftReady={startMindMapGeneration}
+                mindMapTasks={mindMapTasks}
+                onRetryMindMapTask={retryMindMapTask}
+                onCancelMindMapTask={cancelMindMapTask}
               />
             </div>
           )}

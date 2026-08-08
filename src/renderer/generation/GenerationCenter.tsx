@@ -11,7 +11,9 @@ import {
   useWorkbenchRuntimeSelector,
 } from '../workbench/runtime/workbench-runtime-context';
 import { MindMapGenerationDialog } from './MindMapGenerationDialog';
+import { GenerationTaskListItem } from './GenerationTaskListItem';
 import type { MindMapGenerationDraft } from './mind-map-generation-draft';
+import type { GenerationTaskPresentation } from './use-generation-tasks';
 
 export interface GenerationCenterProps {
   readonly projectId: string;
@@ -34,7 +36,10 @@ export interface GenerationCenterProps {
   readonly onRevealSources: () => void;
   readonly onMindMapDraftReady?: (
     draft: MindMapGenerationDraft,
-  ) => void;
+  ) => Promise<void> | void;
+  readonly mindMapTasks?: readonly GenerationTaskPresentation[];
+  readonly onRetryMindMapTask?: (taskId: string) => Promise<void> | void;
+  readonly onCancelMindMapTask?: (taskId: string) => Promise<void> | void;
 }
 
 const applicationTools = [
@@ -77,6 +82,9 @@ export function GenerationCenter({
   onDelete,
   onRevealSources,
   onMindMapDraftReady,
+  mindMapTasks = [],
+  onRetryMindMapTask,
+  onCancelMindMapTask,
 }: GenerationCenterProps) {
   const [mindMapSourceAssets, setMindMapSourceAssets] = useState<
     readonly AssetSnapshot[] | null
@@ -194,7 +202,6 @@ export function GenerationCenter({
               );
             })}
           </div>
-
           <p className="mt-5 text-[11px] font-semibold text-slate-300">
             当前 Asset 工具
           </p>
@@ -253,17 +260,36 @@ export function GenerationCenter({
         }
         listTitle="生成内容"
         listBodyClassName="px-3.5 pb-3.5"
+        itemCount={
+          (state.kind === 'ready' ? state.assets.length : 0) +
+          mindMapTasks.length
+        }
+        listLeadingContent={
+          !generatedSelection.active && mindMapTasks.length > 0
+            ? mindMapTasks.map((presentation) => (
+                <GenerationTaskListItem
+                  key={presentation.task.id}
+                  presentation={presentation}
+                  now={now}
+                  onRetry={onRetryMindMapTask}
+                  onCancel={onCancelMindMapTask}
+                />
+              ))
+            : undefined
+        }
         loadingLabel="正在加载生成内容…"
         failedLabel="生成内容加载失败"
         emptyState={
-          <div className="rounded-[11px] border border-dashed border-white/[0.08] px-4 py-8 text-center">
-            <p className="text-[10px] font-medium text-slate-400">
-              还没有生成内容
-            </p>
-            <p className="mt-1.5 text-[9px] leading-4 text-slate-600">
-              思维导图、讲义等生成结果会出现在这里
-            </p>
-          </div>
+          mindMapTasks.length > 0 ? null : (
+            <div className="rounded-[11px] border border-dashed border-white/[0.08] px-4 py-8 text-center">
+              <p className="text-[10px] font-medium text-slate-400">
+                还没有生成内容
+              </p>
+              <p className="mt-1.5 text-[9px] leading-4 text-slate-600">
+                思维导图、讲义等生成结果会出现在这里
+              </p>
+            </div>
+          )
         }
         selection={generatedSelection}
         onRemoveSelected={onRemoveSelected}
@@ -283,8 +309,8 @@ export function GenerationCenter({
           sourceAssets={mindMapSourceAssets}
           mediaLabel={mediaLabel}
           onClose={closeMindMapDialog}
-          onSubmit={(draft) => {
-            onMindMapDraftReady?.(draft);
+          onSubmit={async (draft) => {
+            await onMindMapDraftReady?.(draft);
             selectionCoordinator.clear();
             closeMindMapDialog();
           }}

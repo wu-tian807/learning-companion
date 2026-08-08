@@ -5,6 +5,7 @@ import {
   createProjectWorkspaceContentRef,
   type AssetSnapshot,
 } from '../../shared/assets';
+import type { GenerationTaskView } from '../../shared/generation-tasks';
 import { AssetSelectionCoordinatorProvider } from '../project/AssetSelectionCoordinatorProvider';
 import type { AssetLoadState } from '../project/project-asset-view';
 import type {
@@ -13,6 +14,7 @@ import type {
 } from '../project/use-asset-selection';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { GenerationCenter } from './GenerationCenter';
+import type { GenerationTaskPresentation } from './use-generation-tasks';
 
 const now = Date.parse('2026-07-31T10:00:00.000Z');
 const generatedAsset: AssetSnapshot = {
@@ -48,7 +50,39 @@ const actions = {
   onDelete: vi.fn(),
   onRemoveSelected: vi.fn(),
   onRevealSources: vi.fn(),
+  onRetryMindMapTask: vi.fn(),
+  onCancelMindMapTask: vi.fn(),
 };
+
+function createTaskPresentation(
+  id: string,
+  status: GenerationTaskView['status'],
+  updatedTime: number,
+): GenerationTaskPresentation {
+  const failed = status === 'failed';
+  return {
+    task: {
+      id,
+      projectId: 'project',
+      definitionId: 'mindmap.generate',
+      definitionVersion: 1,
+      status,
+      metrics: {},
+      ...(failed
+        ? {
+            failure: {
+              phase: 'agent' as const,
+              failedTime: updatedTime,
+              message: '生成失败',
+            },
+          }
+        : {}),
+      createdTime: updatedTime - 1_000,
+      updatedTime,
+    },
+    statusLabel: failed ? 'AI 请求没有完成' : '正在读取资料…',
+  };
+}
 
 function createSelection(
   scope: 'imported' | 'generated',
@@ -99,6 +133,7 @@ interface RenderGenerationCenterOptions {
   readonly asset?: AssetSnapshot;
   readonly state?: AssetLoadState;
   readonly selectedAssetId?: string | null;
+  readonly mindMapTasks?: readonly GenerationTaskPresentation[];
 }
 
 function renderGenerationCenter({
@@ -107,6 +142,7 @@ function renderGenerationCenter({
   asset,
   state = { kind: 'ready', assets: [] },
   selectedAssetId = null,
+  mindMapTasks,
 }: RenderGenerationCenterOptions = {}) {
   return renderToStaticMarkup(
     <WorkbenchRuntimeProvider onError={() => undefined}>
@@ -121,6 +157,7 @@ function renderGenerationCenter({
           asset={asset}
           state={state}
           selectedAssetId={selectedAssetId}
+          mindMapTasks={mindMapTasks}
           busy={false}
           now={now}
           mediaLabel={(mediaType) => mediaType}
@@ -206,5 +243,25 @@ describe('GenerationCenter', () => {
       '梳理主题与知识关系',
     );
     expect(outlineButton).toContain(' disabled=""');
+  });
+
+  it('shows every active task in the Asset list with retry and cancel actions', () => {
+    const html = renderGenerationCenter({
+      mindMapTasks: [
+        createTaskPresentation('task-running', 'agent-assigned', now),
+        createTaskPresentation('task-failed', 'failed', now - 1_000),
+      ],
+    });
+    const mindMapButton = html.match(
+      /<button[^>]*data-generation-tool="mind-map"[^>]*>/,
+    )?.[0];
+
+    expect(html).toContain('2 个内容');
+    expect(html).toContain('data-generation-task-id="task-running"');
+    expect(html).toContain('data-generation-task-id="task-failed"');
+    expect(html).toContain('重试思维导图生成任务');
+    expect(html.match(/取消思维导图生成任务/g)).toHaveLength(2);
+    expect(html).not.toContain('还没有生成内容');
+    expect(mindMapButton).not.toContain(' disabled=""');
   });
 });

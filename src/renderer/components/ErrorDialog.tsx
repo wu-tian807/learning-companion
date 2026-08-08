@@ -54,7 +54,7 @@ export function ErrorDialog({ message, onClose }: ErrorDialogProps) {
             <p
               id="error-dialog-description"
               role="alert"
-              className="mt-2 text-sm leading-6 text-slate-400"
+              className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-slate-400"
             >
               {message}
             </p>
