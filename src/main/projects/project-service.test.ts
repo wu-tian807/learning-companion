@@ -51,6 +51,9 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     cleanupProjectArtifacts: vi.fn(async () => {
       calls.push('cleanup-artifacts');
     }),
+    removeManagedFilesByProject: vi.fn(async () => {
+      calls.push('remove-managed-asset-files');
+    }),
   } as unknown as AssetServiceApi;
   const associationService = {
     loadFromProject: vi.fn(() => calls.push('load-associations')),
@@ -83,6 +86,9 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
       createdMarker: true,
     })),
     rollbackPreparation: vi.fn(async () => undefined),
+    removeProjectWorkspace: vi.fn(async () => {
+      calls.push('remove-project-workspace');
+    }),
     selectWorkspace: vi.fn(async () => '/tmp/projects/selected'),
     openWorkspace: vi.fn(async () => undefined),
   } as unknown as ProjectWorkspaceManagerApi;
@@ -239,7 +245,8 @@ describe('ProjectService', () => {
   });
 
   it('closes the active Workbench and Asset Map before deleting a Project', async () => {
-    const { calls, service } = createDependencies('project');
+    const { calls, service, workspaceManager } =
+      createDependencies('project');
 
     await service.deleteProject('project');
 
@@ -250,8 +257,14 @@ describe('ProjectService', () => {
       'unload-associations',
       'unload-assets',
       'cleanup-artifacts',
+      'remove-managed-asset-files',
       'delete-project',
+      'remove-project-workspace',
     ]);
+    expect(workspaceManager.removeProjectWorkspace).toHaveBeenCalledWith(
+      'project',
+      '/tmp/projects/project',
+    );
   });
 
   it('rolls back both Project-scoped services when association loading fails', async () => {

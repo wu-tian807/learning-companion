@@ -5,6 +5,7 @@ import {
   cloneAssetSnapshot,
   createAbsoluteLocalFileContentRef,
   createProjectWorkspaceContentRef,
+  getManagedProjectAssetDirectory,
   isAsset,
   isAssetCreationKind,
   isAssetContentRef,
@@ -52,6 +53,29 @@ describe('Asset shared contract', () => {
     expect(clone.contentRef).not.toBe(asset.contentRef);
     expect(Object.isFrozen(clone)).toBe(true);
     expect(Object.isFrozen(clone.contentRef)).toBe(true);
+  });
+
+  it('identifies only files inside application-managed Asset directories', () => {
+    expect(
+      getManagedProjectAssetDirectory(
+        createProjectWorkspaceContentRef('assets/imported/notes.md'),
+      ),
+    ).toBe('imported');
+    expect(
+      getManagedProjectAssetDirectory(
+        createProjectWorkspaceContentRef('assets/generated/map.mindmap'),
+      ),
+    ).toBe('generated');
+    expect(
+      getManagedProjectAssetDirectory(
+        createProjectWorkspaceContentRef('notes/source.md'),
+      ),
+    ).toBeUndefined();
+    expect(
+      getManagedProjectAssetDirectory(
+        createAbsoluteLocalFileContentRef('/tmp/notes.md'),
+      ),
+    ).toBeUndefined();
   });
 
   it('accepts only the supported Asset creation kinds', () => {

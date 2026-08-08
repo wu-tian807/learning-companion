@@ -1,4 +1,7 @@
-import type { AssetSnapshot } from '../../shared/assets';
+import {
+  getManagedProjectAssetDirectory,
+  type AssetSnapshot,
+} from '../../shared/assets';
 
 interface AssetDeleteDialogProps {
   readonly assets: readonly AssetSnapshot[];
@@ -16,6 +19,10 @@ export function AssetDeleteDialog({
   onConfirm,
 }: AssetDeleteDialogProps) {
   const singleAsset = assets.length === 1 ? assets[0] : undefined;
+  const includesManagedFiles = assets.some(
+    ({ contentRef }) =>
+      getManagedProjectAssetDirectory(contentRef) !== undefined,
+  );
 
   return (
     <div
@@ -34,7 +41,9 @@ export function AssetDeleteDialog({
           {singleAsset
             ? `“${singleAsset.name}”的记录将从当前 Project 中移除。`
             : `所选 ${assets.length} 个 Asset 的记录将从当前 Project 中移除。`}
-          本地原文件不会被删除。
+          {includesManagedFiles
+            ? '复制到 Project 或由应用生成的文件会一并删除；链接的外部原文件会保留。'
+            : '链接的本地原文件会保留。'}
         </p>
         {!singleAsset && (
           <ul className="mt-3 max-h-28 space-y-1 overflow-y-auto rounded-xl border border-white/[0.07] bg-black/10 px-3 py-2 text-xs text-slate-500">
