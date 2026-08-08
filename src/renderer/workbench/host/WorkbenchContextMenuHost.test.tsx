@@ -1,7 +1,54 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import { observeOutsideContextMenuPointer } from './context-menu-dismissal';
 import { WorkbenchContextMenuDismissLayer } from './WorkbenchContextMenuHost';
+
+describe('observeOutsideContextMenuPointer', () => {
+  it('observes pointerdown in capture phase and dismisses only outside pointers', () => {
+    let listener: ((event: PointerEvent) => void) | undefined;
+    const addEventListener = vi.fn(
+      (_type: string, candidate: EventListenerOrEventListenerObject) => {
+        listener = candidate as (event: PointerEvent) => void;
+      },
+    );
+    const removeEventListener = vi.fn();
+    const documentTarget = {
+      addEventListener,
+      removeEventListener,
+    } as unknown as Document;
+    const menuChild = {} as Node;
+    const outside = {} as Node;
+    const menuRoot = {
+      contains: vi.fn((target: Node | null) => target === menuChild),
+    } as unknown as HTMLElement;
+    const onDismiss = vi.fn();
+
+    const stop = observeOutsideContextMenuPointer(
+      documentTarget,
+      () => menuRoot,
+      onDismiss,
+    );
+
+    expect(addEventListener).toHaveBeenCalledWith(
+      'pointerdown',
+      expect.any(Function),
+      true,
+    );
+    listener?.({ target: menuChild } as unknown as PointerEvent);
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    listener?.({ target: outside } as unknown as PointerEvent);
+    expect(onDismiss).toHaveBeenCalledOnce();
+
+    stop();
+    expect(removeEventListener).toHaveBeenCalledWith(
+      'pointerdown',
+      listener,
+      true,
+    );
+  });
+});
 
 describe('WorkbenchContextMenuDismissLayer', () => {
   it('captures the pointer and dismisses the context menu', () => {
