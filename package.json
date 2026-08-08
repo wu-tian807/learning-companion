@@ -29,7 +29,6 @@
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
-    "@dagrejs/dagre": "3.0.0",
     "@openai/codex": "0.146.0",
     "@uiw/react-codemirror": "^4.25.11",
     "@xyflow/react": "12.11.2",

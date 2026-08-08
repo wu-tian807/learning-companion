@@ -103,4 +103,29 @@ describe('createMindMapLayout', () => {
     });
     expect(layout.edges).toEqual([]);
   });
+
+  it('keeps sibling positions in childIds order regardless of object order', () => {
+    const orderedDocument: MindMapDocumentV1 = {
+      ...document,
+      nodes: {
+        simplex: document.nodes.simplex,
+        root: {
+          ...document.nodes.root,
+          childIds: ['simplex', 'basis'],
+        },
+        feasible: document.nodes.feasible,
+        basis: document.nodes.basis,
+      },
+    };
+    const first = createMindMapLayout(orderedDocument, new Set());
+    const second = createMindMapLayout(orderedDocument, new Set());
+    const firstPositions = new Map(
+      first.nodes.map(({ id, position }) => [id, position]),
+    );
+
+    expect(firstPositions.get('simplex')!.y).toBeLessThan(
+      firstPositions.get('basis')!.y,
+    );
+    expect(second.nodes).toEqual(first.nodes);
+  });
 });

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import 'pdfjs-dist/web/pdf_viewer.css';
 
@@ -44,6 +45,12 @@ import {
   type PdfWorkbenchViewState,
 } from './shared';
 import { createPdfRendererActions } from './renderer-actions';
+import {
+  calculatePdfPanScroll,
+  canStartPdfPan,
+  hasPdfHorizontalOverflow,
+  type PdfPanOrigin,
+} from './pdf-pan';
 
 type PdfLoadState =
   | {
@@ -58,6 +65,19 @@ type PdfLoadState =
   | { readonly kind: 'failed'; readonly message: string };
 
 const SCALE_PRESETS = [50, 75, 100, 125, 150, 200, 300, 400];
+
+interface ActivePdfPan extends PdfPanOrigin {
+  readonly pointerId: number;
+}
+
+function isPdfPanBlockedTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      '.textLayer span, .textLayer br, .annotationLayer a, button, input, textarea, select, [contenteditable="true"], [role="button"]',
+    ) !== null
+  );
+}
 
 function SearchIcon() {
   return (
@@ -363,6 +383,7 @@ export function PdfDocumentWorkbenchView({
   const viewStateVersionRef = useRef(0);
   const savedViewStateVersionRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
   const [loadState, setLoadState] = useState<PdfLoadState>({
     kind: 'loading',
   });
@@ -383,6 +404,8 @@ export function PdfDocumentWorkbenchView({
     total: 0,
   });
   const [scaleMenuOpen, setScaleMenuOpen] = useState(false);
+  const [panAvailable, setPanAvailable] = useState(false);
+  const [panning, setPanning] = useState(false);
 
   const persistViewState = useCallback(
     async (state: PdfWorkbenchViewState, version: number) => {
@@ -651,6 +674,108 @@ export function PdfDocumentWorkbenchView({
   }, [scaleMenuOpen, searchOpen]);
 
   useEffect(() => {
+    const container = containerRef.current;
+    const viewer = viewerRef.current;
+
+    if (!container || !viewer) {
+      return;
+    }
+
+    const updateAvailability = () => {
+      setPanAvailable(
+        hasPdfHorizontalOverflow(
+          container.scrollWidth,
+          container.clientWidth,
+        ),
+      );
+    };
+    const frame = window.requestAnimationFrame(updateAvailability);
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(updateAvailability);
+    observer?.observe(container);
+    observer?.observe(viewer);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [
+    loadState.kind,
+    viewState.customScale,
+    viewState.readingMode,
+    viewState.rotation,
+    viewState.scaleMode,
+    viewState.sidebar,
+  ]);
+
+  const stopPanning = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (activePanRef.current?.pointerId !== event.pointerId) {
+        return;
+      }
+
+      activePanRef.current = undefined;
+      setPanning(false);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    [],
+  );
+
+  const startPanning = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const container = event.currentTarget;
+
+      if (
+        !canStartPdfPan({
+          button: event.button,
+          isPrimary: event.isPrimary,
+          scrollWidth: container.scrollWidth,
+          clientWidth: container.clientWidth,
+          blockedTarget: isPdfPanBlockedTarget(event.target),
+        })
+      ) {
+        return;
+      }
+
+      activePanRef.current = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        scrollLeft: container.scrollLeft,
+        scrollTop: container.scrollTop,
+      };
+      container.setPointerCapture(event.pointerId);
+      setPanning(true);
+      event.preventDefault();
+    },
+    [],
+  );
+
+  const movePanning = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const origin = activePanRef.current;
+
+      if (!origin || origin.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const next = calculatePdfPanScroll(
+        origin,
+        event.clientX,
+        event.clientY,
+      );
+      event.currentTarget.scrollLeft = next.left;
+      event.currentTarget.scrollTop = next.top;
+      event.preventDefault();
+    },
+    [],
+  );
+
+  useEffect(() => {
     if (loadState.kind !== 'ready') {
       return;
     }
@@ -908,8 +1033,20 @@ export function PdfDocumentWorkbenchView({
         <div className="relative min-w-0 flex-1">
           <div
             ref={containerRef}
-            className="absolute inset-0 overflow-auto bg-[#14191f] [scrollbar-color:rgba(120,135,165,.48)_rgba(20,25,31,.6)] [scrollbar-gutter:stable] [scrollbar-width:thin]"
+            className={[
+              'absolute inset-0 overflow-auto bg-[#14191f] [scrollbar-color:rgba(120,135,165,.48)_rgba(20,25,31,.6)] [scrollbar-gutter:stable] [scrollbar-width:thin]',
+              panning
+                ? 'cursor-grabbing select-none'
+                : panAvailable
+                  ? 'cursor-grab'
+                  : '',
+            ].join(' ')}
             aria-label="PDF 页面画布"
+            onPointerDown={startPanning}
+            onPointerMove={movePanning}
+            onPointerUp={stopPanning}
+            onPointerCancel={stopPanning}
+            onLostPointerCapture={stopPanning}
           >
             <div ref={viewerRef} className="pdfViewer" />
           </div>

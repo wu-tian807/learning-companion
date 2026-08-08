@@ -1,5 +1,3 @@
-import dagre from '@dagrejs/dagre';
-
 import type { MindMapDocumentV1, MindMapNodeV1 } from './document';
 
 export const MIND_MAP_LAYOUT_NODE_WIDTH = 244;
@@ -31,6 +29,10 @@ interface VisibleNode {
   readonly id: string;
   readonly depth: number;
 }
+
+const HORIZONTAL_GAP = 88;
+const VERTICAL_GAP = 28;
+const LAYOUT_MARGIN = 30;
 
 function calculateSubtreeSizes(
   document: MindMapDocumentV1,
@@ -117,34 +119,47 @@ export function createMindMapLayout(
 ): MindMapLayout {
   const visible = collectVisibleTree(document, collapsedNodeIds);
   const subtreeSizes = calculateSubtreeSizes(document);
-  const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({
-    rankdir: 'LR',
-    ranker: 'tight-tree',
-    ranksep: 88,
-    nodesep: 28,
-    edgesep: 18,
-    marginx: 30,
-    marginy: 30,
-  });
+  const positions = new Map<string, Readonly<{ x: number; y: number }>>();
+  let nextLeafCenterY = LAYOUT_MARGIN + MIND_MAP_LAYOUT_NODE_HEIGHT / 2;
 
-  for (const { id } of visible.nodes) {
-    graph.setNode(id, {
-      width: MIND_MAP_LAYOUT_NODE_WIDTH,
-      height: MIND_MAP_LAYOUT_NODE_HEIGHT,
-    });
-  }
+  const placeSubtree = (nodeId: string, depth: number): number => {
+    const node = document.nodes[nodeId];
+    const visibleChildIds = collapsedNodeIds.has(nodeId)
+      ? []
+      : node.childIds;
+    let centerY: number;
 
-  for (const edge of visible.edges) {
-    graph.setEdge(edge.source, edge.target);
-  }
+    if (visibleChildIds.length === 0) {
+      centerY = nextLeafCenterY;
+      nextLeafCenterY +=
+        MIND_MAP_LAYOUT_NODE_HEIGHT + VERTICAL_GAP;
+    } else {
+      const childCenters = visibleChildIds.map((childId) =>
+        placeSubtree(childId, depth + 1),
+      );
+      centerY =
+        (childCenters[0]! + childCenters[childCenters.length - 1]!) /
+        2;
+    }
 
-  dagre.layout(graph);
+    positions.set(
+      nodeId,
+      Object.freeze({
+        x:
+          LAYOUT_MARGIN +
+          depth * (MIND_MAP_LAYOUT_NODE_WIDTH + HORIZONTAL_GAP),
+        y: centerY - MIND_MAP_LAYOUT_NODE_HEIGHT / 2,
+      }),
+    );
+    return centerY;
+  };
+
+  placeSubtree(document.rootNodeId, 0);
 
   return Object.freeze({
     nodes: Object.freeze(
       visible.nodes.map(({ id, depth }) => {
-        const position = graph.node(id);
+        const position = positions.get(id);
 
         if (!position) {
           throw new Error(`Mind Map 节点布局缺失：${id}`);
@@ -157,10 +172,7 @@ export function createMindMapLayout(
           hiddenDescendantCount: collapsedNodeIds.has(id)
             ? (subtreeSizes.get(id) ?? 1) - 1
             : 0,
-          position: Object.freeze({
-            x: position.x - MIND_MAP_LAYOUT_NODE_WIDTH / 2,
-            y: position.y - MIND_MAP_LAYOUT_NODE_HEIGHT / 2,
-          }),
+          position,
         });
       }),
     ),
