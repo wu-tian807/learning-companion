@@ -48,7 +48,7 @@ describe.runIf(
   );
 
   it(
-    'creates a thread with an isolated permission profile',
+    'creates a thread with an isolated permission profile over ambient legacy sandbox defaults',
     async () => {
       const temporaryDirectory = await mkdtemp(
         join(tmpdir(), 'learning-companion-codex-permissions-'),
@@ -59,7 +59,14 @@ describe.runIf(
       await mkdir(codexHomePath, { recursive: true });
       await writeFile(
         join(codexHomePath, 'config.toml'),
-        '[mcp_servers.ambient]\ncommand = "missing-ambient-mcp"\n',
+        [
+          'approval_policy = "never"',
+          'sandbox_mode = "danger-full-access"',
+          '',
+          '[mcp_servers.ambient]',
+          'command = "missing-ambient-mcp"',
+          '',
+        ].join('\n'),
         'utf8',
       );
       const service = new CodexRuntimeService(
@@ -101,7 +108,6 @@ describe.runIf(
           },
           tools: { view_image: true },
           web_search: 'disabled',
-          default_permissions: profileId,
           'mcp_servers.ambient.enabled': false,
           ...(disabledSkillPaths.length > 0
             ? {

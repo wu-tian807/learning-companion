@@ -131,13 +131,15 @@ describe('createCodexGenerationConfiguration', () => {
     expect(readOnly.threadInput.configOverrides).toMatchObject({
       features: { shell_tool: true },
       tools: { view_image: true },
-      default_permissions: readOnly.profileId,
       permissions: {
         [readOnly.profileId]: {
           filesystem: { [workspacePath]: 'read' },
         },
       },
     });
+    expect(readOnly.threadInput.configOverrides).not.toHaveProperty(
+      'default_permissions',
+    );
     expect(readOnly.threadInput.developerInstructions).toContain(
       'It reads embedded text only and is not OCR',
     );
@@ -170,13 +172,15 @@ describe('createCodexGenerationConfiguration', () => {
       WORKSPACE_WRITE_TOOL_ID,
     );
     expect(writable.threadInput.configOverrides).toMatchObject({
-      default_permissions: writable.profileId,
       permissions: {
         [writable.profileId]: {
           filesystem: { [workspacePath]: 'write' },
         },
       },
     });
+    expect(writable.threadInput.configOverrides).not.toHaveProperty(
+      'default_permissions',
+    );
     expect(writable.fingerprint).not.toBe(readOnly.fingerprint);
   });
 
