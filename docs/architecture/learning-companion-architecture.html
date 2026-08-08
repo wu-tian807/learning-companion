@@ -1,0 +1,2037 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learning Companion 架构地图</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #111821;
+      --panel-2: #151e29;
+      --panel-3: #0f151d;
+      --text: #edf3fb;
+      --muted: #8e9daf;
+      --faint: #5c6979;
+      --line: #293544;
+      --line-strong: #3a4a5d;
+      --blue: #79a9ff;
+      --blue-soft: rgba(121, 169, 255, 0.13);
+      --green: #65d7ad;
+      --green-soft: rgba(101, 215, 173, 0.12);
+      --amber: #f1bd70;
+      --amber-soft: rgba(241, 189, 112, 0.12);
+      --purple: #b497ff;
+      --purple-soft: rgba(180, 151, 255, 0.13);
+      --red: #ff8f9b;
+      --red-soft: rgba(255, 143, 155, 0.12);
+      --shadow: 0 20px 55px rgba(0, 0, 0, 0.28);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--bg);
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% -10%, rgba(91, 126, 213, 0.18), transparent 32%),
+        radial-gradient(circle at 90% 5%, rgba(122, 93, 189, 0.12), transparent 30%),
+        var(--bg);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    code {
+      color: #c7d8ef;
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    .shell {
+      width: min(1780px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 4px 2px 20px;
+    }
+
+    .title-block {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: clamp(24px, 3vw, 38px);
+      line-height: 1.15;
+      letter-spacing: -0.035em;
+    }
+
+    .subtitle {
+      max-width: 860px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .audit {
+      flex: 0 0 auto;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--muted);
+      background: rgba(17, 24, 33, 0.76);
+      font-size: 11px;
+      line-height: 1.6;
+      text-align: right;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 16px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(17, 24, 33, 0.88);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .sidebar-title {
+      margin: 0 0 9px;
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .view-nav {
+      display: grid;
+      gap: 5px;
+    }
+
+    .nav-button {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      width: 100%;
+      padding: 9px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .nav-button:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .nav-button[aria-current="page"] {
+      border-color: rgba(121, 169, 255, 0.22);
+      color: var(--text);
+      background: var(--blue-soft);
+    }
+
+    .nav-index {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .nav-button[aria-current="page"] .nav-index {
+      border-color: rgba(121, 169, 255, 0.32);
+      color: var(--blue);
+    }
+
+    .nav-label {
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.35;
+    }
+
+    .legend {
+      display: grid;
+      gap: 8px;
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 4px var(--green-soft);
+    }
+
+    .status-dot.partial {
+      background: var(--amber);
+      box-shadow: 0 0 0 4px var(--amber-soft);
+    }
+
+    .status-dot.planned {
+      background: var(--purple);
+      box-shadow: 0 0 0 4px var(--purple-soft);
+    }
+
+    .legend-note {
+      margin: 12px 0 0;
+      color: var(--faint);
+      font-size: 10px;
+      line-height: 1.7;
+    }
+
+    .workspace {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(15, 21, 29, 0.84);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .workspace-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: start;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .breadcrumb {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      align-items: center;
+      min-height: 24px;
+      margin-bottom: 10px;
+      color: var(--faint);
+      font-size: 10px;
+    }
+
+    .breadcrumb button {
+      padding: 0;
+      border: 0;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .breadcrumb button:hover {
+      color: var(--blue);
+    }
+
+    .view-title {
+      margin-bottom: 7px;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+
+    .view-description {
+      max-width: 900px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .back-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      cursor: pointer;
+    }
+
+    .back-button:hover:not(:disabled) {
+      border-color: var(--line-strong);
+      color: var(--text);
+    }
+
+    .back-button:disabled {
+      cursor: default;
+      opacity: 0.35;
+    }
+
+    .workspace-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 352px;
+      min-height: 690px;
+    }
+
+    .graph-column {
+      min-width: 0;
+      border-right: 1px solid var(--line);
+    }
+
+    .graph-hint {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .edge-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .edge-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .edge-sample {
+      width: 24px;
+      height: 0;
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .edge-sample.dashed {
+      border-top-style: dashed;
+      border-top-color: var(--purple);
+    }
+
+    .graph {
+      position: relative;
+      min-height: 760px;
+      overflow: hidden;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    .edge-layer,
+    .node-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .edge-layer {
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    .edge-path {
+      fill: none;
+      stroke: var(--line-strong);
+      stroke-width: 1.35;
+      opacity: 0.76;
+      marker-end: url(#arrow);
+      transition: opacity 160ms ease, stroke 160ms ease, stroke-width 160ms ease;
+    }
+
+    .edge-path.register,
+    .edge-path.planned {
+      stroke-dasharray: 5 5;
+    }
+
+    .edge-path.planned {
+      stroke: rgba(180, 151, 255, 0.72);
+      marker-end: url(#arrow-planned);
+    }
+
+    .edge-path.persist {
+      stroke: rgba(101, 215, 173, 0.62);
+      marker-end: url(#arrow-persist);
+    }
+
+    .edge-path.is-dimmed {
+      opacity: 0.12;
+    }
+
+    .edge-path.is-related {
+      stroke-width: 2.2;
+      opacity: 1;
+    }
+
+    .edge-label {
+      fill: var(--faint);
+      font-size: 9px;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      paint-order: stroke;
+      stroke: var(--panel-3);
+      stroke-width: 5px;
+      stroke-linejoin: round;
+      transition: opacity 160ms ease, fill 160ms ease;
+    }
+
+    .edge-label.is-dimmed {
+      opacity: 0.1;
+    }
+
+    .edge-label.is-related {
+      fill: var(--text);
+    }
+
+    .node {
+      position: absolute;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 7px 10px;
+      align-content: start;
+      min-height: 84px;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--text);
+      background: rgba(21, 30, 41, 0.96);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+      cursor: pointer;
+      text-align: left;
+      transition:
+        transform 150ms ease,
+        border-color 150ms ease,
+        background 150ms ease,
+        opacity 150ms ease;
+    }
+
+    .node:hover {
+      z-index: 4;
+      transform: translateY(-2px);
+      border-color: var(--line-strong);
+      background: #182331;
+    }
+
+    .node:focus-visible {
+      z-index: 5;
+      outline: 2px solid var(--blue);
+      outline-offset: 3px;
+    }
+
+    .node.is-selected {
+      z-index: 3;
+      border-color: rgba(121, 169, 255, 0.72);
+      background: #172437;
+      box-shadow:
+        0 0 0 3px rgba(121, 169, 255, 0.11),
+        0 14px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .node.is-dimmed {
+      opacity: 0.34;
+    }
+
+    .node.planned {
+      border-style: dashed;
+      background:
+        linear-gradient(135deg, rgba(180, 151, 255, 0.08), transparent 55%),
+        rgba(21, 30, 41, 0.96);
+    }
+
+    .node.partial {
+      background:
+        linear-gradient(135deg, rgba(241, 189, 112, 0.07), transparent 55%),
+        rgba(21, 30, 41, 0.96);
+    }
+
+    .node-kicker {
+      grid-column: 1;
+      min-width: 0;
+      color: var(--faint);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .node-status {
+      grid-column: 2;
+      grid-row: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 8px;
+      white-space: nowrap;
+    }
+
+    .node-status::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--green);
+      content: "";
+    }
+
+    .node.partial .node-status::before {
+      background: var(--amber);
+    }
+
+    .node.planned .node-status::before {
+      background: var(--purple);
+    }
+
+    .node-label {
+      grid-column: 1 / -1;
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .node-caption {
+      grid-column: 1 / -1;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 9px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .node-enter {
+      position: absolute;
+      right: 9px;
+      bottom: 8px;
+      color: var(--blue);
+      font-size: 13px;
+    }
+
+    .detail {
+      min-width: 0;
+      padding: 18px;
+      background: rgba(17, 24, 33, 0.8);
+    }
+
+    .detail-scroll {
+      position: sticky;
+      top: 16px;
+    }
+
+    .detail-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 12px;
+      padding: 5px 8px;
+      border: 1px solid rgba(101, 215, 173, 0.2);
+      border-radius: 999px;
+      color: var(--green);
+      background: var(--green-soft);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .detail-status.partial {
+      border-color: rgba(241, 189, 112, 0.2);
+      color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .detail-status.planned {
+      border-color: rgba(180, 151, 255, 0.22);
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .detail-title {
+      margin-bottom: 9px;
+      font-size: 18px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-summary {
+      margin-bottom: 18px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.75;
+    }
+
+    .detail-section {
+      margin-top: 17px;
+      padding-top: 15px;
+      border-top: 1px solid var(--line);
+    }
+
+    .detail-section h3 {
+      margin-bottom: 9px;
+      color: var(--faint);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .detail-section ul,
+    .detail-section ol {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.65;
+    }
+
+    .detail-section li::marker {
+      color: var(--faint);
+    }
+
+    .source-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .source-path {
+      display: block;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.025);
+      line-height: 1.45;
+    }
+
+    .relation-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .relation-button {
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      font-size: 9px;
+    }
+
+    .relation-button:hover {
+      border-color: var(--line-strong);
+      color: var(--text);
+    }
+
+    .enter-button {
+      width: 100%;
+      margin-top: 18px;
+      padding: 9px 11px;
+      border: 1px solid rgba(121, 169, 255, 0.28);
+      border-radius: 10px;
+      color: #dce9ff;
+      background: var(--blue-soft);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .enter-button:hover {
+      border-color: rgba(121, 169, 255, 0.5);
+      background: rgba(121, 169, 255, 0.19);
+    }
+
+    .key-rule {
+      margin-top: 14px;
+      padding: 10px 11px;
+      border-left: 2px solid var(--blue);
+      color: #c7d8ef;
+      background: rgba(121, 169, 255, 0.055);
+      font-size: 10px;
+      line-height: 1.65;
+    }
+
+    @media (max-width: 1220px) {
+      .workspace-body {
+        grid-template-columns: minmax(0, 1fr) 310px;
+      }
+
+      .layout {
+        grid-template-columns: 202px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        padding: 11px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .shell {
+        padding: 12px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .view-nav {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .legend {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .legend-note {
+        grid-column: 1 / -1;
+      }
+
+      .workspace-body {
+        grid-template-columns: 1fr;
+      }
+
+      .graph-column {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .detail-scroll {
+        position: static;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar,
+      .workspace-header {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      .audit {
+        text-align: left;
+      }
+
+      .view-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .workspace-header {
+        display: grid;
+      }
+
+      .back-button {
+        justify-self: start;
+      }
+
+      .graph {
+        display: grid;
+        gap: 10px;
+        min-height: 0 !important;
+        padding: 14px;
+        background-size: 22px 22px;
+      }
+
+      .edge-layer {
+        display: none;
+      }
+
+      .node-layer {
+        position: static;
+        display: grid;
+        gap: 10px;
+      }
+
+      .node {
+        position: relative;
+        inset: auto !important;
+        width: 100% !important;
+        min-height: 78px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .shell {
+        padding: 8px;
+      }
+
+      .view-nav {
+        grid-template-columns: 1fr;
+      }
+
+      .legend {
+        grid-template-columns: 1fr;
+      }
+
+      .workspace-header,
+      .detail {
+        padding: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="title-block">
+        <p class="eyebrow">Learning Companion · Architecture Atlas</p>
+        <h1>从 Electron 边界到 Workbench 扩展闭环</h1>
+        <p class="subtitle">
+          这是一张面向协作开发的可钻取架构地图：既标出当前源码中的真实依赖，
+          也把新增 Workbench、外部组件、派生 Asset、Reference / Link 与生成任务的唯一推荐路径固定下来。
+        </p>
+      </div>
+      <div class="audit">
+        源码核对：2026-08-08<br>
+        基线：8495169 + 当前工作树
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar" aria-label="架构视图导航">
+        <p class="sidebar-title">Architecture views</p>
+        <nav id="viewNav" class="view-nav"></nav>
+        <div class="legend" aria-label="实现状态图例">
+          <span class="legend-item"><span class="status-dot"></span>已实现</span>
+          <span class="legend-item"><span class="status-dot partial"></span>可用但特化</span>
+          <span class="legend-item"><span class="status-dot planned"></span>下一步规范</span>
+          <p class="legend-note">
+            实线表示运行时调用或数据流；虚线表示注册、声明或规划中的统一入口。
+          </p>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="workspace-header">
+          <div>
+            <div id="breadcrumb" class="breadcrumb"></div>
+            <h2 id="viewTitle" class="view-title"></h2>
+            <p id="viewDescription" class="view-description"></p>
+          </div>
+          <button id="backButton" class="back-button" type="button">
+            <span aria-hidden="true">←</span>
+            返回上层
+          </button>
+        </header>
+
+        <div class="workspace-body">
+          <section class="graph-column" aria-label="架构关系图">
+            <div class="graph-hint">
+              <span>单击普通节点查看职责；单击右下角带箭头的节点进入子视图。</span>
+              <span class="edge-legend">
+                <span><i class="edge-sample"></i>运行流</span>
+                <span><i class="edge-sample dashed"></i>注册 / 规划</span>
+              </span>
+            </div>
+            <div id="graph" class="graph">
+              <svg id="edgeLayer" class="edge-layer" aria-hidden="true">
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#516176"></path>
+                  </marker>
+                  <marker id="arrow-planned" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#9f83e8"></path>
+                  </marker>
+                  <marker id="arrow-persist" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#4fac8a"></path>
+                  </marker>
+                </defs>
+                <g id="edgePaths"></g>
+                <g id="edgeLabels"></g>
+              </svg>
+              <div id="nodeLayer" class="node-layer"></div>
+            </div>
+          </section>
+
+          <aside class="detail" aria-live="polite">
+            <div id="detailContent" class="detail-scroll"></div>
+          </aside>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var statusLabels = {
+        implemented: "已实现",
+        partial: "可用但特化",
+        planned: "下一步规范"
+      };
+
+      function node(input) {
+        return Object.assign({
+          status: "implemented",
+          responsibilities: [],
+          extension: [],
+          boundaries: [],
+          files: []
+        }, input);
+      }
+
+      var views = {
+        overview: {
+          index: "00",
+          navLabel: "全局总览",
+          title: "Electron 三进程与应用对象图",
+          description: "Renderer 只表达界面，Preload 只暴露白名单契约，Electron Main 组合并持有全部可信写入能力。带箭头节点可继续进入领域子图。",
+          height: 820,
+          guide: node({
+            id: "overview-guide",
+            label: "如何阅读这张总图",
+            kicker: "READING GUIDE",
+            summary: "先沿着 React → Preload → IPC → ApplicationRuntime 看清进程边界，再进入 Workbench、外部组件、派生内容或生成任务子图。任何新增能力最终都必须回到 Main 中已有的 Service / Registry / Database / File 边界。",
+            responsibilities: [
+              "Renderer 不直接接触 Node.js、SQLite、凭证或子进程。",
+              "Preload 的 window.learningCompanion 是唯一 Renderer → Main 调用面。",
+              "ApplicationRuntime 是组合根；业务模块不在 React 中自行 new Main Service。",
+              "Project 打开后，Asset、Association、Agent Session 与未完成 GenerationTask 都按 Project 生命周期加载。"
+            ],
+            boundaries: [
+              "图中的“下一步规范”不是已存在代码，新增同类能力前应先落地该统一入口。",
+              "旧设计文档可能落后于当前代码；节点中的源码路径以当前工作树为准。"
+            ],
+            files: [
+              "src/main/index.ts",
+              "src/main/bootstrap/create-application-runtime.ts",
+              "src/preload/index.ts",
+              "src/renderer/App.tsx"
+            ]
+          }),
+          nodes: [
+            node({
+              id: "react",
+              label: "React Renderer",
+              kicker: "UNTRUSTED UI",
+              caption: "App / Home / ProjectPage / GenerationCenter",
+              x: 4, y: 5, w: 19,
+              childView: "renderer",
+              summary: "负责页面、用户输入和临时 UI 状态。通过 Preload API 获取快照、发起命令并订阅事件。",
+              responsibilities: ["渲染 Home、Project、Workbench 与设置。", "维护选中 Asset、面板和对话框等前端状态。"],
+              boundaries: ["不得直接读文件、SQLite、Codex Home 或启动外部进程。"],
+              files: ["src/renderer/App.tsx", "src/renderer/project/ProjectPage.tsx"]
+            }),
+            node({
+              id: "preload",
+              label: "Preload 白名单 API",
+              kicker: "TRUST BRIDGE",
+              caption: "window.learningCompanion",
+              x: 29, y: 5, w: 17,
+              summary: "将受限、类型化的业务操作暴露给 Renderer，并统一解包 IPC 成功或结构化错误。",
+              responsibilities: ["只暴露明确方法与经过校验的事件订阅。", "不暴露原始 ipcRenderer。"],
+              boundaries: ["Preload 不实现业务规则，也不保存领域状态。"],
+              files: ["src/preload/index.ts", "src/shared/ipc.ts"]
+            }),
+            node({
+              id: "ipc",
+              label: "IPC Handlers",
+              kicker: "MAIN BOUNDARY",
+              caption: "校验请求 · 调用 Service · 转换 AppError",
+              x: 53, y: 5, w: 17,
+              summary: "Main 进程的请求边界。每组 handler 只做运行时校验、调用对应 Service、包装结果与广播事件。",
+              responsibilities: ["拒绝无效 DTO 和过期 Project / Session 上下文。", "统一将 AppError 映射为 Renderer 可理解的错误。"],
+              boundaries: ["不要在 handler 中重写领域流程或直接操作数据库。"],
+              files: ["src/main/bootstrap/register-application-ipc.ts", "src/main/ipc/"]
+            }),
+            node({
+              id: "runtime",
+              label: "ApplicationRuntime / Bootstrap",
+              kicker: "COMPOSITION ROOT",
+              caption: "构造对象图 · 注册扩展 · 集中释放",
+              x: 76, y: 5, w: 20,
+              childView: "services",
+              summary: "应用唯一组合根。创建数据库、Service、Registry、Provider 与 Workbench，并把它们注入 IPC 和 ApplicationRuntime。",
+              responsibilities: ["按依赖顺序创建对象。", "集中管理退出时的 shutdown / dispose。", "注册内置 Workbench、Artifact Producer、Agent Tool 和 TaskDefinition。"],
+              boundaries: ["具体业务行为留在各领域模块；Bootstrap 只做装配。"],
+              files: ["src/main/bootstrap/create-application-runtime.ts", "src/main/bootstrap/application-runtime.ts"]
+            }),
+            node({
+              id: "renderer-runtime",
+              label: "Workbench Host / Runtime",
+              kicker: "RENDERER DOMAIN",
+              caption: "打开 View · Interaction · Action Surface",
+              x: 4, y: 31, w: 19,
+              childView: "workbench",
+              summary: "Renderer 中承载当前 Asset 的 Workbench View，并把右键、Overflow、生成中心与选择上下文汇聚到统一 Runtime。",
+              files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx", "src/renderer/workbench/runtime/workbench-runtime.ts"]
+            }),
+            node({
+              id: "workbench-main",
+              label: "WorkbenchSessionService",
+              kicker: "MAIN DOMAIN",
+              caption: "resolve → select → open / command / close",
+              x: 29, y: 31, w: 17,
+              childView: "workbench",
+              summary: "Main 中唯一活动 Workbench Session 的生命周期编排器。取得 Asset 内容，选择 Provider，管理 Handle 与 Transport Binding 的释放。",
+              files: ["src/main/workbench/workbench-session-service.ts"]
+            }),
+            node({
+              id: "domain",
+              label: "Project / Asset Domain",
+              kicker: "MAIN DOMAIN",
+              caption: "Service 拥有活动 Project 运行态",
+              x: 53, y: 31, w: 17,
+              childView: "services",
+              summary: "ProjectService 串行化 Project 生命周期；AssetService、AssociationService、AgentSessionService 与 GenerationTaskService 随 Project 加载和卸载。",
+              files: ["src/main/projects/project-service.ts", "src/main/assets/asset-service.ts"]
+            }),
+            node({
+              id: "generation",
+              label: "Generation Runtime",
+              kicker: "MAIN DOMAIN",
+              caption: "TaskDefinition → Workspace → Agent → Asset",
+              x: 76, y: 31, w: 20,
+              childView: "generation",
+              summary: "通用 GenerationTask 执行框架。TaskDefinition 声明 Prompt、能力、工作区和来源，并在 process 中控制生成、校验、修复与提交。",
+              files: ["src/main/generation/", "src/workbenches/mindmap/generation/"]
+            }),
+            node({
+              id: "content",
+              label: "Content Handle / Resource",
+              kicker: "CAPABILITY BOUNDARY",
+              caption: "ContentRef → Handle → learning-content://",
+              x: 4, y: 57, w: 19,
+              childView: "persistence",
+              summary: "ContentResolver 把持久化引用解析为带能力和生命周期的 Handle；ContentResourceService 再按 Session 暴露受控流。",
+              files: ["src/main/content/content-resolver-registry.ts", "src/main/content/content-resource-service.ts"]
+            }),
+            node({
+              id: "external",
+              label: "External Library + Artifact",
+              kicker: "OPTIONAL CAPABILITY",
+              caption: "安装外部组件 · 生成可重建预览",
+              x: 29, y: 57, w: 17,
+              childView: "external",
+              summary: "外部组件负责可选二进制运行时；Artifact 负责基于 Asset Revision 生成可重建的派生缓存。Office → PDF 是当前实例。",
+              files: ["src/main/external-libraries/", "src/main/artifacts/"]
+            }),
+            node({
+              id: "associations",
+              label: "Asset / Reference / Link",
+              kicker: "DURABLE CONTENT",
+              caption: "正式 Asset 与通用有向关系",
+              x: 53, y: 57, w: 17,
+              childView: "derivation",
+              summary: "正式、可打开的派生内容仍是 Asset。Reference 记录其来源，Link 记录其指向的目标；媒体内部位置保存在内容文件中。",
+              files: ["src/main/asset-associations/", "src/shared/asset-associations.ts"]
+            }),
+            node({
+              id: "agent",
+              label: "Agent Provider / Session",
+              kicker: "PROVIDER BOUNDARY",
+              caption: "selected provider · opaque thread binding",
+              x: 76, y: 57, w: 20,
+              childView: "generation",
+              summary: "Provider-neutral Runner 选择当前已认证 Provider；AgentSessionService 维护 workspace locator 到各 Provider session/thread 的映射。",
+              files: ["src/main/agents/agent-provider-service.ts", "src/main/agents/sessions/"]
+            }),
+            node({
+              id: "files",
+              label: "Project / Agent Files",
+              kicker: "FILE SOURCE OF TRUTH",
+              caption: "Asset 正文 · session.json · task workspace",
+              x: 4, y: 76, w: 19,
+              childView: "persistence",
+              summary: "正文、生成候选、Agent Session 映射与可重建 Artifact 分别落在明确的文件目录，不把大内容塞进 SQLite。",
+              files: ["src/main/projects/project-workspace-manager.ts", "src/main/agents/sessions/agent-session-file.ts"]
+            }),
+            node({
+              id: "sqlite",
+              label: "SQLite Databases",
+              kicker: "STRUCTURED PERSISTENCE",
+              caption: "Project · Asset · State · Relation · Task",
+              x: 29, y: 82, w: 17,
+              childView: "persistence",
+              summary: "Database 类负责 SQLite 映射和查询；领域 Service 决定何时加载、缓存、组合与提交。",
+              files: ["src/main/database/initialize-database.ts", "src/main/database/schema/"]
+            }),
+            node({
+              id: "settings",
+              label: "settings.json",
+              kicker: "APP SETTINGS",
+              caption: "偏好 · 默认路径 · onboarding · provider 选择",
+              x: 53, y: 82, w: 17,
+              childView: "persistence",
+              summary: "应用级小型设置通过 JsonSettingsRepository 原子写入；不保存 Provider 凭证或业务正文。",
+              files: ["src/main/settings/json-settings-repository.ts"]
+            }),
+            node({
+              id: "codex",
+              label: "Codex App Server",
+              kicker: "EXTERNAL RUNTIME",
+              caption: "stdio JSON-RPC · thread / turn / events",
+              x: 76, y: 82, w: 20,
+              summary: "Codex Provider 适配的外部 Agent Runtime。Learning Companion 编排请求与持久化映射，但不实现 Codex 内部 Agent loop。",
+              boundaries: ["Codex DTO 不进入 Asset、Workbench 或 Generation 领域契约。"],
+              files: ["src/main/agents/codex/", "src/main/agents/providers/codex-agent-provider.ts"]
+            })
+          ],
+          edges: [
+            { from: "react", to: "preload", label: "调用" },
+            { from: "preload", to: "ipc", label: "invoke / event" },
+            { from: "ipc", to: "runtime", label: "已注入 Service" },
+            { from: "react", to: "renderer-runtime", label: "组合" },
+            { from: "runtime", to: "workbench-main", label: "创建" },
+            { from: "runtime", to: "domain", label: "创建" },
+            { from: "runtime", to: "generation", label: "创建" },
+            { from: "runtime", to: "external", label: "创建" },
+            { from: "workbench-main", to: "content", label: "解析 / 暴露" },
+            { from: "workbench-main", to: "renderer-runtime", label: "bootstrap", kind: "register" },
+            { from: "domain", to: "associations", label: "Project 生命周期" },
+            { from: "domain", to: "sqlite", label: "持久化", kind: "persist" },
+            { from: "domain", to: "files", label: "文件操作", kind: "persist" },
+            { from: "external", to: "files", label: "artifact", kind: "persist" },
+            { from: "associations", to: "sqlite", label: "关系表", kind: "persist" },
+            { from: "generation", to: "agent", label: "resolve runner" },
+            { from: "generation", to: "files", label: "workspace", kind: "persist" },
+            { from: "generation", to: "associations", label: "提交结果" },
+            { from: "agent", to: "codex", label: "JSON-RPC" },
+            { from: "runtime", to: "settings", label: "初始化", kind: "persist" }
+          ]
+        },
+
+        renderer: {
+          index: "01",
+          navLabel: "Renderer 与 Preload",
+          title: "React、Workbench Runtime 与 IPC 投影",
+          description: "Renderer 只维护界面态和可信快照的投影。Workbench View 通过 Runtime 发布 Interaction、注册 Action，不自行绕过 Preload。",
+          height: 800,
+          guide: node({
+            id: "renderer-guide",
+            label: "Renderer 的唯一职责",
+            kicker: "RULE",
+            summary: "把 Main 返回的业务状态变成界面，并把用户意图转换为类型化请求。跨 Workbench 的菜单、生成中心和选区上下文由 WorkbenchRuntime 汇聚，避免每个 View 各写一套全局 UI。",
+            responsibilities: [
+              "页面层组合布局和 Feature Hook。",
+              "Store 只保存可重建的客户端投影；Main 仍是登录、安装和领域数据真相。",
+              "Workbench View 只通过 executeCommand、Runtime 与受控 content URL 工作。"
+            ],
+            boundaries: ["不要在 React 组件中拼绝对路径、写数据库或启动外部工具。"],
+            files: ["src/renderer/", "src/preload/index.ts"]
+          }),
+          nodes: [
+            node({ id: "app", label: "App", kicker: "REACT ROOT", caption: "页面路由 · 设置 · onboarding · 通知", x: 4, y: 5, w: 19, summary: "组合 Home / ProjectPage 以及全局设置、首次引导、通知和 External Library Controller。", files: ["src/renderer/App.tsx"] }),
+            node({ id: "project-page", label: "ProjectPage", kicker: "PAGE COMPOSITION", caption: "AssetPanel · Workbench · GenerationCenter", x: 29, y: 5, w: 19, summary: "组合当前 Project 的左侧资料、中央 Workbench 和右侧生成中心；不实现具体媒体逻辑。", files: ["src/renderer/project/ProjectPage.tsx"] }),
+            node({ id: "preload-api", label: "window.learningCompanion", kicker: "PRELOAD", caption: "类型化方法 + 校验后事件", x: 77, y: 5, w: 19, summary: "Renderer 能调用的唯一 Main API。", boundaries: ["不要给某个 Workbench 私开 ipcRenderer 通道。"], files: ["src/preload/index.ts", "src/shared/ipc.ts"] }),
+            node({ id: "runtime-provider", label: "WorkbenchRuntimeProvider", kicker: "REACT CONTEXT", caption: "一份活动 Workbench Runtime", x: 4, y: 31, w: 19, summary: "向中央 View、右键 Host、Overflow Host 和 GenerationCenter 提供同一 Runtime。", files: ["src/renderer/workbench/runtime/WorkbenchRuntimeProvider.tsx"] }),
+            node({ id: "host", label: "AssetWorkbenchHost", kicker: "LIFECYCLE HOST", caption: "open → lazy load View → activate → close", x: 29, y: 31, w: 19, childView: "workbench", summary: "Asset 改变时关闭旧 Session、通过 Preload 打开新 Session、懒加载匹配的 Renderer Module，并处理失败与过期结果。", files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx"] }),
+            node({ id: "generation-center", label: "GenerationCenter", kicker: "SHARED SURFACE", caption: "全局工具 + 当前 Workbench 工具 + 任务列表", x: 53, y: 31, w: 19, status: "partial", childView: "generation", summary: "同时展示 Project 级生成入口、当前 Workbench 的 generation-tool Contribution 和运行中任务。Mind Map 已接通，但全局工具列表仍硬编码。", boundaries: ["新增第二个全局工具前先实现统一 Generation Tool Registry。"], files: ["src/renderer/generation/GenerationCenter.tsx", "src/renderer/generation/use-generation-tasks.ts"] }),
+            node({ id: "registry", label: "RendererWorkbenchRegistry", kicker: "LAZY REGISTRY", caption: "workbenchId → Renderer module loader", x: 4, y: 57, w: 19, summary: "按 workbenchId 懒加载 React 模块，并校验 Manifest 和 Facility 声明。", files: ["src/renderer/workbench/renderer-workbench-registry.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"] }),
+            node({ id: "view", label: "Workbench Renderer Module", kicker: "FEATURE UI", caption: "View + actions + interaction", x: 29, y: 57, w: 19, childView: "workbench", summary: "媒体特有界面。读取 Main bootstrap payload，通过 executeCommand 保存状态或内容，并发布 Anchor / Selection。", extension: ["在 src/workbenches/<feature>/renderer.tsx 实现。", "需要菜单或生成入口时配套 renderer-actions.ts。"], files: ["src/workbenches/*/renderer.tsx", "src/workbenches/*/renderer-actions.ts"] }),
+            node({ id: "action-runtime", label: "WorkbenchRuntime", kicker: "INTERACTION CORE", caption: "identity · focus · inputs · contributions", x: 53, y: 57, w: 19, summary: "验证当前 Workbench 是否声明了相应 Facility，然后保存 Interaction、Action 与 Surface Contribution。", files: ["src/renderer/workbench/runtime/workbench-runtime.ts", "src/renderer/workbench/runtime/workbench-action-registry.ts"] }),
+            node({ id: "surface-hosts", label: "Surface Hosts", kicker: "SHARED UI", caption: "ContextMenu · Overflow · Generation Center", x: 77, y: 57, w: 19, summary: "统一渲染跨 Workbench 的操作面。Workbench 只贡献 Action 和 Presentation，不复制菜单容器。", files: ["src/renderer/workbench/host/WorkbenchContextMenuHost.tsx", "src/renderer/workbench/host/WorkbenchOverflowHost.tsx"] }),
+            node({ id: "stores", label: "Renderer Stores", kicker: "CLIENT PROJECTION", caption: "Provider · External Library · Notification", x: 4, y: 82, w: 19, summary: "Zustand Store 保存 Main authoritative snapshot 的前端投影、订阅引用计数与临时界面状态。", boundaries: ["Store 不是文件或 SQLite 持久化层。"], files: ["src/renderer/agents/agent-provider-store.ts", "src/renderer/external-libraries/external-library-store.ts", "src/renderer/notifications/notification-store.ts"] }),
+            node({ id: "commands", label: "Workbench Command API", kicker: "PRELOAD CONTRACT", caption: "openWorkbench · commandWorkbench · closeWorkbench", x: 29, y: 82, w: 19, summary: "所有 Workbench 共用三类 IPC 操作，具体命令 payload 由 feature shared.ts 定义并校验。", files: ["src/shared/workbench/protocol.ts", "src/main/ipc/workbench.ts"] }),
+            node({ id: "facility-events", label: "Facility Event Bridge", kicker: "PRELOAD EVENT", caption: "sandbox frame → Main → Renderer Runtime", x: 53, y: 82, w: 19, summary: "HTML / EPUB 等隔离 Frame 的右键和选区经 Main 桥接，再由 Preload 发送到当前 Session。", files: ["src/preload/workbench-facility-events.ts", "src/main/workbench/interaction/"] })
+          ],
+          edges: [
+            { from: "app", to: "project-page", label: "显示 Project" },
+            { from: "project-page", to: "runtime-provider", label: "提供上下文" },
+            { from: "project-page", to: "host", label: "selected Asset" },
+            { from: "project-page", to: "generation-center", label: "组合" },
+            { from: "host", to: "preload-api", label: "open / close" },
+            { from: "host", to: "registry", label: "resolve" },
+            { from: "registry", to: "view", label: "lazy load", kind: "register" },
+            { from: "runtime-provider", to: "action-runtime", label: "持有" },
+            { from: "view", to: "action-runtime", label: "publish / register" },
+            { from: "action-runtime", to: "surface-hosts", label: "贡献" },
+            { from: "action-runtime", to: "generation-center", label: "generation tools" },
+            { from: "view", to: "commands", label: "executeCommand" },
+            { from: "commands", to: "preload-api", label: "invoke" },
+            { from: "facility-events", to: "action-runtime", label: "interaction event" },
+            { from: "preload-api", to: "stores", label: "snapshot / event" }
+          ]
+        },
+
+        services: {
+          index: "02",
+          navLabel: "Main 服务对象图",
+          title: "ApplicationRuntime 下的 Service、Manager 与持久化",
+          description: "Service 负责领域生命周期和运行态；Database 负责 SQLite；Manager 负责无状态路径 / 文件操作；Registry 保存可替换定义。",
+          height: 850,
+          guide: node({
+            id: "services-guide",
+            label: "Project 是运行态加载边界",
+            kicker: "LIFECYCLE",
+            summary: "ProjectService 串行化打开、关闭、切换 Workspace 与删除。打开 Project 时依次加载 Asset、Association、Agent Session 和未完成 GenerationTask；关闭时反向卸载。Workbench Session 必须先关闭。",
+            responsibilities: [
+              "ApplicationRuntime 是应用级生命周期。",
+              "ProjectService 是 Project 级生命周期。",
+              "AssetService、AssetAssociationService、AgentSessionService、GenerationTaskService 各自只拥有一个活动 Project 的运行态。",
+              "Database 不保存“当前 Project”；按显式 ID 查询。"
+            ],
+            files: ["src/main/projects/project-service.ts", "src/main/bootstrap/create-application-runtime.ts"]
+          }),
+          nodes: [
+            node({ id: "composition", label: "createApplicationRuntime", kicker: "COMPOSITION ROOT", caption: "依赖注入 · 注册 · 初始化", x: 39, y: 4, w: 23, summary: "构建所有应用级对象并注册 IPC。", files: ["src/main/bootstrap/create-application-runtime.ts"] }),
+            node({ id: "project-service", label: "ProjectService", kicker: "LIFECYCLE SERVICE", caption: "串行 open / close / workspace change", x: 38, y: 24, w: 25, summary: "Project 级总编排器，保证 Workbench 关闭和各领域 Runtime 的一致加载 / 卸载。", files: ["src/main/projects/project-service.ts"] }),
+            node({ id: "project-db", label: "ProjectDatabase", kicker: "DATABASE + MAP", caption: "全量 Project Map + SQLite CRUD", x: 4, y: 49, w: 17, summary: "当前少数同时维护全量内存索引的 Database；ProjectService 仍负责业务生命周期。", files: ["src/main/projects/project-database.ts"] }),
+            node({ id: "asset-service", label: "AssetService", kicker: "PROJECT-SCOPED SERVICE", caption: "Runtime Map · import · resolve · generated file", x: 23, y: 49, w: 17, childView: "derivation", summary: "拥有当前 Project 的 AssetSnapshot Map，并统一提交导入、刷新、Relink、删除和 generated file。", files: ["src/main/assets/asset-service.ts"] }),
+            node({ id: "association-service", label: "AssetAssociationService", kicker: "PROJECT-SCOPED SERVICE", caption: "Reference / Link Runtime indexes", x: 42, y: 49, w: 17, childView: "derivation", summary: "打开 Project 时一次加载关系表，提供 ensure / delete / lookup，并在 Asset 删除后清理运行态索引。", files: ["src/main/asset-associations/asset-association-service.ts"] }),
+            node({ id: "workbench-service", label: "WorkbenchSessionService", kicker: "ACTIVE SESSION SERVICE", caption: "一个活动 Asset Workbench", x: 61, y: 49, w: 17, childView: "workbench", summary: "管理当前活动 Workbench Session 和 Handle 生命周期。", files: ["src/main/workbench/workbench-session-service.ts"] }),
+            node({ id: "generation-service", label: "GenerationTaskService", kicker: "PROJECT-SCOPED SERVICE", caption: "unfinished Task Map · background runs", x: 80, y: 49, w: 17, childView: "generation", summary: "只加载未完成任务；完成记录保留在数据库但从活动 Map 释放。", files: ["src/main/generation/generation-task-service.ts"] }),
+            node({ id: "agent-session", label: "AgentSessionService", kicker: "PROJECT-SCOPED SERVICE", caption: "locator → provider session binding", x: 4, y: 74, w: 17, childView: "generation", summary: "懒加载 session.json，并按 locator 串行写入多 Provider binding。", files: ["src/main/agents/sessions/agent-session-service.ts"] }),
+            node({ id: "agent-provider", label: "AgentProviderService", kicker: "APPLICATION SERVICE", caption: "凭证状态 · 选择 · Runner 解析", x: 23, y: 74, w: 17, childView: "generation", summary: "应用级 Provider 注册与状态缓存；GenerationTask 通过它选择当前已认证 Provider。", files: ["src/main/agents/agent-provider-service.ts"] }),
+            node({ id: "external-service", label: "ExternalLibraryService", kicker: "APPLICATION SERVICE", caption: "安装 · 取消 · 迁移 · executable", x: 42, y: 74, w: 17, childView: "external", summary: "管理可选外部运行时与后台安装状态，不属于某个 Project。", files: ["src/main/external-libraries/external-library-service.ts"] }),
+            node({ id: "artifact-service", label: "AssetArtifactService", kicker: "DOMAIN SERVICE", caption: "cache hit · dedupe · produce · cleanup", x: 61, y: 74, w: 17, childView: "external", summary: "按 Asset Revision 和 Producer Version 管理可重建派生物。", files: ["src/main/artifacts/asset-artifact-service.ts"] }),
+            node({ id: "managers", label: "Workspace Managers", kicker: "STATELESS OPERATIONS", caption: "Project path / Agent path / file dialog", x: 80, y: 74, w: 17, childView: "persistence", summary: "无状态解析与操作路径；领域 ID 和生命周期由上层 Service 提供。", files: ["src/main/projects/project-workspace-manager.ts", "src/main/agents/workspaces/agent-workspace-manager.ts"] })
+          ],
+          edges: [
+            { from: "composition", to: "project-service", label: "构造" },
+            { from: "composition", to: "agent-provider", label: "构造" },
+            { from: "composition", to: "external-service", label: "构造" },
+            { from: "composition", to: "artifact-service", label: "构造" },
+            { from: "project-service", to: "project-db", label: "Project CRUD", kind: "persist" },
+            { from: "project-service", to: "asset-service", label: "load / unload" },
+            { from: "project-service", to: "association-service", label: "load / unload" },
+            { from: "project-service", to: "workbench-service", label: "close first" },
+            { from: "project-service", to: "generation-service", label: "load unfinished" },
+            { from: "project-service", to: "agent-session", label: "load locator file" },
+            { from: "project-service", to: "managers", label: "workspace ops" },
+            { from: "generation-service", to: "agent-provider", label: "resolve runner" },
+            { from: "asset-service", to: "artifact-service", label: "cleanup" },
+            { from: "artifact-service", to: "external-service", label: "producer dependency" }
+          ]
+        },
+
+        workbench: {
+          index: "03",
+          navLabel: "Workbench 扩展",
+          title: "一个 Workbench 的双端模块与共享设施",
+          description: "每个媒体功能由 shared / main / renderer 三部分组成，通过统一 Catalog 对齐；菜单、选区和生成入口用 Facility + Action Contribution 接入。",
+          height: 900,
+          guide: node({
+            id: "workbench-guide",
+            label: "新增 Workbench 的标准目录",
+            kicker: "CONTRIBUTOR CONTRACT",
+            summary: "Workbench 是一个垂直 Feature，而不是单个 React 组件。最小结构为 shared.ts、main.ts、renderer.tsx；需要菜单、选择或生成入口时再增加 renderer-actions.ts 和 Facility 声明。",
+            responsibilities: [
+              "shared.ts：Manifest、Bootstrap / Command / State / Anchor 的 DTO 与运行时校验。",
+              "main.ts：实现 MainWorkbenchProvider；使用 ContentHandle 和注入的 Service。",
+              "renderer.tsx：渲染 View，消费 bootstrap，调用 executeCommand。",
+              "renderer-actions.ts：把媒体操作贡献到 Overflow、Context Menu 或 Generation Center。",
+              "Catalog：在 builtin-workbenches、register-main-workbenches、register-renderer-workbenches 中登记。"
+            ],
+            extension: [
+              "复制最接近的现有 Workbench，而不是从 ProjectPage 开始改。",
+              "先定义 mediaType、requiredContentCapabilities、supportedAnchorTypes、facilities。",
+              "至少补 shared / main / renderer / catalog 四层测试。"
+            ],
+            boundaries: [
+              "不要给 Workbench 单独暴露任意 IPC。",
+              "不要让 Renderer 持有文件路径或数据库对象。",
+              "不要把可重建预览误建为 Asset，也不要把正式派生内容藏在 Artifact。"
+            ],
+            files: ["src/workbenches/mindmap/", "src/workbenches/pdf/", "src/workbenches/catalog/"]
+          }),
+          nodes: [
+            node({ id: "feature-folder", label: "src/workbenches/<feature>/", kicker: "VERTICAL FEATURE", caption: "shared + main + renderer + optional submodules", x: 38, y: 3, w: 25, summary: "媒体能力的所有特有代码放在同一 Feature 目录；通用基础设施留在 main/shared/renderer/workbench。", extension: ["用已有同类型 Workbench 作为模板。"], files: ["src/workbenches/"] }),
+            node({ id: "shared", label: "shared.ts", kicker: "CROSS-PROCESS CONTRACT", caption: "Manifest · payload · command · state · anchor", x: 4, y: 24, w: 18, summary: "Main 与 Renderer 共用的纯数据契约。所有跨 IPC 数据必须有运行时校验。", files: ["src/workbenches/mindmap/shared.ts", "src/shared/workbench/manifest.ts"] }),
+            node({ id: "main-provider", label: "main.ts / MainWorkbenchProvider", kicker: "TRUSTED FEATURE", caption: "open · command · close · materializeContent?", x: 29, y: 24, w: 19, summary: "访问 ContentHandle、Workbench State 和注入 Service。可选 materializeContent 供预览与 Generation prepare 共用模型友好表示。", extension: ["需要 Office→PDF 一类共享表示时实现 materializeContent。"], files: ["src/main/workbench/workbench-session.ts", "src/workbenches/office/main.ts"] }),
+            node({ id: "renderer-module", label: "renderer.tsx", kicker: "FEATURE VIEW", caption: "React View · interaction · executeCommand", x: 54, y: 24, w: 19, summary: "媒体特有 UI。只消费 JSON bootstrap 和安全 content URL，不直接访问 Node。", files: ["src/workbenches/mindmap/renderer.tsx", "src/workbenches/pdf/renderer.tsx"] }),
+            node({ id: "actions", label: "renderer-actions.ts", kicker: "OPTIONAL CONTRIBUTION", caption: "ActionBundle → three shared surfaces", x: 78, y: 24, w: 18, childView: "generation", summary: "声明 Workbench Action 及其在右键、Overflow、Generation Center 的 Presentation。", extension: ["生成入口使用 kind=generation-tool。", "Action 从 WorkbenchInvocationContext 读取 focus 与 inputs。"], files: ["src/workbenches/mindmap/renderer-actions.ts", "src/renderer/workbench/actions/"] }),
+            node({ id: "manifest", label: "AssetWorkbenchManifest", kicker: "CAPABILITY DECLARATION", caption: "media types · content caps · anchors · facilities", x: 4, y: 49, w: 18, summary: "宿主只依据 Manifest 选择 Provider、验证 Content Capability 和允许的 Interaction / Surface。", files: ["src/shared/workbench/manifest.ts"] }),
+            node({ id: "catalog", label: "Builtin Workbench Catalog", kicker: "COMPOSITION CONTRACT", caption: "同一 ID 驱动 Main 与 Renderer 注册", x: 29, y: 49, w: 19, summary: "集中列出内置 Workbench，契约测试保证 Main Provider 和 Renderer loader 都完整注册。", extension: ["新增 Workbench 必须同时更新三个 catalog 文件。"], files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"] }),
+            node({ id: "session", label: "WorkbenchSessionService", kicker: "MAIN HOST", caption: "resolve content · select provider · lifecycle", x: 54, y: 49, w: 19, summary: "打开 Asset 时选择 Workbench Provider，并在切换时可靠关闭命令、Binding 和 Handle。", files: ["src/main/workbench/workbench-session-service.ts"] }),
+            node({ id: "renderer-host", label: "AssetWorkbenchHost", kicker: "RENDERER HOST", caption: "load module · activate runtime · render hosts", x: 78, y: 49, w: 18, summary: "根据 bootstrap.workbenchId 懒加载 View，并把命令与 Interaction 能力注入它。", files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx"] }),
+            node({ id: "resolver", label: "ContentResolverRegistry", kicker: "CONTENT SOURCE", caption: "contentRef.kind → ContentHandle", x: 4, y: 73, w: 18, childView: "persistence", summary: "按内容来源类型选择 Resolver；当前生产 Asset 使用 local-file。", files: ["src/main/content/content-resolver-registry.ts"] }),
+            node({ id: "handle", label: "ContentHandle", kicker: "ACQUIRED RESOURCE", caption: "capabilities · revision · close", x: 25, y: 73, w: 18, childView: "persistence", summary: "工作台访问内容的能力句柄，方法必须与 capability 对齐，生命周期由 Session 管理。", files: ["src/main/content/content-handle.ts", "src/main/content/tracked-content-handle.ts"] }),
+            node({ id: "state", label: "WorkbenchStateDatabase", kicker: "VIEW PERSISTENCE", caption: "assetId + workbenchId + schemaVersion", x: 46, y: 73, w: 18, summary: "保存阅读器状态，如页码、折叠、缩放和编辑恢复数据；不保存 Asset 正文。", files: ["src/main/workbench/workbench-state-database.ts", "src/main/workbench/workbench-state-data-database.ts"] }),
+            node({ id: "facilities", label: "Facility Registry + Runtime", kicker: "SHARED INTERACTION", caption: "transport · surface · input", x: 67, y: 73, w: 18, summary: "定义和校验右键、Overflow、Generation Center、文字选择及 Frame Transport 等可选设施。", files: ["src/shared/workbench/facilities/", "src/renderer/workbench/runtime/workbench-runtime.ts"] }),
+            node({ id: "external-choice", label: "需要外部组件？", kicker: "DECISION", caption: "进入 External Library / Artifact 子图", x: 4, y: 88, w: 26, childView: "external", summary: "需要 LibreOffice、FFmpeg 等外部二进制时，不要从 Renderer 或 Provider 直接找系统程序；走 ExternalLibraryService，并优先把可复用转换建成 Artifact Producer。" }),
+            node({ id: "derived-choice", label: "会产生可打开的新内容？", kicker: "DECISION", caption: "进入 Generated Asset / Association 子图", x: 37, y: 88, w: 26, childView: "derivation", summary: "用户需要在 Asset 列表继续打开的结果必须成为 generated Asset，并建立 Reference / Link。" }),
+            node({ id: "generation-choice", label: "需要 AI 生成入口？", kicker: "DECISION", caption: "进入 GenerationTask 子图", x: 70, y: 88, w: 26, childView: "generation", summary: "Workbench 只负责收集当前 focus / selection 并形成 Instruction；Prompt、工具、Workspace 与提交逻辑放在 TaskDefinition。" })
+          ],
+          edges: [
+            { from: "feature-folder", to: "shared", label: "定义" },
+            { from: "feature-folder", to: "main-provider", label: "实现" },
+            { from: "feature-folder", to: "renderer-module", label: "实现" },
+            { from: "feature-folder", to: "actions", label: "可选" },
+            { from: "shared", to: "manifest", label: "导出" },
+            { from: "manifest", to: "catalog", label: "注册", kind: "register" },
+            { from: "catalog", to: "session", label: "Main Provider", kind: "register" },
+            { from: "catalog", to: "renderer-host", label: "Renderer loader", kind: "register" },
+            { from: "session", to: "main-provider", label: "open / command" },
+            { from: "renderer-host", to: "renderer-module", label: "render" },
+            { from: "session", to: "resolver", label: "resolve" },
+            { from: "resolver", to: "handle", label: "acquire" },
+            { from: "handle", to: "main-provider", label: "capabilities" },
+            { from: "main-provider", to: "state", label: "load / save", kind: "persist" },
+            { from: "actions", to: "facilities", label: "contribute", kind: "register" },
+            { from: "facilities", to: "renderer-host", label: "shared hosts" }
+          ]
+        },
+
+        external: {
+          index: "04",
+          navLabel: "外部组件与 Artifact",
+          title: "外部运行时、可重建物化与 Workbench 复用",
+          description: "External Library 管理可选二进制；Artifact 保存可重建派生缓存。Workbench 预览和 Generation prepare 通过 materializeContent 复用同一产物。",
+          height: 860,
+          guide: node({
+            id: "external-guide",
+            label: "何时走这条链",
+            kicker: "DECISION",
+            summary: "如果能力依赖用户可选安装的本地程序，用 ExternalLibrary。若该程序把 Asset 转换为可重建表示，用 AssetArtifactService 缓存。只有用户真正拥有和继续编辑 / 打开的结果，才创建 generated Asset。",
+            responsibilities: [
+              "Definition 描述版本、平台包、SHA-256 和 executable 相对路径。",
+              "Service 管理安装状态、取消、迁移和 requireExecutable。",
+              "Producer 在 staging 中调用外部程序并验证输出。",
+              "ArtifactService 根据 source revision + producer version 处理命中、并发去重与清理。",
+              "Workbench materializeContent 返回统一表示给预览和 Agent prepare。"
+            ],
+            boundaries: [
+              "Renderer 不下载、不执行外部程序。",
+              "Provider 不自行搜索系统 PATH 或安装依赖。",
+              "Artifact 是缓存，不出现在 Generated Asset 列表，也不建立 AssetReference。"
+            ],
+            files: ["src/main/external-libraries/", "src/main/artifacts/", "src/workbenches/office/"]
+          }),
+          nodes: [
+            node({ id: "definition", label: "ExternalLibraryDefinition", kicker: "DECLARATION", caption: "version · packages · SHA-256 · executable", x: 4, y: 4, w: 20, summary: "跨平台包清单与完整性要求。", extension: ["为新二进制在 definitions/<id>.ts 增加定义。"], files: ["src/main/external-libraries/external-library-definition.ts", "src/main/external-libraries/definitions/libreoffice.ts"] }),
+            node({ id: "ext-registry", label: "ExternalLibraryRegistry", kicker: "REGISTRY", caption: "libraryId → definition / package", x: 29, y: 4, w: 20, summary: "按稳定 ID 注册 Definition，并按 platform + architecture 选择包。", files: ["src/main/external-libraries/external-library-registry.ts"] }),
+            node({ id: "ext-service", label: "ExternalLibraryService", kicker: "APPLICATION SERVICE", caption: "status · install · cancel · migrate · executable", x: 54, y: 4, w: 20, summary: "外部组件运行态唯一所有者，向设置 UI 广播完整 Snapshot。", files: ["src/main/external-libraries/external-library-service.ts"] }),
+            node({ id: "settings-ui", label: "Settings / Runtime Controller", kicker: "RENDERER PROJECTION", caption: "安装入口 · 进度 · 通知", x: 79, y: 4, w: 17, status: "partial", summary: "通用状态与安装动作已存在，但说明文案仍带 LibreOffice 特化。新增第二种外部组件前应把用途说明纳入 Definition / Snapshot 展示元数据。", boundaries: ["不要在新 Workbench 内另做安装弹窗。"], files: ["src/renderer/settings/ExternalLibrariesSettingsSection.tsx", "src/renderer/external-libraries/"] }),
+            node({ id: "workflow", label: "Installation / Migration Workflows", kicker: "WORKFLOW", caption: "download → verify → install → commit / rollback", x: 4, y: 30, w: 20, summary: "封装安装和迁移的多步骤事务、取消与回滚。", files: ["src/main/external-libraries/external-library-installation-workflow.ts", "src/main/external-libraries/external-library-migration-workflow.ts"] }),
+            node({ id: "path-manager", label: "ExternalLibraryPathManager", kicker: "STATELESS MANAGER", caption: "安全路径 · staging · commit · cleanup", x: 29, y: 30, w: 20, summary: "只负责路径解析和文件系统操作，不拥有安装状态。", files: ["src/main/external-libraries/external-library-path-manager.ts"] }),
+            node({ id: "installer", label: "Installer Registry", kicker: "PLATFORM STRATEGY", caption: "MSI / DMG installer", x: 54, y: 30, w: 20, summary: "按 packageType 选择平台安装器并验证最终 executable。", files: ["src/main/external-libraries/external-library-installer.ts", "src/main/external-libraries/installers/"] }),
+            node({ id: "manifest-file", label: "InstallationManifestFile", kicker: "FILE", caption: "安装目录中的事实清单", x: 79, y: 30, w: 17, summary: "通过文件检查安装版本、包身份和 executable，而不是仅相信 settings.json。", files: ["src/main/external-libraries/external-library-installation-manifest-file.ts"] }),
+            node({ id: "producer", label: "AssetArtifactProducer", kicker: "FEATURE ADAPTER", caption: "source → validated staged output", x: 4, y: 57, w: 20, summary: "由需要该转换的 Feature 拥有。Office Producer 调 LibreOffice 生成并校验 PDF。", extension: ["新媒体转换器放在对应 workbench/<feature>/artifacts/。"], files: ["src/main/artifacts/asset-artifact-registry.ts", "src/workbenches/office/artifacts/libreoffice-preview-producer.ts"] }),
+            node({ id: "artifact-service-node", label: "AssetArtifactService", kicker: "CACHE ORCHESTRATION", caption: "fingerprint · dedupe · cache · cleanup", x: 29, y: 57, w: 20, summary: "统一决定命中、生成、并发消费者与 Asset / Project 删除清理。", files: ["src/main/artifacts/asset-artifact-service.ts"] }),
+            node({ id: "artifact-storage", label: "Artifact Database + Files", kicker: "REBUILDABLE STATE", caption: "SQLite index + Project Workspace file", x: 54, y: 57, w: 20, summary: "SQLite 保存索引，文件保存派生内容；两者都可根据源 Asset 重建。", files: ["src/main/artifacts/asset-artifact-database.ts", "src/main/artifacts/asset-artifact-file-manager.ts"] }),
+            node({ id: "provider", label: "Workbench Main Provider", kicker: "FEATURE CONSUMER", caption: "materializeContent + open / command", x: 79, y: 57, w: 17, childView: "workbench", summary: "注入 ExternalLibraryService 和 ArtifactService。需要时生成预览，返回 runtime-required / conversion-required / ready。", files: ["src/workbenches/office/main.ts"] }),
+            node({ id: "materialize", label: "materializeContent()", kicker: "SHARED REPRESENTATION", caption: "预览与 Agent prepare 共用", x: 20, y: 82, w: 25, summary: "Workbench 负责声明最适合消费的表示。GenerationAssetReferencePreparer 优先复制这个结果；Office 因此给 Agent PDF 而不是 DOCX/PPTX 原件。", files: ["src/main/workbench/workbench-session.ts", "src/main/generation/preparation/generation-asset-reference-preparer.ts"] }),
+            node({ id: "second-lib-gap", label: "第二种外部组件接入点", kicker: "NEXT STANDARD", caption: "展示元数据 + 统一 Producer Catalog", x: 56, y: 82, w: 25, status: "planned", summary: "在接入 FFmpeg 等第二个组件前，将设置卡片用途文案移入 Definition / Snapshot，并考虑把 Bootstrap 中的 Producer 注册抽成 Catalog；不要复制 LibreOffice 专用 UI。", extension: ["先扩展通用展示契约。", "再注册 Definition / Installer / Producer。", "最后由 Workbench 注入 Service 并消费 Artifact。"], files: ["src/main/bootstrap/create-external-library-runtime.ts", "src/main/bootstrap/create-application-runtime.ts"] })
+          ],
+          edges: [
+            { from: "definition", to: "ext-registry", label: "register", kind: "register" },
+            { from: "ext-registry", to: "ext-service", label: "definitions" },
+            { from: "settings-ui", to: "ext-service", label: "Preload IPC" },
+            { from: "ext-service", to: "workflow", label: "orchestrate" },
+            { from: "workflow", to: "path-manager", label: "staging / commit" },
+            { from: "workflow", to: "installer", label: "install" },
+            { from: "workflow", to: "manifest-file", label: "write / inspect", kind: "persist" },
+            { from: "producer", to: "ext-service", label: "requireExecutable" },
+            { from: "artifact-service-node", to: "producer", label: "produce" },
+            { from: "artifact-service-node", to: "artifact-storage", label: "cache", kind: "persist" },
+            { from: "provider", to: "artifact-service-node", label: "getOrCreate" },
+            { from: "provider", to: "materialize", label: "implements" },
+            { from: "materialize", to: "artifact-storage", label: "reuse cached output" },
+            { from: "settings-ui", to: "second-lib-gap", label: "需要泛化", kind: "planned" }
+          ]
+        },
+
+        derivation: {
+          index: "05",
+          navLabel: "派生 Asset 与关联",
+          title: "Artifact、Generated Asset、Reference 与 Link",
+          description: "先判断结果是否需要成为用户拥有的正式内容。可重建表示走 Artifact；可独立打开、重命名和继续派生的结果走 generated Asset。",
+          height: 900,
+          guide: node({
+            id: "derivation-guide",
+            label: "最重要的二分",
+            kicker: "DOMAIN DECISION",
+            summary: "Office 的 PDF 预览是 Artifact；Mind Map、讲义和摘要文件是 generated Asset。两条路径不能混用：Artifact 是缓存，Generated Asset 是领域实体。",
+            responsibilities: [
+              "Artifact：源内容未变时复用；源 Revision 或 Producer Version 改变时重建。",
+              "Generated Asset：写入 assets/generated，由 AssetService 入库，出现在生成中心。",
+              "AssetReference：某个 Asset 总体参考了哪个 source Asset。",
+              "AssetLink：某个 Asset 指向 / 派生出哪个 target Asset。",
+              "节点、页区、时间段等局部绑定保存在所属 Asset content 中，只保存关系 ID + Anchor。"
+            ],
+            boundaries: [
+              "不要把 Reference / Link 字段塞进 Asset 主表。",
+              "不要在 Mind Map 专用表重复保存通用关系。",
+              "不要直接 new Database；通过 AssetAssociationService 的 ensure / delete 操作。"
+            ],
+            files: ["src/main/artifacts/", "src/main/assets/asset-service.ts", "src/main/asset-associations/"]
+          }),
+          nodes: [
+            node({ id: "decision", label: "结果是否是用户拥有的正式内容？", kicker: "DECISION", caption: "能否独立打开、命名、继续派生？", x: 34, y: 3, w: 32, summary: "若只是播放器 / 阅读器需要的中间表示，走 Artifact；若要进入 Asset 列表并形成学习成果，走 Generated Asset。" }),
+            node({ id: "artifact", label: "Rebuildable Artifact", kicker: "CACHE BRANCH", caption: "例如 Office → PDF preview", x: 5, y: 26, w: 24, childView: "external", summary: "由 ArtifactService 管理，不创建 Asset、Reference 或 Link。", files: ["src/main/artifacts/"] }),
+            node({ id: "processor", label: "Feature Task Processor", kicker: "DURABLE BRANCH", caption: "发现 · 校验 · 提交工作区产物", x: 71, y: 26, w: 24, childView: "generation", summary: "TaskDefinition.process 的 Feature 实现负责读取候选、校验、必要时修复，并提交正式结果。", files: ["src/workbenches/mindmap/generation/mindmap-generation-processor.ts"] }),
+            node({ id: "stage", label: "AssetService.stageGeneratedFile", kicker: "DOMAIN WRITE", caption: "幂等文件名 · generated creationKind", x: 71, y: 49, w: 24, summary: "在当前 Project 的 assets/generated 中安全落盘并创建或复用 Asset。Task 通常用 taskId 作为文件名保证恢复幂等。", files: ["src/main/assets/asset-service.ts"] }),
+            node({ id: "generated", label: "Generated Asset", kicker: "DURABLE ENTITY", caption: "Asset row + contentRef + generated file", x: 71, y: 72, w: 24, summary: "正式可打开内容。会出现在 GenerationCenter 的 AssetPanel，并由对应 Workbench 打开。", files: ["src/shared/assets.ts", "src/main/assets/asset-database.ts"] }),
+            node({ id: "association-service", label: "AssetAssociationService", kicker: "PROJECT-SCOPED SERVICE", caption: "ensureReference · ensureLink · lookup", x: 38, y: 49, w: 24, summary: "关系唯一写入口。内存索引按 owner-target pair 去重，Project 生命周期内提供快速查询。", files: ["src/main/asset-associations/asset-association-service.ts"] }),
+            node({ id: "reference", label: "AssetReference", kicker: "SOURCE EDGE", caption: "assetId → sourceAssetId", x: 5, y: 72, w: 24, summary: "说明 generated Asset 总体参考了哪些资料。Mind Map 生成时，每个来源 Asset 只有一条 Reference。", extension: ["ensureReference(generatedAssetId, { sourceAssetId })。"], files: ["src/shared/asset-associations.ts", "src/main/asset-associations/asset-reference-database.ts"] }),
+            node({ id: "link", label: "AssetLink", kicker: "TARGET EDGE", caption: "assetId → targetAssetId", x: 38, y: 72, w: 24, summary: "说明一个 Asset 指向或派生出了另一个正式 Asset。例如 Mind Map 节点派生讲义：owner 是 Mind Map，target 是讲义。", extension: ["ensureLink(mindMapAssetId, { targetAssetId: lectureAssetId })。"], files: ["src/shared/asset-associations.ts", "src/main/asset-associations/asset-link-database.ts"] }),
+            node({ id: "content-binding", label: "Feature Content Association", kicker: "LOCAL POSITION", caption: "relation ID + AssetTarget / Anchor", x: 5, y: 84, w: 38, summary: "媒体内部哪个节点 / Frame / 页区对应关系，不属于通用关系表。Mind Map 在 associations.nodes / frames 中保存 referenceId + sourceTarget 与 linkIds。", files: ["src/workbenches/mindmap/document.ts", "src/workbenches/mindmap/association-mapper.ts"] }),
+            node({ id: "mindmap-example", label: "例：资料 → Mind Map", kicker: "REFERENCE FLOW", caption: "sources → references → node bindings", x: 48, y: 84, w: 22, summary: "Mind Map Asset 对每个来源 ensureReference；候选中的 source alias 映射为 referenceId；节点绑定 sourceTarget={scope:'asset'} 或未来更细 Anchor。" }),
+            node({ id: "lecture-example", label: "例：节点 → 讲义", kicker: "LINK FLOW", caption: "node focus → lecture Asset → linkId", x: 74, y: 84, w: 22, status: "planned", summary: "讲义 Processor 创建 generated Asset；Mind Map ensureLink 到讲义；再以 Revision 写回 Mind Map 节点 associations.linkIds。讲义自身可另建 Reference 指向 Mind Map 或原始来源。", boundaries: ["更新 Mind Map content 时必须走 Handle Revision 检查，避免覆盖用户已编辑内容。"] })
+          ],
+          edges: [
+            { from: "decision", to: "artifact", label: "否：可重建缓存" },
+            { from: "decision", to: "processor", label: "是：正式内容" },
+            { from: "processor", to: "stage", label: "commit" },
+            { from: "stage", to: "generated", label: "file + row", kind: "persist" },
+            { from: "processor", to: "association-service", label: "ensure relations" },
+            { from: "association-service", to: "reference", label: "来源" },
+            { from: "association-service", to: "link", label: "目标" },
+            { from: "reference", to: "content-binding", label: "referenceId" },
+            { from: "link", to: "content-binding", label: "linkId" },
+            { from: "content-binding", to: "mindmap-example", label: "current" },
+            { from: "content-binding", to: "lecture-example", label: "next", kind: "planned" }
+          ]
+        },
+
+        generation: {
+          index: "06",
+          navLabel: "AI 生成任务",
+          title: "从生成入口到 Agent Workspace，再到正式 Asset",
+          description: "全局工具和 Workbench 专属工具只有“如何收集上下文”不同；二者必须发起同一种 GenerationTask，并由 Main 的 TaskDefinition 决定 Prompt、能力和提交。",
+          height: 1040,
+          guide: node({
+            id: "generation-guide",
+            label: "一条后端主路，两种前端入口",
+            kicker: "GOLDEN RULE",
+            summary: "Renderer 只产生 instruction JSON 与 assetReference bindings。systemInstruction、toolRequirements、skills、mcpServers、workspace configs、校验 / 修复 / 提交全部属于 Main TaskDefinition。不要为每个 Workbench 造一套 Agent Service。",
+            responsibilities: [
+              "全局工具：从 Project 选中的资料构造请求。",
+              "Workbench 专属工具：从当前 assetId、focus Anchor、selection inputs 构造请求。",
+              "二者都调用 startGenerationTask。",
+              "GenerationTaskService 负责持久化、恢复、取消、重试和事件。",
+              "TaskDefinition.process 可在同一 TaskAgentSession 中多轮 call、校验和修复。"
+            ],
+            boundaries: [
+              "当前 Mind Map 全局入口仍写死在 GenerationCenter/useGenerationTasks；第二个全局任务前必须先抽统一 Registry + Launcher。",
+              "Workbench Action 不保存 system prompt，不选择 Provider，不直接操作 Session File。",
+              "GenerationTask 不预设 outputRef；具体产物由 Processor 自己发现。"
+            ],
+            files: ["src/main/generation/", "src/renderer/generation/", "src/workbenches/mindmap/generation/"]
+          }),
+          nodes: [
+            node({ id: "global-current", label: "当前全局 Mind Map 入口", kicker: "RENDERER · CURRENT", caption: "selected sources → MindMap dialog", x: 3, y: 3, w: 22, status: "partial", summary: "已经能选择 Project 资料并启动 mindmap.generate@1，但工具列表、对话框和 startMindMap 仍是 Mind Map 特化。", files: ["src/renderer/generation/GenerationCenter.tsx", "src/renderer/generation/use-generation-tasks.ts"] }),
+            node({ id: "workbench-current", label: "Workbench generation-tool", kicker: "RENDERER · CURRENT", caption: "Action Contribution + invocation context", x: 29, y: 3, w: 22, status: "partial", summary: "通用 Surface 与 Contribution 已实现；Mind Map 的节点问答 / 派生资料 / 讲义 Action 目前仍 disabled。", extension: ["Action 从 invocation.focus 和 inputs 构造媒体特有 Instruction。"], files: ["src/workbenches/mindmap/renderer-actions.ts", "src/renderer/workbench/actions/workbench-contribution.ts"] }),
+            node({ id: "global-registry", label: "GlobalGenerationToolRegistry", kicker: "RENDERER · NEXT", caption: "presentation + input UI loader + request builder", x: 55, y: 3, w: 20, status: "planned", summary: "新增第二种全局生成工具前建立的统一注册表。Feature 注册展示信息、输入界面 loader 和把 UI draft 转成 StartGenerationTaskRequest 的 builder。", extension: ["建议路径：src/renderer/generation/tools/generation-tool-registry.ts。", "由中央 Catalog 注册，GenerationCenter 不再硬编码 applicationTools。"] }),
+            node({ id: "launcher", label: "GenerationTaskLauncher", kicker: "RENDERER · NEXT", caption: "所有入口共享 start / validate / optimistic state", x: 79, y: 3, w: 18, status: "planned", summary: "全局 Registry 和 Workbench Action 共同调用的薄客户端。只负责发起 Preload 请求和校验返回，不保存 Prompt 或 Main 领域逻辑。", extension: ["建议路径：src/renderer/generation/generation-task-launcher.ts。", "任务列表订阅与某种任务的 draft UI 分离。"] }),
+            node({ id: "request", label: "StartGenerationTaskRequest", kicker: "SHARED IPC DTO", caption: "definition id/version · instruction · assetReferences", x: 39, y: 22, w: 23, summary: "所有入口统一输出的最小请求。Renderer 不发送 Workspace 路径、Provider、system prompt 或工具实现。", files: ["src/shared/generation-tasks.ts", "src/shared/generation-definitions.ts"] }),
+            node({ id: "task-service", label: "GenerationTaskService", kicker: "MAIN SERVICE", caption: "create · persist · run · retry · cancel · recover", x: 39, y: 40, w: 23, summary: "校验 Definition / Instruction / Asset slots，写 GenerationTaskDatabase，管理活动 Project 中未完成任务和后台执行。", files: ["src/main/generation/generation-task-service.ts", "src/main/generation/generation-task-database.ts"] }),
+            node({ id: "definition-registry", label: "TaskDefinitionRegistry", kicker: "MAIN REGISTRY", caption: "definitionId@version → TaskDefinition", x: 3, y: 40, w: 23, summary: "验证 ID、版本、Workspace、Tool / Skill / MCP、Asset slot 和 Instruction Factory 的声明完整性。", extension: ["每个新任务必须由中央 composition 注册。"], files: ["src/main/generation/generation-task-definition-registry.ts", "src/main/bootstrap/create-application-runtime.ts"] }),
+            node({ id: "definition", label: "Feature TaskDefinition", kicker: "DECLARATIVE + PROCESS", caption: "instruction · prompt · capabilities · workspaces · process", x: 3, y: 60, w: 23, summary: "某种生成任务的唯一业务定义。构造对象组合声明静态配置，并实现 process(context)。", responsibilities: ["systemInstruction", "toolRequirements / skills / mcpServers", "primary / secondary workspace config", "assetReferenceSchema", "instruction.parse + toUserMessage", "process(context)"], files: ["src/main/generation/contracts/task-definition.ts", "src/workbenches/mindmap/generation/mindmap-generation-task-definition.ts"] }),
+            node({ id: "preparer", label: "GenerationTaskPreparer", kicker: "FRAMEWORK PREPARE", caption: "Workspace + asset copies + manifest + user message", x: 30, y: 60, w: 23, summary: "执行所有任务共有的默认 prepare：创建工作区、物化来源副本、写控制清单、把来源 alias 追加到 user message。", files: ["src/main/generation/preparation/generation-task-preparer.ts"] }),
+            node({ id: "workspace", label: "AgentWorkspaceManager", kicker: "STATELESS MANAGER", caption: "<project>/<workspaceKey>/<shared|taskId>", x: 58, y: 60, w: 19, summary: "安全创建 TaskDefinition 指定的主 / 副工作区，不知道 Prompt、Provider 或业务语义。", files: ["src/main/agents/workspaces/agent-workspace-manager.ts", "src/main/generation/contracts/generation-workspace.ts"] }),
+            node({ id: "asset-preparer", label: "AssetReferencePreparer", kicker: "MATERIALIZATION", caption: "references/<alias>/source + metadata.json", x: 80, y: 60, w: 17, summary: "重新校验 Asset，优先调用其 Workbench.materializeContent，再复制到主 Workspace 并记录 revision。", files: ["src/main/generation/preparation/generation-asset-reference-preparer.ts"] }),
+            node({ id: "execution", label: "GenerationTaskExecution", kicker: "FRAMEWORK EXECUTION", caption: "prepare checkpoint → process → completed / failure", x: 3, y: 81, w: 23, summary: "持久化外层单调生命周期，创建 TaskAgentSession 并转发事件；不规定 Feature 的输出文件。", files: ["src/main/generation/generation-task-execution.ts"] }),
+            node({ id: "task-agent", label: "TaskAgentSession", kicker: "TASK-SCOPED AGENT", caption: "stable callKey · same provider · same session", x: 30, y: 81, w: 23, summary: "Definition 可以顺序 call generate、repair-1 等。完成的 callKey 从 checkpoint 复用，恢复时不重复发 Turn。", files: ["src/main/generation/generation-task-agent-session.ts"] }),
+            node({ id: "provider", label: "Selected AgentProvider", kicker: "PROVIDER ADAPTER", caption: "default tools · permissions · stream · metrics", x: 58, y: 81, w: 19, summary: "根据用户当前选择解析 Runner，合并 Provider 默认工具与 TaskDefinition 额外能力，创建 / 恢复 Provider Thread。", files: ["src/main/agents/agent-provider-service.ts", "src/main/agents/providers/codex-agent-provider.ts"] }),
+            node({ id: "session-file", label: "AgentSessionFile", kicker: "FILE MAPPING", caption: "workspace locator → { providerId: sessionId }", x: 80, y: 81, w: 17, summary: "保存在 Project .learning-companion 元数据目录；同一 locator 可为多个 Provider 保存独立绑定。", files: ["src/main/agents/sessions/agent-session-file.ts", "src/main/agents/sessions/agent-session.ts"] }),
+            node({ id: "candidate", label: "Agent Workspace Candidate", kicker: "FILE OUTPUT", caption: "例如 output/mindmap-candidate.json", x: 18, y: 84, w: 23, summary: "Agent 在授权 Workspace 中写入候选。文件名和结构由具体 TaskDefinition / Processor 约定，不属于通用 Task 字段。" }),
+            node({ id: "process", label: "TaskDefinition.process()", kicker: "FEATURE CONTROL LOOP", caption: "call → inspect → validate → repair → commit", x: 46, y: 84, w: 23, summary: "Feature 自己发现候选、做结构校验、在同一 Session 发修复 Turn，并最终通过领域 Service 提交。", files: ["src/workbenches/mindmap/generation/mindmap-generation-processor.ts"] }),
+            node({ id: "result", label: "Generated Asset + Associations", kicker: "DOMAIN RESULT", caption: "stageGeneratedFile → ensureReference / Link", x: 74, y: 84, w: 23, childView: "derivation", summary: "成功结果进入正式 Asset 与通用关系；Task 标记 completed 后从活动内存集合释放，但数据库历史保留。" })
+          ],
+          edges: [
+            { from: "global-current", to: "request", label: "当前直连" },
+            { from: "workbench-current", to: "launcher", label: "未来共用", kind: "planned" },
+            { from: "global-registry", to: "launcher", label: "注册工具", kind: "planned" },
+            { from: "launcher", to: "request", label: "build + start", kind: "planned" },
+            { from: "request", to: "task-service", label: "Preload / IPC" },
+            { from: "task-service", to: "definition-registry", label: "require" },
+            { from: "definition-registry", to: "definition", label: "definition", kind: "register" },
+            { from: "task-service", to: "execution", label: "run" },
+            { from: "execution", to: "preparer", label: "ensurePrepared" },
+            { from: "preparer", to: "workspace", label: "prepare paths" },
+            { from: "preparer", to: "asset-preparer", label: "copy sources" },
+            { from: "execution", to: "process", label: "definition.process" },
+            { from: "process", to: "task-agent", label: "call()" },
+            { from: "task-agent", to: "provider", label: "runTurn" },
+            { from: "provider", to: "session-file", label: "bind / resume", kind: "persist" },
+            { from: "provider", to: "candidate", label: "Agent writes" },
+            { from: "candidate", to: "process", label: "read / validate" },
+            { from: "process", to: "result", label: "commit" },
+            { from: "definition", to: "preparer", label: "static declarations" }
+          ]
+        },
+
+        persistence: {
+          index: "07",
+          navLabel: "命名与状态边界",
+          title: "Service、Manager、Database、File、Handle 等术语",
+          description: "后缀不是装饰，而是在告诉协作者对象是否拥有领域状态、是否执行 I/O、是否需要释放，以及谁才是事实来源。",
+          height: 840,
+          guide: node({
+            id: "persistence-guide",
+            label: "命名选择顺序",
+            kicker: "GLOSSARY",
+            summary: "先问对象保存什么状态，再问它协调领域规则还是只做基础操作，最后才决定后缀。相同后缀应传达相同生命周期语义。",
+            responsibilities: [
+              "领域生命周期与运行态：Service。",
+              "无状态路径 / 文件系统操作：Manager。",
+              "SQLite 映射：Database。",
+              "一个明确结构化文件的读写：File。",
+              "取得后带 capability、revision、close 的资源：Handle。",
+              "按 ID 保存定义：Registry。",
+              "可替换后端实现：Provider。",
+              "两个既有契约之间转换：Adapter。",
+              "多步骤操作过程：Workflow。",
+              "Renderer 响应式内存状态：Store；短期可重建结果：Cache。"
+            ],
+            boundaries: ["不要因为类有方法就叫 Manager；不要因为写文件就一律叫 Store。"],
+            files: ["TECH_STACK.md"]
+          }),
+          nodes: [
+            node({ id: "data", label: "纯数据 / Contract", kicker: "NO IO · NO LIFECYCLE", caption: "Project · Asset · DTO · document", x: 38, y: 4, w: 25, summary: "不可变数据、校验、clone 与创建函数。行为由外部对象组合。", boundaries: ["不持有数据库、Electron 或文件系统对象。"], files: ["src/shared/assets.ts", "src/workbenches/mindmap/document.ts"] }),
+            node({ id: "service", label: "*Service", kicker: "DOMAIN ORCHESTRATION", caption: "可持有运行态与生命周期", x: 4, y: 29, w: 20, summary: "编排多个端口、维护领域不变量、Project / App 生命周期和内存索引。", extension: ["例：AssetService、GenerationTaskService。"], boundaries: ["Service 可以映射到 Database 或 File；名字描述职责，不描述存储介质。"] }),
+            node({ id: "manager", label: "*Manager", kicker: "OPERATION POLICY", caption: "无状态路径 / 文件操作", x: 29, y: 29, w: 20, summary: "提供安全的操作能力，但不拥有业务实体集合或活动 Project。", extension: ["例：ProjectWorkspaceManager、AgentWorkspaceManager、AssetArtifactFileManager。"], boundaries: ["若开始持有领域状态或编排多个业务流程，应重新评估为 Service。"] }),
+            node({ id: "database", label: "*Database", kicker: "SQLITE ADAPTER", caption: "table mapping · query · transaction", x: 54, y: 29, w: 20, summary: "涉及 SQLite 的领域持久化统一使用 Database。是否有内存 Map 必须由该领域契约明确。", extension: ["例：AssetDatabase、GenerationTaskDatabase。"], boundaries: ["Database 不决定 UI 生命周期或业务流程。"] }),
+            node({ id: "file", label: "*File", kicker: "STRUCTURED FILE IO", caption: "一个稳定文件格式的 read / write", x: 79, y: 29, w: 17, summary: "明确把某种结构保存到文件，并负责格式、版本、原子写入与路径校验。", extension: ["例：AgentSessionFile、GenerationPreparedManifestFile。"], boundaries: ["File 不等于泛化文件系统 Store。"] }),
+            node({ id: "handle", label: "*Handle", kicker: "ACQUIRED RESOURCE", caption: "capabilities · revision · close", x: 4, y: 55, w: 20, summary: "解析后得到、需要生命周期管理的资源能力。", extension: ["例：ContentHandle、LocalFileContentHandle。"], boundaries: ["Handle 不拥有全局注册，也不替代 Service。"] }),
+            node({ id: "registry", label: "*Registry", kicker: "DEFINITION MAP", caption: "stable ID → definition / implementation", x: 29, y: 55, w: 20, summary: "启动期注册可扩展定义，通常拒绝重复 ID。", extension: ["例：WorkbenchRegistry、AssetArtifactRegistry、TaskDefinitionRegistry。"], boundaries: ["Registry 不执行完整业务生命周期。"] }),
+            node({ id: "provider", label: "*Provider", kicker: "REPLACEABLE BACKEND", caption: "Workbench 或 Agent 的具体实现", x: 54, y: 55, w: 20, summary: "实现稳定端口的一种后端策略。", extension: ["例：MindMapWorkbenchProvider、CodexAgentProvider。"], boundaries: ["Provider-specific DTO 留在 Adapter / Provider 内。"] }),
+            node({ id: "adapter", label: "*Adapter", kicker: "CONTRACT TRANSLATION", caption: "把一个现有接口适配到另一个", x: 79, y: 55, w: 17, summary: "负责格式、库 API 或协议之间的转换。", extension: ["例：MindMapContentAdapter、PDF Viewer Adapter。"], boundaries: ["不要把完整业务编排塞进 Adapter。"] }),
+            node({ id: "workflow", label: "*Workflow", kicker: "MULTI-STEP OPERATION", caption: "stage · verify · commit · rollback", x: 4, y: 80, w: 20, summary: "一个有明确开始和终止的多步骤过程，通常由 Service 调用。", extension: ["例：ExternalLibraryInstallationWorkflow。"] }),
+            node({ id: "store", label: "*Store", kicker: "REACTIVE MEMORY", caption: "Renderer Zustand state", x: 29, y: 80, w: 20, summary: "当前项目中主要指 Renderer 可订阅的内存状态容器。", extension: ["例：agent-provider-store、workbench-runtime-store。"], boundaries: ["不要用 Store 命名 SQLite 或结构化文件读写。"] }),
+            node({ id: "cache", label: "*Cache", kicker: "EPHEMERAL MEMORY", caption: "可丢弃、可重建、短生命周期", x: 54, y: 80, w: 20, summary: "用于短期记忆或避免重复操作；丢失不影响领域真相。", extension: ["例：InMemoryFileDialogLastDirectoryCache。"] }),
+            node({ id: "repository", label: "*Repository", kicker: "STABLE RECORD PORT", caption: "非 SQLite 的稳定键记录", x: 79, y: 80, w: 17, summary: "在本项目中保留给不直接暴露 SQLite 语义、按稳定键保存设置或记录的端口。", extension: ["例：JsonSettingsRepository。"], boundaries: ["若实现明确是 SQLite，仍命名 Database。"] })
+          ],
+          edges: [
+            { from: "service", to: "data", label: "编排" },
+            { from: "manager", to: "service", label: "被使用" },
+            { from: "database", to: "service", label: "持久化端口", kind: "persist" },
+            { from: "file", to: "service", label: "文件端口", kind: "persist" },
+            { from: "handle", to: "service", label: "生命周期资源" },
+            { from: "registry", to: "provider", label: "注册", kind: "register" },
+            { from: "adapter", to: "provider", label: "转换" },
+            { from: "workflow", to: "service", label: "被编排" },
+            { from: "store", to: "data", label: "UI 投影" },
+            { from: "cache", to: "manager", label: "短期记忆" },
+            { from: "repository", to: "service", label: "记录端口", kind: "persist" }
+          ]
+        },
+
+        contributor: {
+          index: "08",
+          navLabel: "同学开发路线",
+          title: "把一个新 Workbench 从目录做到完整能力",
+          description: "这不是按文件机械照抄的清单，而是一条决策树：先完成最小 Workbench，再根据真实需求选择外部组件、Artifact、Generated Asset 或 GenerationTask 分支。",
+          height: 900,
+          guide: node({
+            id: "contributor-guide",
+            label: "推荐交付边界",
+            kicker: "TEAM PLAYBOOK",
+            summary: "每位同学负责一个垂直 Workbench Feature，但必须使用中央 Host、Catalog、Service 和 Association / Generation 基础设施。Feature 可以拥有媒体特有解析、UI、Anchor、Processor 和 Tool，不能复制全局架构。",
+            responsibilities: [
+              "PR 1：shared/main/renderer + catalog + tests，先能稳定打开。",
+              "PR 2：Workbench State、Interaction 与菜单 Surface。",
+              "PR 3：需要时接入 External Library / Artifact。",
+              "PR 4：需要时定义 TaskDefinition 与生成入口。",
+              "PR 5：需要时提交 Generated Asset，并建立 Reference / Link。"
+            ],
+            boundaries: [
+              "每个 PR 都应能独立验证，不用一个巨型提交同时改所有领域。",
+              "不要为了赶进度在 ProjectPage、GenerationCenter 或 Bootstrap 中永久硬编码第二套特例。"
+            ]
+          }),
+          nodes: [
+            node({ id: "choose", label: "1. 明确媒体与内容能力", kicker: "DESIGN FIRST", caption: "mediaType · read/write/stream · Anchor", x: 36, y: 3, w: 28, summary: "决定媒体语义、需要的 ContentHandle capability、是否可编辑、哪些选择可以成为稳定 Anchor。", extension: ["先写 shared.ts 和测试。"] }),
+            node({ id: "minimal", label: "2. 完成最小双端 Workbench", kicker: "BASELINE", caption: "shared + main + renderer + catalog", x: 36, y: 24, w: 28, childView: "workbench", summary: "Main 能 open/close，Renderer 能稳定显示，Catalog 双端注册一致，切换 Asset 会释放 Handle。" }),
+            node({ id: "interaction", label: "3. 接入共享交互设施", kicker: "OPTIONAL UI", caption: "state · selection · context menu · overflow", x: 4, y: 48, w: 24, childView: "renderer", summary: "Manifest 声明 Facility；View 发布 Interaction；renderer-actions 贡献 Action。不要自己造右键菜单容器。" }),
+            node({ id: "external-question", label: "需要外部程序或转换？", kicker: "OPTIONAL BRANCH", caption: "External Library + Artifact", x: 38, y: 48, w: 24, childView: "external", summary: "二进制由 ExternalLibraryService 管；可重建输出由 ArtifactService 管；通过 materializeContent 复用。" }),
+            node({ id: "generation-question", label: "需要 AI 操作？", kicker: "OPTIONAL BRANCH", caption: "Global 或 Workbench-specific trigger", x: 72, y: 48, w: 24, childView: "generation", summary: "只在 Renderer 收集上下文，统一发起 GenerationTask。TaskDefinition 才拥有 Prompt、工具、Workspace 与 process。" }),
+            node({ id: "artifact-question", label: "结果只是中间预览？", kicker: "CACHE DECISION", caption: "是 → AssetArtifact", x: 4, y: 72, w: 24, childView: "derivation", summary: "可重建、无需出现在 Asset 列表的内容只做 Artifact。" }),
+            node({ id: "asset-question", label: "结果需要独立打开？", kicker: "DOMAIN DECISION", caption: "是 → Generated Asset", x: 38, y: 72, w: 24, childView: "derivation", summary: "使用 AssetService.stageGeneratedFile；成功后由对应 Workbench 打开。" }),
+            node({ id: "association-question", label: "结果与来源 / 目标有关？", kicker: "RELATION DECISION", caption: "Reference + Link + content anchor", x: 72, y: 72, w: 24, childView: "derivation", summary: "总体来源进 AssetReference，派生目标进 AssetLink，局部节点 / 页区绑定进 Feature content。" }),
+            node({ id: "tests", label: "4. 交付验证", kicker: "QUALITY GATE", caption: "contract · provider · renderer · catalog · lifecycle", x: 36, y: 89, w: 28, summary: "至少验证 shared 运行时校验、Main Provider 生命周期、Renderer 状态、Catalog 注册完整性和 Project / Asset 切换。需要文件 / 外部程序时补 Windows 路径与取消测试。", extension: ["运行与改动范围匹配的测试；功能改动默认 pnpm check。"], files: ["src/workbenches/catalog/builtin-workbenches.test.ts", "TECH_STACK.md"] })
+          ],
+          edges: [
+            { from: "choose", to: "minimal", label: "契约先行" },
+            { from: "minimal", to: "interaction", label: "需要交互" },
+            { from: "minimal", to: "external-question", label: "需要转换" },
+            { from: "minimal", to: "generation-question", label: "需要 AI" },
+            { from: "external-question", to: "artifact-question", label: "可重建输出" },
+            { from: "generation-question", to: "asset-question", label: "正式结果" },
+            { from: "asset-question", to: "association-question", label: "建立关系" },
+            { from: "interaction", to: "tests", label: "verify" },
+            { from: "artifact-question", to: "tests", label: "verify" },
+            { from: "association-question", to: "tests", label: "verify" }
+          ]
+        }
+      };
+
+      var viewOrder = [
+        "overview",
+        "renderer",
+        "services",
+        "workbench",
+        "external",
+        "derivation",
+        "generation",
+        "persistence",
+        "contributor"
+      ];
+
+      var currentViewId = "overview";
+      var history = [];
+      var selectedNodeId = null;
+      var viewNav = document.getElementById("viewNav");
+      var graph = document.getElementById("graph");
+      var nodeLayer = document.getElementById("nodeLayer");
+      var edgePaths = document.getElementById("edgePaths");
+      var edgeLabels = document.getElementById("edgeLabels");
+      var detailContent = document.getElementById("detailContent");
+      var breadcrumb = document.getElementById("breadcrumb");
+      var viewTitle = document.getElementById("viewTitle");
+      var viewDescription = document.getElementById("viewDescription");
+      var backButton = document.getElementById("backButton");
+
+      function appendTextElement(parent, tag, className, text) {
+        var element = document.createElement(tag);
+        if (className) {
+          element.className = className;
+        }
+        element.textContent = text;
+        parent.appendChild(element);
+        return element;
+      }
+
+      function renderNavigation() {
+        viewNav.replaceChildren();
+        viewOrder.forEach(function (viewId) {
+          var view = views[viewId];
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "nav-button";
+          button.dataset.viewId = viewId;
+          if (viewId === currentViewId) {
+            button.setAttribute("aria-current", "page");
+          }
+          appendTextElement(button, "span", "nav-index", view.index);
+          appendTextElement(button, "span", "nav-label", view.navLabel);
+          button.addEventListener("click", function () {
+            navigateTo(viewId, false);
+          });
+          viewNav.appendChild(button);
+        });
+      }
+
+      function renderBreadcrumb() {
+        breadcrumb.replaceChildren();
+        var rootButton = document.createElement("button");
+        rootButton.type = "button";
+        rootButton.textContent = "全局总览";
+        rootButton.addEventListener("click", function () {
+          navigateTo("overview", false);
+        });
+        breadcrumb.appendChild(rootButton);
+
+        history.forEach(function (entry) {
+          if (entry.viewId === "overview") {
+            return;
+          }
+          appendTextElement(breadcrumb, "span", "", "›");
+          var button = document.createElement("button");
+          button.type = "button";
+          button.textContent = views[entry.viewId].navLabel;
+          button.addEventListener("click", function () {
+            var index = history.indexOf(entry);
+            history = history.slice(0, index);
+            currentViewId = entry.viewId;
+            selectedNodeId = entry.selectedNodeId || null;
+            render();
+          });
+          breadcrumb.appendChild(button);
+        });
+
+        if (currentViewId !== "overview") {
+          appendTextElement(breadcrumb, "span", "", "›");
+          appendTextElement(breadcrumb, "span", "", views[currentViewId].navLabel);
+        }
+      }
+
+      function navigateTo(viewId, preserveHistory, sourceNodeId) {
+        if (!views[viewId] || viewId === currentViewId) {
+          return;
+        }
+        if (preserveHistory) {
+          history.push({
+            viewId: currentViewId,
+            selectedNodeId: sourceNodeId || selectedNodeId
+          });
+        } else {
+          history = [];
+        }
+        currentViewId = viewId;
+        selectedNodeId = null;
+        render();
+      }
+
+      function findNode(view, nodeId) {
+        return view.nodes.find(function (entry) {
+          return entry.id === nodeId;
+        });
+      }
+
+      function relatedNodeIds(view, nodeId) {
+        var ids = new Set([nodeId]);
+        view.edges.forEach(function (edge) {
+          if (edge.from === nodeId) {
+            ids.add(edge.to);
+          }
+          if (edge.to === nodeId) {
+            ids.add(edge.from);
+          }
+        });
+        return ids;
+      }
+
+      function applySelectionClasses() {
+        var view = views[currentViewId];
+        var related = selectedNodeId ? relatedNodeIds(view, selectedNodeId) : null;
+        nodeLayer.querySelectorAll(".node").forEach(function (element) {
+          var id = element.dataset.nodeId;
+          element.classList.toggle("is-selected", id === selectedNodeId);
+          element.classList.toggle("is-dimmed", Boolean(related && !related.has(id)));
+        });
+        edgePaths.querySelectorAll(".edge-path").forEach(function (path) {
+          var isRelated = Boolean(
+            selectedNodeId &&
+            (path.dataset.from === selectedNodeId || path.dataset.to === selectedNodeId)
+          );
+          path.classList.toggle("is-related", isRelated);
+          path.classList.toggle("is-dimmed", Boolean(selectedNodeId && !isRelated));
+        });
+        edgeLabels.querySelectorAll(".edge-label").forEach(function (label) {
+          var isRelated = Boolean(
+            selectedNodeId &&
+            (label.dataset.from === selectedNodeId || label.dataset.to === selectedNodeId)
+          );
+          label.classList.toggle("is-related", isRelated);
+          label.classList.toggle("is-dimmed", Boolean(selectedNodeId && !isRelated));
+        });
+      }
+
+      function renderNodes() {
+        var view = views[currentViewId];
+        graph.style.minHeight = String(view.height) + "px";
+        nodeLayer.replaceChildren();
+        view.nodes.forEach(function (item) {
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "node " + item.status;
+          button.dataset.nodeId = item.id;
+          button.style.left = String(item.x) + "%";
+          button.style.top = String(item.y) + "%";
+          button.style.width = String(item.w) + "%";
+          button.setAttribute(
+            "aria-label",
+            item.childView ? item.label + "，进入子视图" : item.label + "，查看说明"
+          );
+          appendTextElement(button, "span", "node-kicker", item.kicker);
+          appendTextElement(button, "span", "node-status", statusLabels[item.status]);
+          appendTextElement(button, "span", "node-label", item.label);
+          appendTextElement(button, "span", "node-caption", item.caption || item.summary);
+          if (item.childView) {
+            appendTextElement(button, "span", "node-enter", "↗");
+          }
+          button.addEventListener("click", function () {
+            if (item.childView) {
+              navigateTo(item.childView, true, item.id);
+              return;
+            }
+            selectedNodeId = item.id;
+            renderDetail(item);
+            applySelectionClasses();
+          });
+          nodeLayer.appendChild(button);
+        });
+        applySelectionClasses();
+      }
+
+      function anchorPoint(fromRect, toRect, graphRect) {
+        var fromCenterX = fromRect.left + fromRect.width / 2;
+        var fromCenterY = fromRect.top + fromRect.height / 2;
+        var toCenterX = toRect.left + toRect.width / 2;
+        var toCenterY = toRect.top + toRect.height / 2;
+        var dx = toCenterX - fromCenterX;
+        var dy = toCenterY - fromCenterY;
+        var horizontal = Math.abs(dx) >= Math.abs(dy);
+        var startX;
+        var startY;
+        var endX;
+        var endY;
+
+        if (horizontal) {
+          startX = dx >= 0 ? fromRect.right : fromRect.left;
+          startY = fromCenterY;
+          endX = dx >= 0 ? toRect.left : toRect.right;
+          endY = toCenterY;
+        } else {
+          startX = fromCenterX;
+          startY = dy >= 0 ? fromRect.bottom : fromRect.top;
+          endX = toCenterX;
+          endY = dy >= 0 ? toRect.top : toRect.bottom;
+        }
+
+        return {
+          startX: startX - graphRect.left,
+          startY: startY - graphRect.top,
+          endX: endX - graphRect.left,
+          endY: endY - graphRect.top,
+          horizontal: horizontal
+        };
+      }
+
+      function drawEdges() {
+        var view = views[currentViewId];
+        var graphRect = graph.getBoundingClientRect();
+        edgePaths.replaceChildren();
+        edgeLabels.replaceChildren();
+        if (window.matchMedia("(max-width: 760px)").matches) {
+          return;
+        }
+
+        view.edges.forEach(function (edge) {
+          var from = nodeLayer.querySelector('[data-node-id="' + edge.from + '"]');
+          var to = nodeLayer.querySelector('[data-node-id="' + edge.to + '"]');
+          if (!from || !to) {
+            return;
+          }
+          var points = anchorPoint(from.getBoundingClientRect(), to.getBoundingClientRect(), graphRect);
+          var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          var d;
+          if (points.horizontal) {
+            var midX = (points.startX + points.endX) / 2;
+            d = "M " + points.startX + " " + points.startY +
+              " C " + midX + " " + points.startY +
+              ", " + midX + " " + points.endY +
+              ", " + points.endX + " " + points.endY;
+          } else {
+            var midY = (points.startY + points.endY) / 2;
+            d = "M " + points.startX + " " + points.startY +
+              " C " + points.startX + " " + midY +
+              ", " + points.endX + " " + midY +
+              ", " + points.endX + " " + points.endY;
+          }
+          path.setAttribute("d", d);
+          path.setAttribute("class", "edge-path " + (edge.kind || ""));
+          path.dataset.from = edge.from;
+          path.dataset.to = edge.to;
+          edgePaths.appendChild(path);
+
+          if (edge.label) {
+            var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            label.setAttribute("x", String((points.startX + points.endX) / 2));
+            label.setAttribute("y", String((points.startY + points.endY) / 2 - 5));
+            label.setAttribute("class", "edge-label");
+            label.dataset.from = edge.from;
+            label.dataset.to = edge.to;
+            label.textContent = edge.label;
+            edgeLabels.appendChild(label);
+          }
+        });
+        applySelectionClasses();
+      }
+
+      function appendListSection(title, items, ordered) {
+        if (!items || items.length === 0) {
+          return;
+        }
+        var section = document.createElement("section");
+        section.className = "detail-section";
+        appendTextElement(section, "h3", "", title);
+        var list = document.createElement(ordered ? "ol" : "ul");
+        items.forEach(function (text) {
+          appendTextElement(list, "li", "", text);
+        });
+        section.appendChild(list);
+        detailContent.appendChild(section);
+      }
+
+      function renderSources(files) {
+        if (!files || files.length === 0) {
+          return;
+        }
+        var section = document.createElement("section");
+        section.className = "detail-section";
+        appendTextElement(section, "h3", "", "源码入口");
+        var list = document.createElement("div");
+        list.className = "source-list";
+        files.forEach(function (path) {
+          var code = document.createElement("code");
+          code.className = "source-path";
+          code.textContent = path;
+          list.appendChild(code);
+        });
+        section.appendChild(list);
+        detailContent.appendChild(section);
+      }
+
+      function renderRelations(item) {
+        var view = views[currentViewId];
+        var relations = view.edges.filter(function (edge) {
+          return edge.from === item.id || edge.to === item.id;
+        });
+        if (relations.length === 0) {
+          return;
+        }
+        var section = document.createElement("section");
+        section.className = "detail-section";
+        appendTextElement(section, "h3", "", "相邻节点");
+        var list = document.createElement("div");
+        list.className = "relation-list";
+        relations.forEach(function (edge) {
+          var targetId = edge.from === item.id ? edge.to : edge.from;
+          var target = findNode(view, targetId);
+          if (!target) {
+            return;
+          }
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "relation-button";
+          button.textContent = target.label;
+          button.addEventListener("click", function () {
+            if (target.childView) {
+              navigateTo(target.childView, true, target.id);
+            } else {
+              selectedNodeId = target.id;
+              renderDetail(target);
+              applySelectionClasses();
+              var targetElement = nodeLayer.querySelector('[data-node-id="' + target.id + '"]');
+              if (targetElement) {
+                targetElement.focus({ preventScroll: true });
+              }
+            }
+          });
+          list.appendChild(button);
+        });
+        section.appendChild(list);
+        detailContent.appendChild(section);
+      }
+
+      function renderDetail(item) {
+        detailContent.replaceChildren();
+        var status = appendTextElement(detailContent, "span", "detail-status " + item.status, statusLabels[item.status]);
+        status.setAttribute("aria-label", "实现状态：" + statusLabels[item.status]);
+        appendTextElement(detailContent, "h2", "detail-title", item.label);
+        appendTextElement(detailContent, "p", "detail-summary", item.summary);
+        if (item.keyRule) {
+          appendTextElement(detailContent, "div", "key-rule", item.keyRule);
+        }
+        appendListSection("职责", item.responsibilities, false);
+        appendListSection("如何扩展", item.extension, true);
+        appendListSection("边界 / 不要这样做", item.boundaries, false);
+        renderSources(item.files);
+        if (item.id !== views[currentViewId].guide.id) {
+          renderRelations(item);
+        }
+        if (item.childView) {
+          var enter = document.createElement("button");
+          enter.type = "button";
+          enter.className = "enter-button";
+          enter.textContent = "进入「" + views[item.childView].navLabel + "」子视图 →";
+          enter.addEventListener("click", function () {
+            navigateTo(item.childView, true, item.id);
+          });
+          detailContent.appendChild(enter);
+        }
+      }
+
+      function render() {
+        var view = views[currentViewId];
+        viewTitle.textContent = view.title;
+        viewDescription.textContent = view.description;
+        backButton.disabled = history.length === 0;
+        renderNavigation();
+        renderBreadcrumb();
+        renderNodes();
+
+        var selected = selectedNodeId ? findNode(view, selectedNodeId) : null;
+        renderDetail(selected || view.guide);
+        window.requestAnimationFrame(drawEdges);
+      }
+
+      backButton.addEventListener("click", function () {
+        var previous = history.pop();
+        if (!previous) {
+          return;
+        }
+        currentViewId = previous.viewId;
+        selectedNodeId = previous.selectedNodeId || null;
+        render();
+      });
+
+      window.addEventListener("resize", function () {
+        window.requestAnimationFrame(drawEdges);
+      });
+
+      if ("ResizeObserver" in window) {
+        new ResizeObserver(function () {
+          window.requestAnimationFrame(drawEdges);
+        }).observe(graph);
+      }
+
+      render();
+    }());
+  </script>
+</body>
+</html>
