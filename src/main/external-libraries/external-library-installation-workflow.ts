@@ -1,3 +1,4 @@
+import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExternalLibraryProgress } from '../../shared/external-libraries';
@@ -78,13 +79,13 @@ export class ExternalLibraryInstallationWorkflow {
           totalBytes: packageDefinition.expectedSize,
         },
       });
-      const packagePath = join(
+      const partialPackagePath = join(
         stagingDirectory,
         `package.${packageDefinition.packageType}.partial`,
       );
       const downloaded = await this.dependencies.downloader.download({
         packageDefinition,
-        destinationPath: packagePath,
+        destinationPath: partialPackagePath,
         signal,
         onProgress: (progress) => {
           onStage({ status: 'downloading', progress });
@@ -93,6 +94,14 @@ export class ExternalLibraryInstallationWorkflow {
           onStage({ status: 'verifying' });
         },
       });
+      if (downloaded.packagePath !== partialPackagePath) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      const packagePath = join(
+        stagingDirectory,
+        `package.${packageDefinition.packageType}`,
+      );
+      await rename(partialPackagePath, packagePath);
       onStage({ status: 'installing' });
       const stagingInstallationDirectory = join(
         stagingDirectory,
@@ -103,7 +112,7 @@ export class ExternalLibraryInstallationWorkflow {
       );
       await installer.install(
         {
-          packagePath: downloaded.packagePath,
+          packagePath,
           stagingInstallationDirectory,
           packageDefinition,
         },

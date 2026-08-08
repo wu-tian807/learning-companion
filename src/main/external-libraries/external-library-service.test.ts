@@ -216,6 +216,12 @@ describe("ExternalLibraryService", () => {
     );
     await expect(access(executablePath)).resolves.toBeUndefined();
     expect(harness.installer.install).toHaveBeenCalledOnce();
+    expect(harness.installer.install).toHaveBeenCalledWith(
+      expect.objectContaining({
+        packagePath: expect.stringMatching(/package\.dmg$/u),
+      }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("exposes the executable to an available-status listener", async () => {

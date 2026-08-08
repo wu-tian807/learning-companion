@@ -380,10 +380,10 @@ describe('CodexAgentProvider', () => {
         Parameters<CodexRuntimeServiceApi['createThread']>
       >
     )[0][0];
-    const profileId = threadInput.configOverrides?.default_permissions;
+    const profileId = threadInput.permissions;
     expect(typeof profileId).toBe('string');
     if (typeof profileId !== 'string') {
-      throw new Error('Expected a default Codex permission profile');
+      throw new Error('Expected a Codex thread permission profile');
     }
     expect(profileId).toMatch(/^lc-generation-[a-f0-9]{24}$/u);
     expect(threadInput.permissions).toBe(profileId);
@@ -408,7 +408,6 @@ describe('CodexAgentProvider', () => {
           }),
           tools: { view_image: true },
           web_search: 'disabled',
-          default_permissions: profileId,
           'mcp_servers.user-mcp.enabled': false,
           skills: {
             config: [
@@ -434,6 +433,9 @@ describe('CodexAgentProvider', () => {
         }),
       }),
     );
+    expect(threadInput.configOverrides).not.toHaveProperty(
+      'default_permissions',
+    );
     const turnInput = (
       startTurn.mock.calls as unknown as Array<
         Parameters<CodexRuntimeServiceApi['startTurn']>
@@ -441,7 +443,7 @@ describe('CodexAgentProvider', () => {
     )[0][0];
     expect(turnInput.threadId).toBe('thread-1');
     expect(turnInput.clientUserMessageId).toMatch(/^lc-generation-/u);
-    expect(turnInput.permissions).toBe(profileId);
+    expect(turnInput.permissions).toBeUndefined();
     expect(turnInput.outputSchema).toBeUndefined();
     expect(sessions.getBinding()).toEqual(
       expect.objectContaining({

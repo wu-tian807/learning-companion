@@ -253,6 +253,9 @@ export class CodexAgentProvider
   ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
     const sessionId = resolved.binding.sessionId;
     const startedFallback = this.dependencies.now();
+    // The custom profile is selected by thread/start or thread/resume. Its
+    // definition comes from that thread's config overrides, so re-selecting
+    // it on turn/start would make Codex resolve it against ambient config.
     const stream = this.runtime.startTurn({
       threadId: sessionId,
       clientUserMessageId,
@@ -260,7 +263,6 @@ export class CodexAgentProvider
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',
-      permissions: configuration.profileId,
     });
     let activeTurnId: string | undefined;
     let usage: GenerationTokenUsage | undefined;

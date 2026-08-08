@@ -13,10 +13,14 @@ import {
 export function toThreadConfiguration(
   input: CodexThreadConfiguration,
 ): Record<string, unknown> {
-  if (input.permissions !== undefined && input.sandbox !== undefined) {
+  if (
+    input.permissions !== undefined &&
+    (input.sandbox !== undefined ||
+      input.configOverrides?.default_permissions !== undefined)
+  ) {
     throw new AppError('DATA_INTEGRITY_ERROR', {
       cause: new Error(
-        'Codex permissions and legacy sandbox cannot be used together',
+        'Codex thread permissions cannot be combined with sandbox or default_permissions',
       ),
     });
   }
