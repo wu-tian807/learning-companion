@@ -13,12 +13,36 @@ import {
 } from './src/main/agents/codex/codex-runtime-paths';
 
 const betterSqlite3Source = resolve('node_modules/better-sqlite3');
+const napiCanvasSource = resolve('node_modules/@napi-rs/canvas');
+const pdfJsSource = resolve('node_modules/pdfjs-dist');
 const betterSqlite3RuntimeEntries = new Set([
   'LICENSE',
   'lib',
   'package.json',
   'prebuilds',
 ]);
+
+function resolveNapiCanvasNativePackage(
+  platform: string,
+  arch: string,
+): string {
+  if (platform === 'win32' && arch === 'x64') {
+    return 'canvas-win32-x64-msvc';
+  }
+  if (platform === 'win32' && arch === 'arm64') {
+    return 'canvas-win32-arm64-msvc';
+  }
+  if (platform === 'darwin' && arch === 'x64') {
+    return 'canvas-darwin-x64';
+  }
+  if (platform === 'darwin' && arch === 'arm64') {
+    return 'canvas-darwin-arm64';
+  }
+
+  throw new Error(
+    `@napi-rs/canvas does not support packaged target ${platform}/${arch}`,
+  );
+}
 
 async function copyBetterSqlite3(
   buildPath: string,
@@ -51,6 +75,49 @@ async function copyBetterSqlite3(
   });
 }
 
+async function copyNapiCanvas(
+  buildPath: string,
+  platform: string,
+  arch: string,
+) {
+  const nativePackageName = resolveNapiCanvasNativePackage(
+    platform,
+    arch,
+  );
+  const nativePackageSource = resolve(
+    'node_modules/@napi-rs',
+    nativePackageName,
+  );
+  const destinationRoot = join(
+    buildPath,
+    'node_modules',
+    '@napi-rs',
+  );
+
+  await mkdir(destinationRoot, { recursive: true });
+  await Promise.all([
+    cp(napiCanvasSource, join(destinationRoot, 'canvas'), {
+      recursive: true,
+    }),
+    cp(
+      nativePackageSource,
+      join(destinationRoot, nativePackageName),
+      { recursive: true },
+    ),
+  ]);
+}
+
+async function copyPdfJs(buildPath: string) {
+  const destination = join(
+    buildPath,
+    'node_modules',
+    'pdfjs-dist',
+  );
+
+  await mkdir(dirname(destination), { recursive: true });
+  await cp(pdfJsSource, destination, { recursive: true });
+}
+
 async function copyCodexRuntime(
   buildPath: string,
   platform: string,
@@ -76,8 +143,8 @@ const config: ForgeConfig = {
     },
   },
   rebuildConfig: {
-    // better-sqlite3 13 ships Node-API binaries for our supported platforms.
-    ignoreModules: ['better-sqlite3'],
+    // These packages ship Node-API binaries for our supported platforms.
+    ignoreModules: ['better-sqlite3', '@napi-rs/canvas'],
   },
   makers: [
     {
@@ -91,11 +158,13 @@ const config: ForgeConfig = {
     },
   ],
   hooks: {
-    // Forge's Vite plugin packages only .vite, so copy the external native
-    // dependency after pruning and before ASAR is finalized.
+    // Forge's Vite plugin packages only .vite, so copy external runtime
+    // dependencies after pruning and before ASAR is finalized.
     packageAfterPrune: async (_config, buildPath, _version, platform, arch) => {
       await Promise.all([
         copyBetterSqlite3(buildPath, platform, arch),
+        copyNapiCanvas(buildPath, platform, arch),
+        copyPdfJs(buildPath),
         copyCodexRuntime(buildPath, platform, arch),
       ]);
     },
