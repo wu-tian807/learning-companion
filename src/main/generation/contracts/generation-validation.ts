@@ -1,3 +1,5 @@
+import { AppError } from '../../errors/app-error';
+
 export interface GenerationValidationIssue {
   readonly path: string;
   readonly message: string;
@@ -37,4 +39,27 @@ export function generationValidationFailure<T = never>(
       ),
     ),
   });
+}
+
+export class GenerationPostProcessValidationError extends AppError {
+  readonly issues: readonly GenerationValidationIssue[];
+
+  constructor(issues: readonly GenerationValidationIssue[]) {
+    const failure = generationValidationFailure(issues);
+
+    if (failure.ok) {
+      throw new Error('Generation validation failure 状态无效');
+    }
+
+    const normalized = failure.issues;
+    super('GENERATION_OUTPUT_INVALID', {
+      cause: new Error(
+        normalized
+          .map((issue) => `${issue.path}: ${issue.message}`)
+          .join('\n'),
+      ),
+    });
+    this.name = 'GenerationPostProcessValidationError';
+    this.issues = normalized;
+  }
 }

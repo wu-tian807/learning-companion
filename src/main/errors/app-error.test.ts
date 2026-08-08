@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { AppError, handleAppError } from './app-error';
+import {
+  AppError,
+  describeAppError,
+  handleAppError,
+} from './app-error';
 
 function createLogger() {
   return {
@@ -62,5 +66,23 @@ describe('App error policy', () => {
       '[project:create] INTERNAL_ERROR',
       original,
     );
+  });
+
+  it('keeps the deepest cause as task-safe diagnostic detail', () => {
+    const rpcError = new Error(
+      'failed to load configuration: invalid transport\nin `mcp_servers.codex_apps`',
+    );
+    const error = new AppError('CODEX_REQUEST_FAILED', {
+      cause: rpcError,
+    });
+
+    expect(describeAppError(error)).toEqual({
+      code: 'CODEX_REQUEST_FAILED',
+      kind: 'user',
+      userMessage: 'AI 请求没有完成，请稍后重试。',
+      retryable: true,
+      detail:
+        'failed to load configuration: invalid transport\nin `mcp_servers.codex_apps`',
+    });
   });
 });

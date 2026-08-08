@@ -30,6 +30,7 @@ export type AppErrorCode =
   | 'CODEX_RUNTIME_UNAVAILABLE'
   | 'CODEX_PROTOCOL_ERROR'
   | 'CODEX_REQUEST_FAILED'
+  | 'GENERATION_OUTPUT_INVALID'
   | 'CODEX_TURN_ACTIVE'
   | 'AGENT_PROVIDER_NOT_FOUND'
   | 'AGENT_PROVIDER_SELECTION_REQUIRED'
@@ -51,6 +52,16 @@ interface ErrorLogger {
   warn(message: string, error?: unknown): void;
   error(message: string, error?: unknown): void;
 }
+
+export interface AppErrorDescription {
+  readonly code: string;
+  readonly kind: IpcErrorKind;
+  readonly userMessage?: string;
+  readonly retryable: boolean;
+  readonly detail?: string;
+}
+
+const MAX_ERROR_DETAIL_LENGTH = 2_000;
 
 const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   OPERATION_SUPERSEDED: {
@@ -227,6 +238,12 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     retryable: true,
     logLevel: 'warn',
   },
+  GENERATION_OUTPUT_INVALID: {
+    kind: 'user',
+    userMessage: 'AI 生成的文件未通过校验。',
+    retryable: true,
+    logLevel: 'warn',
+  },
   CODEX_TURN_ACTIVE: {
     kind: 'user',
     userMessage: '当前对话仍在处理中，请等待完成或先停止。',
@@ -309,11 +326,40 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-export function handleAppError(
-  operation: string,
+function normalizedErrorDetail(value: string): string | undefined {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  return normalized.length <= MAX_ERROR_DETAIL_LENGTH
+    ? normalized
+    : `${normalized.slice(0, MAX_ERROR_DETAIL_LENGTH - 1)}…`;
+}
+
+function deepestErrorDetail(
   error: unknown,
-  logger: ErrorLogger = console,
-): IpcErrorPayload {
+  ignoredMessages: ReadonlySet<string>,
+): string | undefined {
+  const visited = new Set<Error>();
+  let current = error;
+  let detail: string | undefined;
+
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    const candidate = normalizedErrorDetail(current.message);
+
+    if (candidate && !ignoredMessages.has(candidate)) {
+      detail = candidate;
+    }
+    current = current.cause;
+  }
+
+  return detail;
+}
+
+export function describeAppError(error: unknown): AppErrorDescription {
   if (isAbortError(error)) {
     return {
       code: 'OPERATION_CANCELLED',
@@ -325,6 +371,40 @@ export function handleAppError(
   const code = error instanceof AppError ? error.code : 'INTERNAL_ERROR';
   const policy =
     error instanceof AppError ? errorPolicies[error.code] : internalErrorPolicy;
+  const ignoredMessages = new Set(
+    [code, policy.userMessage].filter(
+      (message): message is string => message !== undefined,
+    ),
+  );
+  const detail = deepestErrorDetail(error, ignoredMessages);
+
+  return {
+    code,
+    kind: policy.kind,
+    userMessage: policy.userMessage,
+    retryable: policy.retryable,
+    ...(detail ? { detail } : {}),
+  };
+}
+
+export function handleAppError(
+  operation: string,
+  error: unknown,
+  logger: ErrorLogger = console,
+): IpcErrorPayload {
+  const description = describeAppError(error);
+  const code = description.code;
+
+  if (code === 'OPERATION_CANCELLED') {
+    return {
+      code,
+      kind: description.kind,
+      retryable: description.retryable,
+    };
+  }
+
+  const policy =
+    error instanceof AppError ? errorPolicies[error.code] : internalErrorPolicy;
 
   if (policy.logLevel === 'warn') {
     logger.warn(`[${operation}] ${code}`, error);
@@ -334,8 +414,8 @@ export function handleAppError(
 
   return {
     code,
-    kind: policy.kind,
-    message: policy.userMessage,
-    retryable: policy.retryable,
+    kind: description.kind,
+    message: description.userMessage,
+    retryable: description.retryable,
   };
 }

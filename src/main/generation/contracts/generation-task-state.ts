@@ -21,7 +21,6 @@ export interface GenerationTaskPreparedCheckpoint {
 export interface GenerationTaskAgentCheckpoint {
   readonly completedTime: number;
   readonly sessionId: string;
-  readonly outputRef: string;
   readonly providerExecutionId?: string;
 }
 
@@ -40,6 +39,7 @@ export interface GenerationTaskFailure {
   readonly failedTime: number;
   readonly message: string;
   readonly code?: string;
+  readonly detail?: string;
 }
 
 export interface GenerationTaskSnapshot {
@@ -143,10 +143,6 @@ function cloneAgentCheckpoint(
       checkpoint.sessionId,
       'agentCompleted.sessionId',
     ),
-    outputRef: requireRelativePath(
-      checkpoint.outputRef,
-      'agentCompleted.outputRef',
-    ),
     ...(checkpoint.providerExecutionId === undefined
       ? {}
       : {
@@ -188,6 +184,9 @@ function cloneFailure(
     ...(failure.code === undefined
       ? {}
       : { code: requireText(failure.code, 'failure.code') }),
+    ...(failure.detail === undefined
+      ? {}
+      : { detail: requireText(failure.detail, 'failure.detail') }),
   });
 }
 

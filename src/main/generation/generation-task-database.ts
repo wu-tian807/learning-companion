@@ -59,7 +59,6 @@ function mapRow(
             agentCompleted: {
               completedTime: row.agentCompletedTime,
               sessionId: row.agentSessionId!,
-              outputRef: row.agentOutputRef!,
               ...(row.agentProviderExecutionId === null
                 ? {}
                 : {
@@ -104,7 +103,6 @@ function toRow(task: GenerationTaskSnapshot) {
     assignedProviderId: snapshot.assignedProviderId ?? null,
     agentCompletedTime: snapshot.agentCompleted?.completedTime ?? null,
     agentSessionId: snapshot.agentCompleted?.sessionId ?? null,
-    agentOutputRef: snapshot.agentCompleted?.outputRef ?? null,
     agentProviderExecutionId:
       snapshot.agentCompleted?.providerExecutionId ?? null,
     postProcessedTime: snapshot.postProcessed?.completedTime ?? null,
@@ -190,7 +188,6 @@ export class GenerationTaskDatabase
         assignedProviderId: row.assignedProviderId,
         agentCompletedTime: row.agentCompletedTime,
         agentSessionId: row.agentSessionId,
-        agentOutputRef: row.agentOutputRef,
         agentProviderExecutionId: row.agentProviderExecutionId,
         postProcessedTime: row.postProcessedTime,
         postProcessResult: row.postProcessResult,

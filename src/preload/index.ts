@@ -11,6 +11,12 @@ import type {
   ExternalLibraryMigrationResult,
   ExternalLibrarySnapshot,
 } from "../shared/external-libraries";
+import type {
+  GenerationTaskIdRequest,
+  GenerationTaskProjectRequest,
+  GenerationTaskView,
+  StartGenerationTaskRequest,
+} from "../shared/generation-tasks";
 import { isIpcResult, type IpcErrorPayload } from "../shared/ipc-error";
 import type { ProjectSnapshot } from "../shared/projects";
 import type {
@@ -49,6 +55,7 @@ import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
 import { subscribeExternalLibraryEvents } from "./external-library-events";
 import { subscribeAgentProviderEvents } from "./agent-provider-events";
 import { subscribeAssetEvents } from "./asset-events";
+import { subscribeGenerationTaskEvents } from "./generation-task-events";
 
 async function invoke<Response>(
   channel: string,
@@ -188,6 +195,18 @@ const api: LearningCompanionApi = {
     invoke<void>(IPC_CHANNELS.revealAssetInFolder, request),
   onAssetChanged: (listener) =>
     subscribeAssetEvents(ipcRenderer, listener),
+  listGenerationTasks: (request: GenerationTaskProjectRequest) =>
+    invoke<GenerationTaskView[]>(IPC_CHANNELS.listGenerationTasks, request),
+  startGenerationTask: (request: StartGenerationTaskRequest) =>
+    invoke<GenerationTaskView>(IPC_CHANNELS.startGenerationTask, request),
+  retryGenerationTask: (request: GenerationTaskIdRequest) =>
+    invoke<GenerationTaskView>(IPC_CHANNELS.retryGenerationTask, request),
+  cancelGenerationTask: (request: GenerationTaskIdRequest) =>
+    invoke<void>(IPC_CHANNELS.cancelGenerationTask, request),
+  discardGenerationTask: (request: GenerationTaskIdRequest) =>
+    invoke<void>(IPC_CHANNELS.discardGenerationTask, request),
+  onGenerationTaskChanged: (listener) =>
+    subscribeGenerationTaskEvents(ipcRenderer, listener),
   openWorkbench: (request: WorkbenchOpenRequest) =>
     invoke<WorkbenchBootstrap>(IPC_CHANNELS.openWorkbench, request),
   commandWorkbench: (request: WorkbenchCommandRequest) =>

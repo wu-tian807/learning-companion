@@ -16,9 +16,6 @@ import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool
 import type { AgentFunctionToolRegistryApi } from '../function-tools/agent-function-tool-registry';
 import type { AgentMcpServerLookup } from '../mcp/agent-mcp-service';
 import type { AgentSkillLookup } from '../skills/agent-skill-service';
-import type {
-  CodexJsonValue,
-} from '../codex/codex-runtime-types';
 import type { AgentSessionServiceApi } from '../sessions/agent-session-service';
 import {
   CODEX_AGENT_PROVIDER_ID,
@@ -46,7 +43,6 @@ import {
   codexTokenUsageFromEvent,
   codexTurnTiming,
   findRecoveredCodexTurn,
-  parseCodexAgentOutput,
   toGenerationToolEvent,
 } from './codex-generation-response';
 
@@ -226,7 +222,6 @@ export class CodexAgentProvider
       if (recovered) {
         const completedTime = this.dependencies.now();
         return {
-          output: parseCodexAgentOutput(recovered),
           sessionId,
           providerId: this.providerId,
           modelId: resolved.selection.model!.trim(),
@@ -265,8 +260,6 @@ export class CodexAgentProvider
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',
-      permissions: configuration.profileId,
-      outputSchema: request.outputSchema as CodexJsonValue,
     });
     let activeTurnId: string | undefined;
     let usage: GenerationTokenUsage | undefined;
@@ -300,7 +293,6 @@ export class CodexAgentProvider
           }
 
           return {
-            output: parseCodexAgentOutput(next.value.turn),
             sessionId,
             providerId: this.providerId,
             modelId,

@@ -170,12 +170,18 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       this.workspaceManager,
       definition.primaryWorkspaceConfig,
       task.id,
+      [task.projectId],
     );
     const secondary = [];
 
     for (const config of definition.secondaryWorkspaceConfigs) {
       secondary.push(
-        await prepareAgentWorkspace(this.workspaceManager, config, task.id),
+        await prepareAgentWorkspace(
+          this.workspaceManager,
+          config,
+          task.id,
+          [task.projectId],
+        ),
       );
     }
 
@@ -218,7 +224,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       ...(preparedData === undefined
         ? {}
         : { preparedData: cloneJsonValue(preparedData) }),
-      outputContract: definition.outputContract,
       manifestRef: GENERATION_PREPARED_MANIFEST_REF,
     });
   }

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -54,14 +54,21 @@ describe.runIf(
         join(tmpdir(), 'learning-companion-codex-permissions-'),
       );
       const workspacePath = join(temporaryDirectory, 'workspace');
+      const codexHomePath = join(temporaryDirectory, 'home');
       await mkdir(workspacePath, { recursive: true });
+      await mkdir(codexHomePath, { recursive: true });
+      await writeFile(
+        join(codexHomePath, 'config.toml'),
+        '[mcp_servers.ambient]\ncommand = "missing-ambient-mcp"\n',
+        'utf8',
+      );
       const service = new CodexRuntimeService(
         new CodexAppServerConnectionFactory({
           executablePath: resolveCodexExecutablePath({
             isPackaged: false,
             resourcesPath: process.cwd(),
           }),
-          codexHomePath: join(temporaryDirectory, 'home'),
+          codexHomePath,
         }),
       );
       const profileId = 'lc-integration-read-only';
@@ -77,7 +84,6 @@ describe.runIf(
         cwd: workspacePath,
         runtimeWorkspaceRoots: [workspacePath],
         approvalPolicy: 'never' as const,
-        permissions: profileId,
         developerInstructions: 'Read only the supplied workspace.',
         configOverrides: {
           agents: { enabled: false },
@@ -94,6 +100,8 @@ describe.runIf(
           },
           tools: { view_image: false },
           web_search: 'disabled',
+          default_permissions: profileId,
+          'mcp_servers.ambient.enabled': false,
           ...(disabledSkillPaths.length > 0
             ? {
                 skills: {
@@ -117,9 +125,31 @@ describe.runIf(
       };
 
       try {
+        await expect(service.readConfig()).resolves.toMatchObject({
+          config: {
+            mcp_servers: {
+              ambient: expect.objectContaining({
+                command: 'missing-ambient-mcp',
+              }),
+            },
+          },
+        });
         const created = await service.createThread(configuration);
         expect(created.thread.id).toBeTruthy();
         expect(created.model).toBeTruthy();
+        await expect(
+          service.listMcpServers({
+            threadId: created.thread.id,
+            detail: 'toolsAndAuthOnly',
+          }),
+        ).resolves.toMatchObject({
+          data: [
+            expect.objectContaining({
+              name: 'ambient',
+              tools: {},
+            }),
+          ],
+        });
       } finally {
         await service.shutdown();
         await rm(temporaryDirectory, {

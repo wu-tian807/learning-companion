@@ -14,7 +14,6 @@ import type {
   GenerationAgentRunnerResolver,
 } from './generation-agent-runner';
 import { GenerationTaskExecution } from './generation-task-execution';
-import { GenerationTaskOutputFile } from './generation-task-output-file';
 import { GenerationTaskService } from './generation-task-service';
 import type { GenerationTaskPreparerApi } from './preparation/generation-task-preparer';
 import type { PreparedGenerationTask } from './preparation/prepared-generation-task';
@@ -78,7 +77,7 @@ describe('GenerationTask recovery', () => {
     await mkdir(join(primaryPath, 'control'), { recursive: true });
     let commitCount = 0;
     const definition = createMindMapGenerationTaskDefinitionV1({
-      async commit() {
+      async postProcess() {
         commitCount += 1;
         if (commitCount === 1) {
           throw new Error('simulated commit interruption');
@@ -119,7 +118,6 @@ describe('GenerationTask recovery', () => {
           },
         ],
       },
-      outputContract: definition.outputContract,
       manifestRef: 'control/prepared-manifest.json',
     };
     const preparer = {
@@ -134,20 +132,6 @@ describe('GenerationTask recovery', () => {
         yield* [] as GenerationAgentEvent[];
         firstRunnerCalls += 1;
         return {
-          output: {
-            title: 'Map',
-            rootNodeId: 'root',
-            nodes: {
-              root: {
-                id: 'root',
-                title: 'Root',
-                focus: 'Overview',
-                childIds: [],
-                sourceAliases: ['sources-0001'],
-              },
-            },
-            frames: {},
-          },
           sessionId: 'session-1',
           providerId: 'codex',
           modelId: 'gpt-5.2',
@@ -165,7 +149,6 @@ describe('GenerationTask recovery', () => {
           database,
           preparer,
           new GenerationAgentExecutor(),
-          new GenerationTaskOutputFile(),
         ),
         {
           get: () => ({

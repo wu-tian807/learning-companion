@@ -41,12 +41,10 @@ export interface GenerationAgentTurnRequest {
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly workspaces: PreparedAgentWorkspaces;
-  readonly outputSchema: JsonValue;
   readonly signal?: AbortSignal;
 }
 
 export interface GenerationAgentTurnResult {
-  readonly output: JsonValue;
   readonly sessionId: string;
   readonly providerId: string;
   readonly modelId: string;

@@ -1,5 +1,6 @@
 import type {
   CodexAccountState,
+  CodexConfigReadResult,
   CodexLoginChallenge,
   CodexMcpServerPage,
   CodexModelPage,
@@ -37,6 +38,7 @@ export interface CodexRuntimeServiceApi {
     readonly includeHidden?: boolean;
   }): Promise<CodexModelPage>;
   getRateLimits(): Promise<unknown>;
+  readConfig(): Promise<CodexConfigReadResult>;
   listSkills(
     cwds: readonly string[],
     forceReload?: boolean,

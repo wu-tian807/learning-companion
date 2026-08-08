@@ -12,7 +12,6 @@ import { requireAgentCapabilityId } from '../agents/capabilities/agent-capabilit
 type StoredTaskDefinition = TaskDefinition<
   GenerationInstruction,
   JsonValue,
-  unknown,
   JsonValue
 >;
 
@@ -53,8 +52,6 @@ function validateDefinition(
     definition.version <= 0 ||
     definition.systemInstruction.trim().length === 0 ||
     typeof definition.instruction?.parse !== 'function' ||
-    typeof definition.outputContract?.validate !== 'function' ||
-    typeof definition.outputContract?.createRepairMessage !== 'function' ||
     typeof definition.postProcessor?.postProcess !== 'function'
   ) {
     throw new AppError('INVALID_EXTENSION_DEFINITION');
@@ -92,13 +89,6 @@ function validateDefinition(
 
   validateCapabilityRequirements(definition.skills);
   validateCapabilityRequirements(definition.mcpServers);
-
-  if (
-    !Number.isSafeInteger(definition.outputContract.maxRepairTurns) ||
-    definition.outputContract.maxRepairTurns < 0
-  ) {
-    throw new AppError('INVALID_EXTENSION_DEFINITION');
-  }
 }
 
 function validateCapabilityRequirements(
@@ -126,15 +116,9 @@ export class GenerationTaskDefinitionRegistry {
   register<
     TInstruction extends GenerationInstruction,
     TPreparedData extends JsonValue,
-    TAgentOutput,
     TResult extends JsonValue,
   >(
-    definition: TaskDefinition<
-      TInstruction,
-      TPreparedData,
-      TAgentOutput,
-      TResult
-    >,
+    definition: TaskDefinition<TInstruction, TPreparedData, TResult>,
   ): void {
     validateDefinition(definition);
     const id = requireDefinitionId(definition.id);

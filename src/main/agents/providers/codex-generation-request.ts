@@ -22,7 +22,7 @@ import {
 
 export const CODEX_AGENT_PROVIDER_ID = 'codex';
 
-const CODEX_GENERATION_ADAPTER_VERSION = 5;
+const CODEX_GENERATION_ADAPTER_VERSION = 6;
 
 const CODEX_GENERATION_EXECUTION_POLICY = [
   'Learning Companion generation execution boundary:',
@@ -30,7 +30,8 @@ const CODEX_GENERATION_EXECUTION_POLICY = [
   '- Do not request broader filesystem or network access.',
   '- Use only the Skills and MCP servers explicitly supplied by Learning Companion for this task; do not discover or invoke ambient capabilities.',
   '- Do not use apps/connectors, plugins, hooks, memories, goals, or subagents.',
-  '- Return only an answer that conforms to the requested output schema.',
+  '- Treat the writable workspace as the task output surface. Use tools to create or update the files requested by the task.',
+  '- Keep the final assistant message brief; it reports completed work and is not itself the generated artifact.',
 ].join('\n');
 
 export interface CodexGenerationConfiguration {
@@ -64,6 +65,14 @@ function hashJson(value: JsonValue): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
+function tomlDottedKeySegment(value: string): string {
+  return /^[A-Za-z0-9_-]+$/u.test(value) ? value : JSON.stringify(value);
+}
+
+function disabledMcpServerOverrideKey(name: string): string {
+  return `mcp_servers.${tomlDottedKeySegment(name)}.enabled`;
+}
+
 function collectReadableWorkspaces(request: GenerationAgentTurnRequest) {
   return [request.workspaces.primary, ...request.workspaces.secondary]
     .filter((workspace) => workspace.permissions.read)
@@ -86,7 +95,6 @@ export function createCodexClientUserMessageId(
   return `lc-generation-${hashJson({
     taskId: request.taskId,
     userMessage: request.userMessage as unknown as JsonValue,
-    outputSchema: request.outputSchema,
   }).slice(0, 40)}`;
 }
 
@@ -204,15 +212,19 @@ export function createCodexGenerationConfiguration(
   const selectedMcpServerNames = new Set(
     capabilities.mcpServers.map(({ wireName }) => wireName),
   );
-  const mcpServers = Object.fromEntries([
-    ...environment.disabledMcpServers
+  const disabledMcpServerOverrides = Object.fromEntries(
+    environment.disabledMcpServers
       .filter((name) => !selectedMcpServerNames.has(name))
-      .map((name) => [name, { enabled: false }] as const),
-    ...capabilities.mcpServers.map(({ wireName, config }) => [
+      .map(
+        (name) => [disabledMcpServerOverrideKey(name), false] as const,
+      ),
+  );
+  const selectedMcpServers = Object.fromEntries(
+    capabilities.mcpServers.map(({ wireName, config }) => [
       wireName,
       config,
     ] as const),
-  ]);
+  );
   const selectedSkillPaths = new Set(
     capabilities.skills.map(({ path }) => path),
   );
@@ -234,14 +246,16 @@ export function createCodexGenerationConfiguration(
     },
     tools: { view_image: false },
     web_search: 'disabled',
+    default_permissions: profileId,
     permissions: {
       [profileId]: {
         filesystem,
         network: { enabled: false },
       },
     },
-    ...(Object.keys(mcpServers).length > 0
-      ? { mcp_servers: mcpServers }
+    ...disabledMcpServerOverrides,
+    ...(Object.keys(selectedMcpServers).length > 0
+      ? { mcp_servers: selectedMcpServers }
       : {}),
     ...(disabledSkillPaths.length > 0
       ? {
@@ -258,7 +272,6 @@ export function createCodexGenerationConfiguration(
     cwd: request.workspaces.primary.path,
     runtimeWorkspaceRoots,
     approvalPolicy: 'never' as const,
-    permissions: profileId,
     configOverrides,
     developerInstructions: `${request.systemInstruction}\n\n${CODEX_GENERATION_EXECUTION_POLICY}`,
   };

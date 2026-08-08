@@ -27,7 +27,6 @@ export const generationTasks = sqliteTable(
     assignedProviderId: text('assigned_provider_id'),
     agentCompletedTime: integer('agent_completed_time'),
     agentSessionId: text('agent_session_id'),
-    agentOutputRef: text('agent_output_ref'),
     agentProviderExecutionId: text('agent_provider_execution_id'),
     postProcessedTime: integer('post_processed_time'),
     postProcessResult: text('post_process_result_json', {

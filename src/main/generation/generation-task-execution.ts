@@ -1,21 +1,15 @@
-import {
-  cloneJsonValue,
-  isJsonValue,
-  type JsonValue,
-} from '../../shared/workbench/protocol';
-import { AppError } from '../errors/app-error';
+import { cloneJsonValue, isJsonValue, type JsonValue } from '../../shared/workbench/protocol';
+import { AppError, describeAppError } from '../errors/app-error';
 import type { AnyTaskDefinition } from './contracts/task-definition';
 import type {
   GenerationAgentRunner,
   GenerationAgentRunnerResolver,
 } from './generation-agent-runner';
-import {
-  GenerationOutputValidationError,
-  type GenerationAgentExecutionEvent,
-  type GenerationAgentExecutor,
+import type {
+  GenerationAgentExecutionEvent,
+  GenerationAgentExecutor,
 } from './generation-agent-executor';
 import type { GenerationTaskDatabaseApi } from './generation-task-database';
-import type { GenerationTaskOutputFileApi } from './generation-task-output-file';
 import {
   GenerationTask,
   type GenerationTaskFailurePhase,
@@ -52,14 +46,6 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return 'GenerationTask 执行失败';
-}
-
 export class GenerationTaskExecution {
   private readonly now: () => number;
 
@@ -67,7 +53,6 @@ export class GenerationTaskExecution {
     private readonly database: GenerationTaskDatabaseApi,
     private readonly preparer: GenerationTaskPreparerApi,
     private readonly agentExecutor: GenerationAgentExecutor,
-    private readonly outputFile: GenerationTaskOutputFileApi,
     dependencies: Partial<GenerationTaskExecutionDependencies> = {},
   ) {
     this.now = dependencies.now ?? Date.now;
@@ -97,7 +82,7 @@ export class GenerationTaskExecution {
       yield { type: 'phase', phase: 'prepare', state: 'completed' };
 
       failurePhase = 'agent';
-      const output = yield* this.ensureAgentCompleted(
+      yield* this.ensureAgentCompleted(
         task,
         prepared,
         runnerResolver,
@@ -105,16 +90,6 @@ export class GenerationTaskExecution {
       );
 
       failurePhase = 'post-process';
-      const validated = definition.outputContract.validate(output, {
-        assetReferences: prepared.assetReferences,
-      });
-
-      if (!validated.ok) {
-        throw new AppError('DATA_INTEGRITY_ERROR', {
-          cause: new GenerationOutputValidationError(validated.issues),
-        });
-      }
-
       signal.throwIfAborted();
       yield { type: 'phase', phase: 'post-process', state: 'started' };
       const postProcessStartedTime = this.now();
@@ -130,7 +105,6 @@ export class GenerationTaskExecution {
             : { preparedData: prepared.preparedData }),
           signal,
         },
-        validated.value,
       );
       signal.throwIfAborted();
 
@@ -203,9 +177,9 @@ export class GenerationTaskExecution {
     prepared: PreparedGenerationTask,
     runnerResolver: GenerationAgentRunnerResolver,
     signal: AbortSignal,
-  ): AsyncGenerator<GenerationTaskExecutionEvent, JsonValue> {
+  ): AsyncGenerator<GenerationTaskExecutionEvent, void> {
     if (task.getSnapshot().agentCompleted) {
-      return this.outputFile.read(task.getSnapshot(), prepared);
+      return;
     }
 
     const runner = await this.resolveRunner(task, runnerResolver, signal);
@@ -217,17 +191,11 @@ export class GenerationTaskExecution {
       signal,
     );
     signal.throwIfAborted();
-    const outputRef = await this.outputFile.write(
-      prepared,
-      completed.output,
-    );
-    signal.throwIfAborted();
     const completedTime = this.nextTaskTime(task, this.now());
     task.recordAgentCompleted({
       checkpoint: {
         completedTime,
         sessionId: completed.metrics.sessionId,
-        outputRef,
         ...(completed.providerExecutionId
           ? { providerExecutionId: completed.providerExecutionId }
           : {}),
@@ -237,7 +205,6 @@ export class GenerationTaskExecution {
     });
     this.database.update(task.getSnapshot());
     yield { type: 'phase', phase: 'agent', state: 'completed' };
-    return completed.output;
   }
 
   private async resolveRunner(
@@ -279,11 +246,13 @@ export class GenerationTaskExecution {
     }
 
     const failureTime = this.nextTaskTime(task, this.now());
+    const description = describeAppError(error);
     task.recordFailure({
       phase,
       failedTime: failureTime,
-      message: errorMessage(error),
-      ...(error instanceof AppError ? { code: error.code } : {}),
+      message: description.userMessage ?? 'GenerationTask 执行失败',
+      code: description.code,
+      ...(description.detail ? { detail: description.detail } : {}),
     });
     this.database.update(task.getSnapshot());
   }

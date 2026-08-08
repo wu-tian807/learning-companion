@@ -19,6 +19,7 @@ import { normalizeAssetAssociationsMigration } from './migrations/0011-normalize
 import { createGenerationTasksMigration } from './migrations/0012-create-generation-tasks';
 import { indexUnfinishedGenerationTasksMigration } from './migrations/0013-index-unfinished-generation-tasks';
 import { assignGenerationTaskProviderMigration } from './migrations/0014-assign-generation-task-provider';
+import { removeGenerationAgentOutputRefMigration } from './migrations/0015-remove-generation-agent-output-ref';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
@@ -47,6 +48,7 @@ const migrations: readonly DatabaseMigration[] = [
   createGenerationTasksMigration,
   indexUnfinishedGenerationTasksMigration,
   assignGenerationTaskProviderMigration,
+  removeGenerationAgentOutputRefMigration,
 ];
 const schema = {
   ...projectSchema,

@@ -6,6 +6,7 @@ export interface AppPaths {
   readonly settingsFile: string;
   readonly dataDirectory: string;
   readonly databaseFile: string;
+  readonly agentWorkspacesDirectory: string;
   readonly agentRuntimesDirectory: string;
   readonly codexHomeDirectory: string;
 }
@@ -33,6 +34,10 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
     settingsFile: join(configDirectory, 'settings.json'),
     dataDirectory,
     databaseFile: join(dataDirectory, 'learning-companion.sqlite3'),
+    agentWorkspacesDirectory: join(
+      normalizedUserDataDirectory,
+      'agent-workspaces',
+    ),
     agentRuntimesDirectory,
     codexHomeDirectory: join(agentRuntimesDirectory, 'codex', 'home'),
   });

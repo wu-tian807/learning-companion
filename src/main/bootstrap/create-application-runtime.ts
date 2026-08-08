@@ -6,6 +6,7 @@ import { createAgentCapabilityPaths } from '../agents/capabilities/agent-capabil
 import { AgentMcpService } from '../agents/mcp/agent-mcp-service';
 import { AgentSkillService } from '../agents/skills/agent-skill-service';
 import { AgentSessionService } from '../agents/sessions/agent-session-service';
+import { AgentWorkspaceManager } from '../agents/workspaces/agent-workspace-manager';
 import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
 import { AssetArtifactRegistry } from '../artifacts/asset-artifact-registry';
@@ -28,6 +29,14 @@ import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { createDefaultExternalLibrariesRoot } from '../external-libraries/external-library-path-manager';
 import type { ExternalLibraryService } from '../external-libraries/external-library-service';
+import { GenerationAgentExecutor } from '../generation/generation-agent-executor';
+import { GenerationTaskDatabase } from '../generation/generation-task-database';
+import { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
+import { GenerationTaskExecution } from '../generation/generation-task-execution';
+import { GenerationTaskService } from '../generation/generation-task-service';
+import { GenerationAssetReferencePreparer } from '../generation/preparation/generation-asset-reference-preparer';
+import { GenerationPreparedManifestFile } from '../generation/preparation/generation-prepared-manifest-file';
+import { GenerationTaskPreparer } from '../generation/preparation/generation-task-preparer';
 import { createAppPaths } from '../paths/app-paths';
 import { migrateProjectWorkspaces } from '../projects/migrate-project-workspaces';
 import { ProjectDatabase } from '../projects/project-database';
@@ -48,6 +57,8 @@ import { WorkbenchSessionService } from '../workbench/workbench-session-service'
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
+import { MindMapGenerationPostProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-post-processor';
+import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -83,6 +94,7 @@ export async function createApplicationRuntime({
     | SandboxFrameInteractionBridge
     | undefined;
   let workbenchSessionService: WorkbenchSessionService | undefined;
+  let generationTaskService: GenerationTaskService | undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -173,6 +185,35 @@ export async function createApplicationRuntime({
         deletionObserver: associationService,
       },
     );
+    const generationTaskDatabase = new GenerationTaskDatabase(
+      databaseContext,
+    );
+    const generationTaskDefinitions =
+      new GenerationTaskDefinitionRegistry();
+    generationTaskDefinitions.register(
+      createMindMapGenerationTaskDefinitionV1(
+        new MindMapGenerationPostProcessor(
+          assetService,
+          associationService,
+        ),
+      ),
+    );
+    const generationTaskPreparer = new GenerationTaskPreparer(
+      new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
+      new GenerationAssetReferencePreparer(assetService),
+      new GenerationPreparedManifestFile(),
+    );
+    generationTaskService = new GenerationTaskService(
+      generationTaskDatabase,
+      generationTaskDefinitions,
+      new GenerationTaskExecution(
+        generationTaskDatabase,
+        generationTaskPreparer,
+        new GenerationAgentExecutor(),
+      ),
+      projectDatabase,
+      agentProviderService,
+    );
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
     const transportBindingRegistry =
@@ -222,6 +263,7 @@ export async function createApplicationRuntime({
       assetService,
       associationService,
       agentSessionService,
+      generationTaskService,
       workbenchSessionService,
       workspaceManager,
       settingsRepository,
@@ -230,6 +272,7 @@ export async function createApplicationRuntime({
       agentProviderService,
       assetService,
       externalLibraryService,
+      generationTaskService,
       projectService,
       settingsRepository,
       workbenchSessionService,
@@ -241,6 +284,7 @@ export async function createApplicationRuntime({
       codexRuntimeService,
       contentResourceService,
       externalLibraryService,
+      generationTaskService,
       sandboxFrameInteractionBridge,
       workbenchSessionService,
       disposeContentProtocol: removeContentProtocol,
@@ -249,6 +293,7 @@ export async function createApplicationRuntime({
   } catch (error) {
     await Promise.allSettled([
       workbenchSessionService?.closeActive() ?? Promise.resolve(),
+      Promise.resolve(generationTaskService?.unloadProject()),
       externalLibraryService?.shutdown() ?? Promise.resolve(),
       agentProviderService?.dispose() ?? Promise.resolve(),
     ]);

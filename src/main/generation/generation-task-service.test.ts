@@ -1,10 +1,9 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { JsonValue } from '../../shared/workbench/protocol';
 import { createTextAgentUserMessage } from './contracts/agent-message';
 import type { GenerationTaskDatabaseApi } from './generation-task-database';
 import { GenerationTaskDefinitionRegistry } from './generation-task-definition-registry';
@@ -12,12 +11,16 @@ import type { GenerationTaskSnapshot } from './generation-task';
 import { GenerationAgentExecutor } from './generation-agent-executor';
 import { GenerationTaskExecution } from './generation-task-execution';
 import { GenerationTaskService } from './generation-task-service';
-import { GenerationTaskOutputFile } from './generation-task-output-file';
 import type { GenerationAgentRunner } from './generation-agent-runner';
 import type { GenerationTaskPreparerApi } from './preparation/generation-task-preparer';
 import type { PreparedGenerationTask } from './preparation/prepared-generation-task';
 import { MindMapGenerationInstruction } from '../../workbenches/mindmap/generation/mindmap-generation-instruction';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import {
+  MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+  MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH,
+  MIND_MAP_GENERATION_CANDIDATE_VERSION,
+} from '../../workbenches/mindmap/generation/mindmap-generation-output';
 
 const temporaryDirectories: string[] = [];
 
@@ -76,15 +79,25 @@ afterEach(async () => {
 });
 
 describe('GenerationTaskService', () => {
-  it('repairs invalid output in the same session and records actual usage', async () => {
+  it('uses an Agent-authored workspace file and records actual usage', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'generation-service-'));
     temporaryDirectories.push(directory);
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
     await mkdir(join(primaryPath, 'control'), { recursive: true });
     const committedCandidates: unknown[] = [];
     const definition = createMindMapGenerationTaskDefinitionV1({
-      async commit(input) {
-        committedCandidates.push(input.candidate);
+      async postProcess(context) {
+        committedCandidates.push(
+          JSON.parse(
+            await readFile(
+              join(
+                context.workspaces.primary.path,
+                ...MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH.split('/'),
+              ),
+              'utf8',
+            ),
+          ),
+        );
         return { resultAssetId: 'generated-mindmap' };
       },
     });
@@ -121,7 +134,6 @@ describe('GenerationTaskService', () => {
           },
         ],
       },
-      outputContract: definition.outputContract,
       manifestRef: 'control/prepared-manifest.json',
     };
     const prepareTask = (task: GenerationTaskSnapshot) => ({
@@ -149,25 +161,31 @@ describe('GenerationTaskService', () => {
         );
         turnNumber += 1;
         yield { type: 'assistant-delta', delta: `turn-${turnNumber}` };
-        const output: JsonValue =
-          turnNumber === 1
-            ? { invalid: true }
-            : {
-                title: '课程结构',
-                rootNodeId: 'root',
-                nodes: {
-                  root: {
-                    id: 'root',
-                    title: '课程',
-                    focus: '总览',
-                    childIds: [],
-                    sourceAliases: ['sources-0001'],
-                  },
-                },
-                frames: {},
-              };
+        await mkdir(join(primaryPath, 'output'), { recursive: true });
+        await writeFile(
+          join(
+            primaryPath,
+            ...MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH.split('/'),
+          ),
+          `${JSON.stringify({
+            format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+            version: MIND_MAP_GENERATION_CANDIDATE_VERSION,
+            title: '课程结构',
+            rootNodeId: 'root',
+            nodes: {
+              root: {
+                id: 'root',
+                title: '课程',
+                focus: '总览',
+                childIds: [],
+                sourceAliases: ['sources-0001'],
+              },
+            },
+            frames: {},
+          })}\n`,
+          'utf8',
+        );
         return {
-          output,
           sessionId: 'session-1',
           providerId: 'codex',
           modelId: 'gpt-5.2',
@@ -209,7 +227,6 @@ describe('GenerationTaskService', () => {
         database,
         preparer,
         new GenerationAgentExecutor(),
-        new GenerationTaskOutputFile(),
       ),
       {
         get: () => ({
@@ -241,29 +258,26 @@ describe('GenerationTaskService', () => {
       next = await execution.next();
     }
 
-    expect(requests).toEqual([{}, { sessionId: 'session-1' }]);
+    expect(requests).toEqual([{}]);
     expect(resolvedProviderIds).toEqual([undefined]);
     expect(database.get('task-1')?.assignedProviderId).toBe('codex');
-    expect(
-      events.filter(({ type }) => type === 'output-rejected'),
-    ).toHaveLength(1);
     expect(next.value).toMatchObject({
       taskId: 'task-1',
       result: { resultAssetId: 'generated-mindmap' },
       sessionId: 'session-1',
       metrics: {
         totalUsage: {
-          inputTokens: 20,
-          outputTokens: 10,
-          totalTokens: 30,
+          inputTokens: 10,
+          outputTokens: 5,
+          totalTokens: 15,
         },
         agentExecutions: [
           {
             providerId: 'codex',
             modelId: 'gpt-5.2',
             sessionId: 'session-1',
-            turnCount: 2,
-            repairTurnCount: 1,
+            turnCount: 1,
+            repairTurnCount: 0,
           },
         ],
       },
@@ -334,6 +348,30 @@ describe('GenerationTaskService', () => {
     await drain(service.run(retryable.id));
     expect(resolvedProviderIds.slice(-2)).toEqual([undefined, 'codex']);
     expect(database.get(retryable.id)?.postProcessed).toBeDefined();
+
+    selectedRunner = runner;
+    const backgroundEvents: string[] = [];
+    const unsubscribe = service.subscribe((event) => {
+      backgroundEvents.push(event.type);
+    });
+    const background = service.start({
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new MindMapGenerationInstruction().toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+    });
+
+    await vi.waitFor(() =>
+      expect(database.get(background.id)?.postProcessed).toBeDefined(),
+    );
+    await vi.waitFor(() =>
+      expect(backgroundEvents).toContain('task-completed'),
+    );
+    expect(service.list().some(({ id }) => id === background.id)).toBe(
+      false,
+    );
+    unsubscribe();
 
     const cancelled = service.create({
       projectId: 'project-1',

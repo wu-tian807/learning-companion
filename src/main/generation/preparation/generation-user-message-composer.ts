@@ -16,7 +16,7 @@ function createAssetReferencePrompt(
   ]);
 
   return [
-    '参考资料已复制到主工作区。只能使用下面列出的相对路径读取资料，并在结构化结果中使用对应 alias 表达来源：',
+    '参考资料已复制到主工作区。只能使用下面列出的相对路径读取资料，并在 TaskDefinition 要求生成的工作区文件中使用对应 alias 表达来源：',
     ...sections.flat(),
   ].join('\n');
 }

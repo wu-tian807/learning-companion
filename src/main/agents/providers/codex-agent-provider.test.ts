@@ -31,6 +31,7 @@ function createRuntime(
     })),
     startChatGptLogin: vi.fn(),
     cancelLogin: vi.fn(async () => undefined),
+    readConfig: vi.fn(async () => ({ config: { mcp_servers: {} } })),
     listSkills: vi.fn(async () => []),
     listMcpServers: vi.fn(async () => ({ data: [], nextCursor: null })),
     ...overrides,
@@ -134,12 +135,6 @@ function createGenerationRequest(
         permissions: { read: true, write: false },
       },
       secondary: [],
-    },
-    outputSchema: {
-      type: 'object',
-      properties: { ok: { type: 'boolean' } },
-      required: ['ok'],
-      additionalProperties: false,
     },
     ...overrides,
   };
@@ -298,6 +293,13 @@ describe('CodexAgentProvider', () => {
               reasoningOutputTokens: 10,
               totalTokens: 150,
             },
+            total: {
+              inputTokens: 820,
+              cachedInputTokens: 600,
+              outputTokens: 90,
+              reasoningOutputTokens: 30,
+              totalTokens: 910,
+            },
           },
         },
       };
@@ -318,9 +320,10 @@ describe('CodexAgentProvider', () => {
         account: { type: 'chatgpt' },
         requiresOpenaiAuth: true,
       })),
-      listMcpServers: vi.fn(async () => ({
-        data: [{ name: 'user-mcp', authStatus: null, tools: {} }],
-        nextCursor: null,
+      readConfig: vi.fn(async () => ({
+        config: {
+          mcp_servers: { 'user-mcp': { command: 'user-mcp' } },
+        },
       })),
       listSkills: vi.fn(async () => [
         {
@@ -356,7 +359,6 @@ describe('CodexAgentProvider', () => {
       }),
     ]);
     expect(result).toEqual({
-      output: { ok: true },
       sessionId: 'thread-1',
       providerId: 'codex',
       modelId: 'gpt-test-fast',
@@ -365,11 +367,11 @@ describe('CodexAgentProvider', () => {
       completedTime: 2_000,
       activeDurationMs: 800,
       usage: {
-        inputTokens: 120,
-        cachedInputTokens: 20,
-        outputTokens: 30,
-        reasoningTokens: 10,
-        totalTokens: 150,
+        inputTokens: 820,
+        cachedInputTokens: 600,
+        outputTokens: 90,
+        reasoningTokens: 30,
+        totalTokens: 910,
       },
     });
     const threadInput = (
@@ -377,8 +379,13 @@ describe('CodexAgentProvider', () => {
         Parameters<CodexRuntimeServiceApi['createThread']>
       >
     )[0][0];
-    const profileId = threadInput.permissions!;
+    const profileId = threadInput.configOverrides?.default_permissions;
+    expect(typeof profileId).toBe('string');
+    if (typeof profileId !== 'string') {
+      throw new Error('Expected a default Codex permission profile');
+    }
     expect(profileId).toMatch(/^lc-generation-[a-f0-9]{24}$/u);
+    expect(threadInput.permissions).toBeUndefined();
     expect(threadInput).toEqual(
       expect.objectContaining({
         cwd: request.workspaces.primary.path,
@@ -400,7 +407,8 @@ describe('CodexAgentProvider', () => {
           }),
           tools: { view_image: false },
           web_search: 'disabled',
-          mcp_servers: { 'user-mcp': { enabled: false } },
+          default_permissions: profileId,
+          'mcp_servers.user-mcp.enabled': false,
           skills: {
             config: [
               {
@@ -432,8 +440,8 @@ describe('CodexAgentProvider', () => {
     )[0][0];
     expect(turnInput.threadId).toBe('thread-1');
     expect(turnInput.clientUserMessageId).toMatch(/^lc-generation-/u);
-    expect(turnInput.permissions).toBe(profileId);
-    expect(turnInput.outputSchema).toEqual(request.outputSchema);
+    expect(turnInput.permissions).toBeUndefined();
+    expect(turnInput.outputSchema).toBeUndefined();
     expect(sessions.getBinding()).toEqual(
       expect.objectContaining({
         sessionId: 'thread-1',
@@ -483,7 +491,6 @@ describe('CodexAgentProvider', () => {
     expect(recovered.events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
     ]);
-    expect(recovered.result.output).toEqual({ ok: false });
     expect(recovered.result.providerExecutionId).toBe('turn-1');
   });
 
@@ -822,7 +829,7 @@ describe('CodexAgentProvider', () => {
       ],
     });
 
-    const { events, result } = await collectTurn(provider.runTurn(request));
+    const { events } = await collectTurn(provider.runTurn(request));
 
     expect(events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
@@ -837,7 +844,6 @@ describe('CodexAgentProvider', () => {
         toolName: 'dynamic:read_asset_anchor',
       }),
     ]);
-    expect(result.output).toEqual({ ok: true });
     expect(execute).toHaveBeenCalledWith(
       { assetId: 'asset-1' },
       expect.objectContaining({
@@ -911,9 +917,12 @@ describe('CodexAgentProvider', () => {
         account: { type: 'chatgpt' },
         requiresOpenaiAuth: true,
       })),
-      listMcpServers: vi.fn(async () => ({
-        data: [{ name: 'ambient-server', authStatus: null, tools: {} }],
-        nextCursor: null,
+      readConfig: vi.fn(async () => ({
+        config: {
+          mcp_servers: {
+            'ambient-server': { command: 'ambient-server' },
+          },
+        },
       })),
       createThread,
       startTurn,
@@ -969,8 +978,8 @@ describe('CodexAgentProvider', () => {
     expect(createThread).toHaveBeenCalledWith(
       expect.objectContaining({
         configOverrides: expect.objectContaining({
+          'mcp_servers.ambient-server.enabled': false,
           mcp_servers: {
-            'ambient-server': { enabled: false },
             'learning_companion_document-tools': expect.objectContaining({
               enabled: true,
               required: true,
@@ -1053,7 +1062,7 @@ describe('CodexAgentProvider', () => {
 
     await expect(generator.next()).rejects.toThrow('FEATURE_NOT_SUPPORTED');
     expect(createThread).not.toHaveBeenCalled();
-    expect(runtime.listMcpServers).not.toHaveBeenCalled();
+    expect(runtime.readConfig).not.toHaveBeenCalled();
     expect(runtime.listSkills).not.toHaveBeenCalled();
   });
 
@@ -1069,7 +1078,7 @@ describe('CodexAgentProvider', () => {
 
     await expect(generator.next()).rejects.toThrow('FEATURE_NOT_SUPPORTED');
     expect(runtime.getAccount).not.toHaveBeenCalled();
-    expect(runtime.listMcpServers).not.toHaveBeenCalled();
+    expect(runtime.readConfig).not.toHaveBeenCalled();
     expect(runtime.listSkills).not.toHaveBeenCalled();
     expect(createThread).not.toHaveBeenCalled();
   });

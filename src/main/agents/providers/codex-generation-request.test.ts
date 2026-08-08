@@ -48,7 +48,6 @@ function request(): GenerationAgentTurnRequest {
       },
       secondary: [],
     },
-    outputSchema: { type: 'object' },
   };
 }
 
@@ -102,6 +101,7 @@ describe('createCodexGenerationConfiguration', () => {
     ]);
     expect(readOnly.threadInput.configOverrides).toMatchObject({
       features: { shell_tool: true },
+      default_permissions: readOnly.profileId,
       permissions: {
         [readOnly.profileId]: {
           filesystem: { [workspacePath]: 'read' },
@@ -132,6 +132,7 @@ describe('createCodexGenerationConfiguration', () => {
 
     expect(writableTools.nativeToolIds).toContain('workspace.write');
     expect(writable.threadInput.configOverrides).toMatchObject({
+      default_permissions: writable.profileId,
       permissions: {
         [writable.profileId]: {
           filesystem: { [workspacePath]: 'write' },
@@ -226,6 +227,7 @@ describe('createCodexGenerationConfiguration', () => {
       {
         disabledMcpServers: [
           'user-mcp',
+          'user.mcp',
           'learning_companion_document-tools',
         ],
         disabledSkillPaths: [resolve('user-skills', 'SKILL.md'), skillPath],
@@ -258,8 +260,9 @@ describe('createCodexGenerationConfiguration', () => {
       { type: 'text', text: 'Generate it.' },
     ]);
     expect(configuration.threadInput.configOverrides).toMatchObject({
+      'mcp_servers.user-mcp.enabled': false,
+      'mcp_servers."user.mcp".enabled': false,
       mcp_servers: {
-        'user-mcp': { enabled: false },
         'learning_companion_document-tools': {
           enabled: true,
           required: true,

@@ -1,5 +1,9 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
+  MIND_MAP_GENERATION_INSTRUCTION_FORMAT,
+  MIND_MAP_GENERATION_INSTRUCTION_VERSION,
+} from '../../../shared/generation-definitions';
+import {
   createTextAgentUserMessage,
   type AgentUserMessage,
 } from '../../../main/generation/contracts/agent-message';
@@ -12,9 +16,10 @@ import {
   generationValidationSuccess,
 } from '../../../main/generation/contracts/generation-validation';
 
-export const MIND_MAP_GENERATION_INSTRUCTION_FORMAT =
-  'learning-companion/mindmap-generation-instruction';
-export const MIND_MAP_GENERATION_INSTRUCTION_VERSION = 1;
+export {
+  MIND_MAP_GENERATION_INSTRUCTION_FORMAT,
+  MIND_MAP_GENERATION_INSTRUCTION_VERSION,
+} from '../../../shared/generation-definitions';
 
 export type MindMapGenerationInstructionSnapshot = JsonValue & {
   readonly format: typeof MIND_MAP_GENERATION_INSTRUCTION_FORMAT;

@@ -7,7 +7,6 @@ import type {
   GenerationInstruction,
   GenerationInstructionFactory,
 } from './generation-instruction';
-import type { GenerationOutputContract } from './generation-output-contract';
 import type {
   AgentWorkspaceConfig,
   PreparedAgentWorkspaces,
@@ -64,19 +63,16 @@ export interface GenerationTaskPostProcessContext<
 export interface GenerationTaskPostProcessor<
   TInstruction extends GenerationInstruction,
   TPreparedData extends JsonValue,
-  TAgentOutput,
   TResult extends JsonValue,
 > {
   postProcess(
     context: GenerationTaskPostProcessContext<TInstruction, TPreparedData>,
-    output: TAgentOutput,
   ): Promise<TResult>;
 }
 
 export interface TaskDefinition<
   TInstruction extends GenerationInstruction = GenerationInstruction,
   TPreparedData extends JsonValue = JsonValue,
-  TAgentOutput = unknown,
   TResult extends JsonValue = JsonValue,
 > {
   readonly id: string;
@@ -93,11 +89,9 @@ export interface TaskDefinition<
     TInstruction,
     TPreparedData
   >;
-  readonly outputContract: GenerationOutputContract<TAgentOutput>;
   readonly postProcessor: GenerationTaskPostProcessor<
     TInstruction,
     TPreparedData,
-    TAgentOutput,
     TResult
   >;
 }
@@ -105,6 +99,5 @@ export interface TaskDefinition<
 export type AnyTaskDefinition = TaskDefinition<
   GenerationInstruction,
   JsonValue,
-  unknown,
   JsonValue
 >;

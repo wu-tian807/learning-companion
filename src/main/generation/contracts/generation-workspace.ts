@@ -77,10 +77,11 @@ export async function prepareAgentWorkspace(
   manager: AgentWorkspaceManagerApi,
   config: AgentWorkspaceConfig,
   taskId: string,
+  namespaceSegments: readonly string[] = [],
 ): Promise<PreparedAgentWorkspace> {
   const cloned = cloneAgentWorkspaceConfig(config);
   const segments = resolveAgentWorkspaceSegments(cloned, taskId);
-  const path = await manager.prepare(segments);
+  const path = await manager.prepare([...namespaceSegments, ...segments]);
 
   return Object.freeze({
     ...cloned,

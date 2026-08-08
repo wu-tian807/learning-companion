@@ -1,15 +1,17 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
-import type {
-  GenerationOutputContract,
-  GenerationOutputValidationContext,
-} from '../../../main/generation/contracts/generation-output-contract';
+import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import {
   generationValidationFailure,
   generationValidationSuccess,
   type GenerationValidationIssue,
 } from '../../../main/generation/contracts/generation-validation';
 import { isMindMapDocumentV1 } from '../document';
+
+export const MIND_MAP_GENERATION_CANDIDATE_FORMAT =
+  'learning-companion/mindmap-generation-candidate';
+export const MIND_MAP_GENERATION_CANDIDATE_VERSION = 1;
+export const MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH =
+  'output/mindmap-candidate.json';
 
 export interface MindMapGenerationCandidateNodeV1 {
   readonly id: string;
@@ -27,10 +29,16 @@ export interface MindMapGenerationCandidateFrameV1 {
 }
 
 export interface MindMapGenerationCandidateV1 {
+  readonly format: typeof MIND_MAP_GENERATION_CANDIDATE_FORMAT;
+  readonly version: typeof MIND_MAP_GENERATION_CANDIDATE_VERSION;
   readonly title: string;
   readonly rootNodeId: string;
   readonly nodes: Readonly<Record<string, MindMapGenerationCandidateNodeV1>>;
   readonly frames: Readonly<Record<string, MindMapGenerationCandidateFrameV1>>;
+}
+
+export interface MindMapGenerationCandidateValidationContext {
+  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,7 +107,7 @@ function cloneCandidateFrame(
 }
 
 function availableSourceAliases(
-  context: GenerationOutputValidationContext,
+  context: MindMapGenerationCandidateValidationContext,
 ): ReadonlySet<string> {
   return new Set(
     Object.values(context.assetReferences).flatMap((references) =>
@@ -108,14 +116,16 @@ function availableSourceAliases(
   );
 }
 
-function validateCandidate(
+export function validateMindMapGenerationCandidateV1(
   value: JsonValue,
-  context: GenerationOutputValidationContext,
+  context: MindMapGenerationCandidateValidationContext,
 ) {
   const issues: GenerationValidationIssue[] = [];
 
   if (
     !isRecord(value) ||
+    value.format !== MIND_MAP_GENERATION_CANDIDATE_FORMAT ||
+    value.version !== MIND_MAP_GENERATION_CANDIDATE_VERSION ||
     !isRequiredText(value.title) ||
     !isRequiredText(value.rootNodeId) ||
     !isRecord(value.nodes) ||
@@ -221,6 +231,8 @@ function validateCandidate(
 
   return generationValidationSuccess(
     Object.freeze({
+      format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+      version: MIND_MAP_GENERATION_CANDIDATE_VERSION,
       title: value.title.trim(),
       rootNodeId: value.rootNodeId.trim(),
       nodes: Object.freeze(nodes),
@@ -228,85 +240,3 @@ function validateCandidate(
     }),
   );
 }
-
-export const mindMapGenerationOutputContractV1: GenerationOutputContract<MindMapGenerationCandidateV1> =
-  Object.freeze({
-    schema: {
-      type: 'object',
-      required: ['title', 'rootNodeId', 'nodes', 'frames'],
-      additionalProperties: false,
-      properties: {
-        title: { type: 'string', minLength: 1 },
-        rootNodeId: { type: 'string', minLength: 1 },
-        nodes: {
-          type: 'object',
-          minProperties: 1,
-          additionalProperties: {
-            type: 'object',
-            required: [
-              'id',
-              'title',
-              'focus',
-              'childIds',
-              'sourceAliases',
-            ],
-            additionalProperties: false,
-            properties: {
-              id: { type: 'string', minLength: 1 },
-              title: { type: 'string', minLength: 1 },
-              focus: { type: 'string', minLength: 1 },
-              childIds: {
-                type: 'array',
-                uniqueItems: true,
-                items: { type: 'string', minLength: 1 },
-              },
-              sourceAliases: {
-                type: 'array',
-                uniqueItems: true,
-                items: { type: 'string', minLength: 1 },
-              },
-            },
-          },
-        },
-        frames: {
-          type: 'object',
-          additionalProperties: {
-            type: 'object',
-            required: ['id', 'title', 'nodeIds', 'sourceAliases'],
-            additionalProperties: false,
-            properties: {
-              id: { type: 'string', minLength: 1 },
-              title: { type: 'string', minLength: 1 },
-              nodeIds: {
-                type: 'array',
-                minItems: 1,
-                uniqueItems: true,
-                items: { type: 'string', minLength: 1 },
-              },
-              sourceAliases: {
-                type: 'array',
-                uniqueItems: true,
-                items: { type: 'string', minLength: 1 },
-              },
-            },
-          },
-        },
-      },
-    },
-    maxRepairTurns: 2,
-    validate: validateCandidate,
-    createRepairMessage(
-      issues: readonly GenerationValidationIssue[],
-      repairTurnNumber: number,
-    ) {
-      return createTextAgentUserMessage(
-        [
-          `第 ${repairTurnNumber} 次结构修复：上一份思维导图候选不符合输出协议。`,
-          ...issues.map(
-            (issue) => `- ${issue.path}: ${issue.message}`,
-          ),
-          '请只返回修复后的完整结构化结果。',
-        ].join('\n'),
-      );
-    },
-  });

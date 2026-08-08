@@ -65,7 +65,7 @@ describe('GenerationTaskPreparer', () => {
       new GenerationPreparedManifestFile(),
     );
     const definition = createMindMapGenerationTaskDefinitionV1({
-      async commit() {
+      async postProcess() {
         return { resultAssetId: 'unused' };
       },
     });

@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import type { AssetAssociationServiceApi } from '../../../main/asset-associations/asset-association-service';
+import type { AssetServiceApi } from '../../../main/assets/asset-service';
+import { decodeMindMapDocument } from '../mindmap-content-adapter';
 import { MindMapGenerationInstruction } from './mindmap-generation-instruction';
-import { mindMapGenerationOutputContractV1 } from './mindmap-generation-output';
+import {
+  MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+  MIND_MAP_GENERATION_CANDIDATE_VERSION,
+  validateMindMapGenerationCandidateV1,
+} from './mindmap-generation-output';
+import { MindMapGenerationPostProcessor } from './mindmap-generation-post-processor';
 
 const context = {
   assetReferences: {
@@ -20,6 +28,8 @@ const context = {
 
 function createCandidate() {
   return {
+    format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+    version: MIND_MAP_GENERATION_CANDIDATE_VERSION,
     title: '课程结构',
     rootNodeId: 'root',
     nodes: {
@@ -68,7 +78,7 @@ describe('Mind Map generation contracts', () => {
   });
 
   it('accepts a strict tree with source aliases and multi-node frames', () => {
-    const result = mindMapGenerationOutputContractV1.validate(
+    const result = validateMindMapGenerationCandidateV1(
       createCandidate(),
       context,
     );
@@ -78,7 +88,7 @@ describe('Mind Map generation contracts', () => {
 
   it('rejects non-tree output and unknown source aliases', () => {
     const candidate = createCandidate();
-    const result = mindMapGenerationOutputContractV1.validate(
+    const result = validateMindMapGenerationCandidateV1(
       {
         ...candidate,
         nodes: {
@@ -99,5 +109,194 @@ describe('Mind Map generation contracts', () => {
         /严格树|未知来源/,
       );
     }
+  });
+
+  it('creates a generated Asset and maps source aliases to AssetReferences', async () => {
+    let writtenContent: Uint8Array | undefined;
+    const close = vi.fn(async () => undefined);
+    const assets = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      stageGeneratedFile: vi.fn(async () => ({
+        asset: { id: 'generated-asset' },
+        created: true,
+      })),
+      resolveContent: vi.fn(async () => ({
+        handle: {
+          capabilities: new Set(['read-bytes', 'write-bytes']),
+          readBytes: vi.fn(async () => ({
+            content: new Uint8Array(),
+            revision: 'initial-revision',
+          })),
+          writeBytes: vi.fn(async ({ content }) => {
+            writtenContent = content;
+            return { revision: 'final-revision' };
+          }),
+          close,
+        },
+      })),
+      refresh: vi.fn(async () => ({ id: 'generated-asset' })),
+      delete: vi.fn(async () => undefined),
+    } as unknown as AssetServiceApi;
+    const associations = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      ensureReference: vi.fn(() => ({ id: 'reference-1' })),
+    } as unknown as AssetAssociationServiceApi;
+    const processor = new MindMapGenerationPostProcessor(
+      assets,
+      associations,
+      {
+        readFile: vi.fn(async () => JSON.stringify(createCandidate())),
+      },
+    );
+
+    await expect(
+      processor.postProcess(
+        {
+          taskId: 'task-1',
+          projectId: 'project-1',
+          instruction: new MindMapGenerationInstruction(),
+          workspaces: {
+            primary: {
+              key: 'mindmap',
+              scope: 'task',
+              permissions: { read: true, write: true },
+              instanceKey: 'task-1',
+              path: '/tmp/task-1',
+            },
+            secondary: [],
+          },
+          assetReferences: context.assetReferences,
+        },
+      ),
+    ).resolves.toEqual({ resultAssetId: 'generated-asset' });
+
+    expect(assets.stageGeneratedFile).toHaveBeenCalledWith(
+      'project-1',
+      expect.objectContaining({
+        fileName: 'task-1.mindmap',
+        name: '课程结构',
+      }),
+    );
+    expect(associations.ensureReference).toHaveBeenCalledWith(
+      'generated-asset',
+      { sourceAssetId: 'asset-1' },
+    );
+    expect(writtenContent).toBeDefined();
+
+    const document = decodeMindMapDocument(writtenContent!);
+    expect(document.associations.nodes.root).toEqual({
+      references: [
+        {
+          referenceId: 'reference-1',
+          sourceTarget: { scope: 'asset' },
+        },
+      ],
+      linkIds: [],
+    });
+    expect(document.associations.frames.overview?.references).toEqual([
+      {
+        referenceId: 'reference-1',
+        sourceTarget: { scope: 'asset' },
+      },
+    ]);
+    expect(close).toHaveBeenCalledOnce();
+    expect(assets.refresh).toHaveBeenCalledWith('generated-asset');
+  });
+
+  it('lets post-process reject an invalid workspace artifact before staging an Asset', async () => {
+    const assets = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      stageGeneratedFile: vi.fn(),
+    } as unknown as AssetServiceApi;
+    const associations = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+    } as unknown as AssetAssociationServiceApi;
+    const invalid = {
+      ...createCandidate(),
+      nodes: {
+        ...createCandidate().nodes,
+        'chapter-1': {
+          ...createCandidate().nodes['chapter-1'],
+          childIds: ['root'],
+        },
+      },
+    };
+    const processor = new MindMapGenerationPostProcessor(
+      assets,
+      associations,
+      { readFile: vi.fn(async () => JSON.stringify(invalid)) },
+    );
+
+    await expect(
+      processor.postProcess({
+        taskId: 'task-1',
+        projectId: 'project-1',
+        instruction: new MindMapGenerationInstruction(),
+        workspaces: {
+          primary: {
+            key: 'mindmap',
+            scope: 'task',
+            permissions: { read: true, write: true },
+            instanceKey: 'task-1',
+            path: '/tmp/task-1',
+          },
+          secondary: [],
+        },
+        assetReferences: context.assetReferences,
+      }),
+    ).rejects.toMatchObject({
+      code: 'GENERATION_OUTPUT_INVALID',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringMatching(/严格树/u) }),
+      ]),
+    });
+    expect(assets.stageGeneratedFile).not.toHaveBeenCalled();
+  });
+
+  it('rolls back a newly staged Asset when final content cannot be written', async () => {
+    const assets = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      stageGeneratedFile: vi.fn(async () => ({
+        asset: { id: 'generated-asset' },
+        created: true,
+      })),
+      resolveContent: vi.fn(async () => ({
+        handle: { capabilities: new Set(), close: vi.fn() },
+      })),
+      delete: vi.fn(async () => undefined),
+    } as unknown as AssetServiceApi;
+    const associations = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      ensureReference: vi.fn(() => ({ id: 'reference-1' })),
+    } as unknown as AssetAssociationServiceApi;
+    const processor = new MindMapGenerationPostProcessor(
+      assets,
+      associations,
+      {
+        readFile: vi.fn(async () => JSON.stringify(createCandidate())),
+      },
+    );
+
+    await expect(
+      processor.postProcess(
+        {
+          taskId: 'task-1',
+          projectId: 'project-1',
+          instruction: new MindMapGenerationInstruction(),
+          workspaces: {
+            primary: {
+              key: 'mindmap',
+              scope: 'task',
+              permissions: { read: true, write: true },
+              instanceKey: 'task-1',
+              path: '/tmp/task-1',
+            },
+            secondary: [],
+          },
+          assetReferences: context.assetReferences,
+        },
+      ),
+    ).rejects.toThrow('Generated Mind Map 内容不可写');
+    expect(assets.delete).toHaveBeenCalledWith('generated-asset');
   });
 });

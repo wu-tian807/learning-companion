@@ -2,7 +2,6 @@ import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { AgentUserMessage } from '../contracts/agent-message';
 import type { PreparedGenerationAssetReferenceBindings } from '../contracts/generation-asset-reference';
 import type { GenerationInstruction } from '../contracts/generation-instruction';
-import type { GenerationOutputContract } from '../contracts/generation-output-contract';
 import type {
   AgentMcpServerRequirement,
   AgentSkillRequirement,
@@ -24,6 +23,5 @@ export interface PreparedGenerationTask {
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
   readonly preparedData?: JsonValue;
-  readonly outputContract: GenerationOutputContract<unknown>;
   readonly manifestRef: string;
 }

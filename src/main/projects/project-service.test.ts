@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentSessionProjectLifecycle } from '../agents/sessions/agent-session-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
+import type { GenerationTaskProjectLifecycle } from '../generation/generation-task-service';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
 import { createProjectSnapshot } from './project';
@@ -60,6 +61,13 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     loadFromProject: vi.fn(() => calls.push('load-agent-sessions')),
     unloadProject: vi.fn(() => calls.push('unload-agent-sessions')),
   } as AgentSessionProjectLifecycle;
+  const generationTasks = {
+    loadFromProject: vi.fn(() => {
+      calls.push('load-generation-tasks');
+      return [];
+    }),
+    unloadProject: vi.fn(() => calls.push('unload-generation-tasks')),
+  } as GenerationTaskProjectLifecycle;
   const workbenchSessions = {
     closeActive: vi.fn(async () => {
       calls.push('close-workbench');
@@ -87,6 +95,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     assetService,
     associationService,
     agentSessions,
+    generationTasks,
     workbenchSessions,
     workspaceManager,
     settingsRepository,
@@ -102,6 +111,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     agentSessions,
     associationService,
     calls,
+    generationTasks,
     projectDatabase,
     project: () => project,
     service,
@@ -190,6 +200,7 @@ describe('ProjectService', () => {
     );
     expect(calls).toEqual([
       'close-workbench',
+      'unload-generation-tasks',
       'unload-agent-sessions',
       'unload-associations',
       'unload-assets',
@@ -197,6 +208,7 @@ describe('ProjectService', () => {
       'load-assets',
       'load-associations',
       'load-agent-sessions',
+      'load-generation-tasks',
     ]);
     expect(assetService.cleanupProjectArtifacts).toHaveBeenCalledWith(
       'project',
@@ -233,6 +245,7 @@ describe('ProjectService', () => {
 
     expect(calls).toEqual([
       'close-workbench',
+      'unload-generation-tasks',
       'unload-agent-sessions',
       'unload-associations',
       'unload-assets',
@@ -255,6 +268,7 @@ describe('ProjectService', () => {
     expect(current.calls).toEqual([
       'close-workbench',
       'load-assets',
+      'unload-generation-tasks',
       'unload-agent-sessions',
       'unload-associations',
       'unload-assets',

@@ -1,6 +1,7 @@
 import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
+import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
 import {
   registerAgentProviderHandlers,
   removeAgentProviderHandlers,
@@ -22,6 +23,10 @@ import {
   removeHealthCheckHandler,
 } from '../ipc/health-check';
 import {
+  registerGenerationTaskHandlers,
+  removeGenerationTaskHandlers,
+} from '../ipc/generation-tasks';
+import {
   registerProjectHandlers,
   removeProjectHandlers,
 } from '../ipc/projects';
@@ -41,6 +46,7 @@ export interface ApplicationIpcServices {
   readonly agentProviderService: AgentProviderServiceApi;
   readonly assetService: AssetServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
+  readonly generationTaskService: GenerationTaskServiceApi;
   readonly projectService: ProjectServiceApi;
   readonly settingsRepository: SettingsRepository;
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
@@ -65,6 +71,10 @@ export interface ApplicationIpcRegistrations {
   readonly removeProjects: () => void;
   readonly registerAssets: (service: AssetServiceApi) => void;
   readonly removeAssets: () => void;
+  readonly registerGenerationTasks: (
+    service: GenerationTaskServiceApi,
+  ) => void;
+  readonly removeGenerationTasks: () => void;
   readonly registerWorkbench: (
     service: WorkbenchSessionServiceApi,
   ) => void;
@@ -86,6 +96,8 @@ const defaultRegistrations: ApplicationIpcRegistrations = {
   removeProjects: removeProjectHandlers,
   registerAssets: registerAssetHandlers,
   removeAssets: removeAssetHandlers,
+  registerGenerationTasks: registerGenerationTaskHandlers,
+  removeGenerationTasks: removeGenerationTaskHandlers,
   registerWorkbench: registerWorkbenchHandlers,
   removeWorkbench: removeWorkbenchHandlers,
 };
@@ -151,6 +163,13 @@ export function registerApplicationIpc(
     register(
       () => registrations.registerAssets(services.assetService),
       registrations.removeAssets,
+    );
+    register(
+      () =>
+        registrations.registerGenerationTasks(
+          services.generationTaskService,
+        ),
+      registrations.removeGenerationTasks,
     );
     register(
       () =>

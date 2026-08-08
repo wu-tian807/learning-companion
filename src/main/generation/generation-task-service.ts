@@ -31,19 +31,52 @@ export interface CreateGenerationTaskRequest {
 export type GenerationTaskEvent = GenerationTaskExecutionEvent;
 export type GenerationTaskRunResult = GenerationTaskExecutionResult;
 
-export interface GenerationTaskServiceApi {
+export type GenerationTaskServiceEvent =
+  | {
+      readonly type: 'task-changed';
+      readonly snapshot: GenerationTaskSnapshot;
+    }
+  | {
+      readonly type: 'execution-event';
+      readonly projectId: string;
+      readonly taskId: string;
+      readonly event: GenerationTaskExecutionEvent;
+    }
+  | {
+      readonly type: 'task-completed';
+      readonly snapshot: GenerationTaskSnapshot;
+      readonly result: GenerationTaskExecutionResult;
+    }
+  | {
+      readonly type: 'task-discarded';
+      readonly projectId: string;
+      readonly taskId: string;
+    };
+
+export type GenerationTaskServiceListener = (
+  event: GenerationTaskServiceEvent,
+) => void;
+
+export interface GenerationTaskProjectLifecycle {
   loadFromProject(projectId: string): readonly GenerationTaskSnapshot[];
   unloadProject(): void;
+}
+
+export interface GenerationTaskServiceApi
+  extends GenerationTaskProjectLifecycle {
   getActiveProjectId(): string | undefined;
   list(): readonly GenerationTaskSnapshot[];
   get(taskId: string): GenerationTaskSnapshot | undefined;
   create(request: CreateGenerationTaskRequest): GenerationTaskSnapshot;
+  start(request: CreateGenerationTaskRequest): GenerationTaskSnapshot;
+  retry(taskId: string): GenerationTaskSnapshot;
   run(
     taskId: string,
     signal?: AbortSignal,
   ): AsyncGenerator<GenerationTaskEvent, GenerationTaskRunResult>;
   cancel(taskId: string): void;
   discard(taskId: string): void;
+  subscribe(listener: GenerationTaskServiceListener): () => void;
 }
 
 interface GenerationTaskServiceDependencies {
@@ -75,11 +108,23 @@ function createCombinedSignal(
     : controller.signal;
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'AbortError'
+  );
+}
+
 export class GenerationTaskService implements GenerationTaskServiceApi {
   private readonly dependencies: GenerationTaskServiceDependencies;
   private readonly tasks = new Map<string, GenerationTask>();
   private readonly activeRuns = new Map<string, AbortController>();
+  private readonly backgroundRuns = new Map<string, Promise<void>>();
+  private readonly listeners = new Set<GenerationTaskServiceListener>();
   private activeProjectId: string | undefined;
+  private lifecycleVersion = 0;
 
   constructor(
     private readonly database: GenerationTaskDatabaseApi,
@@ -99,7 +144,9 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       throw new AppError('PROJECT_NOT_FOUND');
     }
 
+    this.lifecycleVersion += 1;
     this.abortActiveRuns();
+    this.backgroundRuns.clear();
     this.tasks.clear();
 
     for (const snapshot of this.database.listUnfinishedByProject(
@@ -109,11 +156,21 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
     }
 
     this.activeProjectId = normalizedProjectId;
-    return this.list();
+    const snapshots = this.list();
+
+    for (const snapshot of snapshots) {
+      if (!snapshot.failure) {
+        this.scheduleRun(snapshot.id);
+      }
+    }
+
+    return snapshots;
   }
 
   unloadProject(): void {
+    this.lifecycleVersion += 1;
     this.abortActiveRuns();
+    this.backgroundRuns.clear();
     this.tasks.clear();
     this.activeProjectId = undefined;
   }
@@ -180,7 +237,31 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
     const snapshot = task.getSnapshot();
     this.database.create(snapshot);
     this.tasks.set(snapshot.id, task);
-    return task.getSnapshot();
+    const created = task.getSnapshot();
+    this.publish({ type: 'task-changed', snapshot: created });
+    return created;
+  }
+
+  start(request: CreateGenerationTaskRequest): GenerationTaskSnapshot {
+    const created = this.create(request);
+    this.scheduleRun(created.id);
+    return created;
+  }
+
+  retry(taskId: string): GenerationTaskSnapshot {
+    const snapshot = this.requireTask(taskId).getSnapshot();
+    const currentRun = this.backgroundRuns.get(snapshot.id);
+
+    if (currentRun) {
+      void currentRun.finally(() => {
+        if (this.tasks.has(snapshot.id)) {
+          this.scheduleRun(snapshot.id);
+        }
+      });
+    } else {
+      this.scheduleRun(snapshot.id);
+    }
+    return snapshot;
   }
 
   async *run(
@@ -189,6 +270,7 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
   ): AsyncGenerator<GenerationTaskEvent, GenerationTaskRunResult> {
     const task = this.requireTask(taskId);
     const initialSnapshot = task.getSnapshot();
+    const lifecycleVersion = this.lifecycleVersion;
 
     if (initialSnapshot.cancelledTime !== undefined) {
       throw new AppError('OPERATION_SUPERSEDED');
@@ -216,9 +298,15 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       runSignal.throwIfAborted();
       return result;
     } finally {
-      this.activeRuns.delete(initialSnapshot.id);
+      if (this.activeRuns.get(initialSnapshot.id) === controller) {
+        this.activeRuns.delete(initialSnapshot.id);
+      }
 
-      if (task.getStatus() === 'post-processed') {
+      if (
+        this.lifecycleVersion === lifecycleVersion &&
+        this.tasks.get(initialSnapshot.id) === task &&
+        task.getStatus() === 'post-processed'
+      ) {
         this.releaseCompletedTask(initialSnapshot.id);
       }
     }
@@ -232,15 +320,33 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       Math.max(this.dependencies.now(), task.getSnapshot().updatedTime),
     );
     this.database.update(task.getSnapshot());
+    this.publish({
+      type: 'task-changed',
+      snapshot: task.getSnapshot(),
+    });
     this.tasks.delete(id);
   }
 
   discard(taskId: string): void {
     const task = this.requireTask(taskId);
-    const id = task.getSnapshot().id;
+    const snapshot = task.getSnapshot();
+    const id = snapshot.id;
     this.activeRuns.get(id)?.abort();
     this.database.delete(id);
     this.tasks.delete(id);
+    this.publish({
+      type: 'task-discarded',
+      projectId: snapshot.projectId,
+      taskId: id,
+    });
+  }
+
+  subscribe(listener: GenerationTaskServiceListener): () => void {
+    this.listeners.add(listener);
+
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   private releaseCompletedTask(taskId: string): void {
@@ -272,5 +378,94 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
     }
 
     this.activeRuns.clear();
+  }
+
+  private scheduleRun(taskId: string): void {
+    if (this.backgroundRuns.has(taskId)) {
+      return;
+    }
+
+    const run = this.drainRun(taskId).finally(() => {
+      if (this.backgroundRuns.get(taskId) === run) {
+        this.backgroundRuns.delete(taskId);
+      }
+    });
+    this.backgroundRuns.set(taskId, run);
+  }
+
+  private async drainRun(taskId: string): Promise<void> {
+    const initial = this.requireTask(taskId).getSnapshot();
+    const lifecycleVersion = this.lifecycleVersion;
+
+    try {
+      const iterator = this.run(taskId);
+      let next = await iterator.next();
+
+      while (!next.done) {
+        if (
+          this.activeProjectId !== initial.projectId ||
+          this.lifecycleVersion !== lifecycleVersion
+        ) {
+          return;
+        }
+
+        this.publish({
+          type: 'execution-event',
+          projectId: initial.projectId,
+          taskId,
+          event: next.value,
+        });
+        const current = this.tasks.get(taskId)?.getSnapshot();
+        if (current) {
+          this.publish({ type: 'task-changed', snapshot: current });
+        }
+        next = await iterator.next();
+      }
+
+      if (
+        this.activeProjectId !== initial.projectId ||
+        this.lifecycleVersion !== lifecycleVersion
+      ) {
+        return;
+      }
+
+      const completed = this.database.get(taskId);
+      if (completed) {
+        this.publish({
+          type: 'task-completed',
+          snapshot: completed,
+          result: next.value,
+        });
+      }
+    } catch (error) {
+      if (
+        this.activeProjectId !== initial.projectId ||
+        this.lifecycleVersion !== lifecycleVersion
+      ) {
+        return;
+      }
+
+      const failed = this.tasks.get(taskId)?.getSnapshot();
+      if (failed) {
+        this.publish({ type: 'task-changed', snapshot: failed });
+      }
+      if (isAbortError(error) || !failed) {
+        return;
+      }
+      console.error('GenerationTask 后台执行失败', {
+        taskId,
+        error,
+      });
+    }
+  }
+
+  private publish(event: GenerationTaskServiceEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error('发布 GenerationTask 事件失败', error);
+      }
+    }
   }
 }

@@ -386,3 +386,7 @@ export interface CodexMcpServerPage {
   readonly data: readonly CodexMcpServer[];
   readonly nextCursor: string | null;
 }
+
+export interface CodexConfigReadResult {
+  readonly config: CodexJsonObject;
+}

@@ -92,7 +92,6 @@ interface GenerationInstructionFactory<TInstruction> {
 interface TaskDefinition<
   TInstruction,
   TPreparedData,
-  TAgentOutput,
   TResult
 > {
   id: string;
@@ -106,7 +105,6 @@ interface TaskDefinition<
   assetReferenceSchema: GenerationAssetReferenceSchema;
   instruction: GenerationInstructionFactory<TInstruction>;
   prepareExtension?: GenerationTaskPrepareExtension<...>;
-  outputContract: GenerationOutputContract<TAgentOutput>;
   postProcessor: GenerationTaskPostProcessor<...>;
 }
 ```
@@ -116,16 +114,19 @@ Definition 可以声明额外 prepare 数据，但不要求调用方派生新的
 
 - Instruction Factory；
 - 可选 Prepare Extension；
-- Output Contract；
 - PostProcessor。
+
+通用 Definition 不声明 Agent 产物路径、数量或格式。Agent 在 Workspace 中产生了什么、如何发现、
+如何校验以及如何导入，全部由具体 `postProcessor` 负责。这样 HTML 可以发现入口文件和资源目录，
+Mind Map 可以读取自己的候选文件，核心层不假设“每个任务只有一个输出文件”。
 
 Registry 使用 `id + version` 定位 Definition。版本进入 Task Snapshot，因此应用升级后仍能找到
 创建任务时使用的协议。
 
 `toolRequirements`、`skills` 和 `mcpServers` 分别表达任务工具需求、方法上下文和外部
 MCP Server，都使用 required / optional 语义，但由 Provider Adapter 分别映射。
-`mindmap.generate@1` 当前三者均为空；Provider 根据它的 read-only Workspace 自动提供
-Workspace read / search，直到出现真实复用需求才增加任务专属能力。
+`mindmap.generate@1` 当前三者均为空；Provider 根据它的 writable Workspace 自动提供
+Workspace read / search / write，直到出现真实复用需求才增加任务专属能力。
 
 ## 4. AssetReference 输入
 
@@ -256,9 +257,10 @@ workspace_root/
         │   └── sources-0002/
         │       ├── source.<ext>
         │       └── metadata.json
+        ├── output/
+        │   └── mindmap-candidate.json
         └── control/
-            ├── prepared-manifest.json
-            └── agent-output.json
+            └── prepared-manifest.json
 ```
 
 `prepared-manifest.json` 最后写入，因此它也充当 prepare 完成标志。恢复时会校验每份副本的
@@ -305,7 +307,8 @@ prepared -> assignedProviderId -> agentCompleted -> postProcessed
   `assignedProviderId` 持久化；
 - Task 一旦固定 Provider，重试和崩溃恢复都按该 ID 解析 Runner。用户随后切换到 Claude Code
   只影响新 Task，不会让旧 Task 偷换 Session；
-- Agent 已完成：直接读取 `agent-output.json`，不再次调用 Provider；
+- Agent 已完成：不再次调用 Provider，直接进入具体 Definition 的 post-process；
+- post-process 自己在 Workspace 中发现并校验产物，GenerationTask 不保存通用 output ref；
 - post-process 已完成：保留数据库历史记录，只从活动内存集合卸载；
 - post-process 必须以 `taskId` 做幂等键，防止“外部提交成功、checkpoint 尚未落库”时重复创建结果。
 
@@ -314,7 +317,8 @@ prepared -> assignedProviderId -> agentCompleted -> postProcessed
 migration 12 新增 `generation_tasks`：
 
 - Instruction、AssetReference、metrics、failure 和结果使用 JSON 列；
-- 三个 checkpoint 使用时间和对应 ref 列；
+- 三个 checkpoint 使用时间与各阶段必要数据；只有 prepare 保存通用 manifest ref，Agent checkpoint
+  只保存 Provider Session 和执行标识；
 - SQL CHECK 保证不能越过阶段；
 - `listByProject()` 可读取完整任务历史；
 - `listUnfinishedByProject()` 只读取尚未 post-process 且未取消的可恢复任务；
@@ -328,9 +332,13 @@ migration 12 新增 `generation_tasks`：
 migration 14 新增 `assigned_provider_id`，并从已有 Agent metrics 回填旧任务实际使用的
 Provider。该字段是执行开始前单独落库的恢复检查点，不依赖 Agent 成功返回。
 
-当前 `loadFromProject()` 只恢复状态对象，不擅自启动 Provider。调用 `run()` 后，
-`GenerationTaskService` 会通过 `AgentProviderService` 解析 Runner，并根据检查点从 prepare、
-Agent 或 post-process 的正确位置继续，而不是从头执行。未分配的 Task 使用当前设置中已认证的
+migration 15 删除 `agent_output_ref`。产物属于 TaskDefinition 的 Workspace 协议，不属于通用
+GenerationTask 数据模型。
+
+`loadFromProject()` 会恢复未完成任务。没有持久化 failure 的任务会在后台自动从最近检查点继续；
+已经失败的任务保持可见，等待用户显式重试，避免每次打开 Project 都重复消耗额度。
+`GenerationTaskService` 通过 `AgentProviderService` 解析 Runner，并根据检查点从 prepare、Agent
+或 post-process 的正确位置继续，而不是从头执行。未分配的 Task 使用当前设置中已认证的
 Provider；已分配 Task 使用自己的 `assignedProviderId`。
 
 Task Workspace 的自动回收尚未接入；需要先确定失败诊断保留期和崩溃恢复策略，再给
@@ -360,7 +368,7 @@ Task 汇总：
 本地估算不能冒充 Provider usage。真实 Adapter 只能填 Provider 返回的实际 usage；未返回的字段
 保持缺省。
 
-## 10. Agent 输出与修复
+## 10. Agent Workspace 产物
 
 Runner 是 provider-neutral 的流式端口：
 
@@ -374,19 +382,18 @@ request 已包含：
 - 一条多模态 User Message；
 - allowed tools；
 - 主副 Workspace 和权限；
-- output JSON Schema；
 - Session Locator 或需要续用的 sessionId。
 
-`GenerationAgentExecutor` 负责通用的结构修复循环：
+`GenerationAgentExecutor` 只负责一次 Provider Agent Turn：
 
-1. 调用第一轮；
-2. 使用 Definition 的 Output Contract 做运行时校验；
-3. 失败时生成 repair message；
-4. 使用同一个 `sessionId` 继续下一轮；
-5. 达到 `maxRepairTurns` 后失败；
-6. 成功时聚合所有轮次 usage 和时间。
+1. 传入 System Instruction、User Message、工具和 Workspace；
+2. 转发 assistant delta 与工具调用事件；
+3. 记录 Provider、Model、Session、Turn 和真实 usage；
+4. 不解释 assistant 最终回复，也不声明或读取任务产物。
 
-它会拒绝修复过程中 Provider、Model 或 Session 偷换，避免 metrics 与上下文映射失真。
+Agent 产物由具体 TaskDefinition 的提示词约定，并由其 post-process 在 Agent Turn 完成后自行
+发现和校验。未来的自动修复循环也以 post-process 的可修复结果为依据，而不是校验 assistant
+响应。
 
 ### 10.1 Codex Adapter 的执行边界
 
@@ -396,7 +403,7 @@ request 已包含：
 - request：把 Provider-neutral 请求编译成 Codex 输入、权限 Profile 与配置指纹；
 - environment：枚举并屏蔽用户环境中的 MCP 与 Skills；
 - thread coordinator：创建/恢复 Thread、维护 binding，并串行同一 Session 的 Turn；
-- response：映射流式文本、工具调用、结构化输出、真实 token usage、模型改道与时间。
+- response：映射流式文本、工具调用、完成状态、真实 token usage、模型改道与时间。
 
 Session 配置指纹只包含任务声明的稳定能力，不包含当前机器枚举出的 MCP/Skill 清单。
 因此安装一个新 Skill 不会无意义地更换 Thread，但每次恢复仍会重新生成禁用配置。
@@ -407,7 +414,7 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
 - `workspace.write` 只有在 Definition 声明且 Workspace 允许写时才授予写权限；
 - 网络、Web Search、MCP、Apps、Plugins、Skills、Hooks、Memory、Goals 与 Subagents 默认关闭；
 - 未支持的 required tool 在创建 Thread 前失败；Codex 若仍报告未声明工具调用则按协议错误失败；
-- `clientUserMessageId` 由 Task、消息与 Output Schema 稳定派生，进程重启后可复用已完成 Turn，
+- `clientUserMessageId` 由 Task 与消息稳定派生，进程重启后可复用已完成 Turn，
   避免重复扣费；
 - 只有明确的 `no rollout found for thread id` 才替换失效 binding，网络和连接错误不会被误判成
   Thread 丢失；
@@ -423,9 +430,9 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
 - primary key：`generation-mindmap`；
 - primary scope：`task`；
 - Asset Slot：必需的多值 `sources`；
-- Required tools：`workspace.read`、`workspace.search`；
-- Agent 不写 Workspace，只返回结构化结果；
-- 最大修复轮数：2。
+- Provider 默认工具：`workspace.read`、`workspace.search`、`workspace.write`；
+- Agent 必须在 Workspace 中写入 `output/mindmap-candidate.json`；
+- assistant 最终回复只报告完成状态，不承载产物。
 
 ### 11.2 Candidate 输出
 
@@ -433,6 +440,8 @@ Candidate 包含：
 
 ```ts
 interface MindMapGenerationCandidateV1 {
+  format: "learning-companion/mindmap-generation-candidate";
+  version: 1;
   title: string;
   rootNodeId: string;
   nodes: Record<string, {
@@ -461,18 +470,24 @@ interface MindMapGenerationCandidateV1 {
 Frame 由此预留“多个节点作为一次讲义生成范围”的能力；节点和 Frame 都保留来源映射，
 但通用 AssetReference / AssetLink 仍由关联服务维护，不塞进通用 Asset 对象。
 
-### 11.3 PostProcessor 接缝
+### 11.3 PostProcessor 落地
 
-当前 `MindMapGenerationPostProcessor` 调用 `MindMapGenerationResultCommitter`。真实 Committer
-尚未接入，因为现有 `AssetService` 还没有完整的 generated Asset 创建事务。
+`MindMapGenerationPostProcessor` 自己发现、校验并编排结果落地，不再增加只服务于 Mind Map 的 Committer
+抽象。它通过现有 `AssetService` 和 `AssetAssociationService` 完成领域写入：
 
-Committer 后续必须原子或幂等地完成：
+1. 从主 Workspace 读取 `output/mindmap-candidate.json`；
+2. 校验候选版本、严格树、Frame 和 source alias；
+3. 将 Candidate 转成 `.mindmap` 文档；
+4. 以 `<taskId>.mindmap` 在 Project Workspace 中暂存并创建 generated Asset；
+5. 为所有来源创建通用 AssetReference；
+6. 将 alias 映射为 Mind Map 内部 Node / Frame association；
+7. 用 revision guard 写入带 association 的最终文档并刷新 Asset；
+8. 返回 `resultAssetId`。
 
-1. 将 Candidate 转成 `.mindmap` 文档；
-2. 创建 generated Asset；
-3. 为所有来源创建通用 AssetReference；
-4. 将 alias 映射为 Mind Map 内部 Node / Frame association；
-5. 返回 `resultAssetId`。
+`taskId` 同时是文件幂等键。若进程在 Asset/Reference 已写入、Task checkpoint 尚未写入时中断，
+重试会复用同一个 generated Asset，`ensureReference()` 复用同一对关系，再覆盖最终文档，
+不会产生重复 Asset 或重复引用。普通失败会删除本次刚创建的 Asset；已存在的恢复现场则保留，
+供下一次重试继续。
 
 ## 12. 已实现文件边界
 
@@ -484,12 +499,11 @@ src/main/generation/
 │   ├── generation-prepared-manifest-file.ts
 │   ├── generation-task-preparer.ts
 │   └── generation-user-message-composer.ts
-├── generation-agent-executor.ts       # 同 Session 的输出校验/修复循环
+├── generation-agent-executor.ts       # 单次 Agent Turn 与执行指标
 ├── generation-agent-runner.ts         # Provider Runner 与选择解析端口
 ├── generation-task.ts                 # 纯状态对象
 ├── generation-task-execution.ts       # 三阶段执行
 ├── generation-task-database.ts        # SQLite 映射
-├── generation-task-output-file.ts     # Agent 输出文件
 ├── generation-task-service.ts         # Project 级活动 Task 集合
 └── generation-task-definition-registry.ts
 
@@ -516,12 +530,14 @@ src/workbenches/mindmap/generation/
 
 ## 13. 明确延后
 
-以下内容不在本轮基础层中假装完成：
+以下内容仍明确延后：
 
-- Generation Center 的提交、取消与流式展示 UI；
+- post-process 返回可修复问题后，持久化 revision-requested 状态并回到同一 Provider Session，
+  让 Agent 修改 Workspace 文件，再重新执行 post-process；
 - MCP 和模型参数的声明式扩展映射；自定义 Function Tool 与 Skills 的后续权威设计见
   [Agent Function Tool、Skill 与 Codex 动态工具设计](./2026-08-07-agent-function-tools-and-skills-design.md)；
-- generated Mind Map Asset 的真实 Committer；
 - 成功/失败 Task Workspace 的回收策略。
 
-下一步应补 generated Asset Committer 与 Mind Map 入口，形成第一条真正可见的生成闭环。
+Generation Center 已通过通用 GenerationTask IPC 发起任务，并展示后台阶段、失败重试和取消；
+成功后刷新 generated Asset 列表并打开 `resultAssetId`。下一步重点是模型选择/API 配置，以及
+Mind Map 内部提示词、输出约束和校验修复策略的精调。

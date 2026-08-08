@@ -20,6 +20,7 @@ function createResources(
     externalLibraryService: {
       shutdown: vi.fn(async () => undefined),
     },
+    generationTaskService: { unloadProject: vi.fn() },
     sandboxFrameInteractionBridge: { dispose: vi.fn() },
     workbenchSessionService: {
       closeActive: vi.fn(closeActive),
@@ -69,6 +70,9 @@ describe('ApplicationRuntime', () => {
     ).toHaveBeenCalledOnce();
     expect(
       resources.externalLibraryService.shutdown,
+    ).toHaveBeenCalledOnce();
+    expect(
+      resources.generationTaskService.unloadProject,
     ).toHaveBeenCalledOnce();
     expect(
       resources.codexRuntimeService.shutdown,

@@ -15,6 +15,26 @@ function createTask(): GenerationTask {
 }
 
 describe('GenerationTask', () => {
+  it('keeps a user message and diagnostic detail for failed tasks', () => {
+    const task = createTask();
+
+    task.recordFailure({
+      phase: 'agent',
+      failedTime: 101,
+      message: 'AI 请求没有完成，请稍后重试。',
+      code: 'CODEX_REQUEST_FAILED',
+      detail: 'failed to load configuration: invalid transport',
+    });
+
+    expect(task.getSnapshot().failure).toEqual({
+      phase: 'agent',
+      failedTime: 101,
+      message: 'AI 请求没有完成，请稍后重试。',
+      code: 'CODEX_REQUEST_FAILED',
+      detail: 'failed to load configuration: invalid transport',
+    });
+  });
+
   it('records resumable checkpoints and actual Agent execution metrics', () => {
     const task = createTask();
 
@@ -32,7 +52,6 @@ describe('GenerationTask', () => {
       checkpoint: {
         completedTime: 140,
         sessionId: 'session-1',
-        outputRef: 'control/agent-output.json',
       },
       metrics: {
         sessionId: 'session-1',
@@ -113,7 +132,6 @@ describe('GenerationTask', () => {
         checkpoint: {
           completedTime: 110,
           sessionId: 'session',
-          outputRef: 'control/output.json',
         },
         metrics: {
           sessionId: 'session',

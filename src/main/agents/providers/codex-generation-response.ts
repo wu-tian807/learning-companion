@@ -1,7 +1,4 @@
-import {
-  isJsonValue,
-  type JsonValue,
-} from '../../../shared/workbench/protocol';
+import { isJsonValue } from '../../../shared/workbench/protocol';
 import { AppError } from '../../errors/app-error';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
 import type { GenerationAgentEvent } from '../../generation/generation-agent-runner';
@@ -92,16 +89,6 @@ function isToolItemAllowed(
   );
 }
 
-function findAgentMessage(turn: CodexTurn): string | undefined {
-  const messages = (turn.items ?? []).filter(
-    (item) => item.type === 'agentMessage' && typeof item.text === 'string',
-  );
-  const preferred = [...messages]
-    .reverse()
-    .find((item) => item.phase === 'final_answer');
-  return optionalText((preferred ?? messages.at(-1))?.text as string | undefined);
-}
-
 function hasClientMessage(turn: CodexTurn, clientId: string): boolean {
   return (turn.items ?? []).some(
     (item) => item.type === 'userMessage' && item.clientId === clientId,
@@ -174,21 +161,6 @@ export function toGenerationToolEvent(
   };
 }
 
-export function parseCodexAgentOutput(turn: CodexTurn): JsonValue {
-  const text = findAgentMessage(turn);
-
-  if (!text) {
-    throw new AppError('CODEX_PROTOCOL_ERROR');
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return isJsonValue(parsed) ? parsed : text;
-  } catch {
-    return text;
-  }
-}
-
 export function findRecoveredCodexTurn(
   selection: CodexThreadSelection,
   clientId: string,
@@ -208,18 +180,18 @@ export function codexTokenUsageFromEvent(
   }
 
   const tokenUsage = event.params.tokenUsage;
-  const last = isRecord(tokenUsage) ? tokenUsage.last : undefined;
+  const total = isRecord(tokenUsage) ? tokenUsage.total : undefined;
 
-  if (!isRecord(last)) {
+  if (!isRecord(total)) {
     return undefined;
   }
 
   const usage = {
-    inputTokens: nonNegativeInteger(last.inputTokens),
-    cachedInputTokens: nonNegativeInteger(last.cachedInputTokens),
-    outputTokens: nonNegativeInteger(last.outputTokens),
-    reasoningTokens: nonNegativeInteger(last.reasoningOutputTokens),
-    totalTokens: nonNegativeInteger(last.totalTokens),
+    inputTokens: nonNegativeInteger(total.inputTokens),
+    cachedInputTokens: nonNegativeInteger(total.cachedInputTokens),
+    outputTokens: nonNegativeInteger(total.outputTokens),
+    reasoningTokens: nonNegativeInteger(total.reasoningOutputTokens),
+    totalTokens: nonNegativeInteger(total.totalTokens),
   };
   const entries = Object.entries(usage).filter(([, value]) => value !== undefined);
   return entries.length > 0

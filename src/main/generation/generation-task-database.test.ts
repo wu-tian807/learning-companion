@@ -61,7 +61,6 @@ describe('GenerationTaskDatabase', () => {
         checkpoint: {
           completedTime: 30,
           sessionId: 'session-1',
-          outputRef: 'control/agent-output.json',
           providerExecutionId: 'turn-2',
         },
         metrics: {

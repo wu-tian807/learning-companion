@@ -1,10 +1,7 @@
-import { AppError } from '../../errors/app-error';
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
 import type { CodexRuntimeServiceApi } from '../codex/codex-runtime-service-api';
-import type {
-  CodexMcpServer,
-  CodexSkill,
-} from '../codex/codex-runtime-types';
+import type { CodexSkill } from '../codex/codex-runtime-types';
+import { isRecord } from '../codex/codex-runtime-validation';
 
 export interface CodexGenerationEnvironment {
   readonly disabledMcpServers: readonly string[];
@@ -26,49 +23,22 @@ function allWorkspacePaths(
   );
 }
 
-async function listCodexMcpServerNames(
-  runtime: CodexRuntimeServiceApi,
-): Promise<readonly string[]> {
-  const names = new Set<string>();
-  const cursors = new Set<string>();
-  let cursor: string | undefined;
+function configuredMcpServerNames(config: Readonly<Record<string, unknown>>) {
+  const servers = config.mcp_servers;
 
-  do {
-    const page = await runtime.listMcpServers({
-      ...(cursor ? { cursor } : {}),
-      limit: 100,
-      detail: 'toolsAndAuthOnly',
-    });
+  if (!isRecord(servers)) {
+    return Object.freeze([]);
+  }
 
-    for (const server of page.data as readonly CodexMcpServer[]) {
-      const name = optionalText(server.name);
-
-      if (name) {
-        names.add(name);
-      }
-    }
-
-    const nextCursor = page.nextCursor ?? undefined;
-
-    if (nextCursor && cursors.has(nextCursor)) {
-      throw new AppError('CODEX_PROTOCOL_ERROR');
-    }
-
-    if (nextCursor) {
-      cursors.add(nextCursor);
-    }
-    cursor = nextCursor;
-  } while (cursor);
-
-  return Object.freeze([...names].sort());
+  return Object.freeze(Object.keys(servers).sort());
 }
 
 export async function inspectCodexGenerationEnvironment(
   runtime: CodexRuntimeServiceApi,
   request: GenerationAgentTurnRequest,
 ): Promise<CodexGenerationEnvironment> {
-  const [disabledMcpServers, skillGroups] = await Promise.all([
-    listCodexMcpServerNames(runtime),
+  const [config, skillGroups] = await Promise.all([
+    runtime.readConfig(),
     runtime.listSkills(allWorkspacePaths(request), true),
   ]);
   const disabledSkillPaths = new Set<string>();
@@ -84,7 +54,13 @@ export async function inspectCodexGenerationEnvironment(
   }
 
   return Object.freeze({
-    disabledMcpServers,
+    // mcpServerStatus/list also reports synthetic servers such as
+    // codex_apps. They have no transport entry in config.toml, so writing a
+    // partial `mcp_servers.<name> = { enabled = false }` session table makes
+    // Codex reject thread/start with "invalid transport". Only configured
+    // top-level servers can be safely overridden here; apps are disabled by
+    // the separate apps/features session settings.
+    disabledMcpServers: configuredMcpServerNames(config.config),
     disabledSkillPaths: Object.freeze([...disabledSkillPaths].sort()),
   });
 }

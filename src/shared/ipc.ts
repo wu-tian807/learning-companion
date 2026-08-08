@@ -18,6 +18,13 @@ import type {
   ExternalLibraryMigrationResult,
   ExternalLibrarySnapshot,
 } from "./external-libraries";
+import type {
+  GenerationTaskEvent,
+  GenerationTaskIdRequest,
+  GenerationTaskProjectRequest,
+  GenerationTaskView,
+  StartGenerationTaskRequest,
+} from "./generation-tasks";
 import {
   isAbsoluteFileSystemPath,
   PROJECT_NAME_MAX_LENGTH,
@@ -75,6 +82,12 @@ export const IPC_CHANNELS = {
   refreshAllAssets: "asset:refresh-all",
   revealAssetInFolder: "asset:reveal-in-folder",
   assetChanged: "asset:changed",
+  listGenerationTasks: "generation-task:list",
+  startGenerationTask: "generation-task:start",
+  retryGenerationTask: "generation-task:retry",
+  cancelGenerationTask: "generation-task:cancel",
+  discardGenerationTask: "generation-task:discard",
+  generationTaskChanged: "generation-task:changed",
   openWorkbench: "workbench:open",
   commandWorkbench: "workbench:command",
   closeWorkbench: "workbench:close",
@@ -168,6 +181,24 @@ export interface LearningCompanionApi {
   revealAssetInFolder: (request: AssetIdRequest) => Promise<void>;
   onAssetChanged: (
     listener: (event: AssetChangedEvent) => void,
+  ) => () => void;
+  listGenerationTasks: (
+    request: GenerationTaskProjectRequest,
+  ) => Promise<GenerationTaskView[]>;
+  startGenerationTask: (
+    request: StartGenerationTaskRequest,
+  ) => Promise<GenerationTaskView>;
+  retryGenerationTask: (
+    request: GenerationTaskIdRequest,
+  ) => Promise<GenerationTaskView>;
+  cancelGenerationTask: (
+    request: GenerationTaskIdRequest,
+  ) => Promise<void>;
+  discardGenerationTask: (
+    request: GenerationTaskIdRequest,
+  ) => Promise<void>;
+  onGenerationTaskChanged: (
+    listener: (event: GenerationTaskEvent) => void,
   ) => () => void;
   openWorkbench: (request: WorkbenchOpenRequest) => Promise<WorkbenchBootstrap>;
   commandWorkbench: (

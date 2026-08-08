@@ -5,6 +5,7 @@ import type { CodexRuntimeServiceApi } from '../agents/codex/codex-runtime-servi
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
+import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
 
 export interface ApplicationRuntimeResources {
   readonly databaseContext: DatabaseContext;
@@ -12,6 +13,7 @@ export interface ApplicationRuntimeResources {
   readonly codexRuntimeService: CodexRuntimeServiceApi;
   readonly contentResourceService: ContentResourceService;
   readonly externalLibraryService: ExternalLibraryServiceApi;
+  readonly generationTaskService: GenerationTaskServiceApi;
   readonly sandboxFrameInteractionBridge: SandboxFrameInteractionBridge;
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly disposeContentProtocol: () => void;
@@ -59,6 +61,7 @@ export class ApplicationRuntime {
       return this.shutdownTask;
     }
 
+    this.resources.generationTaskService.unloadProject();
     const providerShutdown = this.resources.agentProviderService
       .dispose()
       .then(() => this.resources.codexRuntimeService.shutdown());

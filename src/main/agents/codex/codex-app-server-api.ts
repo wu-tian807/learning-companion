@@ -2,6 +2,7 @@ import { AppError } from '../../errors/app-error';
 import { toThreadConfiguration } from './codex-runtime-params';
 import type {
   CodexAccountState,
+  CodexConfigReadResult,
   CodexLoginChallenge,
   CodexMcpServerPage,
   CodexModelPage,
@@ -137,6 +138,18 @@ export class CodexAppServerApi {
 
   getRateLimits(): Promise<unknown> {
     return this.request('account/rateLimits/read');
+  }
+
+  async readConfig(): Promise<CodexConfigReadResult> {
+    const result = await this.request<unknown>('config/read', {
+      includeLayers: false,
+    });
+
+    if (!isRecord(result) || !isRecord(result.config)) {
+      throw new AppError('CODEX_PROTOCOL_ERROR');
+    }
+
+    return result as unknown as CodexConfigReadResult;
   }
 
   async listSkills(

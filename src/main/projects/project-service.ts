@@ -10,6 +10,7 @@ import type { AssetServiceApi } from '../assets/asset-service';
 import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
 import type { AgentSessionProjectLifecycle } from '../agents/sessions/agent-session-service';
 import { AppError } from '../errors/app-error';
+import type { GenerationTaskProjectLifecycle } from '../generation/generation-task-service';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { CreateProjectInput } from './project';
@@ -59,6 +60,7 @@ export class ProjectService implements ProjectServiceApi {
     private readonly assetService: AssetServiceApi,
     private readonly associationService: AssetAssociationServiceApi,
     private readonly agentSessions: AgentSessionProjectLifecycle,
+    private readonly generationTasks: GenerationTaskProjectLifecycle,
     private readonly workbenchSessions: WorkbenchSessionLifecycle,
     private readonly workspaceManager: ProjectWorkspaceManagerApi,
     private readonly settingsRepository: SettingsRepository,
@@ -219,6 +221,7 @@ export class ProjectService implements ProjectServiceApi {
       if (activeProjectId === undefined) {
         await this.workbenchSessions.closeActive();
         this.agentSessions.unloadProject();
+        this.generationTasks.unloadProject();
         this.associationService.unloadProject();
         return;
       }
@@ -315,8 +318,10 @@ export class ProjectService implements ProjectServiceApi {
       const assets = await this.assetService.loadFromProject(projectId);
       this.associationService.loadFromProject(projectId);
       this.agentSessions.loadFromProject(projectId);
+      this.generationTasks.loadFromProject(projectId);
       return assets;
     } catch (error) {
+      this.generationTasks.unloadProject();
       this.agentSessions.unloadProject();
       this.associationService.unloadProject();
       this.assetService.unloadProject();
@@ -325,6 +330,7 @@ export class ProjectService implements ProjectServiceApi {
   }
 
   private unloadProjectRuntime(): void {
+    this.generationTasks.unloadProject();
     this.agentSessions.unloadProject();
     this.associationService.unloadProject();
     this.assetService.unloadProject();

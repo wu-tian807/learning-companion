@@ -5,7 +5,7 @@ import { GenerationTaskDefinitionRegistry } from './generation-task-definition-r
 
 function createDefinition() {
   return createMindMapGenerationTaskDefinitionV1({
-    async commit() {
+    async postProcess() {
       return { resultAssetId: 'asset-1' };
     },
   });
@@ -80,6 +80,21 @@ describe('GenerationTaskDefinitionRegistry', () => {
   });
 
   it('keeps the Mind Map definition free of Provider default tools', () => {
-    expect(createDefinition().toolRequirements).toEqual([]);
+    const definition = createDefinition();
+
+    expect(definition.toolRequirements).toEqual([]);
+    expect(definition.primaryWorkspaceConfig.permissions).toEqual({
+      read: true,
+      write: true,
+    });
+    expect(definition.systemInstruction).toContain(
+      'output/mindmap-candidate.json',
+    );
+    expect(definition.systemInstruction).toContain(
+      '正式结构校验由应用的 post-process 负责',
+    );
+    expect(definition.systemInstruction).not.toContain(
+      '重新读取并自检',
+    );
   });
 });

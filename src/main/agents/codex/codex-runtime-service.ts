@@ -12,6 +12,7 @@ import { toTurnParams } from './codex-runtime-params';
 import type { CodexRuntimeServiceApi } from './codex-runtime-service-api';
 import type {
   CodexAccountState,
+  CodexConfigReadResult,
   CodexLoginChallenge,
   CodexMcpServerPage,
   CodexModelPage,
@@ -139,6 +140,10 @@ export class CodexRuntimeService
 
   getRateLimits(): Promise<unknown> {
     return this.appServerApi.getRateLimits();
+  }
+
+  readConfig(): Promise<CodexConfigReadResult> {
+    return this.appServerApi.readConfig();
   }
 
   listSkills(

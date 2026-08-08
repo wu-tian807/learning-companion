@@ -14,6 +14,10 @@ describe('app paths', () => {
       settingsFile: join(userDataDirectory, 'config', 'settings.json'),
       dataDirectory: join(userDataDirectory, 'data'),
       databaseFile: join(userDataDirectory, 'data', 'learning-companion.sqlite3'),
+      agentWorkspacesDirectory: join(
+        userDataDirectory,
+        'agent-workspaces',
+      ),
       agentRuntimesDirectory: join(
         userDataDirectory,
         'agent-runtimes',
