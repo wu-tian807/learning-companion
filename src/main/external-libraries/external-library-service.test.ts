@@ -170,17 +170,21 @@ afterEach(async () => {
 async function installAndWait(
   harness: Harness,
 ): Promise<ReturnType<ExternalLibraryService["list"]>[number]> {
+  const available = new Promise<
+    ReturnType<ExternalLibraryService["list"]>[number]
+  >((resolve) => {
+    const unsubscribe = harness.service.subscribe((snapshot) => {
+      if (snapshot.status === "available") {
+        unsubscribe();
+        resolve(snapshot);
+      }
+    });
+  });
   const accepted =
     await harness.service.startInstallation("libreoffice");
 
   expect(accepted.status).toBe("downloading");
-  await vi.waitFor(() =>
-    expect(harness.service.list()).toMatchObject([
-      { status: "available" },
-    ]),
-  );
-
-  return harness.service.list()[0]!;
+  return available;
 }
 
 describe("ExternalLibraryService", () => {
@@ -221,19 +225,20 @@ describe("ExternalLibraryService", () => {
   it("exposes the executable to an available-status listener", async () => {
     const harness = await createHarness();
     await harness.service.initialize();
-    let executableFromEvent: Promise<string> | undefined;
-    let requested = false;
-    harness.service.subscribe((snapshot) => {
-      if (snapshot.status === "available" && !requested) {
-        requested = true;
-        executableFromEvent =
-          harness.service.requireExecutable("libreoffice");
-      }
+    const executableFromEvent = new Promise<string>((resolve, reject) => {
+      const unsubscribe = harness.service.subscribe((snapshot) => {
+        if (snapshot.status !== "available") {
+          return;
+        }
+
+        unsubscribe();
+        void harness.service
+          .requireExecutable("libreoffice")
+          .then(resolve, reject);
+      });
     });
 
     await harness.service.startInstallation("libreoffice");
-    await vi.waitFor(() => expect(executableFromEvent).toBeDefined());
-
     await expect(executableFromEvent).resolves.toContain(
       join("LibreOffice.app", "Contents", "MacOS", "soffice"),
     );
