@@ -13,11 +13,15 @@ function createProvider(
   id: string,
   supportedMediaTypes: readonly string[],
   requiredContentCapabilities: readonly ContentCapability[] = [],
+  selectionPriority?: number,
 ): MainWorkbenchProvider {
   const manifest: AssetWorkbenchManifest = {
     id,
     version: 1,
     protocolVersion: WORKBENCH_PROTOCOL_VERSION,
+    ...(selectionPriority === undefined
+      ? {}
+      : { selectionPriority }),
     supportedMediaTypes,
     requiredContentCapabilities,
     supportedAnchorTypes: [],
@@ -76,6 +80,53 @@ describe('WorkbenchRegistry', () => {
       provider: fallback,
       reason: 'unsupported-media',
     });
+  });
+
+  it('prefers explicit media matches over wildcard matches', () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const wildcard = createProvider('wildcard', ['text/*']);
+    const markdown = createProvider('markdown', ['text/markdown']);
+    const registry = new WorkbenchRegistry(fallback);
+    registry.register(wildcard);
+    registry.register(markdown);
+
+    expect(
+      registry.select('text/markdown', createHandle([])),
+    ).toEqual({
+      provider: markdown,
+      reason: 'matched',
+    });
+  });
+
+  it('uses selection priority and rejects unresolved ties', () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const defaultProvider = createProvider('default', ['text/plain']);
+    const preferredProvider = createProvider(
+      'preferred',
+      ['text/plain'],
+      [],
+      10,
+    );
+    const registry = new WorkbenchRegistry(fallback);
+    registry.register(defaultProvider);
+    registry.register(preferredProvider);
+
+    expect(registry.select('text/plain', createHandle([]))).toEqual({
+      provider: preferredProvider,
+      reason: 'matched',
+    });
+
+    const conflictingRegistry = new WorkbenchRegistry(fallback);
+    conflictingRegistry.register(
+      createProvider('first', ['text/plain']),
+    );
+    conflictingRegistry.register(
+      createProvider('second', ['text/plain']),
+    );
+
+    expect(() =>
+      conflictingRegistry.select('text/plain', createHandle([])),
+    ).toThrow('REGISTRATION_CONFLICT');
   });
 
   it('rejects duplicate IDs and invalid manifests', () => {

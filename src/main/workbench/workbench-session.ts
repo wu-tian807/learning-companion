@@ -39,8 +39,10 @@ export interface WorkbenchProviderOpenResult {
   readonly transportBindings?: readonly WorkbenchTransportBinding[];
 }
 
-export interface MainWorkbenchProvider {
-  readonly manifest: import('../../shared/workbench/manifest').AssetWorkbenchManifest;
+export interface MainWorkbenchProvider<
+  TId extends string = string,
+> {
+  readonly manifest: import('../../shared/workbench/manifest').AssetWorkbenchManifest<TId>;
   materializeContent?(
     context: WorkbenchMaterializationContext,
   ): Promise<MaterializedWorkbenchContent>;

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { RendererWorkbenchLoader } from '../../renderer/workbench/renderer-workbench-registry';
+import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   builtinWorkbenchCatalog,
@@ -44,10 +45,19 @@ describe('builtin Workbench catalog', () => {
   });
 
   it('registers lazy Renderer loaders for every catalog entry', () => {
-    const loaders = new Map<string, RendererWorkbenchLoader>();
+    const loaders = new Map<
+      string,
+      {
+        manifest: AssetWorkbenchManifest;
+        loader: RendererWorkbenchLoader;
+      }
+    >();
     const registerLoader = vi.fn(
-      (workbenchId: string, loader: RendererWorkbenchLoader) => {
-        loaders.set(workbenchId, loader);
+      (
+        manifest: AssetWorkbenchManifest,
+        loader: RendererWorkbenchLoader,
+      ) => {
+        loaders.set(manifest.id, { manifest, loader });
       },
     );
 
@@ -59,7 +69,11 @@ describe('builtin Workbench catalog', () => {
     );
     expect(
       [...loaders.values()].every(
-        (loader) => typeof loader === 'function',
+        ({ manifest, loader }) =>
+          manifest ===
+            builtinWorkbenchCatalog.find(
+              (entry) => entry.id === manifest.id,
+            )?.manifest && typeof loader === 'function',
       ),
     ).toBe(true);
   });

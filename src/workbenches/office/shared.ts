@@ -34,7 +34,9 @@ export const OFFICE_MEDIA_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ] as const;
 
-export const officeWorkbenchManifest: AssetWorkbenchManifest = {
+export const officeWorkbenchManifest: AssetWorkbenchManifest<
+  typeof OFFICE_WORKBENCH_ID
+> = {
   id: OFFICE_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

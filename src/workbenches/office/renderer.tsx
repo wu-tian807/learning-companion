@@ -319,7 +319,9 @@ export function OfficeWorkbenchView({
   );
 }
 
-const officeRendererWorkbenchModule: RendererWorkbenchModule = {
+const officeRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof officeWorkbenchManifest.id
+> = {
   manifest: officeWorkbenchManifest,
   View: OfficeWorkbenchView,
 };

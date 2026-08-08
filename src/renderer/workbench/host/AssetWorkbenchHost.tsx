@@ -19,10 +19,12 @@ import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
 import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
 import { WorkbenchViewErrorBoundary } from './WorkbenchViewErrorBoundary';
 import {
+  assertRendererWorkbenchCompatibility,
   RendererWorkbenchRegistry,
   type RendererWorkbenchModule,
 } from '../renderer-workbench-registry';
 import { WorkbenchLifecycleCoordinator } from '../workbench-lifecycle';
+import { closeWorkbenchSession } from '../workbench-session-cleanup';
 import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
 
 interface AssetWorkbenchHostProps {
@@ -144,9 +146,11 @@ export function AssetWorkbenchHost({
       // React may run the Host cleanup before the active View cleanup.
       // Yield once so a View can synchronously enqueue its final state command.
       await Promise.resolve();
-      await commandTail;
+      await closeWorkbenchSession(
+        () => window.learningCompanion.closeWorkbench({ sessionId }),
+        commandTail,
+      );
       runtime.deactivate(sessionId);
-      await window.learningCompanion.closeWorkbench({ sessionId });
     };
     const reportCloseError = (closeError: unknown) => {
       const message = userMessageFromError(
@@ -177,6 +181,8 @@ export function AssetWorkbenchHost({
         const module = await defaultRegistry.resolve(
           bootstrap.workbenchId,
         );
+
+        assertRendererWorkbenchCompatibility(module, bootstrap);
         const executeCommand = (
           command: WorkbenchCommand,
         ): Promise<WorkbenchCommandResult> => {

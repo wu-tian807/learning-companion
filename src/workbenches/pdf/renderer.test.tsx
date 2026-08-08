@@ -9,6 +9,7 @@ import {
   clonePdfWorkbenchState,
   DEFAULT_PDF_WORKBENCH_STATE,
   PDF_WORKBENCH_ID,
+  pdfWorkbenchManifest,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -36,7 +37,8 @@ function createBootstrap(
   return {
     sessionId: 'session',
     workbenchId: PDF_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: pdfWorkbenchManifest.version,
+    protocolVersion: pdfWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

@@ -623,7 +623,7 @@ export function ImageWorkbenchView({
       }),
     [actualSize, fit, onReveal, ready, reset, rotate],
   );
-  useWorkbenchContributions('builtin.image', rendererActions);
+  useWorkbenchContributions(imageWorkbenchManifest.id, rendererActions);
 
   const openContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -837,7 +837,9 @@ export function ImageWorkbenchView({
   );
 }
 
-export const imageRendererWorkbenchModule: RendererWorkbenchModule = {
+export const imageRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof imageWorkbenchManifest.id
+> = {
   manifest: imageWorkbenchManifest,
   View: ImageWorkbenchView,
 };

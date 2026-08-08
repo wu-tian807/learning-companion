@@ -17,6 +17,7 @@ export interface WorkbenchOpenRequest {
 export interface WorkbenchBootstrap {
   readonly sessionId: string;
   readonly workbenchId: string;
+  readonly workbenchVersion: number;
   readonly protocolVersion: number;
   readonly assetId: string;
   readonly mediaType: string;
@@ -136,6 +137,9 @@ export function isWorkbenchBootstrap(
     isRecord(value) &&
     isRequiredText(value.sessionId) &&
     isRequiredText(value.workbenchId) &&
+    typeof value.workbenchVersion === 'number' &&
+    Number.isSafeInteger(value.workbenchVersion) &&
+    value.workbenchVersion > 0 &&
     typeof value.protocolVersion === 'number' &&
     Number.isSafeInteger(value.protocolVersion) &&
     value.protocolVersion > 0 &&

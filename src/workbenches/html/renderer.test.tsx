@@ -9,7 +9,10 @@ import {
   HtmlDocumentFrame,
   HtmlWorkbenchView,
 } from './renderer';
-import { HTML_WORKBENCH_ID } from './shared';
+import {
+  HTML_WORKBENCH_ID,
+  htmlWorkbenchManifest,
+} from './shared';
 
 const asset: AssetSnapshot = {
   id: 'asset',
@@ -31,7 +34,8 @@ function render(payload: WorkbenchBootstrap['payload']) {
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: HTML_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: htmlWorkbenchManifest.version,
+    protocolVersion: htmlWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

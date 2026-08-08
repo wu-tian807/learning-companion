@@ -18,18 +18,25 @@ export interface WorkbenchSelection {
   readonly reason: WorkbenchSelectionReason;
 }
 
-function matchesMediaType(
+function mediaTypeSpecificity(
   manifest: AssetWorkbenchManifest,
   mediaType: string,
-): boolean {
+): number | undefined {
   const [type] = mediaType.split('/');
+  let specificity: number | undefined;
 
-  return manifest.supportedMediaTypes.some(
-    (supported) =>
-      supported === mediaType ||
-      supported === '*/*' ||
-      supported === `${type}/*`,
-  );
+  for (const supported of manifest.supportedMediaTypes) {
+    if (supported === mediaType) {
+      return 2;
+    }
+    if (supported === `${type}/*`) {
+      specificity = Math.max(specificity ?? 0, 1);
+    } else if (supported === '*/*') {
+      specificity ??= 0;
+    }
+  }
+
+  return specificity;
 }
 
 export class WorkbenchRegistry {
@@ -70,26 +77,65 @@ export class WorkbenchRegistry {
     mediaType: string,
     handle: import('../content/content-handle').ContentHandle | undefined,
   ): WorkbenchSelection {
-    const candidates = [...this.providers.values()].filter(
-      (provider) =>
-        provider !== this.fallbackProvider &&
-        matchesMediaType(provider.manifest, mediaType),
-    );
-    const provider = candidates.find(
-      (candidate) =>
-        handle !== undefined &&
-        hasContentCapabilities(
-          handle,
-          candidate.manifest.requiredContentCapabilities,
+    const mediaCandidates = [...this.providers.values()]
+      .filter((provider) => provider !== this.fallbackProvider)
+      .map((provider) => ({
+        provider,
+        specificity: mediaTypeSpecificity(
+          provider.manifest,
+          mediaType,
         ),
-    );
+      }))
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          provider: MainWorkbenchProvider;
+          specificity: number;
+        } => candidate.specificity !== undefined,
+      );
+    const candidates = mediaCandidates
+      .filter(
+        ({ provider }) =>
+          handle !== undefined &&
+          hasContentCapabilities(
+            handle,
+            provider.manifest.requiredContentCapabilities,
+          ),
+      )
+      .sort((left, right) => {
+        const priorityDifference =
+          (right.provider.manifest.selectionPriority ?? 0) -
+          (left.provider.manifest.selectionPriority ?? 0);
 
-    if (provider) {
-      return { provider, reason: 'matched' };
+        return (
+          priorityDifference ||
+          right.specificity - left.specificity ||
+          left.provider.manifest.id.localeCompare(
+            right.provider.manifest.id,
+          )
+        );
+      });
+    const [selected, competing] = candidates;
+
+    if (
+      selected &&
+      competing &&
+      (selected.provider.manifest.selectionPriority ?? 0) ===
+        (competing.provider.manifest.selectionPriority ?? 0) &&
+      selected.specificity === competing.specificity
+    ) {
+      throw new AppError('REGISTRATION_CONFLICT');
+    }
+
+    if (selected) {
+      return { provider: selected.provider, reason: 'matched' };
     }
 
     return this.fallback(
-      candidates.length > 0 ? 'missing-capability' : 'unsupported-media',
+      mediaCandidates.length > 0
+        ? 'missing-capability'
+        : 'unsupported-media',
     );
   }
 

@@ -44,51 +44,40 @@ export interface BuiltinWorkbenchCatalogEntry<
   TId extends string = string,
 > {
   readonly id: TId;
-  readonly manifest: AssetWorkbenchManifest;
+  readonly manifest: AssetWorkbenchManifest<TId>;
+}
+
+function defineBuiltinWorkbench<TId extends string>(
+  id: TId,
+  manifest: AssetWorkbenchManifest<TId>,
+): BuiltinWorkbenchCatalogEntry<TId> {
+  return Object.freeze({ id, manifest });
 }
 
 export const builtinWorkbenchCatalog = [
-  {
-    id: PLAIN_TEXT_WORKBENCH_ID,
-    manifest: plainTextWorkbenchManifest,
-  },
-  {
-    id: MARKDOWN_WORKBENCH_ID,
-    manifest: markdownWorkbenchManifest,
-  },
-  {
-    id: MIND_MAP_WORKBENCH_ID,
-    manifest: mindMapWorkbenchManifest,
-  },
-  {
-    id: PDF_WORKBENCH_ID,
-    manifest: pdfWorkbenchManifest,
-  },
-  {
-    id: OFFICE_WORKBENCH_ID,
-    manifest: officeWorkbenchManifest,
-  },
-  {
-    id: HTML_WORKBENCH_ID,
-    manifest: htmlWorkbenchManifest,
-  },
-  {
-    id: EPUB_WORKBENCH_ID,
-    manifest: epubWorkbenchManifest,
-  },
-  {
-    id: IMAGE_WORKBENCH_ID,
-    manifest: imageWorkbenchManifest,
-  },
-  {
-    id: AUDIO_WORKBENCH_ID,
-    manifest: audioWorkbenchManifest,
-  },
-  {
-    id: VIDEO_WORKBENCH_ID,
-    manifest: videoWorkbenchManifest,
-  },
-] as const satisfies readonly BuiltinWorkbenchCatalogEntry[];
+  defineBuiltinWorkbench(
+    PLAIN_TEXT_WORKBENCH_ID,
+    plainTextWorkbenchManifest,
+  ),
+  defineBuiltinWorkbench(
+    MARKDOWN_WORKBENCH_ID,
+    markdownWorkbenchManifest,
+  ),
+  defineBuiltinWorkbench(
+    MIND_MAP_WORKBENCH_ID,
+    mindMapWorkbenchManifest,
+  ),
+  defineBuiltinWorkbench(PDF_WORKBENCH_ID, pdfWorkbenchManifest),
+  defineBuiltinWorkbench(
+    OFFICE_WORKBENCH_ID,
+    officeWorkbenchManifest,
+  ),
+  defineBuiltinWorkbench(HTML_WORKBENCH_ID, htmlWorkbenchManifest),
+  defineBuiltinWorkbench(EPUB_WORKBENCH_ID, epubWorkbenchManifest),
+  defineBuiltinWorkbench(IMAGE_WORKBENCH_ID, imageWorkbenchManifest),
+  defineBuiltinWorkbench(AUDIO_WORKBENCH_ID, audioWorkbenchManifest),
+  defineBuiltinWorkbench(VIDEO_WORKBENCH_ID, videoWorkbenchManifest),
+] as const;
 
 export type BuiltinWorkbenchId =
   (typeof builtinWorkbenchCatalog)[number]['id'];

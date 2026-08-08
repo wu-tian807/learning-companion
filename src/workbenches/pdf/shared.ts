@@ -22,7 +22,9 @@ export const PDF_TEXT_RANGE_ANCHOR_VERSION = 1;
 export const PDF_PAGE_ANCHOR_TYPE = 'pdf.page';
 export const PDF_PAGE_ANCHOR_VERSION = 1;
 
-export const pdfWorkbenchManifest: AssetWorkbenchManifest = {
+export const pdfWorkbenchManifest: AssetWorkbenchManifest<
+  typeof PDF_WORKBENCH_ID
+> = {
   id: PDF_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

@@ -6,7 +6,9 @@ import type { JsonValue } from '../../shared/workbench/protocol';
 
 export const UNSUPPORTED_WORKBENCH_ID = 'builtin.unsupported';
 
-export const unsupportedWorkbenchManifest: AssetWorkbenchManifest = {
+export const unsupportedWorkbenchManifest: AssetWorkbenchManifest<
+  typeof UNSUPPORTED_WORKBENCH_ID
+> = {
   id: UNSUPPORTED_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

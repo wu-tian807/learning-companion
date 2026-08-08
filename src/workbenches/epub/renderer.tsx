@@ -288,7 +288,7 @@ export function EpubWorkbenchView({
     [copySelection, loadState.kind, reload, reveal],
   );
   useWorkbenchContributions(
-    'builtin.epub.viewer',
+    `${epubWorkbenchManifest.id}.viewer`,
     rendererActions,
   );
 
@@ -770,7 +770,9 @@ export function EpubWorkbenchView({
   );
 }
 
-const epubRendererWorkbenchModule: RendererWorkbenchModule = {
+const epubRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof epubWorkbenchManifest.id
+> = {
   manifest: epubWorkbenchManifest,
   View: EpubWorkbenchView,
 };

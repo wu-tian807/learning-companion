@@ -1292,7 +1292,9 @@ export function PdfWorkbenchView(
   );
 }
 
-const pdfWorkbenchModule: RendererWorkbenchModule = {
+const pdfWorkbenchModule: RendererWorkbenchModule<
+  typeof pdfWorkbenchManifest.id
+> = {
   manifest: pdfWorkbenchManifest,
   View: PdfWorkbenchView,
 };

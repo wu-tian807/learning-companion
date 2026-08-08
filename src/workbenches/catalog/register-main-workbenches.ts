@@ -7,6 +7,7 @@ import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry'
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type { WorkbenchStateDatabaseApi } from '../../main/workbench/workbench-state-database';
+import { areAssetWorkbenchManifestsEqual } from '../../shared/workbench/manifest';
 import { AudioWorkbenchProvider } from '../audio/main';
 import { EpubWorkbenchProvider } from '../epub/main';
 import { HtmlWorkbenchProvider } from '../html/main';
@@ -32,12 +33,14 @@ export interface MainWorkbenchRegistrationDependencies {
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
 }
 
-type MainWorkbenchProviderFactory = (
+type MainWorkbenchProviderFactory<TId extends BuiltinWorkbenchId> = (
   dependencies: MainWorkbenchRegistrationDependencies,
-) => MainWorkbenchProvider;
+) => MainWorkbenchProvider<TId>;
 
 const providerFactories: Readonly<
-  Record<BuiltinWorkbenchId, MainWorkbenchProviderFactory>
+  {
+    [TId in BuiltinWorkbenchId]: MainWorkbenchProviderFactory<TId>;
+  }
 > = {
   'builtin.plain-text': (dependencies) =>
     new PlainTextWorkbenchProvider(
@@ -98,9 +101,14 @@ export function registerMainWorkbenches(
   for (const entry of builtinWorkbenchCatalog) {
     const provider = providerFactories[entry.id](dependencies);
 
-    if (provider.manifest.id !== entry.id) {
+    if (
+      !areAssetWorkbenchManifestsEqual(
+        provider.manifest,
+        entry.manifest,
+      )
+    ) {
       throw new Error(
-        `Main Workbench 注册结果不匹配：${entry.id}`,
+        `Main Workbench 注册契约不匹配：${entry.id}`,
       );
     }
 

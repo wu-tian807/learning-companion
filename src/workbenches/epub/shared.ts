@@ -19,7 +19,9 @@ export const EPUB_STATE_SCHEMA_VERSION = 1;
 export const EPUB_CFI_RANGE_ANCHOR_TYPE = 'epub.cfi-range';
 export const EPUB_CFI_RANGE_ANCHOR_VERSION = 1;
 
-export const epubWorkbenchManifest: AssetWorkbenchManifest = {
+export const epubWorkbenchManifest: AssetWorkbenchManifest<
+  typeof EPUB_WORKBENCH_ID
+> = {
   id: EPUB_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

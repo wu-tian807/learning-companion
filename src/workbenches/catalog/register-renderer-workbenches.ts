@@ -8,7 +8,9 @@ import {
 } from './builtin-workbenches';
 
 const rendererLoaders: Readonly<
-  Record<BuiltinWorkbenchId, RendererWorkbenchLoader>
+  {
+    [TId in BuiltinWorkbenchId]: RendererWorkbenchLoader<TId>;
+  }
 > = {
   'builtin.plain-text': async () => {
     const { plainTextRendererWorkbenchModule } = await import(
@@ -64,6 +66,9 @@ export function registerRendererWorkbenches(
   registry: Pick<RendererWorkbenchRegistry, 'registerLoader'>,
 ): void {
   for (const entry of builtinWorkbenchCatalog) {
-    registry.registerLoader(entry.id, rendererLoaders[entry.id]);
+    registry.registerLoader(
+      entry.manifest,
+      rendererLoaders[entry.id],
+    );
   }
 }

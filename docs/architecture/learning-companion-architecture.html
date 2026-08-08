@@ -669,7 +669,7 @@
         </p>
       </div>
       <div class="baseline">
-        源码核对：2026-08-08<br>
+        源码核对：2026-08-09<br>
         main 基线：984756d
       </div>
     </header>
@@ -1687,9 +1687,9 @@
 
         workbench: {
           parent: "main",
-          title: "Main 选择 workbenchId，Renderer 用同一 ID 加载 View",
+          title: "Main 选择 Provider，Renderer 按同一契约加载 View",
           kicker: "LEVEL 3 · WORKBENCH",
-          description: "两端注册表不会彼此扫描。Main 根据 mediaType + ContentHandle capabilities 选择 Provider，把 workbenchId 放进 WorkbenchBootstrap，经 Preload 返回；Renderer 再按该 ID resolve View。",
+          description: "两端注册表不会彼此扫描，也不会互相 import。它们都绑定同一份强类型 Manifest；Main 选择 Provider 后返回 ID 与版本，Renderer 按 ID 懒加载并完成契约握手。",
           rows: 7,
           nodes: [
             N("host", "AssetWorkbenchHost", {
@@ -1722,8 +1722,8 @@
             }),
             N("main-registry", "Main WorkbenchRegistry", {
               tag: "PROVIDER REGISTRY",
-              caption: "mediaType + capabilities → Provider",
-              summary: "使用 shared Manifest 的 supportedMediaTypes 和 requiredContentCapabilities 选择 MainWorkbenchProvider。",
+              caption: "priority + media specificity + capabilities",
+              summary: "使用 shared Manifest 选择 MainWorkbenchProvider。精确媒体类型优先于通配符；显式 priority 可覆盖默认顺序；同级冲突直接失败。",
               files: ["src/main/workbench/workbench-registry.ts"],
               col: 9,
               row: 3,
@@ -1731,9 +1731,9 @@
             }),
             N("bootstrap", "WorkbenchBootstrap", {
               tag: "SHARED DTO",
-              caption: "sessionId · workbenchId · payload",
-              summary: "Main 选择结果的跨进程载体。workbenchId 是两端注册表对齐的关键。",
-              keys: ["sessionId", "workbenchId", "assetId", "mediaType", "payload"],
+              caption: "ID · workbenchVersion · protocolVersion · payload",
+              summary: "Main 选择结果的跨进程载体。Renderer 在挂载 View 前核对 ID、Workbench 版本和协议版本。",
+              keys: ["sessionId", "workbenchId", "workbenchVersion", "protocolVersion", "assetId", "mediaType", "payload"],
               files: ["src/shared/workbench/protocol.ts"],
               col: 5,
               row: 4,
@@ -1742,7 +1742,7 @@
             N("renderer-registry", "RendererWorkbenchRegistry", {
               tag: "LAZY MODULE REGISTRY",
               caption: "workbenchId → async Renderer module",
-              summary: "按 bootstrap.workbenchId 懒加载 Renderer Workbench Module；未注册时使用 Unsupported fallback。",
+              summary: "按 bootstrap.workbenchId 懒加载 Renderer Module，并核对完整 Manifest。未知 ID 立即报注册错误；只有 Main 明确选择 builtin.unsupported 时才显示 Unsupported。",
               files: ["src/renderer/workbench/renderer-workbench-registry.ts"],
               col: 1,
               row: 4,
@@ -1758,10 +1758,10 @@
               row: 6,
               span: 3
             }),
-            N("catalog", "Builtin Workbench Catalog", {
-              tag: "SHARED ID CATALOG",
-              caption: "同一 entry 注册到 Main 与 Renderer",
-              summary: "Catalog 提供稳定 ID 和 Manifest；register-main 创建 Provider，register-renderer 注册 lazy loader。",
+            N("catalog", "Typed Workbench Manifest Catalog", {
+              tag: "SHARED CONTRACT CATALOG",
+              caption: "同一 Manifest 约束 Main Factory 与 Renderer Loader",
+              summary: "Catalog 将字面量 ID 与 Manifest 绑定；两侧映射由 ID 泛型完整覆盖，注册时再校验实际 Provider / Module 的完整契约。",
               files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
               child: "workbench-catalog",
               col: 7,
@@ -1773,8 +1773,8 @@
             { from: "host", to: "preload", label: "open(assetId)" },
             { from: "preload", to: "session", label: "IPC handler" },
             { from: "session", to: "main-registry", label: "select" },
-            { from: "main-registry", to: "bootstrap", label: "chosen workbenchId" },
-            { from: "bootstrap", to: "renderer-registry", label: "返回同一 ID" },
+            { from: "main-registry", to: "bootstrap", label: "ID + versions" },
+            { from: "bootstrap", to: "renderer-registry", label: "contract handshake" },
             { from: "renderer-registry", to: "view", label: "lazy load" },
             { from: "catalog", to: "main-registry", label: "register providers", tone: "contract" },
             { from: "catalog", to: "renderer-registry", label: "register loaders", tone: "contract" }
@@ -1900,8 +1900,8 @@
             }),
             N("template", "统一接入模板", {
               tag: "CONTRIBUTOR PATH",
-              caption: "shared + main + renderer + catalogs",
-              summary: "所有 Workbench 都沿同一条注册和生命周期路径接入；特有能力通过可选分支组合。",
+              caption: "shared + main + renderer + typed registrations",
+              summary: "所有 Workbench 都沿同一条注册和生命周期路径接入；类型检查、启动校验和版本握手共同防止两端漂移。",
               child: "workbench-extension",
               col: 4,
               row: 6,
@@ -1931,8 +1931,8 @@
             N("shared-file", "shared.ts", {
               tag: "REQUIRED",
               caption: "Manifest · payload · commands · state",
-              summary: "定义稳定 workbenchId、媒体类型、Content capabilities、Facility 声明和跨 IPC JSON 数据。",
-              boundaries: ["必须是纯数据并带运行时校验。"],
+              summary: "定义稳定 workbenchId、Manifest 版本、选择优先级、Content capabilities、Facility 声明和跨 IPC JSON 数据。",
+              boundaries: ["必须是纯数据并带运行时校验；Lint 禁止依赖 Main、Renderer 或 Preload。"],
               files: ["src/shared/workbench/manifest.ts", "src/workbenches/mindmap/shared.ts"],
               col: 1,
               row: 3,
@@ -1957,10 +1957,10 @@
               row: 3,
               span: 3
             }),
-            N("catalogs", "Main + Renderer Catalog Registration", {
+            N("catalogs", "Typed Main + Renderer Registration", {
               tag: "REQUIRED",
-              caption: "同一 ID 注册 Provider 与 lazy loader",
-              summary: "把 Manifest 加入 builtin catalog，在 Main factory 创建 Provider，在 Renderer map 注册动态 import。",
+              caption: "同一 Manifest 注册 Provider 与 lazy loader",
+              summary: "把 Manifest 加入 builtin catalog；Main Factory 与 Renderer Loader 的返回 ID 在编译期绑定，运行时再核对完整 Manifest。",
               files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
               target: "workbench",
               col: 5,
@@ -2008,7 +2008,7 @@
             { from: "folder", to: "shared-file", label: "定义" },
             { from: "folder", to: "main-file", label: "实现" },
             { from: "folder", to: "renderer-file", label: "实现" },
-            { from: "shared-file", to: "catalogs", label: "manifest ID", tone: "contract" },
+            { from: "shared-file", to: "catalogs", label: "typed manifest", tone: "contract" },
             { from: "main-file", to: "catalogs", label: "provider" },
             { from: "renderer-file", to: "catalogs", label: "loader" },
             { from: "actions", to: "renderer-file", label: "contribution", tone: "contract" },

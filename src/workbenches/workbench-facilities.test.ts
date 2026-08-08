@@ -2,16 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { createCoreWorkbenchFacilityDefinitionRegistry } from '../shared/workbench/facilities/core-facilities';
 import type { AssetWorkbenchManifest } from '../shared/workbench/manifest';
-import { audioWorkbenchManifest } from './audio/shared';
-import { epubWorkbenchManifest } from './epub/shared';
-import { htmlWorkbenchManifest } from './html/shared';
-import { imageWorkbenchManifest } from './image/shared';
-import { markdownWorkbenchManifest } from './markdown/shared';
-import { mindMapWorkbenchManifest } from './mindmap/shared';
-import { pdfWorkbenchManifest } from './pdf/shared';
-import { plainTextWorkbenchManifest } from './plain-text/shared';
+import { builtinWorkbenchCatalog } from './catalog/builtin-workbenches';
 import { unsupportedWorkbenchManifest } from './unsupported/shared';
-import { videoWorkbenchManifest } from './video/shared';
 
 function facilityIds(manifest: AssetWorkbenchManifest): string[] {
   return manifest.facilities.map((facility) => facility.id).sort();
@@ -20,15 +12,7 @@ function facilityIds(manifest: AssetWorkbenchManifest): string[] {
 describe('built-in Workbench Facility matrix', () => {
   const manifests = [
     unsupportedWorkbenchManifest,
-    plainTextWorkbenchManifest,
-    markdownWorkbenchManifest,
-    mindMapWorkbenchManifest,
-    pdfWorkbenchManifest,
-    imageWorkbenchManifest,
-    audioWorkbenchManifest,
-    videoWorkbenchManifest,
-    htmlWorkbenchManifest,
-    epubWorkbenchManifest,
+    ...builtinWorkbenchCatalog.map(({ manifest }) => manifest),
   ];
 
   it('keeps every built-in manifest valid against the core registry', () => {
@@ -72,6 +56,12 @@ describe('built-in Workbench Facility matrix', () => {
         'core.transport.renderer',
       ],
       'builtin.pdf': [
+        'core.input.text-selection',
+        'core.surface.context-menu',
+        'core.surface.overflow',
+        'core.transport.renderer',
+      ],
+      'builtin.office': [
         'core.input.text-selection',
         'core.surface.context-menu',
         'core.surface.overflow',

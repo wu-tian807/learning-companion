@@ -12,6 +12,7 @@ import { MindMapWorkbenchView } from './renderer';
 import {
   MIND_MAP_MEDIA_TYPE,
   MIND_MAP_WORKBENCH_ID,
+  mindMapWorkbenchManifest,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -37,7 +38,8 @@ function render(payload: WorkbenchBootstrap['payload']) {
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: MIND_MAP_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: mindMapWorkbenchManifest.version,
+    protocolVersion: mindMapWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

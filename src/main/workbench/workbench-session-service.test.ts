@@ -150,6 +150,8 @@ describe('WorkbenchSessionService', () => {
     await expect(manager.open('asset')).resolves.toMatchObject({
       sessionId: 'session',
       workbenchId: 'plain-text',
+      workbenchVersion: 1,
+      protocolVersion: WORKBENCH_PROTOCOL_VERSION,
       availability: 'available',
       payload: { ready: true },
     });

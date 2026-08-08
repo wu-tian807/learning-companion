@@ -4,7 +4,7 @@ import {
   type WorkbenchFacilityDeclaration,
 } from './facilities/facility-declaration';
 
-export const WORKBENCH_PROTOCOL_VERSION = 1;
+export const WORKBENCH_PROTOCOL_VERSION = 2;
 
 export const contentCapabilities = [
   'read-bytes',
@@ -15,14 +15,114 @@ export const contentCapabilities = [
 
 export type ContentCapability = (typeof contentCapabilities)[number];
 
-export interface AssetWorkbenchManifest {
-  readonly id: string;
+export interface AssetWorkbenchManifest<
+  TId extends string = string,
+> {
+  readonly id: TId;
   readonly version: number;
   readonly protocolVersion: number;
+  readonly selectionPriority?: number;
   readonly supportedMediaTypes: readonly string[];
   readonly requiredContentCapabilities: readonly ContentCapability[];
   readonly supportedAnchorTypes: readonly string[];
   readonly facilities: readonly WorkbenchFacilityDeclaration[];
+}
+
+function haveSameStringValues(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value) => right.includes(value))
+  );
+}
+
+function areJsonValuesEqual(
+  left: unknown,
+  right: unknown,
+): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) =>
+        areJsonValuesEqual(value, right[index]),
+      )
+    );
+  }
+
+  if (
+    typeof left !== 'object' ||
+    left === null ||
+    typeof right !== 'object' ||
+    right === null
+  ) {
+    return false;
+  }
+
+  const leftEntries = Object.entries(left);
+  const rightRecord = right as Record<string, unknown>;
+
+  return (
+    leftEntries.length === Object.keys(rightRecord).length &&
+    leftEntries.every(
+      ([key, value]) =>
+        Object.hasOwn(rightRecord, key) &&
+        areJsonValuesEqual(value, rightRecord[key]),
+    )
+  );
+}
+
+export function areAssetWorkbenchManifestsEqual(
+  left: AssetWorkbenchManifest,
+  right: AssetWorkbenchManifest,
+): boolean {
+  if (
+    left.id !== right.id ||
+    left.version !== right.version ||
+    left.protocolVersion !== right.protocolVersion ||
+    (left.selectionPriority ?? 0) !==
+      (right.selectionPriority ?? 0) ||
+    !haveSameStringValues(
+      left.supportedMediaTypes,
+      right.supportedMediaTypes,
+    ) ||
+    !haveSameStringValues(
+      left.requiredContentCapabilities,
+      right.requiredContentCapabilities,
+    ) ||
+    !haveSameStringValues(
+      left.supportedAnchorTypes,
+      right.supportedAnchorTypes,
+    ) ||
+    left.facilities.length !== right.facilities.length
+  ) {
+    return false;
+  }
+
+  const rightFacilities = new Map(
+    right.facilities.map((facility) => [
+      workbenchFacilityKey(facility.id, facility.version),
+      facility,
+    ]),
+  );
+
+  return left.facilities.every((facility) => {
+    const other = rightFacilities.get(
+      workbenchFacilityKey(facility.id, facility.version),
+    );
+
+    return (
+      other !== undefined &&
+      areJsonValuesEqual(facility.options, other.options)
+    );
+  });
 }
 
 function hasUniqueValues(values: readonly string[]): boolean {
@@ -51,6 +151,8 @@ export function isAssetWorkbenchManifest(
     Number.isSafeInteger(candidate.version) &&
     (candidate.version ?? 0) > 0 &&
     candidate.protocolVersion === WORKBENCH_PROTOCOL_VERSION &&
+    (candidate.selectionPriority === undefined ||
+      Number.isSafeInteger(candidate.selectionPriority)) &&
     Array.isArray(candidate.supportedMediaTypes) &&
     candidate.supportedMediaTypes.length > 0 &&
     candidate.supportedMediaTypes.every(

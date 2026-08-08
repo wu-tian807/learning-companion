@@ -11,6 +11,7 @@ import {
 } from '../pdf/shared';
 import {
   OFFICE_PAGE_ANCHOR_TYPE,
+  officeWorkbenchManifest,
 } from './shared';
 import {
   mapOfficePreviewInteraction,
@@ -32,8 +33,9 @@ function createProps(): RendererWorkbenchViewProps {
     },
     bootstrap: {
       sessionId: 'session',
-      workbenchId: 'builtin.office',
-      protocolVersion: 1,
+      workbenchId: officeWorkbenchManifest.id,
+      workbenchVersion: officeWorkbenchManifest.version,
+      protocolVersion: officeWorkbenchManifest.protocolVersion,
       assetId: 'asset',
       mediaType: 'application/msword',
       availability: 'available',

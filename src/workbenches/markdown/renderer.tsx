@@ -336,7 +336,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [activeEditorActionAdapter],
   );
   useWorkbenchContributions(
-    'builtin.markdown.editor',
+    `${markdownWorkbenchManifest.id}.editor`,
     editorActions,
   );
 
@@ -1037,7 +1037,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       viewState,
     ],
   );
-  useWorkbenchContributions('builtin.markdown', rendererActions);
+  useWorkbenchContributions(
+    markdownWorkbenchManifest.id,
+    rendererActions,
+  );
 
   if (!payload) {
     return (
@@ -1201,7 +1204,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   );
 }
 
-export const markdownRendererWorkbenchModule: RendererWorkbenchModule = {
+export const markdownRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof markdownWorkbenchManifest.id
+> = {
   manifest: markdownWorkbenchManifest,
   View: MarkdownWorkbenchView,
 };

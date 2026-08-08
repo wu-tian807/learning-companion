@@ -41,7 +41,9 @@ export const MIND_MAP_NODE_ANCHOR_VERSION = 1;
 export const MIND_MAP_FRAME_ANCHOR_TYPE = 'mindmap.frame';
 export const MIND_MAP_FRAME_ANCHOR_VERSION = 1;
 
-export const mindMapWorkbenchManifest: AssetWorkbenchManifest = {
+export const mindMapWorkbenchManifest: AssetWorkbenchManifest<
+  typeof MIND_MAP_WORKBENCH_ID
+> = {
   id: MIND_MAP_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

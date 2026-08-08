@@ -18,7 +18,9 @@ export const HTML_QUOTE_ANCHOR_VERSION = 1;
 export const HTML_LINK_ANCHOR_TYPE = 'html.link';
 export const HTML_LINK_ANCHOR_VERSION = 1;
 
-export const htmlWorkbenchManifest: AssetWorkbenchManifest = {
+export const htmlWorkbenchManifest: AssetWorkbenchManifest<
+  typeof HTML_WORKBENCH_ID
+> = {
   id: HTML_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
