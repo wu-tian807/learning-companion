@@ -99,6 +99,55 @@ describe('ProjectWorkspaceManager path rules', () => {
 });
 
 describe('ProjectWorkspaceManager', () => {
+  it('creates idempotent generated files and removes only managed output', async () => {
+    const root = await createTemporaryDirectory();
+    const workspacePath = join(root, 'project');
+    const manager = new ProjectWorkspaceManager();
+    await manager.prepareWorkspace({
+      projectId: 'project-a',
+      workspacePath,
+    });
+
+    const created = await manager.createGeneratedFile(
+      workspacePath,
+      'task-1.mindmap',
+      new TextEncoder().encode('first'),
+    );
+    const existing = await manager.createGeneratedFile(
+      workspacePath,
+      'task-1.mindmap',
+      new TextEncoder().encode('second'),
+    );
+
+    expect(created).toMatchObject({
+      created: true,
+      contentRef: {
+        base: 'project-workspace',
+        path: 'assets/generated/task-1.mindmap',
+      },
+    });
+    expect(existing).toMatchObject({
+      created: false,
+      contentRef: created.contentRef,
+    });
+    expect(await readFile(created.absolutePath, 'utf8')).toBe('first');
+
+    await manager.removeGeneratedFile(
+      workspacePath,
+      created.contentRef,
+    );
+    await expect(stat(created.absolutePath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(
+      manager.removeGeneratedFile(workspacePath, {
+        kind: 'local-file',
+        base: 'project-workspace',
+        path: 'assets/imported/source.md',
+      }),
+    ).rejects.toThrow('DATA_INTEGRITY_ERROR');
+  });
+
   it('rejects a filesystem root as a Project Workspace', async () => {
     const manager = new ProjectWorkspaceManager();
 

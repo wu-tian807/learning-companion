@@ -46,6 +46,10 @@ export interface AssetServiceApi {
     path: string,
     mode?: LocalAssetImportMode,
   ): Promise<AssetSnapshot>;
+  stageGeneratedFile(
+    projectId: string,
+    input: StageGeneratedAssetFileInput,
+  ): Promise<StagedGeneratedAsset>;
   update(
     assetId: string,
     changes: UpdateAssetInput,
@@ -81,6 +85,18 @@ export interface AssetDeletionObserver {
 
 export interface AssetServiceUpdateOptions {
   readonly contentStatus?: AssetContentStatus;
+}
+
+export interface StageGeneratedAssetFileInput {
+  readonly fileName: string;
+  readonly name: string;
+  readonly mediaType: string;
+  readonly content: Uint8Array;
+}
+
+export interface StagedGeneratedAsset {
+  readonly asset: AssetSnapshot;
+  readonly created: boolean;
 }
 
 interface ResolvedRuntimeAsset {
@@ -332,6 +348,100 @@ export class AssetService implements AssetServiceApi {
     }
   }
 
+  async stageGeneratedFile(
+    projectId: string,
+    input: StageGeneratedAssetFileInput,
+  ): Promise<StagedGeneratedAsset> {
+    this.requireExpectedProject(projectId);
+    const lifecycleVersion = this.lifecycleVersion;
+    const context = this.createResolveContext(projectId);
+    await this.workspaceManager.validateWorkspace({
+      projectId,
+      workspacePath: context.projectWorkspace,
+    });
+    const generated = await this.workspaceManager.createGeneratedFile(
+      context.projectWorkspace,
+      input.fileName,
+      input.content,
+    );
+    this.requireUnchangedProject(lifecycleVersion, projectId);
+    const existing = [...this.runtimeMap.values()].find((asset) =>
+      isSameContentRef(asset.contentRef, generated.contentRef),
+    );
+
+    if (existing) {
+      if (
+        existing.creationKind !== 'generated' ||
+        existing.mediaType !== input.mediaType
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      return Object.freeze({
+        asset: cloneAssetSnapshot(existing),
+        created: false,
+      });
+    }
+
+    let resolved: ResolvedAssetContent | undefined;
+
+    try {
+      resolved = await this.resolverRegistry.resolve(
+        generated.contentRef,
+        context,
+      );
+      this.requireUnchangedProject(lifecycleVersion, projectId);
+
+      if (
+        resolved.contentStatus.availability !== 'available' ||
+        !resolved.location ||
+        resolved.contentRef.kind !== LOCAL_FILE_CONTENT_KIND
+      ) {
+        throw new AppError('ASSET_UNAVAILABLE');
+      }
+
+      const detectedMediaType = await this.dependencies.detectMediaType(
+        resolved.location.absolutePath,
+      );
+      this.requireUnchangedProject(lifecycleVersion, projectId);
+
+      if (detectedMediaType !== input.mediaType) {
+        throw new AppError('ASSET_MEDIA_TYPE_MISMATCH');
+      }
+
+      const asset = this.assetDatabase.add(projectId, {
+        name: input.name,
+        mediaType: input.mediaType,
+        creationKind: 'generated',
+        contentRef: resolved.contentRef,
+      });
+      const snapshot = createSnapshot(asset, resolved);
+      this.runtimeMap.set(asset.id, snapshot);
+
+      return Object.freeze({
+        asset: cloneAssetSnapshot(snapshot),
+        created: true,
+      });
+    } catch (error) {
+      if (generated.created) {
+        await this.workspaceManager
+          .removeGeneratedFile(
+            context.projectWorkspace,
+            generated.contentRef,
+          )
+          .catch((cleanupError: unknown) => {
+            console.error(
+              '清理创建失败的 Generated Asset 文件失败',
+              cleanupError,
+            );
+          });
+      }
+      throw error;
+    } finally {
+      await resolved?.handle?.close();
+    }
+  }
+
   update(
     assetId: string,
     changes: UpdateAssetInput,
@@ -395,7 +505,7 @@ export class AssetService implements AssetServiceApi {
   async delete(assetId: string): Promise<void> {
     const projectId = this.requireActiveProjectId();
     const lifecycleVersion = this.lifecycleVersion;
-    this.find(assetId);
+    const current = this.find(assetId);
     const project = this.projectLookup.get(projectId);
 
     if (!project) {
@@ -420,6 +530,18 @@ export class AssetService implements AssetServiceApi {
         assetId,
         error,
       });
+    }
+
+    if (current.creationKind === 'generated') {
+      await this.workspaceManager
+        .removeGeneratedFile(project.workspacePath, current.contentRef)
+        .catch((error: unknown) => {
+          console.error('清理 Generated Asset 文件失败', {
+            projectId,
+            assetId,
+            error,
+          });
+        });
     }
   }
 

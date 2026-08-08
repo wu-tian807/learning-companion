@@ -64,6 +64,12 @@ export interface ImportedLocalFile {
   readonly copiedAbsolutePath?: string;
 }
 
+export interface GeneratedLocalFile {
+  readonly contentRef: LocalFileContentRef;
+  readonly absolutePath: string;
+  readonly created: boolean;
+}
+
 interface WorkspaceMarker {
   readonly schemaVersion: number;
   readonly projectId: string;
@@ -98,6 +104,15 @@ export interface ProjectWorkspaceManagerApi {
     workspacePath: string,
     sourcePath: string,
   ): Promise<ImportedLocalFile>;
+  createGeneratedFile(
+    workspacePath: string,
+    fileName: string,
+    content: Uint8Array,
+  ): Promise<GeneratedLocalFile>;
+  removeGeneratedFile(
+    workspacePath: string,
+    contentRef: LocalFileContentRef,
+  ): Promise<void>;
   removeImportedFile(absolutePath: string): Promise<void>;
   openWorkspace(workspacePath: string): Promise<void>;
   revealFile(absolutePath: string): void;
@@ -159,6 +174,25 @@ function createMarkerContent(projectId: string): string {
     null,
     2,
   )}\n`;
+}
+
+function requireGeneratedFileName(value: string): string {
+  const fileName = value.trim();
+
+  if (
+    fileName.length === 0 ||
+    fileName !== value ||
+    basename(fileName) !== fileName ||
+    fileName === '.' ||
+    fileName === '..' ||
+    fileName.includes('\0') ||
+    /[<>:"/\\|?*]/u.test(fileName) ||
+    /[. ]$/u.test(fileName)
+  ) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  return fileName;
 }
 
 function parseMarker(content: string): WorkspaceMarker {
@@ -607,6 +641,109 @@ export class ProjectWorkspaceManager
     }
   }
 
+  async createGeneratedFile(
+    workspacePath: string,
+    fileName: string,
+    content: Uint8Array,
+  ): Promise<GeneratedLocalFile> {
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
+    const generatedDirectory = join(
+      normalizedWorkspace,
+      'assets',
+      'generated',
+    );
+    await this.dependencies.mkdir(generatedDirectory, { recursive: true });
+    const destinationPath = join(
+      generatedDirectory,
+      requireGeneratedFileName(fileName),
+    );
+    const existing = await this.generatedFileIfPresent(
+      normalizedWorkspace,
+      destinationPath,
+    );
+
+    if (existing) {
+      return existing;
+    }
+
+    const temporaryPath = join(
+      generatedDirectory,
+      `.${this.dependencies.createId()}.generating`,
+    );
+
+    try {
+      await this.dependencies.writeFile(
+        temporaryPath,
+        Buffer.from(content),
+        { flag: 'wx' },
+      );
+      await this.dependencies.link(temporaryPath, destinationPath);
+      await this.dependencies.rm(temporaryPath, { force: true });
+
+      return Object.freeze({
+        contentRef: await this.classifyLocalFile(
+          normalizedWorkspace,
+          destinationPath,
+        ),
+        absolutePath: destinationPath,
+        created: true,
+      });
+    } catch (error) {
+      await this.dependencies.rm(temporaryPath, { force: true }).catch(
+        () => undefined,
+      );
+
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'EEXIST'
+      ) {
+        const concurrent = await this.generatedFileIfPresent(
+          normalizedWorkspace,
+          destinationPath,
+        );
+
+        if (concurrent) {
+          return concurrent;
+        }
+      }
+
+      throw new AppError('CONTENT_WRITE_FAILED', { cause: error });
+    }
+  }
+
+  async removeGeneratedFile(
+    workspacePath: string,
+    contentRef: LocalFileContentRef,
+  ): Promise<void> {
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
+
+    if (
+      contentRef.base !== 'project-workspace' ||
+      !contentRef.path.startsWith('assets/generated/')
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const absolutePath = resolvePortableWorkspacePath(
+      normalizedWorkspace,
+      contentRef.path,
+    );
+    const generatedDirectory = join(
+      normalizedWorkspace,
+      'assets',
+      'generated',
+    );
+
+    if (!isPathInside(generatedDirectory, absolutePath)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    await this.dependencies.rm(absolutePath, { force: true });
+  }
+
   async removeImportedFile(absolutePath: string): Promise<void> {
     await this.dependencies.rm(
       requireAbsoluteWorkspaceFilePath(absolutePath),
@@ -614,6 +751,34 @@ export class ProjectWorkspaceManager
       force: true,
       },
     );
+  }
+
+  private async generatedFileIfPresent(
+    workspacePath: string,
+    absolutePath: string,
+  ): Promise<GeneratedLocalFile | undefined> {
+    try {
+      const stats = await this.dependencies.lstat(absolutePath);
+
+      if (stats.isSymbolicLink() || !stats.isFile()) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      return Object.freeze({
+        contentRef: await this.classifyLocalFile(
+          workspacePath,
+          absolutePath,
+        ),
+        absolutePath,
+        created: false,
+      });
+    } catch (error) {
+      if (isFileNotFoundError(error)) {
+        return undefined;
+      }
+
+      throw error;
+    }
   }
 
   async openWorkspace(workspacePath: string): Promise<void> {

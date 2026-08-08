@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ContentCapability } from '../../shared/workbench/manifest';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import type { ContentHandle } from '../content/content-handle';
 import {
   createAssetContentStatus,
   createAbsoluteLocalFileContentRef,
+  createProjectWorkspaceContentRef,
   type AssetContentAvailability,
 } from '../content/content-ref';
 import {
@@ -122,6 +124,7 @@ function createService(
   database: AssetDatabaseApi,
   registry: ContentResolverRegistry,
   dependencies: Partial<AssetServiceDependencies> = {},
+  workspaceManagerOverrides: Partial<ProjectWorkspaceManagerApi> = {},
 ): AssetService {
   const projectLookup = {
     get: (projectId: string) =>
@@ -146,8 +149,20 @@ function createService(
     resolveLocalFile: async (_workspacePath: string, ref: Asset['contentRef']) =>
       ref.path,
     removeImportedFile: async () => undefined,
+    createGeneratedFile: async (
+      workspacePath: string,
+      fileName: string,
+    ) => ({
+      contentRef: createProjectWorkspaceContentRef(
+        `assets/generated/${fileName}`,
+      ),
+      absolutePath: `${workspacePath}/assets/generated/${fileName}`,
+      created: true,
+    }),
+    removeGeneratedFile: async () => undefined,
     selectAssetFiles: async () => [],
     revealFile: vi.fn(),
+    ...workspaceManagerOverrides,
   } as unknown as ProjectWorkspaceManagerApi;
 
   return new AssetService(
@@ -521,6 +536,60 @@ describe('AssetService', () => {
 
     await (resolved.handle as ContentHandle).close();
     expect(handles.at(-1)?.close).toHaveBeenCalledOnce();
+  });
+
+  it('stages generated files idempotently and removes their managed source', async () => {
+    const database = createDatabase([]);
+    const { registry } = createResolver();
+    const contentRef = createProjectWorkspaceContentRef(
+      'assets/generated/task-1.mindmap',
+    );
+    const createGeneratedFile = vi.fn(async () => ({
+      contentRef,
+      absolutePath: '/tmp/project/assets/generated/task-1.mindmap',
+      created: true,
+    }));
+    const removeGeneratedFile = vi.fn(async () => undefined);
+    const service = createService(
+      database,
+      registry,
+      { detectMediaType: vi.fn(async () => MIND_MAP_ASSET_MEDIA_TYPE) },
+      { createGeneratedFile, removeGeneratedFile },
+    );
+    await service.loadFromProject('project');
+
+    const first = await service.stageGeneratedFile('project', {
+      fileName: 'task-1.mindmap',
+      name: '课程结构',
+      mediaType: MIND_MAP_ASSET_MEDIA_TYPE,
+      content: new TextEncoder().encode('{}'),
+    });
+    const second = await service.stageGeneratedFile('project', {
+      fileName: 'task-1.mindmap',
+      name: '不会覆盖已有 Asset',
+      mediaType: MIND_MAP_ASSET_MEDIA_TYPE,
+      content: new TextEncoder().encode('{"changed":true}'),
+    });
+
+    expect(first).toMatchObject({ created: true, asset: { id: 'created' } });
+    expect(second).toMatchObject({
+      created: false,
+      asset: { id: 'created', name: '课程结构' },
+    });
+    expect(database.add).toHaveBeenCalledOnce();
+    expect(database.add).toHaveBeenCalledWith('project', {
+      name: '课程结构',
+      mediaType: MIND_MAP_ASSET_MEDIA_TYPE,
+      creationKind: 'generated',
+      contentRef,
+    });
+
+    await service.delete('created');
+
+    expect(removeGeneratedFile).toHaveBeenCalledWith(
+      '/tmp/project',
+      contentRef,
+    );
   });
 
   it('tracks successful Workbench content writes through AssetService update', async () => {
