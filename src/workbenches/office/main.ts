@@ -6,7 +6,7 @@ import type {
 import {
   LIBREOFFICE_PREVIEW_ARTIFACT_KEY,
   LIBREOFFICE_PREVIEW_PRODUCER_ID,
-} from '../../main/artifacts/producers/libreoffice-preview-producer';
+} from './artifacts/libreoffice-preview-producer';
 import { createFileContentRevision } from '../../main/content/content-revision';
 import type {
   ContentHandle,
@@ -25,6 +25,8 @@ import type {
 } from '../../main/projects/project-database';
 import type {
   MainWorkbenchProvider,
+  MaterializedWorkbenchContent,
+  WorkbenchMaterializationContext,
 } from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
@@ -91,6 +93,15 @@ export class OfficeWorkbenchProvider
     this.now = dependencies.now ?? Date.now;
   }
 
+  async materializeContent(
+    context: WorkbenchMaterializationContext,
+  ): Promise<MaterializedWorkbenchContent> {
+    return this.materializeRequest(
+      await this.createMaterializationRequest(context),
+      context.signal,
+    );
+  }
+
   async open(
     context: Parameters<MainWorkbenchProvider['open']>[0],
   ) {
@@ -106,39 +117,7 @@ export class OfficeWorkbenchProvider
       throw new AppError('REGISTRATION_CONFLICT');
     }
 
-    const project = this.projects.get(context.asset.projectId);
-
-    if (!project) {
-      throw new AppError('PROJECT_NOT_FOUND');
-    }
-
-    let sourceRevision: string;
-
-    try {
-      sourceRevision = await createFileContentRevision(
-        context.content.location.absolutePath,
-        context.signal,
-      );
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-
-      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
-    }
-
-    const request: AssetArtifactRequest = {
-      assetId: context.asset.id,
-      producerId: LIBREOFFICE_PREVIEW_PRODUCER_ID,
-      artifactKey: LIBREOFFICE_PREVIEW_ARTIFACT_KEY,
-      workspacePath: project.workspacePath,
-      source: {
-        assetId: context.asset.id,
-        mediaType: context.asset.mediaType,
-        absolutePath: context.content.location.absolutePath,
-        revision: sourceRevision,
-      },
-    };
+    const request = await this.createMaterializationRequest(context);
     const session: OfficeSession = {
       request,
       viewState: this.readViewState(context.state),
@@ -150,10 +129,10 @@ export class OfficeWorkbenchProvider
 
       if (cached) {
         return {
-          payload: await this.attachArtifact(
+          payload: await this.attachMaterializedContent(
             context.sessionId,
             session,
-            cached,
+            this.toMaterializedContent(cached),
           ),
         };
       }
@@ -205,15 +184,15 @@ export class OfficeWorkbenchProvider
         return { payload: session.readyPayload };
       }
 
-      const artifact = await this.artifacts.getOrCreate(
+      const materialized = await this.materializeRequest(
         session.request,
         context.signal,
       );
       return {
-        payload: await this.attachArtifact(
+        payload: await this.attachMaterializedContent(
           context.sessionId,
           session,
-          artifact,
+          materialized,
         ),
       };
     }
@@ -257,19 +236,86 @@ export class OfficeWorkbenchProvider
     await session.artifactHandle?.close();
   }
 
-  private async attachArtifact(
+  private async createMaterializationRequest(
+    context: WorkbenchMaterializationContext,
+  ): Promise<AssetArtifactRequest> {
+    if (
+      !isOfficeMediaType(context.asset.mediaType) ||
+      context.content.location?.kind !== 'local-file'
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const project = this.projects.get(context.asset.projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+
+    let sourceRevision: string;
+
+    try {
+      sourceRevision = await createFileContentRevision(
+        context.content.location.absolutePath,
+        context.signal,
+      );
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      throw new AppError('ASSET_UNAVAILABLE', { cause: error });
+    }
+
+    return {
+      assetId: context.asset.id,
+      producerId: LIBREOFFICE_PREVIEW_PRODUCER_ID,
+      artifactKey: LIBREOFFICE_PREVIEW_ARTIFACT_KEY,
+      workspacePath: project.workspacePath,
+      source: {
+        assetId: context.asset.id,
+        mediaType: context.asset.mediaType,
+        absolutePath: context.content.location.absolutePath,
+        revision: sourceRevision,
+      },
+    };
+  }
+
+  private async materializeRequest(
+    request: AssetArtifactRequest,
+    signal?: AbortSignal,
+  ): Promise<MaterializedWorkbenchContent> {
+    return this.toMaterializedContent(
+      await this.artifacts.getOrCreate(request, signal),
+    );
+  }
+
+  private toMaterializedContent(
+    artifact: ResolvedAssetArtifact,
+  ): MaterializedWorkbenchContent {
+    if (artifact.artifact.mediaType !== 'application/pdf') {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    return Object.freeze({
+      absolutePath: artifact.absolutePath,
+      mediaType: artifact.artifact.mediaType,
+    });
+  }
+
+  private async attachMaterializedContent(
     sessionId: string,
     session: OfficeSession,
-    artifact: ResolvedAssetArtifact,
+    content: MaterializedWorkbenchContent,
   ): Promise<JsonValue & OfficePreparePreviewResult> {
-    if (artifact.artifact.mediaType !== 'application/pdf') {
+    if (content.mediaType !== 'application/pdf') {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
     this.resources.revokeSession(sessionId);
     await session.artifactHandle?.close();
     const handle = new LocalFileContentHandle(
-      artifact.absolutePath,
+      content.absolutePath,
     );
     const contentUrl = this.resources.register(
       sessionId,

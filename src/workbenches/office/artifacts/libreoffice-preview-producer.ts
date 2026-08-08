@@ -4,18 +4,18 @@ import { pathToFileURL } from 'node:url';
 
 import type {
   ExternalCommandRunnerApi,
-} from '../../external-libraries/external-command-runner';
-import { ExternalCommandRunner } from '../../external-libraries/external-command-runner';
+} from '../../../main/external-libraries/external-command-runner';
+import { ExternalCommandRunner } from '../../../main/external-libraries/external-command-runner';
 import type {
   ExternalLibraryServiceApi,
-} from '../../external-libraries/external-library-service';
-import { LIBREOFFICE_LIBRARY_ID } from '../../external-libraries/definitions/libreoffice';
-import { AppError } from '../../errors/app-error';
+} from '../../../main/external-libraries/external-library-service';
+import { LIBREOFFICE_LIBRARY_ID } from '../../../main/external-libraries/definitions/libreoffice';
+import { AppError } from '../../../main/errors/app-error';
 import type {
   AssetArtifactProduceRequest,
   AssetArtifactProducer,
   ProducedAssetArtifact,
-} from '../asset-artifact-registry';
+} from '../../../main/artifacts/asset-artifact-registry';
 
 export const LIBREOFFICE_PREVIEW_PRODUCER_ID =
   'builtin.office.preview';

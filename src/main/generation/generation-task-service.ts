@@ -305,7 +305,7 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       if (
         this.lifecycleVersion === lifecycleVersion &&
         this.tasks.get(initialSnapshot.id) === task &&
-        task.getStatus() === 'post-processed'
+        task.getStatus() === 'completed'
       ) {
         this.releaseCompletedTask(initialSnapshot.id);
       }

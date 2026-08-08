@@ -23,6 +23,7 @@ export interface PreparedGenerationAssetReference {
   readonly assetId: string;
   readonly name: string;
   readonly mediaType: string;
+  readonly materializedMediaType?: string;
   readonly contentRevision: string;
   readonly relativePath: string;
 }
@@ -201,6 +202,14 @@ export function clonePreparedGenerationAssetReferenceBindings(
               assetId: requireText(reference.assetId, 'assetId'),
               name: requireText(reference.name, 'name'),
               mediaType: requireText(reference.mediaType, 'mediaType'),
+              ...(reference.materializedMediaType === undefined
+                ? {}
+                : {
+                    materializedMediaType: requireText(
+                      reference.materializedMediaType,
+                      'materializedMediaType',
+                    ),
+                  }),
               contentRevision: requireText(
                 reference.contentRevision,
                 'contentRevision',

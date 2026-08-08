@@ -160,6 +160,25 @@ afterEach(async () => {
 });
 
 describe('OfficeWorkbenchProvider', () => {
+  it('exposes the same PDF materialization used by the preview flow', async () => {
+    const harness = await createHarness();
+
+    await expect(
+      harness.provider.materializeContent(harness.context),
+    ).resolves.toEqual({
+      absolutePath: expect.stringContaining('preview.pdf'),
+      mediaType: 'application/pdf',
+    });
+    expect(harness.artifacts.getOrCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId: 'asset',
+        producerId: 'builtin.office.preview',
+        artifactKey: 'preview',
+      }),
+      harness.context.signal,
+    );
+  });
+
   it('opens a valid cached PDF without requiring LibreOffice', async () => {
     const harness = await createHarness({
       cached: true,

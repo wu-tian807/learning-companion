@@ -9,10 +9,17 @@ function createAssetReferencePrompt(
 ): string {
   const sections = Object.entries(bindings).map(([slot, references]) => [
     `[${slot}]`,
-    ...references.map(
-      (reference) =>
-        `- alias=${JSON.stringify(reference.alias)}; name=${JSON.stringify(reference.name)}; mediaType=${JSON.stringify(reference.mediaType)}; path=${JSON.stringify(reference.relativePath)}`,
-    ),
+    ...references.map((reference) => {
+      const materializedMediaType =
+        reference.materializedMediaType ?? reference.mediaType;
+      return [
+        `- alias=${JSON.stringify(reference.alias)}`,
+        `name=${JSON.stringify(reference.name)}`,
+        `mediaType=${JSON.stringify(reference.mediaType)}`,
+        `materializedMediaType=${JSON.stringify(materializedMediaType)}`,
+        `path=${JSON.stringify(reference.relativePath)}`,
+      ].join('; ');
+    }),
   ]);
 
   return [

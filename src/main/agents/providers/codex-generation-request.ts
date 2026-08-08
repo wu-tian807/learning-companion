@@ -10,6 +10,12 @@ import type {
   SelectCodexThreadInput,
 } from '../codex/codex-runtime-types';
 import type { AgentSessionLocator } from '../sessions/agent-session';
+import {
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
+} from '../function-tools/builtin-agent-function-tool-ids';
 import type { CodexGenerationEnvironment } from './codex-generation-environment';
 import {
   codexCapabilityFingerprintDescriptor,
@@ -22,7 +28,7 @@ import {
 
 export const CODEX_AGENT_PROVIDER_ID = 'codex';
 
-const CODEX_GENERATION_ADAPTER_VERSION = 6;
+const CODEX_GENERATION_ADAPTER_VERSION = 8;
 
 const CODEX_GENERATION_EXECUTION_POLICY = [
   'Learning Companion generation execution boundary:',
@@ -30,7 +36,11 @@ const CODEX_GENERATION_EXECUTION_POLICY = [
   '- Do not request broader filesystem or network access.',
   '- Use only the Skills and MCP servers explicitly supplied by Learning Companion for this task; do not discover or invoke ambient capabilities.',
   '- Do not use apps/connectors, plugins, hooks, memories, goals, or subagents.',
-  '- Treat the writable workspace as the task output surface. Use tools to create or update the files requested by the task.',
+  '- Use the shell for file discovery and ordinary text inspection inside the supplied workspace roots.',
+  '- Use apply_patch only when a writable workspace is supplied, and modify files only inside writable workspace roots.',
+  '- For PDFs, start with workspace_read_pdf extract_text on manageable page ranges to locate relevant sections and page numbers. It reads embedded text only and is not OCR; sparse, empty, or garbled text is not evidence that the page is blank.',
+  '- Then use workspace_read_pdf render_pages on every relevant page and whenever formulas, tables, figures, layout, or missing text matter. The default scale 1.5 suits normal pages; raise it toward 2 only for small text or formulas. Do not form the final answer from extracted text alone. Use view_image for standalone image files.',
+  '- Treat the writable workspace as the task output surface. Read-only source workspaces must never be modified.',
   '- Keep the final assistant message brief; it reports completed work and is not itself the generated artifact.',
 ].join('\n');
 
@@ -94,7 +104,7 @@ export function createCodexClientUserMessageId(
 ): string {
   return `lc-generation-${hashJson({
     taskId: request.taskId,
-    userMessage: request.userMessage as unknown as JsonValue,
+    callKey: request.callKey,
   }).slice(0, 40)}`;
 }
 
@@ -143,11 +153,20 @@ export function createCodexGenerationConfiguration(
   capabilities: CodexGenerationCapabilitySelection,
 ): CodexGenerationConfiguration {
   const readableWorkspaces = collectReadableWorkspaces(request);
-  const workspaceToolEnabled = tools.nativeToolIds.some(
-    isCodexWorkspaceGenerationTool,
+  const workspaceToolEnabled = tools.effectiveRequirements.some(({ id }) =>
+    isCodexWorkspaceGenerationTool(id),
   );
   const workspaceWriteEnabled = tools.nativeToolIds.includes(
-    'workspace.write',
+    WORKSPACE_WRITE_TOOL_ID,
+  );
+  const shellEnabled = tools.nativeToolIds.some(
+    (id) =>
+      id === WORKSPACE_READ_TOOL_ID ||
+      id === WORKSPACE_SEARCH_TOOL_ID ||
+      id === WORKSPACE_WRITE_TOOL_ID,
+  );
+  const viewImageEnabled = tools.nativeToolIds.includes(
+    WORKSPACE_VIEW_IMAGE_TOOL_ID,
   );
 
   if (
@@ -242,9 +261,9 @@ export function createCodexGenerationConfiguration(
       memories: false,
       multi_agent: false,
       remote_plugin: false,
-      shell_tool: workspaceToolEnabled,
+      shell_tool: shellEnabled,
     },
-    tools: { view_image: false },
+    tools: { view_image: viewImageEnabled },
     web_search: 'disabled',
     default_permissions: profileId,
     permissions: {
@@ -272,6 +291,7 @@ export function createCodexGenerationConfiguration(
     cwd: request.workspaces.primary.path,
     runtimeWorkspaceRoots,
     approvalPolicy: 'never' as const,
+    permissions: profileId,
     configOverrides,
     developerInstructions: `${request.systemInstruction}\n\n${CODEX_GENERATION_EXECUTION_POLICY}`,
   };

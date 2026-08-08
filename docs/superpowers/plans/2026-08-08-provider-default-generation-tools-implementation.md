@@ -16,17 +16,22 @@
 
 ## 2. Codex 默认工具策略
 
-1. 从本次 Prepared Workspaces 派生默认 read / search / write；
-2. 支持 Provider 注入额外默认工具需求，作为未来 PDF / Video 默认工具的接入点；
+1. 从本次 Prepared Workspaces 派生默认 read / search / write / image；
+2. 文本读取和搜索映射 Codex 原生 Shell，写入映射原生 `apply_patch` / Shell，图片映射
+   Codex 原生 `view_image`；PDF Feature 拥有受控 Dynamic Tool，并在 Workbench 能力目录中
+   注册；
 3. 合并默认需求与 TaskDefinition 额外需求，同 ID 下 required 优先；
-4. 原生工具优先，Function Tool Registry 兜底；
-5. optional 缺失省略，required 缺失提前失败；
-6. Selection 保存最终有效需求、原生工具、Function Tool 和 dynamicTools。
+4. Bootstrap 将已注册的内置 Workbench 能力作为 Provider 默认需求注入，Provider 不硬编码
+   PDF、Video 等具体工具；
+5. 原生工具优先，否则仅查询 Function Tool Registry；
+6. optional 缺失省略，required 缺失提前失败；
+7. Selection 保存最终有效需求、原生工具、Function Tool 和 dynamicTools。
 
 ## 3. 请求、权限与响应统一
 
-1. Codex Thread 配置只消费最终 Selection；
-2. permission profile 依据 Selection 和 Workspace permissions 生成；
+1. Codex Thread 配置只消费最终 Selection，并在存在 readable Workspace 时开启 Shell；
+2. Codex permission profile 把每个 Prepared Workspace 分别映射为 read / write，Shell、脚本和
+   `apply_patch` 共同服从该边界；
 3. 配置指纹记录最终有效工具；
 4. 工具事件白名单改为直接消费 Selection；
 5. Function Tool 回调继续使用同一 Selection，不重复解析。
@@ -34,16 +39,26 @@
 ## 4. Mind Map 迁移
 
 1. `mindmap.generate@1` 使用空 `toolRequirements`；
-2. 保持主 Workspace read-only；
-3. 验证 Provider 自动开启 read / search 且不开放 write；
-4. 保持结构化输出、校验和 post-process 流程不变。
+2. 主 Workspace 保持可写；
+3. 验证 Provider 自动开启 Shell、可写时的原生编辑、PDF Function Tool 和 image 读取；
+4. 后续 Process 执行模型迁移见
+   `2026-08-08-generation-task-process-execution-design.md`。
 
-## 5. 验证
+## 5. Workbench 内容物化
+
+1. `MainWorkbenchProvider` 增加可选 `materializeContent()`；
+2. Office Workbench 通过现有 Artifact Service 提供唯一 Office → PDF 物化实现；
+3. Office 预览命令与 Generation prepare 共用该实现；
+4. Generation 通过现有 Workbench Registry 选择物化能力，不硬编码 Office；
+5. 任务副本记录原始媒体类型和物化媒体类型。
+
+## 6. 验证
 
 1. TaskDefinition Registry 与 prepare / recovery 测试；
 2. Codex 默认工具合并和 required / optional 测试；
-3. read-only / writable Workspace 权限测试；
-4. Function Tool 回调与事件白名单测试；
-5. Session 指纹回归测试；
-6. TypeScript、ESLint、完整 `pnpm check`；
-7. 检查 Git diff，不自动提交或推送。
+3. read-only / writable Workspace permission profile 与路径越界测试；
+4. 真实两页 PDF 的分页文字提取和逐页图片渲染测试；
+5. Function Tool 回调与事件白名单测试；
+6. Session 指纹回归测试；
+7. TypeScript、ESLint、完整 `pnpm check`；
+8. 检查 Git diff，不自动提交或推送。

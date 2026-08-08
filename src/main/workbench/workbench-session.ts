@@ -15,14 +15,23 @@ export type WorkbenchSelectionReason =
   | 'missing-capability'
   | 'content-unavailable';
 
-export interface WorkbenchProviderContext {
-  readonly sessionId: string;
+export interface WorkbenchMaterializationContext {
   readonly asset: Asset;
   readonly content: ResolvedAssetContent;
+  readonly signal?: AbortSignal;
+}
+
+export interface MaterializedWorkbenchContent {
+  readonly absolutePath: string;
+  readonly mediaType: string;
+}
+
+export interface WorkbenchProviderContext
+  extends WorkbenchMaterializationContext {
+  readonly sessionId: string;
   readonly attachments: readonly AssetAttachment[];
   readonly state: WorkbenchStateRecord | undefined;
   readonly selectionReason: WorkbenchSelectionReason;
-  readonly signal?: AbortSignal;
 }
 
 export interface WorkbenchProviderOpenResult {
@@ -32,6 +41,9 @@ export interface WorkbenchProviderOpenResult {
 
 export interface MainWorkbenchProvider {
   readonly manifest: import('../../shared/workbench/manifest').AssetWorkbenchManifest;
+  materializeContent?(
+    context: WorkbenchMaterializationContext,
+  ): Promise<MaterializedWorkbenchContent>;
   open(
     context: WorkbenchProviderContext,
   ): Promise<WorkbenchProviderOpenResult>;

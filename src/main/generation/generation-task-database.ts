@@ -4,7 +4,12 @@ import type { DatabaseContext } from '../database/database-context';
 import { generationTasks } from '../database/schema/generation-tasks';
 import { AppError } from '../errors/app-error';
 import {
+  cloneGenerationTaskMetrics,
+  type GenerationTaskMetrics,
+} from './contracts/generation-metrics';
+import {
   cloneGenerationTaskSnapshot,
+  type GenerationTaskAgentCallCheckpoint,
   type GenerationTaskSnapshot,
 } from './generation-task';
 
@@ -31,10 +36,82 @@ function requireId(value: string, field: string): string {
   return normalized;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Normalizes the one-turn metrics written before database version 16. */
+function normalizePersistedMetrics(
+  value: unknown,
+  agentCalls: readonly GenerationTaskAgentCallCheckpoint[],
+  processCompleted: boolean,
+): GenerationTaskMetrics {
+  if (!isRecord(value) || !Array.isArray(value.agentExecutions)) {
+    throw new Error('GenerationTask metrics JSON 数据无效');
+  }
+
+  const executions: Array<
+    Record<string, unknown> & { callKey: string; purpose: string }
+  > = value.agentExecutions.map((execution, index) => {
+    if (!isRecord(execution)) {
+      throw new Error('GenerationTask Agent metrics JSON 数据无效');
+    }
+
+    const checkpoint = agentCalls[index];
+    return {
+      ...execution,
+      callKey:
+        typeof execution.callKey === 'string'
+          ? execution.callKey
+          : checkpoint?.callKey ?? `legacy-call-${index + 1}`,
+      purpose:
+        typeof execution.purpose === 'string'
+          ? execution.purpose
+          : checkpoint?.purpose ?? 'generation',
+    };
+  });
+  const agentDuration = executions.reduce((total, execution) => {
+    const duration = execution['activeDurationMs'];
+    return total + (typeof duration === 'number' ? duration : 0);
+  }, 0);
+  const prepareDurationMs =
+    typeof value.prepareDurationMs === 'number'
+      ? value.prepareDurationMs
+      : undefined;
+  const legacyPostProcessDuration =
+    typeof value.postProcessDurationMs === 'number'
+      ? value.postProcessDurationMs
+      : 0;
+  const processDurationMs = processCompleted
+    ? typeof value.processDurationMs === 'number'
+      ? value.processDurationMs
+      : agentDuration + legacyPostProcessDuration
+    : undefined;
+
+  return cloneGenerationTaskMetrics({
+    ...(prepareDurationMs === undefined ? {} : { prepareDurationMs }),
+    agentExecutions:
+      executions as unknown as GenerationTaskMetrics['agentExecutions'],
+    ...(processDurationMs === undefined ? {} : { processDurationMs }),
+    totalActiveDurationMs:
+      (prepareDurationMs ?? 0) +
+      (processDurationMs ?? agentDuration),
+    ...(value.totalUsage === undefined
+      ? {}
+      : {
+          totalUsage:
+            value.totalUsage as GenerationTaskMetrics['totalUsage'],
+        }),
+  });
+}
+
 function mapRow(
   row: typeof generationTasks.$inferSelect,
 ): GenerationTaskSnapshot {
   try {
+    const agentCalls = row.agentCalls;
+    const processCompleted = row.processCompletedTime !== null;
+
     return cloneGenerationTaskSnapshot({
       id: row.id,
       projectId: row.projectId,
@@ -53,29 +130,20 @@ function mapRow(
       ...(row.assignedProviderId === null
         ? {}
         : { assignedProviderId: row.assignedProviderId }),
-      ...(row.agentCompletedTime === null
-        ? {}
-        : {
-            agentCompleted: {
-              completedTime: row.agentCompletedTime,
-              sessionId: row.agentSessionId!,
-              ...(row.agentProviderExecutionId === null
-                ? {}
-                : {
-                    providerExecutionId:
-                      row.agentProviderExecutionId,
-                  }),
+      agentCalls,
+      ...(processCompleted
+        ? {
+            completed: {
+              completedTime: row.processCompletedTime!,
+              result: row.processResult!,
             },
-          }),
-      ...(row.postProcessedTime === null
-        ? {}
-        : {
-            postProcessed: {
-              completedTime: row.postProcessedTime,
-              result: row.postProcessResult!,
-            },
-          }),
-      metrics: row.metrics,
+          }
+        : {}),
+      metrics: normalizePersistedMetrics(
+        row.metrics,
+        agentCalls,
+        processCompleted,
+      ),
       ...(row.failure === null ? {} : { failure: row.failure }),
       ...(row.cancelledTime === null
         ? {}
@@ -101,12 +169,9 @@ function toRow(task: GenerationTaskSnapshot) {
     preparedTime: snapshot.prepared?.completedTime ?? null,
     preparedManifestRef: snapshot.prepared?.manifestRef ?? null,
     assignedProviderId: snapshot.assignedProviderId ?? null,
-    agentCompletedTime: snapshot.agentCompleted?.completedTime ?? null,
-    agentSessionId: snapshot.agentCompleted?.sessionId ?? null,
-    agentProviderExecutionId:
-      snapshot.agentCompleted?.providerExecutionId ?? null,
-    postProcessedTime: snapshot.postProcessed?.completedTime ?? null,
-    postProcessResult: snapshot.postProcessed?.result ?? null,
+    agentCalls: snapshot.agentCalls,
+    processCompletedTime: snapshot.completed?.completedTime ?? null,
+    processResult: snapshot.completed?.result ?? null,
     metrics: snapshot.metrics,
     failure: snapshot.failure ?? null,
     cancelledTime: snapshot.cancelledTime ?? null,
@@ -154,7 +219,7 @@ export class GenerationTaskDatabase
             generationTasks.projectId,
             requireId(projectId, 'projectId'),
           ),
-          isNull(generationTasks.postProcessedTime),
+          isNull(generationTasks.processCompletedTime),
           isNull(generationTasks.cancelledTime),
         ),
       )
@@ -186,11 +251,9 @@ export class GenerationTaskDatabase
         preparedTime: row.preparedTime,
         preparedManifestRef: row.preparedManifestRef,
         assignedProviderId: row.assignedProviderId,
-        agentCompletedTime: row.agentCompletedTime,
-        agentSessionId: row.agentSessionId,
-        agentProviderExecutionId: row.agentProviderExecutionId,
-        postProcessedTime: row.postProcessedTime,
-        postProcessResult: row.postProcessResult,
+        agentCalls: row.agentCalls,
+        processCompletedTime: row.processCompletedTime,
+        processResult: row.processResult,
         metrics: row.metrics,
         failure: row.failure,
         cancelledTime: row.cancelledTime,

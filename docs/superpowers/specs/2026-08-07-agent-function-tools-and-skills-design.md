@@ -99,7 +99,16 @@ interface AgentFunctionToolDefinition {
   execute(
     input: JsonValue,
     context: AgentFunctionToolExecutionContext,
-  ): Promise<JsonValue>;
+  ): Promise<JsonValue | AgentFunctionToolContentResult>;
+}
+
+type AgentFunctionToolContentItem =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "image"; readonly url: string };
+
+interface AgentFunctionToolContentResult {
+  readonly kind: "content";
+  readonly items: readonly AgentFunctionToolContentItem[];
 }
 ```
 
@@ -109,7 +118,9 @@ interface AgentFunctionToolDefinition {
 - `version` 是正整数；
 - `description` 不能为空；
 - `inputSchema` 必须是 JSON object Schema；
-- 输出必须是 `JsonValue`，没有输出时返回 `null`；
+- 普通结构化输出使用 `JsonValue`，没有输出时返回 `null`；需要把图片直接交回模型时，
+  使用 Provider-neutral 的 `AgentFunctionToolContentResult`，由 Provider Adapter 映射为自己的
+  text / image content 协议；
 - Definition 注册后按只读对象使用；
 - Schema 是提供给模型和 Provider 的声明，具体工具仍必须在 handler 内校验输入，
   v1 不为此新增 Ajv 等运行时依赖。
@@ -194,7 +205,7 @@ toolRequirements: [
 
 Provider Adapter 先加入自身默认工具，再把额外声明解析为两类能力：
 
-1. Provider 自己支持的原生工具，例如 Codex 的 `workspace.read`；
+1. Provider 自己支持的原生工具，例如 Codex 的 `view_image`；
 2. `AgentFunctionToolRegistry` 中注册的应用工具。
 
 解析规则：
@@ -344,11 +355,14 @@ Conversation 仍由 Provider 自己保存。
 
 ## 6. Workspace 权限与受信任工具
 
-Codex 原生 Workspace 工具继续由现有配置控制：
+Codex Workspace 原生工具由 Provider 组合，媒体 Function Tool 由所属 Feature 注册：
 
-- `workspace.read/search` 决定是否启用只读 Shell 能力；
-- `workspace.write` 是全局写能力开关；
-- 每个 Prepared Workspace 的 `permissions.write` 再决定对应根目录是否可写；
+- `workspace.read/search/write` 映射 Codex 原生 Shell / `apply_patch` 能力；
+- `workspace.view_image` 映射 Codex 原生 `view_image`；
+- PDF Feature 注册 `workspace_read_pdf` Dynamic Tool，支持页段文字提取和逐页图片；
+- `features.shell_tool` 在存在 readable Workspace 时开启；
+- 每个 Prepared Workspace 的 `permissions.write` 决定 Codex permission profile 对该路径
+  配置 read 还是 write；Shell、脚本与 `apply_patch` 都服从同一边界；
 - shared Workspace 继续禁止写入。
 
 应用 Function Tool 在 Electron Main 进程执行，不会自动受到 Codex Sandbox 约束。
@@ -505,11 +519,14 @@ Application Runtime，Bootstrap 使用一个共享 Registry 实例：
 
 ```text
 create AgentFunctionToolRegistry
-→ pass registry to createAgentProviderService
-→ create Asset / Workspace / Converter services
-→ feature modules register concrete tools
+→ Workbench capability catalog registers concrete built-in tools
+→ pass registry and default requirements to createAgentProviderService
+→ create remaining Asset / Workspace / Converter services
 → register IPC and expose application runtime
 ```
+
+工具实现仍归属具体 Feature；Workbench capability catalog 只是 Composition Root。依赖外部
+工具包的能力可在此根据依赖状态条件注册，Provider Adapter 不需要认识 PDF、Video 等领域。
 
 Bootstrap 同时使用 Electron 提供的 `documentsPath` 解析：
 

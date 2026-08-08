@@ -1,4 +1,3 @@
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { AgentUserMessage } from '../contracts/agent-message';
 import type { PreparedGenerationAssetReferenceBindings } from '../contracts/generation-asset-reference';
 import type { GenerationInstruction } from '../contracts/generation-instruction';
@@ -16,12 +15,11 @@ export interface PreparedGenerationTask {
   readonly definitionVersion: number;
   readonly instruction: GenerationInstruction;
   readonly systemInstruction: string;
-  readonly userMessage: AgentUserMessage;
+  readonly defaultUserMessage: AgentUserMessage;
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly preparedData?: JsonValue;
   readonly manifestRef: string;
 }

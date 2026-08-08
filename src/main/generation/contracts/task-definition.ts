@@ -1,4 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import type { AgentUserMessage } from './agent-message';
 import type {
   GenerationAssetReferenceSchema,
   PreparedGenerationAssetReferenceBindings,
@@ -7,6 +8,10 @@ import type {
   GenerationInstruction,
   GenerationInstructionFactory,
 } from './generation-instruction';
+import type {
+  GenerationAgentExecutionMetrics,
+} from './generation-metrics';
+import type { GenerationValidationIssue } from './generation-validation';
 import type {
   AgentWorkspaceConfig,
   PreparedAgentWorkspaces,
@@ -27,7 +32,35 @@ export interface AgentMcpServerRequirement {
   readonly availability: 'required' | 'optional';
 }
 
-export interface GenerationTaskPrepareExtensionContext<
+export interface TaskAgentCallRequest {
+  /**
+   * Stable logical identity inside one GenerationTask. Reusing the key after
+   * recovery returns the persisted call instead of starting another turn.
+   */
+  readonly callKey: string;
+  readonly purpose: string;
+  readonly userMessage?: AgentUserMessage;
+}
+
+export interface TaskAgentCallResult {
+  readonly callKey: string;
+  readonly purpose: string;
+  readonly sessionId: string;
+  readonly providerExecutionId?: string;
+  readonly metrics: GenerationAgentExecutionMetrics;
+}
+
+/**
+ * A task-scoped view of one Provider session. Task definitions can request
+ * multiple sequential turns without knowing how Providers or sessions are
+ * selected and persisted.
+ */
+export interface TaskAgentSession {
+  readonly completedCalls: readonly TaskAgentCallResult[];
+  call(request: TaskAgentCallRequest): Promise<TaskAgentCallResult>;
+}
+
+export interface GenerationTaskProcessContext<
   TInstruction extends GenerationInstruction,
 > {
   readonly taskId: string;
@@ -35,46 +68,29 @@ export interface GenerationTaskPrepareExtensionContext<
   readonly instruction: TInstruction;
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
+  readonly defaultUserMessage: AgentUserMessage;
+  readonly agent: TaskAgentSession;
   readonly signal?: AbortSignal;
+  reportStatus(message: string): void;
+  reportOutputRejected(
+    repairTurnNumber: number,
+    issues: readonly GenerationValidationIssue[],
+  ): void;
 }
 
-export interface GenerationTaskPrepareExtension<
-  TInstruction extends GenerationInstruction,
-  TPreparedData extends JsonValue,
+export interface GenerationTaskProcessor<
+  TInstruction extends GenerationInstruction = GenerationInstruction,
+  TResult extends JsonValue = JsonValue,
 > {
-  prepare(
-    context: GenerationTaskPrepareExtensionContext<TInstruction>,
-  ): Promise<TPreparedData>;
-}
-
-export interface GenerationTaskPostProcessContext<
-  TInstruction extends GenerationInstruction,
-  TPreparedData extends JsonValue,
-> {
-  readonly taskId: string;
-  readonly projectId: string;
-  readonly instruction: TInstruction;
-  readonly workspaces: PreparedAgentWorkspaces;
-  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly preparedData?: TPreparedData;
-  readonly signal?: AbortSignal;
-}
-
-export interface GenerationTaskPostProcessor<
-  TInstruction extends GenerationInstruction,
-  TPreparedData extends JsonValue,
-  TResult extends JsonValue,
-> {
-  postProcess(
-    context: GenerationTaskPostProcessContext<TInstruction, TPreparedData>,
+  process(
+    context: GenerationTaskProcessContext<TInstruction>,
   ): Promise<TResult>;
 }
 
 export interface TaskDefinition<
   TInstruction extends GenerationInstruction = GenerationInstruction,
-  TPreparedData extends JsonValue = JsonValue,
   TResult extends JsonValue = JsonValue,
-> {
+> extends GenerationTaskProcessor<TInstruction, TResult> {
   readonly id: string;
   readonly version: number;
   readonly systemInstruction: string;
@@ -85,19 +101,9 @@ export interface TaskDefinition<
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;
   readonly instruction: GenerationInstructionFactory<TInstruction>;
-  readonly prepareExtension?: GenerationTaskPrepareExtension<
-    TInstruction,
-    TPreparedData
-  >;
-  readonly postProcessor: GenerationTaskPostProcessor<
-    TInstruction,
-    TPreparedData,
-    TResult
-  >;
 }
 
 export type AnyTaskDefinition = TaskDefinition<
   GenerationInstruction,
-  JsonValue,
   JsonValue
 >;

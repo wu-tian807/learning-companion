@@ -5,7 +5,7 @@ import { GenerationTaskDefinitionRegistry } from './generation-task-definition-r
 
 function createDefinition() {
   return createMindMapGenerationTaskDefinitionV1({
-    async postProcess() {
+    async process() {
       return { resultAssetId: 'asset-1' };
     },
   });
@@ -91,7 +91,7 @@ describe('GenerationTaskDefinitionRegistry', () => {
       'output/mindmap-candidate.json',
     );
     expect(definition.systemInstruction).toContain(
-      '正式结构校验由应用的 post-process 负责',
+      '应用会检查产物',
     );
     expect(definition.systemInstruction).not.toContain(
       '重新读取并自检',

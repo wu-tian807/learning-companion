@@ -15,6 +15,9 @@ importers:
       '@codemirror/lang-markdown':
         specifier: ^6.5.1
         version: 6.5.1
+      '@napi-rs/canvas':
+        specifier: 1.0.2
+        version: 1.0.2
       '@openai/codex':
         specifier: 0.146.0
         version: 0.146.0
@@ -4395,7 +4398,6 @@ snapshots:
       '@napi-rs/canvas-linux-x64-musl': 1.0.2
       '@napi-rs/canvas-win32-arm64-msvc': 1.0.2
       '@napi-rs/canvas-win32-x64-msvc': 1.0.2
-    optional: true
 
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:

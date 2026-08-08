@@ -29,7 +29,6 @@ export interface GenerationPreparedManifest {
   readonly definitionId: string;
   readonly definitionVersion: number;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly preparedData?: JsonValue;
 }
 
 export interface GenerationPreparedManifestFileApi {
@@ -37,7 +36,6 @@ export interface GenerationPreparedManifestFileApi {
     primaryWorkspacePath: string,
     task: GenerationTaskSnapshot,
     assetReferences: PreparedGenerationAssetReferenceBindings,
-    preparedData?: JsonValue,
   ): Promise<GenerationPreparedManifest>;
   read(
     primaryWorkspacePath: string,
@@ -80,7 +78,6 @@ function absoluteWorkspacePath(
 function createManifest(
   task: GenerationTaskSnapshot,
   assetReferences: PreparedGenerationAssetReferenceBindings,
-  preparedData?: JsonValue,
 ): GenerationPreparedManifest {
   return Object.freeze({
     format: preparedManifestFormat,
@@ -91,9 +88,6 @@ function createManifest(
     definitionVersion: task.definitionVersion,
     assetReferences:
       clonePreparedGenerationAssetReferenceBindings(assetReferences),
-    ...(preparedData === undefined
-      ? {}
-      : { preparedData: cloneJsonValue(preparedData) }),
   });
 }
 
@@ -112,9 +106,8 @@ export class GenerationPreparedManifestFile
     primaryWorkspacePath: string,
     task: GenerationTaskSnapshot,
     assetReferences: PreparedGenerationAssetReferenceBindings,
-    preparedData?: JsonValue,
   ): Promise<GenerationPreparedManifest> {
-    const manifest = createManifest(task, assetReferences, preparedData);
+    const manifest = createManifest(task, assetReferences);
     await this.writeJson(
       absoluteWorkspacePath(
         primaryWorkspacePath,
@@ -159,8 +152,7 @@ export class GenerationPreparedManifestFile
       value.projectId !== task.projectId ||
       value.definitionId !== task.definitionId ||
       value.definitionVersion !== task.definitionVersion ||
-      !isRecord(value.assetReferences) ||
-      (value.preparedData !== undefined && !isJsonValue(value.preparedData))
+      !isRecord(value.assetReferences)
     ) {
       throw new Error('Generation prepared manifest 数据无效');
     }
@@ -170,7 +162,6 @@ export class GenerationPreparedManifestFile
       clonePreparedGenerationAssetReferenceBindings(
         value.assetReferences as PreparedGenerationAssetReferenceBindings,
       ),
-      value.preparedData,
     );
   }
 

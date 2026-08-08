@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetAssociationServiceApi } from '../../../main/asset-associations/asset-association-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
+import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
+import type {
+  GenerationTaskProcessContext,
+  TaskAgentSession,
+} from '../../../main/generation/contracts/task-definition';
 import { decodeMindMapDocument } from '../mindmap-content-adapter';
 import { MindMapGenerationInstruction } from './mindmap-generation-instruction';
 import {
@@ -9,7 +14,7 @@ import {
   MIND_MAP_GENERATION_CANDIDATE_VERSION,
   validateMindMapGenerationCandidateV1,
 } from './mindmap-generation-output';
-import { MindMapGenerationPostProcessor } from './mindmap-generation-post-processor';
+import { MindMapGenerationProcessor } from './mindmap-generation-processor';
 
 const context = {
   assetReferences: {
@@ -57,6 +62,55 @@ function createCandidate() {
       },
     },
   } as const;
+}
+
+function createProcessContext(
+  overrides: Partial<
+    GenerationTaskProcessContext<MindMapGenerationInstruction>
+  > = {},
+): GenerationTaskProcessContext<MindMapGenerationInstruction> {
+  const agent: TaskAgentSession = {
+    completedCalls: [],
+    call: vi.fn(async ({ callKey, purpose }) => ({
+      callKey,
+      purpose,
+      sessionId: 'session-1',
+      metrics: {
+        callKey,
+        purpose,
+        sessionId: 'session-1',
+        providerId: 'codex',
+        modelId: 'gpt-test',
+        startedTime: 1,
+        completedTime: 2,
+        activeDurationMs: 1,
+        turnCount: 1,
+        repairTurnCount: purpose === 'repair' ? 1 : 0,
+      },
+    })),
+  };
+
+  return {
+    taskId: 'task-1',
+    projectId: 'project-1',
+    instruction: new MindMapGenerationInstruction(),
+    workspaces: {
+      primary: {
+        key: 'mindmap',
+        scope: 'task',
+        permissions: { read: true, write: true },
+        instanceKey: 'task-1',
+        path: '/tmp/task-1',
+      },
+      secondary: [],
+    },
+    assetReferences: context.assetReferences,
+    defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
+    agent,
+    reportStatus: vi.fn(),
+    reportOutputRejected: vi.fn(),
+    ...overrides,
+  };
 }
 
 describe('Mind Map generation contracts', () => {
@@ -141,7 +195,7 @@ describe('Mind Map generation contracts', () => {
       getActiveProjectId: vi.fn(() => 'project-1'),
       ensureReference: vi.fn(() => ({ id: 'reference-1' })),
     } as unknown as AssetAssociationServiceApi;
-    const processor = new MindMapGenerationPostProcessor(
+    const processor = new MindMapGenerationProcessor(
       assets,
       associations,
       {
@@ -150,24 +204,7 @@ describe('Mind Map generation contracts', () => {
     );
 
     await expect(
-      processor.postProcess(
-        {
-          taskId: 'task-1',
-          projectId: 'project-1',
-          instruction: new MindMapGenerationInstruction(),
-          workspaces: {
-            primary: {
-              key: 'mindmap',
-              scope: 'task',
-              permissions: { read: true, write: true },
-              instanceKey: 'task-1',
-              path: '/tmp/task-1',
-            },
-            secondary: [],
-          },
-          assetReferences: context.assetReferences,
-        },
-      ),
+      processor.process(createProcessContext()),
     ).resolves.toEqual({ resultAssetId: 'generated-asset' });
 
     expect(assets.stageGeneratedFile).toHaveBeenCalledWith(
@@ -203,7 +240,7 @@ describe('Mind Map generation contracts', () => {
     expect(assets.refresh).toHaveBeenCalledWith('generated-asset');
   });
 
-  it('lets post-process reject an invalid workspace artifact before staging an Asset', async () => {
+  it('uses bounded repair turns before rejecting an invalid workspace artifact', async () => {
     const assets = {
       getActiveProjectId: vi.fn(() => 'project-1'),
       stageGeneratedFile: vi.fn(),
@@ -221,35 +258,23 @@ describe('Mind Map generation contracts', () => {
         },
       },
     };
-    const processor = new MindMapGenerationPostProcessor(
+    const processor = new MindMapGenerationProcessor(
       assets,
       associations,
       { readFile: vi.fn(async () => JSON.stringify(invalid)) },
     );
+    const processContext = createProcessContext();
 
     await expect(
-      processor.postProcess({
-        taskId: 'task-1',
-        projectId: 'project-1',
-        instruction: new MindMapGenerationInstruction(),
-        workspaces: {
-          primary: {
-            key: 'mindmap',
-            scope: 'task',
-            permissions: { read: true, write: true },
-            instanceKey: 'task-1',
-            path: '/tmp/task-1',
-          },
-          secondary: [],
-        },
-        assetReferences: context.assetReferences,
-      }),
+      processor.process(processContext),
     ).rejects.toMatchObject({
       code: 'GENERATION_OUTPUT_INVALID',
       issues: expect.arrayContaining([
         expect.objectContaining({ message: expect.stringMatching(/严格树/u) }),
       ]),
     });
+    expect(processContext.agent.call).toHaveBeenCalledTimes(4);
+    expect(processContext.reportOutputRejected).toHaveBeenCalledTimes(3);
     expect(assets.stageGeneratedFile).not.toHaveBeenCalled();
   });
 
@@ -269,7 +294,7 @@ describe('Mind Map generation contracts', () => {
       getActiveProjectId: vi.fn(() => 'project-1'),
       ensureReference: vi.fn(() => ({ id: 'reference-1' })),
     } as unknown as AssetAssociationServiceApi;
-    const processor = new MindMapGenerationPostProcessor(
+    const processor = new MindMapGenerationProcessor(
       assets,
       associations,
       {
@@ -278,24 +303,7 @@ describe('Mind Map generation contracts', () => {
     );
 
     await expect(
-      processor.postProcess(
-        {
-          taskId: 'task-1',
-          projectId: 'project-1',
-          instruction: new MindMapGenerationInstruction(),
-          workspaces: {
-            primary: {
-              key: 'mindmap',
-              scope: 'task',
-              permissions: { read: true, write: true },
-              instanceKey: 'task-1',
-              path: '/tmp/task-1',
-            },
-            secondary: [],
-          },
-          assetReferences: context.assetReferences,
-        },
-      ),
+      processor.process(createProcessContext()),
     ).rejects.toThrow('Generated Mind Map 内容不可写');
     expect(assets.delete).toHaveBeenCalledWith('generated-asset');
   });

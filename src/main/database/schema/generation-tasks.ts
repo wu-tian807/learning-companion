@@ -4,7 +4,10 @@ import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { GenerationAssetReferenceBindings } from '../../generation/contracts/generation-asset-reference';
 import type { GenerationTaskMetrics } from '../../generation/contracts/generation-metrics';
-import type { GenerationTaskFailure } from '../../generation/generation-task';
+import type {
+  GenerationTaskAgentCallCheckpoint,
+  GenerationTaskFailure,
+} from '../../generation/generation-task';
 import { projects } from './projects';
 
 export const generationTasks = sqliteTable(
@@ -25,11 +28,11 @@ export const generationTasks = sqliteTable(
     preparedTime: integer('prepared_time'),
     preparedManifestRef: text('prepared_manifest_ref'),
     assignedProviderId: text('assigned_provider_id'),
-    agentCompletedTime: integer('agent_completed_time'),
-    agentSessionId: text('agent_session_id'),
-    agentProviderExecutionId: text('agent_provider_execution_id'),
-    postProcessedTime: integer('post_processed_time'),
-    postProcessResult: text('post_process_result_json', {
+    agentCalls: text('agent_calls_json', { mode: 'json' })
+      .$type<readonly GenerationTaskAgentCallCheckpoint[]>()
+      .notNull(),
+    processCompletedTime: integer('process_completed_time'),
+    processResult: text('process_result_json', {
       mode: 'json',
     }).$type<JsonValue>(),
     metrics: text('metrics_json', { mode: 'json' })
@@ -50,7 +53,7 @@ export const generationTasks = sqliteTable(
     index('generation_tasks_unfinished_project_created_index')
       .on(table.projectId, table.createdTime, table.id)
       .where(
-        sql`${table.postProcessedTime} IS NULL AND ${table.cancelledTime} IS NULL`,
+        sql`${table.processCompletedTime} IS NULL AND ${table.cancelledTime} IS NULL`,
       ),
   ],
 );

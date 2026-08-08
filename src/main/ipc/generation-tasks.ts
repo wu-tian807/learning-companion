@@ -52,11 +52,11 @@ function toView(snapshot: GenerationTaskSnapshot): GenerationTaskView {
     ...(snapshot.assignedProviderId
       ? { assignedProviderId: snapshot.assignedProviderId }
       : {}),
-    ...(snapshot.agentCompleted
-      ? { sessionId: snapshot.agentCompleted.sessionId }
+    ...(snapshot.agentCalls.length > 0
+      ? { sessionId: snapshot.agentCalls.at(-1)!.sessionId }
       : {}),
-    ...(snapshot.postProcessed
-      ? { result: snapshot.postProcessed.result }
+    ...(snapshot.completed
+      ? { result: snapshot.completed.result }
       : {}),
     metrics: generationTaskMetricsToJson(snapshot.metrics),
     ...(snapshot.failure ? { failure: { ...snapshot.failure } } : {}),

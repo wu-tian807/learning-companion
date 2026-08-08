@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   ExternalLibraryServiceApi,
-} from '../../external-libraries/external-library-service';
+} from '../../../main/external-libraries/external-library-service';
 import {
   LIBREOFFICE_PREVIEW_ARTIFACT_KEY,
   LibreOfficePreviewProducer,

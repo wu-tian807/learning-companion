@@ -10,6 +10,12 @@ import type {
 } from '../codex/codex-runtime-types';
 import { CodexRpcError } from '../codex/codex-rpc-connection';
 import {
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
+} from '../function-tools/builtin-agent-function-tool-ids';
+import {
   CODEX_FUNCTION_TOOL_NAMESPACE,
   findSelectedCodexFunctionTool,
   type CodexGenerationToolSelection,
@@ -61,10 +67,14 @@ function isToolItemAllowed(
 
   if (item.type === 'commandExecution') {
     return (
-      nativeToolIds.has('workspace.read') ||
-      nativeToolIds.has('workspace.search') ||
-      nativeToolIds.has('workspace.write')
+      nativeToolIds.has(WORKSPACE_READ_TOOL_ID) ||
+      nativeToolIds.has(WORKSPACE_SEARCH_TOOL_ID) ||
+      nativeToolIds.has(WORKSPACE_WRITE_TOOL_ID)
     );
+  }
+
+  if (item.type === 'imageView') {
+    return nativeToolIds.has(WORKSPACE_VIEW_IMAGE_TOOL_ID);
   }
 
   if (item.type === 'dynamicToolCall') {
@@ -85,7 +95,7 @@ function isToolItemAllowed(
 
   return (
     item.type === 'fileChange' &&
-    nativeToolIds.has('workspace.write')
+    nativeToolIds.has(WORKSPACE_WRITE_TOOL_ID)
   );
 }
 

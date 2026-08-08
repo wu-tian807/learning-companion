@@ -35,7 +35,7 @@ class MemoryDatabase implements GenerationTaskDatabaseApi {
   }
   listUnfinishedByProject(projectId: string) {
     return this.listByProject(projectId).filter(
-      (task) => !task.postProcessed && task.cancelledTime === undefined,
+      (task) => !task.completed && task.cancelledTime === undefined,
     );
   }
   create(task: GenerationTaskSnapshot) {
@@ -70,14 +70,18 @@ afterEach(async () => {
 });
 
 describe('GenerationTask recovery', () => {
-  it('resumes at post-process without invoking the Provider again', async () => {
+  it('replays process while reusing completed Agent calls', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'generation-recovery-'));
     temporaryDirectories.push(directory);
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
     await mkdir(join(primaryPath, 'control'), { recursive: true });
     let commitCount = 0;
     const definition = createMindMapGenerationTaskDefinitionV1({
-      async postProcess() {
+      async process(context) {
+        await context.agent.call({
+          callKey: 'generate',
+          purpose: 'generation',
+        });
         commitCount += 1;
         if (commitCount === 1) {
           throw new Error('simulated commit interruption');
@@ -94,7 +98,7 @@ describe('GenerationTask recovery', () => {
       definitionVersion: definition.version,
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
-      userMessage: createTextAgentUserMessage('generate'),
+      defaultUserMessage: createTextAgentUserMessage('generate'),
       toolRequirements: definition.toolRequirements,
       skills: definition.skills,
       mcpServers: definition.mcpServers,
@@ -186,8 +190,8 @@ describe('GenerationTask recovery', () => {
     expect(firstResolverCalls).toEqual([undefined]);
     expect(database.get(task.id)).toMatchObject({
       assignedProviderId: 'codex',
-      agentCompleted: { sessionId: 'session-1' },
-      failure: { phase: 'post-process' },
+      agentCalls: [{ callKey: 'generate', sessionId: 'session-1' }],
+      failure: { phase: 'process' },
     });
 
     let resumedRunnerCalls = 0;
@@ -217,7 +221,7 @@ describe('GenerationTask recovery', () => {
     });
     expect(commitCount).toBe(2);
     expect(database.tasks.size).toBe(1);
-    expect(database.get(task.id)?.postProcessed).toBeDefined();
+    expect(database.get(task.id)?.completed).toBeDefined();
 
     const reloadedService = createService({
       async resolveRunner() {

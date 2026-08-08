@@ -4,9 +4,16 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
+import {
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
+} from '../function-tools/builtin-agent-function-tool-ids';
 import { resolveCodexGenerationTools } from './codex-function-tools';
 import type { CodexGenerationCapabilitySelection } from './codex-generation-capabilities';
 import {
+  createCodexClientUserMessageId,
   createCodexGenerationConfiguration,
   toCodexUserInput,
 } from './codex-generation-request';
@@ -22,6 +29,7 @@ function request(): GenerationAgentTurnRequest {
 
   return {
     taskId: 'task-1',
+    callKey: 'generate',
     projectId: 'project-1',
     sessionLocator: {
       projectId: 'project-1',
@@ -78,6 +86,25 @@ function registry(version: number, includeUnselected = false) {
 }
 
 describe('createCodexGenerationConfiguration', () => {
+  it('uses the stable logical call key for Provider replay identity', () => {
+    const initial = request();
+    const sameCallWithRebuiltMessage = {
+      ...initial,
+      userMessage: {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: 'Rebuilt prompt.' }],
+      },
+    };
+    const repair = { ...initial, callKey: 'repair-1' };
+
+    expect(createCodexClientUserMessageId(initial)).toBe(
+      createCodexClientUserMessageId(sameCallWithRebuiltMessage),
+    );
+    expect(createCodexClientUserMessageId(initial)).not.toBe(
+      createCodexClientUserMessageId(repair),
+    );
+  });
+
   it('maps Provider default workspace tools to the permission profile', () => {
     const readOnlyRequest = {
       ...request(),
@@ -96,11 +123,14 @@ describe('createCodexGenerationConfiguration', () => {
     const workspacePath = readOnlyRequest.workspaces.primary.path;
 
     expect(readOnlyTools.nativeToolIds).toEqual([
-      'workspace.read',
-      'workspace.search',
+      WORKSPACE_READ_TOOL_ID,
+      WORKSPACE_SEARCH_TOOL_ID,
+      WORKSPACE_VIEW_IMAGE_TOOL_ID,
     ]);
+    expect(readOnly.threadInput.permissions).toBe(readOnly.profileId);
     expect(readOnly.threadInput.configOverrides).toMatchObject({
       features: { shell_tool: true },
+      tools: { view_image: true },
       default_permissions: readOnly.profileId,
       permissions: {
         [readOnly.profileId]: {
@@ -108,6 +138,12 @@ describe('createCodexGenerationConfiguration', () => {
         },
       },
     });
+    expect(readOnly.threadInput.developerInstructions).toContain(
+      'It reads embedded text only and is not OCR',
+    );
+    expect(readOnly.threadInput.developerInstructions).toContain(
+      'Do not form the final answer from extracted text alone',
+    );
 
     const writableRequest = {
       ...readOnlyRequest,
@@ -130,7 +166,9 @@ describe('createCodexGenerationConfiguration', () => {
       emptyCapabilities,
     );
 
-    expect(writableTools.nativeToolIds).toContain('workspace.write');
+    expect(writableTools.nativeToolIds).toContain(
+      WORKSPACE_WRITE_TOOL_ID,
+    );
     expect(writable.threadInput.configOverrides).toMatchObject({
       default_permissions: writable.profileId,
       permissions: {

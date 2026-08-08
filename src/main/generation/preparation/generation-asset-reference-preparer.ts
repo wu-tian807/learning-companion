@@ -10,6 +10,7 @@ import {
 import type { AssetServiceApi } from '../../assets/asset-service';
 import { createFileContentRevision } from '../../content/content-revision';
 import { AppError } from '../../errors/app-error';
+import type { WorkbenchRegistry } from '../../workbench/workbench-registry';
 import {
   clonePreparedGenerationAssetReferenceBindings,
   validateGenerationAssetReferenceBindings,
@@ -81,6 +82,7 @@ export class GenerationAssetReferencePreparer
 
   constructor(
     private readonly assetService: AssetServiceApi,
+    private readonly workbenches: WorkbenchRegistry,
     dependencies: Partial<GenerationAssetReferencePreparerDependencies> = {},
   ) {
     this.dependencies = { ...defaultDependencies, ...dependencies };
@@ -132,9 +134,24 @@ export class GenerationAssetReferencePreparer
             throw new AppError('ASSET_UNAVAILABLE');
           }
 
+          const workbenchSelection = this.workbenches.select(
+            asset.mediaType,
+            resolvedContent.handle,
+          );
+          const materializedContent =
+            workbenchSelection.reason === 'matched' &&
+            workbenchSelection.provider.materializeContent
+              ? await workbenchSelection.provider.materializeContent({
+                  asset,
+                  content: resolvedContent,
+                  ...(signal ? { signal } : {}),
+                })
+              : undefined;
           const alias = `${slot}-${String(index + 1).padStart(4, '0')}`;
           const extension = safeSourceExtension(
-            resolvedContent.location?.absolutePath ?? asset.name,
+            materializedContent?.absolutePath ??
+              resolvedContent.location?.absolutePath ??
+              asset.name,
           );
           const relativePath = `references/${alias}/source${extension}`;
           const destination = absoluteWorkspacePath(
@@ -144,10 +161,11 @@ export class GenerationAssetReferencePreparer
           await this.dependencies.mkdir(dirname(destination), {
             recursive: true,
           });
-          await this.materializeContent(
+          await this.copyContentToWorkspace(
             resolvedContent,
             destination,
             signal,
+            materializedContent?.absolutePath,
           );
           const contentRevision = await this.dependencies.createFileRevision(
             destination,
@@ -158,6 +176,8 @@ export class GenerationAssetReferencePreparer
             assetId: asset.id,
             name: asset.name,
             mediaType: asset.mediaType,
+            materializedMediaType:
+              materializedContent?.mediaType ?? asset.mediaType,
             contentRevision,
             relativePath,
           });
@@ -212,22 +232,25 @@ export class GenerationAssetReferencePreparer
     return normalized;
   }
 
-  private async materializeContent(
+  private async copyContentToWorkspace(
     resolvedContent: Awaited<
       ReturnType<AssetServiceApi['resolveContent']>
     >,
     destination: string,
     signal?: AbortSignal,
+    materializedPath?: string,
   ): Promise<void> {
     signal?.throwIfAborted();
 
-    if (resolvedContent.location) {
+    const sourcePath =
+      materializedPath ?? resolvedContent.location?.absolutePath;
+
+    if (sourcePath) {
       if (
-        resolve(resolvedContent.location.absolutePath) !==
-        resolve(destination)
+        resolve(sourcePath) !== resolve(destination)
       ) {
         await this.dependencies.copyFile(
-          resolvedContent.location.absolutePath,
+          sourcePath,
           destination,
         );
       }

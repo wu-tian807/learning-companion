@@ -1,13 +1,17 @@
 import type { MindMapDocumentV1, MindMapNodeV1 } from './document';
 
-export const MIND_MAP_LAYOUT_NODE_WIDTH = 244;
-export const MIND_MAP_LAYOUT_NODE_HEIGHT = 104;
+export const MIND_MAP_LAYOUT_NODE_WIDTH = 280;
+export const MIND_MAP_LAYOUT_NODE_MIN_HEIGHT = 104;
 
 export interface MindMapLayoutNode {
   readonly id: string;
   readonly node: MindMapNodeV1;
   readonly depth: number;
   readonly hiddenDescendantCount: number;
+  readonly size: Readonly<{
+    width: number;
+    height: number;
+  }>;
   readonly position: Readonly<{
     x: number;
     y: number;
@@ -33,6 +37,46 @@ interface VisibleNode {
 const HORIZONTAL_GAP = 88;
 const VERTICAL_GAP = 28;
 const LAYOUT_MARGIN = 30;
+const TITLE_UNITS_PER_LINE = 28;
+const FOCUS_UNITS_PER_LINE = 34;
+const NODE_VERTICAL_CHROME = 64;
+
+function textDisplayUnits(value: string): number {
+  let units = 0;
+
+  for (const character of value) {
+    if (character === '\t') {
+      units += 4;
+      continue;
+    }
+
+    units +=
+      (character.codePointAt(0) ?? 0) > 0xff ||
+      /[MWmw@#%&]/u.test(character)
+        ? 2
+        : 1;
+  }
+
+  return units;
+}
+
+function wrappedLineCount(value: string, unitsPerLine: number): number {
+  return value.split(/\r\n?|\n/u).reduce(
+    (count, line) =>
+      count + Math.max(1, Math.ceil(textDisplayUnits(line) / unitsPerLine)),
+    0,
+  );
+}
+
+export function calculateMindMapNodeHeight(node: MindMapNodeV1): number {
+  const titleLines = wrappedLineCount(node.title, TITLE_UNITS_PER_LINE);
+  const focusLines = wrappedLineCount(node.focus, FOCUS_UNITS_PER_LINE);
+
+  return Math.max(
+    MIND_MAP_LAYOUT_NODE_MIN_HEIGHT,
+    NODE_VERTICAL_CHROME + titleLines * 18 + focusLines * 16,
+  );
+}
 
 function calculateSubtreeSizes(
   document: MindMapDocumentV1,
@@ -119,28 +163,57 @@ export function createMindMapLayout(
 ): MindMapLayout {
   const visible = collectVisibleTree(document, collapsedNodeIds);
   const subtreeSizes = calculateSubtreeSizes(document);
+  const nodeSizes = new Map(
+    visible.nodes.map(({ id }) => [
+      id,
+      Object.freeze({
+        width: MIND_MAP_LAYOUT_NODE_WIDTH,
+        height: calculateMindMapNodeHeight(document.nodes[id]),
+      }),
+    ]),
+  );
+  const visibleSubtreeHeights = new Map<string, number>();
   const positions = new Map<string, Readonly<{ x: number; y: number }>>();
-  let nextLeafCenterY = LAYOUT_MARGIN + MIND_MAP_LAYOUT_NODE_HEIGHT / 2;
 
-  const placeSubtree = (nodeId: string, depth: number): number => {
-    const node = document.nodes[nodeId];
-    const visibleChildIds = collapsedNodeIds.has(nodeId)
+  const visibleChildIds = (nodeId: string): readonly string[] =>
+    collapsedNodeIds.has(nodeId)
       ? []
-      : node.childIds;
-    let centerY: number;
+      : document.nodes[nodeId].childIds;
 
-    if (visibleChildIds.length === 0) {
-      centerY = nextLeafCenterY;
-      nextLeafCenterY +=
-        MIND_MAP_LAYOUT_NODE_HEIGHT + VERTICAL_GAP;
-    } else {
-      const childCenters = visibleChildIds.map((childId) =>
-        placeSubtree(childId, depth + 1),
-      );
-      centerY =
-        (childCenters[0]! + childCenters[childCenters.length - 1]!) /
-        2;
+  const measureSubtree = (nodeId: string): number => {
+    const existing = visibleSubtreeHeights.get(nodeId);
+
+    if (existing !== undefined) {
+      return existing;
     }
+
+    const children = visibleChildIds(nodeId);
+    const childrenHeight =
+      children.reduce(
+        (height, childId) => height + measureSubtree(childId),
+        0,
+      ) + Math.max(0, children.length - 1) * VERTICAL_GAP;
+    const height = Math.max(
+      nodeSizes.get(nodeId)?.height ?? MIND_MAP_LAYOUT_NODE_MIN_HEIGHT,
+      childrenHeight,
+    );
+    visibleSubtreeHeights.set(nodeId, height);
+    return height;
+  };
+
+  const placeSubtree = (
+    nodeId: string,
+    depth: number,
+    subtreeTop: number,
+  ): void => {
+    const size = nodeSizes.get(nodeId);
+
+    if (!size) {
+      throw new Error(`Mind Map 节点尺寸缺失：${nodeId}`);
+    }
+
+    const subtreeHeight = measureSubtree(nodeId);
+    const centerY = subtreeTop + subtreeHeight / 2;
 
     positions.set(
       nodeId,
@@ -148,20 +221,33 @@ export function createMindMapLayout(
         x:
           LAYOUT_MARGIN +
           depth * (MIND_MAP_LAYOUT_NODE_WIDTH + HORIZONTAL_GAP),
-        y: centerY - MIND_MAP_LAYOUT_NODE_HEIGHT / 2,
+        y: centerY - size.height / 2,
       }),
     );
-    return centerY;
+
+    const children = visibleChildIds(nodeId);
+    const childrenHeight =
+      children.reduce(
+        (height, childId) => height + measureSubtree(childId),
+        0,
+      ) + Math.max(0, children.length - 1) * VERTICAL_GAP;
+    let childTop = subtreeTop + (subtreeHeight - childrenHeight) / 2;
+
+    for (const childId of children) {
+      placeSubtree(childId, depth + 1, childTop);
+      childTop += measureSubtree(childId) + VERTICAL_GAP;
+    }
   };
 
-  placeSubtree(document.rootNodeId, 0);
+  placeSubtree(document.rootNodeId, 0, LAYOUT_MARGIN);
 
   return Object.freeze({
     nodes: Object.freeze(
       visible.nodes.map(({ id, depth }) => {
         const position = positions.get(id);
+        const size = nodeSizes.get(id);
 
-        if (!position) {
+        if (!position || !size) {
           throw new Error(`Mind Map 节点布局缺失：${id}`);
         }
 
@@ -172,6 +258,7 @@ export function createMindMapLayout(
           hiddenDescendantCount: collapsedNodeIds.has(id)
             ? (subtreeSizes.get(id) ?? 1) - 1
             : 0,
+          size,
           position,
         });
       }),

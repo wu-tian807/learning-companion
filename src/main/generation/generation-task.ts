@@ -7,9 +7,9 @@ import {
 import {
   cloneGenerationTaskSnapshot,
   type CreateGenerationTaskInput,
-  type GenerationTaskAgentCheckpoint,
+  type GenerationTaskAgentCallCheckpoint,
+  type GenerationTaskCompletedCheckpoint,
   type GenerationTaskFailure,
-  type GenerationTaskPostProcessCheckpoint,
   type GenerationTaskPreparedCheckpoint,
   type GenerationTaskSnapshot,
   type GenerationTaskStatus,
@@ -18,10 +18,10 @@ import {
 export {
   cloneGenerationTaskSnapshot,
   type CreateGenerationTaskInput,
-  type GenerationTaskAgentCheckpoint,
+  type GenerationTaskAgentCallCheckpoint,
+  type GenerationTaskCompletedCheckpoint,
   type GenerationTaskFailure,
   type GenerationTaskFailurePhase,
-  type GenerationTaskPostProcessCheckpoint,
   type GenerationTaskPreparedCheckpoint,
   type GenerationTaskSnapshot,
   type GenerationTaskStatus,
@@ -42,6 +42,7 @@ export class GenerationTask {
       definitionVersion: input.definitionVersion,
       instruction: input.instruction,
       assetReferences: input.assetReferences,
+      agentCalls: Object.freeze([]),
       metrics: emptyGenerationTaskMetrics(),
       createdTime: input.createdTime,
       updatedTime: input.createdTime,
@@ -61,16 +62,15 @@ export class GenerationTask {
       return 'failed';
     }
 
-    if (this.snapshot.postProcessed) {
-      return 'post-processed';
+    if (this.snapshot.completed) {
+      return 'completed';
     }
 
-    if (this.snapshot.agentCompleted) {
-      return 'agent-completed';
-    }
-
-    if (this.snapshot.assignedProviderId) {
-      return 'agent-assigned';
+    if (
+      this.snapshot.assignedProviderId ||
+      this.snapshot.agentCalls.length > 0
+    ) {
+      return 'processing';
     }
 
     return this.snapshot.prepared ? 'prepared' : 'created';
@@ -79,7 +79,7 @@ export class GenerationTask {
   assignProvider(providerId: string, updatedTime: number): void {
     this.requireActive();
 
-    if (!this.snapshot.prepared || this.snapshot.agentCompleted) {
+    if (!this.snapshot.prepared || this.snapshot.completed) {
       throw new Error('GenerationTask Provider 分配顺序无效');
     }
 
@@ -93,6 +93,7 @@ export class GenerationTask {
     this.replace({
       ...this.snapshot,
       assignedProviderId: providerId,
+      failure: undefined,
       updatedTime,
     });
   }
@@ -104,8 +105,12 @@ export class GenerationTask {
   }): void {
     this.requireActive();
 
-    if (this.snapshot.agentCompleted) {
-      throw new Error('GenerationTask 已执行 Agent，不能替换 prepare checkpoint');
+    if (
+      this.snapshot.assignedProviderId ||
+      this.snapshot.agentCalls.length > 0 ||
+      this.snapshot.completed
+    ) {
+      throw new Error('GenerationTask 已进入 process，不能替换 prepare checkpoint');
     }
 
     this.replace({
@@ -121,25 +126,38 @@ export class GenerationTask {
     });
   }
 
-  recordAgentCompleted(input: {
-    readonly checkpoint: GenerationTaskAgentCheckpoint;
+  recordAgentCallCompleted(input: {
+    readonly checkpoint: GenerationTaskAgentCallCheckpoint;
     readonly metrics: GenerationAgentExecutionMetrics;
     readonly updatedTime: number;
   }): void {
     this.requireActive();
 
+    const previousSessionId = this.snapshot.agentCalls.at(-1)?.sessionId;
+
     if (
       !this.snapshot.prepared ||
       !this.snapshot.assignedProviderId ||
-      this.snapshot.agentCompleted ||
-      input.metrics.providerId !== this.snapshot.assignedProviderId
+      this.snapshot.completed ||
+      input.metrics.providerId !== this.snapshot.assignedProviderId ||
+      input.checkpoint.callKey !== input.metrics.callKey ||
+      input.checkpoint.purpose !== input.metrics.purpose ||
+      input.checkpoint.sessionId !== input.metrics.sessionId ||
+      (previousSessionId !== undefined &&
+        input.checkpoint.sessionId !== previousSessionId) ||
+      this.snapshot.agentCalls.some(
+        ({ callKey }) => callKey === input.checkpoint.callKey,
+      )
     ) {
-      throw new Error('GenerationTask agent checkpoint 顺序无效');
+      throw new Error('GenerationTask Agent call checkpoint 顺序无效');
     }
 
     this.replace({
       ...this.snapshot,
-      agentCompleted: input.checkpoint,
+      agentCalls: Object.freeze([
+        ...this.snapshot.agentCalls,
+        input.checkpoint,
+      ]),
       metrics: appendGenerationAgentExecution(
         this.snapshot.metrics,
         input.metrics,
@@ -149,23 +167,23 @@ export class GenerationTask {
     });
   }
 
-  recordPostProcessed(input: {
-    readonly checkpoint: GenerationTaskPostProcessCheckpoint;
+  recordCompleted(input: {
+    readonly checkpoint: GenerationTaskCompletedCheckpoint;
     readonly durationMs: number;
     readonly updatedTime: number;
   }): void {
     this.requireActive();
 
-    if (!this.snapshot.agentCompleted || this.snapshot.postProcessed) {
-      throw new Error('GenerationTask post-process checkpoint 顺序无效');
+    if (!this.snapshot.prepared || this.snapshot.completed) {
+      throw new Error('GenerationTask process checkpoint 顺序无效');
     }
 
     this.replace({
       ...this.snapshot,
-      postProcessed: input.checkpoint,
+      completed: input.checkpoint,
       metrics: withGenerationPhaseDuration(
         this.snapshot.metrics,
-        'post-process',
+        'process',
         input.durationMs,
       ),
       failure: undefined,
@@ -173,10 +191,24 @@ export class GenerationTask {
     });
   }
 
+  clearFailure(updatedTime: number): void {
+    this.requireActive();
+
+    if (!this.snapshot.failure) {
+      return;
+    }
+
+    this.replace({
+      ...this.snapshot,
+      failure: undefined,
+      updatedTime,
+    });
+  }
+
   recordFailure(failure: GenerationTaskFailure): void {
     this.requireActive();
 
-    if (this.snapshot.postProcessed) {
+    if (this.snapshot.completed) {
       throw new Error('已完成的 GenerationTask 不能记录失败');
     }
 
@@ -192,7 +224,7 @@ export class GenerationTask {
       return;
     }
 
-    if (this.snapshot.postProcessed) {
+    if (this.snapshot.completed) {
       throw new Error('已完成的 GenerationTask 不能取消');
     }
 

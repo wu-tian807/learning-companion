@@ -3,12 +3,16 @@ import { join } from 'node:path';
 
 import type { AssetAssociationServiceApi } from '../../../main/asset-associations/asset-association-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
+import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
 import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import type {
-  GenerationTaskPostProcessContext,
-  GenerationTaskPostProcessor,
+  GenerationTaskProcessContext,
+  GenerationTaskProcessor,
 } from '../../../main/generation/contracts/task-definition';
-import { GenerationPostProcessValidationError } from '../../../main/generation/contracts/generation-validation';
+import {
+  GenerationOutputValidationError,
+  type GenerationValidationIssue,
+} from '../../../main/generation/contracts/generation-validation';
 import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../../shared/asset-media-types';
 import {
   isJsonValue,
@@ -38,6 +42,7 @@ export type MindMapGenerationTaskResult = JsonValue & {
 };
 
 const wholeAssetTarget = Object.freeze({ scope: 'asset' as const });
+const repairsPerProcessRun = 3;
 
 function createEmptyDocument(
   candidate: MindMapGenerationCandidateV1,
@@ -142,11 +147,24 @@ function withAssociations(
   return { ...document, associations };
 }
 
-export class MindMapGenerationPostProcessor
+function createRepairMessage(
+  issues: readonly GenerationValidationIssue[],
+): ReturnType<typeof createTextAgentUserMessage> {
+  const issueList = issues
+    .map(({ path, message }, index) => `${index + 1}. ${path}: ${message}`)
+    .join('\n');
+
+  return createTextAgentUserMessage(`应用校验发现你写入的 ${MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH} 不符合协议：
+
+${issueList}
+
+请直接读取并修复现有候选文件。保留其中正确、充分且有学习价值的内容，只修改违反协议的部分；不要重新输出到聊天消息，也不要自行编写校验脚本。修复完成后简短确认。`);
+}
+
+export class MindMapGenerationProcessor
   implements
-    GenerationTaskPostProcessor<
+    GenerationTaskProcessor<
       MindMapGenerationInstruction,
-      JsonValue,
       MindMapGenerationTaskResult
     >
 {
@@ -160,11 +178,53 @@ export class MindMapGenerationPostProcessor
     },
   ) {}
 
-  async postProcess(
-    context: GenerationTaskPostProcessContext<
-      MindMapGenerationInstruction,
-      JsonValue
-    >,
+  async process(
+    context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
+  ): Promise<MindMapGenerationTaskResult> {
+    context.signal?.throwIfAborted();
+    await context.agent.call({
+      callKey: 'generate',
+      purpose: 'generation',
+      userMessage: context.defaultUserMessage,
+    });
+
+    const completedRepairCount = context.agent.completedCalls.filter(
+      ({ purpose }) => purpose === 'repair',
+    ).length;
+    let repairsThisRun = 0;
+    let candidate: MindMapGenerationCandidateV1;
+
+    while (true) {
+      try {
+        candidate = await this.readCandidate(context);
+        break;
+      } catch (error) {
+        if (
+          !(error instanceof GenerationOutputValidationError) ||
+          repairsThisRun >= repairsPerProcessRun
+        ) {
+          throw error;
+        }
+
+        const repairTurnNumber =
+          completedRepairCount + repairsThisRun + 1;
+        context.reportOutputRejected(repairTurnNumber, error.issues);
+        await context.agent.call({
+          callKey: `repair-${repairTurnNumber}`,
+          purpose: 'repair',
+          userMessage: createRepairMessage(error.issues),
+        });
+        repairsThisRun += 1;
+      }
+    }
+
+    context.reportStatus('正在创建思维导图 Asset…');
+    return this.commitCandidate(context, candidate);
+  }
+
+  private async commitCandidate(
+    context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
+    candidate: MindMapGenerationCandidateV1,
   ): Promise<MindMapGenerationTaskResult> {
     context.signal?.throwIfAborted();
 
@@ -174,9 +234,6 @@ export class MindMapGenerationPostProcessor
     ) {
       throw new Error('Mind Map generation Project 上下文已改变');
     }
-
-    const candidate = await this.readCandidate(context);
-    context.signal?.throwIfAborted();
 
     const initialDocument = createEmptyDocument(candidate);
     const staged = await this.assets.stageGeneratedFile(
@@ -246,10 +303,7 @@ export class MindMapGenerationPostProcessor
   }
 
   private async readCandidate(
-    context: GenerationTaskPostProcessContext<
-      MindMapGenerationInstruction,
-      JsonValue
-    >,
+    context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
   ): Promise<MindMapGenerationCandidateV1> {
     const absolutePath = join(
       context.workspaces.primary.path,
@@ -262,7 +316,7 @@ export class MindMapGenerationPostProcessor
         await this.dependencies.readFile(absolutePath, 'utf8'),
       );
     } catch (error) {
-      throw new GenerationPostProcessValidationError([
+      throw new GenerationOutputValidationError([
         {
           path: MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH,
           message:
@@ -274,7 +328,7 @@ export class MindMapGenerationPostProcessor
     }
 
     if (!isJsonValue(value)) {
-      throw new GenerationPostProcessValidationError([
+      throw new GenerationOutputValidationError([
         {
           path: MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH,
           message: 'Mind Map 候选文件不是有效 JSON 值',
@@ -287,7 +341,7 @@ export class MindMapGenerationPostProcessor
     });
 
     if (!validated.ok) {
-      throw new GenerationPostProcessValidationError(validated.issues);
+      throw new GenerationOutputValidationError(validated.issues);
     }
 
     return validated.value;

@@ -57,13 +57,17 @@ describe('GenerationTaskDatabase', () => {
         updatedTime: 20,
       });
       task.assignProvider('codex', 21);
-      task.recordAgentCompleted({
+      task.recordAgentCallCompleted({
         checkpoint: {
+          callKey: 'generate',
+          purpose: 'generation',
           completedTime: 30,
           sessionId: 'session-1',
           providerExecutionId: 'turn-2',
         },
         metrics: {
+          callKey: 'generate',
+          purpose: 'generation',
           sessionId: 'session-1',
           providerId: 'codex',
           modelId: 'gpt-5.2',
@@ -90,7 +94,7 @@ describe('GenerationTaskDatabase', () => {
            SELECT *
            FROM generation_tasks
            WHERE project_id = ?
-             AND post_processed_time IS NULL
+             AND process_completed_time IS NULL
              AND cancelled_time IS NULL
            ORDER BY created_time, id`,
         )
@@ -103,13 +107,13 @@ describe('GenerationTaskDatabase', () => {
         ),
       ).toBe(true);
 
-      task.recordPostProcessed({
+      task.recordCompleted({
         checkpoint: { completedTime: 35, result: null },
-        durationMs: 5,
+        durationMs: 15,
         updatedTime: 35,
       });
       database.update(task.getSnapshot());
-      expect(database.get('task-1')?.postProcessed?.result).toBeNull();
+      expect(database.get('task-1')?.completed?.result).toBeNull();
       expect(database.listByProject('project-1')).toHaveLength(1);
       expect(database.listUnfinishedByProject('project-1')).toEqual([]);
 

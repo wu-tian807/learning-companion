@@ -44,7 +44,7 @@ function MindMapNodeCard({
 
   return (
     <div
-      className={`mindmap-node-card group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border px-4 py-3 shadow-[0_16px_42px_rgba(0,0,0,0.28)] transition-[border-color,background-color,box-shadow] duration-150 ${
+      className={`mindmap-node-card group relative flex h-full w-full flex-col rounded-2xl border px-4 py-3 shadow-[0_16px_42px_rgba(0,0,0,0.28)] transition-[border-color,background-color,box-shadow] duration-150 ${
         data.growthDelayMs === undefined
           ? ''
           : 'mindmap-node-card--growing'
@@ -77,10 +77,10 @@ function MindMapNodeCard({
           }`}
         />
         <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-[13px] font-semibold leading-[18px] text-slate-100">
+          <h3 className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[13px] font-semibold leading-[18px] text-slate-100">
             {data.title}
           </h3>
-          <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-400">
+          <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-[11px] leading-4 text-slate-400">
             {data.focus}
           </p>
         </div>

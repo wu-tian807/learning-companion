@@ -84,6 +84,7 @@ describe.runIf(
         cwd: workspacePath,
         runtimeWorkspaceRoots: [workspacePath],
         approvalPolicy: 'never' as const,
+        permissions: profileId,
         developerInstructions: 'Read only the supplied workspace.',
         configOverrides: {
           agents: { enabled: false },
@@ -98,7 +99,7 @@ describe.runIf(
             remote_plugin: false,
             shell_tool: true,
           },
-          tools: { view_image: false },
+          tools: { view_image: true },
           web_search: 'disabled',
           default_permissions: profileId,
           'mcp_servers.ambient.enabled': false,

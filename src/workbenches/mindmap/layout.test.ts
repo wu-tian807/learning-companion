@@ -5,7 +5,10 @@ import {
   MIND_MAP_DOCUMENT_VERSION,
   type MindMapDocumentV1,
 } from './document';
-import { createMindMapLayout } from './layout';
+import {
+  createMindMapLayout,
+  MIND_MAP_LAYOUT_NODE_MIN_HEIGHT,
+} from './layout';
 
 const document: MindMapDocumentV1 = {
   format: MIND_MAP_DOCUMENT_FORMAT,
@@ -127,5 +130,29 @@ describe('createMindMapLayout', () => {
       firstPositions.get('basis')!.y,
     );
     expect(second.nodes).toEqual(first.nodes);
+  });
+
+  it('grows long learning nodes and reserves their complete vertical space', () => {
+    const longDocument: MindMapDocumentV1 = {
+      ...document,
+      nodes: {
+        ...document.nodes,
+        basis: {
+          ...document.nodes.basis,
+          focus:
+            '论文首先界定二元结果模型的三类用途，再从方向、显著性、边际效应和预测目标解释 LPM 的适用边界。',
+        },
+      },
+    };
+    const layout = createMindMapLayout(longDocument, new Set());
+    const basis = layout.nodes.find(({ id }) => id === 'basis')!;
+    const simplex = layout.nodes.find(({ id }) => id === 'simplex')!;
+
+    expect(basis.size.height).toBeGreaterThan(
+      MIND_MAP_LAYOUT_NODE_MIN_HEIGHT,
+    );
+    expect(basis.position.y + basis.size.height).toBeLessThanOrEqual(
+      simplex.position.y,
+    );
   });
 });

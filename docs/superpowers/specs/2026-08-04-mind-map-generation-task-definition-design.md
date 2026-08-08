@@ -3,6 +3,11 @@
 日期：2026-08-04
 状态：Generation、Session 与 Codex Provider Adapter 已实现，生成 Asset 提交与产品入口待接入
 
+> 2026-08-08 更新：本文记录的固定
+> `prepare -> run agent -> post-process` 控制流已被
+> `2026-08-08-generation-task-process-execution-design.md` 取代。Instruction、Workspace、
+> AssetReference、Session 定位和 Provider 能力声明仍按本文执行；运行时以新文档和当前代码为准。
+
 ## 1. 最终结论
 
 首条生成链采用四个边界：
@@ -410,8 +415,9 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
 
 当前执行策略为：
 
-- `workspace.read` / `workspace.search` 启用只读命令能力；
-- `workspace.write` 只有在 Definition 声明且 Workspace 允许写时才授予写权限；
+- Provider 默认提供 Codex 原生 Shell read / search、`view_image` 和应用 PDF 工具；
+- writable Workspace 额外获得原生编辑能力；Codex permission profile 约束 Shell、脚本与
+  `apply_patch` 只能写入授权路径；
 - 网络、Web Search、MCP、Apps、Plugins、Skills、Hooks、Memory、Goals 与 Subagents 默认关闭；
 - 未支持的 required tool 在创建 Thread 前失败；Codex 若仍报告未声明工具调用则按协议错误失败；
 - `clientUserMessageId` 由 Task 与消息稳定派生，进程重启后可复用已完成 Turn，
@@ -430,7 +436,7 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
 - primary key：`generation-mindmap`；
 - primary scope：`task`；
 - Asset Slot：必需的多值 `sources`；
-- Provider 默认工具：`workspace.read`、`workspace.search`、`workspace.write`；
+- Provider 默认工具：Workspace Shell read / search、按权限开放的 write、PDF 与 image；
 - Agent 必须在 Workspace 中写入 `output/mindmap-candidate.json`；
 - assistant 最终回复只报告完成状态，不承载产物。
 

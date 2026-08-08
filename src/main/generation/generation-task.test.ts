@@ -19,7 +19,7 @@ describe('GenerationTask', () => {
     const task = createTask();
 
     task.recordFailure({
-      phase: 'agent',
+      phase: 'process',
       failedTime: 101,
       message: 'AI 请求没有完成，请稍后重试。',
       code: 'CODEX_REQUEST_FAILED',
@@ -27,7 +27,7 @@ describe('GenerationTask', () => {
     });
 
     expect(task.getSnapshot().failure).toEqual({
-      phase: 'agent',
+      phase: 'process',
       failedTime: 101,
       message: 'AI 请求没有完成，请稍后重试。',
       code: 'CODEX_REQUEST_FAILED',
@@ -47,21 +47,25 @@ describe('GenerationTask', () => {
       updatedTime: 110,
     });
     task.assignProvider('codex', 111);
-    expect(task.getStatus()).toBe('agent-assigned');
-    task.recordAgentCompleted({
+    expect(task.getStatus()).toBe('processing');
+    task.recordAgentCallCompleted({
       checkpoint: {
+        callKey: 'generate',
+        purpose: 'generation',
         completedTime: 140,
         sessionId: 'session-1',
       },
       metrics: {
+        callKey: 'generate',
+        purpose: 'generation',
         sessionId: 'session-1',
         providerId: 'codex',
         modelId: 'gpt-5.2',
         startedTime: 112,
         completedTime: 138,
         activeDurationMs: 26,
-        turnCount: 2,
-        repairTurnCount: 1,
+        turnCount: 1,
+        repairTurnCount: 0,
         usage: {
           inputTokens: 120,
           cachedInputTokens: 80,
@@ -71,23 +75,23 @@ describe('GenerationTask', () => {
       },
       updatedTime: 140,
     });
-    task.recordPostProcessed({
+    task.recordCompleted({
       checkpoint: {
         completedTime: 145,
         result: { resultAssetId: 'mindmap-1' },
       },
-      durationMs: 5,
+      durationMs: 35,
       updatedTime: 145,
     });
 
     const snapshot = task.getSnapshot();
-    expect(task.getStatus()).toBe('post-processed');
+    expect(task.getStatus()).toBe('completed');
     expect(snapshot.assignedProviderId).toBe('codex');
-    expect(snapshot.agentCompleted?.sessionId).toBe('session-1');
+    expect(snapshot.agentCalls.at(-1)?.sessionId).toBe('session-1');
     expect(snapshot.metrics).toMatchObject({
       prepareDurationMs: 10,
-      postProcessDurationMs: 5,
-      totalActiveDurationMs: 41,
+      processDurationMs: 35,
+      totalActiveDurationMs: 45,
       totalUsage: {
         inputTokens: 120,
         cachedInputTokens: 80,
@@ -107,7 +111,7 @@ describe('GenerationTask', () => {
       updatedTime: 105,
     });
     task.recordFailure({
-      phase: 'agent',
+      phase: 'process',
       failedTime: 106,
       message: 'interrupted',
     });
@@ -128,12 +132,16 @@ describe('GenerationTask', () => {
     const task = createTask();
 
     expect(() =>
-      task.recordAgentCompleted({
+      task.recordAgentCallCompleted({
         checkpoint: {
+          callKey: 'generate',
+          purpose: 'generation',
           completedTime: 110,
           sessionId: 'session',
         },
         metrics: {
+          callKey: 'generate',
+          purpose: 'generation',
           sessionId: 'session',
           providerId: 'codex',
           modelId: 'model',

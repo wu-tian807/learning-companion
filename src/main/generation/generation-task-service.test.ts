@@ -53,7 +53,7 @@ class MemoryGenerationTaskDatabase implements GenerationTaskDatabaseApi {
     projectId: string,
   ): readonly GenerationTaskSnapshot[] {
     return this.listByProject(projectId).filter(
-      (task) => !task.postProcessed && task.cancelledTime === undefined,
+      (task) => !task.completed && task.cancelledTime === undefined,
     );
   }
 
@@ -86,7 +86,11 @@ describe('GenerationTaskService', () => {
     await mkdir(join(primaryPath, 'control'), { recursive: true });
     const committedCandidates: unknown[] = [];
     const definition = createMindMapGenerationTaskDefinitionV1({
-      async postProcess(context) {
+      async process(context) {
+        await context.agent.call({
+          callKey: 'generate',
+          purpose: 'generation',
+        });
         committedCandidates.push(
           JSON.parse(
             await readFile(
@@ -110,7 +114,7 @@ describe('GenerationTaskService', () => {
       definitionVersion: definition.version,
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
-      userMessage: createTextAgentUserMessage('生成思维导图'),
+      defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
       toolRequirements: definition.toolRequirements,
       skills: definition.skills,
       mcpServers: definition.mcpServers,
@@ -273,6 +277,8 @@ describe('GenerationTaskService', () => {
         },
         agentExecutions: [
           {
+            callKey: 'generate',
+            purpose: 'generation',
             providerId: 'codex',
             modelId: 'gpt-5.2',
             sessionId: 'session-1',
@@ -284,7 +290,7 @@ describe('GenerationTaskService', () => {
     });
     expect(committedCandidates).toHaveLength(1);
     expect(database.tasks.size).toBe(1);
-    expect(database.get('task-1')?.postProcessed).toBeDefined();
+    expect(database.get('task-1')?.completed).toBeDefined();
     expect(service.list()).toEqual([]);
 
     const completedWithoutReadingReturn = service.create({
@@ -305,7 +311,7 @@ describe('GenerationTaskService', () => {
 
       if (
         event.value.type === 'phase' &&
-        event.value.phase === 'post-process' &&
+        event.value.phase === 'process' &&
         event.value.state === 'completed'
       ) {
         await interruptedExecution.return(undefined as never);
@@ -314,7 +320,7 @@ describe('GenerationTaskService', () => {
     }
 
     expect(
-      database.get(completedWithoutReadingReturn.id)?.postProcessed,
+      database.get(completedWithoutReadingReturn.id)?.completed,
     ).toBeDefined();
     expect(service.list()).toEqual([]);
 
@@ -347,7 +353,7 @@ describe('GenerationTaskService', () => {
     };
     await drain(service.run(retryable.id));
     expect(resolvedProviderIds.slice(-2)).toEqual([undefined, 'codex']);
-    expect(database.get(retryable.id)?.postProcessed).toBeDefined();
+    expect(database.get(retryable.id)?.completed).toBeDefined();
 
     selectedRunner = runner;
     const backgroundEvents: string[] = [];
@@ -363,7 +369,7 @@ describe('GenerationTaskService', () => {
     });
 
     await vi.waitFor(() =>
-      expect(database.get(background.id)?.postProcessed).toBeDefined(),
+      expect(database.get(background.id)?.completed).toBeDefined(),
     );
     await vi.waitFor(() =>
       expect(backgroundEvents).toContain('task-completed'),

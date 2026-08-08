@@ -5,11 +5,7 @@ import {
 } from '@xyflow/react';
 
 import type { ResolvedMindMapAssociations } from './association-mapper';
-import {
-  MIND_MAP_LAYOUT_NODE_HEIGHT,
-  MIND_MAP_LAYOUT_NODE_WIDTH,
-  type MindMapLayout,
-} from './layout';
+import type { MindMapLayout } from './layout';
 import type { MindMapFlowNode } from './renderer-node';
 
 export type MindMapFlowEdge = Edge<
@@ -47,11 +43,11 @@ export function createMindMapFlowNodes({
       selectable: true,
       draggable: false,
       focusable: true,
-      width: MIND_MAP_LAYOUT_NODE_WIDTH,
-      height: MIND_MAP_LAYOUT_NODE_HEIGHT,
+      width: layoutNode.size.width,
+      height: layoutNode.size.height,
       style: {
-        width: MIND_MAP_LAYOUT_NODE_WIDTH,
-        height: MIND_MAP_LAYOUT_NODE_HEIGHT,
+        width: layoutNode.size.width,
+        height: layoutNode.size.height,
       },
       ariaLabel: `${layoutNode.node.title}，${layoutNode.node.focus}`,
       data: {

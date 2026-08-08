@@ -14,7 +14,7 @@ import { AssetArtifactService } from '../artifacts/asset-artifact-service';
 import { AssetAssociationService } from '../asset-associations/asset-association-service';
 import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
 import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
-import { LibreOfficePreviewProducer } from '../artifacts/producers/libreoffice-preview-producer';
+import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/libreoffice-preview-producer';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
 import { EmptyAttachmentService } from '../attachments/attachment-service';
@@ -57,7 +57,8 @@ import { WorkbenchSessionService } from '../workbench/workbench-session-service'
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
-import { MindMapGenerationPostProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-post-processor';
+import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
+import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
@@ -133,6 +134,8 @@ export async function createApplicationRuntime({
     projectDatabase.initialize();
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
+    const agentToolRegistration =
+      registerWorkbenchAgentFunctionTools(agentFunctionTools);
     const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
     const agentSkills = new AgentSkillService(
       agentCapabilityPaths.skillsPath,
@@ -151,6 +154,7 @@ export async function createApplicationRuntime({
       agentFunctionTools,
       agentSkills,
       agentMcpServers,
+      agentToolRegistration.defaultToolRequirements,
     );
     const artifactRegistry = new AssetArtifactRegistry();
     artifactRegistry.register(
@@ -184,35 +188,6 @@ export async function createApplicationRuntime({
         artifactCleanup: artifactService,
         deletionObserver: associationService,
       },
-    );
-    const generationTaskDatabase = new GenerationTaskDatabase(
-      databaseContext,
-    );
-    const generationTaskDefinitions =
-      new GenerationTaskDefinitionRegistry();
-    generationTaskDefinitions.register(
-      createMindMapGenerationTaskDefinitionV1(
-        new MindMapGenerationPostProcessor(
-          assetService,
-          associationService,
-        ),
-      ),
-    );
-    const generationTaskPreparer = new GenerationTaskPreparer(
-      new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
-      new GenerationAssetReferencePreparer(assetService),
-      new GenerationPreparedManifestFile(),
-    );
-    generationTaskService = new GenerationTaskService(
-      generationTaskDatabase,
-      generationTaskDefinitions,
-      new GenerationTaskExecution(
-        generationTaskDatabase,
-        generationTaskPreparer,
-        new GenerationAgentExecutor(),
-      ),
-      projectDatabase,
-      agentProviderService,
     );
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
@@ -251,6 +226,38 @@ export async function createApplicationRuntime({
       stateDatabase: workbenchStateRepository,
       stateDataDatabase: workbenchStateDataRepository,
     });
+    const generationTaskDatabase = new GenerationTaskDatabase(
+      databaseContext,
+    );
+    const generationTaskDefinitions =
+      new GenerationTaskDefinitionRegistry();
+    generationTaskDefinitions.register(
+      createMindMapGenerationTaskDefinitionV1(
+        new MindMapGenerationProcessor(
+          assetService,
+          associationService,
+        ),
+      ),
+    );
+    const generationTaskPreparer = new GenerationTaskPreparer(
+      new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
+      new GenerationAssetReferencePreparer(
+        assetService,
+        workbenchRegistry,
+      ),
+      new GenerationPreparedManifestFile(),
+    );
+    generationTaskService = new GenerationTaskService(
+      generationTaskDatabase,
+      generationTaskDefinitions,
+      new GenerationTaskExecution(
+        generationTaskDatabase,
+        generationTaskPreparer,
+        new GenerationAgentExecutor(),
+      ),
+      projectDatabase,
+      agentProviderService,
+    );
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
       workbenchRegistry,

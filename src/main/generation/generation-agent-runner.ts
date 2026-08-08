@@ -32,6 +32,7 @@ export type GenerationAgentEvent =
 
 export interface GenerationAgentTurnRequest {
   readonly taskId: string;
+  readonly callKey: string;
   readonly projectId: string;
   readonly sessionLocator: AgentSessionLocator;
   readonly sessionId?: string;

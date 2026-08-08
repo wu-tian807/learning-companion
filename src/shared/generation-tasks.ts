@@ -7,16 +7,12 @@ import {
 export type GenerationTaskStatus =
   | 'created'
   | 'prepared'
-  | 'agent-assigned'
-  | 'agent-completed'
-  | 'post-processed'
+  | 'processing'
+  | 'completed'
   | 'failed'
   | 'cancelled';
 
-export type GenerationTaskFailurePhase =
-  | 'prepare'
-  | 'agent'
-  | 'post-process';
+export type GenerationTaskFailurePhase = 'prepare' | 'process';
 
 export interface GenerationTaskFailureView {
   readonly phase: GenerationTaskFailurePhase;
@@ -134,7 +130,7 @@ function isTime(value: unknown): value is number {
 }
 
 function isFailurePhase(value: unknown): value is GenerationTaskFailurePhase {
-  return value === 'prepare' || value === 'agent' || value === 'post-process';
+  return value === 'prepare' || value === 'process';
 }
 
 export function isGenerationTaskStatus(
@@ -143,9 +139,8 @@ export function isGenerationTaskStatus(
   return (
     value === 'created' ||
     value === 'prepared' ||
-    value === 'agent-assigned' ||
-    value === 'agent-completed' ||
-    value === 'post-processed' ||
+    value === 'processing' ||
+    value === 'completed' ||
     value === 'failed' ||
     value === 'cancelled'
   );

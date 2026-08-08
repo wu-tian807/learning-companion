@@ -6,8 +6,19 @@ import {
 import { AppError } from '../../errors/app-error';
 import type { AgentToolRequirement } from '../../generation/contracts/task-definition';
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
-import type { AgentFunctionToolDefinition } from '../function-tools/agent-function-tool';
+import {
+  AgentFunctionToolExecutionError,
+  isAgentFunctionToolContentResult,
+  type AgentFunctionToolDefinition,
+  type AgentFunctionToolExecutionResult,
+} from '../function-tools/agent-function-tool';
 import type { AgentFunctionToolRegistryApi } from '../function-tools/agent-function-tool-registry';
+import {
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
+} from '../function-tools/builtin-agent-function-tool-ids';
 import type { CodexRuntimeServiceApi } from '../codex/codex-runtime-service-api';
 import type {
   CodexDynamicTool,
@@ -17,12 +28,16 @@ import type {
 export const CODEX_FUNCTION_TOOL_NAMESPACE = 'learning_companion';
 
 const CODEX_WORKSPACE_GENERATION_TOOL_IDS = new Set([
-  'workspace.read',
-  'workspace.search',
-  'workspace.write',
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
 ]);
 const CODEX_NATIVE_GENERATION_TOOL_IDS = new Set([
-  ...CODEX_WORKSPACE_GENERATION_TOOL_IDS,
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
 ]);
 
 export interface CodexGenerationToolSelection {
@@ -73,14 +88,15 @@ function workspaceDefaultToolRequirements(
 
   if (workspaces.some(({ permissions }) => permissions.read)) {
     requirements.push(
-      { id: 'workspace.read', availability: 'required' },
-      { id: 'workspace.search', availability: 'required' },
+      { id: WORKSPACE_READ_TOOL_ID, availability: 'required' },
+      { id: WORKSPACE_SEARCH_TOOL_ID, availability: 'required' },
+      { id: WORKSPACE_VIEW_IMAGE_TOOL_ID, availability: 'required' },
     );
   }
 
   if (workspaces.some(({ permissions }) => permissions.write)) {
     requirements.push({
-      id: 'workspace.write',
+      id: WORKSPACE_WRITE_TOOL_ID,
       availability: 'required',
     });
   }
@@ -94,11 +110,11 @@ function isWorkspaceNativeToolAuthorized(
 ): boolean {
   const workspaces = allWorkspaces(request);
 
-  if (toolId === 'workspace.write') {
+  if (toolId === WORKSPACE_WRITE_TOOL_ID) {
     return workspaces.some(({ permissions }) => permissions.write);
   }
 
-  if (toolId === 'workspace.read' || toolId === 'workspace.search') {
+  if (CODEX_WORKSPACE_GENERATION_TOOL_IDS.has(toolId)) {
     return workspaces.some(({ permissions }) => permissions.read);
   }
 
@@ -173,18 +189,19 @@ export function resolveCodexGenerationTools(
   );
 
   for (const tool of requirements) {
-    if (isCodexNativeGenerationTool(tool.id)) {
-      if (!isWorkspaceNativeToolAuthorized(tool.id, request)) {
-        if (tool.availability === 'required') {
-          throw new AppError('DATA_INTEGRITY_ERROR', {
-            cause: new Error(
-              `Workspace 权限无法满足必需工具：${tool.id}`,
-            ),
-          });
-        }
-        continue;
+    if (
+      isCodexWorkspaceGenerationTool(tool.id) &&
+      !isWorkspaceNativeToolAuthorized(tool.id, request)
+    ) {
+      if (tool.availability === 'required') {
+        throw new AppError('DATA_INTEGRITY_ERROR', {
+          cause: new Error(`Workspace 权限无法满足必需工具：${tool.id}`),
+        });
       }
+      continue;
+    }
 
+    if (isCodexNativeGenerationTool(tool.id)) {
       nativeToolIds.add(tool.id);
       effectiveRequirements.push(tool);
       continue;
@@ -229,12 +246,28 @@ export function findSelectedCodexFunctionTool(
   return selection.functionTools.find(({ id }) => id === toolId);
 }
 
-function failureText(toolId: string): string {
-  return `Learning Companion tool "${toolId}" failed.`;
+function failureText(toolId: string, error: unknown): string {
+  const reason =
+    error instanceof AgentFunctionToolExecutionError
+      ? ` ${error.modelMessage}`
+      : '';
+  return `Learning Companion tool "${toolId}" failed.${reason}`;
 }
 
 function resultText(result: JsonValue): string {
   return typeof result === 'string' ? result : JSON.stringify(result);
+}
+
+function resultContentItems(result: AgentFunctionToolExecutionResult) {
+  if (isAgentFunctionToolContentResult(result)) {
+    return result.items.map((item) =>
+      item.type === 'text'
+        ? { type: 'inputText' as const, text: item.text }
+        : { type: 'inputImage' as const, imageUrl: item.url },
+    );
+  }
+
+  return [{ type: 'inputText' as const, text: resultText(result) }];
 }
 
 async function rejectProtocolRequest(
@@ -296,7 +329,7 @@ export async function handleCodexGenerationServerRequest(
     return rejectProtocolRequest(input, 'Dynamic tool is not allowed');
   }
 
-  let result: JsonValue;
+  let result: AgentFunctionToolExecutionResult;
 
   try {
     input.generationRequest.signal?.throwIfAborted();
@@ -313,16 +346,19 @@ export async function handleCodexGenerationServerRequest(
     );
     input.generationRequest.signal?.throwIfAborted();
 
-    if (!isJsonValue(executionResult)) {
+    if (
+      !isAgentFunctionToolContentResult(executionResult) &&
+      !isJsonValue(executionResult)
+    ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     result = executionResult;
-  } catch {
+  } catch (error) {
     input.generationRequest.signal?.throwIfAborted();
     await input.respond(input.event.request.requestId, {
       result: {
         contentItems: [
-          { type: 'inputText', text: failureText(definition.id) },
+          { type: 'inputText', text: failureText(definition.id, error) },
         ],
         success: false,
       },
@@ -332,9 +368,7 @@ export async function handleCodexGenerationServerRequest(
 
   await input.respond(input.event.request.requestId, {
     result: {
-      contentItems: [
-        { type: 'inputText', text: resultText(result) },
-      ],
+      contentItems: resultContentItems(result),
       success: true,
     },
   });

@@ -41,7 +41,7 @@ export function generationValidationFailure<T = never>(
   });
 }
 
-export class GenerationPostProcessValidationError extends AppError {
+export class GenerationOutputValidationError extends AppError {
   readonly issues: readonly GenerationValidationIssue[];
 
   constructor(issues: readonly GenerationValidationIssue[]) {
@@ -59,7 +59,7 @@ export class GenerationPostProcessValidationError extends AppError {
           .join('\n'),
       ),
     });
-    this.name = 'GenerationPostProcessValidationError';
+    this.name = 'GenerationOutputValidationError';
     this.issues = normalized;
   }
 }

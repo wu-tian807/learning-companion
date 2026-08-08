@@ -18,21 +18,20 @@ export interface GenerationTaskPreparedCheckpoint {
   readonly manifestRef: string;
 }
 
-export interface GenerationTaskAgentCheckpoint {
+export interface GenerationTaskAgentCallCheckpoint {
+  readonly callKey: string;
+  readonly purpose: string;
   readonly completedTime: number;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
 }
 
-export interface GenerationTaskPostProcessCheckpoint {
+export interface GenerationTaskCompletedCheckpoint {
   readonly completedTime: number;
   readonly result: JsonValue;
 }
 
-export type GenerationTaskFailurePhase =
-  | 'prepare'
-  | 'agent'
-  | 'post-process';
+export type GenerationTaskFailurePhase = 'prepare' | 'process';
 
 export interface GenerationTaskFailure {
   readonly phase: GenerationTaskFailurePhase;
@@ -51,8 +50,8 @@ export interface GenerationTaskSnapshot {
   readonly assetReferences: GenerationAssetReferenceBindings;
   readonly prepared?: GenerationTaskPreparedCheckpoint;
   readonly assignedProviderId?: string;
-  readonly agentCompleted?: GenerationTaskAgentCheckpoint;
-  readonly postProcessed?: GenerationTaskPostProcessCheckpoint;
+  readonly agentCalls: readonly GenerationTaskAgentCallCheckpoint[];
+  readonly completed?: GenerationTaskCompletedCheckpoint;
   readonly metrics: GenerationTaskMetrics;
   readonly failure?: GenerationTaskFailure;
   readonly cancelledTime?: number;
@@ -63,9 +62,8 @@ export interface GenerationTaskSnapshot {
 export type GenerationTaskStatus =
   | 'created'
   | 'prepared'
-  | 'agent-assigned'
-  | 'agent-completed'
-  | 'post-processed'
+  | 'processing'
+  | 'completed'
   | 'failed'
   | 'cancelled';
 
@@ -131,36 +129,43 @@ function clonePreparedCheckpoint(
   });
 }
 
-function cloneAgentCheckpoint(
-  checkpoint: GenerationTaskAgentCheckpoint,
-): GenerationTaskAgentCheckpoint {
+function cloneAgentCallCheckpoint(
+  checkpoint: GenerationTaskAgentCallCheckpoint,
+  index: number,
+): GenerationTaskAgentCallCheckpoint {
   return Object.freeze({
+    callKey: requireText(checkpoint.callKey, `agentCalls[${index}].callKey`),
+    purpose: requireText(checkpoint.purpose, `agentCalls[${index}].purpose`),
     completedTime: requireTime(
       checkpoint.completedTime,
-      'agentCompleted.completedTime',
+      `agentCalls[${index}].completedTime`,
     ),
     sessionId: requireText(
       checkpoint.sessionId,
-      'agentCompleted.sessionId',
+      `agentCalls[${index}].sessionId`,
     ),
     ...(checkpoint.providerExecutionId === undefined
       ? {}
       : {
           providerExecutionId: requireText(
             checkpoint.providerExecutionId,
-            'agentCompleted.providerExecutionId',
+            `agentCalls[${index}].providerExecutionId`,
           ),
         }),
   });
 }
 
-function clonePostProcessCheckpoint(
-  checkpoint: GenerationTaskPostProcessCheckpoint,
-): GenerationTaskPostProcessCheckpoint {
+function cloneCompletedCheckpoint(
+  checkpoint: GenerationTaskCompletedCheckpoint,
+): GenerationTaskCompletedCheckpoint {
+  if (!isJsonValue(checkpoint.result)) {
+    throw new Error('GenerationTask completed.result 数据无效');
+  }
+
   return Object.freeze({
     completedTime: requireTime(
       checkpoint.completedTime,
-      'postProcessed.completedTime',
+      'completed.completedTime',
     ),
     result: cloneJsonValue(checkpoint.result),
   });
@@ -169,11 +174,7 @@ function clonePostProcessCheckpoint(
 function cloneFailure(
   failure: GenerationTaskFailure,
 ): GenerationTaskFailure {
-  if (
-    failure.phase !== 'prepare' &&
-    failure.phase !== 'agent' &&
-    failure.phase !== 'post-process'
-  ) {
+  if (failure.phase !== 'prepare' && failure.phase !== 'process') {
     throw new Error('GenerationTask failure.phase 数据无效');
   }
 
@@ -205,11 +206,11 @@ export function cloneGenerationTaskSnapshot(
     ? clonePreparedCheckpoint(snapshot.prepared)
     : undefined;
   const assignedProviderId = snapshot.assignedProviderId;
-  const agentCompleted = snapshot.agentCompleted
-    ? cloneAgentCheckpoint(snapshot.agentCompleted)
-    : undefined;
-  const postProcessed = snapshot.postProcessed
-    ? clonePostProcessCheckpoint(snapshot.postProcessed)
+  const agentCalls = Object.freeze(
+    snapshot.agentCalls.map(cloneAgentCallCheckpoint),
+  );
+  const completed = snapshot.completed
+    ? cloneCompletedCheckpoint(snapshot.completed)
     : undefined;
   const metrics = cloneGenerationTaskMetrics(snapshot.metrics);
   const createdTime = requireTime(snapshot.createdTime, 'createdTime');
@@ -221,42 +222,58 @@ export function cloneGenerationTaskSnapshot(
   const failure = snapshot.failure
     ? cloneFailure(snapshot.failure)
     : undefined;
+  const callKeys = agentCalls.map(({ callKey }) => callKey);
+  const firstSessionId = agentCalls[0]?.sessionId;
+  const lastCallTime = agentCalls.at(-1)?.completedTime;
 
   if (
     updatedTime < createdTime ||
     (prepared && prepared.completedTime < createdTime) ||
-    (agentCompleted &&
-      (!prepared || agentCompleted.completedTime < prepared.completedTime)) ||
-    (postProcessed &&
-      (!agentCompleted ||
-        postProcessed.completedTime < agentCompleted.completedTime)) ||
-    (cancelledTime !== undefined &&
-      (cancelledTime < createdTime || postProcessed !== undefined)) ||
-    (failure &&
-      (failure.failedTime < createdTime || postProcessed !== undefined)) ||
     (prepared && prepared.completedTime > updatedTime) ||
     (assignedProviderId !== undefined &&
       (!prepared || !isAgentProviderId(assignedProviderId))) ||
-    (agentCompleted && assignedProviderId === undefined) ||
-    (agentCompleted && agentCompleted.completedTime > updatedTime) ||
-    (postProcessed && postProcessed.completedTime > updatedTime) ||
-    (cancelledTime !== undefined && cancelledTime > updatedTime) ||
-    (failure && failure.failedTime > updatedTime) ||
+    (agentCalls.length > 0 && assignedProviderId === undefined) ||
+    new Set(callKeys).size !== callKeys.length ||
+    agentCalls.some(
+      (call, index) =>
+        !prepared ||
+        call.completedTime < prepared.completedTime ||
+        call.completedTime > updatedTime ||
+        (index > 0 &&
+          call.completedTime < agentCalls[index - 1]!.completedTime) ||
+        call.sessionId !== firstSessionId,
+    ) ||
+    (completed &&
+      (!prepared ||
+        completed.completedTime < (lastCallTime ?? prepared.completedTime) ||
+        completed.completedTime > updatedTime)) ||
+    (cancelledTime !== undefined &&
+      (cancelledTime < createdTime ||
+        cancelledTime > updatedTime ||
+        completed !== undefined)) ||
+    (failure &&
+      (failure.failedTime < createdTime ||
+        failure.failedTime > updatedTime ||
+        completed !== undefined)) ||
     (prepared === undefined) !== (metrics.prepareDurationMs === undefined) ||
-    (agentCompleted === undefined) !==
-      (metrics.agentExecutions.length === 0) ||
-    (postProcessed === undefined) !==
-      (metrics.postProcessDurationMs === undefined)
+    agentCalls.length !== metrics.agentExecutions.length ||
+    (completed === undefined) !== (metrics.processDurationMs === undefined)
   ) {
     throw new Error('GenerationTask checkpoint 顺序或 metrics 数据无效');
   }
 
-  if (
-    agentCompleted &&
-    (metrics.agentExecutions.at(-1)?.sessionId !== agentCompleted.sessionId ||
-      metrics.agentExecutions.at(-1)?.providerId !== assignedProviderId)
-  ) {
-    throw new Error('GenerationTask provider 或 session metrics 数据不一致');
+  for (let index = 0; index < agentCalls.length; index += 1) {
+    const call = agentCalls[index]!;
+    const execution = metrics.agentExecutions[index]!;
+
+    if (
+      call.callKey !== execution.callKey ||
+      call.purpose !== execution.purpose ||
+      call.sessionId !== execution.sessionId ||
+      execution.providerId !== assignedProviderId
+    ) {
+      throw new Error('GenerationTask Agent call 与 metrics 数据不一致');
+    }
   }
 
   return Object.freeze({
@@ -270,8 +287,8 @@ export function cloneGenerationTaskSnapshot(
     ),
     ...(prepared ? { prepared } : {}),
     ...(assignedProviderId === undefined ? {} : { assignedProviderId }),
-    ...(agentCompleted ? { agentCompleted } : {}),
-    ...(postProcessed ? { postProcessed } : {}),
+    agentCalls,
+    ...(completed ? { completed } : {}),
     metrics,
     ...(failure ? { failure } : {}),
     ...(cancelledTime === undefined ? {} : { cancelledTime }),

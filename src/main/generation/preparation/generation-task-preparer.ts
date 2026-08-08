@@ -1,4 +1,3 @@
-import { cloneJsonValue, type JsonValue } from '../../../shared/workbench/protocol';
 import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
 import { AppError } from '../../errors/app-error';
 import type { GenerationInstruction } from '../contracts/generation-instruction';
@@ -97,23 +96,11 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       },
       signal,
     );
-    const preparedData = definition.prepareExtension
-      ? await definition.prepareExtension.prepare({
-          taskId: task.id,
-          projectId: task.projectId,
-          instruction,
-          workspaces,
-          assetReferences,
-          ...(signal ? { signal } : {}),
-        })
-      : undefined;
-
     signal?.throwIfAborted();
     await this.manifestFile.write(
       workspaces.primary.path,
       task,
       assetReferences,
-      preparedData,
     );
 
     return this.createPreparedRuntime(
@@ -122,7 +109,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       instruction,
       workspaces,
       assetReferences,
-      preparedData,
     );
   }
 
@@ -158,7 +144,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       instruction,
       workspaces,
       assetReferences,
-      manifest.preparedData,
     );
   }
 
@@ -194,16 +179,14 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
     instruction: GenerationInstruction,
     workspaces: PreparedAgentWorkspaces,
     assetReferences: PreparedGenerationTask['assetReferences'],
-    preparedData: JsonValue | undefined,
   ): PreparedGenerationTask {
     const context = {
       taskId: task.id,
       projectId: task.projectId,
       workspaces,
       assetReferences,
-      ...(preparedData === undefined ? {} : { preparedData }),
     };
-    const userMessage = appendAssetReferencesToUserMessage(
+    const defaultUserMessage = appendAssetReferencesToUserMessage(
       instruction.toUserMessage(context),
       assetReferences,
     );
@@ -215,15 +198,12 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definitionVersion: task.definitionVersion,
       instruction,
       systemInstruction: definition.systemInstruction,
-      userMessage,
+      defaultUserMessage,
       toolRequirements: cloneToolRequirements(definition),
       skills: cloneCapabilityRequirements(definition.skills),
       mcpServers: cloneCapabilityRequirements(definition.mcpServers),
       workspaces,
       assetReferences,
-      ...(preparedData === undefined
-        ? {}
-        : { preparedData: cloneJsonValue(preparedData) }),
       manifestRef: GENERATION_PREPARED_MANIFEST_REF,
     });
   }

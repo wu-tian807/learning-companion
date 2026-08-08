@@ -9,6 +9,8 @@ export interface GenerationTokenUsage {
 }
 
 export interface GenerationAgentExecutionMetrics {
+  readonly callKey: string;
+  readonly purpose: string;
   readonly sessionId: string;
   readonly providerId: string;
   readonly modelId: string;
@@ -23,7 +25,8 @@ export interface GenerationAgentExecutionMetrics {
 export interface GenerationTaskMetrics {
   readonly prepareDurationMs?: number;
   readonly agentExecutions: readonly GenerationAgentExecutionMetrics[];
-  readonly postProcessDurationMs?: number;
+  /** Wall-clock duration of TaskDefinition.process, including Agent calls. */
+  readonly processDurationMs?: number;
   readonly totalActiveDurationMs: number;
   readonly totalUsage?: GenerationTokenUsage;
 }
@@ -71,6 +74,8 @@ export function isGenerationAgentExecutionMetrics(
 ): value is GenerationAgentExecutionMetrics {
   return (
     isRecord(value) &&
+    isRequiredText(value.callKey) &&
+    isRequiredText(value.purpose) &&
     isRequiredText(value.sessionId) &&
     isRequiredText(value.providerId) &&
     isRequiredText(value.modelId) &&
@@ -81,7 +86,7 @@ export function isGenerationAgentExecutionMetrics(
     isNonNegativeInteger(value.turnCount) &&
     value.turnCount > 0 &&
     isNonNegativeInteger(value.repairTurnCount) &&
-    value.repairTurnCount < value.turnCount &&
+    value.repairTurnCount <= value.turnCount &&
     (value.usage === undefined || isGenerationTokenUsage(value.usage))
   );
 }
@@ -95,8 +100,8 @@ export function isGenerationTaskMetrics(
       isNonNegativeNumber(value.prepareDurationMs)) &&
     Array.isArray(value.agentExecutions) &&
     value.agentExecutions.every(isGenerationAgentExecutionMetrics) &&
-    (value.postProcessDurationMs === undefined ||
-      isNonNegativeNumber(value.postProcessDurationMs)) &&
+    (value.processDurationMs === undefined ||
+      isNonNegativeNumber(value.processDurationMs)) &&
     isNonNegativeNumber(value.totalActiveDurationMs) &&
     (value.totalUsage === undefined ||
       isGenerationTokenUsage(value.totalUsage))
@@ -107,40 +112,6 @@ export function emptyGenerationTaskMetrics(): GenerationTaskMetrics {
   return Object.freeze({
     agentExecutions: Object.freeze([]),
     totalActiveDurationMs: 0,
-  });
-}
-
-export function cloneGenerationTaskMetrics(
-  metrics: GenerationTaskMetrics,
-): GenerationTaskMetrics {
-  if (!isGenerationTaskMetrics(metrics)) {
-    throw new Error('Generation task metrics 数据无效');
-  }
-
-  return Object.freeze({
-    ...(metrics.prepareDurationMs === undefined
-      ? {}
-      : { prepareDurationMs: metrics.prepareDurationMs }),
-    agentExecutions: Object.freeze(
-      metrics.agentExecutions.map((execution) =>
-        Object.freeze({
-          ...execution,
-          sessionId: execution.sessionId.trim(),
-          providerId: execution.providerId.trim(),
-          modelId: execution.modelId.trim(),
-          ...(execution.usage
-            ? { usage: cloneUsage(execution.usage) }
-            : {}),
-        }),
-      ),
-    ),
-    ...(metrics.postProcessDurationMs === undefined
-      ? {}
-      : { postProcessDurationMs: metrics.postProcessDurationMs }),
-    totalActiveDurationMs: metrics.totalActiveDurationMs,
-    ...(metrics.totalUsage
-      ? { totalUsage: cloneUsage(metrics.totalUsage) }
-      : {}),
   });
 }
 
@@ -156,6 +127,74 @@ function cloneUsage(usage: GenerationTokenUsage): GenerationTokenUsage {
       ),
     ) as GenerationTokenUsage,
   );
+}
+
+function cloneExecution(
+  execution: GenerationAgentExecutionMetrics,
+): GenerationAgentExecutionMetrics {
+  if (!isGenerationAgentExecutionMetrics(execution)) {
+    throw new Error('Generation Agent execution metrics 数据无效');
+  }
+
+  return Object.freeze({
+    ...execution,
+    callKey: execution.callKey.trim(),
+    purpose: execution.purpose.trim(),
+    sessionId: execution.sessionId.trim(),
+    providerId: execution.providerId.trim(),
+    modelId: execution.modelId.trim(),
+    ...(execution.usage ? { usage: cloneUsage(execution.usage) } : {}),
+  });
+}
+
+function activeDuration(
+  prepareDurationMs: number | undefined,
+  executions: readonly GenerationAgentExecutionMetrics[],
+  processDurationMs: number | undefined,
+): number {
+  return (
+    (prepareDurationMs ?? 0) +
+    (processDurationMs ??
+      executions.reduce(
+        (total, execution) => total + execution.activeDurationMs,
+        0,
+      ))
+  );
+}
+
+export function cloneGenerationTaskMetrics(
+  metrics: GenerationTaskMetrics,
+): GenerationTaskMetrics {
+  if (!isGenerationTaskMetrics(metrics)) {
+    throw new Error('Generation task metrics 数据无效');
+  }
+
+  const executions = Object.freeze(
+    metrics.agentExecutions.map(cloneExecution),
+  );
+  const expectedActiveDuration = activeDuration(
+    metrics.prepareDurationMs,
+    executions,
+    metrics.processDurationMs,
+  );
+
+  if (metrics.totalActiveDurationMs !== expectedActiveDuration) {
+    throw new Error('Generation task active duration 数据不一致');
+  }
+
+  return Object.freeze({
+    ...(metrics.prepareDurationMs === undefined
+      ? {}
+      : { prepareDurationMs: metrics.prepareDurationMs }),
+    agentExecutions: executions,
+    ...(metrics.processDurationMs === undefined
+      ? {}
+      : { processDurationMs: metrics.processDurationMs }),
+    totalActiveDurationMs: expectedActiveDuration,
+    ...(metrics.totalUsage
+      ? { totalUsage: cloneUsage(metrics.totalUsage) }
+      : {}),
+  });
 }
 
 export function mergeGenerationTokenUsage(
@@ -184,80 +223,76 @@ export function appendGenerationAgentExecution(
   metrics: GenerationTaskMetrics,
   execution: GenerationAgentExecutionMetrics,
 ): GenerationTaskMetrics {
+  const current = cloneGenerationTaskMetrics(metrics);
+  const clonedExecution = cloneExecution(execution);
+
   if (
-    !isGenerationTaskMetrics(metrics) ||
-    !isGenerationAgentExecutionMetrics(execution)
+    current.processDurationMs !== undefined ||
+    current.agentExecutions.some(
+      ({ callKey }) => callKey === clonedExecution.callKey,
+    )
   ) {
-    throw new Error('Generation metrics 数据无效');
+    throw new Error('Generation Agent execution 顺序或 callKey 无效');
   }
 
-  const clonedExecution = Object.freeze({
-    ...execution,
-    sessionId: execution.sessionId.trim(),
-    providerId: execution.providerId.trim(),
-    modelId: execution.modelId.trim(),
-    ...(execution.usage ? { usage: cloneUsage(execution.usage) } : {}),
-  });
+  const executions = Object.freeze([
+    ...current.agentExecutions,
+    clonedExecution,
+  ]);
   const totalUsage = mergeGenerationTokenUsage(
-    metrics.totalUsage,
-    execution.usage,
+    current.totalUsage,
+    clonedExecution.usage,
   );
 
   return Object.freeze({
-    ...(metrics.prepareDurationMs === undefined
+    ...(current.prepareDurationMs === undefined
       ? {}
-      : { prepareDurationMs: metrics.prepareDurationMs }),
-    agentExecutions: Object.freeze([
-      ...metrics.agentExecutions,
-      clonedExecution,
-    ]),
-    ...(metrics.postProcessDurationMs === undefined
-      ? {}
-      : { postProcessDurationMs: metrics.postProcessDurationMs }),
-    totalActiveDurationMs:
-      metrics.totalActiveDurationMs + execution.activeDurationMs,
+      : { prepareDurationMs: current.prepareDurationMs }),
+    agentExecutions: executions,
+    totalActiveDurationMs: activeDuration(
+      current.prepareDurationMs,
+      executions,
+      undefined,
+    ),
     ...(totalUsage ? { totalUsage } : {}),
   });
 }
 
 export function withGenerationPhaseDuration(
   metrics: GenerationTaskMetrics,
-  phase: 'prepare' | 'post-process',
+  phase: 'prepare' | 'process',
   durationMs: number,
 ): GenerationTaskMetrics {
-  if (!isGenerationTaskMetrics(metrics) || !isNonNegativeNumber(durationMs)) {
+  const current = cloneGenerationTaskMetrics(metrics);
+
+  if (!isNonNegativeNumber(durationMs)) {
     throw new Error('Generation phase metrics 数据无效');
   }
 
-  const previousDuration =
-    phase === 'prepare'
-      ? metrics.prepareDurationMs
-      : metrics.postProcessDurationMs;
+  const prepareDurationMs =
+    phase === 'prepare' ? durationMs : current.prepareDurationMs;
+  const processDurationMs =
+    phase === 'process' ? durationMs : current.processDurationMs;
 
   return Object.freeze({
-    ...(phase === 'prepare'
-      ? { prepareDurationMs: durationMs }
-      : metrics.prepareDurationMs === undefined
-        ? {}
-        : { prepareDurationMs: metrics.prepareDurationMs }),
-    agentExecutions: Object.freeze([...metrics.agentExecutions]),
-    ...(phase === 'post-process'
-      ? { postProcessDurationMs: durationMs }
-      : metrics.postProcessDurationMs === undefined
-        ? {}
-        : { postProcessDurationMs: metrics.postProcessDurationMs }),
-    totalActiveDurationMs:
-      metrics.totalActiveDurationMs - (previousDuration ?? 0) + durationMs,
-    ...(metrics.totalUsage ? { totalUsage: cloneUsage(metrics.totalUsage) } : {}),
+    ...(prepareDurationMs === undefined ? {} : { prepareDurationMs }),
+    agentExecutions: Object.freeze([...current.agentExecutions]),
+    ...(processDurationMs === undefined ? {} : { processDurationMs }),
+    totalActiveDurationMs: activeDuration(
+      prepareDurationMs,
+      current.agentExecutions,
+      processDurationMs,
+    ),
+    ...(current.totalUsage
+      ? { totalUsage: cloneUsage(current.totalUsage) }
+      : {}),
   });
 }
 
 export function generationTaskMetricsToJson(
   metrics: GenerationTaskMetrics,
 ): JsonValue {
-  if (!isGenerationTaskMetrics(metrics)) {
-    throw new Error('Generation task metrics 数据无效');
-  }
-
-  return JSON.parse(JSON.stringify(cloneGenerationTaskMetrics(metrics))) as JsonValue;
+  return JSON.parse(
+    JSON.stringify(cloneGenerationTaskMetrics(metrics)),
+  ) as JsonValue;
 }

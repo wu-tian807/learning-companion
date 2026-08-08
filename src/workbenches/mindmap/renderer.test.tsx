@@ -110,6 +110,7 @@ describe('MindMapWorkbenchView', () => {
     expect(markup).toContain('2 个节点 · 1 个范围');
     expect(markup).toContain('aria-label="收起子节点"');
     expect(markup).not.toContain('aria-label="展开子节点"');
+    expect(markup).not.toContain('line-clamp');
     expect(markup).not.toContain('assets/generated');
   });
 

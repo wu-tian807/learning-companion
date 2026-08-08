@@ -1,14 +1,17 @@
-import { cloneJsonValue, isJsonValue, type JsonValue } from '../../shared/workbench/protocol';
+import {
+  cloneJsonValue,
+  isJsonValue,
+  type JsonValue,
+} from '../../shared/workbench/protocol';
 import { AppError, describeAppError } from '../errors/app-error';
 import type { AnyTaskDefinition } from './contracts/task-definition';
-import type {
-  GenerationAgentRunner,
-  GenerationAgentRunnerResolver,
-} from './generation-agent-runner';
+import type { GenerationValidationIssue } from './contracts/generation-validation';
+import type { GenerationAgentRunnerResolver } from './generation-agent-runner';
 import type {
   GenerationAgentExecutionEvent,
   GenerationAgentExecutor,
 } from './generation-agent-executor';
+import { GenerationTaskAgentSession } from './generation-task-agent-session';
 import type { GenerationTaskDatabaseApi } from './generation-task-database';
 import {
   GenerationTask,
@@ -21,20 +24,59 @@ import type { PreparedGenerationTask } from './preparation/prepared-generation-t
 export type GenerationTaskExecutionEvent =
   | {
       readonly type: 'phase';
-      readonly phase: 'prepare' | 'agent' | 'post-process';
+      readonly phase: 'prepare' | 'process';
       readonly state: 'started' | 'completed';
+    }
+  | {
+      readonly type: 'output-rejected';
+      readonly repairTurnNumber: number;
+      readonly issues: readonly GenerationValidationIssue[];
     }
   | GenerationAgentExecutionEvent;
 
 export interface GenerationTaskExecutionResult {
   readonly taskId: string;
   readonly result: JsonValue;
-  readonly sessionId: string;
+  readonly sessionId?: string;
   readonly metrics: GenerationTaskSnapshot['metrics'];
 }
 
 export interface GenerationTaskExecutionDependencies {
   readonly now: () => number;
+}
+
+class ExecutionEventBuffer {
+  private readonly events: GenerationTaskExecutionEvent[] = [];
+  private wake: (() => void) | undefined;
+
+  push(event: GenerationTaskExecutionEvent): void {
+    this.events.push(event);
+    this.wake?.();
+    this.wake = undefined;
+  }
+
+  shift(): GenerationTaskExecutionEvent | undefined {
+    return this.events.shift();
+  }
+
+  get empty(): boolean {
+    return this.events.length === 0;
+  }
+
+  async wait(): Promise<void> {
+    if (!this.empty) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.wake = resolve;
+    });
+  }
+
+  notify(): void {
+    this.wake?.();
+    this.wake = undefined;
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -43,6 +85,26 @@ function isAbortError(error: unknown): boolean {
     error !== null &&
     'name' in error &&
     error.name === 'AbortError'
+  );
+}
+
+function cloneIssues(
+  issues: readonly GenerationValidationIssue[],
+): readonly GenerationValidationIssue[] {
+  if (
+    issues.length === 0 ||
+    issues.some(
+      ({ path, message }) =>
+        typeof path !== 'string' || message.trim().length === 0,
+    )
+  ) {
+    throw new Error('Generation output rejection issues 数据无效');
+  }
+
+  return Object.freeze(
+    issues.map(({ path, message }) =>
+      Object.freeze({ path, message: message.trim() }),
+    ),
   );
 }
 
@@ -69,8 +131,14 @@ export class GenerationTaskExecution {
   > {
     const initialSnapshot = task.getSnapshot();
 
-    if (initialSnapshot.postProcessed) {
+    if (initialSnapshot.completed) {
       return this.createResult(initialSnapshot);
+    }
+
+    if (initialSnapshot.failure) {
+      const resumedTime = this.nextTaskTime(task, this.now());
+      task.clearFailure(resumedTime);
+      this.database.update(task.getSnapshot());
     }
 
     let failurePhase: GenerationTaskFailurePhase = 'prepare';
@@ -81,52 +149,50 @@ export class GenerationTaskExecution {
       signal.throwIfAborted();
       yield { type: 'phase', phase: 'prepare', state: 'completed' };
 
-      failurePhase = 'agent';
-      yield* this.ensureAgentCompleted(
+      failurePhase = 'process';
+      yield { type: 'phase', phase: 'process', state: 'started' };
+      const recoveredAgentDuration = task
+        .getSnapshot()
+        .metrics.agentExecutions.reduce(
+          (total, execution) => total + execution.activeDurationMs,
+          0,
+        );
+      const processStartedTime = this.now();
+      const processResult = yield* this.runProcess(
         task,
         prepared,
+        definition,
         runnerResolver,
         signal,
       );
-
-      failurePhase = 'post-process';
-      signal.throwIfAborted();
-      yield { type: 'phase', phase: 'post-process', state: 'started' };
-      const postProcessStartedTime = this.now();
-      const postProcessResult = await definition.postProcessor.postProcess(
-        {
-          taskId: prepared.taskId,
-          projectId: prepared.projectId,
-          instruction: prepared.instruction,
-          workspaces: prepared.workspaces,
-          assetReferences: prepared.assetReferences,
-          ...(prepared.preparedData === undefined
-            ? {}
-            : { preparedData: prepared.preparedData }),
-          signal,
-        },
-      );
       signal.throwIfAborted();
 
-      if (!isJsonValue(postProcessResult)) {
+      if (!isJsonValue(processResult)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
       const completedWallTime = this.now();
-      const postProcessedTime = this.nextTaskTime(task, completedWallTime);
-      task.recordPostProcessed({
+      const completedTime = this.nextTaskTime(task, completedWallTime);
+      const allAgentDuration = task
+        .getSnapshot()
+        .metrics.agentExecutions.reduce(
+          (total, execution) => total + execution.activeDurationMs,
+          0,
+        );
+      task.recordCompleted({
         checkpoint: {
-          completedTime: postProcessedTime,
-          result: postProcessResult,
+          completedTime,
+          result: processResult,
         },
         durationMs: Math.max(
-          0,
-          completedWallTime - postProcessStartedTime,
+          allAgentDuration,
+          recoveredAgentDuration +
+            Math.max(0, completedWallTime - processStartedTime),
         ),
-        updatedTime: postProcessedTime,
+        updatedTime: completedTime,
       });
       this.database.update(task.getSnapshot());
-      yield { type: 'phase', phase: 'post-process', state: 'completed' };
+      yield { type: 'phase', phase: 'process', state: 'completed' };
       return this.createResult(task.getSnapshot());
     } catch (error) {
       this.persistFailure(task, failurePhase, error);
@@ -145,7 +211,11 @@ export class GenerationTaskExecution {
       try {
         return await this.preparer.restore(snapshot, definition, signal);
       } catch (error) {
-        if (isAbortError(error) || snapshot.agentCompleted) {
+        if (
+          isAbortError(error) ||
+          snapshot.assignedProviderId !== undefined ||
+          snapshot.agentCalls.length > 0
+        ) {
           throw error;
         }
       }
@@ -172,64 +242,85 @@ export class GenerationTaskExecution {
     return prepared;
   }
 
-  private async *ensureAgentCompleted(
+  private async *runProcess(
     task: GenerationTask,
     prepared: PreparedGenerationTask,
+    definition: AnyTaskDefinition,
     runnerResolver: GenerationAgentRunnerResolver,
     signal: AbortSignal,
-  ): AsyncGenerator<GenerationTaskExecutionEvent, void> {
-    if (task.getSnapshot().agentCompleted) {
-      return;
-    }
-
-    const runner = await this.resolveRunner(task, runnerResolver, signal);
-    signal.throwIfAborted();
-    yield { type: 'phase', phase: 'agent', state: 'started' };
-    const completed = yield* this.agentExecutor.run(
+  ): AsyncGenerator<GenerationTaskExecutionEvent, JsonValue> {
+    const events = new ExecutionEventBuffer();
+    const agent = new GenerationTaskAgentSession(
+      task,
       prepared,
-      runner,
+      this.database,
+      this.agentExecutor,
+      runnerResolver,
       signal,
-    );
-    signal.throwIfAborted();
-    const completedTime = this.nextTaskTime(task, this.now());
-    task.recordAgentCompleted({
-      checkpoint: {
-        completedTime,
-        sessionId: completed.metrics.sessionId,
-        ...(completed.providerExecutionId
-          ? { providerExecutionId: completed.providerExecutionId }
-          : {}),
+      {
+        now: this.now,
+        emit: (event) => events.push(event),
       },
-      metrics: completed.metrics,
-      updatedTime: completedTime,
-    });
-    this.database.update(task.getSnapshot());
-    yield { type: 'phase', phase: 'agent', state: 'completed' };
-  }
+    );
+    let settled = false;
+    const process = Promise.resolve()
+      .then(() =>
+        definition.process({
+          taskId: prepared.taskId,
+          projectId: prepared.projectId,
+          instruction: prepared.instruction,
+          workspaces: prepared.workspaces,
+          assetReferences: prepared.assetReferences,
+          defaultUserMessage: prepared.defaultUserMessage,
+          agent,
+          signal,
+          reportStatus(message) {
+            const normalized = message.trim();
 
-  private async resolveRunner(
-    task: GenerationTask,
-    resolver: GenerationAgentRunnerResolver,
-    signal: AbortSignal,
-  ): Promise<GenerationAgentRunner> {
-    const assignedProviderId = task.getSnapshot().assignedProviderId;
-    const runner = await resolver.resolveRunner(assignedProviderId);
-    signal.throwIfAborted();
+            if (normalized.length === 0) {
+              throw new Error('Generation process status 不能为空');
+            }
 
-    if (
-      assignedProviderId !== undefined &&
-      runner.providerId !== assignedProviderId
-    ) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
+            events.push({
+              type: 'agent-event',
+              event: { type: 'status', message: normalized },
+            });
+          },
+          reportOutputRejected(repairTurnNumber, issues) {
+            if (
+              !Number.isSafeInteger(repairTurnNumber) ||
+              repairTurnNumber <= 0
+            ) {
+              throw new Error('Generation repair turn number 数据无效');
+            }
+
+            events.push({
+              type: 'output-rejected',
+              repairTurnNumber,
+              issues: cloneIssues(issues),
+            });
+          },
+        }),
+      )
+      .finally(() => {
+        settled = true;
+        events.notify();
+      });
+
+    while (!settled || !events.empty) {
+      let event = events.shift();
+
+      while (event) {
+        yield event;
+        event = events.shift();
+      }
+
+      if (!settled) {
+        await events.wait();
+      }
     }
 
-    if (assignedProviderId === undefined) {
-      const assignedTime = this.nextTaskTime(task, this.now());
-      task.assignProvider(runner.providerId, assignedTime);
-      this.database.update(task.getSnapshot());
-    }
-
-    return runner;
+    return await process;
   }
 
   private persistFailure(
@@ -240,7 +331,7 @@ export class GenerationTaskExecution {
     if (
       isAbortError(error) ||
       task.getStatus() === 'cancelled' ||
-      task.getStatus() === 'post-processed'
+      task.getStatus() === 'completed'
     ) {
       return;
     }
@@ -260,14 +351,16 @@ export class GenerationTaskExecution {
   private createResult(
     snapshot: GenerationTaskSnapshot,
   ): GenerationTaskExecutionResult {
-    if (!snapshot.agentCompleted || !snapshot.postProcessed) {
+    if (!snapshot.completed) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
+    const sessionId = snapshot.agentCalls.at(-1)?.sessionId;
+
     return Object.freeze({
       taskId: snapshot.id,
-      result: cloneJsonValue(snapshot.postProcessed.result),
-      sessionId: snapshot.agentCompleted.sessionId,
+      result: cloneJsonValue(snapshot.completed.result),
+      ...(sessionId ? { sessionId } : {}),
       metrics: snapshot.metrics,
     });
   }

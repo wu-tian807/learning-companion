@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createProjectsMigration } from './migrations/0001-create-projects';
 import { createAssetReferencesMigration } from './migrations/0010-create-asset-references';
+import { createGenerationTasksMigration } from './migrations/0012-create-generation-tasks';
+import { indexUnfinishedGenerationTasksMigration } from './migrations/0013-index-unfinished-generation-tasks';
 import { initializeDatabase } from './initialize-database';
 
 const temporaryDirectories: string[] = [];
@@ -31,7 +33,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -103,6 +105,14 @@ describe('initializeDatabase', () => {
           .all()
           .map(({ name }) => name),
       ).not.toContain('agent_output_ref');
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            'PRAGMA table_info(generation_tasks)',
+          )
+          .all()
+          .map(({ name }) => name),
+      ).toContain('agent_calls_json');
     } finally {
       context.close();
     }
@@ -117,7 +127,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        15,
+        16,
       );
     } finally {
       secondContext.close();
@@ -127,6 +137,9 @@ describe('initializeDatabase', () => {
   it('adds the unfinished GenerationTask index to a version 12 database without losing tasks', async () => {
     const databaseFile = await createDatabaseFile();
     const legacyContext = initializeDatabase(databaseFile);
+
+    legacyContext.sqlite.exec('DROP TABLE generation_tasks');
+    legacyContext.sqlite.exec(createGenerationTasksMigration.sql);
 
     legacyContext.sqlite
       .prepare(
@@ -157,17 +170,13 @@ describe('initializeDatabase', () => {
         2,
         2,
       );
-    legacyContext.sqlite.exec(
-      `DROP INDEX generation_tasks_unfinished_project_created_index;
-       ALTER TABLE generation_tasks DROP COLUMN assigned_provider_id;`,
-    );
     legacyContext.sqlite.pragma('user_version = 12');
     legacyContext.close();
 
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -191,10 +200,9 @@ describe('initializeDatabase', () => {
     const databaseFile = await createDatabaseFile();
     const legacyContext = initializeDatabase(databaseFile);
 
-    legacyContext.sqlite.exec(
-      `ALTER TABLE generation_tasks DROP COLUMN assigned_provider_id;
-       ALTER TABLE generation_tasks ADD COLUMN agent_output_ref TEXT;`,
-    );
+    legacyContext.sqlite.exec('DROP TABLE generation_tasks');
+    legacyContext.sqlite.exec(createGenerationTasksMigration.sql);
+    legacyContext.sqlite.exec(indexUnfinishedGenerationTasksMigration.sql);
     legacyContext.sqlite
       .prepare(
         `INSERT INTO projects (
@@ -209,8 +217,9 @@ describe('initializeDatabase', () => {
           instruction_json, asset_references_json,
           prepared_time, prepared_manifest_ref,
           agent_completed_time, agent_session_id, agent_output_ref,
+          post_processed_time, post_process_result_json,
           metrics_json, created_time, updated_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         'task',
@@ -224,6 +233,8 @@ describe('initializeDatabase', () => {
         4,
         'session-1',
         'control/agent-output.json',
+        5,
+        JSON.stringify({ resultAssetId: 'mindmap-1' }),
         JSON.stringify({
           prepareDurationMs: 1,
           agentExecutions: [
@@ -238,10 +249,11 @@ describe('initializeDatabase', () => {
               repairTurnCount: 0,
             },
           ],
-          totalActiveDurationMs: 3,
+          postProcessDurationMs: 1,
+          totalActiveDurationMs: 4,
         }),
         1,
-        4,
+        5,
       );
     legacyContext.sqlite.pragma('user_version = 13');
     legacyContext.close();
@@ -249,7 +261,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(
         context.sqlite
           .prepare<[], { assignedProviderId: string }>(
@@ -259,6 +271,35 @@ describe('initializeDatabase', () => {
           )
           .get(),
       ).toEqual({ assignedProviderId: 'codex' });
+      const migrated = context.sqlite
+        .prepare<
+          [],
+          {
+            agentCalls: string;
+            processCompletedTime: number;
+            processResult: string;
+          }
+        >(
+          `SELECT
+             agent_calls_json AS agentCalls,
+             process_completed_time AS processCompletedTime,
+             process_result_json AS processResult
+           FROM generation_tasks
+           WHERE id = 'task'`,
+        )
+        .get();
+      expect(migrated?.processCompletedTime).toBe(5);
+      expect(JSON.parse(migrated!.agentCalls)).toEqual([
+        {
+          callKey: 'generate',
+          purpose: 'generation',
+          completedTime: 4,
+          sessionId: 'session-1',
+        },
+      ]);
+      expect(JSON.parse(migrated!.processResult)).toEqual({
+        resultAssetId: 'mindmap-1',
+      });
     } finally {
       context.close();
     }
@@ -281,7 +322,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -349,7 +390,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -668,7 +709,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -773,7 +814,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(15);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')

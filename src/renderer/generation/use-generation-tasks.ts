@@ -73,8 +73,7 @@ function executionLabel(event: GenerationExecutionEvent): string | undefined {
 
     return {
       prepare: '正在准备资料…',
-      agent: '正在生成思维导图…',
-      'post-process': '正在创建思维导图 Asset…',
+      process: '正在生成思维导图…',
     }[event.phase];
   }
 
@@ -110,9 +109,8 @@ function defaultStatusLabel(task: GenerationTaskView): string {
   return {
     created: '等待开始…',
     prepared: '资料准备完成…',
-    'agent-assigned': '正在生成思维导图…',
-    'agent-completed': '正在创建思维导图 Asset…',
-    'post-processed': '生成完成',
+    processing: '正在生成思维导图…',
+    completed: '生成完成',
     failed: '生成失败',
     cancelled: '已取消',
   }[task.status];

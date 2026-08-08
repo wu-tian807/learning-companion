@@ -1,5 +1,6 @@
 import { createAgentSessionLocator } from '../agents/sessions/agent-session';
 import { AppError } from '../errors/app-error';
+import type { AgentUserMessage } from './contracts/agent-message';
 import {
   isGenerationTokenUsage,
   type GenerationAgentExecutionMetrics,
@@ -19,6 +20,13 @@ export type GenerationAgentExecutionEvent = {
 export interface CompletedGenerationAgentRun {
   readonly metrics: GenerationAgentExecutionMetrics;
   readonly providerExecutionId?: string;
+}
+
+export interface GenerationAgentExecutionRequest {
+  readonly callKey: string;
+  readonly purpose: string;
+  readonly userMessage: AgentUserMessage;
+  readonly expectedSessionId?: string;
 }
 
 function requireProviderId(value: string): string {
@@ -59,6 +67,7 @@ export class GenerationAgentExecutor {
   async *run(
     prepared: PreparedGenerationTask,
     runner: GenerationAgentRunner,
+    request: GenerationAgentExecutionRequest,
     signal: AbortSignal,
   ): AsyncGenerator<
     GenerationAgentExecutionEvent,
@@ -73,10 +82,14 @@ export class GenerationAgentExecutor {
     signal.throwIfAborted();
     const turn = runner.runTurn({
       taskId: prepared.taskId,
+      callKey: request.callKey,
       projectId: prepared.projectId,
       sessionLocator,
+      ...(request.expectedSessionId
+        ? { sessionId: request.expectedSessionId }
+        : {}),
       systemInstruction: prepared.systemInstruction,
-      userMessage: prepared.userMessage,
+      userMessage: request.userMessage,
       toolRequirements: prepared.toolRequirements,
       skills: prepared.skills,
       mcpServers: prepared.mcpServers,
@@ -92,10 +105,12 @@ export class GenerationAgentExecutor {
 
     const result = next.value;
     signal.throwIfAborted();
-    validateTurnResult(result, providerId, undefined);
+    validateTurnResult(result, providerId, request.expectedSessionId);
 
     return Object.freeze({
       metrics: Object.freeze({
+        callKey: request.callKey,
+        purpose: request.purpose,
         sessionId: result.sessionId,
         providerId,
         modelId: result.modelId,
@@ -103,7 +118,7 @@ export class GenerationAgentExecutor {
         completedTime: result.completedTime,
         activeDurationMs: result.activeDurationMs,
         turnCount: 1,
-        repairTurnCount: 0,
+        repairTurnCount: request.purpose === 'repair' ? 1 : 0,
         ...(result.usage ? { usage: result.usage } : {}),
       }),
       ...(result.providerExecutionId

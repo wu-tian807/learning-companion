@@ -479,6 +479,20 @@ Text Selection Facility。
 - PDF Viewer 保持现有分页、缩放和滚动能力；
 - Office 的阅读状态保存于 `workbench_states`，不进入 Artifact 表。
 
+### 12.3 Workbench 物化能力
+
+Office 转 PDF 是 Office Workbench 的能力，而不是 Generation 或通用 Artifact 层的媒体
+策略。`MainWorkbenchProvider` 可选提供 `materializeContent()`；Office Provider 在该方法
+中通过 `AssetArtifactService.getOrCreate()` 返回自己实际使用的 PDF 内容。
+
+Workbench 的 `preparePreview` 与 Generation prepare 共用同一个 Office 物化实现：前者把
+返回的 PDF 注册为渲染 URL，后者只把同一个 PDF 复制到任务 Workspace。Generation 不认识
+LibreOffice、Office MIME、Producer ID 或 Artifact Key。未提供物化能力的 Workbench 继续
+使用 Asset 原始内容。
+
+`LibreOfficePreviewProducer` 的实现归属 Office Workbench；通用 Main 层只保留 Artifact
+Registry、Service、Database 和文件生命周期基础设施。
+
 ## 13. Anchor 语义预留
 
 本阶段不创建 Anchor 表，但 Office Workbench 不使用 `pdf.*` Anchor 作为最终

@@ -112,6 +112,7 @@ function createGenerationRequest(
 
   return {
     taskId: 'task-1',
+    callKey: 'generate',
     projectId: 'project',
     sessionLocator: {
       projectId: 'project',
@@ -274,9 +275,9 @@ describe('CodexAgentProvider', () => {
         threadId: 'thread-1',
         turnId: 'turn-1',
         item: {
-          id: 'command-1',
-          type: 'commandExecution',
-          command: 'rg source',
+          id: 'image-1',
+          type: 'imageView',
+          path: 'source.png',
         },
       };
       yield {
@@ -354,8 +355,8 @@ describe('CodexAgentProvider', () => {
       expect.objectContaining({
         type: 'tool-call',
         phase: 'started',
-        callId: 'command-1',
-        toolName: 'commandExecution',
+        callId: 'image-1',
+        toolName: 'imageView',
       }),
     ]);
     expect(result).toEqual({
@@ -385,7 +386,7 @@ describe('CodexAgentProvider', () => {
       throw new Error('Expected a default Codex permission profile');
     }
     expect(profileId).toMatch(/^lc-generation-[a-f0-9]{24}$/u);
-    expect(threadInput.permissions).toBeUndefined();
+    expect(threadInput.permissions).toBe(profileId);
     expect(threadInput).toEqual(
       expect.objectContaining({
         cwd: request.workspaces.primary.path,
@@ -405,7 +406,7 @@ describe('CodexAgentProvider', () => {
             multi_agent: false,
             shell_tool: true,
           }),
-          tools: { view_image: false },
+          tools: { view_image: true },
           web_search: 'disabled',
           default_permissions: profileId,
           'mcp_servers.user-mcp.enabled': false,
@@ -440,7 +441,7 @@ describe('CodexAgentProvider', () => {
     )[0][0];
     expect(turnInput.threadId).toBe('thread-1');
     expect(turnInput.clientUserMessageId).toMatch(/^lc-generation-/u);
-    expect(turnInput.permissions).toBeUndefined();
+    expect(turnInput.permissions).toBe(profileId);
     expect(turnInput.outputSchema).toBeUndefined();
     expect(sessions.getBinding()).toEqual(
       expect.objectContaining({
@@ -724,12 +725,12 @@ describe('CodexAgentProvider', () => {
         dynamicTools: [
           expect.objectContaining({
             type: 'namespace',
-            tools: [
+            tools: expect.arrayContaining([
               expect.objectContaining({
                 name: 'inspect_media',
                 deferLoading: true,
               }),
-            ],
+            ]),
           }),
         ],
       }),

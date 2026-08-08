@@ -7,6 +7,16 @@ import type { AgentToolRequirement } from '../../generation/contracts/task-defin
 import type { AgentFunctionToolDefinition } from '../function-tools/agent-function-tool';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import {
+  WORKSPACE_READ_TOOL_ID,
+  WORKSPACE_SEARCH_TOOL_ID,
+  WORKSPACE_VIEW_IMAGE_TOOL_ID,
+  WORKSPACE_WRITE_TOOL_ID,
+} from '../function-tools/builtin-agent-function-tool-ids';
+import {
+  PDF_READ_FUNCTION_TOOL_ID,
+  pdfFunctionTool,
+} from '../../../workbenches/pdf/agent/pdf-function-tool';
+import {
   CODEX_FUNCTION_TOOL_NAMESPACE,
   handleCodexGenerationServerRequest,
   resolveCodexGenerationTools,
@@ -92,42 +102,52 @@ function toolRequest(
 
 describe('Codex function tools', () => {
   it('combines default workspace tools and additional function tools', () => {
+    const registry = createRegistry();
+    registry.register(pdfFunctionTool);
     const selection = resolveCodexGenerationTools(
       toolRequest([
         { id: 'missing_optional', availability: 'optional' },
         { id: 'read_asset_anchor', availability: 'required' },
       ]),
-      createRegistry(),
+      registry,
+      [{ id: PDF_READ_FUNCTION_TOOL_ID, availability: 'required' }],
     );
 
     expect(selection.effectiveRequirements).toEqual([
       { id: 'read_asset_anchor', availability: 'required' },
-      { id: 'workspace.read', availability: 'required' },
-      { id: 'workspace.search', availability: 'required' },
+      { id: PDF_READ_FUNCTION_TOOL_ID, availability: 'required' },
+      { id: WORKSPACE_READ_TOOL_ID, availability: 'required' },
+      { id: WORKSPACE_SEARCH_TOOL_ID, availability: 'required' },
+      { id: WORKSPACE_VIEW_IMAGE_TOOL_ID, availability: 'required' },
     ]);
     expect(selection.nativeToolIds).toEqual([
-      'workspace.read',
-      'workspace.search',
+      WORKSPACE_READ_TOOL_ID,
+      WORKSPACE_SEARCH_TOOL_ID,
+      WORKSPACE_VIEW_IMAGE_TOOL_ID,
     ]);
     expect(selection.functionTools.map(({ id, version }) => ({ id, version })))
-      .toEqual([{ id: 'read_asset_anchor', version: 2 }]);
+      .toEqual([
+        { id: 'read_asset_anchor', version: 2 },
+        { id: PDF_READ_FUNCTION_TOOL_ID, version: 4 },
+      ]);
     expect(selection.dynamicTools).toEqual([
       {
         type: 'namespace',
         name: CODEX_FUNCTION_TOOL_NAMESPACE,
         description: 'Application tools provided by Learning Companion.',
-        tools: [
+        tools: expect.arrayContaining([
           expect.objectContaining({
             type: 'function',
             name: 'read_asset_anchor',
             deferLoading: true,
           }),
-        ],
+          expect.objectContaining({ name: PDF_READ_FUNCTION_TOOL_ID }),
+        ]),
       },
     ]);
   });
 
-  it('fails required unknown tools and omits an empty namespace', () => {
+  it('fails required unknown tools and omits unsupported optional tools', () => {
     const registry = new AgentFunctionToolRegistry();
 
     expect(() =>
@@ -138,14 +158,16 @@ describe('Codex function tools', () => {
         registry,
       ),
     ).toThrowError(new AppError('FEATURE_NOT_SUPPORTED'));
-    expect(
-      resolveCodexGenerationTools(
-        toolRequest([
-          { id: 'missing_optional', availability: 'optional' },
-        ]),
-        registry,
-      ).dynamicTools,
-    ).toEqual([]);
+    const selection = resolveCodexGenerationTools(
+      toolRequest([
+        { id: 'missing_optional', availability: 'optional' },
+      ]),
+      registry,
+    );
+    expect(selection.effectiveRequirements).not.toContainEqual(
+      expect.objectContaining({ id: 'missing_optional' }),
+    );
+    expect(selection.dynamicTools).toHaveLength(0);
   });
 
   it('enables write only when a prepared workspace is writable', () => {
@@ -154,21 +176,21 @@ describe('Codex function tools', () => {
         toolRequest([], false),
         createRegistry(),
       ).nativeToolIds,
-    ).toEqual(['workspace.read', 'workspace.search']);
+    ).toEqual([
+      WORKSPACE_READ_TOOL_ID,
+      WORKSPACE_SEARCH_TOOL_ID,
+      WORKSPACE_VIEW_IMAGE_TOOL_ID,
+    ]);
     expect(
       resolveCodexGenerationTools(
         toolRequest([], true),
         createRegistry(),
       ).nativeToolIds,
-    ).toEqual([
-      'workspace.read',
-      'workspace.search',
-      'workspace.write',
-    ]);
+    ).toContain(WORKSPACE_WRITE_TOOL_ID);
     expect(() =>
       resolveCodexGenerationTools(
         toolRequest([
-          { id: 'workspace.write', availability: 'required' },
+          { id: WORKSPACE_WRITE_TOOL_ID, availability: 'required' },
         ]),
         createRegistry(),
       ),
@@ -187,9 +209,9 @@ describe('Codex function tools', () => {
       ],
     );
 
-    expect(selection.functionTools.map(({ id }) => id)).toEqual([
+    expect(selection.functionTools.map(({ id }) => id)).toContain(
       'read_asset_anchor',
-    ]);
+    );
     expect(selection.effectiveRequirements).toContainEqual({
       id: 'read_asset_anchor',
       availability: 'required',
@@ -225,6 +247,48 @@ describe('Codex function tools', () => {
       result: {
         contentItems: [
           { type: 'inputText', text: '{"text":"selected"}' },
+        ],
+        success: true,
+      },
+    });
+  });
+
+  it('maps rich function results to model-visible image content', async () => {
+    const execute = vi.fn(async () => ({
+      kind: 'content' as const,
+      items: [
+        { type: 'text' as const, text: 'page 1' },
+        {
+          type: 'image' as const,
+          url: 'data:image/png;base64,cGFnZQ==',
+        },
+      ],
+    }));
+    const selection = resolveCodexGenerationTools(
+      toolRequest([
+        { id: 'read_asset_anchor', availability: 'required' },
+      ]),
+      createRegistry(execute),
+    );
+    const respond = vi.fn(async () => undefined);
+
+    await handleCodexGenerationServerRequest({
+      event: serverRequest(),
+      expectedThreadId: 'thread-1',
+      activeTurnId: 'turn-1',
+      selection,
+      generationRequest: executionContext(),
+      respond,
+    });
+
+    expect(respond).toHaveBeenCalledWith('request-1', {
+      result: {
+        contentItems: [
+          { type: 'inputText', text: 'page 1' },
+          {
+            type: 'inputImage',
+            imageUrl: 'data:image/png;base64,cGFnZQ==',
+          },
         ],
         success: true,
       },

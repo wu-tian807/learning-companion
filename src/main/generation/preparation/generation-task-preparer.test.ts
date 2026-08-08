@@ -7,9 +7,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AssetSnapshot } from '../../../shared/assets';
 import { AgentWorkspaceManager } from '../../agents/workspaces/agent-workspace-manager';
 import type { AssetServiceApi } from '../../assets/asset-service';
+import { WorkbenchRegistry } from '../../workbench/workbench-registry';
 import { GenerationTask } from '../generation-task';
 import { MindMapGenerationInstruction } from '../../../workbenches/mindmap/generation/mindmap-generation-instruction';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { UnsupportedWorkbenchProvider } from '../../../workbenches/unsupported/main';
 import { GenerationAssetReferencePreparer } from './generation-asset-reference-preparer';
 import { GenerationPreparedManifestFile } from './generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from './generation-task-preparer';
@@ -61,11 +63,14 @@ describe('GenerationTaskPreparer', () => {
     const workspaceRoot = join(directory, 'agent-workspaces');
     const preparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(workspaceRoot),
-      new GenerationAssetReferencePreparer(assetService),
+      new GenerationAssetReferencePreparer(
+        assetService,
+        new WorkbenchRegistry(new UnsupportedWorkbenchProvider()),
+      ),
       new GenerationPreparedManifestFile(),
     );
     const definition = createMindMapGenerationTaskDefinitionV1({
-      async postProcess() {
+      async process() {
         return { resultAssetId: 'unused' };
       },
     });
@@ -96,7 +101,7 @@ describe('GenerationTaskPreparer', () => {
         'utf8',
       ),
     ).toBe('# Lesson\n');
-    const messageText = prepared.userMessage.content
+    const messageText = prepared.defaultUserMessage.content
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
       .join('\n');

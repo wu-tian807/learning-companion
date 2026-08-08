@@ -71,7 +71,7 @@ function createTaskPresentation(
       ...(failed
         ? {
             failure: {
-              phase: 'agent' as const,
+              phase: 'process' as const,
               failedTime: updatedTime,
               message: '生成失败',
             },
@@ -248,7 +248,7 @@ describe('GenerationCenter', () => {
   it('shows every active task in the Asset list with retry and cancel actions', () => {
     const html = renderGenerationCenter({
       mindMapTasks: [
-        createTaskPresentation('task-running', 'agent-assigned', now),
+        createTaskPresentation('task-running', 'processing', now),
         createTaskPresentation('task-failed', 'failed', now - 1_000),
       ],
     });

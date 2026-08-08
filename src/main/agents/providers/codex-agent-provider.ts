@@ -260,6 +260,7 @@ export class CodexAgentProvider
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',
+      permissions: configuration.profileId,
     });
     let activeTurnId: string | undefined;
     let usage: GenerationTokenUsage | undefined;

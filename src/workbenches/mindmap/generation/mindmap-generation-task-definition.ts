@@ -1,10 +1,10 @@
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
 } from '../../../shared/generation-definitions';
 import type {
-  GenerationTaskPostProcessor,
+  GenerationTaskProcessContext,
+  GenerationTaskProcessor,
   TaskDefinition,
 } from '../../../main/generation/contracts/task-definition';
 import {
@@ -16,7 +16,7 @@ import {
   MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH,
   MIND_MAP_GENERATION_CANDIDATE_VERSION,
 } from './mindmap-generation-output';
-import type { MindMapGenerationTaskResult } from './mindmap-generation-post-processor';
+import type { MindMapGenerationTaskResult } from './mindmap-generation-processor';
 
 export {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
@@ -39,17 +39,15 @@ export const MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1 = `你负责根据用户�
 
 nodes 必须形成严格的单根有序树。每个对象键必须与内部 id 相同。节点和 Frame 只使用用户消息中提供的 source alias 表达来源，不得编造数据库 referenceId、绝对路径或未提供的资料。Frame 可以覆盖多个已有节点，但不得改变树结构。
 
-写入文件后无需自行编写或运行校验脚本；正式结构校验由应用的 post-process 负责。最终回复只简短说明已经完成，不要在回复中粘贴候选 JSON。`;
+写入文件后无需自行编写或运行校验脚本；应用会检查产物，并在必要时通过同一会话明确告知需要修复的项目。最终回复只简短说明已经完成，不要在回复中粘贴候选 JSON。`;
 
 export function createMindMapGenerationTaskDefinitionV1(
-  postProcessor: GenerationTaskPostProcessor<
+  processor: GenerationTaskProcessor<
     MindMapGenerationInstruction,
-    JsonValue,
     MindMapGenerationTaskResult
   >,
 ): TaskDefinition<
   MindMapGenerationInstruction,
-  JsonValue,
   MindMapGenerationTaskResult
 > {
   return Object.freeze({
@@ -73,6 +71,8 @@ export function createMindMapGenerationTaskDefinitionV1(
       }),
     }),
     instruction: mindMapGenerationInstructionFactory,
-    postProcessor,
+    process: (
+      context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
+    ) => processor.process(context),
   });
 }

@@ -11,7 +11,6 @@ export interface PreparedInstructionContext {
   readonly projectId: string;
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly preparedData?: JsonValue;
 }
 
 export abstract class GenerationInstruction<

@@ -11,7 +11,6 @@ import { requireAgentCapabilityId } from '../agents/capabilities/agent-capabilit
 
 type StoredTaskDefinition = TaskDefinition<
   GenerationInstruction,
-  JsonValue,
   JsonValue
 >;
 
@@ -52,7 +51,7 @@ function validateDefinition(
     definition.version <= 0 ||
     definition.systemInstruction.trim().length === 0 ||
     typeof definition.instruction?.parse !== 'function' ||
-    typeof definition.postProcessor?.postProcess !== 'function'
+    typeof definition.process !== 'function'
   ) {
     throw new AppError('INVALID_EXTENSION_DEFINITION');
   }
@@ -115,10 +114,9 @@ export class GenerationTaskDefinitionRegistry {
 
   register<
     TInstruction extends GenerationInstruction,
-    TPreparedData extends JsonValue,
     TResult extends JsonValue,
   >(
-    definition: TaskDefinition<TInstruction, TPreparedData, TResult>,
+    definition: TaskDefinition<TInstruction, TResult>,
   ): void {
     validateDefinition(definition);
     const id = requireDefinitionId(definition.id);
