@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 打通自定义 Responses 兼容 API（火山方舟）的生成任务链路：流式回答失败时如实报错，选择器重选不卡死（目录失败降级手填模型 ID）。
+**Goal:** 打通自定义 Responses 兼容 API（火山方舟）的生成任务链路：RPC 边界合成 delta 交付回答，选择器重选不卡死（目录失败降级手填模型 ID）。
 
-**Architecture:** 两项修复。(1) `startCodexTurn` 在流式循环统计 delta；turn 完成时若无任何 delta（第三方 API 下 codex app-server 不发 `item/agentMessage/delta`），**抛 `CODEX_REQUEST_FAILED` 如实报错**，不拿 turn.items 兜底伪装交付。(2) `AgentProviderSelectorForm` 加 `catalogEpoch` state 重选强制重载模型目录；目录加载失败/卡住时降级为空白可编辑输入框，用户手填模型 ID。
+**Architecture:** 两项修复。(1) 在 RPC 协议边界（`CodexTurnStream`）加适配层：app-server 对第三方 Responses 兼容 API（火山方舟）不发 `item/agentMessage/delta`，但 `item/completed`（agentMessage 完整文本）正常到达——收到它且该 turn 无 delta 时，把完整文本合成一条 `assistant-message-delta` 注入正常数据流，下游零改动。(2) `AgentProviderSelectorForm` 加 `catalogEpoch` state 重选强制重载模型目录；目录加载失败/卡住时降级为空白可编辑输入框，用户手填模型 ID。
 
 **Tech Stack:** TypeScript 6（strict）、React 19、Vitest、Electron。
 
@@ -19,103 +19,179 @@
 
 ---
 
-### Task 1: 流式回答缺失时如实报错
+### Task 1: RPC 边界合成 delta（CodexTurnStream 适配层）
 
 **Files:**
-- Modify: `src/main/agents/providers/codex-agent-provider.ts:458-563`（`startCodexTurn`）
-- Test: `src/main/agents/providers/codex-agent-provider.test.ts`
+- Modify: `src/main/agents/codex/codex-turn-stream.ts`（`CodexTurnStream` 类，`accept`/`acceptReadyEvent`）
+- Create: `src/main/agents/codex/codex-turn-stream.test.ts`（新建，项目该文件无测试）
 
 **Interfaces:**
-- Consumes: `CodexTurn`（`codex-runtime-types.ts`）；`AppError`（`src/main/errors/app-error.ts`）。
-- Produces: `startCodexTurn` 统计流式 delta；turn 完成时 0 个 delta → 抛 `AppError('CODEX_REQUEST_FAILED', { cause: new Error('Codex 未返回流式回答：自定义 API 可能不支持增量输出。') })`。有 delta 时行为不变。
+- Consumes: `CodexRpcIncomingEvent`（`codex-rpc-connection.ts`）；`toTurnEvent`（本文件内部）产出的 `CodexTurnEvent`。
+- Produces: 无 delta 的 turn 收到 `item/completed`（agentMessage 含 text）时，队列额外产出 `{ type: 'assistant-message-delta', threadId, turnId, itemId, delta: <完整文本> }`；有 delta 时不合成。
 
-- [ ] **Step 1: 写失败测试——无 delta 时抛错**
+- [ ] **Step 1: 写失败测试**
 
-在 `describe('CodexAgentProvider')` 内新增测试。`startTurn` mock 流**不含 `assistant-message-delta`**，`turn/completed` 用 `completedTurn`（其 `items` 含 `agentMessage` 文本——测试同时证明**有 items 也报错**，不兜底）：
+新建 `codex-turn-stream.test.ts`：
 
 ```ts
-it('fails with CODEX_REQUEST_FAILED when the turn produced no assistant deltas', async () => {
-  const sessions = createSessions();
-  const startTurn = vi.fn(async function* () {
-    yield {
-      type: 'turn-started' as const,
+import { describe, expect, it } from 'vitest';
+
+import type { CodexRpcIncomingEvent } from './codex-rpc-connection';
+import { CodexTurnStream } from './codex-turn-stream';
+
+function notification(
+  method: string,
+  params: Record<string, unknown>,
+): CodexRpcIncomingEvent {
+  return { type: 'notification', method, params };
+}
+
+async function collect(
+  stream: CodexTurnStream,
+): Promise<{ type: string; delta?: string; method?: string }[]> {
+  const events: { type: string; delta?: string; method?: string }[] = [];
+  let next = await stream.next();
+  while (!next.done) {
+    const event = next.value as { type: string; delta?: string; method?: string };
+    events.push(event);
+    if (event.type === 'turn-completed') break;
+    next = await stream.next();
+  }
+  return events;
+}
+
+describe('CodexTurnStream delta synthesis', () => {
+  it('synthesizes an assistant-message-delta from agentMessage item/completed when no deltas arrived', async () => {
+    const stream = new CodexTurnStream('thread-1');
+    stream.accept(notification('turn/started', {
       threadId: 'thread-1',
       turn: { id: 'turn-1', status: 'inProgress' },
-    };
-    return {
+    }));
+    stream.accept(notification('item/completed', {
       threadId: 'thread-1',
-      turn: completedTurn('unused-live-client-id', {
-        answer: '火山方舟回答',
-      }),
-    };
-  });
-  const runtime = createRuntime({
-    getAccount: vi.fn(async () => ({
-      account: { type: 'chatgpt' },
-      requiresOpenaiAuth: true,
-    })),
-    readConfig: vi.fn(async () => ({ config: { mcp_servers: {} } })),
-    listSkills: vi.fn(async () => []),
-    createThread: vi.fn(async () => selection('thread-1')),
-    startTurn,
-    interruptTurn: vi.fn(async () => undefined),
-  });
-  const provider = new CodexAgentProvider(runtime, sessions.service, {
-    now: () => 3_000,
-  });
-  const request = createGenerationRequest();
+      turnId: 'turn-1',
+      item: {
+        id: 'msg-1',
+        type: 'agentMessage',
+        text: '你好，这是完整回答。',
+      },
+    }));
+    stream.accept(notification('turn/completed', {
+      threadId: 'thread-1',
+      turn: {
+        id: 'turn-1',
+        status: 'completed',
+        items: [{ id: 'msg-1', type: 'agentMessage', text: '你好，这是完整回答。' }],
+      },
+    }));
 
-  await expect(
-    collectTurn(runAccountTurn(provider, request)),
-  ).rejects.toMatchObject({
-    code: 'CODEX_REQUEST_FAILED',
-    cause: expect.objectContaining({
-      message: expect.stringContaining('未返回流式回答'),
-    }),
+    const events = await collect(stream);
+    const deltas = events.filter((e) => e.type === 'assistant-message-delta');
+    expect(deltas).toEqual([
+      {
+        type: 'assistant-message-delta',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'msg-1',
+        delta: '你好，这是完整回答。',
+      },
+    ]);
+  });
+
+  it('does not synthesize when real deltas already arrived', async () => {
+    const stream = new CodexTurnStream('thread-1');
+    stream.accept(notification('turn/started', {
+      threadId: 'thread-1',
+      turn: { id: 'turn-1', status: 'inProgress' },
+    }));
+    stream.accept(notification('item/agentMessage/delta', {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      itemId: 'msg-1',
+      delta: '你',
+    }));
+    stream.accept(notification('item/completed', {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      item: { id: 'msg-1', type: 'agentMessage', text: '你好，这是完整回答。' },
+    }));
+    stream.accept(notification('turn/completed', {
+      threadId: 'thread-1',
+      turn: {
+        id: 'turn-1',
+        status: 'completed',
+        items: [{ id: 'msg-1', type: 'agentMessage', text: '你好，这是完整回答。' }],
+      },
+    }));
+
+    const events = await collect(stream);
+    const deltas = events.filter((e) => e.type === 'assistant-message-delta');
+    expect(deltas).toEqual([
+      {
+        type: 'assistant-message-delta',
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'msg-1',
+        delta: '你',
+      },
+    ]);
   });
 });
 ```
 
 - [ ] **Step 2: 运行测试验证失败**
 
-Run: `pnpm test -- src/main/agents/providers/codex-agent-provider.test.ts`
-Expected: 新测试 FAIL——当前 `startCodexTurn` 对无 delta 的 completed turn 正常返回，不抛错。
+Run: `pnpm test -- src/main/agents/codex/codex-turn-stream.test.ts`
+Expected: 新测试 FAIL——当前 `CodexTurnStream` 不合成 delta，第一个用例 `deltas` 为空。
 
-- [ ] **Step 3: 实现报错逻辑**
+- [ ] **Step 3: 实现合成逻辑**
 
-在 `codex-agent-provider.ts` 的 `startCodexTurn`：
+在 `CodexTurnStream`：
 
-1. 流式循环前初始化 `let receivedAnyDelta = false;`
-2. `assistant-message-delta` 分支里 `yield` 后置 `receivedAnyDelta = true;`（`:529-530` 附近）。
-3. `next.done` 且 `turn.status === 'completed'` 分支，`return` 前：
+1. 新增字段 `private receivedDeltas = false;`，`start()` 重置（新 turn 开始）。
+2. `acceptReadyEvent` 中 `event.type === 'assistant-message-delta'` 时置 `receivedDeltas = true`。
+3. `item/completed` 分支（`toTurnEvent` 产出 `item-completed`）后，在 `acceptReadyEvent` 内补合成逻辑：
 
 ```ts
-if (!receivedAnyDelta) {
-  throw new AppError('CODEX_REQUEST_FAILED', {
-    cause: new Error(
-      'Codex 未返回流式回答：自定义 API 可能不支持增量输出。',
-    ),
+if (
+  event.type === 'item-completed' &&
+  event.item.type === 'agentMessage' &&
+  typeof event.item.text === 'string' &&
+  !this.receivedDeltas
+) {
+  this.queue.push({
+    type: 'assistant-message-delta',
+    threadId: event.threadId,
+    turnId: event.turnId,
+    itemId: event.item.id,
+    delta: event.item.text,
   });
 }
 ```
 
-放在 `next.value.turn.status !== 'completed'` 检查**之后**、构造 `return` 对象**之前**。注意：此 throw 在 `try` 块内，`finally` 会正常执行（中断 turn、清理流），符合现有错误路径惯例。
+放在现有 `eventTurnId` 校验（`eventTurnId !== this.turnId` return）**之后**、`this.queue.push(event)` 之前。
 
 - [ ] **Step 4: 运行测试验证通过**
 
-Run: `pnpm test -- src/main/agents/providers/codex-agent-provider.test.ts`
-Expected: 新测试 PASS（`rejects.toMatchObject` 命中）；既有测试全 PASS（有 delta 场景 `receivedAnyDelta` 为 true，不抛错）。
+Run: `pnpm test -- src/main/agents/codex/codex-turn-stream.test.ts`
+Expected: 两个用例 PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 回归测试**
+
+Run: `pnpm test -- src/main/agents/providers/codex-agent-provider.test.ts src/main/agents/codex/codex-runtime-service.test.ts`
+Expected: 全 PASS（`startCodexTurn` 不变，事件流多了合成 delta 不影响既有断言——既有测试的 turn 有真实 delta，不触发合成）。
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/agents/providers/codex-agent-provider.ts src/main/agents/providers/codex-agent-provider.test.ts
-git commit -m "fix(codex): fail the turn honestly when no assistant deltas arrive
+git add src/main/agents/codex/codex-turn-stream.ts src/main/agents/codex/codex-turn-stream.test.ts
+git commit -m "feat(codex): synthesize assistant delta from item/completed at RPC boundary
 
-第三方 Responses 兼容 API（火山方舟）下 codex app-server 不发送
-item/agentMessage/delta 通知，对话 UI 收不到流式回答。turn 完成时
-若无任何 delta，抛 CODEX_REQUEST_FAILED 如实报错，不拿 turn.items
-兜底伪装交付。
+codex app-server 对第三方 Responses 兼容 API（火山方舟）不发送
+item/agentMessage/delta，但 item/completed 携带完整 agentMessage 文本。
+在 CodexTurnStream（RPC 协议边界）按 turn 统计 delta，收到
+agentMessage item/completed 且无 delta 时合成一条
+assistant-message-delta 注入正常数据流，下游零改动。
 "
 ```
 
@@ -208,11 +284,11 @@ npx electron-forge start -- --remote-debugging-port=9222
 PYTHONIOENCODING=utf-8 python scripts/test_conversation_e2e.py
 ```
 
-Expected: 脚本 step 5 观察到对话面板显示**失败提示**（如"AI 回答失败，请重试"或任务失败事件），不显示空白。
+Expected: 脚本 step 5 观察到对话面板显示**完整回答**（如"你好，我已经准备好帮你解答关于这份资料的问题了😊"），非空白、非失败提示。
 
-- [ ] **Step 2: 验证任务确实失败（如实报错）**
+- [ ] **Step 2: 验证对话历史持久化**
 
-提问完成后查数据库 `generation_tasks`：该任务 `failure_json` 含 `code: CODEX_REQUEST_FAILED`、detail 含"未返回流式回答"。
+提问完成后查数据库 `workbench_state_data`：应有 `html` workbench 的对话索引记录，`entries` 含刚提问的问题与回答。
 
 ```bash
 python -c "import sqlite3; con=sqlite3.connect(r'C:\Users\20935\AppData\Roaming\Learning Companion\data\learning-companion.sqlite3'); print(con.execute('select asset_id, workbench_id, data_key, length(data) from workbench_state_data').fetchall())"

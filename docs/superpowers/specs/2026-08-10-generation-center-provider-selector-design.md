@@ -19,7 +19,7 @@
 - 修复 #1：重选同一连接不再卡死。
 - 修复 #2：任务重试时若固化的连接已失效/被删，回退到当前 selector 配置。
 - 修复 #3：ChatGPT 账号连接的可用性真实反映到 UI。
-- 修复 #4：自定义 API（Responses 兼容）连接下，AI 回答能交付到对话 UI（流式 delta 缺失时兜底）。
+- 修复 #4：自定义 API（Responses 兼容）连接下，回答能交付到对话 UI（RPC 边界合成 delta，进入正常数据流）。
 
 ## 非目标
 
@@ -110,21 +110,25 @@ const configuration =
 
 **效果**：设置页账号连接卡片显示"不可用（账号凭据无效，请重新登录）"而非"可用"。
 
-### 4. 自定义 API 下流式回答失败如实报错（Bug #4）
+### 4. 自定义 API 的流式回答适配层（Bug #4）
 
-**背景（真机 + 日志证据）**：
-- 火山方舟（自定义 API）下，模型 SSE 流式回复正常（`response.output_text.delta` 一帧帧都有）。
-- 但 codex app-server 转发给应用的 RPC 通知里**从不包含 `item/agentMessage/delta`**（日志统计 0 条）——`item/started`、`item/completed`、`turn/completed` 都有，唯独 delta 缺失。
-- 因此 renderer 收不到任何 `assistant-delta`，对话面板显示空白；任务本身 OK（turn 完成）。
-- 完整答案虽然存在于 `turn/completed` 的 `turn.items[].agentMessage.text`，但**不做兜底提取**——流式交付失败就是失败，必须如实报错，不能伪造交付。
+**背景（真机 + RPC 抓包铁证）**：
+- 火山方舟（自定义 API，标准 Responses 协议）SSE 层流式正常（`response.output_text.delta` 一帧帧都有）。
+- 但 codex app-server（0.146.0）把 SSE delta 转成私有 `item/agentMessage/delta` 通知时，**只对 OpenAI 官方响应形状适配**；第三方合规 Responses API 的 delta 被静默丢弃——抓包 18 条原始 RPC 通知里 0 条 delta。
+- **完整文本在 `item/completed`（agentMessage）与 `turn/completed`（items）里都在**（抓包："你好，我已经准备好帮你解答关于这份资料的问题了😊"）。
+- 佐证：`warning` 通知 "Model metadata for doubao-seed-2.0-lite not found. Defaulting to fallback metadata"——app-server 对未知模型 metadata 本就降级。
 
-**改动**：
-1. `src/main/agents/providers/codex-agent-provider.ts` 的 `startCodexTurn`：流式循环中统计是否收到过 `assistant-delta`。
-2. `turn/completed` 时若 **0 个 delta** → 抛 `AppError('CODEX_REQUEST_FAILED', { cause: new Error('Codex 未返回流式回答：自定义 API 可能不支持增量输出。') })`，任务失败，对话 UI 显示失败提示。
+**改动**：在 RPC 协议边界（`src/main/agents/codex/codex-turn-stream.ts`）加**适配层**，把真实数据注入正常数据流：
+- `CodexTurnStream` 按 turn 统计是否收到过 `item/agentMessage/delta`。
+- 收到 `item/completed`（`item.type === 'agentMessage'` 且含 `text`）时，若该 turn **尚未收到任何 delta**，把完整文本作为一条 `assistant-message-delta` 事件推入队列（`itemId` 用 item 的 id）。
+- 下游（`startCodexTurn` → `toGenerationToolEvent` → renderer）**零改动**——拿到的就是正常 delta 事件流。
+- 收到过 delta 的 turn（OpenAI 正常路径）不合成，行为不变。
 
-**效果**：自定义 API 连接下对话提问会如实报错（含原因），不伪装成功；OpenAI 账号连接（正常发 delta）不受影响。
+**这是真实数据适配，不是 mock**：文本来自 app-server 实际交付的 `item/completed`，只是补上它本该发但没发的增量事件。
 
-**边界**：纯工具 turn（无文本回答）也走报错路径——此时用户确实没有得到回答，报错合理。
+**效果**：自定义 API 连接下对话 UI 显示完整回答（一次性而非逐字）；OpenAI 账号连接流式体验不变。
+
+**边界**：`item/completed` 的 agentMessage 无 `text` 字段（如纯工具 turn）不合成；多个 agentMessage 各自合成（对话场景通常 1 个）。
 
 ## 测试
 
@@ -139,7 +143,10 @@ const configuration =
   - `hasConnection` 对存在的连接返回 true、不存在的返回 false。
 - `codex-agent-provider.test.ts`：
   - `inspectAccountConnection` 在认证探测（`getRateLimits`/`listModels`）失败时返回 `unavailable` 并带中文提示；探测成功时返回 `ready`。
-  - `startCodexTurn` 无 delta 时抛 `CODEX_REQUEST_FAILED`（含"未返回流式回答"原因）；有 delta 时不报错。
+- `codex-turn-stream.test.ts`（新建）：
+  - `item/completed`（agentMessage 含 text）且无 delta 时，队列产出 `assistant-message-delta`（完整文本）。
+  - 已有 delta 时不重复合成（保持原始 delta 序列）。
+  - agentMessage 无 `text` 不合成。
 - `html-assistant-processor.test.ts` 相关测试保持通过（处理器不提取答案的设计不变）。
 - `GenerationCenter.test.tsx` 相关测试不受影响（本次不改生成中心 UI）。
 
@@ -151,7 +158,7 @@ const configuration =
 
 ## 风险与注意事项
 
-- **Bug #4**：若后续 codex 版本修复了 delta 转发，无 delta 报错逻辑自动不再触发（正常路径有 delta）。报错信息需对用户可读（中文、含原因）。
+- **Bug #4 适配层**：合成 delta 只发生在「无 delta 的 turn」；若 codex 后续版本修复了 delta 转发（正常路径有 delta），合成逻辑自动不触发，无副作用。合成用真实 `item/completed` 文本，非 mock。
 - 认证探测端点的选择需真机验证：`getRateLimits` 若不经认证校验，改用 `listModels`。
 - 探测会引入一次本地 codex 到 OpenAI 的请求；网络不通时账号连接显示"无法连接 AI 服务"（区分于"凭据无效"）。
 - `hasConnection` 接口新增会触碰 `GenerationAgentRunnerResolver` 的所有实现方（目前仅 `AgentProviderService`），测试 mock 需同步。
