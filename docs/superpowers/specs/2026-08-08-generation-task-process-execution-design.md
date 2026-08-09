@@ -72,6 +72,14 @@ Definition 只得到任务级 Agent 能力，不得到原始 Provider、Runner �
 ## 3. Session 与多次调用
 
 主 Workspace 的 `(projectId, workspaceKey, instanceKey)` 仍是 Session 定位键。
+`TaskAgentSession` 只是每次 `GenerationTask.process()` 获得的调用门面，不决定底层
+Session 的 scope。具体 `TaskDefinition` 通过主 Workspace 配置选择：`task` 使用
+`taskId` 作为 `instanceKey`，`shared` 使用稳定的 `shared` 作为 `instanceKey`，从而
+允许不同 GenerationTask 复用同一个 Provider Session。
+
+每个 GenerationTask 始终拥有独立 `taskId`，用于任务状态、checkpoint 和调用幂等；
+这不等于它必须拥有独立 Workspace 或独立 Provider Session。
+
 一次 GenerationTask 的所有逻辑调用：
 
 - 固定到第一次选择成功的 Provider；
