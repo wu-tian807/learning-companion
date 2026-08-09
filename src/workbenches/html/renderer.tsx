@@ -14,6 +14,7 @@ import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { useWorkbenchRuntimeSelector } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import {
   HTML_ASSISTANT_INSTRUCTION_FORMAT,
   HTML_ASSISTANT_INSTRUCTION_VERSION,
@@ -24,6 +25,7 @@ import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facili
 import type { JsonValue } from '../../shared/workbench/protocol';
 import { ConversationOverlay } from './conversation/ConversationOverlay';
 import { AnchorHighlight } from './conversation/AnchorHighlight';
+import { SelectionFloatBar } from './conversation/SelectionFloatBar';
 import { createHtmlConversationStore } from './conversation/conversation-store';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
@@ -100,9 +102,11 @@ export function HtmlWorkbenchView({
   const [frameFailed, setFrameFailed] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiAnchor, setAiAnchor] = useState<JsonValue>();
+  const [selectionText, setSelectionText] = useState<string>();
   const [highlightTarget, setHighlightTarget] = useState<
     { readonly anchorType?: string; readonly anchorPayload?: unknown } | undefined
-  >();  const frameKey = payload
+  >();
+  const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
 
@@ -113,6 +117,7 @@ export function HtmlWorkbenchView({
   const closeAi = useCallback(() => {
     setAiOpen(false);
     setAiAnchor(undefined);
+    setSelectionText(undefined);
   }, []);
 
   const conversationStore = useMemo(
@@ -235,6 +240,9 @@ export function HtmlWorkbenchView({
 
         if (mapped.kind === 'selection') {
           onInteractionChange(mapped.interaction);
+          // 有选区文本时显示「解释选中内容」悬浮条
+          const selection = findTextSelectionInput(mapped.interaction);
+          setSelectionText(selection?.text);
           return;
         }
 
@@ -304,8 +312,36 @@ export function HtmlWorkbenchView({
         store={conversationStore}
         onClose={closeAi}
         onAsk={startAssistantTask}
+        onRestore={(entry) => {
+          // 恢复历史对话时标注绑定的文档位置（元素锚点 → 红框）
+          const payload = entry.anchor as
+            | { readonly anchorPayload?: unknown }
+            | undefined;
+          setHighlightTarget({
+            anchorType: 'html.element',
+            anchorPayload: payload?.anchorPayload,
+          });
+        }}
       />
       <AnchorHighlight target={highlightTarget as never} />
+
+      {/* 选中文本后的「解释选中内容」悬浮条 */}
+      {selectionText && !aiOpen && (
+        <SelectionFloatBar
+          text={selectionText}
+          rect={{ left: 24, top: 56, bottom: 64 }}
+          onExplain={(text) => {
+            setSelectionText(undefined);
+            openAi({
+              scope: 'content',
+              anchorType: 'html.quote',
+              anchorVersion: 1,
+              anchorPayload: { exact: text },
+            });
+          }}
+          onDismiss={() => setSelectionText(undefined)}
+        />
+      )}
 
       {/* 常驻 AI 对话入口 */}
       <button

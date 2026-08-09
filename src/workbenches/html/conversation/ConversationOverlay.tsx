@@ -31,6 +31,8 @@ export interface HtmlConversationOverlayProps {
     question: string,
     anchor?: JsonValue,
   ) => Promise<string | undefined>;
+  /** Called when a history entry is restored; lets the workbench highlight the anchor. */
+  readonly onRestore?: (entry: HtmlConversationEntry) => void;
   readonly options?: HtmlConversationOverlayOptions;
 }
 
@@ -85,6 +87,7 @@ export function ConversationOverlay({
   store,
   onClose,
   onAsk,
+  onRestore,
   options = {},
 }: HtmlConversationOverlayProps) {
   const createId = options.createId ?? createDisplayId;
@@ -276,6 +279,7 @@ export function ConversationOverlay({
     setTab('chat');
     setMessages(entryToMessages(entry));
     setErrorText(undefined);
+    onRestore?.(entry);
   };
 
   if (!open) {
