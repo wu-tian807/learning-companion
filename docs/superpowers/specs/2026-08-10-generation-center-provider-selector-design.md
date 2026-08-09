@@ -64,11 +64,13 @@ account 连接的"可用"只表示本地 codex 进程有账号状态，不代表
 
 ### 1. 修复选择器重选卡死（Bug #1）
 
-**改动**：`AgentProviderSelectorForm` 增加 `catalogEpoch` state，连接下拉 `onChange` 时 `setCatalogEpoch((epoch) => epoch + 1)`；模型目录 `useEffect` 依赖追加 `catalogEpoch`。effect 重跑时重新 `getAgentProviderModels` 并 `setCatalog` / `setLoadingCatalog(false)`。
+**改动**：`AgentProviderSelectorForm` 增加 `catalogEpoch` state，连接下拉 `onChange` 时 `setCatalogEpoch((epoch) => epoch + 1)`；模型目录 `useEffect` 依赖追加 `catalogEpoch`。effect 重跑时重新 `getAgentProviderModels`。
 
-**效果**：重选同一连接会重新拉取模型目录（api-key 连接是本地静态返回，瞬时完成；account 连接走 codex 拉取），模型下拉恢复。
+**模型目录加载失败/卡住时的降级**：模型下拉渲染改为「失败/加载中/无目录 → 显示空白可编辑输入框，用户可手填模型 ID」。具体：
+- `catalog` 拉取失败（`setError`）或 `loadingCatalog` 长时间不落地 → 渲染 `editable` SelectMenu（输入框）替代选项列表，placeholder 提示"模型列表不可用，请手动输入模型 ID"。
+- api-key 连接 `allowsCustomModel` 本就可手填；account 连接目录失败时同样降级为可编辑输入框。
 
-**备选（不采用）**：`onChange` 中不重置 `catalog` 直接保留旧目录——语义不清晰（连接换了模型目录可能不同），且会闪现旧连接模型。采用 epoch 方案。
+**效果**：重选同一连接会重新拉取模型目录；目录不可用时用户直接手填模型 ID，不卡死。
 
 ### 2. 任务重试回退当前 selector（Bug #2）
 
@@ -108,29 +110,28 @@ const configuration =
 
 **效果**：设置页账号连接卡片显示"不可用（账号凭据无效，请重新登录）"而非"可用"。
 
-### 4. 自定义 API 下 AI 回答交付兜底（Bug #4）
+### 4. 自定义 API 下流式回答失败如实报错（Bug #4）
 
 **背景（真机 + 日志证据）**：
 - 火山方舟（自定义 API）下，模型 SSE 流式回复正常（`response.output_text.delta` 一帧帧都有）。
 - 但 codex app-server 转发给应用的 RPC 通知里**从不包含 `item/agentMessage/delta`**（日志统计 0 条）——`item/started`、`item/completed`、`turn/completed` 都有，唯独 delta 缺失。
 - 因此 renderer 收不到任何 `assistant-delta`，对话面板显示空白；任务本身 OK（turn 完成）。
-- **完整答案在 `turn/completed` 的 `turn.items[].agentMessage.text` 里**（真机抓包确认："已收到，连通正常，可以继续测试。"）。
-- 根因推测：app-server 的 delta 通知依赖 OpenAI 特有的事件序列/`in_progress` 支持，第三方 Responses 兼容 API（火山）不满足该序列，delta 被 app-server 丢弃。
+- 完整答案虽然存在于 `turn/completed` 的 `turn.items[].agentMessage.text`，但**不做兜底提取**——流式交付失败就是失败，必须如实报错，不能伪造交付。
 
 **改动**：
-1. `src/main/agents/providers/codex-agent-provider.ts` 的 `startCodexTurn`：流式循环中统计是否收到过 `assistant-delta`；`turn/completed` 时若 **0 个 delta**，则从 `turn.items` 提取 `agentMessage` 文本，作为一次 `assistant-delta` 事件 yield（渲染侧拼接即得完整回答）。
-2. 若既有 delta 又有 items（正常路径），不重复发送。
+1. `src/main/agents/providers/codex-agent-provider.ts` 的 `startCodexTurn`：流式循环中统计是否收到过 `assistant-delta`。
+2. `turn/completed` 时若 **0 个 delta** → 抛 `AppError('CODEX_REQUEST_FAILED', { cause: new Error('Codex 未返回流式回答：自定义 API 可能不支持增量输出。') })`，任务失败，对话 UI 显示失败提示。
 
-**效果**：自定义 API 连接下对话 UI 能显示完整回答；OpenAI 账号连接下流式体验不变。
+**效果**：自定义 API 连接下对话提问会如实报错（含原因），不伪装成功；OpenAI 账号连接（正常发 delta）不受影响。
 
-**边界**：多个 `agentMessage` 时按顺序拼接（对话场景通常 1 个）；`items` 无 `agentMessage`（如纯工具 turn）则不兜底、不报错。
+**边界**：纯工具 turn（无文本回答）也走报错路径——此时用户确实没有得到回答，报错合理。
 
 ## 测试
 
 ### 单测
 
 - `AgentProviderSelector.test.tsx`：
-  - 重选同一连接后模型下拉恢复（epoch 触发重新拉取）——mock API 返回目录，断言第二次选中同一连接后 `getAgentProviderModels` 被调用两次、模型下拉渲染。
+  - 模型目录加载失败时渲染可编辑输入框（手填模型 ID），不渲染选项列表。
 - `generation-task-agent-session.test.ts`：
   - 任务固化的连接被删后，`resolveRunner` 回退到 selector 配置（`hasConnection` 返回 false → 走 `resolveSelectorConfiguration`）。
   - 连接仍存在时行为不变（`hasConnection` 返回 true → 用固化配置）。
@@ -138,19 +139,19 @@ const configuration =
   - `hasConnection` 对存在的连接返回 true、不存在的返回 false。
 - `codex-agent-provider.test.ts`：
   - `inspectAccountConnection` 在认证探测（`getRateLimits`/`listModels`）失败时返回 `unavailable` 并带中文提示；探测成功时返回 `ready`。
-  - `startCodexTurn` 无 delta 时从 `turn.items` 兜底提取 `agentMessage` 文本并 yield；有 delta 时不重复。
+  - `startCodexTurn` 无 delta 时抛 `CODEX_REQUEST_FAILED`（含"未返回流式回答"原因）；有 delta 时不报错。
 - `html-assistant-processor.test.ts` 相关测试保持通过（处理器不提取答案的设计不变）。
 - `GenerationCenter.test.tsx` 相关测试不受影响（本次不改生成中心 UI）。
 
 ### 真机验证（CDP）
 
-- 复现路径：设置页选择器重选同一连接 → 模型下拉恢复。
+- 复现路径：设置页选择器重选同一连接 → 模型下拉恢复（或降级为可编辑输入框）。
 - 账号连接卡片：坏 key 显示"凭据无效"。
-- 自定义 API 对话链路：打开 HTML 资产 → AI 对话 → 提问 → 回答完整显示（此前为空白）。
+- 自定义 API 对话链路：打开 HTML 资产 → AI 对话 → 提问 → 对话面板显示**失败提示**（不显示空白、不伪装成功）。
 
 ## 风险与注意事项
 
-- **Bug #4 根因推测**（app-server 依赖 OpenAI 事件序列）：若后续 codex 版本修复了 delta 转发，兜底逻辑需保证不重复发送（delta 已存在时不兜底）。
+- **Bug #4**：若后续 codex 版本修复了 delta 转发，无 delta 报错逻辑自动不再触发（正常路径有 delta）。报错信息需对用户可读（中文、含原因）。
 - 认证探测端点的选择需真机验证：`getRateLimits` 若不经认证校验，改用 `listModels`。
 - 探测会引入一次本地 codex 到 OpenAI 的请求；网络不通时账号连接显示"无法连接 AI 服务"（区分于"凭据无效"）。
 - `hasConnection` 接口新增会触碰 `GenerationAgentRunnerResolver` 的所有实现方（目前仅 `AgentProviderService`），测试 mock 需同步。
