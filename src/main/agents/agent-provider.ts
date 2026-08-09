@@ -44,12 +44,6 @@ export interface AgentProvider {
     loginId: string,
   ): Promise<void>;
   normalizeApiConnectionBaseUrl?(baseUrl: string): string;
-  resolveApiConnectionProbeUrl?(
-    connection: Extract<
-      AgentProviderConnectionConfiguration,
-      { readonly kind: 'api-key' }
-    >,
-  ): string;
   /** Selector metadata must remain available without resolving credentials. */
   getModelCatalog(
     connection: AgentProviderConnectionConfiguration,

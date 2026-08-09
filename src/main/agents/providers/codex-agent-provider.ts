@@ -55,10 +55,7 @@ import {
   findRecoveredCodexTurn,
   toGenerationToolEvent,
 } from './codex-generation-response';
-import {
-  normalizeCodexResponsesBaseUrl,
-  resolveCodexResponsesEndpointUrl,
-} from './codex-responses-url';
+import { normalizeCodexResponsesBaseUrl } from './codex-responses-url';
 
 export { CODEX_AGENT_PROVIDER_ID } from './codex-generation-request';
 
@@ -261,15 +258,6 @@ export class CodexAgentProvider implements AgentProvider {
 
   normalizeApiConnectionBaseUrl(baseUrl: string): string {
     return normalizeCodexResponsesBaseUrl(baseUrl);
-  }
-
-  resolveApiConnectionProbeUrl(
-    connection: Extract<
-      AgentProviderConnectionConfiguration,
-      { readonly kind: 'api-key' }
-    >,
-  ): string {
-    return resolveCodexResponsesEndpointUrl(connection.baseUrl);
   }
 
   getModelCatalog(

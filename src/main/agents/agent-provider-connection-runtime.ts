@@ -344,10 +344,7 @@ export class AgentProviderConnectionRuntime {
       };
     }
     try {
-      await this.dependencies.probeUrl(
-        provider.resolveApiConnectionProbeUrl?.(connection) ??
-          connection.baseUrl,
-      );
+      await this.dependencies.probeUrl(connection.baseUrl);
       return {
         inspection: Object.freeze({ status: 'ready' }),
         hasApiKey: true,

@@ -35,15 +35,3 @@ export function normalizeCodexResponsesBaseUrl(value: string): string {
 
   return serializeWithoutTrailingSlash(url);
 }
-
-/** Resolve the concrete endpoint used only for reachability probing. */
-export function resolveCodexResponsesEndpointUrl(value: string): string {
-  const url = new URL(value.trim());
-  const pathname = normalizedPathname(url);
-
-  url.pathname = endsWithResponses(pathname)
-    ? pathname
-    : `${pathname === '/' ? '' : pathname}/${RESPONSES_PATH_SEGMENT}`;
-
-  return serializeWithoutTrailingSlash(url);
-}
