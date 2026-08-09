@@ -210,6 +210,7 @@ export function AiChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [attachNotice, setAttachNotice] = useState<string>();
+  const [copiedMessageId, setCopiedMessageId] = useState<string>();
   const messages = useMemo(
     () => session?.messages ?? [],
     [session?.messages],
@@ -279,29 +280,32 @@ export function AiChatPanel({
     [setSelectedAnswerRange],
   );
 
-  const handleAttach = useCallback(async () => {
-    if (selectedAnswerRange) {
-      // 找到用户提问附带的 anchor，一并传给调用方用于文档定位
-      const answer = messages.find(
-        (message) => message.id === selectedAnswerRange.messageId,
-      );
+  const attachAnswerMessage = useCallback(
+    async (answer: AiChatMessage, text: string) => {
       const userQuestion = messages.find(
-        (message) => message.id === answer?.replyToMessageId,
+        (message) => message.id === answer.replyToMessageId,
       );
       try {
-        await onAttachAnswer(
-          selectedAnswerRange.messageId,
-          selectedAnswerRange.text,
-          userQuestion?.anchor,
-        );
+        await onAttachAnswer(answer.id, text, userQuestion?.anchor);
         setSelectedAnswerRange(null);
         setAttachNotice('已附着到当前文档');
         window.setTimeout(() => setAttachNotice(undefined), 2_500);
       } catch {
         setAttachNotice('附着失败，请重试');
       }
+    },
+    [messages, onAttachAnswer, setSelectedAnswerRange],
+  );
+
+  const handleAttach = useCallback(async () => {
+    if (!selectedAnswerRange) return;
+    const answer = messages.find(
+      (message) => message.id === selectedAnswerRange.messageId,
+    );
+    if (answer) {
+      await attachAnswerMessage(answer, selectedAnswerRange.text);
     }
-  }, [selectedAnswerRange, onAttachAnswer, setSelectedAnswerRange, messages]);
+  }, [attachAnswerMessage, messages, selectedAnswerRange]);
 
   return (
     <div className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l border-white/[0.08] bg-[#1a1f26]">
@@ -374,7 +378,58 @@ export function AiChatPanel({
                 </div>
               )}
               {msg.role === 'assistant' ? (
-                <AiMarkdownContent content={msg.content} />
+                <>
+                  <AiMarkdownContent content={msg.content} />
+                  <div
+                    className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-white/[0.07] pt-2"
+                    onMouseUp={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void attachAnswerMessage(msg, msg.content)}
+                      className="rounded-md px-1.5 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
+                      title="将整条回答附着到原文选区"
+                    >
+                      附着整段
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(msg.content);
+                        setCopiedMessageId(msg.id);
+                        window.setTimeout(() => setCopiedMessageId(undefined), 1_500);
+                      }}
+                      className="rounded-md px-1.5 py-1 text-[10px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                    >
+                      {copiedMessageId === msg.id ? '已复制' : '复制'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraft('请基于刚才的回答继续深入解释，并补充容易混淆的地方。');
+                        inputRef.current?.focus();
+                      }}
+                      className="rounded-md px-1.5 py-1 text-[10px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                    >
+                      继续追问
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        const question = messages.find(
+                          (message) => message.id === msg.replyToMessageId,
+                        );
+                        if (question) {
+                          void sendMessage(question.content, question.anchor);
+                        }
+                      }}
+                      className="rounded-md px-1.5 py-1 text-[10px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200 disabled:opacity-40"
+                    >
+                      重新回答
+                    </button>
+                  </div>
+                </>
               ) : (
                 <p className="whitespace-pre-wrap select-text">{msg.content}</p>
               )}

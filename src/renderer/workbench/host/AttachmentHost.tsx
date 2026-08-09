@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -136,6 +137,20 @@ function extractMetadataPreview(metadata: JsonValue): string {
   return '';
 }
 
+function attachmentAnchorKey(attachment: AssetAttachment): string {
+  const position = extractPosition(attachment.target);
+  if (!position) return attachment.id;
+  const round = (value: number | undefined) =>
+    value === undefined ? '-' : value.toFixed(3);
+  return [
+    position.pageNumber,
+    round(position.xRatio),
+    round(position.yRatio),
+    round(position.widthRatio),
+    round(position.heightRatio),
+  ].join(':');
+}
+
 function formatTypeLabel(typeId: string): string {
   if (typeId === 'ai.annotation') {
     return 'AI 标注';
@@ -242,6 +257,9 @@ export function AttachmentHost({
 }: AttachmentHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
+  const focusTimerRef = useRef<number | undefined>(undefined);
   const [pagePositions, setPagePositions] = useState<
     ReadonlyMap<number, PageMarkerPosition>
   >(
@@ -302,6 +320,45 @@ export function AttachmentHost({
     setActivePopupId(null);
   }, []);
 
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current !== undefined) {
+        window.clearTimeout(focusTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const markerGroups = useMemo(() => {
+    const groups = new Map<string, AssetAttachment[]>();
+    for (const attachment of attachments) {
+      const key = attachmentAnchorKey(attachment);
+      const group = groups.get(key) ?? [];
+      group.push(attachment);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [attachments]);
+
+  const revealAttachment = useCallback((attachment: AssetAttachment) => {
+    const position = extractPosition(attachment.target);
+    const host = hostRef.current;
+    if (!position || !host) return;
+    const page = host.parentElement?.querySelector<HTMLElement>(
+      `.page[data-page-number="${position.pageNumber}"]`,
+    );
+    page?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFocusedAttachmentId(attachment.id);
+    setSidebarOpen(false);
+    if (focusTimerRef.current !== undefined) {
+      window.clearTimeout(focusTimerRef.current);
+    }
+    focusTimerRef.current = window.setTimeout(
+      () => setFocusedAttachmentId(null),
+      1800,
+    );
+  }, []);
+
   if (attachments.length === 0) {
     return null;
   }
@@ -311,14 +368,17 @@ export function AttachmentHost({
       {/* We'll render markers as a layer. Each marker is a small clickable icon
           that shows the position. The actual rendering on the PDF pages is
           best done inside the PDF viewer itself, but this shows the UI model. */}
-      {attachments.map((att) => {
+      {markerGroups.map((group) => {
+        const att = group.at(-1)!;
         const pos = extractPosition(att.target);
         const pagePosition = pos?.pageNumber
           ? pagePositions.get(pos.pageNumber)
           : undefined;
         const quote = extractQuote(att.target);
         const preview = extractMetadataPreview(att.metadata);
-        const isActive = att.id === activeAttachmentId;
+        const isActive =
+          group.some((item) => item.id === activeAttachmentId) ||
+          group.some((item) => item.id === focusedAttachmentId);
 
         const left =
           (pagePosition?.left ?? 16) +
@@ -337,7 +397,7 @@ export function AttachmentHost({
             type="button"
             className={`pointer-events-auto absolute cursor-pointer border transition-all ${
               isActive
-                ? 'z-40 border-indigo-300/90 bg-indigo-400/20'
+                ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
                 : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'
             }`}
             style={{
@@ -350,11 +410,79 @@ export function AttachmentHost({
             title={preview || quote || '标注'}
           >
             <span className="absolute -right-3 -top-3 grid size-6 place-items-center rounded-full border border-indigo-300/50 bg-[#242b3b] text-[11px] text-indigo-200 shadow-[0_4px_12px_rgba(0,0,0,.45)]">
-              ✦
+              {group.length > 1 ? group.length : '✦'}
             </span>
           </button>
         );
       })}
+
+      {createPortal(
+        <>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            className="pointer-events-auto fixed bottom-20 right-5 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
+          >
+            <span>✦</span>
+            标注 {attachments.length}
+          </button>
+          {sidebarOpen && (
+            <aside className="pointer-events-auto fixed bottom-32 right-5 top-20 z-[70] flex w-80 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
+              <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-100">文档标注</h3>
+                  <p className="mt-0.5 text-[10px] text-slate-500">点击定位到原文选区</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  className="rounded-lg px-2 py-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+                {attachments.map((attachment) => {
+                  const position = extractPosition(attachment.target);
+                  const preview = extractMetadataPreview(attachment.metadata) || '无内容摘要';
+                  return (
+                    <div
+                      key={attachment.id}
+                      className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3 hover:border-indigo-300/25"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="shrink-0 rounded-md bg-indigo-400/10 px-1.5 py-0.5 text-[10px] text-indigo-300">
+                          第 {position?.pageNumber ?? 1} 页
+                        </span>
+                        <p className="line-clamp-3 min-w-0 flex-1 text-xs leading-5 text-slate-300">
+                          {preview}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => revealAttachment(attachment)}
+                          className="rounded-lg px-2 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
+                        >
+                          定位
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActivePopupId(attachment.id)}
+                          className="rounded-lg bg-white/[0.06] px-2 py-1 text-[10px] text-slate-300 hover:bg-white/[0.1]"
+                        >
+                          查看
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </aside>
+          )}
+        </>,
+        document.body,
+      )}
 
       {activePopupId && (
         <AnnotationPopup
