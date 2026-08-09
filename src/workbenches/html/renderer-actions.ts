@@ -9,6 +9,8 @@ export interface HtmlRendererActionsOptions {
   readonly onOpenLink: (url: string) => Promise<void> | void;
   readonly onReload: () => void;
   readonly onReveal: () => Promise<void> | void;
+  readonly onExplainSelection: () => void;
+  readonly onSummarizePage: () => void;
 }
 
 export function createHtmlRendererActions({
@@ -17,6 +19,8 @@ export function createHtmlRendererActions({
   onOpenLink,
   onReload,
   onReveal,
+  onExplainSelection,
+  onSummarizePage,
 }: HtmlRendererActionsOptions): WorkbenchActionBundle {
   return {
     actions: [
@@ -54,13 +58,13 @@ export function createHtmlRendererActions({
       },
       {
         id: 'html.ai.explain-selection',
-        enabled: false,
-        execute: () => undefined,
+        enabled: () => Boolean(getContext()),
+        execute: onExplainSelection,
       },
       {
         id: 'html.ai.summarize-page',
-        enabled: false,
-        execute: () => undefined,
+        enabled: true,
+        execute: onSummarizePage,
       },
     ],
     contributions: [

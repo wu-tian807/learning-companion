@@ -20,11 +20,11 @@ const validEntry: HtmlConversationEntry = Object.freeze({
 function makeIndex(
   entries: readonly HtmlConversationEntry[] = [validEntry],
 ): HtmlConversationIndexV1 {
-  return Object.freeze({
+  return {
     format: 'learning-companion/html-conversation-index',
     version: 1,
-    entries: Object.freeze(entries),
-  });
+    entries: Object.freeze([...entries]),
+  };
 }
 
 describe('isHtmlConversationEntry', () => {
@@ -33,7 +33,12 @@ describe('isHtmlConversationEntry', () => {
   });
 
   it('accepts an entry without anchor', () => {
-    const { anchor: _anchor, ...rest } = validEntry;
+    const rest: HtmlConversationEntry = {
+      id: validEntry.id,
+      question: validEntry.question,
+      answer: validEntry.answer,
+      createdTime: validEntry.createdTime,
+    };
     expect(isHtmlConversationEntry(rest)).toBe(true);
   });
 
@@ -71,13 +76,25 @@ describe('isHtmlConversationIndexV1', () => {
 
   it('rejects wrong format / version / non-array entries', () => {
     expect(
-      isHtmlConversationIndexV1({ ...makeIndex(), format: 'other' }),
+      isHtmlConversationIndexV1({
+        format: 'other',
+        version: 1,
+        entries: [validEntry],
+      }),
     ).toBe(false);
     expect(
-      isHtmlConversationIndexV1({ ...makeIndex(), version: 2 }),
+      isHtmlConversationIndexV1({
+        format: 'learning-companion/html-conversation-index',
+        version: 2,
+        entries: [validEntry],
+      }),
     ).toBe(false);
     expect(
-      isHtmlConversationIndexV1({ ...makeIndex(), entries: 'x' }),
+      isHtmlConversationIndexV1({
+        format: 'learning-companion/html-conversation-index',
+        version: 1,
+        entries: 'x',
+      }),
     ).toBe(false);
   });
 

@@ -53,6 +53,8 @@ describe('viewer Workbench context action bundles', () => {
       onOpenLink: vi.fn(),
       onReload: vi.fn(),
       onReveal: vi.fn(),
+      onExplainSelection: vi.fn(),
+      onSummarizePage: vi.fn(),
     });
     const copyAction = bundle.actions.find(
       (action) => action.id === 'html.copy-selection',

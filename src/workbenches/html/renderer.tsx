@@ -12,8 +12,18 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
+import { useWorkbenchRuntimeSelector } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
+import {
+  HTML_ASSISTANT_INSTRUCTION_FORMAT,
+  HTML_ASSISTANT_INSTRUCTION_VERSION,
+  HTML_ASSISTANT_TASK_DEFINITION_ID,
+  HTML_ASSISTANT_TASK_DEFINITION_VERSION,
+} from '../../shared/generation-definitions';
 import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
+import type { JsonValue } from '../../shared/workbench/protocol';
+import { ConversationOverlay } from './conversation/ConversationOverlay';
+import { createHtmlConversationStore } from './conversation/conversation-store';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
@@ -63,6 +73,7 @@ export function HtmlDocumentFrame({
 export function HtmlWorkbenchView({
   asset,
   bootstrap,
+  executeCommand,
   onRelink,
   onRefresh,
   onReveal,
@@ -71,6 +82,10 @@ export function HtmlWorkbenchView({
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
+  const identity = useWorkbenchRuntimeSelector(
+    (state) => state.identity,
+  );
+  const projectId = identity?.projectId;
   const payload = isHtmlWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -82,9 +97,64 @@ export function HtmlWorkbenchView({
   const [frameRevision, setFrameRevision] = useState(0);
   const [loadedFrameKey, setLoadedFrameKey] = useState<string>();
   const [frameFailed, setFrameFailed] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiAnchor, setAiAnchor] = useState<JsonValue>();
   const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
+
+  const openAi = useCallback((anchor?: JsonValue) => {
+    setAiAnchor(anchor);
+    setAiOpen(true);
+  }, []);
+  const closeAi = useCallback(() => {
+    setAiOpen(false);
+    setAiAnchor(undefined);
+  }, []);
+
+  const conversationStore = useMemo(
+    () =>
+      createHtmlConversationStore({
+        executeCommand: (command) => executeCommand(command),
+      }),
+    [executeCommand],
+  );
+
+  const startAssistantTask = useCallback(
+    async (question: string, anchor?: JsonValue) => {
+      try {
+        if (!projectId) {
+          throw new Error('Project 上下文缺失');
+        }
+        const started = await window.learningCompanion.startGenerationTask({
+          projectId,
+          definitionId: HTML_ASSISTANT_TASK_DEFINITION_ID,
+          definitionVersion: HTML_ASSISTANT_TASK_DEFINITION_VERSION,
+          instruction: {
+            format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
+            version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+            question,
+            ...(anchor ? { anchor } : {}),
+          },
+          assetReferences: {
+            sources: [{ assetId: asset.id }],
+          },
+        });
+        return started.id;
+      } catch (error) {
+        const message = userMessageFromError(
+          error,
+          '无法发起 AI 对话。',
+        );
+        if (message) {
+          console.error(message, error);
+          onError(message);
+        }
+        return undefined;
+      }
+    },
+    [asset.id, onError, projectId],
+  );
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -128,8 +198,16 @@ export function HtmlWorkbenchView({
         onOpenLink: onOpenExternal,
         onReload: reload,
         onReveal: reveal,
+        onExplainSelection: () => {
+          const anchor = contextRef.current?.target;
+          openAi(anchor as JsonValue | undefined);
+        },
+        onSummarizePage: () => {
+          const anchor = contextRef.current?.target;
+          openAi(anchor as JsonValue | undefined);
+        },
       }),
-    [onOpenExternal, reload, reportError, reveal],
+    [onOpenExternal, openAi, reload, reportError, reveal],
   );
   useWorkbenchContributions(
     `${htmlWorkbenchManifest.id}.viewer`,
@@ -205,6 +283,14 @@ export function HtmlWorkbenchView({
           setFrameFailed(true);
           setLoadedFrameKey(undefined);
         }}
+      />
+
+      <ConversationOverlay
+        open={aiOpen}
+        anchor={aiAnchor}
+        store={conversationStore}
+        onClose={closeAi}
+        onAsk={startAssistantTask}
       />
 
       {loadedFrameKey !== frameKey && !frameFailed && (

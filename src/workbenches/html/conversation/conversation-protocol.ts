@@ -23,7 +23,7 @@ export const HTML_CONVERSATION_ID_MAX_LENGTH = 128;
 export const HTML_CONVERSATION_TEXT_MAX_LENGTH = 32_768;
 export const HTML_CONVERSATION_ANCHOR_MAX_BYTES = 8_192;
 
-export interface HtmlConversationEntry {
+export type HtmlConversationEntry = JsonValue & {
   /** Stable identity of one question/answer round. */
   readonly id: string;
   /** Serialized ContentAnchorTarget.anchorPayload (html.quote / html.element / html.link). */
@@ -31,13 +31,13 @@ export interface HtmlConversationEntry {
   readonly question: string;
   readonly answer: string;
   readonly createdTime: number;
-}
+};
 
-export interface HtmlConversationIndexV1 {
+export type HtmlConversationIndexV1 = JsonValue & {
   readonly format: typeof HTML_CONVERSATION_INDEX_FORMAT;
   readonly version: typeof HTML_CONVERSATION_INDEX_VERSION;
   readonly entries: readonly HtmlConversationEntry[];
-}
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

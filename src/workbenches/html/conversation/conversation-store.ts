@@ -34,7 +34,18 @@ function parseEntries(value: unknown): readonly HtmlConversationEntry[] {
     throw new Error('HtmlConversation list 响应数据无效');
   }
 
-  return Object.freeze(value.entries.map((entry) => Object.freeze(entry)));
+  const entries = value.entries.map((entry) => {
+    const record = entry as HtmlConversationEntry;
+    return Object.freeze({
+      id: record.id,
+      question: record.question,
+      answer: record.answer,
+      createdTime: record.createdTime,
+      ...(record.anchor === undefined ? {} : { anchor: record.anchor }),
+    }) as HtmlConversationEntry;
+  });
+
+  return Object.freeze(entries);
 }
 
 export function createHtmlConversationStore({
