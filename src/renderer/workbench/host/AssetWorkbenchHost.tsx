@@ -338,7 +338,7 @@ export function AssetWorkbenchHost({
     const View = state.module.View;
 
     content = (
-      <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
+      <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
         <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
           <WorkbenchViewErrorBoundary onError={onError}>
             <View
