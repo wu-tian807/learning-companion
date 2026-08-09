@@ -731,6 +731,22 @@ export function PdfDocumentWorkbenchView({
       return;
     }
 
+    let layoutFrame: number | undefined;
+    const updateLayout = () => {
+      if (layoutFrame !== undefined) {
+        window.cancelAnimationFrame(layoutFrame);
+      }
+      layoutFrame = window.requestAnimationFrame(() => {
+        layoutFrame = undefined;
+        adapterRef.current?.refreshLayout();
+        setPanAvailable(
+          hasPdfHorizontalOverflow(
+            container.scrollWidth,
+            container.clientWidth,
+          ),
+        );
+      });
+    };
     const updateAvailability = () => {
       setPanAvailable(
         hasPdfHorizontalOverflow(
@@ -743,12 +759,14 @@ export function PdfDocumentWorkbenchView({
     const observer =
       typeof ResizeObserver === 'undefined'
         ? undefined
-        : new ResizeObserver(updateAvailability);
+        : new ResizeObserver(updateLayout);
     observer?.observe(container);
-    observer?.observe(viewer);
 
     return () => {
       window.cancelAnimationFrame(frame);
+      if (layoutFrame !== undefined) {
+        window.cancelAnimationFrame(layoutFrame);
+      }
       observer?.disconnect();
     };
   }, [
@@ -1527,7 +1545,7 @@ export function PdfDocumentWorkbenchView({
                     setRegionMode(true);
                   }
                 }}
-                className={`ui-button h-7 rounded-lg px-2 text-[11px] ${
+                className={`ui-button h-7 shrink-0 whitespace-nowrap rounded-lg px-2 text-[11px] ${
                   regionMode
                     ? 'bg-indigo-400/20 text-indigo-200'
                     : 'text-slate-300'

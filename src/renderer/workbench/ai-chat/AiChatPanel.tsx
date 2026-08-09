@@ -308,7 +308,7 @@ export function AiChatPanel({
   }, [attachAnswerMessage, messages, selectedAnswerRange]);
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l border-white/[0.08] bg-[#1a1f26]">
+    <div className="flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-white/[0.08] bg-[#1a1f26]">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-white/[0.075] px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-100">AI 问答</h3>

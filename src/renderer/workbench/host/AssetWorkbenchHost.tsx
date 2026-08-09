@@ -338,8 +338,8 @@ export function AssetWorkbenchHost({
     const View = state.module.View;
 
     content = (
-      <div className="relative flex h-full min-w-0">
-        <div className="min-w-0 flex-1">
+      <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
+        <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
           <WorkbenchViewErrorBoundary onError={onError}>
             <View
               asset={asset}
@@ -451,7 +451,11 @@ export function AssetWorkbenchHost({
           </div>
         )}
       </div>
-      <div className="min-h-0 flex-1">{content}</div>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="absolute inset-0 min-h-0 overflow-hidden">
+          {content}
+        </div>
+      </div>
       <WorkbenchContextMenuHost />
     </article>
   );
