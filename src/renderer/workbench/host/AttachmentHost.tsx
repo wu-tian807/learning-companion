@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import type { AssetAttachment } from '../../../shared/workbench/attachment';
 import type { AssetTarget } from '../../../shared/workbench/anchor';
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import { AiMarkdownContent } from '../ai-chat/AiChatPanel';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];
@@ -199,9 +200,9 @@ function AnnotationPopup({
             <span className="text-[11px] font-semibold text-slate-500">
               附着内容
             </span>
-            <p className="mt-1.5 whitespace-pre-wrap break-words rounded-xl bg-black/15 p-3 text-sm leading-6 text-slate-200">
-              {selectedAnswer ?? answer ?? '无内容'}
-            </p>
+            <div className="mt-1.5 break-words rounded-xl bg-black/15 p-3 text-sm leading-6 text-slate-200">
+              <AiMarkdownContent content={selectedAnswer ?? answer ?? '无内容'} />
+            </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center justify-between border-t border-white/[0.075] px-5 py-3">
