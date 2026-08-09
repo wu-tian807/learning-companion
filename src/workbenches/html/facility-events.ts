@@ -12,6 +12,8 @@ import { interactionFromTextSelection } from '../../shared/workbench/selection';
 import {
   createHtmlLinkTarget,
   createHtmlQuoteTarget,
+  isHtmlElementTarget,
+  isHtmlQuoteTarget,
 } from './shared';
 
 export type HtmlWorkbenchFacilityResult =
@@ -48,10 +50,12 @@ export function mapHtmlWorkbenchFacilityEvent(
     const selection = event.payload.text
       ? {
           text: event.payload.text,
-          target: createHtmlQuoteTarget(
-            event.payload.text,
-            event.payload.frameUrl,
-          ),
+          target: isHtmlQuoteTarget(event.payload.target)
+            ? event.payload.target
+            : createHtmlQuoteTarget(
+                event.payload.text,
+                event.payload.frameUrl,
+              ),
         }
       : undefined;
 
@@ -77,6 +81,9 @@ export function mapHtmlWorkbenchFacilityEvent(
         }
       : undefined;
     const target =
+      (isHtmlElementTarget(context.target)
+        ? context.target
+        : undefined) ??
       selection?.target ??
       (context.linkUrl
         ? createHtmlLinkTarget(context.linkUrl)

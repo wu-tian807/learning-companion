@@ -3,6 +3,7 @@ import type { AssetAssociationServiceApi } from '../../main/asset-associations/a
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
+import type { MainFacilityAdapterRegistry } from '../../main/workbench/interaction/main-facility-adapter-registry';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
@@ -28,6 +29,7 @@ export interface MainWorkbenchRegistrationDependencies {
   readonly artifactService: AssetArtifactServiceApi;
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
+  readonly facilityAdapterRegistry: MainFacilityAdapterRegistry;
   readonly projectLookup: ProjectLookup;
   readonly stateDatabase: WorkbenchStateDatabaseApi;
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
@@ -113,5 +115,15 @@ export function registerMainWorkbenches(
     }
 
     registry.register(provider);
+
+    for (const adapter of provider.facilityAdapters ?? []) {
+      if (adapter.workbenchId !== provider.manifest.id) {
+        throw new Error(
+          `Main Workbench Facility Adapter 归属不匹配：${entry.id}`,
+        );
+      }
+
+      dependencies.facilityAdapterRegistry.register(adapter);
+    }
   }
 }

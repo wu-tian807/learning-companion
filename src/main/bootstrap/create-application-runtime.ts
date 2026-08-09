@@ -52,8 +52,6 @@ import {
 } from '../projects/project-workspace-manager';
 import { JsonSettingsRepository } from '../settings/json-settings-repository';
 import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
-import { SandboxContextMenuFacilityAdapter } from '../workbench/interaction/adapters/sandbox-context-menu-facility-adapter';
-import { SandboxTextSelectionFacilityAdapter } from '../workbench/interaction/adapters/sandbox-text-selection-facility-adapter';
 import { MainFacilityAdapterRegistry } from '../workbench/interaction/main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
@@ -209,12 +207,6 @@ export async function createApplicationRuntime({
       );
     const mainFacilityAdapterRegistry =
       new MainFacilityAdapterRegistry(workbenchFacilityRegistry);
-    mainFacilityAdapterRegistry.register(
-      new SandboxContextMenuFacilityAdapter(),
-    );
-    mainFacilityAdapterRegistry.register(
-      new SandboxTextSelectionFacilityAdapter(),
-    );
     sandboxFrameInteractionBridge =
       new SandboxFrameInteractionBridge(
         transportBindingRegistry,
@@ -234,6 +226,7 @@ export async function createApplicationRuntime({
       artifactService,
       contentResourceService,
       externalLibraryService,
+      facilityAdapterRegistry: mainFacilityAdapterRegistry,
       projectLookup: projectDatabase,
       stateDatabase: workbenchStateRepository,
       stateDataDatabase: workbenchStateDataRepository,

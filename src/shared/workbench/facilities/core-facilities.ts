@@ -1,4 +1,8 @@
 import type { JsonValue } from '../protocol';
+import {
+  isAssetTarget,
+  type ContentAnchorTarget,
+} from '../anchor';
 import type { WorkbenchFacilityDeclaration } from './facility-declaration';
 import { WorkbenchFacilityDefinitionRegistry } from './facility-definition-registry';
 import { defineWorkbenchFacility } from './facility-definition';
@@ -45,6 +49,7 @@ interface TextSelectionFacilityOptions extends CaptureFacilityOptions {
 export interface CoreTextSelectionFacilityEvent {
   readonly text?: string;
   readonly frameUrl?: string;
+  readonly target?: ContentAnchorTarget;
 }
 
 interface TextSelectionInputPayload {
@@ -63,6 +68,7 @@ export interface CoreContextMenuFacilityEvent {
   readonly linkUrl?: string;
   readonly mediaType: CoreContextMediaType;
   readonly sourceUrl?: string;
+  readonly target?: ContentAnchorTarget;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -114,6 +120,12 @@ function isExternalHttpUrl(value: unknown): value is string {
   } catch {
     return false;
   }
+}
+
+function isContentAnchorTarget(
+  value: unknown,
+): value is ContentAnchorTarget {
+  return isAssetTarget(value) && value.scope === 'content';
 }
 
 export function isSandboxFrameTransportBindingPayload(
@@ -172,13 +184,16 @@ export function isCoreTextSelectionFacilityEvent(
   return (
     isRecord(value) &&
     Object.keys(value).every(
-      (key) => key === 'text' || key === 'frameUrl',
+      (key) =>
+        key === 'text' || key === 'frameUrl' || key === 'target',
     ) &&
     (value.text === undefined ||
       (typeof value.text === 'string' &&
         value.text.length <= CORE_TEXT_SELECTION_MAX_LENGTH)) &&
     (value.frameUrl === undefined ||
-      isBoundedUrl(value.frameUrl))
+      isBoundedUrl(value.frameUrl)) &&
+    (value.target === undefined ||
+      isContentAnchorTarget(value.target))
   );
 }
 
@@ -196,6 +211,7 @@ export function isCoreContextMenuFacilityEvent(
         'linkUrl',
         'mediaType',
         'sourceUrl',
+        'target',
       ].includes(key),
     )
   ) {
@@ -222,7 +238,9 @@ export function isCoreContextMenuFacilityEvent(
       value.mediaType as CoreContextMediaType,
     ) &&
     (value.sourceUrl === undefined ||
-      isExternalHttpUrl(value.sourceUrl))
+      isExternalHttpUrl(value.sourceUrl)) &&
+    (value.target === undefined ||
+      isContentAnchorTarget(value.target))
   );
 }
 

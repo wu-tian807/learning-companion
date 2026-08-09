@@ -9,9 +9,11 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
 } from '../../shared/workbench/facilities/core-facilities';
 import { htmlWorkbenchManifest } from './shared';
+import { createHtmlMainFacilityAdapters } from './main-facility-adapters';
 
 export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   readonly manifest = htmlWorkbenchManifest;
+  readonly facilityAdapters = createHtmlMainFacilityAdapters();
   private readonly sessions = new Set<string>();
 
   constructor(

@@ -17,8 +17,10 @@ import {
 } from '../../../shared/workbench/facilities/core-facilities';
 import type { WorkbenchTransportBinding } from '../../../shared/workbench/facilities/transport-binding';
 import { htmlWorkbenchManifest } from '../../../workbenches/html/shared';
-import { SandboxContextMenuFacilityAdapter } from './adapters/sandbox-context-menu-facility-adapter';
-import { SandboxTextSelectionFacilityAdapter } from './adapters/sandbox-text-selection-facility-adapter';
+import {
+  HtmlContextMenuFacilityAdapter,
+  HtmlTextSelectionFacilityAdapter,
+} from '../../../workbenches/html/main-facility-adapters';
 import { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from './sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from './workbench-transport-binding-registry';
@@ -116,8 +118,8 @@ function createFixture() {
   const adapterRegistry = new MainFacilityAdapterRegistry(
     facilityRegistry,
   );
-  adapterRegistry.register(new SandboxContextMenuFacilityAdapter());
-  adapterRegistry.register(new SandboxTextSelectionFacilityAdapter());
+  adapterRegistry.register(new HtmlContextMenuFacilityAdapter());
+  adapterRegistry.register(new HtmlTextSelectionFacilityAdapter());
   const logger = { error: vi.fn() };
   const bridge = new SandboxFrameInteractionBridge(
     bindingRegistry,
@@ -181,10 +183,10 @@ describe('SandboxFrameInteractionBridge', () => {
       expect.objectContaining({
         sessionId: 'session-1',
         facilityId: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
-        payload: {
+        payload: expect.objectContaining({
           text: '嵌套帧选区',
           frameUrl: child.frame.url,
-        },
+        }),
       }),
     );
   });
