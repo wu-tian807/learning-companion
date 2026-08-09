@@ -46,7 +46,7 @@ describe('GenerationTask', () => {
       durationMs: 10,
       updatedTime: 110,
     });
-    task.assignProvider('codex', 111);
+    task.assignProvider('codex', 'codex-account', 111);
     expect(task.getStatus()).toBe('processing');
     task.recordAgentCallCompleted({
       checkpoint: {
@@ -60,6 +60,7 @@ describe('GenerationTask', () => {
         purpose: 'generation',
         sessionId: 'session-1',
         providerId: 'codex',
+        connectionId: 'codex-account',
         modelId: 'gpt-5.2',
         startedTime: 112,
         completedTime: 138,
@@ -144,6 +145,7 @@ describe('GenerationTask', () => {
           purpose: 'generation',
           sessionId: 'session',
           providerId: 'codex',
+          connectionId: 'codex-account',
           modelId: 'model',
           startedTime: 100,
           completedTime: 110,
@@ -167,12 +169,15 @@ describe('GenerationTask', () => {
       updatedTime: 105,
     });
 
-    task.assignProvider('codex', 106);
-    task.assignProvider('codex', 107);
+    task.assignProvider('codex', 'codex-account', 106);
+    task.assignProvider('codex', 'codex-account', 107);
 
     expect(task.getSnapshot().assignedProviderId).toBe('codex');
+    expect(task.getSnapshot().assignedConnectionId).toBe('codex-account');
     expect(task.getSnapshot().updatedTime).toBe(106);
-    expect(() => task.assignProvider('claude-code', 108)).toThrow(
+    expect(() =>
+      task.assignProvider('claude-code', 'claude-account', 108),
+    ).toThrow(
       '已固定到其他 Provider',
     );
   });

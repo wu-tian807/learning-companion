@@ -128,6 +128,7 @@ describe('createCodexGenerationConfiguration', () => {
       WORKSPACE_VIEW_IMAGE_TOOL_ID,
     ]);
     expect(readOnly.threadInput.permissions).toBe(readOnly.profileId);
+    expect(readOnly.threadInput.modelProvider).toBe('openai');
     expect(readOnly.threadInput.configOverrides).toMatchObject({
       features: { shell_tool: true },
       tools: { view_image: true },
@@ -181,10 +182,10 @@ describe('createCodexGenerationConfiguration', () => {
     expect(writable.threadInput.configOverrides).not.toHaveProperty(
       'default_permissions',
     );
-    expect(writable.fingerprint).not.toBe(readOnly.fingerprint);
+    expect(writable.profileId).not.toBe(readOnly.profileId);
   });
 
-  it('includes selected dynamic tools and their version in the fingerprint', () => {
+  it('keeps non-permission tool configuration out of the permission profile identity', () => {
     const generationRequest = request();
     const environment = {
       disabledMcpServers: [],
@@ -224,8 +225,59 @@ describe('createCodexGenerationConfiguration', () => {
         name: 'learning_companion',
       }),
     ]);
-    expect(versionOne.fingerprint).not.toBe(versionTwo.fingerprint);
-    expect(versionOne.fingerprint).toBe(withUnselectedTool.fingerprint);
+    expect(versionOne.profileId).toBe(versionTwo.profileId);
+    expect(versionOne.profileId).toBe(withUnselectedTool.profileId);
+  });
+
+  it('keeps model, prompt, and connection choices out of the permission profile identity', () => {
+    const initialRequest = request();
+    const environment = {
+      disabledMcpServers: [],
+      disabledSkillPaths: [],
+    };
+    const initial = createCodexGenerationConfiguration(
+      initialRequest,
+      environment,
+      resolveCodexGenerationTools(initialRequest, registry(1)),
+      emptyCapabilities,
+    );
+    const changedRequest = {
+      ...initialRequest,
+      modelId: 'deepseek-test',
+      reasoningEffort: 'high',
+      systemInstruction: 'Use a different task instruction.',
+    };
+    const changed = createCodexGenerationConfiguration(
+      changedRequest,
+      environment,
+      resolveCodexGenerationTools(changedRequest, registry(1)),
+      emptyCapabilities,
+      {
+        kind: 'api-key',
+        baseUrl: 'https://example.com/v1',
+        modelProviderId: 'learning-companion-api',
+        environmentKey: 'LC_AGENT_API_KEY_TEST',
+      },
+    );
+
+    expect(changed.profileId).toBe(initial.profileId);
+    expect(changed.resumeInput).toMatchObject({
+      model: 'deepseek-test',
+      modelProvider: 'learning-companion-api',
+      developerInstructions: expect.stringContaining(
+        'Use a different task instruction.',
+      ),
+    });
+    expect(changed.threadInput.configOverrides).toMatchObject({
+      model_providers: {
+        'learning-companion-api': {
+          base_url: 'https://example.com/v1',
+          env_key: 'LC_AGENT_API_KEY_TEST',
+          requires_openai_auth: false,
+          wire_api: 'responses',
+        },
+      },
+    });
   });
 
   it('injects explicit Skills and only selected MCP server configuration', () => {
@@ -317,8 +369,6 @@ describe('createCodexGenerationConfiguration', () => {
         ],
       },
     });
-    expect(configuration.fingerprint).not.toBe(
-      changedSkillVersion.fingerprint,
-    );
+    expect(configuration.profileId).toBe(changedSkillVersion.profileId);
   });
 });

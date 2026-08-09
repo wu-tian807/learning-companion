@@ -56,7 +56,7 @@ describe('GenerationTaskDatabase', () => {
         durationMs: 10,
         updatedTime: 20,
       });
-      task.assignProvider('codex', 21);
+      task.assignProvider('codex', 'codex-account', 21);
       task.recordAgentCallCompleted({
         checkpoint: {
           callKey: 'generate',
@@ -70,6 +70,7 @@ describe('GenerationTaskDatabase', () => {
           purpose: 'generation',
           sessionId: 'session-1',
           providerId: 'codex',
+          connectionId: 'codex-account',
           modelId: 'gpt-5.2',
           startedTime: 21,
           completedTime: 29,

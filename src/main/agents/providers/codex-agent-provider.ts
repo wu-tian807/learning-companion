@@ -1,16 +1,25 @@
+import { createHash } from 'node:crypto';
+
 import type {
-  AgentProviderCredentialSnapshot,
+  AgentProviderConnectionConfiguration,
   AgentProviderLoginChallenge,
+  AgentProviderModelCatalogSnapshot,
+  AgentProviderModelSnapshot,
 } from '../../../shared/agent-providers';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
 import type { AgentToolRequirement } from '../../generation/contracts/task-definition';
 import type {
   GenerationAgentEvent,
+  GenerationAgentRunner,
   GenerationAgentTurnRequest,
   GenerationAgentTurnResult,
 } from '../../generation/generation-agent-runner';
 import { AppError } from '../../errors/app-error';
-import type { AgentProvider } from '../agent-provider';
+import type {
+  AgentProvider,
+  AgentProviderConnectionInspection,
+  ResolvedAgentProviderConnection,
+} from '../agent-provider';
 import type { CodexRuntimeServiceApi } from '../codex/codex-runtime-service-api';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import type { AgentFunctionToolRegistryApi } from '../function-tools/agent-function-tool-registry';
@@ -23,6 +32,7 @@ import {
   createCodexGenerationConfiguration,
   toCodexUserInput,
   type CodexGenerationConfiguration,
+  type CodexGenerationConnection,
 } from './codex-generation-request';
 import { inspectCodexGenerationEnvironment } from './codex-generation-environment';
 import {
@@ -45,8 +55,34 @@ import {
   findRecoveredCodexTurn,
   toGenerationToolEvent,
 } from './codex-generation-response';
+import {
+  normalizeCodexResponsesBaseUrl,
+  resolveCodexResponsesEndpointUrl,
+} from './codex-responses-url';
 
 export { CODEX_AGENT_PROVIDER_ID } from './codex-generation-request';
+
+export const CODEX_ACCOUNT_CONNECTION_ID = 'codex-account';
+
+const CODEX_DEFAULT_REASONING_EFFORTS = Object.freeze(
+  ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map((id) =>
+    Object.freeze({ id, displayName: id }),
+  ),
+);
+
+const CODEX_DEFAULT_MODELS = Object.freeze(
+  ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'].map(
+    (id, index): AgentProviderModelSnapshot =>
+      Object.freeze({
+        id,
+        displayName: id,
+        description: 'Learning Companion 默认支持的 Codex 模型。',
+        isDefault: index === 0,
+        reasoningEfforts: CODEX_DEFAULT_REASONING_EFFORTS,
+        defaultReasoningEffort: 'high',
+      }),
+  ),
+);
 
 interface CodexAgentProviderDependencies {
   readonly now: () => number;
@@ -54,6 +90,15 @@ interface CodexAgentProviderDependencies {
   readonly skills: AgentSkillLookup;
   readonly mcpServers: AgentMcpServerLookup;
   readonly defaultTools: readonly AgentToolRequirement[];
+  readonly createRuntime: (
+    environment: Readonly<NodeJS.ProcessEnv>,
+  ) => CodexRuntimeServiceApi;
+}
+
+interface CodexRuntimeBinding {
+  readonly runtime: CodexRuntimeServiceApi;
+  readonly generationConnection: CodexGenerationConnection;
+  readonly disposeSubscription: () => void;
 }
 
 const emptySkillLookup: AgentSkillLookup = Object.freeze({
@@ -69,20 +114,66 @@ function optionalText(value: string | null | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-export class CodexAgentProvider
-  implements AgentProvider
-{
-  readonly id = CODEX_AGENT_PROVIDER_ID;
+function apiRuntimeNames(connectionId: string): {
+  readonly modelProviderId: string;
+  readonly environmentKey: string;
+} {
+  const suffix = createHash('sha256')
+    .update(connectionId)
+    .digest('hex')
+    .slice(0, 20);
+  return Object.freeze({
+    modelProviderId: `learning-companion-${suffix}`,
+    environmentKey: `LC_AGENT_API_KEY_${suffix.toUpperCase()}`,
+  });
+}
+
+class CodexConnectionRunner implements GenerationAgentRunner {
   readonly providerId = CODEX_AGENT_PROVIDER_ID;
+
+  constructor(
+    readonly connectionId: string,
+    private readonly run: (
+      request: GenerationAgentTurnRequest,
+    ) => AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult>,
+  ) {}
+
+  runTurn(
+    request: GenerationAgentTurnRequest,
+  ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
+    return this.run(request);
+  }
+}
+
+export class CodexAgentProvider implements AgentProvider {
+  readonly id = CODEX_AGENT_PROVIDER_ID;
   readonly displayName = 'Codex';
-  readonly description = '使用 ChatGPT 账号运行 Codex。';
-  readonly loginLabel = '使用 ChatGPT 登录';
+  readonly description = '使用 Codex Agent 执行生成任务。';
+  readonly supportedConnectionKinds = Object.freeze([
+    'account' as const,
+    'api-key' as const,
+  ]);
+  readonly builtInConnections = Object.freeze([
+    Object.freeze({
+      id: CODEX_ACCOUNT_CONNECTION_ID,
+      providerId: CODEX_AGENT_PROVIDER_ID,
+      kind: 'account' as const,
+      displayName: 'ChatGPT 账号',
+    }),
+  ]);
+  readonly apiConnectionDefaults = Object.freeze({
+    displayName: 'Responses-compatible API',
+    baseUrl: 'https://api.openai.com/v1',
+  });
 
   private readonly dependencies: CodexAgentProviderDependencies;
   private readonly threadCoordinator: CodexThreadCoordinator;
+  private readonly apiRuntimes = new Map<string, CodexRuntimeBinding>();
+  private readonly invalidationListeners = new Set<(connectionId: string) => void>();
+  private readonly disposeAccountSubscription: () => void;
 
   constructor(
-    private readonly runtime: CodexRuntimeServiceApi,
+    private readonly accountRuntime: CodexRuntimeServiceApi,
     sessions: AgentSessionServiceApi,
     dependencies: Partial<CodexAgentProviderDependencies> = {},
   ) {
@@ -97,77 +188,206 @@ export class CodexAgentProvider
           Object.freeze({ ...tool }),
         ),
       ),
+      createRuntime: dependencies.createRuntime ?? (() => accountRuntime),
     };
-    this.threadCoordinator = new CodexThreadCoordinator(
-      runtime,
-      sessions,
+    this.threadCoordinator = new CodexThreadCoordinator(sessions);
+    this.disposeAccountSubscription = this.subscribeRuntime(
+      accountRuntime,
+      CODEX_ACCOUNT_CONNECTION_ID,
     );
   }
 
-  subscribeCredentialInvalidation(listener: () => void): () => void {
-    return this.runtime.subscribe((event) => {
-      if (
-        event.type === 'state-changed' &&
-        (event.snapshot.phase === 'failed' || event.snapshot.phase === 'stopped')
-      ) {
-        listener();
-        return;
-      }
-
-      if (
-        event.type === 'notification' &&
-        event.notification.method.startsWith('account/')
-      ) {
-        listener();
-      }
-    });
+  subscribeConnectionInvalidation(
+    listener: (connectionId: string) => void,
+  ): () => void {
+    this.invalidationListeners.add(listener);
+    return () => this.invalidationListeners.delete(listener);
   }
 
-  async getCredentialState(
+  async inspectAccountConnection(
+    connection: AgentProviderConnectionConfiguration,
     refreshCredentials = false,
-  ): Promise<AgentProviderCredentialSnapshot> {
-    const state = await this.runtime.getAccount(refreshCredentials);
+  ): Promise<AgentProviderConnectionInspection> {
+    this.requireAccountConnection(connection);
+    const state = await this.accountRuntime.getAccount(refreshCredentials);
 
     if (!state.account) {
-      return { status: 'unauthenticated' };
+      return Object.freeze({ status: 'unconfigured' });
     }
 
-    return {
-      status: 'authenticated',
-      account: {
+    return Object.freeze({
+      status: 'ready',
+      account: Object.freeze({
         email: optionalText(state.account.email),
         planType: optionalText(state.account.planType),
         authenticationMethod: optionalText(state.account.type),
-      },
-    };
+      }),
+    });
   }
 
-  async startLogin(): Promise<AgentProviderLoginChallenge> {
-    const challenge = await this.runtime.startChatGptLogin('browser');
+  async startLogin(
+    connection: AgentProviderConnectionConfiguration,
+  ): Promise<AgentProviderLoginChallenge> {
+    this.requireAccountConnection(connection);
+    const challenge = await this.accountRuntime.startChatGptLogin('browser');
 
     if (challenge.type === 'chatgpt') {
-      return {
+      return Object.freeze({
         type: 'external-browser',
         providerId: this.id,
+        connectionId: connection.id,
         loginId: challenge.loginId,
         url: challenge.authUrl,
-      };
+      });
     }
 
-    return {
+    return Object.freeze({
       type: 'device-code',
       providerId: this.id,
+      connectionId: connection.id,
       loginId: challenge.loginId,
       verificationUrl: challenge.verificationUrl,
       userCode: challenge.userCode,
-    };
+    });
   }
 
-  cancelLogin(loginId: string): Promise<void> {
-    return this.runtime.cancelLogin(loginId);
+  cancelLogin(
+    connection: AgentProviderConnectionConfiguration,
+    loginId: string,
+  ): Promise<void> {
+    this.requireAccountConnection(connection);
+    return this.accountRuntime.cancelLogin(loginId);
   }
 
-  async *runTurn(
+  normalizeApiConnectionBaseUrl(baseUrl: string): string {
+    return normalizeCodexResponsesBaseUrl(baseUrl);
+  }
+
+  resolveApiConnectionProbeUrl(
+    connection: Extract<
+      AgentProviderConnectionConfiguration,
+      { readonly kind: 'api-key' }
+    >,
+  ): string {
+    return resolveCodexResponsesEndpointUrl(connection.baseUrl);
+  }
+
+  getModelCatalog(
+    connection: AgentProviderConnectionConfiguration,
+  ): Promise<AgentProviderModelCatalogSnapshot> {
+    if (connection.kind === 'api-key') {
+      return Promise.resolve(
+        Object.freeze({
+          providerId: this.id,
+          connectionId: connection.id,
+          allowsCustomModel: true,
+          models: Object.freeze([]),
+        }),
+      );
+    }
+
+    this.requireAccountConnection(connection);
+    return Promise.resolve(
+      Object.freeze({
+        providerId: this.id,
+        connectionId: connection.id,
+        allowsCustomModel: true,
+        models: CODEX_DEFAULT_MODELS,
+      }),
+    );
+  }
+
+  createRunner(
+    connection: ResolvedAgentProviderConnection,
+  ): GenerationAgentRunner {
+    const binding = this.runtimeFor(connection);
+    return new CodexConnectionRunner(
+      connection.configuration.id,
+      (request) =>
+        this.runTurn(
+          binding.runtime,
+          connection.configuration.id,
+          binding.generationConnection,
+          request,
+        ),
+    );
+  }
+
+  async invalidateConnection(connectionId: string): Promise<void> {
+    const binding = this.apiRuntimes.get(connectionId);
+    if (!binding) {
+      return;
+    }
+    this.apiRuntimes.delete(connectionId);
+    binding.disposeSubscription();
+    if (binding.runtime !== this.accountRuntime) {
+      await binding.runtime.shutdown().catch(() => undefined);
+    }
+  }
+
+  async dispose(): Promise<void> {
+    this.disposeAccountSubscription();
+    const bindings = [...this.apiRuntimes.values()];
+    this.apiRuntimes.clear();
+    this.invalidationListeners.clear();
+    await Promise.all(
+      bindings.map(async (binding) => {
+        binding.disposeSubscription();
+        if (binding.runtime !== this.accountRuntime) {
+          await binding.runtime.shutdown().catch(() => undefined);
+        }
+      }),
+    );
+  }
+
+  private runtimeFor(
+    connection: ResolvedAgentProviderConnection,
+  ): CodexRuntimeBinding {
+    if (connection.configuration.kind === 'account') {
+      this.requireAccountConnection(connection.configuration);
+      return {
+        runtime: this.accountRuntime,
+        generationConnection: Object.freeze({ kind: 'account' }),
+        disposeSubscription: () => undefined,
+      };
+    }
+
+    if (!connection.apiKey) {
+      throw new AppError('AGENT_PROVIDER_AUTH_REQUIRED');
+    }
+
+    const existing = this.apiRuntimes.get(connection.configuration.id);
+    if (existing) {
+      return existing;
+    }
+
+    const names = apiRuntimeNames(connection.configuration.id);
+    const runtime = this.dependencies.createRuntime({
+      [names.environmentKey]: connection.apiKey,
+    });
+    const binding: CodexRuntimeBinding = Object.freeze({
+      runtime,
+      generationConnection: Object.freeze({
+        kind: 'api-key',
+        baseUrl: normalizeCodexResponsesBaseUrl(
+          connection.configuration.baseUrl,
+        ),
+        modelProviderId: names.modelProviderId,
+        environmentKey: names.environmentKey,
+      }),
+      disposeSubscription: this.subscribeRuntime(
+        runtime,
+        connection.configuration.id,
+      ),
+    });
+    this.apiRuntimes.set(connection.configuration.id, binding);
+    return binding;
+  }
+
+  private async *runTurn(
+    runtime: CodexRuntimeServiceApi,
+    connectionId: string,
+    generationConnection: CodexGenerationConnection,
     request: GenerationAgentTurnRequest,
   ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
     request.signal?.throwIfAborted();
@@ -184,21 +404,21 @@ export class CodexAgentProvider
         mcpServers: this.dependencies.mcpServers,
       },
     );
-    const account = await this.runtime.getAccount(false);
 
-    if (!account.account) {
-      throw new AppError('AGENT_PROVIDER_AUTH_REQUIRED');
+    if (generationConnection.kind === 'account') {
+      const account = await runtime.getAccount(false);
+      if (!account.account) {
+        throw new AppError('AGENT_PROVIDER_AUTH_REQUIRED');
+      }
     }
 
-    const environment = await inspectCodexGenerationEnvironment(
-      this.runtime,
-      request,
-    );
+    const environment = await inspectCodexGenerationEnvironment(runtime, request);
     const configuration = createCodexGenerationConfiguration(
       request,
       environment,
       tools,
       capabilities,
+      generationConnection,
     );
     const releaseSession = await this.threadCoordinator.acquire(
       request.sessionLocator,
@@ -207,6 +427,7 @@ export class CodexAgentProvider
 
     try {
       const resolved = await this.threadCoordinator.resolve(
+        runtime,
         request,
         configuration,
       );
@@ -223,7 +444,8 @@ export class CodexAgentProvider
         const completedTime = this.dependencies.now();
         return {
           sessionId,
-          providerId: this.providerId,
+          providerId: this.id,
+          connectionId,
           modelId: resolved.selection.model!.trim(),
           providerExecutionId: recovered.id,
           ...codexTurnTiming(recovered, completedTime, completedTime),
@@ -231,6 +453,8 @@ export class CodexAgentProvider
       }
 
       return yield* this.startCodexTurn(
+        runtime,
+        connectionId,
         request,
         resolved,
         configuration,
@@ -244,6 +468,8 @@ export class CodexAgentProvider
   }
 
   private async *startCodexTurn(
+    runtime: CodexRuntimeServiceApi,
+    connectionId: string,
     request: GenerationAgentTurnRequest,
     resolved: ResolvedCodexThread,
     configuration: CodexGenerationConfiguration,
@@ -253,16 +479,15 @@ export class CodexAgentProvider
   ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
     const sessionId = resolved.binding.sessionId;
     const startedFallback = this.dependencies.now();
-    // The custom profile is selected by thread/start or thread/resume. Its
-    // definition comes from that thread's config overrides, so re-selecting
-    // it on turn/start would make Codex resolve it against ambient config.
-    const stream = this.runtime.startTurn({
+    const stream = runtime.startTurn({
       threadId: sessionId,
       clientUserMessageId,
       input: toCodexUserInput(request, capabilities),
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',
+      ...(request.modelId ? { model: request.modelId } : {}),
+      ...(request.reasoningEffort ? { effort: request.reasoningEffort } : {}),
     });
     let activeTurnId: string | undefined;
     let usage: GenerationTokenUsage | undefined;
@@ -270,7 +495,7 @@ export class CodexAgentProvider
     let interruptTask: Promise<void> | undefined;
     const interrupt = () => {
       if (activeTurnId && !interruptTask) {
-        interruptTask = this.runtime
+        interruptTask = runtime
           .interruptTurn({ threadId: sessionId, turnId: activeTurnId })
           .catch(() => undefined);
       }
@@ -297,7 +522,8 @@ export class CodexAgentProvider
 
           return {
             sessionId,
-            providerId: this.providerId,
+            providerId: this.id,
+            connectionId,
             modelId,
             providerExecutionId: next.value.turn.id,
             ...codexTurnTiming(
@@ -310,7 +536,6 @@ export class CodexAgentProvider
         }
 
         const event = next.value;
-
         if (event.type === 'turn-started') {
           activeTurnId = event.turn.id;
         } else if (event.type === 'assistant-message-delta') {
@@ -324,7 +549,6 @@ export class CodexAgentProvider
             tools,
             capabilities.mcpServerIdsByWireName,
           );
-
           if (toolEvent) {
             yield toolEvent;
           }
@@ -336,7 +560,7 @@ export class CodexAgentProvider
             selection: tools,
             generationRequest: request,
             respond: (requestId, response) =>
-              this.runtime.respondToServerRequest(requestId, response),
+              runtime.respondToServerRequest(requestId, response),
           });
         }
 
@@ -350,4 +574,41 @@ export class CodexAgentProvider
     }
   }
 
+  private subscribeRuntime(
+    runtime: CodexRuntimeServiceApi,
+    connectionId: string,
+  ): () => void {
+    return runtime.subscribe((event) => {
+      if (
+        event.type === 'state-changed' &&
+        (event.snapshot.phase === 'failed' || event.snapshot.phase === 'stopped')
+      ) {
+        this.notifyInvalidation(connectionId);
+      } else if (
+        connectionId === CODEX_ACCOUNT_CONNECTION_ID &&
+        event.type === 'notification' &&
+        event.notification.method.startsWith('account/')
+      ) {
+        this.notifyInvalidation(connectionId);
+      }
+    });
+  }
+
+  private notifyInvalidation(connectionId: string): void {
+    for (const listener of this.invalidationListeners) {
+      listener(connectionId);
+    }
+  }
+
+  private requireAccountConnection(
+    connection: AgentProviderConnectionConfiguration,
+  ): void {
+    if (
+      connection.providerId !== this.id ||
+      connection.id !== CODEX_ACCOUNT_CONNECTION_ID ||
+      connection.kind !== 'account'
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+  }
 }

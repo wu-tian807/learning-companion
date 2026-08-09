@@ -2,7 +2,8 @@ import { useEffect, useMemo } from 'react';
 import { useStore } from 'zustand';
 
 import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
-import { AgentProviderCard } from '../agents/AgentProviderCard';
+import { AgentProviderConnections } from '../agents/AgentProviderConnections';
+import { AgentProviderSelector } from '../agents/AgentProviderSelector';
 import {
   defaultAgentProviderSetupApi,
   type AgentProviderSetupApi,
@@ -28,9 +29,6 @@ function LoadedAgentProviderSettings({
 }: LoadedAgentProviderSettingsProps) {
   const controller = useAgentProviderSetup({
     setup,
-    onSetupChange: (next) => {
-      store.getState().applySnapshot(next);
-    },
     onCompleted: () => undefined,
     api,
     refreshProvider: (providerId) =>
@@ -41,21 +39,20 @@ function LoadedAgentProviderSettings({
     <>
       <div className="space-y-3">
         {setup.providers.map((provider) => (
-          <AgentProviderCard
+          <AgentProviderConnections
             key={provider.id}
             provider={provider}
+            api={api}
             loginChallenge={controller.loginChallenge}
-            busy={controller.busyProviderId === provider.id}
-            onLogin={() => {
-              void controller.startLogin(provider.id);
+            busyConnectionId={controller.busyConnectionId}
+            onStartLogin={(providerId, connectionId) => {
+              void controller.startLogin(providerId, connectionId);
             }}
-            onSelect={() => {
-              void controller.selectProvider(provider.id);
-            }}
-            onRefresh={() => {
-              void controller.refresh(provider.id);
+            onRefresh={(providerId) => {
+              void controller.refresh(providerId);
             }}
             onReopenLogin={controller.reopenLogin}
+            onSetupChange={(next) => store.getState().applySnapshot(next)}
           />
         ))}
       </div>
@@ -64,6 +61,25 @@ function LoadedAgentProviderSettings({
         <p className="text-sm text-slate-400">
           当前没有可用的 AI Provider。
         </p>
+      )}
+
+      {setup.selectors.length > 0 && (
+        <div className="mt-6 border-t border-white/[0.08] pt-5">
+          <h4 className="text-sm font-semibold text-slate-200">功能模型</h4>
+          <p className="mt-1 text-xs text-slate-500">
+            每个功能独立选择 Connection、模型与思考力度。
+          </p>
+          <div className="mt-3 space-y-2.5">
+            {setup.selectors.map((selector) => (
+              <AgentProviderSelector
+                key={selector.id}
+                selectorId={selector.id}
+                api={api}
+                store={store}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       {controller.error && (
@@ -94,34 +110,22 @@ export function AgentProviderSettingsSection({
     [api, store],
   );
   const setup = useStore(resolvedStore, (state) => state.setup);
-  const loading = useStore(
-    resolvedStore,
-    (state) => state.loading,
-  );
-  const loadError = useStore(
-    resolvedStore,
-    (state) => state.loadError,
-  );
+  const loading = useStore(resolvedStore, (state) => state.loading);
+  const loadError = useStore(resolvedStore, (state) => state.loadError);
 
-  useEffect(() => {
-    return resolvedStore.getState().connect();
-  }, [resolvedStore]);
+  useEffect(() => resolvedStore.getState().connect(), [resolvedStore]);
 
   return (
     <section>
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-slate-200">
-          AI Provider
-        </h3>
+        <h3 className="text-sm font-semibold text-slate-200">AI Provider</h3>
         <p className="mt-1 text-xs text-slate-500">
-          选择用于 AI 功能的账号。
+          管理账号与 API Connection。
         </p>
       </div>
 
       {loading && !setup && (
-        <p className="text-sm text-slate-400">
-          正在读取 Provider 列表…
-        </p>
+        <p className="text-sm text-slate-400">正在读取 Provider 列表…</p>
       )}
 
       {loadError && (
@@ -132,9 +136,7 @@ export function AgentProviderSettingsSection({
           <span>{loadError}</span>
           <button
             type="button"
-            onClick={() => {
-              void resolvedStore.getState().reload();
-            }}
+            onClick={() => void resolvedStore.getState().reload()}
             className="ui-control h-8 shrink-0 rounded-full border border-rose-200/15 px-3"
           >
             重试

@@ -42,6 +42,18 @@ export class GenerationTask {
       definitionVersion: input.definitionVersion,
       instruction: input.instruction,
       assetReferences: input.assetReferences,
+      ...(input.assignedProviderId
+        ? { assignedProviderId: input.assignedProviderId }
+        : {}),
+      ...(input.assignedConnectionId
+        ? { assignedConnectionId: input.assignedConnectionId }
+        : {}),
+      ...(input.assignedModelId
+        ? { assignedModelId: input.assignedModelId }
+        : {}),
+      ...(input.assignedReasoningEffort
+        ? { assignedReasoningEffort: input.assignedReasoningEffort }
+        : {}),
       agentCalls: Object.freeze([]),
       metrics: emptyGenerationTaskMetrics(),
       createdTime: input.createdTime,
@@ -67,7 +79,7 @@ export class GenerationTask {
     }
 
     if (
-      this.snapshot.assignedProviderId ||
+      (this.snapshot.prepared && this.snapshot.assignedProviderId) ||
       this.snapshot.agentCalls.length > 0
     ) {
       return 'processing';
@@ -76,7 +88,13 @@ export class GenerationTask {
     return this.snapshot.prepared ? 'prepared' : 'created';
   }
 
-  assignProvider(providerId: string, updatedTime: number): void {
+  assignProvider(
+    providerId: string,
+    connectionId: string,
+    updatedTime: number,
+    modelId?: string,
+    reasoningEffort?: string,
+  ): void {
     this.requireActive();
 
     if (!this.snapshot.prepared || this.snapshot.completed) {
@@ -84,7 +102,12 @@ export class GenerationTask {
     }
 
     if (this.snapshot.assignedProviderId) {
-      if (this.snapshot.assignedProviderId !== providerId) {
+      if (
+        this.snapshot.assignedProviderId !== providerId ||
+        this.snapshot.assignedConnectionId !== connectionId ||
+        this.snapshot.assignedModelId !== modelId ||
+        this.snapshot.assignedReasoningEffort !== reasoningEffort
+      ) {
         throw new Error('GenerationTask 已固定到其他 Provider');
       }
       return;
@@ -93,6 +116,11 @@ export class GenerationTask {
     this.replace({
       ...this.snapshot,
       assignedProviderId: providerId,
+      assignedConnectionId: connectionId,
+      ...(modelId ? { assignedModelId: modelId } : {}),
+      ...(reasoningEffort
+        ? { assignedReasoningEffort: reasoningEffort }
+        : {}),
       failure: undefined,
       updatedTime,
     });
@@ -106,7 +134,6 @@ export class GenerationTask {
     this.requireActive();
 
     if (
-      this.snapshot.assignedProviderId ||
       this.snapshot.agentCalls.length > 0 ||
       this.snapshot.completed
     ) {
@@ -138,8 +165,10 @@ export class GenerationTask {
     if (
       !this.snapshot.prepared ||
       !this.snapshot.assignedProviderId ||
+      !this.snapshot.assignedConnectionId ||
       this.snapshot.completed ||
       input.metrics.providerId !== this.snapshot.assignedProviderId ||
+      input.metrics.connectionId !== this.snapshot.assignedConnectionId ||
       input.checkpoint.callKey !== input.metrics.callKey ||
       input.checkpoint.purpose !== input.metrics.purpose ||
       input.checkpoint.sessionId !== input.metrics.sessionId ||

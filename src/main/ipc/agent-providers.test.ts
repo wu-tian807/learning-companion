@@ -54,32 +54,48 @@ function createService(): AgentProviderServiceApi {
   return {
     getSetup: vi.fn(async () => ({
       revision: 0,
-      selectedProviderId: null,
-      activeProviderId: null,
-      requiresSelection: true,
       providers: [],
+      selectors: [],
+      selections: [],
     })),
     refreshProvider: vi.fn(async () => ({
       revision: 0,
-      selectedProviderId: null,
-      activeProviderId: null,
-      requiresSelection: true,
       providers: [],
+      selectors: [],
+      selections: [],
     })),
     subscribe: vi.fn(() => () => undefined),
     startLogin: vi.fn(async () => ({
       type: 'external-browser' as const,
       providerId: 'codex',
+      connectionId: 'codex-account',
       loginId: 'login-1',
       url: 'https://chatgpt.com/login',
     })),
     cancelLogin: vi.fn(async () => undefined),
-    selectProvider: vi.fn(async () => ({
+    configureApiConnection: vi.fn(async () => ({
       revision: 1,
-      selectedProviderId: 'codex',
-      activeProviderId: 'codex',
-      requiresSelection: false,
       providers: [],
+      selectors: [],
+      selections: [],
+    })),
+    deleteConnection: vi.fn(async () => ({
+      revision: 2,
+      providers: [],
+      selectors: [],
+      selections: [],
+    })),
+    getModelCatalog: vi.fn(async () => ({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      allowsCustomModel: false,
+      models: [],
+    })),
+    selectForSelector: vi.fn(async (selection) => ({
+      revision: 2,
+      providers: [],
+      selectors: [],
+      selections: [selection],
     })),
     dispose: vi.fn(async () => undefined),
   };
@@ -90,7 +106,7 @@ beforeEach(() => {
 });
 
 describe('Agent Provider IPC handlers', () => {
-  it('reads, refreshes, and delegates Provider login and selection', async () => {
+  it('delegates Connection and Selector operations', async () => {
     const service = createService();
     registerAgentProviderHandlers(service);
 
@@ -100,23 +116,56 @@ describe('Agent Provider IPC handlers', () => {
     });
     await findHandler(IPC_CHANNELS.startAgentProviderLogin)({
       providerId: 'codex',
+      connectionId: 'codex-account',
     });
     await findHandler(IPC_CHANNELS.cancelAgentProviderLogin)({
       providerId: 'codex',
+      connectionId: 'codex-account',
       loginId: 'login-1',
     });
-    await findHandler(IPC_CHANNELS.selectAgentProvider)({
+    await findHandler(IPC_CHANNELS.configureAgentProviderApiConnection)({
       providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'test-secret',
+    });
+    await findHandler(IPC_CHANNELS.getAgentProviderModels)({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+    });
+    await findHandler(IPC_CHANNELS.selectAgentProviderForSelector)({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
     });
 
     expect(service.getSetup).toHaveBeenCalledWith();
     expect(service.refreshProvider).toHaveBeenCalledWith('codex');
-    expect(service.startLogin).toHaveBeenCalledWith('codex');
+    expect(service.startLogin).toHaveBeenCalledWith('codex', 'codex-account');
     expect(service.cancelLogin).toHaveBeenCalledWith(
       'codex',
+      'codex-account',
       'login-1',
     );
-    expect(service.selectProvider).toHaveBeenCalledWith('codex');
+    expect(service.configureApiConnection).toHaveBeenCalledWith({
+      providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'test-secret',
+    });
+    expect(service.getModelCatalog).toHaveBeenCalledWith(
+      'codex',
+      'codex-account',
+    );
+    expect(service.selectForSelector).toHaveBeenCalledWith({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
   });
 
   it('rejects malformed Provider requests', async () => {
@@ -130,12 +179,14 @@ describe('Agent Provider IPC handlers', () => {
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await expect(
       findHandler(IPC_CHANNELS.startAgentProviderLogin)({
-        providerId: '../codex',
+        providerId: 'codex',
+        connectionId: '../account',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await expect(
       findHandler(IPC_CHANNELS.cancelAgentProviderLogin)({
         providerId: 'codex',
+        connectionId: 'codex-account',
         loginId: '',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
@@ -158,10 +209,9 @@ describe('Agent Provider IPC handlers', () => {
     registerAgentProviderHandlers(service, { broadcast });
     const snapshot = {
       revision: 2,
-      selectedProviderId: null,
-      activeProviderId: null,
-      requiresSelection: true,
       providers: [],
+      selectors: [],
+      selections: [],
     };
     listener?.(snapshot);
 
@@ -191,7 +241,16 @@ describe('Agent Provider IPC handlers', () => {
       IPC_CHANNELS.cancelAgentProviderLogin,
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
-      IPC_CHANNELS.selectAgentProvider,
+      IPC_CHANNELS.configureAgentProviderApiConnection,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.deleteAgentProviderConnection,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.getAgentProviderModels,
+    );
+    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
+      IPC_CHANNELS.selectAgentProviderForSelector,
     );
   });
 });

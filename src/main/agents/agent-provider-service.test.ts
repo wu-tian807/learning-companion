@@ -1,482 +1,439 @@
-import {
-  describe,
-  expect,
-  it,
-  type MockedFunction,
-  vi,
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type {
-  AgentProviderCredentialSnapshot,
-  AgentProviderSetupSnapshot,
+  AgentProviderConnectionConfiguration,
+  AgentProviderSelectorSelectionSnapshot,
 } from '../../shared/agent-providers';
+import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
+import { DEFAULT_APP_PREFERENCES } from '../../shared/app-preferences';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { AgentProvider } from './agent-provider';
 import { AgentProviderRegistry } from './agent-provider-registry';
+import type { AgentProviderSecretStore } from './agent-provider-secret-file';
+import { AgentProviderSelectorRegistry } from './agent-provider-selector-registry';
+import { AgentProviderService } from './agent-provider-service';
 import {
-  AgentProviderService,
-  type AgentProviderServiceDependencies,
-} from './agent-provider-service';
+  normalizeCodexResponsesBaseUrl,
+  resolveCodexResponsesEndpointUrl,
+} from './providers/codex-responses-url';
 
-interface Deferred<T> {
-  readonly promise: Promise<T>;
-  readonly resolve: (value: T) => void;
-  readonly reject: (error: unknown) => void;
-}
-
-type TestProvider = Omit<
-  AgentProvider,
-  'getCredentialState' | 'startLogin' | 'cancelLogin'
-> & {
-  readonly getCredentialState: MockedFunction<
-    AgentProvider['getCredentialState']
-  >;
-  readonly startLogin: MockedFunction<AgentProvider['startLogin']>;
-  readonly cancelLogin: MockedFunction<AgentProvider['cancelLogin']>;
-  invalidate(): void;
-  expectInvalidationDisposed(): void;
-};
-
-function deferred<T>(): Deferred<T> {
-  let resolve: ((value: T) => void) | undefined;
-  let reject: ((error: unknown) => void) | undefined;
-  const promise = new Promise<T>((nextResolve, nextReject) => {
-    resolve = nextResolve;
-    reject = nextReject;
-  });
-
-  return {
-    promise,
-    resolve: (value) => resolve?.(value),
-    reject: (error) => reject?.(error),
+function createSettings() {
+  const connections = new Map<string, AgentProviderConnectionConfiguration>();
+  const selections = new Map<string, AgentProviderSelectorSelectionSnapshot>();
+  const settings: SettingsRepository = {
+    initialize: vi.fn(async () => undefined),
+    get: vi.fn(() => DEFAULT_APP_PREFERENCES),
+    updateHomePreferences: vi.fn(async () => DEFAULT_APP_PREFERENCES),
+    getAppSetup: vi.fn(() => ({
+      currentOnboardingVersion: 2,
+      completedOnboardingVersion: 2,
+      pendingOnboardingStep: null,
+      requiresOnboarding: false,
+    } as const)),
+    completeExternalLibraryOnboarding: vi.fn(),
+    completeAgentProviderOnboarding: vi.fn(),
+    getDefaultProjectWorkspace: vi.fn(() => 'C:\\workspace'),
+    updateDefaultProjectWorkspace: vi.fn(async () => undefined),
+    getExternalLibrariesPath: vi.fn(() => 'C:\\external'),
+    updateExternalLibrariesPath: vi.fn(async () => undefined),
+    listAgentProviderConnections: vi.fn(() => [...connections.values()]),
+    getAgentProviderConnection: vi.fn((id) => connections.get(id)),
+    updateAgentProviderConnection: vi.fn(async (connection) => {
+      connections.set(connection.id, connection);
+    }),
+    deleteAgentProviderConnection: vi.fn(async (id) => {
+      connections.delete(id);
+      for (const [selectorId, selection] of selections) {
+        if (selection.connectionId === id) {
+          selections.delete(selectorId);
+        }
+      }
+    }),
+    listAgentProviderSelectorSelections: vi.fn(() => [...selections.values()]),
+    getAgentProviderSelectorSelection: vi.fn((id) => selections.get(id)),
+    updateAgentProviderSelectorSelection: vi.fn(async (selection) => {
+      selections.set(selection.selectorId, selection);
+    }),
   };
+  return { settings, connections, selections };
 }
 
-function createSettings(selected: string | null = null) {
-  let selectedProviderId = selected;
-  const updateSelectedAgentProviderId = vi.fn(
-    async (providerId: string) => {
-      selectedProviderId = providerId;
-    },
-  );
-  const settings = {
-    getSelectedAgentProviderId: vi.fn(() => selectedProviderId),
-    updateSelectedAgentProviderId,
-  } as unknown as SettingsRepository;
-
-  return { settings, updateSelectedAgentProviderId };
+function createSecrets() {
+  const values = new Map<string, string>();
+  const key = (providerId: string, connectionId: string) =>
+    `${providerId}/${connectionId}`;
+  const store: AgentProviderSecretStore = {
+    get: vi.fn(async (providerId, connectionId) =>
+      values.get(key(providerId, connectionId)),
+    ),
+    set: vi.fn(async (providerId, connectionId, secret) => {
+      values.set(key(providerId, connectionId), secret);
+    }),
+    delete: vi.fn(async (providerId, connectionId) => {
+      values.delete(key(providerId, connectionId));
+    }),
+  };
+  return { store, values };
 }
 
 function createProvider(
-  id: string,
-  credential:
-    | AgentProviderCredentialSnapshot
-    | (() => Promise<AgentProviderCredentialSnapshot>) = {
-    status: 'unauthenticated',
-  },
-): TestProvider {
-  let invalidationListener: (() => void) | undefined;
-  const disposeInvalidation = vi.fn();
-  const getCredentialState: MockedFunction<
-    AgentProvider['getCredentialState']
-  > =
-    typeof credential === 'function'
-      ? vi.fn(credential)
-      : vi.fn(async () => credential);
-
+  inspectAccountConnection: AgentProvider['inspectAccountConnection'] = vi.fn(
+    async () => ({
+      status: 'ready' as const,
+      account: { email: 'student@example.com' },
+    }),
+  ),
+): AgentProvider {
   return {
-    id,
-    providerId: id,
-    displayName: id === 'codex' ? 'Codex' : 'Claude Code',
-    description: `${id} Provider`,
-    loginLabel: `登录 ${id}`,
-    getCredentialState,
-    startLogin: vi.fn(async () => ({
+    id: 'codex',
+    displayName: 'Codex',
+    description: 'Codex Agent',
+    supportedConnectionKinds: ['account', 'api-key'],
+    builtInConnections: [
+      {
+        id: 'codex-account',
+        providerId: 'codex',
+        kind: 'account',
+        displayName: 'ChatGPT 账号',
+      },
+    ],
+    apiConnectionDefaults: {
+      displayName: 'Responses-compatible API',
+      baseUrl: 'https://api.openai.com/v1',
+    },
+    inspectAccountConnection,
+    startLogin: vi.fn(async (connection) => ({
       type: 'external-browser' as const,
-      providerId: id,
-      loginId: `${id}-login`,
-      url: 'https://example.com/login',
+      providerId: 'codex',
+      connectionId: connection.id,
+      loginId: 'login-1',
+      url: 'https://chatgpt.com/login',
     })),
     cancelLogin: vi.fn(async () => undefined),
-    async *runTurn() {
-      yield* [] as never[];
-      throw new Error('not used');
-    },
-    subscribeCredentialInvalidation: vi.fn((listener) => {
-      invalidationListener = listener;
-      return disposeInvalidation;
-    }),
-    invalidate() {
-      invalidationListener?.();
-    },
-    expectInvalidationDisposed() {
-      expect(disposeInvalidation).toHaveBeenCalledOnce();
-    },
+    normalizeApiConnectionBaseUrl: normalizeCodexResponsesBaseUrl,
+    resolveApiConnectionProbeUrl: (connection) =>
+      resolveCodexResponsesEndpointUrl(connection.baseUrl),
+    getModelCatalog: vi.fn(async (configuration) => ({
+      providerId: 'codex',
+      connectionId: configuration.id,
+      allowsCustomModel: configuration.kind === 'api-key',
+      models:
+        configuration.kind === 'api-key'
+          ? []
+          : [
+              {
+                id: 'gpt-test',
+                displayName: 'GPT Test',
+                description: '',
+                isDefault: true,
+                reasoningEfforts: [
+                  { id: 'medium', displayName: 'Medium' },
+                ],
+                defaultReasoningEffort: 'medium',
+              },
+            ],
+    })),
+    createRunner: vi.fn(({ configuration }) => ({
+      providerId: 'codex',
+      connectionId: configuration.id,
+      async *runTurn() {
+        yield* [] as never[];
+        throw new Error('not used');
+      },
+    })),
   };
 }
 
-function createTimerHarness() {
-  let nextTimerId = 1;
-  const callbacks = new Map<number, () => void>();
-  const setTimer = vi.fn((callback: () => void) => {
-    const id = nextTimerId;
-    nextTimerId += 1;
-    callbacks.set(id, callback);
-    return id as unknown as ReturnType<typeof setTimeout>;
+function createService(input: {
+  readonly provider?: AgentProvider;
+  readonly probeUrl?: (url: string) => Promise<void>;
+} = {}) {
+  const { settings, connections, selections } = createSettings();
+  const { store: secrets, values: secretValues } = createSecrets();
+  const provider = input.provider ?? createProvider();
+  const providers = new AgentProviderRegistry();
+  providers.register(provider);
+  const selectors = new AgentProviderSelectorRegistry();
+  selectors.register({
+    id: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+    displayName: '生成中心',
+    description: '生成 Project 内容。',
   });
-  const clearTimer = vi.fn(
-    (timer: ReturnType<typeof setTimeout>) => {
-      callbacks.delete(timer as unknown as number);
+  let nextConnectionNumber = 1;
+  const service = new AgentProviderService(
+    settings,
+    secrets,
+    providers,
+    selectors,
+    {
+      createId: () => `connection-${nextConnectionNumber++}`,
+      probeUrl: input.probeUrl ?? (async () => undefined),
     },
   );
-
   return {
-    setTimer,
-    clearTimer,
-    runNext() {
-      const next = callbacks.entries().next().value as
-        | [number, () => void]
-        | undefined;
-
-      if (!next) {
-        throw new Error('没有可运行的登录观察 Timer');
-      }
-
-      callbacks.delete(next[0]);
-      next[1]();
-    },
-    get size() {
-      return callbacks.size;
-    },
+    service,
+    settings,
+    connections,
+    selections,
+    secrets,
+    secretValues,
+    provider,
   };
-}
-
-function createService(
-  providers: readonly TestProvider[],
-  selectedProviderId: string | null = null,
-  dependencies: Partial<AgentProviderServiceDependencies> = {},
-) {
-  const registry = new AgentProviderRegistry();
-  for (const provider of providers) {
-    registry.register(provider);
-  }
-  const { settings, updateSelectedAgentProviderId } =
-    createSettings(selectedProviderId);
-  const warn = vi.fn();
-
-  return {
-    service: new AgentProviderService(settings, registry, {
-      logger: { warn },
-      ...dependencies,
-    }),
-    updateSelectedAgentProviderId,
-    warn,
-  };
-}
-
-function providerFrom(
-  snapshot: AgentProviderSetupSnapshot,
-  providerId: string,
-) {
-  const provider = snapshot.providers.find(
-    (candidate) => candidate.id === providerId,
-  );
-
-  if (!provider) {
-    throw new Error(`Snapshot 缺少 Provider：${providerId}`);
-  }
-
-  return provider;
 }
 
 describe('AgentProviderService', () => {
-  it('returns every Provider immediately and lets fast Providers finish independently', async () => {
-    const codexCredential = deferred<AgentProviderCredentialSnapshot>();
-    const claudeCredential = deferred<AgentProviderCredentialSnapshot>();
-    const codex = createProvider('codex', () => codexCredential.promise);
-    const claude = createProvider(
-      'claude-code',
-      () => claudeCredential.promise,
+  it('publishes Provider connections and Main-registered selectors', async () => {
+    const { service, provider } = createService();
+
+    await service.getSetup();
+    await vi.waitFor(() =>
+      expect(provider.inspectAccountConnection).toHaveBeenCalled(),
     );
-    const { service } = createService([codex, claude]);
-    const events: AgentProviderSetupSnapshot[] = [];
-    service.subscribe((snapshot) => events.push(snapshot));
+    const setup = await service.getSetup();
 
-    const initial = await service.getSetup();
-
-    expect(initial.providers.map((provider) => provider.id)).toEqual([
-      'codex',
-      'claude-code',
+    expect(setup.selectors).toEqual([
+      {
+        id: 'generation-center',
+        displayName: '生成中心',
+        description: '生成 Project 内容。',
+      },
     ]);
-    expect(providerFrom(initial, 'codex').credential.status).toBe(
-      'checking',
-    );
-    expect(providerFrom(initial, 'claude-code').credential.status).toBe(
-      'checking',
-    );
-
-    claudeCredential.resolve({
-      status: 'authenticated',
-      account: { email: 'learner@example.com' },
-    });
-    await vi.waitFor(() => {
-      const latest = events.at(-1);
-      expect(latest).toBeDefined();
-      expect(
-        providerFrom(latest!, 'claude-code').credential.status,
-      ).toBe('authenticated');
-      expect(
-        providerFrom(latest!, 'codex').credential.status,
-      ).toBe('checking');
+    expect(setup.providers[0]?.connections[0]).toMatchObject({
+      id: 'codex-account',
+      kind: 'account',
+      status: 'ready',
+      hasApiKey: false,
+      removable: false,
     });
 
-    codexCredential.resolve({ status: 'unauthenticated' });
-    await vi.waitFor(() => {
-      expect(
-        providerFrom(events.at(-1)!, 'codex').credential.status,
-      ).toBe('unauthenticated');
-    });
-  });
-
-  it('coalesces an in-flight check and refreshes again on the next read', async () => {
-    const first = deferred<AgentProviderCredentialSnapshot>();
-    const codex = createProvider('codex', () => first.promise);
-    const { service } = createService([codex]);
-    const events: AgentProviderSetupSnapshot[] = [];
-    service.subscribe((snapshot) => events.push(snapshot));
-
-    await service.getSetup();
-    await service.getSetup();
-    expect(codex.getCredentialState).toHaveBeenCalledOnce();
-
-    first.resolve({ status: 'unauthenticated' });
-    await vi.waitFor(() => {
-      expect(
-        providerFrom(events.at(-1)!, 'codex').credential.status,
-      ).toBe('unauthenticated');
-    });
-    await Promise.resolve();
-    codex.getCredentialState.mockResolvedValueOnce({
-      status: 'authenticated',
-      account: {},
-    });
-
-    const cached = await service.getSetup();
-
-    expect(providerFrom(cached, 'codex').credential.status).toBe(
-      'unauthenticated',
-    );
-    expect(codex.getCredentialState).toHaveBeenCalledTimes(2);
-  });
-
-  it('isolates first-check failures and preserves an existing credential on refresh failure', async () => {
-    const codex = createProvider('codex');
-    codex.getCredentialState.mockRejectedValueOnce(
-      new Error('runtime failed'),
-    );
-    const { service, warn } = createService([codex]);
-    const events: AgentProviderSetupSnapshot[] = [];
-    service.subscribe((snapshot) => events.push(snapshot));
-
-    await service.getSetup();
-    await vi.waitFor(() => {
-      expect(
-        providerFrom(events.at(-1)!, 'codex').credential.status,
-      ).toBe('unavailable');
-    });
-
-    codex.getCredentialState.mockResolvedValueOnce({
-      status: 'authenticated',
-      account: { email: 'student@example.com' },
-    });
-    await service.getSetup();
-    await vi.waitFor(() => {
-      expect(
-        providerFrom(events.at(-1)!, 'codex').credential.status,
-      ).toBe('authenticated');
-    });
-
-    codex.getCredentialState.mockRejectedValueOnce(
-      new Error('temporary network failure'),
-    );
-    await service.getSetup();
-    await vi.waitFor(() => {
-      const provider = providerFrom(events.at(-1)!, 'codex');
-      expect(provider.credential.status).toBe('authenticated');
-      expect(provider.refreshError).toBe(
-        '最新状态检查失败，可重新检查。',
-      );
-    });
-    expect(warn).toHaveBeenCalledTimes(2);
-  });
-
-  it('waits for a fresh authenticated state before selecting a Provider', async () => {
-    const credential = deferred<AgentProviderCredentialSnapshot>();
-    const codex = createProvider('codex', () => credential.promise);
-    const { service, updateSelectedAgentProviderId } =
-      createService([codex]);
-
-    const selection = service.selectProvider('codex');
-    expect(updateSelectedAgentProviderId).not.toHaveBeenCalled();
-
-    credential.resolve({
-      status: 'authenticated',
-      account: { email: 'student@example.com' },
-    });
-    const setup = await selection;
-
-    expect(updateSelectedAgentProviderId).toHaveBeenCalledWith('codex');
-    expect(setup.activeProviderId).toBe('codex');
-  });
-
-  it('does not let a pre-login check overwrite the newer login generation', async () => {
-    const staleCredential =
-      deferred<AgentProviderCredentialSnapshot>();
-    const timers = createTimerHarness();
-    const codex = createProvider(
-      'codex',
-      () => staleCredential.promise,
-    );
-    const { service } = createService([codex], null, {
-      setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
-    });
-    const events: AgentProviderSetupSnapshot[] = [];
-    service.subscribe((snapshot) => events.push(snapshot));
-
-    await service.getSetup();
-    await service.startLogin('codex');
-    staleCredential.resolve({
-      status: 'authenticated',
-      account: { email: 'stale@example.com' },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(
-      providerFrom(events.at(-1)!, 'codex').credential.status,
-    ).toBe('checking');
-    expect(timers.size).toBe(1);
-  });
-
-  it('rejects selection when the fresh state is unauthenticated', async () => {
-    const codex = createProvider('codex');
-    const { service, updateSelectedAgentProviderId } =
-      createService([codex]);
-
-    await expect(service.selectProvider('codex')).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_AUTH_REQUIRED',
-    });
-    expect(updateSelectedAgentProviderId).not.toHaveBeenCalled();
-  });
-
-  it('resolves the selected authenticated Provider and keeps explicit task assignments pinned', async () => {
-    const authenticated = {
-      status: 'authenticated' as const,
-      account: {},
-    };
-    const codex = createProvider('codex', authenticated);
-    const claude = createProvider('claude-code', authenticated);
-    const { service } = createService([codex, claude], 'codex');
-
-    await expect(service.resolveRunner()).resolves.toBe(codex);
-    await service.selectProvider('claude-code');
-    await expect(service.resolveRunner()).resolves.toBe(claude);
-    await expect(service.resolveRunner('codex')).resolves.toBe(codex);
-  });
-
-  it('requires a selected and authenticated Provider before resolving a runner', async () => {
-    const codex = createProvider('codex');
-    const { service } = createService([codex]);
-
-    await expect(service.resolveRunner()).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
-    });
-    await expect(service.resolveRunner('codex')).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_AUTH_REQUIRED',
-    });
-  });
-
-  it('polls login in Main until the Provider becomes authenticated', async () => {
-    const timers = createTimerHarness();
-    const codex = createProvider('codex', {
-      status: 'authenticated',
-      account: { email: 'student@example.com' },
-    });
-    const { service } = createService([codex], null, {
-      setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
-      loginPollIntervalMs: 10,
-    });
-
-    await service.startLogin('codex');
-    expect(timers.size).toBe(1);
-    timers.runNext();
-
-    await vi.waitFor(() => {
-      expect(codex.getCredentialState).toHaveBeenCalledOnce();
-      expect(timers.size).toBe(0);
-    });
-  });
-
-  it('cancels a replaced login and disposes Provider-owned resources', async () => {
-    const timers = createTimerHarness();
-    const codex = createProvider('codex');
-    codex.startLogin
-      .mockResolvedValueOnce({
-        type: 'external-browser',
-        providerId: 'codex',
-        loginId: 'login-1',
-        url: 'https://example.com/login-1',
-      })
-      .mockResolvedValueOnce({
-        type: 'external-browser',
-        providerId: 'codex',
-        loginId: 'login-2',
-        url: 'https://example.com/login-2',
-      });
-    const { service } = createService([codex], null, {
-      setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
-    });
-
-    await service.startLogin('codex');
-    await service.startLogin('codex');
-
-    expect(codex.cancelLogin).toHaveBeenCalledWith('login-1');
     await service.dispose();
-    expect(codex.cancelLogin).toHaveBeenCalledWith('login-2');
-    expect(timers.size).toBe(0);
-    codex.expectInvalidationDisposed();
   });
 
-  it('refreshes only the invalidated Provider', async () => {
-    const codex = createProvider('codex');
-    const claude = createProvider('claude-code');
-    createService([codex, claude]);
+  it('creates multiple API connections while keeping keys outside settings', async () => {
+    const { service, connections, secretValues } = createService();
 
-    codex.invalidate();
-    await vi.waitFor(() => {
-      expect(codex.getCredentialState).toHaveBeenCalledOnce();
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'secret-one',
     });
-    expect(claude.getCredentialState).not.toHaveBeenCalled();
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Doubao',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret-two',
+    });
+
+    expect(connections.get('codex-api-connection-1')).toEqual({
+      id: 'codex-api-connection-1',
+      providerId: 'codex',
+      kind: 'api-key',
+      displayName: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/v1',
+    });
+    expect(JSON.stringify([...connections.values()])).not.toContain('secret-one');
+    expect(secretValues.get('codex/codex-api-connection-1')).toBe('secret-one');
+    expect(connections.get('codex-api-connection-2')).toMatchObject({
+      displayName: 'Doubao',
+      baseUrl: 'https://example.com/v1',
+    });
+    expect(secretValues.get('codex/codex-api-connection-2')).toBe('secret-two');
+
+    await service.dispose();
   });
 
-  it('isolates listener failures', async () => {
-    const codex = createProvider('codex');
-    const { service, warn } = createService([codex]);
-    const healthyListener = vi.fn();
-    service.subscribe(() => {
-      throw new Error('listener failed');
+  it('marks API connections ready from URL reachability without validating the key', async () => {
+    const probeUrl = vi.fn(async () => undefined);
+    const { service } = createService({ probeUrl });
+
+    const setup = await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'not-proactively-validated',
     });
-    service.subscribe(healthyListener);
 
-    await service.getSetup();
-
-    expect(healthyListener).toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(
-      'Agent Provider 状态监听器执行失败',
-      expect.any(Error),
+    expect(probeUrl).toHaveBeenCalledWith(
+      'https://example.com/v1/responses',
     );
+    expect(setup.providers[0]?.connections[1]).toMatchObject({
+      status: 'ready',
+      hasApiKey: true,
+    });
+
+    await service.dispose();
+  });
+
+  it('accepts a full Responses endpoint and stores the Codex API root', async () => {
+    const probeUrl = vi.fn(async () => undefined);
+    const { service, connections } = createService({ probeUrl });
+
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'OpenAI',
+      baseUrl: 'https://api.openai.com/v1/responses',
+      apiKey: 'secret',
+    });
+
+    expect(connections.get('codex-api-connection-1')).toMatchObject({
+      baseUrl: 'https://api.openai.com/v1',
+    });
+    expect(probeUrl).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/responses',
+    );
+
+    await service.dispose();
+  });
+
+  it('keeps a configured API connection but marks it unavailable when URL probing fails', async () => {
+    const { service } = createService({
+      probeUrl: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    });
+
+    const setup = await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Offline',
+      baseUrl: 'https://offline.example/v1',
+      apiKey: 'secret',
+    });
+
+    expect(setup.providers[0]?.connections[1]).toMatchObject({
+      status: 'unavailable',
+      hasApiKey: true,
+    });
+
+    await service.dispose();
+  });
+
+  it('persists Selector configuration without resolving Connection readiness', async () => {
+    const inspectAccountConnection = vi.fn(async () => ({
+      status: 'unconfigured' as const,
+    }));
+    const provider = createProvider(inspectAccountConnection);
+    const { service, settings } = createService({ provider });
+
+    await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+
+    expect(inspectAccountConnection).not.toHaveBeenCalled();
+
+    expect(settings.updateAgentProviderSelectorSelection).toHaveBeenCalledWith({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+    await expect(
+      service.resolveRunner({
+        providerId: 'codex',
+        connectionId: 'codex-account',
+        modelId: 'gpt-test',
+        reasoningEffort: 'medium',
+      }),
+    ).rejects.toThrow('AGENT_PROVIDER_AUTH_REQUIRED');
+    expect(inspectAccountConnection).toHaveBeenCalledOnce();
+
+    await service.dispose();
+  });
+
+  it('allows a manual model id for an API Connection', async () => {
+    const { service } = createService();
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+    });
+
+    const setup = await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-api-connection-1',
+      modelId: 'deepseek-chat',
+      reasoningEffort: null,
+    });
+
+    expect(setup.selections[0]).toMatchObject({
+      connectionId: 'codex-api-connection-1',
+      modelId: 'deepseek-chat',
+    });
+
+    await service.dispose();
+  });
+
+  it('resolves a runner bound to the selected Connection', async () => {
+    const { service, provider } = createService();
+    await service.getModelCatalog('codex', 'codex-account');
+
+    const runner = await service.resolveRunner({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+    });
+
+    expect(runner).toMatchObject({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+    });
+    expect(provider.createRunner).toHaveBeenCalledWith({
+      configuration: expect.objectContaining({ id: 'codex-account' }),
+    });
+
+    await service.dispose();
+  });
+
+  it('starts account login for the explicit Connection', async () => {
+    const { service, provider } = createService();
+
+    await expect(
+      service.startLogin('codex', 'codex-account'),
+    ).resolves.toMatchObject({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      loginId: 'login-1',
+    });
+    expect(provider.startLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex-account' }),
+    );
+
+    await service.dispose();
+  });
+
+  it('deletes only removable Connections and their encrypted secret', async () => {
+    const { service, secretValues } = createService();
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+    });
+
+    const setup = await service.deleteConnection(
+      'codex',
+      'codex-api-connection-1',
+    );
+
+    expect(setup.providers[0]?.connections).toHaveLength(1);
+    expect(secretValues.size).toBe(0);
+    await expect(
+      service.deleteConnection('codex', 'codex-account'),
+    ).rejects.toThrow();
+
+    await service.dispose();
   });
 });

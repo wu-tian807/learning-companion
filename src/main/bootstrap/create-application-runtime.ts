@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { safeStorage } from 'electron';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
 import { AgentFunctionToolRegistry } from '../agents/function-tools/agent-function-tool-registry';
@@ -7,6 +8,7 @@ import { createAgentCapabilityPaths } from '../agents/capabilities/agent-capabil
 import { AgentMcpService } from '../agents/mcp/agent-mcp-service';
 import { AgentSkillService } from '../agents/skills/agent-skill-service';
 import { AgentSessionService } from '../agents/sessions/agent-session-service';
+import { EncryptedAgentProviderSecretFile } from '../agents/agent-provider-secret-file';
 import { AgentWorkspaceManager } from '../agents/workspaces/agent-workspace-manager';
 import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
@@ -113,6 +115,10 @@ export async function createApplicationRuntime({
       isPackaged,
       resourcesPath,
     });
+    const agentProviderSecrets = new EncryptedAgentProviderSecretFile(
+      appPaths.agentProviderSecretsFile,
+      safeStorage,
+    );
     const settingsRepository = new JsonSettingsRepository(
       appPaths.settingsFile,
       {
@@ -152,7 +158,15 @@ export async function createApplicationRuntime({
     ]);
     agentProviderService = createAgentProviderService(
       settingsRepository,
+      agentProviderSecrets,
       codexRuntimeService,
+      (environment) =>
+        createCodexRuntime({
+          codexHomePath,
+          isPackaged,
+          resourcesPath,
+          environment,
+        }),
       agentSessionService,
       agentFunctionTools,
       agentSkills,

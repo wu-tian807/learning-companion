@@ -1,5 +1,9 @@
 import type { AppPreferences, HomePreferences } from '../../shared/app-preferences';
 import type { AppSetupSnapshot } from '../../shared/app-setup';
+import type {
+  AgentProviderConnectionConfiguration,
+  AgentProviderSelectorSelectionSnapshot,
+} from '../../shared/agent-providers';
 
 export interface SettingsRepository {
   initialize(): Promise<void>;
@@ -12,6 +16,19 @@ export interface SettingsRepository {
   updateDefaultProjectWorkspace(directory: string): Promise<void>;
   getExternalLibrariesPath(): string;
   updateExternalLibrariesPath(directory: string): Promise<void>;
-  getSelectedAgentProviderId(): string | null;
-  updateSelectedAgentProviderId(providerId: string): Promise<void>;
+  listAgentProviderConnections(): readonly AgentProviderConnectionConfiguration[];
+  getAgentProviderConnection(
+    connectionId: string,
+  ): AgentProviderConnectionConfiguration | undefined;
+  updateAgentProviderConnection(
+    connection: AgentProviderConnectionConfiguration,
+  ): Promise<void>;
+  deleteAgentProviderConnection(connectionId: string): Promise<void>;
+  listAgentProviderSelectorSelections(): readonly AgentProviderSelectorSelectionSnapshot[];
+  getAgentProviderSelectorSelection(
+    selectorId: string,
+  ): AgentProviderSelectorSelectionSnapshot | undefined;
+  updateAgentProviderSelectorSelection(
+    selection: AgentProviderSelectorSelectionSnapshot,
+  ): Promise<void>;
 }

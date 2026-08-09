@@ -80,6 +80,7 @@ function createProcessContext(
         purpose,
         sessionId: 'session-1',
         providerId: 'codex',
+        connectionId: 'codex-account',
         modelId: 'gpt-test',
         startedTime: 1,
         completedTime: 2,

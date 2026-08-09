@@ -29,6 +29,9 @@ export interface GenerationTaskView {
   readonly definitionVersion: number;
   readonly status: GenerationTaskStatus;
   readonly assignedProviderId?: string;
+  readonly assignedConnectionId?: string;
+  readonly assignedModelId?: string;
+  readonly assignedReasoningEffort?: string;
   readonly sessionId?: string;
   readonly result?: JsonValue;
   readonly metrics: JsonValue;
@@ -172,6 +175,12 @@ export function isGenerationTaskView(
     isGenerationTaskStatus(value.status) &&
     (value.assignedProviderId === undefined ||
       isRequiredText(value.assignedProviderId)) &&
+    (value.assignedConnectionId === undefined ||
+      isRequiredText(value.assignedConnectionId)) &&
+    (value.assignedModelId === undefined ||
+      isRequiredText(value.assignedModelId)) &&
+    (value.assignedReasoningEffort === undefined ||
+      isRequiredText(value.assignedReasoningEffort)) &&
     (value.sessionId === undefined || isRequiredText(value.sessionId)) &&
     (value.result === undefined || isJsonValue(value.result)) &&
     isJsonValue(value.metrics) &&

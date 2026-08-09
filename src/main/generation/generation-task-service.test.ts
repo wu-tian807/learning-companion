@@ -112,6 +112,7 @@ describe('GenerationTaskService', () => {
       projectId: 'project-1',
       definitionId: definition.id,
       definitionVersion: definition.version,
+      providerSelectorId: definition.providerSelectorId,
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
       defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
@@ -159,6 +160,7 @@ describe('GenerationTaskService', () => {
     let turnNumber = 0;
     const runner: GenerationAgentRunner = {
       providerId: 'codex',
+      connectionId: 'codex-account',
       async *runTurn(request) {
         requests.push(
           request.sessionId ? { sessionId: request.sessionId } : {},
@@ -192,6 +194,7 @@ describe('GenerationTaskService', () => {
         return {
           sessionId: 'session-1',
           providerId: 'codex',
+          connectionId: 'codex-account',
           modelId: 'gpt-5.2',
           providerExecutionId: `turn-${turnNumber}`,
           startedTime: turnNumber * 10,
@@ -206,21 +209,27 @@ describe('GenerationTaskService', () => {
       },
     };
     const database = new MemoryGenerationTaskDatabase();
-    const resolvedProviderIds: Array<string | undefined> = [];
-    let selectedRunner: GenerationAgentRunner = runner;
+    const resolvedProviderIds: string[] = [];
+    let selectedProviderId = 'codex';
+    let selectedConnectionId = 'codex-account';
+    let codexRunner: GenerationAgentRunner = runner;
     const runnerResolver = {
-      async resolveRunner(providerId?: string) {
-        resolvedProviderIds.push(providerId);
+      resolveSelectorConfiguration() {
+        return {
+          providerId: selectedProviderId,
+          connectionId: selectedConnectionId,
+        };
+      },
+      async resolveRunner(configuration: { providerId: string }) {
+        resolvedProviderIds.push(configuration.providerId);
 
-        if (providerId === undefined) {
-          return selectedRunner;
+        if (configuration.providerId !== 'codex') {
+          throw new Error(
+            `unexpected Provider: ${configuration.providerId}`,
+          );
         }
 
-        if (providerId !== 'codex') {
-          throw new Error(`unexpected Provider: ${providerId}`);
-        }
-
-        return runner;
+        return codexRunner;
       },
     };
     let nextTaskNumber = 1;
@@ -263,8 +272,11 @@ describe('GenerationTaskService', () => {
     }
 
     expect(requests).toEqual([{}]);
-    expect(resolvedProviderIds).toEqual([undefined]);
+    expect(resolvedProviderIds).toEqual(['codex']);
     expect(database.get('task-1')?.assignedProviderId).toBe('codex');
+    expect(database.get('task-1')?.assignedConnectionId).toBe(
+      'codex-account',
+    );
     expect(next.value).toMatchObject({
       taskId: 'task-1',
       result: { resultAssetId: 'generated-mindmap' },
@@ -280,6 +292,7 @@ describe('GenerationTaskService', () => {
             callKey: 'generate',
             purpose: 'generation',
             providerId: 'codex',
+            connectionId: 'codex-account',
             modelId: 'gpt-5.2',
             sessionId: 'session-1',
             turnCount: 1,
@@ -331,8 +344,9 @@ describe('GenerationTaskService', () => {
       instruction: new MindMapGenerationInstruction().toSnapshot(),
       assetReferences: { sources: [{ assetId: 'asset-1' }] },
     });
-    selectedRunner = {
+    codexRunner = {
       providerId: 'codex',
+      connectionId: 'codex-account',
       async *runTurn() {
         yield* [] as never[];
         throw new Error('simulated Agent interruption');
@@ -344,18 +358,15 @@ describe('GenerationTaskService', () => {
     );
     expect(database.get(retryable.id)?.assignedProviderId).toBe('codex');
 
-    selectedRunner = {
-      providerId: 'claude-code',
-      async *runTurn() {
-        yield* [] as never[];
-        throw new Error('switched Provider must not run this task');
-      },
-    };
+    selectedProviderId = 'claude-code';
+    selectedConnectionId = 'claude-account';
+    codexRunner = runner;
     await drain(service.run(retryable.id));
-    expect(resolvedProviderIds.slice(-2)).toEqual([undefined, 'codex']);
+    expect(resolvedProviderIds.slice(-2)).toEqual(['codex', 'codex']);
     expect(database.get(retryable.id)?.completed).toBeDefined();
 
-    selectedRunner = runner;
+    selectedProviderId = 'codex';
+    selectedConnectionId = 'codex-account';
     const backgroundEvents: string[] = [];
     const unsubscribe = service.subscribe((event) => {
       backgroundEvents.push(event.type);

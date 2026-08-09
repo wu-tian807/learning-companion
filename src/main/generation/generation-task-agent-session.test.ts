@@ -35,6 +35,7 @@ describe('GenerationTaskAgentSession', () => {
       projectId: 'project-1',
       definitionId: 'mindmap.generate',
       definitionVersion: 1,
+      providerSelectorId: 'generation-center',
       instruction: {
         toSnapshot: () => null,
         toUserMessage: () => createTextAgentUserMessage('generate'),
@@ -67,6 +68,7 @@ describe('GenerationTaskAgentSession', () => {
     let turnNumber = 0;
     const runner: GenerationAgentRunner = {
       providerId: 'codex',
+      connectionId: 'codex-account',
       async *runTurn(request) {
         yield* [] as never[];
         requests.push(request);
@@ -74,6 +76,7 @@ describe('GenerationTaskAgentSession', () => {
         return {
           sessionId: 'session-1',
           providerId: 'codex',
+          connectionId: 'codex-account',
           modelId: 'gpt-test',
           providerExecutionId: `turn-${turnNumber}`,
           startedTime: turnNumber * 10,
@@ -90,7 +93,13 @@ describe('GenerationTaskAgentSession', () => {
       prepared,
       database,
       new GenerationAgentExecutor(),
-      { resolveRunner },
+      {
+        resolveSelectorConfiguration: () => ({
+          providerId: 'codex',
+          connectionId: 'codex-account',
+        }),
+        resolveRunner,
+      },
       new AbortController().signal,
       {
         now: () => checkpointTime++,
@@ -113,6 +122,7 @@ describe('GenerationTaskAgentSession', () => {
       ]);
     expect(task.getSnapshot()).toMatchObject({
       assignedProviderId: 'codex',
+      assignedConnectionId: 'codex-account',
       agentCalls: [
         { callKey: 'generate', purpose: 'generation', sessionId: 'session-1' },
         { callKey: 'repair-1', purpose: 'repair', sessionId: 'session-1' },
@@ -131,7 +141,13 @@ describe('GenerationTaskAgentSession', () => {
       prepared,
       database,
       new GenerationAgentExecutor(),
-      { resolveRunner: recoveredResolver },
+      {
+        resolveSelectorConfiguration: () => ({
+          providerId: 'codex',
+          connectionId: 'codex-account',
+        }),
+        resolveRunner: recoveredResolver,
+      },
       new AbortController().signal,
       { now: () => 100, emit: vi.fn() },
     );

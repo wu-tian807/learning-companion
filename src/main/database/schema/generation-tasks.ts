@@ -28,6 +28,9 @@ export const generationTasks = sqliteTable(
     preparedTime: integer('prepared_time'),
     preparedManifestRef: text('prepared_manifest_ref'),
     assignedProviderId: text('assigned_provider_id'),
+    assignedConnectionId: text('assigned_connection_id'),
+    assignedModelId: text('assigned_model_id'),
+    assignedReasoningEffort: text('assigned_reasoning_effort'),
     agentCalls: text('agent_calls_json', { mode: 'json' })
       .$type<readonly GenerationTaskAgentCallCheckpoint[]>()
       .notNull(),
