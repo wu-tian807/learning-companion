@@ -65,13 +65,13 @@ afterEach(async () => {
 
 describe('LibreOfficePreviewProducer', () => {
   it('runs a headless isolated conversion and validates the PDF', async () => {
-    const request = await createRequest();
+    const request = await createRequest('中文课程.docx');
     const commandRunner = {
       run: vi.fn(async (command) => {
         const outputDirectory =
           command.args[command.args.indexOf('--outdir') + 1];
         await writeFile(
-          join(outputDirectory, 'course.pdf'),
+          join(outputDirectory, 'source.pdf'),
           '%PDF-1.7\npreview\n%%EOF\n',
         );
         return { stdout: '', stderr: '' };
@@ -95,7 +95,7 @@ describe('LibreOfficePreviewProducer', () => {
           '--headless',
           '--convert-to',
           'pdf',
-          request.source.absolutePath,
+          expect.stringMatching(/[\\/]source\.docx$/u),
         ]),
         signal: expect.any(AbortSignal),
       }),
@@ -117,7 +117,7 @@ describe('LibreOfficePreviewProducer', () => {
             const outputDirectory =
               command.args[command.args.indexOf('--outdir') + 1];
             await writeFile(
-              join(outputDirectory, 'course.pdf'),
+              join(outputDirectory, 'source.pdf'),
               'not a pdf',
             );
             return { stdout: '', stderr: '' };
@@ -140,28 +140,25 @@ describe('LibreOfficePreviewProducer', () => {
     });
     let activeCommands = 0;
     let maximumCommands = 0;
+    let commandCount = 0;
     const producer = new LibreOfficePreviewProducer(
       createExternalLibraries(),
       {
         commandRunner: {
           run: vi.fn(async (command) => {
+            const commandIndex = commandCount;
+            commandCount += 1;
             activeCommands += 1;
             maximumCommands = Math.max(maximumCommands, activeCommands);
-            const sourcePath = command.args.at(-1)!;
 
-            if (sourcePath.endsWith('first.docx')) {
+            if (commandIndex === 0) {
               await firstGate;
             }
 
             const outputDirectory =
               command.args[command.args.indexOf('--outdir') + 1];
             await writeFile(
-              join(
-                outputDirectory,
-                sourcePath.endsWith('first.docx')
-                  ? 'first.pdf'
-                  : 'second.pdf',
-              ),
+              join(outputDirectory, 'source.pdf'),
               '%PDF-1.7\npreview\n%%EOF\n',
             );
             activeCommands -= 1;

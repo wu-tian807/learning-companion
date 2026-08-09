@@ -180,6 +180,39 @@ describe('createCodexGenerationConfiguration', () => {
     expect(writable.fingerprint).not.toBe(readOnly.fingerprint);
   });
 
+  it('uses the built-in read-only profile for prompt-only document AI turns', () => {
+    const promptOnlyRequest: GenerationAgentTurnRequest = {
+      ...request(),
+      toolRequirements: [],
+      workspaces: {
+        primary: {
+          ...request().workspaces.primary,
+          permissions: { read: false, write: false },
+        },
+        secondary: [],
+      },
+    };
+    const tools = resolveCodexGenerationTools(
+      promptOnlyRequest,
+      new AgentFunctionToolRegistry(),
+    );
+    const configuration = createCodexGenerationConfiguration(
+      promptOnlyRequest,
+      { disabledMcpServers: [], disabledSkillPaths: [] },
+      tools,
+      emptyCapabilities,
+    );
+
+    expect(configuration.profileId).toBe(':read-only');
+    expect(configuration.threadInput.permissions).toBe(':read-only');
+    expect(configuration.threadInput.configOverrides).toMatchObject({
+      default_permissions: ':read-only',
+    });
+    expect(configuration.threadInput.configOverrides).not.toHaveProperty(
+      'permissions',
+    );
+  });
+
   it('includes selected dynamic tools and their version in the fingerprint', () => {
     const generationRequest = request();
     const environment = {

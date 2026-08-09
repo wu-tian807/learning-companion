@@ -105,7 +105,7 @@ describe('viewer Workbench context action bundles', () => {
     expectWorkbenchSpecificContextMenu(bundle, [
       '复制选中内容',
       '适应整页',
-      '总结当前页',
+      'AI 总结当前页',
     ]);
   });
 

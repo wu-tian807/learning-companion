@@ -1,5 +1,14 @@
-import { open, lstat, mkdir, readdir } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import {
+  copyFile,
+  open,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type {
@@ -21,13 +30,25 @@ export const LIBREOFFICE_PREVIEW_PRODUCER_ID =
   'builtin.office.preview';
 export const LIBREOFFICE_PREVIEW_ARTIFACT_KEY = 'preview';
 export const LIBREOFFICE_PREVIEW_PRODUCER_VERSION =
-  'office-preview@1+libreoffice@26.2.5';
+  'office-preview@4+powerpoint-animation-final-state+libreoffice@26.2.5';
 
 const OFFICE_MEDIA_TYPES = new Set([
   'application/msword',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const OFFICE_EXTENSIONS = new Map<string, string>([
+  ['application/msword', '.doc'],
+  ['application/vnd.ms-powerpoint', '.ppt'],
+  [
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.pptx',
+  ],
+  [
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.docx',
+  ],
 ]);
 const CONVERSION_TIMEOUT_MS = 5 * 60 * 1000;
 const PDF_HEADER = new TextEncoder().encode('%PDF-');
@@ -38,6 +59,10 @@ function isAbortError(error: unknown): boolean {
     error instanceof Error &&
     error.name === 'AbortError'
   );
+}
+
+function powershellStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function includesBytes(
@@ -145,6 +170,7 @@ export class LibreOfficePreviewProducer
   readonly id = LIBREOFFICE_PREVIEW_PRODUCER_ID;
   readonly version = LIBREOFFICE_PREVIEW_PRODUCER_VERSION;
   private readonly commandRunner: ExternalCommandRunnerApi;
+  private readonly enableNativePowerPoint: boolean;
   private queueTail: Promise<void> = Promise.resolve();
 
   constructor(
@@ -153,6 +179,7 @@ export class LibreOfficePreviewProducer
   ) {
     this.commandRunner =
       dependencies.commandRunner ?? new ExternalCommandRunner();
+    this.enableNativePowerPoint = dependencies.commandRunner === undefined;
   }
 
   async produce(
@@ -201,65 +228,156 @@ export class LibreOfficePreviewProducer
         await this.externalLibraries.requireExecutable(
           LIBREOFFICE_LIBRARY_ID,
         );
-      const outputDirectory = join(
-        request.stagingDirectory,
-        'output',
-      );
-      const profileDirectory = join(
-        request.stagingDirectory,
-        'libreoffice-profile',
-      );
-      await Promise.all([
-        mkdir(outputDirectory, { recursive: true }),
-        mkdir(profileDirectory, { recursive: true }),
-      ]);
-      await this.commandRunner.run({
-        command: executablePath,
-        args: [
-          '--headless',
-          '--nologo',
-          '--nodefault',
-          '--nofirststartwizard',
-          '--norestore',
-          `-env:UserInstallation=${pathToFileURL(profileDirectory).href}`,
-          '--convert-to',
-          'pdf',
-          '--outdir',
-          outputDirectory,
-          request.source.absolutePath,
-        ],
-        cwd: request.stagingDirectory,
-        timeoutMs: CONVERSION_TIMEOUT_MS,
-        signal,
-      });
-      signal.throwIfAborted();
-      const outputNames = (await readdir(outputDirectory)).filter(
-        (name) => extname(name).toLowerCase() === '.pdf',
+      const sourceExtension = OFFICE_EXTENSIONS.get(
+        request.source.mediaType,
       );
 
-      if (outputNames.length !== 1) {
-        throw new AppError('OFFICE_PREVIEW_FAILED');
+      if (!sourceExtension) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
       }
 
-      const filePath = join(outputDirectory, outputNames[0]);
-      const expectedBaseName = basename(
-        request.source.absolutePath,
-        extname(request.source.absolutePath),
+      // LibreOffice on Windows can corrupt any CJK segment in its command
+      // line paths. Keep the whole conversion workspace in the OS temp
+      // directory, then copy the validated result back into managed staging.
+      const conversionDirectory = await mkdtemp(
+        join(tmpdir(), 'learning-companion-office-'),
       );
 
-      if (
-        basename(filePath, extname(filePath)) !== expectedBaseName
-      ) {
-        throw new AppError('OFFICE_PREVIEW_FAILED');
+      try {
+        const outputDirectory = join(conversionDirectory, 'output');
+        const profileDirectory = join(conversionDirectory, 'profile');
+        const stagedSourcePath = join(
+          conversionDirectory,
+          `source${sourceExtension}`,
+        );
+        await Promise.all([
+          mkdir(outputDirectory, { recursive: true }),
+          mkdir(profileDirectory, { recursive: true }),
+          copyFile(request.source.absolutePath, stagedSourcePath),
+        ]);
+
+        const isPresentation =
+          sourceExtension === '.ppt' || sourceExtension === '.pptx';
+        const powerpointOutputPath = join(outputDirectory, 'source.pdf');
+
+        if (
+          process.platform === 'win32' &&
+          isPresentation &&
+          this.enableNativePowerPoint
+        ) {
+          const exportScript = [
+            "$ErrorActionPreference='Stop'",
+            '$app=$null',
+            '$deck=$null',
+            `$sourcePath=${powershellStringLiteral(stagedSourcePath)}`,
+            `$outputPath=${powershellStringLiteral(powerpointOutputPath)}`,
+            'try {',
+            '  $app=New-Object -ComObject PowerPoint.Application',
+            '  $deck=$app.Presentations.Open($sourcePath,$true,$false,$false)',
+            '  foreach($slide in $deck.Slides) {',
+            '    $sequence=$slide.TimeLine.MainSequence',
+            '    while($sequence.Count -gt 0) {$sequence.Item(1).Delete()}',
+            '    $interactive=$slide.TimeLine.InteractiveSequences',
+            '    for($index=$interactive.Count;$index -ge 1;$index--) {',
+            '      $interactiveSequence=$interactive.Item($index)',
+            '      while($interactiveSequence.Count -gt 0) {$interactiveSequence.Item(1).Delete()}',
+            '    }',
+            '  }',
+            // ppSaveAsPDF = 32. PowerPoint's own renderer preserves OMML
+            // equations and exports the fully built slide appearance.
+            '  $deck.SaveAs($outputPath,32)',
+            '} finally {',
+            '  if($null -ne $deck){$deck.Close()}',
+            '  if($null -ne $app){$app.Quit()}',
+            '}',
+          ].join('; ');
+
+          try {
+            await this.commandRunner.run({
+              command: join(
+                process.env.SystemRoot ?? 'C:\\Windows',
+                'System32',
+                'WindowsPowerShell',
+                'v1.0',
+                'powershell.exe',
+              ),
+              args: [
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                exportScript,
+              ],
+              cwd: conversionDirectory,
+              timeoutMs: CONVERSION_TIMEOUT_MS,
+              signal,
+            });
+            signal.throwIfAborted();
+            await validatePdf(powerpointOutputPath);
+          } catch (error) {
+            if (isAbortError(error) || signal.aborted) {
+              throw error;
+            }
+            await rm(powerpointOutputPath, { force: true }).catch(
+              () => undefined,
+            );
+          }
+        }
+
+        if (!(await lstat(powerpointOutputPath).catch(() => undefined))) {
+        await this.commandRunner.run({
+          command: executablePath,
+          args: [
+            '--headless',
+            '--nologo',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--norestore',
+            `-env:UserInstallation=${pathToFileURL(profileDirectory).href}`,
+            '--convert-to',
+            'pdf',
+            '--outdir',
+            outputDirectory,
+            stagedSourcePath,
+          ],
+          cwd: conversionDirectory,
+          timeoutMs: CONVERSION_TIMEOUT_MS,
+          signal,
+        });
+        }
+        signal.throwIfAborted();
+        const outputNames = (await readdir(outputDirectory)).filter(
+          (name) => extname(name).toLowerCase() === '.pdf',
+        );
+
+        if (
+          outputNames.length !== 1 ||
+          outputNames[0].toLowerCase() !== 'source.pdf'
+        ) {
+          throw new AppError('OFFICE_PREVIEW_FAILED');
+        }
+
+        const convertedPath = join(outputDirectory, outputNames[0]);
+        await validatePdf(convertedPath);
+        const managedOutputDirectory = join(
+          request.stagingDirectory,
+          'output',
+        );
+        const filePath = join(managedOutputDirectory, 'preview.pdf');
+        await mkdir(managedOutputDirectory, { recursive: true });
+        await copyFile(convertedPath, filePath);
+        await validatePdf(filePath);
+
+        return Object.freeze({
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        });
+      } finally {
+        await rm(conversionDirectory, {
+          recursive: true,
+          force: true,
+        }).catch(() => undefined);
       }
-
-      await validatePdf(filePath);
-
-      return Object.freeze({
-        filePath,
-        mediaType: 'application/pdf',
-        extension: 'pdf',
-      });
     } catch (error) {
       if (
         isAbortError(error) ||

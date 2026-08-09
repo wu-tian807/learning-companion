@@ -67,6 +67,13 @@ function mapOfficeTarget(
       anchorVersion: OFFICE_ANCHOR_VERSION,
     };
   }
+  if (target.anchorType === 'pdf.region') {
+    return {
+      ...target,
+      anchorType: 'office.preview.region',
+      anchorVersion: OFFICE_ANCHOR_VERSION,
+    };
+  }
 
   return target;
 }

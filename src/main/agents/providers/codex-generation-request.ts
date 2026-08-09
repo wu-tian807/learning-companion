@@ -207,7 +207,11 @@ export function createCodexGenerationConfiguration(
     })),
   };
   const fingerprint = hashJson(descriptor);
-  const profileId = `lc-generation-${fingerprint.slice(0, 24)}`;
+  const usesBuiltInReadOnlyProfile =
+    readableWorkspaces.length === 0 && capabilities.skills.length === 0;
+  const profileId = usesBuiltInReadOnlyProfile
+    ? ':read-only'
+    : `lc-generation-${fingerprint.slice(0, 24)}`;
   const runtimeWorkspaceRoots = readableWorkspaces.map(({ path }) => path);
   const filesystem: CodexJsonObject = {
     ':minimal': 'read',
@@ -266,12 +270,16 @@ export function createCodexGenerationConfiguration(
     tools: { view_image: viewImageEnabled },
     web_search: 'disabled',
     default_permissions: profileId,
-    permissions: {
-      [profileId]: {
-        filesystem,
-        network: { enabled: false },
-      },
-    },
+    ...(usesBuiltInReadOnlyProfile
+      ? {}
+      : {
+          permissions: {
+            [profileId]: {
+              filesystem,
+              network: { enabled: false },
+            },
+          },
+        }),
     ...disabledMcpServerOverrides,
     ...(Object.keys(selectedMcpServers).length > 0
       ? { mcp_servers: selectedMcpServers }

@@ -26,6 +26,9 @@ import type {
   WorkbenchCommandResult,
   WorkbenchOpenRequest,
 } from "../shared/workbench/protocol";
+import type { AssetAttachment } from "../shared/workbench/attachment";
+import type { AssetTarget } from "../shared/workbench/anchor";
+import type { JsonValue } from "../shared/workbench/protocol";
 import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
@@ -39,6 +42,8 @@ import type {
   AssetIdRequest,
   DeleteAssetsRequest,
   DeleteAssetsResult,
+  DocumentAiRequest,
+  DocumentAiResponse,
   HealthCheckResponse,
   LearningCompanionApi,
   OpenExternalRequest,
@@ -215,6 +220,24 @@ const api: LearningCompanionApi = {
     invoke<void>(IPC_CHANNELS.closeWorkbench, request),
   onWorkbenchFacilityEvent: (listener) =>
     subscribeWorkbenchFacilityEvents(ipcRenderer, listener),
+  listAttachments: (request: {
+    projectId: string;
+    assetId: string;
+  }) => invoke<AssetAttachment[]>(IPC_CHANNELS.listAttachments, request),
+  createAttachment: (request: {
+    projectId: string;
+    assetId: string;
+    typeId: string;
+    typeVersion: number;
+    target: AssetTarget;
+    metadata: JsonValue;
+  }) => invoke<AssetAttachment>(IPC_CHANNELS.createAttachment, request),
+  deleteAttachment: (request: {
+    projectId: string;
+    attachmentId: string;
+  }) => invoke<void>(IPC_CHANNELS.deleteAttachment, request),
+  askDocumentAi: (request: DocumentAiRequest) =>
+    invoke<DocumentAiResponse>(IPC_CHANNELS.askDocumentAi, request),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../../shared/assets';
+import type { AssetAttachment } from '../../../shared/workbench/attachment';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
@@ -15,6 +16,8 @@ import {
 import { registerRendererWorkbenches } from '../../../workbenches/catalog/register-renderer-workbenches';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
 import { AttachmentHost } from './AttachmentHost';
+import { AiChatPanelHost } from '../ai-chat/AiChatPanelHost';
+import { getGlobalAiChatStore } from '../ai-chat/chat-store';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
 import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
 import { WorkbenchViewErrorBoundary } from './WorkbenchViewErrorBoundary';
@@ -72,6 +75,9 @@ export function AssetWorkbenchHost({
   const runtime = useWorkbenchRuntime();
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
+  const [attachments, setAttachments] = useState<
+    readonly AssetAttachment[]
+  >([]);
   const activeSessionIdRef = useRef<string | undefined>(undefined);
   const lifecycleRef = useRef(new WorkbenchLifecycleCoordinator());
   const assetId = asset?.id;
@@ -117,6 +123,41 @@ export function AssetWorkbenchHost({
     },
     [onError],
   );
+
+  const refreshAttachments = useCallback(async () => {
+    if (!projectId || !assetId) {
+      return;
+    }
+
+    try {
+      const list =
+        await window.learningCompanion.listAttachments({
+          projectId,
+          assetId,
+        });
+      setAttachments(list);
+    } catch (loadError) {
+      const message = userMessageFromError(
+        loadError,
+        '无法读取文档标注。',
+      );
+      if (message) {
+        console.error(message, loadError);
+      }
+    }
+  }, [assetId, projectId]);
+
+  useEffect(() => {
+    if (!readySessionId) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshAttachments();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [readySessionId, refreshAttachments]);
 
   useEffect(() => {
     let active = true;
@@ -297,23 +338,98 @@ export function AssetWorkbenchHost({
     const View = state.module.View;
 
     content = (
-      <>
-        <WorkbenchViewErrorBoundary onError={onError}>
-          <View
-            asset={asset}
-            bootstrap={state.bootstrap}
-            executeCommand={state.executeCommand}
-            onRelink={onRelink}
-            onRefresh={onRefresh}
-            onReveal={onReveal}
-            onOpenSettings={onOpenSettings}
-            onInteractionChange={reportInteraction}
-            onOpenExternal={openExternal}
-            onError={onError}
-          />
-        </WorkbenchViewErrorBoundary>
-        <AttachmentHost attachments={[]} />
-      </>
+      <div className="relative flex h-full min-w-0">
+        <div className="min-w-0 flex-1">
+          <WorkbenchViewErrorBoundary onError={onError}>
+            <View
+              asset={asset}
+              bootstrap={state.bootstrap}
+              executeCommand={state.executeCommand}
+              onRelink={onRelink}
+              onRefresh={onRefresh}
+              onReveal={onReveal}
+              onOpenSettings={onOpenSettings}
+              onInteractionChange={reportInteraction}
+              onOpenExternal={openExternal}
+              onError={onError}
+            />
+          </WorkbenchViewErrorBoundary>
+        </div>
+        <AiChatPanelHost
+          projectId={projectId}
+          assetId={asset.id}
+          onAttachAnswer={async (
+            _messageId,
+            text,
+            anchor,
+          ) => {
+            const session = getGlobalAiChatStore().getSession(asset.id);
+            const answerMessage = session?.messages.find(
+              (message) => message.id === _messageId,
+            );
+            const userMessage = session?.messages.find(
+              (message) =>
+                message.id === answerMessage?.replyToMessageId,
+            );
+
+            try {
+              const target = anchor?.target ?? {
+                scope: 'content' as const,
+                anchorType: 'pdf.page' as const,
+                anchorVersion: 1,
+                anchorPayload: { pageNumber: anchor?.pageNumber ?? 1 },
+              };
+              await window.learningCompanion.createAttachment({
+                projectId,
+                assetId: asset.id,
+                typeId: 'ai.annotation',
+                typeVersion: 1,
+                target,
+                metadata: {
+                  question: userMessage?.content ?? '',
+                  answer: answerMessage?.content ?? text,
+                  selectedAnswer: text,
+                  ...(answerMessage?.modelInfo
+                    ? { modelInfo: answerMessage.modelInfo }
+                    : {}),
+                  timestamp: Date.now(),
+                },
+              });
+              await refreshAttachments();
+            } catch (attachError) {
+              const message = userMessageFromError(
+                attachError,
+                '无法保存 AI 标注到文档。',
+              );
+              if (message) {
+                onError(message);
+              }
+              throw attachError;
+            }
+          }}
+        />
+        <AttachmentHost
+          attachments={attachments}
+          onDeleteAttachment={async (attachmentId) => {
+            try {
+              await window.learningCompanion.deleteAttachment({
+                projectId,
+                attachmentId,
+              });
+              await refreshAttachments();
+            } catch (deleteError) {
+              const message = userMessageFromError(
+                deleteError,
+                '无法删除附着内容，请重试。',
+              );
+              if (message) {
+                onError(message);
+              }
+              throw deleteError;
+            }
+          }}
+        />
+      </div>
     );
   }
 

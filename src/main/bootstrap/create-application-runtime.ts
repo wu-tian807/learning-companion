@@ -17,7 +17,14 @@ import { AssetReferenceDatabase } from '../asset-associations/asset-reference-da
 import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/libreoffice-preview-producer';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
-import { EmptyAttachmentService } from '../attachments/attachment-service';
+import { AttachmentDatabase } from '../attachments/attachment-database';
+import { AttachmentRegistry } from '../attachments/attachment-registry';
+import { AttachmentService } from '../attachments/attachment-service';
+import {
+  AI_ANNOTATION_ATTACHMENT_TYPE,
+  AI_ANNOTATION_ATTACHMENT_VERSION,
+  isAiAnnotationMetadata,
+} from '../attachments/ai-annotation-attachment';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
 import {
@@ -258,10 +265,20 @@ export async function createApplicationRuntime({
       projectDatabase,
       agentProviderService,
     );
+    const attachmentRegistry = new AttachmentRegistry();
+    attachmentRegistry.register({
+      typeId: AI_ANNOTATION_ATTACHMENT_TYPE,
+      version: AI_ANNOTATION_ATTACHMENT_VERSION,
+      isMetadata: isAiAnnotationMetadata,
+    });
+    const attachmentService = new AttachmentService(
+      new AttachmentDatabase(databaseContext),
+      attachmentRegistry,
+    );
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
       workbenchRegistry,
-      new EmptyAttachmentService(),
+      attachmentService,
       workbenchStateRepository,
       { transportBindingRegistry },
     );
@@ -278,6 +295,7 @@ export async function createApplicationRuntime({
     disposeIpc = registerApplicationIpc({
       agentProviderService,
       assetService,
+      attachmentService,
       externalLibraryService,
       generationTaskService,
       projectService,

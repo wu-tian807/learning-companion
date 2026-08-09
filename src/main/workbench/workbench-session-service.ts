@@ -93,7 +93,7 @@ export class WorkbenchSessionService
         ? this.registry.select(snapshot.mediaType, content.handle)
         : this.registry.fallback('content-unavailable');
     const [attachments, state] = await Promise.all([
-      this.attachmentService.listByAsset(assetId),
+      this.attachmentService.listByAsset(snapshot.projectId, assetId),
       this.stateDatabase.get(assetId, selection.provider.manifest.id),
     ]);
     const session: AssetWorkbenchSession = {

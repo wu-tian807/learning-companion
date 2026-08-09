@@ -1,7 +1,13 @@
 import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { AssetServiceApi } from '../assets/asset-service';
+import {
+  registerAttachmentHandlers,
+  removeAttachmentHandlers,
+} from '../ipc/attachments';
+import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
+import type { GenerationAgentRunnerResolver } from '../generation/generation-agent-runner';
 import {
   registerAgentProviderHandlers,
   removeAgentProviderHandlers,
@@ -43,8 +49,10 @@ import type { SettingsRepository } from '../settings/settings-repository';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 
 export interface ApplicationIpcServices {
-  readonly agentProviderService: AgentProviderServiceApi;
+  readonly agentProviderService: AgentProviderServiceApi &
+    GenerationAgentRunnerResolver;
   readonly assetService: AssetServiceApi;
+  readonly attachmentService: AttachmentServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly generationTaskService: GenerationTaskServiceApi;
   readonly projectService: ProjectServiceApi;
@@ -75,6 +83,11 @@ export interface ApplicationIpcRegistrations {
     service: GenerationTaskServiceApi,
   ) => void;
   readonly removeGenerationTasks: () => void;
+  readonly registerAttachments: (
+    service: AttachmentServiceApi,
+    providers: GenerationAgentRunnerResolver,
+  ) => void;
+  readonly removeAttachments: () => void;
   readonly registerWorkbench: (
     service: WorkbenchSessionServiceApi,
   ) => void;
@@ -98,6 +111,8 @@ const defaultRegistrations: ApplicationIpcRegistrations = {
   removeAssets: removeAssetHandlers,
   registerGenerationTasks: registerGenerationTaskHandlers,
   removeGenerationTasks: removeGenerationTaskHandlers,
+  registerAttachments: registerAttachmentHandlers,
+  removeAttachments: removeAttachmentHandlers,
   registerWorkbench: registerWorkbenchHandlers,
   removeWorkbench: removeWorkbenchHandlers,
 };
@@ -170,6 +185,14 @@ export function registerApplicationIpc(
           services.generationTaskService,
         ),
       registrations.removeGenerationTasks,
+    );
+    register(
+      () =>
+        registrations.registerAttachments(
+          services.attachmentService,
+          services.agentProviderService,
+        ),
+      registrations.removeAttachments,
     );
     register(
       () =>

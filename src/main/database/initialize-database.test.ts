@@ -33,7 +33,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -47,6 +47,7 @@ describe('initializeDatabase', () => {
         'asset_links',
         'asset_references',
         'assets',
+        'attachments',
         'generation_tasks',
         'projects',
         'workbench_state_data',
@@ -127,7 +128,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        16,
+        17,
       );
     } finally {
       secondContext.close();
@@ -176,7 +177,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -261,7 +262,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(
         context.sqlite
           .prepare<[], { assignedProviderId: string }>(
@@ -322,7 +323,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -390,7 +391,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -709,7 +710,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -814,7 +815,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(16);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')

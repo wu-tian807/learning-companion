@@ -21,9 +21,11 @@ import { indexUnfinishedGenerationTasksMigration } from './migrations/0013-index
 import { assignGenerationTaskProviderMigration } from './migrations/0014-assign-generation-task-provider';
 import { removeGenerationAgentOutputRefMigration } from './migrations/0015-remove-generation-agent-output-ref';
 import { processGenerationTasksMigration } from './migrations/0016-process-generation-tasks';
+import { createAttachmentsMigration } from './migrations/0017-create-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
+import * as attachmentSchema from './schema/attachments';
 import * as assetSchema from './schema/assets';
 import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
@@ -51,6 +53,7 @@ const migrations: readonly DatabaseMigration[] = [
   assignGenerationTaskProviderMigration,
   removeGenerationAgentOutputRefMigration,
   processGenerationTasksMigration,
+  createAttachmentsMigration,
 ];
 const schema = {
   ...projectSchema,
@@ -58,6 +61,7 @@ const schema = {
   ...assetArtifactSchema,
   ...assetLinkSchema,
   ...assetReferenceSchema,
+  ...attachmentSchema,
   ...generationTaskSchema,
   ...workbenchStateSchema,
 };

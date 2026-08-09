@@ -22,15 +22,24 @@ describe('LibreOffice ExternalLibraryDefinition', () => {
     ).toEqual(['darwin-arm64', 'darwin-x64', 'win32-x64']);
   });
 
-  it('uses official HTTPS downloads with fixed size and SHA-256', () => {
+  it('uses pinned HTTPS downloads with fixed size and SHA-256', () => {
     for (const packageDefinition of libreOfficeDefinition.packages) {
-      expect(packageDefinition.downloadUrl).toMatch(
-        /^https:\/\/download\.documentfoundation\.org\/libreoffice\/stable\/26\.2\.5\//u,
+      expect(packageDefinition.downloadUrl).toMatch(/^https:\/\//u);
+      expect(packageDefinition.downloadUrl).toContain(
+        '/libreoffice/stable/26.2.5/',
       );
       expect(packageDefinition.sha256).toMatch(/^[a-f0-9]{64}$/u);
       expect(packageDefinition.expectedSize).toBeGreaterThan(
         250_000_000,
       );
     }
+  });
+
+  it('uses the blocking Windows console launcher for conversions', () => {
+    expect(
+      libreOfficeDefinition.packages.find(
+        ({ platform }) => platform === 'win32',
+      )?.executableRelativePath,
+    ).toBe('program/soffice.com');
   });
 });
