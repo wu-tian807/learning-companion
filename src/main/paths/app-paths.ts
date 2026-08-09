@@ -4,6 +4,7 @@ export interface AppPaths {
   readonly userDataDirectory: string;
   readonly configDirectory: string;
   readonly settingsFile: string;
+  readonly agentProviderSecretsFile: string;
   readonly dataDirectory: string;
   readonly databaseFile: string;
   readonly externalLibraryProfilesDirectory: string;
@@ -33,6 +34,10 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
     userDataDirectory: normalizedUserDataDirectory,
     configDirectory,
     settingsFile: join(configDirectory, 'settings.json'),
+    agentProviderSecretsFile: join(
+      normalizedUserDataDirectory,
+      'agent-provider-secrets.json',
+    ),
     dataDirectory,
     databaseFile: join(dataDirectory, 'learning-companion.sqlite3'),
     externalLibraryProfilesDirectory: join(

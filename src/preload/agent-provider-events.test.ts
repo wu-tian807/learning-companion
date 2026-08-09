@@ -19,18 +19,26 @@ describe('Preload AgentProvider Event subscription', () => {
     const dispose = subscribeAgentProviderEvents(ipc, listener);
     const snapshot = {
       revision: 2,
-      selectedProviderId: null,
-      activeProviderId: null,
-      requiresSelection: true,
+      selectors: [],
+      selections: [],
       providers: [
         {
           id: 'codex',
           displayName: 'Codex',
           description: '使用 ChatGPT 账号运行 Codex。',
-          loginLabel: '使用 ChatGPT 登录',
-          selected: false,
-          credential: { status: 'checking' },
-          refreshing: true,
+          supportedConnectionKinds: ['account', 'api-key'],
+          connections: [
+            {
+              id: 'codex-account',
+              providerId: 'codex',
+              kind: 'account',
+              displayName: 'ChatGPT 账号',
+              status: 'unconfigured',
+              hasApiKey: false,
+              refreshing: true,
+              removable: false,
+            },
+          ],
         },
       ],
     };

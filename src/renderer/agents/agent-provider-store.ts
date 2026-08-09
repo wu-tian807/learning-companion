@@ -4,7 +4,6 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
   isAgentProviderId,
   isAgentProviderSetupSnapshot,
-  type AgentProviderCredentialSnapshot,
   type AgentProviderSetupSnapshot,
   type AgentProviderSnapshot,
 } from '../../shared/agent-providers';
@@ -48,25 +47,19 @@ interface ActiveConnection {
   references: number;
 }
 
-function cloneCredential(
-  credential: AgentProviderCredentialSnapshot,
-): AgentProviderCredentialSnapshot {
-  if (credential.status !== 'authenticated') {
-    return { ...credential };
-  }
-
-  return {
-    status: 'authenticated',
-    account: { ...credential.account },
-  };
-}
-
 function cloneProvider(
   provider: AgentProviderSnapshot,
 ): AgentProviderSnapshot {
   return {
     ...provider,
-    credential: cloneCredential(provider.credential),
+    supportedConnectionKinds: [...provider.supportedConnectionKinds],
+    connections: provider.connections.map((connection) => ({
+      ...connection,
+      ...(connection.account ? { account: { ...connection.account } } : {}),
+    })),
+    ...(provider.apiConnectionDefaults
+      ? { apiConnectionDefaults: { ...provider.apiConnectionDefaults } }
+      : {}),
   };
 }
 
@@ -80,6 +73,8 @@ function requireSetupSnapshot(
   return {
     ...value,
     providers: value.providers.map(cloneProvider),
+    selectors: value.selectors.map((selector) => ({ ...selector })),
+    selections: value.selections.map((selection) => ({ ...selection })),
   };
 }
 

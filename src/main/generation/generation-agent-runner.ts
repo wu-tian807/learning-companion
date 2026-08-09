@@ -36,6 +36,8 @@ export interface GenerationAgentTurnRequest {
   readonly projectId: string;
   readonly sessionLocator: AgentSessionLocator;
   readonly sessionId?: string;
+  readonly modelId?: string;
+  readonly reasoningEffort?: string;
   readonly systemInstruction: string;
   readonly userMessage: AgentUserMessage;
   readonly toolRequirements: readonly AgentToolRequirement[];
@@ -48,6 +50,7 @@ export interface GenerationAgentTurnRequest {
 export interface GenerationAgentTurnResult {
   readonly sessionId: string;
   readonly providerId: string;
+  readonly connectionId: string;
   readonly modelId: string;
   readonly providerExecutionId?: string;
   readonly startedTime: number;
@@ -58,6 +61,7 @@ export interface GenerationAgentTurnResult {
 
 export interface GenerationAgentRunner {
   readonly providerId: string;
+  readonly connectionId: string;
 
   runTurn(
     request: GenerationAgentTurnRequest,
@@ -65,5 +69,17 @@ export interface GenerationAgentRunner {
 }
 
 export interface GenerationAgentRunnerResolver {
-  resolveRunner(providerId?: string): Promise<GenerationAgentRunner>;
+  resolveSelectorConfiguration(
+    selectorId: string,
+  ): GenerationAgentExecutionConfiguration;
+  resolveRunner(
+    configuration: GenerationAgentExecutionConfiguration,
+  ): Promise<GenerationAgentRunner>;
+}
+
+export interface GenerationAgentExecutionConfiguration {
+  readonly providerId: string;
+  readonly connectionId: string;
+  readonly modelId?: string;
+  readonly reasoningEffort?: string;
 }

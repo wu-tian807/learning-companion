@@ -3,7 +3,10 @@ import {
   isJsonValue,
   type JsonValue,
 } from '../../../shared/workbench/protocol';
-import { isAgentProviderId } from '../../../shared/agent-providers';
+import {
+  isAgentProviderConnectionId,
+  isAgentProviderId,
+} from '../../../shared/agent-providers';
 import {
   cloneGenerationAssetReferenceBindings,
   type GenerationAssetReferenceBindings,
@@ -50,6 +53,9 @@ export interface GenerationTaskSnapshot {
   readonly assetReferences: GenerationAssetReferenceBindings;
   readonly prepared?: GenerationTaskPreparedCheckpoint;
   readonly assignedProviderId?: string;
+  readonly assignedConnectionId?: string;
+  readonly assignedModelId?: string;
+  readonly assignedReasoningEffort?: string;
   readonly agentCalls: readonly GenerationTaskAgentCallCheckpoint[];
   readonly completed?: GenerationTaskCompletedCheckpoint;
   readonly metrics: GenerationTaskMetrics;
@@ -74,6 +80,10 @@ export interface CreateGenerationTaskInput {
   readonly definitionVersion: number;
   readonly instruction: JsonValue;
   readonly assetReferences: GenerationAssetReferenceBindings;
+  readonly assignedProviderId?: string;
+  readonly assignedConnectionId?: string;
+  readonly assignedModelId?: string;
+  readonly assignedReasoningEffort?: string;
   readonly createdTime: number;
 }
 
@@ -206,6 +216,9 @@ export function cloneGenerationTaskSnapshot(
     ? clonePreparedCheckpoint(snapshot.prepared)
     : undefined;
   const assignedProviderId = snapshot.assignedProviderId;
+  const assignedConnectionId = snapshot.assignedConnectionId;
+  const assignedModelId = snapshot.assignedModelId;
+  const assignedReasoningEffort = snapshot.assignedReasoningEffort;
   const agentCalls = Object.freeze(
     snapshot.agentCalls.map(cloneAgentCallCheckpoint),
   );
@@ -231,8 +244,21 @@ export function cloneGenerationTaskSnapshot(
     (prepared && prepared.completedTime < createdTime) ||
     (prepared && prepared.completedTime > updatedTime) ||
     (assignedProviderId !== undefined &&
-      (!prepared || !isAgentProviderId(assignedProviderId))) ||
-    (agentCalls.length > 0 && assignedProviderId === undefined) ||
+      !isAgentProviderId(assignedProviderId)) ||
+    (assignedConnectionId !== undefined &&
+      (assignedProviderId === undefined ||
+        !isAgentProviderConnectionId(assignedConnectionId))) ||
+    (assignedProviderId !== undefined && assignedConnectionId === undefined) ||
+    (assignedModelId !== undefined &&
+      (assignedProviderId === undefined ||
+        requireText(assignedModelId, 'assignedModelId') !== assignedModelId)) ||
+    (assignedReasoningEffort !== undefined &&
+      (assignedProviderId === undefined ||
+        requireText(
+          assignedReasoningEffort,
+          'assignedReasoningEffort',
+        ) !== assignedReasoningEffort)) ||
+    (agentCalls.length > 0 && assignedConnectionId === undefined) ||
     new Set(callKeys).size !== callKeys.length ||
     agentCalls.some(
       (call, index) =>
@@ -270,7 +296,8 @@ export function cloneGenerationTaskSnapshot(
       call.callKey !== execution.callKey ||
       call.purpose !== execution.purpose ||
       call.sessionId !== execution.sessionId ||
-      execution.providerId !== assignedProviderId
+      execution.providerId !== assignedProviderId ||
+      execution.connectionId !== assignedConnectionId
     ) {
       throw new Error('GenerationTask Agent call 与 metrics 数据不一致');
     }
@@ -287,6 +314,11 @@ export function cloneGenerationTaskSnapshot(
     ),
     ...(prepared ? { prepared } : {}),
     ...(assignedProviderId === undefined ? {} : { assignedProviderId }),
+    ...(assignedConnectionId === undefined ? {} : { assignedConnectionId }),
+    ...(assignedModelId === undefined ? {} : { assignedModelId }),
+    ...(assignedReasoningEffort === undefined
+      ? {}
+      : { assignedReasoningEffort }),
     agentCalls,
     ...(completed ? { completed } : {}),
     metrics,

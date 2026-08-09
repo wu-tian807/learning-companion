@@ -21,6 +21,8 @@ import { indexUnfinishedGenerationTasksMigration } from './migrations/0013-index
 import { assignGenerationTaskProviderMigration } from './migrations/0014-assign-generation-task-provider';
 import { removeGenerationAgentOutputRefMigration } from './migrations/0015-remove-generation-agent-output-ref';
 import { processGenerationTasksMigration } from './migrations/0016-process-generation-tasks';
+import { assignGenerationTaskModelMigration } from './migrations/0017-assign-generation-task-model';
+import { assignGenerationTaskConnectionMigration } from './migrations/0018-assign-generation-task-connection';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
@@ -51,6 +53,8 @@ const migrations: readonly DatabaseMigration[] = [
   assignGenerationTaskProviderMigration,
   removeGenerationAgentOutputRefMigration,
   processGenerationTasksMigration,
+  assignGenerationTaskModelMigration,
+  assignGenerationTaskConnectionMigration,
 ];
 const schema = {
   ...projectSchema,

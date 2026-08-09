@@ -10,31 +10,48 @@ function setupSnapshot(
   revision: number,
   status:
     | 'checking'
-    | 'authenticated'
-    | 'unauthenticated'
-    | 'unavailable' = 'unauthenticated',
+    | 'ready'
+    | 'unconfigured'
+    | 'unavailable' = 'unconfigured',
 ): AgentProviderSetupSnapshot {
-  const authenticated = status === 'authenticated';
+  const ready = status === 'ready';
 
   return {
     revision,
-    selectedProviderId: null,
-    activeProviderId: null,
-    requiresSelection: true,
+    selectors: [
+      {
+        id: 'generation-center',
+        displayName: '生成中心',
+        description: '生成资产时使用的 Agent。',
+      },
+    ],
+    selections: [],
     providers: [
       {
         id: 'codex',
         displayName: 'Codex',
         description: '使用 ChatGPT 账号运行 Codex。',
-        loginLabel: '使用 ChatGPT 登录',
-        selected: false,
-        refreshing: status === 'checking',
-        credential:
-          status === 'unavailable'
-            ? { status, message: '暂时无法检查登录状态' }
-            : authenticated
-              ? { status, account: { email: 'student@example.com' } }
-              : { status },
+        supportedConnectionKinds: ['account', 'api-key'],
+        apiConnectionDefaults: {
+          displayName: 'Responses-compatible API',
+          baseUrl: 'https://api.openai.com/v1',
+        },
+        connections: [
+          {
+            id: 'codex-account',
+            providerId: 'codex',
+            kind: 'account',
+            displayName: 'ChatGPT 账号',
+            status: status === 'checking' ? 'unconfigured' : status,
+            ...(status === 'unavailable'
+              ? { statusMessage: '暂时无法检查登录状态' }
+              : {}),
+            ...(ready ? { account: { email: 'student@example.com' } } : {}),
+            hasApiKey: false,
+            refreshing: status === 'checking',
+            removable: false,
+          },
+        ],
       },
     ],
   };
@@ -100,7 +117,7 @@ describe('Agent Provider Renderer Store', () => {
     const store = createAgentProviderStore(harness.api);
 
     store.getState().connect();
-    harness.emit(setupSnapshot(2, 'authenticated'));
+    harness.emit(setupSnapshot(2, 'ready'));
     harness.resolveInitial(setupSnapshot(1));
     await vi.waitFor(() => {
       expect(store.getState().loading).toBe(false);
@@ -108,15 +125,15 @@ describe('Agent Provider Renderer Store', () => {
 
     expect(store.getState().setup?.revision).toBe(2);
     expect(
-      store.getState().setup?.providers[0]?.credential.status,
-    ).toBe('authenticated');
+      store.getState().setup?.providers[0]?.connections[0]?.status,
+    ).toBe('ready');
   });
 
   it('忽略相同或更低 revision 的状态', () => {
     const store = createAgentProviderStore(
       createApiHarness().api,
       {
-        setup: setupSnapshot(4, 'authenticated'),
+        setup: setupSnapshot(4, 'ready'),
       },
     );
 
@@ -124,8 +141,8 @@ describe('Agent Provider Renderer Store', () => {
     store.getState().applySnapshot(setupSnapshot(3));
 
     expect(
-      store.getState().setup?.providers[0]?.credential.status,
-    ).toBe('authenticated');
+      store.getState().setup?.providers[0]?.connections[0]?.status,
+    ).toBe('ready');
   });
 
   it('复用订阅并在最后一个消费者离开时释放', () => {

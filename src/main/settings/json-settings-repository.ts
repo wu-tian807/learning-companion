@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, normalize } from 'node:path';
 
@@ -15,7 +16,19 @@ import {
   isCompletedOnboardingVersion,
   type AppSetupSnapshot,
 } from '../../shared/app-setup';
-import { isAgentProviderId } from '../../shared/agent-providers';
+import {
+  cloneAgentProviderConnectionConfiguration,
+  cloneAgentProviderSelectorSelection,
+  isAgentProviderBaseUrl,
+  isAgentProviderConnectionConfiguration,
+  isAgentProviderConnectionId,
+  isAgentProviderId,
+  isAgentProviderSelectorId,
+  isAgentProviderSelectorSelectionSnapshot,
+  type AgentProviderConnectionConfiguration,
+  type AgentProviderSelectorSelectionSnapshot,
+} from '../../shared/agent-providers';
+import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 import type { SettingsRepository } from './settings-repository';
 
 export interface SettingsLogger {
@@ -33,7 +46,12 @@ interface StoredSettingsState {
   readonly defaultProjectWorkspace: string;
   readonly externalLibrariesPath: string;
   readonly completedOnboardingVersion: number;
-  readonly selectedAgentProviderId: string | null;
+  readonly agentProviderConnections: Readonly<
+    Record<string, AgentProviderConnectionConfiguration>
+  >;
+  readonly agentProviderSelectorSelections: Readonly<
+    Record<string, AgentProviderSelectorSelectionSnapshot>
+  >;
 }
 
 interface DeserializedSettings {
@@ -44,51 +62,79 @@ interface DeserializedSettings {
 function clonePreferences(preferences: AppPreferences): AppPreferences {
   return Object.freeze({
     schemaVersion: preferences.schemaVersion,
-    home: Object.freeze({
-      viewMode: preferences.home.viewMode,
-      sortMode: preferences.home.sortMode,
-    }),
-  });
-}
-
-function createStoredSettingsState(
-  preferences: AppPreferences,
-  defaultProjectWorkspace: string,
-  externalLibrariesPath: string,
-  completedOnboardingVersion: number,
-  selectedAgentProviderId: string | null,
-): StoredSettingsState {
-  if (!isCompletedOnboardingVersion(completedOnboardingVersion)) {
-    throw new Error('Settings 首次运行引导版本无效');
-  }
-
-  if (
-    selectedAgentProviderId !== null &&
-    !isAgentProviderId(selectedAgentProviderId)
-  ) {
-    throw new Error('Settings Agent Provider 无效');
-  }
-
-  return Object.freeze({
-    preferences: clonePreferences(preferences),
-    defaultProjectWorkspace,
-    externalLibrariesPath,
-    completedOnboardingVersion,
-    selectedAgentProviderId,
+    home: Object.freeze({ ...preferences.home }),
   });
 }
 
 function normalizeDirectory(directory: string): string {
   const value = directory.trim();
 
-  if (value.length === 0 || !isAbsolute(value)) {
+  if (!value || !isAbsolute(value)) {
     throw new Error('默认 Project 工作区必须是绝对路径');
   }
 
   return normalize(value);
 }
 
-function isFileNotFoundError(error: unknown): boolean {
+function cloneState(state: StoredSettingsState): StoredSettingsState {
+  if (!isCompletedOnboardingVersion(state.completedOnboardingVersion)) {
+    throw new Error('Settings 首次运行引导版本无效');
+  }
+
+  const connections = Object.freeze(
+    Object.fromEntries(
+      Object.entries(state.agentProviderConnections).map(
+        ([connectionId, connection]) => {
+          if (
+            !isAgentProviderConnectionId(connectionId) ||
+            connection.id !== connectionId
+          ) {
+            throw new Error('Settings Agent Provider Connection 无效');
+          }
+
+          return [
+            connectionId,
+            cloneAgentProviderConnectionConfiguration(connection),
+          ] as const;
+        },
+      ),
+    ),
+  );
+  const selections = Object.freeze(
+    Object.fromEntries(
+      Object.entries(state.agentProviderSelectorSelections).map(
+        ([selectorId, selection]) => {
+          if (
+            !isAgentProviderSelectorId(selectorId) ||
+            selection.selectorId !== selectorId
+          ) {
+            throw new Error('Settings Agent Provider Selector 配置无效');
+          }
+
+          return [
+            selectorId,
+            cloneAgentProviderSelectorSelection(selection),
+          ] as const;
+        },
+      ),
+    ),
+  );
+
+  return Object.freeze({
+    preferences: clonePreferences(state.preferences),
+    defaultProjectWorkspace: normalizeDirectory(state.defaultProjectWorkspace),
+    externalLibrariesPath: normalizeDirectory(state.externalLibrariesPath),
+    completedOnboardingVersion: state.completedOnboardingVersion,
+    agentProviderConnections: connections,
+    agentProviderSelectorSelections: selections,
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isFileNotFound(error: unknown): boolean {
   return (
     error instanceof Error &&
     'code' in error &&
@@ -96,8 +142,11 @@ function isFileNotFoundError(error: unknown): boolean {
   );
 }
 
+function builtInAccountConnectionId(providerId: string): string {
+  return `${providerId}-account`;
+}
+
 export class JsonSettingsRepository implements SettingsRepository {
-  private readonly settingsFile: string;
   private readonly logger: SettingsLogger;
   private readonly fallbackProjectWorkspace: string;
   private readonly fallbackExternalLibrariesPath: string;
@@ -105,8 +154,10 @@ export class JsonSettingsRepository implements SettingsRepository {
   private initialized = false;
   private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(settingsFile: string, options: JsonSettingsRepositoryOptions = {}) {
-    this.settingsFile = settingsFile;
+  constructor(
+    private readonly settingsFile: string,
+    options: JsonSettingsRepositoryOptions = {},
+  ) {
     this.logger = options.logger ?? console;
     this.fallbackProjectWorkspace = normalizeDirectory(
       options.defaultProjectWorkspace ?? dirname(settingsFile),
@@ -114,13 +165,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     this.fallbackExternalLibrariesPath = normalizeDirectory(
       options.defaultExternalLibrariesPath ?? dirname(settingsFile),
     );
-    this.state = createStoredSettingsState(
-      DEFAULT_APP_PREFERENCES,
-      this.fallbackProjectWorkspace,
-      this.fallbackExternalLibrariesPath,
-      0,
-      null,
-    );
+    this.state = this.defaultState();
   }
 
   async initialize(): Promise<void> {
@@ -129,8 +174,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     }
 
     try {
-      const content = await readFile(this.settingsFile, 'utf8');
-      const restored = this.deserialize(content);
+      const restored = this.deserialize(await readFile(this.settingsFile, 'utf8'));
       this.state = restored.state;
 
       if (restored.needsMigration) {
@@ -144,15 +188,8 @@ export class JsonSettingsRepository implements SettingsRepository {
         }
       }
     } catch (error) {
-      this.state = createStoredSettingsState(
-        DEFAULT_APP_PREFERENCES,
-        this.fallbackProjectWorkspace,
-        this.fallbackExternalLibrariesPath,
-        0,
-        null,
-      );
-
-      if (!isFileNotFoundError(error)) {
+      this.state = this.defaultState();
+      if (!isFileNotFound(error)) {
         this.logger.warn('Settings 读取失败，已恢复默认设置。', error);
       }
     } finally {
@@ -166,28 +203,14 @@ export class JsonSettingsRepository implements SettingsRepository {
   }
 
   async updateHomePreferences(home: HomePreferences): Promise<AppPreferences> {
-    this.requireInitialized();
-
-    const nextPreferences = clonePreferences({
-      schemaVersion: APP_PREFERENCES_SCHEMA_VERSION,
-      home,
-    });
-    const writeTask = this.writeQueue.then(async () => {
-      const nextState = createStoredSettingsState(
-        nextPreferences,
-        this.state.defaultProjectWorkspace,
-        this.state.externalLibrariesPath,
-        this.state.completedOnboardingVersion,
-        this.state.selectedAgentProviderId,
-      );
-      await this.persist(nextState);
-      this.state = nextState;
-    });
-
-    this.writeQueue = writeTask.catch(() => undefined);
-    await writeTask;
-
-    return clonePreferences(this.state.preferences);
+    await this.updateState((state) => ({
+      ...state,
+      preferences: {
+        schemaVersion: APP_PREFERENCES_SCHEMA_VERSION,
+        home,
+      },
+    }));
+    return this.get();
   }
 
   getAppSetup(): AppSetupSnapshot {
@@ -196,56 +219,24 @@ export class JsonSettingsRepository implements SettingsRepository {
   }
 
   async completeExternalLibraryOnboarding(): Promise<AppSetupSnapshot> {
-    this.requireInitialized();
-    const writeTask = this.writeQueue.then(async () => {
-      if (
-        this.state.completedOnboardingVersion >=
-        EXTERNAL_LIBRARY_ONBOARDING_VERSION
-      ) {
-        return;
-      }
-
-      const nextState = createStoredSettingsState(
-        this.state.preferences,
-        this.state.defaultProjectWorkspace,
-        this.state.externalLibrariesPath,
+    await this.updateState((state) => ({
+      ...state,
+      completedOnboardingVersion: Math.max(
+        state.completedOnboardingVersion,
         EXTERNAL_LIBRARY_ONBOARDING_VERSION,
-        this.state.selectedAgentProviderId,
-      );
-      await this.persist(nextState);
-      this.state = nextState;
-    });
-
-    this.writeQueue = writeTask.catch(() => undefined);
-    await writeTask;
-
+      ),
+    }));
     return this.getAppSetup();
   }
 
   async completeAgentProviderOnboarding(): Promise<AppSetupSnapshot> {
-    this.requireInitialized();
-    const writeTask = this.writeQueue.then(async () => {
-      if (
-        this.state.completedOnboardingVersion >=
-        CURRENT_ONBOARDING_VERSION
-      ) {
-        return;
-      }
-
-      const nextState = createStoredSettingsState(
-        this.state.preferences,
-        this.state.defaultProjectWorkspace,
-        this.state.externalLibrariesPath,
+    await this.updateState((state) => ({
+      ...state,
+      completedOnboardingVersion: Math.max(
+        state.completedOnboardingVersion,
         CURRENT_ONBOARDING_VERSION,
-        this.state.selectedAgentProviderId,
-      );
-      await this.persist(nextState);
-      this.state = nextState;
-    });
-
-    this.writeQueue = writeTask.catch(() => undefined);
-    await writeTask;
-
+      ),
+    }));
     return this.getAppSetup();
   }
 
@@ -255,26 +246,11 @@ export class JsonSettingsRepository implements SettingsRepository {
   }
 
   async updateDefaultProjectWorkspace(directory: string): Promise<void> {
-    this.requireInitialized();
-    const normalizedDirectory = normalizeDirectory(directory);
-    const writeTask = this.writeQueue.then(async () => {
-      if (this.state.defaultProjectWorkspace === normalizedDirectory) {
-        return;
-      }
-
-      const nextState = createStoredSettingsState(
-        this.state.preferences,
-        normalizedDirectory,
-        this.state.externalLibrariesPath,
-        this.state.completedOnboardingVersion,
-        this.state.selectedAgentProviderId,
-      );
-      await this.persist(nextState);
-      this.state = nextState;
-    });
-
-    this.writeQueue = writeTask.catch(() => undefined);
-    await writeTask;
+    const normalized = normalizeDirectory(directory);
+    await this.updateState((state) => ({
+      ...state,
+      defaultProjectWorkspace: normalized,
+    }));
   }
 
   getExternalLibrariesPath(): string {
@@ -283,138 +259,303 @@ export class JsonSettingsRepository implements SettingsRepository {
   }
 
   async updateExternalLibrariesPath(directory: string): Promise<void> {
-    this.requireInitialized();
-    const normalizedDirectory = normalizeDirectory(directory);
-    const writeTask = this.writeQueue.then(async () => {
-      if (this.state.externalLibrariesPath === normalizedDirectory) {
-        return;
-      }
-
-      const nextState = createStoredSettingsState(
-        this.state.preferences,
-        this.state.defaultProjectWorkspace,
-        normalizedDirectory,
-        this.state.completedOnboardingVersion,
-        this.state.selectedAgentProviderId,
-      );
-      await this.persist(nextState);
-      this.state = nextState;
-    });
-
-    this.writeQueue = writeTask.catch(() => undefined);
-    await writeTask;
+    const normalized = normalizeDirectory(directory);
+    await this.updateState((state) => ({
+      ...state,
+      externalLibrariesPath: normalized,
+    }));
   }
 
-  getSelectedAgentProviderId(): string | null {
+  listAgentProviderConnections(): readonly AgentProviderConnectionConfiguration[] {
     this.requireInitialized();
-    return this.state.selectedAgentProviderId;
+    return Object.freeze(
+      Object.values(this.state.agentProviderConnections).map(
+        cloneAgentProviderConnectionConfiguration,
+      ),
+    );
   }
 
-  async updateSelectedAgentProviderId(
-    providerId: string,
-  ): Promise<void> {
+  getAgentProviderConnection(
+    connectionId: string,
+  ): AgentProviderConnectionConfiguration | undefined {
     this.requireInitialized();
 
-    if (!isAgentProviderId(providerId)) {
-      throw new Error('Settings Agent Provider 无效');
+    if (!isAgentProviderConnectionId(connectionId)) {
+      throw new Error('Settings Agent Provider Connection ID 无效');
     }
 
-    const writeTask = this.writeQueue.then(async () => {
-      if (this.state.selectedAgentProviderId === providerId) {
-        return;
-      }
+    const connection = this.state.agentProviderConnections[connectionId];
+    return connection
+      ? cloneAgentProviderConnectionConfiguration(connection)
+      : undefined;
+  }
 
-      const nextState = createStoredSettingsState(
-        this.state.preferences,
-        this.state.defaultProjectWorkspace,
-        this.state.externalLibrariesPath,
-        this.state.completedOnboardingVersion,
-        providerId,
+  async updateAgentProviderConnection(
+    connection: AgentProviderConnectionConfiguration,
+  ): Promise<void> {
+    const normalized = cloneAgentProviderConnectionConfiguration(connection);
+    await this.updateState((state) => ({
+      ...state,
+      agentProviderConnections: {
+        ...state.agentProviderConnections,
+        [normalized.id]: normalized,
+      },
+    }));
+  }
+
+  async deleteAgentProviderConnection(connectionId: string): Promise<void> {
+    if (!isAgentProviderConnectionId(connectionId)) {
+      throw new Error('Settings Agent Provider Connection ID 无效');
+    }
+
+    await this.updateState((state) => {
+      const connections = { ...state.agentProviderConnections };
+      delete connections[connectionId];
+      const selections = Object.fromEntries(
+        Object.entries(state.agentProviderSelectorSelections).filter(
+          ([, selection]) => selection.connectionId !== connectionId,
+        ),
       );
-      await this.persist(nextState);
-      this.state = nextState;
+      return {
+        ...state,
+        agentProviderConnections: connections,
+        agentProviderSelectorSelections: selections,
+      };
     });
+  }
 
-    this.writeQueue = writeTask.catch(() => undefined);
-    await writeTask;
+  listAgentProviderSelectorSelections(): readonly AgentProviderSelectorSelectionSnapshot[] {
+    this.requireInitialized();
+    return Object.freeze(
+      Object.values(this.state.agentProviderSelectorSelections).map(
+        cloneAgentProviderSelectorSelection,
+      ),
+    );
+  }
+
+  getAgentProviderSelectorSelection(
+    selectorId: string,
+  ): AgentProviderSelectorSelectionSnapshot | undefined {
+    this.requireInitialized();
+
+    if (!isAgentProviderSelectorId(selectorId)) {
+      throw new Error('Settings Agent Provider Selector ID 无效');
+    }
+
+    const selection = this.state.agentProviderSelectorSelections[selectorId];
+    return selection ? cloneAgentProviderSelectorSelection(selection) : undefined;
+  }
+
+  async updateAgentProviderSelectorSelection(
+    selection: AgentProviderSelectorSelectionSnapshot,
+  ): Promise<void> {
+    const normalized = cloneAgentProviderSelectorSelection(selection);
+    await this.updateState((state) => ({
+      ...state,
+      agentProviderSelectorSelections: {
+        ...state.agentProviderSelectorSelections,
+        [normalized.selectorId]: normalized,
+      },
+    }));
+  }
+
+  private defaultState(): StoredSettingsState {
+    return cloneState({
+      preferences: DEFAULT_APP_PREFERENCES,
+      defaultProjectWorkspace: this.fallbackProjectWorkspace,
+      externalLibrariesPath: this.fallbackExternalLibrariesPath,
+      completedOnboardingVersion: 0,
+      agentProviderConnections: {},
+      agentProviderSelectorSelections: {},
+    });
+  }
+
+  private async updateState(
+    update: (state: StoredSettingsState) => StoredSettingsState,
+  ): Promise<void> {
+    this.requireInitialized();
+    const task = this.writeQueue.then(async () => {
+      const next = cloneState(update(this.state));
+      await this.persist(next);
+      this.state = next;
+    });
+    this.writeQueue = task.catch(() => undefined);
+    await task;
   }
 
   private serialize(state: StoredSettingsState): string {
-    const stored: AppPreferences & {
-      readonly defaultProjectWorkspace: string;
-      readonly externalLibrariesPath: string;
-      readonly completedOnboardingVersion: number;
-      readonly selectedAgentProviderId: string | null;
-    } = {
-      ...state.preferences,
-      defaultProjectWorkspace: state.defaultProjectWorkspace,
-      externalLibrariesPath: state.externalLibrariesPath,
-      completedOnboardingVersion: state.completedOnboardingVersion,
-      selectedAgentProviderId: state.selectedAgentProviderId,
-    };
-
-    return `${JSON.stringify(stored, null, 2)}\n`;
+    return `${JSON.stringify(
+      {
+        ...state.preferences,
+        defaultProjectWorkspace: state.defaultProjectWorkspace,
+        externalLibrariesPath: state.externalLibrariesPath,
+        completedOnboardingVersion: state.completedOnboardingVersion,
+        agentProviderConnections: state.agentProviderConnections,
+        agentProviderSelectorSelections: state.agentProviderSelectorSelections,
+      },
+      null,
+      2,
+    )}\n`;
   }
 
   private deserialize(content: string): DeserializedSettings {
     const value: unknown = JSON.parse(content);
 
-    if (!isAppPreferences(value)) {
+    if (!isAppPreferences(value) || !isRecord(value)) {
       throw new Error('Settings 数据结构或版本无效');
     }
 
     let defaultProjectWorkspace = this.fallbackProjectWorkspace;
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
     let completedOnboardingVersion = 0;
-    let selectedAgentProviderId: string | null = null;
+    let connections: Record<string, AgentProviderConnectionConfiguration> = {};
+    let selections: Record<string, AgentProviderSelectorSelectionSnapshot> = {};
+    let needsMigration = false;
 
     if ('defaultProjectWorkspace' in value) {
       if (typeof value.defaultProjectWorkspace !== 'string') {
         throw new Error('Settings 默认 Project 工作区无效');
       }
-
-      defaultProjectWorkspace = normalizeDirectory(
-        value.defaultProjectWorkspace,
-      );
+      defaultProjectWorkspace = normalizeDirectory(value.defaultProjectWorkspace);
+    } else {
+      needsMigration = true;
     }
 
     if ('externalLibrariesPath' in value) {
       if (typeof value.externalLibrariesPath !== 'string') {
         throw new Error('Settings 外部运行时目录无效');
       }
-
-      externalLibrariesPath = normalizeDirectory(
-        value.externalLibrariesPath,
-      );
+      externalLibrariesPath = normalizeDirectory(value.externalLibrariesPath);
+    } else {
+      needsMigration = true;
     }
 
     if ('completedOnboardingVersion' in value) {
-      if (
-        !isCompletedOnboardingVersion(
-          value.completedOnboardingVersion,
-        )
-      ) {
+      if (!isCompletedOnboardingVersion(value.completedOnboardingVersion)) {
         throw new Error('Settings 首次运行引导版本无效');
       }
-
       completedOnboardingVersion = value.completedOnboardingVersion;
+    } else {
+      needsMigration = true;
     }
 
     if ('completedAgentProviderOnboardingVersion' in value) {
-      if (
-        !isCompletedOnboardingVersion(
-          value.completedAgentProviderOnboardingVersion,
-        )
-      ) {
+      if (!isCompletedOnboardingVersion(value.completedAgentProviderOnboardingVersion)) {
         throw new Error('Settings AI Provider 首次引导版本无效');
       }
-
       if (value.completedAgentProviderOnboardingVersion > 0) {
         completedOnboardingVersion = Math.max(
           completedOnboardingVersion,
           CURRENT_ONBOARDING_VERSION,
         );
       }
+      needsMigration = true;
+    }
+
+    if ('agentProviderConnections' in value) {
+      if (!isRecord(value.agentProviderConnections)) {
+        throw new Error('Settings Agent Provider Connection 配置无效');
+      }
+      connections = Object.fromEntries(
+        Object.entries(value.agentProviderConnections).map(
+          ([id, connection]) => {
+            if (
+              !isAgentProviderConnectionConfiguration(connection) ||
+              connection.id !== id
+            ) {
+              throw new Error('Settings Agent Provider Connection 配置无效');
+            }
+            return [id, connection] as const;
+          },
+        ),
+      );
+    } else {
+      needsMigration = true;
+    }
+
+    const legacyApiConnections = new Map<string, string>();
+    if ('agentProviderAuthentications' in value) {
+      if (!isRecord(value.agentProviderAuthentications)) {
+        throw new Error('Settings Agent Provider 认证配置无效');
+      }
+      for (const [providerId, authentication] of Object.entries(
+        value.agentProviderAuthentications,
+      )) {
+        if (!isAgentProviderId(providerId) || !isRecord(authentication)) {
+          throw new Error('Settings Agent Provider 认证配置无效');
+        }
+        if (authentication.method === 'chatgpt') {
+          continue;
+        }
+        if (
+          authentication.method !== 'api-key' ||
+          !isAgentProviderBaseUrl(authentication.baseUrl)
+        ) {
+          throw new Error('Settings Agent Provider 认证配置无效');
+        }
+        const id = `${providerId}-api-legacy`;
+        connections[id] = {
+          id,
+          providerId,
+          kind: 'api-key',
+          displayName: '已迁移的 API 连接',
+          baseUrl: authentication.baseUrl,
+        };
+        legacyApiConnections.set(providerId, id);
+      }
+      needsMigration = true;
+    }
+
+    if ('agentProviderSelectorSelections' in value) {
+      if (!isRecord(value.agentProviderSelectorSelections)) {
+        throw new Error('Settings Agent Provider Selector 配置无效');
+      }
+      selections = Object.fromEntries(
+        Object.entries(value.agentProviderSelectorSelections).map(
+          ([id, selection]) => {
+            if (
+              !isAgentProviderSelectorSelectionSnapshot(selection) ||
+              selection.selectorId !== id
+            ) {
+              throw new Error('Settings Agent Provider Selector 配置无效');
+            }
+            return [id, selection] as const;
+          },
+        ),
+      );
+    } else {
+      needsMigration = true;
+    }
+
+    if ('agentProviderConsumerSelections' in value) {
+      if (!isRecord(value.agentProviderConsumerSelections)) {
+        throw new Error('Settings Agent Provider 旧配置无效');
+      }
+      for (const [consumerId, selection] of Object.entries(
+        value.agentProviderConsumerSelections,
+      )) {
+        if (
+          !isAgentProviderSelectorId(consumerId) ||
+          !isRecord(selection) ||
+          selection.consumerId !== consumerId ||
+          !isAgentProviderId(selection.providerId) ||
+          (selection.modelId !== null && typeof selection.modelId !== 'string') ||
+          (selection.reasoningEffort !== null &&
+            typeof selection.reasoningEffort !== 'string')
+        ) {
+          throw new Error('Settings Agent Provider 旧配置无效');
+        }
+        selections[consumerId] = {
+          selectorId: consumerId,
+          providerId: selection.providerId,
+          connectionId:
+            legacyApiConnections.get(selection.providerId) ??
+            builtInAccountConnectionId(selection.providerId),
+          modelId: selection.modelId,
+          reasoningEffort: selection.reasoningEffort,
+        };
+      }
+      needsMigration = true;
     }
 
     if ('selectedAgentProviderId' in value) {
@@ -424,39 +565,46 @@ export class JsonSettingsRepository implements SettingsRepository {
       ) {
         throw new Error('Settings Agent Provider 无效');
       }
-
-      selectedAgentProviderId = value.selectedAgentProviderId;
+      const providerId = value.selectedAgentProviderId;
+      if (
+        providerId &&
+        !selections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID]
+      ) {
+        selections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID] = {
+          selectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+          providerId,
+          connectionId:
+            legacyApiConnections.get(providerId) ??
+            builtInAccountConnectionId(providerId),
+          modelId: null,
+          reasoningEffort: null,
+        };
+      }
+      needsMigration = true;
     }
 
     return {
-      state: createStoredSettingsState(
-        value,
+      state: cloneState({
+        preferences: value,
         defaultProjectWorkspace,
         externalLibrariesPath,
         completedOnboardingVersion,
-        selectedAgentProviderId,
-      ),
-      needsMigration:
-        !('defaultProjectWorkspace' in value) ||
-        !('externalLibrariesPath' in value) ||
-        !('completedOnboardingVersion' in value) ||
-        'completedAgentProviderOnboardingVersion' in value ||
-        !('selectedAgentProviderId' in value),
+        agentProviderConnections: connections,
+        agentProviderSelectorSelections: selections,
+      }),
+      needsMigration,
     };
   }
 
   private async persist(state: StoredSettingsState): Promise<void> {
-    const configDirectory = dirname(this.settingsFile);
-    const temporaryFile = `${this.settingsFile}.tmp`;
-
-    await mkdir(configDirectory, { recursive: true });
+    const temporary = `${this.settingsFile}.${randomUUID()}.tmp`;
+    await mkdir(dirname(this.settingsFile), { recursive: true });
 
     try {
-      await writeFile(temporaryFile, this.serialize(state), 'utf8');
-      await rename(temporaryFile, this.settingsFile);
-    } catch (error) {
-      await rm(temporaryFile, { force: true }).catch(() => undefined);
-      throw error;
+      await writeFile(temporary, this.serialize(state), 'utf8');
+      await rename(temporary, this.settingsFile);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined);
     }
   }
 

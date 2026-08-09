@@ -4,7 +4,7 @@ import { useStore } from 'zustand';
 import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
 import type { AppSetupSnapshot } from '../../shared/app-setup';
 import { ErrorDialog } from '../components/ErrorDialog';
-import { AgentProviderCard } from './AgentProviderCard';
+import { AgentProviderConnections } from './AgentProviderConnections';
 import {
   defaultAgentProviderSetupApi,
   type AgentProviderSetupApi,
@@ -37,9 +37,6 @@ function LoadedAgentProviderSetup({
 }: LoadedAgentProviderSetupProps) {
   const controller = useAgentProviderSetup({
     setup,
-    onSetupChange: (next) => {
-      store.getState().applySnapshot(next);
-    },
     onCompleted,
     api,
     refreshProvider: (providerId) =>
@@ -50,22 +47,20 @@ function LoadedAgentProviderSetup({
     <>
       <div className="space-y-3">
         {setup.providers.map((provider) => (
-          <AgentProviderCard
+          <AgentProviderConnections
             key={provider.id}
             provider={provider}
+            api={api}
             loginChallenge={controller.loginChallenge}
-            busy={controller.busyProviderId === provider.id}
-            selectedActionLabel="完成"
-            onLogin={() => {
-              void controller.startLogin(provider.id);
+            busyConnectionId={controller.busyConnectionId}
+            onStartLogin={(providerId, connectionId) => {
+              void controller.startLogin(providerId, connectionId);
             }}
-            onSelect={() => {
-              void controller.selectProvider(provider.id);
-            }}
-            onRefresh={() => {
-              void controller.refresh(provider.id);
+            onRefresh={(providerId) => {
+              void controller.refresh(providerId);
             }}
             onReopenLogin={controller.reopenLogin}
+            onSetupChange={(next) => store.getState().applySnapshot(next)}
           />
         ))}
       </div>
@@ -84,7 +79,15 @@ function LoadedAgentProviderSetup({
       <footer className="-mx-7 -mb-6 mt-6 flex justify-end border-t border-white/[0.08] px-7 py-5">
         <button
           type="button"
-          disabled={controller.busyProviderId !== undefined}
+          disabled={controller.busyConnectionId !== undefined}
+          onClick={() => void controller.complete()}
+          className="ui-primary-button mr-2 h-10 shrink-0 rounded-full bg-slate-50 px-4 text-sm font-semibold text-slate-900 disabled:opacity-40"
+        >
+          完成
+        </button>
+        <button
+          type="button"
+          disabled={controller.busyConnectionId !== undefined}
           onClick={controller.dismiss}
           className="ui-control h-10 shrink-0 rounded-full border border-white/[0.12] px-4 text-sm text-slate-300 disabled:opacity-40"
         >
@@ -131,10 +134,10 @@ export function AgentProviderSetupDialog({
             id="agent-provider-setup-title"
             className="text-2xl font-semibold text-slate-100"
           >
-            选择 AI Provider
+            连接 AI Provider
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            之后可在右上角“设置”中更改。
+            之后可在右上角“设置”中管理连接；各功能分别选择模型。
           </p>
         </header>
 

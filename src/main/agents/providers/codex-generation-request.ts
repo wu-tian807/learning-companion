@@ -18,7 +18,6 @@ import {
 } from '../function-tools/builtin-agent-function-tool-ids';
 import type { CodexGenerationEnvironment } from './codex-generation-environment';
 import {
-  codexCapabilityFingerprintDescriptor,
   type CodexGenerationCapabilitySelection,
 } from './codex-generation-capabilities';
 import {
@@ -27,8 +26,16 @@ import {
 } from './codex-function-tools';
 
 export const CODEX_AGENT_PROVIDER_ID = 'codex';
+export const CODEX_ACCOUNT_MODEL_PROVIDER_ID = 'openai';
 
-const CODEX_GENERATION_ADAPTER_VERSION = 10;
+export type CodexGenerationConnection =
+  | { readonly kind: 'account' }
+  | {
+      readonly kind: 'api-key';
+      readonly baseUrl: string;
+      readonly modelProviderId: string;
+      readonly environmentKey: string;
+    };
 
 const CODEX_GENERATION_EXECUTION_POLICY = [
   'Learning Companion generation execution boundary:',
@@ -45,7 +52,6 @@ const CODEX_GENERATION_EXECUTION_POLICY = [
 ].join('\n');
 
 export interface CodexGenerationConfiguration {
-  readonly fingerprint: string;
   readonly profileId: string;
   readonly runtimeWorkspaceRoots: readonly string[];
   readonly threadInput: CreateCodexThreadInput;
@@ -151,6 +157,7 @@ export function createCodexGenerationConfiguration(
   environment: CodexGenerationEnvironment,
   tools: CodexGenerationToolSelection,
   capabilities: CodexGenerationCapabilitySelection,
+  connection: CodexGenerationConnection = { kind: 'account' },
 ): CodexGenerationConfiguration {
   const readableWorkspaces = collectReadableWorkspaces(request);
   const workspaceToolEnabled = tools.effectiveRequirements.some(({ id }) =>
@@ -177,57 +184,38 @@ export function createCodexGenerationConfiguration(
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
 
-  const descriptor: JsonValue = {
-    adapterVersion: CODEX_GENERATION_ADAPTER_VERSION,
-    providerId: CODEX_AGENT_PROVIDER_ID,
-    systemInstruction: request.systemInstruction,
-    effectiveTools: tools.effectiveRequirements.map(
-      ({ id, availability }) => ({
-        id,
-        availability,
-      }),
-    ),
-    nativeToolIds: tools.nativeToolIds.map((id) => id),
-    functionTools: tools.functionTools.map((tool) => ({
-      id: tool.id,
-      version: tool.version,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      ...(tool.deferLoading === undefined
-        ? {}
-        : { deferLoading: tool.deferLoading }),
-    })),
-    capabilities: codexCapabilityFingerprintDescriptor(capabilities),
-    workspaces: readableWorkspaces.map((workspace) => ({
-      key: workspace.key,
-      instanceKey: workspace.instanceKey,
-      path: workspace.path,
-      read: workspace.permissions.read,
-      write: workspace.permissions.write && workspaceWriteEnabled,
-    })),
-  };
-  const fingerprint = hashJson(descriptor);
-  const profileId = `lc-generation-${fingerprint.slice(0, 24)}`;
+  if (connection.kind === 'api-key' && !request.modelId) {
+    throw new AppError('DATA_INTEGRITY_ERROR', {
+      cause: new Error('自定义 Codex API 必须指定模型 ID'),
+    });
+  }
+
   const runtimeWorkspaceRoots = readableWorkspaces.map(({ path }) => path);
-  const filesystem: CodexJsonObject = {
-    ':minimal': 'read',
-    ...Object.fromEntries(
-      workspaceToolEnabled
-        ? readableWorkspaces.map((workspace) => [
-            workspace.path,
-            workspace.permissions.write && workspaceWriteEnabled
-              ? 'write'
-              : 'read',
-          ])
-        : [],
-    ),
-    ...Object.fromEntries(
-      capabilities.skills.map(({ directoryPath }) => [
-        directoryPath,
-        'read',
-      ]),
-    ),
+  const filesystem: Readonly<Record<string, 'read' | 'write'>> =
+    Object.freeze({
+      ':minimal': 'read',
+      ...Object.fromEntries(
+        workspaceToolEnabled
+          ? readableWorkspaces.map((workspace) => [
+              workspace.path,
+              workspace.permissions.write && workspaceWriteEnabled
+                ? 'write'
+                : 'read',
+            ])
+          : [],
+      ),
+      ...Object.fromEntries(
+        capabilities.skills.map(({ directoryPath }) => [
+          directoryPath,
+          'read',
+        ]),
+      ),
+    });
+  const permissionProfile: JsonValue = {
+    filesystem,
+    network: { enabled: false },
   };
+  const profileId = `lc-generation-${hashJson(permissionProfile).slice(0, 24)}`;
   const selectedMcpServerNames = new Set(
     capabilities.mcpServers.map(({ wireName }) => wireName),
   );
@@ -265,11 +253,21 @@ export function createCodexGenerationConfiguration(
     },
     tools: { view_image: viewImageEnabled },
     web_search: 'disabled',
+    ...(connection.kind === 'api-key'
+      ? {
+          model_providers: {
+            [connection.modelProviderId]: {
+              name: 'Learning Companion Custom API',
+              base_url: connection.baseUrl,
+              env_key: connection.environmentKey,
+              requires_openai_auth: false,
+              wire_api: 'responses',
+            },
+          },
+        }
+      : {}),
     permissions: {
-      [profileId]: {
-        filesystem,
-        network: { enabled: false },
-      },
+      [profileId]: permissionProfile,
     },
     ...disabledMcpServerOverrides,
     ...(Object.keys(selectedMcpServers).length > 0
@@ -287,6 +285,11 @@ export function createCodexGenerationConfiguration(
       : {}),
   };
   const common = {
+    ...(request.modelId ? { model: request.modelId } : {}),
+    modelProvider:
+      connection.kind === 'api-key'
+        ? connection.modelProviderId
+        : CODEX_ACCOUNT_MODEL_PROVIDER_ID,
     cwd: request.workspaces.primary.path,
     runtimeWorkspaceRoots,
     approvalPolicy: 'never' as const,
@@ -296,7 +299,6 @@ export function createCodexGenerationConfiguration(
   };
 
   return Object.freeze({
-    fingerprint,
     profileId,
     runtimeWorkspaceRoots: Object.freeze(runtimeWorkspaceRoots),
     threadInput: Object.freeze({

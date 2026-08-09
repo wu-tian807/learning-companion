@@ -38,6 +38,7 @@ export interface CodexAppServerProcessDependencies {
 export interface CodexAppServerProcessOptions {
   readonly executablePath: string | (() => string);
   readonly codexHomePath: string;
+  readonly environment?: Readonly<NodeJS.ProcessEnv>;
 }
 
 const AUTH_ENVIRONMENT_VARIABLES = [
@@ -112,7 +113,10 @@ export class CodexAppServerConnectionFactory
       {
         cwd: this.options.codexHomePath,
         env: createRuntimeEnvironment(
-          this.dependencies.environment,
+          {
+            ...this.dependencies.environment,
+            ...this.options.environment,
+          },
           this.options.codexHomePath,
         ),
         shell: false,

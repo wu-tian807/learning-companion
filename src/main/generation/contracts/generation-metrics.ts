@@ -13,6 +13,7 @@ export interface GenerationAgentExecutionMetrics {
   readonly purpose: string;
   readonly sessionId: string;
   readonly providerId: string;
+  readonly connectionId: string;
   readonly modelId: string;
   readonly startedTime: number;
   readonly completedTime: number;
@@ -78,6 +79,7 @@ export function isGenerationAgentExecutionMetrics(
     isRequiredText(value.purpose) &&
     isRequiredText(value.sessionId) &&
     isRequiredText(value.providerId) &&
+    isRequiredText(value.connectionId) &&
     isRequiredText(value.modelId) &&
     isNonNegativeInteger(value.startedTime) &&
     isNonNegativeInteger(value.completedTime) &&
@@ -142,6 +144,7 @@ function cloneExecution(
     purpose: execution.purpose.trim(),
     sessionId: execution.sessionId.trim(),
     providerId: execution.providerId.trim(),
+    connectionId: execution.connectionId.trim(),
     modelId: execution.modelId.trim(),
     ...(execution.usage ? { usage: cloneUsage(execution.usage) } : {}),
   });
