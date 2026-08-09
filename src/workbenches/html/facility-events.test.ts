@@ -62,6 +62,7 @@ describe('HTML Workbench Facility event mapper', () => {
       frameUrl: 'learning-content://resource/token',
       tagName: 'div',
       domPath: [1, 2],
+      rect: { x: 5, y: 6, width: 50, height: 20 },
       id: 'chapter',
     });
     const mapped = mapHtmlWorkbenchFacilityEvent(

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type {
   WorkbenchCommand,
-  WorkbenchCommandResult,
 } from '../../shared/workbench/protocol';
 import {
   HTML_CONVERSATION_DATA_KEY,

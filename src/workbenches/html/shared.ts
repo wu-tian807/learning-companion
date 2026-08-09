@@ -67,6 +67,12 @@ export interface HtmlElementAnchorV1 {
   readonly frameUrl: string;
   readonly tagName: string;
   readonly domPath: readonly number[];
+  readonly rect: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
   readonly id?: string;
   readonly role?: string;
   readonly ariaLabel?: string;
@@ -144,6 +150,7 @@ export function isHtmlElementAnchorV1(
     'frameUrl',
     'tagName',
     'domPath',
+    'rect',
     'id',
     'role',
     'ariaLabel',
@@ -161,12 +168,35 @@ export function isHtmlElementAnchorV1(
       (index) =>
         Number.isSafeInteger(index) && index >= 0 && index <= 100_000,
     ) &&
+    isRectValue(value.rect) &&
     (value.id === undefined || isBoundedText(value.id, 512)) &&
     (value.role === undefined || isBoundedText(value.role, 128)) &&
     (value.ariaLabel === undefined ||
       isBoundedText(value.ariaLabel, 512)) &&
     (value.textQuote === undefined ||
       isBoundedText(value.textQuote, 1_024))
+  );
+}
+
+function isRectValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y) &&
+    typeof value.width === 'number' &&
+    Number.isFinite(value.width) &&
+    typeof value.height === 'number' &&
+    Number.isFinite(value.height) &&
+    value.x >= -100_000 &&
+    value.x <= 100_000 &&
+    value.y >= -100_000 &&
+    value.y <= 100_000 &&
+    value.width >= 0 &&
+    value.width <= 100_000 &&
+    value.height >= 0 &&
+    value.height <= 100_000
   );
 }
 
@@ -211,6 +241,12 @@ export function createHtmlElementTarget(
       frameUrl: anchor.frameUrl,
       tagName: anchor.tagName,
       domPath: [...anchor.domPath],
+      rect: {
+        x: anchor.rect.x,
+        y: anchor.rect.y,
+        width: anchor.rect.width,
+        height: anchor.rect.height,
+      },
       ...(anchor.id ? { id: anchor.id } : {}),
       ...(anchor.role ? { role: anchor.role } : {}),
       ...(anchor.ariaLabel ? { ariaLabel: anchor.ariaLabel } : {}),

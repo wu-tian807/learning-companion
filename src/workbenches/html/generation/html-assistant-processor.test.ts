@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
 import type {
   GenerationTaskProcessContext,
+  TaskAgentCallResult,
   TaskAgentSession,
 } from '../../../main/generation/contracts/task-definition';
 import { createHtmlAssistantProcessor } from './html-assistant-processor';
@@ -24,7 +25,19 @@ function createContext(options: {
         callKey: 'ask',
         purpose: 'answer',
         sessionId: 'thread-1',
-      }),
+        metrics: Object.freeze({
+          callKey: 'ask',
+          purpose: 'answer',
+          sessionId: 'thread-1',
+          providerId: 'codex',
+          modelId: 'model-1',
+          startedTime: 0,
+          completedTime: 1,
+          activeDurationMs: 1,
+          turnCount: 1,
+          repairTurnCount: 0,
+        }),
+      } as TaskAgentCallResult),
     ),
     ...options.agent,
   };

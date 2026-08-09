@@ -1,73 +1,90 @@
 /**
  * Transient red-outline highlight for the HTML element captured on
- * right-click. Positioned with `position: fixed` from the element's
- * `getBoundingClientRect`, so it tracks document scrolling without any
- * frame access.
+ * right-click.
+ *
+ * The element's rect is captured by the main-side probe script inside the
+ * sandbox frame (`getBoundingClientRect` in frame coordinates). The renderer
+ * cannot reach into the frame's DOM, so this component positions a fixed
+ * overlay box using the frame rect offset by the iframe's viewport position.
+ * Scroll tracking is handled by re-reading the iframe element's rect on
+ * scroll (no frame access needed).
  */
 import { useEffect, useRef, useState } from 'react';
 
+export interface AnchorHighlightTarget {
+  readonly anchorType?: string;
+  readonly anchorPayload?: {
+    readonly rect?: {
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    };
+    readonly id?: string;
+    readonly tagName?: string;
+  };
+}
+
 export interface AnchorHighlightProps {
-  readonly target: {
-    readonly anchorType?: string;
-    readonly anchorPayload?: unknown;
-  } | undefined;
+  readonly target: AnchorHighlightTarget | undefined;
   readonly durationMs?: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+interface FrameOffset {
+  readonly x: number;
+  readonly y: number;
 }
 
-function elementFromAnchor(payload: unknown): HTMLElement | undefined {
-  if (typeof document === 'undefined' || !isRecord(payload)) {
-    return undefined;
-  }
-  const id = payload.id;
-  if (typeof id === 'string' && id.trim().length > 0) {
-    const candidate = document.getElementById(id.trim());
-    if (candidate) {
-      return candidate;
-    }
-  }
-  return undefined;
+function readFrameOffset(): FrameOffset {
+  // The document iframe is the only child frame of the workbench area.
+  const frame = document.querySelector('iframe[src^="learning-content://"]');
+  const rect = frame?.getBoundingClientRect();
+  return rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 };
 }
 
 export function AnchorHighlight({
   target,
   durationMs = 2_800,
 }: AnchorHighlightProps) {
-  const [rect, setRect] = useState<DOMRect>();
+  const [box, setBox] = useState<
+    | { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+    | undefined
+  >();
   const [visible, setVisible] = useState(false);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [label, setLabel] = useState<string>();
   const timerRef = useRef<number | undefined>(undefined);
-  const onScrollRef = useRef<() => void>(() => undefined);
-
-  const element = target && isRecord(target.anchorPayload)
-    ? elementFromAnchor(target.anchorPayload)
-    : undefined;
+  const targetRef = useRef(target);
+  targetRef.current = target;
 
   useEffect(() => {
-    if (!element) {
+    const payload = target?.anchorPayload;
+    const rect = payload?.rect;
+
+    if (!rect || rect.width === 0 || rect.height === 0) {
       setVisible(false);
-      setRect(undefined);
+      setBox(undefined);
       return;
     }
 
     const update = () => {
-      const next = element.getBoundingClientRect();
-      if (next.width === 0 && next.height === 0) {
-        setVisible(false);
-        return;
-      }
-      setRect(next);
+      const offset = readFrameOffset();
+      setBox({
+        x: offset.x + rect.x,
+        y: offset.y + rect.y,
+        width: rect.width,
+        height: rect.height,
+      });
       setVisible(true);
     };
 
     update();
-    onScrollRef.current = update;
     const doc = document.getElementById('doc');
     doc?.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
+
+    const id = payload.id;
+    const tag = payload.tagName;
+    setLabel(id ? `#${id}` : tag ? `<${tag}>` : undefined);
 
     if (timerRef.current !== undefined) {
       window.clearTimeout(timerRef.current);
@@ -84,32 +101,28 @@ export function AnchorHighlight({
         timerRef.current = undefined;
       }
     };
-  }, [element, durationMs]);
+  }, [target, durationMs]);
 
-  useEffect(() => {
-    if (visible && rect && boxRef.current) {
-      boxRef.current.style.left = `${rect.left - 2}px`;
-      boxRef.current.style.top = `${rect.top - 2}px`;
-      boxRef.current.style.width = `${rect.width + 4}px`;
-      boxRef.current.style.height = `${rect.height + 4}px`;
-    }
-  }, [visible, rect]);
-
-  if (!visible || !rect || !element) {
+  if (!visible || !box) {
     return null;
   }
 
   return (
     <div
-      ref={boxRef}
       className="pointer-events-none fixed z-[44] rounded-[4px] border-[1.5px] border-red-400/90 shadow-[0_0_0_2px_rgba(255,90,90,0.12),inset_0_0_18px_rgba(255,90,90,0.35)]"
+      style={{
+        left: `${box.x - 2}px`,
+        top: `${box.y - 2}px`,
+        width: `${box.width + 4}px`,
+        height: `${box.height + 4}px`,
+      }}
       aria-hidden="true"
     >
-      <span
-        className="absolute -top-4 left-0 rounded-[4px] bg-red-500/90 px-1.5 py-px font-mono text-[9px] text-red-50 whitespace-nowrap"
-      >
-        {element.id ? `#${element.id}` : `<${element.tagName.toLowerCase()}>`}
-      </span>
+      {label && (
+        <span className="absolute -top-4 left-0 rounded-[4px] bg-red-500/90 px-1.5 py-px font-mono text-[9px] text-red-50 whitespace-nowrap">
+          {label}
+        </span>
+      )}
     </div>
   );
 }

@@ -40,6 +40,7 @@ describe('HTML Main Facility adapters', () => {
     const executeJavaScript = vi.fn(async () => ({
       tagName: 'div',
       domPath: [1, 2, 0],
+      rect: { x: 8, y: 12, width: 200, height: 60 },
       id: 'lesson-card',
       role: 'article',
       ariaLabel: '课程内容',

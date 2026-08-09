@@ -10,4 +10,4 @@ export {
   HTML_ASSISTANT_TASK_DEFINITION_VERSION,
   HTML_ASSISTANT_INSTRUCTION_FORMAT,
   HTML_ASSISTANT_INSTRUCTION_VERSION,
-} from '../../../shared/generation-definitions';
+} from '../../shared/generation-definitions';

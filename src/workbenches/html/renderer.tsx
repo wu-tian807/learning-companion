@@ -102,8 +102,7 @@ export function HtmlWorkbenchView({
   const [aiAnchor, setAiAnchor] = useState<JsonValue>();
   const [highlightTarget, setHighlightTarget] = useState<
     { readonly anchorType?: string; readonly anchorPayload?: unknown } | undefined
-  >();
-  const frameKey = payload
+  >();  const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
 
@@ -306,7 +305,7 @@ export function HtmlWorkbenchView({
         onClose={closeAi}
         onAsk={startAssistantTask}
       />
-      <AnchorHighlight target={highlightTarget} />
+      <AnchorHighlight target={highlightTarget as never} />
 
       {/* 常驻 AI 对话入口 */}
       <button

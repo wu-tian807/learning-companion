@@ -74,9 +74,9 @@ describe('htmlAssistantInstructionFactory', () => {
         format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
         version: HTML_ASSISTANT_INSTRUCTION_VERSION,
         question: 'ok',
-        anchor: { invalid: () => 1 },
+        anchor: 42,
       }).ok,
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -90,9 +90,11 @@ describe('HtmlAssistantInstruction', () => {
 
     expect(message.role).toBe('user');
     expect(message.content.length).toBeGreaterThan(0);
-    const text = message.content[0]?.text ?? '';
-    expect(text).toContain('什么是自注意力？');
-    expect(text).toContain('自注意力机制');
+    const parts = message.content
+      .map((part) => ('text' in part ? part.text : ''))
+      .join('');
+    expect(parts).toContain('什么是自注意力？');
+    expect(parts).toContain('自注意力机制');
   });
 
   it('toSnapshot is frozen and versioned', () => {

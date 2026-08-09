@@ -95,10 +95,18 @@ export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
       candidate.getAttribute('aria-label'),
       512,
     );
+    const frameRect = candidate.getBoundingClientRect();
+    const rect = {
+      x: Math.round(frameRect.x),
+      y: Math.round(frameRect.y),
+      width: Math.round(frameRect.width),
+      height: Math.round(frameRect.height),
+    };
 
     return {
       tagName: candidate.tagName.toLowerCase(),
       domPath,
+      rect,
       ...(id ? { id } : {}),
       ...(role ? { role } : {}),
       ...(ariaLabel ? { ariaLabel } : {}),

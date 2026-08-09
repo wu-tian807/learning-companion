@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { AnchorHighlight } from './AnchorHighlight';
+import {
+  AnchorHighlight,
+  type AnchorHighlightTarget,
+} from './AnchorHighlight';
 
 describe('AnchorHighlight', () => {
   it('renders nothing when no target is provided', () => {
@@ -14,7 +17,10 @@ describe('AnchorHighlight', () => {
   it('renders nothing for a quote anchor (no element id)', () => {
     const markup = renderToStaticMarkup(
       <AnchorHighlight
-        target={{ anchorType: 'html.quote', anchorPayload: { exact: 'x' } }}
+        target={{
+          anchorType: 'html.quote',
+          anchorPayload: { exact: 'x' } as unknown as AnchorHighlightTarget['anchorPayload'],
+        }}
       />,
     );
     // SSR 无 document，元素探测返回 undefined → 空渲染（客户端才显示）
