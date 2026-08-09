@@ -5,7 +5,7 @@
 ## 当前能力
 
 - Project 卡片与 NotebookLM 风格列表视图，支持搜索、排序、置顶、重命名和删除。
-- 导入并阅读 PDF、Word、PowerPoint、Markdown、纯文本、图片、视频、HTML 与 EPUB 等资料。
+- 导入并阅读 PDF、Word 和 PowerPoint 资料。
 - Office 文档自动生成 PDF 预览；Windows 环境优先使用 PowerPoint 导出 PPT 的最终动画状态，尽量保留公式和完整页面内容。
 - PDF 统一框选文字、公式和图像区域，并把选区截图随问题发送给 AI。
 - 框选后提供“解释、举例、翻译、总结、自由提问”快捷操作，也可以输入任意问题继续追问。
