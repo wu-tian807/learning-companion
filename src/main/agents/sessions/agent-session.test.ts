@@ -18,13 +18,11 @@ describe('AgentSession', () => {
     session.bindProvider({
       providerId: 'codex',
       sessionId: 'thread-codex-1',
-      configurationFingerprint: 'sha256:codex-config',
       updatedTime: 11,
     });
     session.bindProvider({
       providerId: 'claude-code',
       sessionId: 'session-claude-1',
-      configurationFingerprint: 'sha256:claude-config',
       updatedTime: 12,
     });
 
@@ -34,12 +32,10 @@ describe('AgentSession', () => {
       providerBindings: {
         codex: {
           sessionId: 'thread-codex-1',
-          configurationFingerprint: 'sha256:codex-config',
           createdTime: 11,
         },
         'claude-code': {
           sessionId: 'session-claude-1',
-          configurationFingerprint: 'sha256:claude-config',
           createdTime: 12,
         },
       },
@@ -56,7 +52,6 @@ describe('AgentSession', () => {
     const input = {
       providerId: 'codex',
       sessionId: 'thread-1',
-      configurationFingerprint: 'sha256:config-1',
       updatedTime: 11,
     } as const;
 
@@ -72,7 +67,6 @@ describe('AgentSession', () => {
     session.bindProvider({
       providerId: 'codex',
       sessionId: 'thread-1',
-      configurationFingerprint: 'sha256:config-1',
       updatedTime: 11,
     });
 
@@ -80,7 +74,6 @@ describe('AgentSession', () => {
       session.bindProvider({
         providerId: 'codex',
         sessionId: 'thread-2',
-        configurationFingerprint: 'sha256:config-2',
         updatedTime: 12,
       }),
     ).toThrow('AGENT_SESSION_CONFLICT');
@@ -94,7 +87,6 @@ describe('AgentSession', () => {
     session.bindProvider({
       providerId: 'codex',
       sessionId: 'thread-1',
-      configurationFingerprint: 'sha256:config-1',
       updatedTime: 11,
     });
 
@@ -103,7 +95,6 @@ describe('AgentSession', () => {
         providerId: 'codex',
         expectedSessionId: 'stale-thread',
         sessionId: 'thread-2',
-        configurationFingerprint: 'sha256:config-2',
         updatedTime: 12,
       }),
     ).toThrow('AGENT_SESSION_CONFLICT');
@@ -112,13 +103,11 @@ describe('AgentSession', () => {
         providerId: 'codex',
         expectedSessionId: 'thread-1',
         sessionId: 'thread-2',
-        configurationFingerprint: 'sha256:config-2',
         updatedTime: 12,
       }),
     ).toBe(true);
     expect(session.getProviderBinding('codex')).toMatchObject({
       sessionId: 'thread-2',
-      configurationFingerprint: 'sha256:config-2',
       createdTime: 12,
     });
   });

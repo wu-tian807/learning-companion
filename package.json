@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "test:deepseek-integration": "vitest run src/main/agents/providers/codex-deepseek.integration.test.ts",
     "test:windows-integration": "vitest run src/main/external-libraries/external-command-runner.windows.integration.test.ts",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "smoke:native": "electron scripts/better-sqlite3-smoke.mjs",

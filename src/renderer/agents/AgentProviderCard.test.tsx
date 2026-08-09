@@ -1,92 +1,75 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { AgentProviderSnapshot } from '../../shared/agent-providers';
 import { AgentProviderCard } from './AgentProviderCard';
 
-const selectedProvider: AgentProviderSnapshot = {
+const provider: AgentProviderSnapshot = {
   id: 'codex',
   displayName: 'Codex',
-  description: '使用 ChatGPT 账号运行 Codex。',
-  loginLabel: '使用 ChatGPT 登录',
-  selected: true,
-  refreshing: false,
-  credential: {
-    status: 'authenticated',
-    account: {
-      email: 'student@example.com',
-      planType: 'plus',
+  description: '使用 Codex Agent 执行生成任务。',
+  supportedConnectionKinds: ['account', 'api-key'],
+  connections: [
+    {
+      id: 'codex-account',
+      providerId: 'codex',
+      kind: 'account',
+      displayName: 'ChatGPT 账号',
+      status: 'ready',
+      account: { email: 'student@example.com', planType: 'plus' },
+      hasApiKey: false,
+      refreshing: false,
+      removable: false,
     },
+    {
+      id: 'codex-api-1',
+      providerId: 'codex',
+      kind: 'api-key',
+      displayName: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      status: 'unavailable',
+      statusMessage: '暂时无法访问 Base URL',
+      hasApiKey: true,
+      refreshing: false,
+      removable: true,
+    },
+  ],
+  apiConnectionDefaults: {
+    displayName: 'Responses-compatible API',
+    baseUrl: 'https://api.openai.com/v1',
   },
 };
 
-function renderCard(selectedActionLabel?: string): string {
-  return renderToStaticMarkup(
-    <AgentProviderCard
-      provider={selectedProvider}
-      busy={false}
-      selectedActionLabel={selectedActionLabel}
-      onLogin={vi.fn()}
-      onSelect={vi.fn()}
-      onRefresh={vi.fn()}
-      onReopenLogin={vi.fn()}
-    />,
-  );
-}
-
 describe('AgentProviderCard', () => {
-  it('does not offer an action for the selected Provider in settings', () => {
-    const markup = renderCard();
+  it('只概括 Provider 及其可用连接数量', () => {
+    const markup = renderToStaticMarkup(
+      <AgentProviderCard provider={provider}>
+        <span>连接面板</span>
+      </AgentProviderCard>,
+    );
 
-    expect(markup).toContain('已选择');
-    expect(markup).not.toContain('<button');
+    expect(markup).toContain('Codex');
+    expect(markup).toContain('1 个连接可用');
+    expect(markup).toContain('连接面板');
     expect(markup).not.toContain('继续使用');
+    expect(markup).not.toContain('已选择');
   });
 
-  it('allows the onboarding dialog to provide an explicit completion action', () => {
-    const markup = renderCard('完成');
-
-    expect(markup).toContain('<button');
-    expect(markup).toContain('完成');
-  });
-
-  it('只在当前 Provider 刷新时显示独立进度', () => {
+  it('没有 ready Connection 时明确显示尚不可用', () => {
     const markup = renderToStaticMarkup(
       <AgentProviderCard
         provider={{
-          ...selectedProvider,
-          selected: false,
-          refreshing: true,
+          ...provider,
+          connections: provider.connections.map((connection) => ({
+            ...connection,
+            status: 'unconfigured' as const,
+          })),
         }}
-        busy={false}
-        onLogin={vi.fn()}
-        onSelect={vi.fn()}
-        onRefresh={vi.fn()}
-        onReopenLogin={vi.fn()}
-      />,
+      >
+        <span />
+      </AgentProviderCard>,
     );
 
-    expect(markup).toContain('正在更新');
-    expect(markup).toContain('disabled=""');
-  });
-
-  it('保留已有账号状态并显示刷新失败原因', () => {
-    const markup = renderToStaticMarkup(
-      <AgentProviderCard
-        provider={{
-          ...selectedProvider,
-          refreshError: '暂时无法更新登录状态',
-        }}
-        busy={false}
-        onLogin={vi.fn()}
-        onSelect={vi.fn()}
-        onRefresh={vi.fn()}
-        onReopenLogin={vi.fn()}
-      />,
-    );
-
-    expect(markup).toContain('student@example.com');
-    expect(markup).toContain('暂时无法更新登录状态');
-    expect(markup).toContain('重新检查');
+    expect(markup).toContain('尚无可用连接');
   });
 });

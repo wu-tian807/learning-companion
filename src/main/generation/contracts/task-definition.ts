@@ -95,6 +95,8 @@ export interface TaskDefinition<
 > extends GenerationTaskProcessor<TInstruction, TResult> {
   readonly id: string;
   readonly version: number;
+  /** Stable business slot used to resolve the execution configuration. */
+  readonly providerSelectorId: string;
   readonly systemInstruction: string;
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];

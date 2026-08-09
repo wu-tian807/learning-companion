@@ -8,7 +8,6 @@ export class AgentProviderRegistry {
   register(provider: AgentProvider): void {
     if (
       !isAgentProviderId(provider.id) ||
-      provider.providerId !== provider.id ||
       provider.displayName.trim().length === 0
     ) {
       throw new AppError('INVALID_EXTENSION_DEFINITION');

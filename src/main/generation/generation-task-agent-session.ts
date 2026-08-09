@@ -103,6 +103,7 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
       this.signal.throwIfAborted();
       const expectedSessionId =
         this.task.getSnapshot().agentCalls.at(-1)?.sessionId;
+      const executionConfiguration = this.task.getSnapshot();
       const turn = this.executor.run(
         this.prepared,
         runner,
@@ -113,6 +114,15 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
             request.userMessage ?? this.prepared.defaultUserMessage,
           ),
           ...(expectedSessionId ? { expectedSessionId } : {}),
+          ...(executionConfiguration.assignedModelId
+            ? { modelId: executionConfiguration.assignedModelId }
+            : {}),
+          ...(executionConfiguration.assignedReasoningEffort
+            ? {
+                reasoningEffort:
+                  executionConfiguration.assignedReasoningEffort,
+              }
+            : {}),
         },
         this.signal,
       );
@@ -154,15 +164,30 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
       return this.runner;
     }
 
-    const assignedProviderId = this.task.getSnapshot().assignedProviderId;
-    const runner = await this.runnerResolver.resolveRunner(
-      assignedProviderId,
-    );
+    const snapshot = this.task.getSnapshot();
+    const assignedProviderId = snapshot.assignedProviderId;
+    const assignedConnectionId = snapshot.assignedConnectionId;
+    const configuration = assignedProviderId
+      ? {
+          providerId: assignedProviderId,
+          connectionId: assignedConnectionId!,
+          ...(snapshot.assignedModelId
+            ? { modelId: snapshot.assignedModelId }
+            : {}),
+          ...(snapshot.assignedReasoningEffort
+            ? { reasoningEffort: snapshot.assignedReasoningEffort }
+            : {}),
+        }
+      : await this.runnerResolver.resolveSelectorConfiguration(
+          this.prepared.providerSelectorId,
+        );
+    const runner = await this.runnerResolver.resolveRunner(configuration);
     this.signal.throwIfAborted();
 
     if (
       assignedProviderId !== undefined &&
-      runner.providerId !== assignedProviderId
+      (runner.providerId !== assignedProviderId ||
+        runner.connectionId !== assignedConnectionId)
     ) {
       throw new Error('GenerationTask Provider 恢复结果不一致');
     }
@@ -172,7 +197,13 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
         this.now(),
         this.task.getSnapshot().updatedTime,
       );
-      this.task.assignProvider(runner.providerId, assignedTime);
+      this.task.assignProvider(
+        runner.providerId,
+        runner.connectionId,
+        assignedTime,
+        configuration.modelId,
+        configuration.reasoningEffort,
+      );
       this.database.update(this.task.getSnapshot());
     }
 

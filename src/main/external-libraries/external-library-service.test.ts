@@ -79,8 +79,13 @@ function createSettings(rootPath: string): SettingsRepository {
     updateExternalLibrariesPath: vi.fn(async (nextRootPath: string) => {
       currentRootPath = nextRootPath;
     }),
-    getSelectedAgentProviderId: vi.fn(() => null),
-    updateSelectedAgentProviderId: vi.fn(async () => undefined),
+    listAgentProviderConnections: vi.fn(() => []),
+    getAgentProviderConnection: vi.fn(() => undefined),
+    updateAgentProviderConnection: vi.fn(async () => undefined),
+    deleteAgentProviderConnection: vi.fn(async () => undefined),
+    listAgentProviderSelectorSelections: vi.fn(() => []),
+    getAgentProviderSelectorSelection: vi.fn(() => undefined),
+    updateAgentProviderSelectorSelection: vi.fn(async () => undefined),
   };
 }
 

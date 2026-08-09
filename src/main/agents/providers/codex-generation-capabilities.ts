@@ -1,4 +1,3 @@
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import type {
   AgentMcpServerRequirement,
   AgentSkillRequirement,
@@ -180,24 +179,4 @@ export async function resolveCodexGenerationCapabilities(
       mcpServers.map(({ wireName, id }) => [wireName, id]),
     ),
   });
-}
-
-export function codexCapabilityFingerprintDescriptor(
-  selection: CodexGenerationCapabilitySelection,
-): JsonValue {
-  return {
-    skills: selection.skills.map((skill) => ({
-      id: skill.id,
-      version: skill.version,
-      description: skill.description,
-      directoryPath: skill.directoryPath,
-      path: skill.path,
-    })),
-    mcpServers: selection.mcpServers.map((server) => ({
-      id: server.id,
-      availability: server.availability,
-      wireName: server.wireName,
-      definition: server.definition as unknown as JsonValue,
-    })),
-  };
 }

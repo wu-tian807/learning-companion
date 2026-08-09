@@ -13,7 +13,6 @@ export interface AgentSessionLocator {
 
 export interface AgentProviderSessionBinding {
   readonly sessionId: string;
-  readonly configurationFingerprint: string;
   readonly createdTime: number;
 }
 
@@ -29,7 +28,6 @@ export interface AgentSessionSnapshot {
 export interface BindAgentProviderSessionInput {
   readonly providerId: string;
   readonly sessionId: string;
-  readonly configurationFingerprint: string;
   readonly updatedTime: number;
 }
 
@@ -123,10 +121,6 @@ function cloneProviderBinding(
 
   return Object.freeze({
     sessionId: requireText(value.sessionId, 4096),
-    configurationFingerprint: requireText(
-      value.configurationFingerprint,
-      1024,
-    ),
     createdTime,
   });
 }
@@ -182,7 +176,6 @@ export function cloneAgentSessionSnapshot(
 interface NormalizedAgentProviderSessionInput {
   readonly providerId: string;
   readonly sessionId: string;
-  readonly configurationFingerprint: string;
   readonly updatedTime: number;
 }
 
@@ -196,10 +189,6 @@ function requireProviderInput(
   return Object.freeze({
     providerId: input.providerId,
     sessionId: requireText(input.sessionId, 4096),
-    configurationFingerprint: requireText(
-      input.configurationFingerprint,
-      1024,
-    ),
     updatedTime: requireTimestamp(input.updatedTime),
   });
 }
@@ -253,11 +242,7 @@ export class AgentSession {
       : undefined;
 
     if (existing) {
-      if (
-        existing.sessionId === normalized.sessionId &&
-        existing.configurationFingerprint ===
-          normalized.configurationFingerprint
-      ) {
+      if (existing.sessionId === normalized.sessionId) {
         return false;
       }
 
@@ -267,7 +252,6 @@ export class AgentSession {
     this.requireTransitionTime(normalized.updatedTime);
     this.replaceBinding(normalized.providerId, {
       sessionId: normalized.sessionId,
-      configurationFingerprint: normalized.configurationFingerprint,
       createdTime: normalized.updatedTime,
     });
     return true;
@@ -290,20 +274,12 @@ export class AgentSession {
     }
 
     if (existing.sessionId === normalized.sessionId) {
-      if (
-        existing.configurationFingerprint ===
-        normalized.configurationFingerprint
-      ) {
-        return false;
-      }
-
-      throw new AppError('AGENT_SESSION_CONFLICT');
+      return false;
     }
 
     this.requireTransitionTime(normalized.updatedTime);
     this.replaceBinding(normalized.providerId, {
       sessionId: normalized.sessionId,
-      configurationFingerprint: normalized.configurationFingerprint,
       createdTime: normalized.updatedTime,
     });
     return true;

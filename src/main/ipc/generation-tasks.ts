@@ -52,6 +52,18 @@ function toView(snapshot: GenerationTaskSnapshot): GenerationTaskView {
     ...(snapshot.assignedProviderId
       ? { assignedProviderId: snapshot.assignedProviderId }
       : {}),
+    ...(snapshot.assignedConnectionId
+      ? { assignedConnectionId: snapshot.assignedConnectionId }
+      : {}),
+    ...(snapshot.assignedModelId
+      ? { assignedModelId: snapshot.assignedModelId }
+      : {}),
+    ...(snapshot.assignedReasoningEffort
+      ? {
+          assignedReasoningEffort:
+            snapshot.assignedReasoningEffort,
+        }
+      : {}),
     ...(snapshot.agentCalls.length > 0
       ? { sessionId: snapshot.agentCalls.at(-1)!.sessionId }
       : {}),

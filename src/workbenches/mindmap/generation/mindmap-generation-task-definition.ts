@@ -17,6 +17,7 @@ import {
   MIND_MAP_GENERATION_CANDIDATE_VERSION,
 } from './mindmap-generation-output';
 import type { MindMapGenerationTaskResult } from './mindmap-generation-processor';
+import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 
 export {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
@@ -53,6 +54,7 @@ export function createMindMapGenerationTaskDefinitionV1(
   return Object.freeze({
     id: MIND_MAP_GENERATION_TASK_DEFINITION_ID,
     version: MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
+    providerSelectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
     systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
     toolRequirements: Object.freeze([]),
     skills: Object.freeze([]),
