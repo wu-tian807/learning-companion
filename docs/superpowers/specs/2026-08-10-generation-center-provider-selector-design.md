@@ -19,6 +19,7 @@
 - 修复 #1：重选同一连接不再卡死。
 - 修复 #2：任务重试时若固化的连接已失效/被删，回退到当前 selector 配置。
 - 修复 #3：ChatGPT 账号连接的可用性真实反映到 UI。
+- 修复 #4：自定义 API（Responses 兼容）连接下，AI 回答能交付到对话 UI（流式 delta 缺失时兜底）。
 
 ## 非目标
 
@@ -107,6 +108,23 @@ const configuration =
 
 **效果**：设置页账号连接卡片显示"不可用（账号凭据无效，请重新登录）"而非"可用"。
 
+### 4. 自定义 API 下 AI 回答交付兜底（Bug #4）
+
+**背景（真机 + 日志证据）**：
+- 火山方舟（自定义 API）下，模型 SSE 流式回复正常（`response.output_text.delta` 一帧帧都有）。
+- 但 codex app-server 转发给应用的 RPC 通知里**从不包含 `item/agentMessage/delta`**（日志统计 0 条）——`item/started`、`item/completed`、`turn/completed` 都有，唯独 delta 缺失。
+- 因此 renderer 收不到任何 `assistant-delta`，对话面板显示空白；任务本身 OK（turn 完成）。
+- **完整答案在 `turn/completed` 的 `turn.items[].agentMessage.text` 里**（真机抓包确认："已收到，连通正常，可以继续测试。"）。
+- 根因推测：app-server 的 delta 通知依赖 OpenAI 特有的事件序列/`in_progress` 支持，第三方 Responses 兼容 API（火山）不满足该序列，delta 被 app-server 丢弃。
+
+**改动**：
+1. `src/main/agents/providers/codex-agent-provider.ts` 的 `startCodexTurn`：流式循环中统计是否收到过 `assistant-delta`；`turn/completed` 时若 **0 个 delta**，则从 `turn.items` 提取 `agentMessage` 文本，作为一次 `assistant-delta` 事件 yield（渲染侧拼接即得完整回答）。
+2. 若既有 delta 又有 items（正常路径），不重复发送。
+
+**效果**：自定义 API 连接下对话 UI 能显示完整回答；OpenAI 账号连接下流式体验不变。
+
+**边界**：多个 `agentMessage` 时按顺序拼接（对话场景通常 1 个）；`items` 无 `agentMessage`（如纯工具 turn）则不兜底、不报错。
+
 ## 测试
 
 ### 单测
@@ -120,15 +138,19 @@ const configuration =
   - `hasConnection` 对存在的连接返回 true、不存在的返回 false。
 - `codex-agent-provider.test.ts`：
   - `inspectAccountConnection` 在认证探测（`getRateLimits`/`listModels`）失败时返回 `unavailable` 并带中文提示；探测成功时返回 `ready`。
+  - `startCodexTurn` 无 delta 时从 `turn.items` 兜底提取 `agentMessage` 文本并 yield；有 delta 时不重复。
+- `html-assistant-processor.test.ts` 相关测试保持通过（处理器不提取答案的设计不变）。
 - `GenerationCenter.test.tsx` 相关测试不受影响（本次不改生成中心 UI）。
 
 ### 真机验证（CDP）
 
 - 复现路径：设置页选择器重选同一连接 → 模型下拉恢复。
 - 账号连接卡片：坏 key 显示"凭据无效"。
+- 自定义 API 对话链路：打开 HTML 资产 → AI 对话 → 提问 → 回答完整显示（此前为空白）。
 
 ## 风险与注意事项
 
+- **Bug #4 根因推测**（app-server 依赖 OpenAI 事件序列）：若后续 codex 版本修复了 delta 转发，兜底逻辑需保证不重复发送（delta 已存在时不兜底）。
 - 认证探测端点的选择需真机验证：`getRateLimits` 若不经认证校验，改用 `listModels`。
 - 探测会引入一次本地 codex 到 OpenAI 的请求；网络不通时账号连接显示"无法连接 AI 服务"（区分于"凭据无效"）。
 - `hasConnection` 接口新增会触碰 `GenerationAgentRunnerResolver` 的所有实现方（目前仅 `AgentProviderService`），测试 mock 需同步。
