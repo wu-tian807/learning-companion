@@ -73,7 +73,10 @@ const providerFactories: Readonly<
       dependencies.stateDatabase,
     ),
   'builtin.html': (dependencies) =>
-    new HtmlWorkbenchProvider(dependencies.contentResourceService),
+    new HtmlWorkbenchProvider(
+      dependencies.contentResourceService,
+      dependencies.stateDataDatabase,
+    ),
   'builtin.epub': (dependencies) =>
     new EpubWorkbenchProvider(
       dependencies.contentResourceService,

@@ -20,6 +20,11 @@ export const HTML_LINK_ANCHOR_VERSION = 1;
 export const HTML_ELEMENT_ANCHOR_TYPE = 'html.element';
 export const HTML_ELEMENT_ANCHOR_VERSION = 1;
 
+export const htmlConversationCommands = {
+  list: 'html.conversations.list',
+  append: 'html.conversations.append',
+} as const;
+
 export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   typeof HTML_WORKBENCH_ID
 > = {
