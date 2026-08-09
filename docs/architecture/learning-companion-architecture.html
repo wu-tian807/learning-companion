@@ -1919,11 +1919,11 @@
               row: 1,
               span: 5
             }),
-            N("main-registry", "Main WorkbenchRegistry", {
-              tag: "PROVIDER REGISTRY",
-              caption: "priority + media specificity + capabilities",
-              summary: "使用 shared Manifest 选择 MainWorkbenchProvider。显式 selectionPriority 优先，再比较媒体类型精确度；同级冲突直接失败。",
-              files: ["src/main/workbench/workbench-registry.ts"],
+            N("main-registry", "Main Workbench Registries", {
+              tag: "PROVIDER + FACILITY REGISTRIES",
+              caption: "provider selection · workbench-scoped capture",
+              summary: "WorkbenchRegistry 依 Manifest 选择 Provider；MainFacilityAdapterRegistry 以 workbenchId + facility 选择该媒体自己的沙箱采集逻辑，Host 不理解 HTML DOM、EPUB CFI 或 PDF 坐标。",
+              files: ["src/main/workbench/workbench-registry.ts", "src/main/workbench/interaction/main-facility-adapter-registry.ts", "src/main/workbench/interaction/sandbox-frame-interaction-bridge.ts"],
               col: 4,
               row: 3,
               span: 5
@@ -1965,7 +1965,7 @@
             { id: "workbench.main-ipc", from: "preload-port", to: "session", label: "validated request", summary: "Preload/Main IPC handler 校验 Workbench 请求，并调用注入的 WorkbenchSessionService。" },
             { id: "workbench.content-handle", from: "content-port", to: "session", label: "resolve handle", summary: "WorkbenchSessionService 从 Content Runtime 获取有生命周期的 ContentHandle，并在关闭 Session 时释放。" },
             { from: "session", to: "main-registry", label: "select" },
-            { id: "workbench.main-catalog", from: "catalog-port", to: "main-registry", label: "register providers", tone: "contract", summary: "Builtin catalog 在 Main 侧创建并注册具有稳定 workbenchId 的 Provider。" },
+            { id: "workbench.main-catalog", from: "catalog-port", to: "main-registry", label: "providers + adapters", tone: "contract", summary: "Builtin catalog 在 Main 侧创建 Provider，并自动注册其声明的 Workbench-scoped Facility Adapters；Adapter 归属必须与 Manifest ID 一致。" },
             { from: "main-registry", to: "bootstrap", label: "ID + versions" },
             { id: "workbench.bootstrap-via-ipc", from: "bootstrap", to: "renderer-port", label: "contract handshake", tone: "both", summary: "WorkbenchBootstrap 经 Preload 返回后，Renderer 使用 ID 解析 lazy module，并核对 Workbench 版本、协议版本与 Manifest。" }
           ]
@@ -2030,9 +2030,9 @@
             }),
             N("html", "HTML", {
               tag: "builtin.html",
-              caption: "sandbox frame · facilities",
-              summary: "通过安全内容 URL 和隔离 Frame 展示原始 HTML，交互事件经 Main bridge 返回 Runtime。",
-              files: ["src/workbenches/html/"],
+              caption: "sandbox frame · DOM-owned Anchor",
+              summary: "通过隔离 Frame 展示原始 HTML；HTML 自己注册 Main Facility Adapters，在对应 Frame 中探测 DOM，并把 html.element / html.quote Anchor 经通用 Bridge 返回 Runtime。",
+              files: ["src/workbenches/html/main-facility-adapters.ts", "src/workbenches/html/facility-events.ts", "src/workbenches/html/shared.ts"],
               child: "workbench-extension",
               col: 11,
               row: 2,
@@ -2121,7 +2121,7 @@
             N("shared-file", "shared.ts", {
               tag: "REQUIRED",
               caption: "Manifest · payload · commands · state",
-              summary: "定义稳定 workbenchId、Manifest 版本、选择优先级、Content capabilities、Facility 声明和跨 IPC JSON 数据。",
+              summary: "定义稳定 workbenchId、Manifest 版本、选择优先级、Content capabilities、Facility 声明、媒体 Anchor 和跨 IPC JSON 数据。",
               boundaries: ["必须是纯数据并带运行时校验；Lint 禁止依赖 Main、Renderer 或 Preload。"],
               files: ["src/shared/workbench/manifest.ts", "src/workbenches/mindmap/shared.ts"],
               col: 1,
@@ -2131,9 +2131,9 @@
             N("main-file", "main.ts", {
               tag: "REQUIRED",
               caption: "MainWorkbenchProvider",
-              summary: "实现 open、command、close；需要模型友好副本时可实现 materializeContent。可信 Service 通过构造函数注入。",
+              summary: "实现 open、command、close；需要模型友好副本时可实现 materializeContent。沙箱媒体可通过 facilityAdapters 一并注册自己的 Main 采集器。可信 Service 通过构造函数注入。",
               boundaries: ["不要从 Renderer 直接访问文件或外部程序。"],
-              files: ["src/main/workbench/workbench-session.ts", "src/workbenches/office/main.ts"],
+              files: ["src/main/workbench/workbench-session.ts", "src/workbenches/office/main.ts", "src/workbenches/html/main-facility-adapters.ts"],
               col: 5,
               row: 3,
               span: 3
@@ -2150,7 +2150,7 @@
             N("catalogs", "Typed Main + Renderer Registration", {
               tag: "REQUIRED",
               caption: "同一 Manifest 注册 Provider 与 lazy loader",
-              summary: "把 Manifest 加入 builtin catalog；Main Factory 与 Renderer Loader 的返回 ID 在编译期绑定，运行时再核对完整 Manifest。",
+              summary: "把 Manifest 加入 builtin catalog；Main Factory 与 Renderer Loader 的返回 ID 在编译期绑定，运行时核对完整 Manifest，并验证 Main Facility Adapter 的 Workbench 归属。",
               files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
               target: "workbench",
               col: 5,

@@ -5,6 +5,7 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
 } from '../../shared/workbench/facilities/core-facilities';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
+import { createHtmlElementTarget } from './shared';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 
 describe('HTML Workbench Facility event mapper', () => {
@@ -57,6 +58,12 @@ describe('HTML Workbench Facility event mapper', () => {
   });
 
   it('maps context text and links into one frozen menu interaction', () => {
+    const elementTarget = createHtmlElementTarget({
+      frameUrl: 'learning-content://resource/token',
+      tagName: 'div',
+      domPath: [1, 2],
+      id: 'chapter',
+    });
     const mapped = mapHtmlWorkbenchFacilityEvent(
       {
         sessionId: 'session-1',
@@ -69,6 +76,7 @@ describe('HTML Workbench Facility event mapper', () => {
           selectionText: '右键选区',
           linkUrl: 'https://example.com/chapter',
           mediaType: 'none',
+          target: elementTarget,
         },
       },
       'session-1',
@@ -83,6 +91,7 @@ describe('HTML Workbench Facility event mapper', () => {
     expect(
       mapped && findTextSelectionInput(mapped.interaction)?.text,
     ).toBe('右键选区');
+    expect(mapped?.interaction.focus).toEqual(elementTarget);
   });
 
   it('ignores stale sessions and unknown facility versions', () => {

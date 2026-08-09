@@ -18,10 +18,8 @@ import type { WorkbenchFacilityEvent } from '../../../shared/workbench/facilitie
 import type { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import {
   SANDBOX_CONTEXT_MENU_TRIGGER,
-} from './adapters/sandbox-context-menu-facility-adapter';
-import {
   SANDBOX_SELECTION_SETTLED_TRIGGER,
-} from './adapters/sandbox-text-selection-facility-adapter';
+} from './sandbox-frame-interaction-triggers';
 import type {
   ActiveWorkbenchTransportBinding,
   WorkbenchTransportBindingRegistry,
@@ -160,6 +158,7 @@ export class SandboxFrameInteractionBridge {
 
     for (const facility of activeBinding.binding.facilities) {
       const adapter = this.adapterRegistry.get(
+        activeBinding.workbenchId,
         facility.id,
         facility.version,
         trigger,
@@ -171,6 +170,8 @@ export class SandboxFrameInteractionBridge {
 
       try {
         const payload = await adapter.capture({
+          sessionId: activeBinding.sessionId,
+          workbenchId: activeBinding.workbenchId,
           trigger,
           frame,
           source,
