@@ -23,6 +23,7 @@ import {
 import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import { ConversationOverlay } from './conversation/ConversationOverlay';
+import { AnchorHighlight } from './conversation/AnchorHighlight';
 import { createHtmlConversationStore } from './conversation/conversation-store';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
@@ -99,6 +100,9 @@ export function HtmlWorkbenchView({
   const [frameFailed, setFrameFailed] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiAnchor, setAiAnchor] = useState<JsonValue>();
+  const [highlightTarget, setHighlightTarget] = useState<
+    { readonly anchorType?: string; readonly anchorPayload?: unknown } | undefined
+  >();
   const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
@@ -237,6 +241,16 @@ export function HtmlWorkbenchView({
 
         contextRef.current = mapped.context;
         onInteractionChange(mapped.interaction);
+        // 右键命中元素/文本锚点时，短暂显示细红框标注识别位置。
+        const focusTarget = mapped.interaction.focus;
+        if (focusTarget && focusTarget.scope === 'content') {
+          setHighlightTarget({
+            anchorType: focusTarget.anchorType,
+            anchorPayload: focusTarget.anchorPayload,
+          });
+        } else {
+          setHighlightTarget(undefined);
+        }
         runtime.openContextMenu(
           bootstrap.sessionId,
           mapped.position,
@@ -292,6 +306,17 @@ export function HtmlWorkbenchView({
         onClose={closeAi}
         onAsk={startAssistantTask}
       />
+      <AnchorHighlight target={highlightTarget} />
+
+      {/* 常驻 AI 对话入口 */}
+      <button
+        type="button"
+        onClick={() => openAi(undefined)}
+        className="absolute right-3 top-3 z-30 rounded-full border border-indigo-300/30 bg-indigo-400/15 px-3 py-1.5 text-[10px] font-medium text-indigo-100 shadow-lg backdrop-blur-sm hover:border-indigo-300/50 hover:bg-indigo-400/25"
+        aria-label="打开 AI 对话"
+      >
+        ✨ AI 对话
+      </button>
 
       {loadedFrameKey !== frameKey && !frameFailed && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#151a20]/88">
