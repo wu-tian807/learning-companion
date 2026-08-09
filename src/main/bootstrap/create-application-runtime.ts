@@ -63,6 +63,8 @@ import { registerMainWorkbenches } from '../../workbenches/catalog/register-main
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
 import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { createHtmlAssistantProcessor } from '../../workbenches/html/generation/html-assistant-processor';
+import { createHtmlAssistantTaskDefinitionV1 } from '../../workbenches/html/generation/html-assistant-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -242,6 +244,11 @@ export async function createApplicationRuntime({
           assetService,
           associationService,
         ),
+      ),
+    );
+    generationTaskDefinitions.register(
+      createHtmlAssistantTaskDefinitionV1(
+        createHtmlAssistantProcessor(),
       ),
     );
     const generationTaskPreparer = new GenerationTaskPreparer(
