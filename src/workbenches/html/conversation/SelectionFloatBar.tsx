@@ -1,20 +1,33 @@
 /**
  * Floating "解释选中内容" bar shown after a text selection in the HTML
- * document. Positioned below the selection rect (viewport coordinates),
- * fixed so it stays put while the document scrolls. Dismissed when a
- * mousedown lands outside it.
+ * document.
+ *
+ * The selection rect is captured by the main-side probe inside the sandbox
+ * frame (frame coordinates); the renderer cannot reach into the frame, so
+ * this component positions itself at `iframe viewport offset + frame rect`
+ * — the same approach as AnchorHighlight. Position updates on scroll by
+ * re-reading the iframe element's rect.
  */
 import { useEffect, useRef, useState } from 'react';
 
+export interface SelectionRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface SelectionFloatBarProps {
   readonly text: string;
-  readonly rect: {
-    readonly left: number;
-    readonly top: number;
-    readonly bottom: number;
-  };
+  readonly rect?: SelectionRect;
   readonly onExplain: (text: string) => void;
   readonly onDismiss: () => void;
+}
+
+function readFrameOffset(): { x: number; y: number } {
+  const frame = document.querySelector('iframe[src^="learning-content://"]');
+  const r = frame?.getBoundingClientRect();
+  return r ? { x: r.left, y: r.top } : { x: 0, y: 0 };
 }
 
 export function SelectionFloatBar({
@@ -27,17 +40,28 @@ export function SelectionFloatBar({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!rect) {
+      // 无 rect（历史事件）时退化为文档区顶部
+      setPosition({ left: 24, top: 64 });
+      return;
+    }
+
     const update = () => {
+      const offset = readFrameOffset();
       setPosition({
-        left: rect.left + 10,
-        top: rect.bottom + 8,
+        left: offset.x + rect.x + 10,
+        top: offset.y + rect.y + rect.height + 8,
       });
     };
     update();
-    // 保持与当前选区视觉对齐（选区滚动后通常已被清除，此处理论上无变化）
+    const doc = document.getElementById('doc');
+    doc?.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [rect.left, rect.bottom]);
+    return () => {
+      doc?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [rect]);
 
   useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
@@ -53,8 +77,7 @@ export function SelectionFloatBar({
     return null;
   }
 
-  const snippet =
-    text.length > 18 ? `${text.slice(0, 18)}…` : text;
+  const snippet = text.length > 18 ? `${text.slice(0, 18)}…` : text;
 
   return (
     <div

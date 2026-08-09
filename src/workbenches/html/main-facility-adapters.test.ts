@@ -103,7 +103,10 @@ describe('HTML Main Facility adapters', () => {
   });
 
   it('publishes an HTML quote Anchor for settled selection', async () => {
-    const executeJavaScript = vi.fn(async () => '选中的正文');
+    const executeJavaScript = vi.fn(async () => ({
+      text: '选中的正文',
+      rect: { x: 10, y: 20, width: 120, height: 18 },
+    }));
     const sourceFrame = frame(executeJavaScript);
     const payload = await new HtmlTextSelectionFacilityAdapter().capture(
       context(sourceFrame),

@@ -21,13 +21,31 @@ import {
   createHtmlQuoteTarget,
   HTML_WORKBENCH_ID,
   isHtmlElementAnchorV1,
+  type HtmlQuoteAnchorV1,
 } from './shared';
 
 export const READ_HTML_FRAME_SELECTION_SCRIPT = `(() => {
   const selection = typeof globalThis.getSelection === 'function'
     ? globalThis.getSelection()
     : null;
-  return selection ? selection.toString() : '';
+  const text = selection ? selection.toString() : '';
+  let rect;
+  try {
+    if (selection && selection.rangeCount > 0) {
+      const r = selection.getRangeAt(0).getBoundingClientRect();
+      if (r.width > 0 || r.height > 0) {
+        rect = {
+          x: Math.round(r.x),
+          y: Math.round(r.y),
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+        };
+      }
+    }
+  } catch {
+    rect = undefined;
+  }
+  return { text, rect };
 })()`;
 
 export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
@@ -214,17 +232,25 @@ export class HtmlTextSelectionFacilityAdapter
     const result = await context.frame.executeJavaScript(
       READ_HTML_FRAME_SELECTION_SCRIPT,
     );
+    const parsed =
+      typeof result === 'object' && result !== null && !Array.isArray(result)
+        ? (result as { readonly text?: unknown; readonly rect?: unknown })
+        : {};
     const text =
-      typeof result === 'string'
-        ? result.slice(0, CORE_TEXT_SELECTION_MAX_LENGTH)
+      typeof parsed.text === 'string'
+        ? parsed.text.slice(0, CORE_TEXT_SELECTION_MAX_LENGTH)
         : '';
     const frameUrl = context.frame.url || 'about:blank';
+    const rect =
+      typeof parsed.rect === 'object' && parsed.rect !== null
+        ? (parsed.rect as HtmlQuoteAnchorV1['rect'])
+        : undefined;
 
     return {
       ...(text.trim()
         ? {
             text,
-            target: createHtmlQuoteTarget(text, frameUrl),
+            target: createHtmlQuoteTarget(text, frameUrl, rect),
           }
         : {}),
       frameUrl,

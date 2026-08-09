@@ -57,6 +57,13 @@ export interface HtmlWorkbenchPayload {
 export interface HtmlQuoteAnchorV1 {
   readonly exact: string;
   readonly frameUrl?: string;
+  /** 选区在 frame 内的视口矩形（用于 renderer 定位悬浮条/标注）。 */
+  readonly rect?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
 }
 
 export interface HtmlLinkAnchorV1 {
@@ -125,11 +132,18 @@ export function isHtmlWorkbenchPayload(
 export function isHtmlQuoteAnchorV1(
   value: unknown,
 ): value is HtmlQuoteAnchorV1 {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const allowedKeys = new Set(['exact', 'frameUrl', 'rect']);
+
   return (
-    isRecord(value) &&
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
     isBoundedText(value.exact, 16_384) &&
     (value.frameUrl === undefined ||
-      isBoundedText(value.frameUrl, 8_192))
+      isBoundedText(value.frameUrl, 8_192)) &&
+    (value.rect === undefined || isRectValue(value.rect))
   );
 }
 
@@ -203,6 +217,7 @@ function isRectValue(value: unknown): boolean {
 export function createHtmlQuoteTarget(
   exact: string,
   frameUrl?: string,
+  rect?: HtmlQuoteAnchorV1['rect'],
 ): JsonValue & ContentAnchorTarget {
   return {
     scope: 'content',
@@ -211,6 +226,7 @@ export function createHtmlQuoteTarget(
     anchorPayload: {
       exact,
       ...(frameUrl ? { frameUrl } : {}),
+      ...(rect ? { rect } : {}),
     },
   };
 }

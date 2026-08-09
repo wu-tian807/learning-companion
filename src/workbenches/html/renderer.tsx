@@ -103,6 +103,9 @@ export function HtmlWorkbenchView({
   const [aiOpen, setAiOpen] = useState(false);
   const [aiAnchor, setAiAnchor] = useState<JsonValue>();
   const [selectionText, setSelectionText] = useState<string>();
+  const [selectionRect, setSelectionRect] = useState<
+    { x: number; y: number; width: number; height: number } | undefined
+  >();
   const [highlightTarget, setHighlightTarget] = useState<
     { readonly anchorType?: string; readonly anchorPayload?: unknown } | undefined
   >();
@@ -240,9 +243,23 @@ export function HtmlWorkbenchView({
 
         if (mapped.kind === 'selection') {
           onInteractionChange(mapped.interaction);
-          // 有选区文本时显示「解释选中内容」悬浮条
+          // 有选区文本时显示「解释选中内容」悬浮条（锚点携带 frame 内 rect）
           const selection = findTextSelectionInput(mapped.interaction);
+          const payload =
+            selection?.target &&
+            selection.target.scope === 'content' &&
+            selection.target.anchorType === 'html.quote'
+              ? (selection.target.anchorPayload as {
+                  readonly rect?: {
+                    readonly x: number;
+                    readonly y: number;
+                    readonly width: number;
+                    readonly height: number;
+                  };
+                } | undefined)
+              : undefined;
           setSelectionText(selection?.text);
+          setSelectionRect(payload?.rect);
           return;
         }
 
@@ -329,17 +346,23 @@ export function HtmlWorkbenchView({
       {selectionText && !aiOpen && (
         <SelectionFloatBar
           text={selectionText}
-          rect={{ left: 24, top: 56, bottom: 64 }}
+          rect={selectionRect}
           onExplain={(text) => {
             setSelectionText(undefined);
             openAi({
               scope: 'content',
               anchorType: 'html.quote',
               anchorVersion: 1,
-              anchorPayload: { exact: text },
+              anchorPayload: {
+                exact: text,
+                ...(selectionRect ? { rect: selectionRect } : {}),
+              },
             });
           }}
-          onDismiss={() => setSelectionText(undefined)}
+          onDismiss={() => {
+            setSelectionText(undefined);
+            setSelectionRect(undefined);
+          }}
         />
       )}
 
