@@ -13,14 +13,12 @@
    数据库 `generation_tasks` 记录：失败任务 `11cd4b28` 的 `assigned_connection_id = codex-account`，`assigned_model_id = NULL`；而配置好的 selector 是 `generation-center → codex-api-46ad99e9（火山方舟）→ doubao-seed-2.0-lite`。任务创建时把当时的 selector 配置固化进任务，重试直接复用固化连接，不读取当前 selector。
 3. **ChatGPT 账号连接显示"可用"，但实际 key 无效**。
    `~/.codex/auth.json` 中存的 key 无效（`ced537b1` 任务报 401 `Incorrect API key provided: pwd`）。`inspectAccountConnection` 只查本地 codex 进程状态，不验证 key 真伪，UI 因此显示"可用"。
-4. **生成中心页面没有 AI 执行连接入口**，用户只能进设置改。
 
 ## 目标
 
 - 修复 #1：重选同一连接不再卡死。
 - 修复 #2：任务重试时若固化的连接已失效/被删，回退到当前 selector 配置。
 - 修复 #3：ChatGPT 账号连接的可用性真实反映到 UI。
-- 实现 #4：生成中心直接可选 AI 执行连接，不用进设置。
 
 ## 非目标
 
@@ -109,26 +107,6 @@ const configuration =
 
 **效果**：设置页账号连接卡片显示"不可用（账号凭据无效，请重新登录）"而非"可用"。
 
-### 4. 生成中心 AI 执行选择条（Feature #4）
-
-**位置**：`src/renderer/generation/GenerationCenter.tsx`，`beforeList` 顶部、「通用生成工具」标题之前。
-
-**形态**：一条紧凑横条，含两个 SelectMenu（复用 `SelectMenu` 组件）：
-- 连接下拉（`ariaLabel="生成中心 AI 执行账号"`）：选项为所有 provider 的所有 connection，label 形如 `Codex · Responses-compatible API`（复用 `AgentProviderSelector` 的 `connectionValue` 拼法）。
-- 模型下拉：连接对应的模型目录（api-key 连接 `allowsCustomModel` 时为 editable 输入框；account 连接为选项列表）。不展示思考力度（沿用 selector 保存的值，不占空间）。
-
-**数据流**：
-- 复用 `agentProviderStore`（`src/renderer/agents/agent-provider-store.ts`）+ `defaultAgentProviderSetupApi`，与设置页同一 store 实例，状态同步。
-- 初始值：`setup.selections` 中 `selectorId === 'generation-center'` 的 `providerId/connectionId/modelId`。
-- 选择连接或模型时：调 `selectAgentProviderForSelector` 保存（与设置页相同），store `applySnapshot` 刷新；**不自动触发任何生成**。
-- 展示当前选择：横条标题「AI 执行账号」，副标题显示当前连接 displayName + 模型 ID（如 `火山方舟 · doubao-seed-2.0-lite`）。
-
-**错误处理**：保存失败显示行内错误文案；`catalog` 拉取失败（account 连接时）显示"无法读取模型列表，可直接填写模型 ID"（已有文案），editable 输入框仍可输入。
-
-**组件划分**：新建 `src/renderer/generation/GenerationCenterProviderSelector.tsx`（纯展示 + store 连接），与 `AgentProviderSelector` 共享逻辑（连接扁平化、目录拉取、保存）。考虑抽取公共 hook `useAgentProviderSelector(selectorId)` 供两处复用，避免复制粘贴。
-
-**范围**：仅接入 `generation-center` selector（生成中心）。其他 selector（如有）不动。
-
 ## 测试
 
 ### 单测
@@ -142,17 +120,15 @@ const configuration =
   - `hasConnection` 对存在的连接返回 true、不存在的返回 false。
 - `codex-agent-provider.test.ts`：
   - `inspectAccountConnection` 在认证探测（`getRateLimits`/`listModels`）失败时返回 `unavailable` 并带中文提示；探测成功时返回 `ready`。
-- `GenerationCenter.test.tsx`：
-  - 渲染 AI 执行选择条，展示当前选择，选择后调用 `selectAgentProviderForSelector`。
+- `GenerationCenter.test.tsx` 相关测试不受影响（本次不改生成中心 UI）。
 
 ### 真机验证（CDP）
 
 - 复现路径：设置页选择器重选同一连接 → 模型下拉恢复。
-- 生成中心选择条：切换连接 → 模型下拉加载 → 保存 → 新建生成任务走新连接。
+- 账号连接卡片：坏 key 显示"凭据无效"。
 
 ## 风险与注意事项
 
 - 认证探测端点的选择需真机验证：`getRateLimits` 若不经认证校验，改用 `listModels`。
 - 探测会引入一次本地 codex 到 OpenAI 的请求；网络不通时账号连接显示"无法连接 AI 服务"（区分于"凭据无效"）。
 - `hasConnection` 接口新增会触碰 `GenerationAgentRunnerResolver` 的所有实现方（目前仅 `AgentProviderService`），测试 mock 需同步。
-- 生成中心选择条与设置页选择器是同一 selector 的两处入口，保存互相同步（同一 store + 同一 settings 键）。
