@@ -321,7 +321,7 @@ export function EpubWorkbenchView({
       if (disposed) {
         return;
       }
-      book = createBook(buffer, { openAs: 'epub' });
+      book = createBook(buffer);
       bookRef.current = book;
       await book.opened;
       if (disposed) {
