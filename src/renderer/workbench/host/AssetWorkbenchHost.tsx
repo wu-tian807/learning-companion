@@ -436,9 +436,9 @@ export function AssetWorkbenchHost({
   return (
     <article
       aria-label="Asset 资料工作台"
-      className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
+      className="relative h-full w-full min-w-0 overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
     >
-      <div className="flex h-[54px] shrink-0 items-center justify-between gap-4 border-b border-white/[0.075] px-[17px]">
+      <div className="absolute inset-x-0 top-0 z-10 flex h-[54px] items-center justify-between gap-4 border-b border-white/[0.075] px-[17px]">
         <h2 className="truncate text-sm font-semibold text-slate-100">
           {asset?.name ?? '资料工作台'}
         </h2>
@@ -451,10 +451,8 @@ export function AssetWorkbenchHost({
           </div>
         )}
       </div>
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div className="absolute inset-0 min-h-0 overflow-hidden">
-          {content}
-        </div>
+      <div className="absolute inset-x-0 bottom-0 top-[54px] min-h-0 overflow-hidden">
+        {content}
       </div>
       <WorkbenchContextMenuHost />
     </article>
