@@ -62,6 +62,10 @@ interface TaskAgentSession {
 }
 ```
 
+一个 GenerationTask 对应一次由产品层发起的 Agent 业务请求。TaskDefinition 的
+`process()` 可以为完成该请求执行一次或多次 Provider Turn，例如生成后自动修复；这些
+Turn 都属于同一个 GenerationTask，不会变成多个对用户可见的任务。
+
 Definition 只得到任务级 Agent 能力，不得到原始 Provider、Runner 或
 `AgentSessionService`。因此它不能绕过用户选择、登录检查、Session 映射和 metrics。
 

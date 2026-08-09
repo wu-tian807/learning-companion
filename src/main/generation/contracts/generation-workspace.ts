@@ -51,10 +51,6 @@ export function cloneAgentWorkspaceConfig(
     throw new Error('Agent workspace permissions 数据无效');
   }
 
-  if (config.scope === 'shared' && config.permissions.write) {
-    throw new Error('Shared Agent workspace 不允许 Agent 写入');
-  }
-
   return Object.freeze({
     key,
     scope: config.scope,
