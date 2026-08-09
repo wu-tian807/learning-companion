@@ -156,15 +156,23 @@ describe('GenerationTaskService', () => {
       prepare: async (task: GenerationTaskSnapshot) => prepareTask(task),
       restore: async (task: GenerationTaskSnapshot) => prepareTask(task),
     } satisfies GenerationTaskPreparerApi;
-    const requests: { readonly sessionId?: string }[] = [];
+    const requests: Array<{
+      readonly sessionId?: string;
+      readonly modelId?: string;
+      readonly reasoningEffort?: string;
+    }> = [];
     let turnNumber = 0;
     const runner: GenerationAgentRunner = {
       providerId: 'codex',
       connectionId: 'codex-account',
       async *runTurn(request) {
-        requests.push(
-          request.sessionId ? { sessionId: request.sessionId } : {},
-        );
+        requests.push({
+          ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+          ...(request.modelId ? { modelId: request.modelId } : {}),
+          ...(request.reasoningEffort
+            ? { reasoningEffort: request.reasoningEffort }
+            : {}),
+        });
         turnNumber += 1;
         yield { type: 'assistant-delta', delta: `turn-${turnNumber}` };
         await mkdir(join(primaryPath, 'output'), { recursive: true });
@@ -212,15 +220,31 @@ describe('GenerationTaskService', () => {
     const resolvedProviderIds: string[] = [];
     let selectedProviderId = 'codex';
     let selectedConnectionId = 'codex-account';
+    let selectedModelId = 'gpt-original';
+    let selectedReasoningEffort = 'high';
     let codexRunner: GenerationAgentRunner = runner;
+    const resolvedConfigurations: Array<{
+      readonly providerId: string;
+      readonly connectionId?: string;
+      readonly modelId?: string;
+      readonly reasoningEffort?: string;
+    }> = [];
     const runnerResolver = {
       resolveSelectorConfiguration() {
         return {
           providerId: selectedProviderId,
           connectionId: selectedConnectionId,
+          modelId: selectedModelId,
+          reasoningEffort: selectedReasoningEffort,
         };
       },
-      async resolveRunner(configuration: { providerId: string }) {
+      async resolveRunner(configuration: {
+        providerId: string;
+        connectionId?: string;
+        modelId?: string;
+        reasoningEffort?: string;
+      }) {
+        resolvedConfigurations.push({ ...configuration });
         resolvedProviderIds.push(configuration.providerId);
 
         if (configuration.providerId !== 'codex') {
@@ -271,7 +295,9 @@ describe('GenerationTaskService', () => {
       next = await execution.next();
     }
 
-    expect(requests).toEqual([{}]);
+    expect(requests).toEqual([
+      { modelId: 'gpt-original', reasoningEffort: 'high' },
+    ]);
     expect(resolvedProviderIds).toEqual(['codex']);
     expect(database.get('task-1')?.assignedProviderId).toBe('codex');
     expect(database.get('task-1')?.assignedConnectionId).toBe(
@@ -356,17 +382,51 @@ describe('GenerationTaskService', () => {
     await expect(drain(service.run(retryable.id))).rejects.toThrow(
       'simulated Agent interruption',
     );
-    expect(database.get(retryable.id)?.assignedProviderId).toBe('codex');
+    expect(database.get(retryable.id)).toMatchObject({
+      assignedProviderId: 'codex',
+      assignedConnectionId: 'codex-account',
+      assignedModelId: 'gpt-original',
+      assignedReasoningEffort: 'high',
+    });
 
     selectedProviderId = 'claude-code';
     selectedConnectionId = 'claude-account';
+    selectedModelId = 'claude-sonnet';
+    selectedReasoningEffort = 'medium';
+    const latestSelectionTask = service.create({
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new MindMapGenerationInstruction().toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+    });
+    expect(database.get(latestSelectionTask.id)).toMatchObject({
+      assignedProviderId: 'claude-code',
+      assignedConnectionId: 'claude-account',
+      assignedModelId: 'claude-sonnet',
+      assignedReasoningEffort: 'medium',
+    });
+    service.cancel(latestSelectionTask.id);
+
     codexRunner = runner;
     await drain(service.run(retryable.id));
     expect(resolvedProviderIds.slice(-2)).toEqual(['codex', 'codex']);
+    expect(resolvedConfigurations.at(-1)).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-original',
+      reasoningEffort: 'high',
+    });
+    expect(requests.at(-1)).toMatchObject({
+      modelId: 'gpt-original',
+      reasoningEffort: 'high',
+    });
     expect(database.get(retryable.id)?.completed).toBeDefined();
 
     selectedProviderId = 'codex';
     selectedConnectionId = 'codex-account';
+    selectedModelId = 'gpt-original';
+    selectedReasoningEffort = 'high';
     const backgroundEvents: string[] = [];
     const unsubscribe = service.subscribe((event) => {
       backgroundEvents.push(event.type);

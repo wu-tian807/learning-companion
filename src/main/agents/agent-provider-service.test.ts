@@ -12,10 +12,7 @@ import { AgentProviderRegistry } from './agent-provider-registry';
 import type { AgentProviderSecretStore } from './agent-provider-secret-file';
 import { AgentProviderSelectorRegistry } from './agent-provider-selector-registry';
 import { AgentProviderService } from './agent-provider-service';
-import {
-  normalizeCodexResponsesBaseUrl,
-  resolveCodexResponsesEndpointUrl,
-} from './providers/codex-responses-url';
+import { normalizeCodexResponsesBaseUrl } from './providers/codex-responses-url';
 
 function createSettings() {
   const connections = new Map<string, AgentProviderConnectionConfiguration>();
@@ -111,8 +108,6 @@ function createProvider(
     })),
     cancelLogin: vi.fn(async () => undefined),
     normalizeApiConnectionBaseUrl: normalizeCodexResponsesBaseUrl,
-    resolveApiConnectionProbeUrl: (connection) =>
-      resolveCodexResponsesEndpointUrl(connection.baseUrl),
     getModelCatalog: vi.fn(async (configuration) => ({
       providerId: 'codex',
       connectionId: configuration.id,
@@ -212,7 +207,7 @@ describe('AgentProviderService', () => {
   it('creates multiple API connections while keeping keys outside settings', async () => {
     const { service, connections, secretValues } = createService();
 
-    await service.configureApiConnection({
+    const firstSetup = await service.configureApiConnection({
       providerId: 'codex',
       displayName: 'DeepSeek',
       baseUrl: 'https://api.deepseek.com/v1',
@@ -232,6 +227,7 @@ describe('AgentProviderService', () => {
       displayName: 'DeepSeek',
       baseUrl: 'https://api.deepseek.com/v1',
     });
+    expect(JSON.stringify(firstSetup)).not.toContain('secret-one');
     expect(JSON.stringify([...connections.values()])).not.toContain('secret-one');
     expect(secretValues.get('codex/codex-api-connection-1')).toBe('secret-one');
     expect(connections.get('codex-api-connection-2')).toMatchObject({
@@ -254,9 +250,7 @@ describe('AgentProviderService', () => {
       apiKey: 'not-proactively-validated',
     });
 
-    expect(probeUrl).toHaveBeenCalledWith(
-      'https://example.com/v1/responses',
-    );
+    expect(probeUrl).toHaveBeenCalledWith('https://example.com/v1');
     expect(setup.providers[0]?.connections[1]).toMatchObject({
       status: 'ready',
       hasApiKey: true,
@@ -279,9 +273,7 @@ describe('AgentProviderService', () => {
     expect(connections.get('codex-api-connection-1')).toMatchObject({
       baseUrl: 'https://api.openai.com/v1',
     });
-    expect(probeUrl).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/responses',
-    );
+    expect(probeUrl).toHaveBeenCalledWith('https://api.openai.com/v1');
 
     await service.dispose();
   });
@@ -414,14 +406,22 @@ describe('AgentProviderService', () => {
     await service.dispose();
   });
 
-  it('deletes only removable Connections and their encrypted secret', async () => {
-    const { service, secretValues } = createService();
+  it('deletes removable Connections together with their Selector and encrypted secret', async () => {
+    const { service, secretValues, selections } = createService();
     await service.configureApiConnection({
       providerId: 'codex',
       displayName: 'Custom',
       baseUrl: 'https://example.com/v1',
       apiKey: 'secret',
     });
+    await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-api-connection-1',
+      modelId: 'custom-model',
+      reasoningEffort: null,
+    });
+    expect(selections.size).toBe(1);
 
     const setup = await service.deleteConnection(
       'codex',
@@ -429,6 +429,8 @@ describe('AgentProviderService', () => {
     );
 
     expect(setup.providers[0]?.connections).toHaveLength(1);
+    expect(setup.selections).toEqual([]);
+    expect(selections.size).toBe(0);
     expect(secretValues.size).toBe(0);
     await expect(
       service.deleteConnection('codex', 'codex-account'),
