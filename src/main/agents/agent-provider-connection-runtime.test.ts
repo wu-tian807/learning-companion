@@ -21,7 +21,7 @@ function createProvider(): AgentProvider {
     id: 'codex',
     displayName: 'Codex',
     description: 'Codex Agent',
-    supportedConnectionKinds: ['account'],
+    supportedConnectionKinds: ['account', 'api-key'],
     builtInConnections: [accountConnection],
     inspectAccountConnection: vi.fn(async () => ({ status: 'ready' as const })),
     startLogin: vi.fn(async (connection) => {
@@ -76,14 +76,24 @@ function createManualTimers() {
   return { callbacks, clearTimer, runNext, setTimer };
 }
 
-function createRuntime(provider = createProvider()) {
+interface CreateRuntimeOptions {
+  readonly apiKey?: string;
+  readonly connections?: readonly AgentProviderConnectionConfiguration[];
+  readonly logger?: Pick<Console, 'warn'>;
+  readonly probeUrl?: (url: string) => Promise<void>;
+}
+
+function createRuntime(
+  provider = createProvider(),
+  options: CreateRuntimeOptions = {},
+) {
   const registry = new AgentProviderRegistry();
   registry.register(provider);
   const settings = {
-    listAgentProviderConnections: () => [],
+    listAgentProviderConnections: () => options.connections ?? [],
   } as unknown as SettingsRepository;
   const secrets: AgentProviderSecretStore = {
-    get: vi.fn(async () => undefined),
+    get: vi.fn(async () => options.apiKey),
     set: vi.fn(async () => undefined),
     delete: vi.fn(async () => undefined),
   };
@@ -94,11 +104,11 @@ function createRuntime(provider = createProvider()) {
     new AgentProviderConnectionCatalog(settings, registry),
     vi.fn(),
     {
-      logger: { warn: vi.fn() },
+      logger: options.logger ?? { warn: vi.fn() },
       loginPollIntervalMs: 1,
       setTimer: timers.setTimer,
       clearTimer: timers.clearTimer,
-      probeUrl: vi.fn(async () => undefined),
+      probeUrl: options.probeUrl ?? vi.fn(async () => undefined),
     },
   );
   return { provider, runtime, timers };
@@ -171,6 +181,40 @@ describe('AgentProviderConnectionRuntime', () => {
       inspection: { status: 'unconfigured' },
       refreshing: false,
     });
+
+    await runtime.dispose();
+  });
+
+  it('keeps API keys out of snapshots and logs when probing fails', async () => {
+    const apiKey = 'lc-test-secret-never-log';
+    const logger = { warn: vi.fn() };
+    const apiConnection: AgentProviderConnectionConfiguration = {
+      id: 'codex-api-test',
+      providerId: 'codex',
+      kind: 'api-key',
+      displayName: 'Test API',
+      baseUrl: 'https://offline.example',
+    };
+    const provider = createProvider();
+    const { runtime } = createRuntime(provider, {
+      apiKey,
+      connections: [apiConnection],
+      logger,
+      probeUrl: vi.fn(async () => {
+        throw new Error(`simulated probe failure containing ${apiKey}`);
+      }),
+    });
+
+    await runtime.ensureRefreshed(provider, apiConnection);
+
+    const snapshot = runtime.snapshot('codex', apiConnection.id);
+    expect(snapshot).toMatchObject({
+      inspection: { status: 'unavailable' },
+      hasApiKey: true,
+      refreshing: false,
+    });
+    expect(JSON.stringify(snapshot)).not.toContain(apiKey);
+    expect(logger.warn).not.toHaveBeenCalled();
 
     await runtime.dispose();
   });
