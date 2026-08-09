@@ -97,12 +97,15 @@ const configuration =
 
 ### 3. 账号连接可用性提示（Bug #3）
 
-**改动**：`src/main/agents/providers/codex-agent-provider.ts` 的 `inspectAccountConnection` 增加对 key 有效性的探测：
+**现状**：`inspectAccountConnection` 已传 `refreshCredentials=true`（`codex-agent-provider.ts:209`），语义是"触发 codex 的 token 刷新流程"。但 `ced537b1` 的 401 证明：token 刷新成功（账号状态可读）≠ key 有效。`getAccount` 只返回本地账号状态，不验证 key 能否通过 OpenAI 校验，所以"可用"是假阳性。
 
-- 在 `getAccount(refreshCredentials)` 返回 `ready` 后，再调 `accountRuntime.getAccount(true)`（强制刷新凭据，若刷新失败/无有效凭据则 `status: 'unavailable'`，statusMessage 中文提示）。
-- 若刷新成功但 `account.type` 不是已知可用类型（如 `'pwd'` 疑似错误配置），标记 `status: 'unavailable'` 并提示"账号凭据无效，请重新登录"。
+**改动**：`inspectAccountConnection` 在 `getAccount` 返回账号后，再做一次**轻量认证探测**：调用 codex runtime 的 `getRateLimits()`（`account/rateLimits/read`，本地 codex 进程转发到 OpenAI，用当前凭据）。成功 → `status: 'ready'`；失败（401 等认证错误）→ `status: 'unavailable'`，statusMessage 中文提示"账号凭据无效，请重新登录"。
 
-**说明**：`getAccount(true)` 的 refreshToken 语义是强制刷新 codex 账号 token，刷新失败通常意味着凭据过期/无效。这是低成本、无网络请求的探测（本地 codex 进程内完成），不会卡 UI。
+**说明**：
+- 复用本地 codex 进程（不新增 HTTP 客户端、不把 key 带到主进程）；请求失败即凭据无效。
+- `getRateLimits` 是只读探测，无副作用（不触发 token 刷新、不登出）。
+- 若真机验证发现 `getRateLimits` 不经过认证校验（如本地直接返回），改用 `listModels({ limit: 1 })` 探测（同样只读、走 OpenAI）。
+- 探测失败的网络错误（非认证错误）→ 仍标 `unavailable`，但 statusMessage 用"无法连接 AI 服务"。
 
 **效果**：设置页账号连接卡片显示"不可用（账号凭据无效，请重新登录）"而非"可用"。
 
@@ -138,7 +141,7 @@ const configuration =
 - `agent-provider-service.test.ts`：
   - `hasConnection` 对存在的连接返回 true、不存在的返回 false。
 - `codex-agent-provider.test.ts`：
-  - `inspectAccountConnection` 在 `getAccount(true)` 失败时返回 `unavailable`。
+  - `inspectAccountConnection` 在认证探测（`getRateLimits`/`listModels`）失败时返回 `unavailable` 并带中文提示；探测成功时返回 `ready`。
 - `GenerationCenter.test.tsx`：
   - 渲染 AI 执行选择条，展示当前选择，选择后调用 `selectAgentProviderForSelector`。
 
@@ -149,6 +152,7 @@ const configuration =
 
 ## 风险与注意事项
 
-- `getAccount(true)` 的刷新语义需在真机验证：若刷新本身有副作用（如强制登出），改用只读探测。
+- 认证探测端点的选择需真机验证：`getRateLimits` 若不经认证校验，改用 `listModels`。
+- 探测会引入一次本地 codex 到 OpenAI 的请求；网络不通时账号连接显示"无法连接 AI 服务"（区分于"凭据无效"）。
 - `hasConnection` 接口新增会触碰 `GenerationAgentRunnerResolver` 的所有实现方（目前仅 `AgentProviderService`），测试 mock 需同步。
 - 生成中心选择条与设置页选择器是同一 selector 的两处入口，保存互相同步（同一 store + 同一 settings 键）。
