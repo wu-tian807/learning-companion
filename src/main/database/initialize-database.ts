@@ -24,6 +24,7 @@ import { processGenerationTasksMigration } from './migrations/0016-process-gener
 import { assignGenerationTaskModelMigration } from './migrations/0017-assign-generation-task-model';
 import { assignGenerationTaskConnectionMigration } from './migrations/0018-assign-generation-task-connection';
 import { createAttachmentsMigration } from './migrations/0019-create-attachments';
+import { repairGenerationTaskAssignmentColumnsMigration } from './migrations/0020-repair-generation-task-assignment-columns';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
@@ -36,6 +37,7 @@ import * as workbenchStateSchema from './schema/workbench-state';
 interface DatabaseMigration {
   readonly version: number;
   readonly sql: string;
+  readonly apply?: (sqlite: Database.Database) => void;
 }
 
 const migrations: readonly DatabaseMigration[] = [
@@ -58,6 +60,7 @@ const migrations: readonly DatabaseMigration[] = [
   assignGenerationTaskModelMigration,
   assignGenerationTaskConnectionMigration,
   createAttachmentsMigration,
+  repairGenerationTaskAssignmentColumnsMigration,
 ];
 const schema = {
   ...projectSchema,
@@ -102,7 +105,10 @@ function applyMigrations(sqlite: Database.Database): void {
         throw new Error(`数据库迁移版本不连续：${migration.version}`);
       }
 
-      sqlite.exec(migration.sql);
+      if (migration.sql.trim()) {
+        sqlite.exec(migration.sql);
+      }
+      migration.apply?.(sqlite);
       sqlite.pragma(`user_version = ${migration.version}`);
       appliedVersion = migration.version;
     }

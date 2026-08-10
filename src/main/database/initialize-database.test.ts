@@ -33,7 +33,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -142,7 +142,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        19,
+        20,
       );
     } finally {
       secondContext.close();
@@ -191,7 +191,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -276,7 +276,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<
@@ -345,7 +345,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -413,7 +413,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -732,7 +732,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -837,7 +837,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -878,5 +878,30 @@ describe('initializeDatabase', () => {
     context.close();
 
     expect(context.sqlite.open).toBe(false);
+  });
+
+  it('repairs version 19 databases whose assignment columns drifted across branches', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacy = initializeDatabase(databaseFile);
+    legacy.sqlite.exec(`
+      ALTER TABLE generation_tasks DROP COLUMN assigned_model_id;
+      ALTER TABLE generation_tasks DROP COLUMN assigned_reasoning_effort;
+    `);
+    legacy.sqlite.pragma('user_version = 19');
+    legacy.close();
+
+    const context = initializeDatabase(databaseFile);
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      const columns = context.sqlite
+        .prepare<[], { name: string }>('PRAGMA table_info(generation_tasks)')
+        .all()
+        .map(({ name }) => name);
+      expect(columns).toContain('assigned_connection_id');
+      expect(columns).toContain('assigned_model_id');
+      expect(columns).toContain('assigned_reasoning_effort');
+    } finally {
+      context.close();
+    }
   });
 });

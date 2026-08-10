@@ -176,7 +176,7 @@ function AnnotationPopup({
   onDelete,
 }: AnnotationPopupProps) {
   const [deleting, setDeleting] = useState(false);
-  const metadata = body as Record<string, unknown> | undefined;
+  const metadata = (body ?? attachment.metadata) as Record<string, unknown> | undefined;
   const question = metadata && typeof metadata.question === 'string' ? metadata.question : undefined;
   const answer = metadata && typeof metadata.answer === 'string' ? metadata.answer : undefined;
   const selectedAnswer =
