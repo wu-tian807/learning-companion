@@ -4,7 +4,7 @@ import {
   createAbsoluteLocalFileContentRef,
   createProjectWorkspaceContentRef,
 } from '../../shared/assets';
-import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import {
   cloneAssetAttachment,
   createAssetAttachment,

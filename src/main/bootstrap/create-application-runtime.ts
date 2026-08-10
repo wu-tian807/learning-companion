@@ -21,7 +21,9 @@ import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/l
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
-import { AttachmentFileManager } from '../attachments/attachment-file-manager';
+import { AnchorRegistry } from '../attachments/anchor-registry';
+import { AttachmentContentFile } from '../attachments/attachment-content-file';
+import { AttachmentRegistry } from '../attachments/attachment-registry';
 import { AttachmentService } from '../attachments/attachment-service';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
@@ -43,7 +45,7 @@ import { GenerationTaskDatabase } from '../generation/generation-task-database';
 import { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
 import { GenerationTaskExecution } from '../generation/generation-task-execution';
 import { GenerationTaskService } from '../generation/generation-task-service';
-import { EpubExplanationService } from '../epub-explanations/epub-explanation-service';
+import { EpubExplanationService } from '../../workbenches/epub/explanations/epub-explanation-service';
 import { GenerationAssetReferencePreparer } from '../generation/preparation/generation-asset-reference-preparer';
 import { GenerationPreparedManifestFile } from '../generation/preparation/generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from '../generation/preparation/generation-task-preparer';
@@ -68,8 +70,9 @@ import { registerMainWorkbenches } from '../../workbenches/catalog/register-main
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
 import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
-import { EpubExplanationProcessor } from '../../workbenches/epub/generation/epub-explanation-processor';
-import { createEpubExplanationTaskDefinitionV1 } from '../../workbenches/epub/generation/epub-explanation-task-definition';
+import { registerEpubExplanationAttachmentTypes } from '../../workbenches/epub/explanations/main';
+import { EpubExplanationProcessor } from '../../workbenches/epub/explanations/generation/processor';
+import { createEpubExplanationTaskDefinitionV1 } from '../../workbenches/epub/explanations/generation/task-definition';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -196,10 +199,36 @@ export async function createApplicationRuntime({
       artifactRegistry,
     );
     const assetDatabase = new AssetDatabase(databaseContext);
+    const attachmentRegistry = new AttachmentRegistry();
+    const anchorRegistry = new AnchorRegistry();
+    registerEpubExplanationAttachmentTypes(
+      attachmentRegistry,
+      anchorRegistry,
+    );
+    const attachmentFiles = new AttachmentContentFile(projectDatabase);
+    const assetServiceReference: { current?: AssetService } = {};
     const attachmentService = new AttachmentService(
       new AttachmentDatabase(databaseContext),
+      attachmentRegistry,
+      anchorRegistry,
+      attachmentFiles,
+      {
+        touch(projectId, assetId, updatedTime) {
+          const current = assetDatabase.get(projectId, assetId);
+          if (!current) return;
+          const nextTime = Math.max(updatedTime, current.updatedTime);
+          if (assetServiceReference.current?.getActiveProjectId() === projectId) {
+            assetServiceReference.current.update(assetId, {
+              updatedTime: { mode: 'now' },
+            });
+          } else {
+            assetDatabase.update(projectId, assetId, {
+              updatedTime: nextTime,
+            });
+          }
+        },
+      },
     );
-    const attachmentFiles = new AttachmentFileManager(projectDatabase);
     const associationService = new AssetAssociationService(
       new AssetReferenceDatabase(databaseContext),
       new AssetLinkDatabase(databaseContext),
@@ -220,9 +249,11 @@ export async function createApplicationRuntime({
       workspaceManager,
       {
         artifactCleanup: artifactService,
+        attachmentCleanup: attachmentService,
         deletionObserver: associationService,
       },
     );
+    assetServiceReference.current = assetService;
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
     const transportBindingRegistry =

@@ -3,7 +3,7 @@ import type { IpcRenderer } from 'electron';
 import {
   isEpubExplanationEvent,
   type EpubExplanationEvent,
-} from '../shared/epub-explanations';
+} from '../workbenches/epub/explanations/shared';
 import { IPC_CHANNELS } from '../shared/ipc';
 
 export function subscribeEpubExplanationEvents(

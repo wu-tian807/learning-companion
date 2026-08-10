@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
@@ -7,7 +7,7 @@ import {
   createProjectWorkspaceContentRef,
   type ProjectWorkspaceLocalFileContentRef,
 } from '../../shared/assets';
-import type { AssetAttachmentContent } from '../../shared/workbench/attachment';
+import type { AssetAttachmentContent } from '../../shared/attachments/contracts';
 import { AppError } from '../errors/app-error';
 import type { ProjectLookup } from '../projects/project-database';
 import { resolvePortableWorkspacePath } from '../projects/project-workspace-manager';
@@ -39,33 +39,51 @@ function isMissingFile(error: unknown): boolean {
   );
 }
 
-export class AttachmentFileManager {
+export interface WriteAttachmentContentInput {
+  readonly projectId: string;
+  readonly attachmentId: string;
+  readonly fileName: string;
+  readonly mediaType: string;
+  readonly content: string | Uint8Array;
+}
+
+/** Generic file lifecycle for Attachment-owned project workspace content. */
+export class AttachmentContentFile {
   constructor(private readonly projects: ProjectLookup) {}
 
-  async writeMarkdown(
-    projectId: string,
-    attachmentId: string,
-    markdown: string,
+  async write(
+    input: WriteAttachmentContentInput,
   ): Promise<AssetAttachmentContent> {
-    const project = this.requireProject(projectId);
-    const id = requireSegment(attachmentId, 'id');
-    const relativePath = `attachments/${id}/answer.md`;
+    const project = this.requireProject(input.projectId);
+    const attachmentId = requireSegment(input.attachmentId, 'id');
+    const fileName = requireSegment(input.fileName, 'fileName');
+    const mediaType = input.mediaType.trim();
+
+    if (!mediaType) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const relativePath = `attachments/${attachmentId}/${fileName}`;
     const absolutePath = resolvePortableWorkspacePath(
       project.workspacePath,
       relativePath,
     );
     await mkdir(dirname(absolutePath), { recursive: true });
-    await writeFileAtomic(absolutePath, `${markdown.trim()}\n`, {
-      encoding: 'utf8',
+    const content =
+      typeof input.content === 'string'
+        ? input.content
+        : Buffer.from(input.content);
+    await writeFileAtomic(absolutePath, content, {
+      ...(typeof input.content === 'string' ? { encoding: 'utf8' } : {}),
     });
 
     return Object.freeze({
       ref: createProjectWorkspaceContentRef(relativePath),
-      mediaType: 'text/markdown',
+      mediaType,
     });
   }
 
-  async readMarkdown(
+  async readText(
     projectId: string,
     ref: ProjectWorkspaceLocalFileContentRef,
   ): Promise<string | undefined> {
@@ -85,14 +103,27 @@ export class AttachmentFileManager {
     }
   }
 
-  async delete(projectId: string, attachmentId: string): Promise<void> {
+  async removeAttachment(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<void> {
     const project = this.requireProject(projectId);
-    const directory = join(
-      project.workspacePath,
-      'attachments',
-      requireSegment(attachmentId, 'id'),
+    const relativePath = `attachments/${requireSegment(
+      attachmentId,
+      'id',
+    )}`;
+    await rm(
+      resolvePortableWorkspacePath(project.workspacePath, relativePath),
+      { recursive: true, force: true },
     );
-    await rm(directory, { recursive: true, force: true });
+  }
+
+  async removeProject(projectId: string): Promise<void> {
+    const project = this.requireProject(projectId);
+    await rm(
+      resolvePortableWorkspacePath(project.workspacePath, 'attachments'),
+      { recursive: true, force: true },
+    );
   }
 
   private requireProject(projectId: string) {

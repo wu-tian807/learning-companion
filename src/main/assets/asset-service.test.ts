@@ -602,7 +602,11 @@ describe('AssetService', () => {
     const database = createDatabase([copiedAsset]);
     const { registry } = createResolver();
     const removeManagedAssetFile = vi.fn(async () => true);
-    const service = createService(database, registry, {}, {
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+    const service = createService(database, registry, { attachmentCleanup }, {
       removeManagedAssetFile,
     });
     await service.loadFromProject('project');
@@ -648,12 +652,17 @@ describe('AssetService', () => {
     ]);
     const { registry } = createResolver();
     const removeManagedAssetFile = vi.fn(async () => true);
-    const service = createService(database, registry, {}, {
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+    const service = createService(database, registry, { attachmentCleanup }, {
       removeManagedAssetFile,
     });
 
     await service.removeManagedFilesByProject('project', '/tmp/project');
 
+    expect(attachmentCleanup.removeByProject).toHaveBeenCalledWith('project');
     expect(removeManagedAssetFile).toHaveBeenCalledTimes(2);
     expect(removeManagedAssetFile).toHaveBeenNthCalledWith(
       1,
@@ -846,14 +855,23 @@ describe('AssetService', () => {
     const deletionObserver = {
       onAssetDeleted: vi.fn(),
     };
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
     const service = createService(database, registry, {
       artifactCleanup,
+      attachmentCleanup,
       deletionObserver,
     });
     await service.loadFromProject('project');
 
     await service.delete('asset');
 
+    expect(attachmentCleanup.removeByAsset).toHaveBeenCalledWith(
+      'project',
+      'asset',
+    );
     expect(artifactCleanup.removeByAsset).toHaveBeenCalledWith(
       'asset',
       '/tmp/project',

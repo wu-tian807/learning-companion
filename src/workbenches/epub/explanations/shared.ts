@@ -1,4 +1,11 @@
-import type { ContentAnchorTarget } from './workbench/anchor';
+import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
+import type { JsonValue } from '../../../shared/workbench/protocol';
+import {
+  EPUB_CFI_RANGE_ANCHOR_TYPE,
+  EPUB_CFI_RANGE_ANCHOR_VERSION,
+  isEpubCfiRangeAnchorV1,
+  type EpubCfiRangeAnchorV1,
+} from '../shared';
 
 export const EPUB_EXPLANATION_ATTACHMENT_TYPE = 'epub.ai-explanation';
 export const EPUB_EXPLANATION_ATTACHMENT_VERSION = 1;
@@ -11,16 +18,17 @@ export const EPUB_EXPLANATION_INSTRUCTION_VERSION = 1;
 export type EpubExplanationStatus = 'pending' | 'completed' | 'failed';
 
 export interface EpubCfiRangeTarget extends ContentAnchorTarget {
-  readonly anchorType: 'epub.cfi-range';
-  readonly anchorVersion: 1;
-  readonly anchorPayload: {
-    readonly cfiRange: string;
-    readonly quote: {
-      readonly exact: string;
-      readonly prefix: string;
-      readonly suffix: string;
-    };
-  };
+  readonly anchorType: typeof EPUB_CFI_RANGE_ANCHOR_TYPE;
+  readonly anchorVersion: typeof EPUB_CFI_RANGE_ANCHOR_VERSION;
+  readonly anchorPayload: JsonValue & EpubCfiRangeAnchorV1;
+}
+
+export interface EpubExplanationMetadata {
+  readonly format: 'learning-companion/epub-explanation';
+  readonly version: 1;
+  readonly status: EpubExplanationStatus;
+  readonly taskId?: string;
+  readonly failureMessage?: string | null;
 }
 
 export interface EpubExplanationView {
@@ -46,9 +54,8 @@ export interface CreateEpubExplanationRequest
   readonly target: EpubCfiRangeTarget;
 }
 
-export interface EpubExplanationIdRequest {
-  readonly projectId: string;
-  readonly assetId: string;
+export interface EpubExplanationIdRequest
+  extends ListEpubExplanationsRequest {
   readonly explanationId: string;
 }
 
@@ -83,25 +90,30 @@ function isTime(value: unknown): value is number {
 export function isEpubCfiRangeTarget(
   value: unknown,
 ): value is EpubCfiRangeTarget {
-  if (
-    !isRecord(value) ||
-    value.scope !== 'content' ||
-    value.anchorType !== 'epub.cfi-range' ||
-    value.anchorVersion !== 1 ||
-    !isRecord(value.anchorPayload) ||
-    !isRequiredText(value.anchorPayload.cfiRange, 8_192) ||
-    !isRecord(value.anchorPayload.quote)
-  ) {
-    return false;
-  }
-
-  const quote = value.anchorPayload.quote;
   return (
-    isRequiredText(quote.exact) &&
-    typeof quote.prefix === 'string' &&
-    quote.prefix.length <= 256 &&
-    typeof quote.suffix === 'string' &&
-    quote.suffix.length <= 256
+    isRecord(value) &&
+    value.scope === 'content' &&
+    value.anchorType === EPUB_CFI_RANGE_ANCHOR_TYPE &&
+    value.anchorVersion === EPUB_CFI_RANGE_ANCHOR_VERSION &&
+    isEpubCfiRangeAnchorV1(value.anchorPayload)
+  );
+}
+
+export function isEpubExplanationMetadata(
+  value: unknown,
+): value is EpubExplanationMetadata {
+  return (
+    isRecord(value) &&
+    value.format === 'learning-companion/epub-explanation' &&
+    value.version === 1 &&
+    (value.status === 'pending' ||
+      value.status === 'completed' ||
+      value.status === 'failed') &&
+    (value.taskId === undefined || isRequiredText(value.taskId, 256)) &&
+    (value.failureMessage === undefined ||
+      value.failureMessage === null ||
+      (typeof value.failureMessage === 'string' &&
+        value.failureMessage.length <= 1_000))
   );
 }
 
@@ -129,8 +141,8 @@ export function isEpubExplanationIdRequest(
   value: unknown,
 ): value is EpubExplanationIdRequest {
   return (
-    isListEpubExplanationsRequest(value) &&
     isRecord(value) &&
+    isListEpubExplanationsRequest(value) &&
     isRequiredText(value.explanationId, 256)
   );
 }
@@ -159,14 +171,10 @@ export function isEpubExplanationView(
 export function isEpubExplanationEvent(
   value: unknown,
 ): value is EpubExplanationEvent {
-  if (!isRecord(value)) {
-    return false;
-  }
-
+  if (!isRecord(value)) return false;
   if (value.type === 'changed') {
     return isEpubExplanationView(value.explanation);
   }
-
   return (
     value.type === 'deleted' &&
     isRequiredText(value.projectId, 256) &&

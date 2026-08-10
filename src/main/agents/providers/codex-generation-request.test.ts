@@ -105,7 +105,7 @@ describe('createCodexGenerationConfiguration', () => {
     );
   });
 
-  it('maps Provider default workspace tools to least-privilege sandbox settings', () => {
+  it('maps Provider default workspace tools to the permission profile', () => {
     const readOnlyRequest = {
       ...request(),
       toolRequirements: [],
@@ -172,19 +172,12 @@ describe('createCodexGenerationConfiguration', () => {
     expect(writableTools.nativeToolIds).toContain(
       WORKSPACE_WRITE_TOOL_ID,
     );
-    expect(writable.threadInput).toMatchObject({
-      sandbox: 'workspace-write',
-    });
-    expect(writable.threadInput.permissions).toBeUndefined();
-    expect(writable.threadInput.configOverrides).not.toHaveProperty(
-      'permissions',
-    );
-    expect(writable.turnSandboxPolicy).toEqual({
-      type: 'workspaceWrite',
-      writableRoots: [workspacePath],
-      networkAccess: false,
-      excludeTmpdirEnvVar: true,
-      excludeSlashTmp: true,
+    expect(writable.threadInput.configOverrides).toMatchObject({
+      permissions: {
+        [writable.profileId]: {
+          filesystem: { [workspacePath]: 'write' },
+        },
+      },
     });
     expect(writable.threadInput.configOverrides).not.toHaveProperty(
       'default_permissions',

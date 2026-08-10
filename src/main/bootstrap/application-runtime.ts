@@ -6,7 +6,7 @@ import type { ExternalLibraryServiceApi } from '../external-libraries/external-l
 import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
-import type { EpubExplanationServiceApi } from '../epub-explanations/epub-explanation-service';
+import type { EpubExplanationServiceApi } from '../../workbenches/epub/explanations/epub-explanation-service';
 
 export interface ApplicationRuntimeResources {
   readonly databaseContext: DatabaseContext;

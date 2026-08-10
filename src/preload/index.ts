@@ -23,7 +23,7 @@ import type {
   EpubExplanationIdRequest,
   EpubExplanationView,
   ListEpubExplanationsRequest,
-} from "../shared/epub-explanations";
+} from "../workbenches/epub/explanations/shared";
 import { isIpcResult, type IpcErrorPayload } from "../shared/ipc-error";
 import type { ProjectSnapshot } from "../shared/projects";
 import type {

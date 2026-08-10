@@ -10,8 +10,10 @@ export const createAssetAttachmentsMigration = Object.freeze({
         CHECK (length(trim(type_id)) > 0),
       type_version INTEGER NOT NULL
         CHECK (type_version > 0),
-      target_json TEXT NOT NULL,
-      metadata_json TEXT NOT NULL,
+      target_json TEXT NOT NULL
+        CHECK (json_valid(target_json)),
+      metadata_json TEXT NOT NULL
+        CHECK (json_valid(metadata_json)),
       content_ref_json TEXT,
       content_media_type TEXT,
       created_time INTEGER NOT NULL
@@ -34,5 +36,29 @@ export const createAssetAttachmentsMigration = Object.freeze({
       ON asset_attachments(asset_id, updated_time, id);
     CREATE INDEX asset_attachments_project_index
       ON asset_attachments(project_id);
+
+    CREATE TRIGGER asset_attachments_insert_guard
+    BEFORE INSERT ON asset_attachments
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM assets
+      WHERE id = NEW.asset_id
+        AND project_id = NEW.project_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Attachment Asset does not belong to Project');
+    END;
+
+    CREATE TRIGGER asset_attachments_update_guard
+    BEFORE UPDATE OF project_id, asset_id ON asset_attachments
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM assets
+      WHERE id = NEW.asset_id
+        AND project_id = NEW.project_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Attachment Asset does not belong to Project');
+    END;
   `,
 });

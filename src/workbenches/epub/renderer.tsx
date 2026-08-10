@@ -23,7 +23,8 @@ import { userMessageFromError } from '../../shared/ipc-error';
 import {
   isEpubCfiRangeTarget,
   type EpubExplanationView,
-} from '../../shared/epub-explanations';
+} from './explanations/shared';
+import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
 import {
   interactionFromTextSelection,
   type WorkbenchSelectionSnapshot,
@@ -165,80 +166,6 @@ function EpubToc({
           </button>
         ))
       )}
-    </aside>
-  );
-}
-
-function EpubExplanationCard({
-  explanation,
-  onClose,
-  onRetry,
-  onDelete,
-}: {
-  readonly explanation: EpubExplanationView;
-  readonly onClose: () => void;
-  readonly onRetry: () => void;
-  readonly onDelete: () => void;
-}) {
-  return (
-    <aside
-      aria-label="AI 解释"
-      className="absolute right-4 top-4 z-20 w-[min(380px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl"
-    >
-      <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
-        <div>
-          <p className="text-xs font-semibold text-slate-100">解释这段话</p>
-          <p className="mt-0.5 max-w-[280px] truncate text-[10px] text-slate-500">
-            “{explanation.target.anchorPayload.quote.exact}”
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="关闭 AI 解释"
-          onClick={onClose}
-          className="ui-icon-button grid size-7 place-items-center rounded-full text-sm text-slate-500"
-        >
-          ×
-        </button>
-      </div>
-
-      <div className="max-h-[min(55vh,460px)] overflow-y-auto px-4 py-4">
-        {explanation.status === 'pending' && (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
-            AI 正在解释选中的文字…
-          </div>
-        )}
-        {explanation.status === 'completed' && (
-          <div className="whitespace-pre-wrap text-[13px] leading-6 text-slate-200">
-            {explanation.answer ?? '回答文件暂时不可用。'}
-          </div>
-        )}
-        {explanation.status === 'failed' && (
-          <div>
-            <p className="text-xs leading-5 text-rose-300">
-              {explanation.failureMessage ?? 'AI 解释失败，请重试。'}
-            </p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="ui-control mt-3 rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-300"
-            >
-              重试
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="flex justify-end border-t border-white/[0.07] px-3 py-2">
-        <button
-          type="button"
-          onClick={onDelete}
-          className="ui-control rounded-full px-3 py-1.5 text-[11px] text-slate-500 hover:text-rose-300"
-        >
-          删除解释
-        </button>
-      </div>
     </aside>
   );
 }
@@ -990,7 +917,7 @@ export function EpubWorkbenchView({
           )}
 
           {activeExplanation && (
-            <EpubExplanationCard
+        <EpubExplanationPanel
               explanation={activeExplanation}
               onClose={() => setActiveExplanationId(undefined)}
               onRetry={() => void retryExplanation(activeExplanation)}

@@ -40,6 +40,14 @@ describe('AttachmentDatabase', () => {
         pinned: false,
         workspacePath: directory,
       });
+      projects.add({
+        id: 'project-2',
+        name: 'Other Project',
+        icon: '📗',
+        createdTime: 1,
+        pinned: false,
+        workspacePath: join(directory, 'other'),
+      });
       const assets = new AssetDatabase(context, {
         createId: () => 'asset-1',
         now: () => 2,
@@ -53,6 +61,19 @@ describe('AttachmentDatabase', () => {
         ),
       });
       const database = new AttachmentDatabase(context);
+      expect(() =>
+        database.create({
+          id: 'invalid-project-asset-pair',
+          projectId: 'project-2',
+          assetId: 'asset-1',
+          typeId: 'epub.ai-explanation',
+          typeVersion: 1,
+          target: { scope: 'asset' },
+          metadata: { status: 'pending' },
+          createdTime: 3,
+          updatedTime: 3,
+        }),
+      ).toThrow('Attachment Asset does not belong to Project');
       const created = database.create({
         id: 'explanation-1',
         projectId: 'project-1',
@@ -68,7 +89,7 @@ describe('AttachmentDatabase', () => {
         updatedTime: 3,
       });
 
-      expect(database.listByAsset('asset-1')).toEqual([created]);
+      expect(database.listByAsset('project-1', 'asset-1')).toEqual([created]);
       const updated = database.update({
         ...created,
         metadata: { status: 'completed' },

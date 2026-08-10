@@ -2,7 +2,7 @@ import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
-import type { EpubExplanationServiceApi } from '../epub-explanations/epub-explanation-service';
+import type { EpubExplanationServiceApi } from '../../workbenches/epub/explanations/epub-explanation-service';
 import {
   registerAgentProviderHandlers,
   removeAgentProviderHandlers,
@@ -30,7 +30,7 @@ import {
 import {
   registerEpubExplanationHandlers,
   removeEpubExplanationHandlers,
-} from '../ipc/epub-explanations';
+} from '../../workbenches/epub/explanations/ipc';
 import {
   registerProjectHandlers,
   removeProjectHandlers,

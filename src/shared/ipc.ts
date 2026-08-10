@@ -37,7 +37,7 @@ import type {
   EpubExplanationIdRequest,
   EpubExplanationView,
   ListEpubExplanationsRequest,
-} from "./epub-explanations";
+} from "../workbenches/epub/explanations/shared";
 import {
   isAbsoluteFileSystemPath,
   PROJECT_NAME_MAX_LENGTH,

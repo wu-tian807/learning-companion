@@ -79,12 +79,18 @@ export interface AssetServiceDependencies {
   readonly createDefaultName: typeof createDefaultAssetName;
   readonly isRelinkMediaCompatible: typeof isAssetRelinkMediaCompatible;
   readonly artifactCleanup?: AssetArtifactCleanupApi;
+  readonly attachmentCleanup?: AssetAttachmentCleanupApi;
   readonly deletionObserver?: AssetDeletionObserver;
   readonly now: () => number;
 }
 
 export interface AssetDeletionObserver {
   onAssetDeleted(projectId: string, assetId: string): void;
+}
+
+export interface AssetAttachmentCleanupApi {
+  removeByAsset(projectId: string, assetId: string): Promise<void>;
+  removeByProject(projectId: string): Promise<void>;
 }
 
 export interface AssetServiceUpdateOptions {
@@ -196,6 +202,7 @@ export class AssetService implements AssetServiceApi {
         dependencies.isRelinkMediaCompatible ??
         isAssetRelinkMediaCompatible,
       artifactCleanup: dependencies.artifactCleanup,
+      attachmentCleanup: dependencies.attachmentCleanup,
       deletionObserver: dependencies.deletionObserver,
       now: dependencies.now ?? Date.now,
     };
@@ -519,6 +526,11 @@ export class AssetService implements AssetServiceApi {
       throw new AppError('PROJECT_NOT_FOUND');
     }
 
+    await this.dependencies.attachmentCleanup?.removeByAsset(
+      projectId,
+      assetId,
+    );
+    this.requireUnchangedProject(lifecycleVersion, projectId);
     await this.dependencies.artifactCleanup?.removeByAsset(
       assetId,
       project.workspacePath,
@@ -568,6 +580,8 @@ export class AssetService implements AssetServiceApi {
     if (project.workspacePath !== workspacePath) {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
+
+    await this.dependencies.attachmentCleanup?.removeByProject(projectId);
 
     for (const asset of this.assetDatabase.listByProject(projectId)) {
       await this.workspaceManager.removeManagedAssetFile(

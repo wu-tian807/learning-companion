@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 
-import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import type { DatabaseContext } from '../database/database-context';
 import { assetAttachments } from '../database/schema/asset-attachments';
 import { AppError } from '../errors/app-error';
@@ -8,7 +8,11 @@ import { createAssetAttachment } from './attachment';
 
 export interface AttachmentDatabaseApi {
   get(attachmentId: string): AssetAttachment | undefined;
-  listByAsset(assetId: string): readonly AssetAttachment[];
+  listByProject(projectId: string): readonly AssetAttachment[];
+  listByAsset(
+    projectId: string,
+    assetId: string,
+  ): readonly AssetAttachment[];
   create(attachment: AssetAttachment): AssetAttachment;
   update(attachment: AssetAttachment): AssetAttachment;
   delete(attachmentId: string): void;
@@ -79,11 +83,37 @@ export class AttachmentDatabase implements AttachmentDatabaseApi {
     return row ? fromRow(row) : undefined;
   }
 
-  listByAsset(assetId: string): readonly AssetAttachment[] {
+  listByProject(projectId: string): readonly AssetAttachment[] {
     return this.context.db
       .select()
       .from(assetAttachments)
-      .where(eq(assetAttachments.assetId, requireId(assetId, 'assetId')))
+      .where(
+        eq(assetAttachments.projectId, requireId(projectId, 'projectId')),
+      )
+      .orderBy(
+        asc(assetAttachments.createdTime),
+        asc(assetAttachments.id),
+      )
+      .all()
+      .map(fromRow);
+  }
+
+  listByAsset(
+    projectId: string,
+    assetId: string,
+  ): readonly AssetAttachment[] {
+    return this.context.db
+      .select()
+      .from(assetAttachments)
+      .where(
+        and(
+          eq(
+            assetAttachments.projectId,
+            requireId(projectId, 'projectId'),
+          ),
+          eq(assetAttachments.assetId, requireId(assetId, 'assetId')),
+        ),
+      )
       .orderBy(
         asc(assetAttachments.createdTime),
         asc(assetAttachments.id),

@@ -1,20 +1,20 @@
-import type { JsonValue } from '../../../shared/workbench/protocol';
-import {
-  EPUB_EXPLANATION_INSTRUCTION_FORMAT,
-  EPUB_EXPLANATION_INSTRUCTION_VERSION,
-} from '../../../shared/epub-explanations';
 import {
   createTextAgentUserMessage,
   type AgentUserMessage,
-} from '../../../main/generation/contracts/agent-message';
+} from '../../../../main/generation/contracts/agent-message';
 import {
   GenerationInstruction,
   type GenerationInstructionFactory,
-} from '../../../main/generation/contracts/generation-instruction';
+} from '../../../../main/generation/contracts/generation-instruction';
 import {
   generationValidationFailure,
   generationValidationSuccess,
-} from '../../../main/generation/contracts/generation-validation';
+} from '../../../../main/generation/contracts/generation-validation';
+import type { JsonValue } from '../../../../shared/workbench/protocol';
+import {
+  EPUB_EXPLANATION_INSTRUCTION_FORMAT,
+  EPUB_EXPLANATION_INSTRUCTION_VERSION,
+} from '../shared';
 
 export type EpubExplanationInstructionSnapshot = JsonValue & {
   readonly format: typeof EPUB_EXPLANATION_INSTRUCTION_FORMAT;
@@ -101,10 +101,7 @@ export const epubExplanationInstructionFactory: GenerationInstructionFactory<Epu
         input.suffix.length > 256
       ) {
         return generationValidationFailure([
-          {
-            path: 'instruction',
-            message: 'EPUB 解释任务数据无效',
-          },
+          { path: 'instruction', message: 'EPUB 解释任务数据无效' },
         ]);
       }
 

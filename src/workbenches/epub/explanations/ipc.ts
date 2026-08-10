@@ -1,14 +1,14 @@
 import { BrowserWindow, ipcMain } from 'electron';
 
+import { AppError } from '../../../main/errors/app-error';
+import { registerIpcHandler } from '../../../main/ipc/register-handler';
+import { IPC_CHANNELS } from '../../../shared/ipc';
+import type { EpubExplanationServiceApi } from './epub-explanation-service';
 import {
   isCreateEpubExplanationRequest,
   isEpubExplanationIdRequest,
   isListEpubExplanationsRequest,
-} from '../../shared/epub-explanations';
-import { IPC_CHANNELS } from '../../shared/ipc';
-import type { EpubExplanationServiceApi } from '../epub-explanations/epub-explanation-service';
-import { AppError } from '../errors/app-error';
-import { registerIpcHandler } from './register-handler';
+} from './shared';
 
 let removeSubscription: (() => void) | undefined;
 
@@ -23,10 +23,7 @@ export function registerEpubExplanationHandlers(
   removeSubscription = service.subscribe((event) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) {
-        window.webContents.send(
-          IPC_CHANNELS.epubExplanationChanged,
-          event,
-        );
+        window.webContents.send(IPC_CHANNELS.epubExplanationChanged, event);
       }
     }
   });
@@ -34,36 +31,28 @@ export function registerEpubExplanationHandlers(
   registerIpcHandler(
     IPC_CHANNELS.listEpubExplanations,
     (_event, request: unknown) => {
-      if (!isListEpubExplanationsRequest(request)) {
-        throw invalidRequest();
-      }
+      if (!isListEpubExplanationsRequest(request)) throw invalidRequest();
       return service.list(request);
     },
   );
   registerIpcHandler(
     IPC_CHANNELS.createEpubExplanation,
     (_event, request: unknown) => {
-      if (!isCreateEpubExplanationRequest(request)) {
-        throw invalidRequest();
-      }
+      if (!isCreateEpubExplanationRequest(request)) throw invalidRequest();
       return service.create(request);
     },
   );
   registerIpcHandler(
     IPC_CHANNELS.retryEpubExplanation,
     (_event, request: unknown) => {
-      if (!isEpubExplanationIdRequest(request)) {
-        throw invalidRequest();
-      }
+      if (!isEpubExplanationIdRequest(request)) throw invalidRequest();
       return service.retry(request);
     },
   );
   registerIpcHandler(
     IPC_CHANNELS.deleteEpubExplanation,
     (_event, request: unknown) => {
-      if (!isEpubExplanationIdRequest(request)) {
-        throw invalidRequest();
-      }
+      if (!isEpubExplanationIdRequest(request)) throw invalidRequest();
       return service.delete(request);
     },
   );
