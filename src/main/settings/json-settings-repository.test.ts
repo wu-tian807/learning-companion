@@ -75,6 +75,7 @@ describe('JsonSettingsRepository', () => {
       completedOnboardingVersion: 0,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
+      agentProviderSelectorConnections: {},
     });
   });
 
@@ -112,7 +113,12 @@ describe('JsonSettingsRepository', () => {
 
     const restored = new JsonSettingsRepository(settingsFile);
     await restored.initialize();
-    expect(restored.getAgentProviderSelectorSelection('generation-center')).toEqual({
+    expect(
+      restored.getAgentProviderSelectorSelection(
+        'generation-center',
+        'codex-api-deepseek',
+      ),
+    ).toEqual({
       selectorId: 'generation-center',
       providerId: 'codex',
       connectionId: 'codex-api-deepseek',
@@ -207,7 +213,12 @@ describe('JsonSettingsRepository', () => {
       displayName: '已迁移的 API 连接',
       baseUrl: 'https://example.com/v1',
     });
-    expect(repository.getAgentProviderSelectorSelection('generation-center')).toMatchObject({
+    expect(
+      repository.getAgentProviderSelectorSelection(
+        'generation-center',
+        'codex-api-legacy',
+      ),
+    ).toMatchObject({
       selectorId: 'generation-center',
       connectionId: 'codex-api-legacy',
       modelId: 'custom-model',

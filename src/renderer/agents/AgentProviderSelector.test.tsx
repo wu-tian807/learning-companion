@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
-import { AgentProviderSelector } from './AgentProviderSelector';
+import {
+  AgentProviderSelector,
+  findSelectorConnectionSelection,
+} from './AgentProviderSelector';
 import type { AgentProviderSetupApi } from './agent-provider-api';
 import { createAgentProviderStore } from './agent-provider-store';
 
@@ -70,5 +73,72 @@ describe('AgentProviderSelector', () => {
     expect(markup).toContain('>high<');
     expect(markup).not.toContain('没有可配置的 Connection');
     expect(markup).not.toContain('<select');
+  });
+});
+
+describe('findSelectorConnectionSelection', () => {
+  it('finds the saved model configuration for a specific Connection', () => {
+    const selection = findSelectorConnectionSelection(
+      {
+        ...setup,
+        selections: Object.freeze([
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+            modelId: 'gpt-5.1',
+            reasoningEffort: 'high',
+          }),
+        ]),
+      },
+      'generation-center',
+      'codex-account',
+    );
+
+    expect(selection).toEqual({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-5.1',
+      reasoningEffort: 'high',
+    });
+  });
+
+  it('does not confuse configurations of different Connections for the same Selector', () => {
+    const selection = findSelectorConnectionSelection(
+      {
+        ...setup,
+        selections: Object.freeze([
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+            modelId: 'gpt-5.1',
+            reasoningEffort: 'high',
+          }),
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-api-1',
+            modelId: 'deepseek-chat',
+            reasoningEffort: 'medium',
+          }),
+        ]),
+      },
+      'generation-center',
+      'codex-api-1',
+    );
+
+    expect(selection?.modelId).toBe('deepseek-chat');
+  });
+
+  it('returns undefined when the Connection has no saved configuration', () => {
+    const selection = findSelectorConnectionSelection(
+      setup,
+      'generation-center',
+      'codex-account',
+    );
+
+    expect(selection).toBeUndefined();
   });
 });

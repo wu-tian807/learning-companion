@@ -304,6 +304,11 @@ export class AgentProviderService
       reasoningEffort:
         requestedEffort ?? selectedModel?.defaultReasoningEffort ?? null,
     });
+    await this.settings.updateAgentProviderSelectorConnection(
+      normalized.selectorId,
+      provider.id,
+      connection.id,
+    );
     this.publish();
     return this.createSetupSnapshot();
   }
@@ -313,8 +318,14 @@ export class AgentProviderService
   ): GenerationAgentExecutionConfiguration {
     this.requireActive();
     this.selectors.require(selectorId);
-    const selection =
-      this.settings.getAgentProviderSelectorSelection(selectorId);
+    const current = this.settings.getAgentProviderSelectorConnection(selectorId);
+    if (!current) {
+      throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
+    }
+    const selection = this.settings.getAgentProviderSelectorSelection(
+      selectorId,
+      current.connectionId,
+    );
     if (!selection) {
       throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
     }

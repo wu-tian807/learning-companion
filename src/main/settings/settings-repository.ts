@@ -27,8 +27,17 @@ export interface SettingsRepository {
   listAgentProviderSelectorSelections(): readonly AgentProviderSelectorSelectionSnapshot[];
   getAgentProviderSelectorSelection(
     selectorId: string,
+    connectionId: string,
   ): AgentProviderSelectorSelectionSnapshot | undefined;
   updateAgentProviderSelectorSelection(
     selection: AgentProviderSelectorSelectionSnapshot,
+  ): Promise<void>;
+  getAgentProviderSelectorConnection(
+    selectorId: string,
+  ): { providerId: string; connectionId: string } | undefined;
+  updateAgentProviderSelectorConnection(
+    selectorId: string,
+    providerId: string,
+    connectionId: string,
   ): Promise<void>;
 }

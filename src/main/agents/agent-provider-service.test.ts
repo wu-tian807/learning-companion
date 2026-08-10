@@ -16,7 +16,14 @@ import { normalizeCodexResponsesBaseUrl } from './providers/codex-responses-url'
 
 function createSettings() {
   const connections = new Map<string, AgentProviderConnectionConfiguration>();
-  const selections = new Map<string, AgentProviderSelectorSelectionSnapshot>();
+  const selections = new Map<
+    string,
+    Map<string, AgentProviderSelectorSelectionSnapshot>
+  >();
+  const selectorConnections = new Map<
+    string,
+    { providerId: string; connectionId: string }
+  >();
   const settings: SettingsRepository = {
     initialize: vi.fn(async () => undefined),
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
@@ -40,19 +47,41 @@ function createSettings() {
     }),
     deleteAgentProviderConnection: vi.fn(async (id) => {
       connections.delete(id);
-      for (const [selectorId, selection] of selections) {
-        if (selection.connectionId === id) {
+      for (const [selectorId, byConnection] of selections) {
+        byConnection.delete(id);
+        if (byConnection.size === 0) {
           selections.delete(selectorId);
         }
       }
+      for (const [selectorId, record] of selectorConnections) {
+        if (record.connectionId === id) {
+          selectorConnections.delete(selectorId);
+        }
+      }
     }),
-    listAgentProviderSelectorSelections: vi.fn(() => [...selections.values()]),
-    getAgentProviderSelectorSelection: vi.fn((id) => selections.get(id)),
+    listAgentProviderSelectorSelections: vi.fn(() =>
+      [...selections.values()].flatMap((byConnection) => [
+        ...byConnection.values(),
+      ]),
+    ),
+    getAgentProviderSelectorSelection: vi.fn((selectorId, connectionId) =>
+      selections.get(selectorId)?.get(connectionId),
+    ),
     updateAgentProviderSelectorSelection: vi.fn(async (selection) => {
-      selections.set(selection.selectorId, selection);
+      const byConnection = selections.get(selection.selectorId) ?? new Map();
+      byConnection.set(selection.connectionId, selection);
+      selections.set(selection.selectorId, byConnection);
     }),
+    getAgentProviderSelectorConnection: vi.fn((selectorId) =>
+      selectorConnections.get(selectorId),
+    ),
+    updateAgentProviderSelectorConnection: vi.fn(
+      async (selectorId, providerId, connectionId) => {
+        selectorConnections.set(selectorId, { providerId, connectionId });
+      },
+    ),
   };
-  return { settings, connections, selections };
+  return { settings, connections, selections, selectorConnections };
 }
 
 function createSecrets() {

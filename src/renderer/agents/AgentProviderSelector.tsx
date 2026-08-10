@@ -8,6 +8,7 @@ import {
   type AgentProviderModelCatalogSnapshot,
   type AgentProviderSelectorDefinitionSnapshot,
   type AgentProviderSelectorSelectionSnapshot,
+  type AgentProviderSetupSnapshot,
   type AgentProviderSnapshot,
 } from '../../shared/agent-providers';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -69,6 +70,22 @@ function defaultReasoningEffort(
     return model.defaultReasoningEffort;
   }
   return supported[0] ?? DEFAULT_REASONING_EFFORT;
+}
+
+/**
+ * 查找某个 (selector, connection) 已保存的模型配置。
+ * 每个 Connection 各存一份，切换 Connection 时用各自的配置恢复。
+ */
+export function findSelectorConnectionSelection(
+  setup: AgentProviderSetupSnapshot | undefined,
+  selectorId: string,
+  connectionId: string,
+): AgentProviderSelectorSelectionSnapshot | undefined {
+  return setup?.selections.find(
+    (selection) =>
+      selection.selectorId === selectorId &&
+      selection.connectionId === connectionId,
+  );
 }
 
 function AgentProviderSelectorForm({
@@ -171,6 +188,27 @@ function AgentProviderSelectorForm({
       ? selectedModel.reasoningEfforts.map((effort) => effort.id)
       : CUSTOM_REASONING_EFFORTS;
 
+  /** 恢复某个 Connection 已保存的模型/思考力度配置（没有则回落默认）。 */
+  const restoreConnectionSelection = (
+    connection: SelectorConnection | undefined,
+  ) => {
+    if (!connection) {
+      return;
+    }
+    const saved = findSelectorConnectionSelection(
+      store.getState().setup,
+      definition.id,
+      connection.connection.id,
+    );
+    if (saved?.modelId) {
+      setModelId(saved.modelId);
+      setReasoningEffort(saved.reasoningEffort ?? '');
+    } else {
+      setModelId('');
+      setReasoningEffort(DEFAULT_REASONING_EFFORT);
+    }
+  };
+
   const save = async () => {
     if (!resolvedConnection || !modelId.trim()) {
       return;
@@ -232,9 +270,13 @@ function AgentProviderSelectorForm({
               label: `${provider.displayName} · ${connection.displayName}`,
             }))}
             onChange={(value) => {
+              const nextConnection = connections.find(
+                ({ provider, connection }) =>
+                  connectionValue(provider.id, connection.id) === value,
+              );
               setSelectedConnection(value);
-              setModelId('');
-              setReasoningEffort(DEFAULT_REASONING_EFFORT);
+              // 恢复该 Connection 上次保存的模型/思考力度；没有则回落默认。
+              restoreConnectionSelection(nextConnection);
               setCatalog(undefined);
               setLoadingCatalog(true);
               setError(undefined);

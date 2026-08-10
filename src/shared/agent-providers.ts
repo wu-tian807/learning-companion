@@ -304,12 +304,16 @@ export function isAgentProviderSetupSnapshot(
 
   const providers = new Map(value.providers.map((provider) => [provider.id, provider]));
   const selectorIds = new Set(value.selectors.map((selector) => selector.id));
+  const selectionPairs = new Set(
+    value.selections.map(
+      (selection) => `${selection.selectorId}:${selection.connectionId}`,
+    ),
+  );
 
   return (
     providers.size === value.providers.length &&
     selectorIds.size === value.selectors.length &&
-    new Set(value.selections.map((selection) => selection.selectorId)).size ===
-      value.selections.length &&
+    selectionPairs.size === value.selections.length &&
     value.selections.every((selection) => {
       const provider = providers.get(selection.providerId);
       return (
