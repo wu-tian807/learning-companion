@@ -243,6 +243,7 @@ export async function createApplicationRuntime({
       contentResourceService,
       externalLibraryService,
       facilityAdapterRegistry: mainFacilityAdapterRegistry,
+      frameScriptExecutor: sandboxFrameInteractionBridge,
       projectLookup: projectDatabase,
       stateDatabase: workbenchStateRepository,
       stateDataDatabase: workbenchStateDataRepository,

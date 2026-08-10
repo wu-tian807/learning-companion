@@ -9,7 +9,12 @@ import {
   type HtmlConversationEntry,
 } from './conversation/conversation-protocol';
 import { HtmlWorkbenchProvider } from './main';
-import { htmlConversationCommands, htmlWorkbenchManifest } from './shared';
+import { htmlAnchorCommands } from './anchor-commands';
+import {
+  createHtmlQuoteTarget,
+  htmlConversationCommands,
+  htmlWorkbenchManifest,
+} from './shared';
 
 type ProviderCommandContext = Parameters<HtmlWorkbenchProvider['command']>[0];
 type ProviderOpenContext = Parameters<HtmlWorkbenchProvider['open']>[0];
@@ -62,6 +67,9 @@ function createFakeStateDatabase(
 }
 
 async function createProvider(stateDatabase?: WorkbenchStateDataDatabaseApi) {
+  const frameScriptExecutor = {
+    executeJavaScript: vi.fn(async () => ({ found: true })),
+  };
   const provider = new HtmlWorkbenchProvider(
     {
       register: vi.fn(() => 'learning-content://resource/token'),
@@ -70,6 +78,7 @@ async function createProvider(stateDatabase?: WorkbenchStateDataDatabaseApi) {
       dispose: vi.fn(),
     },
     stateDatabase ?? createFakeStateDatabase(undefined),
+    frameScriptExecutor,
   );
   // 注册 session（open 成功后 sessions 才会包含该 sessionId）
   await provider.open({
@@ -90,7 +99,7 @@ async function createProvider(stateDatabase?: WorkbenchStateDataDatabaseApi) {
     asset: { id: 'asset-1' },
   } as ProviderCommandContext;
 
-  return { provider, context };
+  return { provider, context, frameScriptExecutor };
 }
 
 describe('HtmlWorkbenchProvider conversations', () => {
@@ -263,5 +272,77 @@ describe('HtmlWorkbenchProvider conversations', () => {
         type: htmlConversationCommands.list,
       }),
     ).rejects.toThrow();
+  });
+
+  it('executes validated anchor highlight and clear commands in the session frame', async () => {
+    const { provider, context, frameScriptExecutor } =
+      await createProvider();
+    const target = createHtmlQuoteTarget(
+      '锚点正文',
+      'https://widgets.example.com/chapter',
+    );
+
+    await expect(
+      provider.command(context, {
+        type: htmlAnchorCommands.highlight,
+        payload: {
+          target,
+          revision: 1,
+          reveal: true,
+          durationMs: 2_800,
+        },
+      }),
+    ).resolves.toEqual({ payload: { found: true } });
+    await expect(
+      provider.command(context, {
+        type: htmlAnchorCommands.clear,
+        payload: { target, revision: 1 },
+      }),
+    ).resolves.toEqual({ payload: { found: true } });
+
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenCalledTimes(2);
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      1,
+      'session-1',
+      expect.stringContaining('"action":"highlight"'),
+      { frameUrl: 'https://widgets.example.com/chapter' },
+    );
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      2,
+      'session-1',
+      expect.stringContaining('"action":"clear"'),
+      { frameUrl: 'https://widgets.example.com/chapter' },
+    );
+  });
+
+  it('rejects invalid anchor commands and dishonest frame results', async () => {
+    const { provider, context, frameScriptExecutor } =
+      await createProvider();
+
+    await expect(
+      provider.command(context, {
+        type: htmlAnchorCommands.highlight,
+        payload: {
+          target: { anchorType: 'html.quote' },
+          revision: 0,
+          reveal: true,
+          durationMs: 2_800,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+    expect(frameScriptExecutor.executeJavaScript).not.toHaveBeenCalled();
+
+    frameScriptExecutor.executeJavaScript.mockResolvedValueOnce(
+      null as never,
+    );
+    await expect(
+      provider.command(context, {
+        type: htmlAnchorCommands.clear,
+        payload: {
+          target: createHtmlQuoteTarget('锚点正文'),
+          revision: 1,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 });

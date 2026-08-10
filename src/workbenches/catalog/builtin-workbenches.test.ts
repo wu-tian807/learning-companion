@@ -45,6 +45,7 @@ describe('builtin Workbench catalog', () => {
       contentResourceService: {} as never,
       externalLibraryService: {} as never,
       facilityAdapterRegistry,
+      frameScriptExecutor: {} as never,
       projectLookup: {} as never,
       stateDatabase: {} as never,
       stateDataDatabase: {} as never,

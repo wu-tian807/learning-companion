@@ -34,6 +34,10 @@ import {
   type HtmlAiLaunchRequest,
 } from './conversation/html-ai-launch';
 import { createHtmlConversationStore } from './conversation/conversation-store';
+import {
+  isHtmlAnchorTarget,
+  type HtmlAnchorTarget,
+} from './anchor-commands';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
@@ -128,14 +132,33 @@ export function HtmlWorkbenchView({
   const [selectionRect, setSelectionRect] = useState<
     { x: number; y: number; width: number; height: number } | undefined
   >();
-  const [highlightTarget, setHighlightTarget] = useState<
-    { readonly anchorType?: string; readonly anchorPayload?: unknown } | undefined
-  >();
-  const [highlightPersistent, setHighlightPersistent] = useState(false);
-  const [highlightKey, setHighlightKey] = useState(0);
+  const [highlightTarget, setHighlightTarget] =
+    useState<HtmlAnchorTarget>();
+  const [highlightReveal, setHighlightReveal] = useState(false);
+  const [highlightDurationMs, setHighlightDurationMs] = useState(0);
+  const [highlightRevision, setHighlightRevision] = useState(0);
   const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
+
+  const clearHighlight = useCallback(() => {
+    setHighlightTarget(undefined);
+    setHighlightReveal(false);
+    setHighlightDurationMs(0);
+  }, []);
+
+  const showHighlight = useCallback(
+    (
+      target: HtmlAnchorTarget,
+      options: { readonly reveal: boolean; readonly durationMs: number },
+    ) => {
+      setHighlightTarget(target);
+      setHighlightReveal(options.reveal);
+      setHighlightDurationMs(options.durationMs);
+      setHighlightRevision((current) => current + 1);
+    },
+    [],
+  );
 
   /** 打开 AI 对话栏并交给 Overlay 一个启动请求（open-chat / explain-selection / summarize-page）。 */
   const launchAi = useCallback((request: HtmlAiLaunchRequest) => {
@@ -157,13 +180,10 @@ export function HtmlWorkbenchView({
 
   const explainSelection = useCallback((target: ContentAnchorTarget) => {
     launchRequestIdRef.current += 1;
-    // 选中即清除旧红框，改高亮为新锚点。
-    setHighlightTarget({
-      anchorType: target.anchorType,
-      anchorPayload: target.anchorPayload,
-    });
-    setHighlightPersistent(true);
-    setHighlightKey((current) => current + 1);
+    if (isHtmlAnchorTarget(target)) {
+      // 当前引用常驻，但不改变用户刚刚选中的滚动位置。
+      showHighlight(target, { reveal: false, durationMs: 0 });
+    }
     // 关闭悬浮选区条，避免对话打开后旧浮条残留。
     setSelectionText(undefined);
     setSelectionRect(undefined);
@@ -173,27 +193,25 @@ export function HtmlWorkbenchView({
         target as unknown as JsonValue,
       ),
     );
-  }, [launchAi]);
+  }, [launchAi, showHighlight]);
 
   const summarizePage = useCallback(() => {
     launchRequestIdRef.current += 1;
     // 总结整页：明确忽略当前选区、右键元素与链接。
     setSelectionText(undefined);
     setSelectionRect(undefined);
-    setHighlightTarget(undefined);
-    setHighlightPersistent(false);
+    clearHighlight();
     launchAi(createSummarizePageRequest(launchRequestIdRef.current));
-  }, [launchAi]);
+  }, [clearHighlight, launchAi]);
 
   const closeAi = useCallback(() => {
     setAiOpen(false);
     setAiLaunchRequest(undefined);
     setSelectionText(undefined);
     // 切出对话：清除持久锚点红框
-    setHighlightTarget(undefined);
-    setHighlightPersistent(false);
+    clearHighlight();
     runtime.htmlAiOverlay.getState().closeOverlay();
-  }, [runtime]);
+  }, [clearHighlight, runtime]);
 
   const handleLaunchConsumed = useCallback((requestId: number) => {
     setAiLaunchRequest((current) =>
@@ -269,6 +287,28 @@ export function HtmlWorkbenchView({
     [onError],
   );
 
+  const activateConversationAnchor = useCallback(
+    (anchor: JsonValue) => {
+      if (!isHtmlAnchorTarget(anchor)) {
+        onError('无法在 HTML 原文中定位该锚点。');
+        return;
+      }
+      showHighlight(anchor, { reveal: true, durationMs: 2_800 });
+    },
+    [onError, showHighlight],
+  );
+
+  const reportAnchorNotFound = useCallback(() => {
+    onError('原文内容可能已经变化，无法定位该锚点。');
+  }, [onError]);
+
+  const reportAnchorError = useCallback(
+    (error: unknown) => {
+      reportError(error, '无法在 HTML 原文中定位该锚点。');
+    },
+    [reportError],
+  );
+
   const cancelAnswer = useCallback(async () => {
     const taskId = activeTaskIdRef.current;
     if (!projectId || !taskId) {
@@ -286,11 +326,12 @@ export function HtmlWorkbenchView({
 
   const reload = useCallback(() => {
     contextRef.current = undefined;
+    clearHighlight();
     onInteractionChange({ inputs: [] });
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
     setFrameRevision((current) => current + 1);
-  }, [onInteractionChange]);
+  }, [clearHighlight, onInteractionChange]);
 
   const reveal = useCallback(async () => {
     try {
@@ -377,15 +418,13 @@ export function HtmlWorkbenchView({
         // 右键命中元素/文本锚点：进入对话的「待发送锚点」→ 持久显示红框，
         // 直到发送（onAnchorConsumed）或删除（chip ✕）或离开对话。
         const focusTarget = mapped.interaction.focus;
-        if (focusTarget && focusTarget.scope === 'content') {
-          setHighlightTarget({
-            anchorType: focusTarget.anchorType,
-            anchorPayload: focusTarget.anchorPayload,
+        if (isHtmlAnchorTarget(focusTarget)) {
+          showHighlight(focusTarget, {
+            reveal: false,
+            durationMs: 0,
           });
-          setHighlightPersistent(true);
-          setHighlightKey((current) => current + 1);
         } else {
-          setHighlightTarget(undefined);
+          clearHighlight();
         }
         runtime.openContextMenu(
           bootstrap.sessionId,
@@ -397,9 +436,11 @@ export function HtmlWorkbenchView({
     );
   }, [
     bootstrap.sessionId,
+    clearHighlight,
     onInteractionChange,
     payload,
     runtime,
+    showHighlight,
   ]);
 
   useEffect(() => {
@@ -413,20 +454,20 @@ export function HtmlWorkbenchView({
         !overlay?.contains(target) &&
         !floatBar?.contains(target)
       ) {
-        setHighlightTarget(undefined);
-        setHighlightPersistent(false);
+        clearHighlight();
       }
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, []);
+  }, [clearHighlight]);
 
   useEffect(() => {
     contextRef.current = undefined;
     onInteractionChange({ inputs: [] });
+    clearHighlight();
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
-  }, [onInteractionChange, payload?.contentUrl]);
+  }, [clearHighlight, onInteractionChange, payload?.contentUrl]);
 
   if (!payload) {
     return (
@@ -470,32 +511,30 @@ export function HtmlWorkbenchView({
           reportError(error, '无法保存 HTML AI 对话记录。');
         }}
         onRestore={() => {
-          // 历史对话打开不显示选中对象：选中红框只存在于「当前对话引用未发送」阶段。
-          setHighlightTarget(undefined);
-          setHighlightPersistent(false);
+          clearHighlight();
         }}
+        onAnchorActivate={activateConversationAnchor}
         onAnchorConsumed={() => {
-          // 锚点已随消息发送：选中红框生命周期结束。
-          setHighlightTarget(undefined);
-          setHighlightPersistent(false);
+          clearHighlight();
         }}
         onAnchorRemoved={() => {
-          // 锚点被主动删除：清除红框。
-          setHighlightTarget(undefined);
-          setHighlightPersistent(false);
+          clearHighlight();
         }}
         onStartNew={() => {
           // 主动开启新对话：重置为空白对话（清空红框）。
           setAiLaunchRequest(undefined);
-          setHighlightTarget(undefined);
-          setHighlightPersistent(false);
+          clearHighlight();
           setAiSessionKey((current) => current + 1);
         }}
       />
       <AnchorHighlight
-        key={highlightKey}
-        target={highlightTarget as never}
-        durationMs={highlightPersistent ? 0 : 2_800}
+        target={highlightTarget}
+        revision={highlightRevision}
+        reveal={highlightReveal}
+        durationMs={highlightDurationMs}
+        executeCommand={executeCommand}
+        onNotFound={reportAnchorNotFound}
+        onError={reportAnchorError}
       />
 
       {/* 选中文本后的「引用选中内容」悬浮条（对话栏打开时也显示：

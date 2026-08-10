@@ -4,6 +4,7 @@ import type { ContentResourceServiceApi } from '../../main/content/content-resou
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
 import type { MainFacilityAdapterRegistry } from '../../main/workbench/interaction/main-facility-adapter-registry';
+import type { SandboxFrameScriptExecutor } from '../../main/workbench/interaction/sandbox-frame-script-executor';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
@@ -30,6 +31,7 @@ export interface MainWorkbenchRegistrationDependencies {
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly facilityAdapterRegistry: MainFacilityAdapterRegistry;
+  readonly frameScriptExecutor: SandboxFrameScriptExecutor;
   readonly projectLookup: ProjectLookup;
   readonly stateDatabase: WorkbenchStateDatabaseApi;
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
@@ -76,6 +78,7 @@ const providerFactories: Readonly<
     new HtmlWorkbenchProvider(
       dependencies.contentResourceService,
       dependencies.stateDataDatabase,
+      dependencies.frameScriptExecutor,
     ),
   'builtin.epub': (dependencies) =>
     new EpubWorkbenchProvider(

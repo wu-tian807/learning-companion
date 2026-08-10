@@ -15,6 +15,7 @@ import {
 } from '../../../shared/workbench/facilities/core-facilities';
 import type { WorkbenchFacilityDefinitionRegistry } from '../../../shared/workbench/facilities/facility-definition-registry';
 import type { WorkbenchFacilityEvent } from '../../../shared/workbench/facilities/facility-event';
+import { AppError } from '../../errors/app-error';
 import type { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import {
   SANDBOX_CONTEXT_MENU_TRIGGER,
@@ -24,6 +25,7 @@ import type {
   ActiveWorkbenchTransportBinding,
   WorkbenchTransportBindingRegistry,
 } from './workbench-transport-binding-registry';
+import type { SandboxFrameScriptExecutor } from './sandbox-frame-script-executor';
 
 export interface SandboxFrameInteractionBridgeDependencies {
   readonly schedule: (task: () => void) => void;
@@ -34,8 +36,18 @@ function defaultSchedule(task: () => void): void {
   setTimeout(task, 0);
 }
 
-export class SandboxFrameInteractionBridge {
-  private readonly attachedWebContents = new Map<number, () => void>();
+interface AttachedWebContents {
+  readonly webContents: WebContents;
+  readonly dispose: () => void;
+}
+
+export class SandboxFrameInteractionBridge
+  implements SandboxFrameScriptExecutor
+{
+  private readonly attachedWebContents = new Map<
+    number,
+    AttachedWebContents
+  >();
   private readonly lastPayloadByFacility = new Map<string, string>();
   private readonly schedule: (task: () => void) => void;
   private readonly logger: Pick<Console, 'error'>;
@@ -62,7 +74,7 @@ export class SandboxFrameInteractionBridge {
     const existing = this.attachedWebContents.get(webContents.id);
 
     if (existing) {
-      return existing;
+      return existing.dispose;
     }
 
     const onContextMenu = (
@@ -122,7 +134,10 @@ export class SandboxFrameInteractionBridge {
       webContents.off('before-mouse-event', onBeforeMouseEvent);
       webContents.off('before-input-event', onBeforeInputEvent);
       webContents.off('destroyed', onDestroyed);
-      if (this.attachedWebContents.get(webContents.id) === dispose) {
+      if (
+        this.attachedWebContents.get(webContents.id)?.dispose ===
+        dispose
+      ) {
         this.attachedWebContents.delete(webContents.id);
       }
     };
@@ -131,17 +146,41 @@ export class SandboxFrameInteractionBridge {
     webContents.on('before-mouse-event', onBeforeMouseEvent);
     webContents.on('before-input-event', onBeforeInputEvent);
     webContents.on('destroyed', onDestroyed);
-    this.attachedWebContents.set(webContents.id, dispose);
+    this.attachedWebContents.set(webContents.id, {
+      webContents,
+      dispose,
+    });
 
     return dispose;
   }
 
   dispose(): void {
-    for (const dispose of [...this.attachedWebContents.values()]) {
-      dispose();
+    for (const attachment of [...this.attachedWebContents.values()]) {
+      attachment.dispose();
     }
     this.lastPayloadByFacility.clear();
     this.unsubscribeBindings();
+  }
+
+  async executeJavaScript(
+    sessionId: string,
+    script: string,
+    target?: { readonly frameUrl: string },
+  ): Promise<unknown> {
+    const rootFrame = this.findSessionRootFrame(sessionId);
+
+    if (!rootFrame) {
+      throw new AppError('SERVICE_NOT_READY');
+    }
+
+    const frame = target
+      ? this.findTargetFrame(rootFrame, target.frameUrl)
+      : rootFrame;
+    if (!frame) {
+      throw new AppError('SERVICE_NOT_READY');
+    }
+
+    return frame.executeJavaScript(script);
   }
 
   private async capture(
@@ -250,6 +289,72 @@ export class SandboxFrameInteractionBridge {
         });
 
     return matches.length === 1 ? matches[0] : undefined;
+  }
+
+  private findSessionRootFrame(
+    sessionId: string,
+  ): WebFrameMain | undefined {
+    const matches = this.bindingRegistry
+      .listByTransport(
+        CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+        CORE_FACILITY_VERSION,
+      )
+      .filter((active) => active.sessionId === sessionId);
+
+    if (matches.length !== 1) {
+      return undefined;
+    }
+    const payload = matches[0].binding.payload;
+    if (!isSandboxFrameTransportBindingPayload(payload)) {
+      return undefined;
+    }
+
+    const candidates: WebFrameMain[] = [];
+
+    for (const attachment of this.attachedWebContents.values()) {
+      const webContents = attachment.webContents;
+      if (webContents.isDestroyed()) {
+        continue;
+      }
+
+      try {
+        for (const frame of webContents.mainFrame.framesInSubtree) {
+          if (
+            !frame.isDestroyed() &&
+            !frame.detached &&
+            frame.url === payload.rootUrl
+          ) {
+            candidates.push(frame);
+          }
+        }
+      } catch {
+        // Frame trees can detach while a Workbench is being replaced.
+      }
+    }
+
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }
+
+  private findTargetFrame(
+    rootFrame: WebFrameMain,
+    frameUrl: string,
+  ): WebFrameMain | undefined {
+    if (rootFrame.url === frameUrl) {
+      return rootFrame;
+    }
+
+    try {
+      const candidates = rootFrame.framesInSubtree.filter(
+        (frame) =>
+          !frame.isDestroyed() &&
+          !frame.detached &&
+          frame.url === frameUrl,
+      );
+
+      return candidates.length === 1 ? candidates[0] : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private readAncestorUrls(

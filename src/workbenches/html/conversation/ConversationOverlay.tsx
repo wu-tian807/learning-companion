@@ -43,6 +43,8 @@ export interface HtmlConversationOverlayProps {
   ) => Promise<string | undefined>;
   /** Called when a history entry is restored; lets the workbench highlight the anchor. */
   readonly onRestore?: (entry: HtmlConversationEntry) => void;
+  /** Reveals an anchor attached to a restored or current conversation message. */
+  readonly onAnchorActivate?: (anchor: JsonValue) => void;
   /** 锚点随消息发送后调用：选中红框生命周期结束（发送即清除）。 */
   readonly onAnchorConsumed?: () => void;
   /** 锚点被主动删除（chip ✕）时调用：清除红框。 */
@@ -134,6 +136,7 @@ export function ConversationOverlay({
   onClose,
   onAsk,
   onRestore,
+  onAnchorActivate,
   onAnchorConsumed,
   onAnchorRemoved,
   onStartNew,
@@ -658,6 +661,7 @@ export function ConversationOverlay({
             <MessageStream
               messages={messages}
               emptyLabel="选择一段内容，或直接输入你的问题。"
+              onAnchorActivate={onAnchorActivate}
             />
           </div>
           {errorText && (

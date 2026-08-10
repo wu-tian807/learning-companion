@@ -1,6 +1,7 @@
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
+import type { SandboxFrameScriptExecutor } from '../../main/workbench/interaction/sandbox-frame-script-executor';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type {
   JsonValue,
@@ -26,9 +27,38 @@ import {
   htmlWorkbenchManifest,
 } from './shared';
 import { createHtmlMainFacilityAdapters } from './main-facility-adapters';
+import {
+  htmlAnchorCommands,
+  isHtmlAnchorClearCommandPayload,
+  isHtmlAnchorCommandResult,
+  isHtmlAnchorHighlightCommandPayload,
+} from './anchor-commands';
+import {
+  createHtmlAnchorClearFrameScript,
+  createHtmlAnchorHighlightFrameScript,
+} from './html-anchor-frame-script';
 
 function createResult(payload: JsonValue): WorkbenchCommandResult {
   return { payload };
+}
+
+function anchorFrameTarget(target: {
+  readonly anchorPayload: JsonValue;
+}): { readonly frameUrl: string } | undefined {
+  const payload = target.anchorPayload;
+
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return undefined;
+  }
+  const record = payload as { readonly frameUrl?: JsonValue };
+
+  return typeof record.frameUrl === 'string'
+    ? { frameUrl: record.frameUrl }
+    : undefined;
 }
 
 function encodeConversationIndex(index: unknown): Uint8Array {
@@ -64,6 +94,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   constructor(
     private readonly resourceService: ContentResourceServiceApi,
     private readonly stateDataDatabase: WorkbenchStateDataDatabaseApi,
+    private readonly frameScriptExecutor: SandboxFrameScriptExecutor,
   ) {}
 
   async open(context: Parameters<MainWorkbenchProvider['open']>[0]) {
@@ -117,6 +148,36 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   ): Promise<WorkbenchCommandResult> {
     if (!this.sessions.has(context.sessionId)) {
       throw new AppError('WORKBENCH_SESSION_NOT_FOUND');
+    }
+
+    if (command.type === htmlAnchorCommands.highlight) {
+      if (!isHtmlAnchorHighlightCommandPayload(command.payload)) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      const result = await this.frameScriptExecutor.executeJavaScript(
+        context.sessionId,
+        createHtmlAnchorHighlightFrameScript(command.payload),
+        anchorFrameTarget(command.payload.target),
+      );
+      if (!isHtmlAnchorCommandResult(result)) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      return createResult(result);
+    }
+
+    if (command.type === htmlAnchorCommands.clear) {
+      if (!isHtmlAnchorClearCommandPayload(command.payload)) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      const result = await this.frameScriptExecutor.executeJavaScript(
+        context.sessionId,
+        createHtmlAnchorClearFrameScript(command.payload),
+        anchorFrameTarget(command.payload.target),
+      );
+      if (!isHtmlAnchorCommandResult(result)) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      return createResult(result);
     }
 
     const assetId = context.asset.id;

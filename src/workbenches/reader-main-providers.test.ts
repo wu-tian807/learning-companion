@@ -141,6 +141,7 @@ describe('stream reader main providers', () => {
     const provider = new HtmlWorkbenchProvider(
       resources,
       createEmptyStateDataDatabase(),
+      { executeJavaScript: vi.fn() },
     );
     const context = createContext('text/html', 'html');
 
@@ -212,6 +213,7 @@ describe('stream reader main providers', () => {
     const provider = new HtmlWorkbenchProvider(
       resources,
       createEmptyStateDataDatabase(),
+      { executeJavaScript: vi.fn() },
     );
 
     await expect(

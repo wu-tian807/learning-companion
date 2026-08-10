@@ -41,14 +41,25 @@ function anchorSummary(anchor: JsonValue): string {
 
 function bubbleClass(role: ConversationMessage['role']): string {
   return [
-    'max-w-[85%] rounded-[12px] px-3 py-2 text-[11px] leading-6 whitespace-pre-wrap',
+    'rounded-[12px] px-3 py-2 text-[11px] leading-6 whitespace-pre-wrap',
     role === 'user'
       ? 'bg-indigo-400/15 border border-indigo-300/20 text-indigo-100 rounded-tr-[4px]'
       : 'bg-white/[0.045] border border-white/[0.055] text-slate-300 rounded-tl-[4px]',
   ].join(' ');
 }
 
-export function MessageBubble({ message }: { readonly message: ConversationMessage }) {
+export interface MessageBubbleProps {
+  readonly message: ConversationMessage;
+  readonly onAnchorActivate?: (anchor: JsonValue) => void;
+}
+
+export function MessageBubble({
+  message,
+  onAnchorActivate,
+}: MessageBubbleProps) {
+  const anchor = message.anchor;
+  const summary = anchor ? anchorSummary(anchor) : undefined;
+
   return (
     <div
       className={[
@@ -67,15 +78,33 @@ export function MessageBubble({ message }: { readonly message: ConversationMessa
       >
         {message.role === 'user' ? '你' : 'AI'}
       </span>
-      <div className={bubbleClass(message.role)}>
-        {message.text}
-        {message.streaming && <span className="caret ml-0.5 inline-block h-3 w-[6px] bg-indigo-300 align-[-2px]" />}
+      <div
+        className={[
+          'flex max-w-[85%] flex-col gap-0.5',
+          message.role === 'user' ? 'items-end' : 'items-start',
+        ].join(' ')}
+      >
+        <div className={bubbleClass(message.role)}>
+          {message.text}
+          {message.streaming && <span className="caret ml-0.5 inline-block h-3 w-[6px] bg-indigo-300 align-[-2px]" />}
+        </div>
+        {anchor && summary &&
+          (onAnchorActivate ? (
+            <button
+              type="button"
+              className="block max-w-full truncate rounded px-1 text-[9px] text-indigo-300/70 underline decoration-indigo-300/30 underline-offset-2 hover:bg-indigo-300/10 hover:text-indigo-200"
+              aria-label={`在原文中定位：${summary}`}
+              title={`在原文中定位：${summary}`}
+              onClick={() => onAnchorActivate(anchor)}
+            >
+              {summary}
+            </button>
+          ) : (
+            <span className="block max-w-full truncate text-[9px] text-indigo-300/70">
+              {summary}
+            </span>
+          ))}
       </div>
-      {message.anchor && (
-        <span className="mt-0.5 block max-w-[85%] text-[9px] text-indigo-300/70">
-          {anchorSummary(message.anchor)}
-        </span>
-      )}
     </div>
   );
 }
@@ -83,9 +112,11 @@ export function MessageBubble({ message }: { readonly message: ConversationMessa
 export function MessageStream({
   messages,
   emptyLabel,
+  onAnchorActivate,
 }: {
   readonly messages: readonly ConversationMessage[];
   readonly emptyLabel: string;
+  readonly onAnchorActivate?: (anchor: JsonValue) => void;
 }) {
   return (
     <div
@@ -98,7 +129,13 @@ export function MessageStream({
           {emptyLabel}
         </p>
       ) : (
-        messages.map((message) => <MessageBubble key={message.id} message={message} />)
+        messages.map((message) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            onAnchorActivate={onAnchorActivate}
+          />
+        ))
       )}
     </div>
   );
