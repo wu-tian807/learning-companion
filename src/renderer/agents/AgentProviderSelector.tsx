@@ -98,6 +98,8 @@ function AgentProviderSelectorForm({
   );
   const [catalog, setCatalog] = useState<AgentProviderModelCatalogSnapshot>();
   const [loadingCatalog, setLoadingCatalog] = useState(Boolean(initial));
+  // 连接重选（含选回同一连接）时递增，强制模型目录 effect 重跑
+  const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const resolvedConnection = connections.find(
@@ -161,7 +163,7 @@ function AgentProviderSelectorForm({
     return () => {
       active = false;
     };
-  }, [api, resolvedConnectionId, resolvedProviderId]);
+  }, [api, resolvedConnectionId, resolvedProviderId, catalogEpoch]);
 
   const selectedModel = catalog?.models.find((model) => model.id === modelId);
   const effortOptions =
@@ -236,6 +238,8 @@ function AgentProviderSelectorForm({
               setCatalog(undefined);
               setLoadingCatalog(true);
               setError(undefined);
+              // 连接 ID 不变（重选同一连接）时 effect 不会重跑，用 epoch 强制刷新目录
+              setCatalogEpoch((epoch) => epoch + 1);
             }}
             className="w-full"
           />
