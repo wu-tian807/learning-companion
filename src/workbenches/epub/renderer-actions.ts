@@ -1,10 +1,14 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
+import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selection';
 
 export interface EpubRendererActionsOptions {
   readonly ready: boolean;
   readonly hasSelection: () => boolean;
   readonly onCopySelection: (text: string) => Promise<void> | void;
+  readonly onExplainSelection: (
+    selection: WorkbenchSelectionSnapshot,
+  ) => Promise<void> | void;
   readonly onReload: () => void;
   readonly onReveal: () => Promise<void> | void;
 }
@@ -13,6 +17,7 @@ export function createEpubRendererActions({
   ready,
   hasSelection,
   onCopySelection,
+  onExplainSelection,
   onReload,
   onReveal,
 }: EpubRendererActionsOptions): WorkbenchActionBundle {
@@ -43,8 +48,14 @@ export function createEpubRendererActions({
       },
       {
         id: 'epub.ai.explain-selection',
-        enabled: false,
-        execute: () => undefined,
+        enabled: () => ready && hasSelection(),
+        execute: (context) => {
+          const selection = findTextSelectionInput(context);
+
+          if (selection) {
+            return onExplainSelection(selection);
+          }
+        },
       },
     ],
     contributions: [
@@ -82,9 +93,10 @@ export function createEpubRendererActions({
         order: 10,
         presentation: {
           kind: 'generation-tool',
-          label: '解释选中内容',
+          label: '解释这段话',
           description: '将选区和 EPUB CFI 锚点交给 AI',
-          disabledReason: '等待 EPUB AI 工具接入',
+          disabledReason:
+            notReadyReason ?? '请先在 EPUB 中选择文本',
         },
       },
       {

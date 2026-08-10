@@ -21,6 +21,10 @@ import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
+  isEpubCfiRangeTarget,
+  type EpubExplanationView,
+} from '../../shared/epub-explanations';
+import {
   interactionFromTextSelection,
   type WorkbenchSelectionSnapshot,
 } from '../../shared/workbench/selection';
@@ -165,7 +169,82 @@ function EpubToc({
   );
 }
 
+function EpubExplanationCard({
+  explanation,
+  onClose,
+  onRetry,
+  onDelete,
+}: {
+  readonly explanation: EpubExplanationView;
+  readonly onClose: () => void;
+  readonly onRetry: () => void;
+  readonly onDelete: () => void;
+}) {
+  return (
+    <aside
+      aria-label="AI 解释"
+      className="absolute right-4 top-4 z-20 w-[min(380px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl"
+    >
+      <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-100">解释这段话</p>
+          <p className="mt-0.5 max-w-[280px] truncate text-[10px] text-slate-500">
+            “{explanation.target.anchorPayload.quote.exact}”
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-label="关闭 AI 解释"
+          onClick={onClose}
+          className="ui-icon-button grid size-7 place-items-center rounded-full text-sm text-slate-500"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="max-h-[min(55vh,460px)] overflow-y-auto px-4 py-4">
+        {explanation.status === 'pending' && (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
+            AI 正在解释选中的文字…
+          </div>
+        )}
+        {explanation.status === 'completed' && (
+          <div className="whitespace-pre-wrap text-[13px] leading-6 text-slate-200">
+            {explanation.answer ?? '回答文件暂时不可用。'}
+          </div>
+        )}
+        {explanation.status === 'failed' && (
+          <div>
+            <p className="text-xs leading-5 text-rose-300">
+              {explanation.failureMessage ?? 'AI 解释失败，请重试。'}
+            </p>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="ui-control mt-3 rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-300"
+            >
+              重试
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end border-t border-white/[0.07] px-3 py-2">
+        <button
+          type="button"
+          onClick={onDelete}
+          className="ui-control rounded-full px-3 py-1.5 text-[11px] text-slate-500 hover:text-rose-300"
+        >
+          删除解释
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 export function EpubWorkbenchView({
+  asset,
   bootstrap,
   executeCommand,
   onRelink,
@@ -201,6 +280,10 @@ export function EpubWorkbenchView({
   const [navigation, setNavigation] = useState<FlatNavItem[]>([]);
   const [progress, setProgress] = useState<number>();
   const [readerRevision, setReaderRevision] = useState(0);
+  const [explanations, setExplanations] = useState<
+    EpubExplanationView[]
+  >([]);
+  const [activeExplanationId, setActiveExplanationId] = useState<string>();
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -276,21 +359,118 @@ export function EpubWorkbenchView({
     [reportError],
   );
 
+  const explainSelection = useCallback(
+    async (selection: WorkbenchSelectionSnapshot) => {
+      if (!isEpubCfiRangeTarget(selection.target)) {
+        reportError(
+          new Error('EPUB 选区锚点无效'),
+          '无法解释这个 EPUB 选区。',
+        );
+        return;
+      }
+      const target = selection.target;
+
+      const existing = explanations.find(
+        (candidate) =>
+          candidate.target.anchorPayload.cfiRange ===
+          target.anchorPayload.cfiRange,
+      );
+      if (existing) {
+        setActiveExplanationId(existing.id);
+        return;
+      }
+
+      try {
+        const created = await window.learningCompanion.createEpubExplanation({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          target,
+        });
+        setExplanations((current) => [
+          ...current.filter((item) => item.id !== created.id),
+          created,
+        ]);
+        setActiveExplanationId(created.id);
+      } catch (error) {
+        reportError(error, '无法启动 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, explanations, reportError],
+  );
+
   const rendererActions = useMemo(
     () =>
       createEpubRendererActions({
         ready: loadState.kind === 'ready',
         hasSelection: () => selectionRef.current !== undefined,
         onCopySelection: copySelection,
+        onExplainSelection: explainSelection,
         onReload: reload,
         onReveal: reveal,
       }),
-    [copySelection, loadState.kind, reload, reveal],
+    [copySelection, explainSelection, loadState.kind, reload, reveal],
   );
   useWorkbenchContributions(
     `${epubWorkbenchManifest.id}.viewer`,
     rendererActions,
   );
+
+  useEffect(() => {
+    let active = true;
+    const removeSubscription =
+      window.learningCompanion.onEpubExplanationChanged((event) => {
+        if (event.type === 'changed') {
+          if (
+            event.explanation.projectId !== asset.projectId ||
+            event.explanation.assetId !== asset.id
+          ) {
+            return;
+          }
+          setExplanations((current) => [
+            ...current.filter(
+              (item) => item.id !== event.explanation.id,
+            ),
+            event.explanation,
+          ]);
+          return;
+        }
+        if (
+          event.projectId !== asset.projectId ||
+          event.assetId !== asset.id
+        ) {
+          return;
+        }
+        setExplanations((current) =>
+          current.filter((item) => item.id !== event.explanationId),
+        );
+        setActiveExplanationId((current) =>
+          current === event.explanationId ? undefined : current,
+        );
+      });
+
+    void window.learningCompanion
+      .listEpubExplanations({
+        projectId: asset.projectId,
+        assetId: asset.id,
+      })
+      .then((items) => {
+        if (active) {
+          setExplanations([...items]);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          reportError(error, '无法加载 EPUB 的 AI 解释。');
+        }
+      });
+
+    return () => {
+      active = false;
+      removeSubscription();
+      setExplanations([]);
+      setActiveExplanationId(undefined);
+    };
+  }, [asset.id, asset.projectId, reportError]);
 
   useEffect(() => {
     const host = viewerHostRef.current;
@@ -534,6 +714,85 @@ export function EpubWorkbenchView({
     );
   }, [viewState.fontScale, viewState.theme]);
 
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition || loadState.kind !== 'ready') {
+      return;
+    }
+
+    for (const explanation of explanations) {
+      const cfiRange = explanation.target.anchorPayload.cfiRange;
+      const color =
+        explanation.status === 'failed'
+          ? '#fb7185'
+          : explanation.status === 'pending'
+            ? '#94a3b8'
+            : '#93c5fd';
+      rendition.annotations.underline(
+        cfiRange,
+        { explanationId: explanation.id },
+        () => setActiveExplanationId(explanation.id),
+        `epub-ai-explanation-${explanation.status}`,
+        {
+          stroke: color,
+          'stroke-width': '2',
+          'stroke-opacity': '0.7',
+          ...(explanation.status !== 'completed'
+            ? { 'stroke-dasharray': '3 3' }
+            : {}),
+        },
+      );
+    }
+
+    return () => {
+      for (const explanation of explanations) {
+        rendition.annotations.remove(
+          explanation.target.anchorPayload.cfiRange,
+          'underline',
+        );
+      }
+    };
+  }, [explanations, loadState.kind]);
+
+  const retryExplanation = useCallback(
+    async (explanation: EpubExplanationView) => {
+      try {
+        const retried =
+          await window.learningCompanion.retryEpubExplanation({
+            projectId: asset.projectId,
+            assetId: asset.id,
+            explanationId: explanation.id,
+          });
+        setExplanations((current) => [
+          ...current.filter((item) => item.id !== retried.id),
+          retried,
+        ]);
+      } catch (error) {
+        reportError(error, '无法重试 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, reportError],
+  );
+
+  const deleteExplanation = useCallback(
+    async (explanation: EpubExplanationView) => {
+      try {
+        await window.learningCompanion.deleteEpubExplanation({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          explanationId: explanation.id,
+        });
+        setExplanations((current) =>
+          current.filter((item) => item.id !== explanation.id),
+        );
+        setActiveExplanationId(undefined);
+      } catch (error) {
+        reportError(error, '无法删除 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, reportError],
+  );
+
   const navigate = useCallback(
     (direction: 'previous' | 'next') => {
       const rendition = renditionRef.current;
@@ -557,6 +816,9 @@ export function EpubWorkbenchView({
         { value: 'sepia' as const, label: '纸张' },
       ],
     [],
+  );
+  const activeExplanation = explanations.find(
+    (explanation) => explanation.id === activeExplanationId,
   );
 
   if (!payload) {
@@ -725,6 +987,15 @@ export function EpubWorkbenchView({
             <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-white/[0.06] bg-[#20262e]/75 px-2.5 py-1 text-[10px] tabular-nums text-slate-500 backdrop-blur">
               {Math.round(progress * 100)}%
             </div>
+          )}
+
+          {activeExplanation && (
+            <EpubExplanationCard
+              explanation={activeExplanation}
+              onClose={() => setActiveExplanationId(undefined)}
+              onRetry={() => void retryExplanation(activeExplanation)}
+              onDelete={() => void deleteExplanation(activeExplanation)}
+            />
           )}
         </div>
       </div>

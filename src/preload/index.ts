@@ -18,6 +18,12 @@ import type {
   GenerationTaskView,
   StartGenerationTaskRequest,
 } from "../shared/generation-tasks";
+import type {
+  CreateEpubExplanationRequest,
+  EpubExplanationIdRequest,
+  EpubExplanationView,
+  ListEpubExplanationsRequest,
+} from "../shared/epub-explanations";
 import { isIpcResult, type IpcErrorPayload } from "../shared/ipc-error";
 import type { ProjectSnapshot } from "../shared/projects";
 import type {
@@ -60,6 +66,7 @@ import { subscribeExternalLibraryEvents } from "./external-library-events";
 import { subscribeAgentProviderEvents } from "./agent-provider-events";
 import { subscribeAssetEvents } from "./asset-events";
 import { subscribeGenerationTaskEvents } from "./generation-task-events";
+import { subscribeEpubExplanationEvents } from "./epub-explanation-events";
 
 async function invoke<Response>(
   channel: string,
@@ -232,6 +239,16 @@ const api: LearningCompanionApi = {
     invoke<void>(IPC_CHANNELS.discardGenerationTask, request),
   onGenerationTaskChanged: (listener) =>
     subscribeGenerationTaskEvents(ipcRenderer, listener),
+  listEpubExplanations: (request: ListEpubExplanationsRequest) =>
+    invoke<EpubExplanationView[]>(IPC_CHANNELS.listEpubExplanations, request),
+  createEpubExplanation: (request: CreateEpubExplanationRequest) =>
+    invoke<EpubExplanationView>(IPC_CHANNELS.createEpubExplanation, request),
+  retryEpubExplanation: (request: EpubExplanationIdRequest) =>
+    invoke<EpubExplanationView>(IPC_CHANNELS.retryEpubExplanation, request),
+  deleteEpubExplanation: (request: EpubExplanationIdRequest) =>
+    invoke<void>(IPC_CHANNELS.deleteEpubExplanation, request),
+  onEpubExplanationChanged: (listener) =>
+    subscribeEpubExplanationEvents(ipcRenderer, listener),
   openWorkbench: (request: WorkbenchOpenRequest) =>
     invoke<WorkbenchBootstrap>(IPC_CHANNELS.openWorkbench, request),
   commandWorkbench: (request: WorkbenchCommandRequest) =>

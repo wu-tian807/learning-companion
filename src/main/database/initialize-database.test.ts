@@ -33,7 +33,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -44,6 +44,7 @@ describe('initializeDatabase', () => {
 
       expect(tableNames).toEqual([
         'asset_artifacts',
+        'asset_attachments',
         'asset_links',
         'asset_references',
         'assets',
@@ -141,7 +142,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        18,
+        19,
       );
     } finally {
       secondContext.close();
@@ -153,6 +154,7 @@ describe('initializeDatabase', () => {
     const legacyContext = initializeDatabase(databaseFile);
 
     legacyContext.sqlite.exec('DROP TABLE generation_tasks');
+    legacyContext.sqlite.exec('DROP TABLE asset_attachments');
     legacyContext.sqlite.exec(createGenerationTasksMigration.sql);
 
     legacyContext.sqlite
@@ -190,7 +192,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -215,6 +217,7 @@ describe('initializeDatabase', () => {
     const legacyContext = initializeDatabase(databaseFile);
 
     legacyContext.sqlite.exec('DROP TABLE generation_tasks');
+    legacyContext.sqlite.exec('DROP TABLE asset_attachments');
     legacyContext.sqlite.exec(createGenerationTasksMigration.sql);
     legacyContext.sqlite.exec(indexUnfinishedGenerationTasksMigration.sql);
     legacyContext.sqlite
@@ -275,7 +278,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<
@@ -344,7 +347,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -412,7 +415,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -597,6 +600,7 @@ describe('initializeDatabase', () => {
       DROP TABLE asset_links;
       DROP TABLE asset_references;
       DROP TABLE asset_artifacts;
+      DROP TABLE asset_attachments;
       ALTER TABLE assets DROP COLUMN creation_kind;
       ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time;
     `);
@@ -723,6 +727,7 @@ describe('initializeDatabase', () => {
       DROP TABLE asset_links;
       DROP TABLE asset_references;
       DROP TABLE generation_tasks;
+      DROP TABLE asset_attachments;
       ALTER TABLE assets RENAME COLUMN updated_time TO last_used_time;
     `);
     legacyContext.sqlite.pragma('user_version = 8');
@@ -731,7 +736,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -830,13 +835,14 @@ describe('initializeDatabase', () => {
       JSON.stringify({ scope: 'asset' }),
       0,
     );
+    legacyContext.sqlite.exec('DROP TABLE asset_attachments');
     legacyContext.sqlite.pragma('user_version = 10');
     legacyContext.close();
 
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(18);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')

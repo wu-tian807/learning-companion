@@ -31,6 +31,13 @@ import type {
   GenerationTaskView,
   StartGenerationTaskRequest,
 } from "./generation-tasks";
+import type {
+  CreateEpubExplanationRequest,
+  EpubExplanationEvent,
+  EpubExplanationIdRequest,
+  EpubExplanationView,
+  ListEpubExplanationsRequest,
+} from "./epub-explanations";
 import {
   isAbsoluteFileSystemPath,
   PROJECT_NAME_MAX_LENGTH,
@@ -98,6 +105,11 @@ export const IPC_CHANNELS = {
   cancelGenerationTask: "generation-task:cancel",
   discardGenerationTask: "generation-task:discard",
   generationTaskChanged: "generation-task:changed",
+  listEpubExplanations: "epub-explanation:list",
+  createEpubExplanation: "epub-explanation:create",
+  retryEpubExplanation: "epub-explanation:retry",
+  deleteEpubExplanation: "epub-explanation:delete",
+  epubExplanationChanged: "epub-explanation:changed",
   openWorkbench: "workbench:open",
   commandWorkbench: "workbench:command",
   closeWorkbench: "workbench:close",
@@ -218,6 +230,21 @@ export interface LearningCompanionApi {
   ) => Promise<void>;
   onGenerationTaskChanged: (
     listener: (event: GenerationTaskEvent) => void,
+  ) => () => void;
+  listEpubExplanations: (
+    request: ListEpubExplanationsRequest,
+  ) => Promise<EpubExplanationView[]>;
+  createEpubExplanation: (
+    request: CreateEpubExplanationRequest,
+  ) => Promise<EpubExplanationView>;
+  retryEpubExplanation: (
+    request: EpubExplanationIdRequest,
+  ) => Promise<EpubExplanationView>;
+  deleteEpubExplanation: (
+    request: EpubExplanationIdRequest,
+  ) => Promise<void>;
+  onEpubExplanationChanged: (
+    listener: (event: EpubExplanationEvent) => void,
   ) => () => void;
   openWorkbench: (request: WorkbenchOpenRequest) => Promise<WorkbenchBootstrap>;
   commandWorkbench: (

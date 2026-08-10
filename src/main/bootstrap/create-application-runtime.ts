@@ -20,7 +20,9 @@ import { AssetReferenceDatabase } from '../asset-associations/asset-reference-da
 import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/libreoffice-preview-producer';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
-import { EmptyAttachmentService } from '../attachments/attachment-service';
+import { AttachmentDatabase } from '../attachments/attachment-database';
+import { AttachmentFileManager } from '../attachments/attachment-file-manager';
+import { AttachmentService } from '../attachments/attachment-service';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
 import {
@@ -41,6 +43,7 @@ import { GenerationTaskDatabase } from '../generation/generation-task-database';
 import { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
 import { GenerationTaskExecution } from '../generation/generation-task-execution';
 import { GenerationTaskService } from '../generation/generation-task-service';
+import { EpubExplanationService } from '../epub-explanations/epub-explanation-service';
 import { GenerationAssetReferencePreparer } from '../generation/preparation/generation-asset-reference-preparer';
 import { GenerationPreparedManifestFile } from '../generation/preparation/generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from '../generation/preparation/generation-task-preparer';
@@ -65,6 +68,8 @@ import { registerMainWorkbenches } from '../../workbenches/catalog/register-main
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
 import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { EpubExplanationProcessor } from '../../workbenches/epub/generation/epub-explanation-processor';
+import { createEpubExplanationTaskDefinitionV1 } from '../../workbenches/epub/generation/epub-explanation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -101,6 +106,7 @@ export async function createApplicationRuntime({
     | undefined;
   let workbenchSessionService: WorkbenchSessionService | undefined;
   let generationTaskService: GenerationTaskService | undefined;
+  let epubExplanationService: EpubExplanationService | undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -190,6 +196,10 @@ export async function createApplicationRuntime({
       artifactRegistry,
     );
     const assetDatabase = new AssetDatabase(databaseContext);
+    const attachmentService = new AttachmentService(
+      new AttachmentDatabase(databaseContext),
+    );
+    const attachmentFiles = new AttachmentFileManager(projectDatabase);
     const associationService = new AssetAssociationService(
       new AssetReferenceDatabase(databaseContext),
       new AssetLinkDatabase(databaseContext),
@@ -258,6 +268,14 @@ export async function createApplicationRuntime({
         ),
       ),
     );
+    generationTaskDefinitions.register(
+      createEpubExplanationTaskDefinitionV1(
+        new EpubExplanationProcessor(
+          attachmentService,
+          attachmentFiles,
+        ),
+      ),
+    );
     const generationTaskPreparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
       new GenerationAssetReferencePreparer(
@@ -277,10 +295,16 @@ export async function createApplicationRuntime({
       projectDatabase,
       agentProviderService,
     );
+    epubExplanationService = new EpubExplanationService(
+      attachmentService,
+      attachmentFiles,
+      generationTaskService,
+      assetDatabase,
+    );
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
       workbenchRegistry,
-      new EmptyAttachmentService(),
+      attachmentService,
       workbenchStateRepository,
       { transportBindingRegistry },
     );
@@ -298,6 +322,7 @@ export async function createApplicationRuntime({
       agentProviderService,
       assetService,
       externalLibraryService,
+      epubExplanationService,
       generationTaskService,
       projectService,
       settingsRepository,
@@ -310,6 +335,7 @@ export async function createApplicationRuntime({
       codexRuntimeService,
       contentResourceService,
       externalLibraryService,
+      epubExplanationService,
       generationTaskService,
       sandboxFrameInteractionBridge,
       workbenchSessionService,
@@ -320,6 +346,7 @@ export async function createApplicationRuntime({
     await Promise.allSettled([
       workbenchSessionService?.closeActive() ?? Promise.resolve(),
       Promise.resolve(generationTaskService?.unloadProject()),
+      Promise.resolve(epubExplanationService?.dispose()),
       externalLibraryService?.shutdown() ?? Promise.resolve(),
       agentProviderService?.dispose() ?? Promise.resolve(),
     ]);
