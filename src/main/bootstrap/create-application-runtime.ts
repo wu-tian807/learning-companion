@@ -1,5 +1,4 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { safeStorage } from 'electron';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
@@ -17,7 +16,6 @@ import { AssetArtifactService } from '../artifacts/asset-artifact-service';
 import { AssetAssociationService } from '../asset-associations/asset-association-service';
 import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
 import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
-import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/libreoffice-preview-producer';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
@@ -35,17 +33,12 @@ import { LocalFileContentResolver } from '../content/resolvers/local-file/local-
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { createDefaultExternalLibrariesRoot } from '../external-libraries/external-library-path-manager';
-import {
-  LIBREOFFICE_LIBRARY_ID,
-  LIBREOFFICE_VERSION,
-} from '../external-libraries/definitions/libreoffice';
 import type { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { GenerationAgentExecutor } from '../generation/generation-agent-executor';
 import { GenerationTaskDatabase } from '../generation/generation-task-database';
 import { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
 import { GenerationTaskExecution } from '../generation/generation-task-execution';
 import { GenerationTaskService } from '../generation/generation-task-service';
-import { EpubExplanationService } from '../../workbenches/epub/explanations/epub-explanation-service';
 import { GenerationAssetReferencePreparer } from '../generation/preparation/generation-asset-reference-preparer';
 import { GenerationPreparedManifestFile } from '../generation/preparation/generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from '../generation/preparation/generation-task-preparer';
@@ -68,11 +61,13 @@ import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-da
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
-import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
-import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
-import { registerEpubExplanationAttachmentTypes } from '../../workbenches/epub/explanations/main';
-import { EpubExplanationProcessor } from '../../workbenches/epub/explanations/generation/processor';
-import { createEpubExplanationTaskDefinitionV1 } from '../../workbenches/epub/explanations/generation/task-definition';
+import {
+  registerMainWorkbenchArtifactProducers,
+  registerMainWorkbenchAttachmentTypes,
+  registerMainWorkbenchGenerationTaskDefinitions,
+  startMainWorkbenchFeatures,
+  type MainWorkbenchFeatureRuntime,
+} from '../../workbenches/catalog/main-workbench-features';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -109,7 +104,7 @@ export async function createApplicationRuntime({
     | undefined;
   let workbenchSessionService: WorkbenchSessionService | undefined;
   let generationTaskService: GenerationTaskService | undefined;
-  let epubExplanationService: EpubExplanationService | undefined;
+  let mainWorkbenchFeatures: MainWorkbenchFeatureRuntime | undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -183,52 +178,18 @@ export async function createApplicationRuntime({
       agentToolRegistration.defaultToolRequirements,
     );
     const artifactRegistry = new AssetArtifactRegistry();
-    artifactRegistry.register(
-      new LibreOfficePreviewProducer(
-        externalLibraryService,
-        join(
-          appPaths.externalLibraryProfilesDirectory,
-          LIBREOFFICE_LIBRARY_ID,
-          LIBREOFFICE_VERSION,
-        ),
-      ),
-    );
+    registerMainWorkbenchArtifactProducers({
+      artifacts: artifactRegistry,
+      externalLibraries: externalLibraryService,
+      externalLibraryProfilesDirectory:
+        appPaths.externalLibraryProfilesDirectory,
+    });
     const artifactService = new AssetArtifactService(
       new AssetArtifactDatabase(databaseContext),
       new AssetArtifactFileManager(),
       artifactRegistry,
     );
     const assetDatabase = new AssetDatabase(databaseContext);
-    const attachmentRegistry = new AttachmentRegistry();
-    const anchorRegistry = new AnchorRegistry();
-    registerEpubExplanationAttachmentTypes(
-      attachmentRegistry,
-      anchorRegistry,
-    );
-    const attachmentFiles = new AttachmentContentFile(projectDatabase);
-    const assetServiceReference: { current?: AssetService } = {};
-    const attachmentService = new AttachmentService(
-      new AttachmentDatabase(databaseContext),
-      attachmentRegistry,
-      anchorRegistry,
-      attachmentFiles,
-      {
-        touch(projectId, assetId, updatedTime) {
-          const current = assetDatabase.get(projectId, assetId);
-          if (!current) return;
-          const nextTime = Math.max(updatedTime, current.updatedTime);
-          if (assetServiceReference.current?.getActiveProjectId() === projectId) {
-            assetServiceReference.current.update(assetId, {
-              updatedTime: { mode: 'now' },
-            });
-          } else {
-            assetDatabase.update(projectId, assetId, {
-              updatedTime: nextTime,
-            });
-          }
-        },
-      },
-    );
     const associationService = new AssetAssociationService(
       new AssetReferenceDatabase(databaseContext),
       new AssetLinkDatabase(databaseContext),
@@ -249,11 +210,24 @@ export async function createApplicationRuntime({
       workspaceManager,
       {
         artifactCleanup: artifactService,
-        attachmentCleanup: attachmentService,
         deletionObserver: associationService,
       },
     );
-    assetServiceReference.current = assetService;
+    const attachmentRegistry = new AttachmentRegistry();
+    const anchorRegistry = new AnchorRegistry();
+    registerMainWorkbenchAttachmentTypes({
+      attachments: attachmentRegistry,
+      anchors: anchorRegistry,
+    });
+    const attachmentFiles = new AttachmentContentFile(projectDatabase);
+    const attachmentService = new AttachmentService(
+      new AttachmentDatabase(databaseContext),
+      attachmentRegistry,
+      anchorRegistry,
+      attachmentFiles,
+      assetService,
+    );
+    assetService.registerAttachmentCleanup(attachmentService);
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
     const transportBindingRegistry =
@@ -291,19 +265,12 @@ export async function createApplicationRuntime({
     );
     const generationTaskDefinitions =
       new GenerationTaskDefinitionRegistry();
-    generationTaskDefinitions.register(
-      createMindMapGenerationTaskDefinitionV1(
-        new MindMapGenerationProcessor(
-          assetService,
-          associationService,
-        ),
-      ),
-    );
-    generationTaskDefinitions.register(
-      createEpubExplanationTaskDefinitionV1(
-        new EpubExplanationProcessor(attachmentService),
-      ),
-    );
+    registerMainWorkbenchGenerationTaskDefinitions({
+      definitions: generationTaskDefinitions,
+      assets: assetService,
+      associations: associationService,
+      attachments: attachmentService,
+    });
     const generationTaskPreparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
       new GenerationAssetReferencePreparer(
@@ -322,12 +289,6 @@ export async function createApplicationRuntime({
       ),
       projectDatabase,
       agentProviderService,
-    );
-    epubExplanationService = new EpubExplanationService(
-      attachmentService,
-      attachmentFiles,
-      generationTaskService,
-      assetDatabase,
     );
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
@@ -350,11 +311,16 @@ export async function createApplicationRuntime({
       agentProviderService,
       assetService,
       externalLibraryService,
-      epubExplanationService,
       generationTaskService,
       projectService,
       settingsRepository,
       workbenchSessionService,
+    });
+    mainWorkbenchFeatures = startMainWorkbenchFeatures({
+      attachments: attachmentService,
+      attachmentFiles,
+      generationTasks: generationTaskService,
+      assets: assetDatabase,
     });
 
     return new ApplicationRuntime({
@@ -363,22 +329,23 @@ export async function createApplicationRuntime({
       codexRuntimeService,
       contentResourceService,
       externalLibraryService,
-      epubExplanationService,
       generationTaskService,
       sandboxFrameInteractionBridge,
       workbenchSessionService,
       disposeContentProtocol: removeContentProtocol,
       disposeIpc,
+      disposeWorkbenchFeatures: () =>
+        mainWorkbenchFeatures?.dispose(),
     });
   } catch (error) {
     await Promise.allSettled([
       workbenchSessionService?.closeActive() ?? Promise.resolve(),
       Promise.resolve(generationTaskService?.unloadProject()),
-      Promise.resolve(epubExplanationService?.dispose()),
       externalLibraryService?.shutdown() ?? Promise.resolve(),
       agentProviderService?.dispose() ?? Promise.resolve(),
     ]);
     await codexRuntimeService?.shutdown().catch(() => undefined);
+    mainWorkbenchFeatures?.dispose();
     disposeIpc();
     if (contentProtocolRegistered) {
       removeContentProtocol();

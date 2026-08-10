@@ -24,8 +24,6 @@ function createRegistrations(): ApplicationIpcRegistrations {
     removeAssets: vi.fn(),
     registerGenerationTasks: vi.fn(),
     removeGenerationTasks: vi.fn(),
-    registerEpubExplanations: vi.fn(),
-    removeEpubExplanations: vi.fn(),
     registerWorkbench: vi.fn(),
     removeWorkbench: vi.fn(),
   };
@@ -35,8 +33,7 @@ const services: ApplicationIpcServices = {
   agentProviderService: {} as never,
   assetService: {} as never,
   externalLibraryService: {} as never,
-      generationTaskService: {} as never,
-      epubExplanationService: {} as never,
+  generationTaskService: {} as never,
   projectService: {} as never,
   settingsRepository: {} as never,
   workbenchSessionService: {} as never,

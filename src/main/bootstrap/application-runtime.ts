@@ -6,7 +6,6 @@ import type { ExternalLibraryServiceApi } from '../external-libraries/external-l
 import type { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
-import type { EpubExplanationServiceApi } from '../../workbenches/epub/explanations/epub-explanation-service';
 
 export interface ApplicationRuntimeResources {
   readonly databaseContext: DatabaseContext;
@@ -15,11 +14,11 @@ export interface ApplicationRuntimeResources {
   readonly contentResourceService: ContentResourceService;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly generationTaskService: GenerationTaskServiceApi;
-  readonly epubExplanationService: EpubExplanationServiceApi;
   readonly sandboxFrameInteractionBridge: SandboxFrameInteractionBridge;
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly disposeContentProtocol: () => void;
   readonly disposeIpc: () => void;
+  readonly disposeWorkbenchFeatures: () => void;
 }
 
 export class ApplicationRuntime {
@@ -83,8 +82,8 @@ export class ApplicationRuntime {
     this.disposed = true;
     this.resources.disposeContentProtocol();
     this.resources.contentResourceService.dispose();
+    this.resources.disposeWorkbenchFeatures();
     this.resources.disposeIpc();
-    this.resources.epubExplanationService.dispose();
     this.resources.sandboxFrameInteractionBridge.dispose();
     this.resources.databaseContext.close();
   }

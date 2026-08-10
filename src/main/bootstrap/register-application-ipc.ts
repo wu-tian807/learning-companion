@@ -2,7 +2,6 @@ import type { AgentProviderServiceApi } from '../agents/agent-provider-service';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
-import type { EpubExplanationServiceApi } from '../../workbenches/epub/explanations/epub-explanation-service';
 import {
   registerAgentProviderHandlers,
   removeAgentProviderHandlers,
@@ -28,10 +27,6 @@ import {
   removeGenerationTaskHandlers,
 } from '../ipc/generation-tasks';
 import {
-  registerEpubExplanationHandlers,
-  removeEpubExplanationHandlers,
-} from '../../workbenches/epub/explanations/ipc';
-import {
   registerProjectHandlers,
   removeProjectHandlers,
 } from '../ipc/projects';
@@ -52,7 +47,6 @@ export interface ApplicationIpcServices {
   readonly assetService: AssetServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly generationTaskService: GenerationTaskServiceApi;
-  readonly epubExplanationService: EpubExplanationServiceApi;
   readonly projectService: ProjectServiceApi;
   readonly settingsRepository: SettingsRepository;
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
@@ -81,10 +75,6 @@ export interface ApplicationIpcRegistrations {
     service: GenerationTaskServiceApi,
   ) => void;
   readonly removeGenerationTasks: () => void;
-  readonly registerEpubExplanations: (
-    service: EpubExplanationServiceApi,
-  ) => void;
-  readonly removeEpubExplanations: () => void;
   readonly registerWorkbench: (
     service: WorkbenchSessionServiceApi,
   ) => void;
@@ -108,8 +98,6 @@ const defaultRegistrations: ApplicationIpcRegistrations = {
   removeAssets: removeAssetHandlers,
   registerGenerationTasks: registerGenerationTaskHandlers,
   removeGenerationTasks: removeGenerationTaskHandlers,
-  registerEpubExplanations: registerEpubExplanationHandlers,
-  removeEpubExplanations: removeEpubExplanationHandlers,
   registerWorkbench: registerWorkbenchHandlers,
   removeWorkbench: removeWorkbenchHandlers,
 };
@@ -182,13 +170,6 @@ export function registerApplicationIpc(
           services.generationTaskService,
         ),
       registrations.removeGenerationTasks,
-    );
-    register(
-      () =>
-        registrations.registerEpubExplanations(
-          services.epubExplanationService,
-        ),
-      registrations.removeEpubExplanations,
     );
     register(
       () =>

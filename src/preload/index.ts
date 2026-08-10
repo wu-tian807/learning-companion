@@ -18,12 +18,6 @@ import type {
   GenerationTaskView,
   StartGenerationTaskRequest,
 } from "../shared/generation-tasks";
-import type {
-  CreateEpubExplanationRequest,
-  EpubExplanationIdRequest,
-  EpubExplanationView,
-  ListEpubExplanationsRequest,
-} from "../workbenches/epub/explanations/shared";
 import { isIpcResult, type IpcErrorPayload } from "../shared/ipc-error";
 import type { ProjectSnapshot } from "../shared/projects";
 import type {
@@ -66,7 +60,10 @@ import { subscribeExternalLibraryEvents } from "./external-library-events";
 import { subscribeAgentProviderEvents } from "./agent-provider-events";
 import { subscribeAssetEvents } from "./asset-events";
 import { subscribeGenerationTaskEvents } from "./generation-task-events";
-import { subscribeEpubExplanationEvents } from "./epub-explanation-events";
+import {
+  createPreloadWorkbenchFeatureApi,
+  type WorkbenchFeaturePreloadApi,
+} from "../workbenches/catalog/register-preload-workbench-features";
 
 async function invoke<Response>(
   channel: string,
@@ -91,7 +88,7 @@ async function invoke<Response>(
   return result.data;
 }
 
-const api: LearningCompanionApi = {
+const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   healthCheck: () => invoke<HealthCheckResponse>(IPC_CHANNELS.healthCheck),
   openExternal: (request: OpenExternalRequest) =>
     invoke<void>(IPC_CHANNELS.openExternal, request),
@@ -239,16 +236,7 @@ const api: LearningCompanionApi = {
     invoke<void>(IPC_CHANNELS.discardGenerationTask, request),
   onGenerationTaskChanged: (listener) =>
     subscribeGenerationTaskEvents(ipcRenderer, listener),
-  listEpubExplanations: (request: ListEpubExplanationsRequest) =>
-    invoke<EpubExplanationView[]>(IPC_CHANNELS.listEpubExplanations, request),
-  createEpubExplanation: (request: CreateEpubExplanationRequest) =>
-    invoke<EpubExplanationView>(IPC_CHANNELS.createEpubExplanation, request),
-  retryEpubExplanation: (request: EpubExplanationIdRequest) =>
-    invoke<EpubExplanationView>(IPC_CHANNELS.retryEpubExplanation, request),
-  deleteEpubExplanation: (request: EpubExplanationIdRequest) =>
-    invoke<void>(IPC_CHANNELS.deleteEpubExplanation, request),
-  onEpubExplanationChanged: (listener) =>
-    subscribeEpubExplanationEvents(ipcRenderer, listener),
+  ...createPreloadWorkbenchFeatureApi(ipcRenderer, invoke),
   openWorkbench: (request: WorkbenchOpenRequest) =>
     invoke<WorkbenchBootstrap>(IPC_CHANNELS.openWorkbench, request),
   commandWorkbench: (request: WorkbenchCommandRequest) =>

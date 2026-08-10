@@ -21,13 +21,13 @@ function createResources(
       shutdown: vi.fn(async () => undefined),
     },
     generationTaskService: { unloadProject: vi.fn() },
-    epubExplanationService: { dispose: vi.fn() },
     sandboxFrameInteractionBridge: { dispose: vi.fn() },
     workbenchSessionService: {
       closeActive: vi.fn(closeActive),
     },
     disposeContentProtocol: vi.fn(),
     disposeIpc: vi.fn(),
+    disposeWorkbenchFeatures: vi.fn(),
   };
 }
 
@@ -112,7 +112,7 @@ describe('ApplicationRuntime', () => {
     ).toHaveBeenCalledOnce();
     expect(resources.disposeIpc).toHaveBeenCalledOnce();
     expect(
-      resources.epubExplanationService.dispose,
+      resources.disposeWorkbenchFeatures,
     ).toHaveBeenCalledOnce();
     expect(
       resources.sandboxFrameInteractionBridge.dispose,

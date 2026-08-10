@@ -15,6 +15,14 @@ export const EPUB_EXPLANATION_INSTRUCTION_FORMAT =
   'learning-companion/epub-explanation-instruction';
 export const EPUB_EXPLANATION_INSTRUCTION_VERSION = 1;
 
+export const EPUB_EXPLANATION_IPC_CHANNELS = Object.freeze({
+  list: 'epub-explanation:list',
+  create: 'epub-explanation:create',
+  retry: 'epub-explanation:retry',
+  delete: 'epub-explanation:delete',
+  changed: 'epub-explanation:changed',
+});
+
 export interface EpubExplanationMetadata {
   readonly format: 'learning-companion/epub-explanation';
   readonly version: 1;
@@ -81,6 +89,24 @@ export type EpubExplanationEvent =
       readonly assetId: string;
       readonly explanationId: string;
     };
+
+export interface EpubExplanationPreloadApi {
+  listEpubExplanations(
+    request: ListEpubExplanationsRequest,
+  ): Promise<EpubExplanationView[]>;
+  createEpubExplanation(
+    request: CreateEpubExplanationRequest,
+  ): Promise<EpubExplanationView>;
+  retryEpubExplanation(
+    request: EpubExplanationIdRequest,
+  ): Promise<EpubExplanationView>;
+  deleteEpubExplanation(
+    request: EpubExplanationIdRequest,
+  ): Promise<void>;
+  onEpubExplanationChanged(
+    listener: (event: EpubExplanationEvent) => void,
+  ): () => void;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
