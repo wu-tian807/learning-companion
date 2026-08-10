@@ -87,6 +87,11 @@ export interface AssetDeletionObserver {
   onAssetDeleted(projectId: string, assetId: string): void;
 }
 
+export interface AssetAttachmentCleanupApi {
+  removeByAsset(projectId: string, assetId: string): Promise<void>;
+  removeByProject(projectId: string): Promise<void>;
+}
+
 export interface AssetServiceUpdateOptions {
   readonly contentStatus?: AssetContentStatus;
 }
@@ -180,6 +185,7 @@ export class AssetService implements AssetServiceApi {
   private lifecycleVersion = 0;
   private readonly listeners = new Set<AssetChangedListener>();
   private readonly dependencies: AssetServiceDependencies;
+  private attachmentCleanup: AssetAttachmentCleanupApi | undefined;
 
   constructor(
     private readonly assetDatabase: AssetDatabaseApi,
@@ -199,6 +205,60 @@ export class AssetService implements AssetServiceApi {
       deletionObserver: dependencies.deletionObserver,
       now: dependencies.now ?? Date.now,
     };
+  }
+
+  registerAttachmentCleanup(cleanup: AssetAttachmentCleanupApi): void {
+    if (this.attachmentCleanup) {
+      throw new AppError('REGISTRATION_CONFLICT');
+    }
+
+    this.attachmentCleanup = cleanup;
+  }
+
+  touch(projectId: string, assetId: string, updatedTime: number): void {
+    const current = this.assetDatabase.get(projectId, assetId);
+
+    if (!current || !isUnixMilliseconds(updatedTime)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const nextTime = normalizeUpdateTiming(
+      current.updatedTime,
+      {
+        mode: 'observed',
+        observedTime: updatedTime,
+      },
+      false,
+      this.dependencies.now(),
+    );
+
+    if (nextTime === undefined || nextTime === current.updatedTime) {
+      return;
+    }
+
+    const runtime =
+      this.activeProjectId === projectId
+        ? this.runtimeMap.get(assetId)
+        : undefined;
+
+    if (this.activeProjectId === projectId && !runtime) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const updated = this.assetDatabase.update(projectId, assetId, {
+      updatedTime: nextTime,
+    });
+
+    if (!runtime) {
+      return;
+    }
+
+    const snapshot = cloneAssetSnapshot({
+      ...runtime,
+      updatedTime: updated.updatedTime,
+    });
+    this.runtimeMap.set(assetId, snapshot);
+    this.publishChanged(snapshot);
   }
 
   async loadFromProject(
@@ -519,6 +579,11 @@ export class AssetService implements AssetServiceApi {
       throw new AppError('PROJECT_NOT_FOUND');
     }
 
+    await this.attachmentCleanup?.removeByAsset(
+      projectId,
+      assetId,
+    );
+    this.requireUnchangedProject(lifecycleVersion, projectId);
     await this.dependencies.artifactCleanup?.removeByAsset(
       assetId,
       project.workspacePath,
@@ -568,6 +633,8 @@ export class AssetService implements AssetServiceApi {
     if (project.workspacePath !== workspacePath) {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
+
+    await this.attachmentCleanup?.removeByProject(projectId);
 
     for (const asset of this.assetDatabase.listByProject(projectId)) {
       await this.workspaceManager.removeManagedAssetFile(

@@ -83,14 +83,10 @@ function normalizePersistedMetrics(
     typeof value.prepareDurationMs === 'number'
       ? value.prepareDurationMs
       : undefined;
-  const legacyPostProcessDuration =
-    typeof value.postProcessDurationMs === 'number'
-      ? value.postProcessDurationMs
-      : 0;
   const processDurationMs = processCompleted
     ? typeof value.processDurationMs === 'number'
       ? value.processDurationMs
-      : agentDuration + legacyPostProcessDuration
+      : agentDuration
     : undefined;
 
   return cloneGenerationTaskMetrics({

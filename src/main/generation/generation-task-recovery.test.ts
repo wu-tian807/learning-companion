@@ -145,6 +145,7 @@ describe('GenerationTask recovery', () => {
           startedTime: 10,
           completedTime: 20,
           activeDurationMs: 10,
+          assistantOutput: 'recovered answer',
         };
       },
     };

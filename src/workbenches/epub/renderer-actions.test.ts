@@ -26,16 +26,22 @@ describe('EPUB renderer actions', () => {
       ready: true,
       hasSelection: () => hasSelection,
       onCopySelection: vi.fn(),
+      onExplainSelection: vi.fn(),
       onReload: vi.fn(),
       onReveal: vi.fn(),
     });
     const copy = bundle.actions.find(
       (action) => action.id === 'epub.copy-selection',
     )!;
+    const explain = bundle.actions.find(
+      (action) => action.id === 'epub.ai.explain-selection',
+    )!;
 
     expect(isWorkbenchActionEnabled(copy)).toBe(false);
+    expect(isWorkbenchActionEnabled(explain)).toBe(false);
     hasSelection = true;
     expect(isWorkbenchActionEnabled(copy)).toBe(true);
+    expect(isWorkbenchActionEnabled(explain)).toBe(true);
     expect(
       bundle.contributions
         .filter((entry) => entry.surface === 'context-menu')
@@ -43,9 +49,39 @@ describe('EPUB renderer actions', () => {
     ).toEqual([
       '复制选中内容',
       '重新加载电子书',
-      '解释选中内容',
+      '解释这段话',
       '在文件夹中显示',
     ]);
+  });
+
+  it('explains from the frozen invocation including the CFI target', async () => {
+    const onExplainSelection = vi.fn();
+    const bundle = createEpubRendererActions({
+      ready: true,
+      hasSelection: () => true,
+      onCopySelection: vi.fn(),
+      onExplainSelection,
+      onReload: vi.fn(),
+      onReveal: vi.fn(),
+    });
+    const explain = bundle.actions.find(
+      (action) => action.id === 'epub.ai.explain-selection',
+    )!;
+    const selection = {
+      text: anchor.quote.exact,
+      target: createEpubCfiRangeTarget(anchor),
+    };
+
+    await explain.execute({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      workbenchId: 'builtin.epub',
+      sessionId: 'session-1',
+      origin: 'context-menu',
+      ...interactionFromTextSelection(selection),
+    });
+
+    expect(onExplainSelection).toHaveBeenCalledWith(selection);
   });
 
   it('copies from the frozen invocation while preserving the CFI anchor', async () => {
@@ -54,6 +90,7 @@ describe('EPUB renderer actions', () => {
       ready: true,
       hasSelection: () => true,
       onCopySelection,
+      onExplainSelection: vi.fn(),
       onReload: vi.fn(),
       onReveal: vi.fn(),
     });

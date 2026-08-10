@@ -419,6 +419,17 @@ describe('CodexAgentProvider', () => {
         callId: 'image-1',
         toolName: 'imageView',
       }),
+      {
+        type: 'usage-updated',
+        usage: {
+          inputTokens: 820,
+          cachedInputTokens: 600,
+          outputTokens: 90,
+          reasoningTokens: 30,
+          totalTokens: 910,
+        },
+      },
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(result).toEqual({
       sessionId: 'thread-1',
@@ -429,6 +440,7 @@ describe('CodexAgentProvider', () => {
       startedTime: 1_000,
       completedTime: 2_000,
       activeDurationMs: 800,
+      assistantOutput: '{"ok":true}',
       usage: {
         inputTokens: 820,
         cachedInputTokens: 600,
@@ -650,8 +662,10 @@ describe('CodexAgentProvider', () => {
     expect(startTurn).not.toHaveBeenCalled();
     expect(recovered.events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
+      { type: 'assistant-completed', text: '{"ok":false}' },
     ]);
     expect(recovered.result.providerExecutionId).toBe('turn-1');
+    expect(recovered.result.assistantOutput).toBe('{"ok":false}');
   });
 
   it('resumes the bound thread with the latest execution configuration', async () => {
@@ -1131,6 +1145,7 @@ describe('CodexAgentProvider', () => {
         phase: 'completed',
         toolName: 'dynamic:read_asset_anchor',
       }),
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(execute).toHaveBeenCalledWith(
       { assetId: 'asset-1' },
@@ -1264,6 +1279,7 @@ describe('CodexAgentProvider', () => {
         phase: 'completed',
         toolName: 'mcp:document-tools/read_document',
       }),
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(createThread).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -21,6 +21,11 @@ import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
+  isEpubCfiRangeTarget,
+  type EpubExplanationView,
+} from './explanations/shared';
+import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
+import {
   interactionFromTextSelection,
   type WorkbenchSelectionSnapshot,
 } from '../../shared/workbench/selection';
@@ -166,6 +171,7 @@ function EpubToc({
 }
 
 export function EpubWorkbenchView({
+  asset,
   bootstrap,
   executeCommand,
   onRelink,
@@ -201,6 +207,10 @@ export function EpubWorkbenchView({
   const [navigation, setNavigation] = useState<FlatNavItem[]>([]);
   const [progress, setProgress] = useState<number>();
   const [readerRevision, setReaderRevision] = useState(0);
+  const [explanations, setExplanations] = useState<
+    EpubExplanationView[]
+  >([]);
+  const [activeExplanationId, setActiveExplanationId] = useState<string>();
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -276,21 +286,140 @@ export function EpubWorkbenchView({
     [reportError],
   );
 
+  const explainSelection = useCallback(
+    async (selection: WorkbenchSelectionSnapshot) => {
+      if (!isEpubCfiRangeTarget(selection.target)) {
+        reportError(
+          new Error('EPUB 选区锚点无效'),
+          '无法解释这个 EPUB 选区。',
+        );
+        return;
+      }
+      const target = selection.target;
+
+      const existing = explanations.find(
+        (candidate) =>
+          candidate.target.anchorPayload.cfiRange ===
+          target.anchorPayload.cfiRange,
+      );
+      if (existing) {
+        setActiveExplanationId(existing.id);
+        return;
+      }
+
+      try {
+        const created = await window.learningCompanion.createEpubExplanation({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          target,
+        });
+        setExplanations((current) => [
+          ...current.filter((item) => item.id !== created.id),
+          created,
+        ]);
+        setActiveExplanationId(created.id);
+      } catch (error) {
+        reportError(error, '无法启动 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, explanations, reportError],
+  );
+
   const rendererActions = useMemo(
     () =>
       createEpubRendererActions({
         ready: loadState.kind === 'ready',
         hasSelection: () => selectionRef.current !== undefined,
         onCopySelection: copySelection,
+        onExplainSelection: explainSelection,
         onReload: reload,
         onReveal: reveal,
       }),
-    [copySelection, loadState.kind, reload, reveal],
+    [copySelection, explainSelection, loadState.kind, reload, reveal],
   );
   useWorkbenchContributions(
     `${epubWorkbenchManifest.id}.viewer`,
     rendererActions,
   );
+
+  useEffect(() => {
+    let active = true;
+    const removeSubscription =
+      window.learningCompanion.onEpubExplanationChanged((event) => {
+        if (event.type === 'changed') {
+          if (
+            event.explanation.projectId !== asset.projectId ||
+            event.explanation.assetId !== asset.id
+          ) {
+            return;
+          }
+          setExplanations((current) => [
+            ...current.filter(
+              (item) => item.id !== event.explanation.id,
+            ),
+            event.explanation,
+          ]);
+          return;
+        }
+        if (event.type === 'replaced') {
+          if (
+            event.projectId !== asset.projectId ||
+            event.assetId !== asset.id
+          ) {
+            return;
+          }
+          setExplanations((current) => [
+            ...current.filter(
+              (item) =>
+                item.id !== event.previousExplanationId &&
+                item.id !== event.explanation.id,
+            ),
+            event.explanation,
+          ]);
+          setActiveExplanationId((current) =>
+            current === event.previousExplanationId
+              ? event.explanation.id
+              : current,
+          );
+          return;
+        }
+        if (
+          event.projectId !== asset.projectId ||
+          event.assetId !== asset.id
+        ) {
+          return;
+        }
+        setExplanations((current) =>
+          current.filter((item) => item.id !== event.explanationId),
+        );
+        setActiveExplanationId((current) =>
+          current === event.explanationId ? undefined : current,
+        );
+      });
+
+    void window.learningCompanion
+      .listEpubExplanations({
+        projectId: asset.projectId,
+        assetId: asset.id,
+      })
+      .then((items) => {
+        if (active) {
+          setExplanations([...items]);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          reportError(error, '无法加载 EPUB 的 AI 解释。');
+        }
+      });
+
+    return () => {
+      active = false;
+      removeSubscription();
+      setExplanations([]);
+      setActiveExplanationId(undefined);
+    };
+  }, [asset.id, asset.projectId, reportError]);
 
   useEffect(() => {
     const host = viewerHostRef.current;
@@ -534,6 +663,87 @@ export function EpubWorkbenchView({
     );
   }, [viewState.fontScale, viewState.theme]);
 
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition || loadState.kind !== 'ready') {
+      return;
+    }
+
+    for (const explanation of explanations) {
+      const cfiRange = explanation.target.anchorPayload.cfiRange;
+      const color =
+        explanation.status === 'failed'
+          ? '#fb7185'
+          : explanation.status === 'pending'
+            ? '#94a3b8'
+            : '#93c5fd';
+      rendition.annotations.underline(
+        cfiRange,
+        { explanationId: explanation.id },
+        () => setActiveExplanationId(explanation.id),
+        `epub-ai-explanation-${explanation.status}`,
+        {
+          stroke: color,
+          'stroke-width': '2',
+          'stroke-opacity': '0.7',
+          ...(explanation.status !== 'completed'
+            ? { 'stroke-dasharray': '3 3' }
+            : {}),
+        },
+      );
+    }
+
+    return () => {
+      for (const explanation of explanations) {
+        rendition.annotations.remove(
+          explanation.target.anchorPayload.cfiRange,
+          'underline',
+        );
+      }
+    };
+  }, [explanations, loadState.kind]);
+
+  const retryExplanation = useCallback(
+    async (explanation: EpubExplanationView) => {
+      try {
+        const retried =
+          await window.learningCompanion.retryEpubExplanation({
+            projectId: asset.projectId,
+            assetId: asset.id,
+            kind: explanation.kind,
+            explanationId: explanation.id,
+          });
+        setExplanations((current) => [
+          ...current.filter((item) => item.id !== retried.id),
+          retried,
+        ]);
+      } catch (error) {
+        reportError(error, '无法重试 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, reportError],
+  );
+
+  const deleteExplanation = useCallback(
+    async (explanation: EpubExplanationView) => {
+      try {
+        await window.learningCompanion.deleteEpubExplanation({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          kind: explanation.kind,
+          explanationId: explanation.id,
+        });
+        setExplanations((current) =>
+          current.filter((item) => item.id !== explanation.id),
+        );
+        setActiveExplanationId(undefined);
+      } catch (error) {
+        reportError(error, '无法删除 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, reportError],
+  );
+
   const navigate = useCallback(
     (direction: 'previous' | 'next') => {
       const rendition = renditionRef.current;
@@ -557,6 +767,9 @@ export function EpubWorkbenchView({
         { value: 'sepia' as const, label: '纸张' },
       ],
     [],
+  );
+  const activeExplanation = explanations.find(
+    (explanation) => explanation.id === activeExplanationId,
   );
 
   if (!payload) {
@@ -725,6 +938,15 @@ export function EpubWorkbenchView({
             <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-white/[0.06] bg-[#20262e]/75 px-2.5 py-1 text-[10px] tabular-nums text-slate-500 backdrop-blur">
               {Math.round(progress * 100)}%
             </div>
+          )}
+
+          {activeExplanation && (
+        <EpubExplanationPanel
+              explanation={activeExplanation}
+              onClose={() => setActiveExplanationId(undefined)}
+              onRetry={() => void retryExplanation(activeExplanation)}
+              onDelete={() => void deleteExplanation(activeExplanation)}
+            />
           )}
         </div>
       </div>
