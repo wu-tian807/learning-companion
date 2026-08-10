@@ -66,6 +66,6 @@ EPUB 解释不再依赖工作区输出文件，所以不存在“Agent turn 完�
 
 通用合约收敛在 `src/shared/attachments/contracts.ts`；通用 main-process 实现在 `src/main/attachments/`。EPUB 的 shared contracts、IPC、Service、面板和 generation 代码全部位于 `src/workbenches/epub/explanations/`。
 
-数据库只保留 version 19 的 `attachments` 表，使用触发器确保 `assetId` 属于 `projectId`。此前尚未合并的 `asset_attachments` migration 不作为公开迁移历史保留；其他并行功能分支合并时适配这套 schema。
+数据库使用 version 19 的 `asset_attachments` 表，名称明确表达 Attachment 从属于 Asset，并使用触发器确保 `assetId` 属于 `projectId`。其他并行功能分支合并时统一适配这套 schema，不再保留另一套 `attachments` 表。
 
 Codex Windows 工作区写权限属于 Provider 全局能力，和 EPUB Note 正文来源无关。该修复应保留为独立提交/PR，并通过真实 Agent 集成测试覆盖可写根、只读 secondary 和工作区外路径。
