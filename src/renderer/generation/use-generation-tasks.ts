@@ -24,7 +24,11 @@ export interface GenerationTaskPresentation {
 interface UseGenerationTasksOptions {
   readonly projectId: string;
   readonly enabled: boolean;
-  readonly onCompleted: (resultAssetId: string) => Promise<void> | void;
+  /**
+   * 任务完成后回调，传入完整任务快照（含 result）。
+   * 产物解读（resultAssetId 等）是各任务自己的事，hook 不做任何假设。
+   */
+  readonly onCompleted: (task: GenerationTaskView) => void;
   readonly onError: (message: string) => void;
 }
 
@@ -45,24 +49,6 @@ function upsertTask(
   const updated = [...tasks];
   updated[index] = next;
   return updated;
-}
-
-function resultAssetId(task: GenerationTaskView): string | undefined {
-  const result = task.result;
-
-  if (
-    typeof result !== 'object' ||
-    result === null ||
-    Array.isArray(result)
-  ) {
-    return undefined;
-  }
-
-  const candidate = result as Readonly<Record<string, unknown>>;
-  return typeof candidate.resultAssetId === 'string' &&
-    candidate.resultAssetId.trim().length > 0
-    ? candidate.resultAssetId
-    : undefined;
 }
 
 function executionLabel(event: GenerationExecutionEvent): string | undefined {
@@ -201,22 +187,8 @@ export function useGenerationTasks({
             delete next[snapshot.id];
             return next;
           });
-          const assetId = resultAssetId(snapshot);
-          if (assetId) {
-            void Promise.resolve()
-              .then(() => onCompletedRef.current(assetId))
-              .catch((error: unknown) => {
-                const message = userMessageFromError(
-                  error,
-                  '思维导图已生成，但无法打开结果。',
-                );
-                if (message) {
-                  onErrorRef.current(message);
-                }
-              });
-          } else {
-            onErrorRef.current('生成任务完成，但没有返回有效的 Asset。');
-          }
+          // 产物解读交给消费方（onCompleted 收到完整快照）；hook 不检查 result。
+          onCompletedRef.current(snapshot);
           return;
         }
 
