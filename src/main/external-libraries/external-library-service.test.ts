@@ -87,7 +87,6 @@ function createSettings(rootPath: string): SettingsRepository {
     getAgentProviderSelectorSelection: vi.fn(() => undefined),
     updateAgentProviderSelectorSelection: vi.fn(async () => undefined),
     getAgentProviderSelectorConnection: vi.fn(() => undefined),
-    updateAgentProviderSelectorConnection: vi.fn(async () => undefined),
   };
 }
 

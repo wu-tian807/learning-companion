@@ -35,9 +35,4 @@ export interface SettingsRepository {
   getAgentProviderSelectorConnection(
     selectorId: string,
   ): { providerId: string; connectionId: string } | undefined;
-  updateAgentProviderSelectorConnection(
-    selectorId: string,
-    providerId: string,
-    connectionId: string,
-  ): Promise<void>;
 }

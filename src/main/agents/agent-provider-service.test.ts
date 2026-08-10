@@ -71,14 +71,13 @@ function createSettings() {
       const byConnection = selections.get(selection.selectorId) ?? new Map();
       byConnection.set(selection.connectionId, selection);
       selections.set(selection.selectorId, byConnection);
+      selectorConnections.set(selection.selectorId, {
+        providerId: selection.providerId,
+        connectionId: selection.connectionId,
+      });
     }),
     getAgentProviderSelectorConnection: vi.fn((selectorId) =>
       selectorConnections.get(selectorId),
-    ),
-    updateAgentProviderSelectorConnection: vi.fn(
-      async (selectorId, providerId, connectionId) => {
-        selectorConnections.set(selectorId, { providerId, connectionId });
-      },
     ),
   };
   return { settings, connections, selections, selectorConnections };
@@ -390,6 +389,65 @@ describe('AgentProviderService', () => {
     });
 
     expect(setup.selections[0]).toMatchObject({
+      connectionId: 'codex-api-connection-1',
+      modelId: 'deepseek-chat',
+    });
+    expect(setup.selectorConnections).toEqual([
+      {
+        selectorId: 'generation-center',
+        providerId: 'codex',
+        connectionId: 'codex-api-connection-1',
+      },
+    ]);
+
+    await service.dispose();
+  });
+
+  it('publishes the active Connection separately from per-Connection model configurations', async () => {
+    const { service } = createService();
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+    });
+    await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+
+    const setup = await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-api-connection-1',
+      modelId: 'deepseek-chat',
+      reasoningEffort: null,
+    });
+
+    expect(setup.selections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          connectionId: 'codex-account',
+          modelId: 'gpt-test',
+        }),
+        expect.objectContaining({
+          connectionId: 'codex-api-connection-1',
+          modelId: 'deepseek-chat',
+        }),
+      ]),
+    );
+    expect(setup.selectorConnections).toEqual([
+      {
+        selectorId: 'generation-center',
+        providerId: 'codex',
+        connectionId: 'codex-api-connection-1',
+      },
+    ]);
+    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+      providerId: 'codex',
       connectionId: 'codex-api-connection-1',
       modelId: 'deepseek-chat',
     });

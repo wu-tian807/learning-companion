@@ -80,7 +80,6 @@ function createRepository() {
     getAgentProviderSelectorSelection: vi.fn(() => undefined),
     updateAgentProviderSelectorSelection: vi.fn(async () => undefined),
     getAgentProviderSelectorConnection: vi.fn(() => undefined),
-    updateAgentProviderSelectorConnection: vi.fn(async () => undefined),
   };
 
   return {

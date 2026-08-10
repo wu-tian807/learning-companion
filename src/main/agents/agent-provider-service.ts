@@ -304,11 +304,6 @@ export class AgentProviderService
       reasoningEffort:
         requestedEffort ?? selectedModel?.defaultReasoningEffort ?? null,
     });
-    await this.settings.updateAgentProviderSelectorConnection(
-      normalized.selectorId,
-      provider.id,
-      connection.id,
-    );
     this.publish();
     return this.createSetupSnapshot();
   }
@@ -392,12 +387,36 @@ export class AgentProviderService
           ) === true
         );
       });
+    const selectorConnections = selectors.flatMap((selector) => {
+      const active = this.settings.getAgentProviderSelectorConnection(
+        selector.id,
+      );
+      if (
+        !active ||
+        !selections.some(
+          (selection) =>
+            selection.selectorId === selector.id &&
+            selection.providerId === active.providerId &&
+            selection.connectionId === active.connectionId,
+        )
+      ) {
+        return [];
+      }
+      return [
+        Object.freeze({
+          selectorId: selector.id,
+          providerId: active.providerId,
+          connectionId: active.connectionId,
+        }),
+      ];
+    });
 
     return Object.freeze({
       revision: this.revision,
       providers: Object.freeze(providers),
       selectors: Object.freeze(selectors),
       selections: Object.freeze(selections),
+      selectorConnections: Object.freeze(selectorConnections),
     });
   }
 

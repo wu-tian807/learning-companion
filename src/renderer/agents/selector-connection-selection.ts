@@ -18,3 +18,22 @@ export function findSelectorConnectionSelection(
       selection.connectionId === connectionId,
   );
 }
+
+export function findActiveSelectorConnectionSelection(
+  setup: AgentProviderSetupSnapshot | undefined,
+  selectorId: string,
+): AgentProviderSelectorSelectionSnapshot | undefined {
+  const active = setup?.selectorConnections.find(
+    (connection) => connection.selectorId === selectorId,
+  );
+  if (!active) {
+    return undefined;
+  }
+
+  const selection = findSelectorConnectionSelection(
+    setup,
+    selectorId,
+    active.connectionId,
+  );
+  return selection?.providerId === active.providerId ? selection : undefined;
+}

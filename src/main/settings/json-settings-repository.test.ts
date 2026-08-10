@@ -125,11 +125,18 @@ describe('JsonSettingsRepository', () => {
       modelId: 'deepseek-chat',
       reasoningEffort: 'high',
     });
+    expect(
+      restored.getAgentProviderSelectorConnection('generation-center'),
+    ).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-api-deepseek',
+    });
   });
 
   it('deleting a Connection also clears selectors that reference it', async () => {
     const directory = await temporaryDirectory();
-    const repository = new JsonSettingsRepository(join(directory, 'settings.json'));
+    const settingsFile = join(directory, 'settings.json');
+    const repository = new JsonSettingsRepository(settingsFile);
     await repository.initialize();
     await repository.updateAgentProviderConnection({
       id: 'codex-api-1',
@@ -150,6 +157,18 @@ describe('JsonSettingsRepository', () => {
 
     expect(repository.listAgentProviderConnections()).toEqual([]);
     expect(repository.listAgentProviderSelectorSelections()).toEqual([]);
+    expect(
+      repository.getAgentProviderSelectorConnection('generation-center'),
+    ).toBeUndefined();
+
+    const warn = vi.fn();
+    const restored = new JsonSettingsRepository(settingsFile, {
+      logger: { warn },
+    });
+    await restored.initialize();
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(restored.listAgentProviderSelectorSelections()).toEqual([]);
   });
 
   it('serializes concurrent updates in invocation order', async () => {

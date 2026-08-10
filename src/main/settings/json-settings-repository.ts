@@ -368,11 +368,13 @@ export class JsonSettingsRepository implements SettingsRepository {
       const connections = { ...state.agentProviderConnections };
       delete connections[connectionId];
       const selections = Object.fromEntries(
-        Object.entries(state.agentProviderSelectorSelections).map(
+        Object.entries(state.agentProviderSelectorSelections).flatMap(
           ([selectorId, byConnection]) => {
             const next = { ...byConnection };
             delete next[connectionId];
-            return [selectorId, next] as const;
+            return Object.keys(next).length > 0
+              ? [[selectorId, next] as const]
+              : [];
           },
         ),
       );
@@ -435,6 +437,13 @@ export class JsonSettingsRepository implements SettingsRepository {
       return {
         ...state,
         agentProviderSelectorSelections: bySelector,
+        agentProviderSelectorConnections: {
+          ...state.agentProviderSelectorConnections,
+          [normalized.selectorId]: Object.freeze({
+            providerId: normalized.providerId,
+            connectionId: normalized.connectionId,
+          }),
+        },
       };
     });
   }
@@ -450,28 +459,6 @@ export class JsonSettingsRepository implements SettingsRepository {
 
     const record = this.state.agentProviderSelectorConnections[selectorId];
     return record ? Object.freeze({ ...record }) : undefined;
-  }
-
-  async updateAgentProviderSelectorConnection(
-    selectorId: string,
-    providerId: string,
-    connectionId: string,
-  ): Promise<void> {
-    if (
-      !isAgentProviderSelectorId(selectorId) ||
-      !isAgentProviderId(providerId) ||
-      !isAgentProviderConnectionId(connectionId)
-    ) {
-      throw new Error('Settings Agent Provider Selector 配置无效');
-    }
-
-    await this.updateState((state) => ({
-      ...state,
-      agentProviderSelectorConnections: {
-        ...state.agentProviderSelectorConnections,
-        [selectorId]: Object.freeze({ providerId, connectionId }),
-      },
-    }));
   }
 
   private defaultState(): StoredSettingsState {
@@ -643,28 +630,8 @@ export class JsonSettingsRepository implements SettingsRepository {
         if (!isAgentProviderSelectorId(id)) {
           throw new Error('Settings Agent Provider Selector 配置无效');
         }
-        // 新结构：selectorId → (connectionId → selection)
-        if (isRecord(entry) && isAgentProviderConnectionId(Object.keys(entry)[0] ?? '')) {
-          if (
-            !Object.entries(entry).every(
-              ([connectionId, selection]) =>
-                isAgentProviderConnectionId(connectionId) &&
-                isAgentProviderSelectorSelectionSnapshot(selection) &&
-                selection.selectorId === id &&
-                selection.connectionId === connectionId,
-            )
-          ) {
-            throw new Error('Settings Agent Provider Selector 配置无效');
-          }
-          selections[id] = entry as Record<
-            string,
-            AgentProviderSelectorSelectionSnapshot
-          >;
-        } else {
-          // 旧结构：selectorId → 单条 selection
-          if (!isAgentProviderSelectorSelectionSnapshot(entry)) {
-            throw new Error('Settings Agent Provider Selector 配置无效');
-          }
+        // 旧结构：selectorId → 单条 selection
+        if (isAgentProviderSelectorSelectionSnapshot(entry)) {
           if (entry.selectorId !== id) {
             throw new Error('Settings Agent Provider Selector 配置无效');
           }
@@ -674,7 +641,26 @@ export class JsonSettingsRepository implements SettingsRepository {
             connectionId: entry.connectionId,
           };
           needsMigration = true;
+          continue;
         }
+
+        // 新结构：selectorId → (connectionId → selection)。空映射也是合法状态。
+        if (
+          !isRecord(entry) ||
+          !Object.entries(entry).every(
+            ([connectionId, selection]) =>
+              isAgentProviderConnectionId(connectionId) &&
+              isAgentProviderSelectorSelectionSnapshot(selection) &&
+              selection.selectorId === id &&
+              selection.connectionId === connectionId,
+          )
+        ) {
+          throw new Error('Settings Agent Provider Selector 配置无效');
+        }
+        selections[id] = entry as Record<
+          string,
+          AgentProviderSelectorSelectionSnapshot
+        >;
       }
     } else {
       needsMigration = true;

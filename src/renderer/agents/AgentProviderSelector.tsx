@@ -19,7 +19,10 @@ import {
   agentProviderStore,
   type AgentProviderStore,
 } from './agent-provider-store';
-import { findSelectorConnectionSelection } from './selector-connection-selection';
+import {
+  findActiveSelectorConnectionSelection,
+  findSelectorConnectionSelection,
+} from './selector-connection-selection';
 import { SelectMenu } from '../components/SelectMenu';
 
 const CUSTOM_REASONING_EFFORTS = [
@@ -360,9 +363,7 @@ export function AgentProviderSelector({
   const definition = setup?.selectors.find(
     (candidate) => candidate.id === selectorId,
   );
-  const selection = setup?.selections.find(
-    (candidate) => candidate.selectorId === selectorId,
-  );
+  const selection = findActiveSelectorConnectionSelection(setup, selectorId);
   const connections = useMemo(
     () =>
       setup?.providers.flatMap((provider) =>
