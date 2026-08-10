@@ -17,6 +17,9 @@ import type { HtmlConversationStore } from './conversation-store';
 import type { HtmlConversationEntry } from './conversation-protocol';
 import { AnchorChip } from './anchor-summary';
 import { ErrorBubble, MessageStream } from './conversation-messages';
+import type { HtmlAiLaunchRequest } from './html-ai-launch';
+import { applyLaunchRequest } from './launch-application';
+import { applyCancellation } from './cancel-answer';
 
 export interface HtmlConversationOverlayOptions {
   readonly createId?: () => string;
@@ -26,7 +29,10 @@ export interface HtmlConversationOverlayOptions {
 
 export interface HtmlConversationOverlayProps {
   readonly open: boolean;
-  readonly anchor?: JsonValue;
+  /** 启动请求：由 renderer 在点击 AI 入口时构造（open-chat / explain-selection / summarize-page）。 */
+  readonly launchRequest?: HtmlAiLaunchRequest;
+  /** 启动请求已被 Overlay 接收；父组件据此清除一次性请求。 */
+  readonly onLaunchConsumed?: (requestId: number) => void;
   readonly store: HtmlConversationStore;
   readonly onClose: () => void;
   /** Starts a generation task; resolves with the task id (or undefined on failure). */
@@ -45,6 +51,10 @@ export interface HtmlConversationOverlayProps {
   readonly onStartNew?: () => void;
   /** Reports persistence failures that cannot be shown after the panel closes. */
   readonly onPersistenceError?: (error: unknown) => void;
+  /** AI 回答进行中状态同步给 workbench（一键命令据此禁用）。 */
+  readonly onBusyChange?: (busy: boolean) => void;
+  /** 取消当前回答（busy 时发送按钮变为「停止」）。 */
+  readonly onCancelAnswer?: () => void;
   readonly options?: HtmlConversationOverlayOptions;
 }
 
@@ -61,6 +71,11 @@ interface ActiveStream {
   readonly taskId: string;
 }
 
+interface SubmitQuestionOptions {
+  /** 是否清空并在启动失败时恢复输入框；自动命令不应改写用户草稿。 */
+  readonly consumeInput?: boolean;
+}
+
 interface ConversationIdentity {
   readonly id: string;
   readonly createdTime: number;
@@ -75,6 +90,15 @@ function createDisplayId(): string {
 
 function createConversationId(): string {
   return `conv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function initialPendingAnchor(
+  request: HtmlAiLaunchRequest | undefined,
+): JsonValue | undefined {
+  if (!request || request.intent === 'summarize-page') {
+    return undefined;
+  }
+  return request.anchor ?? undefined;
 }
 
 function entryToMessages(entry: HtmlConversationEntry): DisplayMessage[] {
@@ -104,7 +128,8 @@ function messagesFingerprint(
 
 export function ConversationOverlay({
   open,
-  anchor,
+  launchRequest,
+  onLaunchConsumed,
   store,
   onClose,
   onAsk,
@@ -113,6 +138,8 @@ export function ConversationOverlay({
   onAnchorRemoved,
   onStartNew,
   onPersistenceError,
+  onBusyChange,
+  onCancelAnswer,
   options = {},
 }: HtmlConversationOverlayProps) {
   const createId = options.createId ?? createDisplayId;
@@ -123,7 +150,9 @@ export function ConversationOverlay({
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [history, setHistory] = useState<readonly HtmlConversationEntry[]>([]);
   const [input, setInput] = useState('');
-  const [pendingAnchor, setPendingAnchor] = useState<JsonValue>();
+  const [pendingAnchor, setPendingAnchor] = useState<JsonValue | undefined>(
+    () => initialPendingAnchor(launchRequest),
+  );
   const [busy, setBusy] = useState(false);
   const [errorText, setErrorText] = useState<string>();
   const streamRef = useRef<ActiveStream | undefined>(undefined);
@@ -132,6 +161,8 @@ export function ConversationOverlay({
   const busyRef = useRef(false);
   const messagesRef = useRef<DisplayMessage[]>([]);
   const mountedRef = useRef(true);
+  /** 已消费的启动请求 id：防 Strict Mode / 重渲染重复自动提交。 */
+  const lastHandledRequestIdRef = useRef<number | undefined>(undefined);
   const identityRef = useRef<ConversationIdentity | undefined>(undefined);
   if (!identityRef.current) {
     identityRef.current = {
@@ -153,6 +184,11 @@ export function ConversationOverlay({
     update: (current: DisplayMessage[]) => DisplayMessage[],
   ) => replaceMessages(update(messagesRef.current));
 
+  const setBusyState = (next: boolean) => {
+    busyRef.current = next;
+    setBusy(next);
+  };
+
   const resetConversation = () => {
     identityRef.current = {
       id: createArchiveId(),
@@ -162,8 +198,7 @@ export function ConversationOverlay({
     };
     streamRef.current = undefined;
     streamMessageIdRef.current = undefined;
-    busyRef.current = false;
-    setBusy(false);
+    setBusyState(false);
     replaceMessages([]);
   };
 
@@ -216,12 +251,42 @@ export function ConversationOverlay({
   const persistConversationRef = useRef(persistConversation);
   persistConversationRef.current = persistConversation;
 
-  // 外部传入新锚点（右键/选中触发）→ 设为待发送锚点，显示在输入框上方。
+  // 消费启动请求：open-chat / explain-selection 只设置待引用锚点；
+  // summarize-page 清除锚点并自动提交整页总结问题。
+  // 用 lastHandledRequestIdRef 防止 Strict Mode / 重渲染重复应用。
   useEffect(() => {
-    if (anchor !== undefined) {
-      setPendingAnchor(anchor);
+    const request = launchRequest;
+    if (
+      !request ||
+      request.id === lastHandledRequestIdRef.current ||
+      !open
+    ) {
+      return;
     }
-  }, [anchor]);
+    const application = applyLaunchRequest(request);
+    const autoSubmit = application.autoSubmit;
+
+    // action 正常会在 busy 时禁用；这里仍保留生命周期兜底，等回答结束后再消费，
+    // 避免竞态下静默丢失一次业务请求。
+    if (autoSubmit && busyRef.current) {
+      return;
+    }
+
+    lastHandledRequestIdRef.current = request.id;
+    if (application.pendingAnchor !== undefined) {
+      setPendingAnchor(application.pendingAnchor ?? undefined);
+    }
+
+    if (autoSubmit) {
+      // summarize-page：自动提交专用问题（不携带锚点）。
+      submitQuestionRef.current(
+        autoSubmit.question,
+        autoSubmit.anchor,
+        { consumeInput: false },
+      );
+    }
+    onLaunchConsumed?.(request.id);
+  }, [busy, launchRequest, onLaunchConsumed, open]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -297,6 +362,9 @@ export function ConversationOverlay({
         } else {
           failStream('AI 任务已完成，但最终回答无效，请重试。');
         }
+      } else if (snapshot.status === 'cancelled') {
+        // 用户主动取消：结束流式状态，保留已生成的部分文本。
+        cancelStream();
       } else if (snapshot.status === 'failed' || snapshot.failure) {
         failStream();
       }
@@ -323,8 +391,7 @@ export function ConversationOverlay({
   function finishStreamState() {
     streamRef.current = undefined;
     streamMessageIdRef.current = undefined;
-    busyRef.current = false;
-    setBusy(false);
+    setBusyState(false);
   }
 
   function finalizeStream(updatedTime: number, answer: string) {
@@ -362,18 +429,45 @@ export function ConversationOverlay({
     setErrorText(message);
   }
 
-  const ask = () => {
-    const question = input.trim();
-    if (!question || busyRef.current) {
+  /** 用户主动取消：丢弃非权威流式回答，保留用户问题。 */
+  function cancelStream() {
+    const messageId = streamMessageIdRef.current;
+    finishStreamState();
+    if (messageId) {
+      updateMessages((current) =>
+        applyCancellation(current, messageId),
+      );
+    }
+  }
+
+  /** busy 时发送按钮变为「停止」：取消当前回答。 */
+  const handleCancelAnswer = () => {
+    if (!busyRef.current) {
       return;
     }
+    onCancelAnswer?.();
+  };
+
+  // AI 回答进行中同步给 workbench（一键命令据此禁用）。
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+
+  /** 提交一条问题：question 与锚点显式传入，避免读取可能已过期的 state。 */
+  const submitQuestion = (
+    question: string,
+    messageAnchor?: JsonValue,
+    options: SubmitQuestionOptions = {},
+  ) => {
+    const normalized = question.trim();
+    if (!normalized || busyRef.current) {
+      return;
+    }
+    const consumeInput = options.consumeInput ?? true;
     setErrorText(undefined);
-    setInput('');
     const userMessageId = createId();
     const streamMessageId = createId();
     // 锚点随本条消息一起发出；发出后清除待发送锚点（等待下一次选中）
-    const messageAnchor = pendingAnchor;
-    setPendingAnchor(undefined);
     if (messageAnchor !== undefined) {
       onAnchorConsumed?.();
     }
@@ -382,15 +476,18 @@ export function ConversationOverlay({
       {
         id: userMessageId,
         role: 'user',
-        text: question,
+        text: normalized,
         ...(messageAnchor === undefined ? {} : { anchor: messageAnchor }),
       },
       { id: streamMessageId, role: 'assistant', text: '', streaming: true },
     ]);
-    busyRef.current = true;
-    setBusy(true);
+    setPendingAnchor(undefined);
+    if (consumeInput) {
+      setInput('');
+    }
+    setBusyState(true);
 
-    void onAsk(identityRef.current!.id, question, messageAnchor).then(
+    void onAsk(identityRef.current!.id, normalized, messageAnchor).then(
       (taskId) => {
         if (taskId) {
           streamRef.current = { taskId };
@@ -398,7 +495,7 @@ export function ConversationOverlay({
           return;
         }
 
-        // 任务未创建成功：结束流式占位并提示。
+        // 任务未创建成功：结束流式占位、恢复输入并提示。
         updateMessages((current) =>
           current.map((message) =>
             message.id === streamMessageId
@@ -406,9 +503,10 @@ export function ConversationOverlay({
               : message,
           ),
         );
-        busyRef.current = false;
-        setBusy(false);
-        setInput(question);
+        setBusyState(false);
+        if (consumeInput) {
+          setInput(normalized);
+        }
         setErrorText('无法发起 AI 对话，请重试。');
       },
       () => {
@@ -419,13 +517,17 @@ export function ConversationOverlay({
               : message,
           ),
         );
-        busyRef.current = false;
-        setBusy(false);
-        setInput(question);
+        setBusyState(false);
+        if (consumeInput) {
+          setInput(normalized);
+        }
         setErrorText('无法发起 AI 对话，请重试。');
       },
     );
   };
+
+  const submitQuestionRef = useRef(submitQuestion);
+  submitQuestionRef.current = submitQuestion;
 
   const restore = (entry: HtmlConversationEntry) => {
     if (busyRef.current) {
@@ -490,7 +592,7 @@ export function ConversationOverlay({
       <div className="flex items-center gap-2 border-b border-white/[0.08] px-3.5 py-3">
         <span className="size-2.5 rounded-[4px] bg-gradient-to-br from-indigo-400 to-fuchsia-400 shadow-[0_0_10px_rgba(129,140,248,0.7)]" />
         <h3 className="text-xs font-semibold text-slate-100">AI 对话</h3>
-        {(pendingAnchor !== undefined || anchor !== undefined) && (
+        {pendingAnchor !== undefined && (
           <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[9px] text-slate-500">
             锚点已选
           </span>
@@ -560,7 +662,10 @@ export function ConversationOverlay({
           </div>
           {errorText && (
             <div className="px-3 pb-2">
-              <ErrorBubble text={errorText} onRetry={() => ask()} />
+              <ErrorBubble
+                text={errorText}
+                onRetry={() => submitQuestion(input.trim(), pendingAnchor)}
+              />
             </div>
           )}
           <div className="border-t border-white/[0.08] p-2.5">
@@ -585,19 +690,26 @@ export function ConversationOverlay({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
-                    ask();
+                    submitQuestion(input.trim(), pendingAnchor);
                   }
                 }}
                 className="min-h-5 max-h-24 flex-1 resize-none bg-transparent text-[11px] leading-6 text-slate-100 outline-none placeholder:text-slate-600"
               />
               <button
                 type="button"
-                aria-label="发送"
-                disabled={busy || input.trim().length === 0}
-                onClick={ask}
-                className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-xs text-white disabled:opacity-40"
+                aria-label={busy ? '停止回答' : '发送'}
+                title={busy ? '停止回答' : undefined}
+                disabled={!busy && input.trim().length === 0}
+                onClick={
+                  busy ? handleCancelAnswer : () => submitQuestion(input.trim(), pendingAnchor)
+                }
+                className={
+                  busy
+                    ? 'grid size-8 shrink-0 place-items-center rounded-lg bg-rose-500/90 text-xs text-white hover:bg-rose-400'
+                    : 'grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-xs text-white disabled:opacity-40'
+                }
               >
-                ➤
+                {busy ? '■' : '➤'}
               </button>
             </div>
             <p className="mt-1.5 px-1 text-[9px] text-slate-600">

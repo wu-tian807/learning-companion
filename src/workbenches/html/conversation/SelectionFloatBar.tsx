@@ -1,5 +1,5 @@
 /**
- * Floating "解释选中内容" bar shown after a text selection in the HTML
+ * Floating "引用选中内容" bar shown after a text selection in the HTML
  * document.
  *
  * The selection rect is captured by the main-side probe inside the sandbox
@@ -95,7 +95,7 @@ export function SelectionFloatBar({
         onClick={() => onExplain(text)}
         className="rounded-full border border-indigo-300/25 bg-indigo-400/15 px-2.5 py-1 text-[10px] font-semibold text-indigo-200 hover:bg-indigo-400/25"
       >
-        解释选中内容
+        引用选中内容
       </button>
     </div>
   );

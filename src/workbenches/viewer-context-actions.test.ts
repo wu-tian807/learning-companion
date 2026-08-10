@@ -67,7 +67,7 @@ describe('viewer Workbench context action bundles', () => {
     expectWorkbenchSpecificContextMenu(bundle, [
       '复制选中内容',
       '在浏览器中打开链接',
-      '解释选中内容',
+      '引用选中内容',
       '总结当前页面',
     ]);
     expect(isWorkbenchActionEnabled(copyAction!)).toBe(false);

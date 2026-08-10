@@ -23,13 +23,21 @@ import {
 } from '../../shared/generation-definitions';
 import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import { ConversationOverlay } from './conversation/ConversationOverlay';
 import { AnchorHighlight } from './conversation/AnchorHighlight';
 import { SelectionFloatBar } from './conversation/SelectionFloatBar';
+import {
+  createExplainSelectionRequest,
+  createOpenChatRequest,
+  createSummarizePageRequest,
+  type HtmlAiLaunchRequest,
+} from './conversation/html-ai-launch';
 import { createHtmlConversationStore } from './conversation/conversation-store';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
+  createHtmlQuoteTarget,
   htmlWorkbenchManifest,
   isHtmlWorkbenchPayload,
 } from './shared';
@@ -101,8 +109,21 @@ export function HtmlWorkbenchView({
   const [loadedFrameKey, setLoadedFrameKey] = useState<string>();
   const [frameFailed, setFrameFailed] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiAnchor, setAiAnchor] = useState<JsonValue>();
   const [aiSessionKey, setAiSessionKey] = useState(0);
+  const [aiLaunchRequest, setAiLaunchRequest] = useState<HtmlAiLaunchRequest>();
+  const launchRequestIdRef = useRef(0);
+  /** 当前进行中的任务 ID（cancelAnswer 用）。 */
+  const activeTaskIdRef = useRef<string | undefined>(undefined);
+  const [aiBusy, setAiBusyState] = useState(false);
+  /** busy 结束时清除当前任务 ID；开始新任务时由 startAssistantTask 覆盖。 */
+  const setAiBusy = useCallback((busy: boolean) => {
+    setAiBusyState((current) => {
+      if (!busy && current) {
+        activeTaskIdRef.current = undefined;
+      }
+      return busy;
+    });
+  }, []);
   const [selectionText, setSelectionText] = useState<string>();
   const [selectionRect, setSelectionRect] = useState<
     { x: number; y: number; width: number; height: number } | undefined
@@ -116,27 +137,69 @@ export function HtmlWorkbenchView({
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
 
-  const openAi = useCallback((anchor?: JsonValue) => {
-    // 只有初次打开（从关闭 → 打开）才递增 key 重建为新对话；
-    // 对话栏已打开时仅更新锚点（保持当前对话，右键/选中新元素只换 pendingAnchor）。
+  /** 打开 AI 对话栏并交给 Overlay 一个启动请求（open-chat / explain-selection / summarize-page）。 */
+  const launchAi = useCallback((request: HtmlAiLaunchRequest) => {
     setAiOpen((currentlyOpen) => {
       if (!currentlyOpen) {
         setAiSessionKey((current) => current + 1);
       }
       return true;
     });
-    setAiAnchor(anchor);
+    setAiLaunchRequest(request);
     runtime.htmlAiOverlay.getState().openOverlay();
   }, [runtime]);
+
+  const openChat = useCallback((anchor?: JsonValue) => {
+    launchRequestIdRef.current += 1;
+    // 普通打开对话：不自动提交，可携带当前焦点锚点。
+    launchAi(createOpenChatRequest(launchRequestIdRef.current, anchor));
+  }, [launchAi]);
+
+  const explainSelection = useCallback((target: ContentAnchorTarget) => {
+    launchRequestIdRef.current += 1;
+    // 选中即清除旧红框，改高亮为新锚点。
+    setHighlightTarget({
+      anchorType: target.anchorType,
+      anchorPayload: target.anchorPayload,
+    });
+    setHighlightPersistent(true);
+    setHighlightKey((current) => current + 1);
+    // 关闭悬浮选区条，避免对话打开后旧浮条残留。
+    setSelectionText(undefined);
+    setSelectionRect(undefined);
+    launchAi(
+      createExplainSelectionRequest(
+        launchRequestIdRef.current,
+        target as unknown as JsonValue,
+      ),
+    );
+  }, [launchAi]);
+
+  const summarizePage = useCallback(() => {
+    launchRequestIdRef.current += 1;
+    // 总结整页：明确忽略当前选区、右键元素与链接。
+    setSelectionText(undefined);
+    setSelectionRect(undefined);
+    setHighlightTarget(undefined);
+    setHighlightPersistent(false);
+    launchAi(createSummarizePageRequest(launchRequestIdRef.current));
+  }, [launchAi]);
+
   const closeAi = useCallback(() => {
     setAiOpen(false);
-    setAiAnchor(undefined);
+    setAiLaunchRequest(undefined);
     setSelectionText(undefined);
     // 切出对话：清除持久锚点红框
     setHighlightTarget(undefined);
     setHighlightPersistent(false);
     runtime.htmlAiOverlay.getState().closeOverlay();
   }, [runtime]);
+
+  const handleLaunchConsumed = useCallback((requestId: number) => {
+    setAiLaunchRequest((current) =>
+      current?.id === requestId ? undefined : current,
+    );
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -177,6 +240,7 @@ export function HtmlWorkbenchView({
             sources: [{ assetId: asset.id }],
           },
         });
+        activeTaskIdRef.current = started.id;
         return started.id;
       } catch (error) {
         const message = userMessageFromError(
@@ -205,6 +269,21 @@ export function HtmlWorkbenchView({
     [onError],
   );
 
+  const cancelAnswer = useCallback(async () => {
+    const taskId = activeTaskIdRef.current;
+    if (!projectId || !taskId) {
+      return;
+    }
+    try {
+      await window.learningCompanion.cancelGenerationTask({
+        projectId,
+        taskId,
+      });
+    } catch (error) {
+      reportError(error, '无法停止 AI 回答。');
+    }
+  }, [projectId, reportError]);
+
   const reload = useCallback(() => {
     contextRef.current = undefined;
     onInteractionChange({ inputs: [] });
@@ -225,6 +304,7 @@ export function HtmlWorkbenchView({
     () =>
       createHtmlRendererActions({
         getContext: () => contextRef.current,
+        aiBusy,
         onCopySelection: async (text) => {
           try {
             await navigator.clipboard.writeText(text);
@@ -235,21 +315,19 @@ export function HtmlWorkbenchView({
         onOpenLink: onOpenExternal,
         onReload: reload,
         onReveal: reveal,
-        onExplainSelection: () => {
-          const anchor = contextRef.current?.target;
-          openAi(anchor as JsonValue | undefined);
+        onExplainSelection: (selection) => {
+          explainSelection(selection);
         },
         onSummarizePage: () => {
-          const anchor = contextRef.current?.target;
-          openAi(anchor as JsonValue | undefined);
+          summarizePage();
         },
         onOpenChat: () => {
           // 总入口：优先带当前选区锚点，无选区则打开空白对话
           const anchor = contextRef.current?.target;
-          openAi(anchor as JsonValue | undefined);
+          openChat(anchor as JsonValue | undefined);
         },
       }),
-    [onOpenExternal, openAi, reload, reportError, reveal],
+    [aiBusy, explainSelection, onOpenExternal, openChat, reload, reportError, reveal, summarizePage],
   );
   useWorkbenchContributions(
     `${htmlWorkbenchManifest.id}.viewer`,
@@ -274,7 +352,7 @@ export function HtmlWorkbenchView({
 
         if (mapped.kind === 'selection') {
           onInteractionChange(mapped.interaction);
-          // 有选区文本时显示「解释选中内容」悬浮条（锚点携带 frame 内 rect）
+          // 有选区文本时显示「引用选中内容」悬浮条（锚点携带 frame 内 rect）
           const selection = findTextSelectionInput(mapped.interaction);
           const payload =
             selection?.target &&
@@ -379,10 +457,15 @@ export function HtmlWorkbenchView({
       <ConversationOverlay
         key={aiSessionKey}
         open={aiOpen}
-        anchor={aiAnchor}
+        launchRequest={aiLaunchRequest}
+        onLaunchConsumed={handleLaunchConsumed}
         store={conversationStore}
         onClose={closeAi}
         onAsk={startAssistantTask}
+        onBusyChange={setAiBusy}
+        onCancelAnswer={() => {
+          void cancelAnswer();
+        }}
         onPersistenceError={(error) => {
           reportError(error, '无法保存 HTML AI 对话记录。');
         }}
@@ -393,19 +476,17 @@ export function HtmlWorkbenchView({
         }}
         onAnchorConsumed={() => {
           // 锚点已随消息发送：选中红框生命周期结束。
-          setAiAnchor(undefined);
           setHighlightTarget(undefined);
           setHighlightPersistent(false);
         }}
         onAnchorRemoved={() => {
           // 锚点被主动删除：清除红框。
-          setAiAnchor(undefined);
           setHighlightTarget(undefined);
           setHighlightPersistent(false);
         }}
         onStartNew={() => {
           // 主动开启新对话：重置为空白对话（清空红框）。
-          setAiAnchor(undefined);
+          setAiLaunchRequest(undefined);
           setHighlightTarget(undefined);
           setHighlightPersistent(false);
           setAiSessionKey((current) => current + 1);
@@ -417,22 +498,21 @@ export function HtmlWorkbenchView({
         durationMs={highlightPersistent ? 0 : 2_800}
       />
 
-      {/* 选中文本后的「解释选中内容」悬浮条 */}
-      {selectionText && !aiOpen && (
+      {/* 选中文本后的「引用选中内容」悬浮条（对话栏打开时也显示：
+          点击后把新选中内容更新到对话栏锚点，而不是被对话栏状态挡住） */}
+      {selectionText && (
         <SelectionFloatBar
           text={selectionText}
           rect={selectionRect}
           onExplain={(text) => {
             setSelectionText(undefined);
-            openAi({
-              scope: 'content',
-              anchorType: 'html.quote',
-              anchorVersion: 1,
-              anchorPayload: {
-                exact: text,
-                ...(selectionRect ? { rect: selectionRect } : {}),
-              },
-            });
+            explainSelection(
+              createHtmlQuoteTarget(
+                text,
+                payload.contentUrl,
+                selectionRect,
+              ),
+            );
           }}
           onDismiss={() => {
             setSelectionText(undefined);

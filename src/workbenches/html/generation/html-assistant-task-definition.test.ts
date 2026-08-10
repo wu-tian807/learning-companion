@@ -117,6 +117,33 @@ describe('HtmlAssistantInstruction', () => {
       .join('');
     expect(parts).toContain('什么是自注意力？');
     expect(parts).toContain('自注意力机制');
+    expect(parts).toContain('用户选中/聚焦的内容');
+  });
+
+  it('renders user message with whole-page guidance when no anchor', () => {
+    const instruction = new HtmlAssistantInstruction({
+      conversationId: 'conversation-1',
+      question: '请总结当前 HTML 页面。',
+    });
+    const message = instruction.toUserMessage();
+
+    const parts = message.content
+      .map((part) => ('text' in part ? part.text : ''))
+      .join('');
+    expect(parts).toContain('请总结当前 HTML 页面。');
+    expect(parts).toContain('基于整个资料回答');
+    expect(parts).not.toContain('用户选中/聚焦的内容');
+  });
+
+  it('summarize question never serializes a selection anchor', () => {
+    const instruction = new HtmlAssistantInstruction({
+      conversationId: 'conversation-1',
+      question: '请总结当前 HTML 页面。',
+    });
+    const snapshot = instruction.toSnapshot();
+
+    expect(snapshot.anchor).toBeUndefined();
+    expect(snapshot.question).toContain('总结');
   });
 
   it('toSnapshot is frozen and versioned', () => {

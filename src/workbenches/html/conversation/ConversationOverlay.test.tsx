@@ -41,7 +41,16 @@ function renderMarkup(options: {
   return renderToStaticMarkup(
     <ConversationOverlay
       open={options.open ?? true}
-      anchor={options.anchor as never}
+      launchRequest={
+        options.anchor === undefined
+          ? undefined
+          : {
+              id: 1,
+              intent: 'open-chat',
+              anchor: options.anchor as never,
+              submit: 'draft',
+            }
+      }
       store={options.store ?? createStore().store}
       onClose={vi.fn()}
       onAsk={vi.fn() as never}
