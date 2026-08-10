@@ -8,7 +8,6 @@ import {
   type AgentProviderModelCatalogSnapshot,
   type AgentProviderSelectorDefinitionSnapshot,
   type AgentProviderSelectorSelectionSnapshot,
-  type AgentProviderSetupSnapshot,
   type AgentProviderSnapshot,
 } from '../../shared/agent-providers';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -20,6 +19,7 @@ import {
   agentProviderStore,
   type AgentProviderStore,
 } from './agent-provider-store';
+import { findSelectorConnectionSelection } from './selector-connection-selection';
 import { SelectMenu } from '../components/SelectMenu';
 
 const CUSTOM_REASONING_EFFORTS = [
@@ -70,22 +70,6 @@ function defaultReasoningEffort(
     return model.defaultReasoningEffort;
   }
   return supported[0] ?? DEFAULT_REASONING_EFFORT;
-}
-
-/**
- * 查找某个 (selector, connection) 已保存的模型配置。
- * 每个 Connection 各存一份，切换 Connection 时用各自的配置恢复。
- */
-export function findSelectorConnectionSelection(
-  setup: AgentProviderSetupSnapshot | undefined,
-  selectorId: string,
-  connectionId: string,
-): AgentProviderSelectorSelectionSnapshot | undefined {
-  return setup?.selections.find(
-    (selection) =>
-      selection.selectorId === selectorId &&
-      selection.connectionId === connectionId,
-  );
 }
 
 function AgentProviderSelectorForm({

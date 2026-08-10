@@ -2,12 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
-import {
-  AgentProviderSelector,
-  findSelectorConnectionSelection,
-} from './AgentProviderSelector';
+import { AgentProviderSelector } from './AgentProviderSelector';
 import type { AgentProviderSetupApi } from './agent-provider-api';
 import { createAgentProviderStore } from './agent-provider-store';
+import { findSelectorConnectionSelection } from './selector-connection-selection';
 
 const setup: AgentProviderSetupSnapshot = Object.freeze({
   revision: 1,

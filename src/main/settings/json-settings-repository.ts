@@ -527,7 +527,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
     let completedOnboardingVersion = 0;
     let connections: Record<string, AgentProviderConnectionConfiguration> = {};
-    let selections: Record<
+    const selections: Record<
       string,
       Record<string, AgentProviderSelectorSelectionSnapshot>
     > = {};
