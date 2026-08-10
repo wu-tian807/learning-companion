@@ -79,9 +79,25 @@ export function ProjectPage({
   } = useGenerationTasks({
     projectId: project.id,
     enabled: session.loadState.kind === 'ready',
-    onCompleted: async (resultAssetId) => {
-      await assetOperations.refreshAllAssets();
-      session.selectAsset(resultAssetId);
+    onCompleted: async (task) => {
+      // mindmap 的产物解读：result.resultAssetId 指向生成的新 Asset。
+      const result = task.result;
+      const record =
+        typeof result === 'object' &&
+        result !== null &&
+        !Array.isArray(result)
+          ? (result as Readonly<Record<string, unknown>>)
+          : undefined;
+      const assetId =
+        record &&
+        typeof record.resultAssetId === 'string' &&
+        record.resultAssetId.trim().length > 0
+          ? record.resultAssetId
+          : undefined;
+      if (assetId) {
+        await assetOperations.refreshAllAssets();
+        session.selectAsset(assetId);
+      }
     },
     onError: setError,
   });

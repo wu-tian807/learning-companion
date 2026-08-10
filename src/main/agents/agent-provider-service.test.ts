@@ -16,7 +16,14 @@ import { normalizeCodexResponsesBaseUrl } from './providers/codex-responses-url'
 
 function createSettings() {
   const connections = new Map<string, AgentProviderConnectionConfiguration>();
-  const selections = new Map<string, AgentProviderSelectorSelectionSnapshot>();
+  const selections = new Map<
+    string,
+    Map<string, AgentProviderSelectorSelectionSnapshot>
+  >();
+  const selectorConnections = new Map<
+    string,
+    { providerId: string; connectionId: string }
+  >();
   const settings: SettingsRepository = {
     initialize: vi.fn(async () => undefined),
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
@@ -40,19 +47,40 @@ function createSettings() {
     }),
     deleteAgentProviderConnection: vi.fn(async (id) => {
       connections.delete(id);
-      for (const [selectorId, selection] of selections) {
-        if (selection.connectionId === id) {
+      for (const [selectorId, byConnection] of selections) {
+        byConnection.delete(id);
+        if (byConnection.size === 0) {
           selections.delete(selectorId);
         }
       }
+      for (const [selectorId, record] of selectorConnections) {
+        if (record.connectionId === id) {
+          selectorConnections.delete(selectorId);
+        }
+      }
     }),
-    listAgentProviderSelectorSelections: vi.fn(() => [...selections.values()]),
-    getAgentProviderSelectorSelection: vi.fn((id) => selections.get(id)),
+    listAgentProviderSelectorSelections: vi.fn(() =>
+      [...selections.values()].flatMap((byConnection) => [
+        ...byConnection.values(),
+      ]),
+    ),
+    getAgentProviderSelectorSelection: vi.fn((selectorId, connectionId) =>
+      selections.get(selectorId)?.get(connectionId),
+    ),
     updateAgentProviderSelectorSelection: vi.fn(async (selection) => {
-      selections.set(selection.selectorId, selection);
+      const byConnection = selections.get(selection.selectorId) ?? new Map();
+      byConnection.set(selection.connectionId, selection);
+      selections.set(selection.selectorId, byConnection);
+      selectorConnections.set(selection.selectorId, {
+        providerId: selection.providerId,
+        connectionId: selection.connectionId,
+      });
     }),
+    getAgentProviderSelectorConnection: vi.fn((selectorId) =>
+      selectorConnections.get(selectorId),
+    ),
   };
-  return { settings, connections, selections };
+  return { settings, connections, selections, selectorConnections };
 }
 
 function createSecrets() {
@@ -361,6 +389,65 @@ describe('AgentProviderService', () => {
     });
 
     expect(setup.selections[0]).toMatchObject({
+      connectionId: 'codex-api-connection-1',
+      modelId: 'deepseek-chat',
+    });
+    expect(setup.selectorConnections).toEqual([
+      {
+        selectorId: 'generation-center',
+        providerId: 'codex',
+        connectionId: 'codex-api-connection-1',
+      },
+    ]);
+
+    await service.dispose();
+  });
+
+  it('publishes the active Connection separately from per-Connection model configurations', async () => {
+    const { service } = createService();
+    await service.configureApiConnection({
+      providerId: 'codex',
+      displayName: 'Custom',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+    });
+    await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+
+    const setup = await service.selectForSelector({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-api-connection-1',
+      modelId: 'deepseek-chat',
+      reasoningEffort: null,
+    });
+
+    expect(setup.selections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          connectionId: 'codex-account',
+          modelId: 'gpt-test',
+        }),
+        expect.objectContaining({
+          connectionId: 'codex-api-connection-1',
+          modelId: 'deepseek-chat',
+        }),
+      ]),
+    );
+    expect(setup.selectorConnections).toEqual([
+      {
+        selectorId: 'generation-center',
+        providerId: 'codex',
+        connectionId: 'codex-api-connection-1',
+      },
+    ]);
+    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+      providerId: 'codex',
       connectionId: 'codex-api-connection-1',
       modelId: 'deepseek-chat',
     });

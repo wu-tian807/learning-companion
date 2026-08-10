@@ -526,6 +526,102 @@ describe('CodexAgentProvider', () => {
     );
   });
 
+  it('preserves mixed workspace permissions through the mocked Codex runtime', async () => {
+    const sessions = createSessions();
+    const createThread = vi.fn(async () => selection('thread-mixed'));
+    const startTurn = vi.fn(async function* () {
+      yield {
+        type: 'turn-started' as const,
+        threadId: 'thread-mixed',
+        turn: { id: 'turn-mixed', status: 'inProgress' },
+      };
+      return {
+        threadId: 'thread-mixed',
+        turn: completedTurn('unused'),
+      };
+    });
+    const runtime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      createThread,
+      startTurn,
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const provider = new CodexAgentProvider(runtime, sessions.service);
+    const baseRequest = createGenerationRequest();
+    const primaryPath = resolve('test-fixtures', 'writable-primary');
+    const secondaryPath = resolve('test-fixtures', 'read-only-secondary');
+    const request = createGenerationRequest({
+      workspaces: {
+        primary: {
+          ...baseRequest.workspaces.primary,
+          path: primaryPath,
+          permissions: { read: true, write: true },
+        },
+        secondary: [
+          {
+            key: 'reference-material',
+            scope: 'task',
+            instanceKey: 'task-1',
+            path: secondaryPath,
+            permissions: { read: true, write: false },
+          },
+        ],
+      },
+    });
+
+    await collectTurn(runAccountTurn(provider, request));
+
+    const threadInput = (
+      createThread.mock.calls as unknown as Array<
+        Parameters<CodexRuntimeServiceApi['createThread']>
+      >
+    )[0][0];
+    const profileId = threadInput.permissions;
+    expect(typeof profileId).toBe('string');
+    if (typeof profileId !== 'string') {
+      throw new Error('Expected a Codex thread permission profile');
+    }
+    expect(threadInput).toEqual(
+      expect.objectContaining({
+        cwd: primaryPath,
+        runtimeWorkspaceRoots: expect.arrayContaining([
+          primaryPath,
+          secondaryPath,
+        ]),
+        permissions: profileId,
+      }),
+    );
+    expect(threadInput.runtimeWorkspaceRoots).toHaveLength(2);
+    expect(threadInput.sandbox).toBeUndefined();
+    expect(threadInput.configOverrides).toMatchObject({
+      permissions: {
+        [profileId]: {
+          filesystem: {
+            ':minimal': 'read',
+            [primaryPath]: 'write',
+            [secondaryPath]: 'read',
+          },
+          network: { enabled: false },
+        },
+      },
+    });
+
+    const turnInput = (
+      startTurn.mock.calls as unknown as Array<
+        Parameters<CodexRuntimeServiceApi['startTurn']>
+      >
+    )[0][0];
+    expect(turnInput.runtimeWorkspaceRoots).toEqual(
+      expect.arrayContaining([primaryPath, secondaryPath]),
+    );
+    expect(turnInput.runtimeWorkspaceRoots).toHaveLength(2);
+    expect(turnInput.permissions).toBeUndefined();
+    expect(turnInput.sandboxPolicy).toBeUndefined();
+  });
+
   it('recovers a completed turn without consuming another model call', async () => {
     const sessions = createSessions();
     let clientUserMessageId = '';
