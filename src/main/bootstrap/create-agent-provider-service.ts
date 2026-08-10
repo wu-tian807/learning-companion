@@ -11,6 +11,7 @@ import type { AgentSkillServiceApi } from '../agents/skills/agent-skill-service'
 import type { AgentToolRequirement } from '../generation/contracts/task-definition';
 import type { SettingsRepository } from '../settings/settings-repository';
 import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
+import { registerWorkbenchAgentProviderSelectors } from '../../workbenches/catalog/register-agent-provider-selectors';
 
 export function createAgentProviderService(
   settings: SettingsRepository,
@@ -32,6 +33,7 @@ export function createAgentProviderService(
     displayName: '生成中心',
     description: '生成思维导图、学习提纲等 Project 内容。',
   });
+  registerWorkbenchAgentProviderSelectors(selectors);
   registry.register(
     new CodexAgentProvider(codexRuntime, agentSessions, {
       functionTools,

@@ -82,6 +82,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class EpubExplanationService implements EpubExplanationServiceApi {
   private readonly listeners = new Set<EpubExplanationListener>();
+  private readonly retryingAttachmentIds = new Set<string>();
   private readonly removeAttachmentSubscription: () => void;
   private readonly removeGenerationSubscription: () => void;
 
@@ -112,7 +113,9 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     return Promise.all(
       attachments
         .filter(isExplanationAttachment)
-        .map((attachment) => this.toView(attachment)),
+        .map(async (attachment) =>
+          this.toView(await this.reconcilePendingTask(attachment)),
+        ),
     );
   }
 
@@ -152,7 +155,21 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   }
 
   async retry(request: EpubExplanationIdRequest): Promise<EpubExplanationView> {
-    return this.startFreshTask(await this.requireExplanation(request));
+    const attachmentId = request.explanationId.trim();
+    if (this.retryingAttachmentIds.has(attachmentId)) {
+      throw new AppError('OPERATION_SUPERSEDED');
+    }
+
+    this.retryingAttachmentIds.add(attachmentId);
+    try {
+      const attachment = await this.requireExplanation(request);
+      if (attachment.metadata.status !== 'failed') {
+        throw new AppError('OPERATION_SUPERSEDED');
+      }
+      return await this.startFreshTask(attachment);
+    } finally {
+      this.retryingAttachmentIds.delete(attachmentId);
+    }
   }
 
   async delete(request: EpubExplanationIdRequest): Promise<void> {
@@ -176,6 +193,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   dispose(): void {
     this.removeAttachmentSubscription();
     this.removeGenerationSubscription();
+    this.retryingAttachmentIds.clear();
     this.listeners.clear();
   }
 
@@ -279,6 +297,54 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       createdTime: attachment.createdTime,
       updatedTime: attachment.updatedTime,
     });
+  }
+
+  private async reconcilePendingTask(
+    attachment: AssetAttachment & {
+      readonly target: EpubExplanationView['target'];
+      readonly metadata: JsonValue & EpubExplanationMetadata;
+    },
+  ): Promise<
+    AssetAttachment & {
+      readonly target: EpubExplanationView['target'];
+      readonly metadata: JsonValue & EpubExplanationMetadata;
+    }
+  > {
+    if (attachment.metadata.status !== 'pending') {
+      return attachment;
+    }
+
+    const taskId = attachment.metadata.taskId;
+    const task = taskId ? this.generationTasks.get(taskId) : undefined;
+
+    if (
+      task &&
+      !task.completed &&
+      !task.failure &&
+      task.cancelledTime === undefined
+    ) {
+      return attachment;
+    }
+
+    const updated = await this.attachments.update({
+      projectId: attachment.projectId,
+      attachmentId: attachment.id,
+      metadata: metadata({
+        status: 'failed',
+        ...(taskId ? { taskId } : {}),
+        failureMessage:
+          task?.failure?.message ??
+          (task?.cancelledTime === undefined
+            ? 'AI 解释任务已中断，请重试。'
+            : 'AI 解释已取消，请重试。'),
+      }),
+    });
+
+    if (!isExplanationAttachment(updated)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    return updated;
   }
 
   private async handleAttachmentEvent(

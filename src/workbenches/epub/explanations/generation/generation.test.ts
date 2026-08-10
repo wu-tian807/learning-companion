@@ -7,6 +7,7 @@ import {
 import { EpubExplanationInstruction } from './instruction';
 import { EpubExplanationProcessor } from './processor';
 import { createEpubExplanationTaskDefinitionV1 } from './task-definition';
+import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../../shared/agent-provider-selectors';
 
 describe('EPUB explanation generation', () => {
   it('creates a fixed explanation message with selection context', () => {
@@ -37,6 +38,9 @@ describe('EPUB explanation generation', () => {
     expect(definition.id).toBe(EPUB_EXPLANATION_TASK_DEFINITION_ID);
     expect(definition.version).toBe(
       EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+    );
+    expect(definition.providerSelectorId).toBe(
+      WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
     );
     expect(definition.primaryWorkspaceConfig).toMatchObject({
       scope: 'task',
@@ -76,6 +80,7 @@ describe('EPUB explanation generation', () => {
     );
 
     await processor.process({
+      taskId: 'task-1',
       projectId: 'project-1',
       instruction: { attachmentId: 'attachment-1' },
       agent: { call },
@@ -99,5 +104,44 @@ describe('EPUB explanation generation', () => {
         metadata: expect.objectContaining({ status: 'completed' }),
       }),
     );
+  });
+
+  it('rejects a stale task before it can overwrite a newer Attachment owner', async () => {
+    const write = vi.fn();
+    const processor = new EpubExplanationProcessor(
+      {
+        get: vi.fn(async () => ({
+          id: 'attachment-1',
+          projectId: 'project-1',
+          assetId: 'asset-1',
+          typeId: 'epub.ai-explanation',
+          typeVersion: 1,
+          target: { scope: 'asset' },
+          metadata: {
+            format: 'learning-companion/epub-explanation',
+            version: 1,
+            status: 'pending',
+            taskId: 'new-task',
+          },
+          createdTime: 1,
+          updatedTime: 2,
+        })),
+      } as never,
+      { write } as never,
+    );
+
+    await expect(
+      processor.process({
+        taskId: 'old-task',
+        projectId: 'project-1',
+        instruction: { attachmentId: 'attachment-1' },
+        agent: {
+          call: vi.fn(async () => ({ assistantOutput: '旧任务回答' })),
+        },
+        defaultUserMessage: { role: 'user', content: [] },
+        reportStatus: vi.fn(),
+      } as never),
+    ).rejects.toThrow('OPERATION_SUPERSEDED');
+    expect(write).not.toHaveBeenCalled();
   });
 });

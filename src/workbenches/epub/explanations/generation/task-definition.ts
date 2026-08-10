@@ -1,4 +1,4 @@
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../../../shared/agent-provider-selectors';
+import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../../shared/agent-provider-selectors';
 import type {
   GenerationTaskProcessContext,
   GenerationTaskProcessor,
@@ -28,7 +28,7 @@ export function createEpubExplanationTaskDefinitionV1(
   return Object.freeze({
     id: EPUB_EXPLANATION_TASK_DEFINITION_ID,
     version: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
-    providerSelectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+    providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
     systemInstruction: EPUB_EXPLANATION_SYSTEM_INSTRUCTION_V1,
     toolRequirements: Object.freeze([]),
     skills: Object.freeze([]),

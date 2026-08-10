@@ -53,30 +53,46 @@ export class EpubExplanationProcessor
     if (
       !attachment ||
       attachment.projectId !== context.projectId ||
-      !isEpubExplanationMetadata(currentMetadata)
+      !isEpubExplanationMetadata(currentMetadata) ||
+      currentMetadata.status !== 'pending' ||
+      currentMetadata.taskId !== context.taskId
     ) {
-      throw new AppError('ATTACHMENT_NOT_FOUND');
+      throw new AppError('OPERATION_SUPERSEDED');
     }
 
-    const content = await this.contentFiles.write({
-      projectId: attachment.projectId,
-      attachmentId: attachment.id,
-      fileName: 'answer.md',
-      mediaType: 'text/markdown',
-      content: `${answer}\n`,
-    });
-    await this.attachments.update({
-      projectId: attachment.projectId,
-      attachmentId: attachment.id,
-      metadata: {
-        format: 'learning-companion/epub-explanation',
-        version: 1,
-        status: 'completed',
-        ...(currentMetadata.taskId ? { taskId: currentMetadata.taskId } : {}),
-        failureMessage: null,
-      },
-      content,
-    });
+    let contentWritten = false;
+    try {
+      const content = await this.contentFiles.write({
+        projectId: attachment.projectId,
+        attachmentId: attachment.id,
+        fileName: 'answer.md',
+        mediaType: 'text/markdown',
+        content: `${answer}\n`,
+      });
+      contentWritten = true;
+      context.signal?.throwIfAborted();
+      await this.attachments.update({
+        projectId: attachment.projectId,
+        attachmentId: attachment.id,
+        metadata: {
+          format: 'learning-companion/epub-explanation',
+          version: 1,
+          status: 'completed',
+          taskId: context.taskId,
+          failureMessage: null,
+        },
+        content,
+      });
+    } catch (error) {
+      if (contentWritten) {
+        await this.contentFiles
+          .removeAttachment(attachment.projectId, attachment.id)
+          .catch((cleanupError: unknown) => {
+            console.error('回滚 EPUB 解释 Attachment 内容失败', cleanupError);
+          });
+      }
+      throw error;
+    }
 
     return Object.freeze({ attachmentId: attachment.id });
   }
