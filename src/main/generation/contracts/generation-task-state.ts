@@ -15,6 +15,10 @@ import {
   cloneGenerationTaskMetrics,
   type GenerationTaskMetrics,
 } from './generation-metrics';
+import {
+  cloneAssistantOutput,
+  type AssistantOutput,
+} from './assistant-output';
 
 export interface GenerationTaskPreparedCheckpoint {
   readonly completedTime: number;
@@ -27,6 +31,7 @@ export interface GenerationTaskAgentCallCheckpoint {
   readonly completedTime: number;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
+  readonly assistantOutput?: AssistantOutput;
 }
 
 export interface GenerationTaskCompletedCheckpoint {
@@ -160,6 +165,13 @@ function cloneAgentCallCheckpoint(
           providerExecutionId: requireText(
             checkpoint.providerExecutionId,
             `agentCalls[${index}].providerExecutionId`,
+          ),
+        }),
+    ...(checkpoint.assistantOutput === undefined
+      ? {}
+      : {
+          assistantOutput: cloneAssistantOutput(
+            checkpoint.assistantOutput,
           ),
         }),
   });

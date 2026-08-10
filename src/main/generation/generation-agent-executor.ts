@@ -1,5 +1,10 @@
 import { createAgentSessionLocator } from '../agents/sessions/agent-session';
 import { AppError } from '../errors/app-error';
+import {
+  cloneAssistantOutput,
+  isAssistantOutput,
+  type AssistantOutput,
+} from './contracts/assistant-output';
 import type { AgentUserMessage } from './contracts/agent-message';
 import {
   isGenerationTokenUsage,
@@ -20,6 +25,7 @@ export type GenerationAgentExecutionEvent = {
 export interface CompletedGenerationAgentRun {
   readonly metrics: GenerationAgentExecutionMetrics;
   readonly providerExecutionId?: string;
+  readonly assistantOutput?: AssistantOutput;
 }
 
 export interface GenerationAgentExecutionRequest {
@@ -60,6 +66,8 @@ function validateTurnResult(
     result.activeDurationMs < 0 ||
     (result.usage !== undefined &&
       !isGenerationTokenUsage(result.usage)) ||
+    (result.assistantOutput !== undefined &&
+      !isAssistantOutput(result.assistantOutput)) ||
     (expectedSessionId !== undefined &&
       result.sessionId !== expectedSessionId)
   ) {
@@ -138,6 +146,13 @@ export class GenerationAgentExecutor {
       }),
       ...(result.providerExecutionId
         ? { providerExecutionId: result.providerExecutionId }
+        : {}),
+      ...(result.assistantOutput
+        ? {
+            assistantOutput: cloneAssistantOutput(
+              result.assistantOutput,
+            ),
+          }
         : {}),
     });
   }

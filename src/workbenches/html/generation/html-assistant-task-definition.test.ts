@@ -25,6 +25,7 @@ describe('htmlAssistantInstructionFactory', () => {
     const result = htmlAssistantInstructionFactory.parse({
       format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
       version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+      conversationId: 'conversation-1',
       question: ' 什么是自注意力？ ',
       anchor: quoteAnchor,
     });
@@ -34,6 +35,7 @@ describe('htmlAssistantInstructionFactory', () => {
       return;
     }
     expect(result.value.question).toBe('什么是自注意力？');
+    expect(result.value.conversationId).toBe('conversation-1');
     expect(result.value.anchor).toEqual(quoteAnchor);
   });
 
@@ -41,6 +43,7 @@ describe('htmlAssistantInstructionFactory', () => {
     const result = htmlAssistantInstructionFactory.parse({
       format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
       version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+      conversationId: 'conversation-1',
       question: '总结当前页面',
     });
 
@@ -59,6 +62,22 @@ describe('htmlAssistantInstructionFactory', () => {
       htmlAssistantInstructionFactory.parse({
         format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
         version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+        question: '缺少会话身份',
+      }).ok,
+    ).toBe(false);
+    expect(
+      htmlAssistantInstructionFactory.parse({
+        format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
+        version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+        conversationId: '../unsafe',
+        question: '问题',
+      }).ok,
+    ).toBe(false);
+    expect(
+      htmlAssistantInstructionFactory.parse({
+        format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
+        version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+        conversationId: 'conversation-1',
         question: '   ',
       }).ok,
     ).toBe(false);
@@ -66,6 +85,7 @@ describe('htmlAssistantInstructionFactory', () => {
       htmlAssistantInstructionFactory.parse({
         format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
         version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+        conversationId: 'conversation-1',
         question: 'q'.repeat(2_001),
       }).ok,
     ).toBe(false);
@@ -73,6 +93,7 @@ describe('htmlAssistantInstructionFactory', () => {
       htmlAssistantInstructionFactory.parse({
         format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
         version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+        conversationId: 'conversation-1',
         question: 'ok',
         anchor: 42,
       }).ok,
@@ -83,6 +104,7 @@ describe('htmlAssistantInstructionFactory', () => {
 describe('HtmlAssistantInstruction', () => {
   it('renders user message with anchor description', () => {
     const instruction = new HtmlAssistantInstruction({
+      conversationId: 'conversation-1',
       question: '什么是自注意力？',
       anchor: quoteAnchor,
     });
@@ -99,6 +121,7 @@ describe('HtmlAssistantInstruction', () => {
 
   it('toSnapshot is frozen and versioned', () => {
     const snapshot = new HtmlAssistantInstruction({
+      conversationId: 'conversation-1',
       question: '问题',
     }).toSnapshot();
 
@@ -108,18 +131,30 @@ describe('HtmlAssistantInstruction', () => {
   });
 
   it('rejects empty and oversized questions', () => {
-    expect(() => new HtmlAssistantInstruction({ question: '  ' })).toThrow();
     expect(
-      () => new HtmlAssistantInstruction({ question: 'q'.repeat(2_001) }),
+      () =>
+        new HtmlAssistantInstruction({
+          conversationId: 'conversation-1',
+          question: '  ',
+        }),
+    ).toThrow();
+    expect(
+      () =>
+        new HtmlAssistantInstruction({
+          conversationId: 'conversation-1',
+          question: 'q'.repeat(2_001),
+        }),
     ).toThrow();
   });
 });
 
 describe('createHtmlAssistantTaskDefinitionV1', () => {
-  it('declares shared workspace scope and single source schema', () => {
+  it('maps each validated conversation to a named workspace', () => {
     const processor = {
       async process() {
-        return Object.freeze({ answer: '' }) as HtmlAssistantTaskResult;
+        return Object.freeze({
+          answer: '回答',
+        }) as HtmlAssistantTaskResult;
       },
     };
     const definition = createHtmlAssistantTaskDefinitionV1(processor);
@@ -128,9 +163,17 @@ describe('createHtmlAssistantTaskDefinitionV1', () => {
     expect(definition.version).toBe(HTML_ASSISTANT_TASK_DEFINITION_VERSION);
     expect(definition.primaryWorkspaceConfig).toEqual({
       key: 'html-assistant',
-      scope: 'shared',
+      scope: 'named',
       permissions: { read: true, write: false },
     });
+    expect(
+      definition.resolvePrimaryWorkspaceInstanceKey?.(
+        new HtmlAssistantInstruction({
+          conversationId: 'conversation-1',
+          question: '问题',
+        }),
+      ),
+    ).toBe('conversation-1');
     expect(definition.assetReferenceSchema.sources).toEqual({
       required: true,
       cardinality: 'one',

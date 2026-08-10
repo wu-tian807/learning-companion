@@ -1,5 +1,6 @@
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AgentSessionLocator } from '../agents/sessions/agent-session';
+import type { AssistantOutput } from './contracts/assistant-output';
 import type { AgentUserMessage } from './contracts/agent-message';
 import type { GenerationTokenUsage } from './contracts/generation-metrics';
 import type {
@@ -53,6 +54,7 @@ export interface GenerationAgentTurnResult {
   readonly connectionId: string;
   readonly modelId: string;
   readonly providerExecutionId?: string;
+  readonly assistantOutput?: AssistantOutput;
   readonly startedTime: number;
   readonly completedTime: number;
   readonly activeDurationMs: number;

@@ -47,7 +47,10 @@ describe('isHtmlConversationEntry', () => {
     expect(isHtmlConversationEntry(validEntry)).toBe(true);
   });
 
-  it('rejects empty messages, invalid roles, times, and non-JSON anchors', () => {
+  it('rejects unsafe ids, empty messages, invalid roles, times, and non-JSON anchors', () => {
+    expect(
+      isHtmlConversationEntry({ ...validEntry, id: '../unsafe' }),
+    ).toBe(false);
     expect(isHtmlConversationEntry({ ...validEntry, messages: [] })).toBe(false);
     expect(
       isHtmlConversationEntry({

@@ -9,6 +9,12 @@ import {
   isJsonValue,
   type JsonValue,
 } from '../../../shared/workbench/protocol';
+import {
+  HTML_CONVERSATION_ID_MAX_LENGTH,
+  isHtmlConversationId,
+} from './conversation-id';
+
+export { HTML_CONVERSATION_ID_MAX_LENGTH } from './conversation-id';
 
 export const HTML_CONVERSATION_DATA_KEY = 'html-conversations-v1';
 export const HTML_CONVERSATION_INDEX_FORMAT =
@@ -17,7 +23,6 @@ export const HTML_CONVERSATION_INDEX_VERSION = 2;
 
 export const HTML_CONVERSATION_MAX_ENTRIES = 1_000;
 export const HTML_CONVERSATION_MAX_MESSAGES = 2_000;
-export const HTML_CONVERSATION_ID_MAX_LENGTH = 128;
 export const HTML_CONVERSATION_TEXT_MAX_LENGTH = 32_768;
 export const HTML_CONVERSATION_ANCHOR_MAX_BYTES = 8_192;
 
@@ -88,7 +93,7 @@ export function isHtmlConversationEntry(
   }
 
   return (
-    isBoundedText(value.id, HTML_CONVERSATION_ID_MAX_LENGTH) &&
+    isHtmlConversationId(value.id) &&
     Array.isArray(value.messages) &&
     value.messages.length > 0 &&
     value.messages.length <= HTML_CONVERSATION_MAX_MESSAGES &&
@@ -135,7 +140,7 @@ function isLegacyHtmlConversationEntry(
   }
 
   return (
-    isBoundedText(value.id, HTML_CONVERSATION_ID_MAX_LENGTH) &&
+    isHtmlConversationId(value.id) &&
     isBoundedText(value.question, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
     isBoundedText(value.answer, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
     isTime(value.createdTime) &&
@@ -333,7 +338,7 @@ export function removeHtmlConversationEntry(
 ): HtmlConversationIndex {
   if (
     !isHtmlConversationIndex(index) ||
-    !isBoundedText(entryId, HTML_CONVERSATION_ID_MAX_LENGTH)
+    !isHtmlConversationId(entryId)
   ) {
     throw new Error('HtmlConversationEntry id 无效');
   }

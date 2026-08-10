@@ -1,7 +1,10 @@
 import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
-import { requireAgentWorkspaceKey } from '../../agents/workspaces/agent-workspace-paths';
+import {
+  requireAgentWorkspaceKey,
+  requireAgentWorkspacePathSegment,
+} from '../../agents/workspaces/agent-workspace-paths';
 
-export type AgentWorkspaceScope = 'shared' | 'task';
+export type AgentWorkspaceScope = 'shared' | 'task' | 'named';
 
 export interface AgentWorkspacePermissions {
   readonly read: boolean;
@@ -39,7 +42,11 @@ export function cloneAgentWorkspaceConfig(
 ): AgentWorkspaceConfig {
   const key = requireAgentWorkspaceKey(config.key);
 
-  if (config.scope !== 'shared' && config.scope !== 'task') {
+  if (
+    config.scope !== 'shared' &&
+    config.scope !== 'task' &&
+    config.scope !== 'named'
+  ) {
     throw new Error('Agent workspace scope 数据无效');
   }
 
@@ -61,10 +68,19 @@ export function cloneAgentWorkspaceConfig(
 export function resolveAgentWorkspaceSegments(
   config: AgentWorkspaceConfig,
   taskId: string,
+  namedInstanceKey?: string,
 ): readonly [string, string] {
   const cloned = cloneAgentWorkspaceConfig(config);
   const instanceKey =
-    cloned.scope === 'shared' ? 'shared' : requireText(taskId, 'taskId');
+    cloned.scope === 'shared'
+      ? 'shared'
+      : cloned.scope === 'task'
+        ? requireText(taskId, 'taskId')
+        : requireAgentWorkspacePathSegment(namedInstanceKey ?? '');
+
+  if (cloned.scope !== 'named' && namedInstanceKey !== undefined) {
+    throw new Error('Agent workspace named instanceKey 仅适用于 named scope');
+  }
 
   return Object.freeze([cloned.key, instanceKey]);
 }
@@ -74,9 +90,14 @@ export async function prepareAgentWorkspace(
   config: AgentWorkspaceConfig,
   taskId: string,
   namespaceSegments: readonly string[] = [],
+  namedInstanceKey?: string,
 ): Promise<PreparedAgentWorkspace> {
   const cloned = cloneAgentWorkspaceConfig(config);
-  const segments = resolveAgentWorkspaceSegments(cloned, taskId);
+  const segments = resolveAgentWorkspaceSegments(
+    cloned,
+    taskId,
+    namedInstanceKey,
+  );
   const path = await manager.prepare([...namespaceSegments, ...segments]);
 
   return Object.freeze({

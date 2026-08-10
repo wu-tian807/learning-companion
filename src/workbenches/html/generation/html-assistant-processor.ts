@@ -1,38 +1,31 @@
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import type {
   GenerationTaskProcessContext,
   GenerationTaskProcessor,
 } from '../../../main/generation/contracts/task-definition';
 import type { HtmlAssistantInstruction } from './html-assistant-instruction';
+import type { HtmlAssistantTaskResult } from './html-assistant-result';
 
-export type HtmlAssistantTaskResult = JsonValue & {
-  readonly answer: string;
-};
+export type { HtmlAssistantTaskResult } from './html-assistant-result';
 
 /**
  * Single-turn processor: one agent call per question.
  *
- * The conversational thread is reused across tasks via the shared workspace
- * (`scope: 'shared'` in the task definition), so Codex maintains history and
- * the processor never re-sends previous turns. The model's streaming reply is
- * delivered to the renderer through generation task events; this processor
- * only marks the task successful.
+ * Tasks carrying the same conversationId resolve to the same named workspace,
+ * so Codex maintains history and the processor never re-sends previous turns.
+ * Streaming deltas remain optional execution events; the completed call output
+ * is returned as the authoritative business result.
  */
-export function createHtmlAssistantProcessor(
-  dependencies: { readonly now?: () => number } = {},
-): GenerationTaskProcessor<
+export function createHtmlAssistantProcessor(): GenerationTaskProcessor<
   HtmlAssistantInstruction,
   HtmlAssistantTaskResult
 > {
-  const now = dependencies.now ?? Date.now;
-
   return {
     async process(
       context: GenerationTaskProcessContext<HtmlAssistantInstruction>,
     ): Promise<HtmlAssistantTaskResult> {
       context.signal?.throwIfAborted();
 
-      await context.agent.call({
+      const completed = await context.agent.call({
         callKey: 'ask',
         purpose: 'answer',
         userMessage: context.defaultUserMessage,
@@ -40,7 +33,11 @@ export function createHtmlAssistantProcessor(
 
       context.signal?.throwIfAborted();
 
-      return Object.freeze({ answer: '', completedTime: now() });
+      if (!completed.assistantOutput) {
+        throw new Error('HTML Assistant 未收到最终回答');
+      }
+
+      return Object.freeze({ answer: completed.assistantOutput.text });
     },
   };
 }

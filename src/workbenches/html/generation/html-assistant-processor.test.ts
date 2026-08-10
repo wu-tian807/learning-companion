@@ -16,7 +16,10 @@ function createContext(options: {
 } = {}) {
   const instruction =
     options.instruction ??
-    new HtmlAssistantInstruction({ question: '什么是自注意力？' });
+    new HtmlAssistantInstruction({
+      conversationId: 'conversation-1',
+      question: '什么是自注意力？',
+    });
 
   const agent: TaskAgentSession = {
     completedCalls: Object.freeze([]),
@@ -25,6 +28,7 @@ function createContext(options: {
         callKey: 'ask',
         purpose: 'answer',
         sessionId: 'thread-1',
+        assistantOutput: Object.freeze({ text: '最终回答' }),
         metrics: Object.freeze({
           callKey: 'ask',
           purpose: 'answer',
@@ -52,10 +56,10 @@ function createContext(options: {
       workspaces: Object.freeze({
         primary: Object.freeze({
           key: 'html-assistant',
-          instanceKey: 'shared',
-          scope: 'shared',
+          instanceKey: 'conversation-1',
+          scope: 'named',
           permissions: Object.freeze({ read: true, write: false }),
-          path: '/workspace/html-assistant/shared',
+          path: '/workspace/html-assistant/conversation-1',
         }),
         secondary: Object.freeze([]),
       }),
@@ -83,7 +87,7 @@ function createContext(options: {
 describe('createHtmlAssistantProcessor', () => {
   it('calls the agent once with the ask call key', async () => {
     const { context, agent } = createContext();
-    const processor = createHtmlAssistantProcessor({ now: () => 123 });
+    const processor = createHtmlAssistantProcessor();
 
     const result = await processor.process(context);
 
@@ -94,7 +98,26 @@ describe('createHtmlAssistantProcessor', () => {
         purpose: 'answer',
       }),
     );
-    expect(result).toEqual({ answer: '', completedTime: 123 });
+    expect(result).toEqual({ answer: '最终回答' });
+  });
+
+  it('fails honestly when the provider completes without final output', async () => {
+    const { context } = createContext({
+      agent: {
+        call: vi.fn(async () =>
+          Object.freeze({
+            callKey: 'ask',
+            purpose: 'answer',
+            sessionId: 'thread-1',
+            metrics: {},
+          } as TaskAgentCallResult),
+        ),
+      },
+    });
+
+    await expect(
+      createHtmlAssistantProcessor().process(context),
+    ).rejects.toThrow('未收到最终回答');
   });
 
   it('throws when aborted before the call', async () => {

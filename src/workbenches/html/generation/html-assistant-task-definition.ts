@@ -12,7 +12,7 @@ import {
   HtmlAssistantInstruction,
   htmlAssistantInstructionFactory,
 } from './html-assistant-instruction';
-import type { HtmlAssistantTaskResult } from './html-assistant-processor';
+import type { HtmlAssistantTaskResult } from './html-assistant-result';
 
 export {
   HTML_ASSISTANT_TASK_DEFINITION_ID,
@@ -47,9 +47,14 @@ export function createHtmlAssistantTaskDefinitionV1(
     mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'html-assistant',
-      scope: 'shared' as const,
+      scope: 'named' as const,
       permissions: Object.freeze({ read: true, write: false }),
     }),
+    resolvePrimaryWorkspaceInstanceKey(
+      instruction: HtmlAssistantInstruction,
+    ) {
+      return instruction.conversationId;
+    },
     secondaryWorkspaceConfigs: Object.freeze([]),
     assetReferenceSchema: Object.freeze({
       sources: Object.freeze({

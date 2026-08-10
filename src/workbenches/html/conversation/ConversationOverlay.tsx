@@ -4,14 +4,15 @@
  * A right-side panel over the document area. Owns the conversation state
  * machine (idle / ready / awaiting / streaming / restoring), the message
  * stream, and the history tab. Asking a question delegates to `onAsk`
- * (renderer starts the generation task) and streams `assistant-delta`
- * events back into the current message.
+ * (renderer starts the generation task). Optional `assistant-delta` events
+ * enhance the in-progress display; the completed task result is authoritative.
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { GenerationTaskEvent } from '../../../shared/generation-tasks';
+import { isHtmlAssistantTaskResult } from '../generation/html-assistant-result';
 import type { HtmlConversationStore } from './conversation-store';
 import type { HtmlConversationEntry } from './conversation-protocol';
 import { AnchorChip } from './anchor-summary';
@@ -30,6 +31,7 @@ export interface HtmlConversationOverlayProps {
   readonly onClose: () => void;
   /** Starts a generation task; resolves with the task id (or undefined on failure). */
   readonly onAsk: (
+    conversationId: string,
     question: string,
     anchor?: JsonValue,
   ) => Promise<string | undefined>;
@@ -287,7 +289,14 @@ export function ConversationOverlay({
         return;
       }
       if (snapshot.status === 'completed') {
-        finalizeStream(snapshot.updatedTime);
+        if (isHtmlAssistantTaskResult(snapshot.result)) {
+          finalizeStream(
+            snapshot.updatedTime,
+            snapshot.result.answer,
+          );
+        } else {
+          failStream('AI 任务已完成，但最终回答无效，请重试。');
+        }
       } else if (snapshot.status === 'failed' || snapshot.failure) {
         failStream();
       }
@@ -318,7 +327,7 @@ export function ConversationOverlay({
     setBusy(false);
   }
 
-  function finalizeStream(updatedTime: number) {
+  function finalizeStream(updatedTime: number, answer: string) {
     const pending = streamRef.current;
     const messageId = streamMessageIdRef.current;
     finishStreamState();
@@ -331,14 +340,14 @@ export function ConversationOverlay({
     updateMessages((current) =>
       current.map((message) =>
         message.id === messageId
-          ? { ...message, streaming: false }
+          ? { ...message, text: answer, streaming: false }
           : message,
       ),
     );
     void persistConversation(updatedTime);
   }
 
-  function failStream() {
+  function failStream(message = 'AI 回答失败，请重试。') {
     const messageId = streamMessageIdRef.current;
     finishStreamState();
     if (messageId) {
@@ -350,7 +359,7 @@ export function ConversationOverlay({
         ),
       );
     }
-    setErrorText('AI 回答失败，请重试。');
+    setErrorText(message);
   }
 
   const ask = () => {
@@ -381,7 +390,7 @@ export function ConversationOverlay({
     busyRef.current = true;
     setBusy(true);
 
-    void onAsk(question, messageAnchor).then(
+    void onAsk(identityRef.current!.id, question, messageAnchor).then(
       (taskId) => {
         if (taskId) {
           streamRef.current = { taskId };
@@ -472,8 +481,8 @@ export function ConversationOverlay({
     <div
       className={
         portalHost
-          ? 'flex h-full w-full flex-col overflow-hidden bg-[#21272f]'
-          : 'absolute inset-y-0 right-0 z-40 flex w-[320px] flex-col border-l border-white/10 bg-[#21272f] shadow-[-24px_0_50px_rgba(0,0,0,0.35)]'
+          ? 'flex h-full w-full flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#21272f] shadow-[0_20px_50px_rgba(5,8,12,0.16)]'
+          : 'absolute inset-y-0 right-0 z-40 flex w-[min(320px,calc(100%-20px))] flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#21272f] shadow-[-24px_0_50px_rgba(0,0,0,0.35)]'
       }
       role="dialog"
       aria-label="AI 对话"

@@ -79,6 +79,29 @@ describe('GenerationTaskDefinitionRegistry', () => {
     ).toThrow('INVALID_EXTENSION_DEFINITION');
   });
 
+  it('requires a resolver only for named primary workspaces', () => {
+    const registry = new GenerationTaskDefinitionRegistry();
+    const definition = createDefinition();
+
+    expect(() =>
+      registry.register({
+        ...definition,
+        primaryWorkspaceConfig: {
+          ...definition.primaryWorkspaceConfig,
+          scope: 'named',
+        },
+      }),
+    ).toThrow('INVALID_EXTENSION_DEFINITION');
+    expect(() =>
+      registry.register({
+        ...definition,
+        resolvePrimaryWorkspaceInstanceKey() {
+          return 'unexpected';
+        },
+      }),
+    ).toThrow('INVALID_EXTENSION_DEFINITION');
+  });
+
   it('keeps the Mind Map definition free of Provider default tools', () => {
     const definition = createDefinition();
 

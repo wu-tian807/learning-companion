@@ -2,13 +2,15 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetSnapshot } from '../../../shared/assets';
 import { AgentWorkspaceManager } from '../../agents/workspaces/agent-workspace-manager';
 import type { AssetServiceApi } from '../../assets/asset-service';
 import { WorkbenchRegistry } from '../../workbench/workbench-registry';
 import { GenerationTask } from '../generation-task';
+import { HtmlAssistantInstruction } from '../../../workbenches/html/generation/html-assistant-instruction';
+import { createHtmlAssistantTaskDefinitionV1 } from '../../../workbenches/html/generation/html-assistant-task-definition';
 import { MindMapGenerationInstruction } from '../../../workbenches/mindmap/generation/mindmap-generation-instruction';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../../workbenches/unsupported/main';
@@ -122,5 +124,71 @@ describe('GenerationTaskPreparer', () => {
 
     expect(restored.assetReferences).toEqual(prepared.assetReferences);
     expect(resolveCount).toBe(1);
+  });
+
+  it('resolves a named primary workspace from the validated instruction', async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), 'learning-companion-generation-named-'),
+    );
+    temporaryDirectories.push(workspaceRoot);
+    const preparedReferences = Object.freeze({
+      sources: Object.freeze([
+        Object.freeze({
+          alias: 'sources-0001',
+          assetId: 'asset-1',
+          name: 'lesson.html',
+          mediaType: 'text/html',
+          contentRevision: 'revision-1',
+          relativePath: 'references/sources-0001/source.html',
+        }),
+      ]),
+    });
+    const preparer = new GenerationTaskPreparer(
+      new AgentWorkspaceManager(workspaceRoot),
+      {
+        prepare: vi.fn(async () => preparedReferences),
+        verify: vi.fn(async () => preparedReferences),
+      },
+      {
+        write: vi.fn(async () => ({}) as never),
+        read: vi.fn(async () => ({}) as never),
+      },
+    );
+    const definition = createHtmlAssistantTaskDefinitionV1({
+      async process() {
+        return { answer: 'unused' };
+      },
+    });
+    const task = GenerationTask.create({
+      id: 'task-1',
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new HtmlAssistantInstruction({
+        conversationId: 'conversation-1',
+        question: '总结当前资料',
+      }).toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+      createdTime: 10,
+    });
+
+    const prepared = await preparer.prepare(
+      task.getSnapshot(),
+      definition,
+    );
+
+    expect(prepared.workspaces.primary).toMatchObject({
+      key: 'html-assistant',
+      scope: 'named',
+      instanceKey: 'conversation-1',
+    });
+    expect(prepared.workspaces.primary.path).toBe(
+      join(
+        workspaceRoot,
+        'project-1',
+        'html-assistant',
+        'conversation-1',
+      ),
+    );
   });
 });

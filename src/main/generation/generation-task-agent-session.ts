@@ -68,6 +68,9 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
           ...(checkpoint.providerExecutionId
             ? { providerExecutionId: checkpoint.providerExecutionId }
             : {}),
+          ...(checkpoint.assistantOutput
+            ? { assistantOutput: checkpoint.assistantOutput }
+            : {}),
           metrics,
         });
       }),
@@ -147,6 +150,9 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
           sessionId: completed.metrics.sessionId,
           ...(completed.providerExecutionId
             ? { providerExecutionId: completed.providerExecutionId }
+            : {}),
+          ...(completed.assistantOutput
+            ? { assistantOutput: completed.assistantOutput }
             : {}),
         },
         metrics: completed.metrics,

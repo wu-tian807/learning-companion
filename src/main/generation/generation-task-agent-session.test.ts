@@ -79,6 +79,7 @@ describe('GenerationTaskAgentSession', () => {
           connectionId: 'codex-account',
           modelId: 'gpt-test',
           providerExecutionId: `turn-${turnNumber}`,
+          assistantOutput: { text: `answer-${turnNumber}` },
           startedTime: turnNumber * 10,
           completedTime: turnNumber * 10 + 5,
           activeDurationMs: 5,
@@ -124,8 +125,18 @@ describe('GenerationTaskAgentSession', () => {
       assignedProviderId: 'codex',
       assignedConnectionId: 'codex-account',
       agentCalls: [
-        { callKey: 'generate', purpose: 'generation', sessionId: 'session-1' },
-        { callKey: 'repair-1', purpose: 'repair', sessionId: 'session-1' },
+        {
+          callKey: 'generate',
+          purpose: 'generation',
+          sessionId: 'session-1',
+          assistantOutput: { text: 'answer-1' },
+        },
+        {
+          callKey: 'repair-1',
+          purpose: 'repair',
+          sessionId: 'session-1',
+          assistantOutput: { text: 'answer-2' },
+        },
       ],
       metrics: {
         totalUsage: { totalTokens: 20 },
@@ -157,6 +168,7 @@ describe('GenerationTaskAgentSession', () => {
     ).resolves.toMatchObject({
       callKey: 'repair-1',
       sessionId: 'session-1',
+      assistantOutput: { text: 'answer-2' },
     });
     expect(recoveredResolver).not.toHaveBeenCalled();
   });

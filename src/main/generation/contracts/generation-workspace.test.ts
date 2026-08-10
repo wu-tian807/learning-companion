@@ -66,6 +66,58 @@ describe('generation workspace contracts', () => {
     ]);
   });
 
+  it('uses a validated named instance key for conversation workspaces', async () => {
+    const manager = {
+      resolve: vi.fn(),
+      prepare: vi.fn(async (segments: readonly string[]) =>
+        segments.join('/'),
+      ),
+    };
+    const workspace = await prepareAgentWorkspace(
+      manager,
+      {
+        key: 'html-assistant',
+        scope: 'named',
+        permissions: { read: true, write: false },
+      },
+      'task-1',
+      ['project-1'],
+      'conversation-1',
+    );
+
+    expect(workspace.instanceKey).toBe('conversation-1');
+    expect(manager.prepare).toHaveBeenCalledWith([
+      'project-1',
+      'html-assistant',
+      'conversation-1',
+    ]);
+  });
+
+  it('rejects missing or unsafe named instance keys', async () => {
+    const manager = {
+      resolve: vi.fn(),
+      prepare: vi.fn(),
+    };
+    const config = {
+      key: 'html-assistant',
+      scope: 'named' as const,
+      permissions: { read: true, write: false },
+    };
+
+    await expect(
+      prepareAgentWorkspace(manager, config, 'task-1'),
+    ).rejects.toThrow();
+    await expect(
+      prepareAgentWorkspace(
+        manager,
+        config,
+        'task-1',
+        [],
+        '../conversation',
+      ),
+    ).rejects.toThrow();
+  });
+
   it('rejects nested keys and write-only workspace permissions', () => {
     expect(() =>
       cloneAgentWorkspaceConfig({

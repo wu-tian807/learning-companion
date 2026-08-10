@@ -153,7 +153,11 @@ export function HtmlWorkbenchView({
   );
 
   const startAssistantTask = useCallback(
-    async (question: string, anchor?: JsonValue) => {
+    async (
+      conversationId: string,
+      question: string,
+      anchor?: JsonValue,
+    ) => {
       try {
         if (!projectId) {
           throw new Error('Project 上下文缺失');
@@ -165,6 +169,7 @@ export function HtmlWorkbenchView({
           instruction: {
             format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
             version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+            conversationId,
             question,
             ...(anchor ? { anchor } : {}),
           },

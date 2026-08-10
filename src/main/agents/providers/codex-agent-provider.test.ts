@@ -426,6 +426,7 @@ describe('CodexAgentProvider', () => {
       connectionId: 'codex-account',
       modelId: 'gpt-test-fast',
       providerExecutionId: 'turn-1',
+      assistantOutput: { text: '{"ok":true}' },
       startedTime: 1_000,
       completedTime: 2_000,
       activeDurationMs: 800,
@@ -512,6 +513,53 @@ describe('CodexAgentProvider', () => {
         sessionId: 'thread-1',
       }),
     );
+  });
+
+  it('delivers item/completed final output when Codex emits no delta', async () => {
+    const sessions = createSessions();
+    const startTurn = vi.fn(async function* () {
+      yield {
+        type: 'turn-started' as const,
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'inProgress' },
+      };
+      yield {
+        type: 'item-completed' as const,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          id: 'message-1',
+          type: 'agentMessage',
+          phase: 'final_answer',
+          text: 'DeepSeek 最终回答',
+        },
+      };
+      return {
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'completed', items: [] },
+      };
+    });
+    const runtime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      createThread: vi.fn(async () => selection('thread-1')),
+      startTurn,
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const provider = new CodexAgentProvider(runtime, sessions.service);
+
+    const completed = await collectTurn(
+      runAccountTurn(provider, createGenerationRequest()),
+    );
+
+    expect(completed.events).toEqual([
+      { type: 'session-resolved', sessionId: 'thread-1' },
+    ]);
+    expect(completed.result.assistantOutput).toEqual({
+      text: 'DeepSeek 最终回答',
+    });
   });
 
   it('preserves mixed workspace permissions through the mocked Codex runtime', async () => {
@@ -652,6 +700,9 @@ describe('CodexAgentProvider', () => {
       { type: 'session-resolved', sessionId: 'thread-1' },
     ]);
     expect(recovered.result.providerExecutionId).toBe('turn-1');
+    expect(recovered.result.assistantOutput).toEqual({
+      text: '{"ok":false}',
+    });
   });
 
   it('resumes the bound thread with the latest execution configuration', async () => {

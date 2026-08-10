@@ -1,4 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import type { AssistantOutput } from './assistant-output';
 import type { AgentUserMessage } from './agent-message';
 import type {
   GenerationAssetReferenceSchema,
@@ -47,6 +48,7 @@ export interface TaskAgentCallResult {
   readonly purpose: string;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
+  readonly assistantOutput?: AssistantOutput;
   readonly metrics: GenerationAgentExecutionMetrics;
 }
 
@@ -102,6 +104,10 @@ export interface TaskDefinition<
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
+  /** Resolves the stable instance for a named primary Workspace. */
+  resolvePrimaryWorkspaceInstanceKey?(
+    instruction: TInstruction,
+  ): string;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;
   readonly instruction: GenerationInstructionFactory<TInstruction>;

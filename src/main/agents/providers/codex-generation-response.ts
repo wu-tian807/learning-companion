@@ -1,5 +1,6 @@
 import { isJsonValue } from '../../../shared/workbench/protocol';
 import { AppError } from '../../errors/app-error';
+import type { AssistantOutput } from '../../generation/contracts/assistant-output';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
 import type { GenerationAgentEvent } from '../../generation/generation-agent-runner';
 import type {
@@ -103,6 +104,41 @@ function hasClientMessage(turn: CodexTurn, clientId: string): boolean {
   return (turn.items ?? []).some(
     (item) => item.type === 'userMessage' && item.clientId === clientId,
   );
+}
+
+export function codexAssistantOutputFromItem(
+  item: CodexThreadItem,
+): AssistantOutput | undefined {
+  if (
+    item.type !== 'agentMessage' ||
+    typeof item.text !== 'string' ||
+    item.text.trim().length === 0
+  ) {
+    return undefined;
+  }
+
+  return Object.freeze({ text: item.text });
+}
+
+export function codexAssistantOutputFromTurn(
+  turn: CodexTurn,
+): AssistantOutput | undefined {
+  const outputs = (turn.items ?? [])
+    .map((item) => ({
+      item,
+      output: codexAssistantOutputFromItem(item),
+    }))
+    .filter(
+      (candidate): candidate is {
+        readonly item: CodexThreadItem;
+        readonly output: AssistantOutput;
+      } => candidate.output !== undefined,
+    );
+  const finalAnswer = [...outputs]
+    .reverse()
+    .find(({ item }) => item.phase === 'final_answer');
+
+  return finalAnswer?.output ?? outputs.at(-1)?.output;
 }
 
 function nonNegativeInteger(value: unknown): number | undefined {

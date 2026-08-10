@@ -16,6 +16,7 @@ import {
   generationValidationFailure,
   generationValidationSuccess,
 } from '../../../main/generation/contracts/generation-validation';
+import { isHtmlConversationId } from '../conversation/conversation-id';
 
 export {
   HTML_ASSISTANT_INSTRUCTION_FORMAT,
@@ -27,6 +28,7 @@ export const HTML_ASSISTANT_QUESTION_MAX_LENGTH = 2_000;
 export type HtmlAssistantInstructionSnapshot = JsonValue & {
   readonly format: typeof HTML_ASSISTANT_INSTRUCTION_FORMAT;
   readonly version: typeof HTML_ASSISTANT_INSTRUCTION_VERSION;
+  readonly conversationId: string;
   readonly question: string;
   readonly anchor?: JsonValue;
 };
@@ -87,13 +89,21 @@ function describeAnchor(anchor: JsonValue): string {
 }
 
 export class HtmlAssistantInstruction extends GenerationInstruction<HtmlAssistantInstructionSnapshot> {
+  readonly conversationId: string;
   readonly question: string;
   readonly anchor?: JsonValue;
 
-  constructor(input: { readonly question: string; readonly anchor?: JsonValue }) {
+  constructor(input: {
+    readonly conversationId: string;
+    readonly question: string;
+    readonly anchor?: JsonValue;
+  }) {
     super();
     const normalized = input.question.trim();
 
+    if (!isHtmlConversationId(input.conversationId)) {
+      throw new Error('HtmlAssistant conversationId 数据无效');
+    }
     if (normalized.length === 0) {
       throw new Error('HtmlAssistant question 不能为空');
     }
@@ -104,6 +114,7 @@ export class HtmlAssistantInstruction extends GenerationInstruction<HtmlAssistan
       throw new Error('HtmlAssistant anchor 不是 JSON 值');
     }
 
+    this.conversationId = input.conversationId;
     this.question = normalized;
     this.anchor = input.anchor;
   }
@@ -112,6 +123,7 @@ export class HtmlAssistantInstruction extends GenerationInstruction<HtmlAssistan
     return Object.freeze({
       format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
       version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+      conversationId: this.conversationId,
       question: this.question,
       ...(this.anchor !== undefined ? { anchor: this.anchor } : {}),
     });
@@ -137,6 +149,7 @@ export const htmlAssistantInstructionFactory: GenerationInstructionFactory<HtmlA
         !isRecord(input) ||
         input.format !== HTML_ASSISTANT_INSTRUCTION_FORMAT ||
         input.version !== HTML_ASSISTANT_INSTRUCTION_VERSION ||
+        !isHtmlConversationId(input.conversationId) ||
         typeof input.question !== 'string' ||
         input.question.trim().length === 0 ||
         input.question.length > HTML_ASSISTANT_QUESTION_MAX_LENGTH ||
@@ -152,6 +165,7 @@ export const htmlAssistantInstructionFactory: GenerationInstructionFactory<HtmlA
 
       return generationValidationSuccess(
         new HtmlAssistantInstruction({
+          conversationId: input.conversationId,
           question: input.question,
           ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
         }),
