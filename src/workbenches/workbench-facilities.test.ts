@@ -86,6 +86,7 @@ describe('built-in Workbench Facility matrix', () => {
       'builtin.html': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.sandbox-frame',
       ],

@@ -1,12 +1,9 @@
 /**
- * Conversation index protocol for the HTML assistant.
+ * Persisted conversation protocol for the HTML assistant.
  *
- * The conversation log is persisted in `workbench_state_data` under a single
- * html-workbench-private key. Only a compact index is stored locally:
- * question / answer / anchor summary / createdTime. The authoritative Codex
- * thread history is read from the provider when the UI needs full messages.
- *
- * Pure data module: no database, no Electron, no renderer imports.
+ * Version 1 stored one question/answer pair per entry. Version 2 stores a
+ * complete multi-turn conversation. The database key intentionally stays the
+ * same so existing v1 data can be migrated instead of silently disappearing.
  */
 import {
   isJsonValue,
@@ -16,28 +13,42 @@ import {
 export const HTML_CONVERSATION_DATA_KEY = 'html-conversations-v1';
 export const HTML_CONVERSATION_INDEX_FORMAT =
   'learning-companion/html-conversation-index';
-export const HTML_CONVERSATION_INDEX_VERSION = 1;
+export const HTML_CONVERSATION_INDEX_VERSION = 2;
 
 export const HTML_CONVERSATION_MAX_ENTRIES = 1_000;
+export const HTML_CONVERSATION_MAX_MESSAGES = 2_000;
 export const HTML_CONVERSATION_ID_MAX_LENGTH = 128;
 export const HTML_CONVERSATION_TEXT_MAX_LENGTH = 32_768;
 export const HTML_CONVERSATION_ANCHOR_MAX_BYTES = 8_192;
 
-export type HtmlConversationEntry = JsonValue & {
-  /** Stable identity of one question/answer round. */
-  readonly id: string;
-  /** Serialized ContentAnchorTarget.anchorPayload (html.quote / html.element / html.link). */
+export type HtmlConversationMessage = JsonValue & {
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+  /** The content anchor consumed by this particular message. */
   readonly anchor?: JsonValue;
-  readonly question: string;
-  readonly answer: string;
-  readonly createdTime: number;
 };
 
-export type HtmlConversationIndexV1 = JsonValue & {
+export type HtmlConversationEntry = JsonValue & {
+  /** Stable identity, preserved when a restored conversation is continued. */
+  readonly id: string;
+  readonly messages: readonly HtmlConversationMessage[];
+  readonly createdTime: number;
+  readonly updatedTime: number;
+};
+
+export type HtmlConversationIndex = JsonValue & {
   readonly format: typeof HTML_CONVERSATION_INDEX_FORMAT;
   readonly version: typeof HTML_CONVERSATION_INDEX_VERSION;
   readonly entries: readonly HtmlConversationEntry[];
 };
+
+interface LegacyHtmlConversationEntry {
+  readonly id: string;
+  readonly anchor?: JsonValue;
+  readonly question: string;
+  readonly answer: string;
+  readonly createdTime: number;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -55,6 +66,20 @@ function isTime(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
+export function isHtmlConversationMessage(
+  value: unknown,
+): value is HtmlConversationMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.role === 'user' || value.role === 'assistant') &&
+    isBoundedText(value.text, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
+    (value.anchor === undefined || isJsonValue(value.anchor))
+  );
+}
+
 export function isHtmlConversationEntry(
   value: unknown,
 ): value is HtmlConversationEntry {
@@ -64,16 +89,19 @@ export function isHtmlConversationEntry(
 
   return (
     isBoundedText(value.id, HTML_CONVERSATION_ID_MAX_LENGTH) &&
-    (value.anchor === undefined || isJsonValue(value.anchor)) &&
-    isBoundedText(value.question, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
-    isBoundedText(value.answer, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
-    isTime(value.createdTime)
+    Array.isArray(value.messages) &&
+    value.messages.length > 0 &&
+    value.messages.length <= HTML_CONVERSATION_MAX_MESSAGES &&
+    value.messages.every(isHtmlConversationMessage) &&
+    isTime(value.createdTime) &&
+    isTime(value.updatedTime) &&
+    Number(value.updatedTime) >= Number(value.createdTime)
   );
 }
 
-export function isHtmlConversationIndexV1(
+export function isHtmlConversationIndex(
   value: unknown,
-): value is HtmlConversationIndexV1 {
+): value is HtmlConversationIndex {
   if (
     !isRecord(value) ||
     value.format !== HTML_CONVERSATION_INDEX_FORMAT ||
@@ -86,18 +114,151 @@ export function isHtmlConversationIndexV1(
   }
 
   let previousTime = -1;
+  const ids = new Set<string>();
 
   for (const entry of value.entries) {
-    if (entry.createdTime < previousTime) {
+    if (entry.createdTime < previousTime || ids.has(entry.id)) {
       return false;
     }
     previousTime = entry.createdTime;
+    ids.add(entry.id);
   }
 
   return true;
 }
 
-export function createHtmlConversationIndex(): HtmlConversationIndexV1 {
+function isLegacyHtmlConversationEntry(
+  value: unknown,
+): value is LegacyHtmlConversationEntry {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isBoundedText(value.id, HTML_CONVERSATION_ID_MAX_LENGTH) &&
+    isBoundedText(value.question, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
+    isBoundedText(value.answer, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
+    isTime(value.createdTime) &&
+    (value.anchor === undefined || isJsonValue(value.anchor))
+  );
+}
+
+function freezeEntry(entry: HtmlConversationEntry): HtmlConversationEntry {
+  return Object.freeze({
+    id: entry.id,
+    messages: Object.freeze(
+      entry.messages.map((message) =>
+        Object.freeze({
+          role: message.role,
+          text: message.text,
+          ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
+        }),
+      ),
+    ),
+    createdTime: entry.createdTime,
+    updatedTime: entry.updatedTime,
+  }) as HtmlConversationEntry;
+}
+
+function migrateEntry(value: unknown): HtmlConversationEntry | undefined {
+  if (isHtmlConversationEntry(value)) {
+    return freezeEntry(value);
+  }
+  if (!isLegacyHtmlConversationEntry(value)) {
+    return undefined;
+  }
+
+  return freezeEntry({
+    id: value.id,
+    messages: [
+      {
+        role: 'user',
+        text: value.question,
+        ...(value.anchor === undefined ? {} : { anchor: value.anchor }),
+      },
+      { role: 'assistant', text: value.answer },
+    ],
+    createdTime: value.createdTime,
+    updatedTime: value.createdTime,
+  });
+}
+
+function withUniqueMigratedId(
+  entry: HtmlConversationEntry,
+  usedIds: Set<string>,
+): HtmlConversationEntry {
+  if (!usedIds.has(entry.id)) {
+    usedIds.add(entry.id);
+    return entry;
+  }
+
+  let suffixNumber = 2;
+  let candidate: string;
+  do {
+    const suffix = `~${suffixNumber}`;
+    candidate = `${entry.id.slice(
+      0,
+      HTML_CONVERSATION_ID_MAX_LENGTH - suffix.length,
+    )}${suffix}`;
+    suffixNumber += 1;
+  } while (usedIds.has(candidate));
+
+  usedIds.add(candidate);
+  return freezeEntry({
+    id: candidate,
+    messages: entry.messages,
+    createdTime: entry.createdTime,
+    updatedTime: entry.updatedTime,
+  });
+}
+
+/**
+ * Reads v2, the original v1 Q/A shape, and the short-lived transitional v1
+ * message shape. Invalid data returns undefined so callers can recover safely.
+ */
+export function normalizeHtmlConversationIndex(
+  value: unknown,
+): HtmlConversationIndex | undefined {
+  if (!isRecord(value) || value.format !== HTML_CONVERSATION_INDEX_FORMAT) {
+    return undefined;
+  }
+  if (value.version !== 1 && value.version !== HTML_CONVERSATION_INDEX_VERSION) {
+    return undefined;
+  }
+  if (
+    !Array.isArray(value.entries) ||
+    value.entries.length > HTML_CONVERSATION_MAX_ENTRIES
+  ) {
+    return undefined;
+  }
+
+  const entries: HtmlConversationEntry[] = [];
+  const usedIds = new Set<string>();
+  for (const valueEntry of value.entries) {
+    const entry = migrateEntry(valueEntry);
+    if (!entry) {
+      return undefined;
+    }
+    entries.push(
+      value.version === 1
+        ? withUniqueMigratedId(entry, usedIds)
+        : entry,
+    );
+  }
+
+  entries.sort(
+    (left, right) =>
+      left.createdTime - right.createdTime || left.id.localeCompare(right.id),
+  );
+  try {
+    const index = createHtmlConversationIndexWith(entries);
+    return isHtmlConversationIndex(index) ? index : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function createHtmlConversationIndex(): HtmlConversationIndex {
   return Object.freeze({
     format: HTML_CONVERSATION_INDEX_FORMAT,
     version: HTML_CONVERSATION_INDEX_VERSION,
@@ -105,29 +266,78 @@ export function createHtmlConversationIndex(): HtmlConversationIndexV1 {
   });
 }
 
-export function appendHtmlConversationEntry(
-  index: HtmlConversationIndexV1,
-  entry: HtmlConversationEntry,
-): HtmlConversationIndexV1 {
-  if (!isHtmlConversationIndexV1(index)) {
-    throw new Error('HtmlConversationIndex 数据无效');
-  }
-  if (!isHtmlConversationEntry(entry)) {
-    throw new Error('HtmlConversationEntry 数据无效');
-  }
-  if (index.entries.length >= HTML_CONVERSATION_MAX_ENTRIES) {
+export function createHtmlConversationIndexWith(
+  entries: readonly HtmlConversationEntry[],
+): HtmlConversationIndex {
+  if (entries.length > HTML_CONVERSATION_MAX_ENTRIES) {
     throw new Error('HtmlConversationIndex 已达到条数上限');
   }
 
-  const previous = index.entries[index.entries.length - 1];
+  const index = Object.freeze({
+    format: HTML_CONVERSATION_INDEX_FORMAT,
+    version: HTML_CONVERSATION_INDEX_VERSION,
+    entries: Object.freeze(entries.map(freezeEntry)),
+  });
 
-  if (previous && entry.createdTime < previous.createdTime) {
-    throw new Error('HtmlConversationEntry 时间戳不能早于上一条');
+  if (!isHtmlConversationIndex(index)) {
+    throw new Error('HtmlConversationIndex 数据无效');
+  }
+  return index;
+}
+
+/** Insert a new conversation or replace the existing entry with the same id. */
+export function saveHtmlConversationEntry(
+  index: HtmlConversationIndex,
+  entry: HtmlConversationEntry,
+): HtmlConversationIndex {
+  if (!isHtmlConversationIndex(index) || !isHtmlConversationEntry(entry)) {
+    throw new Error('HtmlConversationEntry 数据无效');
   }
 
-  return Object.freeze({
-    format: index.format,
-    version: index.version,
-    entries: Object.freeze([...index.entries, entry]),
-  });
+  const existingIndex = index.entries.findIndex(
+    (candidate) => candidate.id === entry.id,
+  );
+  if (
+    existingIndex < 0 &&
+    index.entries.length >= HTML_CONVERSATION_MAX_ENTRIES
+  ) {
+    throw new Error('HtmlConversationIndex 已达到条数上限');
+  }
+
+  if (existingIndex >= 0) {
+    const existing = index.entries[existingIndex]!;
+    if (entry.updatedTime < existing.updatedTime) {
+      return index;
+    }
+    const replacement = freezeEntry({
+      id: entry.id,
+      messages: entry.messages,
+      createdTime: existing.createdTime,
+      updatedTime: entry.updatedTime,
+    });
+    const entries = [...index.entries];
+    entries[existingIndex] = replacement;
+    return createHtmlConversationIndexWith(entries);
+  }
+
+  const entries = [...index.entries, freezeEntry(entry)].sort(
+    (left, right) =>
+      left.createdTime - right.createdTime || left.id.localeCompare(right.id),
+  );
+  return createHtmlConversationIndexWith(entries);
+}
+
+export function removeHtmlConversationEntry(
+  index: HtmlConversationIndex,
+  entryId: string,
+): HtmlConversationIndex {
+  if (
+    !isHtmlConversationIndex(index) ||
+    !isBoundedText(entryId, HTML_CONVERSATION_ID_MAX_LENGTH)
+  ) {
+    throw new Error('HtmlConversationEntry id 无效');
+  }
+  return createHtmlConversationIndexWith(
+    index.entries.filter((entry) => entry.id !== entryId),
+  );
 }

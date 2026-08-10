@@ -102,6 +102,7 @@ export function HtmlWorkbenchView({
   const [frameFailed, setFrameFailed] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiAnchor, setAiAnchor] = useState<JsonValue>();
+  const [aiSessionKey, setAiSessionKey] = useState(0);
   const [selectionText, setSelectionText] = useState<string>();
   const [selectionRect, setSelectionRect] = useState<
     { x: number; y: number; width: number; height: number } | undefined
@@ -109,19 +110,39 @@ export function HtmlWorkbenchView({
   const [highlightTarget, setHighlightTarget] = useState<
     { readonly anchorType?: string; readonly anchorPayload?: unknown } | undefined
   >();
+  const [highlightPersistent, setHighlightPersistent] = useState(false);
+  const [highlightKey, setHighlightKey] = useState(0);
   const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
 
   const openAi = useCallback((anchor?: JsonValue) => {
+    // 只有初次打开（从关闭 → 打开）才递增 key 重建为新对话；
+    // 对话栏已打开时仅更新锚点（保持当前对话，右键/选中新元素只换 pendingAnchor）。
+    setAiOpen((currentlyOpen) => {
+      if (!currentlyOpen) {
+        setAiSessionKey((current) => current + 1);
+      }
+      return true;
+    });
     setAiAnchor(anchor);
-    setAiOpen(true);
-  }, []);
+    runtime.htmlAiOverlay.getState().openOverlay();
+  }, [runtime]);
   const closeAi = useCallback(() => {
     setAiOpen(false);
     setAiAnchor(undefined);
     setSelectionText(undefined);
-  }, []);
+    // 切出对话：清除持久锚点红框
+    setHighlightTarget(undefined);
+    setHighlightPersistent(false);
+    runtime.htmlAiOverlay.getState().closeOverlay();
+  }, [runtime]);
+
+  useEffect(() => {
+    return () => {
+      runtime.htmlAiOverlay.getState().closeOverlay();
+    };
+  }, [runtime]);
 
   const conversationStore = useMemo(
     () =>
@@ -217,6 +238,11 @@ export function HtmlWorkbenchView({
           const anchor = contextRef.current?.target;
           openAi(anchor as JsonValue | undefined);
         },
+        onOpenChat: () => {
+          // 总入口：优先带当前选区锚点，无选区则打开空白对话
+          const anchor = contextRef.current?.target;
+          openAi(anchor as JsonValue | undefined);
+        },
       }),
     [onOpenExternal, openAi, reload, reportError, reveal],
   );
@@ -265,13 +291,16 @@ export function HtmlWorkbenchView({
 
         contextRef.current = mapped.context;
         onInteractionChange(mapped.interaction);
-        // 右键命中元素/文本锚点时，短暂显示细红框标注识别位置。
+        // 右键命中元素/文本锚点：进入对话的「待发送锚点」→ 持久显示红框，
+        // 直到发送（onAnchorConsumed）或删除（chip ✕）或离开对话。
         const focusTarget = mapped.interaction.focus;
         if (focusTarget && focusTarget.scope === 'content') {
           setHighlightTarget({
             anchorType: focusTarget.anchorType,
             anchorPayload: focusTarget.anchorPayload,
           });
+          setHighlightPersistent(true);
+          setHighlightKey((current) => current + 1);
         } else {
           setHighlightTarget(undefined);
         }
@@ -289,6 +318,25 @@ export function HtmlWorkbenchView({
     payload,
     runtime,
   ]);
+
+  useEffect(() => {
+    // 点击别处（非对话栏、非浮动条）取消当前待发送锚点的红框。
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      const overlay = document.querySelector('[role="dialog"][aria-label="AI 对话"]');
+      const floatBar = document.querySelector('[role="toolbar"][aria-label="选中内容操作"]');
+      if (
+        target &&
+        !overlay?.contains(target) &&
+        !floatBar?.contains(target)
+      ) {
+        setHighlightTarget(undefined);
+        setHighlightPersistent(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
 
   useEffect(() => {
     contextRef.current = undefined;
@@ -324,23 +372,45 @@ export function HtmlWorkbenchView({
       />
 
       <ConversationOverlay
+        key={aiSessionKey}
         open={aiOpen}
         anchor={aiAnchor}
         store={conversationStore}
         onClose={closeAi}
         onAsk={startAssistantTask}
-        onRestore={(entry) => {
-          // 恢复历史对话时标注绑定的文档位置（元素锚点 → 红框）
-          const payload = entry.anchor as
-            | { readonly anchorPayload?: unknown }
-            | undefined;
-          setHighlightTarget({
-            anchorType: 'html.element',
-            anchorPayload: payload?.anchorPayload,
-          });
+        onPersistenceError={(error) => {
+          reportError(error, '无法保存 HTML AI 对话记录。');
+        }}
+        onRestore={() => {
+          // 历史对话打开不显示选中对象：选中红框只存在于「当前对话引用未发送」阶段。
+          setHighlightTarget(undefined);
+          setHighlightPersistent(false);
+        }}
+        onAnchorConsumed={() => {
+          // 锚点已随消息发送：选中红框生命周期结束。
+          setAiAnchor(undefined);
+          setHighlightTarget(undefined);
+          setHighlightPersistent(false);
+        }}
+        onAnchorRemoved={() => {
+          // 锚点被主动删除：清除红框。
+          setAiAnchor(undefined);
+          setHighlightTarget(undefined);
+          setHighlightPersistent(false);
+        }}
+        onStartNew={() => {
+          // 主动开启新对话：重置为空白对话（清空红框）。
+          setAiAnchor(undefined);
+          setHighlightTarget(undefined);
+          setHighlightPersistent(false);
+          setAiSessionKey((current) => current + 1);
         }}
       />
-      <AnchorHighlight target={highlightTarget as never} />
+      <AnchorHighlight
+        key={highlightKey}
+        target={highlightTarget as never}
+        durationMs={highlightPersistent ? 0 : 2_800}
+      />
 
       {/* 选中文本后的「解释选中内容」悬浮条 */}
       {selectionText && !aiOpen && (
@@ -365,16 +435,6 @@ export function HtmlWorkbenchView({
           }}
         />
       )}
-
-      {/* 常驻 AI 对话入口 */}
-      <button
-        type="button"
-        onClick={() => openAi(undefined)}
-        className="absolute right-3 top-3 z-30 rounded-full border border-indigo-300/30 bg-indigo-400/15 px-3 py-1.5 text-[10px] font-medium text-indigo-100 shadow-lg backdrop-blur-sm hover:border-indigo-300/50 hover:bg-indigo-400/25"
-        aria-label="打开 AI 对话"
-      >
-        ✨ AI 对话
-      </button>
 
       {loadedFrameKey !== frameKey && !frameFailed && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#151a20]/88">

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useStore } from 'zustand';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetSelectionScope } from '../project/asset-panel-selection';
@@ -116,6 +117,12 @@ export function GenerationCenter({
     : [];
   void contributionRevision;
 
+  // HTML AI 对话栏：打开时卸载本面板，由对话栏占据整个区域。
+  const aiOverlayOpen = useStore(
+    runtime.htmlAiOverlay,
+    (state) => state.open,
+  );
+
   const closeMindMapDialog = useCallback(() => {
     setMindMapSourceAssets(null);
     window.requestAnimationFrame(() => {
@@ -125,6 +132,13 @@ export function GenerationCenter({
 
   return (
     <>
+      {aiOverlayOpen ? (
+        // HTML AI 对话栏占据整个面板区域（对话栏组件经 portal 渲染进来）
+        <div
+          id="html-ai-overlay-slot"
+          className="flex h-full w-full flex-col overflow-hidden"
+        />
+      ) : (
       <AssetPanel
         id="project-generation-center"
         ariaLabel="生成中心"
@@ -303,6 +317,7 @@ export function GenerationCenter({
         onRelink={onRelink}
         onDelete={onDelete}
       />
+      )}
       {mindMapSourceAssets && (
         <MindMapGenerationDialog
           projectId={projectId}

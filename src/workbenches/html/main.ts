@@ -13,11 +13,13 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
 } from '../../shared/workbench/facilities/core-facilities';
 import {
-  appendHtmlConversationEntry,
   createHtmlConversationIndex,
   HTML_CONVERSATION_DATA_KEY,
   isHtmlConversationEntry,
-  isHtmlConversationIndexV1,
+  isHtmlConversationIndex,
+  normalizeHtmlConversationIndex,
+  removeHtmlConversationEntry,
+  saveHtmlConversationEntry,
 } from './conversation/conversation-protocol';
 import {
   htmlConversationCommands,
@@ -30,7 +32,7 @@ function createResult(payload: JsonValue): WorkbenchCommandResult {
 }
 
 function encodeConversationIndex(index: unknown): Uint8Array {
-  if (!isHtmlConversationIndexV1(index)) {
+  if (!isHtmlConversationIndex(index)) {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
   return new TextEncoder().encode(JSON.stringify(index));
@@ -44,11 +46,12 @@ function decodeConversationIndex(
       new TextDecoder('utf-8', { fatal: true }).decode(data),
     );
 
-    if (isHtmlConversationIndexV1(value)) {
-      return value;
+    const normalized = normalizeHtmlConversationIndex(value);
+    if (normalized) {
+      return normalized;
     }
   } catch {
-    // 损坏或旧格式数据按空索引处理，不阻塞对话栏。
+    // 损坏数据按空索引处理，不阻塞对话栏。
   }
   return createHtmlConversationIndex();
 }
@@ -131,7 +134,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
       return createResult({ entries: index.entries });
     }
 
-    if (command.type === htmlConversationCommands.append) {
+    if (command.type === htmlConversationCommands.save) {
       const entry = (command.payload as { readonly entry?: unknown } | undefined)
         ?.entry;
 
@@ -147,14 +150,47 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
       const index = record
         ? decodeConversationIndex(record.data)
         : createHtmlConversationIndex();
-      const next = appendHtmlConversationEntry(index, entry);
+      const next = saveHtmlConversationEntry(index, entry);
 
       await this.stateDataDatabase.save({
         assetId,
         workbenchId: htmlWorkbenchManifest.id,
         dataKey: HTML_CONVERSATION_DATA_KEY,
         data: encodeConversationIndex(next),
-        updatedTime: entry.createdTime,
+        updatedTime: Math.max(
+          entry.updatedTime,
+          ...next.entries.map((candidate) => candidate.updatedTime),
+        ),
+      });
+
+      return createResult({ entries: next.entries });
+    }
+
+    if (command.type === htmlConversationCommands.remove) {
+      const entryId = (
+        command.payload as { readonly entryId?: unknown } | undefined
+      )?.entryId;
+
+      if (typeof entryId !== 'string' || entryId.trim().length === 0) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      const record = await this.stateDataDatabase.get(
+        assetId,
+        htmlWorkbenchManifest.id,
+        HTML_CONVERSATION_DATA_KEY,
+      );
+      const index = record
+        ? decodeConversationIndex(record.data)
+        : createHtmlConversationIndex();
+      const next = removeHtmlConversationEntry(index, entryId);
+
+      await this.stateDataDatabase.save({
+        assetId,
+        workbenchId: htmlWorkbenchManifest.id,
+        dataKey: HTML_CONVERSATION_DATA_KEY,
+        data: encodeConversationIndex(next),
+        updatedTime: Date.now(),
       });
 
       return createResult({ entries: next.entries });

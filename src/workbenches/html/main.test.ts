@@ -16,10 +16,16 @@ type ProviderOpenContext = Parameters<HtmlWorkbenchProvider['open']>[0];
 
 const validEntry: HtmlConversationEntry = Object.freeze({
   id: 'c-1',
-  anchor: Object.freeze({ exact: '自注意力机制' }),
-  question: '什么是自注意力？',
-  answer: '自注意力允许任意两个位置直接交互。',
+  messages: Object.freeze([
+    Object.freeze({ role: 'user', text: '什么是自注意力？' }),
+    Object.freeze({
+      role: 'assistant',
+      text: '自注意力允许任意两个位置直接交互。',
+      anchor: Object.freeze({ exact: '自注意力机制' }),
+    }),
+  ]),
   createdTime: 1_720_000_000_000,
+  updatedTime: 1_720_000_000_100,
 });
 
 function encode(data: unknown): Uint8Array {
@@ -101,7 +107,7 @@ describe('HtmlWorkbenchProvider conversations', () => {
   it('lists stored entries', async () => {
     const stored = encode({
       format: 'learning-companion/html-conversation-index',
-      version: 1,
+      version: 2,
       entries: [validEntry],
     });
     const { provider, context } = await createProvider(
@@ -115,12 +121,12 @@ describe('HtmlWorkbenchProvider conversations', () => {
     expect(result.payload).toEqual({ entries: [validEntry] });
   });
 
-  it('appends an entry and persists it', async () => {
+  it('saves an entry and persists it', async () => {
     const state = createFakeStateDatabase(undefined);
     const { provider, context } = await createProvider(state);
 
     const result = await provider.command(context, {
-      type: htmlConversationCommands.append,
+      type: htmlConversationCommands.save,
       payload: { entry: validEntry },
     });
 
@@ -132,12 +138,98 @@ describe('HtmlWorkbenchProvider conversations', () => {
     expect(second.payload).toEqual({ entries: [validEntry] });
   });
 
-  it('rejects invalid append payload', async () => {
+  it('updates an existing conversation by id without duplicating it', async () => {
+    const state = createFakeStateDatabase(
+      encode({
+        format: 'learning-companion/html-conversation-index',
+        version: 2,
+        entries: [validEntry],
+      }),
+    );
+    const { provider, context } = await createProvider(state);
+    const continued: HtmlConversationEntry = {
+      ...validEntry,
+      messages: [
+        ...validEntry.messages,
+        { role: 'user', text: '能再举个例子吗？' },
+        { role: 'assistant', text: '当然可以。' },
+      ],
+      updatedTime: validEntry.updatedTime + 1,
+    };
+
+    const result = await provider.command(context, {
+      type: htmlConversationCommands.save,
+      payload: { entry: continued },
+    });
+
+    expect(result.payload).toEqual({ entries: [continued] });
+    expect(state.saved).toHaveLength(1);
+  });
+
+  it('migrates legacy v1 question/answer history when listing', async () => {
+    const legacyAnchor = { exact: '旧锚点' };
+    const { provider, context } = await createProvider(
+      createFakeStateDatabase(
+        encode({
+          format: 'learning-companion/html-conversation-index',
+          version: 1,
+          entries: [
+            {
+              id: 'legacy-1',
+              anchor: legacyAnchor,
+              question: '旧问题',
+              answer: '旧回答',
+              createdTime: 100,
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(
+      provider.command(context, { type: htmlConversationCommands.list }),
+    ).resolves.toEqual({
+      payload: {
+        entries: [
+          {
+            id: 'legacy-1',
+            messages: [
+              { role: 'user', text: '旧问题', anchor: legacyAnchor },
+              { role: 'assistant', text: '旧回答' },
+            ],
+            createdTime: 100,
+            updatedTime: 100,
+          },
+        ],
+      },
+    });
+  });
+
+  it('removes an entry and persists the remaining index', async () => {
+    const state = createFakeStateDatabase(
+      encode({
+        format: 'learning-companion/html-conversation-index',
+        version: 2,
+        entries: [validEntry],
+      }),
+    );
+    const { provider, context } = await createProvider(state);
+
+    const result = await provider.command(context, {
+      type: htmlConversationCommands.remove,
+      payload: { entryId: validEntry.id },
+    });
+
+    expect(result.payload).toEqual({ entries: [] });
+    expect(state.saved).toHaveLength(1);
+  });
+
+  it('rejects invalid save payload', async () => {
     const { provider, context } = await createProvider();
 
     await expect(
       provider.command(context, {
-        type: htmlConversationCommands.append,
+        type: htmlConversationCommands.save,
         payload: { entry: { id: '' } },
       }),
     ).rejects.toThrow();

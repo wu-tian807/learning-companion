@@ -20,6 +20,7 @@ import { htmlWorkbenchManifest } from '../../../workbenches/html/shared';
 import {
   HtmlContextMenuFacilityAdapter,
   HtmlTextSelectionFacilityAdapter,
+  READ_HTML_FRAME_SELECTION_SCRIPT,
 } from '../../../workbenches/html/main-facility-adapters';
 import { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from './sandbox-frame-interaction-bridge';
@@ -58,7 +59,11 @@ function createFrame(
   selection = '选中的文字',
 ): TestFrame {
   let destroyed = false;
-  const executeJavaScript = vi.fn(async () => selection);
+  const executeJavaScript = vi.fn(async (script: string) =>
+    script === READ_HTML_FRAME_SELECTION_SCRIPT
+      ? { text: selection }
+      : null,
+  );
   const frame = {
     url,
     parent,

@@ -11,6 +11,7 @@ export interface HtmlRendererActionsOptions {
   readonly onReveal: () => Promise<void> | void;
   readonly onExplainSelection: () => void;
   readonly onSummarizePage: () => void;
+  readonly onOpenChat: () => void;
 }
 
 export function createHtmlRendererActions({
@@ -21,6 +22,7 @@ export function createHtmlRendererActions({
   onReveal,
   onExplainSelection,
   onSummarizePage,
+  onOpenChat,
 }: HtmlRendererActionsOptions): WorkbenchActionBundle {
   return {
     actions: [
@@ -65,6 +67,11 @@ export function createHtmlRendererActions({
         id: 'html.ai.summarize-page',
         enabled: true,
         execute: onSummarizePage,
+      },
+      {
+        id: 'html.ai.open-chat',
+        enabled: true,
+        execute: onOpenChat,
       },
     ],
     contributions: [
@@ -151,6 +158,18 @@ export function createHtmlRendererActions({
           label: '总结当前页面',
           description: '以完整 HTML 页面作为生成上下文',
           disabledReason: '等待 HTML AI 工具接入',
+        },
+      },
+      {
+        id: 'html.ai.open-chat.generation-center',
+        actionId: 'html.ai.open-chat',
+        surface: 'generation-center',
+        group: '80-ai',
+        order: 10,
+        presentation: {
+          kind: 'generation-tool',
+          label: 'AI 对话',
+          description: '打开对话栏，可结合选中的内容提问',
         },
       },
       {

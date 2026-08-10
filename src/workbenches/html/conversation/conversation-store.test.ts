@@ -9,10 +9,16 @@ import type { HtmlConversationEntry } from './conversation-protocol';
 
 const validEntry: HtmlConversationEntry = Object.freeze({
   id: 'c-1',
-  anchor: Object.freeze({ exact: '自注意力机制' }),
-  question: '什么是自注意力？',
-  answer: '自注意力允许任意两个位置直接交互。',
+  messages: Object.freeze([
+    Object.freeze({ role: 'user', text: '什么是自注意力？' }),
+    Object.freeze({
+      role: 'assistant',
+      text: '自注意力允许任意两个位置直接交互。',
+      anchor: Object.freeze({ exact: '自注意力机制' }),
+    }),
+  ]),
   createdTime: 1_720_000_000_000,
+  updatedTime: 1_720_000_000_100,
 });
 
 function createStore(handler: (command: WorkbenchCommand) => unknown) {
@@ -39,17 +45,27 @@ describe('createHtmlConversationStore', () => {
     });
   });
 
-  it('appends an entry through the append command', async () => {
+  it('saves an entry through the idempotent save command', async () => {
     const { store, executeCommand } = createStore(() => ({
       entries: [validEntry],
     }));
 
-    const entries = await store.append(validEntry);
+    const entries = await store.save(validEntry);
 
     expect(entries).toEqual([validEntry]);
     expect(executeCommand).toHaveBeenCalledWith({
-      type: 'html.conversations.append',
+      type: 'html.conversations.save',
       payload: { entry: validEntry },
+    });
+  });
+
+  it('removes an entry through the remove command', async () => {
+    const { store, executeCommand } = createStore(() => ({ entries: [] }));
+
+    await expect(store.remove(validEntry.id)).resolves.toEqual([]);
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: 'html.conversations.remove',
+      payload: { entryId: validEntry.id },
     });
   });
 

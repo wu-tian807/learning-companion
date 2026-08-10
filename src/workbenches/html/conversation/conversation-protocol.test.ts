@@ -1,145 +1,252 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  appendHtmlConversationEntry,
   createHtmlConversationIndex,
   HTML_CONVERSATION_MAX_ENTRIES,
   isHtmlConversationEntry,
-  isHtmlConversationIndexV1,
+  isHtmlConversationIndex,
+  normalizeHtmlConversationIndex,
+  removeHtmlConversationEntry,
+  saveHtmlConversationEntry,
   type HtmlConversationEntry,
-  type HtmlConversationIndexV1,
+  type HtmlConversationIndex,
 } from './conversation-protocol';
 
 const validEntry: HtmlConversationEntry = Object.freeze({
   id: 'c-1',
-  question: '什么是自注意力？',
-  answer: '自注意力允许任意两个位置直接交互。',
+  messages: Object.freeze([
+    Object.freeze({
+      role: 'user',
+      text: '什么是自注意力？',
+      anchor: Object.freeze({
+        anchorType: 'html.quote',
+        anchorPayload: Object.freeze({ exact: '自注意力' }),
+      }),
+    }),
+    Object.freeze({
+      role: 'assistant',
+      text: '自注意力允许任意两个位置直接交互。',
+    }),
+  ]),
   createdTime: 1_720_000_000_000,
+  updatedTime: 1_720_000_000_100,
 });
 
 function makeIndex(
   entries: readonly HtmlConversationEntry[] = [validEntry],
-): HtmlConversationIndexV1 {
+): HtmlConversationIndex {
   return {
     format: 'learning-companion/html-conversation-index',
-    version: 1,
+    version: 2,
     entries: Object.freeze([...entries]),
   };
 }
 
 describe('isHtmlConversationEntry', () => {
-  it('accepts a valid entry', () => {
+  it('accepts a valid multi-turn entry', () => {
     expect(isHtmlConversationEntry(validEntry)).toBe(true);
   });
 
-  it('accepts an entry without anchor', () => {
-    const rest: HtmlConversationEntry = {
-      id: validEntry.id,
-      question: validEntry.question,
-      answer: validEntry.answer,
-      createdTime: validEntry.createdTime,
-    };
-    expect(isHtmlConversationEntry(rest)).toBe(true);
-  });
-
-  it('rejects empty id / question / answer', () => {
-    expect(isHtmlConversationEntry({ ...validEntry, id: '' })).toBe(false);
-    expect(isHtmlConversationEntry({ ...validEntry, question: '  ' })).toBe(false);
-    expect(isHtmlConversationEntry({ ...validEntry, answer: '' })).toBe(false);
-  });
-
-  it('rejects oversized text and invalid time', () => {
+  it('rejects empty messages, invalid roles, times, and non-JSON anchors', () => {
+    expect(isHtmlConversationEntry({ ...validEntry, messages: [] })).toBe(false);
     expect(
       isHtmlConversationEntry({
         ...validEntry,
-        question: 'q'.repeat(32_769),
+        messages: [{ role: 'system', text: 'x' }],
       }),
     ).toBe(false);
-    expect(isHtmlConversationEntry({ ...validEntry, createdTime: -1 })).toBe(false);
-  });
-
-  it('rejects non-JSON anchor', () => {
     expect(
-      isHtmlConversationEntry({ ...validEntry, anchor: { nested: () => 1 } }),
+      isHtmlConversationEntry({
+        ...validEntry,
+        updatedTime: validEntry.createdTime - 1,
+      }),
+    ).toBe(false);
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          { role: 'user', text: 'x', anchor: { invalid: () => undefined } },
+        ],
+      }),
     ).toBe(false);
   });
 });
 
-describe('isHtmlConversationIndexV1', () => {
-  it('accepts a valid index', () => {
-    expect(isHtmlConversationIndexV1(makeIndex())).toBe(true);
+describe('normalizeHtmlConversationIndex', () => {
+  it('accepts the current v2 format', () => {
+    expect(normalizeHtmlConversationIndex(makeIndex())).toEqual(makeIndex());
   });
 
-  it('accepts an empty index', () => {
-    expect(isHtmlConversationIndexV1(createHtmlConversationIndex())).toBe(true);
+  it('migrates original v1 question/answer entries without losing anchors', () => {
+    const migrated = normalizeHtmlConversationIndex({
+      format: 'learning-companion/html-conversation-index',
+      version: 1,
+      entries: [
+        {
+          id: 'legacy-task',
+          anchor: { anchorType: 'html.quote', anchorPayload: { exact: '旧锚点' } },
+          question: '旧问题',
+          answer: '旧回答',
+          createdTime: 100,
+        },
+      ],
+    });
+
+    expect(migrated).toEqual({
+      format: 'learning-companion/html-conversation-index',
+      version: 2,
+      entries: [
+        {
+          id: 'legacy-task',
+          messages: [
+            {
+              role: 'user',
+              text: '旧问题',
+              anchor: {
+                anchorType: 'html.quote',
+                anchorPayload: { exact: '旧锚点' },
+              },
+            },
+            { role: 'assistant', text: '旧回答' },
+          ],
+          createdTime: 100,
+          updatedTime: 100,
+        },
+      ],
+    });
   });
 
-  it('rejects wrong format / version / non-array entries', () => {
+  it('accepts the transitional message shape that was written as version 1', () => {
     expect(
-      isHtmlConversationIndexV1({
-        format: 'other',
+      normalizeHtmlConversationIndex({
+        format: 'learning-companion/html-conversation-index',
         version: 1,
         entries: [validEntry],
       }),
-    ).toBe(false);
+    ).toEqual(makeIndex());
+  });
+
+  it('keeps colliding v1 entries by assigning deterministic migrated ids', () => {
+    const legacy = {
+      id: 'same-id',
+      question: '问题',
+      answer: '回答',
+      createdTime: 100,
+    };
+    const migrated = normalizeHtmlConversationIndex({
+      format: 'learning-companion/html-conversation-index',
+      version: 1,
+      entries: [legacy, legacy],
+    });
+
+    expect(migrated?.entries.map((entry) => entry.id)).toEqual([
+      'same-id',
+      'same-id~2',
+    ]);
+  });
+
+  it('rejects corrupted data instead of partially dropping entries', () => {
     expect(
-      isHtmlConversationIndexV1({
-        format: 'learning-companion/html-conversation-index',
-        version: 2,
-        entries: [validEntry],
-      }),
-    ).toBe(false);
-    expect(
-      isHtmlConversationIndexV1({
+      normalizeHtmlConversationIndex({
         format: 'learning-companion/html-conversation-index',
         version: 1,
-        entries: 'x',
+        entries: [{ id: 'broken' }],
       }),
+    ).toBeUndefined();
+    expect(
+      normalizeHtmlConversationIndex(makeIndex([validEntry, validEntry])),
+    ).toBeUndefined();
+  });
+});
+
+describe('isHtmlConversationIndex', () => {
+  it('accepts empty/current indexes and rejects duplicate ids or bad ordering', () => {
+    expect(isHtmlConversationIndex(createHtmlConversationIndex())).toBe(true);
+    expect(isHtmlConversationIndex(makeIndex())).toBe(true);
+    expect(isHtmlConversationIndex(makeIndex([validEntry, validEntry]))).toBe(
+      false,
+    );
+    expect(
+      isHtmlConversationIndex(
+        makeIndex([
+          { ...validEntry, id: 'later', createdTime: validEntry.createdTime + 1 },
+          validEntry,
+        ]),
+      ),
     ).toBe(false);
   });
+});
 
-  it('rejects out-of-order entries', () => {
-    const later = { ...validEntry, id: 'c-2', createdTime: 1_720_000_000_001 };
-    expect(isHtmlConversationIndexV1(makeIndex([later, validEntry]))).toBe(false);
+describe('saveHtmlConversationEntry', () => {
+  it('inserts a new entry and keeps the index ordered', () => {
+    const later = {
+      ...validEntry,
+      id: 'later',
+      createdTime: validEntry.createdTime + 10,
+    };
+    const index = saveHtmlConversationEntry(createHtmlConversationIndex(), later);
+    const next = saveHtmlConversationEntry(index, validEntry);
+
+    expect(next.entries.map((entry) => entry.id)).toEqual(['c-1', 'later']);
+    expect(isHtmlConversationIndex(next)).toBe(true);
   });
 
-  it('rejects more than the entry cap', () => {
+  it('updates by stable id without duplicating or changing createdTime', () => {
+    const updated = saveHtmlConversationEntry(makeIndex(), {
+      ...validEntry,
+      messages: [...validEntry.messages, { role: 'user', text: '继续问' }],
+      createdTime: validEntry.createdTime + 999,
+      updatedTime: validEntry.updatedTime + 1_000,
+    });
+
+    expect(updated.entries).toHaveLength(1);
+    expect(updated.entries[0]?.createdTime).toBe(validEntry.createdTime);
+    expect(updated.entries[0]?.messages).toHaveLength(3);
+  });
+
+  it('ignores a stale update and enforces the entry cap only for inserts', () => {
+    const index = makeIndex();
+    expect(
+      saveHtmlConversationEntry(index, {
+        ...validEntry,
+        messages: [{ role: 'user', text: 'stale' }],
+        updatedTime: validEntry.updatedTime - 1,
+      }),
+    ).toBe(index);
+
     const entries = Array.from(
-      { length: HTML_CONVERSATION_MAX_ENTRIES + 1 },
+      { length: HTML_CONVERSATION_MAX_ENTRIES },
       (_, index) => ({
         ...validEntry,
         id: `c-${index}`,
-        createdTime: 1_720_000_000_000 + index,
+        createdTime: validEntry.createdTime + index,
+        updatedTime: validEntry.updatedTime + index,
       }),
     );
-    expect(isHtmlConversationIndexV1(makeIndex(entries))).toBe(false);
+    expect(() =>
+      saveHtmlConversationEntry(makeIndex(entries), {
+        ...validEntry,
+        id: 'overflow',
+        createdTime: validEntry.createdTime + entries.length,
+        updatedTime: validEntry.updatedTime + entries.length,
+      }),
+    ).toThrow();
   });
 });
 
-describe('appendHtmlConversationEntry', () => {
-  it('appends a new entry immutably', () => {
-    const index = createHtmlConversationIndex();
-    const next = appendHtmlConversationEntry(index, validEntry);
-
-    expect(index.entries).toHaveLength(0);
-    expect(next.entries).toEqual([validEntry]);
-    expect(Object.isFrozen(next.entries)).toBe(true);
-    expect(isHtmlConversationIndexV1(next)).toBe(true);
-  });
-
-  it('rejects invalid entry and time regression', () => {
-    expect(() =>
-      appendHtmlConversationEntry(createHtmlConversationIndex(), {
-        ...validEntry,
-        id: '',
-      }),
-    ).toThrow();
-    expect(() =>
-      appendHtmlConversationEntry(makeIndex(), {
-        ...validEntry,
-        id: 'c-2',
-        createdTime: 1_000_000,
-      }),
-    ).toThrow();
+describe('removeHtmlConversationEntry', () => {
+  it('removes only the requested stable id', () => {
+    const other = {
+      ...validEntry,
+      id: 'c-2',
+      createdTime: validEntry.createdTime + 1,
+      updatedTime: validEntry.updatedTime + 1,
+    };
+    expect(
+      removeHtmlConversationEntry(
+        makeIndex([validEntry, other]),
+        'c-1',
+      ).entries,
+    ).toEqual([other]);
   });
 });

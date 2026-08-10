@@ -3,11 +3,40 @@
  */
 import type { ReactNode } from 'react';
 
+import type { JsonValue } from '../../../shared/workbench/protocol';
+
 export interface ConversationMessage {
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly streaming?: boolean;
+  /** 该消息绑定的锚点（user 消息提问时携带）。 */
+  readonly anchor?: JsonValue;
+}
+
+function anchorSummary(anchor: JsonValue): string {
+  if (typeof anchor !== 'object' || anchor === null) {
+    return '内容';
+  }
+  const record = anchor as Record<string, unknown>;
+  const payload =
+    typeof record.anchorPayload === 'object' && record.anchorPayload !== null
+      ? (record.anchorPayload as Record<string, unknown>)
+      : {};
+  if (record.anchorType === 'html.quote') {
+    return typeof payload.exact === 'string'
+      ? `选中：${payload.exact.slice(0, 24)}`
+      : '选中文本';
+  }
+  if (record.anchorType === 'html.element') {
+    return typeof payload.id === 'string' && payload.id
+      ? `选中：#${payload.id}`
+      : '选中元素';
+  }
+  if (record.anchorType === 'html.link') {
+    return typeof payload.url === 'string' ? `选中：${payload.url}` : '选中链接';
+  }
+  return '选中内容';
 }
 
 function bubbleClass(role: ConversationMessage['role']): string {
@@ -42,6 +71,11 @@ export function MessageBubble({ message }: { readonly message: ConversationMessa
         {message.text}
         {message.streaming && <span className="caret ml-0.5 inline-block h-3 w-[6px] bg-indigo-300 align-[-2px]" />}
       </div>
+      {message.anchor && (
+        <span className="mt-0.5 block max-w-[85%] text-[9px] text-indigo-300/70">
+          {anchorSummary(message.anchor)}
+        </span>
+      )}
     </div>
   );
 }

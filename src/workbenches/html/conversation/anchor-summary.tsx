@@ -63,7 +63,13 @@ export function summarizeHtmlAnchor(anchor: JsonValue): HtmlAnchorSummary {
   return { kindLabel: '内容' };
 }
 
-export function AnchorChip({ anchor }: { readonly anchor: JsonValue }) {
+export function AnchorChip({
+  anchor,
+  onRemove,
+}: {
+  readonly anchor: JsonValue;
+  readonly onRemove?: () => void;
+}) {
   const summary = summarizeHtmlAnchor(anchor);
 
   return (
@@ -73,6 +79,16 @@ export function AnchorChip({ anchor }: { readonly anchor: JsonValue }) {
       </span>
       {summary.detail && (
         <span className="min-w-0 break-all text-slate-400">{summary.detail}</span>
+      )}
+      {onRemove && (
+        <button
+          type="button"
+          aria-label="删除选中锚点"
+          onClick={onRemove}
+          className="ml-auto shrink-0 rounded-md px-1 text-slate-500 hover:bg-white/10 hover:text-slate-200"
+        >
+          ✕
+        </button>
       )}
     </div>
   );

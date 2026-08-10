@@ -27,6 +27,7 @@ export interface AnchorHighlightTarget {
 
 export interface AnchorHighlightProps {
   readonly target: AnchorHighlightTarget | undefined;
+  /** 0 = 持久显示（当前对话期间常驻），否则为显示毫秒数。 */
   readonly durationMs?: number;
 }
 
@@ -89,9 +90,14 @@ export function AnchorHighlight({
     if (timerRef.current !== undefined) {
       window.clearTimeout(timerRef.current);
     }
-    timerRef.current = window.setTimeout(() => {
-      setVisible(false);
-    }, durationMs);
+    if (durationMs > 0) {
+      timerRef.current = window.setTimeout(() => {
+        setVisible(false);
+      }, durationMs);
+    } else {
+      // 持久模式：不自动消失，由调用方在切出对话时清除。
+      timerRef.current = undefined;
+    }
 
     return () => {
       doc?.removeEventListener('scroll', update);

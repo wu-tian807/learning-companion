@@ -7,20 +7,30 @@ import type { HtmlConversationEntry } from './conversation-protocol';
 
 const entry: HtmlConversationEntry = Object.freeze({
   id: 'c-1',
-  anchor: Object.freeze({
-    anchorType: 'html.quote',
-    anchorPayload: Object.freeze({ exact: '自注意力' }),
-  }),
-  question: '什么是自注意力？',
-  answer: '自注意力允许任意两个位置直接交互。',
+  messages: Object.freeze([
+    Object.freeze({
+      role: 'user',
+      text: '什么是自注意力？',
+      anchor: Object.freeze({
+        anchorType: 'html.quote',
+        anchorPayload: Object.freeze({ exact: '自注意力' }),
+      }),
+    }),
+    Object.freeze({
+      role: 'assistant',
+      text: '自注意力允许任意两个位置直接交互。',
+    }),
+  ]),
   createdTime: 1_720_000_000_000,
+  updatedTime: 1_720_000_000_100,
 });
 
 function createStore(entries: readonly HtmlConversationEntry[] = []) {
   const list = vi.fn(async () => entries);
-  const append = vi.fn(async () => [...entries]);
-  const store: HtmlConversationStore = { list, append };
-  return { store, list, append };
+  const save = vi.fn(async () => [...entries]);
+  const remove = vi.fn(async () => [...entries]);
+  const store: HtmlConversationStore = { list, save, remove };
+  return { store, list, save, remove };
 }
 
 function renderMarkup(options: {
@@ -55,7 +65,7 @@ describe('ConversationOverlay', () => {
     expect(markup).toContain('首次提问会把');
   });
 
-  it('renders the anchor chip when an anchor is provided', () => {
+  it('shows the anchor-selected marker when an anchor is provided', () => {
     const markup = renderMarkup({
       anchor: {
         anchorType: 'html.quote',
@@ -63,11 +73,11 @@ describe('ConversationOverlay', () => {
       },
     });
 
-    expect(markup).toContain('选中文本');
-    expect(markup).toContain('自注意力机制');
+    // 锚点 chip 由 effect 设置（SSR 不执行），静态渲染验证 header 的「锚点已选」标记
+    expect(markup).toContain('锚点已选');
   });
 
-  it('renders element anchor summary', () => {
+  it('shows the anchor-selected marker for element anchors', () => {
     const markup = renderMarkup({
       anchor: {
         anchorType: 'html.element',
@@ -75,8 +85,7 @@ describe('ConversationOverlay', () => {
       },
     });
 
-    expect(markup).toContain('元素');
-    expect(markup).toContain('#btn-mha');
+    expect(markup).toContain('锚点已选');
   });
 
   it('renders the empty chat state before any conversation', () => {
