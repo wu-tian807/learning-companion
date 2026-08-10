@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
+import '../../markdown/markdown-workbench.css';
 
 import {
   MARKDOWN_PREVIEW_RENDER_POLICY,
@@ -50,7 +51,7 @@ export function EpubExplanationPanel({
   return (
     <aside
       aria-label="AI 解释"
-      className="absolute right-4 top-4 z-20 w-[min(380px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl"
+      className="learning-markdown-workbench absolute right-4 top-4 z-20 w-[min(380px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl"
     >
       <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
         <div>
