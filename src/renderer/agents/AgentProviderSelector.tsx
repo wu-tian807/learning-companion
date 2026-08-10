@@ -19,6 +19,10 @@ import {
   agentProviderStore,
   type AgentProviderStore,
 } from './agent-provider-store';
+import {
+  findActiveSelectorConnectionSelection,
+  findSelectorConnectionSelection,
+} from './selector-connection-selection';
 import { SelectMenu } from '../components/SelectMenu';
 
 const CUSTOM_REASONING_EFFORTS = [
@@ -171,6 +175,27 @@ function AgentProviderSelectorForm({
       ? selectedModel.reasoningEfforts.map((effort) => effort.id)
       : CUSTOM_REASONING_EFFORTS;
 
+  /** 恢复某个 Connection 已保存的模型/思考力度配置（没有则回落默认）。 */
+  const restoreConnectionSelection = (
+    connection: SelectorConnection | undefined,
+  ) => {
+    if (!connection) {
+      return;
+    }
+    const saved = findSelectorConnectionSelection(
+      store.getState().setup,
+      definition.id,
+      connection.connection.id,
+    );
+    if (saved?.modelId) {
+      setModelId(saved.modelId);
+      setReasoningEffort(saved.reasoningEffort ?? '');
+    } else {
+      setModelId('');
+      setReasoningEffort(DEFAULT_REASONING_EFFORT);
+    }
+  };
+
   const save = async () => {
     if (!resolvedConnection || !modelId.trim()) {
       return;
@@ -232,9 +257,13 @@ function AgentProviderSelectorForm({
               label: `${provider.displayName} · ${connection.displayName}`,
             }))}
             onChange={(value) => {
+              const nextConnection = connections.find(
+                ({ provider, connection }) =>
+                  connectionValue(provider.id, connection.id) === value,
+              );
               setSelectedConnection(value);
-              setModelId('');
-              setReasoningEffort(DEFAULT_REASONING_EFFORT);
+              // 恢复该 Connection 上次保存的模型/思考力度；没有则回落默认。
+              restoreConnectionSelection(nextConnection);
               setCatalog(undefined);
               setLoadingCatalog(true);
               setError(undefined);
@@ -334,9 +363,7 @@ export function AgentProviderSelector({
   const definition = setup?.selectors.find(
     (candidate) => candidate.id === selectorId,
   );
-  const selection = setup?.selections.find(
-    (candidate) => candidate.selectorId === selectorId,
-  );
+  const selection = findActiveSelectorConnectionSelection(setup, selectorId);
   const connections = useMemo(
     () =>
       setup?.providers.flatMap((provider) =>

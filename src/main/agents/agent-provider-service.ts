@@ -313,8 +313,14 @@ export class AgentProviderService
   ): GenerationAgentExecutionConfiguration {
     this.requireActive();
     this.selectors.require(selectorId);
-    const selection =
-      this.settings.getAgentProviderSelectorSelection(selectorId);
+    const current = this.settings.getAgentProviderSelectorConnection(selectorId);
+    if (!current) {
+      throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
+    }
+    const selection = this.settings.getAgentProviderSelectorSelection(
+      selectorId,
+      current.connectionId,
+    );
     if (!selection) {
       throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
     }
@@ -381,12 +387,36 @@ export class AgentProviderService
           ) === true
         );
       });
+    const selectorConnections = selectors.flatMap((selector) => {
+      const active = this.settings.getAgentProviderSelectorConnection(
+        selector.id,
+      );
+      if (
+        !active ||
+        !selections.some(
+          (selection) =>
+            selection.selectorId === selector.id &&
+            selection.providerId === active.providerId &&
+            selection.connectionId === active.connectionId,
+        )
+      ) {
+        return [];
+      }
+      return [
+        Object.freeze({
+          selectorId: selector.id,
+          providerId: active.providerId,
+          connectionId: active.connectionId,
+        }),
+      ];
+    });
 
     return Object.freeze({
       revision: this.revision,
       providers: Object.freeze(providers),
       selectors: Object.freeze(selectors),
       selections: Object.freeze(selections),
+      selectorConnections: Object.freeze(selectorConnections),
     });
   }
 

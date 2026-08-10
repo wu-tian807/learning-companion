@@ -58,6 +58,13 @@ describe('Agent Provider contracts', () => {
             reasoningEffort: 'high',
           },
         ],
+        selectorConnections: [
+          {
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+          },
+        ],
       }),
     ).toBe(true);
   });
@@ -77,6 +84,7 @@ describe('Agent Provider contracts', () => {
             reasoningEffort: null,
           },
         ],
+        selectorConnections: [],
       }),
     ).toBe(false);
   });
@@ -106,8 +114,27 @@ describe('Agent Provider contracts', () => {
         ],
         selectors: [selector],
         selections: [],
+        selectorConnections: [],
       }),
     ).toBe(true);
+  });
+
+  it('rejects an active Selector Connection without a matching configuration', () => {
+    expect(
+      isAgentProviderSetupSnapshot({
+        revision: 5,
+        providers: [provider],
+        selectors: [selector],
+        selections: [],
+        selectorConnections: [
+          {
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+          },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it('validates connection-scoped login instructions', () => {
