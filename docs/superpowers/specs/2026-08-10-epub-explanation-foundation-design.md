@@ -2,7 +2,7 @@
 
 ## 结论
 
-当前“解释这段话”定义为锚定 EPUB CFI 选区的即时解释 Note，而不是可持续追问的自由问答。用户选择文本后创建一个可定位、可再次打开、可删除的 Attachment；如果未来增加“继续追问”，应新增明确的 Conversation 入口，而不是改变现有按钮的隐式语义。
+当前“解释这段话”定义为锚定 EPUB CFI 选区的即时解释 Note，而不是可持续追问的自由问答。用户选择文本后先创建 GenerationTask；只有任务成功后才创建可定位、可再次打开、可删除的 Attachment。如果未来增加“继续追问”，应新增明确的 Conversation 入口，而不是改变现有按钮的隐式语义。
 
 结果载体和 Session 生命周期是两个正交决策：Note 由 Attachment 持久化，但正文直接采用 Agent 最终回答；每次解释使用独立的 task Session，不因 Attachment 的存在而共享上下文。
 
@@ -13,20 +13,18 @@
 | 是否显示 delta | 否 | 当前入口是异步 Note 生成；UI 展示 pending/failed/completed 状态，避免临时文本与持久结果出现双重真相 |
 | Session 生命周期 | `task` | 每个选区可独立复现，避免其他段落的历史上下文污染解释 |
 | 稳定实例边界 | 不适用 | 当前功能不继承前文；未来问答使用显式 Conversation 作为稳定边界 |
-| 重试策略 | 新任务、新 Session | 失败任务及其 checkpoint 保留诊断信息；新任务不会复用已经完成但不可用的调用结果 |
+| 重试策略 | 重试原 GenerationTask | 保留 prepare、Agent call、Session 和 metrics checkpoint，只重新执行未完成的 process |
 
 ## 主链路
 
 ```text
 EPUB Workbench 选区
-  → EpubExplanationService 创建 pending Attachment
-  → 创建 GenerationTask(TaskDefinition + Instruction)
+  → EpubExplanationService 创建 GenerationTask(TaskDefinition + Instruction)
   → TaskDefinition.process(context)
   → context.agent.call(...)
   → AgentProvider 返回规范化事件和最终回答
   → Processor 校验最终 Markdown
-  → AttachmentContentFile 原子写入正文
-  → AttachmentService 更新 Attachment 为 completed
+  → AttachmentService 原子写入正文并创建完整 Attachment
   → EPUB Workbench 按 CFI 渲染标记和 Note 面板
 ```
 
@@ -56,9 +54,13 @@ Provider 事件统一为 session、assistant delta、assistant completed、tool�
 
 通用层不知道 EPUB、CFI、“解释”状态、Markdown 文件名或媒体类型。EPUB 垂直切片注册自己的 Attachment 类型和 CFI Anchor，并决定正文使用 `answer.md` 与 `text/markdown`。
 
+pending、failed、cancelled 和 retry 都属于 GenerationTask。Renderer 的统一解释视图只是投影：pending/failed 来自未完成 GenerationTask，completed 来自 Attachment。Attachment 不保存 `taskId`、执行状态或失败信息。
+
 ## 重试与失败
 
-EPUB 解释不再依赖工作区输出文件，所以不存在“Agent turn 完成但 answer.md 缺失”的 repair loop。失败时保留旧 GenerationTask 供诊断；用户重试会创建新的 GenerationTask 和 task-scoped Session，并把 Attachment 的 `taskId` 原子更新到新任务。旧任务完成事件因为 taskId 不匹配而不能覆盖新状态。
+EPUB 解释失败时不会创建 Attachment。用户重试直接调用原 GenerationTask 的重试机制；GenerationTask 清除 failure，并恢复 prepare、Agent call 与 Session checkpoint。若 Agent call 已完成而创建 Attachment 之前失败，重试会复用最终回答，只重新执行 process。
+
+Processor 在创建前按 Asset、Attachment 类型和 CFI 查找已有结果。若 Attachment 已创建、但进程在 GenerationTask 写入 completed checkpoint 前崩溃，重试会直接返回同一 Attachment，从而避免重复产物。
 
 需要文件产物的其他 TaskDefinition 仍可在同一 Session 内使用稳定递增的 `repair-1`、`repair-2` callKey。GenerationTask 的 checkpoint 保证每个 callKey 幂等，但不会替 Processor 自动决定产物修复策略。
 
