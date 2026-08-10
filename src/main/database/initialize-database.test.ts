@@ -33,7 +33,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -105,6 +105,20 @@ describe('initializeDatabase', () => {
           )
           .all()
           .map(({ name }) => name),
+      ).toEqual(
+        expect.arrayContaining([
+          'assigned_connection_id',
+          'assigned_model_id',
+          'assigned_reasoning_effort',
+        ]),
+      );
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            'PRAGMA table_info(generation_tasks)',
+          )
+          .all()
+          .map(({ name }) => name),
       ).not.toContain('agent_output_ref');
       expect(
         context.sqlite
@@ -128,7 +142,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        17,
+        19,
       );
     } finally {
       secondContext.close();
@@ -177,7 +191,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -262,16 +276,24 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
-          .prepare<[], { assignedProviderId: string }>(
-            `SELECT assigned_provider_id AS assignedProviderId
+          .prepare<
+            [],
+            { assignedProviderId: string; assignedConnectionId: string }
+          >(
+            `SELECT
+               assigned_provider_id AS assignedProviderId,
+               assigned_connection_id AS assignedConnectionId
              FROM generation_tasks
              WHERE id = 'task'`,
           )
           .get(),
-      ).toEqual({ assignedProviderId: 'codex' });
+      ).toEqual({
+        assignedProviderId: 'codex',
+        assignedConnectionId: 'codex-account',
+      });
       const migrated = context.sqlite
         .prepare<
           [],
@@ -323,7 +345,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -391,7 +413,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -710,7 +732,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -815,7 +837,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(17);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')

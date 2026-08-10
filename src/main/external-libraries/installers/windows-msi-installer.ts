@@ -1,5 +1,5 @@
-import { mkdir } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { mkdir, open } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, join } from 'node:path';
 
 import { AppError } from '../../errors/app-error';
 import type {
@@ -14,6 +14,7 @@ import {
 } from '../external-library-installer';
 
 const INSTALL_TIMEOUT_MS = 20 * 60 * 1000;
+const MAX_INSTALL_LOG_DETAIL_LENGTH = 16 * 1024;
 
 export interface WindowsMsiInstallerDependencies {
   readonly commandRunner: ExternalCommandRunnerApi;
@@ -28,6 +29,34 @@ function defaultResolveMsiexecPath(): string {
   }
 
   return join(systemRoot, 'System32', 'msiexec.exe');
+}
+
+function quoteWindowsInstallerPath(path: string): string {
+  if (path.includes('"')) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  return `"${path}"`;
+}
+
+async function readInstallLogTail(logPath: string): Promise<string | undefined> {
+  const handle = await open(logPath, 'r').catch(() => undefined);
+  if (!handle) {
+    return undefined;
+  }
+
+  try {
+    const { size } = await handle.stat();
+    const length = Math.min(size, MAX_INSTALL_LOG_DETAIL_LENGTH);
+    if (length === 0) {
+      return undefined;
+    }
+    const content = Buffer.alloc(length);
+    await handle.read(content, 0, length, size - length);
+    return content.toString('utf8').trim() || undefined;
+  } finally {
+    await handle.close();
+  }
 }
 
 export class WindowsMsiInstaller implements ExternalLibraryInstaller {
@@ -53,6 +82,9 @@ export class WindowsMsiInstaller implements ExternalLibraryInstaller {
     }
 
     const packagePath = requireInstallerAbsolutePath(request.packagePath);
+    if (extname(packagePath).toLocaleLowerCase() !== '.msi') {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
     const stagingInstallationDirectory =
       requireInstallerAbsolutePath(
         request.stagingInstallationDirectory,
@@ -61,22 +93,45 @@ export class WindowsMsiInstaller implements ExternalLibraryInstaller {
       stagingInstallationDirectory,
       'runtime',
     );
+    const logPath = join(
+      dirname(stagingInstallationDirectory),
+      'msiexec.log',
+    );
     await mkdir(runtimeDirectory, { recursive: true });
 
-    await this.commandRunner.run({
-      command: requireInstallerAbsolutePath(
-        this.resolveMsiexecPath(),
-      ),
-      args: [
-        '/a',
-        packagePath,
-        '/qn',
-        '/norestart',
-        `TARGETDIR=${runtimeDirectory}`,
-      ],
-      timeoutMs: INSTALL_TIMEOUT_MS,
-      signal,
-    });
+    try {
+      await this.commandRunner.run({
+        command: requireInstallerAbsolutePath(
+          this.resolveMsiexecPath(),
+        ),
+        args: [
+          '/a',
+          quoteWindowsInstallerPath(packagePath),
+          '/qn',
+          '/L*V',
+          quoteWindowsInstallerPath(logPath),
+          `TARGETDIR=${quoteWindowsInstallerPath(runtimeDirectory)}`,
+        ],
+        // Without verbatim arguments Node serializes a path with spaces as
+        // "TARGETDIR=C:\\...". MSI requires TARGETDIR="C:\\..." instead.
+        windowsVerbatimArguments: true,
+        timeoutMs: INSTALL_TIMEOUT_MS,
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
+
+      const logTail = await readInstallLogTail(logPath);
+      throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
+        cause: logTail
+          ? new Error(`Windows Installer 日志末尾：\n${logTail}`, {
+              cause: error,
+            })
+          : error,
+      });
+    }
     await validateInstalledExecutable(request);
   }
 }

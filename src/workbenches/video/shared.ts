@@ -19,7 +19,9 @@ export const VIDEO_STATE_SCHEMA_VERSION = 1;
 export const VIDEO_TIME_RANGE_ANCHOR_TYPE = 'video.time-range';
 export const VIDEO_TIME_RANGE_ANCHOR_VERSION = 1;
 
-export const videoWorkbenchManifest: AssetWorkbenchManifest = {
+export const videoWorkbenchManifest: AssetWorkbenchManifest<
+  typeof VIDEO_WORKBENCH_ID
+> = {
   id: VIDEO_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

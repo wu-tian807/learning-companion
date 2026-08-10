@@ -6,12 +6,15 @@ import type { WorkbenchFacilityDefinitionRegistry } from '../../../shared/workbe
 import { AppError } from '../../errors/app-error';
 
 export interface MainFacilityCaptureContext {
+  readonly sessionId: string;
+  readonly workbenchId: string;
   readonly trigger: string;
   readonly frame: WebFrameMain;
   readonly source?: unknown;
 }
 
 export interface MainWorkbenchFacilityAdapter {
+  readonly workbenchId: string;
   readonly facilityId: string;
   readonly facilityVersion: number;
   readonly triggers: readonly string[];
@@ -40,6 +43,9 @@ export class MainFacilityAdapterRegistry {
 
     if (
       !definition?.validateEvent ||
+      typeof adapter.workbenchId !== 'string' ||
+      adapter.workbenchId.trim().length === 0 ||
+      adapter.workbenchId !== adapter.workbenchId.trim() ||
       adapter.triggers.length === 0 ||
       triggers.size !== adapter.triggers.length ||
       adapter.triggers.some(
@@ -50,7 +56,8 @@ export class MainFacilityAdapterRegistry {
       throw new AppError('INVALID_EXTENSION_DEFINITION');
     }
 
-    const key = workbenchFacilityKey(
+    const key = this.adapterKey(
+      adapter.workbenchId,
       adapter.facilityId,
       adapter.facilityVersion,
     );
@@ -75,14 +82,26 @@ export class MainFacilityAdapterRegistry {
   }
 
   get(
+    workbenchId: string,
     facilityId: string,
     facilityVersion: number,
     trigger: string,
   ): MainWorkbenchFacilityAdapter | undefined {
     const adapter = this.adapters.get(
-      workbenchFacilityKey(facilityId, facilityVersion),
+      this.adapterKey(workbenchId, facilityId, facilityVersion),
     );
 
     return adapter?.triggers.includes(trigger) ? adapter : undefined;
+  }
+
+  private adapterKey(
+    workbenchId: string,
+    facilityId: string,
+    facilityVersion: number,
+  ): string {
+    return `${workbenchId.trim()}:${workbenchFacilityKey(
+      facilityId,
+      facilityVersion,
+    )}`;
   }
 }

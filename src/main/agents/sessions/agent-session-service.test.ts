@@ -65,7 +65,6 @@ describe('AgentSessionService', () => {
         locator,
         providerId: 'codex',
         sessionId: 'thread-1',
-        configurationFingerprint: 'sha256:config-1',
       }),
     ).resolves.toMatchObject({ sessionId: 'thread-1' });
 
@@ -75,7 +74,6 @@ describe('AgentSessionService', () => {
       restored.getProviderBinding(locator, 'codex'),
     ).resolves.toMatchObject({
       sessionId: 'thread-1',
-      configurationFingerprint: 'sha256:config-1',
     });
     await expect(
       new AgentSessionFile(workspacePath).read(locator),
@@ -92,13 +90,11 @@ describe('AgentSessionService', () => {
         locator,
         providerId: 'codex',
         sessionId: 'thread-codex-1',
-        configurationFingerprint: 'sha256:codex-config',
       }),
       service.bindProvider({
         locator,
         providerId: 'claude-code',
         sessionId: 'session-claude-1',
-        configurationFingerprint: 'sha256:claude-config',
       }),
     ]);
 
@@ -118,7 +114,6 @@ describe('AgentSessionService', () => {
       locator,
       providerId: 'codex',
       sessionId: 'thread-1',
-      configurationFingerprint: 'sha256:config-1',
     });
 
     await expect(
@@ -126,7 +121,6 @@ describe('AgentSessionService', () => {
         locator,
         providerId: 'codex',
         sessionId: 'thread-2',
-        configurationFingerprint: 'sha256:config-2',
       }),
     ).rejects.toThrow('AGENT_SESSION_CONFLICT');
     await expect(
@@ -142,7 +136,6 @@ describe('AgentSessionService', () => {
       locator,
       providerId: 'codex',
       sessionId: 'thread-1',
-      configurationFingerprint: 'sha256:config-1',
     });
 
     await expect(
@@ -151,11 +144,9 @@ describe('AgentSessionService', () => {
         providerId: 'codex',
         expectedSessionId: 'thread-1',
         sessionId: 'thread-2',
-        configurationFingerprint: 'sha256:config-2',
       }),
     ).resolves.toMatchObject({
       sessionId: 'thread-2',
-      configurationFingerprint: 'sha256:config-2',
     });
   });
 

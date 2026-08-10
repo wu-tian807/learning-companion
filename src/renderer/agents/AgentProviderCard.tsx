@@ -1,71 +1,19 @@
-import type {
-  AgentProviderLoginChallenge,
-  AgentProviderSnapshot,
-} from '../../shared/agent-providers';
+import type { ReactNode } from 'react';
+
+import type { AgentProviderSnapshot } from '../../shared/agent-providers';
 
 interface AgentProviderCardProps {
   readonly provider: AgentProviderSnapshot;
-  readonly loginChallenge?: AgentProviderLoginChallenge;
-  readonly busy: boolean;
-  readonly selectedActionLabel?: string;
-  readonly onLogin: () => void;
-  readonly onSelect: () => void;
-  readonly onRefresh: () => void;
-  readonly onReopenLogin: () => void;
-}
-
-function credentialLabel(provider: AgentProviderSnapshot): string {
-  if (provider.credential.status === 'checking') {
-    return '正在检查';
-  }
-  if (provider.credential.status === 'authenticated') {
-    return '已登录';
-  }
-  if (provider.credential.status === 'unavailable') {
-    return '状态不可用';
-  }
-  return '未登录';
-}
-
-function accountDescription(provider: AgentProviderSnapshot): string {
-  if (provider.credential.status === 'checking') {
-    return '正在检查登录状态…';
-  }
-
-  if (provider.credential.status === 'unavailable') {
-    return provider.credential.message;
-  }
-
-  if (provider.credential.status === 'unauthenticated') {
-    return '未检测到可用账号';
-  }
-
-  const account = provider.credential.account;
-  const details = [
-    account.email,
-    account.planType ? `${account.planType} 计划` : undefined,
-  ].filter((value): value is string => value !== undefined);
-
-  return details.length > 0
-    ? details.join(' · ')
-    : '账号可用';
+  readonly children: ReactNode;
 }
 
 export function AgentProviderCard({
   provider,
-  loginChallenge,
-  busy,
-  selectedActionLabel,
-  onLogin,
-  onSelect,
-  onRefresh,
-  onReopenLogin,
+  children,
 }: AgentProviderCardProps) {
-  const credential = provider.credential;
-  const awaitingLogin =
-    loginChallenge?.providerId === provider.id;
-  const checking =
-    provider.refreshing || credential.status === 'checking';
+  const readyCount = provider.connections.filter(
+    (connection) => connection.status === 'ready',
+  ).length;
 
   return (
     <article className="rounded-[18px] border border-white/[0.09] bg-white/[0.025] p-5">
@@ -77,127 +25,23 @@ export function AgentProviderCard({
             </h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] ${
-                credential.status === 'authenticated'
+                readyCount > 0
                   ? 'bg-emerald-300/10 text-emerald-200'
-                  : credential.status === 'unavailable'
-                    ? 'bg-rose-300/10 text-rose-200'
-                    : 'bg-white/[0.06] text-slate-400'
+                  : 'bg-white/[0.06] text-slate-400'
               }`}
             >
-              {credentialLabel(provider)}
+              {readyCount > 0 ? `${readyCount} 个连接可用` : '尚无可用连接'}
             </span>
-            {provider.selected && (
-              <span className="rounded-full border border-indigo-200/15 px-2 py-0.5 text-[10px] text-indigo-200">
-                已选择
-              </span>
-            )}
-            {provider.refreshing &&
-              credential.status !== 'checking' && (
-                <span className="text-[10px] text-slate-500">
-                  正在更新…
-                </span>
-              )}
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-400">
             {provider.description}
           </p>
-          <p className="mt-2 text-[11px] leading-5 text-slate-500">
-            {accountDescription(provider)}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          {credential.status === 'authenticated' ? (
-            !provider.selected || selectedActionLabel ? (
-              <button
-                type="button"
-                disabled={busy || checking}
-                onClick={onSelect}
-                className="ui-primary-button h-9 rounded-full bg-slate-50 px-4 text-xs font-semibold text-slate-900 disabled:opacity-40"
-              >
-                {busy
-                  ? '正在验证…'
-                  : provider.selected
-                    ? selectedActionLabel
-                    : `选择 ${provider.displayName}`}
-              </button>
-            ) : null
-          ) : credential.status === 'unauthenticated' ? (
-            <button
-              type="button"
-              disabled={busy || awaitingLogin || checking}
-              onClick={onLogin}
-              className="ui-primary-button h-9 rounded-full bg-slate-50 px-4 text-xs font-semibold text-slate-900 disabled:opacity-40"
-            >
-              {busy
-                ? '正在启动…'
-                : awaitingLogin
-                  ? '等待登录…'
-                  : provider.loginLabel}
-            </button>
-          ) : credential.status === 'checking' ? (
-            <span className="px-2 py-2 text-xs text-slate-500">
-              正在检查…
-            </span>
-          ) : (
-            <button
-              type="button"
-              disabled={checking}
-              onClick={onRefresh}
-              className="ui-control h-9 rounded-full border border-white/[0.12] px-4 text-xs text-slate-300 disabled:opacity-40"
-            >
-              {checking ? '正在检查…' : '重新检查'}
-            </button>
-          )}
         </div>
       </div>
 
-      {awaitingLogin && (
-        <div className="mt-4 rounded-xl border border-indigo-200/10 bg-indigo-300/[0.04] px-3.5 py-3 text-xs leading-5 text-indigo-100/80">
-          <p>
-            完成浏览器登录后将自动检查。
-          </p>
-          {loginChallenge.type === 'device-code' && (
-            <p className="mt-2 font-mono text-sm tracking-wider text-indigo-100">
-              {loginChallenge.userCode}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={onReopenLogin}
-              className="ui-control text-xs text-indigo-200 underline decoration-indigo-300/30 underline-offset-4"
-            >
-              重新打开登录页面
-            </button>
-            <button
-              type="button"
-              disabled={checking}
-              onClick={onRefresh}
-              className="ui-control text-xs text-indigo-200 underline decoration-indigo-300/30 underline-offset-4 disabled:opacity-40"
-            >
-              {checking ? '正在检查…' : '立即检查登录状态'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {provider.refreshError && (
-        <div
-          role="status"
-          className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-300/15 bg-amber-300/[0.04] px-3.5 py-3 text-xs leading-5 text-amber-100/80"
-        >
-          <span>{provider.refreshError}</span>
-          <button
-            type="button"
-            disabled={checking}
-            onClick={onRefresh}
-            className="ui-control h-8 shrink-0 rounded-full border border-amber-200/15 px-3 text-amber-100 disabled:opacity-40"
-          >
-            {checking ? '正在检查…' : '重新检查'}
-          </button>
-        </div>
-      )}
+      <div className="mt-4 space-y-2.5 border-t border-white/[0.07] pt-4">
+        {children}
+      </div>
     </article>
   );
 }

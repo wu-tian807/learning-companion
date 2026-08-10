@@ -1,0 +1,4069 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learning Companion 顶层架构地图</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0e13;
+      --surface: #111821;
+      --surface-strong: #17212d;
+      --surface-soft: #0f151d;
+      --text: #edf3fb;
+      --muted: #94a3b5;
+      --faint: #647287;
+      --line: #2a3746;
+      --line-strong: #42536a;
+      --blue: #78a9ff;
+      --blue-soft: rgba(120, 169, 255, 0.12);
+      --green: #68d9ae;
+      --green-soft: rgba(104, 217, 174, 0.11);
+      --amber: #f1bd70;
+      --amber-soft: rgba(241, 189, 112, 0.11);
+      --purple: #b89cff;
+      --purple-soft: rgba(184, 156, 255, 0.11);
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 320px;
+      background: var(--bg);
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% -8%, rgba(74, 111, 190, 0.17), transparent 32%),
+        radial-gradient(circle at 95% 4%, rgba(118, 87, 174, 0.11), transparent 28%),
+        var(--bg);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    code {
+      color: #c7d8ef;
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font-size: 0.9em;
+      overflow-wrap: anywhere;
+    }
+
+    .page {
+      width: min(1540px, 100%);
+      margin: 0 auto;
+      padding: 22px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+
+    .brand {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--blue);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: clamp(25px, 3vw, 38px);
+      line-height: 1.16;
+      letter-spacing: -0.035em;
+    }
+
+    .intro {
+      max-width: 820px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .baseline {
+      flex: 0 0 auto;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--faint);
+      background: rgba(17, 24, 33, 0.72);
+      font-size: 10px;
+      line-height: 1.55;
+      text-align: right;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 46px;
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(17, 24, 33, 0.82);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
+    }
+
+    .breadcrumbs {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .crumb {
+      padding: 5px 7px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .crumb:hover,
+    .crumb[aria-current="page"] {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .crumb-separator {
+      color: var(--faint);
+      font-size: 10px;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 7px;
+    }
+
+    .toolbar-button,
+    .enter-button {
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .toolbar-button:hover,
+    .enter-button:hover {
+      border-color: var(--line-strong);
+      color: var(--text);
+    }
+
+    .toolbar-button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .map-panel,
+    .inspector {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: rgba(15, 21, 29, 0.9);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .map-header {
+      padding: 19px 20px 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .map-kicker {
+      margin: 0 0 6px;
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .map-title {
+      margin-bottom: 6px;
+      font-size: 19px;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+    }
+
+    .map-description {
+      max-width: 900px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .diagram-wrap {
+      padding: 14px;
+    }
+
+    .diagram-note {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 2px 11px;
+      color: var(--faint);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .status-legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .status-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-legend i {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--green);
+    }
+
+    .status-legend .partial {
+      background: var(--amber);
+    }
+
+    .status-legend .planned {
+      background: var(--purple);
+    }
+
+    .diagram {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      grid-auto-rows: 104px;
+      gap: 24px 20px;
+      min-height: calc(var(--rows, 5) * 128px);
+      padding: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.035);
+      border-radius: 13px;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+        rgba(8, 12, 17, 0.55);
+      background-size: 24px 24px;
+    }
+
+    .edge-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    .edge-path {
+      fill: none;
+      stroke: #4b5d73;
+      stroke-width: 1.5;
+      marker-end: url(#arrow);
+      transition:
+        stroke-width 150ms ease,
+        filter 150ms ease;
+    }
+
+    .edge-path.persist {
+      stroke: #4da782;
+      marker-end: url(#arrow-green);
+    }
+
+    .edge-path.contract {
+      stroke: #8c77ca;
+      stroke-dasharray: 5 5;
+      marker-end: url(#arrow-purple);
+    }
+
+    .edge-path.both {
+      marker-start: url(#arrow);
+    }
+
+    .edge-path.projected {
+      stroke-width: 1.8;
+    }
+
+    .edge-path.selected {
+      stroke-width: 3;
+      filter: drop-shadow(0 0 5px rgba(120, 169, 255, 0.48));
+    }
+
+    .edge-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 16;
+      pointer-events: stroke;
+      cursor: pointer;
+    }
+
+    .edge-port {
+      fill: #0d131b;
+      stroke: #7890ad;
+      stroke-width: 2;
+    }
+
+    .edge-port.selected {
+      fill: #78a9ff;
+      stroke: #dce9ff;
+    }
+
+    .edge-control-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .edge-control {
+      position: absolute;
+      width: max-content;
+      max-width: 240px;
+      padding: 4px 7px;
+      overflow: hidden;
+      transform: translate(-50%, -50%);
+      border: 1px solid #2b3848;
+      border-radius: 6px;
+      color: #8fa0b5;
+      background: #0d131b;
+      cursor: pointer;
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 1.25;
+      pointer-events: auto;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .edge-control:hover,
+    .edge-control[aria-pressed="true"] {
+      border-color: rgba(120, 169, 255, 0.66);
+      color: #dce9ff;
+      background: #162235;
+    }
+
+    .edge-control.cross-module::after {
+      margin-left: 5px;
+      color: var(--blue);
+      content: "↗";
+    }
+
+    .edge-control.cross-module {
+      white-space: normal;
+    }
+
+    .node {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      align-content: start;
+      gap: 5px;
+      min-width: 0;
+      padding: 12px 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--text);
+      background: linear-gradient(145deg, rgba(23, 33, 45, 0.98), rgba(16, 23, 32, 0.98));
+      box-shadow: 0 12px 25px rgba(0, 0, 0, 0.18);
+      cursor: pointer;
+      text-align: left;
+      transition:
+        transform 150ms ease,
+        border-color 150ms ease,
+        background 150ms ease;
+    }
+
+    .node:hover {
+      transform: translateY(-2px);
+      border-color: var(--line-strong);
+    }
+
+    .node[aria-pressed="true"] {
+      border-color: rgba(120, 169, 255, 0.68);
+      background: linear-gradient(145deg, rgba(32, 48, 68, 0.98), rgba(18, 28, 39, 0.98));
+      box-shadow:
+        0 0 0 2px rgba(120, 169, 255, 0.12),
+        0 14px 30px rgba(0, 0, 0, 0.23);
+    }
+
+    .mobile-relations {
+      display: none;
+    }
+
+    .node.planned {
+      border-color: rgba(184, 156, 255, 0.34);
+      background: linear-gradient(145deg, rgba(40, 31, 57, 0.88), rgba(20, 20, 31, 0.96));
+    }
+
+    .node.partial {
+      border-color: rgba(241, 189, 112, 0.32);
+      background: linear-gradient(145deg, rgba(53, 41, 26, 0.82), rgba(25, 23, 21, 0.96));
+    }
+
+    .node-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .node-tag {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--faint);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .node-status {
+      flex: 0 0 auto;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 3px var(--green-soft);
+    }
+
+    .node.partial .node-status {
+      background: var(--amber);
+      box-shadow: 0 0 0 3px var(--amber-soft);
+    }
+
+    .node.planned .node-status {
+      background: var(--purple);
+      box-shadow: 0 0 0 3px var(--purple-soft);
+    }
+
+    .node-title {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .node-caption {
+      display: -webkit-box;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 9px;
+      line-height: 1.45;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .node-enter {
+      position: absolute;
+      right: 9px;
+      bottom: 7px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .inspector {
+      position: sticky;
+      top: 14px;
+      overflow: hidden;
+    }
+
+    .inspector-content {
+      padding: 19px;
+    }
+
+    .inspector-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 12px;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .inspector-status i {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--green);
+    }
+
+    .inspector-status.partial i {
+      background: var(--amber);
+    }
+
+    .inspector-status.planned i {
+      background: var(--purple);
+    }
+
+    .inspector-status.relation i {
+      background: var(--blue);
+    }
+
+    .inspector h3 {
+      margin-bottom: 8px;
+      font-size: 18px;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+    }
+
+    .inspector-summary {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.7;
+    }
+
+    .detail-section {
+      margin-top: 17px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .detail-section h4 {
+      margin: 0 0 8px;
+      color: var(--faint);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .detail-section ul {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding-left: 17px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.55;
+    }
+
+    .detail-section li::marker {
+      color: var(--faint);
+    }
+
+    .key-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .key-chip {
+      padding: 5px 7px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: #bed0e7;
+      background: rgba(255, 255, 255, 0.025);
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+    }
+
+    .source-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .source-list code {
+      display: block;
+      padding: 6px 7px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.022);
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    .enter-button {
+      width: 100%;
+      margin-top: 18px;
+      border-color: rgba(120, 169, 255, 0.34);
+      color: #dce9ff;
+      background: var(--blue-soft);
+      font-weight: 700;
+    }
+
+    .footer-note {
+      margin: 13px 2px 0;
+      color: var(--faint);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1480px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      .inspector {
+        position: static;
+      }
+    }
+
+    @media (max-width: 1060px) {
+      .page {
+        padding: 10px;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      .baseline {
+        justify-self: start;
+        text-align: left;
+      }
+
+      .toolbar {
+        align-items: flex-start;
+      }
+
+      .diagram-note {
+        display: grid;
+      }
+
+      .status-legend {
+        justify-content: flex-start;
+      }
+
+      .diagram {
+        display: block;
+        min-height: 0 !important;
+      }
+
+      .edge-layer {
+        display: none;
+      }
+
+      .edge-control-layer {
+        display: none;
+      }
+
+      .node {
+        width: 100%;
+        min-height: 82px;
+        margin-bottom: 10px;
+      }
+
+      .node:last-child {
+        margin-bottom: 0;
+      }
+
+      .mobile-relations {
+        display: grid;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .mobile-relation {
+        width: 100%;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.025);
+        cursor: pointer;
+        font-size: 10px;
+        line-height: 1.45;
+        text-align: left;
+      }
+
+      .mobile-relation[aria-pressed="true"] {
+        border-color: rgba(120, 169, 255, 0.66);
+        color: var(--text);
+        background: var(--blue-soft);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .node {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <p class="eyebrow">Learning Companion · Top-down architecture</p>
+        <h1>先抓主线，再下钻实现</h1>
+        <p class="intro">
+          第一层只看 Electron 的信任边界；进入模块后才展示它自己的协作关系。
+          跨模块调用只连到当前视图边缘，避免把整棵依赖树一次铺开。
+        </p>
+      </div>
+      <div class="baseline">
+        源码核对：2026-08-09<br>
+        main 基线：ab3c630
+      </div>
+    </header>
+
+    <nav class="toolbar" aria-label="架构层级导航">
+      <div id="breadcrumbs" class="breadcrumbs"></div>
+      <div class="toolbar-actions">
+        <button id="backButton" class="toolbar-button" type="button">← 返回</button>
+        <button id="homeButton" class="toolbar-button" type="button">总览</button>
+      </div>
+    </nav>
+
+    <main class="content">
+      <section class="map-panel" aria-labelledby="mapTitle">
+        <header class="map-header">
+          <p id="mapKicker" class="map-kicker"></p>
+          <h2 id="mapTitle" class="map-title"></h2>
+          <p id="mapDescription" class="map-description"></p>
+        </header>
+        <div class="diagram-wrap">
+          <div class="diagram-note">
+            <span>单击节点或关系说明查看详情；双击节点，或使用右侧按钮进入下一层。</span>
+            <span class="status-legend" aria-label="实现状态">
+              <span><i></i>已实现</span>
+              <span><i class="partial"></i>接口已就绪</span>
+              <span><i class="planned"></i>规划中</span>
+            </span>
+          </div>
+          <div id="diagram" class="diagram">
+            <svg id="edgeLayer" class="edge-layer" aria-hidden="true">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5d73"></path>
+                </marker>
+                <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#4da782"></path>
+                </marker>
+                <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#8c77ca"></path>
+                </marker>
+              </defs>
+              <g id="edgePaths"></g>
+              <g id="edgePorts"></g>
+            </svg>
+            <div id="edgeControls" class="edge-control-layer"></div>
+            <div id="nodeLayer" style="display: contents"></div>
+          </div>
+          <div id="mobileRelations" class="mobile-relations" aria-label="当前视图关系"></div>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-live="polite">
+        <div id="inspectorContent" class="inspector-content"></div>
+      </aside>
+    </main>
+
+    <p class="footer-note">
+      图只描述当前主干代码和已经明确的扩展方向。状态为“规划中”的节点不是现有 API，
+      接入第二种同类能力前应先把该统一入口实现出来。
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var statusLabels = {
+        implemented: "已实现",
+        partial: "接口已就绪，后端未完整落地",
+        planned: "规划中"
+      };
+
+      function N(id, title, input) {
+        return Object.assign({
+          id: id,
+          title: title,
+          tag: "",
+          caption: "",
+          summary: "",
+          status: "implemented",
+          responsibilities: [],
+          boundaries: [],
+          keys: [],
+          files: [],
+          col: 1,
+          row: 1,
+          span: 3,
+          rowSpan: 1,
+          kind: "module"
+        }, input || {});
+      }
+
+      var views = {
+        overview: {
+          title: "Electron 顶层边界",
+          kicker: "LEVEL 1 · SYSTEM",
+          description: "四个节点就是第一眼需要记住的全部：React 负责界面，Preload 负责白名单桥接，Electron Main 负责可信行为，Shared 负责三端共同理解的数据契约。",
+          rows: 5,
+          nodes: [
+            N("react", "React Renderer", {
+              tag: "UI PROCESS",
+              caption: "页面、选择、临时状态、Workbench View",
+              summary: "不可信 UI 层。只通过 window.learningCompanion 请求 Main，不直接访问 Node、SQLite、凭证或子进程。",
+              responsibilities: ["组合 Home、ProjectPage、Settings 和 Generation UI。", "承载 Renderer Workbench Registry 与当前 Workbench View。"],
+              boundaries: ["业务写入和文件访问必须越过 Preload。"],
+              files: ["src/renderer/App.tsx", "src/renderer/project/ProjectPage.tsx"],
+              child: "renderer",
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("preload", "Preload / IPC Bridge", {
+              tag: "TRUST BRIDGE",
+              caption: "window.learningCompanion · invoke · events",
+              summary: "唯一的 Renderer → Main 调用面。它只暴露类型化白名单方法，并把 IPC 成功或错误转换成统一结果。",
+              responsibilities: ["封装 ipcRenderer.invoke。", "订阅 Asset、Generation、Provider、External Library 与 Workbench Facility 事件。"],
+              boundaries: ["不保存领域状态，不决定 Workbench，不实现业务规则。"],
+              files: ["src/preload/index.ts", "src/shared/ipc.ts"],
+              child: "preload",
+              col: 5,
+              row: 2,
+              span: 3
+            }),
+            N("main", "Electron Main", {
+              tag: "TRUSTED PROCESS",
+              caption: "ApplicationRuntime · Services · Database · Files",
+              summary: "可信应用层。组合并持有 Project、Asset、Workbench、Generation、Provider、外部组件和持久化能力。",
+              responsibilities: ["校验请求并执行领域行为。", "集中创建、注册和释放应用对象。"],
+              boundaries: ["Renderer 不应自行 new 这里的 Service。"],
+              files: ["src/main/bootstrap/create-application-runtime.ts", "src/main/bootstrap/application-runtime.ts"],
+              child: "main",
+              col: 9,
+              row: 2,
+              span: 3
+            }),
+            N("shared", "Shared Contracts", {
+              tag: "PURE DATA",
+              caption: "DTO · Manifest · Asset · Workbench · Generation",
+              summary: "三端共同使用的纯数据和运行时校验。它让 IPC 两侧、Main/Renderer Workbench 以及生成入口使用同一套稳定标识。",
+              responsibilities: ["定义可序列化数据。", "提供 is/clone/create 等边界校验。"],
+              boundaries: ["不包含 React、Electron、SQLite 或文件系统行为。"],
+              files: ["src/shared/", "src/shared/workbench/"],
+              child: "shared",
+              col: 4,
+              row: 4,
+              span: 6
+            })
+          ],
+          edges: [
+            { from: "react", to: "preload", label: "白名单调用", tone: "both" },
+            { from: "preload", to: "main", label: "IPC 请求 / 事件", tone: "both" },
+            { from: "shared", to: "react", label: "DTO / View types", tone: "contract" },
+            { from: "shared", to: "preload", label: "API contract", tone: "contract" },
+            { from: "shared", to: "main", label: "边界校验", tone: "contract" }
+          ]
+        },
+
+        renderer: {
+          parent: "overview",
+          title: "React Renderer 的五块界面职责",
+          kicker: "LEVEL 2 · RENDERER",
+          description: "Renderer 只组织界面和输入。需要可信能力的模块把请求送到右侧 Preload 边界；具体媒体逻辑留在平铺的 Workbench feature 中。",
+          rows: 6,
+          nodes: [
+            N("app", "App Shell", {
+              tag: "COMPOSITION",
+              caption: "页面切换 · 全局 Dialog · 通知",
+              summary: "React 根组件，只组合 Home、ProjectPage、Settings、首次引导、通知和外部组件状态控制器。",
+              responsibilities: ["决定显示 Home 还是 ProjectPage。", "挂载全局设置、Onboarding 与 NotificationHost。"],
+              boundaries: ["不包含 Project、Asset 或 Workbench 的领域实现。"],
+              files: ["src/renderer/App.tsx"],
+              col: 5,
+              row: 1,
+              span: 3
+            }),
+            N("project-ui", "Home / ProjectPage", {
+              tag: "PAGE COMPOSITION",
+              caption: "Project 列表 · 三栏 Project 工作区",
+              summary: "Home 负责 Project 入口；ProjectPage 组合 Asset 栏、Workbench 和 Generation Center。",
+              responsibilities: ["维护当前 Project 页面状态。", "把选中 Asset 传给 WorkbenchHost。"],
+              files: ["src/renderer/home/Home.tsx", "src/renderer/project/ProjectPage.tsx"],
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("asset-panel", "Asset Panel", {
+              tag: "PROJECT UI",
+              caption: "列表 · 筛选 · 多选 · 导入 · 删除",
+              summary: "展示当前 Project 的 AssetSnapshot，并负责选择、排序动画和批量操作的前端交互。",
+              responsibilities: ["订阅 Asset changed 事件。", "发起导入、重命名、Relink、刷新和删除。"],
+              boundaries: ["不直接修改 Asset 文件或数据库。"],
+              files: ["src/renderer/project/AssetPanel.tsx", "src/renderer/project/use-project-assets.ts"],
+              col: 1,
+              row: 5,
+              span: 3
+            }),
+            N("workbench-ui", "Workbench Host / Runtime", {
+              tag: "MEDIA UI",
+              caption: "Host · Renderer Registry · actions · facilities",
+              summary: "打开当前 Asset 的 Workbench Session，按 Main 返回的 workbenchId 懒加载对应 Renderer View，并统一右键、选区和动作入口。",
+              responsibilities: ["管理 View 生命周期。", "把 interaction 暴露给菜单和 Generation Surface。"],
+              files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx", "src/renderer/workbench/runtime/workbench-runtime.ts"],
+              child: "renderer-workbench",
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("generation-ui", "Generation Center", {
+              tag: "TASK UI",
+              caption: "任务入口 · 进度 · 重试 · 取消",
+              summary: "展示 Project 中的 GenerationTask，并把用户输入整理成 StartGenerationTaskRequest。当前全局工具仍只有 Mind Map 特化入口。",
+              responsibilities: ["展示多任务。", "订阅任务事件并调用 start/retry/cancel/discard。"],
+              boundaries: ["不保存系统提示词、Provider Session 或 Workspace 路径。"],
+              files: ["src/renderer/generation/GenerationCenter.tsx", "src/renderer/generation/use-generation-tasks.ts"],
+              child: "generation-entry",
+              col: 9,
+              row: 3,
+              span: 3
+            }),
+            N("settings-ui", "Settings / Onboarding", {
+              tag: "APPLICATION UI",
+              caption: "常规 · External Library · Agent Provider",
+              summary: "展示应用设置、外部组件安装状态和 Provider 登录/选择状态。首次引导复用同一套业务 API。",
+              files: ["src/renderer/settings/SettingsDialog.tsx", "src/renderer/onboarding/FirstRunOnboarding.tsx"],
+              col: 9,
+              row: 5,
+              span: 3
+            }),
+            N("preload-port", "→ Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "window.learningCompanion",
+              summary: "Renderer 中所有可信操作都在这里离开当前模块。",
+              files: ["src/preload/index.ts"],
+              kind: "boundary",
+              target: "preload",
+              col: 5,
+              row: 6,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "app", to: "project-ui", label: "显示" },
+            { from: "app", to: "settings-ui", label: "挂载" },
+            { from: "project-ui", to: "asset-panel", label: "当前 Project" },
+            { from: "project-ui", to: "workbench-ui", label: "selected asset" },
+            { from: "project-ui", to: "generation-ui", label: "selected sources" },
+            { from: "workbench-ui", to: "preload-port", label: "open / command / close" },
+            { from: "asset-panel", to: "preload-port", label: "Asset commands" },
+            { from: "generation-ui", to: "preload-port", label: "Task commands" },
+            { from: "settings-ui", to: "preload-port", label: "Settings commands" }
+          ]
+        },
+
+        preload: {
+          parent: "overview",
+          title: "Preload 是一座桥，不是第三个业务层",
+          kicker: "LEVEL 2 · PRELOAD",
+          description: "这里没有 Service 或注册表。它把共享契约实现成 window.learningCompanion，并将请求和事件安全地跨过 Electron 隔离边界。",
+          rows: 5,
+          nodes: [
+            N("renderer-port", "React Renderer", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "调用 window.learningCompanion",
+              summary: "调用方只能看到 LearningCompanionApi，不接触原始 ipcRenderer。",
+              kind: "boundary",
+              target: "renderer",
+              col: 1,
+              row: 2,
+              span: 2
+            }),
+            N("api", "LearningCompanionApi", {
+              tag: "EXPOSED API",
+              caption: "Project · Asset · Workbench · Generation · Settings",
+              summary: "contextBridge 暴露的完整白名单。每个方法返回结构化成功值或结构化错误。",
+              responsibilities: ["封装 invoke。", "暴露经过校验的事件订阅和 File path helper。"],
+              boundaries: ["不能把 ipcRenderer 或任意 channel 暴露给页面。"],
+              files: ["src/preload/index.ts", "src/shared/ipc.ts"],
+              col: 4,
+              row: 2,
+              span: 3
+            }),
+            N("transport", "Invoke + Event Adapters", {
+              tag: "TRANSPORT",
+              caption: "request/response · changed events · facility events",
+              summary: "请求使用 ipcRenderer.invoke；状态变化和 sandbox Workbench interaction 使用独立、可取消的事件订阅。",
+              files: ["src/preload/asset-events.ts", "src/preload/generation-task-events.ts", "src/preload/workbench-facility-events.ts"],
+              col: 8,
+              row: 2,
+              span: 3
+            }),
+            N("main-port", "Electron Main IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "registerApplicationIpc / handlers",
+              summary: "请求进入 Main 后先做 DTO 校验，再调用注入的 Service。",
+              kind: "boundary",
+              target: "main",
+              col: 11,
+              row: 2,
+              span: 2
+            }),
+            N("contracts", "Shared IPC Contracts", {
+              tag: "PURE DATA",
+              caption: "IPC_CHANNELS · DTO · WorkbenchBootstrap",
+              summary: "两侧共同依赖的通道名、请求结构、事件结构和运行时校验，防止桥两端各自猜测协议。",
+              files: ["src/shared/ipc.ts", "src/shared/workbench/protocol.ts"],
+              kind: "boundary",
+              target: "shared",
+              col: 4,
+              row: 4,
+              span: 7
+            })
+          ],
+          edges: [
+            { from: "renderer-port", to: "api", label: "typed call" },
+            { from: "api", to: "transport", label: "invoke / subscribe" },
+            { from: "transport", to: "main-port", label: "Electron IPC", tone: "both" },
+            { from: "contracts", to: "api", label: "API types", tone: "contract" },
+            { from: "contracts", to: "transport", label: "channel + validation", tone: "contract" }
+          ]
+        },
+
+        main: {
+          parent: "overview",
+          title: "Electron Main 的六个大模块",
+          kicker: "LEVEL 2 · MAIN",
+          description: "createApplicationRuntime 是唯一组合根。它注册 IPC、创建 Service/Registry/Database/File，并把各模块按应用与 Project 生命周期连起来。",
+          rows: 6,
+          nodes: [
+            N("runtime", "createApplicationRuntime", {
+              tag: "COMPOSITION ROOT",
+              caption: "创建对象图 · 注册扩展 · 集中释放",
+              summary: "所有跨领域依赖只在组合根显式装配。它不实现业务，而是决定哪个 Service 获得哪个端口。",
+              responsibilities: ["初始化 settings、SQLite、外部组件与 Codex runtime。", "注册 Workbench、Artifact Producer、Agent Tool 与 TaskDefinition。"],
+              boundaries: ["不要在业务 Service 内隐藏构造另一套全局 Runtime。"],
+              files: ["src/main/bootstrap/create-application-runtime.ts"],
+              col: 5,
+              row: 1,
+              span: 4
+            }),
+            N("ipc", "Application IPC Handlers", {
+              tag: "MAIN BOUNDARY",
+              caption: "校验 DTO · 调用注入 Service · 包装错误",
+              summary: "Main 的传输边界。handler 保持薄，只做请求校验、Service 调用和事件广播。",
+              files: ["src/main/bootstrap/register-application-ipc.ts", "src/main/ipc/"],
+              col: 1,
+              row: 1,
+              span: 3
+            }),
+            N("project-asset", "Project / Asset Domain", {
+              tag: "DOMAIN",
+              caption: "Project lifecycle · Asset runtime · associations",
+              summary: "ProjectService 负责编排打开/关闭；AssetService 维护当前 Project 的资料并统一导入、生成、刷新和删除。",
+              files: ["src/main/projects/project-service.ts", "src/main/assets/asset-service.ts"],
+              child: "project-asset",
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("workbench", "Workbench Domain", {
+              tag: "EXTENSION RUNTIME",
+              caption: "Session · Main Registry · facilities",
+              summary: "选择 MainWorkbenchProvider，解析 Asset 内容，返回 workbenchId 和 bootstrap，并管理当前 Session。",
+              files: ["src/main/workbench/", "src/workbenches/catalog/register-main-workbenches.ts"],
+              child: "workbench",
+              col: 4,
+              row: 3,
+              span: 3
+            }),
+            N("generation", "Generation / Agent", {
+              tag: "DURABLE TASKS",
+              caption: "TaskDefinition · Workspace · Provider · Session",
+              summary: "把 UI 发来的最小请求转成可恢复任务、Agent 工作区、Provider turn 和最终领域提交。",
+              files: ["src/main/generation/", "src/main/agents/"],
+              child: "generation",
+              col: 7,
+              row: 3,
+              span: 3
+            }),
+            N("external", "External Libraries / Artifacts", {
+              tag: "LOCAL CAPABILITIES",
+              caption: "install runtime · reusable derived files",
+              summary: "统一安装外部二进制，并缓存可重建的派生表示。Office → PDF 是当前完整样例。",
+              files: ["src/main/external-libraries/", "src/main/artifacts/"],
+              child: "external-libraries",
+              col: 10,
+              row: 3,
+              span: 3
+            }),
+            N("content", "Content Runtime", {
+              tag: "RESOURCE ACCESS",
+              caption: "ContentRef · Resolver · Handle · app-content URL",
+              summary: "把 Asset.contentRef 解析成受控 ContentHandle，并为 Renderer 注册临时可访问 URL。",
+              files: ["src/main/content/"],
+              child: "content",
+              col: 3,
+              row: 5,
+              span: 3
+            }),
+            N("persistence", "Settings / Persistence", {
+              tag: "DURABLE ADAPTERS",
+              caption: "SQLite · settings.json · Project metadata files",
+              summary: "集中展示各类持久化适配器及其命名边界；领域行为仍由 Service 负责。",
+              files: ["src/main/database/", "src/main/settings/", "src/main/agents/sessions/"],
+              child: "persistence",
+              col: 7,
+              row: 5,
+              span: 3
+            }),
+            N("preload-port", "← Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "Renderer 请求从这里进入",
+              summary: "registerApplicationIpc 把已构造的 Service 注入各组 handler。",
+              kind: "boundary",
+              target: "preload",
+              col: 1,
+              row: 6,
+              span: 2
+            })
+          ],
+          edges: [
+            { from: "runtime", to: "ipc", label: "注册并注入", tone: "contract" },
+            { from: "runtime", to: "project-asset", label: "组合", tone: "contract" },
+            { from: "runtime", to: "workbench", label: "组合", tone: "contract" },
+            { from: "runtime", to: "generation", label: "组合", tone: "contract" },
+            { from: "runtime", to: "external", label: "组合", tone: "contract" },
+            { from: "runtime", to: "content", label: "组合", tone: "contract" },
+            { from: "runtime", to: "persistence", label: "组合", tone: "contract" },
+            { from: "preload-port", to: "ipc", label: "validated request" }
+          ]
+        },
+
+        shared: {
+          parent: "overview",
+          title: "Shared 只放跨边界的纯契约",
+          kicker: "LEVEL 2 · SHARED",
+          description: "Shared 的价值不是复用任意代码，而是让 Renderer、Preload、Main 和 Workbench feature 对同一份可序列化数据达成一致。",
+          rows: 5,
+          nodes: [
+            N("ipc-contracts", "IPC Contracts", {
+              tag: "REQUEST / RESPONSE",
+              caption: "channels · DTO · API surface",
+              summary: "定义 LearningCompanionApi、IPC channel、请求和响应结构。",
+              files: ["src/shared/ipc.ts", "src/shared/ipc-error.ts"],
+              target: "preload",
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("domain-contracts", "Project / Asset Contracts", {
+              tag: "DOMAIN DATA",
+              caption: "ProjectSnapshot · Asset · ContentRef · associations",
+              summary: "定义 Project、Asset、AssetReference 和 AssetLink 的跨进程数据结构及校验。",
+              files: ["src/shared/projects.ts", "src/shared/assets.ts", "src/shared/asset-associations.ts"],
+              target: "asset-extensions",
+              col: 4,
+              row: 2,
+              span: 3
+            }),
+            N("workbench-contracts", "Workbench Contracts", {
+              tag: "EXTENSION CONTRACT",
+              caption: "Manifest · protocol · facilities · anchor",
+              summary: "Main Provider 与 Renderer Module 共用的 workbenchId、媒体能力、bootstrap、command、facility 和 anchor 结构。",
+              files: ["src/shared/workbench/"],
+              target: "workbench",
+              col: 7,
+              row: 2,
+              span: 3
+            }),
+            N("generation-contracts", "Generation Contracts", {
+              tag: "TASK DTO",
+              caption: "definitionId · instruction · asset references · task view",
+              summary: "Renderer 只发送最小 Generation request；Main 的 TaskDefinition 决定 Prompt、能力和工作区。",
+              files: ["src/shared/generation-tasks.ts", "src/shared/generation-definitions.ts"],
+              target: "generation",
+              col: 10,
+              row: 2,
+              span: 3
+            }),
+            N("pure-rule", "纯数据规则", {
+              tag: "BOUNDARY",
+              caption: "可序列化 · 可校验 · 无 IO",
+              summary: "Shared 可以包含 type、常量和纯函数，但不能依赖 React、Electron、SQLite、Node 文件系统或应用运行态。",
+              responsibilities: ["所有跨 IPC 数据都能在运行时验证。", "稳定 ID 在 Main 与 Renderer 两侧一致。"],
+              col: 4,
+              row: 4,
+              span: 6
+            })
+          ],
+          edges: [
+            { from: "pure-rule", to: "ipc-contracts", label: "约束", tone: "contract" },
+            { from: "pure-rule", to: "domain-contracts", label: "约束", tone: "contract" },
+            { from: "pure-rule", to: "workbench-contracts", label: "约束", tone: "contract" },
+            { from: "pure-rule", to: "generation-contracts", label: "约束", tone: "contract" }
+          ]
+        },
+
+        "project-asset": {
+          parent: "main",
+          title: "Project → Asset 的主干",
+          kicker: "LEVEL 3 · PROJECT / ASSET",
+          description: "ProjectService 管 Project 生命周期，AssetService 管当前 Project 的 Asset 行为。数据库只负责持久化；Asset 通过 projectId 归属 Project。",
+          rows: 6,
+          nodes: [
+            N("project-service", "ProjectService", {
+              tag: "LIFECYCLE SERVICE",
+              caption: "create · open · close · workspace · delete",
+              summary: "Project 级总编排器。打开时依次加载 Asset、Association、Agent Session 和未完成 GenerationTask；关闭时统一卸载。",
+              responsibilities: ["串行化 Project 生命周期操作。", "协调 Workbench 关闭与各 Project-scoped Service。"],
+              boundaries: ["ProjectDatabase 不替代这个业务编排。"],
+              files: ["src/main/projects/project-service.ts"],
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("project", "Project", {
+              tag: "ENTITY / SNAPSHOT",
+              caption: "id · name · workspacePath",
+              summary: "Project 是 Asset 和 Agent 工作区的生命周期边界；workspacePath 指向它的受管内容目录。",
+              keys: ["project.id", "workspacePath"],
+              files: ["src/shared/projects.ts", "src/main/projects/project.ts"],
+              col: 5,
+              row: 1,
+              span: 3
+            }),
+            N("project-db", "ProjectDatabase", {
+              tag: "SQLITE ADAPTER + MAP",
+              caption: "Project CRUD · 全量内存索引",
+              summary: "读写 projects 表，并维护当前应用的 Project Map。业务生命周期仍由 ProjectService 决定。",
+              files: ["src/main/projects/project-database.ts", "src/main/database/schema/projects.ts"],
+              col: 9,
+              row: 1,
+              span: 3
+            }),
+            N("asset-service", "AssetService", {
+              tag: "PROJECT-SCOPED SERVICE",
+              caption: "runtimeMap · import · resolve · generated file",
+              summary: "当前 Project 的 Asset 唯一行为入口。统一导入、生成、刷新、Relink、删除、内容解析和事件发布。",
+              responsibilities: ["按 Project 加载和卸载 runtimeMap。", "在写库前后协调 Workspace、Artifact cleanup 和 Association deletion observer。"],
+              files: ["src/main/assets/asset-service.ts"],
+              col: 1,
+              row: 4,
+              span: 3
+            }),
+            N("asset", "Asset", {
+              tag: "ENTITY / SNAPSHOT",
+              caption: "id · projectId · mediaType · contentRef",
+              summary: "正式可打开的资料实体。它只保存核心属性和 ContentRef；Reference、Link、Artifact、Attachment 不塞进 Asset 行本身。",
+              keys: ["asset.id", "projectId", "mediaType", "contentRef", "creationKind"],
+              files: ["src/shared/assets.ts", "src/main/assets/asset.ts"],
+              child: "asset-extensions",
+              col: 5,
+              row: 4,
+              span: 3
+            }),
+            N("asset-db", "AssetDatabase", {
+              tag: "SQLITE ADAPTER",
+              caption: "assets table · projectId scoped CRUD",
+              summary: "按 projectId 查询和写入 Asset 行。它不持有当前 Project 的 UI 运行态。",
+              keys: ["projectId", "assetId"],
+              files: ["src/main/assets/asset-database.ts", "src/main/database/schema/assets.ts"],
+              col: 9,
+              row: 4,
+              span: 3
+            }),
+            N("sqlite", "→ SQLite", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "learning-companion.db",
+              summary: "Project 与 Asset 的长期真相保存在 SQLite。",
+              kind: "boundary",
+              target: "persistence",
+              col: 10,
+              row: 6,
+              span: 2
+            })
+          ],
+          edges: [
+            { from: "project-service", to: "project", label: "行为入口" },
+            { from: "project-service", to: "project-db", label: "CRUD", tone: "persist" },
+            { from: "project-service", to: "asset-service", label: "load / unload" },
+            { from: "project", to: "asset", label: "projectId" },
+            { from: "asset-service", to: "asset", label: "runtimeMap" },
+            { from: "asset-service", to: "asset-db", label: "CRUD", tone: "persist" },
+            { from: "project-db", to: "sqlite", label: "projects", tone: "persist" },
+            { from: "asset-db", to: "sqlite", label: "assets", tone: "persist" }
+          ]
+        },
+
+        "asset-extensions": {
+          parent: "project-asset",
+          title: "Asset 周围的五种结构",
+          kicker: "LEVEL 4 · ASSET MODEL",
+          description: "这些结构不膨胀 Asset 行，而是用 projectId / assetId 指回正式 Asset。只有 ContentRef 是 Asset 自身字段；其余都有独立生命周期。",
+          rows: 6,
+          nodes: [
+            N("project", "Project", {
+              tag: "OWNER",
+              caption: "Asset.projectId → Project.id",
+              summary: "所有关联结构都被限制在同一 Project 中。",
+              keys: ["projectId"],
+              target: "project-asset",
+              col: 5,
+              row: 1,
+              span: 3
+            }),
+            N("asset", "Asset", {
+              tag: "CORE ENTITY",
+              caption: "正式资料 · assetId",
+              summary: "列表、Workbench 和生成结果最终都围绕正式 Asset 工作。",
+              keys: ["assetId", "projectId"],
+              files: ["src/shared/assets.ts"],
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("reference", "AssetReference", {
+              tag: "SOURCE RELATION",
+              caption: "assetId → sourceAssetId",
+              summary: "说明某个 Asset 总体参考了哪些 source Asset。生成 Mind Map 后，由 generated Asset 指向输入资料；它不是 GenerationTask 执行期的临时输入绑定。",
+              keys: ["id", "projectId", "assetId", "sourceAssetId"],
+              files: ["src/shared/asset-associations.ts", "src/main/asset-associations/asset-reference-database.ts"],
+              child: "asset-associations",
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("link", "AssetLink", {
+              tag: "TARGET RELATION",
+              caption: "assetId → targetAssetId",
+              summary: "说明某个 Asset 指向或派生出了另一个正式 Asset，例如 Mind Map 节点派生讲义。",
+              keys: ["id", "projectId", "assetId", "targetAssetId"],
+              files: ["src/shared/asset-associations.ts", "src/main/asset-associations/asset-link-database.ts"],
+              child: "asset-associations",
+              col: 9,
+              row: 2,
+              span: 3
+            }),
+            N("artifact", "AssetArtifact", {
+              tag: "REBUILDABLE DERIVATION",
+              caption: "assetId + producerId + artifactKey",
+              summary: "可重建、无需出现在 Asset 列表的派生文件，例如 Office 预览 PDF。元数据入库，文件放 Project Workspace。",
+              keys: ["assetId", "producerId", "artifactKey", "sourceRevision"],
+              files: ["src/main/artifacts/asset-artifact.ts"],
+              child: "artifact",
+              col: 1,
+              row: 5,
+              span: 3
+            }),
+            N("attachment", "AssetAttachment", {
+              tag: "LOCAL ANNOTATION",
+              caption: "assetId + AssetTarget / Anchor",
+              summary: "面向某个 Asset 或内容 Anchor 的笔记/附件契约已经定义，但 Main 目前仍使用 EmptyAttachmentService，没有持久化实现。",
+              status: "partial",
+              keys: ["id", "projectId", "assetId", "typeId", "target"],
+              files: ["src/shared/workbench/attachment.ts", "src/main/attachments/attachment-service.ts"],
+              child: "attachment",
+              col: 5,
+              row: 5,
+              span: 3
+            }),
+            N("content-ref", "Asset.contentRef", {
+              tag: "CONTENT POINTER",
+              caption: "project-workspace relative / absolute file",
+              summary: "Asset 自身保存的内容指针。Resolver 将它转换成带 capabilities 和 revision 的 ContentHandle。",
+              keys: ["kind", "base", "path"],
+              files: ["src/shared/assets.ts", "src/main/content/"],
+              child: "content",
+              col: 9,
+              row: 5,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "project", to: "asset", label: "projectId" },
+            { from: "reference", to: "asset", label: "owner assetId" },
+            { from: "link", to: "asset", label: "owner assetId" },
+            { from: "artifact", to: "asset", label: "assetId" },
+            { from: "attachment", to: "asset", label: "assetId" },
+            { from: "content-ref", to: "asset", label: "字段" }
+          ]
+        },
+
+        "asset-associations": {
+          parent: "asset-extensions",
+          title: "Reference 与 Link 共用一套 Association Service",
+          kicker: "LEVEL 5 · ASSOCIATIONS",
+          description: "通用关系保持简洁；节点、Frame、页区或时间段的局部语义保存在所属 Asset content 中，只保存 relation ID 与 Anchor。",
+          rows: 6,
+          nodes: [
+            N("asset-service-port", "← AssetService", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "删除 Asset 后通知关系运行态",
+              summary: "AssetService 删除成功后调用 onAssetDeleted，同步清理当前 Project 的关系索引。",
+              kind: "boundary",
+              target: "project-asset",
+              col: 1,
+              row: 1,
+              span: 2
+            }),
+            N("service", "AssetAssociationService", {
+              tag: "PROJECT-SCOPED SERVICE",
+              caption: "load · ensure · delete · indexed lookup",
+              summary: "Reference 和 Link 的统一行为入口。打开 Project 时加载两张表，并维护按 ID、owner、pair 的内存索引。",
+              responsibilities: ["保证关系两端 Asset 都存在且属于当前 Project。", "按 owner/related pair 幂等去重。"],
+              files: ["src/main/asset-associations/asset-association-service.ts"],
+              col: 5,
+              row: 2,
+              span: 4
+            }),
+            N("reference", "AssetReference", {
+              tag: "SOURCE EDGE",
+              caption: "owner assetId → sourceAssetId",
+              summary: "表达总体来源。Mind Map 生成完成后，每个来源 Asset 对应一条 Reference。",
+              keys: ["referenceId", "assetId", "sourceAssetId"],
+              files: ["src/main/asset-associations/asset-reference-database.ts"],
+              col: 1,
+              row: 4,
+              span: 3
+            }),
+            N("link", "AssetLink", {
+              tag: "TARGET EDGE",
+              caption: "owner assetId → targetAssetId",
+              summary: "表达总体目标或派生关系。未来从节点生成讲义时，Mind Map 是 owner，讲义是 target。",
+              keys: ["linkId", "assetId", "targetAssetId"],
+              files: ["src/main/asset-associations/asset-link-database.ts"],
+              col: 5,
+              row: 4,
+              span: 3
+            }),
+            N("feature-content", "Feature Content Mapping", {
+              tag: "LOCAL SEMANTICS",
+              caption: "referenceId / linkIds + AssetTarget",
+              summary: "哪个节点或 Frame 对应哪条通用关系，保存在 Mind Map document 的 associations.nodes / frames 中，而不是扩展通用表。",
+              keys: ["referenceId", "sourceTarget", "linkIds"],
+              files: ["src/workbenches/mindmap/document.ts", "src/workbenches/mindmap/association-mapper.ts"],
+              col: 9,
+              row: 4,
+              span: 3
+            }),
+            N("sqlite", "→ SQLite", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "asset_references + asset_links",
+              summary: "Reference 与 Link 使用两张结构明确的表，但通过同一个 Service 暴露领域行为。",
+              kind: "boundary",
+              target: "persistence",
+              col: 5,
+              row: 6,
+              span: 4
+            })
+          ],
+          edges: [
+            { from: "asset-service-port", to: "service", label: "deletion observer" },
+            { from: "service", to: "reference", label: "ensure / delete" },
+            { from: "service", to: "link", label: "ensure / delete" },
+            { from: "reference", to: "sqlite", label: "reference table", tone: "persist" },
+            { from: "link", to: "sqlite", label: "link table", tone: "persist" },
+            { from: "feature-content", to: "reference", label: "referenceId", tone: "contract" },
+            { from: "feature-content", to: "link", label: "linkIds", tone: "contract" }
+          ]
+        },
+
+        artifact: {
+          parent: "asset-extensions",
+          title: "Artifact 是可重建的中间产物",
+          kicker: "LEVEL 5 · ASSET ARTIFACT",
+          description: "Workbench 或 Generation prepare 请求模型友好表示；AssetArtifactService 负责缓存、去重、生成和清理，Producer 负责具体转换。",
+          rows: 7,
+          nodes: [
+            N("workbench-consumer", "← Workbench", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "materializeContent for preview",
+              summary: "Workbench 请求可复用预览表示，例如 Office Workbench 请求 PDF Artifact。",
+              files: ["src/workbenches/office/main.ts"],
+              kind: "boundary",
+              target: "workbench-extension",
+              preferredSide: "left",
+              col: 1,
+              row: 1,
+              span: 1
+            }),
+            N("generation-consumer", "← Generation Preparer", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "materializeContent for agent input",
+              summary: "Generation prepare 请求同一个模型友好副本，不另写一条 Office 转换路径。",
+              files: ["src/main/generation/preparation/generation-asset-reference-preparer.ts"],
+              kind: "boundary",
+              target: "generation",
+              preferredSide: "left",
+              col: 1,
+              row: 3,
+              span: 1
+            }),
+            N("service", "AssetArtifactService", {
+              tag: "APPLICATION SERVICE",
+              caption: "cache · deduplicate · generate · cleanup",
+              summary: "按 assetId + producerId + artifactKey 管理派生物；源 revision 或 Producer version 变化时自动重建。",
+              responsibilities: ["合并同一产物的并发生成。", "删除 Asset/Project 时清理元数据与文件。"],
+              files: ["src/main/artifacts/asset-artifact-service.ts"],
+              col: 5,
+              row: 2,
+              span: 4
+            }),
+            N("registry", "AssetArtifactRegistry", {
+              tag: "PRODUCER REGISTRY",
+              caption: "producerId → AssetArtifactProducer",
+              summary: "把具体转换算法注册为稳定 Producer。当前注册 LibreOfficePreviewProducer。",
+              files: ["src/main/artifacts/asset-artifact-registry.ts", "src/main/bootstrap/create-application-runtime.ts"],
+              col: 1,
+              row: 4,
+              span: 3
+            }),
+            N("producer", "Artifact Producer", {
+              tag: "FEATURE STRATEGY",
+              caption: "source + staging → produced file",
+              summary: "具体 feature 实现转换，例如调用 LibreOffice 把 DOC/PPT 转成 PDF，并在 staging 中返回受验证文件。",
+              files: ["src/workbenches/office/artifacts/libreoffice-preview-producer.ts"],
+              col: 1,
+              row: 6,
+              span: 3
+            }),
+            N("database", "AssetArtifactDatabase", {
+              tag: "SQLITE ADAPTER",
+              caption: "revision · relativePath · producerVersion",
+              summary: "保存 Artifact 元数据和缓存指纹，不保存文件字节。",
+              files: ["src/main/artifacts/asset-artifact-database.ts"],
+              col: 5,
+              row: 5,
+              span: 3
+            }),
+            N("file-manager", "AssetArtifactFileManager", {
+              tag: "SAFE FILE OPERATIONS",
+              caption: "staging · hash · commit · remove",
+              summary: "把 Producer 输出提交到 Project Workspace 的受管目录，并防止路径逃逸和符号链接绕过。",
+              files: ["src/main/artifacts/asset-artifact-file-manager.ts"],
+              col: 9,
+              row: 5,
+              span: 3
+            }),
+            N("sqlite", "→ SQLite", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "asset_artifacts",
+              summary: "只保存元数据。",
+              kind: "boundary",
+              target: "persistence",
+              col: 5,
+              row: 7,
+              span: 3
+            }),
+            N("workspace", "→ Project Workspace", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: ".learning-companion/artifacts/...",
+              summary: "保存实际派生文件，可丢弃并按源 revision 重建。",
+              kind: "boundary",
+              target: "persistence",
+              col: 9,
+              row: 7,
+              span: 3
+            }),
+            N("external", "→ External Library", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "例如 LibreOffice executable",
+              summary: "Producer 需要外部二进制时，通过 ExternalLibraryService 获取，不自行下载安装。",
+              kind: "boundary",
+              target: "external-libraries",
+              col: 1,
+              row: 7,
+              span: 3
+            })
+          ],
+          edges: [
+            { id: "artifact.workbench-consumer", from: "workbench-consumer", to: "service", label: "get or create", summary: "Workbench 通过 materializeContent 请求缓存或生成可重建 Artifact。" },
+            { id: "artifact.generation-consumer", from: "generation-consumer", to: "service", label: "prepare input", summary: "Generation prepare 与 Workbench 复用同一个 AssetArtifactService 和 Producer。" },
+            { from: "service", to: "registry", label: "require producer" },
+            { from: "registry", to: "producer", label: "produce" },
+            { from: "producer", to: "external", label: "requireExecutable" },
+            { from: "service", to: "database", label: "metadata", tone: "persist" },
+            { from: "service", to: "file-manager", label: "commit file" },
+            { from: "database", to: "sqlite", label: "row", tone: "persist" },
+            { from: "file-manager", to: "workspace", label: "artifact bytes", tone: "persist" }
+          ]
+        },
+
+        attachment: {
+          parent: "asset-extensions",
+          title: "Attachment 契约已存在，持久化尚未实现",
+          kicker: "LEVEL 5 · ATTACHMENT",
+          description: "这条链现在故意保持显式占位：共享数据和 Host 已经有了，但 Main 注入 EmptyAttachmentService，因此不要误以为附件已经可以长期保存。",
+          rows: 5,
+          nodes: [
+            N("contract", "AssetAttachment Contract", {
+              tag: "SHARED DATA",
+              caption: "assetId · typeId · AssetTarget · metadata · content?",
+              summary: "附件可以绑定整个 Asset 或某种媒体 Anchor，也可以携带 Project Workspace 中的附属文件。",
+              status: "partial",
+              keys: ["assetId", "typeId", "target", "metadata", "content.ref"],
+              files: ["src/shared/workbench/attachment.ts", "src/shared/workbench/anchor.ts"],
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("service-api", "AttachmentService API", {
+              tag: "MAIN PORT",
+              caption: "listByAsset · create · update · delete",
+              summary: "WorkbenchSessionService 只依赖该端口，因此未来可替换实现而无需改 Workbench 生命周期。",
+              status: "partial",
+              files: ["src/main/attachments/attachment-service.ts"],
+              col: 5,
+              row: 2,
+              span: 3
+            }),
+            N("empty", "EmptyAttachmentService", {
+              tag: "CURRENT IMPLEMENTATION",
+              caption: "list = [] · writes unsupported",
+              summary: "当前 Main 的真实注入。读取返回空列表，创建、更新和删除都明确报 FEATURE_NOT_SUPPORTED。",
+              status: "partial",
+              files: ["src/main/bootstrap/create-application-runtime.ts", "src/main/attachments/attachment-service.ts"],
+              col: 9,
+              row: 2,
+              span: 3
+            }),
+            N("host", "AttachmentHost", {
+              tag: "RENDERER PLACEHOLDER",
+              caption: "Workbench 下方的附件展示入口",
+              summary: "Renderer Host 已预留，但当前 AssetWorkbenchHost 传入空数组。",
+              status: "partial",
+              files: ["src/renderer/workbench/host/AttachmentHost.tsx", "src/renderer/workbench/host/AssetWorkbenchHost.tsx"],
+              col: 1,
+              row: 4,
+              span: 3
+            }),
+            N("future", "Attachment Persistence", {
+              tag: "NEXT IMPLEMENTATION",
+              caption: "Database + optional File + cleanup",
+              summary: "后续应实现独立 Database/File adapter，并由 Asset 删除与 Project 生命周期协调清理，而不是写进 Asset JSON。",
+              status: "planned",
+              responsibilities: ["新增 attachment table。", "可选内容文件落 Project Workspace。", "AssetService 删除后触发清理。"],
+              col: 7,
+              row: 4,
+              span: 4
+            })
+          ],
+          edges: [
+            { from: "contract", to: "service-api", label: "domain shape", tone: "contract" },
+            { from: "service-api", to: "empty", label: "当前注入" },
+            { from: "contract", to: "host", label: "render" },
+            { from: "service-api", to: "future", label: "替换端口", tone: "contract" }
+          ]
+        },
+
+        content: {
+          parent: "main",
+          title: "从 ContentRef 到受控 ContentHandle",
+          kicker: "LEVEL 3 · CONTENT",
+          description: "Asset 保存位置无关的 ContentRef；Resolver 在 Project 上下文中解析真实文件并返回 capabilities、revision、状态和必须关闭的 Handle。",
+          rows: 6,
+          nodes: [
+            N("asset-ref", "Asset.contentRef", {
+              tag: "DOMAIN POINTER",
+              caption: "local-file + project-workspace / absolute",
+              summary: "ContentRef 是可持久化指针，不等于已经打开的文件句柄。",
+              keys: ["kind", "base", "path"],
+              files: ["src/shared/assets.ts"],
+              kind: "boundary",
+              target: "asset-extensions",
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("registry", "ContentResolverRegistry", {
+              tag: "RESOLVER REGISTRY",
+              caption: "content kind → resolver",
+              summary: "根据 ContentRef.kind 选择解析器。当前注册 LocalFileContentResolver。",
+              files: ["src/main/content/content-resolver-registry.ts", "src/main/bootstrap/create-application-runtime.ts"],
+              col: 5,
+              row: 2,
+              span: 3
+            }),
+            N("resolver", "LocalFileContentResolver", {
+              tag: "IO ADAPTER",
+              caption: "resolve path · inspect · open handle",
+              summary: "安全解析 Project Workspace 相对路径或外部绝对路径，检查可用性并创建 LocalFileContentHandle。",
+              files: ["src/main/content/resolvers/local-file/local-file-content-resolver.ts"],
+              col: 9,
+              row: 2,
+              span: 3
+            }),
+            N("handle", "ContentHandle", {
+              tag: "ACQUIRED RESOURCE",
+              caption: "capabilities · read/write · revision · close",
+              summary: "Workbench 只使用已声明 capability。Handle 是有生命周期的资源，Session 关闭时必须释放。",
+              keys: ["read-stream", "read-bytes", "write-bytes"],
+              files: ["src/main/content/content-handle.ts", "src/main/content/tracked-content-handle.ts"],
+              col: 5,
+              row: 4,
+              span: 3
+            }),
+            N("workbench-port", "→ WorkbenchSessionService", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "select provider + open",
+              summary: "只有内容可用且 capability 匹配时，Main Registry 才选择对应 Workbench。",
+              kind: "boundary",
+              target: "workbench",
+              col: 1,
+              row: 6,
+              span: 3
+            }),
+            N("resource", "ContentResourceService", {
+              tag: "TEMP URL",
+              caption: "app-content://... → Renderer",
+              summary: "为 PDF、HTML、EPUB、Image、Audio、Video 等 Viewer 注册临时内容 URL，避免向 Renderer 暴露任意文件访问。",
+              files: ["src/main/content/content-resource-service.ts", "src/main/content/register-content-protocol.ts"],
+              col: 5,
+              row: 6,
+              span: 3
+            }),
+            N("filesystem", "→ Project / External File", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "真实文件系统",
+              summary: "Resolver 是内容路径进入文件系统的受控边界。",
+              kind: "boundary",
+              target: "persistence",
+              col: 9,
+              row: 6,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "asset-ref", to: "registry", label: "resolve" },
+            { from: "registry", to: "resolver", label: "kind match" },
+            { from: "resolver", to: "handle", label: "acquire" },
+            { from: "handle", to: "workbench-port", label: "capability selection" },
+            { from: "handle", to: "resource", label: "register safe URL" },
+            { from: "resolver", to: "filesystem", label: "inspect / open", tone: "persist" }
+          ]
+        },
+
+        "renderer-workbench": {
+          parent: "renderer",
+          title: "Renderer Workbench 只负责加载 View 与收集交互",
+          kicker: "LEVEL 3 · RENDERER WORKBENCH",
+          description: "当前视图只展示 Renderer 自己拥有的 Host、Registry、Runtime、Action 和媒体 View。可信生命周期通过边界关系进入 Preload，不再把 Main 节点画成 Renderer 内部节点。",
+          rows: 5,
+          nodes: [
+            N("preload-port", "← Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "open · command · close · events",
+              summary: "Renderer 只通过 window.learningCompanion 接收 bootstrap、执行命令和关闭 Session。",
+              kind: "boundary",
+              target: "preload",
+              preferredSide: "left",
+              col: 1,
+              row: 1,
+              span: 1
+            }),
+            N("host", "AssetWorkbenchHost", {
+              tag: "RENDERER HOST",
+              caption: "selected Asset · bootstrap · View lifecycle",
+              summary: "管理活动 Renderer View、命令队列和关闭顺序；拿到 bootstrap 后再加载对应模块。",
+              files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx"],
+              col: 3,
+              row: 1,
+              span: 3
+            }),
+            N("registry", "RendererWorkbenchRegistry", {
+              tag: "LAZY MODULE REGISTRY",
+              caption: "workbenchId → typed async Renderer module",
+              summary: "按 bootstrap.workbenchId 懒加载 Renderer Module，并核对 Workbench 版本、协议版本与完整 Manifest。未知 ID 直接报注册错误；只有 Main 明确选中 builtin.unsupported 时才显示 Unsupported。",
+              files: ["src/renderer/workbench/renderer-workbench-registry.ts"],
+              col: 8,
+              row: 1,
+              span: 3
+            }),
+            N("runtime", "Workbench Runtime", {
+              tag: "RENDERER SESSION STATE",
+              caption: "commands · focus · selection · contributions",
+              summary: "为当前 View 提供命令执行、interaction snapshot 和 Action Contribution 的共享运行态。",
+              files: ["src/renderer/workbench/runtime/WorkbenchRuntimeProvider.tsx", "src/renderer/workbench/runtime/workbench-runtime-store.ts"],
+              col: 3,
+              row: 3,
+              span: 3
+            }),
+            N("view", "Renderer Workbench View", {
+              tag: "FEATURE UI",
+              caption: "bootstrap · media UI · interaction",
+              summary: "媒体特有 React View。它消费安全 payload，通过 runtime 发命令，并上报 selection/focus。",
+              files: ["src/workbenches/mindmap/renderer.tsx", "src/workbenches/pdf/renderer.tsx"],
+              target: "workbench-catalog",
+              col: 8,
+              row: 3,
+              span: 3
+            }),
+            N("actions", "Workbench Actions / Facilities", {
+              tag: "RENDERER EXTENSION",
+              caption: "context menu · overflow · generation surface",
+              summary: "媒体 feature 通过统一 Contribution 接入菜单、选区和生成入口，不在 View 内重复造宿主交互。",
+              files: ["src/renderer/workbench/actions/", "src/shared/workbench/facilities/"],
+              col: 3,
+              row: 5,
+              span: 3
+            }),
+            N("catalog-port", "→ Typed Workbench Manifest Catalog", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "stable ID · typed Manifest · renderer loader",
+              summary: "Catalog 把字面量 ID 和 Manifest 与 Renderer lazy loader 编译期绑定，加载时再做完整契约校验。",
+              kind: "boundary",
+              target: "workbench-catalog",
+              preferredSide: "right",
+              col: 12,
+              row: 3,
+              span: 1
+            })
+          ],
+          edges: [
+            { id: "workbench.renderer-ipc", from: "preload-port", to: "host", label: "bootstrap / commands", tone: "both", summary: "Renderer Host 通过 Preload 白名单接收 WorkbenchBootstrap，并发送 command/close 请求。" },
+            { from: "host", to: "registry", label: "bootstrap.workbenchId" },
+            { from: "host", to: "runtime", label: "mount session" },
+            { from: "registry", to: "view", label: "lazy load" },
+            { from: "runtime", to: "view", label: "commands / interaction", tone: "both" },
+            { from: "actions", to: "runtime", label: "contributions", tone: "contract" },
+            { id: "workbench.renderer-catalog", from: "catalog-port", to: "registry", label: "register typed loaders", tone: "contract", summary: "Typed catalog 在 Renderer 侧完整覆盖每个 workbenchId，并把 Manifest 与异步模块 loader 绑定。" }
+          ]
+        },
+
+        workbench: {
+          parent: "main",
+          title: "Main Workbench 只拥有可信 Session 与 Provider 选择",
+          kicker: "LEVEL 3 · MAIN WORKBENCH",
+          description: "当前视图只展示 Main 中的 Workbench 生命周期。Renderer、Preload、Content Runtime 与 Catalog 都以边界关系接入；点击关系说明即可查看流向，再按需打开目标模块。",
+          rows: 5,
+          nodes: [
+            N("preload-port", "← Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "WorkbenchOpenRequest · command · close",
+              summary: "Main handler 校验请求后把可信生命周期操作交给 WorkbenchSessionService。",
+              kind: "boundary",
+              target: "preload",
+              preferredSide: "left",
+              col: 1,
+              row: 1,
+              span: 1
+            }),
+            N("content-port", "← Content Runtime", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "ContentHandle · capabilities · close",
+              summary: "Content Runtime 解析 Asset.contentRef；Workbench Session 只消费已声明 capability 的 Handle。",
+              kind: "boundary",
+              target: "content",
+              preferredSide: "right",
+              col: 12,
+              row: 1,
+              span: 1
+            }),
+            N("session", "WorkbenchSessionService", {
+              tag: "MAIN LIFECYCLE",
+              caption: "resolve content · select · open · close",
+              summary: "Main 中唯一活动 Workbench Session 的编排器。负责关闭旧 Handle、Provider 和 transport bindings。",
+              files: ["src/main/workbench/workbench-session-service.ts"],
+              col: 4,
+              row: 1,
+              span: 5
+            }),
+            N("main-registry", "Main Workbench Registries", {
+              tag: "PROVIDER + FACILITY REGISTRIES",
+              caption: "provider selection · workbench-scoped capture",
+              summary: "WorkbenchRegistry 依 Manifest 选择 Provider；MainFacilityAdapterRegistry 以 workbenchId + facility 选择该媒体自己的沙箱采集逻辑，Host 不理解 HTML DOM、EPUB CFI 或 PDF 坐标。",
+              files: ["src/main/workbench/workbench-registry.ts", "src/main/workbench/interaction/main-facility-adapter-registry.ts", "src/main/workbench/interaction/sandbox-frame-interaction-bridge.ts"],
+              col: 4,
+              row: 3,
+              span: 5
+            }),
+            N("catalog-port", "← Typed Workbench Manifest Catalog", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "Manifest · typed Main Provider factory",
+              summary: "Catalog 将字面量 ID 与 Manifest 绑定；Main Factory 完整覆盖所有 ID，并在注册时核对 Provider 的完整契约。",
+              kind: "boundary",
+              target: "workbench-catalog",
+              preferredSide: "right",
+              col: 12,
+              row: 3,
+              span: 1
+            }),
+            N("bootstrap", "WorkbenchBootstrap", {
+              tag: "MAIN OUTPUT DTO",
+              caption: "ID · workbenchVersion · protocolVersion · payload",
+              summary: "Main 选择结果的跨进程载体。Renderer 在挂载 View 前核对 ID、Workbench 版本和协议版本。",
+              keys: ["sessionId", "workbenchId", "workbenchVersion", "protocolVersion", "assetId", "mediaType", "payload"],
+              files: ["src/shared/workbench/protocol.ts"],
+              col: 4,
+              row: 5,
+              span: 5
+            }),
+            N("renderer-port", "→ Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "WorkbenchBootstrap response",
+              summary: "Main 把 WorkbenchBootstrap 返回 Preload；Renderer 使用其 ID 解析 lazy module，再执行版本和 Manifest 契约握手。",
+              kind: "boundary",
+              target: "preload",
+              preferredSide: "left",
+              col: 1,
+              row: 5,
+              span: 1
+            })
+          ],
+          edges: [
+            { id: "workbench.main-ipc", from: "preload-port", to: "session", label: "validated request", summary: "Preload/Main IPC handler 校验 Workbench 请求，并调用注入的 WorkbenchSessionService。" },
+            { id: "workbench.content-handle", from: "content-port", to: "session", label: "resolve handle", summary: "WorkbenchSessionService 从 Content Runtime 获取有生命周期的 ContentHandle，并在关闭 Session 时释放。" },
+            { from: "session", to: "main-registry", label: "select" },
+            { id: "workbench.main-catalog", from: "catalog-port", to: "main-registry", label: "providers + adapters", tone: "contract", summary: "Builtin catalog 在 Main 侧创建 Provider，并自动注册其声明的 Workbench-scoped Facility Adapters；Adapter 归属必须与 Manifest ID 一致。" },
+            { from: "main-registry", to: "bootstrap", label: "ID + versions" },
+            { id: "workbench.bootstrap-via-ipc", from: "bootstrap", to: "renderer-port", label: "contract handshake", tone: "both", summary: "WorkbenchBootstrap 经 Preload 返回后，Renderer 使用 ID 解析 lazy module，并核对 Workbench 版本、协议版本与 Manifest。" }
+          ]
+        },
+
+        "workbench-catalog": {
+          parent: "workbench",
+          title: "内置 Workbench 是平铺的同级 Feature",
+          kicker: "LEVEL 4 · WORKBENCH CATALOG",
+          description: "每个媒体 Workbench 都是 src/workbenches 下独立的 vertical feature；不存在继承层级。单击任意节点查看其特有 Main 依赖，进入后查看统一接入模板。",
+          rows: 6,
+          nodes: [
+            N("plain", "Plain Text", {
+              tag: "builtin.plain-text",
+              caption: "editable text · state data",
+              summary: "读写文本内容并持久化编辑器状态数据。",
+              files: ["src/workbenches/plain-text/"],
+              child: "workbench-extension",
+              col: 1,
+              row: 2,
+              span: 2
+            }),
+            N("markdown", "Markdown", {
+              tag: "builtin.markdown",
+              caption: "visual editor · tolerant parser",
+              summary: "可视化 Markdown 编辑器，使用 state 与 state-data，并贡献编辑动作。",
+              files: ["src/workbenches/markdown/"],
+              child: "workbench-extension",
+              col: 3,
+              row: 2,
+              span: 2
+            }),
+            N("mindmap", "Mind Map", {
+              tag: "builtin.mindmap",
+              caption: "tree view · associations · generation",
+              summary: "渲染 .mindmap 文档，读取 AssetAssociation，且拥有当前第一个完整 GenerationTaskDefinition。",
+              files: ["src/workbenches/mindmap/"],
+              child: "workbench-extension",
+              col: 5,
+              row: 2,
+              span: 2
+            }),
+            N("pdf", "PDF", {
+              tag: "builtin.pdf",
+              caption: "PDF.js · state · Agent function tool",
+              summary: "使用 ContentResource URL 渲染 PDF，保存视图状态，并向 Agent FunctionTool Registry 注册 PDF 工具。",
+              files: ["src/workbenches/pdf/"],
+              child: "workbench-extension",
+              col: 7,
+              row: 2,
+              span: 2
+            }),
+            N("office", "Office", {
+              tag: "builtin.office",
+              caption: "Artifact + LibreOffice → PDF",
+              summary: "依赖 ExternalLibraryService 与 AssetArtifactService，将 DOC/PPT 物化成 PDF 后复用 PDF 预览。",
+              files: ["src/workbenches/office/"],
+              child: "workbench-extension",
+              col: 9,
+              row: 2,
+              span: 2
+            }),
+            N("html", "HTML", {
+              tag: "builtin.html",
+              caption: "sandbox frame · DOM-owned Anchor",
+              summary: "通过隔离 Frame 展示原始 HTML；HTML 自己注册 Main Facility Adapters，在对应 Frame 中探测 DOM，并把 html.element / html.quote Anchor 经通用 Bridge 返回 Runtime。",
+              files: ["src/workbenches/html/main-facility-adapters.ts", "src/workbenches/html/facility-events.ts", "src/workbenches/html/shared.ts"],
+              child: "workbench-extension",
+              col: 11,
+              row: 2,
+              span: 2
+            }),
+            N("epub", "EPUB", {
+              tag: "builtin.epub",
+              caption: "reader · sandbox · state",
+              summary: "EPUB 阅读器，使用安全内容资源和 Workbench state。",
+              files: ["src/workbenches/epub/"],
+              child: "workbench-extension",
+              col: 1,
+              row: 4,
+              span: 2
+            }),
+            N("image", "Image", {
+              tag: "builtin.image",
+              caption: "viewer · pan/zoom · context actions",
+              summary: "图片查看器，使用 ContentResource URL 和通用 Workbench 菜单设施。",
+              files: ["src/workbenches/image/"],
+              child: "workbench-extension",
+              col: 3,
+              row: 4,
+              span: 2
+            }),
+            N("audio", "Audio", {
+              tag: "builtin.audio",
+              caption: "media viewer · state",
+              summary: "音频播放器，Main 负责安全 URL 和状态。",
+              files: ["src/workbenches/audio/"],
+              child: "workbench-extension",
+              col: 5,
+              row: 4,
+              span: 2
+            }),
+            N("video", "Video", {
+              tag: "builtin.video",
+              caption: "media viewer · metadata · state",
+              summary: "视频播放器，Main 负责内容 URL、元数据和视图状态。",
+              files: ["src/workbenches/video/"],
+              child: "workbench-extension",
+              col: 7,
+              row: 4,
+              span: 2
+            }),
+            N("unsupported", "Unsupported", {
+              tag: "EXPLICIT FALLBACK",
+              caption: "Main-selected unsupported media / capability",
+              summary: "Main 在媒体不支持或 capability 不足时明确选中 builtin.unsupported。Renderer 遇到未知 ID 会报错，不会静默回退。",
+              files: ["src/workbenches/unsupported/"],
+              child: "workbench-extension",
+              col: 9,
+              row: 4,
+              span: 2
+            }),
+            N("template", "统一接入模板", {
+              tag: "CONTRIBUTOR PATH",
+              caption: "shared + main + renderer + typed registrations",
+              summary: "所有 Workbench 都沿同一条注册和生命周期路径接入；类型检查、启动校验和版本握手共同防止两端漂移。",
+              child: "workbench-extension",
+              col: 4,
+              row: 6,
+              span: 6
+            })
+          ],
+          edges: []
+        },
+
+        "workbench-extension": {
+          parent: "workbench-catalog",
+          title: "新增 Workbench 的统一实现路径",
+          kicker: "LEVEL 5 · CONTRIBUTOR BLUEPRINT",
+          description: "先完成 shared/main/renderer 最小闭环，再按真实需求选择 Action、External Library、Artifact、Generated Asset 或 GenerationTask 分支；不要自建 IPC 和菜单容器。",
+          rows: 7,
+          nodes: [
+            N("folder", "src/workbenches/<feature>/", {
+              tag: "VERTICAL FEATURE",
+              caption: "媒体特有代码放在同一目录",
+              summary: "每个 Workbench feature 自包含 shared 契约、Main Provider、Renderer View 和可选能力。",
+              responsibilities: ["优先复制最相近媒体 Workbench 的结构。", "通用基础设施留在 main/shared/renderer/workbench。"],
+              files: ["src/workbenches/"],
+              col: 5,
+              row: 1,
+              span: 4
+            }),
+            N("shared-file", "shared.ts", {
+              tag: "REQUIRED",
+              caption: "Manifest · payload · commands · state",
+              summary: "定义稳定 workbenchId、Manifest 版本、选择优先级、Content capabilities、Facility 声明、媒体 Anchor 和跨 IPC JSON 数据。",
+              boundaries: ["必须是纯数据并带运行时校验；Lint 禁止依赖 Main、Renderer 或 Preload。"],
+              files: ["src/shared/workbench/manifest.ts", "src/workbenches/mindmap/shared.ts"],
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("main-file", "main.ts", {
+              tag: "REQUIRED",
+              caption: "MainWorkbenchProvider",
+              summary: "实现 open、command、close；需要模型友好副本时可实现 materializeContent。沙箱媒体可通过 facilityAdapters 一并注册自己的 Main 采集器。可信 Service 通过构造函数注入。",
+              boundaries: ["不要从 Renderer 直接访问文件或外部程序。"],
+              files: ["src/main/workbench/workbench-session.ts", "src/workbenches/office/main.ts", "src/workbenches/html/main-facility-adapters.ts"],
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("renderer-file", "renderer.tsx", {
+              tag: "REQUIRED",
+              caption: "RendererWorkbenchModule + View",
+              summary: "消费 bootstrap payload，渲染媒体 UI，通过 executeCommand 返回 Main，并上报 selection/focus。",
+              files: ["src/renderer/workbench/renderer-workbench-registry.ts", "src/workbenches/pdf/renderer.tsx"],
+              col: 9,
+              row: 3,
+              span: 3
+            }),
+            N("catalogs", "Typed Main + Renderer Registration", {
+              tag: "REQUIRED",
+              caption: "同一 Manifest 注册 Provider 与 lazy loader",
+              summary: "把 Manifest 加入 builtin catalog；Main Factory 与 Renderer Loader 的返回 ID 在编译期绑定，运行时核对完整 Manifest，并验证 Main Facility Adapter 的 Workbench 归属。",
+              files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
+              target: "workbench",
+              col: 5,
+              row: 5,
+              span: 4
+            }),
+            N("actions", "renderer-actions.ts", {
+              tag: "OPTIONAL UI",
+              caption: "context menu · overflow · generation surface",
+              summary: "通过 Workbench Action Contribution 接入统一菜单和生成入口，不要在 View 内另造一套右键菜单。",
+              files: ["src/renderer/workbench/actions/", "src/workbenches/mindmap/renderer-actions.ts"],
+              col: 1,
+              row: 5,
+              span: 3
+            }),
+            N("external-question", "需要外部程序或派生预览？", {
+              tag: "OPTIONAL BRANCH",
+              caption: "ExternalLibraryService + AssetArtifact",
+              summary: "外部二进制由 External Library 管；可重建中间文件由 Artifact 管；通过 materializeContent 让预览与 Agent prepare 复用。",
+              child: "external-libraries",
+              col: 1,
+              row: 7,
+              span: 3
+            }),
+            N("asset-question", "需要生成正式新资料？", {
+              tag: "OPTIONAL BRANCH",
+              caption: "AssetService + Reference / Link",
+              summary: "正式可打开结果用 stageGeneratedFile 创建 Asset，再通过 AssetAssociationService 建立来源或目标关系。",
+              child: "asset-associations",
+              col: 5,
+              row: 7,
+              span: 3
+            }),
+            N("generation-question", "需要 AI 处理？", {
+              tag: "OPTIONAL BRANCH",
+              caption: "Instruction → GenerationTask",
+              summary: "Renderer 只收集 asset/anchor/selection 并形成 instruction；TaskDefinition 决定 Prompt、能力、工作区和 process。",
+              child: "generation-entry",
+              col: 9,
+              row: 7,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "folder", to: "shared-file", label: "定义" },
+            { from: "folder", to: "main-file", label: "实现" },
+            { from: "folder", to: "renderer-file", label: "实现" },
+            { from: "shared-file", to: "catalogs", label: "typed manifest", tone: "contract" },
+            { from: "main-file", to: "catalogs", label: "provider" },
+            { from: "renderer-file", to: "catalogs", label: "loader" },
+            { from: "actions", to: "renderer-file", label: "contribution", tone: "contract" },
+            { from: "folder", to: "external-question", label: "按需", tone: "contract" },
+            { from: "folder", to: "asset-question", label: "按需", tone: "contract" },
+            { from: "folder", to: "generation-question", label: "按需", tone: "contract" }
+          ]
+        },
+
+        generation: {
+          parent: "main",
+          title: "GenerationTask 的完整主路",
+          kicker: "LEVEL 3 · GENERATION",
+          description: "所有入口最终只提交 definitionId/version、instruction 和 assetReferences。Main 负责持久化、prepare、process、Provider 选择、恢复和结果事件。",
+          rows: 7,
+          nodes: [
+            N("trigger", "Global / Workbench Trigger", {
+              tag: "RENDERER INPUT",
+              caption: "用户文字 · selected assets · anchor / selection",
+              summary: "全局入口与 Workbench 专属入口只在上下文收集方式上不同，二者必须进入同一种 GenerationTask。",
+              child: "generation-entry",
+              col: 1,
+              row: 1,
+              span: 3
+            }),
+            N("request", "StartGenerationTaskRequest", {
+              tag: "SHARED DTO",
+              caption: "definition + instruction + assetReferences",
+              summary: "Renderer 不发送 Prompt、Provider、Workspace 路径或 Session ID。",
+              keys: ["projectId", "definitionId", "definitionVersion", "instruction", "assetReferences"],
+              files: ["src/shared/generation-tasks.ts"],
+              col: 5,
+              row: 1,
+              span: 3
+            }),
+            N("preload-port", "→ Preload / IPC", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "generation-task:start / events",
+              summary: "任务命令和流式状态在这里跨进程。",
+              kind: "boundary",
+              target: "preload",
+              col: 9,
+              row: 1,
+              span: 3
+            }),
+            N("service", "GenerationTaskService", {
+              tag: "PROJECT-SCOPED SERVICE",
+              caption: "create · start · retry · cancel · recover",
+              summary: "维护当前 Project 的未完成任务，写 Database，调度后台执行并广播 task-changed / execution-event。",
+              responsibilities: ["Project 打开时只加载未完成任务。", "任务完成后保留数据库历史，但从活动内存移除。"],
+              files: ["src/main/generation/generation-task-service.ts"],
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("database", "GenerationTaskDatabase", {
+              tag: "SQLITE ADAPTER",
+              caption: "durable checkpoints + unfinished partial index",
+              summary: "保存 prepare、agent calls、provider、metrics、failure 和 completed checkpoint；通过 partial index 快速查询未完成任务。",
+              files: ["src/main/generation/generation-task-database.ts", "src/main/database/migrations/0013-index-unfinished-generation-tasks.ts"],
+              col: 1,
+              row: 5,
+              span: 3
+            }),
+            N("definitions", "TaskDefinition Registry", {
+              tag: "BUSINESS DEFINITIONS",
+              caption: "definitionId@version → TaskDefinition",
+              summary: "校验并保存具体生成任务的声明与 process。当前注册 mindmap.generate@1。",
+              files: ["src/main/generation/generation-task-definition-registry.ts", "src/workbenches/mindmap/generation/mindmap-generation-task-definition.ts"],
+              child: "task-definition",
+              col: 5,
+              row: 5,
+              span: 3
+            }),
+            N("execution", "GenerationTaskExecution", {
+              tag: "FRAMEWORK EXECUTION",
+              caption: "prepare checkpoint → process → completed/failure",
+              summary: "恢复外层单调生命周期，创建 TaskAgentSession 并转发事件；不预设候选文件名或最终 Asset 类型。",
+              files: ["src/main/generation/generation-task-execution.ts"],
+              child: "task-definition",
+              col: 9,
+              row: 5,
+              span: 3
+            }),
+            N("provider", "→ Selected Agent Provider", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "Provider Service · Session · Codex",
+              summary: "Task 第一次 Agent call 时固定 Provider；后续恢复和修复沿用同一 Provider Session。",
+              kind: "boundary",
+              target: "agent-runtime",
+              col: 9,
+              row: 7,
+              span: 3
+            }),
+            N("sqlite", "→ SQLite", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "generation_tasks",
+              summary: "任务状态和 checkpoint 的长期真相。",
+              kind: "boundary",
+              target: "persistence",
+              col: 1,
+              row: 7,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "trigger", to: "request", label: "build" },
+            { from: "request", to: "preload-port", label: "start task" },
+            { from: "preload-port", to: "service", label: "validated request" },
+            { from: "service", to: "database", label: "checkpoint", tone: "persist" },
+            { from: "service", to: "definitions", label: "require definition" },
+            { from: "service", to: "execution", label: "run / recover" },
+            { from: "execution", to: "provider", label: "agent calls" },
+            { from: "database", to: "sqlite", label: "task row", tone: "persist" }
+          ]
+        },
+
+        "generation-entry": {
+          parent: "generation",
+          title: "全局工具与 Workbench 工具在 Request 处汇合",
+          kicker: "LEVEL 4 · GENERATION ENTRY",
+          description: "当前 Mind Map 全局入口已经可用，但仍是硬编码特化。新增第二种全局工具前，应先落地统一 Global Tool Registry 与 Launcher；Workbench Action 也复用同一个 Launcher。",
+          rows: 6,
+          nodes: [
+            N("current-global", "当前：Mind Map Global Entry", {
+              tag: "IMPLEMENTED · SPECIALIZED",
+              caption: "GenerationCenter + MindMap dialog + hook",
+              summary: "从 Project 的 selected sources 构造 mindmap.generate@1 请求。它能工作，但不应继续复制成第二套、第三套硬编码工具。",
+              files: ["src/renderer/generation/GenerationCenter.tsx", "src/renderer/generation/MindMapGenerationDialog.tsx", "src/renderer/generation/use-generation-tasks.ts"],
+              col: 1,
+              row: 1,
+              span: 3
+            }),
+            N("global-registry", "GlobalGenerationToolRegistry", {
+              tag: "PLANNED",
+              caption: "presentation + input loader + request builder",
+              summary: "未来每个全局工具注册展示信息、输入 UI loader 和 request builder；GenerationCenter 不再硬编码工具类型。",
+              status: "planned",
+              responsibilities: ["第二种全局工具接入前先实现。", "只管理 Renderer 入口，不包含 Prompt 或 Main 业务。"],
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("workbench-action", "Workbench generation-tool Action", {
+              tag: "IMPLEMENTED SURFACE",
+              caption: "asset + focus anchor + selection inputs",
+              summary: "通用 Action surface 和 invocation context 已存在；具体 feature 决定如何把当前媒体上下文写进 instruction。",
+              status: "partial",
+              files: ["src/renderer/workbench/actions/workbench-contribution.ts", "src/renderer/workbench/runtime/workbench-invocation.ts", "src/workbenches/mindmap/renderer-actions.ts"],
+              col: 1,
+              row: 5,
+              span: 3
+            }),
+            N("launcher", "GenerationTaskLauncher", {
+              tag: "PLANNED SHARED CLIENT",
+              caption: "validate request · call Preload · optimistic state",
+              summary: "Global Registry 与 Workbench Action 共用的薄客户端。它只发起任务，不保存 TaskDefinition 配置。",
+              status: "planned",
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("instruction", "Feature Instruction", {
+              tag: "COMPOSABLE USER INPUT",
+              caption: "text + asset/anchor/selection semantics",
+              summary: "每个 TaskDefinition 自定义 parse 和 toUserMessage。Anchor 不需要另开框架接口，可以作为 instruction 数据进入 prepare/process。",
+              files: ["src/main/generation/contracts/generation-instruction.ts", "src/workbenches/mindmap/generation/mindmap-generation-instruction.ts"],
+              col: 5,
+              row: 5,
+              span: 3
+            }),
+            N("request", "StartGenerationTaskRequest", {
+              tag: "ONE MERGE POINT",
+              caption: "definitionId/version + instruction + assetReferences",
+              summary: "无论从哪里触发，最终都进入同一个最小 DTO 和 Main GenerationTaskService。",
+              keys: ["definitionId", "definitionVersion", "instruction", "assetReferences"],
+              target: "generation",
+              col: 9,
+              row: 3,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "current-global", to: "request", label: "当前直接构造" },
+            { from: "global-registry", to: "launcher", label: "target path", tone: "contract" },
+            { from: "workbench-action", to: "launcher", label: "target path", tone: "contract" },
+            { from: "launcher", to: "request", label: "start", tone: "contract" },
+            { from: "workbench-action", to: "instruction", label: "媒体上下文" },
+            { from: "instruction", to: "request", label: "instruction JSON" }
+          ]
+        },
+
+        "task-definition": {
+          parent: "generation",
+          title: "TaskDefinition 声明能力，process 控制业务循环",
+          kicker: "LEVEL 4 · TASK DEFINITION",
+          description: "框架提供默认 prepare、可恢复 TaskAgentSession 和持久化 checkpoint；具体 Definition 决定 instruction、Prompt、能力、Workspace、候选发现、校验/修复与最终领域提交。",
+          rows: 7,
+          nodes: [
+            N("definition", "TaskDefinition", {
+              tag: "DECLARATIVE + PROCESS",
+              caption: "id/version · configs · process(context)",
+              summary: "一种生成任务的唯一业务定义。静态声明与 process 组合在一个可版本化 Definition 中。",
+              responsibilities: ["声明系统提示词、能力、Workspace 和 Asset slot。", "提供 instruction factory 与 process。"],
+              files: ["src/main/generation/contracts/task-definition.ts"],
+              col: 5,
+              row: 1,
+              span: 4
+            }),
+            N("instruction", "Instruction Factory", {
+              tag: "USER MESSAGE INPUT",
+              caption: "parse(JsonValue) · toUserMessage(context)",
+              summary: "把 UI 提交的可组合数据校验为 feature instruction，并转换成一条 Agent user message。",
+              files: ["src/main/generation/contracts/generation-instruction.ts"],
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("capabilities", "Agent Capability Requirements", {
+              tag: "STATIC DECLARATION",
+              caption: "systemInstruction · tools · skills · mcp",
+              summary: "Task 只声明所需能力 ID 和 required/optional；Provider adapter 负责解析成自己的执行配置。",
+              keys: ["toolRequirements", "skills", "mcpServers"],
+              files: ["src/main/generation/contracts/task-definition.ts", "src/main/agents/function-tools/"],
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("workspace-config", "Workspace + AssetReference Schema", {
+              tag: "STATIC DECLARATION",
+              caption: "primary/secondary · shared/task · source slots",
+              summary: "声明主副工作区读写权限和来源 Asset slot。默认 prepare 会创建目录并把来源复制/物化到主工作区。",
+              keys: ["primaryWorkspaceConfig", "secondaryWorkspaceConfigs", "assetReferenceSchema"],
+              files: ["src/main/generation/contracts/generation-workspace.ts", "src/main/generation/contracts/generation-asset-reference.ts"],
+              col: 9,
+              row: 3,
+              span: 3
+            }),
+            N("preparer", "GenerationTaskPreparer", {
+              tag: "FRAMEWORK DEFAULT",
+              caption: "workspace · materialize · copy · manifest · message",
+              summary: "所有任务共用：创建 Workspace，验证/物化 AssetReference，写 prepared manifest，并把 alias/path 追加到 user message。",
+              files: ["src/main/generation/preparation/generation-task-preparer.ts", "src/main/generation/preparation/generation-asset-reference-preparer.ts"],
+              col: 1,
+              row: 5,
+              span: 3
+            }),
+            N("process", "Feature process(context)", {
+              tag: "BUSINESS CONTROL LOOP",
+              caption: "call → inspect → validate → repair → commit",
+              summary: "具体产物由 process 自己发现。它可以在同一 Session 顺序 call Agent，读取候选，校验，发修复 turn，并调用领域 Service 提交。",
+              files: ["src/workbenches/mindmap/generation/mindmap-generation-processor.ts"],
+              col: 5,
+              row: 5,
+              span: 3
+            }),
+            N("agent-session", "TaskAgentSession", {
+              tag: "RECOVERABLE CALL API",
+              caption: "stable callKey · completedCalls · same session",
+              summary: "每次成功 call 都立刻持久化 checkpoint。恢复时相同 callKey 直接复用，后续 repair 沿用同一 Provider Session。",
+              files: ["src/main/generation/generation-task-agent-session.ts"],
+              kind: "boundary",
+              target: "agent-runtime",
+              col: 9,
+              row: 5,
+              span: 3
+            }),
+            N("domain-port", "→ Domain Services", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "AssetService · AssetAssociationService · future services",
+              summary: "最终提交是具体 Processor 的职责，例如 Mind Map Processor 创建 generated Asset 并确保 AssetReference。",
+              kind: "boundary",
+              target: "asset-associations",
+              col: 5,
+              row: 7,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "definition", to: "instruction", label: "defines" },
+            { from: "definition", to: "capabilities", label: "declares" },
+            { from: "definition", to: "workspace-config", label: "declares" },
+            { from: "instruction", to: "preparer", label: "toUserMessage" },
+            { from: "workspace-config", to: "preparer", label: "prepare inputs" },
+            { from: "preparer", to: "process", label: "Prepared context" },
+            { from: "process", to: "agent-session", label: "call(key)" },
+            { from: "process", to: "domain-port", label: "commit result" }
+          ]
+        },
+
+        "agent-runtime": {
+          parent: "generation",
+          title: "从选中 Provider 到 Codex Thread",
+          kicker: "LEVEL 4 · AGENT RUNTIME",
+          description: "Generation 只依赖通用 Runner。AgentProviderService 根据用户设置选择已认证 Provider；Codex adapter 再解析工具、Skills、MCP、权限和 Session locator。",
+          rows: 7,
+          nodes: [
+            N("execution-port", "← Generation Execution", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "resolveRunner(providerId?)",
+              summary: "任务首次调用时使用当前选中 Provider；一旦分配，恢复时必须得到同一 Provider。",
+              kind: "boundary",
+              target: "generation",
+              col: 1,
+              row: 1,
+              span: 3
+            }),
+            N("provider-service", "AgentProviderService", {
+              tag: "SELECTION + AUTH STATE",
+              caption: "settings selection · credentials · runner resolver",
+              summary: "维护 Provider 登录/刷新/选择状态，并只返回已认证的活动 Runner。",
+              files: ["src/main/agents/agent-provider-service.ts"],
+              col: 5,
+              row: 1,
+              span: 3
+            }),
+            N("registry", "AgentProviderRegistry", {
+              tag: "PROVIDER REGISTRY",
+              caption: "providerId → AgentProvider",
+              summary: "注册通用 AgentProvider。当前只注册 Codex，但上层 Generation 数据不依赖 Codex 类型。",
+              files: ["src/main/agents/agent-provider-registry.ts", "src/main/bootstrap/create-agent-provider-service.ts"],
+              col: 9,
+              row: 1,
+              span: 3
+            }),
+            N("codex", "CodexAgentProvider", {
+              tag: "PROVIDER ADAPTER",
+              caption: "request translation · stream · tool calls · metrics",
+              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用，合并 Provider 默认工具与 TaskDefinition 额外能力。",
+              files: ["src/main/agents/providers/codex-agent-provider.ts"],
+              col: 5,
+              row: 3,
+              span: 3
+            }),
+            N("capabilities", "Tool / Skill / MCP Registries", {
+              tag: "CAPABILITY LOOKUP",
+              caption: "stable capability IDs",
+              summary: "Function tools 在内存 Registry 中注册；Skills 与 MCP 从 Learning Companion 的固定能力目录读取。",
+              files: ["src/main/agents/function-tools/", "src/main/agents/skills/", "src/main/agents/mcp/"],
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("codex-runtime", "CodexRuntimeService", {
+              tag: "APP-SERVER CLIENT",
+              caption: "process · JSON-RPC · login · thread · turn",
+              summary: "管理内置 Codex app-server 进程和 JSON-RPC 连接，不向上层暴露 Codex 私有协议。",
+              files: ["src/main/agents/codex/codex-runtime-service.ts", "src/main/agents/codex/codex-app-server-process.ts"],
+              col: 9,
+              row: 3,
+              span: 3
+            }),
+            N("session", "AgentSessionService / File", {
+              tag: "SESSION MAPPING",
+              caption: "workspace locator → providerId → sessionId",
+              summary: "用 projectId + workspaceKey + instanceKey 定位 session.json；同一 locator 可为多个 Provider 保存独立 binding。",
+              keys: ["projectId", "workspaceKey", "instanceKey", "providerBindings"],
+              files: ["src/main/agents/sessions/agent-session-service.ts", "src/main/agents/sessions/agent-session-file.ts"],
+              col: 3,
+              row: 5,
+              span: 4
+            }),
+            N("codex-external", "→ Codex app-server / .codex", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "account · thread history · model runtime",
+              summary: "Codex 自己管理账户和 Thread 内容；Learning Companion 只维护 workspace locator 到 sessionId 的映射。",
+              kind: "boundary",
+              col: 9,
+              row: 5,
+              span: 3
+            }),
+            N("project-workspace", "→ Project Workspace metadata", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: ".learning-companion/agent-sessions/<key>/<instance>/session.json",
+              summary: "Session 映射属于 Project 元数据，不放 Agent 工作区产物里。",
+              kind: "boundary",
+              target: "persistence",
+              col: 3,
+              row: 7,
+              span: 4
+            })
+          ],
+          edges: [
+            { from: "execution-port", to: "provider-service", label: "resolve runner" },
+            { from: "provider-service", to: "registry", label: "selected provider" },
+            { from: "registry", to: "codex", label: "Codex runner" },
+            { from: "capabilities", to: "codex", label: "resolve IDs" },
+            { from: "codex", to: "codex-runtime", label: "start / resume turn" },
+            { from: "codex-runtime", to: "codex-external", label: "JSON-RPC" },
+            { from: "codex", to: "session", label: "resolve thread binding" },
+            { from: "session", to: "project-workspace", label: "session.json", tone: "persist" }
+          ]
+        },
+
+        "external-libraries": {
+          parent: "main",
+          title: "Workbench 需要外部程序时，只走 ExternalLibraryService",
+          kicker: "LEVEL 3 · EXTERNAL LIBRARIES",
+          description: "Definition 声明跨平台包和校验；Registry 选择当前平台包；Service 管状态、安装、取消、迁移和 executable。Workbench 只调用 requireExecutable。",
+          rows: 7,
+          nodes: [
+            N("settings-port", "← Settings UI / Preload", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "list · install · cancel · migrate · events",
+              summary: "安装体验由统一设置页承载，不在每个 Workbench 内重复实现。",
+              kind: "boundary",
+              target: "renderer",
+              col: 1,
+              row: 1,
+              span: 3
+            }),
+            N("consumer", "Workbench / Producer", {
+              tag: "CAPABILITY CONSUMER",
+              caption: "requireExecutable(libraryId)",
+              summary: "业务模块只请求已验证 executable。当前 Office Artifact Producer 使用 LibreOffice。",
+              files: ["src/workbenches/office/main.ts", "src/workbenches/office/artifacts/libreoffice-preview-producer.ts"],
+              kind: "boundary",
+              target: "workbench-extension",
+              col: 1,
+              row: 3,
+              span: 3
+            }),
+            N("service", "ExternalLibraryService", {
+              tag: "APPLICATION SERVICE",
+              caption: "snapshot · install · cancel · remove · migrate",
+              summary: "外部组件运行态唯一所有者。并发安装、取消、迁移和状态事件都在这里协调。",
+              files: ["src/main/external-libraries/external-library-service.ts"],
+              col: 5,
+              row: 2,
+              span: 4
+            }),
+            N("definition", "Definition + Registry", {
+              tag: "DECLARATION",
+              caption: "libraryId · version · package · SHA-256 · executable",
+              summary: "新组件先增加 Definition，再在 createExternalLibraryRuntime 注册；按 platform + architecture 选择包。",
+              files: ["src/main/external-libraries/external-library-definition.ts", "src/main/external-libraries/external-library-registry.ts", "src/main/bootstrap/create-external-library-runtime.ts"],
+              col: 9,
+              row: 1,
+              span: 3
+            }),
+            N("workflow", "Installation / Migration Workflow", {
+              tag: "MULTI-STEP OPERATION",
+              caption: "download → verify → install → commit / rollback",
+              summary: "Service 调用的有界多步骤流程，负责 staging、取消、校验、提交和失败清理。",
+              files: ["src/main/external-libraries/external-library-installation-workflow.ts", "src/main/external-libraries/external-library-migration-workflow.ts"],
+              col: 5,
+              row: 4,
+              span: 4
+            }),
+            N("downloader", "Downloader", {
+              tag: "IO ADAPTER",
+              caption: "official URL + progress + SHA-256",
+              summary: "下载官方包并进行固定散列校验。",
+              files: ["src/main/external-libraries/external-library-downloader.ts"],
+              col: 1,
+              row: 6,
+              span: 3
+            }),
+            N("installer", "Installer Registry", {
+              tag: "PLATFORM STRATEGY",
+              caption: "MSI / DMG",
+              summary: "按 packageType 选择 Windows MSI 或 macOS DMG 安装器。",
+              files: ["src/main/external-libraries/external-library-installer.ts", "src/main/external-libraries/installers/"],
+              col: 5,
+              row: 6,
+              span: 3
+            }),
+            N("path-manager", "ExternalLibraryPathManager", {
+              tag: "SAFE FILE OPERATIONS",
+              caption: "staging · paths · commit · cleanup",
+              summary: "只负责安全路径和文件操作，不拥有安装状态。",
+              files: ["src/main/external-libraries/external-library-path-manager.ts"],
+              col: 9,
+              row: 6,
+              span: 3
+            }),
+            N("external", "→ Vendor Package / Installed Runtime", {
+              tag: "OUTSIDE THIS VIEW",
+              caption: "LibreOffice now · FFmpeg or others later",
+              summary: "外界二进制与下载源都在当前视图边缘结束。",
+              kind: "boundary",
+              col: 9,
+              row: 7,
+              span: 3
+            })
+          ],
+          edges: [
+            { from: "settings-port", to: "service", label: "commands / events", tone: "both" },
+            { from: "consumer", to: "service", label: "requireExecutable" },
+            { from: "service", to: "definition", label: "select package" },
+            { from: "service", to: "workflow", label: "run" },
+            { from: "workflow", to: "downloader", label: "download + verify" },
+            { from: "workflow", to: "installer", label: "install" },
+            { from: "workflow", to: "path-manager", label: "stage + commit" },
+            { from: "path-manager", to: "external", label: "installed files", tone: "persist" }
+          ]
+        },
+
+        persistence: {
+          parent: "main",
+          title: "持久化适配器按介质和职责命名",
+          kicker: "LEVEL 3 · PERSISTENCE",
+          description: "Database 专指 SQLite 映射；File 专指一种稳定结构化文件；Manager 做安全路径/文件操作；Renderer Store 是可订阅内存状态；Cache 是可丢弃短期记忆。",
+          rows: 6,
+          nodes: [
+            N("databases", "Domain *Database", {
+              tag: "SQLITE ADAPTERS",
+              caption: "Project · Asset · Association · Artifact · Task · State",
+              summary: "每个 Database 映射自己的表和查询，不决定 UI 或 Project 生命周期。",
+              responsibilities: ["ProjectDatabase 特别维护全量 Project Map。", "GenerationTaskDatabase 提供未完成任务查询。"],
+              files: ["src/main/database/", "src/main/projects/project-database.ts", "src/main/assets/asset-database.ts"],
+              col: 1,
+              row: 2,
+              span: 3
+            }),
+            N("database-context", "DatabaseContext / Drizzle", {
+              tag: "SQLITE ROOT",
+              caption: "connection · schema · migrations",
+              summary: "所有领域 Database 共用的 SQLite 连接和 migration 入口。",
+              files: ["src/main/database/database-context.ts", "src/main/database/initialize-database.ts"],
+              col: 5,
+              row: 2,
+              span: 3
+            }),
+            N("sqlite", "SQLite file", {
+              tag: "DURABLE FILE",
+              caption: "app userData / learning-companion.db",
+              summary: "Project、Asset、关系、Artifact、Workbench State 和 GenerationTask 的长期数据。",
+              keys: ["projects", "assets", "asset_references", "asset_links", "asset_artifacts", "generation_tasks"],
+              col: 9,
+              row: 2,
+              span: 3
+            }),
+            N("settings", "JsonSettingsRepository", {
+              tag: "STRUCTURED FILE",
+              caption: "settings.json · atomic update",
+              summary: "保存应用级偏好、默认路径、首次引导版本和当前 Provider 选择；登录 Token 仍由 Provider 自己管理。",
+              files: ["src/main/settings/json-settings-repository.ts", "src/main/settings/settings-repository.ts"],
+              col: 1,
+              row: 4,
+              span: 3
+            }),
+            N("settings-file", "settings.json", {
+              tag: "DURABLE FILE",
+              caption: "app userData / settings.json",
+              summary: "JsonSettingsRepository 独立管理的应用级 JSON 文件，不经过 SQLite。",
+              col: 1,
+              row: 6,
+              span: 3
+            }),
+            N("session-file", "AgentSessionFile", {
+              tag: "PROJECT METADATA FILE",
+              caption: "locator → provider session bindings",
+              summary: "在 Project Workspace 的 .learning-companion/agent-sessions 下保存 session.json。",
+              files: ["src/main/agents/sessions/agent-session-file.ts"],
+              col: 5,
+              row: 4,
+              span: 3
+            }),
+            N("managed-files", "Workspace File Managers", {
+              tag: "SAFE OPERATIONS",
+              caption: "Project assets · artifacts · agent workspaces",
+              summary: "Manager 负责安全解析、创建、提交和删除受管文件，不拥有领域实体集合。",
+              files: ["src/main/projects/project-workspace-manager.ts", "src/main/artifacts/asset-artifact-file-manager.ts", "src/main/agents/workspaces/agent-workspace-manager.ts"],
+              col: 9,
+              row: 4,
+              span: 3
+            }),
+            N("renderer-memory", "Renderer Store / Main Cache", {
+              tag: "EPHEMERAL MEMORY",
+              caption: "Zustand Store · last directory Cache",
+              summary: "Store 是 Renderer 可订阅内存状态；Cache 可丢弃并重建。两者都不是领域长期真相。",
+              files: ["src/renderer/workbench/runtime/workbench-runtime-store.ts", "src/renderer/agents/agent-provider-store.ts", "src/main/filesystem/file-dialog-last-directory-cache.ts"],
+              col: 5,
+              row: 6,
+              span: 7
+            })
+          ],
+          edges: [
+            { from: "databases", to: "database-context", label: "queries" },
+            { from: "database-context", to: "sqlite", label: "read / write / migrate", tone: "persist" },
+            { from: "settings", to: "settings-file", label: "atomic read / write", tone: "persist" },
+            { from: "session-file", to: "managed-files", label: "Project metadata path" }
+          ]
+        }
+      };
+
+      var state = {
+        viewId: views[location.hash.slice(1)] ? location.hash.slice(1) : "overview",
+        selection: null,
+        activeRelation: null
+      };
+
+      var diagram = document.getElementById("diagram");
+      var nodeLayer = document.getElementById("nodeLayer");
+      var edgeLayer = document.getElementById("edgeLayer");
+      var edgePaths = document.getElementById("edgePaths");
+      var edgePorts = document.getElementById("edgePorts");
+      var edgeControls = document.getElementById("edgeControls");
+      var mobileRelations = document.getElementById("mobileRelations");
+      var inspectorContent = document.getElementById("inspectorContent");
+      var breadcrumbs = document.getElementById("breadcrumbs");
+      var backButton = document.getElementById("backButton");
+      var homeButton = document.getElementById("homeButton");
+      var mapTitle = document.getElementById("mapTitle");
+      var mapKicker = document.getElementById("mapKicker");
+      var mapDescription = document.getElementById("mapDescription");
+      var edgeFrame = 0;
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function canonicalTrail(viewId) {
+        var trail = [];
+        var current = viewId;
+        var guard = new Set();
+
+        while (views[current] && !guard.has(current)) {
+          guard.add(current);
+          trail.unshift(current);
+          current = views[current].parent;
+        }
+
+        if (trail[0] !== "overview") {
+          trail.unshift("overview");
+        }
+        return trail;
+      }
+
+      function isDescendantView(viewId, ancestorViewId) {
+        var current = viewId;
+        var guard = new Set();
+
+        while (views[current] && !guard.has(current)) {
+          if (current === ancestorViewId) {
+            return true;
+          }
+          guard.add(current);
+          current = views[current].parent;
+        }
+        return false;
+      }
+
+      function shouldPreserveActiveRelation(viewId) {
+        return Boolean(
+          state.activeRelation &&
+          isDescendantView(state.activeRelation.originViewId, viewId)
+        );
+      }
+
+      function navigate(viewId, options) {
+        if (!views[viewId]) {
+          return;
+        }
+        var preserveRelation = Boolean(
+          options && options.preserveRelation && state.activeRelation
+        );
+        state.viewId = viewId;
+        state.selection = preserveRelation
+          ? { kind: "relation", id: state.activeRelation.id }
+          : null;
+        if (!preserveRelation) {
+          state.activeRelation = null;
+        }
+        history.replaceState(null, "", "#" + viewId);
+        render();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+
+      function renderBreadcrumbs() {
+        var trail = canonicalTrail(state.viewId);
+        breadcrumbs.innerHTML = "";
+
+        trail.forEach(function (viewId, index) {
+          if (index > 0) {
+            var separator = document.createElement("span");
+            separator.className = "crumb-separator";
+            separator.textContent = "›";
+            breadcrumbs.appendChild(separator);
+          }
+
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "crumb";
+          button.textContent = views[viewId].title;
+          if (viewId === state.viewId) {
+            button.setAttribute("aria-current", "page");
+          } else {
+            button.addEventListener("click", function () {
+              navigate(viewId, {
+                preserveRelation: shouldPreserveActiveRelation(viewId)
+              });
+            });
+          }
+          breadcrumbs.appendChild(button);
+        });
+
+        backButton.disabled = state.viewId === "overview";
+      }
+
+      function visibleNodes(view) {
+        return view.nodes.filter(function (node) {
+          return node.kind !== "boundary";
+        });
+      }
+
+      function findNode(view, nodeId) {
+        return view.nodes.find(function (node) {
+          return node.id === nodeId;
+        });
+      }
+
+      function relationId(viewId, edge, index) {
+        return edge.id || [viewId, edge.from, edge.to, edge.label || index].join("::");
+      }
+
+      function baseRelations(viewId) {
+        var view = views[viewId];
+        return view.edges.map(function (edge, index) {
+          return {
+            id: relationId(viewId, edge, index),
+            viewId: viewId,
+            edge: edge,
+            from: findNode(view, edge.from),
+            to: findNode(view, edge.to),
+            projected: false,
+            active: null
+          };
+        }).filter(function (relation) {
+          return Boolean(relation.from && relation.to);
+        });
+      }
+
+      function boundarySideFromLayout(node, view) {
+        if (node.preferredSide) {
+          return node.preferredSide;
+        }
+        var x = (node.col - 1 + node.span / 2) / 12;
+        var y = (node.row - 1 + node.rowSpan / 2) / Math.max(view.rows, 1);
+        var candidates = [
+          { side: "left", distance: x },
+          { side: "right", distance: 1 - x },
+          { side: "top", distance: y },
+          { side: "bottom", distance: 1 - y }
+        ];
+        candidates.sort(function (left, right) {
+          return left.distance - right.distance;
+        });
+        return candidates[0].side;
+      }
+
+      function endpointDescriptor(viewId, node) {
+        var view = views[viewId];
+        if (node.kind === "boundary") {
+          return {
+            kind: node.target ? "view" : "external",
+            viewId: node.target || null,
+            nodeId: null,
+            ownerViewId: null,
+            title: node.title,
+            summary: node.summary,
+            files: node.files.slice(),
+            hint: {
+              col: node.col,
+              row: node.row,
+              span: node.span,
+              rowSpan: node.rowSpan,
+              preferredSide: boundarySideFromLayout(node, view)
+            }
+          };
+        }
+        return {
+          kind: "node",
+          viewId: null,
+          nodeId: node.id,
+          ownerViewId: viewId,
+          title: node.title,
+          summary: node.summary,
+          files: node.files.slice(),
+          hint: null
+        };
+      }
+
+      function relationIsCrossModule(relation) {
+        return relation.projected ||
+          relation.from.kind === "boundary" ||
+          relation.to.kind === "boundary";
+      }
+
+      function captureActiveRelation(relation) {
+        return {
+          id: relation.id,
+          originViewId: relation.viewId,
+          edge: Object.assign({}, relation.edge),
+          from: endpointDescriptor(relation.viewId, relation.from),
+          to: endpointDescriptor(relation.viewId, relation.to)
+        };
+      }
+
+      function directChildView(ancestorViewId, descendantViewId) {
+        var current = descendantViewId;
+        var guard = new Set();
+
+        while (views[current] && !guard.has(current)) {
+          guard.add(current);
+          if (views[current].parent === ancestorViewId) {
+            return current;
+          }
+          current = views[current].parent;
+        }
+        return null;
+      }
+
+      function moduleNodeForView(activeViewId, descendantViewId) {
+        var childViewId = directChildView(activeViewId, descendantViewId);
+        if (!childViewId) {
+          return null;
+        }
+        return views[activeViewId].nodes.find(function (node) {
+          return node.kind !== "boundary" && node.child === childViewId;
+        }) || null;
+      }
+
+      function projectedBoundary(descriptor, role, view) {
+        var hint = descriptor.hint || {};
+        var preferredSide = hint.preferredSide || (role === "from" ? "left" : "right");
+        return N("__boundary-" + role + "-" + (descriptor.viewId || descriptor.title), descriptor.title, {
+          tag: "CONTINUES OUTSIDE THIS VIEW",
+          caption: descriptor.summary,
+          summary: descriptor.summary,
+          files: descriptor.files,
+          kind: "boundary",
+          target: descriptor.viewId,
+          preferredSide: preferredSide,
+          col: hint.col || (preferredSide === "left" ? 1 : 12),
+          row: hint.row || Math.ceil(view.rows / 2),
+          span: hint.span || 1,
+          rowSpan: hint.rowSpan || 1
+        });
+      }
+
+      function projectEndpoint(descriptor, activeViewId, role) {
+        var view = views[activeViewId];
+        var descendantViewId = descriptor.kind === "node"
+          ? descriptor.ownerViewId
+          : descriptor.viewId;
+
+        if (descriptor.kind === "node" && descriptor.ownerViewId === activeViewId) {
+          return findNode(view, descriptor.nodeId);
+        }
+        if (
+          descendantViewId &&
+          descendantViewId !== activeViewId &&
+          isDescendantView(descendantViewId, activeViewId)
+        ) {
+          var moduleNode = moduleNodeForView(activeViewId, descendantViewId);
+          if (moduleNode) {
+            return moduleNode;
+          }
+        }
+        return projectedBoundary(descriptor, role, view);
+      }
+
+      function endpointKey(node) {
+        if (node.kind === "boundary") {
+          return "boundary:" + (node.target || node.title);
+        }
+        return "node:" + node.id;
+      }
+
+      function projectActiveRelation(viewId) {
+        var active = state.activeRelation;
+        if (!active || active.originViewId === viewId || !isDescendantView(active.originViewId, viewId)) {
+          return null;
+        }
+        var from = projectEndpoint(active.from, viewId, "from");
+        var to = projectEndpoint(active.to, viewId, "to");
+        if (!from || !to) {
+          return null;
+        }
+        if (from.kind === "boundary" && to.kind === "boundary") {
+          return null;
+        }
+        if (from.kind !== "boundary" && to.kind !== "boundary" && from.id === to.id) {
+          return null;
+        }
+        return {
+          id: active.id,
+          viewId: viewId,
+          edge: Object.assign({}, active.edge),
+          from: from,
+          to: to,
+          projected: true,
+          active: active
+        };
+      }
+
+      function relationsForView(viewId) {
+        var relations = baseRelations(viewId);
+        var projected = projectActiveRelation(viewId);
+        if (!projected) {
+          return relations;
+        }
+        var fromKey = endpointKey(projected.from);
+        var toKey = endpointKey(projected.to);
+        var matchIndex = relations.findIndex(function (relation) {
+          var exact = endpointKey(relation.from) === fromKey && endpointKey(relation.to) === toKey;
+          var reversible = projected.edge.tone === "both" || relation.edge.tone === "both";
+          var reversed = endpointKey(relation.from) === toKey && endpointKey(relation.to) === fromKey;
+          return exact || (reversible && reversed);
+        });
+        if (matchIndex >= 0) {
+          relations[matchIndex] = Object.assign({}, relations[matchIndex], {
+            id: projected.id,
+            projected: true,
+            active: projected.active
+          });
+        } else {
+          relations.push(projected);
+        }
+        return relations;
+      }
+
+      function ensureSelection(view, relations) {
+        var nodes = visibleNodes(view);
+        var selectionExists = state.selection && (
+          state.selection.kind === "node"
+            ? nodes.some(function (node) { return node.id === state.selection.id; })
+            : relations.some(function (relation) { return relation.id === state.selection.id; })
+        );
+        if (!selectionExists) {
+          state.selection = nodes[0]
+            ? { kind: "node", id: nodes[0].id }
+            : (relations[0] ? { kind: "relation", id: relations[0].id } : null);
+        }
+      }
+
+      function renderNodes(view, relations) {
+        nodeLayer.innerHTML = "";
+        ensureSelection(view, relations);
+
+        visibleNodes(view).forEach(function (node) {
+          var button = document.createElement("button");
+          button.type = "button";
+          button.id = "node-" + node.id;
+          button.className = "node " + node.status;
+          button.style.gridColumn = node.col + " / span " + node.span;
+          button.style.gridRow = node.row + " / span " + node.rowSpan;
+          button.setAttribute(
+            "aria-pressed",
+            state.selection && state.selection.kind === "node" && node.id === state.selection.id
+              ? "true"
+              : "false"
+          );
+          button.innerHTML =
+            '<span class="node-topline">' +
+              '<span class="node-tag">' + escapeHtml(node.tag) + '</span>' +
+              '<span class="node-status" aria-hidden="true"></span>' +
+            '</span>' +
+            '<span class="node-title">' + escapeHtml(node.title) + '</span>' +
+            '<span class="node-caption">' + escapeHtml(node.caption) + '</span>' +
+            (node.child || node.target ? '<span class="node-enter" aria-hidden="true">↘</span>' : "");
+
+          button.addEventListener("click", function () {
+            state.selection = { kind: "node", id: node.id };
+            state.activeRelation = null;
+            render();
+          });
+          button.addEventListener("dblclick", function () {
+            if (node.child || node.target) {
+              navigate(node.child || node.target);
+            }
+          });
+          nodeLayer.appendChild(button);
+        });
+      }
+
+      function nodeDetailSections(node) {
+        var sections = "";
+
+        if (node.responsibilities.length) {
+          sections +=
+            '<section class="detail-section"><h4>负责什么</h4><ul>' +
+            node.responsibilities.map(function (item) {
+              return "<li>" + escapeHtml(item) + "</li>";
+            }).join("") +
+            "</ul></section>";
+        }
+
+        if (node.boundaries.length) {
+          sections +=
+            '<section class="detail-section"><h4>不要放进这里</h4><ul>' +
+            node.boundaries.map(function (item) {
+              return "<li>" + escapeHtml(item) + "</li>";
+            }).join("") +
+            "</ul></section>";
+        }
+
+        if (node.keys.length) {
+          sections +=
+            '<section class="detail-section"><h4>关键键 / 契约</h4><div class="key-list">' +
+            node.keys.map(function (item) {
+              return '<span class="key-chip">' + escapeHtml(item) + "</span>";
+            }).join("") +
+            "</div></section>";
+        }
+
+        if (node.files.length) {
+          sections +=
+            '<section class="detail-section"><h4>源码入口</h4><div class="source-list">' +
+            node.files.map(function (item) {
+              return "<code>" + escapeHtml(item) + "</code>";
+            }).join("") +
+            "</div></section>";
+        }
+
+        return sections;
+      }
+
+      function renderNodeSelection(view, node) {
+        var sections = nodeDetailSections(node);
+
+        var destination = node.child || node.target;
+        var buttonLabel = node.child ? "进入该模块 →" : "打开相关模块 →";
+        inspectorContent.innerHTML =
+          '<div class="inspector-status ' + node.status + '"><i></i>' +
+            escapeHtml(statusLabels[node.status]) +
+          "</div>" +
+          "<h3>" + escapeHtml(node.title) + "</h3>" +
+          '<p class="inspector-summary">' + escapeHtml(node.summary || node.caption) + "</p>" +
+          sections +
+          (destination
+            ? '<button id="enterButton" class="enter-button" type="button">' + buttonLabel + "</button>"
+            : "");
+
+        if (destination) {
+          document.getElementById("enterButton").addEventListener("click", function () {
+            navigate(destination);
+          });
+        }
+      }
+
+      function cleanEndpointTitle(title) {
+        return String(title).replace(/^[←→]\s*/, "");
+      }
+
+      function relationSourceFiles(relation) {
+        var files = [];
+        var endpoints = relation.active
+          ? [relation.active.from, relation.active.to]
+          : [endpointDescriptor(relation.viewId, relation.from), endpointDescriptor(relation.viewId, relation.to)];
+        endpoints.forEach(function (endpoint) {
+          endpoint.files.forEach(function (file) {
+            if (files.indexOf(file) < 0) {
+              files.push(file);
+            }
+          });
+        });
+        return files;
+      }
+
+      function relationOriginalEndpoints(relation) {
+        if (relation.active) {
+          return { from: relation.active.from, to: relation.active.to };
+        }
+        return {
+          from: endpointDescriptor(relation.viewId, relation.from),
+          to: endpointDescriptor(relation.viewId, relation.to)
+        };
+      }
+
+      function relationDestination(relation) {
+        var endpoints = relationOriginalEndpoints(relation);
+        if (endpoints.to.kind !== "node" && endpoints.to.viewId) {
+          return endpoints.to.viewId;
+        }
+        if (endpoints.from.kind !== "node" && endpoints.from.viewId) {
+          return endpoints.from.viewId;
+        }
+        return null;
+      }
+
+      function relationSummary(relation) {
+        var endpoints = relationOriginalEndpoints(relation);
+        var boundaryEndpoint = relation.from.kind === "boundary" ? relation.from :
+          (relation.to.kind === "boundary" ? relation.to : null);
+        return (relation.active && relation.active.edge.summary) ||
+          relation.edge.summary ||
+          (boundaryEndpoint && boundaryEndpoint.summary) ||
+          cleanEndpointTitle(endpoints.from.title) + " 通过“" +
+            (relation.edge.label || "连接") + "”连接到 " +
+            cleanEndpointTitle(endpoints.to.title) + "。";
+      }
+
+      function renderRelationSelection(relation) {
+        var endpoints = relationOriginalEndpoints(relation);
+        var sourceTitle = cleanEndpointTitle(endpoints.from.title);
+        var targetTitle = cleanEndpointTitle(endpoints.to.title);
+        var crossModule = relationIsCrossModule(relation);
+        var files = relationSourceFiles(relation);
+        var currentProjection = cleanEndpointTitle(relation.from.title) + " → " +
+          cleanEndpointTitle(relation.to.title);
+        var sections =
+          '<section class="detail-section"><h4>连接到哪里</h4><ul>' +
+            "<li>" + escapeHtml(sourceTitle) + " → " + escapeHtml(targetTitle) + "</li>" +
+            (relation.projected
+              ? "<li>当前层投影：" + escapeHtml(currentProjection) + "</li>"
+              : "") +
+            "<li>关系 ID：<code>" + escapeHtml(relation.id) + "</code></li>" +
+          "</ul></section>";
+
+        if (files.length) {
+          sections +=
+            '<section class="detail-section"><h4>源码依据</h4><div class="source-list">' +
+            files.map(function (file) {
+              return "<code>" + escapeHtml(file) + "</code>";
+            }).join("") +
+            "</div></section>";
+        }
+
+        var destination = relationDestination(relation);
+        inspectorContent.innerHTML =
+          '<div class="inspector-status relation"><i></i>' +
+            (crossModule ? "跨模块关系" : "模块内关系") +
+          "</div>" +
+          "<h3>" + escapeHtml(relation.edge.label || (sourceTitle + " → " + targetTitle)) + "</h3>" +
+          '<p class="inspector-summary">' + escapeHtml(relationSummary(relation)) + "</p>" +
+          sections +
+          (destination
+            ? '<button id="enterButton" class="enter-button" type="button">打开目标模块 →</button>'
+            : "");
+
+        if (destination) {
+          document.getElementById("enterButton").addEventListener("click", function () {
+            navigate(destination);
+          });
+        }
+      }
+
+      function renderSelection(view, relations) {
+        Array.prototype.forEach.call(nodeLayer.querySelectorAll(".node"), function (button) {
+          var selected = state.selection && state.selection.kind === "node" &&
+            button.id === "node-" + state.selection.id;
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+        });
+
+        if (state.selection && state.selection.kind === "relation") {
+          var relation = relations.find(function (candidate) {
+            return candidate.id === state.selection.id;
+          });
+          if (relation) {
+            renderRelationSelection(relation);
+            return;
+          }
+        }
+
+        var node = visibleNodes(view).find(function (candidate) {
+          return state.selection && candidate.id === state.selection.id;
+        }) || visibleNodes(view)[0];
+        if (node) {
+          renderNodeSelection(view, node);
+        } else {
+          inspectorContent.innerHTML = '<p class="inspector-summary">当前视图没有可检查的节点。</p>';
+        }
+      }
+
+      function anchorFor(element, other, bounds) {
+        var box = element.getBoundingClientRect();
+        var otherBox = other.getBoundingClientRect();
+        var centerX = box.left - bounds.left + box.width / 2;
+        var centerY = box.top - bounds.top + box.height / 2;
+        var otherX = otherBox.left - bounds.left + otherBox.width / 2;
+        var otherY = otherBox.top - bounds.top + otherBox.height / 2;
+        var dx = otherX - centerX;
+        var dy = otherY - centerY;
+
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          return {
+            x: dx >= 0 ? box.right - bounds.left : box.left - bounds.left,
+            y: centerY,
+            side: "horizontal",
+            edge: dx >= 0 ? "right" : "left"
+          };
+        }
+
+        return {
+          x: centerX,
+          y: dy >= 0 ? box.bottom - bounds.top : box.top - bounds.top,
+          side: "vertical",
+          edge: dy >= 0 ? "bottom" : "top"
+        };
+      }
+
+      function anchorForPoint(element, point, bounds) {
+        var box = element.getBoundingClientRect();
+        var centerX = box.left - bounds.left + box.width / 2;
+        var centerY = box.top - bounds.top + box.height / 2;
+        var dx = point.x - centerX;
+        var dy = point.y - centerY;
+
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          return {
+            x: dx >= 0 ? box.right - bounds.left : box.left - bounds.left,
+            y: centerY,
+            side: "horizontal",
+            edge: dx >= 0 ? "right" : "left"
+          };
+        }
+        return {
+          x: centerX,
+          y: dy >= 0 ? box.bottom - bounds.top : box.top - bounds.top,
+          side: "vertical",
+          edge: dy >= 0 ? "bottom" : "top"
+        };
+      }
+
+      function clamp(value, minimum, maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
+      }
+
+      function boundaryPointFor(node, view, bounds) {
+        var side = boundarySideFromLayout(node, view);
+        var normalizedX = (node.col - 1 + node.span / 2) / 12;
+        var normalizedY = (node.row - 1 + node.rowSpan / 2) / Math.max(view.rows, 1);
+        var x = clamp(normalizedX * bounds.width, 18, bounds.width - 18);
+        var y = clamp(normalizedY * bounds.height, 18, bounds.height - 18);
+        var inset = 2;
+
+        if (side === "left") {
+          return { x: inset, y: y, side: "horizontal", edge: "right" };
+        }
+        if (side === "right") {
+          return { x: bounds.width - inset, y: y, side: "horizontal", edge: "left" };
+        }
+        if (side === "top") {
+          return { x: x, y: inset, side: "vertical", edge: "bottom" };
+        }
+        return { x: x, y: bounds.height - inset, side: "vertical", edge: "top" };
+      }
+
+      function relationGeometry(relation, view, bounds) {
+        var fromBoundary = relation.from.kind === "boundary";
+        var toBoundary = relation.to.kind === "boundary";
+        if (fromBoundary && toBoundary) {
+          return null;
+        }
+        if (!fromBoundary && !toBoundary) {
+          var fromElement = document.getElementById("node-" + relation.from.id);
+          var toElement = document.getElementById("node-" + relation.to.id);
+          if (!fromElement || !toElement) {
+            return null;
+          }
+          return {
+            start: anchorFor(fromElement, toElement, bounds),
+            end: anchorFor(toElement, fromElement, bounds),
+            port: null
+          };
+        }
+
+        var boundaryNode = fromBoundary ? relation.from : relation.to;
+        var localNode = fromBoundary ? relation.to : relation.from;
+        var localElement = document.getElementById("node-" + localNode.id);
+        if (!localElement) {
+          return null;
+        }
+        var port = boundaryPointFor(boundaryNode, view, bounds);
+        var localAnchor = anchorForPoint(localElement, port, bounds);
+        return fromBoundary
+          ? { start: port, end: localAnchor, port: port }
+          : { start: localAnchor, end: port, port: port };
+      }
+
+      function pathBetween(start, end) {
+        if (start.side === "horizontal" || end.side === "horizontal") {
+          var middleX = (start.x + end.x) / 2;
+          return "M " + start.x + " " + start.y +
+            " C " + middleX + " " + start.y +
+            ", " + middleX + " " + end.y +
+            ", " + end.x + " " + end.y;
+        }
+
+        var middleY = (start.y + end.y) / 2;
+        return "M " + start.x + " " + start.y +
+          " C " + start.x + " " + middleY +
+          ", " + end.x + " " + middleY +
+          ", " + end.x + " " + end.y;
+      }
+
+      function moveAlongEdge(point, distance, bounds) {
+        var moved = { x: point.x, y: point.y };
+        if (point.edge === "left") {
+          moved.x -= distance;
+        } else if (point.edge === "right") {
+          moved.x += distance;
+        } else if (point.edge === "top") {
+          moved.y -= distance;
+        } else {
+          moved.y += distance;
+        }
+        moved.x = clamp(moved.x, 6, bounds.width - 6);
+        moved.y = clamp(moved.y, 6, bounds.height - 6);
+        return moved;
+      }
+
+      function coordinateKey(x, y) {
+        return x.toFixed(2) + "," + y.toFixed(2);
+      }
+
+      function uniqueCoordinates(values) {
+        return values
+          .sort(function (left, right) { return left - right; })
+          .filter(function (value, index, all) {
+            return index === 0 || Math.abs(value - all[index - 1]) > 0.5;
+          });
+      }
+
+      function pointInsideObstacle(point, obstacle) {
+        return point.x > obstacle.left && point.x < obstacle.right &&
+          point.y > obstacle.top && point.y < obstacle.bottom;
+      }
+
+      function segmentIsClear(start, end, obstacles) {
+        if (Math.abs(start.x - end.x) < 0.5) {
+          var verticalTop = Math.min(start.y, end.y);
+          var verticalBottom = Math.max(start.y, end.y);
+          return !obstacles.some(function (obstacle) {
+            return start.x > obstacle.left && start.x < obstacle.right &&
+              verticalBottom > obstacle.top && verticalTop < obstacle.bottom;
+          });
+        }
+        if (Math.abs(start.y - end.y) < 0.5) {
+          var horizontalLeft = Math.min(start.x, end.x);
+          var horizontalRight = Math.max(start.x, end.x);
+          return !obstacles.some(function (obstacle) {
+            return start.y > obstacle.top && start.y < obstacle.bottom &&
+              horizontalRight > obstacle.left && horizontalLeft < obstacle.right;
+          });
+        }
+        return false;
+      }
+
+      function simplifyRoute(points) {
+        var deduplicated = points.filter(function (point, index) {
+          return index === 0 || Math.abs(point.x - points[index - 1].x) > 0.5 ||
+            Math.abs(point.y - points[index - 1].y) > 0.5;
+        });
+        return deduplicated.filter(function (point, index) {
+          if (index === 0 || index === deduplicated.length - 1) {
+            return true;
+          }
+          var previous = deduplicated[index - 1];
+          var next = deduplicated[index + 1];
+          var sameHorizontal = Math.abs(previous.y - point.y) < 0.5 &&
+            Math.abs(point.y - next.y) < 0.5;
+          var sameVertical = Math.abs(previous.x - point.x) < 0.5 &&
+            Math.abs(point.x - next.x) < 0.5;
+          return !sameHorizontal && !sameVertical;
+        });
+      }
+
+      function roundedRoutePath(points) {
+        var route = simplifyRoute(points);
+        if (route.length < 2) {
+          return "";
+        }
+        var output = "M " + route[0].x + " " + route[0].y;
+        for (var index = 1; index < route.length - 1; index += 1) {
+          var previous = route[index - 1];
+          var current = route[index];
+          var next = route[index + 1];
+          var previousDistance = Math.hypot(
+            current.x - previous.x,
+            current.y - previous.y
+          );
+          var nextDistance = Math.hypot(
+            next.x - current.x,
+            next.y - current.y
+          );
+          var radius = Math.min(10, previousDistance / 2, nextDistance / 2);
+          var before = {
+            x: current.x + (previous.x - current.x) * radius / previousDistance,
+            y: current.y + (previous.y - current.y) * radius / previousDistance
+          };
+          var after = {
+            x: current.x + (next.x - current.x) * radius / nextDistance,
+            y: current.y + (next.y - current.y) * radius / nextDistance
+          };
+          output += " L " + before.x + " " + before.y +
+            " Q " + current.x + " " + current.y + " " + after.x + " " + after.y;
+        }
+        var last = route[route.length - 1];
+        return output + " L " + last.x + " " + last.y;
+      }
+
+      function routeBetween(geometry, bounds) {
+        var stubDistance = 9;
+        var startStub = moveAlongEdge(geometry.start, stubDistance, bounds);
+        var endStub = moveAlongEdge(geometry.end, stubDistance, bounds);
+        var obstaclePadding = 7;
+        var obstacles = Array.prototype.map.call(
+          nodeLayer.querySelectorAll(".node"),
+          function (node) {
+            var rectangle = localRectangle(node, bounds);
+            return {
+              left: clamp(rectangle.left - obstaclePadding, 4, bounds.width - 4),
+              right: clamp(rectangle.right + obstaclePadding, 4, bounds.width - 4),
+              top: clamp(rectangle.top - obstaclePadding, 4, bounds.height - 4),
+              bottom: clamp(rectangle.bottom + obstaclePadding, 4, bounds.height - 4)
+            };
+          }
+        );
+        var xStops = [6, bounds.width - 6, startStub.x, endStub.x];
+        var yStops = [6, bounds.height - 6, startStub.y, endStub.y];
+
+        obstacles.forEach(function (obstacle) {
+          xStops.push(obstacle.left, obstacle.right);
+          yStops.push(obstacle.top, obstacle.bottom);
+        });
+        xStops = uniqueCoordinates(xStops);
+        yStops = uniqueCoordinates(yStops);
+        xStops.slice(1).forEach(function (value, index) {
+          var previous = xStops[index];
+          if (value - previous > 24) {
+            xStops.push((previous + value) / 2);
+          }
+        });
+        yStops.slice(1).forEach(function (value, index) {
+          var previous = yStops[index];
+          if (value - previous > 24) {
+            yStops.push((previous + value) / 2);
+          }
+        });
+        xStops = uniqueCoordinates(xStops);
+        yStops = uniqueCoordinates(yStops);
+
+        var points = {};
+        var rows = {};
+        var columns = {};
+        xStops.forEach(function (x) {
+          yStops.forEach(function (y) {
+            var point = { x: x, y: y };
+            var isTerminal = coordinateKey(x, y) === coordinateKey(startStub.x, startStub.y) ||
+              coordinateKey(x, y) === coordinateKey(endStub.x, endStub.y);
+            if (!isTerminal && obstacles.some(function (obstacle) {
+              return pointInsideObstacle(point, obstacle);
+            })) {
+              return;
+            }
+            var key = coordinateKey(x, y);
+            points[key] = point;
+            (rows[y.toFixed(2)] || (rows[y.toFixed(2)] = [])).push(point);
+            (columns[x.toFixed(2)] || (columns[x.toFixed(2)] = [])).push(point);
+          });
+        });
+
+        var graph = {};
+        Object.keys(points).forEach(function (key) { graph[key] = []; });
+        function connect(left, right, direction) {
+          if (!segmentIsClear(left, right, obstacles)) {
+            return;
+          }
+          var leftKey = coordinateKey(left.x, left.y);
+          var rightKey = coordinateKey(right.x, right.y);
+          var distance = Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+          graph[leftKey].push({ key: rightKey, distance: distance, direction: direction });
+          graph[rightKey].push({ key: leftKey, distance: distance, direction: direction });
+        }
+        Object.keys(rows).forEach(function (key) {
+          var row = rows[key].sort(function (left, right) { return left.x - right.x; });
+          for (var index = 1; index < row.length; index += 1) {
+            connect(row[index - 1], row[index], "horizontal");
+          }
+        });
+        Object.keys(columns).forEach(function (key) {
+          var column = columns[key].sort(function (left, right) { return left.y - right.y; });
+          for (var index = 1; index < column.length; index += 1) {
+            connect(column[index - 1], column[index], "vertical");
+          }
+        });
+
+        var startKey = coordinateKey(startStub.x, startStub.y);
+        var endKey = coordinateKey(endStub.x, endStub.y);
+        var distances = {};
+        var previousStates = {};
+        var openStates = [{ key: startKey, direction: "start", cost: 0 }];
+        distances[startKey + "|start"] = 0;
+        var finalState = null;
+        while (openStates.length) {
+          openStates.sort(function (left, right) { return left.cost - right.cost; });
+          var current = openStates.shift();
+          var currentStateKey = current.key + "|" + current.direction;
+          if (current.cost !== distances[currentStateKey]) {
+            continue;
+          }
+          if (current.key === endKey) {
+            finalState = currentStateKey;
+            break;
+          }
+          (graph[current.key] || []).forEach(function (edge) {
+            var bendCost = current.direction !== "start" &&
+              current.direction !== edge.direction ? 28 : 0;
+            var nextCost = current.cost + edge.distance + bendCost;
+            var nextStateKey = edge.key + "|" + edge.direction;
+            if (distances[nextStateKey] === undefined || nextCost < distances[nextStateKey]) {
+              distances[nextStateKey] = nextCost;
+              previousStates[nextStateKey] = currentStateKey;
+              openStates.push({ key: edge.key, direction: edge.direction, cost: nextCost });
+            }
+          });
+        }
+
+        if (!finalState) {
+          var boundaryRoutes = [
+            [
+              startStub,
+              { x: startStub.x, y: 6 },
+              { x: endStub.x, y: 6 },
+              endStub
+            ],
+            [
+              startStub,
+              { x: startStub.x, y: bounds.height - 6 },
+              { x: endStub.x, y: bounds.height - 6 },
+              endStub
+            ],
+            [
+              startStub,
+              { x: 6, y: startStub.y },
+              { x: 6, y: endStub.y },
+              endStub
+            ],
+            [
+              startStub,
+              { x: bounds.width - 6, y: startStub.y },
+              { x: bounds.width - 6, y: endStub.y },
+              endStub
+            ]
+          ].filter(function (candidate) {
+            return candidate.every(function (point, index) {
+              return index === 0 || segmentIsClear(candidate[index - 1], point, obstacles);
+            });
+          }).sort(function (left, right) {
+            function lengthOf(candidate) {
+              return candidate.slice(1).reduce(function (total, point, index) {
+                return total + Math.abs(point.x - candidate[index].x) +
+                  Math.abs(point.y - candidate[index].y);
+              }, 0);
+            }
+            return lengthOf(left) - lengthOf(right);
+          });
+          if (boundaryRoutes.length) {
+            return {
+              pathData: roundedRoutePath([
+                { x: geometry.start.x, y: geometry.start.y }
+              ].concat(boundaryRoutes[0], [{ x: geometry.end.x, y: geometry.end.y }])),
+              fallback: false
+            };
+          }
+          return {
+            pathData: pathBetween(geometry.start, geometry.end),
+            fallback: true
+          };
+        }
+        var route = [];
+        var cursor = finalState;
+        while (cursor) {
+          route.push(points[cursor.split("|")[0]]);
+          cursor = previousStates[cursor];
+        }
+        route.reverse();
+        route.unshift({ x: geometry.start.x, y: geometry.start.y });
+        route.push({ x: geometry.end.x, y: geometry.end.y });
+        return {
+          pathData: roundedRoutePath(route),
+          fallback: false
+        };
+      }
+
+      function selectRelation(relation) {
+        state.selection = { kind: "relation", id: relation.id };
+        state.activeRelation = relationIsCrossModule(relation)
+          ? (relation.active || captureActiveRelation(relation))
+          : null;
+        render();
+      }
+
+      function relationControlLabel(relation) {
+        var label = relation.edge.label || "关系";
+        if (relation.from.kind === "boundary") {
+          return cleanEndpointTitle(relation.from.title) + " · " + label;
+        }
+        if (relation.to.kind === "boundary") {
+          return label + " · " + cleanEndpointTitle(relation.to.title);
+        }
+        return label;
+      }
+
+      function rectanglesOverlap(left, right, padding) {
+        return !(
+          left.right + padding <= right.left ||
+          left.left >= right.right + padding ||
+          left.bottom + padding <= right.top ||
+          left.top >= right.bottom + padding
+        );
+      }
+
+      function localRectangle(element, bounds) {
+        var box = element.getBoundingClientRect();
+        return {
+          left: box.left - bounds.left,
+          top: box.top - bounds.top,
+          right: box.right - bounds.left,
+          bottom: box.bottom - bounds.top,
+          width: box.width,
+          height: box.height
+        };
+      }
+
+      function placeEdgeControl(control, geometry, bounds, ownPath) {
+        var box = control.getBoundingClientRect();
+        var gap = 10;
+        var fractions = [0.5, 0.35, 0.65, 0.2, 0.8];
+        var candidates = [];
+        var pathLength = ownPath.getTotalLength();
+        var stepSize = 18;
+        for (var level = 0; level < 8; level += 1) {
+          fractions.forEach(function (fraction) {
+            var centerLength = pathLength * fraction;
+            var center = ownPath.getPointAtLength(centerLength);
+            var previous = ownPath.getPointAtLength(Math.max(0, centerLength - 3));
+            var next = ownPath.getPointAtLength(Math.min(pathLength, centerLength + 3));
+            var dx = next.x - previous.x;
+            var dy = next.y - previous.y;
+            var tangentLength = Math.max(1, Math.hypot(dx, dy));
+            var normalX = -dy / tangentLength;
+            var normalY = dx / tangentLength;
+            var halfExtent = Math.abs(normalX) * box.width / 2 +
+              Math.abs(normalY) * box.height / 2;
+            var distance = halfExtent + gap + level * stepSize;
+            candidates.push({
+              x: center.x + normalX * distance,
+              y: center.y + normalY * distance
+            });
+            candidates.push({
+              x: center.x - normalX * distance,
+              y: center.y - normalY * distance
+            });
+          });
+        }
+        var obstacles = Array.prototype.map.call(
+          nodeLayer.querySelectorAll(".node"),
+          function (node) { return localRectangle(node, bounds); }
+        ).concat(Array.prototype.map.call(
+          edgeControls.querySelectorAll(".edge-control:not([data-placing='true'])"),
+          function (label) { return localRectangle(label, bounds); }
+        ));
+        var pathPoints = [];
+        Array.prototype.forEach.call(edgePaths.querySelectorAll(".edge-path"), function (path) {
+          var length = path.getTotalLength();
+          for (var pointIndex = 1; pointIndex < 100; pointIndex += 1) {
+            pathPoints.push(path.getPointAtLength(length * pointIndex / 100));
+          }
+        });
+        var chosen = null;
+        var ranked = [];
+
+        candidates.some(function (candidate) {
+          var centerX = clamp(candidate.x, box.width / 2 + 8, bounds.width - box.width / 2 - 8);
+          var centerY = clamp(candidate.y, box.height / 2 + 8, bounds.height - box.height / 2 - 8);
+          var candidateBox = {
+            left: centerX - box.width / 2,
+            right: centerX + box.width / 2,
+            top: centerY - box.height / 2,
+            bottom: centerY + box.height / 2
+          };
+          var obstacleHits = obstacles.filter(function (obstacle) {
+            return rectanglesOverlap(candidateBox, obstacle, 6);
+          }).length;
+          var pathHits = pathPoints.filter(function (point) {
+            return point.x > candidateBox.left - 4 && point.x < candidateBox.right + 4 &&
+              point.y > candidateBox.top - 4 && point.y < candidateBox.bottom + 4;
+          }).length;
+          ranked.push({ x: centerX, y: centerY, score: obstacleHits * 100 + pathHits });
+          if (obstacleHits === 0 && pathHits === 0) {
+            chosen = { x: centerX, y: centerY };
+            return true;
+          }
+          return false;
+        });
+
+        if (!chosen) {
+          ranked.sort(function (left, right) { return left.score - right.score; });
+          chosen = ranked[0];
+          control.setAttribute("data-collision", "true");
+        } else {
+          control.removeAttribute("data-collision");
+        }
+        control.style.left = chosen.x + "px";
+        control.style.top = chosen.y + "px";
+        control.removeAttribute("data-placing");
+      }
+
+      function drawEdges(view, relations) {
+        cancelAnimationFrame(edgeFrame);
+        edgeFrame = requestAnimationFrame(function () {
+          var bounds = diagram.getBoundingClientRect();
+          var namespace = "http://www.w3.org/2000/svg";
+          edgeLayer.setAttribute("viewBox", "0 0 " + bounds.width + " " + bounds.height);
+          edgePaths.innerHTML = "";
+          edgePorts.innerHTML = "";
+          edgeControls.innerHTML = "";
+          var renderedRelations = [];
+
+          relations.forEach(function (relation) {
+            var geometry = relationGeometry(relation, view, bounds);
+            if (!geometry) {
+              return;
+            }
+            var selected = state.selection && state.selection.kind === "relation" &&
+              state.selection.id === relation.id;
+            var route = routeBetween(geometry, bounds);
+            var pathData = route.pathData;
+            var path = document.createElementNS(namespace, "path");
+            path.setAttribute("d", pathData);
+            path.setAttribute(
+              "class",
+              "edge-path " + (relation.edge.tone || "") +
+                (relation.projected ? " projected" : "") +
+                (selected ? " selected" : "")
+            );
+            path.setAttribute("data-relation-id", relation.id);
+            path.setAttribute("data-from", relation.from.id);
+            path.setAttribute("data-to", relation.to.id);
+            if (route.fallback) {
+              path.setAttribute("data-route-fallback", "true");
+            }
+            edgePaths.appendChild(path);
+
+            var hitPath = document.createElementNS(namespace, "path");
+            hitPath.setAttribute("d", pathData);
+            hitPath.setAttribute("class", "edge-hit");
+            hitPath.addEventListener("click", function () {
+              selectRelation(relation);
+            });
+            edgePaths.appendChild(hitPath);
+
+            if (geometry.port) {
+              var port = document.createElementNS(namespace, "circle");
+              port.setAttribute("cx", geometry.port.x);
+              port.setAttribute("cy", geometry.port.y);
+              port.setAttribute("r", selected ? "5" : "4");
+              port.setAttribute("class", "edge-port" + (selected ? " selected" : ""));
+              edgePorts.appendChild(port);
+            }
+
+            renderedRelations.push({
+              relation: relation,
+              geometry: geometry,
+              path: path,
+              selected: selected
+            });
+          });
+
+          renderedRelations.forEach(function (rendered) {
+            var relation = rendered.relation;
+            var control = document.createElement("button");
+            control.type = "button";
+            control.className = "edge-control" +
+              (relationIsCrossModule(relation) ? " cross-module" : "");
+            control.setAttribute("data-placing", "true");
+            control.setAttribute("data-relation-id", relation.id);
+            control.textContent = relationControlLabel(relation);
+            control.setAttribute("aria-pressed", rendered.selected ? "true" : "false");
+            control.setAttribute(
+              "aria-label",
+              "查看关系：" + cleanEndpointTitle(relation.from.title) + " 到 " +
+                cleanEndpointTitle(relation.to.title) + "，" + relationControlLabel(relation)
+            );
+            control.addEventListener("click", function () {
+              selectRelation(relation);
+            });
+            edgeControls.appendChild(control);
+            placeEdgeControl(control, rendered.geometry, bounds, rendered.path);
+          });
+        });
+      }
+
+      function renderMobileRelations(relations) {
+        mobileRelations.innerHTML = "";
+        relations.forEach(function (relation) {
+          var button = document.createElement("button");
+          var selected = state.selection && state.selection.kind === "relation" &&
+            state.selection.id === relation.id;
+          button.type = "button";
+          button.className = "mobile-relation";
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+          button.textContent = cleanEndpointTitle(relation.from.title) + " → " +
+            cleanEndpointTitle(relation.to.title) + " · " +
+            (relation.edge.label || "连接");
+          button.addEventListener("click", function () {
+            selectRelation(relation);
+          });
+          mobileRelations.appendChild(button);
+        });
+      }
+
+      function render() {
+        var view = views[state.viewId];
+        var relations = relationsForView(state.viewId);
+        mapTitle.textContent = view.title;
+        mapKicker.textContent = view.kicker;
+        mapDescription.textContent = view.description;
+        diagram.style.setProperty("--rows", String(view.rows));
+        renderBreadcrumbs();
+        renderNodes(view, relations);
+        renderSelection(view, relations);
+        renderMobileRelations(relations);
+        drawEdges(view, relations);
+      }
+
+      backButton.addEventListener("click", function () {
+        var parent = views[state.viewId].parent;
+        if (parent) {
+          navigate(parent, {
+            preserveRelation: shouldPreserveActiveRelation(parent)
+          });
+        }
+      });
+
+      homeButton.addEventListener("click", function () {
+        navigate("overview", {
+          preserveRelation: shouldPreserveActiveRelation("overview")
+        });
+      });
+
+      window.addEventListener("resize", function () {
+        drawEdges(views[state.viewId], relationsForView(state.viewId));
+      });
+      window.addEventListener("hashchange", function () {
+        var requested = location.hash.slice(1);
+        if (views[requested] && requested !== state.viewId) {
+          state.viewId = requested;
+          state.selection = null;
+          state.activeRelation = null;
+          render();
+        }
+      });
+
+      if ("ResizeObserver" in window) {
+        new ResizeObserver(function () {
+          drawEdges(views[state.viewId], relationsForView(state.viewId));
+        }).observe(diagram);
+      }
+
+      window.__HIERARCHICAL_MAP_AUDIT__ = Object.freeze({
+        viewIds: Object.freeze(Object.keys(views))
+      });
+      render();
+    })();
+  </script>
+</body>
+</html>

@@ -45,6 +45,7 @@ function normalizePersistedMetrics(
   value: unknown,
   agentCalls: readonly GenerationTaskAgentCallCheckpoint[],
   processCompleted: boolean,
+  assignedConnectionId: string | null,
 ): GenerationTaskMetrics {
   if (!isRecord(value) || !Array.isArray(value.agentExecutions)) {
     throw new Error('GenerationTask metrics JSON 数据无效');
@@ -60,6 +61,10 @@ function normalizePersistedMetrics(
     const checkpoint = agentCalls[index];
     return {
       ...execution,
+      connectionId:
+        typeof execution.connectionId === 'string'
+          ? execution.connectionId
+          : assignedConnectionId ?? 'legacy-account',
       callKey:
         typeof execution.callKey === 'string'
           ? execution.callKey
@@ -130,6 +135,15 @@ function mapRow(
       ...(row.assignedProviderId === null
         ? {}
         : { assignedProviderId: row.assignedProviderId }),
+      ...(row.assignedConnectionId === null
+        ? {}
+        : { assignedConnectionId: row.assignedConnectionId }),
+      ...(row.assignedModelId === null
+        ? {}
+        : { assignedModelId: row.assignedModelId }),
+      ...(row.assignedReasoningEffort === null
+        ? {}
+        : { assignedReasoningEffort: row.assignedReasoningEffort }),
       agentCalls,
       ...(processCompleted
         ? {
@@ -143,6 +157,7 @@ function mapRow(
         row.metrics,
         agentCalls,
         processCompleted,
+        row.assignedConnectionId,
       ),
       ...(row.failure === null ? {} : { failure: row.failure }),
       ...(row.cancelledTime === null
@@ -169,6 +184,9 @@ function toRow(task: GenerationTaskSnapshot) {
     preparedTime: snapshot.prepared?.completedTime ?? null,
     preparedManifestRef: snapshot.prepared?.manifestRef ?? null,
     assignedProviderId: snapshot.assignedProviderId ?? null,
+    assignedConnectionId: snapshot.assignedConnectionId ?? null,
+    assignedModelId: snapshot.assignedModelId ?? null,
+    assignedReasoningEffort: snapshot.assignedReasoningEffort ?? null,
     agentCalls: snapshot.agentCalls,
     processCompletedTime: snapshot.completed?.completedTime ?? null,
     processResult: snapshot.completed?.result ?? null,
@@ -251,6 +269,9 @@ export class GenerationTaskDatabase
         preparedTime: row.preparedTime,
         preparedManifestRef: row.preparedManifestRef,
         assignedProviderId: row.assignedProviderId,
+        assignedConnectionId: row.assignedConnectionId,
+        assignedModelId: row.assignedModelId,
+        assignedReasoningEffort: row.assignedReasoningEffort,
         agentCalls: row.agentCalls,
         processCompletedTime: row.processCompletedTime,
         processResult: row.processResult,

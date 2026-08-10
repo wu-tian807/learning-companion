@@ -1,4 +1,6 @@
 import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { safeStorage } from 'electron';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
 import { AgentFunctionToolRegistry } from '../agents/function-tools/agent-function-tool-registry';
@@ -6,6 +8,7 @@ import { createAgentCapabilityPaths } from '../agents/capabilities/agent-capabil
 import { AgentMcpService } from '../agents/mcp/agent-mcp-service';
 import { AgentSkillService } from '../agents/skills/agent-skill-service';
 import { AgentSessionService } from '../agents/sessions/agent-session-service';
+import { EncryptedAgentProviderSecretFile } from '../agents/agent-provider-secret-file';
 import { AgentWorkspaceManager } from '../agents/workspaces/agent-workspace-manager';
 import { AssetArtifactDatabase } from '../artifacts/asset-artifact-database';
 import { AssetArtifactFileManager } from '../artifacts/asset-artifact-file-manager';
@@ -35,6 +38,10 @@ import { LocalFileContentResolver } from '../content/resolvers/local-file/local-
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { createDefaultExternalLibrariesRoot } from '../external-libraries/external-library-path-manager';
+import {
+  LIBREOFFICE_LIBRARY_ID,
+  LIBREOFFICE_VERSION,
+} from '../external-libraries/definitions/libreoffice';
 import type { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { GenerationAgentExecutor } from '../generation/generation-agent-executor';
 import { GenerationTaskDatabase } from '../generation/generation-task-database';
@@ -54,8 +61,6 @@ import {
 } from '../projects/project-workspace-manager';
 import { JsonSettingsRepository } from '../settings/json-settings-repository';
 import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
-import { SandboxContextMenuFacilityAdapter } from '../workbench/interaction/adapters/sandbox-context-menu-facility-adapter';
-import { SandboxTextSelectionFacilityAdapter } from '../workbench/interaction/adapters/sandbox-text-selection-facility-adapter';
 import { MainFacilityAdapterRegistry } from '../workbench/interaction/main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
@@ -117,6 +122,10 @@ export async function createApplicationRuntime({
       isPackaged,
       resourcesPath,
     });
+    const agentProviderSecrets = new EncryptedAgentProviderSecretFile(
+      appPaths.agentProviderSecretsFile,
+      safeStorage,
+    );
     const settingsRepository = new JsonSettingsRepository(
       appPaths.settingsFile,
       {
@@ -156,7 +165,15 @@ export async function createApplicationRuntime({
     ]);
     agentProviderService = createAgentProviderService(
       settingsRepository,
+      agentProviderSecrets,
       codexRuntimeService,
+      (environment) =>
+        createCodexRuntime({
+          codexHomePath,
+          isPackaged,
+          resourcesPath,
+          environment,
+        }),
       agentSessionService,
       agentFunctionTools,
       agentSkills,
@@ -165,7 +182,14 @@ export async function createApplicationRuntime({
     );
     const artifactRegistry = new AssetArtifactRegistry();
     artifactRegistry.register(
-      new LibreOfficePreviewProducer(externalLibraryService),
+      new LibreOfficePreviewProducer(
+        externalLibraryService,
+        join(
+          appPaths.externalLibraryProfilesDirectory,
+          LIBREOFFICE_LIBRARY_ID,
+          LIBREOFFICE_VERSION,
+        ),
+      ),
     );
     const artifactService = new AssetArtifactService(
       new AssetArtifactDatabase(databaseContext),
@@ -204,12 +228,6 @@ export async function createApplicationRuntime({
       );
     const mainFacilityAdapterRegistry =
       new MainFacilityAdapterRegistry(workbenchFacilityRegistry);
-    mainFacilityAdapterRegistry.register(
-      new SandboxContextMenuFacilityAdapter(),
-    );
-    mainFacilityAdapterRegistry.register(
-      new SandboxTextSelectionFacilityAdapter(),
-    );
     sandboxFrameInteractionBridge =
       new SandboxFrameInteractionBridge(
         transportBindingRegistry,
@@ -229,6 +247,7 @@ export async function createApplicationRuntime({
       artifactService,
       contentResourceService,
       externalLibraryService,
+      facilityAdapterRegistry: mainFacilityAdapterRegistry,
       projectLookup: projectDatabase,
       stateDatabase: workbenchStateRepository,
       stateDataDatabase: workbenchStateDataRepository,

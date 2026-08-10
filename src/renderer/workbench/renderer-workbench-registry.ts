@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 
 import {
+  areAssetWorkbenchManifestsEqual,
   isAssetWorkbenchManifest,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
@@ -31,16 +32,43 @@ export interface RendererWorkbenchViewProps {
   readonly onError: (message: string) => void;
 }
 
-export interface RendererWorkbenchModule {
-  readonly manifest: AssetWorkbenchManifest;
+export interface RendererWorkbenchModule<
+  TId extends string = string,
+> {
+  readonly manifest: AssetWorkbenchManifest<TId>;
   readonly View: ComponentType<RendererWorkbenchViewProps>;
 }
 
-export type RendererWorkbenchLoader = () => Promise<RendererWorkbenchModule>;
+export type RendererWorkbenchLoader<
+  TId extends string = string,
+> = () => Promise<RendererWorkbenchModule<TId>>;
+
+export function assertRendererWorkbenchCompatibility(
+  module: RendererWorkbenchModule,
+  bootstrap: WorkbenchBootstrap,
+): void {
+  if (
+    module.manifest.id !== bootstrap.workbenchId ||
+    module.manifest.version !== bootstrap.workbenchVersion ||
+    module.manifest.protocolVersion !== bootstrap.protocolVersion
+  ) {
+    throw new Error(
+      `Workbench 前后端契约版本不匹配：${bootstrap.workbenchId}`,
+    );
+  }
+}
+
+interface RendererWorkbenchLoaderRegistration {
+  readonly manifest: AssetWorkbenchManifest;
+  readonly load: RendererWorkbenchLoader;
+}
 
 export class RendererWorkbenchRegistry {
   private readonly modules = new Map<string, RendererWorkbenchModule>();
-  private readonly loaders = new Map<string, RendererWorkbenchLoader>();
+  private readonly loaders = new Map<
+    string,
+    RendererWorkbenchLoaderRegistration
+  >();
   private readonly loadingModules = new Map<
     string,
     Promise<RendererWorkbenchModule>
@@ -56,7 +84,9 @@ export class RendererWorkbenchRegistry {
     this.modules.set(fallbackModule.manifest.id, fallbackModule);
   }
 
-  register(module: RendererWorkbenchModule): void {
+  register<TId extends string>(
+    module: RendererWorkbenchModule<TId>,
+  ): void {
     this.validateModule(module);
 
     if (this.hasRegistration(module.manifest.id)) {
@@ -66,19 +96,21 @@ export class RendererWorkbenchRegistry {
     this.modules.set(module.manifest.id, module);
   }
 
-  registerLoader(
-    workbenchId: string,
-    loader: RendererWorkbenchLoader,
+  registerLoader<TId extends string>(
+    manifest: AssetWorkbenchManifest<TId>,
+    loader: RendererWorkbenchLoader<TId>,
   ): void {
-    if (!workbenchId.trim()) {
-      throw new Error('Renderer Workbench ID 无效');
-    }
+    this.validateManifest(manifest);
+    const workbenchId = manifest.id;
 
     if (this.hasRegistration(workbenchId)) {
       throw new Error(`Renderer Workbench 重复注册：${workbenchId}`);
     }
 
-    this.loaders.set(workbenchId, loader);
+    this.loaders.set(workbenchId, {
+      manifest,
+      load: loader,
+    });
   }
 
   async resolve(workbenchId: string): Promise<RendererWorkbenchModule> {
@@ -88,10 +120,10 @@ export class RendererWorkbenchRegistry {
       return registeredModule;
     }
 
-    const loader = this.loaders.get(workbenchId);
+    const registration = this.loaders.get(workbenchId);
 
-    if (!loader) {
-      return this.fallbackModule;
+    if (!registration) {
+      throw new Error(`Renderer Workbench 未注册：${workbenchId}`);
     }
 
     const loadingModule = this.loadingModules.get(workbenchId);
@@ -100,13 +132,19 @@ export class RendererWorkbenchRegistry {
       return loadingModule;
     }
 
-    const nextLoadingModule = loader()
+    const nextLoadingModule = registration
+      .load()
       .then((module) => {
         this.validateModule(module);
 
-        if (module.manifest.id !== workbenchId) {
+        if (
+          !areAssetWorkbenchManifestsEqual(
+            module.manifest,
+            registration.manifest,
+          )
+        ) {
           throw new Error(
-            `Renderer Workbench 加载结果不匹配：${workbenchId}`,
+            `Renderer Workbench 加载契约不匹配：${workbenchId}`,
           );
         }
 
@@ -131,12 +169,16 @@ export class RendererWorkbenchRegistry {
   }
 
   private validateModule(module: RendererWorkbenchModule): void {
-    if (!isAssetWorkbenchManifest(module.manifest)) {
+    this.validateManifest(module.manifest);
+  }
+
+  private validateManifest(manifest: AssetWorkbenchManifest): void {
+    if (!isAssetWorkbenchManifest(manifest)) {
       throw new Error('Renderer Workbench Manifest 无效');
     }
     if (
       !this.facilityRegistry.validateDeclarations(
-        module.manifest.facilities,
+        manifest.facilities,
       )
     ) {
       throw new Error('Renderer Workbench Facility 声明无效');

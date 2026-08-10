@@ -42,7 +42,6 @@ function createBoundSession(): AgentSession {
   session.bindProvider({
     providerId: 'codex',
     sessionId: 'thread-1',
-    configurationFingerprint: 'sha256:config-1',
     updatedTime: 11,
   });
   return session;
@@ -92,6 +91,39 @@ describe('AgentSessionFile', () => {
       version: AGENT_SESSION_FILE_VERSION,
       locator,
     });
+  });
+
+  it('reads a legacy fingerprint document and removes it on rewrite', async () => {
+    const workspacePath = await createWorkspace();
+    const file = new AgentSessionFile(workspacePath);
+    const snapshot = createBoundSession().getSnapshot();
+    await file.write(snapshot);
+    const filePath = file.resolve(locator);
+
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        format: AGENT_SESSION_FILE_FORMAT,
+        version: 1,
+        ...snapshot,
+        providerBindings: {
+          codex: {
+            ...snapshot.providerBindings.codex,
+            configurationFingerprint: 'legacy-configuration',
+          },
+        },
+      }),
+    );
+
+    const restored = await file.read(locator);
+    expect(restored).toEqual(snapshot);
+    await file.write(restored!);
+
+    const rewritten = JSON.parse(await readFile(filePath, 'utf8'));
+    expect(rewritten.version).toBe(AGENT_SESSION_FILE_VERSION);
+    expect(
+      rewritten.providerBindings.codex,
+    ).not.toHaveProperty('configurationFingerprint');
   });
 
   it('returns undefined without creating metadata for a missing mapping', async () => {

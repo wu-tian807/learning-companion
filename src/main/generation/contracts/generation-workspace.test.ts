@@ -41,7 +41,7 @@ describe('generation workspace contracts', () => {
     });
   });
 
-  it('uses shared as the stable instance key', async () => {
+  it('uses shared as the stable instance key without overriding permissions', async () => {
     const manager = {
       resolve: vi.fn(),
       prepare: vi.fn(async (segments: readonly string[]) =>
@@ -53,15 +53,20 @@ describe('generation workspace contracts', () => {
       {
         key: 'project-outline',
         scope: 'shared',
-        permissions: { read: true, write: false },
+        permissions: { read: true, write: true },
       },
       'ignored-task-id',
     );
 
     expect(workspace.instanceKey).toBe('shared');
+    expect(workspace.permissions).toEqual({ read: true, write: true });
+    expect(manager.prepare).toHaveBeenCalledWith([
+      'project-outline',
+      'shared',
+    ]);
   });
 
-  it('rejects nested keys and Agent-writable shared workspaces', () => {
+  it('rejects nested keys and write-only workspace permissions', () => {
     expect(() =>
       cloneAgentWorkspaceConfig({
         key: 'parent.child',
@@ -73,8 +78,8 @@ describe('generation workspace contracts', () => {
       cloneAgentWorkspaceConfig({
         key: 'project-outline',
         scope: 'shared',
-        permissions: { read: true, write: true },
+        permissions: { read: false, write: true },
       }),
-    ).toThrow('不允许 Agent 写入');
+    ).toThrow('permissions 数据无效');
   });
 });

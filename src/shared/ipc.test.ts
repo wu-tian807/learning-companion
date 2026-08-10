@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   createHealthCheckResponse,
+  isAgentProviderConnectionRequest,
   isAgentProviderIdRequest,
   isCancelAgentProviderLoginRequest,
+  isConfigureAgentProviderApiConnectionRequest,
   isAddLocalAssetsRequest,
   isAddLocalAssetsResult,
   isAssetIdRequest,
@@ -21,6 +23,7 @@ import {
   isRenameAssetRequest,
   isRenameProjectRequest,
   isSetProjectPinnedRequest,
+  isSelectAgentProviderForSelectorRequest,
   isSelectProjectWorkspaceRequest,
   isUpdateHomePreferencesRequest,
 } from "./ipc";
@@ -328,17 +331,42 @@ describe("Agent Provider contract", () => {
     expect(isAgentProviderIdRequest({ providerId: "codex" })).toBe(true);
     expect(isAgentProviderIdRequest({ providerId: "../codex" })).toBe(false);
     expect(
+      isAgentProviderConnectionRequest({
+        providerId: "codex",
+        connectionId: "codex-account",
+      }),
+    ).toBe(true);
+    expect(
       isCancelAgentProviderLoginRequest({
         providerId: "codex",
+        connectionId: "codex-account",
         loginId: "login-1",
       }),
     ).toBe(true);
     expect(
       isCancelAgentProviderLoginRequest({
         providerId: "codex",
+        connectionId: "codex-account",
         loginId: "",
       }),
     ).toBe(false);
+    expect(
+      isConfigureAgentProviderApiConnectionRequest({
+        providerId: "codex",
+        displayName: "DeepSeek",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "secret",
+      }),
+    ).toBe(true);
+    expect(
+      isSelectAgentProviderForSelectorRequest({
+        selectorId: "generation-center",
+        providerId: "codex",
+        connectionId: "codex-account",
+        modelId: "gpt-5.2",
+        reasoningEffort: "high",
+      }),
+    ).toBe(true);
   });
 });
 

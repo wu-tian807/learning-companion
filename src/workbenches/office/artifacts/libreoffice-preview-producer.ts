@@ -8,7 +8,7 @@ import {
   rm,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join, normalize } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type {
@@ -18,7 +18,10 @@ import { ExternalCommandRunner } from '../../../main/external-libraries/external
 import type {
   ExternalLibraryServiceApi,
 } from '../../../main/external-libraries/external-library-service';
-import { LIBREOFFICE_LIBRARY_ID } from '../../../main/external-libraries/definitions/libreoffice';
+import {
+  LIBREOFFICE_LIBRARY_ID,
+  LIBREOFFICE_VERSION,
+} from '../../../main/external-libraries/definitions/libreoffice';
 import { AppError } from '../../../main/errors/app-error';
 import type {
   AssetArtifactProduceRequest,
@@ -30,7 +33,7 @@ export const LIBREOFFICE_PREVIEW_PRODUCER_ID =
   'builtin.office.preview';
 export const LIBREOFFICE_PREVIEW_ARTIFACT_KEY = 'preview';
 export const LIBREOFFICE_PREVIEW_PRODUCER_VERSION =
-  'office-preview@4+powerpoint-animation-final-state+libreoffice@26.2.5';
+  `office-preview@4+powerpoint-animation-final-state+libreoffice@${LIBREOFFICE_VERSION}`;
 
 const OFFICE_MEDIA_TYPES = new Set([
   'application/msword',
@@ -53,6 +56,16 @@ const OFFICE_EXTENSIONS = new Map<string, string>([
 const CONVERSION_TIMEOUT_MS = 5 * 60 * 1000;
 const PDF_HEADER = new TextEncoder().encode('%PDF-');
 const PDF_EOF = new TextEncoder().encode('%%EOF');
+
+function previewFailure(detail: string): AppError {
+  return new AppError('OFFICE_PREVIEW_FAILED', {
+    cause: new Error(detail),
+  });
+}
+
+function commandDiagnostics(stdout: string, stderr: string): string {
+  return `stdout:\n${stdout.trim() || '<empty>'}\nstderr:\n${stderr.trim() || '<empty>'}`;
+}
 
 function isAbortError(error: unknown): boolean {
   return (
@@ -175,8 +188,17 @@ export class LibreOfficePreviewProducer
 
   constructor(
     private readonly externalLibraries: ExternalLibraryServiceApi,
+    profileDirectory: string,
     dependencies: Partial<LibreOfficePreviewProducerDependencies> = {},
   ) {
+    const normalizedProfileDirectory = normalize(
+      profileDirectory.trim(),
+    );
+
+    if (!isAbsolute(normalizedProfileDirectory)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
     this.commandRunner =
       dependencies.commandRunner ?? new ExternalCommandRunner();
     this.enableNativePowerPoint = dependencies.commandRunner === undefined;
@@ -323,26 +345,31 @@ export class LibreOfficePreviewProducer
           }
         }
 
+        let libreOfficeDiagnostics: string | undefined;
         if (!(await lstat(powerpointOutputPath).catch(() => undefined))) {
-        await this.commandRunner.run({
-          command: executablePath,
-          args: [
-            '--headless',
-            '--nologo',
-            '--nodefault',
-            '--nofirststartwizard',
-            '--norestore',
-            `-env:UserInstallation=${pathToFileURL(profileDirectory).href}`,
-            '--convert-to',
-            'pdf',
-            '--outdir',
-            outputDirectory,
-            stagedSourcePath,
-          ],
-          cwd: conversionDirectory,
-          timeoutMs: CONVERSION_TIMEOUT_MS,
-          signal,
-        });
+          const commandResult = await this.commandRunner.run({
+            command: executablePath,
+            args: [
+              '--headless',
+              '--nologo',
+              '--nodefault',
+              '--nofirststartwizard',
+              '--norestore',
+              `-env:UserInstallation=${pathToFileURL(profileDirectory).href}`,
+              '--convert-to',
+              'pdf',
+              '--outdir',
+              outputDirectory,
+              stagedSourcePath,
+            ],
+            cwd: conversionDirectory,
+            timeoutMs: CONVERSION_TIMEOUT_MS,
+            signal,
+          });
+          libreOfficeDiagnostics = commandDiagnostics(
+            commandResult.stdout,
+            commandResult.stderr,
+          );
         }
         signal.throwIfAborted();
         const outputNames = (await readdir(outputDirectory)).filter(
@@ -353,7 +380,9 @@ export class LibreOfficePreviewProducer
           outputNames.length !== 1 ||
           outputNames[0].toLowerCase() !== 'source.pdf'
         ) {
-          throw new AppError('OFFICE_PREVIEW_FAILED');
+          throw previewFailure(
+            `LibreOffice produced an unexpected PDF result.\nConversion diagnostics:\n${libreOfficeDiagnostics ?? '<native PowerPoint export>'}`,
+          );
         }
 
         const convertedPath = join(outputDirectory, outputNames[0]);

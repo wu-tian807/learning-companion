@@ -324,7 +324,7 @@ export function PlainTextWorkbenchView({
     [editorActionAdapter],
   );
   useWorkbenchContributions(
-    'builtin.plain-text.editor',
+    `${plainTextWorkbenchManifest.id}.editor`,
     editorActions,
   );
 
@@ -560,7 +560,10 @@ export function PlainTextWorkbenchView({
       viewOptions,
     ],
   );
-  useWorkbenchContributions('builtin.plain-text', rendererActions);
+  useWorkbenchContributions(
+    plainTextWorkbenchManifest.id,
+    rendererActions,
+  );
 
   if (!payload) {
     return (
@@ -753,7 +756,9 @@ export function PlainTextWorkbenchView({
   );
 }
 
-export const plainTextRendererWorkbenchModule: RendererWorkbenchModule = {
+export const plainTextRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof plainTextWorkbenchManifest.id
+> = {
   manifest: plainTextWorkbenchManifest,
   View: PlainTextWorkbenchView,
 };

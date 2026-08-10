@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '../../errors/app-error';
 import type {
   ExternalCommandRequest,
   ExternalCommandRunnerApi,
@@ -30,7 +31,7 @@ afterEach(async () => {
 });
 
 describe('WindowsMsiInstaller', () => {
-  it('uses MSI administrative extraction into the staging runtime', async () => {
+  it('preserves MSI property quoting for a staging path with spaces', async () => {
     const directory = await mkdtemp(
       join(tmpdir(), 'learning-companion-msi-installer-'),
     );
@@ -38,7 +39,7 @@ describe('WindowsMsiInstaller', () => {
     const packagePath = join(directory, 'libreoffice.msi');
     const stagingInstallationDirectory = join(
       directory,
-      'installation',
+      'installation with spaces',
     );
     await writeFile(packagePath, 'fake msi');
     const run = vi.fn(
@@ -46,9 +47,9 @@ describe('WindowsMsiInstaller', () => {
         const targetArgument = request.args.find((argument) =>
           argument.startsWith('TARGETDIR='),
         )!;
-        const runtimeDirectory = targetArgument.slice(
-          'TARGETDIR='.length,
-        );
+        const runtimeDirectory = targetArgument
+          .slice('TARGETDIR='.length)
+          .replace(/^"|"$/gu, '');
         const executablePath = join(
           runtimeDirectory,
           'program',
@@ -95,13 +96,47 @@ describe('WindowsMsiInstaller', () => {
       command: '/Windows/System32/msiexec.exe',
       args: [
         '/a',
-        packagePath,
+        `"${packagePath}"`,
         '/qn',
-        '/norestart',
-        `TARGETDIR=${join(stagingInstallationDirectory, 'runtime')}`,
+        '/L*V',
+        `"${join(directory, 'msiexec.log')}"`,
+        `TARGETDIR="${join(stagingInstallationDirectory, 'runtime')}"`,
       ],
+      windowsVerbatimArguments: true,
       timeoutMs: 20 * 60 * 1000,
       signal: expect.any(AbortSignal),
     });
+  });
+
+  it('refuses to pass a partial download to Windows Installer', async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), 'learning-companion-msi-installer-'),
+    );
+    temporaryDirectories.push(directory);
+    const run = vi.fn<ExternalCommandRunnerApi['run']>();
+    const installer = new WindowsMsiInstaller({
+      commandRunner: { run },
+      resolveMsiexecPath: () => '/Windows/System32/msiexec.exe',
+    });
+
+    await expect(
+      installer.install(
+        {
+          packagePath: join(directory, 'libreoffice.msi.partial'),
+          stagingInstallationDirectory: join(directory, 'installation'),
+          packageDefinition: {
+            platform: 'win32',
+            architecture: 'x64',
+            packageType: 'msi',
+            downloadUrl: 'https://download.example/libreoffice.msi',
+            sha256: 'b'.repeat(64),
+            expectedSize: 8,
+            executableRelativePath: 'program/soffice.exe',
+          },
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toEqual(expect.any(AppError));
+    expect(run).not.toHaveBeenCalled();
   });
 });

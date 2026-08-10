@@ -11,6 +11,7 @@ import {
   type DocumentAiResponse,
 } from '../../shared/ipc';
 import type { AssetAttachment } from '../../shared/workbench/attachment';
+import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 import type { GenerationAgentRunnerResolver } from '../generation/generation-agent-runner';
 import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import { AppError } from '../errors/app-error';
@@ -101,7 +102,11 @@ async function askDocumentAi(
   providers: GenerationAgentRunnerResolver,
   request: DocumentAiRequest,
 ): Promise<DocumentAiResponse> {
-  const runner = await providers.resolveRunner();
+  const runner = await providers.resolveRunner(
+    providers.resolveSelectorConfiguration(
+      GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+    ),
+  );
   const taskId = randomUUID();
   const workspace = await mkdtemp(
     join(tmpdir(), 'learning-companion-document-ai-'),

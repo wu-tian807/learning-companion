@@ -25,6 +25,64 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/workbenches/**/shared.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '../../main/**',
+                '../../renderer/**',
+                '../../preload/**',
+              ],
+              message:
+                'Workbench shared contracts must not depend on a process-specific layer.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/workbenches/**/main.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../../renderer/**'],
+              message:
+                'Workbench Main providers must not import Renderer code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      'src/workbenches/**/renderer.tsx',
+      'src/workbenches/**/renderer-actions.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../../main/**'],
+              message:
+                'Workbench Renderer modules must not import Main code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: [
       'forge.config.ts',
       'vite.*.config.ts',

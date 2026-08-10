@@ -500,7 +500,9 @@ export function MindMapWorkbenchView(
   );
 }
 
-export const mindMapRendererWorkbenchModule: RendererWorkbenchModule = {
+export const mindMapRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof mindMapWorkbenchManifest.id
+> = {
   manifest: mindMapWorkbenchManifest,
   View: MindMapWorkbenchView,
 };

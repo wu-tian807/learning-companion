@@ -79,7 +79,11 @@ describe('migrateProjectWorkspaces', () => {
           'utf8',
         ),
       ),
-    ).toEqual({ schemaVersion: 1, projectId: 'legacy' });
+    ).toEqual({
+      schemaVersion: 1,
+      projectId: 'legacy',
+      ownsWorkspaceRoot: true,
+    });
 
     await expect(
       migrateProjectWorkspaces(

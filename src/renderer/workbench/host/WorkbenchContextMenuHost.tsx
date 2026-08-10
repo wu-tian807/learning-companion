@@ -19,6 +19,7 @@ import {
   resolveContextMenuMaximumHeight,
   resolveContextMenuViewportPosition,
 } from './context-menu-position';
+import { observeOutsideContextMenuPointer } from './context-menu-dismissal';
 
 function shouldClose(
   entry: ResolvedWorkbenchContribution,
@@ -119,11 +120,11 @@ export function WorkbenchContextMenuHost() {
       return;
     }
 
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        runtime.closeContextMenu();
-      }
-    };
+    const stopObservingOutsidePointer = observeOutsideContextMenuPointer(
+      document,
+      () => rootRef.current,
+      () => runtime.closeContextMenu(),
+    );
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         runtime.closeContextMenu();
@@ -131,7 +132,6 @@ export function WorkbenchContextMenuHost() {
     };
     const closeOnViewportChange = () => runtime.closeContextMenu();
 
-    document.addEventListener('mousedown', closeOnOutsideClick);
     document.addEventListener('keydown', closeOnEscape);
     document.addEventListener('scroll', closeOnViewportChange, {
       capture: true,
@@ -148,7 +148,7 @@ export function WorkbenchContextMenuHost() {
     );
 
     return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
+      stopObservingOutsidePointer();
       document.removeEventListener('keydown', closeOnEscape);
       document.removeEventListener(
         'scroll',

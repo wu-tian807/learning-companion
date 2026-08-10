@@ -19,7 +19,9 @@ export const IMAGE_STATE_SCHEMA_VERSION = 1;
 export const IMAGE_VIEWPORT_ANCHOR_TYPE = 'image.viewport';
 export const IMAGE_VIEWPORT_ANCHOR_VERSION = 1;
 
-export const imageWorkbenchManifest: AssetWorkbenchManifest = {
+export const imageWorkbenchManifest: AssetWorkbenchManifest<
+  typeof IMAGE_WORKBENCH_ID
+> = {
   id: IMAGE_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

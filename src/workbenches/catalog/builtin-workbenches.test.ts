@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
+import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+  CORE_FACILITY_VERSION,
+  createCoreWorkbenchFacilityDefinitionRegistry,
+} from '../../shared/workbench/facilities/core-facilities';
+import { MainFacilityAdapterRegistry } from '../../main/workbench/interaction/main-facility-adapter-registry';
+import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { RendererWorkbenchLoader } from '../../renderer/workbench/renderer-workbench-registry';
+import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   builtinWorkbenchCatalog,
@@ -23,16 +30,21 @@ describe('builtin Workbench catalog', () => {
   });
 
   it('registers every catalog entry in Main', () => {
+    const facilityRegistry =
+      createCoreWorkbenchFacilityDefinitionRegistry();
     const registry = new WorkbenchRegistry(
       new UnsupportedWorkbenchProvider(),
-      createCoreWorkbenchFacilityDefinitionRegistry(),
+      facilityRegistry,
     );
+    const facilityAdapterRegistry =
+      new MainFacilityAdapterRegistry(facilityRegistry);
 
     registerMainWorkbenches(registry, {
       associationService: {} as never,
       artifactService: {} as never,
       contentResourceService: {} as never,
       externalLibraryService: {} as never,
+      facilityAdapterRegistry,
       projectLookup: {} as never,
       stateDatabase: {} as never,
       stateDataDatabase: {} as never,
@@ -41,13 +53,30 @@ describe('builtin Workbench catalog', () => {
     for (const entry of builtinWorkbenchCatalog) {
       expect(registry.get(entry.id)?.manifest).toBe(entry.manifest);
     }
+    expect(
+      facilityAdapterRegistry.get(
+        'builtin.html',
+        CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+        CORE_FACILITY_VERSION,
+        SANDBOX_CONTEXT_MENU_TRIGGER,
+      )?.workbenchId,
+    ).toBe('builtin.html');
   });
 
   it('registers lazy Renderer loaders for every catalog entry', () => {
-    const loaders = new Map<string, RendererWorkbenchLoader>();
+    const loaders = new Map<
+      string,
+      {
+        manifest: AssetWorkbenchManifest;
+        loader: RendererWorkbenchLoader;
+      }
+    >();
     const registerLoader = vi.fn(
-      (workbenchId: string, loader: RendererWorkbenchLoader) => {
-        loaders.set(workbenchId, loader);
+      (
+        manifest: AssetWorkbenchManifest,
+        loader: RendererWorkbenchLoader,
+      ) => {
+        loaders.set(manifest.id, { manifest, loader });
       },
     );
 
@@ -59,7 +88,11 @@ describe('builtin Workbench catalog', () => {
     );
     expect(
       [...loaders.values()].every(
-        (loader) => typeof loader === 'function',
+        ({ manifest, loader }) =>
+          manifest ===
+            builtinWorkbenchCatalog.find(
+              (entry) => entry.id === manifest.id,
+            )?.manifest && typeof loader === 'function',
       ),
     ).toBe(true);
   });

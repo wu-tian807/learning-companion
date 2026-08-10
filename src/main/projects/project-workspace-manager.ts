@@ -7,6 +7,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  readdir,
   realpath,
   rm,
   stat,
@@ -24,6 +25,7 @@ import { dialog, shell } from 'electron';
 import {
   createAbsoluteLocalFileContentRef,
   createProjectWorkspaceContentRef,
+  getManagedProjectAssetDirectory,
   type LocalFileContentRef,
 } from '../../shared/assets';
 import { AppError } from '../errors/app-error';
@@ -73,6 +75,7 @@ export interface GeneratedLocalFile {
 interface WorkspaceMarker {
   readonly schemaVersion: number;
   readonly projectId: string;
+  readonly ownsWorkspaceRoot?: boolean;
 }
 
 export interface ProjectWorkspaceManagerApi {
@@ -109,11 +112,14 @@ export interface ProjectWorkspaceManagerApi {
     fileName: string,
     content: Uint8Array,
   ): Promise<GeneratedLocalFile>;
-  removeGeneratedFile(
+  removeManagedAssetFile(
     workspacePath: string,
     contentRef: LocalFileContentRef,
+  ): Promise<boolean>;
+  removeProjectWorkspace(
+    projectId: string,
+    workspacePath: string,
   ): Promise<void>;
-  removeImportedFile(absolutePath: string): Promise<void>;
   openWorkspace(workspacePath: string): Promise<void>;
   revealFile(absolutePath: string): void;
 }
@@ -125,6 +131,7 @@ export interface ProjectWorkspaceManagerDependencies {
   readonly lstat: typeof lstat;
   readonly mkdir: typeof mkdir;
   readonly readFile: typeof readFile;
+  readonly readdir: typeof readdir;
   readonly realpath: typeof realpath;
   readonly rm: typeof rm;
   readonly stat: typeof stat;
@@ -146,6 +153,7 @@ const defaultDependencies: Omit<
   lstat,
   mkdir,
   readFile,
+  readdir,
   realpath,
   rm,
   stat,
@@ -165,11 +173,15 @@ function isFileNotFoundError(error: unknown): boolean {
   );
 }
 
-function createMarkerContent(projectId: string): string {
+function createMarkerContent(
+  projectId: string,
+  ownsWorkspaceRoot: boolean,
+): string {
   return `${JSON.stringify(
     {
       schemaVersion: PROJECT_WORKSPACE_SCHEMA_VERSION,
       projectId,
+      ownsWorkspaceRoot,
     } satisfies WorkspaceMarker,
     null,
     2,
@@ -206,7 +218,9 @@ function parseMarker(content: string): WorkspaceMarker {
     value.schemaVersion !== PROJECT_WORKSPACE_SCHEMA_VERSION ||
     !('projectId' in value) ||
     typeof value.projectId !== 'string' ||
-    value.projectId.trim().length === 0
+    value.projectId.trim().length === 0 ||
+    ('ownsWorkspaceRoot' in value &&
+      typeof value.ownsWorkspaceRoot !== 'boolean')
   ) {
     throw new AppError('PROJECT_WORKSPACE_CONFLICT');
   }
@@ -214,6 +228,9 @@ function parseMarker(content: string): WorkspaceMarker {
   return {
     schemaVersion: PROJECT_WORKSPACE_SCHEMA_VERSION,
     projectId: value.projectId.trim(),
+    ...('ownsWorkspaceRoot' in value
+      ? { ownsWorkspaceRoot: value.ownsWorkspaceRoot as boolean }
+      : {}),
   };
 }
 
@@ -348,7 +365,7 @@ export class ProjectWorkspaceManager
         try {
           await this.dependencies.writeFile(
             temporaryMarkerPath,
-            createMarkerContent(projectId),
+            createMarkerContent(projectId, createdWorkspaceDirectory),
             { encoding: 'utf8', flag: 'wx' },
           );
           await this.dependencies.link(temporaryMarkerPath, markerPath);
@@ -713,44 +730,104 @@ export class ProjectWorkspaceManager
     }
   }
 
-  async removeGeneratedFile(
+  async removeManagedAssetFile(
     workspacePath: string,
     contentRef: LocalFileContentRef,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const normalizedWorkspace =
       requireAbsoluteWorkspaceDirectoryPath(workspacePath);
 
-    if (
-      contentRef.base !== 'project-workspace' ||
-      !contentRef.path.startsWith('assets/generated/')
-    ) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
+    if (contentRef.base !== 'project-workspace') {
+      return false;
+    }
+
+    const managedDirectoryName =
+      getManagedProjectAssetDirectory(contentRef);
+
+    if (!managedDirectoryName) {
+      return false;
     }
 
     const absolutePath = resolvePortableWorkspacePath(
       normalizedWorkspace,
       contentRef.path,
     );
-    const generatedDirectory = join(
+    const managedDirectory = join(
       normalizedWorkspace,
       'assets',
-      'generated',
+      managedDirectoryName,
     );
 
-    if (!isPathInside(generatedDirectory, absolutePath)) {
+    if (!isPathInside(managedDirectory, absolutePath)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
     await this.dependencies.rm(absolutePath, { force: true });
+    return true;
   }
 
-  async removeImportedFile(absolutePath: string): Promise<void> {
-    await this.dependencies.rm(
-      requireAbsoluteWorkspaceFilePath(absolutePath),
-      {
-      force: true,
-      },
+  async removeProjectWorkspace(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const normalizedProjectId = projectId.trim();
+    const normalizedWorkspace =
+      requireAbsoluteWorkspaceDirectoryPath(workspacePath);
+
+    if (normalizedProjectId.length === 0) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+
+    const marker = await this.readMarker(normalizedWorkspace);
+
+    if (!marker) {
+      return;
+    }
+    if (marker.projectId !== normalizedProjectId) {
+      throw new AppError('PROJECT_WORKSPACE_CONFLICT');
+    }
+
+    const workspaceStats = await this.dependencies.lstat(
+      normalizedWorkspace,
     );
+    if (workspaceStats.isSymbolicLink() || !workspaceStats.isDirectory()) {
+      throw new AppError('PROJECT_WORKSPACE_CONFLICT');
+    }
+
+    const ownsWorkspaceRoot =
+      marker.ownsWorkspaceRoot ??
+      (await this.isLegacyApplicationWorkspace(normalizedWorkspace));
+
+    if (ownsWorkspaceRoot) {
+      await this.dependencies.rm(normalizedWorkspace, {
+        recursive: true,
+        force: true,
+      });
+      return;
+    }
+
+    // The root and its reserved-looking directories predated the Project, so
+    // only detach the exact marker. AssetService removes files it can prove
+    // are managed from persisted ContentRefs before this method is called.
+    await this.dependencies.rm(this.markerPath(normalizedWorkspace), {
+      force: true,
+    });
+  }
+
+  private async isLegacyApplicationWorkspace(
+    workspacePath: string,
+  ): Promise<boolean> {
+    const entries = await this.dependencies.readdir(workspacePath);
+    const applicationEntries = new Set([
+      'assets',
+      'attachments',
+      PROJECT_WORKSPACE_METADATA_DIRECTORY,
+    ]);
+
+    // Old markers did not persist root ownership. A legacy root is removable
+    // only when every top-level entry belongs to the standard app layout.
+    // Any user file or unknown directory makes the decision conservative.
+    return entries.every((entry) => applicationEntries.has(entry));
   }
 
   private async generatedFileIfPresent(

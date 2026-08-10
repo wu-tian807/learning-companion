@@ -249,38 +249,42 @@ async function executeReadPdf(
   }
 
   context.signal?.throwIfAborted();
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const bytes = new Uint8Array(await readFile(target.absolutePath));
-  const loadingTask = pdfjs.getDocument({
-    data: bytes,
-    useSystemFonts: true,
-  });
-
   try {
-    const document = await loadingTask.promise;
-    const { startPage, endPage } = validatePageRange(
-      input,
-      document.numPages,
-      operation,
-    );
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const bytes = new Uint8Array(await readFile(target.absolutePath));
+    const loadingTask = pdfjs.getDocument({
+      data: bytes,
+      useSystemFonts: true,
+    });
 
-    return operation === 'extract_text'
-      ? await extractText(
-          document,
-          target,
-          input,
-          context,
-          startPage,
-          endPage,
-        )
-      : await renderPages(
-          document,
-          target,
-          input,
-          context,
-          startPage,
-          endPage,
-        );
+    try {
+      const document = await loadingTask.promise;
+      const { startPage, endPage } = validatePageRange(
+        input,
+        document.numPages,
+        operation,
+      );
+
+      return operation === 'extract_text'
+        ? await extractText(
+            document,
+            target,
+            input,
+            context,
+            startPage,
+            endPage,
+          )
+        : await renderPages(
+            document,
+            target,
+            input,
+            context,
+            startPage,
+            endPage,
+          );
+    } finally {
+      await loadingTask.destroy();
+    }
   } catch (error) {
     if (error instanceof AgentFunctionToolExecutionError) {
       throw error;
@@ -289,8 +293,6 @@ async function executeReadPdf(
     throw new AgentFunctionToolExecutionError(
       'PDF 无法处理；文件可能已损坏、加密或使用了不受支持的编码。',
     );
-  } finally {
-    await loadingTask.destroy();
   }
 }
 

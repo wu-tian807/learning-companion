@@ -204,7 +204,14 @@ workspace_root/<key>/<taskId>
 
 - `scope: shared` 固定使用 `shared`；
 - `scope: task` 使用 `taskId`；
-- shared Workspace 当前禁止 Agent 写入，避免多个 Task 并发污染共享上下文。
+- `scope` 只决定稳定的 Workspace 实例键，不隐含读写策略；shared Workspace 是否可写
+  完全由 `permissions` 声明。需要避免并发写入时，由使用该 Workspace 的业务 Service
+  负责串行化或冲突控制。
+
+两种 scope 使用完全相同的 `TaskDefinition -> GenerationTask` 执行链路。每次外部
+Agent 业务请求都创建一个新的 GenerationTask；`shared` 不表示一个永不结束的 Task，
+只表示这些独立 Task 使用相同的 Workspace 实例和 Provider Session。`task` 则让每个
+GenerationTask 使用自己的 Workspace 实例和 Provider Session。
 
 ### 5.2 主副 Workspace
 

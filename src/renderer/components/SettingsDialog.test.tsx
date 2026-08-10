@@ -109,7 +109,7 @@ describe('SettingsDialog', () => {
 
     expect(markup).toContain('常规');
     expect(markup).toContain('AI Provider');
-    expect(markup).toContain('选择用于 AI 功能的账号');
+    expect(markup).toContain('管理账号与 API Connection');
     expect(markup).not.toContain('外部组件位置');
   });
 });

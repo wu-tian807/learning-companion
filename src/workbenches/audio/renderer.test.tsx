@@ -11,6 +11,7 @@ import {
 } from './renderer';
 import {
   AUDIO_WORKBENCH_ID,
+  audioWorkbenchManifest,
   cloneAudioViewState,
   DEFAULT_AUDIO_VIEW_STATE,
 } from './shared';
@@ -38,7 +39,8 @@ function render(payload: WorkbenchBootstrap['payload']) {
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: AUDIO_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: audioWorkbenchManifest.version,
+    protocolVersion: audioWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

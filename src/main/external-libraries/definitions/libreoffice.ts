@@ -48,12 +48,13 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
         architecture: 'x64',
         packageType: 'msi',
         downloadUrl:
-          'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.2.5/win/x86_64/LibreOffice_26.2.5_Win_x86-64.msi',
+          'https://download.documentfoundation.org/libreoffice/stable/26.2.5/win/x86_64/LibreOffice_26.2.5_Win_x86-64.msi',
         sha256:
           'f15ba07bfcb0186986cf3171063506f5d207c11f8cc051ba0d135209e9e915f9',
         expectedSize: 372_948_992,
-        // soffice.exe is a GUI launcher and can return before a headless
-        // conversion finishes. The console launcher waits for completion.
+        // soffice.exe is a GUI launcher and may return before a headless
+        // conversion finishes. The console entry point waits for the worker
+        // process and exposes its conversion diagnostics.
         executableRelativePath: 'program/soffice.com',
       }),
     ]),

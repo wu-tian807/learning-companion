@@ -13,6 +13,7 @@ export interface PreparedGenerationTask {
   readonly projectId: string;
   readonly definitionId: string;
   readonly definitionVersion: number;
+  readonly providerSelectorId: string;
   readonly instruction: GenerationInstruction;
   readonly systemInstruction: string;
   readonly defaultUserMessage: AgentUserMessage;

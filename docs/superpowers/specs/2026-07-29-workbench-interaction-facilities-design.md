@@ -94,7 +94,8 @@ Workbench 自己监听事件、维护选区、渲染菜单并决定 IPC。
 本设计选择该方案。
 
 - Manifest 使用开放的 `id + version + options` 声明设施；
-- Facility Registry 注册配置校验器、事件校验器和端侧 Adapter；
+- Facility Registry 注册配置与事件校验器，端侧 Adapter 由对应
+  Workbench Provider 一并注册；
 - Workbench 自己或公共捕获器产生原始交互；
 - Workbench Adapter 把原始信息映射为自己的 Anchor；
 - Host 是持续 Interaction 的唯一发布入口；
@@ -567,6 +568,21 @@ Main 端新增通用 `SandboxFrameInteractionBridge`，职责仅包括：
 - 通过白名单 IPC 发送带 `sessionId` 的原始交互事件；
 - Window、Frame 或 Session 销毁后释放监听和缓存。
 
+Main Facility Adapter Registry 使用
+`workbenchId + facilityId + facilityVersion` 作为注册键。Bridge 先由 Frame
+归属找到活动 `workbenchId`，再查找该 Workbench 自己注册的 Adapter；同一个
+Facility 因此可以由 HTML、未来网页型 EPUB 或其他 Workbench 分别实现，且
+互不覆盖。
+
+Adapter 随 `MainWorkbenchProvider.facilityAdapters` 注册。统一 Catalog 会校验
+Adapter 的 `workbenchId` 必须与 Provider Manifest 一致，然后完成注册。Host、
+Bridge 和 Bootstrap 不再集中列举每种媒体的采集类。
+
+Renderer Workbench 可以复用 CodeMirror 等机械采集 Adapter，但必须由具体
+Workbench 主动创建并注入 `createTarget`；Host/Runtime 只接收、按 Manifest
+校验和保存 `WorkbenchInteractionSnapshot`，不监听媒体 DOM，也不构造任何
+HTML、EPUB、PDF、图片、音视频或思维导图 Anchor。
+
 它不负责：
 
 - 创建 HTML、EPUB 或 PDF Anchor；
@@ -575,11 +591,15 @@ Main 端新增通用 `SandboxFrameInteractionBridge`，职责仅包括：
 - 访问 Asset、Attachment 或数据库；
 - 向沙箱页面暴露任何本地能力。
 
-第一阶段注册两个 Sandbox Frame Adapter：
+HTML Workbench 第一阶段注册两个 Sandbox Frame Adapter：
 
 - `core.surface.context-menu@1`：消费 Electron `context-menu` 参数；
 - `core.input.text-selection@1`：在选择手势稳定后从焦点 Frame 只读取得
   文字。
+
+这里的 Adapter 代码归属于 HTML Workbench。它可以在 Electron Main 中借助
+`WebFrameMain.executeJavaScript()` 穿过沙箱边界采集，但不因此变成 Host 的
+媒体逻辑；Bridge 只把 Adapter 返回的 JSON 当作不透明 Facility Payload。
 
 未来如果沙箱 HTML 需要区域选择，可以注册
 `core.input.region-selection@1` 的 Adapter；Bridge 本身不增加新的事件
@@ -673,6 +693,10 @@ HTML Renderer：
 - 通过 Facility Registry 校验 `facilityId + version + payload`；
 - 把文字映射成 `html.quote` Anchor；
 - 把链接映射成 `html.link` Anchor；
+- 右键时由 HTML Main Adapter 探测对应 Frame 中当前 DOM 元素，发布
+  `html.element@1` Anchor；该 Anchor 保存 Frame URL、标签、有限长度的
+  DOM child-index 路径以及可选 ID、role、aria-label 和文字提示；
+- DOM 探测失败时只省略 `html.element`，基础右键上下文仍然发布；
 - 收到 `core.input.text-selection` 时立即调用
   `onInteractionChange()`；
 - 收到 `core.surface.context-menu` 时调用
@@ -780,6 +804,7 @@ src/
 │       └── interaction/
 │           ├── sandbox-frame-interaction-bridge.ts
 │           ├── main-facility-adapter-registry.ts
+│           ├── sandbox-frame-interaction-triggers.ts
 │           └── workbench-transport-binding-registry.ts
 ├── preload/
 │   └── index.ts
@@ -804,6 +829,9 @@ src/
 │           └── workbench-runtime.ts
 └── workbenches/
     ├── html/
+    │   ├── main-facility-adapters.ts
+    │   ├── facility-events.ts
+    │   └── shared.ts
     ├── epub/
     ├── plain-text/
     ├── markdown/

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RendererWorkbenchModule } from './renderer-workbench-registry';
-import { RendererWorkbenchRegistry } from './renderer-workbench-registry';
+import {
+  assertRendererWorkbenchCompatibility,
+  RendererWorkbenchRegistry,
+} from './renderer-workbench-registry';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
 
 function TestView() {
@@ -9,7 +12,7 @@ function TestView() {
 }
 
 describe('RendererWorkbenchRegistry', () => {
-  it('resolves registered modules and falls back for unknown IDs', async () => {
+  it('resolves registered modules and rejects unknown IDs', async () => {
     const registry = new RendererWorkbenchRegistry(
       unsupportedRendererWorkbenchModule,
     );
@@ -26,9 +29,12 @@ describe('RendererWorkbenchRegistry', () => {
     await expect(registry.resolve('builtin.plain-text')).resolves.toBe(
       module,
     );
-    await expect(registry.resolve('unknown')).resolves.toBe(
-      unsupportedRendererWorkbenchModule,
+    await expect(registry.resolve('unknown')).rejects.toThrow(
+      'Renderer Workbench 未注册',
     );
+    await expect(
+      registry.resolve(unsupportedRendererWorkbenchModule.manifest.id),
+    ).resolves.toBe(unsupportedRendererWorkbenchModule);
   });
 
   it('loads renderer modules only when first resolved', async () => {
@@ -45,7 +51,7 @@ describe('RendererWorkbenchRegistry', () => {
     };
     let loadCount = 0;
 
-    registry.registerLoader(module.manifest.id, async () => {
+    registry.registerLoader(module.manifest, async () => {
       loadCount += 1;
       return module;
     });
@@ -66,22 +72,28 @@ describe('RendererWorkbenchRegistry', () => {
     expect(loadCount).toBe(1);
   });
 
-  it('rejects loader results registered under a different ID', async () => {
+  it('rejects loader results with a different contract', async () => {
     const registry = new RendererWorkbenchRegistry(
       unsupportedRendererWorkbenchModule,
     );
 
-    registry.registerLoader('builtin.plain-text', async () => ({
+    const expectedManifest = {
+      ...unsupportedRendererWorkbenchModule.manifest,
+      id: 'builtin.plain-text' as const,
+      supportedMediaTypes: ['text/plain'],
+    };
+
+    registry.registerLoader(expectedManifest, async () => ({
       manifest: {
-        ...unsupportedRendererWorkbenchModule.manifest,
-        id: 'builtin.other',
+        ...expectedManifest,
+        version: expectedManifest.version + 1,
       },
       View: TestView,
     }));
 
     await expect(
       registry.resolve('builtin.plain-text'),
-    ).rejects.toThrow('Renderer Workbench 加载结果不匹配');
+    ).rejects.toThrow('Renderer Workbench 加载契约不匹配');
   });
 
   it('rejects duplicate module IDs', () => {
@@ -92,5 +104,35 @@ describe('RendererWorkbenchRegistry', () => {
     expect(() =>
       registry.register(unsupportedRendererWorkbenchModule),
     ).toThrow('Renderer Workbench 重复注册');
+  });
+
+  it('checks the Main bootstrap against the Renderer contract', () => {
+    const module: RendererWorkbenchModule = {
+      manifest: {
+        ...unsupportedRendererWorkbenchModule.manifest,
+        id: 'builtin.plain-text',
+      },
+      View: TestView,
+    };
+    const bootstrap = {
+      sessionId: 'session',
+      workbenchId: module.manifest.id,
+      workbenchVersion: module.manifest.version,
+      protocolVersion: module.manifest.protocolVersion,
+      assetId: 'asset',
+      mediaType: 'text/plain',
+      availability: 'available' as const,
+      payload: null,
+    };
+
+    expect(() =>
+      assertRendererWorkbenchCompatibility(module, bootstrap),
+    ).not.toThrow();
+    expect(() =>
+      assertRendererWorkbenchCompatibility(module, {
+        ...bootstrap,
+        workbenchVersion: bootstrap.workbenchVersion + 1,
+      }),
+    ).toThrow('Workbench 前后端契约版本不匹配');
   });
 });

@@ -13,6 +13,7 @@ import {
   cloneImageViewState,
   DEFAULT_IMAGE_VIEW_STATE,
   IMAGE_WORKBENCH_ID,
+  imageWorkbenchManifest,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -40,7 +41,8 @@ function createBootstrap(
   return {
     sessionId: 'session',
     workbenchId: IMAGE_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: imageWorkbenchManifest.version,
+    protocolVersion: imageWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

@@ -23,7 +23,6 @@ function challengeUrl(
 
 interface UseAgentProviderSetupInput {
   readonly setup: AgentProviderSetupSnapshot;
-  readonly onSetupChange: (setup: AgentProviderSetupSnapshot) => void;
   readonly onCompleted: (setup: AppSetupSnapshot) => void;
   readonly api: AgentProviderSetupApi;
   readonly refreshProvider: (
@@ -33,7 +32,6 @@ interface UseAgentProviderSetupInput {
 
 export function useAgentProviderSetup({
   setup,
-  onSetupChange,
   onCompleted,
   api,
   refreshProvider,
@@ -41,16 +39,17 @@ export function useAgentProviderSetup({
   const [loginChallenge, setLoginChallenge] = useState<
     AgentProviderLoginChallenge | undefined
   >();
-  const [busyProviderId, setBusyProviderId] = useState<
+  const [busyConnectionId, setBusyConnectionId] = useState<
     string | undefined
   >();
   const [error, setError] = useState<string | null>(null);
   const currentLoginChallenge =
     loginChallenge &&
-    setup.providers.find(
-      (candidate) =>
-        candidate.id === loginChallenge.providerId,
-    )?.credential.status !== 'authenticated'
+    setup.providers
+      .find((candidate) => candidate.id === loginChallenge.providerId)
+      ?.connections.find(
+        (candidate) => candidate.id === loginChallenge.connectionId,
+      )?.status !== 'ready'
       ? loginChallenge
       : undefined;
 
@@ -64,13 +63,14 @@ export function useAgentProviderSetup({
         throw new Error('Agent Provider 状态响应无效');
       }
 
-      const provider = loginChallenge
-        ? next.providers.find(
-            (candidate) =>
-              candidate.id === loginChallenge.providerId,
-          )
+      const connection = loginChallenge
+        ? next.providers
+            .find((candidate) => candidate.id === loginChallenge.providerId)
+            ?.connections.find(
+              (candidate) => candidate.id === loginChallenge.connectionId,
+            )
         : undefined;
-      if (provider?.credential.status === 'authenticated') {
+      if (connection?.status === 'ready') {
         setLoginChallenge(undefined);
       }
     } catch (refreshError) {
@@ -83,13 +83,16 @@ export function useAgentProviderSetup({
     }
   };
 
-  const startLogin = async (providerId: string) => {
-    setBusyProviderId(providerId);
+  const startLogin = async (providerId: string, connectionId: string) => {
+    setBusyConnectionId(connectionId);
     setError(null);
     let challenge: AgentProviderLoginChallenge | undefined;
 
     try {
-      challenge = await api.startAgentProviderLogin({ providerId });
+      challenge = await api.startAgentProviderLogin({
+        providerId,
+        connectionId,
+      });
 
       if (!isAgentProviderLoginChallenge(challenge)) {
         throw new Error('Agent Provider 登录响应无效');
@@ -102,6 +105,7 @@ export function useAgentProviderSetup({
         await api
           .cancelAgentProviderLogin({
             providerId: challenge.providerId,
+            connectionId: challenge.connectionId,
             loginId: challenge.loginId,
           })
           .catch(() => undefined);
@@ -114,22 +118,15 @@ export function useAgentProviderSetup({
         ) ?? '无法开始 Provider 登录，请重试。',
       );
     } finally {
-      setBusyProviderId(undefined);
+      setBusyConnectionId(undefined);
     }
   };
 
-  const selectProvider = async (providerId: string) => {
-    setBusyProviderId(providerId);
+  const complete = async () => {
+    setBusyConnectionId('onboarding');
     setError(null);
 
     try {
-      const next = await api.selectAgentProvider({ providerId });
-
-      if (!isAgentProviderSetupSnapshot(next)) {
-        throw new Error('Agent Provider 选择响应无效');
-      }
-
-      onSetupChange(next);
       const appSetup = await api.completeAgentProviderOnboarding();
 
       if (!isAppSetupSnapshot(appSetup)) {
@@ -141,11 +138,11 @@ export function useAgentProviderSetup({
       setError(
         userMessageFromError(
           selectionError,
-          '无法选择该 Provider，请重新检查登录状态。',
-        ) ?? '无法选择该 Provider，请重新检查登录状态。',
+          '无法保存 Provider 设置状态，请重试。',
+        ) ?? '无法保存 Provider 设置状态，请重试。',
       );
     } finally {
-      setBusyProviderId(undefined);
+      setBusyConnectionId(undefined);
     }
   };
 
@@ -167,8 +164,8 @@ export function useAgentProviderSetup({
   };
 
   const dismiss = () => {
-    setBusyProviderId(
-      currentLoginChallenge?.providerId ?? 'onboarding',
+    setBusyConnectionId(
+      currentLoginChallenge?.connectionId ?? 'onboarding',
     );
     setError(null);
 
@@ -176,6 +173,7 @@ export function useAgentProviderSetup({
       ? api
           .cancelAgentProviderLogin({
             providerId: currentLoginChallenge.providerId,
+            connectionId: currentLoginChallenge.connectionId,
             loginId: currentLoginChallenge.loginId,
           })
           .catch(() => undefined)
@@ -198,19 +196,19 @@ export function useAgentProviderSetup({
         );
       })
       .finally(() => {
-        setBusyProviderId(undefined);
+        setBusyConnectionId(undefined);
       });
   };
 
   return {
     setup,
     loginChallenge: currentLoginChallenge,
-    busyProviderId,
+    busyConnectionId,
     error,
     clearError: () => setError(null),
     refresh,
     startLogin,
-    selectProvider,
+    complete,
     reopenLogin,
     dismiss,
   };

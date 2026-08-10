@@ -281,7 +281,7 @@ export function VideoWorkbenchView({
       }),
     [ready, reveal, togglePlayback],
   );
-  useWorkbenchContributions('builtin.video', rendererActions);
+  useWorkbenchContributions(videoWorkbenchManifest.id, rendererActions);
 
   const openContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -370,7 +370,9 @@ export function VideoWorkbenchView({
   );
 }
 
-const videoRendererWorkbenchModule: RendererWorkbenchModule = {
+const videoRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof videoWorkbenchManifest.id
+> = {
   manifest: videoWorkbenchManifest,
   View: VideoWorkbenchView,
 };

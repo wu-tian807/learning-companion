@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
+import { WORKBENCH_PROTOCOL_VERSION } from '../../shared/workbench/manifest';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import {
   registerWorkbenchHandlers,
@@ -53,7 +54,8 @@ function createManager() {
     open: vi.fn(async (assetId: string) => ({
       sessionId: 'session',
       workbenchId: 'builtin.unsupported',
-      protocolVersion: 1,
+      workbenchVersion: 1,
+      protocolVersion: WORKBENCH_PROTOCOL_VERSION,
       assetId,
       mediaType: 'text/plain',
       availability: 'available',

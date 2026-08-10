@@ -13,6 +13,7 @@ import {
   cloneVideoViewState,
   DEFAULT_VIDEO_VIEW_STATE,
   VIDEO_WORKBENCH_ID,
+  videoWorkbenchManifest,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -38,7 +39,8 @@ function render(payload: WorkbenchBootstrap['payload']) {
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: VIDEO_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: videoWorkbenchManifest.version,
+    protocolVersion: videoWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

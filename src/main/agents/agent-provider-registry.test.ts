@@ -6,19 +6,27 @@ import { AgentProviderRegistry } from './agent-provider-registry';
 function provider(id: string): AgentProvider {
   return {
     id,
-    providerId: id,
     displayName: id,
     description: '',
-    loginLabel: '登录',
-    getCredentialState: vi.fn(async () => ({
-      status: 'unauthenticated' as const,
+    supportedConnectionKinds: ['account'],
+    builtInConnections: [{
+      id: `${id}-account`,
+      providerId: id,
+      kind: 'account',
+      displayName: 'Account',
+    }],
+    inspectAccountConnection: vi.fn(async () => ({
+      status: 'unconfigured' as const,
     })),
     startLogin: vi.fn(),
     cancelLogin: vi.fn(),
-    async *runTurn() {
-      yield* [] as never[];
-      throw new Error('not used');
-    },
+    getModelCatalog: vi.fn(async () => ({
+      providerId: id,
+      connectionId: `${id}-account`,
+      allowsCustomModel: false,
+      models: [],
+    })),
+    createRunner: vi.fn(),
   };
 }
 

@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const outputDirectory = path.resolve('out');
-const expectedSuffix = path.join(
+const betterSqlite3ExpectedSuffix = path.join(
   'app.asar.unpacked',
   'node_modules',
   'better-sqlite3',
@@ -12,17 +13,44 @@ const expectedSuffix = path.join(
   `${process.platform}-${process.arch}.node`,
 );
 
-function findExpectedBinary(directory) {
+function findExpectedBinary(directory, expectedSuffix) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const entryPath = path.join(directory, entry.name);
 
     if (entry.isDirectory()) {
-      const nestedResult = findExpectedBinary(entryPath);
+      const nestedResult = findExpectedBinary(entryPath, expectedSuffix);
 
       if (nestedResult) {
         return nestedResult;
       }
     } else if (entryPath.endsWith(expectedSuffix)) {
+      return entryPath;
+    }
+  }
+
+  return undefined;
+}
+
+function findPackagedCanvasBinary(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      const nestedResult = findPackagedCanvasBinary(entryPath);
+
+      if (nestedResult) {
+        return nestedResult;
+      }
+      continue;
+    }
+
+    const normalizedPath = entryPath.split(path.sep).join('/');
+    if (
+      entry.name.endsWith('.node') &&
+      normalizedPath.includes(
+        '/app.asar.unpacked/node_modules/@napi-rs/canvas-',
+      )
+    ) {
       return entryPath;
     }
   }
@@ -51,18 +79,41 @@ function findAppAsar(directory) {
 assert.ok(fs.existsSync(outputDirectory), '尚未生成 out 打包目录');
 assert.ok(process.versions.electron, '打包验证必须运行在 Electron 中');
 
-const nativeBinary = findExpectedBinary(outputDirectory);
+const betterSqlite3Binary = findExpectedBinary(
+  outputDirectory,
+  betterSqlite3ExpectedSuffix,
+);
+const canvasBinary = findPackagedCanvasBinary(outputDirectory);
 const appAsar = findAppAsar(outputDirectory);
 
 assert.ok(
-  nativeBinary,
-  `打包产物中缺少解包后的原生模块：${expectedSuffix}`,
+  betterSqlite3Binary,
+  `打包产物中缺少解包后的原生模块：${betterSqlite3ExpectedSuffix}`,
+);
+assert.ok(
+  canvasBinary,
+  '打包产物中缺少 @napi-rs/canvas 的解包原生模块',
 );
 assert.ok(appAsar, '打包产物中缺少 app.asar');
 
 const packagedRequire = createRequire(import.meta.url);
+const packagedPdfJsPath = path.join(
+  appAsar,
+  'node_modules',
+  'pdfjs-dist',
+  'legacy',
+  'build',
+  'pdf.mjs',
+);
+assert.ok(
+  fs.existsSync(packagedPdfJsPath),
+  `打包产物中缺少 PDF.js：${packagedPdfJsPath}`,
+);
 const PackagedDatabase = packagedRequire(
   path.join(appAsar, 'node_modules/better-sqlite3'),
+);
+const { createCanvas } = packagedRequire(
+  path.join(appAsar, 'node_modules/@napi-rs/canvas'),
 );
 const database = new PackagedDatabase(':memory:');
 
@@ -79,7 +130,16 @@ try {
     .get();
 
   assert.deepEqual(result, { content: 'packaged native module' });
-  console.log(`packaged native module verified: ${nativeBinary}`);
+  const canvas = createCanvas(2, 2);
+  assert.equal(canvas.width, 2);
+  assert.equal(canvas.height, 2);
+  assert.ok(canvas.encodeSync('png').byteLength > 0);
+  const pdfjs = await import(pathToFileURL(packagedPdfJsPath).href);
+  assert.equal(typeof pdfjs.getDocument, 'function');
+
+  console.log(
+    `packaged runtime dependencies verified: ${betterSqlite3Binary}, ${canvasBinary}, ${packagedPdfJsPath}`,
+  );
 } finally {
   database.close();
 }

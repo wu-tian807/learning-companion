@@ -3,9 +3,15 @@ import { isHomePreferences } from "./app-preferences";
 import type { AppSetupSnapshot } from "./app-setup";
 import type {
   AgentProviderLoginChallenge,
+  AgentProviderModelCatalogSnapshot,
   AgentProviderSetupSnapshot,
 } from "./agent-providers";
-import { isAgentProviderId } from "./agent-providers";
+import {
+  isAgentProviderBaseUrl,
+  isAgentProviderConnectionId,
+  isAgentProviderId,
+  isAgentProviderSelectorSelectionSnapshot,
+} from "./agent-providers";
 import {
   ASSET_NAME_MAX_LENGTH,
   isAssetSnapshotList,
@@ -57,7 +63,11 @@ export const IPC_CHANNELS = {
   agentProviderChanged: "agent-provider:changed",
   startAgentProviderLogin: "agent-provider:start-login",
   cancelAgentProviderLogin: "agent-provider:cancel-login",
-  selectAgentProvider: "agent-provider:select",
+  configureAgentProviderApiConnection:
+    "agent-provider:configure-api-connection",
+  deleteAgentProviderConnection: "agent-provider:delete-connection",
+  getAgentProviderModels: "agent-provider:get-models",
+  selectAgentProviderForSelector: "agent-provider:select-for-selector",
   listExternalLibraries: "external-library:list",
   refreshExternalLibrary: "external-library:refresh",
   startExternalLibraryInstallation: "external-library:install",
@@ -128,13 +138,22 @@ export interface LearningCompanionApi {
     listener: (snapshot: AgentProviderSetupSnapshot) => void,
   ) => () => void;
   startAgentProviderLogin: (
-    request: AgentProviderIdRequest,
+    request: AgentProviderConnectionRequest,
   ) => Promise<AgentProviderLoginChallenge>;
   cancelAgentProviderLogin: (
     request: CancelAgentProviderLoginRequest,
   ) => Promise<void>;
-  selectAgentProvider: (
-    request: AgentProviderIdRequest,
+  configureAgentProviderApiConnection: (
+    request: ConfigureAgentProviderApiConnectionRequest,
+  ) => Promise<AgentProviderSetupSnapshot>;
+  deleteAgentProviderConnection: (
+    request: AgentProviderConnectionRequest,
+  ) => Promise<AgentProviderSetupSnapshot>;
+  getAgentProviderModels: (
+    request: AgentProviderConnectionRequest,
+  ) => Promise<AgentProviderModelCatalogSnapshot>;
+  selectAgentProviderForSelector: (
+    request: SelectAgentProviderForSelectorRequest,
   ) => Promise<AgentProviderSetupSnapshot>;
   listExternalLibraries: () => Promise<ExternalLibrarySnapshot[]>;
   refreshExternalLibrary: (
@@ -271,9 +290,30 @@ export interface AgentProviderIdRequest {
   providerId: string;
 }
 
-export interface CancelAgentProviderLoginRequest {
-  providerId: string;
+export interface AgentProviderConnectionRequest
+  extends AgentProviderIdRequest {
+  connectionId: string;
+}
+
+export interface CancelAgentProviderLoginRequest
+  extends AgentProviderConnectionRequest {
   loginId: string;
+}
+
+export interface ConfigureAgentProviderApiConnectionRequest {
+  providerId: string;
+  connectionId?: string;
+  displayName: string;
+  baseUrl: string;
+  apiKey?: string;
+}
+
+export interface SelectAgentProviderForSelectorRequest {
+  selectorId: string;
+  providerId: string;
+  connectionId: string;
+  modelId: string | null;
+  reasoningEffort: string | null;
 }
 
 export interface RenameProjectRequest {
@@ -546,14 +586,45 @@ export function isAgentProviderIdRequest(
   return isRecord(value) && isAgentProviderId(value.providerId);
 }
 
+export function isAgentProviderConnectionRequest(
+  value: unknown,
+): value is AgentProviderConnectionRequest {
+  return (
+    isRecord(value) &&
+    isAgentProviderId(value.providerId) &&
+    isAgentProviderConnectionId(value.connectionId)
+  );
+}
+
 export function isCancelAgentProviderLoginRequest(
   value: unknown,
 ): value is CancelAgentProviderLoginRequest {
   return (
     isRecord(value) &&
     isAgentProviderId(value.providerId) &&
+    isAgentProviderConnectionId(value.connectionId) &&
     isRequiredText(value.loginId, 256)
   );
+}
+
+export function isConfigureAgentProviderApiConnectionRequest(
+  value: unknown,
+): value is ConfigureAgentProviderApiConnectionRequest {
+  return (
+    isRecord(value) &&
+    isAgentProviderId(value.providerId) &&
+    (value.connectionId === undefined ||
+      isAgentProviderConnectionId(value.connectionId)) &&
+    isRequiredText(value.displayName, 128) &&
+    isAgentProviderBaseUrl(value.baseUrl) &&
+    (value.apiKey === undefined || isRequiredText(value.apiKey, 8_192))
+  );
+}
+
+export function isSelectAgentProviderForSelectorRequest(
+  value: unknown,
+): value is SelectAgentProviderForSelectorRequest {
+  return isAgentProviderSelectorSelectionSnapshot(value);
 }
 
 export function isDeleteAssetsRequest(

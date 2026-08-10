@@ -27,6 +27,8 @@ export interface GenerationAgentExecutionRequest {
   readonly purpose: string;
   readonly userMessage: AgentUserMessage;
   readonly expectedSessionId?: string;
+  readonly modelId?: string;
+  readonly reasoningEffort?: string;
 }
 
 function requireProviderId(value: string): string {
@@ -42,11 +44,13 @@ function requireProviderId(value: string): string {
 function validateTurnResult(
   result: GenerationAgentTurnResult,
   runnerProviderId: string,
+  runnerConnectionId: string,
   expectedSessionId: string | undefined,
 ): void {
   if (
     result.sessionId.trim().length === 0 ||
     result.providerId !== runnerProviderId ||
+    result.connectionId !== runnerConnectionId ||
     result.modelId.trim().length === 0 ||
     !Number.isSafeInteger(result.startedTime) ||
     result.startedTime < 0 ||
@@ -74,6 +78,7 @@ export class GenerationAgentExecutor {
     CompletedGenerationAgentRun
   > {
     const providerId = requireProviderId(runner.providerId);
+    const connectionId = requireProviderId(runner.connectionId);
     const sessionLocator = createAgentSessionLocator({
       projectId: prepared.projectId,
       workspaceKey: prepared.workspaces.primary.key,
@@ -87,6 +92,10 @@ export class GenerationAgentExecutor {
       sessionLocator,
       ...(request.expectedSessionId
         ? { sessionId: request.expectedSessionId }
+        : {}),
+      ...(request.modelId ? { modelId: request.modelId } : {}),
+      ...(request.reasoningEffort
+        ? { reasoningEffort: request.reasoningEffort }
         : {}),
       systemInstruction: prepared.systemInstruction,
       userMessage: request.userMessage,
@@ -105,7 +114,12 @@ export class GenerationAgentExecutor {
 
     const result = next.value;
     signal.throwIfAborted();
-    validateTurnResult(result, providerId, request.expectedSessionId);
+    validateTurnResult(
+      result,
+      providerId,
+      connectionId,
+      request.expectedSessionId,
+    );
 
     return Object.freeze({
       metrics: Object.freeze({
@@ -113,6 +127,7 @@ export class GenerationAgentExecutor {
         purpose: request.purpose,
         sessionId: result.sessionId,
         providerId,
+        connectionId,
         modelId: result.modelId,
         startedTime: result.startedTime,
         completedTime: result.completedTime,

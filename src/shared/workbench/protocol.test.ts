@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { WORKBENCH_PROTOCOL_VERSION } from './manifest';
 import {
   isJsonValue,
   isWorkbenchBootstrap,
@@ -41,12 +42,24 @@ describe('Workbench protocol', () => {
       isWorkbenchBootstrap({
         sessionId: 'session',
         workbenchId: 'builtin.unsupported',
-        protocolVersion: 1,
+        workbenchVersion: 1,
+        protocolVersion: WORKBENCH_PROTOCOL_VERSION,
         assetId: 'asset',
         mediaType: 'text/plain',
         availability: 'available',
         payload: { reason: 'unsupported-media' },
       }),
     ).toBe(true);
+    expect(
+      isWorkbenchBootstrap({
+        sessionId: 'session',
+        workbenchId: 'builtin.unsupported',
+        protocolVersion: WORKBENCH_PROTOCOL_VERSION,
+        assetId: 'asset',
+        mediaType: 'text/plain',
+        availability: 'available',
+        payload: null,
+      }),
+    ).toBe(false);
   });
 });

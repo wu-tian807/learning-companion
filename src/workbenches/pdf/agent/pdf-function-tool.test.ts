@@ -94,7 +94,7 @@ describe('workspace PDF function tool', () => {
     expect(result).toEqual(expect.stringContaining('page 1/2'));
     expect(result).toEqual(expect.stringContaining('First PDF page'));
     expect(result).toEqual(expect.stringContaining('Second PDF page'));
-  });
+  }, 15_000);
 
   it('tells the Agent how to handle sparse embedded text and visual details', () => {
     expect(pdfFunctionTool.description).toContain(

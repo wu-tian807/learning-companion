@@ -224,6 +224,10 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       definition.assetReferenceSchema,
       request.assetReferences,
     );
+    const executionConfiguration =
+      this.runnerResolver.resolveSelectorConfiguration(
+        definition.providerSelectorId,
+      );
     const createdTime = this.dependencies.now();
     const task = GenerationTask.create({
       id: this.dependencies.createId(),
@@ -232,6 +236,17 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       definitionVersion: definition.version,
       instruction: parsedInstruction.value.toSnapshot(),
       assetReferences,
+      assignedProviderId: executionConfiguration.providerId,
+      assignedConnectionId: executionConfiguration.connectionId,
+      ...(executionConfiguration.modelId
+        ? { assignedModelId: executionConfiguration.modelId }
+        : {}),
+      ...(executionConfiguration.reasoningEffort
+        ? {
+            assignedReasoningEffort:
+              executionConfiguration.reasoningEffort,
+          }
+        : {}),
       createdTime,
     });
     const snapshot = task.getSnapshot();

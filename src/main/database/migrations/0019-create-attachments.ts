@@ -38,7 +38,7 @@ const attachmentGuardSql = `
 `;
 
 export const createAttachmentsMigration = Object.freeze({
-  version: 17,
+  version: 19,
   sql: `
     CREATE TABLE IF NOT EXISTS attachments (
       id TEXT PRIMARY KEY

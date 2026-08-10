@@ -26,7 +26,9 @@ export const DEFAULT_PLAIN_TEXT_VIEW_OPTIONS:
     lineNumbers: true,
   });
 
-export const plainTextWorkbenchManifest: AssetWorkbenchManifest = {
+export const plainTextWorkbenchManifest: AssetWorkbenchManifest<
+  typeof PLAIN_TEXT_WORKBENCH_ID
+> = {
   id: PLAIN_TEXT_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

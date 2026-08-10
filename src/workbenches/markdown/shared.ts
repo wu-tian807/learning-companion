@@ -139,7 +139,9 @@ export const DEFAULT_MARKDOWN_WORKBENCH_STATE:
     outlineVisible: false,
   });
 
-export const markdownWorkbenchManifest: AssetWorkbenchManifest = {
+export const markdownWorkbenchManifest: AssetWorkbenchManifest<
+  typeof MARKDOWN_WORKBENCH_ID
+> = {
   id: MARKDOWN_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

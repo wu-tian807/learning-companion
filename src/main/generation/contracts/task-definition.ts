@@ -51,9 +51,11 @@ export interface TaskAgentCallResult {
 }
 
 /**
- * A task-scoped view of one Provider session. Task definitions can request
- * multiple sequential turns without knowing how Providers or sessions are
- * selected and persisted.
+ * Agent-call facade injected for one GenerationTask execution. The concrete
+ * TaskDefinition chooses whether the underlying Provider session is isolated
+ * to that task or shared across tasks through its primary Workspace scope.
+ * Definitions can request multiple sequential turns without knowing how the
+ * Provider session is selected and persisted.
  */
 export interface TaskAgentSession {
   readonly completedCalls: readonly TaskAgentCallResult[];
@@ -93,6 +95,8 @@ export interface TaskDefinition<
 > extends GenerationTaskProcessor<TInstruction, TResult> {
   readonly id: string;
   readonly version: number;
+  /** Stable business slot used to resolve the execution configuration. */
+  readonly providerSelectorId: string;
   readonly systemInstruction: string;
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];

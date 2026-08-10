@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createHtmlLinkTarget,
+  createHtmlElementTarget,
   createHtmlQuoteTarget,
   isHtmlLinkAnchorV1,
+  isHtmlElementAnchorV1,
+  isHtmlElementTarget,
   isHtmlQuoteAnchorV1,
   isHtmlWorkbenchPayload,
 } from './shared';
@@ -45,6 +48,26 @@ describe('HTML Workbench shared protocol', () => {
     expect(
       isHtmlLinkAnchorV1({
         url: 'javascript:alert(1)',
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps a bounded DOM path for Workbench-owned element location', () => {
+    const target = createHtmlElementTarget({
+      frameUrl: 'learning-content://resource/token',
+      tagName: 'div',
+      domPath: [1, 3, 0],
+      id: 'chapter',
+      textQuote: '章节正文',
+    });
+
+    expect(isHtmlElementTarget(target)).toBe(true);
+    expect(isHtmlElementAnchorV1(target.anchorPayload)).toBe(true);
+    expect(
+      isHtmlElementAnchorV1({
+        frameUrl: 'learning-content://resource/token',
+        tagName: 'DIV',
+        domPath: [1],
       }),
     ).toBe(false);
   });

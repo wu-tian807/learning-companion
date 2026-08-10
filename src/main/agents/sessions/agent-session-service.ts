@@ -17,7 +17,6 @@ export interface BindAgentSessionProviderRequest {
   readonly locator: AgentSessionLocator;
   readonly providerId: string;
   readonly sessionId: string;
-  readonly configurationFingerprint: string;
 }
 
 export interface ReplaceAgentSessionProviderRequest
@@ -168,7 +167,6 @@ export class AgentSessionService implements AgentSessionServiceApi {
       const changed = candidate.bindProvider({
         providerId: request.providerId,
         sessionId: request.sessionId,
-        configurationFingerprint: request.configurationFingerprint,
         updatedTime: operationTime,
       });
 
@@ -202,7 +200,6 @@ export class AgentSessionService implements AgentSessionServiceApi {
         providerId: request.providerId,
         expectedSessionId: request.expectedSessionId,
         sessionId: request.sessionId,
-        configurationFingerprint: request.configurationFingerprint,
         updatedTime: this.nextTimestamp(
           currentSnapshot.updatedTime,
         ),

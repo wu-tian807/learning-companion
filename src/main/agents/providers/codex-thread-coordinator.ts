@@ -26,11 +26,11 @@ export class CodexThreadCoordinator {
   private readonly operationTails = new Map<string, Promise<void>>();
 
   constructor(
-    private readonly runtime: CodexRuntimeServiceApi,
     private readonly sessions: AgentSessionServiceApi,
   ) {}
 
   async resolve(
+    runtime: CodexRuntimeServiceApi,
     request: GenerationAgentTurnRequest,
     configuration: CodexGenerationConfiguration,
   ): Promise<ResolvedCodexThread> {
@@ -44,13 +44,10 @@ export class CodexThreadCoordinator {
       throw new AppError('AGENT_SESSION_CONFLICT');
     }
 
-    if (
-      existing &&
-      existing.configurationFingerprint === configuration.fingerprint
-    ) {
+    if (existing) {
       try {
         const selection = requireCodexThreadSelection(
-          await this.runtime.selectThread({
+          await runtime.selectThread({
             threadId: existing.sessionId,
             ...configuration.resumeInput,
           }),
@@ -68,7 +65,7 @@ export class CodexThreadCoordinator {
       throw new AppError('AGENT_SESSION_CONFLICT');
     }
 
-    return this.createAndBind(request, configuration, existing);
+    return this.createAndBind(runtime, request, configuration, existing);
   }
 
   async acquire(
@@ -109,13 +106,14 @@ export class CodexThreadCoordinator {
   }
 
   private async createAndBind(
+    runtime: CodexRuntimeServiceApi,
     request: GenerationAgentTurnRequest,
     configuration: CodexGenerationConfiguration,
     existing?: AgentProviderSessionBinding,
   ): Promise<ResolvedCodexThread> {
     request.signal?.throwIfAborted();
     const selection = requireCodexThreadSelection(
-      await this.runtime.createThread(configuration.threadInput),
+      await runtime.createThread(configuration.threadInput),
     );
     request.signal?.throwIfAborted();
     const binding = existing
@@ -124,13 +122,11 @@ export class CodexThreadCoordinator {
           providerId: CODEX_AGENT_PROVIDER_ID,
           expectedSessionId: existing.sessionId,
           sessionId: selection.thread.id,
-          configurationFingerprint: configuration.fingerprint,
         })
       : await this.sessions.bindProvider({
           locator: request.sessionLocator,
           providerId: CODEX_AGENT_PROVIDER_ID,
           sessionId: selection.thread.id,
-          configurationFingerprint: configuration.fingerprint,
         });
 
     return { binding, selection };

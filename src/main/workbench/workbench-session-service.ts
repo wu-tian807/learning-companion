@@ -162,6 +162,7 @@ export class WorkbenchSessionService
     return {
       sessionId: session.id,
       workbenchId: session.workbenchId,
+      workbenchVersion: session.provider.manifest.version,
       protocolVersion: session.provider.manifest.protocolVersion,
       assetId: session.asset.id,
       mediaType: session.asset.mediaType,

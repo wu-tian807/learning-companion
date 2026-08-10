@@ -4,6 +4,7 @@ import type { AppPreferences } from "../shared/app-preferences";
 import type { AppSetupSnapshot } from "../shared/app-setup";
 import type {
   AgentProviderLoginChallenge,
+  AgentProviderModelCatalogSnapshot,
   AgentProviderSetupSnapshot,
 } from "../shared/agent-providers";
 import type { AssetSnapshot } from "../shared/assets";
@@ -32,8 +33,10 @@ import type { JsonValue } from "../shared/workbench/protocol";
 import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
+  AgentProviderConnectionRequest,
   AgentProviderIdRequest,
   CancelAgentProviderLoginRequest,
+  ConfigureAgentProviderApiConnectionRequest,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
   MigrateExternalLibrariesRequest,
@@ -53,6 +56,7 @@ import type {
   RenameAssetRequest,
   RenameProjectRequest,
   SetProjectPinnedRequest,
+  SelectAgentProviderForSelectorRequest,
   UpdateHomePreferencesRequest,
 } from "../shared/ipc";
 import { IPC_CHANNELS } from "../shared/ipc";
@@ -114,7 +118,7 @@ const api: LearningCompanionApi = {
     ),
   onAgentProviderSetupChanged: (listener) =>
     subscribeAgentProviderEvents(ipcRenderer, listener),
-  startAgentProviderLogin: (request: AgentProviderIdRequest) =>
+  startAgentProviderLogin: (request: AgentProviderConnectionRequest) =>
     invoke<AgentProviderLoginChallenge>(
       IPC_CHANNELS.startAgentProviderLogin,
       request,
@@ -126,9 +130,30 @@ const api: LearningCompanionApi = {
       IPC_CHANNELS.cancelAgentProviderLogin,
       request,
     ),
-  selectAgentProvider: (request: AgentProviderIdRequest) =>
+  configureAgentProviderApiConnection: (
+    request: ConfigureAgentProviderApiConnectionRequest,
+  ) =>
     invoke<AgentProviderSetupSnapshot>(
-      IPC_CHANNELS.selectAgentProvider,
+      IPC_CHANNELS.configureAgentProviderApiConnection,
+      request,
+    ),
+  deleteAgentProviderConnection: (
+    request: AgentProviderConnectionRequest,
+  ) =>
+    invoke<AgentProviderSetupSnapshot>(
+      IPC_CHANNELS.deleteAgentProviderConnection,
+      request,
+    ),
+  getAgentProviderModels: (request: AgentProviderConnectionRequest) =>
+    invoke<AgentProviderModelCatalogSnapshot>(
+      IPC_CHANNELS.getAgentProviderModels,
+      request,
+    ),
+  selectAgentProviderForSelector: (
+    request: SelectAgentProviderForSelectorRequest,
+  ) =>
+    invoke<AgentProviderSetupSnapshot>(
+      IPC_CHANNELS.selectAgentProviderForSelector,
       request,
     ),
   listExternalLibraries: () =>

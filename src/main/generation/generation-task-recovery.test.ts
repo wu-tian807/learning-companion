@@ -96,6 +96,7 @@ describe('GenerationTask recovery', () => {
       projectId: 'project-1',
       definitionId: definition.id,
       definitionVersion: definition.version,
+      providerSelectorId: definition.providerSelectorId,
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
       defaultUserMessage: createTextAgentUserMessage('generate'),
@@ -132,12 +133,14 @@ describe('GenerationTask recovery', () => {
     let firstRunnerCalls = 0;
     const firstRunner: GenerationAgentRunner = {
       providerId: 'codex',
+      connectionId: 'codex-account',
       async *runTurn() {
         yield* [] as GenerationAgentEvent[];
         firstRunnerCalls += 1;
         return {
           sessionId: 'session-1',
           providerId: 'codex',
+          connectionId: 'codex-account',
           modelId: 'gpt-5.2',
           startedTime: 10,
           completedTime: 20,
@@ -167,10 +170,16 @@ describe('GenerationTask recovery', () => {
         runnerResolver,
         { createId: () => 'task-1' },
       );
-    const firstResolverCalls: Array<string | undefined> = [];
+    const firstResolverCalls: string[] = [];
     const firstService = createService({
-      async resolveRunner(providerId?: string) {
-        firstResolverCalls.push(providerId);
+      resolveSelectorConfiguration() {
+        return {
+          providerId: 'codex',
+          connectionId: 'codex-account',
+        };
+      },
+      async resolveRunner(configuration) {
+        firstResolverCalls.push(configuration.providerId);
         return firstRunner;
       },
     });
@@ -187,7 +196,7 @@ describe('GenerationTask recovery', () => {
       'simulated commit interruption',
     );
     expect(firstRunnerCalls).toBe(1);
-    expect(firstResolverCalls).toEqual([undefined]);
+    expect(firstResolverCalls).toEqual(['codex']);
     expect(database.get(task.id)).toMatchObject({
       assignedProviderId: 'codex',
       agentCalls: [{ callKey: 'generate', sessionId: 'session-1' }],
@@ -197,6 +206,7 @@ describe('GenerationTask recovery', () => {
     let resumedRunnerCalls = 0;
     const resumedRunner: GenerationAgentRunner = {
       providerId: 'codex',
+      connectionId: 'codex-account',
       async *runTurn() {
         yield* [] as GenerationAgentEvent[];
         resumedRunnerCalls += 1;
@@ -205,6 +215,12 @@ describe('GenerationTask recovery', () => {
     };
     let resumedResolverCalls = 0;
     const resumedService = createService({
+      resolveSelectorConfiguration() {
+        return {
+          providerId: 'codex',
+          connectionId: 'codex-account',
+        };
+      },
       async resolveRunner() {
         resumedResolverCalls += 1;
         return resumedRunner;
@@ -224,6 +240,12 @@ describe('GenerationTask recovery', () => {
     expect(database.get(task.id)?.completed).toBeDefined();
 
     const reloadedService = createService({
+      resolveSelectorConfiguration() {
+        return {
+          providerId: 'codex',
+          connectionId: 'codex-account',
+        };
+      },
       async resolveRunner() {
         return resumedRunner;
       },

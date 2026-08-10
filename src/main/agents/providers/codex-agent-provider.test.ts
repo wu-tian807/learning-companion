@@ -14,11 +14,28 @@ import type {
   CodexThreadSelection,
   CodexTurn,
 } from '../codex/codex-runtime-types';
+import type { ResolvedAgentProviderConnection } from '../agent-provider';
 import type { AgentProviderSessionBinding } from '../sessions/agent-session';
 import type { AgentSessionServiceApi } from '../sessions/agent-session-service';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import { CodexAgentProvider } from './codex-agent-provider';
 import { CODEX_FUNCTION_TOOL_NAMESPACE } from './codex-function-tools';
+
+const accountConnection: ResolvedAgentProviderConnection = Object.freeze({
+  configuration: Object.freeze({
+    id: 'codex-account',
+    providerId: 'codex',
+    kind: 'account',
+    displayName: 'ChatGPT 账号',
+  }),
+});
+
+function runAccountTurn(
+  provider: CodexAgentProvider,
+  request: GenerationAgentTurnRequest,
+) {
+  return provider.createRunner(accountConnection).runTurn(request);
+}
 
 function createRuntime(
   overrides: Partial<CodexRuntimeServiceApi> = {},
@@ -87,7 +104,6 @@ function createSessions(initial?: AgentProviderSessionBinding) {
     bindProvider: vi.fn(async (request) => {
       binding = {
         sessionId: request.sessionId,
-        configurationFingerprint: request.configurationFingerprint,
         createdTime: 1,
       };
       return binding;
@@ -95,7 +111,6 @@ function createSessions(initial?: AgentProviderSessionBinding) {
     replaceProviderBinding: vi.fn(async (request) => {
       binding = {
         sessionId: request.sessionId,
-        configurationFingerprint: request.configurationFingerprint,
         createdTime: 2,
       };
       return binding;
@@ -171,8 +186,13 @@ describe('CodexAgentProvider', () => {
       createSessions().service,
     );
 
-    await expect(provider.getCredentialState(true)).resolves.toEqual({
-      status: 'authenticated',
+    await expect(
+      provider.inspectAccountConnection(
+        accountConnection.configuration,
+        true,
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
       account: {
         email: 'student@example.com',
         planType: 'plus',
@@ -187,9 +207,44 @@ describe('CodexAgentProvider', () => {
       createSessions().service,
     );
 
-    await expect(provider.getCredentialState()).resolves.toEqual({
-      status: 'unauthenticated',
+    await expect(
+      provider.inspectAccountConnection(accountConnection.configuration),
+    ).resolves.toEqual({
+      status: 'unconfigured',
     });
+  });
+
+  it('returns the local model catalog without consulting login state or the runtime catalog', async () => {
+    const listModels = vi.fn();
+    const provider = new CodexAgentProvider(
+      createRuntime({
+        listModels,
+      }),
+      createSessions().service,
+    );
+
+    const catalog = await provider.getModelCatalog(
+      accountConnection.configuration,
+    );
+
+    expect(catalog).toMatchObject({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      allowsCustomModel: true,
+    });
+    expect(catalog.models.map((model) => model.id)).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ]);
+    expect(catalog.models[0]).toMatchObject({
+      isDefault: true,
+      defaultReasoningEffort: 'high',
+    });
+    expect(
+      catalog.models[0]?.reasoningEfforts.map((effort) => effort.id),
+    ).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+    expect(listModels).not.toHaveBeenCalled();
   });
 
   it('uses the App Server managed browser login flow', async () => {
@@ -203,9 +258,12 @@ describe('CodexAgentProvider', () => {
       createSessions().service,
     );
 
-    await expect(provider.startLogin()).resolves.toEqual({
+    await expect(
+      provider.startLogin(accountConnection.configuration),
+    ).resolves.toEqual({
       type: 'external-browser',
       providerId: 'codex',
+      connectionId: 'codex-account',
       loginId: 'login-1',
       url: 'https://chatgpt.com/login',
     });
@@ -228,7 +286,7 @@ describe('CodexAgentProvider', () => {
       createSessions().service,
     );
 
-    provider.subscribeCredentialInvalidation(invalidated);
+    provider.subscribeConnectionInvalidation(invalidated);
     listener?.({
       type: 'notification',
       notification: {
@@ -252,6 +310,7 @@ describe('CodexAgentProvider', () => {
     });
 
     expect(invalidated).toHaveBeenCalledTimes(2);
+    expect(invalidated).toHaveBeenCalledWith('codex-account');
   });
 
   it('creates a least-privilege Codex thread and maps streamed results', async () => {
@@ -347,7 +406,9 @@ describe('CodexAgentProvider', () => {
       now: () => 3_000,
     });
     const request = createGenerationRequest();
-    const { events, result } = await collectTurn(provider.runTurn(request));
+    const { events, result } = await collectTurn(
+      runAccountTurn(provider, request),
+    );
 
     expect(events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
@@ -362,6 +423,7 @@ describe('CodexAgentProvider', () => {
     expect(result).toEqual({
       sessionId: 'thread-1',
       providerId: 'codex',
+      connectionId: 'codex-account',
       modelId: 'gpt-test-fast',
       providerExecutionId: 'turn-1',
       startedTime: 1_000,
@@ -380,10 +442,10 @@ describe('CodexAgentProvider', () => {
         Parameters<CodexRuntimeServiceApi['createThread']>
       >
     )[0][0];
-    const profileId = threadInput.configOverrides?.default_permissions;
+    const profileId = threadInput.permissions;
     expect(typeof profileId).toBe('string');
     if (typeof profileId !== 'string') {
-      throw new Error('Expected a default Codex permission profile');
+      throw new Error('Expected a Codex thread permission profile');
     }
     expect(profileId).toMatch(/^lc-generation-[a-f0-9]{24}$/u);
     expect(threadInput.permissions).toBe(profileId);
@@ -408,7 +470,6 @@ describe('CodexAgentProvider', () => {
           }),
           tools: { view_image: true },
           web_search: 'disabled',
-          default_permissions: profileId,
           'mcp_servers.user-mcp.enabled': false,
           skills: {
             config: [
@@ -434,6 +495,9 @@ describe('CodexAgentProvider', () => {
         }),
       }),
     );
+    expect(threadInput.configOverrides).not.toHaveProperty(
+      'default_permissions',
+    );
     const turnInput = (
       startTurn.mock.calls as unknown as Array<
         Parameters<CodexRuntimeServiceApi['startTurn']>
@@ -441,12 +505,11 @@ describe('CodexAgentProvider', () => {
     )[0][0];
     expect(turnInput.threadId).toBe('thread-1');
     expect(turnInput.clientUserMessageId).toMatch(/^lc-generation-/u);
-    expect(turnInput.permissions).toBe(profileId);
+    expect(turnInput.permissions).toBeUndefined();
     expect(turnInput.outputSchema).toBeUndefined();
     expect(sessions.getBinding()).toEqual(
       expect.objectContaining({
         sessionId: 'thread-1',
-        configurationFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
       }),
     );
   });
@@ -481,9 +544,9 @@ describe('CodexAgentProvider', () => {
     });
     const request = createGenerationRequest();
 
-    await collectTurn(provider.runTurn(request));
+    await collectTurn(runAccountTurn(provider, request));
     startTurn.mockClear();
-    const recovered = await collectTurn(provider.runTurn(request));
+    const recovered = await collectTurn(runAccountTurn(provider, request));
 
     expect(selectThread).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: 'thread-1', excludeTurns: false }),
@@ -495,19 +558,21 @@ describe('CodexAgentProvider', () => {
     expect(recovered.result.providerExecutionId).toBe('turn-1');
   });
 
-  it('replaces a bound thread when immutable execution configuration changes', async () => {
+  it('resumes the bound thread with the latest execution configuration', async () => {
     const sessions = createSessions({
       sessionId: 'thread-old',
-      configurationFingerprint: 'outdated',
       createdTime: 1,
     });
+    const createThread = vi.fn(async () => selection('thread-new'));
+    const selectThread = vi.fn(async () => selection('thread-old'));
     const runtime = createRuntime({
       getAccount: vi.fn(async () => ({
         account: { type: 'chatgpt' },
         requiresOpenaiAuth: true,
       })),
       listMcpServers: vi.fn(async () => ({ data: [], nextCursor: null })),
-      createThread: vi.fn(async () => selection('thread-new')),
+      createThread,
+      selectThread,
       startTurn: vi.fn(async function* (input) {
         yield* [];
         return {
@@ -519,16 +584,138 @@ describe('CodexAgentProvider', () => {
     });
     const provider = new CodexAgentProvider(runtime, sessions.service);
 
-    await collectTurn(provider.runTurn(createGenerationRequest()));
+    await collectTurn(
+      runAccountTurn(
+        provider,
+        createGenerationRequest({
+          modelId: 'gpt-latest',
+          systemInstruction: 'Use the latest task instructions.',
+        }),
+      ),
+    );
 
-    expect(sessions.service.replaceProviderBinding).toHaveBeenCalledWith(
+    expect(selectThread).toHaveBeenCalledWith(
       expect.objectContaining({
-        expectedSessionId: 'thread-old',
-        sessionId: 'thread-new',
-        providerId: 'codex',
+        threadId: 'thread-old',
+        model: 'gpt-latest',
+        developerInstructions: expect.stringContaining(
+          'Use the latest task instructions.',
+        ),
       }),
     );
-    expect(sessions.getBinding()?.sessionId).toBe('thread-new');
+    expect(createThread).not.toHaveBeenCalled();
+    expect(
+      sessions.service.replaceProviderBinding,
+    ).not.toHaveBeenCalled();
+    expect(sessions.getBinding()?.sessionId).toBe('thread-old');
+  });
+
+  it('reuses one workspace thread after switching from account to API Connection', async () => {
+    const sessions = createSessions();
+    const selectAccountThread = vi.fn(async () => selection('thread-shared'));
+    const accountRuntime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      createThread: vi.fn(async () => selection('thread-shared')),
+      selectThread: selectAccountThread,
+      startTurn: vi.fn(async function* (input) {
+        yield* [];
+        return {
+          threadId: input.threadId,
+          turn: completedTurn(input.clientUserMessageId!),
+        };
+      }),
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const selectApiThread = vi.fn(async () => selection('thread-shared'));
+    const createApiThread = vi.fn();
+    const apiRuntime = createRuntime({
+      selectThread: selectApiThread,
+      createThread: createApiThread,
+      startTurn: vi.fn(async function* (input) {
+        yield* [];
+        return {
+          threadId: input.threadId,
+          turn: completedTurn(input.clientUserMessageId!),
+        };
+      }),
+      interruptTurn: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+    });
+    const createApiRuntime = vi.fn(
+      (environment: Readonly<NodeJS.ProcessEnv>) => {
+        void environment;
+        return apiRuntime;
+      },
+    );
+    const provider = new CodexAgentProvider(
+      accountRuntime,
+      sessions.service,
+      { createRuntime: createApiRuntime },
+    );
+
+    await collectTurn(
+      runAccountTurn(provider, createGenerationRequest()),
+    );
+    const apiRunner = provider.createRunner({
+      configuration: {
+        id: 'codex-api-deepseek',
+        providerId: 'codex',
+        kind: 'api-key',
+        displayName: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1',
+      },
+      apiKey: 'secret-value',
+    });
+    const continued = await collectTurn(
+      apiRunner.runTurn(
+        createGenerationRequest({
+          taskId: 'task-2',
+          callKey: 'continue',
+          modelId: 'deepseek-chat',
+        }),
+      ),
+    );
+
+    expect(createApiRuntime).toHaveBeenCalledOnce();
+    const runtimeEnvironment = createApiRuntime.mock.calls[0]![0];
+    const [environmentKey] = Object.keys(runtimeEnvironment);
+    expect(environmentKey).toMatch(/^LC_AGENT_API_KEY_[A-F0-9]+$/u);
+    expect(runtimeEnvironment[environmentKey!]).toBe('secret-value');
+    expect(selectApiThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: 'thread-shared',
+        model: 'deepseek-chat',
+        modelProvider: expect.stringMatching(/^learning-companion-/u),
+      }),
+    );
+    expect(createApiThread).not.toHaveBeenCalled();
+    expect(continued.result).toMatchObject({
+      sessionId: 'thread-shared',
+      providerId: 'codex',
+      connectionId: 'codex-api-deepseek',
+    });
+    await collectTurn(
+      runAccountTurn(
+        provider,
+        createGenerationRequest({
+          taskId: 'task-3',
+          callKey: 'back-to-account',
+          modelId: 'gpt-test',
+        }),
+      ),
+    );
+    expect(selectAccountThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: 'thread-shared',
+        modelProvider: 'openai',
+      }),
+    );
+    expect(sessions.getBinding()?.sessionId).toBe('thread-shared');
+
+    await provider.dispose();
   });
 
   it('replaces only an explicitly missing persisted Codex thread', async () => {
@@ -564,8 +751,8 @@ describe('CodexAgentProvider', () => {
     const provider = new CodexAgentProvider(runtime, sessions.service);
     const request = createGenerationRequest();
 
-    await collectTurn(provider.runTurn(request));
-    await collectTurn(provider.runTurn(request));
+    await collectTurn(runAccountTurn(provider, request));
+    await collectTurn(runAccountTurn(provider, request));
 
     expect(sessions.service.replaceProviderBinding).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -602,10 +789,10 @@ describe('CodexAgentProvider', () => {
     const provider = new CodexAgentProvider(runtime, sessions.service);
     const request = createGenerationRequest();
 
-    await collectTurn(provider.runTurn(request));
-    await expect(collectTurn(provider.runTurn(request))).rejects.toThrow(
-      'CODEX_REQUEST_FAILED',
-    );
+    await collectTurn(runAccountTurn(provider, request));
+    await expect(
+      collectTurn(runAccountTurn(provider, request)),
+    ).rejects.toThrow('CODEX_REQUEST_FAILED');
 
     expect(createThread).toHaveBeenCalledTimes(1);
     expect(sessions.service.replaceProviderBinding).not.toHaveBeenCalled();
@@ -653,7 +840,7 @@ describe('CodexAgentProvider', () => {
       instanceKey: 'shared',
     };
     const firstRun = collectTurn(
-      provider.runTurn({
+      runAccountTurn(provider, {
         ...baseRequest,
         sessionLocator: sharedLocator,
         workspaces: { primary: sharedWorkspace, secondary: [] },
@@ -661,7 +848,7 @@ describe('CodexAgentProvider', () => {
     );
     await vi.waitFor(() => expect(startTurn).toHaveBeenCalledTimes(1));
     const secondRun = collectTurn(
-      provider.runTurn({
+      runAccountTurn(provider, {
         ...baseRequest,
         taskId: 'task-2',
         sessionLocator: sharedLocator,
@@ -718,7 +905,9 @@ describe('CodexAgentProvider', () => {
       },
     );
 
-    await collectTurn(provider.runTurn(createGenerationRequest()));
+    await collectTurn(
+      runAccountTurn(provider, createGenerationRequest()),
+    );
 
     expect(createThread).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -830,7 +1019,9 @@ describe('CodexAgentProvider', () => {
       ],
     });
 
-    const { events } = await collectTurn(provider.runTurn(request));
+    const { events } = await collectTurn(
+      runAccountTurn(provider, request),
+    );
 
     expect(events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
@@ -961,7 +1152,9 @@ describe('CodexAgentProvider', () => {
       mcpServers: [{ id: 'document-tools', availability: 'required' }],
     });
 
-    const { events } = await collectTurn(provider.runTurn(request));
+    const { events } = await collectTurn(
+      runAccountTurn(provider, request),
+    );
 
     expect(events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
@@ -1037,7 +1230,7 @@ describe('CodexAgentProvider', () => {
     const provider = new CodexAgentProvider(runtime, sessions.service);
 
     await expect(
-      collectTurn(provider.runTurn(createGenerationRequest())),
+      collectTurn(runAccountTurn(provider, createGenerationRequest())),
     ).rejects.toThrow('CODEX_PROTOCOL_ERROR');
   });
 
@@ -1053,7 +1246,8 @@ describe('CodexAgentProvider', () => {
       createThread,
     });
     const provider = new CodexAgentProvider(runtime, sessions.service);
-    const generator = provider.runTurn(
+    const generator = runAccountTurn(
+      provider,
       createGenerationRequest({
         toolRequirements: [
           { id: 'database.write', availability: 'required' },
@@ -1071,7 +1265,8 @@ describe('CodexAgentProvider', () => {
     const createThread = vi.fn();
     const runtime = createRuntime({ createThread });
     const provider = new CodexAgentProvider(runtime, createSessions().service);
-    const generator = provider.runTurn(
+    const generator = runAccountTurn(
+      provider,
       createGenerationRequest({
         skills: [{ id: 'missing-skill', availability: 'required' }],
       }),

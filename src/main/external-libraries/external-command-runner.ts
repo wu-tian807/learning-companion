@@ -23,6 +23,7 @@ export interface ExternalCommandRequest {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd?: string;
+  readonly windowsVerbatimArguments?: boolean;
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
   readonly outputLimit?: number;
@@ -98,6 +99,8 @@ export class ExternalCommandRunner
           cwd: request.cwd,
           shell: false,
           windowsHide: true,
+          windowsVerbatimArguments:
+            request.windowsVerbatimArguments ?? false,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
       } catch (error) {

@@ -6,12 +6,14 @@ export interface CreateCodexRuntimeInput {
   readonly codexHomePath: string;
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
+  readonly environment?: Readonly<NodeJS.ProcessEnv>;
 }
 
 export function createCodexRuntime({
   codexHomePath,
   isPackaged,
   resourcesPath,
+  environment,
 }: CreateCodexRuntimeInput): CodexRuntimeService {
   return new CodexRuntimeService(
     new CodexAppServerConnectionFactory({
@@ -21,6 +23,7 @@ export function createCodexRuntime({
           isPackaged,
           resourcesPath,
         }),
+      ...(environment ? { environment } : {}),
     }),
   );
 }

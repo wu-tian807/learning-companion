@@ -79,6 +79,7 @@ describe('LibreOfficePreviewProducer', () => {
     };
     const producer = new LibreOfficePreviewProducer(
       createExternalLibraries(),
+      join(request.workspacePath, 'libreoffice-profile'),
       { commandRunner },
     );
 
@@ -88,6 +89,7 @@ describe('LibreOfficePreviewProducer', () => {
       mediaType: 'application/pdf',
       extension: 'pdf',
     });
+    expect(commandRunner.run).toHaveBeenCalledOnce();
     expect(commandRunner.run).toHaveBeenCalledWith(
       expect.objectContaining({
         command: '/runtime/soffice',
@@ -105,12 +107,16 @@ describe('LibreOfficePreviewProducer', () => {
         argument.startsWith('-env:UserInstallation=file:'),
       ),
     ).toBe(true);
+    expect(commandRunner.run.mock.calls[0][0].args).not.toContain(
+      '--terminate_after_init',
+    );
   });
 
   it('rejects an invalid conversion result', async () => {
     const request = await createRequest();
     const producer = new LibreOfficePreviewProducer(
       createExternalLibraries(),
+      join(request.workspacePath, 'libreoffice-profile'),
       {
         commandRunner: {
           run: vi.fn(async (command) => {
@@ -131,6 +137,33 @@ describe('LibreOfficePreviewProducer', () => {
     ).rejects.toThrow('OFFICE_PREVIEW_FAILED');
   });
 
+  it('preserves LibreOffice diagnostics when no PDF is produced', async () => {
+    const request = await createRequest();
+    const producer = new LibreOfficePreviewProducer(
+      createExternalLibraries(),
+      join(request.workspacePath, 'libreoffice-profile'),
+      {
+        commandRunner: {
+          run: vi.fn(async () => ({
+            stdout: 'source could not be loaded',
+            stderr: 'conversion warning',
+          })),
+        },
+      },
+    );
+
+    await expect(
+      producer.produce(request, new AbortController().signal),
+    ).rejects.toMatchObject({
+      code: 'OFFICE_PREVIEW_FAILED',
+      cause: expect.objectContaining({
+        message: expect.stringContaining(
+          'source could not be loaded',
+        ),
+      }),
+    });
+  });
+
   it('serializes LibreOffice conversions', async () => {
     const firstRequest = await createRequest('first.docx');
     const secondRequest = await createRequest('second.docx');
@@ -143,6 +176,7 @@ describe('LibreOfficePreviewProducer', () => {
     let commandCount = 0;
     const producer = new LibreOfficePreviewProducer(
       createExternalLibraries(),
+      join(firstRequest.workspacePath, 'libreoffice-profile'),
       {
         commandRunner: {
           run: vi.fn(async (command) => {

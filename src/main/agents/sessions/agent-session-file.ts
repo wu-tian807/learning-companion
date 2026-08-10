@@ -25,7 +25,9 @@ export const AGENT_SESSION_METADATA_DIRECTORY = 'agent-sessions';
 export const AGENT_SESSION_FILE_NAME = 'session.json';
 export const AGENT_SESSION_FILE_FORMAT =
   'learning-companion/agent-session';
-export const AGENT_SESSION_FILE_VERSION = 1;
+export const AGENT_SESSION_FILE_VERSION = 2;
+
+const LEGACY_AGENT_SESSION_FILE_VERSION = 1;
 
 export interface AgentSessionFileApi {
   read(
@@ -148,7 +150,8 @@ export class AgentSessionFile implements AgentSessionFileApi {
     if (
       !isRecord(value) ||
       value.format !== AGENT_SESSION_FILE_FORMAT ||
-      value.version !== AGENT_SESSION_FILE_VERSION
+      (value.version !== LEGACY_AGENT_SESSION_FILE_VERSION &&
+        value.version !== AGENT_SESSION_FILE_VERSION)
     ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }

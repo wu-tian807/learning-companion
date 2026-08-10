@@ -72,7 +72,9 @@ export function UnsupportedWorkbenchView({
   );
 }
 
-export const unsupportedRendererWorkbenchModule: RendererWorkbenchModule = {
+export const unsupportedRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof unsupportedWorkbenchManifest.id
+> = {
   manifest: unsupportedWorkbenchManifest,
   View: UnsupportedWorkbenchView,
 };

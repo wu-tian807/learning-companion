@@ -9,6 +9,7 @@ import {
   cloneEpubViewState,
   DEFAULT_EPUB_VIEW_STATE,
   EPUB_WORKBENCH_ID,
+  epubWorkbenchManifest,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -31,7 +32,8 @@ function render(payload: WorkbenchBootstrap['payload']) {
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: EPUB_WORKBENCH_ID,
-    protocolVersion: 1,
+    workbenchVersion: epubWorkbenchManifest.version,
+    protocolVersion: epubWorkbenchManifest.protocolVersion,
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',

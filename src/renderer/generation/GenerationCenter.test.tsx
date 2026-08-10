@@ -179,6 +179,7 @@ describe('GenerationCenter', () => {
     expect(html).toContain('选择 Asset 后显示对应工具');
     expect(html).toContain('还没有生成内容');
     expect(html).not.toContain('当前资料上下文');
+    expect(html).not.toContain('生成中心 Connection');
   });
 
   it('renders real generated Assets through the shared list', () => {

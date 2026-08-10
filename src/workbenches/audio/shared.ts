@@ -28,7 +28,9 @@ export const AUDIO_PLAYBACK_RATES = [
   2,
 ] as const;
 
-export const audioWorkbenchManifest: AssetWorkbenchManifest = {
+export const audioWorkbenchManifest: AssetWorkbenchManifest<
+  typeof AUDIO_WORKBENCH_ID
+> = {
   id: AUDIO_WORKBENCH_ID,
   version: 1,
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,

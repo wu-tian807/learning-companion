@@ -454,7 +454,9 @@ export function AudioWorkbenchView({
   );
 }
 
-const audioRendererWorkbenchModule: RendererWorkbenchModule = {
+const audioRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof audioWorkbenchManifest.id
+> = {
   manifest: audioWorkbenchManifest,
   View: AudioWorkbenchView,
 };

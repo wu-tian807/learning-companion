@@ -131,7 +131,10 @@ export function HtmlWorkbenchView({
       }),
     [onOpenExternal, reload, reportError, reveal],
   );
-  useWorkbenchContributions('builtin.html.viewer', rendererActions);
+  useWorkbenchContributions(
+    `${htmlWorkbenchManifest.id}.viewer`,
+    rendererActions,
+  );
 
   useEffect(() => {
     if (!payload) {
@@ -245,7 +248,9 @@ export function HtmlWorkbenchView({
   );
 }
 
-const htmlRendererWorkbenchModule: RendererWorkbenchModule = {
+const htmlRendererWorkbenchModule: RendererWorkbenchModule<
+  typeof htmlWorkbenchManifest.id
+> = {
   manifest: htmlWorkbenchManifest,
   View: HtmlWorkbenchView,
 };
