@@ -70,9 +70,9 @@ describe('GenerationTaskAgentSession', () => {
       providerId: 'codex',
       connectionId: 'codex-account',
       async *runTurn(request) {
-        yield* [] as never[];
         requests.push(request);
         turnNumber += 1;
+        yield { type: 'assistant-delta', delta: `answer-${turnNumber}` };
         return {
           sessionId: 'session-1',
           providerId: 'codex',
@@ -107,7 +107,8 @@ describe('GenerationTaskAgentSession', () => {
       },
     );
 
-    await session.call({ callKey: 'generate', purpose: 'generation' });
+    await expect(session.call({ callKey: 'generate', purpose: 'generation' }))
+      .resolves.toMatchObject({ assistantText: 'answer-1' });
     await session.call({
       callKey: 'repair-1',
       purpose: 'repair',
@@ -124,8 +125,8 @@ describe('GenerationTaskAgentSession', () => {
       assignedProviderId: 'codex',
       assignedConnectionId: 'codex-account',
       agentCalls: [
-        { callKey: 'generate', purpose: 'generation', sessionId: 'session-1' },
-        { callKey: 'repair-1', purpose: 'repair', sessionId: 'session-1' },
+        { callKey: 'generate', purpose: 'generation', sessionId: 'session-1', assistantText: 'answer-1' },
+        { callKey: 'repair-1', purpose: 'repair', sessionId: 'session-1', assistantText: 'answer-2' },
       ],
       metrics: {
         totalUsage: { totalTokens: 20 },
@@ -157,6 +158,7 @@ describe('GenerationTaskAgentSession', () => {
     ).resolves.toMatchObject({
       callKey: 'repair-1',
       sessionId: 'session-1',
+      assistantText: 'answer-2',
     });
     expect(recoveredResolver).not.toHaveBeenCalled();
   });

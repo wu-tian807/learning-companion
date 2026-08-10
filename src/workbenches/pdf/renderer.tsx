@@ -24,6 +24,14 @@ import {
 import type {
   WorkbenchInteractionSnapshot,
 } from '../../shared/workbench/interaction';
+import type { AssetTarget } from '../../shared/workbench/anchor';
+import {
+  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+  WORKBENCH_RESOLVE_ANCHOR_EVENT,
+  WORKBENCH_REVEAL_ANCHOR_EVENT,
+  type ResolveWorkbenchAnchorDetail,
+  type RevealWorkbenchAnchorDetail,
+} from '../../renderer/workbench/host/workbench-anchor-bridge';
 import type {
   PdfDocumentSummary,
   PdfFindStatus,
@@ -37,6 +45,8 @@ import {
   createPdfPageTarget,
   createPdfSaveViewStateCommand,
   DEFAULT_PDF_WORKBENCH_STATE,
+  PDF_REGION_ANCHOR_TYPE,
+  PDF_REGION_ANCHOR_VERSION,
   isPdfSaveViewStateResult,
   isPdfWorkbenchPayload,
   pdfWorkbenchManifest,
@@ -373,6 +383,7 @@ interface PdfDocumentWorkbenchViewProps
   readonly mapInteraction?: (
     interaction: WorkbenchInteractionSnapshot,
   ) => WorkbenchInteractionSnapshot;
+  readonly mapAnchorTarget?: (target: AssetTarget) => AssetTarget;
 }
 
 export function PdfDocumentWorkbenchView({
@@ -390,6 +401,7 @@ export function PdfDocumentWorkbenchView({
     createPdfSaveViewStateCommand,
   isSaveViewStateResult = isPdfSaveViewStateResult,
   mapInteraction = identityInteraction,
+  mapAnchorTarget = (target) => target,
 }: PdfDocumentWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isPdfWorkbenchPayload(bootstrap.payload)
@@ -410,6 +422,58 @@ export function PdfDocumentWorkbenchView({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
+
+  useEffect(() => {
+    const findPage = (target: AssetTarget): HTMLElement | undefined => {
+      const mapped = mapAnchorTarget(target);
+      if (mapped.scope !== 'content') return undefined;
+      const payload = mapped.anchorPayload as Record<string, unknown>;
+      const start = payload.start as Record<string, unknown> | undefined;
+      const pageNumber = typeof payload.pageNumber === 'number'
+        ? payload.pageNumber
+        : typeof start?.pageNumber === 'number' ? start.pageNumber : undefined;
+      if (!pageNumber) return undefined;
+      return viewerRef.current?.querySelector<HTMLElement>(
+        `.page[data-page-number="${pageNumber}"]`,
+      ) ?? undefined;
+    };
+    const resolve = (event: Event) => {
+      const detail = (event as CustomEvent<ResolveWorkbenchAnchorDetail>).detail;
+      if (detail.assetId !== asset.id) return;
+      const mapped = mapAnchorTarget(detail.target);
+      const page = findPage(mapped);
+      if (!page || mapped.scope !== 'content') return;
+      const payload = mapped.anchorPayload as Record<string, unknown>;
+      const pageRect = page.getBoundingClientRect();
+      const x = typeof payload.x === 'number' ? payload.x : 1;
+      const y = typeof payload.y === 'number' ? payload.y : 0;
+      const width = typeof payload.width === 'number' ? payload.width : 0;
+      const height = typeof payload.height === 'number' ? payload.height : 0;
+      detail.respond({
+        left: pageRect.left + x * pageRect.width,
+        top: pageRect.top + y * pageRect.height,
+        width: width * pageRect.width,
+        height: height * pageRect.height,
+      });
+    };
+    const reveal = (event: Event) => {
+      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>).detail;
+      if (detail.assetId !== asset.id) return;
+      findPage(detail.target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    const notifyLayout = () => window.dispatchEvent(
+      new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
+    );
+    const container = containerRef.current;
+    window.addEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    container?.addEventListener('scroll', notifyLayout, { passive: true });
+    return () => {
+      window.removeEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+      container?.removeEventListener('scroll', notifyLayout);
+    };
+  }, [asset.id, mapAnchorTarget]);
   const [loadState, setLoadState] = useState<PdfLoadState>({
     kind: 'loading',
   });
@@ -941,8 +1005,8 @@ export function PdfDocumentWorkbenchView({
         store.setPendingAnchor(asset.id, {
           target: {
             scope: 'content',
-            anchorType: 'pdf.region',
-            anchorVersion: 1,
+            anchorType: PDF_REGION_ANCHOR_TYPE,
+            anchorVersion: PDF_REGION_ANCHOR_VERSION,
             anchorPayload: {
               pageNumber: region.pageNumber,
               x: (left - pageRect.left) / pageRect.width,
@@ -1106,6 +1170,7 @@ export function PdfDocumentWorkbenchView({
             projectId: asset.projectId,
             assetId: asset.id,
             question: userMessage.content,
+            target: anchor,
           }).then((result) => {
             store.addAssistantMessage(
               asset.id,

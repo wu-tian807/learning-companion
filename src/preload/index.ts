@@ -256,7 +256,12 @@ const api: LearningCompanionApi = {
     typeVersion: number;
     target: AssetTarget;
     metadata: JsonValue;
+    body?: JsonValue;
   }) => invoke<AssetAttachment>(IPC_CHANNELS.createAttachment, request),
+  readAttachmentContent: (request: {
+    projectId: string;
+    attachmentId: string;
+  }) => invoke<JsonValue>(IPC_CHANNELS.readAttachmentContent, request),
   deleteAttachment: (request: {
     projectId: string;
     attachmentId: string;

@@ -40,6 +40,7 @@ export type AppErrorCode =
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
   | 'ATTACHMENT_TYPE_NOT_REGISTERED'
+  | 'ATTACHMENT_ANCHOR_INVALID'
   | 'ATTACHMENT_METADATA_INVALID'
   | 'ATTACHMENT_NOT_FOUND'
   | 'SERVICE_NOT_READY';
@@ -300,6 +301,12 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '标注类型未注册，无法创建该标注。',
     retryable: false,
     logLevel: 'error',
+  },
+  ATTACHMENT_ANCHOR_INVALID: {
+    kind: 'user',
+    userMessage: '标注位置格式无效或尚未注册。',
+    retryable: false,
+    logLevel: 'warn',
   },
   ATTACHMENT_METADATA_INVALID: {
     kind: 'user',

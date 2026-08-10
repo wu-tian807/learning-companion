@@ -47,6 +47,7 @@ export interface TaskAgentCallResult {
   readonly purpose: string;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
+  readonly assistantText?: string;
   readonly metrics: GenerationAgentExecutionMetrics;
 }
 

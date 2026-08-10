@@ -23,6 +23,7 @@ import {
 import {
   clonePdfWorkbenchState,
   PDF_PAGE_ANCHOR_TYPE,
+  PDF_REGION_ANCHOR_TYPE,
   PDF_TEXT_RANGE_ANCHOR_TYPE,
 } from '../pdf/shared';
 import { PdfDocumentWorkbenchView } from '../pdf/renderer';
@@ -34,6 +35,7 @@ import {
   isOfficeWorkbenchPayload,
   OFFICE_ANCHOR_VERSION,
   OFFICE_PAGE_ANCHOR_TYPE,
+  OFFICE_REGION_ANCHOR_TYPE,
   OFFICE_TEXT_RANGE_ANCHOR_TYPE,
   officeWorkbenchManifest,
   type OfficePreparePreviewResult,
@@ -67,14 +69,28 @@ function mapOfficeTarget(
       anchorVersion: OFFICE_ANCHOR_VERSION,
     };
   }
-  if (target.anchorType === 'pdf.region') {
+  if (target.anchorType === PDF_REGION_ANCHOR_TYPE) {
     return {
       ...target,
-      anchorType: 'office.preview.region',
+      anchorType: OFFICE_REGION_ANCHOR_TYPE,
       anchorVersion: OFFICE_ANCHOR_VERSION,
     };
   }
 
+  return target;
+}
+
+function mapOfficeTargetToPdf(target: ContentAnchorTarget | undefined): ContentAnchorTarget | undefined {
+  if (!target) return undefined;
+  if (target.anchorType === OFFICE_TEXT_RANGE_ANCHOR_TYPE) {
+    return { ...target, anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE, anchorVersion: 1 };
+  }
+  if (target.anchorType === OFFICE_PAGE_ANCHOR_TYPE) {
+    return { ...target, anchorType: PDF_PAGE_ANCHOR_TYPE, anchorVersion: 1 };
+  }
+  if (target.anchorType === OFFICE_REGION_ANCHOR_TYPE) {
+    return { ...target, anchorType: PDF_REGION_ANCHOR_TYPE, anchorVersion: 1 };
+  }
   return target;
 }
 
@@ -166,6 +182,9 @@ function OfficePdfPreview({
       }
       isSaveViewStateResult={isOfficeSaveViewStateResult}
       mapInteraction={mapOfficePreviewInteraction}
+      mapAnchorTarget={(target) =>
+        target.scope === 'content' ? mapOfficeTargetToPdf(target) ?? target : target
+      }
     />
   );
 }

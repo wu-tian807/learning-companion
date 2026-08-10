@@ -107,6 +107,7 @@ export const IPC_CHANNELS = {
   workbenchFacilityEvent: "workbench:facility-event",
   listAttachments: "attachment:list",
   createAttachment: "attachment:create",
+  readAttachmentContent: "attachment:read-content",
   deleteAttachment: "attachment:delete",
   askDocumentAi: "document-ai:ask",
 } as const;
@@ -245,7 +246,12 @@ export interface LearningCompanionApi {
     typeVersion: number;
     target: AssetTarget;
     metadata: JsonValue;
+    body?: JsonValue;
   }) => Promise<AssetAttachment>;
+  readAttachmentContent: (request: {
+    projectId: string;
+    attachmentId: string;
+  }) => Promise<JsonValue>;
   deleteAttachment: (request: {
     projectId: string;
     attachmentId: string;
@@ -258,6 +264,7 @@ export interface DocumentAiRequest {
   readonly projectId: string;
   readonly assetId: string;
   readonly question: string;
+  readonly target: AssetTarget;
   readonly selectedText?: string;
   readonly selectedImageDataUrl?: string;
 }

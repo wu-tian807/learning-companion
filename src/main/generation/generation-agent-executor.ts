@@ -20,6 +20,7 @@ export type GenerationAgentExecutionEvent = {
 export interface CompletedGenerationAgentRun {
   readonly metrics: GenerationAgentExecutionMetrics;
   readonly providerExecutionId?: string;
+  readonly assistantText?: string;
 }
 
 export interface GenerationAgentExecutionRequest {
@@ -106,8 +107,12 @@ export class GenerationAgentExecutor {
       signal,
     });
     let next = await turn.next();
+    let assistantText = '';
 
     while (!next.done) {
+      if (next.value.type === 'assistant-delta') {
+        assistantText += next.value.delta;
+      }
       yield { type: 'agent-event', event: next.value };
       next = await turn.next();
     }
@@ -138,6 +143,9 @@ export class GenerationAgentExecutor {
       }),
       ...(result.providerExecutionId
         ? { providerExecutionId: result.providerExecutionId }
+        : {}),
+      ...(assistantText.trim()
+        ? { assistantText: assistantText.trim() }
         : {}),
     });
   }

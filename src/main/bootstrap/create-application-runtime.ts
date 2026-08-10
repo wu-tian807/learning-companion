@@ -18,11 +18,14 @@ import { AssetAssociationService } from '../asset-associations/asset-association
 import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
 import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
 import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/libreoffice-preview-producer';
+import { createDocumentQuestionTaskDefinitionV1 } from '../../workbenches/document-ai/generation/document-question-task-definition';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
+import { AnchorRegistry } from '../attachments/anchor-registry';
 import { AttachmentRegistry } from '../attachments/attachment-registry';
 import { AttachmentService } from '../attachments/attachment-service';
+import { AttachmentContentStore } from '../attachments/attachment-content-store';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
@@ -70,6 +73,23 @@ import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-da
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
+import {
+  isPdfPageAnchorV1,
+  isPdfRegionAnchorV1,
+  isPdfTextRangeAnchorV1,
+  PDF_PAGE_ANCHOR_TYPE,
+  PDF_PAGE_ANCHOR_VERSION,
+  PDF_REGION_ANCHOR_TYPE,
+  PDF_REGION_ANCHOR_VERSION,
+  PDF_TEXT_RANGE_ANCHOR_TYPE,
+  PDF_TEXT_RANGE_ANCHOR_VERSION,
+} from '../../workbenches/pdf/shared';
+import {
+  OFFICE_ANCHOR_VERSION,
+  OFFICE_PAGE_ANCHOR_TYPE,
+  OFFICE_REGION_ANCHOR_TYPE,
+  OFFICE_TEXT_RANGE_ANCHOR_TYPE,
+} from '../../workbenches/office/shared';
 import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
 import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
@@ -265,6 +285,9 @@ export async function createApplicationRuntime({
         ),
       ),
     );
+    generationTaskDefinitions.register(
+      createDocumentQuestionTaskDefinitionV1(),
+    );
     const generationTaskPreparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
       new GenerationAssetReferencePreparer(
@@ -290,9 +313,25 @@ export async function createApplicationRuntime({
       version: AI_ANNOTATION_ATTACHMENT_VERSION,
       isMetadata: isAiAnnotationMetadata,
     });
+    const anchorRegistry = new AnchorRegistry();
+    for (const definition of [
+      { anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE, version: PDF_TEXT_RANGE_ANCHOR_VERSION, isPayload: isPdfTextRangeAnchorV1 },
+      { anchorType: PDF_PAGE_ANCHOR_TYPE, version: PDF_PAGE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 },
+      { anchorType: PDF_REGION_ANCHOR_TYPE, version: PDF_REGION_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 },
+      { anchorType: OFFICE_TEXT_RANGE_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfTextRangeAnchorV1 },
+      { anchorType: OFFICE_PAGE_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 },
+      { anchorType: OFFICE_REGION_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 },
+    ]) {
+      anchorRegistry.register(definition);
+    }
     const attachmentService = new AttachmentService(
       new AttachmentDatabase(databaseContext),
       attachmentRegistry,
+      anchorRegistry,
+      new AttachmentContentStore(projectDatabase, workspaceManager),
+      (assetId) => {
+        assetService.update(assetId, { updatedTime: { mode: 'now' } });
+      },
     );
     workbenchSessionService = new WorkbenchSessionService(
       assetService,

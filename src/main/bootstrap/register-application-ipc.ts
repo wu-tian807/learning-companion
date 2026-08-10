@@ -85,7 +85,7 @@ export interface ApplicationIpcRegistrations {
   readonly removeGenerationTasks: () => void;
   readonly registerAttachments: (
     service: AttachmentServiceApi,
-    providers: GenerationAgentRunnerResolver,
+    tasks: GenerationTaskServiceApi,
   ) => void;
   readonly removeAttachments: () => void;
   readonly registerWorkbench: (
@@ -190,7 +190,7 @@ export function registerApplicationIpc(
       () =>
         registrations.registerAttachments(
           services.attachmentService,
-          services.agentProviderService,
+          services.generationTaskService,
         ),
       registrations.removeAttachments,
     );

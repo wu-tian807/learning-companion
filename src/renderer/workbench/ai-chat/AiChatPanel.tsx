@@ -118,6 +118,7 @@ export function useAiChat(
           projectId,
           assetId,
           question: content,
+          target: effectiveAnchor?.target ?? { scope: 'asset' },
           ...(effectiveAnchor?.selectedText
             ? { selectedText: effectiveAnchor.selectedText }
             : {}),

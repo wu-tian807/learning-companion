@@ -27,6 +27,7 @@ export interface GenerationTaskAgentCallCheckpoint {
   readonly completedTime: number;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
+  readonly assistantText?: string;
 }
 
 export interface GenerationTaskCompletedCheckpoint {
@@ -160,6 +161,14 @@ function cloneAgentCallCheckpoint(
           providerExecutionId: requireText(
             checkpoint.providerExecutionId,
             `agentCalls[${index}].providerExecutionId`,
+          ),
+        }),
+    ...(checkpoint.assistantText === undefined
+      ? {}
+      : {
+          assistantText: requireText(
+            checkpoint.assistantText,
+            `agentCalls[${index}].assistantText`,
           ),
         }),
   });

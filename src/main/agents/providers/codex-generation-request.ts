@@ -215,11 +215,7 @@ export function createCodexGenerationConfiguration(
     filesystem,
     network: { enabled: false },
   };
-  const usesBuiltInReadOnlyProfile =
-    readableWorkspaces.length === 0 && capabilities.skills.length === 0;
-  const profileId = usesBuiltInReadOnlyProfile
-    ? ':read-only'
-    : `lc-generation-${hashJson(permissionProfile).slice(0, 24)}`;
+  const profileId = `lc-generation-${hashJson(permissionProfile).slice(0, 24)}`;
   const selectedMcpServerNames = new Set(
     capabilities.mcpServers.map(({ wireName }) => wireName),
   );
@@ -257,9 +253,6 @@ export function createCodexGenerationConfiguration(
     },
     tools: { view_image: viewImageEnabled },
     web_search: 'disabled',
-    ...(usesBuiltInReadOnlyProfile
-      ? { default_permissions: profileId }
-      : {}),
     ...(connection.kind === 'api-key'
       ? {
           model_providers: {
@@ -273,13 +266,9 @@ export function createCodexGenerationConfiguration(
           },
         }
       : {}),
-    ...(usesBuiltInReadOnlyProfile
-      ? {}
-      : {
-          permissions: {
-            [profileId]: permissionProfile,
-          },
-        }),
+    permissions: {
+      [profileId]: permissionProfile,
+    },
     ...disabledMcpServerOverrides,
     ...(Object.keys(selectedMcpServers).length > 0
       ? { mcp_servers: selectedMcpServers }

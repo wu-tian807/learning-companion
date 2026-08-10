@@ -12,9 +12,17 @@ import type { AssetAttachment } from '../../../shared/workbench/attachment';
 import type { AssetTarget } from '../../../shared/workbench/anchor';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { AiMarkdownContent } from '../ai-chat/AiChatPanel';
+import {
+  resolveWorkbenchAnchor,
+  revealWorkbenchAnchor,
+  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+  type WorkbenchAnchorRect,
+} from './workbench-anchor-bridge';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];
+  readonly assetId: string;
+  readonly projectId: string;
   /** 点击标注时回调，传递标注 ID */
   readonly onAttachmentClick?: (attachmentId: string) => void;
   /** 当前活跃的标注 ID */
@@ -31,13 +39,6 @@ interface AnchorPosition {
   readonly yRatio?: number;
   readonly widthRatio?: number;
   readonly heightRatio?: number;
-}
-
-interface PageMarkerPosition {
-  readonly left: number;
-  readonly top: number;
-  readonly width: number;
-  readonly height: number;
 }
 
 function extractPosition(target: AssetTarget): AnchorPosition | undefined {
@@ -121,6 +122,9 @@ function extractMetadataPreview(metadata: JsonValue): string {
     !Array.isArray(metadata)
   ) {
     const m = metadata as Record<string, unknown>;
+    if (typeof m.questionPreview === 'string') {
+      return m.questionPreview.slice(0, 60);
+    }
     if (typeof m.selectedAnswer === 'string') {
       return m.selectedAnswer.slice(0, 60);
     }
@@ -160,17 +164,19 @@ function formatTypeLabel(typeId: string): string {
 
 interface AnnotationPopupProps {
   readonly attachment: AssetAttachment;
+  readonly body?: JsonValue;
   readonly onClose: () => void;
   readonly onDelete?: () => Promise<void> | void;
 }
 
 function AnnotationPopup({
   attachment,
+  body,
   onClose,
   onDelete,
 }: AnnotationPopupProps) {
   const [deleting, setDeleting] = useState(false);
-  const metadata = attachment.metadata as Record<string, unknown> | undefined;
+  const metadata = body as Record<string, unknown> | undefined;
   const question = metadata && typeof metadata.question === 'string' ? metadata.question : undefined;
   const answer = metadata && typeof metadata.answer === 'string' ? metadata.answer : undefined;
   const selectedAnswer =
@@ -251,17 +257,20 @@ function AnnotationPopup({
 
 export function AttachmentHost({
   attachments,
+  assetId,
+  projectId,
   onAttachmentClick,
   activeAttachmentId,
   onDeleteAttachment,
 }: AttachmentHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
+  const [activeBody, setActiveBody] = useState<JsonValue>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
   const focusTimerRef = useRef<number | undefined>(undefined);
-  const [pagePositions, setPagePositions] = useState<
-    ReadonlyMap<number, PageMarkerPosition>
+  const [anchorRects, setAnchorRects] = useState<
+    ReadonlyMap<string, WorkbenchAnchorRect>
   >(
     new Map(),
   );
@@ -271,39 +280,32 @@ export function AttachmentHost({
     if (!host) return;
 
     const update = () => {
+      const next = new Map<string, WorkbenchAnchorRect>();
       const hostRect = host.getBoundingClientRect();
-      const next = new Map<number, PageMarkerPosition>();
-      for (const page of host.parentElement?.querySelectorAll<HTMLElement>(
-        '.page[data-page-number]',
-      ) ?? []) {
-        const pageNumber = Number(page.dataset.pageNumber);
-        if (Number.isSafeInteger(pageNumber) && pageNumber > 0) {
-          const rect = page.getBoundingClientRect();
-          next.set(pageNumber, {
+      for (const attachment of attachments) {
+        const rect = resolveWorkbenchAnchor(assetId, attachment.target);
+        if (rect) {
+          next.set(attachment.id, {
+            ...rect,
             left: rect.left - hostRect.left,
             top: rect.top - hostRect.top,
-            width: rect.width,
-            height: rect.height,
           });
         }
       }
-      setPagePositions(next);
+      setAnchorRects(next);
     };
 
     update();
-    const scrollContainer = host.parentElement?.querySelector<HTMLElement>(
-      '.pdfViewer',
-    )?.parentElement;
-    scrollContainer?.addEventListener('scroll', update, { passive: true });
+    window.addEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
     window.addEventListener('resize', update);
     const observer = new MutationObserver(update);
     observer.observe(host.parentElement ?? host, { childList: true, subtree: true });
     return () => {
-      scrollContainer?.removeEventListener('scroll', update);
+      window.removeEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
       window.removeEventListener('resize', update);
       observer.disconnect();
     };
-  }, [attachments]);
+  }, [assetId, attachments]);
 
   const handleMarkerClick = useCallback(
     (attachmentId: string, event: ReactMouseEvent) => {
@@ -318,7 +320,22 @@ export function AttachmentHost({
 
   const handleClosePopup = useCallback(() => {
     setActivePopupId(null);
+    setActiveBody(undefined);
   }, []);
+
+  useEffect(() => {
+    if (!activePopupId) return;
+    let cancelled = false;
+    void window.learningCompanion.readAttachmentContent({
+      projectId,
+      attachmentId: activePopupId,
+    }).then((body) => {
+      if (!cancelled) setActiveBody(body);
+    }).catch(() => {
+      if (!cancelled) setActiveBody(undefined);
+    });
+    return () => { cancelled = true; };
+  }, [activePopupId, projectId]);
 
   useEffect(
     () => () => {
@@ -341,13 +358,7 @@ export function AttachmentHost({
   }, [attachments]);
 
   const revealAttachment = useCallback((attachment: AssetAttachment) => {
-    const position = extractPosition(attachment.target);
-    const host = hostRef.current;
-    if (!position || !host) return;
-    const page = host.parentElement?.querySelector<HTMLElement>(
-      `.page[data-page-number="${position.pageNumber}"]`,
-    );
-    page?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    revealWorkbenchAnchor(assetId, attachment.target);
     setFocusedAttachmentId(attachment.id);
     setSidebarOpen(false);
     if (focusTimerRef.current !== undefined) {
@@ -357,7 +368,7 @@ export function AttachmentHost({
       () => setFocusedAttachmentId(null),
       1800,
     );
-  }, []);
+  }, [assetId]);
 
   if (attachments.length === 0) {
     return null;
@@ -370,26 +381,19 @@ export function AttachmentHost({
           best done inside the PDF viewer itself, but this shows the UI model. */}
       {markerGroups.map((group) => {
         const att = group.at(-1)!;
-        const pos = extractPosition(att.target);
-        const pagePosition = pos?.pageNumber
-          ? pagePositions.get(pos.pageNumber)
-          : undefined;
+        const anchorRect = anchorRects.get(att.id);
         const quote = extractQuote(att.target);
         const preview = extractMetadataPreview(att.metadata);
         const isActive =
           group.some((item) => item.id === activeAttachmentId) ||
           group.some((item) => item.id === focusedAttachmentId);
 
-        const left =
-          (pagePosition?.left ?? 16) +
-          (pos?.xRatio ?? 1) * (pagePosition?.width ?? 0);
-        const top =
-          (pagePosition?.top ?? 16) +
-          (pos?.yRatio ?? 0) * (pagePosition?.height ?? 0);
-        const width =
-          (pos?.widthRatio ?? 0) * (pagePosition?.width ?? 0);
-        const height =
-          (pos?.heightRatio ?? 0) * (pagePosition?.height ?? 0);
+        if (!anchorRect) return null;
+
+        const left = anchorRect?.left ?? 16;
+        const top = anchorRect?.top ?? 16;
+        const width = anchorRect?.width ?? 0;
+        const height = anchorRect?.height ?? 0;
 
         return (
           <button
@@ -486,6 +490,7 @@ export function AttachmentHost({
 
       {activePopupId && (
         <AnnotationPopup
+          body={activeBody}
           attachment={
             attachments.find((a) => a.id === activePopupId) ??
             attachments[0]

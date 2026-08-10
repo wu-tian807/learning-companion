@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
+import { toThreadConfiguration } from '../codex/codex-runtime-params';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import {
   WORKSPACE_READ_TOOL_ID,
@@ -229,7 +230,7 @@ describe('createCodexGenerationConfiguration', () => {
     expect(versionOne.profileId).toBe(withUnselectedTool.profileId);
   });
 
-  it('uses the built-in read-only profile for prompt-only document AI turns', () => {
+  it('creates a Runtime-compatible explicit profile for prompt-only document AI turns', () => {
     const promptOnlyRequest: GenerationAgentTurnRequest = {
       ...request(),
       toolRequirements: [],
@@ -252,14 +253,24 @@ describe('createCodexGenerationConfiguration', () => {
       emptyCapabilities,
     );
 
-    expect(configuration.profileId).toBe(':read-only');
-    expect(configuration.threadInput.permissions).toBe(':read-only');
+    expect(configuration.profileId).toMatch(/^lc-generation-/u);
+    expect(configuration.threadInput.permissions).toBe(
+      configuration.profileId,
+    );
     expect(configuration.threadInput.configOverrides).toMatchObject({
-      default_permissions: ':read-only',
+      permissions: {
+        [configuration.profileId]: {
+          filesystem: { ':minimal': 'read' },
+          network: { enabled: false },
+        },
+      },
     });
     expect(configuration.threadInput.configOverrides).not.toHaveProperty(
-      'permissions',
+      'default_permissions',
     );
+    expect(() =>
+      toThreadConfiguration(configuration.threadInput),
+    ).not.toThrow();
   });
 
   it('keeps model, prompt, and connection choices out of the permission profile identity', () => {

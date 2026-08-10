@@ -379,12 +379,7 @@ export function AssetWorkbenchHost({
             );
 
             try {
-              const target = anchor?.target ?? {
-                scope: 'content' as const,
-                anchorType: 'pdf.page' as const,
-                anchorVersion: 1,
-                anchorPayload: { pageNumber: anchor?.pageNumber ?? 1 },
-              };
+              const target = anchor?.target ?? { scope: 'asset' as const };
               await window.learningCompanion.createAttachment({
                 projectId,
                 assetId: asset.id,
@@ -392,13 +387,17 @@ export function AssetWorkbenchHost({
                 typeVersion: 1,
                 target,
                 metadata: {
-                  question: userMessage?.content ?? '',
-                  answer: answerMessage?.content ?? text,
-                  selectedAnswer: text,
+                  contentFormat: 'ai-annotation-v1',
+                  questionPreview: Array.from(userMessage?.content ?? '').slice(0, 200).join(''),
                   ...(answerMessage?.modelInfo
                     ? { modelInfo: answerMessage.modelInfo }
                     : {}),
                   timestamp: Date.now(),
+                },
+                body: {
+                  question: userMessage?.content ?? '',
+                  answer: answerMessage?.content ?? text,
+                  selectedAnswer: text,
                 },
               });
               await refreshAttachments();
@@ -415,6 +414,8 @@ export function AssetWorkbenchHost({
           }}
         />
         <AttachmentHost
+          projectId={projectId}
+          assetId={asset.id}
           attachments={attachments}
           onDeleteAttachment={async (attachmentId) => {
             try {
