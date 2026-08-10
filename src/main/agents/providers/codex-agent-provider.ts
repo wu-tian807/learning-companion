@@ -474,6 +474,9 @@ export class CodexAgentProvider implements AgentProvider {
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',
+      ...(configuration.turnSandboxPolicy
+        ? { sandboxPolicy: configuration.turnSandboxPolicy }
+        : {}),
       ...(request.modelId ? { model: request.modelId } : {}),
       ...(request.reasoningEffort ? { effort: request.reasoningEffort } : {}),
     });

@@ -5,6 +5,7 @@ import { AppError } from '../../errors/app-error';
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
 import type {
   CodexJsonObject,
+  CodexTurnSandboxPolicy,
   CodexTurnUserInput,
   CreateCodexThreadInput,
   SelectCodexThreadInput,
@@ -54,6 +55,7 @@ const CODEX_GENERATION_EXECUTION_POLICY = [
 export interface CodexGenerationConfiguration {
   readonly profileId: string;
   readonly runtimeWorkspaceRoots: readonly string[];
+  readonly turnSandboxPolicy?: CodexTurnSandboxPolicy;
   readonly threadInput: CreateCodexThreadInput;
   readonly resumeInput: Omit<SelectCodexThreadInput, 'threadId'>;
 }
@@ -175,6 +177,12 @@ export function createCodexGenerationConfiguration(
   const viewImageEnabled = tools.nativeToolIds.includes(
     WORKSPACE_VIEW_IMAGE_TOOL_ID,
   );
+  const writableRoots = readableWorkspaces
+    .filter(
+      (workspace) => workspace.permissions.write && workspaceWriteEnabled,
+    )
+    .map(({ path }) => path);
+  const usesNativeWorkspaceWriteSandbox = writableRoots.length > 0;
 
   if (
     (workspaceToolEnabled && readableWorkspaces.length === 0) ||
@@ -266,9 +274,13 @@ export function createCodexGenerationConfiguration(
           },
         }
       : {}),
-    permissions: {
-      [profileId]: permissionProfile,
-    },
+    ...(usesNativeWorkspaceWriteSandbox
+      ? {}
+      : {
+          permissions: {
+            [profileId]: permissionProfile,
+          },
+        }),
     ...disabledMcpServerOverrides,
     ...(Object.keys(selectedMcpServers).length > 0
       ? { mcp_servers: selectedMcpServers }
@@ -293,7 +305,9 @@ export function createCodexGenerationConfiguration(
     cwd: request.workspaces.primary.path,
     runtimeWorkspaceRoots,
     approvalPolicy: 'never' as const,
-    permissions: profileId,
+    ...(usesNativeWorkspaceWriteSandbox
+      ? { sandbox: 'workspace-write' as const }
+      : { permissions: profileId }),
     configOverrides,
     developerInstructions: `${request.systemInstruction}\n\n${CODEX_GENERATION_EXECUTION_POLICY}`,
   };
@@ -301,6 +315,17 @@ export function createCodexGenerationConfiguration(
   return Object.freeze({
     profileId,
     runtimeWorkspaceRoots: Object.freeze(runtimeWorkspaceRoots),
+    ...(usesNativeWorkspaceWriteSandbox
+      ? {
+          turnSandboxPolicy: Object.freeze({
+            type: 'workspaceWrite' as const,
+            writableRoots: Object.freeze(writableRoots),
+            networkAccess: false,
+            excludeTmpdirEnvVar: true,
+            excludeSlashTmp: true,
+          }),
+        }
+      : {}),
     threadInput: Object.freeze({
       ...common,
       ...(tools.dynamicTools.length > 0
