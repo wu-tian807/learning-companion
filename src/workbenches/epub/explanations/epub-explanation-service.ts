@@ -1,5 +1,4 @@
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { AssetLookup } from '../../../main/assets/asset-database';
 import type { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
 import type {
@@ -7,6 +6,10 @@ import type {
   AttachmentServiceEvent,
 } from '../../../main/attachments/attachment-service';
 import { AppError } from '../../../main/errors/app-error';
+import {
+  GenerationTask,
+  type GenerationTaskSnapshot,
+} from '../../../main/generation/generation-task';
 import type {
   GenerationTaskServiceApi,
   GenerationTaskServiceEvent,
@@ -14,20 +17,22 @@ import type {
 import {
   EPUB_EXPLANATION_ATTACHMENT_TYPE,
   EPUB_EXPLANATION_ATTACHMENT_VERSION,
-  EPUB_EXPLANATION_INSTRUCTION_FORMAT,
-  EPUB_EXPLANATION_INSTRUCTION_VERSION,
   EPUB_EXPLANATION_TASK_DEFINITION_ID,
   EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
   isEpubCfiRangeTarget,
   isEpubExplanationMetadata,
   type CreateEpubExplanationRequest,
+  type EpubExplanationAttachmentView,
   type EpubExplanationEvent,
   type EpubExplanationIdRequest,
-  type EpubExplanationMetadata,
-  type EpubExplanationStatus,
+  type EpubExplanationTaskView,
   type EpubExplanationView,
   type ListEpubExplanationsRequest,
 } from './shared';
+import {
+  EpubExplanationInstruction,
+  epubExplanationInstructionFactory,
+} from './generation/instruction';
 
 export type EpubExplanationListener = (
   event: EpubExplanationEvent,
@@ -46,43 +51,43 @@ export interface EpubExplanationServiceApi {
   dispose(): void;
 }
 
-function metadata(input: {
-  readonly status: EpubExplanationStatus;
-  readonly taskId?: string;
-  readonly failureMessage?: string | null;
-}): JsonValue & EpubExplanationMetadata {
-  return Object.freeze({
-    format: 'learning-companion/epub-explanation' as const,
-    version: 1 as const,
-    status: input.status,
-    ...(input.taskId ? { taskId: input.taskId } : {}),
-    ...(input.failureMessage !== undefined
-      ? { failureMessage: input.failureMessage }
-      : {}),
-  });
-}
-
 function isExplanationAttachment(
   attachment: AssetAttachment,
 ): attachment is AssetAttachment & {
-  readonly target: EpubExplanationView['target'];
-  readonly metadata: JsonValue & EpubExplanationMetadata;
+  readonly target: EpubExplanationAttachmentView['target'];
 } {
   return (
     attachment.typeId === EPUB_EXPLANATION_ATTACHMENT_TYPE &&
     attachment.typeVersion === EPUB_EXPLANATION_ATTACHMENT_VERSION &&
     isEpubCfiRangeTarget(attachment.target) &&
-    isEpubExplanationMetadata(attachment.metadata)
+    isEpubExplanationMetadata(attachment.metadata) &&
+    attachment.content?.mediaType === 'text/markdown'
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function sameTarget(
+  left: EpubExplanationView['target'],
+  right: EpubExplanationView['target'],
+): boolean {
+  return left.anchorPayload.cfiRange === right.anchorPayload.cfiRange;
+}
+
+function resultAttachmentId(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const attachmentId = Reflect.get(value, 'attachmentId');
+  return typeof attachmentId === 'string' && attachmentId.trim().length > 0
+    ? attachmentId
+    : undefined;
 }
 
 export class EpubExplanationService implements EpubExplanationServiceApi {
   private readonly listeners = new Set<EpubExplanationListener>();
-  private readonly retryingAttachmentIds = new Set<string>();
+  private readonly taskLocations = new Map<
+    string,
+    { readonly projectId: string; readonly assetId: string }
+  >();
   private readonly removeAttachmentSubscription: () => void;
   private readonly removeGenerationSubscription: () => void;
 
@@ -106,16 +111,36 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     request: ListEpubExplanationsRequest,
   ): Promise<readonly EpubExplanationView[]> {
     this.requireAsset(request.projectId, request.assetId);
-    const attachments = await this.attachments.listByAsset(
-      request.projectId,
-      request.assetId,
-    );
-    return Promise.all(
-      attachments
+    const attachmentViews = await Promise.all(
+      (
+        await this.attachments.listByAsset(
+          request.projectId,
+          request.assetId,
+        )
+      )
         .filter(isExplanationAttachment)
-        .map(async (attachment) =>
-          this.toView(await this.reconcilePendingTask(attachment)),
-        ),
+        .map((attachment) => this.toAttachmentView(attachment)),
+    );
+    const taskViews = this.generationTasks
+      .list()
+      .map((snapshot) => this.toTaskView(snapshot))
+      .filter(
+        (view): view is EpubExplanationTaskView =>
+          view !== undefined &&
+          view.projectId === request.projectId &&
+          view.assetId === request.assetId,
+      );
+
+    for (const view of taskViews) {
+      this.taskLocations.set(view.id, {
+        projectId: view.projectId,
+        assetId: view.assetId,
+      });
+    }
+
+    return [...attachmentViews, ...taskViews].sort(
+      (left, right) =>
+        left.createdTime - right.createdTime || left.id.localeCompare(right.id),
     );
   }
 
@@ -123,65 +148,73 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     request: CreateEpubExplanationRequest,
   ): Promise<EpubExplanationView> {
     this.requireAsset(request.projectId, request.assetId);
-    const existing = (
+    const existingAttachment = (
       await this.attachments.listByAsset(request.projectId, request.assetId)
-    ).filter(isExplanationAttachment).find(
-      (attachment) =>
-        attachment.target.anchorPayload.cfiRange ===
-          request.target.anchorPayload.cfiRange,
-    );
-    if (existing) return this.toView(existing);
-
-    const attachment = await this.attachments.create({
-      projectId: request.projectId,
-      assetId: request.assetId,
-      typeId: EPUB_EXPLANATION_ATTACHMENT_TYPE,
-      typeVersion: EPUB_EXPLANATION_ATTACHMENT_VERSION,
-      target: request.target,
-      metadata: metadata({ status: 'pending' }),
-    });
-
-    try {
-      if (!isExplanationAttachment(attachment)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      return await this.startFreshTask(attachment);
-    } catch (error) {
-      await this.attachments
-        .delete(attachment.projectId, attachment.id)
-        .catch(() => undefined);
-      throw error;
+    )
+      .filter(isExplanationAttachment)
+      .find((attachment) => sameTarget(attachment.target, request.target));
+    if (existingAttachment) {
+      return this.toAttachmentView(existingAttachment);
     }
+
+    const existingTask = this.generationTasks
+      .list()
+      .map((snapshot) => this.toTaskView(snapshot))
+      .find(
+        (view) =>
+          view?.projectId === request.projectId &&
+          view.assetId === request.assetId &&
+          sameTarget(view.target, request.target),
+      );
+    if (existingTask) return existingTask;
+
+    const instruction = new EpubExplanationInstruction({
+      assetId: request.assetId,
+      target: request.target,
+    });
+    const task = this.generationTasks.start({
+      projectId: request.projectId,
+      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
+      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      instruction: instruction.toSnapshot(),
+      assetReferences: {},
+    });
+    const view = this.toTaskView(task);
+    if (!view) throw new AppError('DATA_INTEGRITY_ERROR');
+    this.taskLocations.set(view.id, {
+      projectId: view.projectId,
+      assetId: view.assetId,
+    });
+    return view;
   }
 
   async retry(request: EpubExplanationIdRequest): Promise<EpubExplanationView> {
-    const attachmentId = request.explanationId.trim();
-    if (this.retryingAttachmentIds.has(attachmentId)) {
+    if (request.kind !== 'task') {
       throw new AppError('OPERATION_SUPERSEDED');
     }
-
-    this.retryingAttachmentIds.add(attachmentId);
-    try {
-      const attachment = await this.requireExplanation(request);
-      if (attachment.metadata.status !== 'failed') {
-        throw new AppError('OPERATION_SUPERSEDED');
-      }
-      return await this.startFreshTask(attachment);
-    } finally {
-      this.retryingAttachmentIds.delete(attachmentId);
+    const current = this.requireTask(request);
+    if (current.status !== 'failed') {
+      throw new AppError('OPERATION_SUPERSEDED');
     }
+    const retried = this.toTaskView(
+      this.generationTasks.retry(request.explanationId),
+    );
+    if (!retried) throw new AppError('DATA_INTEGRITY_ERROR');
+    return retried;
   }
 
   async delete(request: EpubExplanationIdRequest): Promise<void> {
-    const current = await this.requireExplanation(request);
-    const taskId = current.metadata.taskId;
-    if (current.metadata.status !== 'completed' && taskId) {
-      try {
-        this.generationTasks.cancel(taskId);
-      } catch {
-        // The failed task may already be outside the active in-memory set.
+    if (request.kind === 'task') {
+      const current = this.requireTask(request);
+      if (current.status === 'failed') {
+        this.generationTasks.discard(current.id);
+      } else {
+        this.generationTasks.cancel(current.id);
       }
+      return;
     }
+
+    const current = await this.requireAttachment(request);
     await this.attachments.delete(current.projectId, current.id);
   }
 
@@ -193,51 +226,8 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   dispose(): void {
     this.removeAttachmentSubscription();
     this.removeGenerationSubscription();
-    this.retryingAttachmentIds.clear();
+    this.taskLocations.clear();
     this.listeners.clear();
-  }
-
-  private async startFreshTask(
-    attachment: AssetAttachment & {
-      readonly target: EpubExplanationView['target'];
-    },
-  ): Promise<EpubExplanationView> {
-    const quote = attachment.target.anchorPayload.quote;
-    const task = this.generationTasks.create({
-      projectId: attachment.projectId,
-      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
-      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
-      instruction: {
-        format: EPUB_EXPLANATION_INSTRUCTION_FORMAT,
-        version: EPUB_EXPLANATION_INSTRUCTION_VERSION,
-        attachmentId: attachment.id,
-        exact: quote.exact,
-        prefix: quote.prefix,
-        suffix: quote.suffix,
-      },
-      assetReferences: {},
-    });
-
-    try {
-      const pending = await this.attachments.update({
-        projectId: attachment.projectId,
-        attachmentId: attachment.id,
-        metadata: metadata({ status: 'pending', taskId: task.id }),
-        content: null,
-      });
-      this.generationTasks.retry(task.id);
-      if (!isExplanationAttachment(pending)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      return this.toView(pending);
-    } catch (error) {
-      try {
-        this.generationTasks.discard(task.id);
-      } catch {
-        // Best-effort compensation for a task that did not start.
-      }
-      throw error;
-    }
   }
 
   private requireAsset(projectId: string, assetId: string): void {
@@ -250,11 +240,24 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     }
   }
 
-  private async requireExplanation(
+  private requireTask(request: EpubExplanationIdRequest): EpubExplanationTaskView {
+    this.requireAsset(request.projectId, request.assetId);
+    const snapshot = this.generationTasks.get(request.explanationId);
+    const view = snapshot ? this.toTaskView(snapshot) : undefined;
+    if (
+      !view ||
+      view.projectId !== request.projectId ||
+      view.assetId !== request.assetId
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return view;
+  }
+
+  private async requireAttachment(
     request: EpubExplanationIdRequest,
   ): Promise<AssetAttachment & {
-    readonly target: EpubExplanationView['target'];
-    readonly metadata: JsonValue & EpubExplanationMetadata;
+    readonly target: EpubExplanationAttachmentView['target'];
   }> {
     this.requireAsset(request.projectId, request.assetId);
     const attachment = await this.attachments.get(request.explanationId);
@@ -269,82 +272,66 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     return attachment;
   }
 
-  private async toView(
-    attachment: AssetAttachment & {
-      readonly target: EpubExplanationView['target'];
-      readonly metadata: JsonValue & EpubExplanationMetadata;
-    },
-  ): Promise<EpubExplanationView> {
-    const answer = attachment.content
-      ? await this.contentFiles.readText(
-          attachment.projectId,
-          attachment.content.ref,
-        )
-      : undefined;
+  private taskInstruction(
+    snapshot: GenerationTaskSnapshot,
+  ): EpubExplanationInstruction | undefined {
+    if (
+      snapshot.definitionId !== EPUB_EXPLANATION_TASK_DEFINITION_ID ||
+      snapshot.definitionVersion !==
+        EPUB_EXPLANATION_TASK_DEFINITION_VERSION
+    ) {
+      return undefined;
+    }
+    const parsed = epubExplanationInstructionFactory.parse(
+      snapshot.instruction,
+    );
+    return parsed.ok ? parsed.value : undefined;
+  }
+
+  private toTaskView(
+    snapshot: GenerationTaskSnapshot,
+  ): EpubExplanationTaskView | undefined {
+    const instruction = this.taskInstruction(snapshot);
+    if (!instruction) return undefined;
+    const status = new GenerationTask(snapshot).getStatus();
+    if (status === 'completed' || status === 'cancelled') return undefined;
     return Object.freeze({
+      kind: 'task',
+      id: snapshot.id,
+      projectId: snapshot.projectId,
+      assetId: instruction.assetId,
+      target: instruction.target,
+      status: status === 'failed' ? 'failed' : 'pending',
+      ...(snapshot.failure
+        ? { failureMessage: snapshot.failure.message }
+        : {}),
+      createdTime: snapshot.createdTime,
+      updatedTime: snapshot.updatedTime,
+    });
+  }
+
+  private async toAttachmentView(
+    attachment: AssetAttachment & {
+      readonly target: EpubExplanationAttachmentView['target'];
+    },
+  ): Promise<EpubExplanationAttachmentView> {
+    if (!attachment.content) throw new AppError('DATA_INTEGRITY_ERROR');
+    const answer = await this.contentFiles.readText(
+      attachment.projectId,
+      attachment.content.ref,
+    );
+    if (answer === undefined) throw new AppError('DATA_INTEGRITY_ERROR');
+    return Object.freeze({
+      kind: 'attachment',
       id: attachment.id,
       projectId: attachment.projectId,
       assetId: attachment.assetId,
       target: attachment.target,
-      status: attachment.metadata.status,
-      ...(attachment.metadata.taskId
-        ? { taskId: attachment.metadata.taskId }
-        : {}),
-      ...(answer === undefined ? {} : { answer }),
-      ...(typeof attachment.metadata.failureMessage === 'string'
-        ? { failureMessage: attachment.metadata.failureMessage }
-        : {}),
+      status: 'completed',
+      answer,
       createdTime: attachment.createdTime,
       updatedTime: attachment.updatedTime,
     });
-  }
-
-  private async reconcilePendingTask(
-    attachment: AssetAttachment & {
-      readonly target: EpubExplanationView['target'];
-      readonly metadata: JsonValue & EpubExplanationMetadata;
-    },
-  ): Promise<
-    AssetAttachment & {
-      readonly target: EpubExplanationView['target'];
-      readonly metadata: JsonValue & EpubExplanationMetadata;
-    }
-  > {
-    if (attachment.metadata.status !== 'pending') {
-      return attachment;
-    }
-
-    const taskId = attachment.metadata.taskId;
-    const task = taskId ? this.generationTasks.get(taskId) : undefined;
-
-    if (
-      task &&
-      !task.completed &&
-      !task.failure &&
-      task.cancelledTime === undefined
-    ) {
-      return attachment;
-    }
-
-    const updated = await this.attachments.update({
-      projectId: attachment.projectId,
-      attachmentId: attachment.id,
-      metadata: metadata({
-        status: 'failed',
-        ...(taskId ? { taskId } : {}),
-        failureMessage:
-          task?.failure?.message ??
-          (task?.cancelledTime === undefined
-            ? 'AI 解释任务已中断，请重试。'
-            : 'AI 解释已取消，请重试。'),
-      }),
-    });
-
-    if (!isExplanationAttachment(updated)) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-
-    return updated;
   }
 
   private async handleAttachmentEvent(
@@ -362,47 +349,74 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     }
     this.publish({
       type: 'changed',
-      explanation: await this.toView(event.attachment),
+      explanation: await this.toAttachmentView(event.attachment),
     });
   }
 
   private async handleGenerationEvent(
     event: GenerationTaskServiceEvent,
   ): Promise<void> {
-    if (event.type !== 'task-changed') return;
-    const snapshot = event.snapshot;
-    if (
-      snapshot.definitionId !== EPUB_EXPLANATION_TASK_DEFINITION_ID ||
-      (!snapshot.failure && snapshot.cancelledTime === undefined)
-    ) {
+    if (event.type === 'execution-event') return;
+    if (event.type === 'task-discarded') {
+      const location = this.taskLocations.get(event.taskId);
+      if (!location) return;
+      this.taskLocations.delete(event.taskId);
+      this.publish({
+        type: 'deleted',
+        ...location,
+        explanationId: event.taskId,
+      });
       return;
     }
-    const instruction: unknown = snapshot.instruction;
-    if (
-      !isRecord(instruction) ||
-      instruction.format !== EPUB_EXPLANATION_INSTRUCTION_FORMAT ||
-      typeof instruction.attachmentId !== 'string'
-    ) {
+
+    const instruction = this.taskInstruction(event.snapshot);
+    if (!instruction) return;
+    const location = {
+      projectId: event.snapshot.projectId,
+      assetId: instruction.assetId,
+    };
+    this.taskLocations.set(event.snapshot.id, location);
+
+    if (event.type === 'task-completed') {
+      this.taskLocations.delete(event.snapshot.id);
+      const attachmentId = resultAttachmentId(event.result.result);
+      const attachment = attachmentId
+        ? await this.attachments.get(attachmentId)
+        : undefined;
+      if (
+        !attachment ||
+        attachment.projectId !== location.projectId ||
+        attachment.assetId !== location.assetId ||
+        !isExplanationAttachment(attachment)
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      this.publish({
+        type: 'replaced',
+        ...location,
+        previousExplanationId: event.snapshot.id,
+        explanation: await this.toAttachmentView(attachment),
+      });
       return;
     }
-    const attachment = await this.attachments.get(instruction.attachmentId);
-    if (!attachment || !isExplanationAttachment(attachment)) return;
-    if (
-      attachment.metadata.taskId !== snapshot.id ||
-      attachment.metadata.status === 'completed'
-    ) {
+
+    const status = new GenerationTask(event.snapshot).getStatus();
+    if (status === 'completed') {
+      // task-completed carries the result Attachment ID and performs the
+      // renderer projection replacement atomically.
       return;
     }
-    await this.attachments.update({
-      projectId: attachment.projectId,
-      attachmentId: attachment.id,
-      metadata: metadata({
-        status: 'failed',
-        taskId: snapshot.id,
-        failureMessage:
-          snapshot.failure?.message ?? 'AI 解释已取消，请重试。',
-      }),
-    });
+    const view = this.toTaskView(event.snapshot);
+    if (!view) {
+      this.taskLocations.delete(event.snapshot.id);
+      this.publish({
+        type: 'deleted',
+        ...location,
+        explanationId: event.snapshot.id,
+      });
+      return;
+    }
+    this.publish({ type: 'changed', explanation: view });
   }
 
   private publish(event: EpubExplanationEvent): void {

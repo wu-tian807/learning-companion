@@ -44,6 +44,13 @@ function createHarness() {
       typeof value === 'object' && value !== null && 'cfiRange' in value,
   });
   const contentFiles = {
+    write: vi.fn(async ({ attachmentId, fileName, mediaType }) => ({
+      ref: {
+        base: 'project-workspace' as const,
+        path: `attachments/${attachmentId}/${fileName}`,
+      },
+      mediaType,
+    })),
     removeAttachment: vi.fn(async () => undefined),
     removeProject: vi.fn(async () => undefined),
   } as unknown as AttachmentContentFile;
@@ -120,6 +127,70 @@ describe('AttachmentService', () => {
       created.id,
     );
     expect(events).toContainEqual({ type: 'deleted', attachment: created });
+  });
+
+  it('publishes a file-backed Attachment only after its content is ready', async () => {
+    const { service, stored, contentFiles } = createHarness();
+
+    const created = await service.createWithContent({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'epub.note',
+      typeVersion: 1,
+      target: { scope: 'asset' },
+      metadata: { status: 'completed' },
+      content: {
+        fileName: 'answer.md',
+        mediaType: 'text/markdown',
+        data: '# 回答\n',
+      },
+    });
+
+    expect(contentFiles.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentId: 'attachment-1',
+        fileName: 'answer.md',
+        content: '# 回答\n',
+      }),
+    );
+    expect(created.content).toEqual({
+      ref: {
+        base: 'project-workspace',
+        kind: 'local-file',
+        path: 'attachments/attachment-1/answer.md',
+      },
+      mediaType: 'text/markdown',
+    });
+    expect(stored.get(created.id)).toEqual(created);
+  });
+
+  it('rolls back both content and database state when Asset tracking fails', async () => {
+    const { service, stored, contentFiles, tracker } = createHarness();
+    tracker.touch.mockImplementationOnce(() => {
+      throw new Error('asset tracking failed');
+    });
+
+    await expect(
+      service.createWithContent({
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        typeId: 'epub.note',
+        typeVersion: 1,
+        target: { scope: 'asset' },
+        metadata: { status: 'completed' },
+        content: {
+          fileName: 'answer.md',
+          mediaType: 'text/markdown',
+          data: '# 回答\n',
+        },
+      }),
+    ).rejects.toThrow('asset tracking failed');
+
+    expect(stored.size).toBe(0);
+    expect(contentFiles.removeAttachment).toHaveBeenCalledWith(
+      'project-1',
+      'attachment-1',
+    );
   });
 
   it('contains rejected async subscribers', async () => {

@@ -104,7 +104,11 @@ export function EpubExplanationPanel({
           onClick={onDelete}
           className="ui-control rounded-full px-3 py-1.5 text-[11px] text-slate-500 hover:text-rose-300"
         >
-          删除解释
+          {explanation.kind === 'attachment'
+            ? '删除解释'
+            : explanation.status === 'pending'
+              ? '取消生成'
+              : '移除任务'}
         </button>
       </div>
     </aside>

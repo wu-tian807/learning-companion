@@ -361,6 +361,28 @@ export function EpubWorkbenchView({
           ]);
           return;
         }
+        if (event.type === 'replaced') {
+          if (
+            event.projectId !== asset.projectId ||
+            event.assetId !== asset.id
+          ) {
+            return;
+          }
+          setExplanations((current) => [
+            ...current.filter(
+              (item) =>
+                item.id !== event.previousExplanationId &&
+                item.id !== event.explanation.id,
+            ),
+            event.explanation,
+          ]);
+          setActiveExplanationId((current) =>
+            current === event.previousExplanationId
+              ? event.explanation.id
+              : current,
+          );
+          return;
+        }
         if (
           event.projectId !== asset.projectId ||
           event.assetId !== asset.id
@@ -688,6 +710,7 @@ export function EpubWorkbenchView({
           await window.learningCompanion.retryEpubExplanation({
             projectId: asset.projectId,
             assetId: asset.id,
+            kind: explanation.kind,
             explanationId: explanation.id,
           });
         setExplanations((current) => [
@@ -707,6 +730,7 @@ export function EpubWorkbenchView({
         await window.learningCompanion.deleteEpubExplanation({
           projectId: asset.projectId,
           assetId: asset.id,
+          kind: explanation.kind,
           explanationId: explanation.id,
         });
         setExplanations((current) =>

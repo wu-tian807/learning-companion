@@ -31,6 +31,15 @@ export interface CreateAttachmentInput {
   readonly content?: AssetAttachmentContent;
 }
 
+export interface CreateAttachmentWithContentInput
+  extends Omit<CreateAttachmentInput, 'content'> {
+  readonly content: {
+    readonly fileName: string;
+    readonly mediaType: string;
+    readonly data: string | Uint8Array;
+  };
+}
+
 export interface UpdateAttachmentInput {
   readonly projectId: string;
   readonly attachmentId: string;
@@ -51,6 +60,9 @@ export interface AttachmentServiceApi {
     assetId: string,
   ): Promise<readonly AssetAttachment[]>;
   create(input: CreateAttachmentInput): Promise<AssetAttachment>;
+  createWithContent(
+    input: CreateAttachmentWithContentInput,
+  ): Promise<AssetAttachment>;
   update(input: UpdateAttachmentInput): Promise<AssetAttachment>;
   delete(projectId: string, attachmentId: string): Promise<void>;
   removeByAsset(projectId: string, assetId: string): Promise<void>;
@@ -74,6 +86,13 @@ export class EmptyAttachmentService implements AttachmentServiceApi {
   }
 
   async create(_input: CreateAttachmentInput): Promise<AssetAttachment> {
+    void _input;
+    throw new AppError('FEATURE_NOT_SUPPORTED');
+  }
+
+  async createWithContent(
+    _input: CreateAttachmentWithContentInput,
+  ): Promise<AssetAttachment> {
     void _input;
     throw new AppError('FEATURE_NOT_SUPPORTED');
   }
@@ -142,21 +161,70 @@ export class AttachmentService implements AttachmentServiceApi {
     this.assertRegistered(input.typeId, input.typeVersion, input.metadata);
     this.assertTarget(input.target);
     const now = this.dependencies.now();
-    const created = this.database.create(
-      createAssetAttachment({
-        id: this.dependencies.createId(),
-        projectId: input.projectId,
-        assetId: input.assetId,
-        typeId: input.typeId,
-        typeVersion: input.typeVersion,
-        target: input.target,
-        metadata: input.metadata,
-        ...(input.content ? { content: input.content } : {}),
-        createdTime: now,
-        updatedTime: now,
-      }),
+    return this.persistCreated(
+      this.dependencies.createId(),
+      input,
+      now,
     );
-    this.assetTracker.touch(created.projectId, created.assetId, now);
+  }
+
+  async createWithContent(
+    input: CreateAttachmentWithContentInput,
+  ): Promise<AssetAttachment> {
+    this.assertRegistered(input.typeId, input.typeVersion, input.metadata);
+    this.assertTarget(input.target);
+    const id = this.dependencies.createId();
+    const now = this.dependencies.now();
+    const content = await this.contentFiles.write({
+      projectId: input.projectId,
+      attachmentId: id,
+      fileName: input.content.fileName,
+      mediaType: input.content.mediaType,
+      content: input.content.data,
+    });
+
+    try {
+      return this.persistCreated(id, { ...input, content }, now);
+    } catch (error) {
+      await this.contentFiles
+        .removeAttachment(input.projectId, id)
+        .catch((cleanupError: unknown) => {
+          console.error('回滚 Attachment 内容文件失败', cleanupError);
+        });
+      throw error;
+    }
+  }
+
+  private persistCreated(
+    id: string,
+    input: CreateAttachmentInput,
+    now: number,
+  ): AssetAttachment {
+    const candidate = createAssetAttachment({
+      id,
+      projectId: input.projectId,
+      assetId: input.assetId,
+      typeId: input.typeId,
+      typeVersion: input.typeVersion,
+      target: input.target,
+      metadata: input.metadata,
+      ...(input.content ? { content: input.content } : {}),
+      createdTime: now,
+      updatedTime: now,
+    });
+    const created = this.database.create(candidate);
+
+    try {
+      this.assetTracker.touch(created.projectId, created.assetId, now);
+    } catch (error) {
+      try {
+        this.database.delete(created.id);
+      } catch (rollbackError) {
+        console.error('回滚 Attachment 数据库记录失败', rollbackError);
+      }
+      throw error;
+    }
+
     this.publish({ type: 'changed', attachment: created });
     return created;
   }

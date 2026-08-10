@@ -301,10 +301,7 @@ export async function createApplicationRuntime({
     );
     generationTaskDefinitions.register(
       createEpubExplanationTaskDefinitionV1(
-        new EpubExplanationProcessor(
-          attachmentService,
-          attachmentFiles,
-        ),
+        new EpubExplanationProcessor(attachmentService),
       ),
     );
     const generationTaskPreparer = new GenerationTaskPreparer(

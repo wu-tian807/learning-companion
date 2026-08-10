@@ -14,15 +14,15 @@ import type { JsonValue } from '../../../../shared/workbench/protocol';
 import {
   EPUB_EXPLANATION_INSTRUCTION_FORMAT,
   EPUB_EXPLANATION_INSTRUCTION_VERSION,
+  isEpubCfiRangeTarget,
+  type EpubCfiRangeTarget,
 } from '../shared';
 
 export type EpubExplanationInstructionSnapshot = JsonValue & {
   readonly format: typeof EPUB_EXPLANATION_INSTRUCTION_FORMAT;
   readonly version: typeof EPUB_EXPLANATION_INSTRUCTION_VERSION;
-  readonly attachmentId: string;
-  readonly exact: string;
-  readonly prefix: string;
-  readonly suffix: string;
+  readonly assetId: string;
+  readonly target: JsonValue & EpubCfiRangeTarget;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -30,36 +30,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class EpubExplanationInstruction extends GenerationInstruction<EpubExplanationInstructionSnapshot> {
-  readonly attachmentId: string;
-  readonly exact: string;
-  readonly prefix: string;
-  readonly suffix: string;
+  readonly assetId: string;
+  readonly target: EpubCfiRangeTarget;
 
   constructor(input: {
-    readonly attachmentId: string;
-    readonly exact: string;
-    readonly prefix: string;
-    readonly suffix: string;
+    readonly assetId: string;
+    readonly target: EpubCfiRangeTarget;
   }) {
     super();
-    this.attachmentId = input.attachmentId.trim();
-    this.exact = input.exact.trim();
-    this.prefix = input.prefix;
-    this.suffix = input.suffix;
+    this.assetId = input.assetId.trim();
+    this.target = input.target;
   }
 
   toSnapshot(): EpubExplanationInstructionSnapshot {
+    const target = Object.freeze({
+      scope: 'content' as const,
+      anchorType: this.target.anchorType,
+      anchorVersion: this.target.anchorVersion,
+      anchorPayload: this.target.anchorPayload,
+    }) as JsonValue & EpubCfiRangeTarget;
     return Object.freeze({
       format: EPUB_EXPLANATION_INSTRUCTION_FORMAT,
       version: EPUB_EXPLANATION_INSTRUCTION_VERSION,
-      attachmentId: this.attachmentId,
-      exact: this.exact,
-      prefix: this.prefix,
-      suffix: this.suffix,
+      assetId: this.assetId,
+      target,
     });
   }
 
   toUserMessage(): AgentUserMessage {
+    const { exact, prefix, suffix } = this.target.anchorPayload.quote;
     return createTextAgentUserMessage(`请解释下面选中的文字，使普通读者能够理解。
 
 要求：
@@ -70,15 +69,15 @@ export class EpubExplanationInstruction extends GenerationInstruction<EpubExplan
 5. 回答简洁，避免重复原文。
 
 <context-before>
-${this.prefix || '（无）'}
+${prefix || '（无）'}
 </context-before>
 
 <selection>
-${this.exact}
+${exact}
 </selection>
 
 <context-after>
-${this.suffix || '（无）'}
+${suffix || '（无）'}
 </context-after>`);
   }
 }
@@ -90,15 +89,9 @@ export const epubExplanationInstructionFactory: GenerationInstructionFactory<Epu
         !isRecord(input) ||
         input.format !== EPUB_EXPLANATION_INSTRUCTION_FORMAT ||
         input.version !== EPUB_EXPLANATION_INSTRUCTION_VERSION ||
-        typeof input.attachmentId !== 'string' ||
-        input.attachmentId.trim().length === 0 ||
-        typeof input.exact !== 'string' ||
-        input.exact.trim().length === 0 ||
-        input.exact.length > 16_384 ||
-        typeof input.prefix !== 'string' ||
-        input.prefix.length > 256 ||
-        typeof input.suffix !== 'string' ||
-        input.suffix.length > 256
+        typeof input.assetId !== 'string' ||
+        input.assetId.trim().length === 0 ||
+        !isEpubCfiRangeTarget(input.target)
       ) {
         return generationValidationFailure([
           { path: 'instruction', message: 'EPUB 解释任务数据无效' },
@@ -107,10 +100,8 @@ export const epubExplanationInstructionFactory: GenerationInstructionFactory<Epu
 
       return generationValidationSuccess(
         new EpubExplanationInstruction({
-          attachmentId: input.attachmentId,
-          exact: input.exact,
-          prefix: input.prefix,
-          suffix: input.suffix,
+          assetId: input.assetId,
+          target: input.target,
         }),
       );
     },

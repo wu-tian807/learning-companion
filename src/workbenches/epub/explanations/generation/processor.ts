@@ -1,4 +1,3 @@
-import type { AttachmentContentFile } from '../../../../main/attachments/attachment-content-file';
 import type { AttachmentServiceApi } from '../../../../main/attachments/attachment-service';
 import { AppError } from '../../../../main/errors/app-error';
 import type {
@@ -6,7 +5,12 @@ import type {
   GenerationTaskProcessor,
 } from '../../../../main/generation/contracts/task-definition';
 import type { JsonValue } from '../../../../shared/workbench/protocol';
-import { isEpubExplanationMetadata } from '../shared';
+import {
+  EPUB_EXPLANATION_ATTACHMENT_TYPE,
+  EPUB_EXPLANATION_ATTACHMENT_VERSION,
+  isEpubCfiRangeTarget,
+  isEpubExplanationMetadata,
+} from '../shared';
 import type { EpubExplanationInstruction } from './instruction';
 
 export type EpubExplanationTaskResult = JsonValue & {
@@ -22,10 +26,7 @@ export class EpubExplanationProcessor
       EpubExplanationTaskResult
     >
 {
-  constructor(
-    private readonly attachments: AttachmentServiceApi,
-    private readonly contentFiles: AttachmentContentFile,
-  ) {}
+  constructor(private readonly attachments: AttachmentServiceApi) {}
 
   async process(
     context: GenerationTaskProcessContext<EpubExplanationInstruction>,
@@ -46,53 +47,51 @@ export class EpubExplanationProcessor
       });
     }
 
-    const attachment = await this.attachments.get(
-      context.instruction.attachmentId,
+    const existing = (
+      await this.attachments.listByAsset(
+        context.projectId,
+        context.instruction.assetId,
+      )
+    ).find(
+      (attachment) =>
+        attachment.typeId === EPUB_EXPLANATION_ATTACHMENT_TYPE &&
+        attachment.typeVersion === EPUB_EXPLANATION_ATTACHMENT_VERSION &&
+        isEpubCfiRangeTarget(attachment.target) &&
+        attachment.target.anchorType ===
+          context.instruction.target.anchorType &&
+        attachment.target.anchorVersion ===
+          context.instruction.target.anchorVersion &&
+        attachment.target.anchorPayload.cfiRange ===
+          context.instruction.target.anchorPayload.cfiRange,
     );
-    const currentMetadata = attachment?.metadata;
-    if (
-      !attachment ||
-      attachment.projectId !== context.projectId ||
-      !isEpubExplanationMetadata(currentMetadata) ||
-      currentMetadata.status !== 'pending' ||
-      currentMetadata.taskId !== context.taskId
-    ) {
-      throw new AppError('OPERATION_SUPERSEDED');
+
+    if (existing) {
+      if (
+        !isEpubExplanationMetadata(existing.metadata) ||
+        existing.content?.mediaType !== 'text/markdown'
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      return Object.freeze({ attachmentId: existing.id });
     }
 
-    let contentWritten = false;
-    try {
-      const content = await this.contentFiles.write({
-        projectId: attachment.projectId,
-        attachmentId: attachment.id,
+    context.signal?.throwIfAborted();
+    const attachment = await this.attachments.createWithContent({
+      projectId: context.projectId,
+      assetId: context.instruction.assetId,
+      typeId: EPUB_EXPLANATION_ATTACHMENT_TYPE,
+      typeVersion: EPUB_EXPLANATION_ATTACHMENT_VERSION,
+      target: context.instruction.target,
+      metadata: {
+        format: 'learning-companion/epub-explanation',
+        version: 1,
+      },
+      content: {
         fileName: 'answer.md',
         mediaType: 'text/markdown',
-        content: `${answer}\n`,
-      });
-      contentWritten = true;
-      context.signal?.throwIfAborted();
-      await this.attachments.update({
-        projectId: attachment.projectId,
-        attachmentId: attachment.id,
-        metadata: {
-          format: 'learning-companion/epub-explanation',
-          version: 1,
-          status: 'completed',
-          taskId: context.taskId,
-          failureMessage: null,
-        },
-        content,
-      });
-    } catch (error) {
-      if (contentWritten) {
-        await this.contentFiles
-          .removeAttachment(attachment.projectId, attachment.id)
-          .catch((cleanupError: unknown) => {
-            console.error('回滚 EPUB 解释 Attachment 内容失败', cleanupError);
-          });
-      }
-      throw error;
-    }
+        data: `${answer}\n`,
+      },
+    });
 
     return Object.freeze({ attachmentId: attachment.id });
   }

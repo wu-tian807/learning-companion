@@ -1,11 +1,11 @@
-import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
   EPUB_CFI_RANGE_ANCHOR_TYPE,
   EPUB_CFI_RANGE_ANCHOR_VERSION,
   isEpubCfiRangeAnchorV1,
-  type EpubCfiRangeAnchorV1,
+  type EpubCfiRangeTarget,
 } from '../shared';
+
+export type { EpubCfiRangeTarget } from '../shared';
 
 export const EPUB_EXPLANATION_ATTACHMENT_TYPE = 'epub.ai-explanation';
 export const EPUB_EXPLANATION_ATTACHMENT_VERSION = 1;
@@ -15,34 +15,37 @@ export const EPUB_EXPLANATION_INSTRUCTION_FORMAT =
   'learning-companion/epub-explanation-instruction';
 export const EPUB_EXPLANATION_INSTRUCTION_VERSION = 1;
 
-export type EpubExplanationStatus = 'pending' | 'completed' | 'failed';
-
-export interface EpubCfiRangeTarget extends ContentAnchorTarget {
-  readonly anchorType: typeof EPUB_CFI_RANGE_ANCHOR_TYPE;
-  readonly anchorVersion: typeof EPUB_CFI_RANGE_ANCHOR_VERSION;
-  readonly anchorPayload: JsonValue & EpubCfiRangeAnchorV1;
-}
-
 export interface EpubExplanationMetadata {
   readonly format: 'learning-companion/epub-explanation';
   readonly version: 1;
-  readonly status: EpubExplanationStatus;
-  readonly taskId?: string;
-  readonly failureMessage?: string | null;
 }
 
-export interface EpubExplanationView {
+interface EpubExplanationViewBase {
   readonly id: string;
   readonly projectId: string;
   readonly assetId: string;
   readonly target: EpubCfiRangeTarget;
-  readonly status: EpubExplanationStatus;
-  readonly taskId?: string;
-  readonly answer?: string;
-  readonly failureMessage?: string;
   readonly createdTime: number;
   readonly updatedTime: number;
 }
+
+export interface EpubExplanationTaskView extends EpubExplanationViewBase {
+  readonly kind: 'task';
+  readonly status: 'pending' | 'failed';
+  readonly failureMessage?: string;
+}
+
+export interface EpubExplanationAttachmentView
+  extends EpubExplanationViewBase {
+  readonly kind: 'attachment';
+  readonly status: 'completed';
+  readonly answer: string;
+}
+
+/** Renderer projection. Pending/failed rows come from GenerationTask; completed rows come from Attachment. */
+export type EpubExplanationView =
+  | EpubExplanationTaskView
+  | EpubExplanationAttachmentView;
 
 export interface ListEpubExplanationsRequest {
   readonly projectId: string;
@@ -56,6 +59,7 @@ export interface CreateEpubExplanationRequest
 
 export interface EpubExplanationIdRequest
   extends ListEpubExplanationsRequest {
+  readonly kind: EpubExplanationView['kind'];
   readonly explanationId: string;
 }
 
@@ -63,6 +67,13 @@ export type EpubExplanationEvent =
   | {
       readonly type: 'changed';
       readonly explanation: EpubExplanationView;
+    }
+  | {
+      readonly type: 'replaced';
+      readonly projectId: string;
+      readonly assetId: string;
+      readonly previousExplanationId: string;
+      readonly explanation: EpubExplanationAttachmentView;
     }
   | {
       readonly type: 'deleted';
@@ -105,15 +116,7 @@ export function isEpubExplanationMetadata(
   return (
     isRecord(value) &&
     value.format === 'learning-companion/epub-explanation' &&
-    value.version === 1 &&
-    (value.status === 'pending' ||
-      value.status === 'completed' ||
-      value.status === 'failed') &&
-    (value.taskId === undefined || isRequiredText(value.taskId, 256)) &&
-    (value.failureMessage === undefined ||
-      value.failureMessage === null ||
-      (typeof value.failureMessage === 'string' &&
-        value.failureMessage.length <= 1_000))
+    value.version === 1
   );
 }
 
@@ -143,6 +146,7 @@ export function isEpubExplanationIdRequest(
   return (
     isRecord(value) &&
     isListEpubExplanationsRequest(value) &&
+    (value.kind === 'task' || value.kind === 'attachment') &&
     isRequiredText(value.explanationId, 256)
   );
 }
@@ -156,13 +160,15 @@ export function isEpubExplanationView(
     isRequiredText(value.projectId, 256) &&
     isRequiredText(value.assetId, 256) &&
     isEpubCfiRangeTarget(value.target) &&
-    (value.status === 'pending' ||
-      value.status === 'completed' ||
-      value.status === 'failed') &&
-    (value.taskId === undefined || isRequiredText(value.taskId, 256)) &&
-    (value.answer === undefined || typeof value.answer === 'string') &&
-    (value.failureMessage === undefined ||
-      typeof value.failureMessage === 'string') &&
+    ((value.kind === 'task' &&
+      (value.status === 'pending' || value.status === 'failed') &&
+      value.answer === undefined &&
+      (value.failureMessage === undefined ||
+        typeof value.failureMessage === 'string')) ||
+      (value.kind === 'attachment' &&
+        value.status === 'completed' &&
+        typeof value.answer === 'string' &&
+        value.failureMessage === undefined)) &&
     isTime(value.createdTime) &&
     isTime(value.updatedTime)
   );
@@ -174,6 +180,17 @@ export function isEpubExplanationEvent(
   if (!isRecord(value)) return false;
   if (value.type === 'changed') {
     return isEpubExplanationView(value.explanation);
+  }
+  if (value.type === 'replaced') {
+    return (
+      isRequiredText(value.projectId, 256) &&
+      isRequiredText(value.assetId, 256) &&
+      isRequiredText(value.previousExplanationId, 256) &&
+      isEpubExplanationView(value.explanation) &&
+      value.explanation.kind === 'attachment' &&
+      value.explanation.projectId === value.projectId &&
+      value.explanation.assetId === value.assetId
+    );
   }
   return (
     value.type === 'deleted' &&
