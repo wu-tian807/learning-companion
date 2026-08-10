@@ -28,8 +28,28 @@ interface UseGenerationTasksOptions {
    * 任务完成后回调，传入完整任务快照（含 result）。
    * 产物解读（resultAssetId 等）是各任务自己的事，hook 不做任何假设。
    */
-  readonly onCompleted: (task: GenerationTaskView) => void;
+  readonly onCompleted: (
+    task: GenerationTaskView,
+  ) => Promise<void> | void;
   readonly onError: (message: string) => void;
+}
+
+export async function deliverGenerationTaskCompletion(
+  task: GenerationTaskView,
+  onCompleted: (task: GenerationTaskView) => Promise<void> | void,
+  onError: (message: string) => void,
+): Promise<void> {
+  try {
+    await onCompleted(task);
+  } catch (error) {
+    const message = userMessageFromError(
+      error,
+      '生成任务已完成，但无法处理任务结果。',
+    );
+    if (message) {
+      onError(message);
+    }
+  }
 }
 
 function upsertTask(
@@ -187,8 +207,12 @@ export function useGenerationTasks({
             delete next[snapshot.id];
             return next;
           });
-          // 产物解读交给消费方（onCompleted 收到完整快照）；hook 不检查 result。
-          onCompletedRef.current(snapshot);
+          // 产物解读交给消费方；共享 Hook 只负责隔离异步消费错误。
+          void deliverGenerationTaskCompletion(
+            snapshot,
+            onCompletedRef.current,
+            onErrorRef.current,
+          );
           return;
         }
 
