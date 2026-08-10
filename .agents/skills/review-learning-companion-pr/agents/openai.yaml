@@ -1,0 +1,4 @@
+interface:
+  display_name: "Learning Companion PR 初审"
+  short_description: "按架构边界、测试矩阵和跨平台门槛完成 PR 发布前初审"
+  default_prompt: "使用 $review-learning-companion-pr 对当前分支执行发布前自检，并只在所有硬性门槛通过后给出可发起 PR 的结论。"
