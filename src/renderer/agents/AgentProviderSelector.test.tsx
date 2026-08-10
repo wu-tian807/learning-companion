@@ -5,6 +5,10 @@ import type { AgentProviderSetupSnapshot } from '../../shared/agent-providers';
 import { AgentProviderSelector } from './AgentProviderSelector';
 import type { AgentProviderSetupApi } from './agent-provider-api';
 import { createAgentProviderStore } from './agent-provider-store';
+import {
+  findActiveSelectorConnectionSelection,
+  findSelectorConnectionSelection,
+} from './selector-connection-selection';
 
 const setup: AgentProviderSetupSnapshot = Object.freeze({
   revision: 1,
@@ -16,6 +20,7 @@ const setup: AgentProviderSetupSnapshot = Object.freeze({
     }),
   ]),
   selections: Object.freeze([]),
+  selectorConnections: Object.freeze([]),
   providers: Object.freeze([
     Object.freeze({
       id: 'codex',
@@ -70,5 +75,168 @@ describe('AgentProviderSelector', () => {
     expect(markup).toContain('>high<');
     expect(markup).not.toContain('没有可配置的 Connection');
     expect(markup).not.toContain('<select');
+  });
+
+  it('restores the explicitly active Connection when multiple configurations exist', () => {
+    const api = createApi();
+    const provider = setup.providers[0]!;
+    const configuredSetup: AgentProviderSetupSnapshot = {
+      ...setup,
+      providers: [
+        {
+          ...provider,
+          supportedConnectionKinds: ['account', 'api-key'],
+          connections: [
+            ...provider.connections,
+            {
+              id: 'codex-api-1',
+              providerId: 'codex',
+              kind: 'api-key',
+              displayName: 'DeepSeek API',
+              baseUrl: 'https://api.deepseek.com',
+              status: 'ready',
+              hasApiKey: true,
+              refreshing: false,
+              removable: true,
+            },
+          ],
+        },
+      ],
+      selections: [
+        {
+          selectorId: 'generation-center',
+          providerId: 'codex',
+          connectionId: 'codex-account',
+          modelId: 'gpt-5.1',
+          reasoningEffort: 'high',
+        },
+        {
+          selectorId: 'generation-center',
+          providerId: 'codex',
+          connectionId: 'codex-api-1',
+          modelId: 'deepseek-chat',
+          reasoningEffort: 'medium',
+        },
+      ],
+      selectorConnections: [
+        {
+          selectorId: 'generation-center',
+          providerId: 'codex',
+          connectionId: 'codex-api-1',
+        },
+      ],
+    };
+
+    const markup = renderToStaticMarkup(
+      <AgentProviderSelector
+        selectorId="generation-center"
+        api={api}
+        store={createAgentProviderStore(api, { setup: configuredSetup })}
+      />,
+    );
+
+    expect(markup).toContain('Codex · DeepSeek API');
+  });
+});
+
+describe('findSelectorConnectionSelection', () => {
+  it('finds the saved model configuration for a specific Connection', () => {
+    const selection = findSelectorConnectionSelection(
+      {
+        ...setup,
+        selections: Object.freeze([
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+            modelId: 'gpt-5.1',
+            reasoningEffort: 'high',
+          }),
+        ]),
+      },
+      'generation-center',
+      'codex-account',
+    );
+
+    expect(selection).toEqual({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-5.1',
+      reasoningEffort: 'high',
+    });
+  });
+
+  it('uses the explicitly active Connection instead of the first saved configuration', () => {
+    const active = findActiveSelectorConnectionSelection(
+      {
+        ...setup,
+        selections: Object.freeze([
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+            modelId: 'gpt-5.1',
+            reasoningEffort: 'high',
+          }),
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-api-1',
+            modelId: 'deepseek-chat',
+            reasoningEffort: 'medium',
+          }),
+        ]),
+        selectorConnections: Object.freeze([
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-api-1',
+          }),
+        ]),
+      },
+      'generation-center',
+    );
+
+    expect(active?.connectionId).toBe('codex-api-1');
+    expect(active?.modelId).toBe('deepseek-chat');
+  });
+
+  it('does not confuse configurations of different Connections for the same Selector', () => {
+    const selection = findSelectorConnectionSelection(
+      {
+        ...setup,
+        selections: Object.freeze([
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+            modelId: 'gpt-5.1',
+            reasoningEffort: 'high',
+          }),
+          Object.freeze({
+            selectorId: 'generation-center',
+            providerId: 'codex',
+            connectionId: 'codex-api-1',
+            modelId: 'deepseek-chat',
+            reasoningEffort: 'medium',
+          }),
+        ]),
+      },
+      'generation-center',
+      'codex-api-1',
+    );
+
+    expect(selection?.modelId).toBe('deepseek-chat');
+  });
+
+  it('returns undefined when the Connection has no saved configuration', () => {
+    const selection = findSelectorConnectionSelection(
+      setup,
+      'generation-center',
+      'codex-account',
+    );
+
+    expect(selection).toBeUndefined();
   });
 });

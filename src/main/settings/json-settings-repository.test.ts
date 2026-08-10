@@ -75,6 +75,7 @@ describe('JsonSettingsRepository', () => {
       completedOnboardingVersion: 0,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
+      agentProviderSelectorConnections: {},
     });
   });
 
@@ -112,18 +113,30 @@ describe('JsonSettingsRepository', () => {
 
     const restored = new JsonSettingsRepository(settingsFile);
     await restored.initialize();
-    expect(restored.getAgentProviderSelectorSelection('generation-center')).toEqual({
+    expect(
+      restored.getAgentProviderSelectorSelection(
+        'generation-center',
+        'codex-api-deepseek',
+      ),
+    ).toEqual({
       selectorId: 'generation-center',
       providerId: 'codex',
       connectionId: 'codex-api-deepseek',
       modelId: 'deepseek-chat',
       reasoningEffort: 'high',
     });
+    expect(
+      restored.getAgentProviderSelectorConnection('generation-center'),
+    ).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-api-deepseek',
+    });
   });
 
   it('deleting a Connection also clears selectors that reference it', async () => {
     const directory = await temporaryDirectory();
-    const repository = new JsonSettingsRepository(join(directory, 'settings.json'));
+    const settingsFile = join(directory, 'settings.json');
+    const repository = new JsonSettingsRepository(settingsFile);
     await repository.initialize();
     await repository.updateAgentProviderConnection({
       id: 'codex-api-1',
@@ -144,6 +157,18 @@ describe('JsonSettingsRepository', () => {
 
     expect(repository.listAgentProviderConnections()).toEqual([]);
     expect(repository.listAgentProviderSelectorSelections()).toEqual([]);
+    expect(
+      repository.getAgentProviderSelectorConnection('generation-center'),
+    ).toBeUndefined();
+
+    const warn = vi.fn();
+    const restored = new JsonSettingsRepository(settingsFile, {
+      logger: { warn },
+    });
+    await restored.initialize();
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(restored.listAgentProviderSelectorSelections()).toEqual([]);
   });
 
   it('serializes concurrent updates in invocation order', async () => {
@@ -207,7 +232,12 @@ describe('JsonSettingsRepository', () => {
       displayName: '已迁移的 API 连接',
       baseUrl: 'https://example.com/v1',
     });
-    expect(repository.getAgentProviderSelectorSelection('generation-center')).toMatchObject({
+    expect(
+      repository.getAgentProviderSelectorSelection(
+        'generation-center',
+        'codex-api-legacy',
+      ),
+    ).toMatchObject({
       selectorId: 'generation-center',
       connectionId: 'codex-api-legacy',
       modelId: 'custom-model',
