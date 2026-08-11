@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createHtmlQuoteTarget } from '../shared';
 import {
   createHtmlConversationIndex,
   HTML_CONVERSATION_MAX_ENTRIES,
@@ -18,10 +19,7 @@ const validEntry: HtmlConversationEntry = Object.freeze({
     Object.freeze({
       role: 'user',
       text: '什么是自注意力？',
-      anchor: Object.freeze({
-        anchorType: 'html.quote',
-        anchorPayload: Object.freeze({ exact: '自注意力' }),
-      }),
+      anchor: createHtmlQuoteTarget('自注意力'),
     }),
     Object.freeze({
       role: 'assistant',
@@ -73,6 +71,47 @@ describe('isHtmlConversationEntry', () => {
       }),
     ).toBe(false);
   });
+
+  it('rejects anchors that are not validated HTML targets', () => {
+    // 只有 anchorType/anchorPayload 但缺 scope/anchorVersion 的裸对象不合法。
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          {
+            role: 'user',
+            text: 'x',
+            anchor: {
+              anchorType: 'html.quote',
+              anchorPayload: { exact: '裸锚点' },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('enforces the anchor byte budget', () => {
+    const oversizedAnchor = createHtmlQuoteTarget('大'.repeat(8_000));
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          { role: 'user', text: 'x', anchor: oversizedAnchor },
+        ],
+      }),
+    ).toBe(false);
+
+    const boundedAnchor = createHtmlQuoteTarget('自注意力');
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          { role: 'user', text: 'x', anchor: boundedAnchor },
+        ],
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('normalizeHtmlConversationIndex', () => {
@@ -87,7 +126,7 @@ describe('normalizeHtmlConversationIndex', () => {
       entries: [
         {
           id: 'legacy-task',
-          anchor: { anchorType: 'html.quote', anchorPayload: { exact: '旧锚点' } },
+          anchor: createHtmlQuoteTarget('旧锚点'),
           question: '旧问题',
           answer: '旧回答',
           createdTime: 100,
@@ -105,10 +144,7 @@ describe('normalizeHtmlConversationIndex', () => {
             {
               role: 'user',
               text: '旧问题',
-              anchor: {
-                anchorType: 'html.quote',
-                anchorPayload: { exact: '旧锚点' },
-              },
+              anchor: createHtmlQuoteTarget('旧锚点'),
             },
             { role: 'assistant', text: '旧回答' },
           ],

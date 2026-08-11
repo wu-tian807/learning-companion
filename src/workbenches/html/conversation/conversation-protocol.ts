@@ -6,9 +6,9 @@
  * same so existing v1 data can be migrated instead of silently disappearing.
  */
 import {
-  isJsonValue,
   type JsonValue,
 } from '../../../shared/workbench/protocol';
+import { isHtmlAnchorTarget } from '../anchor-commands';
 import {
   HTML_CONVERSATION_ID_MAX_LENGTH,
   isHtmlConversationId,
@@ -71,6 +71,15 @@ function isTime(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
+function isBoundedAnchor(value: unknown): boolean {
+  return (
+    value !== undefined &&
+    isHtmlAnchorTarget(value) &&
+    new TextEncoder().encode(JSON.stringify(value)).byteLength <=
+      HTML_CONVERSATION_ANCHOR_MAX_BYTES
+  );
+}
+
 export function isHtmlConversationMessage(
   value: unknown,
 ): value is HtmlConversationMessage {
@@ -81,7 +90,7 @@ export function isHtmlConversationMessage(
   return (
     (value.role === 'user' || value.role === 'assistant') &&
     isBoundedText(value.text, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
-    (value.anchor === undefined || isJsonValue(value.anchor))
+    (value.anchor === undefined || isBoundedAnchor(value.anchor))
   );
 }
 
@@ -144,7 +153,7 @@ function isLegacyHtmlConversationEntry(
     isBoundedText(value.question, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
     isBoundedText(value.answer, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
     isTime(value.createdTime) &&
-    (value.anchor === undefined || isJsonValue(value.anchor))
+    (value.anchor === undefined || isBoundedAnchor(value.anchor))
   );
 }
 

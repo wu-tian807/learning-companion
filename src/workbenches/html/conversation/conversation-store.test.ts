@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { WorkbenchCommand } from '../../../shared/workbench/protocol';
+import { createHtmlQuoteTarget } from '../shared';
 import {
   createHtmlConversationStore,
   type HtmlConversationStoreOptions,
@@ -14,7 +15,7 @@ const validEntry: HtmlConversationEntry = Object.freeze({
     Object.freeze({
       role: 'assistant',
       text: '自注意力允许任意两个位置直接交互。',
-      anchor: Object.freeze({ exact: '自注意力机制' }),
+      anchor: createHtmlQuoteTarget('自注意力机制'),
     }),
   ]),
   createdTime: 1_720_000_000_000,

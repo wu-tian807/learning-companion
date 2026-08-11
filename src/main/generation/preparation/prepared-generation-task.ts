@@ -5,6 +5,7 @@ import type {
   AgentMcpServerRequirement,
   AgentSkillRequirement,
   AgentToolRequirement,
+  TaskOutputMode,
 } from '../contracts/task-definition';
 import type { PreparedAgentWorkspaces } from '../contracts/generation-workspace';
 
@@ -14,6 +15,7 @@ export interface PreparedGenerationTask {
   readonly definitionId: string;
   readonly definitionVersion: number;
   readonly providerSelectorId: string;
+  readonly outputMode: TaskOutputMode;
   readonly instruction: GenerationInstruction;
   readonly systemInstruction: string;
   readonly defaultUserMessage: AgentUserMessage;

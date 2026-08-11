@@ -34,9 +34,9 @@ import {
   type WorkbenchContextMenuWheelEvent,
 } from './workbench-runtime-store';
 import {
-  createHtmlAiOverlayStore,
-  type HtmlAiOverlayStore,
-} from '../html-ai-overlay-store';
+  createWorkbenchPanelStore,
+  type WorkbenchPanelStore,
+} from '../workbench-panel-store';
 
 export interface WorkbenchContextMenuPosition {
   readonly x: number;
@@ -55,8 +55,8 @@ export type WorkbenchErrorReporter = (
 
 export class WorkbenchRuntime {
   readonly store: WorkbenchRuntimeStore;
-  /** 跨组件共享：HTML AI 对话栏是否在生成中心展开。 */
-  readonly htmlAiOverlay: HtmlAiOverlayStore;
+  /** 跨组件共享：当前 Workbench 面板贡献是否在宿主面板展开。 */
+  readonly workbenchPanel: WorkbenchPanelStore;
   private readonly registry = new WorkbenchActionRegistry();
   private readonly invoker: WorkbenchActionInvoker;
   private reportError: WorkbenchErrorReporter;
@@ -70,7 +70,7 @@ export class WorkbenchRuntime {
   ) {
     this.reportError = reportError;
     this.store = createWorkbenchRuntimeStore();
-    this.htmlAiOverlay = createHtmlAiOverlayStore();
+    this.workbenchPanel = createWorkbenchPanelStore();
     this.invoker = new WorkbenchActionInvoker(
       this.registry,
       this.store,

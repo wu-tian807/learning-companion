@@ -135,6 +135,7 @@ function createGenerationRequest(
       instanceKey: 'task-1',
     },
     systemInstruction: 'Generate a mind map candidate.',
+    outputMode: 'workspace-artifact',
     userMessage: {
       role: 'user',
       content: [{ type: 'text', text: 'Read sources and respond.' }],

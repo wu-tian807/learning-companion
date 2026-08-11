@@ -10,13 +10,17 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import type { GenerationTaskEvent } from '../../../shared/generation-tasks';
+import type {
+  GenerationTaskEvent,
+  GenerationTaskView,
+} from '../../../shared/generation-tasks';
 import { isHtmlAssistantTaskResult } from '../generation/html-assistant-result';
 import type { HtmlConversationStore } from './conversation-store';
 import type { HtmlConversationEntry } from './conversation-protocol';
 import type { HtmlAiLaunchRequest } from './html-ai-launch';
 import { applyLaunchRequest } from './launch-application';
 import { applyCancellation } from './cancel-answer';
+import { resolveConversationTask } from './conversation-task-resolution';
 
 export interface ConversationDisplayMessage {
   readonly id: string;
@@ -41,12 +45,13 @@ export interface ConversationControllerInput {
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly store: HtmlConversationStore;
   readonly onClose: () => void;
-  /** Starts a generation task; resolves with the task id (or undefined on failure). */
+  /** Starts a generation task; resolves with the task id and its latest
+   * authoritative snapshot (already reconciled against any early completion). */
   readonly onAsk: (
     conversationId: string,
     question: string,
     anchor?: JsonValue,
-  ) => Promise<string | undefined>;
+  ) => Promise<{ taskId: string; snapshot?: GenerationTaskView } | undefined>;
   /** Called when a history entry is restored; lets the workbench highlight the anchor. */
   readonly onRestore?: (entry: HtmlConversationEntry) => void;
   /** 锚点随消息发送后调用：选中红框生命周期结束（发送即清除）。 */
@@ -512,10 +517,28 @@ export function useConversationController({
     setBusyState(true);
 
     void onAsk(identityRef.current!.id, normalized, messageAnchor).then(
-      (taskId) => {
-        if (taskId) {
-          streamRef.current = { taskId };
+      (started) => {
+        if (started?.taskId) {
+          streamRef.current = { taskId: started.taskId };
           streamMessageIdRef.current = streamMessageId;
+
+          // 竞态校准：start IPC 返回可能晚于 task 完成广播（快 task / mock /
+          // 缓存恢复）。onAsk 已主动读取权威快照；若已终态，直接按快照落定，
+          // 不依赖已错过的广播事件。
+          const resolution = resolveConversationTask(
+            started.taskId,
+            started.snapshot,
+          );
+          if (resolution.kind === 'terminal-completed') {
+            finalizeStream(
+              resolution.updatedTime,
+              resolution.answer,
+            );
+          } else if (resolution.kind === 'terminal-cancelled') {
+            cancelStream();
+          } else if (resolution.kind === 'terminal-failed') {
+            failStream();
+          }
           return;
         }
 

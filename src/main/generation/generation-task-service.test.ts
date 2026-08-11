@@ -113,6 +113,7 @@ describe('GenerationTaskService', () => {
       definitionId: definition.id,
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
+      outputMode: 'workspace-artifact',
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
       defaultUserMessage: createTextAgentUserMessage('生成思维导图'),

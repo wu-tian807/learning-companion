@@ -169,7 +169,7 @@ export function HtmlWorkbenchView({
       return true;
     });
     setAiLaunchRequest(request);
-    runtime.htmlAiOverlay.getState().openOverlay();
+    runtime.workbenchPanel.getState().openPanel();
   }, [runtime]);
 
   const openChat = useCallback((anchor?: JsonValue) => {
@@ -210,7 +210,7 @@ export function HtmlWorkbenchView({
     setSelectionText(undefined);
     // 切出对话：清除持久锚点红框
     clearHighlight();
-    runtime.htmlAiOverlay.getState().closeOverlay();
+    runtime.workbenchPanel.getState().closePanel();
   }, [clearHighlight, runtime]);
 
   const handleLaunchConsumed = useCallback((requestId: number) => {
@@ -221,7 +221,7 @@ export function HtmlWorkbenchView({
 
   useEffect(() => {
     return () => {
-      runtime.htmlAiOverlay.getState().closeOverlay();
+      runtime.workbenchPanel.getState().closePanel();
     };
   }, [runtime]);
 
@@ -259,7 +259,21 @@ export function HtmlWorkbenchView({
           },
         });
         activeTaskIdRef.current = started.id;
-        return started.id;
+
+        // 竞态校准：start IPC 返回可能晚于快 task 完成广播（mock / 缓存恢复 /
+        // 快速 Provider）。start 返回后立即读取一次权威快照，随结果返回；
+        // controller 据此落定终态，不依赖已错过的广播事件。
+        try {
+          const latest = await window.learningCompanion.listGenerationTasks({
+            projectId,
+          });
+          return {
+            taskId: started.id,
+            snapshot: latest.find((task) => task.id === started.id),
+          };
+        } catch {
+          return { taskId: started.id };
+        }
       } catch (error) {
         const message = userMessageFromError(
           error,

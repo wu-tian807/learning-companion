@@ -6,6 +6,7 @@ import type {
   AgentMcpServerRequirement,
   AgentSkillRequirement,
   AgentToolRequirement,
+  TaskOutputMode,
 } from './contracts/task-definition';
 import type { PreparedAgentWorkspaces } from './contracts/generation-workspace';
 
@@ -47,6 +48,7 @@ export interface GenerationAgentTurnRequest {
   readonly modelId?: string;
   readonly reasoningEffort?: string;
   readonly systemInstruction: string;
+  readonly outputMode: TaskOutputMode;
   readonly userMessage: AgentUserMessage;
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];

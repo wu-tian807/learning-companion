@@ -191,4 +191,102 @@ describe('GenerationTaskPreparer', () => {
       ),
     );
   });
+
+  it('isolates prepared manifests per taskId inside a shared named workspace', async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), 'learning-companion-generation-named-isolation-'),
+    );
+    temporaryDirectories.push(workspaceRoot);
+    const manifestFile = new GenerationPreparedManifestFile();
+    const preparer = new GenerationTaskPreparer(
+      new AgentWorkspaceManager(workspaceRoot),
+      {
+        prepare: vi.fn(async ({ bindings }) =>
+          references(bindings.sources[0]?.assetId ?? 'asset-1'),
+        ),
+        verify: vi.fn(async (_path, _schema, bindings) =>
+          references(bindings.sources[0]?.assetId ?? 'asset-1'),
+        ),
+      },
+      manifestFile,
+    );
+    const definition = createHtmlAssistantTaskDefinitionV1({
+      async process() {
+        return { answer: 'unused' };
+      },
+    });
+    const createTask = (id: string, assetId: string) =>
+      GenerationTask.create({
+        id,
+        projectId: 'project-1',
+        definitionId: definition.id,
+        definitionVersion: definition.version,
+        instruction: new HtmlAssistantInstruction({
+          conversationId: 'conversation-1',
+          question: '问题 ' + id,
+        }).toSnapshot(),
+        assetReferences: { sources: [{ assetId }] },
+        createdTime: 10,
+      });
+
+    // 同一 conversation 连续两个 task：prepared manifest 必须按 taskId 隔离，
+    // 恢复第一个 task 不能读到第二个 task 的 manifest。
+    const firstTask = createTask('task-a', 'asset-1');
+    const secondTask = createTask('task-b', 'asset-2');
+    const firstPrepared = await preparer.prepare(
+      firstTask.getSnapshot(),
+      definition,
+    );
+    const secondPrepared = await preparer.prepare(
+      secondTask.getSnapshot(),
+      definition,
+    );
+
+    expect(firstPrepared.manifestRef).toContain('task-a');
+    expect(secondPrepared.manifestRef).toContain('task-b');
+    expect(firstPrepared.manifestRef).not.toBe(secondPrepared.manifestRef);
+
+    firstTask.recordPrepared({
+      checkpoint: { completedTime: 20, manifestRef: firstPrepared.manifestRef },
+      durationMs: 10,
+      updatedTime: 20,
+    });
+    secondTask.recordPrepared({
+      checkpoint: { completedTime: 20, manifestRef: secondPrepared.manifestRef },
+      durationMs: 10,
+      updatedTime: 20,
+    });
+
+    const restoredFirst = await preparer.restore(
+      firstTask.getSnapshot(),
+      definition,
+    );
+    const restoredSecond = await preparer.restore(
+      secondTask.getSnapshot(),
+      definition,
+    );
+
+    // 各自恢复出各自的 asset reference，互不串线。
+    expect(
+      restoredFirst.assetReferences.sources[0]?.assetId,
+    ).toBe('asset-1');
+    expect(
+      restoredSecond.assetReferences.sources[0]?.assetId,
+    ).toBe('asset-2');
+  });
+
+  function references(assetId: string) {
+    return Object.freeze({
+      sources: Object.freeze([
+        Object.freeze({
+          alias: 'sources-0001',
+          assetId,
+          name: 'lesson.html',
+          mediaType: 'text/html',
+          contentRevision: 'revision-1',
+          relativePath: 'references/sources-0001/source.html',
+        }),
+      ]),
+    });
+  }
 });

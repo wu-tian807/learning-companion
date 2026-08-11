@@ -51,6 +51,25 @@ const CODEX_GENERATION_EXECUTION_POLICY = [
   '- Keep the final assistant message brief; it reports completed work and is not itself the generated artifact.',
 ].join('\n');
 
+/** Provider guidance for tasks whose final assistant message IS the product. */
+const CODEX_ASSISTANT_MESSAGE_EXECUTION_POLICY = [
+  'Learning Companion generation execution boundary:',
+  '- Use only the workspace roots and Skill resources supplied for this task and obey their filesystem permissions.',
+  '- Do not request broader filesystem or network access.',
+  '- Use only the Skills and MCP servers explicitly supplied by Learning Companion for this task; do not discover or invoke ambient capabilities.',
+  '- Do not use apps/connectors, plugins, hooks, memories, goals, or subagents.',
+  '- Use the shell for file discovery and ordinary text inspection inside the supplied workspace roots.',
+  '- The final assistant message IS the delivered answer; write it directly and completely.',
+].join('\n');
+
+function generationExecutionPolicy(
+  request: GenerationAgentTurnRequest,
+): string {
+  return request.outputMode === 'assistant-message'
+    ? CODEX_ASSISTANT_MESSAGE_EXECUTION_POLICY
+    : CODEX_GENERATION_EXECUTION_POLICY;
+}
+
 export interface CodexGenerationConfiguration {
   readonly profileId: string;
   readonly runtimeWorkspaceRoots: readonly string[];
@@ -295,7 +314,7 @@ export function createCodexGenerationConfiguration(
     approvalPolicy: 'never' as const,
     permissions: profileId,
     configOverrides,
-    developerInstructions: `${request.systemInstruction}\n\n${CODEX_GENERATION_EXECUTION_POLICY}`,
+    developerInstructions: `${request.systemInstruction}\n\n${generationExecutionPolicy(request)}`,
   };
 
   return Object.freeze({

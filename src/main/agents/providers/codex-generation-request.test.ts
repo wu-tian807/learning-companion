@@ -37,6 +37,7 @@ function request(): GenerationAgentTurnRequest {
       instanceKey: 'task-1',
     },
     systemInstruction: 'Generate a mind map candidate.',
+    outputMode: 'workspace-artifact',
     userMessage: {
       role: 'user',
       content: [{ type: 'text', text: 'Generate it.' }],
@@ -183,6 +184,29 @@ describe('createCodexGenerationConfiguration', () => {
       'default_permissions',
     );
     expect(writable.profileId).not.toBe(readOnly.profileId);
+  });
+
+  it('shapes the execution policy for assistant-message output mode', () => {
+    const generationRequest = {
+      ...request(),
+      outputMode: 'assistant-message' as const,
+    };
+    const config = createCodexGenerationConfiguration(
+      generationRequest,
+      { disabledMcpServers: [], disabledSkillPaths: [] },
+      resolveCodexGenerationTools(
+        generationRequest,
+        registry(1),
+      ),
+      emptyCapabilities,
+    );
+
+    expect(config.threadInput.developerInstructions).toContain(
+      'The final assistant message IS the delivered answer',
+    );
+    expect(config.threadInput.developerInstructions).not.toContain(
+      'Keep the final assistant message brief',
+    );
   });
 
   it('keeps non-permission tool configuration out of the permission profile identity', () => {

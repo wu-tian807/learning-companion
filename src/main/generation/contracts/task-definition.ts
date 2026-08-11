@@ -93,6 +93,8 @@ export interface GenerationTaskProcessor<
   ): Promise<TResult>;
 }
 
+export type TaskOutputMode = 'assistant-message' | 'workspace-artifact';
+
 export interface TaskDefinition<
   TInstruction extends GenerationInstruction = GenerationInstruction,
   TResult extends JsonValue = JsonValue,
@@ -102,6 +104,13 @@ export interface TaskDefinition<
   /** Stable business slot used to resolve the execution configuration. */
   readonly providerSelectorId: string;
   readonly systemInstruction: string;
+  /**
+   * What the task delivers: a final assistant message that IS the product
+   * (`assistant-message`, e.g. HTML chat) or a workspace file that is the
+   * product (`workspace-artifact`, e.g. MindMap). The Provider shapes its
+   * execution prompt accordingly. Defaults to `workspace-artifact`.
+   */
+  readonly outputMode?: TaskOutputMode;
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];

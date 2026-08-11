@@ -9,6 +9,7 @@
 import { createPortal } from 'react-dom';
 
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import type { GenerationTaskView } from '../../../shared/generation-tasks';
 import type { HtmlConversationStore } from './conversation-store';
 import type { HtmlConversationEntry } from './conversation-protocol';
 import { AnchorChip } from './anchor-summary';
@@ -33,12 +34,16 @@ export interface HtmlConversationOverlayProps {
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly store: HtmlConversationStore;
   readonly onClose: () => void;
-  /** Starts a generation task; resolves with the task id (or undefined on failure). */
+  /** Starts a generation task; resolves with the task id and its latest
+   * authoritative snapshot (already reconciled against any early completion). */
   readonly onAsk: (
     conversationId: string,
     question: string,
     anchor?: JsonValue,
-  ) => Promise<string | undefined>;
+  ) => Promise<{
+    readonly taskId: string;
+    readonly snapshot?: GenerationTaskView;
+  } | undefined>;
   /** Called when a history entry is restored; lets the workbench highlight the anchor. */
   readonly onRestore?: (entry: HtmlConversationEntry) => void;
   /** Reveals an anchor attached to a restored or current conversation message. */
@@ -89,11 +94,11 @@ export function ConversationOverlay(props: HtmlConversationOverlayProps) {
     return null;
   }
 
-  // 优先渲染到生成中心替换槽（对话栏打开时生成中心已卸载，槽位独占整个面板）；
-  // 槽位不存在（生成中心收起/未打开）时回退渲染在 workbench 阅读区右侧。
+  // 优先渲染到宿主面板贡献槽（面板打开时宿主已卸载，槽位独占整个面板）；
+  // 槽位不存在（宿主面板收起/未打开）时回退渲染在 workbench 阅读区右侧。
   const portalHost =
     typeof document !== 'undefined'
-      ? document.getElementById('html-ai-overlay-slot')
+      ? document.getElementById('workbench-panel-slot')
       : null;
 
   const overlayElement = (

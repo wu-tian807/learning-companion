@@ -117,9 +117,10 @@ export function GenerationCenter({
     : [];
   void contributionRevision;
 
-  // HTML AI 对话栏：打开时卸载本面板，由对话栏占据整个区域。
-  const aiOverlayOpen = useStore(
-    runtime.htmlAiOverlay,
+  // Workbench 面板贡献：打开时卸载本面板，由贡献面板占据整个区域
+  // （通用槽位，不关心是哪个 Workbench 贡献的）。
+  const panelOpen = useStore(
+    runtime.workbenchPanel,
     (state) => state.open,
   );
 
@@ -132,10 +133,10 @@ export function GenerationCenter({
 
   return (
     <>
-      {aiOverlayOpen ? (
-        // HTML AI 对话栏占据整个面板区域（对话栏组件经 portal 渲染进来）
+      {panelOpen ? (
+        // 贡献面板占据整个面板区域（面板组件经 portal 渲染进通用槽位）
         <div
-          id="html-ai-overlay-slot"
+          id="workbench-panel-slot"
           className="flex h-full w-full flex-col overflow-hidden"
         />
       ) : (

@@ -26,7 +26,7 @@ const validEntry: HtmlConversationEntry = Object.freeze({
     Object.freeze({
       role: 'assistant',
       text: '自注意力允许任意两个位置直接交互。',
-      anchor: Object.freeze({ exact: '自注意力机制' }),
+      anchor: createHtmlQuoteTarget('自注意力机制'),
     }),
   ]),
   createdTime: 1_720_000_000_000,
@@ -176,7 +176,7 @@ describe('HtmlWorkbenchProvider conversations', () => {
   });
 
   it('migrates legacy v1 question/answer history when listing', async () => {
-    const legacyAnchor = { exact: '旧锚点' };
+    const legacyAnchor = createHtmlQuoteTarget('旧锚点');
     const { provider, context } = await createProvider(
       createFakeStateDatabase(
         encode({

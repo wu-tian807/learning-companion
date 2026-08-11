@@ -2,7 +2,7 @@ import {
   HTML_ASSISTANT_TASK_DEFINITION_ID,
   HTML_ASSISTANT_TASK_DEFINITION_VERSION,
 } from '../../../shared/generation-definitions';
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
+import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import type {
   GenerationTaskProcessContext,
   GenerationTaskProcessor,
@@ -40,7 +40,8 @@ export function createHtmlAssistantTaskDefinitionV1(
   return Object.freeze({
     id: HTML_ASSISTANT_TASK_DEFINITION_ID,
     version: HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-    providerSelectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+    providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
+    outputMode: 'assistant-message' as const,
     systemInstruction: HTML_ASSISTANT_SYSTEM_INSTRUCTION_V1,
     toolRequirements: Object.freeze([]),
     skills: Object.freeze([]),
