@@ -1,5 +1,4 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import { isJsonValue } from '../../../shared/workbench/protocol';
 import {
   HTML_ASSISTANT_INSTRUCTION_FORMAT,
   HTML_ASSISTANT_INSTRUCTION_VERSION,
@@ -17,6 +16,7 @@ import {
   generationValidationSuccess,
 } from '../../../main/generation/contracts/generation-validation';
 import { isHtmlConversationId } from '../conversation/conversation-id';
+import { isHtmlAnchorTarget } from '../anchor-commands';
 
 export {
   HTML_ASSISTANT_INSTRUCTION_FORMAT,
@@ -24,6 +24,7 @@ export {
 } from '../../../shared/generation-definitions';
 
 export const HTML_ASSISTANT_QUESTION_MAX_LENGTH = 2_000;
+export const HTML_ASSISTANT_ANCHOR_MAX_BYTES = 8_192;
 
 export type HtmlAssistantInstructionSnapshot = JsonValue & {
   readonly format: typeof HTML_ASSISTANT_INSTRUCTION_FORMAT;
@@ -35,6 +36,14 @@ export type HtmlAssistantInstructionSnapshot = JsonValue & {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidHtmlAnchor(value: unknown): value is JsonValue {
+  return (
+    isHtmlAnchorTarget(value) &&
+    new TextEncoder().encode(JSON.stringify(value)).byteLength <=
+      HTML_ASSISTANT_ANCHOR_MAX_BYTES
+  );
 }
 
 function describeAnchor(anchor: JsonValue): string {
@@ -110,8 +119,8 @@ export class HtmlAssistantInstruction extends GenerationInstruction<HtmlAssistan
     if (normalized.length > HTML_ASSISTANT_QUESTION_MAX_LENGTH) {
       throw new Error('HtmlAssistant question 超出长度上限');
     }
-    if (input.anchor !== undefined && !isJsonValue(input.anchor)) {
-      throw new Error('HtmlAssistant anchor 不是 JSON 值');
+    if (input.anchor !== undefined && !isValidHtmlAnchor(input.anchor)) {
+      throw new Error('HtmlAssistant anchor 数据无效');
     }
 
     this.conversationId = input.conversationId;
@@ -153,7 +162,7 @@ export const htmlAssistantInstructionFactory: GenerationInstructionFactory<HtmlA
         typeof input.question !== 'string' ||
         input.question.trim().length === 0 ||
         input.question.length > HTML_ASSISTANT_QUESTION_MAX_LENGTH ||
-        (input.anchor !== undefined && !isJsonValue(input.anchor))
+        (input.anchor !== undefined && !isValidHtmlAnchor(input.anchor))
       ) {
         return generationValidationFailure([
           {

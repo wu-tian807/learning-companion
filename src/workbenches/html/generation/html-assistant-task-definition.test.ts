@@ -97,7 +97,21 @@ describe('htmlAssistantInstructionFactory', () => {
         question: 'ok',
         anchor: 42,
       }).ok,
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      htmlAssistantInstructionFactory.parse({
+        format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
+        version: HTML_ASSISTANT_INSTRUCTION_VERSION,
+        conversationId: 'conversation-1',
+        question: 'ok',
+        anchor: {
+          scope: 'content',
+          anchorType: 'html.quote',
+          anchorVersion: 1,
+          anchorPayload: { exact: 'x'.repeat(10_000) },
+        },
+      }).ok,
+    ).toBe(false);
   });
 });
 

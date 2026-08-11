@@ -25,10 +25,13 @@ export const HTML_CONVERSATION_MAX_ENTRIES = 1_000;
 export const HTML_CONVERSATION_MAX_MESSAGES = 2_000;
 export const HTML_CONVERSATION_TEXT_MAX_LENGTH = 32_768;
 export const HTML_CONVERSATION_ANCHOR_MAX_BYTES = 8_192;
+export const HTML_CONVERSATION_TASK_ID_MAX_LENGTH = 128;
 
 export type HtmlConversationMessage = JsonValue & {
   readonly role: 'user' | 'assistant';
   readonly text: string;
+  /** Main-owned task identity used to recover a task after reload. */
+  readonly generationTaskId?: string;
   /** The content anchor consumed by this particular message. */
   readonly anchor?: JsonValue;
   /** 取消（停止）后保留的半截回答。 */
@@ -69,6 +72,18 @@ function isBoundedText(value: unknown, maximumLength: number): value is string {
   );
 }
 
+function isMessageText(
+  role: 'user' | 'assistant',
+  value: unknown,
+  generationTaskId: unknown,
+): value is string {
+  // An acknowledged assistant task may have no delta yet. Persisting that
+  // empty placeholder is what lets a restart recover the task association.
+  return role === 'assistant' && generationTaskId !== undefined
+    ? typeof value === 'string' && value.length <= HTML_CONVERSATION_TEXT_MAX_LENGTH
+    : isBoundedText(value, HTML_CONVERSATION_TEXT_MAX_LENGTH);
+}
+
 function isTime(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
@@ -91,7 +106,12 @@ export function isHtmlConversationMessage(
 
   return (
     (value.role === 'user' || value.role === 'assistant') &&
-    isBoundedText(value.text, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
+    isMessageText(value.role, value.text, value.generationTaskId) &&
+    (value.generationTaskId === undefined ||
+      isBoundedText(
+        value.generationTaskId,
+        HTML_CONVERSATION_TASK_ID_MAX_LENGTH,
+      )) &&
     (value.anchor === undefined || isBoundedAnchor(value.anchor)) &&
     (value.stopped === undefined || value.stopped === true)
   );
@@ -168,6 +188,9 @@ function freezeEntry(entry: HtmlConversationEntry): HtmlConversationEntry {
         Object.freeze({
           role: message.role,
           text: message.text,
+          ...(message.generationTaskId === undefined
+            ? {}
+            : { generationTaskId: message.generationTaskId }),
           ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
           ...(message.stopped === undefined ? {} : { stopped: message.stopped }),
         }),

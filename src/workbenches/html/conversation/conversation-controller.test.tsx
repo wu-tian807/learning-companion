@@ -182,9 +182,15 @@ describe('useConversationController 生命周期', () => {
       resolveAsk = resolve;
     });
     const onAsk = vi.fn(async () => askPromise);
+    const savedEntries: HtmlConversationEntry[] = [];
+    const store = storeWith();
+    store.save = vi.fn(async (entry) => {
+      savedEntries.push(entry);
+      return [entry];
+    });
     renderController({
       open: true,
-      store: storeWith(),
+      store,
       onAsk,
       options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
     });
@@ -215,6 +221,14 @@ describe('useConversationController 生命周期', () => {
     expect(latest.state.messages[1]).toMatchObject({
       role: 'assistant',
       text: '最终回答',
+    });
+    expect(latest.state.messages[1]).toMatchObject({
+      generationTaskId: 'task-1',
+    });
+    expect(savedEntries[0]?.messages[1]).toMatchObject({
+      role: 'assistant',
+      text: '',
+      generationTaskId: 'task-1',
     });
     expect(latest.state.messages[1]?.streaming).toBeFalsy();
     expect(latest.state.busy).toBe(false);
@@ -403,6 +417,38 @@ describe('useConversationController 生命周期', () => {
     expect(onCancelAnswer).toHaveBeenCalledTimes(1);
   });
 
+  it('返回前点击停止会在 start 完成后取消真实任务', async () => {
+    let resolveAsk: (value: {
+      taskId: string;
+      snapshot?: GenerationTaskView;
+    }) => void = () => undefined;
+    const askPromise = new Promise<{
+      taskId: string;
+      snapshot?: GenerationTaskView;
+    }>((resolve) => {
+      resolveAsk = resolve;
+    });
+    const onCancelAnswer = vi.fn();
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk: vi.fn(async () => askPromise),
+      onCancelAnswer,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('未返回时停止');
+      latest.actions.handleCancelAnswer();
+    });
+    expect(onCancelAnswer).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveAsk({ taskId: 'task-1', snapshot: snapshot({ status: 'processing' }) });
+      await askPromise;
+    });
+    expect(onCancelAnswer).toHaveBeenCalledWith('task-1');
+  });
   it('取消发生在 taskId 返回前：校准快照为 cancelled 时同样保留并标记 stopped', async () => {
     let resolveAsk: (value: {
       taskId: string;
@@ -578,6 +624,123 @@ describe('useConversationController 生命周期', () => {
     expect(conversationIds[0]).toBe(conversationIds[1]);
   });
 
+  it('恢复历史会按持久化 taskId 读取最终结果并校正 UI', async () => {
+    const entry: HtmlConversationEntry = {
+      id: 'conversation-restored',
+      messages: [
+        { role: 'user', text: '旧问题' },
+        {
+          role: 'assistant',
+          text: '崩溃前的临时文本',
+          generationTaskId: 'task-1',
+        },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const onGetTask = vi.fn(async () => completedSnapshot('重启后最终回答', 300));
+    renderController({
+      open: true,
+      store: storeWith([entry]),
+      onGetTask,
+      options: {
+        createId: () => `id-${++createIdCounter}`,
+        createConversationId: () => 'new-conversation',
+        now: () => 100,
+      },
+    });
+
+    act(() => {
+      latest.actions.restore(entry);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onGetTask).toHaveBeenCalledWith('task-1');
+    expect(latest.state.messages[1]).toMatchObject({
+      text: '重启后最终回答',
+      generationTaskId: 'task-1',
+      streaming: false,
+    });
+    expect(latest.state.busy).toBe(false);
+  });
+
+  it('恢复历史中的运行中任务会恢复 streaming 并注册取消边界', async () => {
+    const entry: HtmlConversationEntry = {
+      id: 'conversation-restored-running',
+      messages: [
+        { role: 'user', text: '旧问题' },
+        {
+          role: 'assistant',
+          text: '重启前已生成的临时文本',
+          generationTaskId: 'task-running',
+        },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const onGetTask = vi.fn(async () =>
+      snapshot({ id: 'task-running', status: 'processing' }),
+    );
+    const onTaskActivated = vi.fn();
+    renderController({
+      open: true,
+      store: storeWith([entry]),
+      onGetTask,
+      onTaskActivated,
+      options: {
+        createId: () => `id-${++createIdCounter}`,
+        createConversationId: () => 'new-conversation',
+        now: () => 100,
+      },
+    });
+
+    act(() => {
+      latest.actions.restore(entry);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onGetTask).toHaveBeenCalledWith('task-running');
+    expect(onTaskActivated).toHaveBeenCalledWith('task-running');
+    expect(latest.state.messages[1]).toMatchObject({
+      text: '重启前已生成的临时文本',
+      generationTaskId: 'task-running',
+      streaming: true,
+    });
+    expect(latest.state.busy).toBe(true);
+
+    // 恢复后的运行中任务继续消费 delta 与终态广播
+    act(() => {
+      emit({
+        type: 'execution-event',
+        projectId: 'project-1',
+        taskId: 'task-running',
+        event: { type: 'assistant-delta', delta: '继续' },
+      });
+    });
+    expect(latest.state.messages[1]?.text).toBe('重启前已生成的临时文本继续');
+
+    act(() => {
+      emit({
+        type: 'task-completed',
+        snapshot: snapshot({
+          id: 'task-running',
+          status: 'completed',
+          result: Object.freeze({ answer: '最终回答' }),
+          updatedTime: 300,
+        }),
+      });
+    });
+    expect(latest.state.messages[1]).toMatchObject({
+      text: '最终回答',
+      streaming: false,
+    });
+    expect(latest.state.busy).toBe(false);
+    expect(latest.state.messages[1]?.generationTaskId).toBe('task-running');
+  });
   it('恢复历史后继续使用原 conversationId；新建对话才生成新 ID', async () => {
     const entry: HtmlConversationEntry = Object.freeze({
       id: 'conv-history-1',

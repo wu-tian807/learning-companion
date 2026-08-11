@@ -138,6 +138,19 @@ export function registerGenerationTaskHandlers(
   );
 
   registerIpcHandler(
+    IPC_CHANNELS.getGenerationTask,
+    (_event, request: unknown) => {
+      if (!isGenerationTaskIdRequest(request)) {
+        throw invalidRequest();
+      }
+
+      requireProject(service, request.projectId);
+      const snapshot = service.get(request.taskId);
+      return snapshot ? toView(snapshot) : undefined;
+    },
+  );
+
+  registerIpcHandler(
     IPC_CHANNELS.startGenerationTask,
     (_event, request: unknown) => {
       if (!isStartGenerationTaskRequest(request)) {
@@ -190,6 +203,7 @@ export function removeGenerationTaskHandlers(): void {
   removeSubscription?.();
   removeSubscription = undefined;
   ipcMain.removeHandler(IPC_CHANNELS.listGenerationTasks);
+  ipcMain.removeHandler(IPC_CHANNELS.getGenerationTask);
   ipcMain.removeHandler(IPC_CHANNELS.startGenerationTask);
   ipcMain.removeHandler(IPC_CHANNELS.retryGenerationTask);
   ipcMain.removeHandler(IPC_CHANNELS.cancelGenerationTask);

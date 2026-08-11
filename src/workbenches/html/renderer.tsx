@@ -258,12 +258,13 @@ export function HtmlWorkbenchView({
         // 快速 Provider）。start 返回后立即读取一次权威快照，随结果返回；
         // controller 据此落定终态，不依赖已错过的广播事件。
         try {
-          const latest = await window.learningCompanion.listGenerationTasks({
+          const latest = await window.learningCompanion.getGenerationTask({
             projectId,
+            taskId: started.id,
           });
           return {
             taskId: started.id,
-            snapshot: latest.find((task) => task.id === started.id),
+            snapshot: latest,
           };
         } catch {
           return { taskId: started.id };
@@ -297,12 +298,13 @@ export function HtmlWorkbenchView({
         });
         activeTaskIdRef.current = retried.id;
         try {
-          const latest = await window.learningCompanion.listGenerationTasks({
+          const latest = await window.learningCompanion.getGenerationTask({
             projectId,
+            taskId: retried.id,
           });
           return {
             taskId: retried.id,
-            snapshot: latest.find((task) => task.id === retried.id),
+            snapshot: latest,
           };
         } catch {
           return { taskId: retried.id };
@@ -555,6 +557,18 @@ export function HtmlWorkbenchView({
         store={conversationStore}
         onClose={closeAi}
         onAsk={startAssistantTask}
+        onGetTask={async (taskId) => {
+          if (!projectId) {
+            return undefined;
+          }
+          return window.learningCompanion.getGenerationTask({
+            projectId,
+            taskId,
+          });
+        }}
+        onTaskActivated={(taskId) => {
+          activeTaskIdRef.current = taskId;
+        }}
         onRetryTask={retryAssistantTask}
         onBusyChange={setAiBusy}
         onAnswerSettled={handleAnswerSettled}

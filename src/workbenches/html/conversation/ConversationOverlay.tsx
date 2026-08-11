@@ -44,6 +44,10 @@ export interface HtmlConversationOverlayProps {
     readonly taskId: string;
     readonly snapshot?: GenerationTaskView;
   } | undefined>;
+  readonly onGetTask?: (
+    taskId: string,
+  ) => Promise<GenerationTaskView | undefined>;
+  readonly onTaskActivated?: (taskId: string) => void;
   /** Called when a history entry is restored; lets the workbench highlight the anchor. */
   readonly onRestore?: (entry: HtmlConversationEntry) => void;
   /** Reveals an anchor attached to a restored or current conversation message. */

@@ -26,6 +26,8 @@ export interface ConversationDisplayMessage {
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
+  /** Persisted Main task identity for restart/reload reconciliation. */
+  readonly generationTaskId?: string;
   readonly streaming?: boolean;
   /** 取消（停止）后保留的半截回答。 */
   readonly stopped?: boolean;
@@ -54,6 +56,13 @@ export interface ConversationControllerInput {
     question: string,
     anchor?: JsonValue,
   ) => Promise<{ taskId: string; snapshot?: GenerationTaskView } | undefined>;
+  /** Reads the authoritative task snapshot, including completed tasks released
+   * from the in-memory GenerationTaskService map. */
+  readonly onGetTask?: (
+    taskId: string,
+  ) => Promise<GenerationTaskView | undefined>;
+  /** Registers a recovered running task with the workbench cancel boundary. */
+  readonly onTaskActivated?: (taskId: string) => void;
   /** Called when a history entry is restored; lets the workbench highlight the anchor. */
   readonly onRestore?: (entry: HtmlConversationEntry) => void;
   /** 锚点随消息发送后调用：选中红框生命周期结束（发送即清除）。 */
@@ -144,6 +153,9 @@ function entryToMessages(entry: HtmlConversationEntry): ConversationDisplayMessa
     id: `restored:${entry.id}:${index}`,
     role: message.role,
     text: message.text,
+    ...(message.generationTaskId === undefined
+      ? {}
+      : { generationTaskId: message.generationTaskId }),
     ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
     ...(message.stopped === undefined ? {} : { stopped: message.stopped }),
   }));
@@ -151,10 +163,17 @@ function entryToMessages(entry: HtmlConversationEntry): ConversationDisplayMessa
 
 function archivedMessages(messages: readonly ConversationDisplayMessage[]) {
   return messages
-    .filter((message) => message.text.trim().length > 0)
+    .filter(
+      (message) =>
+        message.text.trim().length > 0 ||
+        message.generationTaskId !== undefined,
+    )
     .map((message) => ({
       role: message.role,
       text: message.text,
+      ...(message.generationTaskId === undefined
+        ? {}
+        : { generationTaskId: message.generationTaskId }),
       ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
       ...(message.stopped === undefined ? {} : { stopped: message.stopped }),
     }));
@@ -173,6 +192,8 @@ export function useConversationController({
   store,
   onClose,
   onAsk,
+  onGetTask,
+  onTaskActivated,
   onRestore,
   onAnchorConsumed,
   onStartNew,
@@ -200,6 +221,7 @@ export function useConversationController({
   const [errorText, setErrorText] = useState<string>();
   const streamTaskIdRef = useRef<string | undefined>(undefined);
   const streamMessageIdRef = useRef<string | undefined>(undefined);
+  const pendingCancelRef = useRef(false);
   /** 最近一次失败的任务：重试按钮据此重跑原任务而非重新提问。 */
   const retryTaskRef = useRef<
     { readonly taskId: string; readonly messageId: string } | undefined
@@ -208,6 +230,8 @@ export function useConversationController({
   const busyRef = useRef(false);
   const messagesRef = useRef<ConversationDisplayMessage[]>([]);
   const mountedRef = useRef(true);
+  const onGetTaskRef = useRef(onGetTask);
+  onGetTaskRef.current = onGetTask;
   /** 已消费的启动请求 id：防 Strict Mode / 重渲染重复自动提交。 */
   const lastHandledRequestIdRef = useRef<number | undefined>(undefined);
   const identityRef = useRef<ConversationIdentity | undefined>(undefined);
@@ -245,6 +269,7 @@ export function useConversationController({
     };
     streamTaskIdRef.current = undefined;
     streamMessageIdRef.current = undefined;
+    pendingCancelRef.current = false;
     setBusyState(false);
     replaceMessages([]);
   };
@@ -297,6 +322,19 @@ export function useConversationController({
 
   const persistConversationRef = useRef(persistConversation);
   persistConversationRef.current = persistConversation;
+
+  const bindGenerationTask = (messageId: string, taskId: string) => {
+    updateMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? { ...message, generationTaskId: taskId }
+          : message,
+      ),
+    );
+    // Persist the association as soon as Main acknowledges the task. This
+    // closes the crash/unmount window before the eventual answer arrives.
+    void persistConversation();
+  };
 
   // 消费启动请求：open-chat / explain-selection 只设置待引用锚点；
   // summarize-page 清除锚点并自动提交整页总结问题。
@@ -503,6 +541,7 @@ export function useConversationController({
       return;
     }
     retryTaskRef.current = undefined;
+    pendingCancelRef.current = false;
     setErrorText(undefined);
     setBusyState(true);
     updateMessages((current) =>
@@ -521,6 +560,7 @@ export function useConversationController({
         if (started?.taskId) {
           streamTaskIdRef.current = started.taskId;
           streamMessageIdRef.current = retry.messageId;
+          bindGenerationTask(retry.messageId, started.taskId);
 
           // 与 submitQuestion 相同的竞态校准：已终态直接落定。
           const resolution = resolveConversationTask(
@@ -533,6 +573,9 @@ export function useConversationController({
             cancelStream();
           } else if (resolution.kind === 'terminal-failed') {
             failStream();
+          } else if (pendingCancelRef.current) {
+            pendingCancelRef.current = false;
+            onCancelAnswer?.(started.taskId);
           }
           return;
         }
@@ -576,7 +619,11 @@ export function useConversationController({
   /** busy 时发送按钮变为「停止」：取消当前回答（携带任务 id 供父组件校验目标）。 */
   const handleCancelAnswer = () => {
     const taskId = streamTaskIdRef.current;
-    if (!busyRef.current || !taskId) {
+    if (!busyRef.current) {
+      return;
+    }
+    if (!taskId) {
+      pendingCancelRef.current = true;
       return;
     }
     onCancelAnswer?.(taskId);
@@ -599,6 +646,7 @@ export function useConversationController({
     }
     const consumeInput = options.consumeInput ?? true;
     setErrorText(undefined);
+    pendingCancelRef.current = false;
     const userMessageId = createId();
     const streamMessageId = createId();
     // 锚点随本条消息一起发出；发出后清除待发送锚点（等待下一次选中）
@@ -626,6 +674,7 @@ export function useConversationController({
         if (started?.taskId) {
           streamTaskIdRef.current = started.taskId;
           streamMessageIdRef.current = streamMessageId;
+          bindGenerationTask(streamMessageId, started.taskId);
 
           // 竞态校准：start IPC 返回可能晚于 task 完成广播（快 task / mock /
           // 缓存恢复）。onAsk 已主动读取权威快照；若已终态，直接按快照落定，
@@ -644,6 +693,9 @@ export function useConversationController({
           } else if (resolution.kind === 'terminal-failed') {
             // failStream 会恢复输入框内容，重试按钮不会失效。
             failStream();
+          } else if (pendingCancelRef.current) {
+            pendingCancelRef.current = false;
+            onCancelAnswer?.(started.taskId);
           }
           return;
         }
@@ -682,6 +734,61 @@ export function useConversationController({
   const submitQuestionRef = useRef(submitQuestion);
   submitQuestionRef.current = submitQuestion;
 
+  const recoverRestoredTask = (
+    restoredMessages: readonly ConversationDisplayMessage[],
+    conversationId: string,
+  ) => {
+    const getTask = onGetTaskRef.current;
+    const candidate = [...restoredMessages]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === 'assistant' && message.generationTaskId,
+      );
+    if (!getTask || !candidate?.generationTaskId) {
+      return;
+    }
+
+    const taskId = candidate.generationTaskId;
+    void getTask(taskId).then(
+      (snapshot) => {
+        if (
+          !mountedRef.current ||
+          identityRef.current?.id !== conversationId ||
+          !snapshot
+        ) {
+          return;
+        }
+
+        streamTaskIdRef.current = taskId;
+        streamMessageIdRef.current = candidate.id;
+        onTaskActivated?.(taskId);
+        const resolution = resolveConversationTask(taskId, snapshot);
+        if (resolution.kind === 'terminal-completed') {
+          finalizeStream(resolution.updatedTime, resolution.answer);
+        } else if (resolution.kind === 'terminal-cancelled') {
+          cancelStream();
+        } else if (resolution.kind === 'terminal-failed') {
+          failStream();
+        } else {
+          updateMessages((current) =>
+            current.map((message) =>
+              message.id === candidate.id
+                ? { ...message, streaming: true }
+                : message,
+            ),
+          );
+          setBusyState(true);
+        }
+      },
+      (error: unknown) => {
+        if (mountedRef.current && identityRef.current?.id === conversationId) {
+          onPersistenceError?.(error);
+        }
+      },
+    );
+  };
+
   const restore = (entry: HtmlConversationEntry) => {
     if (busyRef.current) {
       return;
@@ -695,9 +802,16 @@ export function useConversationController({
       pendingSaves: new Map(),
       deleted: false,
     };
+    streamTaskIdRef.current = undefined;
+    streamMessageIdRef.current = undefined;
+    pendingCancelRef.current = false;
+    retryTaskRef.current = undefined;
+    setBusyState(false);
     setTab('chat');
-    replaceMessages(entryToMessages(entry));
+    const restoredMessages = entryToMessages(entry);
+    replaceMessages(restoredMessages);
     setErrorText(undefined);
+    recoverRestoredTask(restoredMessages, entry.id);
     onRestore?.(entry);
   };
 

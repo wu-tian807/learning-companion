@@ -450,6 +450,7 @@ describe('GenerationTaskService', () => {
     expect(service.list().some(({ id }) => id === background.id)).toBe(
       false,
     );
+    expect(service.get(background.id)?.completed).toBeDefined();
     unsubscribe();
 
     const cancelled = service.create({

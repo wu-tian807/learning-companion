@@ -46,6 +46,9 @@ function parseEntries(value: unknown): readonly HtmlConversationEntry[] {
           Object.freeze({
             role: message.role,
             text: message.text,
+            ...(message.generationTaskId === undefined
+              ? {}
+              : { generationTaskId: message.generationTaskId }),
             ...(message.anchor === undefined
               ? {}
               : { anchor: message.anchor }),

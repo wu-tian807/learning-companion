@@ -117,6 +117,51 @@ describe('isHtmlConversationEntry', () => {
     ).toBe(false);
   });
 
+  it('validates persisted GenerationTask associations', () => {
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          {
+            role: 'assistant',
+            text: 'answer',
+            generationTaskId: 'task-1',
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          {
+            role: 'assistant',
+            text: 'answer',
+            generationTaskId: '',
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          {
+            role: 'assistant',
+            text: '',
+            generationTaskId: 'task-pending',
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [{ role: 'assistant', text: '' }],
+      }),
+    ).toBe(false);
+  });
+
   it('enforces the anchor byte budget', () => {
     const oversizedAnchor = createHtmlQuoteTarget('大'.repeat(8_000));
     expect(
