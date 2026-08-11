@@ -77,6 +77,12 @@ export interface EpubCfiRangeAnchorV1 {
   };
 }
 
+export interface EpubCfiRangeTarget extends ContentAnchorTarget {
+  readonly anchorType: typeof EPUB_CFI_RANGE_ANCHOR_TYPE;
+  readonly anchorVersion: typeof EPUB_CFI_RANGE_ANCHOR_VERSION;
+  readonly anchorPayload: JsonValue & EpubCfiRangeAnchorV1;
+}
+
 export const DEFAULT_EPUB_VIEW_STATE: Readonly<EpubWorkbenchViewState> =
   Object.freeze({
     flow: 'paginated',
@@ -192,7 +198,7 @@ export function isEpubCfiRangeAnchorV1(
 
 export function createEpubCfiRangeTarget(
   anchor: EpubCfiRangeAnchorV1,
-): ContentAnchorTarget {
+): EpubCfiRangeTarget {
   return {
     scope: 'content',
     anchorType: EPUB_CFI_RANGE_ANCHOR_TYPE,

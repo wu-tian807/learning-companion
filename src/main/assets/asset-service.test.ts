@@ -47,6 +47,13 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
     initialAssets.map((asset) => [asset.id, cloneAsset(asset)]),
   );
   const database = {
+    get: vi.fn((projectId: string, assetId: string) => {
+      const asset = assetMap.get(assetId);
+
+      return asset?.projectId === projectId
+        ? cloneAsset(asset)
+        : undefined;
+    }),
     listByProject: vi.fn((projectId: string) =>
       [...assetMap.values()]
         .filter((asset) => asset.projectId === projectId)
@@ -177,6 +184,50 @@ function createService(
 }
 
 describe('AssetService', () => {
+  it('touches active and inactive Assets without depending on loaded runtime state', async () => {
+    const database = createDatabase([
+      createAsset('active'),
+      createAsset(
+        'inactive',
+        '/tmp/inactive.md',
+        'text/markdown',
+        'project-two',
+      ),
+    ]);
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    await service.loadFromProject('project');
+    const activeTime = Date.parse('2026-07-27T03:00:00.000Z');
+    const inactiveTime = Date.parse('2026-07-27T03:30:00.000Z');
+
+    service.touch('project', 'active', activeTime);
+    service.touch('project-two', 'inactive', inactiveTime);
+
+    expect(service.get('active')?.updatedTime).toBe(activeTime);
+    expect(database.update).toHaveBeenCalledWith(
+      'project-two',
+      'inactive',
+      { updatedTime: inactiveTime },
+    );
+    expect(service.get('inactive')).toBeUndefined();
+  });
+
+  it('rejects duplicate Attachment cleanup registration', () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    const cleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+
+    service.registerAttachmentCleanup(cleanup);
+
+    expect(() => service.registerAttachmentCleanup(cleanup)).toThrow(
+      'REGISTRATION_CONFLICT',
+    );
+  });
+
   it('loads runtime status while keeping Asset pure data', async () => {
     const database = createDatabase();
     const { handles, registry } = createResolver(() => 'missing');
@@ -602,9 +653,14 @@ describe('AssetService', () => {
     const database = createDatabase([copiedAsset]);
     const { registry } = createResolver();
     const removeManagedAssetFile = vi.fn(async () => true);
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
     const service = createService(database, registry, {}, {
       removeManagedAssetFile,
     });
+    service.registerAttachmentCleanup(attachmentCleanup);
     await service.loadFromProject('project');
 
     await service.delete('asset');
@@ -648,12 +704,18 @@ describe('AssetService', () => {
     ]);
     const { registry } = createResolver();
     const removeManagedAssetFile = vi.fn(async () => true);
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
     const service = createService(database, registry, {}, {
       removeManagedAssetFile,
     });
+    service.registerAttachmentCleanup(attachmentCleanup);
 
     await service.removeManagedFilesByProject('project', '/tmp/project');
 
+    expect(attachmentCleanup.removeByProject).toHaveBeenCalledWith('project');
     expect(removeManagedAssetFile).toHaveBeenCalledTimes(2);
     expect(removeManagedAssetFile).toHaveBeenNthCalledWith(
       1,
@@ -846,14 +908,23 @@ describe('AssetService', () => {
     const deletionObserver = {
       onAssetDeleted: vi.fn(),
     };
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
     const service = createService(database, registry, {
       artifactCleanup,
       deletionObserver,
     });
+    service.registerAttachmentCleanup(attachmentCleanup);
     await service.loadFromProject('project');
 
     await service.delete('asset');
 
+    expect(attachmentCleanup.removeByAsset).toHaveBeenCalledWith(
+      'project',
+      'asset',
+    );
     expect(artifactCleanup.removeByAsset).toHaveBeenCalledWith(
       'asset',
       '/tmp/project',

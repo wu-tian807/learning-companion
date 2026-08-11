@@ -79,10 +79,10 @@ describe('GenerationTaskAgentSession', () => {
           connectionId: 'codex-account',
           modelId: 'gpt-test',
           providerExecutionId: `turn-${turnNumber}`,
-          assistantOutput: { text: `answer-${turnNumber}` },
           startedTime: turnNumber * 10,
           completedTime: turnNumber * 10 + 5,
           activeDurationMs: 5,
+          assistantOutput: `answer-${turnNumber}`,
           usage: { totalTokens: 10 },
         };
       },
@@ -108,7 +108,10 @@ describe('GenerationTaskAgentSession', () => {
       },
     );
 
-    await session.call({ callKey: 'generate', purpose: 'generation' });
+    const generated = await session.call({
+      callKey: 'generate',
+      purpose: 'generation',
+    });
     await session.call({
       callKey: 'repair-1',
       purpose: 'repair',
@@ -116,6 +119,7 @@ describe('GenerationTaskAgentSession', () => {
     });
 
     expect(resolveRunner).toHaveBeenCalledOnce();
+    expect(generated.assistantOutput).toBe('answer-1');
     expect(requests.map(({ callKey, sessionId }) => ({ callKey, sessionId })))
       .toEqual([
         { callKey: 'generate', sessionId: undefined },
@@ -125,18 +129,8 @@ describe('GenerationTaskAgentSession', () => {
       assignedProviderId: 'codex',
       assignedConnectionId: 'codex-account',
       agentCalls: [
-        {
-          callKey: 'generate',
-          purpose: 'generation',
-          sessionId: 'session-1',
-          assistantOutput: { text: 'answer-1' },
-        },
-        {
-          callKey: 'repair-1',
-          purpose: 'repair',
-          sessionId: 'session-1',
-          assistantOutput: { text: 'answer-2' },
-        },
+        { callKey: 'generate', purpose: 'generation', sessionId: 'session-1' },
+        { callKey: 'repair-1', purpose: 'repair', sessionId: 'session-1' },
       ],
       metrics: {
         totalUsage: { totalTokens: 20 },
@@ -168,7 +162,7 @@ describe('GenerationTaskAgentSession', () => {
     ).resolves.toMatchObject({
       callKey: 'repair-1',
       sessionId: 'session-1',
-      assistantOutput: { text: 'answer-2' },
+      assistantOutput: 'answer-2',
     });
     expect(recoveredResolver).not.toHaveBeenCalled();
   });

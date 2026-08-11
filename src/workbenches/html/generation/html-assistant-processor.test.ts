@@ -28,7 +28,7 @@ function createContext(options: {
         callKey: 'ask',
         purpose: 'answer',
         sessionId: 'thread-1',
-        assistantOutput: Object.freeze({ text: '最终回答' }),
+        assistantOutput: '最终回答',
         metrics: Object.freeze({
           callKey: 'ask',
           purpose: 'answer',

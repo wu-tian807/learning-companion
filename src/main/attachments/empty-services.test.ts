@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import { EmptyAttachmentService } from './attachment-service';
 
 const attachment: AssetAttachment = {
@@ -18,7 +18,7 @@ const attachment: AssetAttachment = {
 describe('EmptyAttachmentService', () => {
   it('returns empty reads without pretending persistence exists', async () => {
     await expect(
-      new EmptyAttachmentService().listByAsset('asset'),
+      new EmptyAttachmentService().listByAsset('project', 'asset'),
     ).resolves.toEqual([]);
   });
 

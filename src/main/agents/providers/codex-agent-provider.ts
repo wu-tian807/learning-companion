@@ -7,7 +7,6 @@ import type {
   AgentProviderModelSnapshot,
 } from '../../../shared/agent-providers';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
-import type { AssistantOutput } from '../../generation/contracts/assistant-output';
 import type { AgentToolRequirement } from '../../generation/contracts/task-definition';
 import type {
   GenerationAgentEvent,
@@ -50,7 +49,6 @@ import {
   type ResolvedCodexThread,
 } from './codex-thread-coordinator';
 import {
-  codexAssistantOutputFromItem,
   codexAssistantOutputFromTurn,
   codexModelFromReroute,
   codexTokenUsageFromEvent,
@@ -434,13 +432,14 @@ export class CodexAgentProvider implements AgentProvider {
       if (recovered) {
         const completedTime = this.dependencies.now();
         const assistantOutput = codexAssistantOutputFromTurn(recovered);
+        yield { type: 'assistant-completed', text: assistantOutput };
         return {
           sessionId,
           providerId: this.id,
           connectionId,
           modelId: resolved.selection.model!.trim(),
           providerExecutionId: recovered.id,
-          ...(assistantOutput ? { assistantOutput } : {}),
+          assistantOutput,
           ...codexTurnTiming(recovered, completedTime, completedTime),
         };
       }
@@ -485,7 +484,6 @@ export class CodexAgentProvider implements AgentProvider {
     let activeTurnId: string | undefined;
     let usage: GenerationTokenUsage | undefined;
     let modelId = resolved.selection.model!.trim();
-    let assistantOutput: AssistantOutput | undefined;
     let interruptTask: Promise<void> | undefined;
     const interrupt = () => {
       if (activeTurnId && !interruptTask) {
@@ -514,9 +512,10 @@ export class CodexAgentProvider implements AgentProvider {
             });
           }
 
-          const completedAssistantOutput =
-            codexAssistantOutputFromTurn(next.value.turn) ??
-            assistantOutput;
+          const assistantOutput = codexAssistantOutputFromTurn(
+            next.value.turn,
+          );
+          yield { type: 'assistant-completed', text: assistantOutput };
 
           return {
             sessionId,
@@ -524,9 +523,7 @@ export class CodexAgentProvider implements AgentProvider {
             connectionId,
             modelId,
             providerExecutionId: next.value.turn.id,
-            ...(completedAssistantOutput
-              ? { assistantOutput: completedAssistantOutput }
-              : {}),
+            assistantOutput,
             ...codexTurnTiming(
               next.value.turn,
               startedFallback,
@@ -545,11 +542,6 @@ export class CodexAgentProvider implements AgentProvider {
           event.type === 'item-started' ||
           event.type === 'item-completed'
         ) {
-          if (event.type === 'item-completed') {
-            assistantOutput =
-              codexAssistantOutputFromItem(event.item) ??
-              assistantOutput;
-          }
           const toolEvent = toGenerationToolEvent(
             event,
             tools,
@@ -570,7 +562,11 @@ export class CodexAgentProvider implements AgentProvider {
           });
         }
 
-        usage = codexTokenUsageFromEvent(event) ?? usage;
+        const nextUsage = codexTokenUsageFromEvent(event);
+        if (nextUsage) {
+          usage = nextUsage;
+          yield { type: 'usage-updated', usage: nextUsage };
+        }
         modelId = codexModelFromReroute(event) ?? modelId;
       }
     } finally {

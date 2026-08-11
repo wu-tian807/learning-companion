@@ -123,7 +123,7 @@ describe.runIf(Boolean(deepSeekApiKey))('Codex DeepSeek live integration', () =>
         expect(result.threadId).toBe(thread.thread.id);
         expect(result.turn.status).toBe('completed');
         expect(
-          codexAssistantOutputFromTurn(result.turn)?.text,
+          codexAssistantOutputFromTurn(result.turn),
         ).toContain('LC_DEEPSEEK_OK');
       } finally {
         await service.shutdown();

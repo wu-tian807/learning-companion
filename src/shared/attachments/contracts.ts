@@ -1,6 +1,6 @@
 import type { ProjectWorkspaceLocalFileContentRef } from '../assets';
-import type { AssetTarget } from './anchor';
-import type { JsonValue } from './protocol';
+import type { AssetTarget } from '../workbench/anchor';
+import type { JsonValue } from '../workbench/protocol';
 
 export interface AssetAttachmentContent {
   readonly ref: ProjectWorkspaceLocalFileContentRef;

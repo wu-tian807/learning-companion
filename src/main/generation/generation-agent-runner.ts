@@ -1,6 +1,5 @@
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AgentSessionLocator } from '../agents/sessions/agent-session';
-import type { AssistantOutput } from './contracts/assistant-output';
 import type { AgentUserMessage } from './contracts/agent-message';
 import type { GenerationTokenUsage } from './contracts/generation-metrics';
 import type {
@@ -18,6 +17,14 @@ export type GenerationAgentEvent =
   | {
       readonly type: 'assistant-delta';
       readonly delta: string;
+    }
+  | {
+      readonly type: 'assistant-completed';
+      readonly text: string;
+    }
+  | {
+      readonly type: 'usage-updated';
+      readonly usage: GenerationTokenUsage;
     }
   | {
       readonly type: 'tool-call';
@@ -54,10 +61,11 @@ export interface GenerationAgentTurnResult {
   readonly connectionId: string;
   readonly modelId: string;
   readonly providerExecutionId?: string;
-  readonly assistantOutput?: AssistantOutput;
   readonly startedTime: number;
   readonly completedTime: number;
   readonly activeDurationMs: number;
+  /** Canonical final assistant response. Streaming is optional. */
+  readonly assistantOutput: string;
   readonly usage?: GenerationTokenUsage;
 }
 

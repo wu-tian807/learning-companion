@@ -1,6 +1,5 @@
 import { isJsonValue } from '../../../shared/workbench/protocol';
 import { AppError } from '../../errors/app-error';
-import type { AssistantOutput } from '../../generation/contracts/assistant-output';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
 import type { GenerationAgentEvent } from '../../generation/generation-agent-runner';
 import type {
@@ -106,41 +105,6 @@ function hasClientMessage(turn: CodexTurn, clientId: string): boolean {
   );
 }
 
-export function codexAssistantOutputFromItem(
-  item: CodexThreadItem,
-): AssistantOutput | undefined {
-  if (
-    item.type !== 'agentMessage' ||
-    typeof item.text !== 'string' ||
-    item.text.trim().length === 0
-  ) {
-    return undefined;
-  }
-
-  return Object.freeze({ text: item.text });
-}
-
-export function codexAssistantOutputFromTurn(
-  turn: CodexTurn,
-): AssistantOutput | undefined {
-  const outputs = (turn.items ?? [])
-    .map((item) => ({
-      item,
-      output: codexAssistantOutputFromItem(item),
-    }))
-    .filter(
-      (candidate): candidate is {
-        readonly item: CodexThreadItem;
-        readonly output: AssistantOutput;
-      } => candidate.output !== undefined,
-    );
-  const finalAnswer = [...outputs]
-    .reverse()
-    .find(({ item }) => item.phase === 'final_answer');
-
-  return finalAnswer?.output ?? outputs.at(-1)?.output;
-}
-
 function nonNegativeInteger(value: unknown): number | undefined {
   return Number.isSafeInteger(value) && Number(value) >= 0
     ? Number(value)
@@ -216,6 +180,25 @@ export function findRecoveredCodexTurn(
     .find(
       (turn) => turn.status === 'completed' && hasClientMessage(turn, clientId),
     );
+}
+
+export function codexAssistantOutputFromTurn(turn: CodexTurn): string {
+  const item = [...(turn.items ?? [])]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.type === 'agentMessage' &&
+        candidate.phase === 'final_answer' &&
+        typeof candidate.text === 'string',
+    );
+
+  if (!item || typeof item.text !== 'string') {
+    throw new AppError('CODEX_PROTOCOL_ERROR', {
+      cause: new Error('Codex completed turn did not contain a final answer'),
+    });
+  }
+
+  return item.text;
 }
 
 export function codexTokenUsageFromEvent(

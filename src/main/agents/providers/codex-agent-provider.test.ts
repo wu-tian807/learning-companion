@@ -419,6 +419,17 @@ describe('CodexAgentProvider', () => {
         callId: 'image-1',
         toolName: 'imageView',
       }),
+      {
+        type: 'usage-updated',
+        usage: {
+          inputTokens: 820,
+          cachedInputTokens: 600,
+          outputTokens: 90,
+          reasoningTokens: 30,
+          totalTokens: 910,
+        },
+      },
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(result).toEqual({
       sessionId: 'thread-1',
@@ -426,7 +437,7 @@ describe('CodexAgentProvider', () => {
       connectionId: 'codex-account',
       modelId: 'gpt-test-fast',
       providerExecutionId: 'turn-1',
-      assistantOutput: { text: '{"ok":true}' },
+      assistantOutput: '{"ok":true}',
       startedTime: 1_000,
       completedTime: 2_000,
       activeDurationMs: 800,
@@ -536,7 +547,18 @@ describe('CodexAgentProvider', () => {
       };
       return {
         threadId: 'thread-1',
-        turn: { id: 'turn-1', status: 'completed', items: [] },
+        turn: {
+          id: 'turn-1',
+          status: 'completed',
+          items: [
+            {
+              id: 'message-1',
+              type: 'agentMessage',
+              phase: 'final_answer',
+              text: 'DeepSeek 最终回答',
+            },
+          ],
+        },
       };
     });
     const runtime = createRuntime({
@@ -556,10 +578,9 @@ describe('CodexAgentProvider', () => {
 
     expect(completed.events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
+      { type: 'assistant-completed', text: 'DeepSeek 最终回答' },
     ]);
-    expect(completed.result.assistantOutput).toEqual({
-      text: 'DeepSeek 最终回答',
-    });
+    expect(completed.result.assistantOutput).toBe('DeepSeek 最终回答');
   });
 
   it('preserves mixed workspace permissions through the mocked Codex runtime', async () => {
@@ -698,11 +719,10 @@ describe('CodexAgentProvider', () => {
     expect(startTurn).not.toHaveBeenCalled();
     expect(recovered.events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
+      { type: 'assistant-completed', text: '{"ok":false}' },
     ]);
     expect(recovered.result.providerExecutionId).toBe('turn-1');
-    expect(recovered.result.assistantOutput).toEqual({
-      text: '{"ok":false}',
-    });
+    expect(recovered.result.assistantOutput).toBe('{"ok":false}');
   });
 
   it('resumes the bound thread with the latest execution configuration', async () => {
@@ -1182,6 +1202,7 @@ describe('CodexAgentProvider', () => {
         phase: 'completed',
         toolName: 'dynamic:read_asset_anchor',
       }),
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(execute).toHaveBeenCalledWith(
       { assetId: 'asset-1' },
@@ -1315,6 +1336,7 @@ describe('CodexAgentProvider', () => {
         phase: 'completed',
         toolName: 'mcp:document-tools/read_document',
       }),
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(createThread).toHaveBeenCalledWith(
       expect.objectContaining({

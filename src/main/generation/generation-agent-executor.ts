@@ -1,10 +1,5 @@
 import { createAgentSessionLocator } from '../agents/sessions/agent-session';
 import { AppError } from '../errors/app-error';
-import {
-  cloneAssistantOutput,
-  isAssistantOutput,
-  type AssistantOutput,
-} from './contracts/assistant-output';
 import type { AgentUserMessage } from './contracts/agent-message';
 import {
   isGenerationTokenUsage,
@@ -25,7 +20,7 @@ export type GenerationAgentExecutionEvent = {
 export interface CompletedGenerationAgentRun {
   readonly metrics: GenerationAgentExecutionMetrics;
   readonly providerExecutionId?: string;
-  readonly assistantOutput?: AssistantOutput;
+  readonly assistantOutput: string;
 }
 
 export interface GenerationAgentExecutionRequest {
@@ -64,10 +59,9 @@ function validateTurnResult(
     result.completedTime < result.startedTime ||
     !Number.isFinite(result.activeDurationMs) ||
     result.activeDurationMs < 0 ||
+    typeof result.assistantOutput !== 'string' ||
     (result.usage !== undefined &&
       !isGenerationTokenUsage(result.usage)) ||
-    (result.assistantOutput !== undefined &&
-      !isAssistantOutput(result.assistantOutput)) ||
     (expectedSessionId !== undefined &&
       result.sessionId !== expectedSessionId)
   ) {
@@ -130,6 +124,7 @@ export class GenerationAgentExecutor {
     );
 
     return Object.freeze({
+      assistantOutput: result.assistantOutput,
       metrics: Object.freeze({
         callKey: request.callKey,
         purpose: request.purpose,
@@ -146,13 +141,6 @@ export class GenerationAgentExecutor {
       }),
       ...(result.providerExecutionId
         ? { providerExecutionId: result.providerExecutionId }
-        : {}),
-      ...(result.assistantOutput
-        ? {
-            assistantOutput: cloneAssistantOutput(
-              result.assistantOutput,
-            ),
-          }
         : {}),
     });
   }

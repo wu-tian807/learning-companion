@@ -18,6 +18,7 @@ export interface ApplicationRuntimeResources {
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly disposeContentProtocol: () => void;
   readonly disposeIpc: () => void;
+  readonly disposeWorkbenchFeatures: () => void;
 }
 
 export class ApplicationRuntime {
@@ -81,6 +82,7 @@ export class ApplicationRuntime {
     this.disposed = true;
     this.resources.disposeContentProtocol();
     this.resources.contentResourceService.dispose();
+    this.resources.disposeWorkbenchFeatures();
     this.resources.disposeIpc();
     this.resources.sandboxFrameInteractionBridge.dispose();
     this.resources.databaseContext.close();

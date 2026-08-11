@@ -193,7 +193,10 @@ export function useGenerationTasks({
         }
 
         const snapshot = event.snapshot;
-        if (snapshot.projectId !== projectId) {
+        if (
+          snapshot.projectId !== projectId ||
+          snapshot.definitionId !== MIND_MAP_GENERATION_TASK_DEFINITION_ID
+        ) {
           return;
         }
 

@@ -37,7 +37,7 @@ export function createHtmlAssistantProcessor(): GenerationTaskProcessor<
         throw new Error('HTML Assistant 未收到最终回答');
       }
 
-      return Object.freeze({ answer: completed.assistantOutput.text });
+      return Object.freeze({ answer: completed.assistantOutput });
     },
   };
 }

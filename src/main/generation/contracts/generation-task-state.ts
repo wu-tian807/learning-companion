@@ -15,10 +15,6 @@ import {
   cloneGenerationTaskMetrics,
   type GenerationTaskMetrics,
 } from './generation-metrics';
-import {
-  cloneAssistantOutput,
-  type AssistantOutput,
-} from './assistant-output';
 
 export interface GenerationTaskPreparedCheckpoint {
   readonly completedTime: number;
@@ -31,7 +27,7 @@ export interface GenerationTaskAgentCallCheckpoint {
   readonly completedTime: number;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
-  readonly assistantOutput?: AssistantOutput;
+  readonly assistantOutput?: string;
 }
 
 export interface GenerationTaskCompletedCheckpoint {
@@ -110,6 +106,13 @@ function requireTime(value: number, field: string): number {
   return value;
 }
 
+function requireAssistantOutput(value: string, field: string): string {
+  if (typeof value !== 'string' || value.length > 4 * 1024 * 1024) {
+    throw new Error(`GenerationTask ${field} 数据无效`);
+  }
+  return value;
+}
+
 function requireRelativePath(value: string, field: string): string {
   const normalized = requireText(value, field);
 
@@ -159,19 +162,20 @@ function cloneAgentCallCheckpoint(
       checkpoint.sessionId,
       `agentCalls[${index}].sessionId`,
     ),
+    ...(checkpoint.assistantOutput === undefined
+      ? {}
+      : {
+          assistantOutput: requireAssistantOutput(
+            checkpoint.assistantOutput,
+            `agentCalls[${index}].assistantOutput`,
+          ),
+        }),
     ...(checkpoint.providerExecutionId === undefined
       ? {}
       : {
           providerExecutionId: requireText(
             checkpoint.providerExecutionId,
             `agentCalls[${index}].providerExecutionId`,
-          ),
-        }),
-    ...(checkpoint.assistantOutput === undefined
-      ? {}
-      : {
-          assistantOutput: cloneAssistantOutput(
-            checkpoint.assistantOutput,
           ),
         }),
   });
