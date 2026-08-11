@@ -186,7 +186,7 @@ Workbench 返回与预览界面相同的缓存 PDF；准备结果同时保留原
     skills: []
     mcpServers: []
 
-它使用 task-scoped、可写的 `generation-mindmap` Workspace。Provider 自动提供 Shell
+它使用默认按 `taskId` 隔离、可写的 `generation-mindmap` Workspace。Provider 自动提供 Shell
 read / search、原生 write、PDF text / page image 与 image view；Agent 将候选树写入任务 Workspace，
 TaskDefinition 的 `process()`
 负责校验、在同一 Session 请求修复，并将通过校验的候选提交为正式 Asset。Agent 不直接

@@ -35,7 +35,6 @@ export function createEpubExplanationTaskDefinitionV1(
     mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'generation-epub-explanation',
-      scope: 'task' as const,
       permissions: Object.freeze({ read: false, write: false }),
     }),
     secondaryWorkspaceConfigs: Object.freeze([]),

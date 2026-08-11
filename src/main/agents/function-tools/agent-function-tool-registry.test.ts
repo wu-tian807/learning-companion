@@ -101,7 +101,6 @@ describe('AgentFunctionToolRegistry', () => {
       workspaces: {
         primary: {
           key: 'generation-mindmap',
-          scope: 'task' as const,
           instanceKey: 'task-1',
           path: 'D:\\workspace\\task-1',
           permissions: { read: true, write: false },

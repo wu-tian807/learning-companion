@@ -44,7 +44,6 @@ describe('inspectCodexGenerationEnvironment', () => {
       workspaces: {
         primary: {
           key: 'generation-mindmap',
-          scope: 'task',
           instanceKey: 'task-1',
           path: workspacePath,
           permissions: { read: true, write: false },

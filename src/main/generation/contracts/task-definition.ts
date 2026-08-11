@@ -56,8 +56,9 @@ export interface TaskAgentCallResult {
 
 /**
  * Agent-call facade injected for one GenerationTask execution. The concrete
- * TaskDefinition chooses whether the underlying Provider session is isolated
- * to that task or shared across tasks through its primary Workspace scope.
+ * TaskDefinition chooses the underlying Provider session through its primary
+ * Workspace instance key. Definitions can use the taskId default or resolve a
+ * stable key to continue the same session across GenerationTasks.
  * Definitions can request multiple sequential turns without knowing how the
  * Provider session is selected and persisted.
  */
@@ -106,8 +107,6 @@ export interface TaskDefinition<
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
-  /** Stable provider-session identity for this instruction when using a shared workspace. */
-  readonly resolvePrimaryWorkspaceInstanceKey?: (instruction: JsonValue) => string;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;
   readonly instruction: GenerationInstructionFactory<TInstruction>;

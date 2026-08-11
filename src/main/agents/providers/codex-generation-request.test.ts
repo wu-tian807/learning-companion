@@ -50,7 +50,6 @@ function request(): GenerationAgentTurnRequest {
     workspaces: {
       primary: {
         key: 'generation-mindmap',
-        scope: 'task',
         instanceKey: 'task-1',
         path,
         permissions: { read: true, write: false },
@@ -142,11 +141,11 @@ describe('createCodexGenerationConfiguration', () => {
     expect(readOnly.threadInput.configOverrides).not.toHaveProperty(
       'default_permissions',
     );
-    expect(readOnly.threadInput.developerInstructions).toContain(
-      'It reads embedded text only and is not OCR',
+    expect(readOnly.threadInput.developerInstructions).toBe(
+      readOnlyRequest.systemInstruction,
     );
-    expect(readOnly.threadInput.developerInstructions).toContain(
-      'Do not form the final answer from extracted text alone',
+    expect(readOnly.threadInput.developerInstructions).not.toContain(
+      'Learning Companion generation execution boundary',
     );
 
     const writableRequest = {
@@ -308,9 +307,7 @@ describe('createCodexGenerationConfiguration', () => {
     expect(changed.resumeInput).toMatchObject({
       model: 'deepseek-test',
       modelProvider: 'learning-companion-api',
-      developerInstructions: expect.stringContaining(
-        'Use a different task instruction.',
-      ),
+      developerInstructions: changedRequest.systemInstruction,
     });
     expect(changed.threadInput.configOverrides).toMatchObject({
       model_providers: {

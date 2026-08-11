@@ -145,7 +145,6 @@ function createGenerationRequest(
     workspaces: {
       primary: {
         key: 'generation-mindmap',
-        scope: 'task',
         instanceKey: 'task-1',
         path: workspacePath,
         permissions: { read: true, write: false },
@@ -563,7 +562,6 @@ describe('CodexAgentProvider', () => {
         secondary: [
           {
             key: 'reference-material',
-            scope: 'task',
             instanceKey: 'task-1',
             path: secondaryPath,
             permissions: { read: true, write: false },
@@ -942,7 +940,6 @@ describe('CodexAgentProvider', () => {
     const baseRequest = createGenerationRequest();
     const sharedWorkspace = {
       ...baseRequest.workspaces.primary,
-      scope: 'shared' as const,
       instanceKey: 'shared',
     };
     const sharedLocator = {
