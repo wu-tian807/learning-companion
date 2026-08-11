@@ -64,8 +64,13 @@ export interface ConversationControllerInput {
   readonly onPersistenceError?: (error: unknown) => void;
   /** AI 回答进行中状态同步给 workbench（一键命令据此禁用）。 */
   readonly onBusyChange?: (busy: boolean) => void;
-  /** 取消当前回答（busy 时发送按钮变为「停止」）。 */
-  readonly onCancelAnswer?: () => void;
+  /** 取消当前回答（busy 时发送按钮变为「停止」）；taskId 由 controller 在调用时
+   * 提供，父组件据此校验取消目标，避免瞄准已结束/已释放的任务。 */
+  readonly onCancelAnswer?: (taskId: string) => void;
+  /** 一次回答进入终态（完成/失败/取消）时同步回调，父组件据此清理进行中任务引用。
+   * 与 busy 状态分离：busy 的 setState 异步生效，终态回调同步执行，杜绝「停止」
+   * 在任务结束后仍读取到旧 taskId 的竞态窗口。 */
+  readonly onAnswerSettled?: (taskId: string) => void;
   /** 重跑一个失败的 GenerationTask（保留原 instruction 与 conversationId）。
    * 与 onAsk 同形：返回任务 id 与权威快照（已对齐早完成）。 */
   readonly onRetryTask?: (
@@ -107,10 +112,6 @@ export interface ConversationControllerActions {
 export interface SubmitQuestionOptions {
   /** 是否清空并在启动失败时恢复输入框；自动命令不应改写用户草稿。 */
   readonly consumeInput?: boolean;
-}
-
-interface ActiveStream {
-  readonly taskId: string;
 }
 
 interface ConversationIdentity {
@@ -178,6 +179,7 @@ export function useConversationController({
   onPersistenceError,
   onBusyChange,
   onCancelAnswer,
+  onAnswerSettled,
   onRetryTask,
   options = {},
 }: ConversationControllerInput): {
@@ -196,7 +198,7 @@ export function useConversationController({
   );
   const [busy, setBusy] = useState(false);
   const [errorText, setErrorText] = useState<string>();
-  const streamRef = useRef<ActiveStream | undefined>(undefined);
+  const streamTaskIdRef = useRef<string | undefined>(undefined);
   const streamMessageIdRef = useRef<string | undefined>(undefined);
   /** 最近一次失败的任务：重试按钮据此重跑原任务而非重新提问。 */
   const retryTaskRef = useRef<
@@ -241,7 +243,7 @@ export function useConversationController({
       pendingSaves: new Map(),
       deleted: false,
     };
-    streamRef.current = undefined;
+    streamTaskIdRef.current = undefined;
     streamMessageIdRef.current = undefined;
     setBusyState(false);
     replaceMessages([]);
@@ -370,10 +372,10 @@ export function useConversationController({
     (event: GenerationTaskEvent) => void
   >(() => undefined);
   generationEventHandlerRef.current = (event: GenerationTaskEvent) => {
-    const active = streamRef.current;
+    const activeTaskId = streamTaskIdRef.current;
 
     if (event.type === 'execution-event') {
-      if (active?.taskId !== event.taskId) {
+      if (activeTaskId !== event.taskId) {
         return;
       }
       if (event.event.type === 'assistant-delta') {
@@ -395,7 +397,7 @@ export function useConversationController({
 
     if (event.type === 'task-changed' || event.type === 'task-completed') {
       const snapshot = event.snapshot;
-      if (active?.taskId !== snapshot.id) {
+      if (activeTaskId !== snapshot.id) {
         return;
       }
       if (snapshot.status === 'completed') {
@@ -434,17 +436,23 @@ export function useConversationController({
   }, [messages]);
 
   function finishStreamState() {
-    streamRef.current = undefined;
+    const settledTaskId = streamTaskIdRef.current;
+    streamTaskIdRef.current = undefined;
     streamMessageIdRef.current = undefined;
     setBusyState(false);
+    // 同步上报终态任务（busy setState 异步生效，停止按钮可能仍持有旧引用；
+    // 父组件据此清理 activeTaskIdRef，并可在取消时校验目标）。
+    if (settledTaskId) {
+      onAnswerSettled?.(settledTaskId);
+    }
   }
 
   function finalizeStream(updatedTime: number, answer: string) {
-    const pending = streamRef.current;
+    const settledTaskId = streamTaskIdRef.current;
     const messageId = streamMessageIdRef.current;
     finishStreamState();
 
-    if (!pending || !messageId) {
+    if (!settledTaskId || !messageId) {
       return;
     }
 
@@ -461,7 +469,7 @@ export function useConversationController({
 
   function failStream(message = 'AI 回答失败，请重试。') {
     const messageId = streamMessageIdRef.current;
-    const failedTaskId = streamRef.current?.taskId;
+    const failedTaskId = streamTaskIdRef.current;
     const failedMessageId = messageId;
     finishStreamState();
     if (messageId) {
@@ -511,7 +519,7 @@ export function useConversationController({
     ).then(
       (started) => {
         if (started?.taskId) {
-          streamRef.current = { taskId: started.taskId };
+          streamTaskIdRef.current = started.taskId;
           streamMessageIdRef.current = retry.messageId;
 
           // 与 submitQuestion 相同的竞态校准：已终态直接落定。
@@ -565,12 +573,13 @@ export function useConversationController({
     }
   }
 
-  /** busy 时发送按钮变为「停止」：取消当前回答。 */
+  /** busy 时发送按钮变为「停止」：取消当前回答（携带任务 id 供父组件校验目标）。 */
   const handleCancelAnswer = () => {
-    if (!busyRef.current) {
+    const taskId = streamTaskIdRef.current;
+    if (!busyRef.current || !taskId) {
       return;
     }
-    onCancelAnswer?.();
+    onCancelAnswer?.(taskId);
   };
 
   // AI 回答进行中同步给 workbench（一键命令据此禁用）。
@@ -615,7 +624,7 @@ export function useConversationController({
     void onAsk(identityRef.current!.id, normalized, messageAnchor).then(
       (started) => {
         if (started?.taskId) {
-          streamRef.current = { taskId: started.taskId };
+          streamTaskIdRef.current = started.taskId;
           streamMessageIdRef.current = streamMessageId;
 
           // 竞态校准：start IPC 返回可能晚于 task 完成广播（快 task / mock /

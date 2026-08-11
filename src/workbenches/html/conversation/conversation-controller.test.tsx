@@ -97,6 +97,7 @@ describe('useConversationController 生命周期', () => {
     state: ConversationControllerState;
     actions: ConversationControllerActions;
   };
+  let createIdCounter = 0;
 
   beforeEach(() => {
     container = document.createElement('div');
@@ -118,8 +119,6 @@ describe('useConversationController 生命周期', () => {
     });
     createIdCounter = 0;
   });
-
-  let createIdCounter = 0;
 
   afterEach(() => {
     if (root) {
@@ -322,6 +321,86 @@ describe('useConversationController 生命周期', () => {
     });
     expect(latest.state.busy).toBe(false);
     expect(onCancelAnswer).not.toHaveBeenCalled();
+  });
+
+  it('终态时同步回调 onAnswerSettled（完成/失败/取消各一次）', async () => {
+    const onAnswerSettled = vi.fn();
+    const onAsk = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: snapshot({ status: 'processing' }),
+    }));
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      onAnswerSettled,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('第一问');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // 广播完成 → 终态回调
+    act(() => {
+      emit({ type: 'task-completed', snapshot: completedSnapshot('完成', 200) });
+    });
+    expect(onAnswerSettled).toHaveBeenCalledWith('task-1');
+    expect(onAnswerSettled).toHaveBeenCalledTimes(1);
+    expect(latest.state.busy).toBe(false);
+
+    // 再提交第二问 → 取消终态 → 第二次回调
+    act(() => {
+      latest.actions.submitQuestion('第二问');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      emit({ type: 'task-changed', snapshot: snapshot({ status: 'cancelled' }) });
+    });
+    expect(onAnswerSettled).toHaveBeenCalledTimes(2);
+    expect(onAnswerSettled).toHaveBeenLastCalledWith('task-1');
+  });
+
+  it('handleCancelAnswer 携带进行中的任务 id；busy 结束后不再回调', async () => {
+    const onCancelAnswer = vi.fn();
+    const onAsk = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: snapshot({ status: 'processing' }),
+    }));
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      onCancelAnswer,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    // 提交 → 取消（busy 中）→ 取消回调携带 taskId
+    act(() => {
+      latest.actions.submitQuestion('取消目标');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(latest.state.busy).toBe(true);
+    act(() => {
+      latest.actions.handleCancelAnswer();
+    });
+    expect(onCancelAnswer).toHaveBeenCalledWith('task-1');
+
+    // 任务终态（busy 结束）后再点停止：不再回调
+    act(() => {
+      emit({ type: 'task-completed', snapshot: completedSnapshot('最终', 200) });
+    });
+    expect(latest.state.busy).toBe(false);
+    act(() => {
+      latest.actions.handleCancelAnswer();
+    });
+    expect(onCancelAnswer).toHaveBeenCalledTimes(1);
   });
 
   it('取消发生在 taskId 返回前：校准快照为 cancelled 时同样保留并标记 stopped', async () => {

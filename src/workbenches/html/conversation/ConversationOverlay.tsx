@@ -58,8 +58,10 @@ export interface HtmlConversationOverlayProps {
   readonly onPersistenceError?: (error: unknown) => void;
   /** AI 回答进行中状态同步给 workbench（一键命令据此禁用）。 */
   readonly onBusyChange?: (busy: boolean) => void;
-  /** 取消当前回答（busy 时发送按钮变为「停止」）。 */
-  readonly onCancelAnswer?: () => void;
+  /** 取消当前回答（busy 时发送按钮变为「停止」）；taskId 供父组件校验取消目标。 */
+  readonly onCancelAnswer?: (taskId: string) => void;
+  /** 一次回答终态（完成/失败/取消）时同步回调，父组件据此清理进行中任务引用。 */
+  readonly onAnswerSettled?: (taskId: string) => void;
   /** 重跑一个失败的 GenerationTask（保留原 instruction 与 conversationId）。 */
   readonly onRetryTask?: (
     taskId: string,

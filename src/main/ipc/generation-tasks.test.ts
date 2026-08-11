@@ -153,6 +153,45 @@ describe('GenerationTask IPC handlers', () => {
     expect(service.discard).toHaveBeenCalledWith('task-1');
   });
 
+  it('rejects retry/cancel/discard with a stale or unknown Project context', async () => {
+    const { service } = createService();
+    registerGenerationTaskHandlers(service);
+
+    // 陈旧 project：拒绝且不触碰 service
+    await expect(
+      findHandler(IPC_CHANNELS.retryGenerationTask)({
+        projectId: 'project-2',
+        taskId: 'task-1',
+      }),
+    ).rejects.toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+    await expect(
+      findHandler(IPC_CHANNELS.cancelGenerationTask)({
+        projectId: 'project-2',
+        taskId: 'task-1',
+      }),
+    ).rejects.toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+    await expect(
+      findHandler(IPC_CHANNELS.discardGenerationTask)({
+        projectId: 'project-2',
+        taskId: 'task-1',
+      }),
+    ).rejects.toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+    expect(service.retry).not.toHaveBeenCalled();
+    expect(service.cancel).not.toHaveBeenCalled();
+    expect(service.discard).not.toHaveBeenCalled();
+
+    // 畸形请求（缺 taskId / 非对象）：INVALID_IPC_REQUEST
+    await expect(
+      findHandler(IPC_CHANNELS.retryGenerationTask)({
+        projectId: 'project-1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
+      findHandler(IPC_CHANNELS.retryGenerationTask)(null),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    expect(service.retry).not.toHaveBeenCalled();
+  });
+
   it('broadcasts public task events and unwraps Provider execution events', () => {
     const { service, snapshot, emit } = createService();
     const broadcast = vi.fn();

@@ -116,17 +116,11 @@ export function HtmlWorkbenchView({
   const [aiSessionKey, setAiSessionKey] = useState(0);
   const [aiLaunchRequest, setAiLaunchRequest] = useState<HtmlAiLaunchRequest>();
   const launchRequestIdRef = useRef(0);
-  /** 当前进行中的任务 ID（cancelAnswer 用）。 */
+  /** 当前进行中的任务 ID（cancelAnswer 用；终态时由 onAnswerSettled 同步清除）。 */
   const activeTaskIdRef = useRef<string | undefined>(undefined);
   const [aiBusy, setAiBusyState] = useState(false);
-  /** busy 结束时清除当前任务 ID；开始新任务时由 startAssistantTask 覆盖。 */
   const setAiBusy = useCallback((busy: boolean) => {
-    setAiBusyState((current) => {
-      if (!busy && current) {
-        activeTaskIdRef.current = undefined;
-      }
-      return busy;
-    });
+    setAiBusyState(busy);
   }, []);
   const [selectionText, setSelectionText] = useState<string>();
   const [selectionRect, setSelectionRect] = useState<
@@ -359,9 +353,17 @@ export function HtmlWorkbenchView({
     [reportError],
   );
 
-  const cancelAnswer = useCallback(async () => {
-    const taskId = activeTaskIdRef.current;
-    if (!projectId || !taskId) {
+  /** 一次回答终态时同步清除进行中任务引用（取消按钮据此不再瞄准已结束任务）。 */
+  const handleAnswerSettled = useCallback((taskId: string) => {
+    if (activeTaskIdRef.current === taskId) {
+      activeTaskIdRef.current = undefined;
+    }
+  }, []);
+
+  const cancelAnswer = useCallback(async (taskId: string) => {
+    // 校验取消目标仍为进行中任务；task-completed 广播与停止点击的竞态下，
+    // 按钮可能持有已结束/已释放的任务引用（service 侧会抛 DATA_INTEGRITY_ERROR）。
+    if (activeTaskIdRef.current !== taskId || !projectId) {
       return;
     }
     try {
@@ -555,8 +557,9 @@ export function HtmlWorkbenchView({
         onAsk={startAssistantTask}
         onRetryTask={retryAssistantTask}
         onBusyChange={setAiBusy}
-        onCancelAnswer={() => {
-          void cancelAnswer();
+        onAnswerSettled={handleAnswerSettled}
+        onCancelAnswer={(taskId) => {
+          void cancelAnswer(taskId);
         }}
         onPersistenceError={(error) => {
           reportError(error, '无法保存 HTML AI 对话记录。');

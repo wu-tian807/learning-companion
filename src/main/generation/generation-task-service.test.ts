@@ -465,4 +465,176 @@ describe('GenerationTaskService', () => {
     expect(service.list()).toEqual([]);
     expect(service.loadFromProject('project-1')).toEqual([]);
   });
+
+  it('retry 重跑失败任务、重复 retry 幂等、对已完成任务重跑快照', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'generation-retry-'));
+    temporaryDirectories.push(directory);
+    const primaryPath = join(directory, 'generation-mindmap', 'task-1');
+    await mkdir(join(primaryPath, 'control'), { recursive: true });
+    const definition = createMindMapGenerationTaskDefinitionV1({
+      async process(context) {
+        await context.agent.call({ callKey: 'generate', purpose: 'generation' });
+        return { resultAssetId: 'generated-mindmap' };
+      },
+    });
+    const registry = new GenerationTaskDefinitionRegistry();
+    registry.register(definition);
+    const prepared: PreparedGenerationTask = {
+      taskId: 'task-1',
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      providerSelectorId: definition.providerSelectorId,
+      outputMode: 'workspace-artifact',
+      instruction: new MindMapGenerationInstruction(),
+      systemInstruction: definition.systemInstruction,
+      defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
+      toolRequirements: definition.toolRequirements,
+      skills: definition.skills,
+      mcpServers: definition.mcpServers,
+      workspaces: {
+        primary: {
+          ...definition.primaryWorkspaceConfig,
+          instanceKey: 'task-1',
+          path: primaryPath,
+        },
+        secondary: [],
+      },
+      assetReferences: {
+        sources: [
+          {
+            alias: 'sources-0001',
+            assetId: 'asset-1',
+            name: 'lesson.md',
+            mediaType: 'text/markdown',
+            contentRevision: 'revision',
+            relativePath: 'references/sources-0001/source.md',
+          },
+        ],
+      },
+      manifestRef: 'control/prepared-manifest.json',
+    };
+    const prepareTask = (task: GenerationTaskSnapshot) => ({
+      ...prepared,
+      taskId: task.id,
+      workspaces: {
+        ...prepared.workspaces,
+        primary: { ...prepared.workspaces.primary, instanceKey: task.id },
+      },
+    });
+    const preparer = {
+      prepare: async (task: GenerationTaskSnapshot) => prepareTask(task),
+      restore: async (task: GenerationTaskSnapshot) => prepareTask(task),
+    } satisfies GenerationTaskPreparerApi;
+
+    // 第一轮：Agent 抛错 → 任务失败；第二轮（retry）：正常返回。
+    let failing = true;
+    let runCount = 0;
+    const runner: GenerationAgentRunner = {
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      async *runTurn() {
+        runCount += 1;
+        if (failing) {
+          throw new Error('simulated Agent failure');
+        }
+        yield { type: 'status', message: 'running' };
+        return {
+          sessionId: 'session-1',
+          providerId: 'codex',
+          connectionId: 'codex-account',
+          modelId: 'gpt-5.2',
+          startedTime: 10,
+          completedTime: 15,
+          activeDurationMs: 5,
+          assistantOutput: 'answer',
+        };
+      },
+    };
+    const database = new MemoryGenerationTaskDatabase();
+    const runnerResolver = {
+      resolveSelectorConfiguration() {
+        return {
+          providerId: 'codex',
+          connectionId: 'codex-account',
+          modelId: 'gpt-original',
+          reasoningEffort: 'high',
+        };
+      },
+      async resolveRunner() {
+        return runner;
+      },
+    };
+    let nextTaskNumber = 1;
+    const service = new GenerationTaskService(
+      database,
+      registry,
+      new GenerationTaskExecution(
+        database,
+        preparer,
+        new GenerationAgentExecutor(),
+      ),
+      {
+        get: () => ({
+          id: 'project-1',
+          name: 'Project',
+          icon: '📘',
+          createdTime: 1,
+          pinned: false,
+          workspacePath: primaryPath,
+        }),
+      },
+      runnerResolver,
+      { createId: () => `task-${nextTaskNumber++}` },
+    );
+    service.loadFromProject('project-1');
+    const created = service.create({
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new MindMapGenerationInstruction().toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+    });
+
+    // 第一轮失败 → 任务保留在 service（未释放），failure 落库
+    await expect(drain(service.run(created.id))).rejects.toThrow(
+      'simulated Agent failure',
+    );
+    expect(database.get(created.id)?.failure).toBeDefined();
+    expect(service.list().some(({ id }) => id === created.id)).toBe(true);
+
+    // retry 返回的仍是原快照（scheduleRun 异步执行，快照同步返回）
+    const retried = service.retry(created.id);
+    expect(retried.id).toBe(created.id);
+    // 重复 retry：幂等（不新增 run、不抛错）
+    expect(() => service.retry(created.id)).not.toThrow();
+
+    // 恢复 runner 后，retry 调度的后台 run 完成 → 任务 completed
+    failing = false;
+    await vi.waitFor(() => {
+      const snapshot = database.get(created.id);
+      expect(snapshot?.completed).toBeDefined();
+    });
+    expect(runCount).toBe(2);
+    expect(service.list()).toEqual([]);
+
+    // 已完成任务已被释放：retry 不再可寻址，抛 DATA_INTEGRITY_ERROR（不再重跑）
+    await expect(
+      Promise.resolve().then(() => service.retry(created.id)),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+    expect(runCount).toBe(2);
+
+    // 取消的任务会从 service 移除：retry 不再可寻址，抛 DATA_INTEGRITY_ERROR
+    const cancelledTask = service.create({
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new MindMapGenerationInstruction().toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+    });
+    service.cancel(cancelledTask.id);
+    await expect(
+      Promise.resolve().then(() => service.retry(cancelledTask.id)),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+  });
 });
