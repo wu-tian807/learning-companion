@@ -7,10 +7,10 @@ export const DOCUMENT_AI_IPC_CHANNELS = Object.freeze({
 export interface DocumentAiRequest {
   readonly projectId: string;
   readonly assetId: string;
+  readonly conversationId: string;
   readonly question: string;
   readonly target: AssetTarget;
   readonly selectedText?: string;
-  readonly selectedImageDataUrl?: string;
 }
 
 export interface DocumentAiResponse {

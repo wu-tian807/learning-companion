@@ -66,6 +66,34 @@ describe('generation workspace contracts', () => {
     ]);
   });
 
+  it('uses a validated explicit conversation identity for a shared workspace', async () => {
+    const manager = {
+      resolve: vi.fn(),
+      prepare: vi.fn(async (segments: readonly string[]) => segments.join('/')),
+    };
+    const config = {
+      key: 'document-question',
+      scope: 'shared' as const,
+      permissions: { read: true, write: false },
+    };
+
+    const first = await prepareAgentWorkspace(
+      manager, config, 'task-a', ['project'], 'conversation-a',
+    );
+    const second = await prepareAgentWorkspace(
+      manager, config, 'task-b', ['project'], 'conversation-b',
+    );
+
+    expect(first.instanceKey).toBe('conversation-a');
+    expect(second.instanceKey).toBe('conversation-b');
+    expect(manager.prepare).toHaveBeenNthCalledWith(1, [
+      'project', 'document-question', 'conversation-a',
+    ]);
+    await expect(prepareAgentWorkspace(
+      manager, config, 'task-c', ['project'], '../escape',
+    )).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+  });
+
   it('rejects nested keys and write-only workspace permissions', () => {
     expect(() =>
       cloneAgentWorkspaceConfig({

@@ -46,10 +46,14 @@ const AiChatContext = createContext<AiChatStore | null>(null);
 
 export interface AiChatProviderProps {
   readonly children: ReactNode;
+  readonly store?: AiChatStore;
 }
 
-export function AiChatProvider({ children }: AiChatProviderProps) {
-  const store = useMemo(() => getGlobalAiChatStore(), []);
+export function AiChatProvider({ children, store: providedStore }: AiChatProviderProps) {
+  const store = useMemo(
+    () => providedStore ?? getGlobalAiChatStore(),
+    [providedStore],
+  );
   return (
     <AiChatContext.Provider value={store}>
       {children}
@@ -85,6 +89,46 @@ export interface UseAiChatResult {
 
 type ChatState = ReturnType<AiChatStore['getSnapshot']>;
 
+export async function sendDocumentAiMessage(input: {
+  readonly store: AiChatStore;
+  readonly projectId: string;
+  readonly assetId: string;
+  readonly content: string;
+  readonly anchor?: AiChatMessage['anchor'];
+  readonly ask: typeof window.learningCompanion.askDocumentAi;
+}): Promise<boolean> {
+  const { store, projectId, assetId, content, anchor, ask } = input;
+  if (store.getSession(assetId)?.loading) return false;
+  const session = store.ensureSession(projectId, assetId);
+  const effectiveAnchor = anchor ?? store.getSession(assetId)?.pendingAnchor;
+  const updated = store.addUserMessage(assetId, content, effectiveAnchor);
+  const userMessage = updated.messages.at(-1)!;
+  store.setDraft('');
+  try {
+    const result = await ask({
+      projectId,
+      assetId,
+      conversationId: session.id,
+      question: content,
+      target: effectiveAnchor?.target ?? { scope: 'asset' },
+      ...(effectiveAnchor?.selectedText
+        ? { selectedText: effectiveAnchor.selectedText }
+        : {}),
+    });
+    store.addAssistantMessage(
+      assetId,
+      result.answer,
+      userMessage.id,
+      `${result.providerId}/${result.modelId}`,
+    );
+    return true;
+  } catch (error) {
+    store.setLoading(assetId, false);
+    console.error('[document-ai] 提问失败', error);
+    return false;
+  }
+}
+
 export function useAiChat(
   projectId: string,
   assetId: string,
@@ -92,6 +136,7 @@ export function useAiChat(
   const store = useAiChatStore();
   const state = useSyncExternalStore(
     useCallback((onChange: () => void) => store.subscribe(onChange), [store]),
+    useCallback(() => store.getSnapshot(), [store]),
     useCallback(() => store.getSnapshot(), [store]),
   ) as ChatState;
 
@@ -108,34 +153,10 @@ export function useAiChat(
 
   const sendMessage = useCallback(
     async (content: string, anchor?: AiChatMessage['anchor']) => {
-      store.ensureSession(projectId, assetId);
-      const effectiveAnchor = anchor ?? store.getSession(assetId)?.pendingAnchor;
-      const updated = store.addUserMessage(assetId, content, effectiveAnchor);
-      const userMessage = updated.messages.at(-1)!;
-      store.setDraft('');
-      try {
-        const result = await window.learningCompanion.askDocumentAi({
-          projectId,
-          assetId,
-          question: content,
-          target: effectiveAnchor?.target ?? { scope: 'asset' },
-          ...(effectiveAnchor?.selectedText
-            ? { selectedText: effectiveAnchor.selectedText }
-            : {}),
-          ...(effectiveAnchor?.selectedImageDataUrl
-            ? { selectedImageDataUrl: effectiveAnchor.selectedImageDataUrl }
-            : {}),
-        });
-        store.addAssistantMessage(
-          assetId,
-          result.answer,
-          userMessage.id,
-          `${result.providerId}/${result.modelId}`,
-        );
-      } catch (error) {
-        store.setLoading(assetId, false);
-        console.error('[document-ai] 提问失败', error);
-      }
+      await sendDocumentAiMessage({
+        store, projectId, assetId, content, anchor,
+        ask: window.learningCompanion.askDocumentAi,
+      });
     },
     [store, projectId, assetId],
   );
@@ -205,7 +226,6 @@ export function AiChatPanel({
     sendMessage,
     setSelectedAnswerRange,
     clearSession,
-    clearPendingAnchor,
   } = useAiChat(projectId, assetId);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -461,25 +481,6 @@ export function AiChatPanel({
         {pendingAnchor?.selectedText && (
           <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-indigo-500/10 px-3 py-2 text-[11px] text-indigo-200">
             <span className="line-clamp-2">当前选区：{pendingAnchor.selectedText}</span>
-          </div>
-        )}
-        {pendingAnchor?.selectedImageDataUrl && (
-          <div className="mb-2 rounded-lg bg-indigo-500/10 p-2 text-[11px] text-indigo-200">
-            <img
-              src={pendingAnchor.selectedImageDataUrl}
-              alt="已框选的公式或图像区域"
-              className="mb-1.5 max-h-24 w-full rounded bg-white object-contain"
-            />
-            <div className="flex items-center justify-between gap-2">
-              <span>已框选文档区域，将随问题一起发送给 AI</span>
-              <button
-                type="button"
-                onClick={clearPendingAnchor}
-                className="shrink-0 rounded px-1.5 py-0.5 text-rose-300 hover:bg-rose-400/10"
-              >
-                取消框选
-              </button>
-            </div>
           </div>
         )}
         <div className="flex items-center gap-2">

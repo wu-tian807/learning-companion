@@ -106,6 +106,8 @@ export interface TaskDefinition<
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
+  /** Stable provider-session identity for this instruction when using a shared workspace. */
+  readonly resolvePrimaryWorkspaceInstanceKey?: (instruction: JsonValue) => string;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;
   readonly instruction: GenerationInstructionFactory<TInstruction>;

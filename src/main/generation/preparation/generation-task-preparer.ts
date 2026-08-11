@@ -86,7 +86,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
     signal?.throwIfAborted();
     validateDefinitionIdentity(task, definition);
     const instruction = parseInstruction(task, definition);
-    const workspaces = await this.prepareWorkspaces(task, definition);
+    const workspaces = await this.prepareWorkspaces(task, definition, instruction);
     const assetReferences = await this.assetReferencePreparer.prepare(
       {
         projectId: task.projectId,
@@ -125,7 +125,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
     }
 
     const instruction = parseInstruction(task, definition);
-    const workspaces = await this.prepareWorkspaces(task, definition);
+    const workspaces = await this.prepareWorkspaces(task, definition, instruction);
     const manifest = await this.manifestFile.read(
       workspaces.primary.path,
       task.prepared.manifestRef,
@@ -150,12 +150,14 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   private async prepareWorkspaces(
     task: GenerationTaskSnapshot,
     definition: AnyTaskDefinition,
+    instruction: GenerationInstruction,
   ): Promise<PreparedAgentWorkspaces> {
     const primary = await prepareAgentWorkspace(
       this.workspaceManager,
       definition.primaryWorkspaceConfig,
       task.id,
       [task.projectId],
+      definition.resolvePrimaryWorkspaceInstanceKey?.(instruction.toSnapshot()),
     );
     const secondary = [];
 

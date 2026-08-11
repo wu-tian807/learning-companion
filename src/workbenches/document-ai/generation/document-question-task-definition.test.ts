@@ -7,6 +7,7 @@ import { createDocumentQuestionTaskDefinitionV1 } from './document-question-task
 describe('DocumentQuestion generation contract', () => {
   it('round-trips page and region targets through the instruction snapshot', () => {
     const instruction = new DocumentQuestionInstruction({
+      conversationId: 'conversation-1',
       question: '解释这个公式',
       target: {
         scope: 'content',

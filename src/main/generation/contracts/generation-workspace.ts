@@ -1,5 +1,6 @@
 import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
 import { requireAgentWorkspaceKey } from '../../agents/workspaces/agent-workspace-paths';
+import { requireAgentWorkspacePathSegment } from '../../agents/workspaces/agent-workspace-paths';
 
 export type AgentWorkspaceScope = 'shared' | 'task';
 
@@ -61,10 +62,13 @@ export function cloneAgentWorkspaceConfig(
 export function resolveAgentWorkspaceSegments(
   config: AgentWorkspaceConfig,
   taskId: string,
+  sharedInstanceKey?: string,
 ): readonly [string, string] {
   const cloned = cloneAgentWorkspaceConfig(config);
   const instanceKey =
-    cloned.scope === 'shared' ? 'shared' : requireText(taskId, 'taskId');
+    cloned.scope === 'shared'
+      ? requireAgentWorkspacePathSegment(sharedInstanceKey ?? 'shared')
+      : requireText(taskId, 'taskId');
 
   return Object.freeze([cloned.key, instanceKey]);
 }
@@ -74,9 +78,10 @@ export async function prepareAgentWorkspace(
   config: AgentWorkspaceConfig,
   taskId: string,
   namespaceSegments: readonly string[] = [],
+  sharedInstanceKey?: string,
 ): Promise<PreparedAgentWorkspace> {
   const cloned = cloneAgentWorkspaceConfig(config);
-  const segments = resolveAgentWorkspaceSegments(cloned, taskId);
+  const segments = resolveAgentWorkspaceSegments(cloned, taskId, sharedInstanceKey);
   const path = await manager.prepare([...namespaceSegments, ...segments]);
 
   return Object.freeze({

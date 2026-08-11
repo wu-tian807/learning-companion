@@ -23,7 +23,6 @@ export interface AiChatMessage {
     readonly target: ContentAnchorTarget;
     readonly pageNumber?: number;
     readonly selectedText?: string;
-    readonly selectedImageDataUrl?: string;
   };
 }
 
@@ -138,7 +137,9 @@ function createSession(
 }
 
 function defaultCreateId(): string {
-  return `${SESSION_ID_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const randomId = globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  return `${SESSION_ID_PREFIX}${randomId}`;
 }
 
 export function createAiChatStore(
@@ -219,7 +220,7 @@ export function createAiChatStore(
         return existing;
       }
 
-      const session = createSession(sessionId, projectId, assetId);
+    const session = createSession(createId(), projectId, assetId);
       const next = new Map(state.sessions);
       next.set(sessionId, session);
       state = { ...state, sessions: next };
@@ -267,9 +268,13 @@ export function createAiChatStore(
       };
 
       return mutateSession(assetId, (session) => ({
-        ...session,
-        messages: [...session.messages, message],
-        loading: false,
+        ...(session.messages.some(({ id }) => id === replyToMessageId)
+          ? {
+              ...session,
+              messages: [...session.messages, message],
+              loading: false,
+            }
+          : session),
       }));
     },
 
@@ -296,8 +301,9 @@ export function createAiChatStore(
         return;
       }
 
+      const current = state.sessions.get(sessionId)!;
       const next = new Map(state.sessions);
-      next.delete(sessionId);
+      next.set(sessionId, createSession(createId(), current.projectId, assetId));
       state = { ...state, sessions: next };
       emit();
     },

@@ -44,6 +44,11 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
       scope: 'shared' as const,
       permissions: Object.freeze({ read: true, write: false }),
     }),
+    resolvePrimaryWorkspaceInstanceKey: (snapshot: JsonValue) => {
+      const parsed = documentQuestionInstructionFactory.parse(snapshot);
+      if (!parsed.ok) throw new Error('Invalid document question instruction');
+      return parsed.value.conversationId;
+    },
     secondaryWorkspaceConfigs: Object.freeze([]),
     assetReferenceSchema: Object.freeze({
       document: Object.freeze({

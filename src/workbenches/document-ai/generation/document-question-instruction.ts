@@ -23,6 +23,7 @@ export type DocumentQuestionInstructionSnapshot = JsonValue & {
   readonly format: typeof DOCUMENT_QUESTION_INSTRUCTION_FORMAT;
   readonly version: typeof DOCUMENT_QUESTION_INSTRUCTION_VERSION;
   readonly question: string;
+  readonly conversationId: string;
   readonly target: JsonValue;
   readonly selectedText?: string;
 };
@@ -33,23 +34,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class DocumentQuestionInstruction extends GenerationInstruction<DocumentQuestionInstructionSnapshot> {
   readonly question: string;
+  readonly conversationId: string;
   readonly target: AssetTarget;
   readonly selectedText?: string;
 
   constructor(input: {
     readonly question: string;
+    readonly conversationId: string;
     readonly target: AssetTarget;
     readonly selectedText?: string;
   }) {
     super();
     const question = input.question.trim();
     const selectedText = input.selectedText?.trim();
+    const conversationId = input.conversationId.trim();
 
-    if (!question) {
+    if (!question || !/^[A-Za-z0-9._-]{1,128}$/u.test(conversationId)) {
       throw new Error('Document question cannot be empty');
     }
 
     this.question = question;
+    this.conversationId = conversationId;
     this.target = cloneAssetTarget(input.target);
     this.selectedText = selectedText || undefined;
   }
@@ -59,6 +64,7 @@ export class DocumentQuestionInstruction extends GenerationInstruction<DocumentQ
       format: DOCUMENT_QUESTION_INSTRUCTION_FORMAT,
       version: DOCUMENT_QUESTION_INSTRUCTION_VERSION,
       question: this.question,
+      conversationId: this.conversationId,
       target: this.target as unknown as JsonValue,
       ...(this.selectedText ? { selectedText: this.selectedText } : {}),
     });
@@ -94,6 +100,7 @@ export const documentQuestionInstructionFactory: GenerationInstructionFactory<Do
         input.format !== DOCUMENT_QUESTION_INSTRUCTION_FORMAT ||
         input.version !== DOCUMENT_QUESTION_INSTRUCTION_VERSION ||
         typeof input.question !== 'string' ||
+        typeof input.conversationId !== 'string' ||
         !isAssetTarget(input.target) ||
         (input.selectedText !== undefined && typeof input.selectedText !== 'string')
       ) {
@@ -106,6 +113,7 @@ export const documentQuestionInstructionFactory: GenerationInstructionFactory<Do
         return generationValidationSuccess(
           new DocumentQuestionInstruction({
             question: input.question,
+            conversationId: input.conversationId,
             target: input.target,
             ...(input.selectedText === undefined
               ? {}

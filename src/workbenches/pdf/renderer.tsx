@@ -63,6 +63,11 @@ import {
   hasPdfHorizontalOverflow,
   type PdfPanOrigin,
 } from './pdf-pan';
+import {
+  completePdfRegionPointer,
+  movePdfRegionPointer,
+  shouldDismissPdfRegionMenu,
+} from './pdf-region-interaction';
 
 type PdfLoadState =
   | {
@@ -423,6 +428,7 @@ export function PdfDocumentWorkbenchView({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
+  const regionMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const findPage = (target: AssetTarget): HTMLElement | undefined => {
@@ -502,6 +508,17 @@ export function PdfDocumentWorkbenchView({
     useState<PdfRegionSelection>();
   const [regionActionMenu, setRegionActionMenu] =
     useState<PdfRegionActionMenu>();
+
+  useEffect(() => {
+    if (!regionActionMenu) return;
+    const dismiss = (event: PointerEvent) => {
+      if (shouldDismissPdfRegionMenu(regionMenuRef.current, event.target)) {
+        setRegionActionMenu(undefined);
+      }
+    };
+    document.addEventListener('pointerdown', dismiss, true);
+    return () => document.removeEventListener('pointerdown', dismiss, true);
+  }, [regionActionMenu]);
 
   const persistViewState = useCallback(
     async (state: PdfWorkbenchViewState, version: number) => {
@@ -934,11 +951,9 @@ export function PdfDocumentWorkbenchView({
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const region = activeRegionRef.current;
       if (region?.pointerId === event.pointerId) {
-        const next = {
-          ...region,
-          currentX: event.clientX,
-          currentY: event.clientY,
-        };
+        const next = movePdfRegionPointer(
+          region, event.pointerId, event.clientX, event.clientY,
+        )!;
         activeRegionRef.current = next;
         setRegionSelection(next);
         event.preventDefault();
@@ -973,34 +988,16 @@ export function PdfDocumentWorkbenchView({
         }
 
         const pageRect = region.page.getBoundingClientRect();
-        const left = Math.max(pageRect.left, Math.min(region.startX, event.clientX));
-        const top = Math.max(pageRect.top, Math.min(region.startY, event.clientY));
-        const right = Math.min(pageRect.right, Math.max(region.startX, event.clientX));
-        const bottom = Math.min(pageRect.bottom, Math.max(region.startY, event.clientY));
-        if (right - left < 8 || bottom - top < 8) {
+        const completed = completePdfRegionPointer(
+          region, event.pointerId, event.clientX, event.clientY, pageRect,
+        )!;
+        if (completed.kind === 'too-small') {
           if (region.explicit) {
             onError('框选区域太小，请重新拖动选择公式或图像。');
           }
           return;
         }
 
-        const scaleX = region.canvas.width / pageRect.width;
-        const scaleY = region.canvas.height / pageRect.height;
-        const output = document.createElement('canvas');
-        output.width = Math.max(1, Math.round((right - left) * scaleX));
-        output.height = Math.max(1, Math.round((bottom - top) * scaleY));
-        const context = output.getContext('2d');
-        context?.drawImage(
-          region.canvas,
-          Math.round((left - pageRect.left) * scaleX),
-          Math.round((top - pageRect.top) * scaleY),
-          output.width,
-          output.height,
-          0,
-          0,
-          output.width,
-          output.height,
-        );
         const store = getGlobalAiChatStore();
         store.ensureSession(asset.projectId, asset.id);
         store.setPendingAnchor(asset.id, {
@@ -1010,20 +1007,19 @@ export function PdfDocumentWorkbenchView({
             anchorVersion: PDF_REGION_ANCHOR_VERSION,
             anchorPayload: {
               pageNumber: region.pageNumber,
-              x: (left - pageRect.left) / pageRect.width,
-              y: (top - pageRect.top) / pageRect.height,
-              width: (right - left) / pageRect.width,
-              height: (bottom - top) / pageRect.height,
+              x: completed.x,
+              y: completed.y,
+              width: completed.width,
+              height: completed.height,
             },
           },
           pageNumber: region.pageNumber,
-          selectedImageDataUrl: output.toDataURL('image/png'),
         });
         store.setPanelOpen(true);
         store.setDraft('');
         const containerRect = event.currentTarget.getBoundingClientRect();
         setRegionActionMenu({
-          top: Math.max(12, top - containerRect.top - 46),
+          top: Math.max(12, completed.top - containerRect.top - 46),
         });
         event.preventDefault();
         return;
@@ -1156,7 +1152,7 @@ export function PdfDocumentWorkbenchView({
         },
         onAiSummarize: (pageNumber, anchor) => {
           const store = getGlobalAiChatStore();
-          store.ensureSession(asset.projectId, asset.id);
+          const session = store.ensureSession(asset.projectId, asset.id);
           store.setPanelOpen(true);
           const updated = store.addUserMessage(
             asset.id,
@@ -1170,6 +1166,7 @@ export function PdfDocumentWorkbenchView({
           void window.learningCompanion.askDocumentAi({
             projectId: asset.projectId,
             assetId: asset.id,
+            conversationId: session.id,
             question: userMessage.content,
             target: anchor,
           }).then((result) => {
@@ -1392,6 +1389,7 @@ export function PdfDocumentWorkbenchView({
 
           {regionActionMenu && (
             <div
+              ref={regionMenuRef}
               className="absolute right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto whitespace-nowrap rounded-xl border border-white/15 bg-[#171c25]/95 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.45)] backdrop-blur [scrollbar-width:none]"
               style={{ top: regionActionMenu.top }}
             >

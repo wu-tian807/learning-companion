@@ -25,13 +25,10 @@ export function isDocumentAiRequest(value: unknown): value is DocumentAiRequest 
     isRecord(value) &&
     typeof value.projectId === 'string' && value.projectId.trim().length > 0 &&
     typeof value.assetId === 'string' && value.assetId.trim().length > 0 &&
+    typeof value.conversationId === 'string' && /^[A-Za-z0-9._-]{1,128}$/u.test(value.conversationId) &&
     typeof value.question === 'string' && value.question.trim().length > 0 &&
     isAssetTarget(value.target) &&
-    (value.selectedText === undefined || typeof value.selectedText === 'string') &&
-    (value.selectedImageDataUrl === undefined ||
-      (typeof value.selectedImageDataUrl === 'string' &&
-        /^data:image\/png;base64,[A-Za-z0-9+/=]+$/u.test(value.selectedImageDataUrl) &&
-        value.selectedImageDataUrl.length <= 12_000_000))
+    (value.selectedText === undefined || typeof value.selectedText === 'string')
   );
 }
 
@@ -41,6 +38,7 @@ export async function askDocumentAi(
 ): Promise<DocumentAiResponse> {
   const instruction = new DocumentQuestionInstruction({
     question: request.question,
+    conversationId: request.conversationId,
     target: request.target,
     ...(request.selectedText ? { selectedText: request.selectedText } : {}),
   });

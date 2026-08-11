@@ -30,7 +30,7 @@ function reconcileLegacyBranchSchema(sqlite: Database.Database): void {
   }
 
   sqlite.exec(`
-    INSERT OR IGNORE INTO asset_attachments (
+    INSERT INTO asset_attachments (
       id, project_id, asset_id, type_id, type_version,
       target_json, metadata_json, content_ref_json, content_media_type,
       created_time, updated_time

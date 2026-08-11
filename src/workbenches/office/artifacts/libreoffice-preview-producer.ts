@@ -175,6 +175,10 @@ async function waitForTurn(
 
 export interface LibreOfficePreviewProducerDependencies {
   readonly commandRunner: ExternalCommandRunnerApi;
+  readonly nativePowerPointCommandRunner: ExternalCommandRunnerApi;
+  readonly platform: NodeJS.Platform;
+  readonly createConversionDirectory: () => Promise<string>;
+  readonly removeConversionDirectory: (path: string) => Promise<void>;
 }
 
 export class LibreOfficePreviewProducer
@@ -183,7 +187,10 @@ export class LibreOfficePreviewProducer
   readonly id = LIBREOFFICE_PREVIEW_PRODUCER_ID;
   readonly version = LIBREOFFICE_PREVIEW_PRODUCER_VERSION;
   private readonly commandRunner: ExternalCommandRunnerApi;
-  private readonly enableNativePowerPoint: boolean;
+  private readonly nativePowerPointCommandRunner?: ExternalCommandRunnerApi;
+  private readonly platform: NodeJS.Platform;
+  private readonly createConversionDirectory: () => Promise<string>;
+  private readonly removeConversionDirectory: (path: string) => Promise<void>;
   private queueTail: Promise<void> = Promise.resolve();
 
   constructor(
@@ -201,7 +208,14 @@ export class LibreOfficePreviewProducer
 
     this.commandRunner =
       dependencies.commandRunner ?? new ExternalCommandRunner();
-    this.enableNativePowerPoint = dependencies.commandRunner === undefined;
+    this.nativePowerPointCommandRunner =
+      dependencies.nativePowerPointCommandRunner ??
+      (dependencies.commandRunner === undefined ? this.commandRunner : undefined);
+    this.platform = dependencies.platform ?? process.platform;
+    this.createConversionDirectory = dependencies.createConversionDirectory ??
+      (() => mkdtemp(join(tmpdir(), 'learning-companion-office-')));
+    this.removeConversionDirectory = dependencies.removeConversionDirectory ??
+      ((path) => rm(path, { recursive: true, force: true }));
   }
 
   async produce(
@@ -261,9 +275,7 @@ export class LibreOfficePreviewProducer
       // LibreOffice on Windows can corrupt any CJK segment in its command
       // line paths. Keep the whole conversion workspace in the OS temp
       // directory, then copy the validated result back into managed staging.
-      const conversionDirectory = await mkdtemp(
-        join(tmpdir(), 'learning-companion-office-'),
-      );
+      const conversionDirectory = await this.createConversionDirectory();
 
       try {
         const outputDirectory = join(conversionDirectory, 'output');
@@ -283,9 +295,9 @@ export class LibreOfficePreviewProducer
         const powerpointOutputPath = join(outputDirectory, 'source.pdf');
 
         if (
-          process.platform === 'win32' &&
+          this.platform === 'win32' &&
           isPresentation &&
-          this.enableNativePowerPoint
+          this.nativePowerPointCommandRunner
         ) {
           const exportScript = [
             "$ErrorActionPreference='Stop'",
@@ -315,7 +327,7 @@ export class LibreOfficePreviewProducer
           ].join('; ');
 
           try {
-            await this.commandRunner.run({
+            await this.nativePowerPointCommandRunner.run({
               command: join(
                 process.env.SystemRoot ?? 'C:\\Windows',
                 'System32',
@@ -402,10 +414,9 @@ export class LibreOfficePreviewProducer
           extension: 'pdf',
         });
       } finally {
-        await rm(conversionDirectory, {
-          recursive: true,
-          force: true,
-        }).catch(() => undefined);
+        await this.removeConversionDirectory(conversionDirectory).catch(
+          () => undefined,
+        );
       }
     } catch (error) {
       if (
