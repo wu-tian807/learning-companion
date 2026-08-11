@@ -1,0 +1,461 @@
+// @vitest-environment jsdom
+/**
+ * 生命周期测试：conversation state machine（useConversationController）。
+ *
+ * 用 createRoot + act 驱动真实 React effects，覆盖 review 点名的任务订阅
+ * 与生命周期竞态——这是 renderToStaticMarkup（不执行 effects）测不到的。
+ * 通过注入 onAsk / store / 事件订阅 mock 复现：
+ *   - 完成事件早于 start IPC 返回；
+ *   - 有 delta → 最终 result 校正且不重复；
+ *   - 取消发生在 taskId 返回前后；
+ *   - 同一 conversation 连续任务继承 Session；
+ *   - 恢复历史后继续原 conversationId。
+ */
+import { createRoot, type Root } from 'react-dom/client';
+import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// React 19 要求显式声明 act 环境，否则 effects 不执行
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+import type {
+  GenerationTaskEvent,
+  GenerationTaskView,
+} from '../../../shared/generation-tasks';
+import type { HtmlConversationStore } from './conversation-store';
+import type { HtmlConversationEntry } from './conversation-protocol';
+import {
+  useConversationController,
+  type ConversationControllerActions,
+  type ConversationControllerInput,
+  type ConversationControllerState,
+} from './conversation-controller';
+
+interface WindowWithApi {
+  learningCompanion: {
+    onGenerationTaskChanged(
+      listener: (event: GenerationTaskEvent) => void,
+    ): () => void;
+  };
+}
+
+const listeners = new Set<(event: GenerationTaskEvent) => void>();
+const windowWithApi = window as unknown as WindowWithApi;
+
+function emit(event: GenerationTaskEvent): void {
+  for (const listener of [...listeners]) {
+    listener(event);
+  }
+}
+
+function snapshot(partial: Partial<GenerationTaskView>): GenerationTaskView {
+  return Object.freeze({
+    id: 'task-1',
+    projectId: 'project-1',
+    definitionId: 'html.assistant',
+    definitionVersion: 1,
+    status: 'processing',
+    metrics: Object.freeze({}),
+    createdTime: 100,
+    updatedTime: 100,
+    ...partial,
+  });
+}
+
+function completedSnapshot(answer: string, updatedTime = 200): GenerationTaskView {
+  return snapshot({
+    status: 'completed',
+    result: Object.freeze({ answer }),
+    updatedTime,
+  });
+}
+
+/** 测试用 harness：把 controller 的 state/actions 暴露给测试断言。 */
+function Harness({
+  input,
+  onRender,
+}: {
+  readonly input: ConversationControllerInput;
+  readonly onRender: (value: {
+    readonly state: ConversationControllerState;
+    readonly actions: ConversationControllerActions;
+  }) => void;
+}) {
+  const value = useConversationController(input);
+  onRender(value);
+  return null;
+}
+
+describe('useConversationController 生命周期', () => {
+  let root: Root | undefined;
+  let container: HTMLDivElement | undefined;
+  let onRender: (value: {
+    state: ConversationControllerState;
+    actions: ConversationControllerActions;
+  }) => void;
+  let latest: {
+    state: ConversationControllerState;
+    actions: ConversationControllerActions;
+  };
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    listeners.clear();
+    windowWithApi.learningCompanion = {
+      onGenerationTaskChanged(listener) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    onRender = vi.fn((value: {
+      state: ConversationControllerState;
+      actions: ConversationControllerActions;
+    }) => {
+      latest = value;
+    });
+    createIdCounter = 0;
+  });
+
+  let createIdCounter = 0;
+
+  afterEach(() => {
+    if (root) {
+      act(() => {
+        root!.unmount();
+      });
+      root = undefined;
+    }
+    container?.remove();
+    listeners.clear();
+  });
+
+  function renderController(
+    input: Omit<
+      ConversationControllerInput,
+      'onClose' | 'onAsk'
+    > &
+      Partial<Pick<ConversationControllerInput, 'onClose' | 'onAsk'>>,
+  ) {
+    root = createRoot(container!);
+    act(() => {
+      root!.render(
+        <Harness
+          input={
+            {
+              ...input,
+              onClose:
+                input.onClose ??
+                vi.fn(() => {
+                  /* 默认无操作 */
+                }),
+              onAsk:
+                input.onAsk ??
+                vi.fn(async () => undefined),
+            } as ConversationControllerInput
+          }
+          onRender={(value) => onRender(value)}
+        />,
+      );
+    });
+    return latest;
+  }
+
+  function storeWith(entries: readonly HtmlConversationEntry[] = []) {
+    const store: HtmlConversationStore = {
+      list: vi.fn(async () => entries),
+      save: vi.fn(async () => entries),
+      remove: vi.fn(async () => entries),
+    };
+    return store;
+  }
+
+  it('完成事件早于 start IPC 返回：最终回答仍显示且 busy 正常结束', async () => {
+    let resolveAsk: (value: {
+      taskId: string;
+      snapshot?: GenerationTaskView;
+    } | undefined) => void = () => undefined;
+    const askPromise = new Promise<
+      { taskId: string; snapshot?: GenerationTaskView } | undefined
+    >((resolve) => {
+      resolveAsk = resolve;
+    });
+    const onAsk = vi.fn(async () => askPromise);
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    // 提交问题 → onAsk 挂起（start IPC 未返回）
+    act(() => {
+      latest.actions.submitQuestion('什么是自注意力？');
+    });
+    expect(latest.state.busy).toBe(true);
+    expect(latest.state.messages).toHaveLength(2);
+    expect(latest.state.messages[1]).toMatchObject({
+      role: 'assistant',
+      text: '',
+      streaming: true,
+    });
+
+    // start 返回前，完成事件先到（快 task 场景）
+    act(() => {
+      emit({ type: 'task-completed', snapshot: completedSnapshot('最终回答') });
+    });
+
+    // start 返回（带权威快照）
+    await act(async () => {
+      resolveAsk({ taskId: 'task-1', snapshot: completedSnapshot('最终回答') });
+      await askPromise;
+    });
+
+    expect(latest.state.messages[1]).toMatchObject({
+      role: 'assistant',
+      text: '最终回答',
+    });
+    expect(latest.state.messages[1]?.streaming).toBeFalsy();
+    expect(latest.state.busy).toBe(false);
+  });
+
+  it('有 delta 时最终 result 校正流式缓冲且不重复', async () => {
+    let resolveAsk: (value: {
+      taskId: string;
+      snapshot?: GenerationTaskView;
+    } | undefined) => void = () => undefined;
+    const askPromise = new Promise<
+      { taskId: string; snapshot?: GenerationTaskView } | undefined
+    >((resolve) => {
+      resolveAsk = resolve;
+    });
+    const onAsk = vi.fn(async () => askPromise);
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('解释一下？');
+    });
+
+    // start 返回（running 快照）→ taskId 注册，之后的 delta 才被接收
+    await act(async () => {
+      resolveAsk({ taskId: 'task-1', snapshot: snapshot({ status: 'processing' }) });
+      await askPromise;
+    });
+
+    // delta 逐字到达（真实流式）
+    act(() => {
+      emit({
+        type: 'execution-event',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        event: { type: 'assistant-delta', delta: '你' },
+      });
+      emit({
+        type: 'execution-event',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        event: { type: 'assistant-delta', delta: '好' },
+      });
+    });
+    expect(latest.state.messages[1]?.text).toBe('你好');
+
+    // 完成事件带最终 result（校正流式缓冲，不叠加造成重复）
+    act(() => {
+      emit({ type: 'task-completed', snapshot: completedSnapshot('你好') });
+    });
+
+    // 最终结果 = result.answer（不叠加 delta 造成重复）
+    expect(latest.state.messages[1]?.text).toBe('你好');
+    expect(latest.state.messages[1]?.streaming).toBeFalsy();
+    expect(latest.state.busy).toBe(false);
+  });
+
+  it('取消发生在 taskId 返回后：移除流式占位并保留用户问题', async () => {
+    let resolveAsk: (value: {
+      taskId: string;
+      snapshot?: GenerationTaskView;
+    } | undefined) => void = () => undefined;
+    const askPromise = new Promise<
+      { taskId: string; snapshot?: GenerationTaskView } | undefined
+    >((resolve) => {
+      resolveAsk = resolve;
+    });
+    const onAsk = vi.fn(async () => askPromise);
+    const onCancelAnswer = vi.fn();
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      onCancelAnswer,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('会被取消吗？');
+    });
+
+    // start 返回，再广播 cancelled
+    await act(async () => {
+      resolveAsk({ taskId: 'task-1', snapshot: snapshot({ status: 'processing' }) });
+      await askPromise;
+    });
+    act(() => {
+      emit({ type: 'task-changed', snapshot: snapshot({ status: 'cancelled' }) });
+    });
+
+    expect(latest.state.messages).toHaveLength(1);
+    expect(latest.state.messages[0]).toMatchObject({
+      role: 'user',
+      text: '会被取消吗？',
+    });
+    expect(latest.state.busy).toBe(false);
+    expect(onCancelAnswer).not.toHaveBeenCalled();
+  });
+
+  it('取消发生在 taskId 返回前：校准快照为 cancelled 时同样移除占位', async () => {
+    let resolveAsk: (value: {
+      taskId: string;
+      snapshot?: GenerationTaskView;
+    } | undefined) => void = () => undefined;
+    const askPromise = new Promise<
+      { taskId: string; snapshot?: GenerationTaskView } | undefined
+    >((resolve) => {
+      resolveAsk = resolve;
+    });
+    const onAsk = vi.fn(async () => askPromise);
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('也会取消吗？');
+    });
+
+    // start 返回时快照已是 cancelled（取消广播早到，start 读到终态）
+    await act(async () => {
+      resolveAsk({ taskId: 'task-1', snapshot: snapshot({ status: 'cancelled' }) });
+      await askPromise;
+    });
+
+    expect(latest.state.messages).toHaveLength(1);
+    expect(latest.state.messages[0]?.text).toBe('也会取消吗？');
+    expect(latest.state.busy).toBe(false);
+  });
+
+  it('同一 conversation 连续任务继承同一 conversationId', async () => {
+    const conversationIds: string[] = [];
+    const onAsk = vi.fn(
+      async (conversationId: string) => {
+        conversationIds.push(conversationId);
+        return {
+          taskId: `task-${conversationIds.length}`,
+          snapshot: snapshot({ status: 'processing' }),
+        };
+      },
+    );
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('第一问');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(latest.state.busy).toBe(true);
+
+    act(() => {
+      emit({
+        type: 'task-completed',
+        snapshot: completedSnapshot('第一答', 200),
+      });
+    });
+    expect(latest.state.busy).toBe(false);
+
+    act(() => {
+      latest.actions.submitQuestion('第二问');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // 两轮共享同一个 conversationId → 同一 named workspace / Codex thread
+    expect(conversationIds).toHaveLength(2);
+    expect(conversationIds[0]).toBe(conversationIds[1]);
+  });
+
+  it('恢复历史后继续使用原 conversationId；新建对话才生成新 ID', async () => {
+    const entry: HtmlConversationEntry = Object.freeze({
+      id: 'conv-history-1',
+      messages: Object.freeze([
+        Object.freeze({ role: 'user', text: '历史问题' }),
+        Object.freeze({ role: 'assistant', text: '历史回答' }),
+      ]),
+      createdTime: 50,
+      updatedTime: 60,
+    });
+    const conversationIds: string[] = [];
+    const onAsk = vi.fn(
+      async (conversationId: string) => {
+        conversationIds.push(conversationId);
+        return {
+          taskId: `task-${conversationIds.length}`,
+          snapshot: snapshot({ status: 'processing' }),
+        };
+      },
+    );
+    renderController({
+      open: true,
+      store: storeWith([entry]),
+      onAsk,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.restore(entry);
+    });
+    expect(latest.state.messages).toHaveLength(2);
+    expect(latest.state.messages[0]?.text).toBe('历史问题');
+
+    // 恢复后提问 → 用原 conversationId（继续原 Codex thread）
+    act(() => {
+      latest.actions.submitQuestion('接着问');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      emit({ type: 'task-completed', snapshot: completedSnapshot('继续答', 200) });
+    });
+    expect(conversationIds).toHaveLength(1);
+    expect(conversationIds[0]).toBe('conv-history-1');
+    expect(latest.state.busy).toBe(false);
+
+    // 新建对话 → 新的 conversationId
+    act(() => {
+      latest.actions.startNew();
+    });
+    act(() => {
+      latest.actions.submitQuestion('新对话问题');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(conversationIds).toHaveLength(2);
+    expect(conversationIds[1]).not.toBe('conv-history-1');
+  });
+});

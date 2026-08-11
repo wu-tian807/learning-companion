@@ -1,7 +1,7 @@
 # 生成中心 AI 执行连接选择器设计
 
 日期：2026-08-10
-状态：待审阅
+状态：已落定（Bug #1–#3 已实现；Bug #4 按 PR #20 评审结论改为最终输出方案，2026-08-11 修订）
 
 ## 背景
 
@@ -19,7 +19,7 @@
 - 修复 #1：重选同一连接不再卡死。
 - 修复 #2：任务重试时若固化的连接已失效/被删，回退到当前 selector 配置。
 - 修复 #3：ChatGPT 账号连接的可用性真实反映到 UI。
-- 修复 #4：自定义 API（Responses 兼容）连接下，回答能交付到对话 UI（RPC 边界合成 delta，进入正常数据流）。
+- 修复 #4：自定义 API（Responses 兼容）连接下，回答能交付到对话 UI（最终 Assistant 输出作为权威业务结果，delta 只是可选的过程体验）。
 
 ## 非目标
 
@@ -110,7 +110,7 @@ const configuration =
 
 **效果**：设置页账号连接卡片显示"不可用（账号凭据无效，请重新登录）"而非"可用"。
 
-### 4. 自定义 API 的流式回答适配层（Bug #4）
+### 4. 自定义 API 的最终回答交付（Bug #4）
 
 **背景（真机 + RPC 抓包铁证）**：
 - 火山方舟（自定义 API，标准 Responses 协议）SSE 层流式正常（`response.output_text.delta` 一帧帧都有）。
@@ -118,17 +118,13 @@ const configuration =
 - **完整文本在 `item/completed`（agentMessage）与 `turn/completed`（items）里都在**（抓包："你好，我已经准备好帮你解答关于这份资料的问题了😊"）。
 - 佐证：`warning` 通知 "Model metadata for doubao-seed-2.0-lite not found. Defaulting to fallback metadata"——app-server 对未知模型 metadata 本就降级。
 
-**改动**：在 RPC 协议边界（`src/main/agents/codex/codex-turn-stream.ts`）加**适配层**，把真实数据注入正常数据流：
-- `CodexTurnStream` 按 turn 统计是否收到过 `item/agentMessage/delta`。
-- 收到 `item/completed`（`item.type === 'agentMessage'` 且含 `text`）时，若该 turn **尚未收到任何 delta**，把完整文本作为一条 `assistant-message-delta` 事件推入队列（`itemId` 用 item 的 id）。
-- 下游（`startCodexTurn` → `toGenerationToolEvent` → renderer）**零改动**——拿到的就是正常 delta 事件流。
-- 收到过 delta 的 turn（OpenAI 正常路径）不合成，行为不变。
+**方案（已按 PR #20 评审结论落定，取代早期"合成 delta"草案）**：
+- **最终 Assistant 输出是权威业务结果**：Provider 从 `turn/completed` 的 `item/agentMessage`（`phase === 'final_answer'`）提取最终文本（`codexAssistantOutputFromTurn`，`codex-generation-response.ts`），经 `GenerationTaskAgentSession.call()` 返回 `assistantOutput`，写入 call checkpoint，供 `TaskDefinition.process()` 形成业务 result。
+- **delta 只是可选的过程体验**：真实 `assistant-message-delta` 事件继续按 `agent.call({ assistantEvents: 'runtime' })` 转发；**不在 RPC 边界把完整回答伪装成一条 delta**（假 delta 会污染"delta = 过程、result = 权威"的契约）。
+- 交付链路：`assistantOutput → TaskDefinition result.answer → task-completed → Renderer`，Renderer 以 `result.answer` 校正流式缓冲，避免遗漏、重复或截断。
+- 无 delta 的 Provider（如 Doubao）任务完成时一次性显示最终答案；OpenAI 正常路径保留真实逐字流式。
 
-**这是真实数据适配，不是 mock**：文本来自 app-server 实际交付的 `item/completed`，只是补上它本该发但没发的增量事件。
-
-**效果**：自定义 API 连接下对话 UI 显示完整回答（一次性而非逐字）；OpenAI 账号连接流式体验不变。
-
-**边界**：`item/completed` 的 agentMessage 无 `text` 字段（如纯工具 turn）不合成；多个 agentMessage 各自合成（对话场景通常 1 个）。
+**边界**：`item/completed` 的 agentMessage 无 `text` 字段（如纯工具 turn）按 `CODEX_PROTOCOL_ERROR` 失败；对话场景通常只有一个 `final_answer` agentMessage。
 
 ## 测试
 
@@ -143,22 +139,24 @@ const configuration =
   - `hasConnection` 对存在的连接返回 true、不存在的返回 false。
 - `codex-agent-provider.test.ts`：
   - `inspectAccountConnection` 在认证探测（`getRateLimits`/`listModels`）失败时返回 `unavailable` 并带中文提示；探测成功时返回 `ready`。
-- `codex-turn-stream.test.ts`（新建）：
-  - `item/completed`（agentMessage 含 text）且无 delta 时，队列产出 `assistant-message-delta`（完整文本）。
-  - 已有 delta 时不重复合成（保持原始 delta 序列）。
-  - agentMessage 无 `text` 不合成。
-- `html-assistant-processor.test.ts` 相关测试保持通过（处理器不提取答案的设计不变）。
+- `codex-generation-response.test.ts`：
+  - `codexAssistantOutputFromTurn` 从 `turn/completed` 的 `item/agentMessage`（`phase === 'final_answer'`）提取最终文本；无 `final_answer` 时抛 `CODEX_PROTOCOL_ERROR`。
+- `html-assistant-processor.test.ts`：
+  - `process()` 返回 `callResult.assistantOutput` 作为业务 `answer`；Provider 无最终输出时诚实失败。
+- `conversation-controller.test.tsx`（jsdom）：
+  - 完成事件早于 start IPC 返回仍能显示最终回答且 busy 正常结束；
+  - 有 delta 时最终 result 校正流式缓冲且不重复。
 - `GenerationCenter.test.tsx` 相关测试不受影响（本次不改生成中心 UI）。
 
 ### 真机验证（CDP）
 
 - 复现路径：设置页选择器重选同一连接 → 模型下拉恢复（或降级为可编辑输入框）。
 - 账号连接卡片：坏 key 显示"凭据无效"。
-- 自定义 API 对话链路：打开 HTML 资产 → AI 对话 → 提问 → 对话面板显示**失败提示**（不显示空白、不伪装成功）。
+- 自定义 API 对话链路：打开 HTML 资产 → AI 对话 → 提问 → 对话面板显示完整最终回答（无 delta 的 Provider 一次性显示；不做假 delta）。
 
 ## 风险与注意事项
 
-- **Bug #4 适配层**：合成 delta 只发生在「无 delta 的 turn」；若 codex 后续版本修复了 delta 转发（正常路径有 delta），合成逻辑自动不触发，无副作用。合成用真实 `item/completed` 文本，非 mock。
+- **Bug #4 交付**：最终 `assistantOutput` 写入 call checkpoint，恢复时可重放；无 delta 的 Provider 在任务完成时一次性显示最终答案。不再在 RPC 边界合成 delta。
 - 认证探测端点的选择需真机验证：`getRateLimits` 若不经认证校验，改用 `listModels`。
 - 探测会引入一次本地 codex 到 OpenAI 的请求；网络不通时账号连接显示"无法连接 AI 服务"（区分于"凭据无效"）。
 - `hasConnection` 接口新增会触碰 `GenerationAgentRunnerResolver` 的所有实现方（目前仅 `AgentProviderService`），测试 mock 需同步。
