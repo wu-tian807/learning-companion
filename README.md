@@ -26,6 +26,32 @@ pnpm install
 pnpm dev
 ```
 
+## AI 自动划重点（Markdown）
+
+启动应用前配置 AI 服务，然后在 Markdown 工作台点击“AI 划重点”。应用只会在该按钮被点击后发送当前文档内容；AI 返回原文中的精确句子，应用将其映射为只读高亮（源码和渲染视图都会显示），不会自动修改或保存原文件。
+
+默认使用 OpenAI：设置环境变量 `OPENAI_API_KEY`，默认模型 `gpt-5.6-terra`，可通过 `LEARNING_COMPANION_OPENAI_MODEL` 覆盖。
+
+使用 DeepSeek：设置以下环境变量后重启应用：
+
+- `LEARNING_COMPANION_AI_PROVIDER=deepseek`
+- `LEARNING_COMPANION_AI_API_KEY=<你的 DeepSeek API Key>`
+- 可选 `LEARNING_COMPANION_AI_MODEL=deepseek-v4-flash`（默认）或 `deepseek-v4-pro`
+
+其他 OpenAI 兼容服务：设置 `LEARNING_COMPANION_AI_BASE_URL` 指向其接口地址（如 `https://api.deepseek.com`），并使用 `LEARNING_COMPANION_AI_API_KEY` 提供密钥。
+
+## 纯文本阅读与 AI 答疑
+
+- 打开 `.txt` 资料后，默认进入阅读模式，把文本渲染成适合学习的页面并保留阅读位置；
+  标题栏可随时切换「编辑 / 阅读」。
+- 在任意支持文字选区的资料（纯文本、Markdown、PDF、EPUB、HTML）中选中一段文字，
+  右键选择「解释选中内容」，即可让 AI 解释该段落；在右侧 AI 面板中可以继续输入
+  追问，AI 会结合原文回答。
+
+AI 答疑复用与「AI 划重点」相同的服务配置（`OPENAI_API_KEY` 或
+`LEARNING_COMPANION_AI_API_KEY` 等环境变量），选中文字与追问只会在你点击菜单后
+发送，不会自动上传整个文档。
+
 ## 验证
 
 ```bash

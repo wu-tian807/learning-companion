@@ -20,7 +20,6 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
-    "test:windows-integration": "vitest run src/main/external-libraries/external-command-runner.windows.integration.test.ts",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "smoke:native": "electron scripts/better-sqlite3-smoke.mjs",
     "package": "electron-forge package",
@@ -29,10 +28,7 @@
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
-    "@napi-rs/canvas": "1.0.2",
-    "@openai/codex": "0.146.0",
     "@uiw/react-codemirror": "^4.25.11",
-    "@xyflow/react": "12.11.2",
     "better-sqlite3": "13.0.1",
     "drizzle-orm": "0.45.2",
     "electron-squirrel-startup": "1.0.1",

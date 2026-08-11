@@ -5,11 +5,6 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig({
   base: './',
-  server: {
-    watch: {
-      ignored: ['**/out/**'],
-    },
-  },
   plugins: [
     react(),
     tailwindcss(),

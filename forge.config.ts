@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir } from 'node:fs/promises';
+import { cp, mkdir } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { FuseVersion, FuseV1Options } from '@electron/fuses';
@@ -6,11 +6,6 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
-
-import {
-  CODEX_RUNTIME_DIRECTORY,
-  resolveCodexRuntimeSourceDirectory,
-} from './src/main/agents/codex/codex-runtime-paths';
 
 const betterSqlite3Source = resolve('node_modules/better-sqlite3');
 const betterSqlite3RuntimeEntries = new Set([
@@ -51,29 +46,9 @@ async function copyBetterSqlite3(
   });
 }
 
-async function copyCodexRuntime(
-  buildPath: string,
-  platform: string,
-  arch: string,
-) {
-  const source = resolveCodexRuntimeSourceDirectory(
-    platform as NodeJS.Platform,
-    arch,
-  );
-  const destination = join(buildPath, CODEX_RUNTIME_DIRECTORY);
-
-  await cp(source, destination, { recursive: true });
-
-  if (platform !== 'win32') {
-    await chmod(join(destination, 'bin', 'codex'), 0o755);
-  }
-}
-
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: {
-      unpackDir: CODEX_RUNTIME_DIRECTORY,
-    },
+    asar: true,
   },
   rebuildConfig: {
     // better-sqlite3 13 ships Node-API binaries for our supported platforms.
@@ -94,10 +69,7 @@ const config: ForgeConfig = {
     // Forge's Vite plugin packages only .vite, so copy the external native
     // dependency after pruning and before ASAR is finalized.
     packageAfterPrune: async (_config, buildPath, _version, platform, arch) => {
-      await Promise.all([
-        copyBetterSqlite3(buildPath, platform, arch),
-        copyCodexRuntime(buildPath, platform, arch),
-      ]);
+      await copyBetterSqlite3(buildPath, platform, arch);
     },
   },
   plugins: [
