@@ -49,6 +49,16 @@ describe('Document AI chat session lifecycle', () => {
     expect(store.getSession('asset')?.messages).toHaveLength(0);
   });
 
+  it('clears the visible error when a retry starts and succeeds', () => {
+    const store = createAiChatStore(() => 'conversation');
+    store.ensureSession('project', 'asset');
+    store.setError('asset', '模型未配置');
+    const question = store.addUserMessage('asset', 'retry').messages.at(-1)!;
+    expect(store.getSession('asset')?.error).toBeUndefined();
+    store.addAssistantMessage('asset', 'ok', question.id);
+    expect(store.getSession('asset')?.error).toBeUndefined();
+  });
+
   it('starts a new provider conversation after a renderer restart', () => {
     const beforeRestart = createAiChatStore(() => 'conversation-before-restart');
     const afterRestart = createAiChatStore(() => 'conversation-after-restart');

@@ -5,8 +5,10 @@ import {
   AiChatPanel,
   AiChatProvider,
   cancelActiveDocumentAiRequest,
+  documentAiErrorMessage,
   sendDocumentAiMessage,
 } from './AiChatPanel';
+import { AiChatPanelHost } from './AiChatPanelHost';
 import { createAiChatStore } from './chat-store';
 
 describe('AiChatPanel component state composition', () => {
@@ -71,6 +73,7 @@ describe('AiChatPanel component state composition', () => {
       ask: vi.fn(async () => { throw new Error('offline'); }),
     })).resolves.toBe(false);
     expect(store.getSession('asset')?.loading).toBe(false);
+    expect(store.getSession('asset')?.error).toContain('AI 回答失败');
 
     await expect(sendDocumentAiMessage({
       store, projectId: 'project', assetId: 'asset', content: 'retry',
@@ -78,6 +81,45 @@ describe('AiChatPanel component state composition', () => {
     })).resolves.toBe(true);
     expect(store.getSession('asset')?.messages.at(-1)?.content).toBe('ok');
     consoleError.mockRestore();
+  });
+
+  it('shows a persistent model setup error instead of failing silently', async () => {
+    const store = createAiChatStore(() => 'conversation');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await sendDocumentAiMessage({
+      store, projectId: 'project', assetId: 'asset', content: 'question',
+      ask: vi.fn(async () => { throw new Error('No provider/model connection configured'); }),
+    });
+
+    const html = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+          onAttachAnswer={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+    expect(documentAiErrorMessage(new Error('No provider configured')))
+      .toContain('尚未配置可用模型');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('尚未配置可用模型');
+    consoleError.mockRestore();
+  });
+
+  it('renders a discoverable AI question launcher while the panel is closed', () => {
+    const store = createAiChatStore();
+    const html = renderToStaticMarkup(
+      <AiChatPanelHost
+        store={store}
+        projectId="project"
+        assetId="asset"
+        onAttachAnswer={vi.fn()}
+      />,
+    );
+    expect(html).toContain('AI 问答');
+    expect(html).toContain('打开当前文档的 AI 问答');
   });
 
   it('renders only the current Asset conversation and its loading state', () => {

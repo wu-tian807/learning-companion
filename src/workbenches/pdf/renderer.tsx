@@ -103,6 +103,13 @@ interface PdfRegionActionMenu {
   readonly top: number;
 }
 
+interface CompletedPdfRegionSelection {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 const PDF_REGION_QUICK_QUESTIONS = [
   ['解释', '请用通俗易懂的语言解释我框选的内容。'],
   ['举例', '请针对我框选的内容给出一个具体、容易理解的例子。'],
@@ -514,6 +521,8 @@ export function PdfDocumentWorkbenchView({
   const [regionMode, setRegionMode] = useState(true);
   const [regionSelection, setRegionSelection] =
     useState<PdfRegionSelection>();
+  const [completedRegionSelection, setCompletedRegionSelection] =
+    useState<CompletedPdfRegionSelection>();
   const [regionActionMenu, setRegionActionMenu] =
     useState<PdfRegionActionMenu>();
 
@@ -922,6 +931,7 @@ export function PdfDocumentWorkbenchView({
           };
           activeRegionRef.current = selection;
           setRegionSelection(selection);
+          setCompletedRegionSelection(undefined);
           event.currentTarget.setPointerCapture(event.pointerId);
           event.preventDefault();
         }
@@ -1026,6 +1036,16 @@ export function PdfDocumentWorkbenchView({
         store.setPanelOpen(true);
         store.setDraft('');
         const containerRect = event.currentTarget.getBoundingClientRect();
+        setCompletedRegionSelection({
+          left:
+            pageRect.left + completed.x * pageRect.width - containerRect.left +
+            event.currentTarget.scrollLeft,
+          top:
+            pageRect.top + completed.y * pageRect.height - containerRect.top +
+            event.currentTarget.scrollTop,
+          width: completed.width * pageRect.width,
+          height: completed.height * pageRect.height,
+        });
         setRegionActionMenu({
           top: Math.max(12, completed.top - containerRect.top - 46),
         });
@@ -1382,6 +1402,13 @@ export function PdfDocumentWorkbenchView({
             onLostPointerCapture={cancelPointerInteraction}
           >
             <div ref={viewerRef} className="pdfViewer" />
+            {completedRegionSelection && (
+              <div
+                aria-label="已框选区域"
+                className="pointer-events-none absolute z-40 border-2 border-indigo-300 bg-indigo-400/20 shadow-[0_0_0_1px_rgba(15,23,42,.7)]"
+                style={completedRegionSelection}
+              />
+            )}
           </div>
 
           {regionSelection && containerRef.current && (
@@ -1614,6 +1641,7 @@ export function PdfDocumentWorkbenchView({
                   if (regionMode) {
                     activeRegionRef.current = undefined;
                     setRegionSelection(undefined);
+                    setCompletedRegionSelection(undefined);
                     const store = getGlobalAiChatStore();
                     store.setPendingAnchor(asset.id, undefined);
                     store.setPanelOpen(false);

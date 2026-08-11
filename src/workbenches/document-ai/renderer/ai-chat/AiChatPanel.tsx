@@ -75,6 +75,7 @@ export interface UseAiChatResult {
   readonly panelOpen: boolean;
   readonly draft: string;
   readonly loading: boolean;
+  readonly error?: string;
   readonly selectedAnswerRange: AiChatState['selectedAnswerRange'];
   readonly pendingAnchor?: AiChatMessage['anchor'];
   togglePanel(): void;
@@ -92,6 +93,17 @@ const activeRequestIds = new Map<string, string>();
 
 function createDocumentAiRequestId(): string {
   return `document-ai-${globalThis.crypto.randomUUID()}`;
+}
+
+export function documentAiErrorMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message.trim() : '';
+  if (/provider|model|selector|connection|login|配置|模型|登录/i.test(detail)) {
+    return '尚未配置可用模型，或 Agent 登录已失效。请先到生成中心完成模型配置后重试。';
+  }
+  if (/cancel/i.test(detail)) return '本次回答已取消。';
+  return detail
+    ? `AI 回答失败：${detail}`
+    : 'AI 回答失败，请检查网络与模型配置后重试。';
 }
 
 export async function cancelActiveDocumentAiRequest(assetId: string): Promise<void> {
@@ -139,6 +151,7 @@ export async function sendDocumentAiMessage(input: {
     return true;
   } catch (error) {
     store.setLoading(assetId, false);
+    store.setError(assetId, documentAiErrorMessage(error));
     console.error('[document-ai] 提问失败', error);
     return false;
   } finally {
@@ -210,6 +223,7 @@ export function useAiChat(
     panelOpen: state.panelOpen,
     draft: state.draft,
     loading: session?.loading ?? false,
+    error: session?.error,
     selectedAnswerRange: state.selectedAnswerRange,
     pendingAnchor: session?.pendingAnchor,
     togglePanel,
@@ -246,6 +260,7 @@ export function AiChatPanel({
     session,
     draft,
     loading,
+    error,
     selectedAnswerRange,
     pendingAnchor,
     setDraft,
@@ -487,10 +502,13 @@ export function AiChatPanel({
         {loading && (
           <div className="flex justify-start">
             <div className="rounded-2xl rounded-bl-md bg-white/[0.06] px-4 py-3">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>正在回答，已优先使用当前选区</span>
+                <div className="flex items-center gap-1.5">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
                 <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400 [animation-delay:150ms]" />
                 <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400 [animation-delay:300ms]" />
+                </div>
               </div>
             </div>
           </div>
@@ -504,6 +522,11 @@ export function AiChatPanel({
         onSubmit={handleSubmit}
         className="shrink-0 border-t border-white/[0.075] p-3"
       >
+        {error && (
+          <div role="alert" className="mb-2 rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs leading-5 text-rose-200">
+            {error}
+          </div>
+        )}
         {pendingAnchor?.selectedText && (
           <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-indigo-500/10 px-3 py-2 text-[11px] text-indigo-200">
             <span className="line-clamp-2">当前选区：{pendingAnchor.selectedText}</span>

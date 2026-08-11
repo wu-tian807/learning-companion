@@ -420,18 +420,17 @@ export function AttachmentHost({
         );
       })}
 
-      {createPortal(
-        <>
+      <>
           <button
             type="button"
             onClick={() => setSidebarOpen((open) => !open)}
-            className="pointer-events-auto fixed bottom-20 right-5 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
+            className="pointer-events-auto absolute right-3 top-14 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
           >
             <span>✦</span>
             标注 {attachments.length}
           </button>
           {sidebarOpen && (
-            <aside className="pointer-events-auto fixed bottom-32 right-5 top-20 z-[70] flex w-80 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
+            <aside className="pointer-events-auto absolute bottom-4 right-3 top-24 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">文档标注</h3>
@@ -484,9 +483,7 @@ export function AttachmentHost({
               </div>
             </aside>
           )}
-        </>,
-        document.body,
-      )}
+        </>
 
       {activePopupId && (
         <AnnotationPopup

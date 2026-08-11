@@ -33,6 +33,8 @@ export interface AiChatSession {
   readonly messages: readonly AiChatMessage[];
   /** 是否正在等待 AI 回复 */
   readonly loading: boolean;
+  /** 最近一次请求失败的用户可见提示 */
+  readonly error?: string;
   readonly pendingAnchor?: AiChatMessage['anchor'];
 }
 
@@ -82,6 +84,8 @@ export interface AiChatActions {
   ): AiChatSession;
 
   setLoading(assetId: string, loading: boolean): void;
+
+  setError(assetId: string, error?: string): void;
 
   setPendingAnchor(assetId: string, anchor?: AiChatMessage['anchor']): void;
 
@@ -249,6 +253,7 @@ export function createAiChatStore(
         ...session,
         messages: [...session.messages, message],
         loading: true,
+        error: undefined,
       }));
     },
 
@@ -273,6 +278,7 @@ export function createAiChatStore(
               ...session,
               messages: [...session.messages, message],
               loading: false,
+              error: undefined,
             }
           : session),
       }));
@@ -280,6 +286,10 @@ export function createAiChatStore(
 
     setLoading(assetId: string, loading: boolean): void {
       mutateSession(assetId, (session) => ({ ...session, loading }));
+    },
+
+    setError(assetId: string, error?: string): void {
+      mutateSession(assetId, (session) => ({ ...session, error }));
     },
 
     setPendingAnchor(assetId: string, anchor?: AiChatMessage['anchor']): void {
