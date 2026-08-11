@@ -44,7 +44,7 @@ describe('EPUB explanation generation', () => {
     );
   });
 
-  it('uses an isolated tool-free task workspace', () => {
+  it('uses the default task-isolated, tool-free workspace', () => {
     const definition = createEpubExplanationTaskDefinitionV1({
       process: vi.fn(),
     });
@@ -57,9 +57,9 @@ describe('EPUB explanation generation', () => {
       WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
     );
     expect(definition.primaryWorkspaceConfig).toMatchObject({
-      scope: 'task',
       permissions: { read: false, write: false },
     });
+    expect(definition.primaryWorkspaceConfig.resolveInstanceKey).toBeUndefined();
     expect(definition.assetReferenceSchema).toEqual({});
   });
 

@@ -1,4 +1,4 @@
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
+import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import {
   DOCUMENT_QUESTION_TASK_DEFINITION_ID,
   DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
@@ -32,7 +32,7 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
   return Object.freeze({
     id: DOCUMENT_QUESTION_TASK_DEFINITION_ID,
     version: DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
-    providerSelectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+    providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
     systemInstruction: DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V1,
     toolRequirements: Object.freeze([
       { id: PDF_READ_FUNCTION_TOOL_ID, availability: 'required' as const },
@@ -41,14 +41,15 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
     mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'document-question',
-      scope: 'shared' as const,
       permissions: Object.freeze({ read: true, write: false }),
+      resolveInstanceKey: ({ instruction }: { instruction: JsonValue }) => {
+        const parsed = documentQuestionInstructionFactory.parse(instruction);
+        if (!parsed.ok) {
+          throw new Error('Invalid document question instruction');
+        }
+        return parsed.value.conversationId;
+      },
     }),
-    resolvePrimaryWorkspaceInstanceKey: (snapshot: JsonValue) => {
-      const parsed = documentQuestionInstructionFactory.parse(snapshot);
-      if (!parsed.ok) throw new Error('Invalid document question instruction');
-      return parsed.value.conversationId;
-    },
     secondaryWorkspaceConfigs: Object.freeze([]),
     assetReferenceSchema: Object.freeze({
       document: Object.freeze({

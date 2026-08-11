@@ -61,7 +61,6 @@ export function createMindMapGenerationTaskDefinitionV1(
     mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'generation-mindmap',
-      scope: 'task' as const,
       permissions: Object.freeze({ read: true, write: true }),
     }),
     secondaryWorkspaceConfigs: Object.freeze([]),

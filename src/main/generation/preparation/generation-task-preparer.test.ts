@@ -69,10 +69,19 @@ describe('GenerationTaskPreparer', () => {
       ),
       new GenerationPreparedManifestFile(),
     );
-    const definition = createMindMapGenerationTaskDefinitionV1({
+    const baseDefinition = createMindMapGenerationTaskDefinitionV1({
       async process() {
         return { resultAssetId: 'unused' };
       },
+    });
+    const definition = Object.freeze({
+      ...baseDefinition,
+      primaryWorkspaceConfig: Object.freeze({
+        ...baseDefinition.primaryWorkspaceConfig,
+        resolveInstanceKey: ({ instruction }: { instruction: unknown }) =>
+          (instruction as { additionalInstructions: string })
+            .additionalInstructions,
+      }),
     });
     const task = GenerationTask.create({
       id: 'task-1',
@@ -80,7 +89,7 @@ describe('GenerationTaskPreparer', () => {
       definitionId: definition.id,
       definitionVersion: definition.version,
       instruction: new MindMapGenerationInstruction({
-        additionalInstructions: '突出概念关系',
+        additionalInstructions: 'conversation-1',
       }).toSnapshot(),
       assetReferences: { sources: [{ assetId: asset.id }] },
       createdTime: 10,
@@ -89,6 +98,15 @@ describe('GenerationTaskPreparer', () => {
     const prepared = await preparer.prepare(
       task.getSnapshot(),
       definition,
+    );
+    expect(prepared.workspaces.primary.instanceKey).toBe('conversation-1');
+    expect(prepared.workspaces.primary.path).toBe(
+      join(
+        workspaceRoot,
+        'project-1',
+        'generation-mindmap',
+        'conversation-1',
+      ),
     );
     const copiedRelativePath =
       prepared.assetReferences.sources?.[0]?.relativePath;
@@ -121,6 +139,10 @@ describe('GenerationTaskPreparer', () => {
     const restored = await preparer.restore(task.getSnapshot(), definition);
 
     expect(restored.assetReferences).toEqual(prepared.assetReferences);
+    expect(restored.workspaces.primary.path).toBe(
+      prepared.workspaces.primary.path,
+    );
+    expect(restored.workspaces.primary.instanceKey).toBe('conversation-1');
     expect(resolveCount).toBe(1);
   });
 });

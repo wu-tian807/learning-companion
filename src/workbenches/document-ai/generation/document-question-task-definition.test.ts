@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
+import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import { DocumentQuestionInstruction, documentQuestionInstructionFactory } from './document-question-instruction';
 import { createDocumentQuestionTaskDefinitionV1 } from './document-question-task-definition';
 
@@ -35,7 +35,7 @@ describe('DocumentQuestion generation contract', () => {
     });
   });
 
-  it('uses Generation Center and returns the persisted final assistant output', async () => {
+  it('uses the Workbench selector, preserves the conversation session, and returns the final assistant output', async () => {
     const definition = createDocumentQuestionTaskDefinitionV1();
     const call = vi.fn(async () => ({
       callKey: 'answer',
@@ -47,7 +47,15 @@ describe('DocumentQuestion generation contract', () => {
         startedTime: 1, completedTime: 2, activeDurationMs: 1,
       },
     }));
-    expect(definition.providerSelectorId).toBe(GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID);
+    expect(definition.providerSelectorId).toBe(WORKBENCH_AGENT_PROVIDER_SELECTOR_ID);
+    expect(definition.primaryWorkspaceConfig.resolveInstanceKey?.({
+      taskId: 'task-1',
+      instruction: new DocumentQuestionInstruction({
+        conversationId: 'conversation-1',
+        question: '为什么？',
+        target: { scope: 'asset' },
+      }).toSnapshot(),
+    })).toBe('conversation-1');
     await expect(definition.process({ agent: { call } } as never)).resolves.toEqual({
       answer: '这是最终回答。', providerId: 'codex', modelId: 'gpt-test',
     });
