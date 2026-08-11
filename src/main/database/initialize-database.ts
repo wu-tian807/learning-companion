@@ -23,12 +23,11 @@ import { removeGenerationAgentOutputRefMigration } from './migrations/0015-remov
 import { processGenerationTasksMigration } from './migrations/0016-process-generation-tasks';
 import { assignGenerationTaskModelMigration } from './migrations/0017-assign-generation-task-model';
 import { assignGenerationTaskConnectionMigration } from './migrations/0018-assign-generation-task-connection';
-import { createAttachmentsMigration } from './migrations/0019-create-attachments';
-import { repairGenerationTaskAssignmentColumnsMigration } from './migrations/0020-repair-generation-task-assignment-columns';
+import { createAssetAttachmentsMigration } from './migrations/0019-create-asset-attachments';
+import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
-import * as attachmentSchema from './schema/attachments';
 import * as assetSchema from './schema/assets';
 import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
@@ -37,7 +36,6 @@ import * as workbenchStateSchema from './schema/workbench-state';
 interface DatabaseMigration {
   readonly version: number;
   readonly sql: string;
-  readonly apply?: (sqlite: Database.Database) => void;
 }
 
 const migrations: readonly DatabaseMigration[] = [
@@ -59,16 +57,15 @@ const migrations: readonly DatabaseMigration[] = [
   processGenerationTasksMigration,
   assignGenerationTaskModelMigration,
   assignGenerationTaskConnectionMigration,
-  createAttachmentsMigration,
-  repairGenerationTaskAssignmentColumnsMigration,
+  createAssetAttachmentsMigration,
 ];
 const schema = {
+  ...assetAttachmentSchema,
   ...projectSchema,
   ...assetSchema,
   ...assetArtifactSchema,
   ...assetLinkSchema,
   ...assetReferenceSchema,
-  ...attachmentSchema,
   ...generationTaskSchema,
   ...workbenchStateSchema,
 };
@@ -105,10 +102,7 @@ function applyMigrations(sqlite: Database.Database): void {
         throw new Error(`数据库迁移版本不连续：${migration.version}`);
       }
 
-      if (migration.sql.trim()) {
-        sqlite.exec(migration.sql);
-      }
-      migration.apply?.(sqlite);
+      sqlite.exec(migration.sql);
       sqlite.pragma(`user_version = ${migration.version}`);
       appliedVersion = migration.version;
     }

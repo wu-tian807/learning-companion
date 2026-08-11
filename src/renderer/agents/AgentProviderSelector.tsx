@@ -19,6 +19,10 @@ import {
   agentProviderStore,
   type AgentProviderStore,
 } from './agent-provider-store';
+import {
+  findActiveSelectorConnectionSelection,
+  findSelectorConnectionSelection,
+} from './selector-connection-selection';
 import { SelectMenu } from '../components/SelectMenu';
 
 const CUSTOM_REASONING_EFFORTS = [
@@ -98,6 +102,8 @@ function AgentProviderSelectorForm({
   );
   const [catalog, setCatalog] = useState<AgentProviderModelCatalogSnapshot>();
   const [loadingCatalog, setLoadingCatalog] = useState(Boolean(initial));
+  // 连接重选（含选回同一连接）时递增，强制模型目录 effect 重跑
+  const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const resolvedConnection = connections.find(
@@ -161,13 +167,34 @@ function AgentProviderSelectorForm({
     return () => {
       active = false;
     };
-  }, [api, resolvedConnectionId, resolvedProviderId]);
+  }, [api, resolvedConnectionId, resolvedProviderId, catalogEpoch]);
 
   const selectedModel = catalog?.models.find((model) => model.id === modelId);
   const effortOptions =
     selectedModel && selectedModel.reasoningEfforts.length > 0
       ? selectedModel.reasoningEfforts.map((effort) => effort.id)
       : CUSTOM_REASONING_EFFORTS;
+
+  /** 恢复某个 Connection 已保存的模型/思考力度配置（没有则回落默认）。 */
+  const restoreConnectionSelection = (
+    connection: SelectorConnection | undefined,
+  ) => {
+    if (!connection) {
+      return;
+    }
+    const saved = findSelectorConnectionSelection(
+      store.getState().setup,
+      definition.id,
+      connection.connection.id,
+    );
+    if (saved?.modelId) {
+      setModelId(saved.modelId);
+      setReasoningEffort(saved.reasoningEffort ?? '');
+    } else {
+      setModelId('');
+      setReasoningEffort(DEFAULT_REASONING_EFFORT);
+    }
+  };
 
   const save = async () => {
     if (!resolvedConnection || !modelId.trim()) {
@@ -230,12 +257,18 @@ function AgentProviderSelectorForm({
               label: `${provider.displayName} · ${connection.displayName}`,
             }))}
             onChange={(value) => {
+              const nextConnection = connections.find(
+                ({ provider, connection }) =>
+                  connectionValue(provider.id, connection.id) === value,
+              );
               setSelectedConnection(value);
-              setModelId('');
-              setReasoningEffort(DEFAULT_REASONING_EFFORT);
+              // 恢复该 Connection 上次保存的模型/思考力度；没有则回落默认。
+              restoreConnectionSelection(nextConnection);
               setCatalog(undefined);
               setLoadingCatalog(true);
               setError(undefined);
+              // 连接 ID 不变（重选同一连接）时 effect 不会重跑，用 epoch 强制刷新目录
+              setCatalogEpoch((epoch) => epoch + 1);
             }}
             className="w-full"
           />
@@ -330,9 +363,7 @@ export function AgentProviderSelector({
   const definition = setup?.selectors.find(
     (candidate) => candidate.id === selectorId,
   );
-  const selection = setup?.selections.find(
-    (candidate) => candidate.selectorId === selectorId,
-  );
+  const selection = findActiveSelectorConnectionSelection(setup, selectorId);
   const connections = useMemo(
     () =>
       setup?.providers.flatMap((provider) =>

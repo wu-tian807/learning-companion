@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CreateAttachmentInput } from './attachment-service';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import { EmptyAttachmentService } from './attachment-service';
 
-const attachmentInput: CreateAttachmentInput = {
+const attachment: AssetAttachment = {
+  id: 'attachment',
   projectId: 'project',
   assetId: 'asset',
   typeId: 'user-note',
   typeVersion: 1,
   target: { scope: 'asset' },
   metadata: { text: '笔记' },
+  createdTime: Date.parse('2026-07-27T01:00:00.000Z'),
+  updatedTime: Date.parse('2026-07-27T01:00:00.000Z'),
 };
 
 describe('EmptyAttachmentService', () => {
@@ -21,7 +24,7 @@ describe('EmptyAttachmentService', () => {
 
   it('returns an explicit unsupported error for writes', async () => {
     await expect(
-      new EmptyAttachmentService().create(attachmentInput),
+      new EmptyAttachmentService().create(attachment),
     ).rejects.toThrow('FEATURE_NOT_SUPPORTED');
   });
 });

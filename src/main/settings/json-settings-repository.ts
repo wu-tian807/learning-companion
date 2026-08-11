@@ -49,8 +49,19 @@ interface StoredSettingsState {
   readonly agentProviderConnections: Readonly<
     Record<string, AgentProviderConnectionConfiguration>
   >;
+  /**
+   * selectorId → (connectionId → selection)。同一功能的每个 Connection 各存一份
+   * 模型/思考力度配置，切换 Connection 时各自恢复。
+   */
   readonly agentProviderSelectorSelections: Readonly<
-    Record<string, AgentProviderSelectorSelectionSnapshot>
+    Record<
+      string,
+      Readonly<Record<string, AgentProviderSelectorSelectionSnapshot>>
+    >
+  >;
+  /** selectorId → 上次使用的 (providerId, connectionId)，任务执行时使用。 */
+  readonly agentProviderSelectorConnections: Readonly<
+    Record<string, { readonly providerId: string; readonly connectionId: string }>
   >;
 }
 
@@ -103,17 +114,61 @@ function cloneState(state: StoredSettingsState): StoredSettingsState {
   const selections = Object.freeze(
     Object.fromEntries(
       Object.entries(state.agentProviderSelectorSelections).map(
-        ([selectorId, selection]) => {
+        ([selectorId, byConnection]) => {
           if (
             !isAgentProviderSelectorId(selectorId) ||
-            selection.selectorId !== selectorId
+            !isRecord(byConnection)
+          ) {
+            throw new Error('Settings Agent Provider Selector 配置无效');
+          }
+
+          const normalized = Object.freeze(
+            Object.fromEntries(
+              Object.entries(byConnection).map(
+                ([connectionId, selection]) => {
+                  if (
+                    !isAgentProviderConnectionId(connectionId) ||
+                    !isAgentProviderSelectorSelectionSnapshot(selection) ||
+                    selection.selectorId !== selectorId ||
+                    selection.connectionId !== connectionId
+                  ) {
+                    throw new Error(
+                      'Settings Agent Provider Selector 配置无效',
+                    );
+                  }
+
+                  return [
+                    connectionId,
+                    cloneAgentProviderSelectorSelection(selection),
+                  ] as const;
+                },
+              ),
+            ),
+          );
+          return [selectorId, normalized] as const;
+        },
+      ),
+    ),
+  );
+  const selectorConnections = Object.freeze(
+    Object.fromEntries(
+      Object.entries(state.agentProviderSelectorConnections).map(
+        ([selectorId, record]) => {
+          if (
+            !isAgentProviderSelectorId(selectorId) ||
+            !isRecord(record) ||
+            !isAgentProviderId(record.providerId) ||
+            !isAgentProviderConnectionId(record.connectionId)
           ) {
             throw new Error('Settings Agent Provider Selector 配置无效');
           }
 
           return [
             selectorId,
-            cloneAgentProviderSelectorSelection(selection),
+            Object.freeze({
+              providerId: record.providerId,
+              connectionId: record.connectionId,
+            }),
           ] as const;
         },
       ),
@@ -127,6 +182,7 @@ function cloneState(state: StoredSettingsState): StoredSettingsState {
     completedOnboardingVersion: state.completedOnboardingVersion,
     agentProviderConnections: connections,
     agentProviderSelectorSelections: selections,
+    agentProviderSelectorConnections: selectorConnections,
   });
 }
 
@@ -312,14 +368,26 @@ export class JsonSettingsRepository implements SettingsRepository {
       const connections = { ...state.agentProviderConnections };
       delete connections[connectionId];
       const selections = Object.fromEntries(
-        Object.entries(state.agentProviderSelectorSelections).filter(
-          ([, selection]) => selection.connectionId !== connectionId,
+        Object.entries(state.agentProviderSelectorSelections).flatMap(
+          ([selectorId, byConnection]) => {
+            const next = { ...byConnection };
+            delete next[connectionId];
+            return Object.keys(next).length > 0
+              ? [[selectorId, next] as const]
+              : [];
+          },
+        ),
+      );
+      const selectorConnections = Object.fromEntries(
+        Object.entries(state.agentProviderSelectorConnections).filter(
+          ([, record]) => record.connectionId !== connectionId,
         ),
       );
       return {
         ...state,
         agentProviderConnections: connections,
         agentProviderSelectorSelections: selections,
+        agentProviderSelectorConnections: selectorConnections,
       };
     });
   }
@@ -327,22 +395,30 @@ export class JsonSettingsRepository implements SettingsRepository {
   listAgentProviderSelectorSelections(): readonly AgentProviderSelectorSelectionSnapshot[] {
     this.requireInitialized();
     return Object.freeze(
-      Object.values(this.state.agentProviderSelectorSelections).map(
-        cloneAgentProviderSelectorSelection,
+      Object.values(this.state.agentProviderSelectorSelections).flatMap(
+        (byConnection) =>
+          Object.values(byConnection).map(
+            cloneAgentProviderSelectorSelection,
+          ),
       ),
     );
   }
 
   getAgentProviderSelectorSelection(
     selectorId: string,
+    connectionId: string,
   ): AgentProviderSelectorSelectionSnapshot | undefined {
     this.requireInitialized();
 
     if (!isAgentProviderSelectorId(selectorId)) {
       throw new Error('Settings Agent Provider Selector ID 无效');
     }
+    if (!isAgentProviderConnectionId(connectionId)) {
+      throw new Error('Settings Agent Provider Connection ID 无效');
+    }
 
-    const selection = this.state.agentProviderSelectorSelections[selectorId];
+    const selection =
+      this.state.agentProviderSelectorSelections[selectorId]?.[connectionId];
     return selection ? cloneAgentProviderSelectorSelection(selection) : undefined;
   }
 
@@ -350,13 +426,39 @@ export class JsonSettingsRepository implements SettingsRepository {
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<void> {
     const normalized = cloneAgentProviderSelectorSelection(selection);
-    await this.updateState((state) => ({
-      ...state,
-      agentProviderSelectorSelections: {
+    await this.updateState((state) => {
+      const bySelector = {
         ...state.agentProviderSelectorSelections,
-        [normalized.selectorId]: normalized,
-      },
-    }));
+        [normalized.selectorId]: {
+          ...state.agentProviderSelectorSelections[normalized.selectorId],
+          [normalized.connectionId]: normalized,
+        },
+      };
+      return {
+        ...state,
+        agentProviderSelectorSelections: bySelector,
+        agentProviderSelectorConnections: {
+          ...state.agentProviderSelectorConnections,
+          [normalized.selectorId]: Object.freeze({
+            providerId: normalized.providerId,
+            connectionId: normalized.connectionId,
+          }),
+        },
+      };
+    });
+  }
+
+  getAgentProviderSelectorConnection(
+    selectorId: string,
+  ): { providerId: string; connectionId: string } | undefined {
+    this.requireInitialized();
+
+    if (!isAgentProviderSelectorId(selectorId)) {
+      throw new Error('Settings Agent Provider Selector ID 无效');
+    }
+
+    const record = this.state.agentProviderSelectorConnections[selectorId];
+    return record ? Object.freeze({ ...record }) : undefined;
   }
 
   private defaultState(): StoredSettingsState {
@@ -367,6 +469,7 @@ export class JsonSettingsRepository implements SettingsRepository {
       completedOnboardingVersion: 0,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
+      agentProviderSelectorConnections: {},
     });
   }
 
@@ -392,6 +495,8 @@ export class JsonSettingsRepository implements SettingsRepository {
         completedOnboardingVersion: state.completedOnboardingVersion,
         agentProviderConnections: state.agentProviderConnections,
         agentProviderSelectorSelections: state.agentProviderSelectorSelections,
+        agentProviderSelectorConnections:
+          state.agentProviderSelectorConnections,
       },
       null,
       2,
@@ -409,7 +514,14 @@ export class JsonSettingsRepository implements SettingsRepository {
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
     let completedOnboardingVersion = 0;
     let connections: Record<string, AgentProviderConnectionConfiguration> = {};
-    let selections: Record<string, AgentProviderSelectorSelectionSnapshot> = {};
+    const selections: Record<
+      string,
+      Record<string, AgentProviderSelectorSelectionSnapshot>
+    > = {};
+    let selectorConnections: Record<
+      string,
+      { providerId: string; connectionId: string }
+    > = {};
     let needsMigration = false;
 
     if ('defaultProjectWorkspace' in value) {
@@ -510,19 +622,46 @@ export class JsonSettingsRepository implements SettingsRepository {
       if (!isRecord(value.agentProviderSelectorSelections)) {
         throw new Error('Settings Agent Provider Selector 配置无效');
       }
-      selections = Object.fromEntries(
-        Object.entries(value.agentProviderSelectorSelections).map(
-          ([id, selection]) => {
-            if (
-              !isAgentProviderSelectorSelectionSnapshot(selection) ||
-              selection.selectorId !== id
-            ) {
-              throw new Error('Settings Agent Provider Selector 配置无效');
-            }
-            return [id, selection] as const;
-          },
-        ),
-      );
+      const raw = value.agentProviderSelectorSelections as Record<
+        string,
+        unknown
+      >;
+      for (const [id, entry] of Object.entries(raw)) {
+        if (!isAgentProviderSelectorId(id)) {
+          throw new Error('Settings Agent Provider Selector 配置无效');
+        }
+        // 旧结构：selectorId → 单条 selection
+        if (isAgentProviderSelectorSelectionSnapshot(entry)) {
+          if (entry.selectorId !== id) {
+            throw new Error('Settings Agent Provider Selector 配置无效');
+          }
+          selections[id] = { [entry.connectionId]: entry };
+          selectorConnections[id] = {
+            providerId: entry.providerId,
+            connectionId: entry.connectionId,
+          };
+          needsMigration = true;
+          continue;
+        }
+
+        // 新结构：selectorId → (connectionId → selection)。空映射也是合法状态。
+        if (
+          !isRecord(entry) ||
+          !Object.entries(entry).every(
+            ([connectionId, selection]) =>
+              isAgentProviderConnectionId(connectionId) &&
+              isAgentProviderSelectorSelectionSnapshot(selection) &&
+              selection.selectorId === id &&
+              selection.connectionId === connectionId,
+          )
+        ) {
+          throw new Error('Settings Agent Provider Selector 配置无效');
+        }
+        selections[id] = entry as Record<
+          string,
+          AgentProviderSelectorSelectionSnapshot
+        >;
+      }
     } else {
       needsMigration = true;
     }
@@ -545,14 +684,21 @@ export class JsonSettingsRepository implements SettingsRepository {
         ) {
           throw new Error('Settings Agent Provider 旧配置无效');
         }
+        const connectionId =
+          legacyApiConnections.get(selection.providerId) ??
+          builtInAccountConnectionId(selection.providerId);
         selections[consumerId] = {
-          selectorId: consumerId,
+          [connectionId]: {
+            selectorId: consumerId,
+            providerId: selection.providerId,
+            connectionId,
+            modelId: selection.modelId,
+            reasoningEffort: selection.reasoningEffort,
+          },
+        };
+        selectorConnections[consumerId] = {
           providerId: selection.providerId,
-          connectionId:
-            legacyApiConnections.get(selection.providerId) ??
-            builtInAccountConnectionId(selection.providerId),
-          modelId: selection.modelId,
-          reasoningEffort: selection.reasoningEffort,
+          connectionId,
         };
       }
       needsMigration = true;
@@ -570,17 +716,48 @@ export class JsonSettingsRepository implements SettingsRepository {
         providerId &&
         !selections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID]
       ) {
+        const connectionId =
+          legacyApiConnections.get(providerId) ??
+          builtInAccountConnectionId(providerId);
         selections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID] = {
-          selectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+          [connectionId]: {
+            selectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+            providerId,
+            connectionId,
+            modelId: null,
+            reasoningEffort: null,
+          },
+        };
+        selectorConnections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID] = {
           providerId,
-          connectionId:
-            legacyApiConnections.get(providerId) ??
-            builtInAccountConnectionId(providerId),
-          modelId: null,
-          reasoningEffort: null,
+          connectionId,
         };
       }
       needsMigration = true;
+    }
+
+    if ('agentProviderSelectorConnections' in value) {
+      if (!isRecord(value.agentProviderSelectorConnections)) {
+        throw new Error('Settings Agent Provider Selector 配置无效');
+      }
+      selectorConnections = Object.fromEntries(
+        Object.entries(value.agentProviderSelectorConnections).map(
+          ([selectorId, record]) => {
+            if (
+              !isAgentProviderSelectorId(selectorId) ||
+              !isRecord(record) ||
+              !isAgentProviderId(record.providerId) ||
+              !isAgentProviderConnectionId(record.connectionId)
+            ) {
+              throw new Error('Settings Agent Provider Selector 配置无效');
+            }
+            return [
+              selectorId,
+              { providerId: record.providerId, connectionId: record.connectionId },
+            ] as const;
+          },
+        ),
+      );
     }
 
     return {
@@ -591,6 +768,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         completedOnboardingVersion,
         agentProviderConnections: connections,
         agentProviderSelectorSelections: selections,
+        agentProviderSelectorConnections: selectorConnections,
       }),
       needsMigration,
     };

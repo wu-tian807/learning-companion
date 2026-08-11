@@ -68,9 +68,9 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
           ...(checkpoint.providerExecutionId
             ? { providerExecutionId: checkpoint.providerExecutionId }
             : {}),
-          ...(checkpoint.assistantText
-            ? { assistantText: checkpoint.assistantText }
-            : {}),
+          ...(checkpoint.assistantOutput === undefined
+            ? {}
+            : { assistantOutput: checkpoint.assistantOutput }),
           metrics,
         });
       }),
@@ -132,7 +132,16 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
       let next = await turn.next();
 
       while (!next.done) {
-        this.emit(next.value);
+        const agentEvent = next.value.event;
+        const isAssistantEvent =
+          agentEvent.type === 'assistant-delta' ||
+          agentEvent.type === 'assistant-completed';
+        if (
+          !isAssistantEvent ||
+          (request.assistantEvents ?? 'runtime') === 'runtime'
+        ) {
+          this.emit(next.value);
+        }
         next = await turn.next();
       }
 
@@ -151,9 +160,7 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
           ...(completed.providerExecutionId
             ? { providerExecutionId: completed.providerExecutionId }
             : {}),
-          ...(completed.assistantText
-            ? { assistantText: completed.assistantText }
-            : {}),
+          assistantOutput: completed.assistantOutput,
         },
         metrics: completed.metrics,
         updatedTime: completedTime,

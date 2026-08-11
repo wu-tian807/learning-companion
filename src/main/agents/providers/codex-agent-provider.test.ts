@@ -419,6 +419,17 @@ describe('CodexAgentProvider', () => {
         callId: 'image-1',
         toolName: 'imageView',
       }),
+      {
+        type: 'usage-updated',
+        usage: {
+          inputTokens: 820,
+          cachedInputTokens: 600,
+          outputTokens: 90,
+          reasoningTokens: 30,
+          totalTokens: 910,
+        },
+      },
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(result).toEqual({
       sessionId: 'thread-1',
@@ -429,6 +440,7 @@ describe('CodexAgentProvider', () => {
       startedTime: 1_000,
       completedTime: 2_000,
       activeDurationMs: 800,
+      assistantOutput: '{"ok":true}',
       usage: {
         inputTokens: 820,
         cachedInputTokens: 600,
@@ -514,6 +526,102 @@ describe('CodexAgentProvider', () => {
     );
   });
 
+  it('preserves mixed workspace permissions through the mocked Codex runtime', async () => {
+    const sessions = createSessions();
+    const createThread = vi.fn(async () => selection('thread-mixed'));
+    const startTurn = vi.fn(async function* () {
+      yield {
+        type: 'turn-started' as const,
+        threadId: 'thread-mixed',
+        turn: { id: 'turn-mixed', status: 'inProgress' },
+      };
+      return {
+        threadId: 'thread-mixed',
+        turn: completedTurn('unused'),
+      };
+    });
+    const runtime = createRuntime({
+      getAccount: vi.fn(async () => ({
+        account: { type: 'chatgpt' },
+        requiresOpenaiAuth: true,
+      })),
+      createThread,
+      startTurn,
+      interruptTurn: vi.fn(async () => undefined),
+    });
+    const provider = new CodexAgentProvider(runtime, sessions.service);
+    const baseRequest = createGenerationRequest();
+    const primaryPath = resolve('test-fixtures', 'writable-primary');
+    const secondaryPath = resolve('test-fixtures', 'read-only-secondary');
+    const request = createGenerationRequest({
+      workspaces: {
+        primary: {
+          ...baseRequest.workspaces.primary,
+          path: primaryPath,
+          permissions: { read: true, write: true },
+        },
+        secondary: [
+          {
+            key: 'reference-material',
+            scope: 'task',
+            instanceKey: 'task-1',
+            path: secondaryPath,
+            permissions: { read: true, write: false },
+          },
+        ],
+      },
+    });
+
+    await collectTurn(runAccountTurn(provider, request));
+
+    const threadInput = (
+      createThread.mock.calls as unknown as Array<
+        Parameters<CodexRuntimeServiceApi['createThread']>
+      >
+    )[0][0];
+    const profileId = threadInput.permissions;
+    expect(typeof profileId).toBe('string');
+    if (typeof profileId !== 'string') {
+      throw new Error('Expected a Codex thread permission profile');
+    }
+    expect(threadInput).toEqual(
+      expect.objectContaining({
+        cwd: primaryPath,
+        runtimeWorkspaceRoots: expect.arrayContaining([
+          primaryPath,
+          secondaryPath,
+        ]),
+        permissions: profileId,
+      }),
+    );
+    expect(threadInput.runtimeWorkspaceRoots).toHaveLength(2);
+    expect(threadInput.sandbox).toBeUndefined();
+    expect(threadInput.configOverrides).toMatchObject({
+      permissions: {
+        [profileId]: {
+          filesystem: {
+            ':minimal': 'read',
+            [primaryPath]: 'write',
+            [secondaryPath]: 'read',
+          },
+          network: { enabled: false },
+        },
+      },
+    });
+
+    const turnInput = (
+      startTurn.mock.calls as unknown as Array<
+        Parameters<CodexRuntimeServiceApi['startTurn']>
+      >
+    )[0][0];
+    expect(turnInput.runtimeWorkspaceRoots).toEqual(
+      expect.arrayContaining([primaryPath, secondaryPath]),
+    );
+    expect(turnInput.runtimeWorkspaceRoots).toHaveLength(2);
+    expect(turnInput.permissions).toBeUndefined();
+    expect(turnInput.sandboxPolicy).toBeUndefined();
+  });
+
   it('recovers a completed turn without consuming another model call', async () => {
     const sessions = createSessions();
     let clientUserMessageId = '';
@@ -554,8 +662,10 @@ describe('CodexAgentProvider', () => {
     expect(startTurn).not.toHaveBeenCalled();
     expect(recovered.events).toEqual([
       { type: 'session-resolved', sessionId: 'thread-1' },
+      { type: 'assistant-completed', text: '{"ok":false}' },
     ]);
     expect(recovered.result.providerExecutionId).toBe('turn-1');
+    expect(recovered.result.assistantOutput).toBe('{"ok":false}');
   });
 
   it('resumes the bound thread with the latest execution configuration', async () => {
@@ -1035,6 +1145,7 @@ describe('CodexAgentProvider', () => {
         phase: 'completed',
         toolName: 'dynamic:read_asset_anchor',
       }),
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(execute).toHaveBeenCalledWith(
       { assetId: 'asset-1' },
@@ -1168,6 +1279,7 @@ describe('CodexAgentProvider', () => {
         phase: 'completed',
         toolName: 'mcp:document-tools/read_document',
       }),
+      { type: 'assistant-completed', text: '{"ok":true}' },
     ]);
     expect(createThread).toHaveBeenCalledWith(
       expect.objectContaining({

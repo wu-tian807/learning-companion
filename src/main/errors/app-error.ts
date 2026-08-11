@@ -17,6 +17,10 @@ export type AppErrorCode =
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
+  | 'ATTACHMENT_NOT_FOUND'
+  | 'ATTACHMENT_TYPE_NOT_REGISTERED'
+  | 'ATTACHMENT_METADATA_INVALID'
+  | 'ATTACHMENT_ANCHOR_INVALID'
   | 'PROJECT_NOT_FOUND'
   | 'PROJECT_WORKSPACE_UNAVAILABLE'
   | 'PROJECT_WORKSPACE_CONFLICT'
@@ -39,10 +43,6 @@ export type AppErrorCode =
   | 'INVALID_IPC_REQUEST'
   | 'DATABASE_WRITE_CONFLICT'
   | 'DATA_INTEGRITY_ERROR'
-  | 'ATTACHMENT_TYPE_NOT_REGISTERED'
-  | 'ATTACHMENT_ANCHOR_INVALID'
-  | 'ATTACHMENT_METADATA_INVALID'
-  | 'ATTACHMENT_NOT_FOUND'
   | 'SERVICE_NOT_READY';
 
 interface ErrorPolicy {
@@ -162,6 +162,30 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '该资料已经不存在，请刷新资料列表。',
     retryable: true,
     logLevel: 'warn',
+  },
+  ATTACHMENT_NOT_FOUND: {
+    kind: 'user',
+    userMessage: '该标注已经不存在，请刷新后重试。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  ATTACHMENT_TYPE_NOT_REGISTERED: {
+    kind: 'internal',
+    userMessage: '标注类型尚未注册，请重启应用后重试。',
+    retryable: false,
+    logLevel: 'error',
+  },
+  ATTACHMENT_METADATA_INVALID: {
+    kind: 'internal',
+    userMessage: '标注内容格式无效，请重试。',
+    retryable: true,
+    logLevel: 'error',
+  },
+  ATTACHMENT_ANCHOR_INVALID: {
+    kind: 'internal',
+    userMessage: '标注位置无效，请重新选择内容。',
+    retryable: true,
+    logLevel: 'error',
   },
   PROJECT_NOT_FOUND: {
     kind: 'user',
@@ -295,30 +319,6 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '本地数据出现异常，请重启应用后重试。',
     retryable: true,
     logLevel: 'error',
-  },
-  ATTACHMENT_TYPE_NOT_REGISTERED: {
-    kind: 'internal',
-    userMessage: '标注类型未注册，无法创建该标注。',
-    retryable: false,
-    logLevel: 'error',
-  },
-  ATTACHMENT_ANCHOR_INVALID: {
-    kind: 'user',
-    userMessage: '标注位置格式无效或尚未注册。',
-    retryable: false,
-    logLevel: 'warn',
-  },
-  ATTACHMENT_METADATA_INVALID: {
-    kind: 'user',
-    userMessage: '标注内容不符合该类型的格式要求。',
-    retryable: false,
-    logLevel: 'warn',
-  },
-  ATTACHMENT_NOT_FOUND: {
-    kind: 'user',
-    userMessage: '该标注已经不存在，请刷新后重试。',
-    retryable: true,
-    logLevel: 'warn',
   },
   SERVICE_NOT_READY: {
     kind: 'internal',

@@ -1,4 +1,4 @@
-import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import type {
   JsonValue,
   WorkbenchCommand,

@@ -19,6 +19,14 @@ export type GenerationAgentEvent =
       readonly delta: string;
     }
   | {
+      readonly type: 'assistant-completed';
+      readonly text: string;
+    }
+  | {
+      readonly type: 'usage-updated';
+      readonly usage: GenerationTokenUsage;
+    }
+  | {
       readonly type: 'tool-call';
       readonly phase: 'started' | 'completed';
       readonly callId: string;
@@ -56,6 +64,8 @@ export interface GenerationAgentTurnResult {
   readonly startedTime: number;
   readonly completedTime: number;
   readonly activeDurationMs: number;
+  /** Canonical final assistant response. Streaming is optional. */
+  readonly assistantOutput: string;
   readonly usage?: GenerationTokenUsage;
 }
 

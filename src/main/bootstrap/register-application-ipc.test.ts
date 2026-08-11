@@ -67,7 +67,6 @@ describe('registerApplicationIpc', () => {
     );
     expect(registrations.registerAttachments).toHaveBeenCalledWith(
       services.attachmentService,
-      services.agentProviderService,
     );
     expect(registrations.registerWorkbench).toHaveBeenCalledWith(
       services.workbenchSessionService,

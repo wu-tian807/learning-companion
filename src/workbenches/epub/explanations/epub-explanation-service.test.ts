@@ -1,0 +1,254 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
+import { GenerationTask } from '../../../main/generation/generation-task';
+import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
+import { createEpubCfiRangeTarget } from '../shared';
+import {
+  EPUB_EXPLANATION_TASK_DEFINITION_ID,
+  EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+} from './shared';
+import { EpubExplanationInstruction } from './generation/instruction';
+import { EpubExplanationService } from './epub-explanation-service';
+
+function createTarget() {
+  return createEpubCfiRangeTarget({
+    cfiRange: 'epubcfi(/6/2!/4/2/1:0,/1:4)',
+    quote: { exact: '文字', prefix: '前文', suffix: '后文' },
+  });
+}
+
+describe('EpubExplanationService GenerationTask lifecycle', () => {
+  it('does not create a pending Attachment and retries the same GenerationTask', async () => {
+    const target = createTarget();
+    const tasks = new Map<string, ReturnType<GenerationTask['getSnapshot']>>();
+    const start = vi.fn((request) => {
+      const task = GenerationTask.create({
+        id: 'task-1',
+        projectId: request.projectId,
+        definitionId: request.definitionId,
+        definitionVersion: request.definitionVersion,
+        instruction: request.instruction,
+        assetReferences: request.assetReferences,
+        createdTime: 1,
+      });
+      const snapshot = task.getSnapshot();
+      tasks.set(snapshot.id, snapshot);
+      return snapshot;
+    });
+    const retry = vi.fn((taskId: string) => {
+      const current = tasks.get(taskId);
+      if (!current) throw new Error('missing task');
+      const task = new GenerationTask(current);
+      task.clearFailure(3);
+      const snapshot = task.getSnapshot();
+      tasks.set(taskId, snapshot);
+      return snapshot;
+    });
+    const attachments = {
+      get: vi.fn(async () => undefined),
+      listByAsset: vi.fn(async () => []),
+      create: vi.fn(),
+      createWithContent: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      removeByAsset: vi.fn(),
+      removeByProject: vi.fn(),
+      subscribe: () => () => undefined,
+    } as unknown as AttachmentServiceApi;
+    const generationTasks = {
+      start,
+      retry,
+      list: () => [...tasks.values()],
+      get: (taskId: string) => tasks.get(taskId),
+      getActiveProjectId: () => 'project-1',
+      subscribe: () => () => undefined,
+    } as unknown as GenerationTaskServiceApi;
+    const service = new EpubExplanationService(
+      attachments,
+      { readText: vi.fn() } as never,
+      generationTasks,
+      {
+        get: () => ({ mediaType: 'application/epub+zip' }),
+      } as never,
+    );
+
+    const created = await service.create({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      target,
+    });
+    const failedTask = new GenerationTask(tasks.get('task-1')!);
+    failedTask.recordFailure({
+      phase: 'process',
+      failedTime: 2,
+      message: '模型请求失败',
+    });
+    tasks.set('task-1', failedTask.getSnapshot());
+    const retried = await service.retry({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      kind: 'task',
+      explanationId: 'task-1',
+    });
+
+    expect(created).toMatchObject({
+      kind: 'task',
+      id: 'task-1',
+      status: 'pending',
+      target,
+    });
+    expect(retried).toMatchObject({
+      kind: 'task',
+      id: 'task-1',
+      status: 'pending',
+    });
+    expect(start).toHaveBeenCalledOnce();
+    expect(retry).toHaveBeenCalledOnce();
+    expect(retry).toHaveBeenCalledWith('task-1');
+    expect(attachments.create).not.toHaveBeenCalled();
+    expect(attachments.createWithContent).not.toHaveBeenCalled();
+    service.dispose();
+  });
+
+  it('restores failed UI state from the unfinished GenerationTask itself', async () => {
+    const target = createTarget();
+    const instruction = new EpubExplanationInstruction({
+      assetId: 'asset-1',
+      target,
+    });
+    const task = GenerationTask.create({
+      id: 'task-1',
+      projectId: 'project-1',
+      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
+      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      instruction: instruction.toSnapshot(),
+      assetReferences: {},
+      createdTime: 1,
+    });
+    task.recordFailure({
+      phase: 'process',
+      failedTime: 2,
+      message: '模型请求失败',
+    });
+    const service = new EpubExplanationService(
+      {
+        listByAsset: async () => [],
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      { readText: vi.fn() } as never,
+      {
+        getActiveProjectId: () => 'project-1',
+        list: () => [task.getSnapshot()],
+        subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      {
+        get: () => ({ mediaType: 'application/epub+zip' }),
+      } as never,
+    );
+
+    const views = await service.list({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+    });
+
+    expect(views).toEqual([
+      expect.objectContaining({
+        kind: 'task',
+        id: 'task-1',
+        status: 'failed',
+        failureMessage: '模型请求失败',
+      }),
+    ]);
+    service.dispose();
+  });
+
+  it('replaces the active task projection with its completed Attachment', async () => {
+    const target = createTarget();
+    const instruction = new EpubExplanationInstruction({
+      assetId: 'asset-1',
+      target,
+    });
+    const task = GenerationTask.create({
+      id: 'task-1',
+      projectId: 'project-1',
+      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
+      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      instruction: instruction.toSnapshot(),
+      assetReferences: {},
+      createdTime: 1,
+    });
+    const attachment = {
+      id: 'attachment-1',
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'epub.ai-explanation',
+      typeVersion: 1,
+      target,
+      metadata: {
+        format: 'learning-companion/epub-explanation',
+        version: 1,
+      },
+      content: {
+        ref: {
+          kind: 'local-file',
+          base: 'project-workspace',
+          path: 'attachments/attachment-1/answer.md',
+        },
+        mediaType: 'text/markdown',
+      },
+      createdTime: 2,
+      updatedTime: 2,
+    } as const;
+    let generationListener:
+      | Parameters<GenerationTaskServiceApi['subscribe']>[0]
+      | undefined;
+    const service = new EpubExplanationService(
+      {
+        get: async (id: string) =>
+          id === attachment.id ? attachment : undefined,
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      { readText: vi.fn(async () => '# 解释\n正文') } as never,
+      {
+        getActiveProjectId: () => 'project-1',
+        subscribe: (
+          listener: Parameters<GenerationTaskServiceApi['subscribe']>[0],
+        ) => {
+          generationListener = listener;
+          return () => undefined;
+        },
+      } as unknown as GenerationTaskServiceApi,
+      {
+        get: () => ({ mediaType: 'application/epub+zip' }),
+      } as never,
+    );
+    const replaced = new Promise<unknown>((resolve) => {
+      service.subscribe((event) => {
+        if (event.type === 'replaced') resolve(event);
+      });
+    });
+
+    generationListener?.({
+      type: 'task-completed',
+      snapshot: task.getSnapshot(),
+      result: {
+        taskId: 'task-1',
+        result: { attachmentId: 'attachment-1' },
+        metrics: task.getSnapshot().metrics,
+      },
+    });
+
+    await expect(replaced).resolves.toMatchObject({
+      type: 'replaced',
+      previousExplanationId: 'task-1',
+      explanation: {
+        kind: 'attachment',
+        id: 'attachment-1',
+        status: 'completed',
+        answer: '# 解释\n正文',
+      },
+    });
+    service.dispose();
+  });
+});

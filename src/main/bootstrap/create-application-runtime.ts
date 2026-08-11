@@ -1,5 +1,4 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { safeStorage } from 'electron';
 
 import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
@@ -17,20 +16,13 @@ import { AssetArtifactService } from '../artifacts/asset-artifact-service';
 import { AssetAssociationService } from '../asset-associations/asset-association-service';
 import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
 import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
-import { LibreOfficePreviewProducer } from '../../workbenches/office/artifacts/libreoffice-preview-producer';
-import { createDocumentQuestionTaskDefinitionV1 } from '../../workbenches/document-ai/generation/document-question-task-definition';
 import { AssetDatabase } from '../assets/asset-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
 import { AnchorRegistry } from '../attachments/anchor-registry';
+import { AttachmentContentFile } from '../attachments/attachment-content-file';
 import { AttachmentRegistry } from '../attachments/attachment-registry';
 import { AttachmentService } from '../attachments/attachment-service';
-import { AttachmentContentStore } from '../attachments/attachment-content-store';
-import {
-  AI_ANNOTATION_ATTACHMENT_TYPE,
-  AI_ANNOTATION_ATTACHMENT_VERSION,
-  isAiAnnotationMetadata,
-} from '../attachments/ai-annotation-attachment';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
 import {
@@ -41,10 +33,6 @@ import { LocalFileContentResolver } from '../content/resolvers/local-file/local-
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { createDefaultExternalLibrariesRoot } from '../external-libraries/external-library-path-manager';
-import {
-  LIBREOFFICE_LIBRARY_ID,
-  LIBREOFFICE_VERSION,
-} from '../external-libraries/definitions/libreoffice';
 import type { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { GenerationAgentExecutor } from '../generation/generation-agent-executor';
 import { GenerationTaskDatabase } from '../generation/generation-task-database';
@@ -74,24 +62,12 @@ import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
 import {
-  isPdfPageAnchorV1,
-  isPdfRegionAnchorV1,
-  isPdfTextRangeAnchorV1,
-  PDF_PAGE_ANCHOR_TYPE,
-  PDF_PAGE_ANCHOR_VERSION,
-  PDF_REGION_ANCHOR_TYPE,
-  PDF_REGION_ANCHOR_VERSION,
-  PDF_TEXT_RANGE_ANCHOR_TYPE,
-  PDF_TEXT_RANGE_ANCHOR_VERSION,
-} from '../../workbenches/pdf/shared';
-import {
-  OFFICE_ANCHOR_VERSION,
-  OFFICE_PAGE_ANCHOR_TYPE,
-  OFFICE_REGION_ANCHOR_TYPE,
-  OFFICE_TEXT_RANGE_ANCHOR_TYPE,
-} from '../../workbenches/office/shared';
-import { MindMapGenerationProcessor } from '../../workbenches/mindmap/generation/mindmap-generation-processor';
-import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+  registerMainWorkbenchArtifactProducers,
+  registerMainWorkbenchAttachmentTypes,
+  registerMainWorkbenchGenerationTaskDefinitions,
+  startMainWorkbenchFeatures,
+  type MainWorkbenchFeatureRuntime,
+} from '../../workbenches/catalog/main-workbench-features';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -128,6 +104,7 @@ export async function createApplicationRuntime({
     | undefined;
   let workbenchSessionService: WorkbenchSessionService | undefined;
   let generationTaskService: GenerationTaskService | undefined;
+  let mainWorkbenchFeatures: MainWorkbenchFeatureRuntime | undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -201,16 +178,12 @@ export async function createApplicationRuntime({
       agentToolRegistration.defaultToolRequirements,
     );
     const artifactRegistry = new AssetArtifactRegistry();
-    artifactRegistry.register(
-      new LibreOfficePreviewProducer(
-        externalLibraryService,
-        join(
-          appPaths.externalLibraryProfilesDirectory,
-          LIBREOFFICE_LIBRARY_ID,
-          LIBREOFFICE_VERSION,
-        ),
-      ),
-    );
+    registerMainWorkbenchArtifactProducers({
+      artifacts: artifactRegistry,
+      externalLibraries: externalLibraryService,
+      externalLibraryProfilesDirectory:
+        appPaths.externalLibraryProfilesDirectory,
+    });
     const artifactService = new AssetArtifactService(
       new AssetArtifactDatabase(databaseContext),
       new AssetArtifactFileManager(),
@@ -240,6 +213,21 @@ export async function createApplicationRuntime({
         deletionObserver: associationService,
       },
     );
+    const attachmentRegistry = new AttachmentRegistry();
+    const anchorRegistry = new AnchorRegistry();
+    registerMainWorkbenchAttachmentTypes({
+      attachments: attachmentRegistry,
+      anchors: anchorRegistry,
+    });
+    const attachmentFiles = new AttachmentContentFile(projectDatabase);
+    const attachmentService = new AttachmentService(
+      new AttachmentDatabase(databaseContext),
+      attachmentRegistry,
+      anchorRegistry,
+      attachmentFiles,
+      assetService,
+    );
+    assetService.registerAttachmentCleanup(attachmentService);
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
     const transportBindingRegistry =
@@ -277,17 +265,12 @@ export async function createApplicationRuntime({
     );
     const generationTaskDefinitions =
       new GenerationTaskDefinitionRegistry();
-    generationTaskDefinitions.register(
-      createMindMapGenerationTaskDefinitionV1(
-        new MindMapGenerationProcessor(
-          assetService,
-          associationService,
-        ),
-      ),
-    );
-    generationTaskDefinitions.register(
-      createDocumentQuestionTaskDefinitionV1(),
-    );
+    registerMainWorkbenchGenerationTaskDefinitions({
+      definitions: generationTaskDefinitions,
+      assets: assetService,
+      associations: associationService,
+      attachments: attachmentService,
+    });
     const generationTaskPreparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
       new GenerationAssetReferencePreparer(
@@ -306,32 +289,6 @@ export async function createApplicationRuntime({
       ),
       projectDatabase,
       agentProviderService,
-    );
-    const attachmentRegistry = new AttachmentRegistry();
-    attachmentRegistry.register({
-      typeId: AI_ANNOTATION_ATTACHMENT_TYPE,
-      version: AI_ANNOTATION_ATTACHMENT_VERSION,
-      isMetadata: isAiAnnotationMetadata,
-    });
-    const anchorRegistry = new AnchorRegistry();
-    for (const definition of [
-      { anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE, version: PDF_TEXT_RANGE_ANCHOR_VERSION, isPayload: isPdfTextRangeAnchorV1 },
-      { anchorType: PDF_PAGE_ANCHOR_TYPE, version: PDF_PAGE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 },
-      { anchorType: PDF_REGION_ANCHOR_TYPE, version: PDF_REGION_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 },
-      { anchorType: OFFICE_TEXT_RANGE_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfTextRangeAnchorV1 },
-      { anchorType: OFFICE_PAGE_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 },
-      { anchorType: OFFICE_REGION_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 },
-    ]) {
-      anchorRegistry.register(definition);
-    }
-    const attachmentService = new AttachmentService(
-      new AttachmentDatabase(databaseContext),
-      attachmentRegistry,
-      anchorRegistry,
-      new AttachmentContentStore(projectDatabase, workspaceManager),
-      (assetId) => {
-        assetService.update(assetId, { updatedTime: { mode: 'now' } });
-      },
     );
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
@@ -360,6 +317,12 @@ export async function createApplicationRuntime({
       settingsRepository,
       workbenchSessionService,
     });
+    mainWorkbenchFeatures = startMainWorkbenchFeatures({
+      attachments: attachmentService,
+      attachmentFiles,
+      generationTasks: generationTaskService,
+      assets: assetDatabase,
+    });
 
     return new ApplicationRuntime({
       agentProviderService,
@@ -372,6 +335,8 @@ export async function createApplicationRuntime({
       workbenchSessionService,
       disposeContentProtocol: removeContentProtocol,
       disposeIpc,
+      disposeWorkbenchFeatures: () =>
+        mainWorkbenchFeatures?.dispose(),
     });
   } catch (error) {
     await Promise.allSettled([
@@ -381,6 +346,7 @@ export async function createApplicationRuntime({
       agentProviderService?.dispose() ?? Promise.resolve(),
     ]);
     await codexRuntimeService?.shutdown().catch(() => undefined);
+    mainWorkbenchFeatures?.dispose();
     disposeIpc();
     if (contentProtocolRegistered) {
       removeContentProtocol();

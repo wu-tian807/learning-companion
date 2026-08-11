@@ -27,7 +27,7 @@ import type {
   WorkbenchCommandResult,
   WorkbenchOpenRequest,
 } from "../shared/workbench/protocol";
-import type { AssetAttachment } from "../shared/workbench/attachment";
+import type { AssetAttachment } from "../shared/attachments/contracts";
 import type { AssetTarget } from "../shared/workbench/anchor";
 import type { JsonValue } from "../shared/workbench/protocol";
 import type {
@@ -45,8 +45,6 @@ import type {
   AssetIdRequest,
   DeleteAssetsRequest,
   DeleteAssetsResult,
-  DocumentAiRequest,
-  DocumentAiResponse,
   HealthCheckResponse,
   LearningCompanionApi,
   OpenExternalRequest,
@@ -65,6 +63,10 @@ import { subscribeExternalLibraryEvents } from "./external-library-events";
 import { subscribeAgentProviderEvents } from "./agent-provider-events";
 import { subscribeAssetEvents } from "./asset-events";
 import { subscribeGenerationTaskEvents } from "./generation-task-events";
+import {
+  createPreloadWorkbenchFeatureApi,
+  type WorkbenchFeaturePreloadApi,
+} from "../workbenches/catalog/register-preload-workbench-features";
 
 async function invoke<Response>(
   channel: string,
@@ -89,7 +91,7 @@ async function invoke<Response>(
   return result.data;
 }
 
-const api: LearningCompanionApi = {
+const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   healthCheck: () => invoke<HealthCheckResponse>(IPC_CHANNELS.healthCheck),
   openExternal: (request: OpenExternalRequest) =>
     invoke<void>(IPC_CHANNELS.openExternal, request),
@@ -237,6 +239,7 @@ const api: LearningCompanionApi = {
     invoke<void>(IPC_CHANNELS.discardGenerationTask, request),
   onGenerationTaskChanged: (listener) =>
     subscribeGenerationTaskEvents(ipcRenderer, listener),
+  ...createPreloadWorkbenchFeatureApi(ipcRenderer, invoke),
   openWorkbench: (request: WorkbenchOpenRequest) =>
     invoke<WorkbenchBootstrap>(IPC_CHANNELS.openWorkbench, request),
   commandWorkbench: (request: WorkbenchCommandRequest) =>
@@ -266,8 +269,6 @@ const api: LearningCompanionApi = {
     projectId: string;
     attachmentId: string;
   }) => invoke<void>(IPC_CHANNELS.deleteAttachment, request),
-  askDocumentAi: (request: DocumentAiRequest) =>
-    invoke<DocumentAiResponse>(IPC_CHANNELS.askDocumentAi, request),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 

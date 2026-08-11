@@ -28,6 +28,7 @@ export function AiChatPanelHost({
   const panelOpen = useSyncExternalStore(
     useCallback((onChange: () => void) => store.subscribe(onChange), [store]),
     useCallback(() => store.getSnapshot().panelOpen, [store]),
+    () => false,
   );
 
   if (!panelOpen) {

@@ -40,6 +40,8 @@ export interface TaskAgentCallRequest {
   readonly callKey: string;
   readonly purpose: string;
   readonly userMessage?: AgentUserMessage;
+  /** Final output is always returned; this only controls runtime UI events. */
+  readonly assistantEvents?: 'none' | 'runtime';
 }
 
 export interface TaskAgentCallResult {
@@ -47,7 +49,8 @@ export interface TaskAgentCallResult {
   readonly purpose: string;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
-  readonly assistantText?: string;
+  /** Missing only for checkpoints created before final-output persistence. */
+  readonly assistantOutput?: string;
   readonly metrics: GenerationAgentExecutionMetrics;
 }
 

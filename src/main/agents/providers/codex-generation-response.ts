@@ -182,6 +182,25 @@ export function findRecoveredCodexTurn(
     );
 }
 
+export function codexAssistantOutputFromTurn(turn: CodexTurn): string {
+  const item = [...(turn.items ?? [])]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.type === 'agentMessage' &&
+        candidate.phase === 'final_answer' &&
+        typeof candidate.text === 'string',
+    );
+
+  if (!item || typeof item.text !== 'string') {
+    throw new AppError('CODEX_PROTOCOL_ERROR', {
+      cause: new Error('Codex completed turn did not contain a final answer'),
+    });
+  }
+
+  return item.text;
+}
+
 export function codexTokenUsageFromEvent(
   event: CodexTurnEvent,
 ): GenerationTokenUsage | undefined {

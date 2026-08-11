@@ -49,6 +49,7 @@ import {
   type ResolvedCodexThread,
 } from './codex-thread-coordinator';
 import {
+  codexAssistantOutputFromTurn,
   codexModelFromReroute,
   codexTokenUsageFromEvent,
   codexTurnTiming,
@@ -430,12 +431,15 @@ export class CodexAgentProvider implements AgentProvider {
 
       if (recovered) {
         const completedTime = this.dependencies.now();
+        const assistantOutput = codexAssistantOutputFromTurn(recovered);
+        yield { type: 'assistant-completed', text: assistantOutput };
         return {
           sessionId,
           providerId: this.id,
           connectionId,
           modelId: resolved.selection.model!.trim(),
           providerExecutionId: recovered.id,
+          assistantOutput,
           ...codexTurnTiming(recovered, completedTime, completedTime),
         };
       }
@@ -508,12 +512,18 @@ export class CodexAgentProvider implements AgentProvider {
             });
           }
 
+          const assistantOutput = codexAssistantOutputFromTurn(
+            next.value.turn,
+          );
+          yield { type: 'assistant-completed', text: assistantOutput };
+
           return {
             sessionId,
             providerId: this.id,
             connectionId,
             modelId,
             providerExecutionId: next.value.turn.id,
+            assistantOutput,
             ...codexTurnTiming(
               next.value.turn,
               startedFallback,
@@ -552,7 +562,11 @@ export class CodexAgentProvider implements AgentProvider {
           });
         }
 
-        usage = codexTokenUsageFromEvent(event) ?? usage;
+        const nextUsage = codexTokenUsageFromEvent(event);
+        if (nextUsage) {
+          usage = nextUsage;
+          yield { type: 'usage-updated', usage: nextUsage };
+        }
         modelId = codexModelFromReroute(event) ?? modelId;
       }
     } finally {

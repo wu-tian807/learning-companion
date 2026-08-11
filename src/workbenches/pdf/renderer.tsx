@@ -15,7 +15,8 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
-import { getGlobalAiChatStore } from '../../renderer/workbench/ai-chat/chat-store';
+import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
+import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   findTextSelectionInput,
@@ -1694,10 +1695,18 @@ export function PdfWorkbenchView(
   props: RendererWorkbenchViewProps,
 ) {
   return (
-    <PdfDocumentWorkbenchView
-      {...props}
-      contributionOwnerId={pdfWorkbenchManifest.id}
-    />
+    <DocumentAiWorkbenchShell
+      projectId={props.asset.projectId}
+      assetId={props.asset.id}
+      attachments={props.attachments ?? []}
+      refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
+      onError={props.onError}
+    >
+      <PdfDocumentWorkbenchView
+        {...props}
+        contributionOwnerId={pdfWorkbenchManifest.id}
+      />
+    </DocumentAiWorkbenchShell>
   );
 }
 

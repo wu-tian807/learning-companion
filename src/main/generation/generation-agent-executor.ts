@@ -20,7 +20,7 @@ export type GenerationAgentExecutionEvent = {
 export interface CompletedGenerationAgentRun {
   readonly metrics: GenerationAgentExecutionMetrics;
   readonly providerExecutionId?: string;
-  readonly assistantText?: string;
+  readonly assistantOutput: string;
 }
 
 export interface GenerationAgentExecutionRequest {
@@ -59,6 +59,7 @@ function validateTurnResult(
     result.completedTime < result.startedTime ||
     !Number.isFinite(result.activeDurationMs) ||
     result.activeDurationMs < 0 ||
+    typeof result.assistantOutput !== 'string' ||
     (result.usage !== undefined &&
       !isGenerationTokenUsage(result.usage)) ||
     (expectedSessionId !== undefined &&
@@ -107,12 +108,8 @@ export class GenerationAgentExecutor {
       signal,
     });
     let next = await turn.next();
-    let assistantText = '';
 
     while (!next.done) {
-      if (next.value.type === 'assistant-delta') {
-        assistantText += next.value.delta;
-      }
       yield { type: 'agent-event', event: next.value };
       next = await turn.next();
     }
@@ -127,6 +124,7 @@ export class GenerationAgentExecutor {
     );
 
     return Object.freeze({
+      assistantOutput: result.assistantOutput,
       metrics: Object.freeze({
         callKey: request.callKey,
         purpose: request.purpose,
@@ -143,9 +141,6 @@ export class GenerationAgentExecutor {
       }),
       ...(result.providerExecutionId
         ? { providerExecutionId: result.providerExecutionId }
-        : {}),
-      ...(assistantText.trim()
-        ? { assistantText: assistantText.trim() }
         : {}),
     });
   }

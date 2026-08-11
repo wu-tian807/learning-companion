@@ -61,7 +61,7 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
         callKey: 'answer',
         purpose: 'document-question',
       });
-      const answer = call.assistantText?.trim();
+      const answer = call.assistantOutput?.trim();
 
       if (!answer) {
         throw new Error('Document question Agent returned no assistant text');

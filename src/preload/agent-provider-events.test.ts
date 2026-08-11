@@ -21,6 +21,7 @@ describe('Preload AgentProvider Event subscription', () => {
       revision: 2,
       selectors: [],
       selections: [],
+      selectorConnections: [],
       providers: [
         {
           id: 'codex',

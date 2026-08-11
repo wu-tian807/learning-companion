@@ -27,6 +27,7 @@ function createResources(
     },
     disposeContentProtocol: vi.fn(),
     disposeIpc: vi.fn(),
+    disposeWorkbenchFeatures: vi.fn(),
   };
 }
 
@@ -110,6 +111,9 @@ describe('ApplicationRuntime', () => {
       resources.contentResourceService.dispose,
     ).toHaveBeenCalledOnce();
     expect(resources.disposeIpc).toHaveBeenCalledOnce();
+    expect(
+      resources.disposeWorkbenchFeatures,
+    ).toHaveBeenCalledOnce();
     expect(
       resources.sandboxFrameInteractionBridge.dispose,
     ).toHaveBeenCalledOnce();

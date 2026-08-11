@@ -57,12 +57,14 @@ function createService(): AgentProviderServiceApi {
       providers: [],
       selectors: [],
       selections: [],
+      selectorConnections: [],
     })),
     refreshProvider: vi.fn(async () => ({
       revision: 0,
       providers: [],
       selectors: [],
       selections: [],
+      selectorConnections: [],
     })),
     subscribe: vi.fn(() => () => undefined),
     startLogin: vi.fn(async () => ({
@@ -78,12 +80,14 @@ function createService(): AgentProviderServiceApi {
       providers: [],
       selectors: [],
       selections: [],
+      selectorConnections: [],
     })),
     deleteConnection: vi.fn(async () => ({
       revision: 2,
       providers: [],
       selectors: [],
       selections: [],
+      selectorConnections: [],
     })),
     getModelCatalog: vi.fn(async () => ({
       providerId: 'codex',
@@ -96,6 +100,13 @@ function createService(): AgentProviderServiceApi {
       providers: [],
       selectors: [],
       selections: [selection],
+      selectorConnections: [
+        {
+          selectorId: selection.selectorId,
+          providerId: selection.providerId,
+          connectionId: selection.connectionId,
+        },
+      ],
     })),
     dispose: vi.fn(async () => undefined),
   };
@@ -212,6 +223,7 @@ describe('Agent Provider IPC handlers', () => {
       providers: [],
       selectors: [],
       selections: [],
+      selectorConnections: [],
     };
     listener?.(snapshot);
 

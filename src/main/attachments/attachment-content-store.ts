@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import type { JsonValue } from '../../shared/workbench/protocol';
-import type { AssetAttachment } from '../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import type { ProjectLookup } from '../projects/project-database';
 import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
 import { AppError } from '../errors/app-error';

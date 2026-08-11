@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../../shared/assets';
-import type { AssetAttachment } from '../../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
@@ -15,9 +15,6 @@ import {
 } from '../../../shared/workbench/interaction';
 import { registerRendererWorkbenches } from '../../../workbenches/catalog/register-renderer-workbenches';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
-import { AttachmentHost } from './AttachmentHost';
-import { AiChatPanelHost } from '../ai-chat/AiChatPanelHost';
-import { getGlobalAiChatStore } from '../ai-chat/chat-store';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
 import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
 import { WorkbenchViewErrorBoundary } from './WorkbenchViewErrorBoundary';
@@ -350,6 +347,8 @@ export function AssetWorkbenchHost({
             <View
               asset={asset}
               bootstrap={state.bootstrap}
+              attachments={attachments}
+              refreshAttachments={refreshAttachments}
               executeCommand={state.executeCommand}
               onRelink={onRelink}
               onRefresh={onRefresh}
@@ -361,81 +360,6 @@ export function AssetWorkbenchHost({
             />
           </WorkbenchViewErrorBoundary>
         </div>
-        <AiChatPanelHost
-          projectId={projectId}
-          assetId={asset.id}
-          onAttachAnswer={async (
-            _messageId,
-            text,
-            anchor,
-          ) => {
-            const session = getGlobalAiChatStore().getSession(asset.id);
-            const answerMessage = session?.messages.find(
-              (message) => message.id === _messageId,
-            );
-            const userMessage = session?.messages.find(
-              (message) =>
-                message.id === answerMessage?.replyToMessageId,
-            );
-
-            try {
-              const target = anchor?.target ?? { scope: 'asset' as const };
-              await window.learningCompanion.createAttachment({
-                projectId,
-                assetId: asset.id,
-                typeId: 'ai.annotation',
-                typeVersion: 1,
-                target,
-                metadata: {
-                  contentFormat: 'ai-annotation-v1',
-                  questionPreview: Array.from(userMessage?.content ?? '').slice(0, 200).join(''),
-                  ...(answerMessage?.modelInfo
-                    ? { modelInfo: answerMessage.modelInfo }
-                    : {}),
-                  timestamp: Date.now(),
-                },
-                body: {
-                  question: userMessage?.content ?? '',
-                  answer: answerMessage?.content ?? text,
-                  selectedAnswer: text,
-                },
-              });
-              await refreshAttachments();
-            } catch (attachError) {
-              const message = userMessageFromError(
-                attachError,
-                '无法保存 AI 标注到文档。',
-              );
-              if (message) {
-                onError(message);
-              }
-              throw attachError;
-            }
-          }}
-        />
-        <AttachmentHost
-          projectId={projectId}
-          assetId={asset.id}
-          attachments={attachments}
-          onDeleteAttachment={async (attachmentId) => {
-            try {
-              await window.learningCompanion.deleteAttachment({
-                projectId,
-                attachmentId,
-              });
-              await refreshAttachments();
-            } catch (deleteError) {
-              const message = userMessageFromError(
-                deleteError,
-                '无法删除附着内容，请重试。',
-              );
-              if (message) {
-                onError(message);
-              }
-              throw deleteError;
-            }
-          }}
-        />
       </div>
     );
   }

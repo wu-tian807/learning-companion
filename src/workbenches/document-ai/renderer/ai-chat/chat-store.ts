@@ -6,7 +6,7 @@
  * 让组件订阅 store 变化时自动重渲染。
  */
 
-import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
+import type { ContentAnchorTarget } from '../../../../shared/workbench/anchor';
 
 export interface AiChatMessage {
   readonly id: string;

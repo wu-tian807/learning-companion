@@ -8,16 +8,16 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { AssetAttachment } from '../../../shared/workbench/attachment';
+import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import type { AssetTarget } from '../../../shared/workbench/anchor';
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import { AiMarkdownContent } from '../ai-chat/AiChatPanel';
+import { AiMarkdownContent } from './ai-chat/AiChatPanel';
 import {
   resolveWorkbenchAnchor,
   revealWorkbenchAnchor,
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
   type WorkbenchAnchorRect,
-} from './workbench-anchor-bridge';
+} from '../../../renderer/workbench/host/workbench-anchor-bridge';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];

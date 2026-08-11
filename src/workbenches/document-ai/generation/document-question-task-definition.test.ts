@@ -40,7 +40,7 @@ describe('DocumentQuestion generation contract', () => {
       callKey: 'answer',
       purpose: 'document-question',
       sessionId: 'session',
-      assistantText: '这是最终回答。',
+      assistantOutput: '这是最终回答。',
       metrics: {
         providerId: 'codex', connectionId: 'account', modelId: 'gpt-test',
         startedTime: 1, completedTime: 2, activeDurationMs: 1,

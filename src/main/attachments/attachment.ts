@@ -5,7 +5,7 @@ import {
 import type {
   AssetAttachment,
   AssetAttachmentContent,
-} from '../../shared/workbench/attachment';
+} from '../../shared/attachments/contracts';
 import { isAssetTarget } from '../../shared/workbench/anchor';
 import { isJsonValue } from '../../shared/workbench/protocol';
 import { isUnixMilliseconds } from '../../shared/projects';

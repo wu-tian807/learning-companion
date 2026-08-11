@@ -44,7 +44,7 @@ import type {
   WorkbenchOpenRequest,
 } from "./workbench/protocol";
 import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-event";
-import type { AssetAttachment } from "./workbench/attachment";
+import type { AssetAttachment } from "./attachments/contracts";
 import type { AssetTarget } from "./workbench/anchor";
 import type { JsonValue } from "./workbench/protocol";
 
@@ -109,7 +109,6 @@ export const IPC_CHANNELS = {
   createAttachment: "attachment:create",
   readAttachmentContent: "attachment:read-content",
   deleteAttachment: "attachment:delete",
-  askDocumentAi: "document-ai:ask",
 } as const;
 
 export const ASSET_BATCH_MAX_SIZE = 512;
@@ -256,23 +255,7 @@ export interface LearningCompanionApi {
     projectId: string;
     attachmentId: string;
   }) => Promise<void>;
-  askDocumentAi: (request: DocumentAiRequest) => Promise<DocumentAiResponse>;
   getPathForFile: (file: File) => string;
-}
-
-export interface DocumentAiRequest {
-  readonly projectId: string;
-  readonly assetId: string;
-  readonly question: string;
-  readonly target: AssetTarget;
-  readonly selectedText?: string;
-  readonly selectedImageDataUrl?: string;
-}
-
-export interface DocumentAiResponse {
-  readonly answer: string;
-  readonly providerId: string;
-  readonly modelId: string;
 }
 
 export interface CreateProjectRequest {

@@ -65,6 +65,14 @@ export interface GenerationTaskIdRequest {
   readonly taskId: string;
 }
 
+export interface GenerationUsageView {
+  readonly inputTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly totalTokens?: number;
+}
+
 export type GenerationExecutionEvent =
   | {
       readonly type: 'phase';
@@ -78,6 +86,14 @@ export type GenerationExecutionEvent =
   | {
       readonly type: 'assistant-delta';
       readonly delta: string;
+    }
+  | {
+      readonly type: 'assistant-completed';
+      readonly text: string;
+    }
+  | {
+      readonly type: 'usage-updated';
+      readonly usage: GenerationUsageView;
     }
   | {
       readonly type: 'tool-call';
@@ -267,6 +283,28 @@ function isGenerationExecutionEvent(
 
   if (value.type === 'assistant-delta') {
     return typeof value.delta === 'string';
+  }
+
+  if (value.type === 'assistant-completed') {
+    return typeof value.text === 'string';
+  }
+
+  if (value.type === 'usage-updated') {
+    return (
+      isRecord(value.usage) &&
+      Object.entries(value.usage).every(
+        ([key, item]) =>
+          [
+            'inputTokens',
+            'cachedInputTokens',
+            'outputTokens',
+            'reasoningTokens',
+            'totalTokens',
+          ].includes(key) &&
+          Number.isSafeInteger(item) &&
+          Number(item) >= 0,
+      )
+    );
   }
 
   if (value.type === 'tool-call') {

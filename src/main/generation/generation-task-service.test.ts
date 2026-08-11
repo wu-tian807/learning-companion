@@ -208,6 +208,7 @@ describe('GenerationTaskService', () => {
           startedTime: turnNumber * 10,
           completedTime: turnNumber * 10 + 5,
           activeDurationMs: 5,
+          assistantOutput: `answer-${turnNumber}`,
           usage: {
             inputTokens: 10,
             outputTokens: 5,

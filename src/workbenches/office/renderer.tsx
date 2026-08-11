@@ -40,6 +40,7 @@ import {
   officeWorkbenchManifest,
   type OfficePreparePreviewResult,
 } from './shared';
+import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
 
 type PreparationState =
   | { readonly kind: 'runtime-required' }
@@ -173,19 +174,27 @@ function OfficePdfPreview({
   );
 
   return (
-    <PdfDocumentWorkbenchView
-      {...props}
-      bootstrap={pdfBootstrap}
-      contributionOwnerId={officeWorkbenchManifest.id}
-      createSaveViewStateCommand={
-        createOfficeSaveViewStateCommand
-      }
-      isSaveViewStateResult={isOfficeSaveViewStateResult}
-      mapInteraction={mapOfficePreviewInteraction}
-      mapAnchorTarget={(target) =>
-        target.scope === 'content' ? mapOfficeTargetToPdf(target) ?? target : target
-      }
-    />
+    <DocumentAiWorkbenchShell
+      projectId={props.asset.projectId}
+      assetId={props.asset.id}
+      attachments={props.attachments ?? []}
+      refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
+      onError={props.onError}
+    >
+      <PdfDocumentWorkbenchView
+        {...props}
+        bootstrap={pdfBootstrap}
+        contributionOwnerId={officeWorkbenchManifest.id}
+        createSaveViewStateCommand={
+          createOfficeSaveViewStateCommand
+        }
+        isSaveViewStateResult={isOfficeSaveViewStateResult}
+        mapInteraction={mapOfficePreviewInteraction}
+        mapAnchorTarget={(target) =>
+          target.scope === 'content' ? mapOfficeTargetToPdf(target) ?? target : target
+        }
+      />
+    </DocumentAiWorkbenchShell>
   );
 }
 
