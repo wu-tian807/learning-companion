@@ -98,7 +98,6 @@ function createProcessContext(
     workspaces: {
       primary: {
         key: 'mindmap',
-        scope: 'task',
         permissions: { read: true, write: true },
         instanceKey: 'task-1',
         path: '/tmp/task-1',

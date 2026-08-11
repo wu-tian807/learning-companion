@@ -1,7 +1,9 @@
+import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
-import { requireAgentWorkspaceKey } from '../../agents/workspaces/agent-workspace-paths';
-
-export type AgentWorkspaceScope = 'shared' | 'task';
+import {
+  requireAgentWorkspaceKey,
+  requireAgentWorkspacePathSegment,
+} from '../../agents/workspaces/agent-workspace-paths';
 
 export interface AgentWorkspacePermissions {
   readonly read: boolean;
@@ -10,11 +12,24 @@ export interface AgentWorkspacePermissions {
 
 export interface AgentWorkspaceConfig {
   readonly key: string;
-  readonly scope: AgentWorkspaceScope;
   readonly permissions: AgentWorkspacePermissions;
+  /**
+   * Resolves the concrete Workspace and Provider Session partition. When
+   * omitted, each GenerationTask uses its own taskId.
+   */
+  readonly resolveInstanceKey?: (
+    context: AgentWorkspaceInstanceContext,
+  ) => string;
 }
 
-export interface PreparedAgentWorkspace extends AgentWorkspaceConfig {
+export interface AgentWorkspaceInstanceContext {
+  readonly taskId: string;
+  readonly instruction: JsonValue;
+}
+
+export interface PreparedAgentWorkspace {
+  readonly key: string;
+  readonly permissions: AgentWorkspacePermissions;
   readonly instanceKey: string;
   readonly path: string;
 }
@@ -24,23 +39,16 @@ export interface PreparedAgentWorkspaces {
   readonly secondary: readonly PreparedAgentWorkspace[];
 }
 
-function requireText(value: string, field: string): string {
-  const normalized = value.trim();
-
-  if (normalized.length === 0) {
-    throw new Error(`Agent workspace ${field} 不能为空`);
-  }
-
-  return normalized;
-}
-
 export function cloneAgentWorkspaceConfig(
   config: AgentWorkspaceConfig,
 ): AgentWorkspaceConfig {
   const key = requireAgentWorkspaceKey(config.key);
 
-  if (config.scope !== 'shared' && config.scope !== 'task') {
-    throw new Error('Agent workspace scope 数据无效');
+  if (
+    config.resolveInstanceKey !== undefined &&
+    typeof config.resolveInstanceKey !== 'function'
+  ) {
+    throw new Error('Agent workspace resolveInstanceKey 数据无效');
   }
 
   if (
@@ -53,35 +61,48 @@ export function cloneAgentWorkspaceConfig(
 
   return Object.freeze({
     key,
-    scope: config.scope,
     permissions: Object.freeze({ ...config.permissions }),
+    ...(config.resolveInstanceKey
+      ? { resolveInstanceKey: config.resolveInstanceKey }
+      : {}),
   });
 }
 
-export function resolveAgentWorkspaceSegments(
+function resolveInstanceKey(
   config: AgentWorkspaceConfig,
-  taskId: string,
-): readonly [string, string] {
-  const cloned = cloneAgentWorkspaceConfig(config);
-  const instanceKey =
-    cloned.scope === 'shared' ? 'shared' : requireText(taskId, 'taskId');
+  context: AgentWorkspaceInstanceContext,
+): string {
+  const normalizedContext = Object.freeze({
+    taskId: requireAgentWorkspacePathSegment(context.taskId),
+    instruction: context.instruction,
+  });
+  const resolved = config.resolveInstanceKey
+    ? config.resolveInstanceKey(normalizedContext)
+    : normalizedContext.taskId;
 
-  return Object.freeze([cloned.key, instanceKey]);
+  return requireAgentWorkspacePathSegment(
+    resolved,
+  );
 }
 
 export async function prepareAgentWorkspace(
   manager: AgentWorkspaceManagerApi,
   config: AgentWorkspaceConfig,
-  taskId: string,
+  context: AgentWorkspaceInstanceContext,
   namespaceSegments: readonly string[] = [],
 ): Promise<PreparedAgentWorkspace> {
   const cloned = cloneAgentWorkspaceConfig(config);
-  const segments = resolveAgentWorkspaceSegments(cloned, taskId);
-  const path = await manager.prepare([...namespaceSegments, ...segments]);
+  const instanceKey = resolveInstanceKey(cloned, context);
+  const path = await manager.prepare([
+    ...namespaceSegments,
+    cloned.key,
+    instanceKey,
+  ]);
 
   return Object.freeze({
-    ...cloned,
-    instanceKey: segments[1],
+    key: cloned.key,
+    permissions: cloned.permissions,
+    instanceKey,
     path,
   });
 }

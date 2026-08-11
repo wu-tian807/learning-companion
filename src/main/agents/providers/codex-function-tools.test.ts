@@ -72,7 +72,6 @@ function executionContext() {
     workspaces: {
       primary: {
         key: 'generation-mindmap',
-        scope: 'task' as const,
         instanceKey: 'task-1',
         path: resolve('test-fixtures', 'generation-mindmap'),
         permissions: { read: true, write: false },
