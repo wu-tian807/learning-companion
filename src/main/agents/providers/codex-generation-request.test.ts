@@ -49,7 +49,6 @@ function request(): GenerationAgentTurnRequest {
     workspaces: {
       primary: {
         key: 'generation-mindmap',
-        scope: 'task',
         instanceKey: 'task-1',
         path,
         permissions: { read: true, write: false },

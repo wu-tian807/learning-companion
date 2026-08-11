@@ -363,8 +363,8 @@ Codex Workspace 原生工具由 Provider 组合，媒体 Function Tool 由所属
 - `features.shell_tool` 在存在 readable Workspace 时开启；
 - 每个 Prepared Workspace 的 `permissions.write` 决定 Codex permission profile 对该路径
   配置 read 还是 write；Shell、脚本与 `apply_patch` 都服从同一边界；
-- shared Workspace 的读写能力完全服从 TaskDefinition 声明的 `permissions`；`scope`
-  本身不附加只读限制。并发写入冲突由具体业务 Service 负责控制。
+- 跨 Task 复用的命名 Workspace 仍完全服从 TaskDefinition 声明的 `permissions`；
+  `instanceKey` 本身不附加只读限制。并发写入冲突由具体业务 Service 负责控制。
 
 应用 Function Tool 在 Electron Main 进程执行，不会自动受到 Codex Sandbox 约束。
 这是有意选择：这些工具是 Learning Companion 自己发布和测试的领域能力，可以直接调用

@@ -48,7 +48,6 @@ describe('GenerationTaskAgentSession', () => {
       workspaces: {
         primary: {
           key: 'generation-mindmap',
-          scope: 'task',
           permissions: { read: true, write: true },
           instanceKey: 'task-1',
           path: 'D:\\tmp\\task-1',
