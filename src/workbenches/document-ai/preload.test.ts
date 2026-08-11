@@ -10,7 +10,7 @@ describe('Document AI Preload API', () => {
     }));
     const api = createDocumentAiPreloadApi({} as never, invoke as never);
     const request = {
-      projectId: 'project-1', assetId: 'asset-1', conversationId: 'conversation-1', question: 'why?',
+      projectId: 'project-1', assetId: 'asset-1', requestId: 'request-1', conversationId: 'conversation-1', question: 'why?',
       target: { scope: 'asset' as const },
     };
 
@@ -18,5 +18,7 @@ describe('Document AI Preload API', () => {
       answer: 'answer', providerId: 'provider', modelId: 'model',
     });
     expect(invoke).toHaveBeenCalledWith(DOCUMENT_AI_IPC_CHANNELS.ask, request);
+    await api.cancelDocumentAi('request-1');
+    expect(invoke).toHaveBeenCalledWith(DOCUMENT_AI_IPC_CHANNELS.cancel, 'request-1');
   });
 });

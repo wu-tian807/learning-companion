@@ -429,6 +429,14 @@ export function PdfDocumentWorkbenchView({
   const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
   const regionMenuRef = useRef<HTMLDivElement>(null);
+  const activeDocumentRequestIdsRef = useRef(new Set<string>());
+
+  useEffect(() => () => {
+    for (const requestId of activeDocumentRequestIdsRef.current) {
+      void window.learningCompanion.cancelDocumentAi(requestId).catch(() => undefined);
+    }
+    activeDocumentRequestIdsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const findPage = (target: AssetTarget): HTMLElement | undefined => {
@@ -1163,9 +1171,12 @@ export function PdfDocumentWorkbenchView({
             },
           );
           const userMessage = updated.messages.at(-1)!;
+          const requestId = `document-ai-${globalThis.crypto.randomUUID()}`;
+          activeDocumentRequestIdsRef.current.add(requestId);
           void window.learningCompanion.askDocumentAi({
             projectId: asset.projectId,
             assetId: asset.id,
+            requestId,
             conversationId: session.id,
             question: userMessage.content,
             target: anchor,
@@ -1180,6 +1191,8 @@ export function PdfDocumentWorkbenchView({
             store.setLoading(asset.id, false);
             onError('AI 回答失败，请检查 Agent 登录状态后重试。');
             console.error('[document-ai] 总结页面失败', error);
+          }).finally(() => {
+            activeDocumentRequestIdsRef.current.delete(requestId);
           });
         },
       }),

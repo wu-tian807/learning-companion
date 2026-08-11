@@ -1,10 +1,38 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AiChatPanel, AiChatProvider, sendDocumentAiMessage } from './AiChatPanel';
+import {
+  AiChatPanel,
+  AiChatProvider,
+  cancelActiveDocumentAiRequest,
+  sendDocumentAiMessage,
+} from './AiChatPanel';
 import { createAiChatStore } from './chat-store';
 
 describe('AiChatPanel component state composition', () => {
+  it('cancels the active GenerationTask when the component is cleared or unmounted', async () => {
+    const cancelDocumentAi = vi.fn(async () => undefined);
+    vi.stubGlobal('window', { learningCompanion: { cancelDocumentAi } });
+    const store = createAiChatStore(() => 'conversation');
+    let resolveRequest!: (value: { answer: string; providerId: string; modelId: string }) => void;
+    let requestId = '';
+    const pending = sendDocumentAiMessage({
+      store, projectId: 'project', assetId: 'asset', content: 'question',
+      ask: vi.fn((request) => {
+        requestId = request.requestId;
+        return new Promise<{ answer: string; providerId: string; modelId: string }>(
+          (resolve) => { resolveRequest = resolve; },
+        );
+      }),
+    });
+
+    await cancelActiveDocumentAiRequest('asset');
+    expect(cancelDocumentAi).toHaveBeenCalledWith(requestId);
+    resolveRequest({ answer: 'ignored', providerId: 'p', modelId: 'm' });
+    await pending;
+    vi.unstubAllGlobals();
+  });
+
   it('blocks duplicate sends, ignores a cleared in-flight reply, and permits retry', async () => {
     let sequence = 0;
     const store = createAiChatStore(() => `conversation-${++sequence}`);

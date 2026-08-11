@@ -15,5 +15,7 @@ export function createDocumentAiPreloadApi(
   return Object.freeze({
     askDocumentAi: (request: DocumentAiRequest) =>
       invoke<DocumentAiResponse>(DOCUMENT_AI_IPC_CHANNELS.ask, request),
+    cancelDocumentAi: (requestId: string) =>
+      invoke<void>(DOCUMENT_AI_IPC_CHANNELS.cancel, requestId),
   });
 }

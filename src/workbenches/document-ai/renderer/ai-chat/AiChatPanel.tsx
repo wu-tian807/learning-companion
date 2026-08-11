@@ -88,6 +88,18 @@ export interface UseAiChatResult {
 }
 
 type ChatState = ReturnType<AiChatStore['getSnapshot']>;
+const activeRequestIds = new Map<string, string>();
+
+function createDocumentAiRequestId(): string {
+  return `document-ai-${globalThis.crypto.randomUUID()}`;
+}
+
+export async function cancelActiveDocumentAiRequest(assetId: string): Promise<void> {
+  const requestId = activeRequestIds.get(assetId);
+  if (!requestId) return;
+  activeRequestIds.delete(assetId);
+  await window.learningCompanion.cancelDocumentAi(requestId).catch(() => undefined);
+}
 
 export async function sendDocumentAiMessage(input: {
   readonly store: AiChatStore;
@@ -103,11 +115,14 @@ export async function sendDocumentAiMessage(input: {
   const effectiveAnchor = anchor ?? store.getSession(assetId)?.pendingAnchor;
   const updated = store.addUserMessage(assetId, content, effectiveAnchor);
   const userMessage = updated.messages.at(-1)!;
+  const requestId = createDocumentAiRequestId();
+  activeRequestIds.set(assetId, requestId);
   store.setDraft('');
   try {
     const result = await ask({
       projectId,
       assetId,
+      requestId,
       conversationId: session.id,
       question: content,
       target: effectiveAnchor?.target ?? { scope: 'asset' },
@@ -126,6 +141,10 @@ export async function sendDocumentAiMessage(input: {
     store.setLoading(assetId, false);
     console.error('[document-ai] 提问失败', error);
     return false;
+  } finally {
+    if (activeRequestIds.get(assetId) === requestId) {
+      activeRequestIds.delete(assetId);
+    }
   }
 }
 
@@ -168,7 +187,10 @@ export function useAiChat(
   );
 
   const clearSession = useCallback(
-    () => store.clearSession(assetId),
+    () => {
+      void cancelActiveDocumentAiRequest(assetId);
+      store.clearSession(assetId);
+    },
     [store, assetId],
   );
   const clearPendingAnchor = useCallback(
@@ -178,6 +200,10 @@ export function useAiChat(
     },
     [store, assetId],
   );
+
+  useEffect(() => () => {
+    void cancelActiveDocumentAiRequest(assetId);
+  }, [assetId]);
 
   return {
     session,

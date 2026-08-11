@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
-import { askDocumentAi, isDocumentAiRequest } from './ipc';
+import { askDocumentAi, DocumentAiActiveRequests, isDocumentAiRequest } from './ipc';
 import { documentQuestionInstructionFactory } from './generation/document-question-instruction';
 
 describe('Document AI IPC composition', () => {
@@ -17,7 +17,11 @@ describe('Document AI IPC composition', () => {
     { projectId: 'p', assetId: '', question: 'q', target: { scope: 'asset' } },
     { projectId: 'p', assetId: 'a', question: '', target: { scope: 'asset' } },
     { projectId: 'p', assetId: 'a', question: 'q', target: { scope: 'content' } },
-    { projectId: 'p', assetId: 'a', question: 'q', target: { scope: 'asset' }, selectedImageDataUrl: 'data:text/plain;base64,QQ==' },
+    {
+      projectId: 'p', assetId: 'a', requestId: 'request-1',
+      conversationId: 'conversation-1', question: 'q', target: { scope: 'asset' },
+      selectedImageDataUrl: 'data:image/png;base64,QQ==',
+    },
   ])('rejects malformed request %#', (value) => {
     expect(isDocumentAiRequest(value)).toBe(false);
   });
@@ -29,7 +33,7 @@ describe('Document AI IPC composition', () => {
     }));
 
     await expect(askDocumentAi({ create, run } as never, {
-      projectId: ' project-1 ', assetId: ' asset-1 ', conversationId: 'conversation-1', question: 'why?',
+      projectId: ' project-1 ', assetId: ' asset-1 ', requestId: 'request-1', conversationId: 'conversation-1', question: 'why?',
       target: { scope: 'asset' }, selectedText: 'selection',
     })).resolves.toEqual({ answer: 'answer', providerId: 'provider', modelId: 'model' });
 
@@ -62,7 +66,34 @@ describe('Document AI IPC composition', () => {
   it('rejects a malformed persisted task result', async () => {
     const run = () => completedRun({ answer: '' });
     await expect(askDocumentAi({ create: () => ({ id: 'task-1' }), run } as never, {
-      projectId: 'p', assetId: 'a', conversationId: 'conversation-1', question: 'q', target: { scope: 'asset' },
+      projectId: 'p', assetId: 'a', requestId: 'request-1', conversationId: 'conversation-1', question: 'q', target: { scope: 'asset' },
+    })).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+  });
+
+  it('cancels each active GenerationTask at most once and ignores stale cancellation', () => {
+    const cancel = vi.fn();
+    const requests = new DocumentAiActiveRequests({ cancel });
+    expect(requests.start('request-1')).toBe(true);
+    expect(requests.start('request-1')).toBe(false);
+    requests.track('request-1', 'task-1');
+    requests.cancel('request-1');
+    requests.cancel('request-1');
+    requests.finish('request-1');
+    requests.cancel('missing');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledWith('task-1');
+
+    expect(requests.start('request-2')).toBe(true);
+    requests.cancel('request-2');
+    requests.track('request-2', 'task-2');
+    expect(cancel).toHaveBeenCalledWith('task-2');
+  });
+
+  it('rejects empty response fields even when their types are strings', async () => {
+    const run = () => completedRun({ answer: ' ', providerId: 'provider', modelId: 'model' });
+    await expect(askDocumentAi({ create: () => ({ id: 'task-1' }), run } as never, {
+      projectId: 'p', assetId: 'a', requestId: 'request-1', conversationId: 'conversation-1',
+      question: 'q', target: { scope: 'asset' },
     })).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 });
