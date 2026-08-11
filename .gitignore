@@ -5,3 +5,6 @@ coverage/
 dist/
 *.log
 .DS_Store
+externalLib/
+scripts/__pycache__/
+.pnpm-store/
