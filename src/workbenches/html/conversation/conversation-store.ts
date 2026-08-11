@@ -49,6 +49,9 @@ function parseEntries(value: unknown): readonly HtmlConversationEntry[] {
             ...(message.anchor === undefined
               ? {}
               : { anchor: message.anchor }),
+            ...(message.stopped === undefined
+              ? {}
+              : { stopped: message.stopped }),
           }),
         ),
       ),

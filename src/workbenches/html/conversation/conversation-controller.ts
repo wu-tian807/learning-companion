@@ -27,6 +27,8 @@ export interface ConversationDisplayMessage {
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly streaming?: boolean;
+  /** 取消（停止）后保留的半截回答。 */
+  readonly stopped?: boolean;
   /** 该消息绑定的锚点（提问时随消息一起发出）。 */
   readonly anchor?: JsonValue;
 }
@@ -142,6 +144,7 @@ function entryToMessages(entry: HtmlConversationEntry): ConversationDisplayMessa
     role: message.role,
     text: message.text,
     ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
+    ...(message.stopped === undefined ? {} : { stopped: message.stopped }),
   }));
 }
 
@@ -152,6 +155,7 @@ function archivedMessages(messages: readonly ConversationDisplayMessage[]) {
       role: message.role,
       text: message.text,
       ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
+      ...(message.stopped === undefined ? {} : { stopped: message.stopped }),
     }));
 }
 
@@ -194,8 +198,6 @@ export function useConversationController({
   const [errorText, setErrorText] = useState<string>();
   const streamRef = useRef<ActiveStream | undefined>(undefined);
   const streamMessageIdRef = useRef<string | undefined>(undefined);
-  /** 最近一次提交的问题：失败时恢复输入框（重试按钮依赖 input）。 */
-  const pendingQuestionRef = useRef<string | undefined>(undefined);
   /** 最近一次失败的任务：重试按钮据此重跑原任务而非重新提问。 */
   const retryTaskRef = useRef<
     { readonly taskId: string; readonly messageId: string } | undefined
@@ -435,8 +437,6 @@ export function useConversationController({
     streamRef.current = undefined;
     streamMessageIdRef.current = undefined;
     setBusyState(false);
-    // 成功/取消后清掉待恢复问题，避免下次失败误恢复旧内容。
-    pendingQuestionRef.current = undefined;
   }
 
   function finalizeStream(updatedTime: number, answer: string) {
@@ -461,8 +461,6 @@ export function useConversationController({
 
   function failStream(message = 'AI 回答失败，请重试。') {
     const messageId = streamMessageIdRef.current;
-    // 先取待恢复问题与失败任务 id，再 finishStreamState（它会清 ref）。
-    const pendingQuestion = pendingQuestionRef.current;
     const failedTaskId = streamRef.current?.taskId;
     const failedMessageId = messageId;
     finishStreamState();
@@ -474,10 +472,6 @@ export function useConversationController({
             : message,
         ),
       );
-    }
-    // 失败后恢复输入框内容：重试按钮（依赖 input）不能失效。
-    if (pendingQuestion !== undefined) {
-      setInput(pendingQuestion);
     }
     // 记录失败任务：重试按钮据此重跑原任务（保留 instruction 与 conversationId），
     // 而非把同一问题再提交一遍。
@@ -616,7 +610,6 @@ export function useConversationController({
     if (consumeInput) {
       setInput('');
     }
-    pendingQuestionRef.current = normalized;
     setBusyState(true);
 
     void onAsk(identityRef.current!.id, normalized, messageAnchor).then(

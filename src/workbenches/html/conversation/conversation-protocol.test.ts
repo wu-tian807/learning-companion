@@ -91,6 +91,32 @@ describe('isHtmlConversationEntry', () => {
     ).toBe(false);
   });
 
+  it('accepts a stopped assistant message and rejects non-boolean stopped', () => {
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          ...validEntry.messages,
+          Object.freeze({
+            role: 'assistant',
+            text: '已生成的部分',
+            stopped: true,
+          }),
+        ],
+      }),
+    ).toBe(true);
+
+    expect(
+      isHtmlConversationEntry({
+        ...validEntry,
+        messages: [
+          ...validEntry.messages,
+          { role: 'assistant', text: '已生成的部分', stopped: 'yes' },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it('enforces the anchor byte budget', () => {
     const oversizedAnchor = createHtmlQuoteTarget('大'.repeat(8_000));
     expect(

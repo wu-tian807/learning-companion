@@ -31,6 +31,8 @@ export type HtmlConversationMessage = JsonValue & {
   readonly text: string;
   /** The content anchor consumed by this particular message. */
   readonly anchor?: JsonValue;
+  /** 取消（停止）后保留的半截回答。 */
+  readonly stopped?: boolean;
 };
 
 export type HtmlConversationEntry = JsonValue & {
@@ -90,7 +92,8 @@ export function isHtmlConversationMessage(
   return (
     (value.role === 'user' || value.role === 'assistant') &&
     isBoundedText(value.text, HTML_CONVERSATION_TEXT_MAX_LENGTH) &&
-    (value.anchor === undefined || isBoundedAnchor(value.anchor))
+    (value.anchor === undefined || isBoundedAnchor(value.anchor)) &&
+    (value.stopped === undefined || value.stopped === true)
   );
 }
 
@@ -166,6 +169,7 @@ function freezeEntry(entry: HtmlConversationEntry): HtmlConversationEntry {
           role: message.role,
           text: message.text,
           ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
+          ...(message.stopped === undefined ? {} : { stopped: message.stopped }),
         }),
       ),
     ),

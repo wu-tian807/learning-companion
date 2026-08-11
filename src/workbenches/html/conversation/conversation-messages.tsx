@@ -10,6 +10,8 @@ export interface ConversationMessage {
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly streaming?: boolean;
+  /** 取消（停止）后保留的半截回答。 */
+  readonly stopped?: boolean;
   /** 该消息绑定的锚点（user 消息提问时携带）。 */
   readonly anchor?: JsonValue;
 }
@@ -87,6 +89,11 @@ export function MessageBubble({
         <div className={bubbleClass(message.role)}>
           {message.text}
           {message.streaming && <span className="caret ml-0.5 inline-block h-3 w-[6px] bg-indigo-300 align-[-2px]" />}
+          {message.stopped && (
+            <span className="ml-1.5 rounded bg-white/10 px-1 py-px align-middle text-[9px] text-slate-400">
+              已停止
+            </span>
+          )}
         </div>
         {anchor && summary &&
           (onAnchorActivate ? (

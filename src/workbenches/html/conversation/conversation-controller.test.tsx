@@ -277,7 +277,7 @@ describe('useConversationController 生命周期', () => {
     expect(latest.state.busy).toBe(false);
   });
 
-  it('取消发生在 taskId 返回后：移除流式占位并保留用户问题', async () => {
+  it('取消发生在 taskId 返回后：保留已生成部分并标记 stopped', async () => {
     let resolveAsk: (value: {
       taskId: string;
       snapshot?: GenerationTaskView;
@@ -310,16 +310,21 @@ describe('useConversationController 生命周期', () => {
       emit({ type: 'task-changed', snapshot: snapshot({ status: 'cancelled' }) });
     });
 
-    expect(latest.state.messages).toHaveLength(1);
+    expect(latest.state.messages).toHaveLength(2);
     expect(latest.state.messages[0]).toMatchObject({
       role: 'user',
       text: '会被取消吗？',
+    });
+    expect(latest.state.messages[1]).toMatchObject({
+      role: 'assistant',
+      streaming: false,
+      stopped: true,
     });
     expect(latest.state.busy).toBe(false);
     expect(onCancelAnswer).not.toHaveBeenCalled();
   });
 
-  it('取消发生在 taskId 返回前：校准快照为 cancelled 时同样移除占位', async () => {
+  it('取消发生在 taskId 返回前：校准快照为 cancelled 时同样保留并标记 stopped', async () => {
     let resolveAsk: (value: {
       taskId: string;
       snapshot?: GenerationTaskView;
@@ -347,12 +352,17 @@ describe('useConversationController 生命周期', () => {
       await askPromise;
     });
 
-    expect(latest.state.messages).toHaveLength(1);
+    expect(latest.state.messages).toHaveLength(2);
     expect(latest.state.messages[0]?.text).toBe('也会取消吗？');
+    expect(latest.state.messages[1]).toMatchObject({
+      role: 'assistant',
+      streaming: false,
+      stopped: true,
+    });
     expect(latest.state.busy).toBe(false);
   });
 
-  it('任务快速失败（terminal-failed）后恢复输入框，重试重跑原任务', async () => {
+  it('任务快速失败（terminal-failed）后重试重跑原任务，不填充输入框', async () => {
     const onAsk = vi.fn(async () => ({
       taskId: 'task-1',
       snapshot: snapshot({ status: 'failed' }),
@@ -379,8 +389,8 @@ describe('useConversationController 生命周期', () => {
 
     expect(latest.state.busy).toBe(false);
     expect(latest.state.errorText).toBe('AI 回答失败，请重试。');
-    // 输入框恢复内容（用户可继续编辑）
-    expect(latest.state.input).toBe('重试我');
+    // 失败后输入框保持空：重试不依赖输入框内容，不该回填旧问题
+    expect(latest.state.input).toBe('');
 
     // 重试：重跑原任务，不重新提问
     act(() => {
