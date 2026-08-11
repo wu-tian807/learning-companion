@@ -1,25 +1,23 @@
 /**
  * HTML assistant conversation overlay.
  *
- * A right-side panel over the document area. Owns the conversation state
- * machine (idle / ready / awaiting / streaming / restoring), the message
- * stream, and the history tab. Asking a question delegates to `onAsk`
- * (renderer starts the generation task). Optional `assistant-delta` events
- * enhance the in-progress display; the completed task result is authoritative.
+ * A right-side panel over the document area. Pure view: the conversation
+ * state machine (identity, message stream, generation task subscription,
+ * persistence, restore/delete/new) lives in `conversation-controller.ts`;
+ * this component renders the panel and delegates every interaction.
  */
-import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import type { GenerationTaskEvent } from '../../../shared/generation-tasks';
-import { isHtmlAssistantTaskResult } from '../generation/html-assistant-result';
 import type { HtmlConversationStore } from './conversation-store';
 import type { HtmlConversationEntry } from './conversation-protocol';
 import { AnchorChip } from './anchor-summary';
 import { ErrorBubble, MessageStream } from './conversation-messages';
+import {
+  useConversationController,
+  type ConversationControllerOptions,
+} from './conversation-controller';
 import type { HtmlAiLaunchRequest } from './html-ai-launch';
-import { applyLaunchRequest } from './launch-application';
-import { applyCancellation } from './cancel-answer';
 
 export interface HtmlConversationOverlayOptions {
   readonly createId?: () => string;
@@ -60,516 +58,32 @@ export interface HtmlConversationOverlayProps {
   readonly options?: HtmlConversationOverlayOptions;
 }
 
-interface DisplayMessage {
-  readonly id: string;
-  readonly role: 'user' | 'assistant';
-  readonly text: string;
-  readonly streaming?: boolean;
-  /** 该消息绑定的锚点（提问时随消息一起发出）。 */
-  readonly anchor?: JsonValue;
-}
-
-interface ActiveStream {
-  readonly taskId: string;
-}
-
-interface SubmitQuestionOptions {
-  /** 是否清空并在启动失败时恢复输入框；自动命令不应改写用户草稿。 */
-  readonly consumeInput?: boolean;
-}
-
-interface ConversationIdentity {
-  readonly id: string;
-  readonly createdTime: number;
-  persistedFingerprint?: string;
-  readonly pendingSaves: Map<string, Promise<void>>;
-  deleted: boolean;
-}
-
-function createDisplayId(): string {
-  return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function createConversationId(): string {
-  return `conv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function initialPendingAnchor(
-  request: HtmlAiLaunchRequest | undefined,
-): JsonValue | undefined {
-  if (!request || request.intent === 'summarize-page') {
-    return undefined;
-  }
-  return request.anchor ?? undefined;
-}
-
-function entryToMessages(entry: HtmlConversationEntry): DisplayMessage[] {
-  return entry.messages.map((message, index) => ({
-    id: `restored:${entry.id}:${index}`,
-    role: message.role,
-    text: message.text,
-    ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
-  }));
-}
-
-function archivedMessages(messages: readonly DisplayMessage[]) {
-  return messages
-    .filter((message) => message.text.trim().length > 0)
-    .map((message) => ({
-      role: message.role,
-      text: message.text,
-      ...(message.anchor === undefined ? {} : { anchor: message.anchor }),
-    }));
-}
-
-function messagesFingerprint(
-  messages: ReturnType<typeof archivedMessages>,
-): string {
-  return JSON.stringify(messages);
-}
-
-export function ConversationOverlay({
-  open,
-  launchRequest,
-  onLaunchConsumed,
-  store,
-  onClose,
-  onAsk,
-  onRestore,
-  onAnchorActivate,
-  onAnchorConsumed,
-  onAnchorRemoved,
-  onStartNew,
-  onPersistenceError,
-  onBusyChange,
-  onCancelAnswer,
-  options = {},
-}: HtmlConversationOverlayProps) {
-  const createId = options.createId ?? createDisplayId;
-  const createArchiveId =
-    options.createConversationId ?? createConversationId;
-  const now = options.now ?? Date.now;
-  const [tab, setTab] = useState<'chat' | 'history'>('chat');
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  const [history, setHistory] = useState<readonly HtmlConversationEntry[]>([]);
-  const [input, setInput] = useState('');
-  const [pendingAnchor, setPendingAnchor] = useState<JsonValue | undefined>(
-    () => initialPendingAnchor(launchRequest),
+export function ConversationOverlay(props: HtmlConversationOverlayProps) {
+  const { open } = props;
+  const { state, actions } = useConversationController(
+    props satisfies Parameters<typeof useConversationController>[0],
   );
-  const [busy, setBusy] = useState(false);
-  const [errorText, setErrorText] = useState<string>();
-  const streamRef = useRef<ActiveStream | undefined>(undefined);
-  const streamMessageIdRef = useRef<string | undefined>(undefined);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const busyRef = useRef(false);
-  const messagesRef = useRef<DisplayMessage[]>([]);
-  const mountedRef = useRef(true);
-  /** 已消费的启动请求 id：防 Strict Mode / 重渲染重复自动提交。 */
-  const lastHandledRequestIdRef = useRef<number | undefined>(undefined);
-  const identityRef = useRef<ConversationIdentity | undefined>(undefined);
-  if (!identityRef.current) {
-    identityRef.current = {
-      id: createArchiveId(),
-      createdTime: now(),
-      pendingSaves: new Map(),
-      deleted: false,
-    };
-  }
-  busyRef.current = busy;
-
-  const replaceMessages = (next: DisplayMessage[]) => {
-    messagesRef.current = next;
-    setMessages(next);
-    return next;
-  };
-
-  const updateMessages = (
-    update: (current: DisplayMessage[]) => DisplayMessage[],
-  ) => replaceMessages(update(messagesRef.current));
-
-  const setBusyState = (next: boolean) => {
-    busyRef.current = next;
-    setBusy(next);
-  };
-
-  const resetConversation = () => {
-    identityRef.current = {
-      id: createArchiveId(),
-      createdTime: now(),
-      pendingSaves: new Map(),
-      deleted: false,
-    };
-    streamRef.current = undefined;
-    streamMessageIdRef.current = undefined;
-    setBusyState(false);
-    replaceMessages([]);
-  };
-
-  const persistConversation = (updatedTime = now()): Promise<void> => {
-    const identity = identityRef.current!;
-    if (identity.deleted) {
-      return Promise.resolve();
-    }
-
-    const archive = archivedMessages(messagesRef.current);
-    if (archive.length === 0) {
-      return Promise.resolve();
-    }
-    const fingerprint = messagesFingerprint(archive);
-    if (identity.persistedFingerprint === fingerprint) {
-      return Promise.resolve();
-    }
-    const pending = identity.pendingSaves.get(fingerprint);
-    if (pending) {
-      return pending;
-    }
-
-    const persistence = store
-      .save({
-        id: identity.id,
-        messages: archive,
-        createdTime: identity.createdTime,
-        updatedTime: Math.max(identity.createdTime, updatedTime),
-      })
-      .then(
-        (entries) => {
-          identity.pendingSaves.delete(fingerprint);
-          identity.persistedFingerprint = fingerprint;
-          if (mountedRef.current) {
-            setHistory(entries);
-          }
-        },
-        (error: unknown) => {
-          identity.pendingSaves.delete(fingerprint);
-          if (mountedRef.current) {
-            setErrorText('无法保存对话记录，请稍后重试。');
-          }
-          onPersistenceError?.(error);
-        },
-      );
-    identity.pendingSaves.set(fingerprint, persistence);
-    return persistence;
-  };
-
-  const persistConversationRef = useRef(persistConversation);
-  persistConversationRef.current = persistConversation;
-
-  // 消费启动请求：open-chat / explain-selection 只设置待引用锚点；
-  // summarize-page 清除锚点并自动提交整页总结问题。
-  // 用 lastHandledRequestIdRef 防止 Strict Mode / 重渲染重复应用。
-  useEffect(() => {
-    const request = launchRequest;
-    if (
-      !request ||
-      request.id === lastHandledRequestIdRef.current ||
-      !open
-    ) {
-      return;
-    }
-    const application = applyLaunchRequest(request);
-    const autoSubmit = application.autoSubmit;
-
-    // action 正常会在 busy 时禁用；这里仍保留生命周期兜底，等回答结束后再消费，
-    // 避免竞态下静默丢失一次业务请求。
-    if (autoSubmit && busyRef.current) {
-      return;
-    }
-
-    lastHandledRequestIdRef.current = request.id;
-    if (application.pendingAnchor !== undefined) {
-      setPendingAnchor(application.pendingAnchor ?? undefined);
-    }
-
-    if (autoSubmit) {
-      // summarize-page：自动提交专用问题（不携带锚点）。
-      submitQuestionRef.current(
-        autoSubmit.question,
-        autoSubmit.anchor,
-        { consumeInput: false },
-      );
-    }
-    onLaunchConsumed?.(request.id);
-  }, [busy, launchRequest, onLaunchConsumed, open]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      void persistConversationRef.current();
-    };
-  }, []);
-
-  // 打开时加载历史列表。
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    let active = true;
-    void store
-      .list()
-      .then((entries) => {
-        if (active) {
-          setHistory(entries);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setErrorText('无法读取对话记录。');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [open, store]);
-
-  // Keep the subscription alive while the panel is hidden so an answer that
-  // completes immediately after close can still replace the partial archive.
-  const generationEventHandlerRef = useRef<
-    (event: GenerationTaskEvent) => void
-  >(() => undefined);
-  generationEventHandlerRef.current = (event: GenerationTaskEvent) => {
-    const active = streamRef.current;
-
-    if (event.type === 'execution-event') {
-      if (active?.taskId !== event.taskId) {
-        return;
-      }
-      if (event.event.type === 'assistant-delta') {
-        const messageId = streamMessageIdRef.current;
-        if (!messageId) {
-          return;
-        }
-        const delta = event.event.delta;
-        updateMessages((current) =>
-          current.map((message) =>
-            message.id === messageId
-              ? { ...message, text: message.text + delta }
-              : message,
-          ),
-        );
-      }
-      return;
-    }
-
-    if (event.type === 'task-changed' || event.type === 'task-completed') {
-      const snapshot = event.snapshot;
-      if (active?.taskId !== snapshot.id) {
-        return;
-      }
-      if (snapshot.status === 'completed') {
-        if (isHtmlAssistantTaskResult(snapshot.result)) {
-          finalizeStream(
-            snapshot.updatedTime,
-            snapshot.result.answer,
-          );
-        } else {
-          failStream('AI 任务已完成，但最终回答无效，请重试。');
-        }
-      } else if (snapshot.status === 'cancelled') {
-        // 用户主动取消：结束流式状态，保留已生成的部分文本。
-        cancelStream();
-      } else if (snapshot.status === 'failed' || snapshot.failure) {
-        failStream();
-      }
-    }
-  };
-
-  // 流式回答：订阅 generation task 事件，增量渲染当前消息。
-  useEffect(() => {
-    return window.learningCompanion.onGenerationTaskChanged(
-      (event: GenerationTaskEvent) => {
-        generationEventHandlerRef.current(event);
-      },
-    );
-  }, []);
-
-  // 消息变化时滚动到底部。
-  useEffect(() => {
-    const scroll = scrollRef.current;
-    if (scroll) {
-      scroll.scrollTop = scroll.scrollHeight;
-    }
-  }, [messages]);
-
-  function finishStreamState() {
-    streamRef.current = undefined;
-    streamMessageIdRef.current = undefined;
-    setBusyState(false);
-  }
-
-  function finalizeStream(updatedTime: number, answer: string) {
-    const pending = streamRef.current;
-    const messageId = streamMessageIdRef.current;
-    finishStreamState();
-
-    if (!pending || !messageId) {
-      return;
-    }
-
-    // 消息流留在内存；关闭对话时（handleClose）统一整体存档为一条历史。
-    updateMessages((current) =>
-      current.map((message) =>
-        message.id === messageId
-          ? { ...message, text: answer, streaming: false }
-          : message,
-      ),
-    );
-    void persistConversation(updatedTime);
-  }
-
-  function failStream(message = 'AI 回答失败，请重试。') {
-    const messageId = streamMessageIdRef.current;
-    finishStreamState();
-    if (messageId) {
-      updateMessages((current) =>
-        current.map((message) =>
-          message.id === messageId
-            ? { ...message, streaming: false }
-            : message,
-        ),
-      );
-    }
-    setErrorText(message);
-  }
-
-  /** 用户主动取消：丢弃非权威流式回答，保留用户问题。 */
-  function cancelStream() {
-    const messageId = streamMessageIdRef.current;
-    finishStreamState();
-    if (messageId) {
-      updateMessages((current) =>
-        applyCancellation(current, messageId),
-      );
-    }
-  }
-
-  /** busy 时发送按钮变为「停止」：取消当前回答。 */
-  const handleCancelAnswer = () => {
-    if (!busyRef.current) {
-      return;
-    }
-    onCancelAnswer?.();
-  };
-
-  // AI 回答进行中同步给 workbench（一键命令据此禁用）。
-  useEffect(() => {
-    onBusyChange?.(busy);
-  }, [busy, onBusyChange]);
-
-  /** 提交一条问题：question 与锚点显式传入，避免读取可能已过期的 state。 */
-  const submitQuestion = (
-    question: string,
-    messageAnchor?: JsonValue,
-    options: SubmitQuestionOptions = {},
-  ) => {
-    const normalized = question.trim();
-    if (!normalized || busyRef.current) {
-      return;
-    }
-    const consumeInput = options.consumeInput ?? true;
-    setErrorText(undefined);
-    const userMessageId = createId();
-    const streamMessageId = createId();
-    // 锚点随本条消息一起发出；发出后清除待发送锚点（等待下一次选中）
-    if (messageAnchor !== undefined) {
-      onAnchorConsumed?.();
-    }
-    updateMessages((current) => [
-      ...current,
-      {
-        id: userMessageId,
-        role: 'user',
-        text: normalized,
-        ...(messageAnchor === undefined ? {} : { anchor: messageAnchor }),
-      },
-      { id: streamMessageId, role: 'assistant', text: '', streaming: true },
-    ]);
-    setPendingAnchor(undefined);
-    if (consumeInput) {
-      setInput('');
-    }
-    setBusyState(true);
-
-    void onAsk(identityRef.current!.id, normalized, messageAnchor).then(
-      (taskId) => {
-        if (taskId) {
-          streamRef.current = { taskId };
-          streamMessageIdRef.current = streamMessageId;
-          return;
-        }
-
-        // 任务未创建成功：结束流式占位、恢复输入并提示。
-        updateMessages((current) =>
-          current.map((message) =>
-            message.id === streamMessageId
-              ? { ...message, streaming: false }
-              : message,
-          ),
-        );
-        setBusyState(false);
-        if (consumeInput) {
-          setInput(normalized);
-        }
-        setErrorText('无法发起 AI 对话，请重试。');
-      },
-      () => {
-        updateMessages((current) =>
-          current.map((message) =>
-            message.id === streamMessageId
-              ? { ...message, streaming: false }
-              : message,
-          ),
-        );
-        setBusyState(false);
-        if (consumeInput) {
-          setInput(normalized);
-        }
-        setErrorText('无法发起 AI 对话，请重试。');
-      },
-    );
-  };
-
-  const submitQuestionRef = useRef(submitQuestion);
-  submitQuestionRef.current = submitQuestion;
-
-  const restore = (entry: HtmlConversationEntry) => {
-    if (busyRef.current) {
-      return;
-    }
-    void persistConversation();
-    const archive = archivedMessages(entryToMessages(entry));
-    identityRef.current = {
-      id: entry.id,
-      createdTime: entry.createdTime,
-      persistedFingerprint: messagesFingerprint(archive),
-      pendingSaves: new Map(),
-      deleted: false,
-    };
-    setTab('chat');
-    replaceMessages(entryToMessages(entry));
-    setErrorText(undefined);
-    onRestore?.(entry);
-  };
-
-  const handleClose = () => {
-    if (busyRef.current) {
-      return;
-    }
-    void persistConversation();
-    onClose();
-  };
-
-  const startNew = () => {
-    if (busyRef.current) {
-      return;
-    }
-    void persistConversation();
-    resetConversation();
-    setPendingAnchor(undefined);
-    setErrorText(undefined);
-    setTab('chat');
-    onStartNew?.();
-  };
+  const {
+    tab,
+    messages,
+    history,
+    input,
+    pendingAnchor,
+    busy,
+    errorText,
+    scrollRef,
+  } = state;
+  const {
+    setTab,
+    setInput,
+    setPendingAnchor,
+    submitQuestion,
+    restore,
+    deleteEntry,
+    startNew,
+    handleClose,
+    handleCancelAnswer,
+  } = actions;
 
   if (!open) {
     return null;
@@ -661,7 +175,7 @@ export function ConversationOverlay({
             <MessageStream
               messages={messages}
               emptyLabel="选择一段内容，或直接输入你的问题。"
-              onAnchorActivate={onAnchorActivate}
+              onAnchorActivate={props.onAnchorActivate}
             />
           </div>
           {errorText && (
@@ -680,7 +194,7 @@ export function ConversationOverlay({
                   anchor={pendingAnchor}
                   onRemove={() => {
                     setPendingAnchor(undefined);
-                    onAnchorRemoved?.();
+                    props.onAnchorRemoved?.();
                   }}
                 />
               </div>
@@ -763,29 +277,7 @@ export function ConversationOverlay({
                   <button
                     type="button"
                     aria-label="删除对话历史"
-                    onClick={() => {
-                      const currentIdentity = identityRef.current!;
-                      const deletingCurrent = currentIdentity.id === entry.id;
-                      if (deletingCurrent) {
-                        currentIdentity.deleted = true;
-                      }
-                      void store
-                        .remove(entry.id)
-                        .then((entries) => {
-                          setHistory(entries);
-                          if (
-                            deletingCurrent &&
-                            identityRef.current === currentIdentity
-                          ) {
-                            resetConversation();
-                          }
-                        })
-                        .catch((error: unknown) => {
-                          currentIdentity.deleted = false;
-                          setErrorText('无法删除对话记录，请稍后重试。');
-                          onPersistenceError?.(error);
-                        });
-                    }}
+                    onClick={() => deleteEntry(entry)}
                     className="absolute right-1.5 top-1.5 rounded-md px-1.5 text-[10px] text-slate-600 opacity-0 hover:bg-white/10 hover:text-rose-300 group-hover:opacity-100"
                   >
                     🗑
@@ -803,3 +295,5 @@ export function ConversationOverlay({
     ? createPortal(overlayElement, portalHost)
     : overlayElement;
 }
+
+export type { ConversationControllerOptions };
