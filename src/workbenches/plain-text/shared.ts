@@ -24,7 +24,26 @@ export const DEFAULT_PLAIN_TEXT_VIEW_OPTIONS:
   JsonValue & PlainTextViewOptions = Object.freeze({
     wordWrap: true,
     lineNumbers: true,
+    readMode: true,
   });
+
+export function normalizePlainTextViewOptions(
+  value: unknown,
+): PlainTextViewOptions | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.wordWrap !== 'boolean' ||
+    typeof value.lineNumbers !== 'boolean'
+  ) {
+    return undefined;
+  }
+
+  return {
+    wordWrap: value.wordWrap,
+    lineNumbers: value.lineNumbers,
+    readMode: value.readMode === true,
+  };
+}
 
 export const plainTextWorkbenchManifest: AssetWorkbenchManifest<
   typeof PLAIN_TEXT_WORKBENCH_ID
@@ -53,6 +72,7 @@ export type PlainTextEncoding = 'utf-8' | 'gbk';
 export interface PlainTextViewOptions {
   readonly wordWrap: boolean;
   readonly lineNumbers: boolean;
+  readonly readMode: boolean;
 }
 
 export interface PlainTextViewState {
@@ -169,9 +189,9 @@ export function isPlainTextViewOptions(
   value: unknown,
 ): value is PlainTextViewOptions {
   return (
+    normalizePlainTextViewOptions(value) !== undefined &&
     isRecord(value) &&
-    typeof value.wordWrap === 'boolean' &&
-    typeof value.lineNumbers === 'boolean'
+    typeof value.readMode === 'boolean'
   );
 }
 

@@ -19,12 +19,15 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
+import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
+import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
 import {
   createPlainTextBufferCommand,
   createPlainTextViewStateCommand,
+  DEFAULT_PLAIN_TEXT_VIEW_OPTIONS,
   isPlainTextBackupResult,
   isPlainTextLineEndingResult,
   isPlainTextReopenResult,
@@ -40,6 +43,7 @@ import {
   type PlainTextViewState,
 } from './shared';
 import { createPlainTextRendererActions } from './renderer-actions';
+import { PlainTextReadActionAdapter } from './read-action-adapter';
 
 type BackupStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
 
@@ -232,9 +236,12 @@ function PlainTextRecoveryDialog({
 
 export function PlainTextWorkbenchView({
   bootstrap,
+  asset,
   executeCommand,
   onInteractionChange,
   onError,
+  attachments,
+  refreshAttachments,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isPlainTextWorkbenchPayload(bootstrap.payload)
@@ -258,8 +265,9 @@ export function PlainTextWorkbenchView({
   );
   const [viewOptions, setViewOptions] = useState<PlainTextViewOptions>(
     payload?.viewOptions ?? {
-      wordWrap: true,
-      lineNumbers: true,
+      wordWrap: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS.wordWrap,
+      lineNumbers: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS.lineNumbers,
+      readMode: DEFAULT_PLAIN_TEXT_VIEW_OPTIONS.readMode,
     },
   );
   const [editorInstanceKey, setEditorInstanceKey] = useState(0);
@@ -269,6 +277,9 @@ export function PlainTextWorkbenchView({
   const [backupStatus, setBackupStatus] =
     useState<BackupStatus>('idle');
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
+  const [readScrollTop, setReadScrollTop] = useState(
+    payload?.viewState?.scrollTop ?? 0,
+  );
   const dirty =
     content !== savedContent || lineEnding !== savedLineEnding;
   const extensions = useMemo(() => {
@@ -319,9 +330,22 @@ export function PlainTextWorkbenchView({
       }),
     [recovery],
   );
+  const readHostRef = useRef<HTMLDivElement>(null);
+  const readActionAdapter = useMemo(
+    () =>
+      new PlainTextReadActionAdapter({
+        getContainer: () => readHostRef.current,
+        getSource: () => latestContentRef.current,
+      }),
+    [],
+  );
+  const activeEditorActionAdapter =
+    viewOptions.readMode
+      ? readActionAdapter
+      : editorActionAdapter;
   const editorActions = useMemo(
-    () => createEditorActionPreset(editorActionAdapter),
-    [editorActionAdapter],
+    () => createEditorActionPreset(activeEditorActionAdapter),
+    [activeEditorActionAdapter],
   );
   useWorkbenchContributions(
     `${plainTextWorkbenchManifest.id}.editor`,
@@ -354,6 +378,32 @@ export function PlainTextWorkbenchView({
     ],
   );
 
+  const onReadContextMenu = useCallback(
+    (event: MouseEvent) => {
+      if (recovery) {
+        return;
+      }
+
+      event.preventDefault();
+      const capture = readActionAdapter.captureContextMenu(
+        event.clientX,
+        event.clientY,
+      );
+      runtime.openContextMenu(
+        bootstrap.sessionId,
+        { x: event.clientX, y: event.clientY },
+        capture.interaction,
+        { onWheel: capture.onWheel },
+      );
+    },
+    [
+      bootstrap.sessionId,
+      readActionAdapter,
+      recovery,
+      runtime,
+    ],
+  );
+
   const contextMenuExtension = useMemo(
     () =>
       EditorView.domEventHandlers({
@@ -381,6 +431,7 @@ export function PlainTextWorkbenchView({
           payload: {
             wordWrap: nextViewOptions.wordWrap,
             lineNumbers: nextViewOptions.lineNumbers,
+            readMode: nextViewOptions.readMode,
           },
         });
 
@@ -391,6 +442,7 @@ export function PlainTextWorkbenchView({
         setViewOptions({
           wordWrap: result.payload.wordWrap,
           lineNumbers: result.payload.lineNumbers,
+          readMode: result.payload.readMode,
         });
       } catch (error) {
         reportError(error, '无法更新文本编辑器显示选项。');
@@ -534,7 +586,15 @@ export function PlainTextWorkbenchView({
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [cursor, dirty, executeCommand, payload, recovery, reportError]);
+  }, [
+    cursor,
+    dirty,
+    executeCommand,
+    payload,
+    readScrollTop,
+    recovery,
+    reportError,
+  ]);
 
   const rendererActions = useMemo(
     () =>
@@ -544,6 +604,18 @@ export function PlainTextWorkbenchView({
         encoding,
         lineEnding,
         viewOptions,
+        hasSelection: () =>
+          activeEditorActionAdapter.getState().canCopy,
+        onAiExplain: (text, anchor) => {
+          const store = getGlobalAiChatStore();
+          store.ensureSession(asset.projectId, asset.id);
+          store.setPendingAnchor(asset.id, {
+            target: anchor,
+            selectedText: text,
+          });
+          store.setPanelOpen(true);
+          store.setDraft('');
+        },
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
         onSetViewOptions: updateViewOptions,
@@ -555,6 +627,9 @@ export function PlainTextWorkbenchView({
       recovery,
       reopenWithEncoding,
       saving,
+      activeEditorActionAdapter,
+      asset.id,
+      asset.projectId,
       updateLineEnding,
       updateViewOptions,
       viewOptions,
@@ -623,8 +698,64 @@ export function PlainTextWorkbenchView({
       }[backupStatus]
     : '已保存';
 
+  const switchMode = async (readMode: boolean) => {
+    if (viewOptions.readMode === readMode || recovery) {
+      return;
+    }
+
+    runtime.closeContextMenu();
+    onInteractionChange({ inputs: [] });
+    await updateViewOptions({
+      ...viewOptions,
+      readMode,
+    });
+  };
+
+  useEffect(() => {
+    if (!viewOptions.readMode || recovery) {
+      return;
+    }
+
+    const element = readHostRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    element.scrollTop = viewStateRef.current.scrollTop;
+
+    const publishSelection = () => {
+      onInteractionChange(
+        readActionAdapter.captureInteraction(),
+      );
+    };
+    const document = element.ownerDocument;
+
+    document.addEventListener('selectionchange', publishSelection);
+    return () => {
+      document.removeEventListener(
+        'selectionchange',
+        publishSelection,
+      );
+    };
+  }, [
+    onInteractionChange,
+    readActionAdapter,
+    recovery,
+    viewOptions.readMode,
+  ]);
+
   return (
-    <div
+    <DocumentAiWorkbenchShell
+      projectId={asset.projectId}
+      assetId={asset.id}
+      attachments={attachments ?? []}
+      refreshAttachments={
+        refreshAttachments ?? (async () => undefined)
+      }
+      onError={onError}
+    >
+      <div
       className="relative flex h-full min-h-0 flex-col bg-[#171c22]"
       onKeyDownCapture={(event) => {
         if (
@@ -655,20 +786,82 @@ export function PlainTextWorkbenchView({
             {lineEnding === 'crlf' ? 'CRLF' : 'LF'}
           </span>
         </div>
-        <button
-          type="button"
-          disabled={!dirty || saving || Boolean(recovery)}
-          onClick={() => void save()}
-          className="ui-control rounded-lg border border-white/[0.09] px-3 py-1.5 text-[11px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
-          title="保存（⌘/Ctrl + S）"
-        >
-          {saving ? '保存中…' : '保存'}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <div
+            role="group"
+            aria-label="纯文本视图模式"
+            className="flex h-[28px] items-center rounded-lg border border-white/[0.08] bg-black/10 p-0.5"
+          >
+            {(
+              [
+                ['edit', '编辑'],
+                ['read', '阅读'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                disabled={Boolean(recovery) || saving}
+                aria-pressed={viewOptions.readMode === (mode === 'read')}
+                onClick={() => void switchMode(mode === 'read')}
+                className={`rounded-md px-2.5 py-1 text-[10px] transition ${
+                  viewOptions.readMode === (mode === 'read')
+                    ? 'bg-white/[0.1] text-slate-100'
+                    : 'text-slate-500 hover:bg-white/[0.06] hover:text-slate-300'
+                } disabled:opacity-35`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={!dirty || saving || Boolean(recovery)}
+            onClick={() => void save()}
+            className="ui-control rounded-lg border border-white/[0.09] px-3 py-1.5 text-[11px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
+            title="保存（⌘/Ctrl + S）"
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="relative h-full">
-          <CodeMirror
+        {viewOptions.readMode ? (
+          <div className="relative h-full min-h-0 overflow-hidden bg-[#171c22]">
+            <div
+              ref={readHostRef}
+              aria-label="纯文本阅读视图"
+              className="h-full min-h-0 overflow-y-auto px-6 py-9"
+              onContextMenu={(event) =>
+                onReadContextMenu(event.nativeEvent)}
+              onScroll={(event) => {
+                const scrollTop = Math.max(
+                  0,
+                  event.currentTarget.scrollTop,
+                );
+                viewStateRef.current = {
+                  ...viewStateRef.current,
+                  scrollTop,
+                };
+                setReadScrollTop(scrollTop);
+                runtime.closeContextMenu();
+              }}
+            >
+              <div className="mx-auto max-w-[780px] whitespace-pre-wrap text-[15px] leading-8 text-slate-200 [overflow-wrap:anywhere]">
+                {content.length > 0
+                  ? content
+                  : (
+                    <span className="text-slate-600">
+                      空白文本，切回「编辑」模式开始输入。
+                    </span>
+                  )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="relative h-full">
+            <CodeMirror
             key={editorInstanceKey}
             ref={editorRef}
             className="h-full min-h-0"
@@ -732,12 +925,15 @@ export function PlainTextWorkbenchView({
                 );
               }
             }}
-          />
-        </div>
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-white/[0.055] bg-[#1b2027] px-3 text-[10px] text-slate-600">
-        <span>{cursor}</span>
+        <span>
+          {viewOptions.readMode ? '阅读模式' : cursor}
+        </span>
         <span className={backupStatus === 'failed' ? 'text-rose-300' : ''}>
           {content.length.toLocaleString()} 字符 · {backupLabel}
         </span>
@@ -752,7 +948,8 @@ export function PlainTextWorkbenchView({
           onDiscard={() => void discardRecovery()}
         />
       )}
-    </div>
+      </div>
+    </DocumentAiWorkbenchShell>
   );
 }
 
