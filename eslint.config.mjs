@@ -11,7 +11,10 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/renderer/**/*.{ts,tsx}'],
+    files: [
+      'src/renderer/**/*.{ts,tsx}',
+      'src/workbenches/document-ai/renderer/**/*.{ts,tsx}',
+    ],
     languageOptions: {
       globals: globals.browser,
     },

@@ -10,9 +10,11 @@ import type { GenerationTaskDefinitionRegistry } from '../../main/generation/gen
 import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
 import { AppError } from '../../main/errors/app-error';
+import { documentAiMainFeature } from '../document-ai/main';
 import { epubExplanationMainFeature } from '../epub/explanations/main';
 import { mindMapGenerationMainFeature } from '../mindmap/generation/main';
 import { officeArtifactMainFeature } from '../office/main-feature';
+import { pdfAnchorMainFeature } from '../pdf/main-feature';
 
 export interface MainWorkbenchArtifactRegistrationContext {
   readonly artifacts: AssetArtifactRegistryApi;
@@ -62,7 +64,9 @@ export interface MainWorkbenchFeatureDefinition {
 const builtinMainWorkbenchFeatures: readonly MainWorkbenchFeatureDefinition[] =
   Object.freeze([
     officeArtifactMainFeature,
+    pdfAnchorMainFeature,
     mindMapGenerationMainFeature,
+    documentAiMainFeature,
     epubExplanationMainFeature,
   ]);
 

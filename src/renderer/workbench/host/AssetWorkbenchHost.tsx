@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../../shared/assets';
+import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
@@ -14,7 +15,6 @@ import {
 } from '../../../shared/workbench/interaction';
 import { registerRendererWorkbenches } from '../../../workbenches/catalog/register-renderer-workbenches';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
-import { AttachmentHost } from './AttachmentHost';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
 import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
 import { WorkbenchViewErrorBoundary } from './WorkbenchViewErrorBoundary';
@@ -74,6 +74,9 @@ export function AssetWorkbenchHost({
   const runtime = useWorkbenchRuntime();
   const [settledState, setSettledState] =
     useState<SettledWorkbenchHostState>();
+  const [attachments, setAttachments] = useState<
+    readonly AssetAttachment[]
+  >([]);
   const activeSessionIdRef = useRef<string | undefined>(undefined);
   const lifecycleRef = useRef(new WorkbenchLifecycleCoordinator());
   const assetId = asset?.id;
@@ -119,6 +122,41 @@ export function AssetWorkbenchHost({
     },
     [onError],
   );
+
+  const refreshAttachments = useCallback(async () => {
+    if (!projectId || !assetId) {
+      return;
+    }
+
+    try {
+      const list =
+        await window.learningCompanion.listAttachments({
+          projectId,
+          assetId,
+        });
+      setAttachments(list);
+    } catch (loadError) {
+      const message = userMessageFromError(
+        loadError,
+        '无法读取文档标注。',
+      );
+      if (message) {
+        console.error(message, loadError);
+      }
+    }
+  }, [assetId, projectId]);
+
+  useEffect(() => {
+    if (!readySessionId) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshAttachments();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [readySessionId, refreshAttachments]);
 
   useEffect(() => {
     let active = true;
@@ -303,32 +341,35 @@ export function AssetWorkbenchHost({
     const View = state.module.View;
 
     content = (
-      <>
-        <WorkbenchViewErrorBoundary onError={onError}>
-          <View
-            asset={asset}
-            bootstrap={state.bootstrap}
-            executeCommand={state.executeCommand}
-            onRelink={onRelink}
-            onRefresh={onRefresh}
-            onReveal={onReveal}
-            onOpenSettings={onOpenSettings}
-            onInteractionChange={reportInteraction}
-            onOpenExternal={openExternal}
-            onError={onError}
-          />
-        </WorkbenchViewErrorBoundary>
-        <AttachmentHost attachments={[]} />
-      </>
+      <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
+        <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+          <WorkbenchViewErrorBoundary onError={onError}>
+            <View
+              asset={asset}
+              bootstrap={state.bootstrap}
+              attachments={attachments}
+              refreshAttachments={refreshAttachments}
+              executeCommand={state.executeCommand}
+              onRelink={onRelink}
+              onRefresh={onRefresh}
+              onReveal={onReveal}
+              onOpenSettings={onOpenSettings}
+              onInteractionChange={reportInteraction}
+              onOpenExternal={openExternal}
+              onError={onError}
+            />
+          </WorkbenchViewErrorBoundary>
+        </div>
+      </div>
     );
   }
 
   return (
     <article
       aria-label="Asset 资料工作台"
-      className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
+      className="relative h-full w-full min-w-0 overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#1c2127] shadow-[0_20px_50px_rgba(5,8,12,0.16)]"
     >
-      <div className="flex h-[54px] shrink-0 items-center justify-between gap-4 border-b border-white/[0.075] px-[17px]">
+      <div className="absolute inset-x-0 top-0 z-10 flex h-[54px] items-center justify-between gap-4 border-b border-white/[0.075] px-[17px]">
         <h2 className="truncate text-sm font-semibold text-slate-100">
           {asset?.name ?? '资料工作台'}
         </h2>
@@ -341,7 +382,9 @@ export function AssetWorkbenchHost({
           </div>
         )}
       </div>
-      <div className="min-h-0 flex-1">{content}</div>
+      <div className="absolute inset-x-0 bottom-0 top-[54px] min-h-0 overflow-hidden">
+        {content}
+      </div>
       <WorkbenchContextMenuHost />
     </article>
   );

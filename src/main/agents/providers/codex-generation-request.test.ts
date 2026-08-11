@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
+import { toThreadConfiguration } from '../codex/codex-runtime-params';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import {
   WORKSPACE_READ_TOOL_ID,
@@ -226,6 +227,49 @@ describe('createCodexGenerationConfiguration', () => {
     ]);
     expect(versionOne.profileId).toBe(versionTwo.profileId);
     expect(versionOne.profileId).toBe(withUnselectedTool.profileId);
+  });
+
+  it('creates a Runtime-compatible explicit profile for prompt-only document AI turns', () => {
+    const promptOnlyRequest: GenerationAgentTurnRequest = {
+      ...request(),
+      toolRequirements: [],
+      workspaces: {
+        primary: {
+          ...request().workspaces.primary,
+          permissions: { read: false, write: false },
+        },
+        secondary: [],
+      },
+    };
+    const tools = resolveCodexGenerationTools(
+      promptOnlyRequest,
+      new AgentFunctionToolRegistry(),
+    );
+    const configuration = createCodexGenerationConfiguration(
+      promptOnlyRequest,
+      { disabledMcpServers: [], disabledSkillPaths: [] },
+      tools,
+      emptyCapabilities,
+    );
+
+    expect(configuration.profileId).toMatch(/^lc-generation-/u);
+    expect(configuration.threadInput.permissions).toBe(
+      configuration.profileId,
+    );
+    expect(configuration.threadInput.configOverrides).toMatchObject({
+      permissions: {
+        [configuration.profileId]: {
+          filesystem: { ':minimal': 'read' },
+          network: { enabled: false },
+        },
+      },
+    });
+    expect(configuration.threadInput.configOverrides).not.toHaveProperty(
+      'default_permissions',
+    );
+    expect(() =>
+      toThreadConfiguration(configuration.threadInput),
+    ).not.toThrow();
   });
 
   it('keeps model, prompt, and connection choices out of the permission profile identity', () => {

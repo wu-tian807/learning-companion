@@ -33,7 +33,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -142,7 +142,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        19,
+        20,
       );
     } finally {
       secondContext.close();
@@ -192,7 +192,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -277,7 +277,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<
@@ -346,7 +346,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -414,7 +414,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -735,7 +735,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -841,7 +841,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(19);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -882,5 +882,59 @@ describe('initializeDatabase', () => {
     context.close();
 
     expect(context.sqlite.open).toBe(false);
+  });
+
+  it('reconciles databases written by the legacy branch version 20 without losing attachments', async () => {
+    const databaseFile = await createDatabaseFile();
+    initializeDatabase(databaseFile).close();
+    const legacy = new Database(databaseFile);
+    legacy.pragma('foreign_keys = OFF');
+    legacy.exec(`
+      INSERT INTO projects (id, name, icon, created_time, pinned, workspace_path)
+      VALUES ('project', 'Project', 'book', 1, 0, 'C:/workspace');
+      INSERT INTO assets (
+        id, project_id, name, media_type, content_ref, created_time, updated_time
+      ) VALUES (
+        'asset', 'project', 'Document', 'application/pdf',
+        '{"kind":"local-file","base":"absolute","path":"C:/document.pdf"}', 1, 1
+      );
+      DROP TABLE asset_attachments;
+      CREATE TABLE attachments (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, asset_id TEXT NOT NULL,
+        type_id TEXT NOT NULL, type_version INTEGER NOT NULL,
+        target TEXT NOT NULL, metadata TEXT NOT NULL, content_ref TEXT,
+        content_media_type TEXT, created_time INTEGER NOT NULL, updated_time INTEGER NOT NULL
+      );
+      INSERT INTO attachments VALUES (
+        'annotation', 'project', 'asset', 'ai.annotation', 1,
+        '{"scope":"asset"}',
+        '{"contentFormat":"ai-annotation-v1","questionPreview":"question","timestamp":1}',
+        NULL, NULL, 2, 1
+      );
+      PRAGMA user_version = 20;
+    `);
+    legacy.close();
+
+    const context = initializeDatabase(databaseFile);
+    try {
+      expect(context.sqlite.prepare(
+        'SELECT id, created_time, updated_time FROM asset_attachments',
+      ).get()).toEqual({ id: 'annotation', created_time: 2, updated_time: 2 });
+      expect(context.sqlite.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attachments'",
+      ).get()).toBeUndefined();
+    } finally {
+      context.close();
+    }
+  });
+
+  it('still rejects a database newer than the supported compatibility version', async () => {
+    const databaseFile = await createDatabaseFile();
+    initializeDatabase(databaseFile).close();
+    const newer = new Database(databaseFile);
+    newer.pragma('user_version = 21');
+    newer.close();
+
+    expect(() => initializeDatabase(databaseFile)).toThrow(/21/);
   });
 });

@@ -59,6 +59,10 @@ export interface AttachmentServiceApi {
     projectId: string,
     assetId: string,
   ): Promise<readonly AssetAttachment[]>;
+  readTextContent(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<string | undefined>;
   create(input: CreateAttachmentInput): Promise<AssetAttachment>;
   createWithContent(
     input: CreateAttachmentWithContentInput,
@@ -83,6 +87,15 @@ export class EmptyAttachmentService implements AttachmentServiceApi {
     void _projectId;
     void _assetId;
     return [];
+  }
+
+  async readTextContent(
+    _projectId: string,
+    _attachmentId: string,
+  ): Promise<string | undefined> {
+    void _projectId;
+    void _attachmentId;
+    return undefined;
   }
 
   async create(_input: CreateAttachmentInput): Promise<AssetAttachment> {
@@ -155,6 +168,17 @@ export class AttachmentService implements AttachmentServiceApi {
     assetId: string,
   ): Promise<readonly AssetAttachment[]> {
     return this.database.listByAsset(projectId, assetId);
+  }
+
+  async readTextContent(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<string | undefined> {
+    const attachment = this.requireOwned(projectId, attachmentId);
+    if (!attachment.content) {
+      return undefined;
+    }
+    return this.contentFiles.readText(projectId, attachment.content.ref);
   }
 
   async create(input: CreateAttachmentInput): Promise<AssetAttachment> {

@@ -321,7 +321,7 @@ export function ProjectPage({
               />
             </div>
           )}
-          <div className="min-w-0 flex-1">
+          <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
             <AssetWorkbenchHost
               projectId={project.id}
               asset={assetOperations.selectedAsset}

@@ -30,6 +30,7 @@ describe('PDF Workbench shared protocol', () => {
     expect(pdfWorkbenchManifest.supportedAnchorTypes).toEqual([
       'pdf.text-range',
       'pdf.page',
+      'pdf.region',
     ]);
   });
 

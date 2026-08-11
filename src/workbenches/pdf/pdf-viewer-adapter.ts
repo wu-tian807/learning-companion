@@ -13,6 +13,7 @@ import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selectio
 import {
   clonePdfWorkbenchState,
   createPdfDocumentIdentity,
+  createPdfPageTarget,
   createPdfTextRangeAnchor,
   createPdfTextRangeTarget,
   type PdfDocumentIdentity,
@@ -1234,7 +1235,7 @@ export class PdfViewerAdapter {
         : undefined;
 
       if (!index) {
-        this.reportSelectionMappingFailure(pageNumber);
+        this.publishPageFallbackSelection(pageNumber, selection.toString());
         return;
       }
 
@@ -1255,7 +1256,7 @@ export class PdfViewerAdapter {
         endOffset === undefined ||
         startOffset > endOffset
       ) {
-        this.reportSelectionMappingFailure(pageNumber);
+        this.publishPageFallbackSelection(pageNumber, selection.toString());
         return;
       }
 
@@ -1275,7 +1276,10 @@ export class PdfViewerAdapter {
     );
 
     if (!snapshot) {
-      this.reportSelectionMappingFailure(startPageNumber);
+      this.publishPageFallbackSelection(
+        startPageNumber,
+        selection.toString(),
+      );
       return;
     }
 
@@ -1287,6 +1291,26 @@ export class PdfViewerAdapter {
       `[pdf-workbench] 第 ${pageNumber} 页 Text Layer 选区映射失败；保留浏览器复制，但不生成 Anchor。`,
     );
     this.options.events.onSelectionChange(undefined);
+  }
+
+  private publishPageFallbackSelection(
+    pageNumber: number,
+    selectedText: string,
+  ): void {
+    const text = normalizePdfSelectionText(selectedText);
+
+    if (!text) {
+      this.reportSelectionMappingFailure(pageNumber);
+      return;
+    }
+
+    console.info(
+      `[pdf-workbench] 第 ${pageNumber} 页使用页级 Anchor 保留选区。`,
+    );
+    this.options.events.onSelectionChange({
+      text,
+      target: createPdfPageTarget(pageNumber),
+    });
   }
 
   private applyInitialState(): void {
