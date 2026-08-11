@@ -289,6 +289,42 @@ export function HtmlWorkbenchView({
     [asset.id, onError, projectId],
   );
 
+  /** 重跑失败的 GenerationTask：保留原 instruction 与 conversationId，
+   * 复用与 start 相同的竞态校准（返回任务 id + 权威快照）。 */
+  const retryAssistantTask = useCallback(
+    async (taskId: string) => {
+      try {
+        if (!projectId) {
+          throw new Error('Project 上下文缺失');
+        }
+        const retried = await window.learningCompanion.retryGenerationTask({
+          projectId,
+          taskId,
+        });
+        activeTaskIdRef.current = retried.id;
+        try {
+          const latest = await window.learningCompanion.listGenerationTasks({
+            projectId,
+          });
+          return {
+            taskId: retried.id,
+            snapshot: latest.find((task) => task.id === retried.id),
+          };
+        } catch {
+          return { taskId: retried.id };
+        }
+      } catch (error) {
+        const message = userMessageFromError(error, '无法重试 AI 对话。');
+        if (message) {
+          console.error(message, error);
+          onError(message);
+        }
+        return undefined;
+      }
+    },
+    [onError, projectId],
+  );
+
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
       const message = userMessageFromError(error, fallback);
@@ -517,6 +553,7 @@ export function HtmlWorkbenchView({
         store={conversationStore}
         onClose={closeAi}
         onAsk={startAssistantTask}
+        onRetryTask={retryAssistantTask}
         onBusyChange={setAiBusy}
         onCancelAnswer={() => {
           void cancelAnswer();

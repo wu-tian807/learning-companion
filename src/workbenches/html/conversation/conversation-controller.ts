@@ -64,6 +64,11 @@ export interface ConversationControllerInput {
   readonly onBusyChange?: (busy: boolean) => void;
   /** 取消当前回答（busy 时发送按钮变为「停止」）。 */
   readonly onCancelAnswer?: () => void;
+  /** 重跑一个失败的 GenerationTask（保留原 instruction 与 conversationId）。
+   * 与 onAsk 同形：返回任务 id 与权威快照（已对齐早完成）。 */
+  readonly onRetryTask?: (
+    taskId: string,
+  ) => Promise<{ taskId: string; snapshot?: GenerationTaskView } | undefined>;
   readonly options?: ConversationControllerOptions;
 }
 
@@ -88,6 +93,8 @@ export interface ConversationControllerActions {
     messageAnchor?: JsonValue,
     options?: SubmitQuestionOptions,
   ) => void;
+  /** 重跑失败的原任务（保留原 instruction 与 conversationId）。 */
+  readonly retryTask: () => void;
   readonly restore: (entry: HtmlConversationEntry) => void;
   readonly deleteEntry: (entry: HtmlConversationEntry) => void;
   readonly startNew: () => void;
@@ -167,6 +174,7 @@ export function useConversationController({
   onPersistenceError,
   onBusyChange,
   onCancelAnswer,
+  onRetryTask,
   options = {},
 }: ConversationControllerInput): {
   readonly state: ConversationControllerState;
@@ -186,6 +194,12 @@ export function useConversationController({
   const [errorText, setErrorText] = useState<string>();
   const streamRef = useRef<ActiveStream | undefined>(undefined);
   const streamMessageIdRef = useRef<string | undefined>(undefined);
+  /** 最近一次提交的问题：失败时恢复输入框（重试按钮依赖 input）。 */
+  const pendingQuestionRef = useRef<string | undefined>(undefined);
+  /** 最近一次失败的任务：重试按钮据此重跑原任务而非重新提问。 */
+  const retryTaskRef = useRef<
+    { readonly taskId: string; readonly messageId: string } | undefined
+  >(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
   const messagesRef = useRef<ConversationDisplayMessage[]>([]);
@@ -421,6 +435,8 @@ export function useConversationController({
     streamRef.current = undefined;
     streamMessageIdRef.current = undefined;
     setBusyState(false);
+    // 成功/取消后清掉待恢复问题，避免下次失败误恢复旧内容。
+    pendingQuestionRef.current = undefined;
   }
 
   function finalizeStream(updatedTime: number, answer: string) {
@@ -445,6 +461,10 @@ export function useConversationController({
 
   function failStream(message = 'AI 回答失败，请重试。') {
     const messageId = streamMessageIdRef.current;
+    // 先取待恢复问题与失败任务 id，再 finishStreamState（它会清 ref）。
+    const pendingQuestion = pendingQuestionRef.current;
+    const failedTaskId = streamRef.current?.taskId;
+    const failedMessageId = messageId;
     finishStreamState();
     if (messageId) {
       updateMessages((current) =>
@@ -455,8 +475,90 @@ export function useConversationController({
         ),
       );
     }
+    // 失败后恢复输入框内容：重试按钮（依赖 input）不能失效。
+    if (pendingQuestion !== undefined) {
+      setInput(pendingQuestion);
+    }
+    // 记录失败任务：重试按钮据此重跑原任务（保留 instruction 与 conversationId），
+    // 而非把同一问题再提交一遍。
+    if (failedTaskId && failedMessageId) {
+      retryTaskRef.current = {
+        taskId: failedTaskId,
+        messageId: failedMessageId,
+      };
+    }
     setErrorText(message);
   }
+
+  /**
+   * 重试失败的 GenerationTask：重跑原任务，不重新提问。
+   * 失败的原 assistant 消息重新进入 streaming，由重跑后的
+   * taskId 快照/广播接管。
+   */
+  const retryTask = () => {
+    const retry = retryTaskRef.current;
+    if (!retry || busyRef.current) {
+      return;
+    }
+    retryTaskRef.current = undefined;
+    setErrorText(undefined);
+    setBusyState(true);
+    updateMessages((current) =>
+      current.map((message) =>
+        message.id === retry.messageId
+          ? { ...message, streaming: true }
+          : message,
+      ),
+    );
+
+    void (onRetryTask
+      ? onRetryTask(retry.taskId)
+      : Promise.resolve(undefined)
+    ).then(
+      (started) => {
+        if (started?.taskId) {
+          streamRef.current = { taskId: started.taskId };
+          streamMessageIdRef.current = retry.messageId;
+
+          // 与 submitQuestion 相同的竞态校准：已终态直接落定。
+          const resolution = resolveConversationTask(
+            started.taskId,
+            started.snapshot,
+          );
+          if (resolution.kind === 'terminal-completed') {
+            finalizeStream(resolution.updatedTime, resolution.answer);
+          } else if (resolution.kind === 'terminal-cancelled') {
+            cancelStream();
+          } else if (resolution.kind === 'terminal-failed') {
+            failStream();
+          }
+          return;
+        }
+
+        // 重试未成功：结束流式占位并提示。
+        updateMessages((current) =>
+          current.map((message) =>
+            message.id === retry.messageId
+              ? { ...message, streaming: false }
+              : message,
+          ),
+        );
+        setBusyState(false);
+        setErrorText('无法重试 AI 对话，请稍后再试。');
+      },
+      () => {
+        updateMessages((current) =>
+          current.map((message) =>
+            message.id === retry.messageId
+              ? { ...message, streaming: false }
+              : message,
+          ),
+        );
+        setBusyState(false);
+        setErrorText('无法重试 AI 对话，请稍后再试。');
+      },
+    );
+  };
 
   /** 用户主动取消：丢弃非权威流式回答，保留用户问题。 */
   function cancelStream() {
@@ -514,6 +616,7 @@ export function useConversationController({
     if (consumeInput) {
       setInput('');
     }
+    pendingQuestionRef.current = normalized;
     setBusyState(true);
 
     void onAsk(identityRef.current!.id, normalized, messageAnchor).then(
@@ -537,6 +640,7 @@ export function useConversationController({
           } else if (resolution.kind === 'terminal-cancelled') {
             cancelStream();
           } else if (resolution.kind === 'terminal-failed') {
+            // failStream 会恢复输入框内容，重试按钮不会失效。
             failStream();
           }
           return;
@@ -656,6 +760,7 @@ export function useConversationController({
       setPendingAnchor,
       setErrorText,
       submitQuestion,
+      retryTask,
       restore,
       deleteEntry,
       startNew,

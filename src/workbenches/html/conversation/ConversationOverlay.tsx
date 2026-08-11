@@ -60,6 +60,13 @@ export interface HtmlConversationOverlayProps {
   readonly onBusyChange?: (busy: boolean) => void;
   /** 取消当前回答（busy 时发送按钮变为「停止」）。 */
   readonly onCancelAnswer?: () => void;
+  /** 重跑一个失败的 GenerationTask（保留原 instruction 与 conversationId）。 */
+  readonly onRetryTask?: (
+    taskId: string,
+  ) => Promise<{
+    readonly taskId: string;
+    readonly snapshot?: GenerationTaskView;
+  } | undefined>;
   readonly options?: HtmlConversationOverlayOptions;
 }
 
@@ -83,6 +90,7 @@ export function ConversationOverlay(props: HtmlConversationOverlayProps) {
     setInput,
     setPendingAnchor,
     submitQuestion,
+    retryTask,
     restore,
     deleteEntry,
     startNew,
@@ -187,7 +195,7 @@ export function ConversationOverlay(props: HtmlConversationOverlayProps) {
             <div className="px-3 pb-2">
               <ErrorBubble
                 text={errorText}
-                onRetry={() => submitQuestion(input.trim(), pendingAnchor)}
+                onRetry={retryTask}
               />
             </div>
           )}

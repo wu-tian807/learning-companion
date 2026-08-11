@@ -352,6 +352,97 @@ describe('useConversationController 生命周期', () => {
     expect(latest.state.busy).toBe(false);
   });
 
+  it('任务快速失败（terminal-failed）后恢复输入框，重试重跑原任务', async () => {
+    const onAsk = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: snapshot({ status: 'failed' }),
+    }));
+    const onRetryTask = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: snapshot({ status: 'processing' }),
+    }));
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      onRetryTask,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    // 提交问题 → 输入框被清空（consumeInput 默认 true）
+    act(() => {
+      latest.actions.submitQuestion('重试我');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(latest.state.busy).toBe(false);
+    expect(latest.state.errorText).toBe('AI 回答失败，请重试。');
+    // 输入框恢复内容（用户可继续编辑）
+    expect(latest.state.input).toBe('重试我');
+
+    // 重试：重跑原任务，不重新提问
+    act(() => {
+      latest.actions.retryTask();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onRetryTask).toHaveBeenCalledWith('task-1');
+    expect(onAsk).toHaveBeenCalledTimes(1);
+    expect(latest.state.busy).toBe(true);
+  });
+
+  it('运行中任务经 task-changed 事件失败：重试重跑原任务而非重新提问', async () => {
+    const onAsk = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: snapshot({ status: 'processing' }),
+    }));
+    const onRetryTask = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: snapshot({ status: 'processing' }),
+    }));
+    renderController({
+      open: true,
+      store: storeWith(),
+      onAsk,
+      onRetryTask,
+      options: { createId: () => `id-${++createIdCounter}`, now: () => 100 },
+    });
+
+    act(() => {
+      latest.actions.submitQuestion('事件失败问题');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(latest.state.busy).toBe(true);
+
+    // 真实场景：任务运行中广播 failed 事件（如 401 无 key）
+    act(() => {
+      emit({
+        type: 'task-changed',
+        snapshot: snapshot({ status: 'failed' }),
+      });
+    });
+
+    expect(latest.state.busy).toBe(false);
+    expect(latest.state.errorText).toBe('AI 回答失败，请重试。');
+
+    // 重试：重跑原任务（onRetryTask(task-1)），不重新提问（onAsk 不再被调）
+    act(() => {
+      latest.actions.retryTask();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onRetryTask).toHaveBeenCalledWith('task-1');
+    expect(onAsk).toHaveBeenCalledTimes(1);
+    expect(latest.state.busy).toBe(true);
+  });
+
   it('同一 conversation 连续任务继承同一 conversationId', async () => {
     const conversationIds: string[] = [];
     const onAsk = vi.fn(
