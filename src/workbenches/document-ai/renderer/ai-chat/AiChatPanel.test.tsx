@@ -12,7 +12,6 @@ import { createAiChatStore } from './chat-store';
 describe('AiChatPanel component state composition', () => {
   it('cancels the active GenerationTask when the component is cleared or unmounted', async () => {
     const cancelDocumentAi = vi.fn(async () => undefined);
-    vi.stubGlobal('window', { learningCompanion: { cancelDocumentAi } });
     const store = createAiChatStore(() => 'conversation');
     let resolveRequest!: (value: { answer: string; providerId: string; modelId: string }) => void;
     let requestId = '';
@@ -26,11 +25,12 @@ describe('AiChatPanel component state composition', () => {
       }),
     });
 
-    await cancelActiveDocumentAiRequest('asset');
+    await cancelActiveDocumentAiRequest('asset', {
+      cancel: cancelDocumentAi,
+    });
     expect(cancelDocumentAi).toHaveBeenCalledWith(requestId);
     resolveRequest({ answer: 'ignored', providerId: 'p', modelId: 'm' });
     await pending;
-    vi.unstubAllGlobals();
   });
 
   it('blocks duplicate sends, ignores a cleared in-flight reply, and permits retry', async () => {

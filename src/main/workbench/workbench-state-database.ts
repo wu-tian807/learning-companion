@@ -114,26 +114,3 @@ export class WorkbenchStateDatabase
       .run();
   }
 }
-
-export class EmptyWorkbenchStateDatabase
-  implements WorkbenchStateDatabaseApi {
-  async get(
-    _assetId: string,
-    _workbenchId: string,
-  ): Promise<WorkbenchStateRecord | undefined> {
-    void _assetId;
-    void _workbenchId;
-    return undefined;
-  }
-
-  async save(_record: WorkbenchStateRecord): Promise<void> {
-    void _record;
-    throw new AppError('FEATURE_NOT_SUPPORTED');
-  }
-
-  async delete(_assetId: string, _workbenchId: string): Promise<void> {
-    void _assetId;
-    void _workbenchId;
-    throw new AppError('FEATURE_NOT_SUPPORTED');
-  }
-}

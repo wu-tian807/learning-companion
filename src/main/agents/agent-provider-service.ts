@@ -92,7 +92,6 @@ export class AgentProviderService
   private readonly listeners = new Set<
     (snapshot: AgentProviderSetupSnapshot) => void
   >();
-  private initializationTask: Promise<void> | undefined;
   private revision = 0;
   private disposed = false;
 
@@ -117,29 +116,21 @@ export class AgentProviderService
     );
   }
 
-  initialize(): Promise<void> {
+  getSetup(): Promise<AgentProviderSetupSnapshot> {
     this.requireActive();
-    this.initializationTask ??= this.initializeDefaultSelections();
-    return this.initializationTask;
-  }
-
-  async getSetup(): Promise<AgentProviderSetupSnapshot> {
-    this.requireActive();
-    await this.initialize();
     const snapshot = this.createSetupSnapshot();
     for (const provider of this.registry.list()) {
       for (const connection of this.connections.list(provider)) {
         void this.connectionRuntime.ensureRefreshed(provider, connection);
       }
     }
-    return snapshot;
+    return Promise.resolve(snapshot);
   }
 
-  async refreshProvider(providerId: string): Promise<AgentProviderSetupSnapshot> {
+  refreshProvider(providerId: string): Promise<AgentProviderSetupSnapshot> {
     this.requireActive();
-    await this.initialize();
     this.connectionRuntime.refreshProvider(this.registry.require(providerId));
-    return this.createSetupSnapshot();
+    return Promise.resolve(this.createSetupSnapshot());
   }
 
   subscribe(
@@ -328,18 +319,12 @@ export class AgentProviderService
     selectorId: string,
   ): GenerationAgentExecutionConfiguration {
     this.requireActive();
-    this.selectors.require(selectorId);
-    const current = this.settings.getAgentProviderSelectorConnection(selectorId);
-    if (!current) {
-      throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
-    }
-    const selection = this.settings.getAgentProviderSelectorSelection(
-      selectorId,
-      current.connectionId,
-    );
+    const selection = this.resolveEffectiveSelection(selectorId);
     if (!selection) {
       throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
     }
+    const provider = this.registry.require(selection.providerId);
+    this.connections.require(provider, selection.connectionId);
     return Object.freeze({
       providerId: selection.providerId,
       connectionId: selection.connectionId,
@@ -387,44 +372,29 @@ export class AgentProviderService
     const providers = this.registry.list().map((provider) =>
       this.createProviderSnapshot(provider),
     );
-    const selectors = this.selectors.list();
+    const definitions = this.selectors.list();
+    const selectors = definitions.map(({ id, displayName, description }) => ({
+      id,
+      displayName,
+      description,
+    }));
     const providerMap = new Map(
       providers.map((provider) => [provider.id, provider]),
     );
-    const selectorIds = new Set(selectors.map((selector) => selector.id));
-    const selections = this.settings
-      .listAgentProviderSelectorSelections()
-      .filter((selection) => {
-        const provider = providerMap.get(selection.providerId);
-        return (
-          selectorIds.has(selection.selectorId) &&
-          provider?.connections.some(
-            (connection) => connection.id === selection.connectionId,
-          ) === true
-        );
-      });
-    const selectorConnections = selectors.flatMap((selector) => {
-      const active = this.settings.getAgentProviderSelectorConnection(
-        selector.id,
-      );
+    const selections = definitions.flatMap((selector) => {
+      const selection = this.resolveEffectiveSelection(selector.id);
+      if (!selection) {
+        return [];
+      }
+      const provider = providerMap.get(selection.providerId);
       if (
-        !active ||
-        !selections.some(
-          (selection) =>
-            selection.selectorId === selector.id &&
-            selection.providerId === active.providerId &&
-            selection.connectionId === active.connectionId,
-        )
+        provider?.connections.some(
+          (connection) => connection.id === selection.connectionId,
+        ) !== true
       ) {
         return [];
       }
-      return [
-        Object.freeze({
-          selectorId: selector.id,
-          providerId: active.providerId,
-          connectionId: active.connectionId,
-        }),
-      ];
+      return [selection];
     });
 
     return Object.freeze({
@@ -432,43 +402,23 @@ export class AgentProviderService
       providers: Object.freeze(providers),
       selectors: Object.freeze(selectors),
       selections: Object.freeze(selections),
-      selectorConnections: Object.freeze(selectorConnections),
     });
   }
 
-  private async initializeDefaultSelections(): Promise<void> {
-    let changed = false;
-
-    for (const selector of this.selectors.list()) {
-      const defaultSelection = selector.defaultSelection;
-      if (!defaultSelection) {
-        continue;
-      }
-
-      const active = this.settings.getAgentProviderSelectorConnection(
-        selector.id,
-      );
-      const existing = active
-        ? this.settings.getAgentProviderSelectorSelection(
-            selector.id,
-            active.connectionId,
-          )
-        : undefined;
-      if (existing && active && existing.providerId === active.providerId) {
-        continue;
-      }
-
-      const resolved = await this.resolveValidatedSelection({
-        selectorId: selector.id,
-        ...defaultSelection,
-      });
-      await this.settings.updateAgentProviderSelectorSelection(resolved);
-      changed = true;
+  private resolveEffectiveSelection(
+    selectorId: string,
+  ): AgentProviderSelectorSelectionSnapshot | undefined {
+    const selector = this.selectors.require(selectorId);
+    const explicit = this.settings.getAgentProviderSelectorSelection(selectorId);
+    if (explicit) {
+      return explicit;
     }
-
-    if (changed) {
-      this.publish();
-    }
+    return selector.defaultSelection
+      ? {
+          selectorId,
+          ...selector.defaultSelection,
+        }
+      : undefined;
   }
 
   private createProviderSnapshot(

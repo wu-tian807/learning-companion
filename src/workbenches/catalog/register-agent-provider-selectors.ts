@@ -1,5 +1,7 @@
-import type { AgentProviderSelectorRegistry } from '../../main/agents/agent-provider-selector-registry';
-import type { AgentProviderSelectorDefinitionSnapshot } from '../../shared/agent-providers';
+import type {
+  AgentProviderSelectorDefinition,
+  AgentProviderSelectorRegistry,
+} from '../../main/agents/agent-provider-selector-registry';
 import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 
 export const WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION =
@@ -13,7 +15,7 @@ export const WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION =
       modelId: 'gpt-5.6-sol',
       reasoningEffort: 'medium',
     }),
-  }) satisfies AgentProviderSelectorDefinitionSnapshot;
+  }) satisfies AgentProviderSelectorDefinition;
 
 export function registerWorkbenchAgentProviderSelectors(
   registry: AgentProviderSelectorRegistry,

@@ -1,6 +1,5 @@
-import type { MainWorkbenchFeatureDefinition } from '../catalog/main-workbench-features';
+import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
 import { createDocumentQuestionTaskDefinitionV1 } from './generation/document-question-task-definition';
-import { registerDocumentAiHandlers, removeDocumentAiHandlers } from './ipc';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
@@ -19,8 +18,4 @@ export const documentAiMainFeature = Object.freeze({
   registerGenerationTaskDefinitions({ definitions }): void {
     definitions.register(createDocumentQuestionTaskDefinitionV1());
   },
-  start({ generationTasks }) {
-    registerDocumentAiHandlers(generationTasks);
-    return Object.freeze({ dispose: removeDocumentAiHandlers });
-  },
-} satisfies MainWorkbenchFeatureDefinition);
+} satisfies MainWorkbenchContribution);

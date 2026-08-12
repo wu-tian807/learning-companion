@@ -6,6 +6,7 @@ import type {
 } from '../../shared/attachments/contracts';
 import type { AssetTarget } from '../../shared/workbench/anchor';
 import type { JsonValue } from '../../shared/workbench/protocol';
+import type { AssetLookup } from '../assets/asset-database';
 import { AppError } from '../errors/app-error';
 import { createAssetAttachment } from './attachment';
 import type { AnchorRegistry } from './anchor-registry';
@@ -49,10 +50,6 @@ export interface UpdateAttachmentInput {
   readonly content?: AssetAttachmentContent | null;
 }
 
-export interface AttachmentAssetTracker {
-  touch(projectId: string, assetId: string, updatedTime: number): void;
-}
-
 export interface AttachmentServiceApi {
   get(attachmentId: string): Promise<AssetAttachment | undefined>;
   listByAsset(
@@ -74,68 +71,6 @@ export interface AttachmentServiceApi {
   subscribe(listener: AttachmentServiceListener): () => void;
 }
 
-export class EmptyAttachmentService implements AttachmentServiceApi {
-  async get(_attachmentId: string): Promise<AssetAttachment | undefined> {
-    void _attachmentId;
-    return undefined;
-  }
-
-  async listByAsset(
-    _projectId: string,
-    _assetId: string,
-  ): Promise<readonly AssetAttachment[]> {
-    void _projectId;
-    void _assetId;
-    return [];
-  }
-
-  async readTextContent(
-    _projectId: string,
-    _attachmentId: string,
-  ): Promise<string | undefined> {
-    void _projectId;
-    void _attachmentId;
-    return undefined;
-  }
-
-  async create(_input: CreateAttachmentInput): Promise<AssetAttachment> {
-    void _input;
-    throw new AppError('FEATURE_NOT_SUPPORTED');
-  }
-
-  async createWithContent(
-    _input: CreateAttachmentWithContentInput,
-  ): Promise<AssetAttachment> {
-    void _input;
-    throw new AppError('FEATURE_NOT_SUPPORTED');
-  }
-
-  async update(_input: UpdateAttachmentInput): Promise<AssetAttachment> {
-    void _input;
-    throw new AppError('FEATURE_NOT_SUPPORTED');
-  }
-
-  async delete(_projectId: string, _attachmentId: string): Promise<void> {
-    void _projectId;
-    void _attachmentId;
-    throw new AppError('FEATURE_NOT_SUPPORTED');
-  }
-
-  async removeByAsset(_projectId: string, _assetId: string): Promise<void> {
-    void _projectId;
-    void _assetId;
-  }
-
-  async removeByProject(_projectId: string): Promise<void> {
-    void _projectId;
-  }
-
-  subscribe(_listener: AttachmentServiceListener): () => void {
-    void _listener;
-    return () => undefined;
-  }
-}
-
 export interface AttachmentServiceDependencies {
   readonly createId: () => string;
   readonly now: () => number;
@@ -150,7 +85,7 @@ export class AttachmentService implements AttachmentServiceApi {
     private readonly registry: AttachmentRegistry,
     private readonly anchors: AnchorRegistry,
     private readonly contentFiles: AttachmentContentFile,
-    private readonly assetTracker: AttachmentAssetTracker,
+    private readonly assets: AssetLookup,
     dependencies: Partial<AttachmentServiceDependencies> = {},
   ) {
     this.dependencies = {
@@ -224,6 +159,7 @@ export class AttachmentService implements AttachmentServiceApi {
     input: CreateAttachmentInput,
     now: number,
   ): AssetAttachment {
+    this.requireAsset(input.projectId, input.assetId);
     const candidate = createAssetAttachment({
       id,
       projectId: input.projectId,
@@ -237,24 +173,13 @@ export class AttachmentService implements AttachmentServiceApi {
       updatedTime: now,
     });
     const created = this.database.create(candidate);
-
-    try {
-      this.assetTracker.touch(created.projectId, created.assetId, now);
-    } catch (error) {
-      try {
-        this.database.delete(created.id);
-      } catch (rollbackError) {
-        console.error('回滚 Attachment 数据库记录失败', rollbackError);
-      }
-      throw error;
-    }
-
     this.publish({ type: 'changed', attachment: created });
     return created;
   }
 
   async update(input: UpdateAttachmentInput): Promise<AssetAttachment> {
     const current = this.requireOwned(input.projectId, input.attachmentId);
+    this.requireAsset(current.projectId, current.assetId);
     const target = input.target ?? current.target;
     const metadata = input.metadata ?? current.metadata;
     this.assertRegistered(current.typeId, current.typeVersion, metadata);
@@ -271,21 +196,22 @@ export class AttachmentService implements AttachmentServiceApi {
         updatedTime: now,
       }),
     );
-    this.assetTracker.touch(updated.projectId, updated.assetId, now);
     this.publish({ type: 'changed', attachment: updated });
     return updated;
   }
 
   async delete(projectId: string, attachmentId: string): Promise<void> {
     const current = this.requireOwned(projectId, attachmentId);
+    this.requireAsset(current.projectId, current.assetId);
     await this.contentFiles.removeAttachment(current.projectId, current.id);
     this.database.delete(current.id);
-    this.assetTracker.touch(
-      current.projectId,
-      current.assetId,
-      Math.max(this.dependencies.now(), current.updatedTime),
-    );
-    this.publish({ type: 'deleted', attachment: current });
+    this.publish({
+      type: 'deleted',
+      attachment: {
+        ...current,
+        updatedTime: Math.max(this.dependencies.now(), current.updatedTime),
+      },
+    });
   }
 
   async removeByAsset(projectId: string, assetId: string): Promise<void> {
@@ -316,6 +242,12 @@ export class AttachmentService implements AttachmentServiceApi {
       throw new AppError('ATTACHMENT_NOT_FOUND');
     }
     return attachment;
+  }
+
+  private requireAsset(projectId: string, assetId: string): void {
+    if (!this.assets.get(projectId, assetId)) {
+      throw new AppError('ASSET_NOT_FOUND');
+    }
   }
 
   private assertRegistered(

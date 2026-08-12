@@ -19,10 +19,6 @@ import {
   agentProviderStore,
   type AgentProviderStore,
 } from './agent-provider-store';
-import {
-  findActiveSelectorConnectionSelection,
-  findSelectorConnectionSelection,
-} from './selector-connection-selection';
 import { SelectMenu } from '../components/SelectMenu';
 
 const CUSTOM_REASONING_EFFORTS = [
@@ -86,24 +82,18 @@ function AgentProviderSelectorForm({
   );
   const initial = selectedConfiguredConnection ?? connections[0];
   const reusesSavedSelection = selectedConfiguredConnection !== undefined;
-  const declaredDefault =
-    initial &&
-    definition.defaultSelection?.providerId === initial.provider.id &&
-    definition.defaultSelection.connectionId === initial.connection.id
-      ? definition.defaultSelection
-      : undefined;
   const [selectedConnection, setSelectedConnection] = useState(
     initial ? connectionValue(initial.provider.id, initial.connection.id) : '',
   );
   const [modelId, setModelId] = useState(
     reusesSavedSelection
       ? selection?.modelId ?? ''
-      : declaredDefault?.modelId ?? '',
+      : '',
   );
   const [reasoningEffort, setReasoningEffort] = useState(
     reusesSavedSelection
       ? selection?.reasoningEffort ?? ''
-      : declaredDefault?.reasoningEffort ?? '',
+      : '',
   );
   const [catalog, setCatalog] = useState<AgentProviderModelCatalogSnapshot>();
   const [loadingCatalog, setLoadingCatalog] = useState(Boolean(initial));
@@ -180,29 +170,23 @@ function AgentProviderSelectorForm({
       ? selectedModel.reasoningEfforts.map((effort) => effort.id)
       : CUSTOM_REASONING_EFFORTS;
 
-  /** 恢复某个 Connection 已保存的模型/思考力度配置（没有则回落默认）。 */
   const restoreConnectionSelection = (
     connection: SelectorConnection | undefined,
   ) => {
     if (!connection) {
       return;
     }
-    const saved = findSelectorConnectionSelection(
-      store.getState().setup,
-      definition.id,
-      connection.connection.id,
-    );
+    const saved =
+      selection?.providerId === connection.provider.id &&
+      selection.connectionId === connection.connection.id
+        ? selection
+        : undefined;
     if (saved?.modelId) {
       setModelId(saved.modelId);
       setReasoningEffort(saved.reasoningEffort ?? '');
     } else {
-      const fallback =
-        definition.defaultSelection?.providerId === connection.provider.id &&
-        definition.defaultSelection.connectionId === connection.connection.id
-          ? definition.defaultSelection
-          : undefined;
-      setModelId(fallback?.modelId ?? '');
-      setReasoningEffort(fallback?.reasoningEffort ?? '');
+      setModelId('');
+      setReasoningEffort('');
     }
   };
 
@@ -373,7 +357,9 @@ export function AgentProviderSelector({
   const definition = setup?.selectors.find(
     (candidate) => candidate.id === selectorId,
   );
-  const selection = findActiveSelectorConnectionSelection(setup, selectorId);
+  const selection = setup?.selections.find(
+    (candidate) => candidate.selectorId === selectorId,
+  );
   const connections = useMemo(
     () =>
       setup?.providers.flatMap((provider) =>

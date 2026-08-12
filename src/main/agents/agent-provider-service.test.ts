@@ -16,14 +16,7 @@ import { normalizeCodexResponsesBaseUrl } from './providers/codex-responses-url'
 
 function createSettings() {
   const connections = new Map<string, AgentProviderConnectionConfiguration>();
-  const selections = new Map<
-    string,
-    Map<string, AgentProviderSelectorSelectionSnapshot>
-  >();
-  const selectorConnections = new Map<
-    string,
-    { providerId: string; connectionId: string }
-  >();
+  const selections = new Map<string, AgentProviderSelectorSelectionSnapshot>();
   const settings: SettingsRepository = {
     initialize: vi.fn(async () => undefined),
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
@@ -47,40 +40,20 @@ function createSettings() {
     }),
     deleteAgentProviderConnection: vi.fn(async (id) => {
       connections.delete(id);
-      for (const [selectorId, byConnection] of selections) {
-        byConnection.delete(id);
-        if (byConnection.size === 0) {
+      for (const [selectorId, selection] of selections) {
+        if (selection.connectionId === id) {
           selections.delete(selectorId);
         }
       }
-      for (const [selectorId, record] of selectorConnections) {
-        if (record.connectionId === id) {
-          selectorConnections.delete(selectorId);
-        }
-      }
     }),
-    listAgentProviderSelectorSelections: vi.fn(() =>
-      [...selections.values()].flatMap((byConnection) => [
-        ...byConnection.values(),
-      ]),
-    ),
-    getAgentProviderSelectorSelection: vi.fn((selectorId, connectionId) =>
-      selections.get(selectorId)?.get(connectionId),
+    getAgentProviderSelectorSelection: vi.fn((selectorId) =>
+      selections.get(selectorId),
     ),
     updateAgentProviderSelectorSelection: vi.fn(async (selection) => {
-      const byConnection = selections.get(selection.selectorId) ?? new Map();
-      byConnection.set(selection.connectionId, selection);
-      selections.set(selection.selectorId, byConnection);
-      selectorConnections.set(selection.selectorId, {
-        providerId: selection.providerId,
-        connectionId: selection.connectionId,
-      });
+      selections.set(selection.selectorId, selection);
     }),
-    getAgentProviderSelectorConnection: vi.fn((selectorId) =>
-      selectorConnections.get(selectorId),
-    ),
   };
-  return { settings, connections, selections, selectorConnections };
+  return { settings, connections, selections };
 }
 
 function createSecrets() {
@@ -215,7 +188,7 @@ function createService(input: {
 }
 
 describe('AgentProviderService', () => {
-  it('persists a declared Selector default before its first use', async () => {
+  it('resolves a declared Selector default without persisting it', async () => {
     const { service, settings, selectors } = createService({
       defaultSelection: {
         providerId: 'codex',
@@ -231,15 +204,19 @@ describe('AgentProviderService', () => {
       modelId: 'gpt-test',
       reasoningEffort: 'medium',
     });
-    await service.initialize();
+    const setup = await service.getSetup();
 
-    expect(settings.updateAgentProviderSelectorSelection).toHaveBeenCalledWith({
-      selectorId: 'generation-center',
-      providerId: 'codex',
-      connectionId: 'codex-account',
-      modelId: 'gpt-test',
-      reasoningEffort: 'medium',
-    });
+    expect(settings.updateAgentProviderSelectorSelection).not.toHaveBeenCalled();
+    expect(setup.selectors[0]).not.toHaveProperty('defaultSelection');
+    expect(setup.selections).toEqual([
+      {
+        selectorId: 'generation-center',
+        providerId: 'codex',
+        connectionId: 'codex-account',
+        modelId: 'gpt-test',
+        reasoningEffort: 'medium',
+      },
+    ]);
     expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
       providerId: 'codex',
       connectionId: 'codex-account',
@@ -267,9 +244,6 @@ describe('AgentProviderService', () => {
       reasoningEffort: 'high',
     });
     vi.mocked(settings.updateAgentProviderSelectorSelection).mockClear();
-
-    await service.initialize();
-    await service.initialize();
 
     expect(settings.updateAgentProviderSelectorSelection).not.toHaveBeenCalled();
     expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
@@ -469,18 +443,10 @@ describe('AgentProviderService', () => {
       connectionId: 'codex-api-connection-1',
       modelId: 'deepseek-chat',
     });
-    expect(setup.selectorConnections).toEqual([
-      {
-        selectorId: 'generation-center',
-        providerId: 'codex',
-        connectionId: 'codex-api-connection-1',
-      },
-    ]);
-
     await service.dispose();
   });
 
-  it('publishes the active Connection separately from per-Connection model configurations', async () => {
+  it('publishes one effective selection for each Selector', async () => {
     const { service } = createService();
     await service.configureApiConnection({
       providerId: 'codex',
@@ -504,24 +470,11 @@ describe('AgentProviderService', () => {
       reasoningEffort: null,
     });
 
-    expect(setup.selections).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          connectionId: 'codex-account',
-          modelId: 'gpt-test',
-        }),
-        expect.objectContaining({
-          connectionId: 'codex-api-connection-1',
-          modelId: 'deepseek-chat',
-        }),
-      ]),
-    );
-    expect(setup.selectorConnections).toEqual([
-      {
-        selectorId: 'generation-center',
-        providerId: 'codex',
+    expect(setup.selections).toEqual([
+      expect.objectContaining({
         connectionId: 'codex-api-connection-1',
-      },
+        modelId: 'deepseek-chat',
+      }),
     ]);
     expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
       providerId: 'codex',

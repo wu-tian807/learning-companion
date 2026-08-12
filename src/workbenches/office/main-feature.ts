@@ -4,7 +4,7 @@ import {
   LIBREOFFICE_LIBRARY_ID,
   LIBREOFFICE_VERSION,
 } from '../../main/external-libraries/definitions/libreoffice';
-import type { MainWorkbenchFeatureDefinition } from '../catalog/main-workbench-features';
+import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
 import { LibreOfficePreviewProducer } from './artifacts/libreoffice-preview-producer';
 import {
   isPdfPageAnchorV1,
@@ -41,4 +41,4 @@ export const officeArtifactMainFeature = Object.freeze({
       ),
     );
   },
-} satisfies MainWorkbenchFeatureDefinition);
+} satisfies MainWorkbenchContribution);

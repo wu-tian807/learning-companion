@@ -26,7 +26,6 @@ function setupSnapshot(
       },
     ],
     selections: [],
-    selectorConnections: [],
     providers: [
       {
         id: 'codex',

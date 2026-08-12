@@ -36,6 +36,14 @@ const selector = {
   description: '生成 Project 内容。',
 } as const;
 
+const selection = {
+  selectorId: 'generation-center',
+  providerId: 'codex',
+  connectionId: 'codex-account',
+  modelId: 'gpt-5.6-sol',
+  reasoningEffort: 'high',
+} as const;
+
 describe('Agent Provider contracts', () => {
   it('accepts stable Provider ids', () => {
     expect(isAgentProviderId('codex')).toBe(true);
@@ -43,70 +51,35 @@ describe('Agent Provider contracts', () => {
     expect(isAgentProviderId('../codex')).toBe(false);
   });
 
-  it('validates Providers, Connections, Selectors and composite selections', () => {
+  it('validates one effective selection per Selector', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 3,
         providers: [provider],
         selectors: [selector],
-        selections: [
-          {
-            selectorId: 'generation-center',
-            providerId: 'codex',
-            connectionId: 'codex-account',
-            modelId: 'gpt-5.4',
-            reasoningEffort: 'high',
-          },
-        ],
-        selectorConnections: [
-          {
-            selectorId: 'generation-center',
-            providerId: 'codex',
-            connectionId: 'codex-account',
-          },
-        ],
+        selections: [selection],
       }),
     ).toBe(true);
   });
 
-  it('rejects selections that reference another Provider or Connection', () => {
+  it('rejects selections that reference a missing Connection', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 4,
         providers: [provider],
         selectors: [selector],
-        selections: [
-          {
-            selectorId: 'generation-center',
-            providerId: 'codex',
-            connectionId: 'missing',
-            modelId: null,
-            reasoningEffort: null,
-          },
-        ],
-        selectorConnections: [],
+        selections: [{ ...selection, connectionId: 'missing' }],
       }),
     ).toBe(false);
   });
 
-  it('rejects a Selector default that references a missing Connection', () => {
+  it('rejects duplicate effective selections for one Selector', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 4,
         providers: [provider],
-        selectors: [
-          {
-            ...selector,
-            defaultSelection: {
-              providerId: 'codex',
-              connectionId: 'missing',
-              modelId: 'gpt-5.6-sol',
-              reasoningEffort: 'high',
-            },
-          },
-        ],
-        selections: [],
-        selectorConnections: [],
+        selectors: [selector],
+        selections: [selection, { ...selection, modelId: 'gpt-5.6-terra' }],
       }),
     ).toBe(false);
   });
@@ -136,27 +109,8 @@ describe('Agent Provider contracts', () => {
         ],
         selectors: [selector],
         selections: [],
-        selectorConnections: [],
       }),
     ).toBe(true);
-  });
-
-  it('rejects an active Selector Connection without a matching configuration', () => {
-    expect(
-      isAgentProviderSetupSnapshot({
-        revision: 5,
-        providers: [provider],
-        selectors: [selector],
-        selections: [],
-        selectorConnections: [
-          {
-            selectorId: 'generation-center',
-            providerId: 'codex',
-            connectionId: 'codex-account',
-          },
-        ],
-      }),
-    ).toBe(false);
   });
 
   it('validates connection-scoped login instructions', () => {
