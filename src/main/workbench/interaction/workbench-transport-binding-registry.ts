@@ -10,11 +10,13 @@ import {
   type WorkbenchTransportBinding,
 } from '../../../shared/workbench/facilities/transport-binding';
 import { AppError } from '../../errors/app-error';
+import type { MainWorkbenchFacilityAdapter } from './main-workbench-facility-adapter';
 
 export interface ActiveWorkbenchTransportBinding {
   readonly sessionId: string;
   readonly workbenchId: string;
   readonly binding: WorkbenchTransportBinding;
+  readonly adapters: readonly MainWorkbenchFacilityAdapter[];
 }
 
 export interface WorkbenchTransportBindingRegistryEvent {
@@ -31,6 +33,7 @@ export interface WorkbenchTransportBindingRegistryApi {
     sessionId: string,
     manifest: AssetWorkbenchManifest,
     bindings: readonly WorkbenchTransportBinding[],
+    adapters?: readonly MainWorkbenchFacilityAdapter[],
   ): () => void;
   disposeSession(sessionId: string): void;
 }
@@ -70,6 +73,7 @@ export class WorkbenchTransportBindingRegistry
     sessionId: string,
     manifest: AssetWorkbenchManifest,
     bindings: readonly WorkbenchTransportBinding[],
+    adapters: readonly MainWorkbenchFacilityAdapter[] = [],
   ): () => void {
     if (!sessionId.trim() || this.sessions.has(sessionId)) {
       throw new AppError('REGISTRATION_CONFLICT');
@@ -132,6 +136,13 @@ export class WorkbenchTransportBindingRegistry
         sessionId,
         workbenchId: manifest.id,
         binding,
+        adapters: adapters.filter((adapter) =>
+          binding.facilities.some(
+            (facility) =>
+              facility.id === adapter.facilityId &&
+              facility.version === adapter.facilityVersion,
+          ),
+        ),
       });
     }
 

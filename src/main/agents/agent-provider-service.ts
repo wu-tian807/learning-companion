@@ -266,6 +266,15 @@ export class AgentProviderService
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<AgentProviderSetupSnapshot> {
     this.requireActive();
+    const resolved = await this.resolveValidatedSelection(selection);
+    await this.settings.updateAgentProviderSelectorSelection(resolved);
+    this.publish();
+    return this.createSetupSnapshot();
+  }
+
+  private async resolveValidatedSelection(
+    selection: AgentProviderSelectorSelectionSnapshot,
+  ): Promise<AgentProviderSelectorSelectionSnapshot> {
     const normalized = cloneAgentProviderSelectorSelection(selection);
     this.selectors.require(normalized.selectorId);
     const provider = this.registry.require(normalized.providerId);
@@ -296,7 +305,7 @@ export class AgentProviderService
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    await this.settings.updateAgentProviderSelectorSelection({
+    return Object.freeze({
       selectorId: normalized.selectorId,
       providerId: provider.id,
       connectionId: connection.id,
@@ -304,26 +313,18 @@ export class AgentProviderService
       reasoningEffort:
         requestedEffort ?? selectedModel?.defaultReasoningEffort ?? null,
     });
-    this.publish();
-    return this.createSetupSnapshot();
   }
 
   resolveSelectorConfiguration(
     selectorId: string,
   ): GenerationAgentExecutionConfiguration {
     this.requireActive();
-    this.selectors.require(selectorId);
-    const current = this.settings.getAgentProviderSelectorConnection(selectorId);
-    if (!current) {
-      throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
-    }
-    const selection = this.settings.getAgentProviderSelectorSelection(
-      selectorId,
-      current.connectionId,
-    );
+    const selection = this.resolveEffectiveSelection(selectorId);
     if (!selection) {
       throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
     }
+    const provider = this.registry.require(selection.providerId);
+    this.connections.require(provider, selection.connectionId);
     return Object.freeze({
       providerId: selection.providerId,
       connectionId: selection.connectionId,
@@ -371,44 +372,29 @@ export class AgentProviderService
     const providers = this.registry.list().map((provider) =>
       this.createProviderSnapshot(provider),
     );
-    const selectors = this.selectors.list();
+    const definitions = this.selectors.list();
+    const selectors = definitions.map(({ id, displayName, description }) => ({
+      id,
+      displayName,
+      description,
+    }));
     const providerMap = new Map(
       providers.map((provider) => [provider.id, provider]),
     );
-    const selectorIds = new Set(selectors.map((selector) => selector.id));
-    const selections = this.settings
-      .listAgentProviderSelectorSelections()
-      .filter((selection) => {
-        const provider = providerMap.get(selection.providerId);
-        return (
-          selectorIds.has(selection.selectorId) &&
-          provider?.connections.some(
-            (connection) => connection.id === selection.connectionId,
-          ) === true
-        );
-      });
-    const selectorConnections = selectors.flatMap((selector) => {
-      const active = this.settings.getAgentProviderSelectorConnection(
-        selector.id,
-      );
+    const selections = definitions.flatMap((selector) => {
+      const selection = this.resolveEffectiveSelection(selector.id);
+      if (!selection) {
+        return [];
+      }
+      const provider = providerMap.get(selection.providerId);
       if (
-        !active ||
-        !selections.some(
-          (selection) =>
-            selection.selectorId === selector.id &&
-            selection.providerId === active.providerId &&
-            selection.connectionId === active.connectionId,
-        )
+        provider?.connections.some(
+          (connection) => connection.id === selection.connectionId,
+        ) !== true
       ) {
         return [];
       }
-      return [
-        Object.freeze({
-          selectorId: selector.id,
-          providerId: active.providerId,
-          connectionId: active.connectionId,
-        }),
-      ];
+      return [selection];
     });
 
     return Object.freeze({
@@ -416,8 +402,23 @@ export class AgentProviderService
       providers: Object.freeze(providers),
       selectors: Object.freeze(selectors),
       selections: Object.freeze(selections),
-      selectorConnections: Object.freeze(selectorConnections),
     });
+  }
+
+  private resolveEffectiveSelection(
+    selectorId: string,
+  ): AgentProviderSelectorSelectionSnapshot | undefined {
+    const selector = this.selectors.require(selectorId);
+    const explicit = this.settings.getAgentProviderSelectorSelection(selectorId);
+    if (explicit) {
+      return explicit;
+    }
+    return selector.defaultSelection
+      ? {
+          selectorId,
+          ...selector.defaultSelection,
+        }
+      : undefined;
   }
 
   private createProviderSnapshot(

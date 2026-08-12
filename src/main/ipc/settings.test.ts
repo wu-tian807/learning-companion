@@ -76,10 +76,8 @@ function createRepository() {
     getAgentProviderConnection: vi.fn(() => undefined),
     updateAgentProviderConnection: vi.fn(async () => undefined),
     deleteAgentProviderConnection: vi.fn(async () => undefined),
-    listAgentProviderSelectorSelections: vi.fn(() => []),
     getAgentProviderSelectorSelection: vi.fn(() => undefined),
     updateAgentProviderSelectorSelection: vi.fn(async () => undefined),
-    getAgentProviderSelectorConnection: vi.fn(() => undefined),
   };
 
   return {

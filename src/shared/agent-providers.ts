@@ -68,18 +68,12 @@ export interface AgentProviderSelectorSelectionSnapshot {
   readonly reasoningEffort: string | null;
 }
 
-export interface AgentProviderSelectorConnectionSnapshot {
-  readonly selectorId: string;
-  readonly providerId: string;
-  readonly connectionId: string;
-}
-
 export interface AgentProviderSetupSnapshot {
   readonly revision: number;
   readonly providers: readonly AgentProviderSnapshot[];
   readonly selectors: readonly AgentProviderSelectorDefinitionSnapshot[];
+  /** One effective selection per Selector. Defaults are resolved in Main. */
   readonly selections: readonly AgentProviderSelectorSelectionSnapshot[];
-  readonly selectorConnections: readonly AgentProviderSelectorConnectionSnapshot[];
 }
 
 export interface AgentProviderReasoningEffortSnapshot {
@@ -304,33 +298,22 @@ export function isAgentProviderSetupSnapshot(
     !Array.isArray(value.selectors) ||
     !value.selectors.every(isAgentProviderSelectorDefinitionSnapshot) ||
     !Array.isArray(value.selections) ||
-    !value.selections.every(isAgentProviderSelectorSelectionSnapshot) ||
-    !Array.isArray(value.selectorConnections) ||
-    !value.selectorConnections.every(
-      isAgentProviderSelectorConnectionSnapshot,
-    )
+    !value.selections.every(isAgentProviderSelectorSelectionSnapshot)
   ) {
     return false;
   }
 
   const selections = value.selections;
-  const selectorConnections = value.selectorConnections;
   const providers = new Map(value.providers.map((provider) => [provider.id, provider]));
   const selectorIds = new Set(value.selectors.map((selector) => selector.id));
-  const selectionPairs = new Set(
-    selections.map(
-      (selection) => `${selection.selectorId}:${selection.connectionId}`,
-    ),
-  );
-  const activeSelectorIds = new Set(
-    selectorConnections.map(({ selectorId }) => selectorId),
+  const selectedSelectorIds = new Set(
+    selections.map(({ selectorId }) => selectorId),
   );
 
   return (
     providers.size === value.providers.length &&
     selectorIds.size === value.selectors.length &&
-    selectionPairs.size === selections.length &&
-    activeSelectorIds.size === selectorConnections.length &&
+    selectedSelectorIds.size === selections.length &&
     selections.every((selection) => {
       const provider = providers.get(selection.providerId);
       return (
@@ -339,26 +322,7 @@ export function isAgentProviderSetupSnapshot(
           (connection) => connection.id === selection.connectionId,
         ) === true
       );
-    }) &&
-    selectorConnections.every((active) =>
-      selections.some(
-        (selection) =>
-          selection.selectorId === active.selectorId &&
-          selection.providerId === active.providerId &&
-          selection.connectionId === active.connectionId,
-      ),
-    )
-  );
-}
-
-export function isAgentProviderSelectorConnectionSnapshot(
-  value: unknown,
-): value is AgentProviderSelectorConnectionSnapshot {
-  return (
-    isRecord(value) &&
-    isAgentProviderSelectorId(value.selectorId) &&
-    isAgentProviderId(value.providerId) &&
-    isAgentProviderConnectionId(value.connectionId)
+    })
   );
 }
 

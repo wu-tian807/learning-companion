@@ -15,7 +15,6 @@ import {
 } from '../../../shared/workbench/facilities/core-facilities';
 import type { WorkbenchFacilityDefinitionRegistry } from '../../../shared/workbench/facilities/facility-definition-registry';
 import type { WorkbenchFacilityEvent } from '../../../shared/workbench/facilities/facility-event';
-import type { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import {
   SANDBOX_CONTEXT_MENU_TRIGGER,
   SANDBOX_SELECTION_SETTLED_TRIGGER,
@@ -43,7 +42,6 @@ export class SandboxFrameInteractionBridge {
 
   constructor(
     private readonly bindingRegistry: WorkbenchTransportBindingRegistry,
-    private readonly adapterRegistry: MainFacilityAdapterRegistry,
     private readonly facilityRegistry: WorkbenchFacilityDefinitionRegistry,
     dependencies: Partial<SandboxFrameInteractionBridgeDependencies> = {},
   ) {
@@ -156,15 +154,17 @@ export class SandboxFrameInteractionBridge {
       return;
     }
 
-    for (const facility of activeBinding.binding.facilities) {
-      const adapter = this.adapterRegistry.get(
-        activeBinding.workbenchId,
-        facility.id,
-        facility.version,
-        trigger,
+    for (const adapter of activeBinding.adapters) {
+      if (!adapter.triggers.includes(trigger)) {
+        continue;
+      }
+      const facility = activeBinding.binding.facilities.find(
+        (candidate) =>
+          candidate.id === adapter.facilityId &&
+          candidate.version === adapter.facilityVersion,
       );
 
-      if (!adapter) {
+      if (!facility) {
         continue;
       }
 

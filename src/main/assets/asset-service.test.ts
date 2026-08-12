@@ -212,22 +212,6 @@ describe('AssetService', () => {
     expect(service.get('inactive')).toBeUndefined();
   });
 
-  it('rejects duplicate Attachment cleanup registration', () => {
-    const database = createDatabase();
-    const { registry } = createResolver();
-    const service = createService(database, registry);
-    const cleanup = {
-      removeByAsset: vi.fn(async () => undefined),
-      removeByProject: vi.fn(async () => undefined),
-    };
-
-    service.registerAttachmentCleanup(cleanup);
-
-    expect(() => service.registerAttachmentCleanup(cleanup)).toThrow(
-      'REGISTRATION_CONFLICT',
-    );
-  });
-
   it('loads runtime status while keeping Asset pure data', async () => {
     const database = createDatabase();
     const { handles, registry } = createResolver(() => 'missing');
@@ -657,10 +641,11 @@ describe('AssetService', () => {
       removeByAsset: vi.fn(async () => undefined),
       removeByProject: vi.fn(async () => undefined),
     };
-    const service = createService(database, registry, {}, {
+    const service = createService(database, registry, {
+      attachmentCleanup,
+    }, {
       removeManagedAssetFile,
     });
-    service.registerAttachmentCleanup(attachmentCleanup);
     await service.loadFromProject('project');
 
     await service.delete('asset');
@@ -708,10 +693,11 @@ describe('AssetService', () => {
       removeByAsset: vi.fn(async () => undefined),
       removeByProject: vi.fn(async () => undefined),
     };
-    const service = createService(database, registry, {}, {
+    const service = createService(database, registry, {
+      attachmentCleanup,
+    }, {
       removeManagedAssetFile,
     });
-    service.registerAttachmentCleanup(attachmentCleanup);
 
     await service.removeManagedFilesByProject('project', '/tmp/project');
 
@@ -914,9 +900,9 @@ describe('AssetService', () => {
     };
     const service = createService(database, registry, {
       artifactCleanup,
+      attachmentCleanup,
       deletionObserver,
     });
-    service.registerAttachmentCleanup(attachmentCleanup);
     await service.loadFromProject('project');
 
     await service.delete('asset');

@@ -1,4 +1,4 @@
-import type { MainWorkbenchFeatureDefinition } from '../catalog/main-workbench-features';
+import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
 import {
   PDF_PAGE_ANCHOR_TYPE,
   PDF_PAGE_ANCHOR_VERSION,
@@ -18,4 +18,4 @@ export const pdfAnchorMainFeature = Object.freeze({
     anchors.register({ anchorType: PDF_PAGE_ANCHOR_TYPE, version: PDF_PAGE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 });
     anchors.register({ anchorType: PDF_REGION_ANCHOR_TYPE, version: PDF_REGION_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 });
   },
-} satisfies MainWorkbenchFeatureDefinition);
+} satisfies MainWorkbenchContribution);

@@ -21,7 +21,6 @@ import {
   HtmlContextMenuFacilityAdapter,
   HtmlTextSelectionFacilityAdapter,
 } from '../../../workbenches/html/main-facility-adapters';
-import { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from './sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from './workbench-transport-binding-registry';
 
@@ -115,15 +114,13 @@ function createFixture() {
   const bindingRegistry = new WorkbenchTransportBindingRegistry(
     facilityRegistry,
   );
-  const adapterRegistry = new MainFacilityAdapterRegistry(
-    facilityRegistry,
-  );
-  adapterRegistry.register(new HtmlContextMenuFacilityAdapter());
-  adapterRegistry.register(new HtmlTextSelectionFacilityAdapter());
+  const adapters = [
+    new HtmlContextMenuFacilityAdapter(),
+    new HtmlTextSelectionFacilityAdapter(),
+  ];
   const logger = { error: vi.fn() };
   const bridge = new SandboxFrameInteractionBridge(
     bindingRegistry,
-    adapterRegistry,
     facilityRegistry,
     {
       schedule: (task) => task(),
@@ -134,7 +131,7 @@ function createFixture() {
   bridge.attach(webContents as unknown as WebContents);
 
   return {
-    adapterRegistry,
+    adapters,
     bindingRegistry,
     bridge,
     logger,
@@ -156,6 +153,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(rootUrl)],
+      fixture.adapters,
     );
 
     fixture.webContents.emit(
@@ -202,6 +200,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(firstRoot.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.emit(
       'context-menu',
@@ -220,6 +219,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-2',
       htmlWorkbenchManifest,
       [binding(nestedRoot.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.emit(
       'context-menu',
@@ -242,6 +242,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.focusedFrame = root.frame;
 
@@ -267,6 +268,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-2',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.emit(
       'before-mouse-event',
@@ -293,6 +295,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.focusedFrame = root.frame;
     fixture.webContents.emit(
@@ -310,6 +313,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-2',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     root.executeJavaScript.mockRejectedValueOnce(
       new Error('frame destroyed'),
