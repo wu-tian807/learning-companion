@@ -60,7 +60,7 @@ export function runGenerationTask(
     let taskId: string | undefined;
     let abortRequested = false;
     let settled = false;
-    let unsubscribe = () => undefined;
+    let unsubscribe: () => void = () => undefined;
 
     const dispose = () => {
       unsubscribe();
