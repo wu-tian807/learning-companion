@@ -170,6 +170,12 @@ function createProvider(
 function createService(input: {
   readonly provider?: AgentProvider;
   readonly probeUrl?: (url: string) => Promise<void>;
+  readonly defaultSelection?: Readonly<{
+    readonly providerId: string;
+    readonly connectionId: string;
+    readonly modelId: string | null;
+    readonly reasoningEffort: string | null;
+  }>;
 } = {}) {
   const { settings, connections, selections } = createSettings();
   const { store: secrets, values: secretValues } = createSecrets();
@@ -181,6 +187,9 @@ function createService(input: {
     id: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
     displayName: '生成中心',
     description: '生成 Project 内容。',
+    ...(input.defaultSelection
+      ? { defaultSelection: input.defaultSelection }
+      : {}),
   });
   let nextConnectionNumber = 1;
   const service = new AgentProviderService(
@@ -198,6 +207,7 @@ function createService(input: {
     settings,
     connections,
     selections,
+    selectors,
     secrets,
     secretValues,
     provider,
@@ -205,6 +215,73 @@ function createService(input: {
 }
 
 describe('AgentProviderService', () => {
+  it('persists a declared Selector default before its first use', async () => {
+    const { service, settings, selectors } = createService({
+      defaultSelection: {
+        providerId: 'codex',
+        connectionId: 'codex-account',
+        modelId: 'gpt-test',
+        reasoningEffort: 'medium',
+      },
+    });
+
+    expect(selectors.require('generation-center').defaultSelection).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+    await service.initialize();
+
+    expect(settings.updateAgentProviderSelectorSelection).toHaveBeenCalledWith({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+
+    await service.dispose();
+  });
+
+  it('does not replace an existing Selector choice with its declared default', async () => {
+    const { service, settings } = createService({
+      defaultSelection: {
+        providerId: 'codex',
+        connectionId: 'codex-account',
+        modelId: 'gpt-test',
+        reasoningEffort: 'medium',
+      },
+    });
+    await settings.updateAgentProviderSelectorSelection({
+      selectorId: 'generation-center',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'user-model',
+      reasoningEffort: 'high',
+    });
+    vi.mocked(settings.updateAgentProviderSelectorSelection).mockClear();
+
+    await service.initialize();
+    await service.initialize();
+
+    expect(settings.updateAgentProviderSelectorSelection).not.toHaveBeenCalled();
+    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'user-model',
+      reasoningEffort: 'high',
+    });
+
+    await service.dispose();
+  });
+
   it('publishes Provider connections and Main-registered selectors', async () => {
     const { service, provider } = createService();
 

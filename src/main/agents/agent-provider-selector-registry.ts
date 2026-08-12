@@ -15,6 +15,16 @@ function cloneDefinition(
     id: definition.id,
     displayName: definition.displayName.trim(),
     description: definition.description.trim(),
+    ...(definition.defaultSelection
+      ? {
+          defaultSelection: Object.freeze({
+            providerId: definition.defaultSelection.providerId,
+            connectionId: definition.defaultSelection.connectionId,
+            modelId: definition.defaultSelection.modelId,
+            reasoningEffort: definition.defaultSelection.reasoningEffort,
+          }),
+        }
+      : {}),
   });
 }
 

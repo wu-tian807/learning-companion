@@ -34,7 +34,6 @@ const CUSTOM_REASONING_EFFORTS = [
   'max',
   'ultra',
 ] as const;
-const DEFAULT_REASONING_EFFORT = 'high';
 
 interface SelectorConnection {
   readonly provider: AgentProviderSnapshot;
@@ -63,16 +62,14 @@ function defaultReasoningEffort(
   model: AgentProviderModelCatalogSnapshot['models'][number] | undefined,
 ): string {
   const supported = model?.reasoningEfforts.map((effort) => effort.id) ?? [];
-  if (supported.length === 0 || supported.includes(DEFAULT_REASONING_EFFORT)) {
-    return DEFAULT_REASONING_EFFORT;
-  }
   if (
     model?.defaultReasoningEffort &&
-    supported.includes(model.defaultReasoningEffort)
+    (supported.length === 0 ||
+      supported.includes(model.defaultReasoningEffort))
   ) {
     return model.defaultReasoningEffort;
   }
-  return supported[0] ?? DEFAULT_REASONING_EFFORT;
+  return supported[0] ?? '';
 }
 
 function AgentProviderSelectorForm({
@@ -89,16 +86,24 @@ function AgentProviderSelectorForm({
   );
   const initial = selectedConfiguredConnection ?? connections[0];
   const reusesSavedSelection = selectedConfiguredConnection !== undefined;
+  const declaredDefault =
+    initial &&
+    definition.defaultSelection?.providerId === initial.provider.id &&
+    definition.defaultSelection.connectionId === initial.connection.id
+      ? definition.defaultSelection
+      : undefined;
   const [selectedConnection, setSelectedConnection] = useState(
     initial ? connectionValue(initial.provider.id, initial.connection.id) : '',
   );
   const [modelId, setModelId] = useState(
-    reusesSavedSelection ? selection?.modelId ?? '' : '',
+    reusesSavedSelection
+      ? selection?.modelId ?? ''
+      : declaredDefault?.modelId ?? '',
   );
   const [reasoningEffort, setReasoningEffort] = useState(
     reusesSavedSelection
       ? selection?.reasoningEffort ?? ''
-      : DEFAULT_REASONING_EFFORT,
+      : declaredDefault?.reasoningEffort ?? '',
   );
   const [catalog, setCatalog] = useState<AgentProviderModelCatalogSnapshot>();
   const [loadingCatalog, setLoadingCatalog] = useState(Boolean(initial));
@@ -191,8 +196,13 @@ function AgentProviderSelectorForm({
       setModelId(saved.modelId);
       setReasoningEffort(saved.reasoningEffort ?? '');
     } else {
-      setModelId('');
-      setReasoningEffort(DEFAULT_REASONING_EFFORT);
+      const fallback =
+        definition.defaultSelection?.providerId === connection.provider.id &&
+        definition.defaultSelection.connectionId === connection.connection.id
+          ? definition.defaultSelection
+          : undefined;
+      setModelId(fallback?.modelId ?? '');
+      setReasoningEffort(fallback?.reasoningEffort ?? '');
     }
   };
 

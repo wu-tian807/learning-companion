@@ -17,6 +17,12 @@ const setup: AgentProviderSetupSnapshot = Object.freeze({
       id: 'generation-center',
       displayName: '生成中心',
       description: '生成 Project 内容。',
+      defaultSelection: {
+        providerId: 'codex',
+        connectionId: 'codex-account',
+        modelId: 'gpt-5.6-sol',
+        reasoningEffort: 'medium',
+      },
     }),
   ]),
   selections: Object.freeze([]),
@@ -72,7 +78,7 @@ describe('AgentProviderSelector', () => {
 
     expect(markup).toContain('aria-haspopup="listbox"');
     expect(markup).toContain('aria-label="生成中心 思考力度"');
-    expect(markup).toContain('>high<');
+    expect(markup).toContain('>medium<');
     expect(markup).not.toContain('没有可配置的 Connection');
     expect(markup).not.toContain('<select');
   });

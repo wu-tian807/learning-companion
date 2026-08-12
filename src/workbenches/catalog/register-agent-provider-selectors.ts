@@ -7,6 +7,12 @@ export const WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION =
     id: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
     displayName: '工作台 AI',
     description: '用于 EPUB、PDF 等 Workbench 中的解释、问答与辅助操作。',
+    defaultSelection: Object.freeze({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-5.6-sol',
+      reasoningEffort: 'medium',
+    }),
   }) satisfies AgentProviderSelectorDefinitionSnapshot;
 
 export function registerWorkbenchAgentProviderSelectors(

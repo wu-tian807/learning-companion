@@ -177,6 +177,7 @@ export async function createApplicationRuntime({
       agentMcpServers,
       agentToolRegistration.defaultToolRequirements,
     );
+    await agentProviderService.initialize();
     const artifactRegistry = new AssetArtifactRegistry();
     registerMainWorkbenchArtifactProducers({
       artifacts: artifactRegistry,

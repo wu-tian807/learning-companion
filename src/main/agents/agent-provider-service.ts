@@ -92,6 +92,7 @@ export class AgentProviderService
   private readonly listeners = new Set<
     (snapshot: AgentProviderSetupSnapshot) => void
   >();
+  private initializationTask: Promise<void> | undefined;
   private revision = 0;
   private disposed = false;
 
@@ -116,21 +117,29 @@ export class AgentProviderService
     );
   }
 
-  getSetup(): Promise<AgentProviderSetupSnapshot> {
+  initialize(): Promise<void> {
     this.requireActive();
+    this.initializationTask ??= this.initializeDefaultSelections();
+    return this.initializationTask;
+  }
+
+  async getSetup(): Promise<AgentProviderSetupSnapshot> {
+    this.requireActive();
+    await this.initialize();
     const snapshot = this.createSetupSnapshot();
     for (const provider of this.registry.list()) {
       for (const connection of this.connections.list(provider)) {
         void this.connectionRuntime.ensureRefreshed(provider, connection);
       }
     }
-    return Promise.resolve(snapshot);
+    return snapshot;
   }
 
-  refreshProvider(providerId: string): Promise<AgentProviderSetupSnapshot> {
+  async refreshProvider(providerId: string): Promise<AgentProviderSetupSnapshot> {
     this.requireActive();
+    await this.initialize();
     this.connectionRuntime.refreshProvider(this.registry.require(providerId));
-    return Promise.resolve(this.createSetupSnapshot());
+    return this.createSetupSnapshot();
   }
 
   subscribe(
@@ -266,6 +275,15 @@ export class AgentProviderService
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<AgentProviderSetupSnapshot> {
     this.requireActive();
+    const resolved = await this.resolveValidatedSelection(selection);
+    await this.settings.updateAgentProviderSelectorSelection(resolved);
+    this.publish();
+    return this.createSetupSnapshot();
+  }
+
+  private async resolveValidatedSelection(
+    selection: AgentProviderSelectorSelectionSnapshot,
+  ): Promise<AgentProviderSelectorSelectionSnapshot> {
     const normalized = cloneAgentProviderSelectorSelection(selection);
     this.selectors.require(normalized.selectorId);
     const provider = this.registry.require(normalized.providerId);
@@ -296,7 +314,7 @@ export class AgentProviderService
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    await this.settings.updateAgentProviderSelectorSelection({
+    return Object.freeze({
       selectorId: normalized.selectorId,
       providerId: provider.id,
       connectionId: connection.id,
@@ -304,8 +322,6 @@ export class AgentProviderService
       reasoningEffort:
         requestedEffort ?? selectedModel?.defaultReasoningEffort ?? null,
     });
-    this.publish();
-    return this.createSetupSnapshot();
   }
 
   resolveSelectorConfiguration(
@@ -418,6 +434,41 @@ export class AgentProviderService
       selections: Object.freeze(selections),
       selectorConnections: Object.freeze(selectorConnections),
     });
+  }
+
+  private async initializeDefaultSelections(): Promise<void> {
+    let changed = false;
+
+    for (const selector of this.selectors.list()) {
+      const defaultSelection = selector.defaultSelection;
+      if (!defaultSelection) {
+        continue;
+      }
+
+      const active = this.settings.getAgentProviderSelectorConnection(
+        selector.id,
+      );
+      const existing = active
+        ? this.settings.getAgentProviderSelectorSelection(
+            selector.id,
+            active.connectionId,
+          )
+        : undefined;
+      if (existing && active && existing.providerId === active.providerId) {
+        continue;
+      }
+
+      const resolved = await this.resolveValidatedSelection({
+        selectorId: selector.id,
+        ...defaultSelection,
+      });
+      await this.settings.updateAgentProviderSelectorSelection(resolved);
+      changed = true;
+    }
+
+    if (changed) {
+      this.publish();
+    }
   }
 
   private createProviderSnapshot(

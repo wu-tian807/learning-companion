@@ -58,6 +58,14 @@ export interface AgentProviderSelectorDefinitionSnapshot {
   readonly id: string;
   readonly displayName: string;
   readonly description: string;
+  readonly defaultSelection?: AgentProviderSelectorDefaultSelectionSnapshot;
+}
+
+export interface AgentProviderSelectorDefaultSelectionSnapshot {
+  readonly providerId: string;
+  readonly connectionId: string;
+  readonly modelId: string | null;
+  readonly reasoningEffort: string | null;
 }
 
 export interface AgentProviderSelectorSelectionSnapshot {
@@ -275,7 +283,21 @@ export function isAgentProviderSelectorDefinitionSnapshot(
     isRecord(value) &&
     isAgentProviderSelectorId(value.id) &&
     isRequiredText(value.displayName, 128) &&
-    isRequiredText(value.description)
+    isRequiredText(value.description) &&
+    (value.defaultSelection === undefined ||
+      isAgentProviderSelectorDefaultSelectionSnapshot(value.defaultSelection))
+  );
+}
+
+export function isAgentProviderSelectorDefaultSelectionSnapshot(
+  value: unknown,
+): value is AgentProviderSelectorDefaultSelectionSnapshot {
+  return (
+    isRecord(value) &&
+    isAgentProviderId(value.providerId) &&
+    isAgentProviderConnectionId(value.connectionId) &&
+    isNullableText(value.modelId) &&
+    isNullableText(value.reasoningEffort)
   );
 }
 
@@ -317,6 +339,19 @@ export function isAgentProviderSetupSnapshot(
   const selectorConnections = value.selectorConnections;
   const providers = new Map(value.providers.map((provider) => [provider.id, provider]));
   const selectorIds = new Set(value.selectors.map((selector) => selector.id));
+  if (
+    value.selectors.some((selector) => {
+      const defaultSelection = selector.defaultSelection;
+      if (!defaultSelection) return false;
+      return !providers
+        .get(defaultSelection.providerId)
+        ?.connections.some(
+          (connection) => connection.id === defaultSelection.connectionId,
+        );
+    })
+  ) {
+    return false;
+  }
   const selectionPairs = new Set(
     selections.map(
       (selection) => `${selection.selectorId}:${selection.connectionId}`,

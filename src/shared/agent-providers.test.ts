@@ -89,6 +89,28 @@ describe('Agent Provider contracts', () => {
     ).toBe(false);
   });
 
+  it('rejects a Selector default that references a missing Connection', () => {
+    expect(
+      isAgentProviderSetupSnapshot({
+        revision: 4,
+        providers: [provider],
+        selectors: [
+          {
+            ...selector,
+            defaultSelection: {
+              providerId: 'codex',
+              connectionId: 'missing',
+              modelId: 'gpt-5.6-sol',
+              reasoningEffort: 'high',
+            },
+          },
+        ],
+        selections: [],
+        selectorConnections: [],
+      }),
+    ).toBe(false);
+  });
+
   it('keeps refreshing independent from the three persisted statuses', () => {
     expect(
       isAgentProviderSetupSnapshot({
