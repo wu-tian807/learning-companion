@@ -123,7 +123,6 @@ describe('GenerationTask recovery', () => {
           },
         ],
       },
-      manifestRef: 'control/prepared-manifest.json',
     };
     const preparer = {
       prepare: async () => prepared,
@@ -203,6 +202,15 @@ describe('GenerationTask recovery', () => {
       agentCalls: [{ callKey: 'generate', sessionId: 'session-1' }],
       failure: { phase: 'process' },
     });
+    const interrupted = database.get(task.id)!;
+    database.tasks.set(task.id, {
+      ...interrupted,
+      prepared: {
+        completedTime: interrupted.prepared!.completedTime,
+        legacyManifestRef:
+          'control/tasks/task-1/prepared-manifest.json',
+      },
+    });
 
     let resumedRunnerCalls = 0;
     const resumedRunner: GenerationAgentRunner = {
@@ -239,6 +247,12 @@ describe('GenerationTask recovery', () => {
     expect(commitCount).toBe(2);
     expect(database.tasks.size).toBe(1);
     expect(database.get(task.id)?.completed).toBeDefined();
+    expect(
+      database.get(task.id)?.prepared?.assetReferences?.sources[0]?.assetId,
+    ).toBe('asset-1');
+    expect(
+      database.get(task.id)?.prepared?.legacyManifestRef,
+    ).toBeUndefined();
 
     const reloadedService = createService({
       resolveSelectorConfiguration() {

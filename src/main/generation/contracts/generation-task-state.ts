@@ -9,17 +9,29 @@ import {
 } from '../../../shared/agent-providers';
 import {
   cloneGenerationAssetReferenceBindings,
+  clonePreparedGenerationAssetReferenceBindings,
   type GenerationAssetReferenceBindings,
+  type PreparedGenerationAssetReferenceBindings,
 } from './generation-asset-reference';
 import {
   cloneGenerationTaskMetrics,
   type GenerationTaskMetrics,
 } from './generation-metrics';
 
-export interface GenerationTaskPreparedCheckpoint {
-  readonly completedTime: number;
-  readonly manifestRef: string;
-}
+export type GenerationTaskPreparedData =
+  | {
+      readonly assetReferences: PreparedGenerationAssetReferenceBindings;
+      readonly legacyManifestRef?: never;
+    }
+  | {
+      /** Compatibility only for unfinished tasks prepared before database v21. */
+      readonly assetReferences?: never;
+      readonly legacyManifestRef: string;
+    };
+
+export type GenerationTaskPreparedCheckpoint = Readonly<
+  { readonly completedTime: number } & GenerationTaskPreparedData
+>;
 
 export interface GenerationTaskAgentCallCheckpoint {
   readonly callKey: string;
@@ -135,14 +147,33 @@ function requireRelativePath(value: string, field: string): string {
 function clonePreparedCheckpoint(
   checkpoint: GenerationTaskPreparedCheckpoint,
 ): GenerationTaskPreparedCheckpoint {
+  const completedTime = requireTime(
+    checkpoint.completedTime,
+    'prepared.completedTime',
+  );
+
+  if (checkpoint.assetReferences !== undefined) {
+    if (checkpoint.legacyManifestRef !== undefined) {
+      throw new Error('GenerationTask prepared checkpoint 数据无效');
+    }
+
+    return Object.freeze({
+      completedTime,
+      assetReferences: clonePreparedGenerationAssetReferenceBindings(
+        checkpoint.assetReferences,
+      ),
+    });
+  }
+
+  if (checkpoint.legacyManifestRef === undefined) {
+    throw new Error('GenerationTask prepared checkpoint 数据无效');
+  }
+
   return Object.freeze({
-    completedTime: requireTime(
-      checkpoint.completedTime,
-      'prepared.completedTime',
-    ),
-    manifestRef: requireRelativePath(
-      checkpoint.manifestRef,
-      'prepared.manifestRef',
+    completedTime,
+    legacyManifestRef: requireRelativePath(
+      checkpoint.legacyManifestRef,
+      'prepared.legacyManifestRef',
     ),
   });
 }

@@ -205,7 +205,6 @@ describe('GenerationTask IPC handlers', () => {
         secondary: [],
       },
       assetReferences: { sources: [{ alias: 'sources-0001', assetId: 'asset-1', name: 'index.html', mediaType: 'text/html', contentRevision: 'r1', relativePath: 'references/sources-0001/source.html' }] },
-      manifestRef: 'control/prepared-manifest.json',
     });
     const preparer: GenerationTaskPreparerApi = {
       async prepare(task) { return createPrepared(task, definition); },

@@ -209,7 +209,20 @@ export class GenerationTaskExecution {
 
     if (snapshot.prepared) {
       try {
-        return await this.preparer.restore(snapshot, definition, signal);
+        const prepared = await this.preparer.restore(
+          snapshot,
+          definition,
+          signal,
+        );
+
+        if (snapshot.prepared.legacyManifestRef !== undefined) {
+          task.migrateLegacyPreparedCheckpoint(
+            prepared.assetReferences,
+          );
+          this.database.update(task.getSnapshot());
+        }
+
+        return prepared;
       } catch (error) {
         if (
           isAbortError(error) ||
@@ -233,7 +246,7 @@ export class GenerationTaskExecution {
     task.recordPrepared({
       checkpoint: {
         completedTime,
-        manifestRef: prepared.manifestRef,
+        assetReferences: prepared.assetReferences,
       },
       durationMs: Math.max(0, completedWallTime - startedTime),
       updatedTime: completedTime,

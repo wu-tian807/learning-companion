@@ -139,7 +139,6 @@ describe('GenerationTaskService', () => {
           },
         ],
       },
-      manifestRef: 'control/prepared-manifest.json',
     };
     const prepareTask = (task: GenerationTaskSnapshot) => ({
       ...prepared,
@@ -511,7 +510,6 @@ describe('GenerationTaskService', () => {
           },
         ],
       },
-      manifestRef: 'control/prepared-manifest.json',
     };
     const prepareTask = (task: GenerationTaskSnapshot) => ({
       ...prepared,

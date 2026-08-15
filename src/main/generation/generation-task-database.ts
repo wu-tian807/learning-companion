@@ -125,7 +125,7 @@ function mapRow(
         : {
             prepared: {
               completedTime: row.preparedTime,
-              manifestRef: row.preparedManifestRef!,
+              ...row.preparedData!,
             },
           }),
       ...(row.assignedProviderId === null
@@ -178,7 +178,12 @@ function toRow(task: GenerationTaskSnapshot) {
     instruction: snapshot.instruction,
     assetReferences: snapshot.assetReferences,
     preparedTime: snapshot.prepared?.completedTime ?? null,
-    preparedManifestRef: snapshot.prepared?.manifestRef ?? null,
+    preparedData:
+      snapshot.prepared === undefined
+        ? null
+        : snapshot.prepared.assetReferences !== undefined
+          ? { assetReferences: snapshot.prepared.assetReferences }
+          : { legacyManifestRef: snapshot.prepared.legacyManifestRef },
     assignedProviderId: snapshot.assignedProviderId ?? null,
     assignedConnectionId: snapshot.assignedConnectionId ?? null,
     assignedModelId: snapshot.assignedModelId ?? null,
@@ -263,7 +268,7 @@ export class GenerationTaskDatabase
         instruction: row.instruction,
         assetReferences: row.assetReferences,
         preparedTime: row.preparedTime,
-        preparedManifestRef: row.preparedManifestRef,
+        preparedData: row.preparedData,
         assignedProviderId: row.assignedProviderId,
         assignedConnectionId: row.assignedConnectionId,
         assignedModelId: row.assignedModelId,

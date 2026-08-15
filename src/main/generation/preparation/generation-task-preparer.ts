@@ -8,12 +8,12 @@ import {
 } from '../contracts/generation-workspace';
 import type { GenerationTaskSnapshot } from '../generation-task';
 import type { GenerationAssetReferencePreparerApi } from './generation-asset-reference-preparer';
-import type { GenerationPreparedManifestFileApi } from './generation-prepared-manifest-file';
-import { generationPreparedManifestRef } from './generation-prepared-manifest-file';
+import {
+  LegacyGenerationPreparedManifestFile,
+  type LegacyGenerationPreparedManifestFileApi,
+} from './legacy-generation-prepared-manifest-file';
 import { appendAssetReferencesToUserMessage } from './generation-user-message-composer';
 import type { PreparedGenerationTask } from './prepared-generation-task';
-
-export { generationPreparedManifestRef } from './generation-prepared-manifest-file';
 
 export interface GenerationTaskPreparerApi {
   prepare(
@@ -75,7 +75,8 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   constructor(
     private readonly workspaceManager: AgentWorkspaceManagerApi,
     private readonly assetReferencePreparer: GenerationAssetReferencePreparerApi,
-    private readonly manifestFile: GenerationPreparedManifestFileApi,
+    private readonly legacyManifestFile: LegacyGenerationPreparedManifestFileApi =
+      new LegacyGenerationPreparedManifestFile(),
   ) {}
 
   async prepare(
@@ -101,11 +102,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       signal,
     );
     signal?.throwIfAborted();
-    await this.manifestFile.write(
-      workspaces.primary.path,
-      task,
-      assetReferences,
-    );
 
     return this.createPreparedRuntime(
       task,
@@ -134,15 +130,17 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definition,
       instruction,
     );
-    const manifest = await this.manifestFile.read(
-      workspaces.primary.path,
-      task.prepared.manifestRef,
-      task,
-    );
+    const persistedReferences =
+      task.prepared.assetReferences ??
+      (await this.legacyManifestFile.read(
+        workspaces.primary.path,
+        task.prepared.legacyManifestRef!,
+        task,
+      ));
     const assetReferences = await this.assetReferencePreparer.verify(
       workspaces.primary.path,
       definition.assetReferenceSchema,
-      manifest.assetReferences,
+      persistedReferences,
       signal,
     );
 
@@ -218,7 +216,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       mcpServers: cloneCapabilityRequirements(definition.mcpServers),
       workspaces,
       assetReferences,
-      manifestRef: generationPreparedManifestRef(task.id),
     });
   }
 }

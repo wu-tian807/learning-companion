@@ -25,7 +25,7 @@ describe('GenerationTaskAgentSession', () => {
     task.recordPrepared({
       checkpoint: {
         completedTime: 2,
-        manifestRef: 'control/prepared-manifest.json',
+        assetReferences: {},
       },
       durationMs: 1,
       updatedTime: 2,
@@ -55,7 +55,6 @@ describe('GenerationTaskAgentSession', () => {
         secondary: [],
       },
       assetReferences: { sources: [] },
-      manifestRef: 'control/prepared-manifest.json',
     };
     const updates: unknown[] = [];
     const database = {

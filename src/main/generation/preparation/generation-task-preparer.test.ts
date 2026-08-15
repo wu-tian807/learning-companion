@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,7 +15,6 @@ import { MindMapGenerationInstruction } from '../../../workbenches/mindmap/gener
 import { createMindMapGenerationTaskDefinitionV1 } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../../workbenches/unsupported/main';
 import { GenerationAssetReferencePreparer } from './generation-asset-reference-preparer';
-import { GenerationPreparedManifestFile } from './generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from './generation-task-preparer';
 
 const temporaryDirectories: string[] = [];
@@ -29,7 +28,7 @@ afterEach(async () => {
 });
 
 describe('GenerationTaskPreparer', () => {
-  it('copies references into the primary workspace and restores from its manifest', async () => {
+  it('copies references without request/control folders and restores from the task checkpoint', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'generation-prepare-'));
     temporaryDirectories.push(directory);
     const sourcePath = join(directory, 'lesson.md');
@@ -69,7 +68,6 @@ describe('GenerationTaskPreparer', () => {
         assetService,
         new WorkbenchRegistry(new UnsupportedWorkbenchProvider()),
       ),
-      new GenerationPreparedManifestFile(),
     );
     const baseDefinition = createMindMapGenerationTaskDefinitionV1({
       async process() {
@@ -128,11 +126,14 @@ describe('GenerationTaskPreparer', () => {
     expect(messageText).toContain('sources-0001');
     expect(messageText).toContain(copiedRelativePath);
     expect(messageText).not.toContain(sourcePath);
+    expect(await readdir(prepared.workspaces.primary.path)).toEqual([
+      'references',
+    ]);
 
     task.recordPrepared({
       checkpoint: {
         completedTime: 20,
-        manifestRef: prepared.manifestRef,
+        assetReferences: prepared.assetReferences,
       },
       durationMs: 10,
       updatedTime: 20,
@@ -170,10 +171,6 @@ describe('GenerationTaskPreparer', () => {
       {
         prepare: vi.fn(async () => preparedReferences),
         verify: vi.fn(async () => preparedReferences),
-      },
-      {
-        write: vi.fn(async () => ({}) as never),
-        read: vi.fn(async () => ({}) as never),
       },
     );
     const definition = createHtmlAssistantTaskDefinitionV1({
@@ -213,12 +210,86 @@ describe('GenerationTaskPreparer', () => {
     );
   });
 
-  it('isolates prepared manifests per taskId inside a reused conversation workspace', async () => {
+  it('restores a migrated v20 checkpoint through the read-only legacy manifest adapter', async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), 'learning-companion-generation-legacy-'),
+    );
+    temporaryDirectories.push(workspaceRoot);
+    const workspaceManager = new AgentWorkspaceManager(workspaceRoot);
+    const definition = createMindMapGenerationTaskDefinitionV1({
+      async process() {
+        return { resultAssetId: 'unused' };
+      },
+    });
+    const task = GenerationTask.create({
+      id: 'task-legacy',
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new MindMapGenerationInstruction({
+        additionalInstructions: '',
+      }).toSnapshot(),
+      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+      createdTime: 10,
+    });
+    const legacyManifestRef =
+      'control/tasks/task-legacy/prepared-manifest.json';
+    task.recordPrepared({
+      checkpoint: { completedTime: 20, legacyManifestRef },
+      durationMs: 10,
+      updatedTime: 20,
+    });
+    const workspacePath = await workspaceManager.prepare([
+      'project-1',
+      'generation-mindmap',
+      'task-legacy',
+    ]);
+    const manifestPath = join(
+      workspacePath,
+      ...legacyManifestRef.split('/'),
+    );
+    await mkdir(dirname(manifestPath), { recursive: true });
+    const legacyReferences = references('asset-1');
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        format: 'learning-companion/generation-prepared-manifest',
+        version: 1,
+        taskId: 'task-legacy',
+        projectId: 'project-1',
+        definitionId: definition.id,
+        definitionVersion: definition.version,
+        assetReferences: legacyReferences,
+      }),
+      'utf8',
+    );
+    const verify = vi.fn(async () => legacyReferences);
+    const preparer = new GenerationTaskPreparer(workspaceManager, {
+      prepare: vi.fn(async () => {
+        throw new Error('legacy restore must not prepare current assets');
+      }),
+      verify,
+    });
+
+    const restored = await preparer.restore(
+      task.getSnapshot(),
+      definition,
+    );
+
+    expect(restored.assetReferences).toEqual(legacyReferences);
+    expect(verify).toHaveBeenCalledWith(
+      workspacePath,
+      definition.assetReferenceSchema,
+      legacyReferences,
+      undefined,
+    );
+  });
+
+  it('isolates prepared reference checkpoints between tasks sharing a conversation workspace', async () => {
     const workspaceRoot = await mkdtemp(
       join(tmpdir(), 'learning-companion-generation-named-isolation-'),
     );
     temporaryDirectories.push(workspaceRoot);
-    const manifestFile = new GenerationPreparedManifestFile();
     const preparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(workspaceRoot),
       {
@@ -229,7 +300,6 @@ describe('GenerationTaskPreparer', () => {
           references(bindings.sources[0]?.assetId ?? 'asset-1'),
         ),
       },
-      manifestFile,
     );
     const definition = createHtmlAssistantTaskDefinitionV1({
       async process() {
@@ -250,8 +320,8 @@ describe('GenerationTaskPreparer', () => {
         createdTime: 10,
       });
 
-    // 同一 conversation 连续两个 task：prepared manifest 必须按 taskId 隔离，
-    // 恢复第一个 task 不能读到第二个 task 的 manifest。
+    // 同一 conversation 连续两个 task：prepared 引用跟随各自 Task checkpoint，
+    // 不再通过共享工作区中的 control 文件互相覆盖。
     const firstTask = createTask('task-a', 'asset-1');
     const secondTask = createTask('task-b', 'asset-2');
     const firstPrepared = await preparer.prepare(
@@ -263,20 +333,29 @@ describe('GenerationTaskPreparer', () => {
       definition,
     );
 
-    expect(firstPrepared.manifestRef).toContain('task-a');
-    expect(secondPrepared.manifestRef).toContain('task-b');
-    expect(firstPrepared.manifestRef).not.toBe(secondPrepared.manifestRef);
-
     firstTask.recordPrepared({
-      checkpoint: { completedTime: 20, manifestRef: firstPrepared.manifestRef },
+      checkpoint: {
+        completedTime: 20,
+        assetReferences: firstPrepared.assetReferences,
+      },
       durationMs: 10,
       updatedTime: 20,
     });
     secondTask.recordPrepared({
-      checkpoint: { completedTime: 20, manifestRef: secondPrepared.manifestRef },
+      checkpoint: {
+        completedTime: 20,
+        assetReferences: secondPrepared.assetReferences,
+      },
       durationMs: 10,
       updatedTime: 20,
     });
+
+    expect(
+      firstTask.getSnapshot().prepared?.assetReferences?.sources[0]?.assetId,
+    ).toBe('asset-1');
+    expect(
+      secondTask.getSnapshot().prepared?.assetReferences?.sources[0]?.assetId,
+    ).toBe('asset-2');
 
     const restoredFirst = await preparer.restore(
       firstTask.getSnapshot(),

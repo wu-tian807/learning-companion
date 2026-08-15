@@ -40,7 +40,6 @@ import { GenerationTaskDefinitionRegistry } from '../generation/generation-task-
 import { GenerationTaskExecution } from '../generation/generation-task-execution';
 import { GenerationTaskService } from '../generation/generation-task-service';
 import { GenerationAssetReferencePreparer } from '../generation/preparation/generation-asset-reference-preparer';
-import { GenerationPreparedManifestFile } from '../generation/preparation/generation-prepared-manifest-file';
 import { GenerationTaskPreparer } from '../generation/preparation/generation-task-preparer';
 import { createAppPaths } from '../paths/app-paths';
 import { migrateProjectWorkspaces } from '../projects/migrate-project-workspaces';
@@ -283,7 +282,6 @@ export async function createApplicationRuntime({
         assetService,
         workbenchRegistry,
       ),
-      new GenerationPreparedManifestFile(),
     );
     generationTaskService = new GenerationTaskService(
       generationTaskDatabase,

@@ -259,26 +259,24 @@ Provider 内部对话内容。
 
 ```text
 workspace_root/
-└── generation-mindmap/
-    └── <taskId>/
-        ├── request/
-        │   ├── instruction.json
-        │   └── asset-references.json
-        ├── references/
-        │   ├── sources-0001/
-        │   │   ├── source.<ext>
-        │   │   └── metadata.json
-        │   └── sources-0002/
-        │       ├── source.<ext>
-        │       └── metadata.json
-        ├── output/
-        │   └── mindmap-candidate.json
-        └── control/
-            └── prepared-manifest.json
+└── <projectId>/
+    └── generation-mindmap/
+        └── <instanceKey>/
+            ├── references/
+            │   ├── sources-0001/
+            │   │   ├── source.<ext>
+            │   │   └── metadata.json
+            │   └── sources-0002/
+            │       ├── source.<ext>
+            │       └── metadata.json
+            └── output/
+                └── mindmap-candidate.json
 ```
 
-`prepared-manifest.json` 最后写入，因此它也充当 prepare 完成标志。恢复时会校验每份副本的
-revision；Agent 已完成后不允许悄悄重新 prepare，以免用新来源解释旧输出。
+Instruction、输入 AssetReference 与物化后的引用快照均随 GenerationTask 保存在 SQLite；
+调用 Agent 时才动态组装 User Message。工作区不再创建 `request/` 或 `control/`。恢复时从
+Task checkpoint 取得引用快照，并校验 `references/` 中每份副本的 revision，避免用新来源
+解释旧输出。
 
 ## 7. GenerationTask 状态
 
@@ -511,7 +509,7 @@ src/main/generation/
 ├── contracts/                         # 纯协议和状态校验
 ├── preparation/
 │   ├── generation-asset-reference-preparer.ts
-│   ├── generation-prepared-manifest-file.ts
+│   ├── legacy-generation-prepared-manifest-file.ts # 仅兼容 v20 未完成任务
 │   ├── generation-task-preparer.ts
 │   └── generation-user-message-composer.ts
 ├── generation-agent-executor.ts       # 单次 Agent Turn 与执行指标

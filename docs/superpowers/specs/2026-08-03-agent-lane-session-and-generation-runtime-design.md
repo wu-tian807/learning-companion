@@ -389,32 +389,20 @@ staging、失败草稿和流式日志。
 
 ### 5.1 目录布局
 
-推荐放在 Project Workspace 已有 `.learning-companion` 控制目录下：
+当前实现已不再采用早期的 Lane `control/work/result` 目录。Agent 工作区与 Session 元数据
+分别落盘：
 
 ```text
-<project-workspace>/
-└── .learning-companion/
-    └── agents/
-        └── lanes/
-            ├── creator/
-            │   ├── shared/
-            │   │   ├── project/
-            │   │   └── asset-projections/
-            │   │       └── <assetId>/<revision>/
-            │   └── sessions/
-            │       └── <sessionId>/
-            │           ├── control/
-            │           │   └── session.json
-            │           ├── work/
-            │           │   ├── request/
-            │           │   └── staging/
-            │           └── result/
-            └── tutor/
-                ├── shared/
-                └── sessions/
+<agent-workspaces>/<projectId>/<workspaceKey>/<instanceKey>/
+├── references/
+└── <TaskDefinition 自己约定的产物目录>
+
+<project-workspace>/.learning-companion/agent-sessions/
+└── <workspaceKey>/<instanceKey>/session.json
 ```
 
-`control/` 只允许 Main 访问；Session 的 `cwd` 是自己的 `work/`。
+Instruction 与引用 checkpoint 存在 GenerationTask 数据库记录中，调用 Agent 时动态注入；
+工作区不再创建 `request/` 或 `control/`。
 
 ### 5.2 共享读，不共享写
 
@@ -424,14 +412,12 @@ Lane Workspace 是共享物理容器，不代表 Session 默认拥有整个 Lane
 Session A
   read  → shared/asset-projections/A/rev-1
   read  → shared/asset-projections/B/rev-3
-  read  → sessions/A/work/request
-  write → sessions/A/work/staging
+  write → Workspace A 中 TaskDefinition 允许的产物路径
 
 Session B
   read  → shared/asset-projections/B/rev-3
   read  → shared/asset-projections/C/rev-2
-  read  → sessions/B/work/request
-  write → sessions/B/work/staging
+  write → Workspace B 中 TaskDefinition 允许的产物路径
 ```
 
 两个 Session 可以复用同一份 `B/rev-3`，但不能读取彼此的 Session 目录，也不能
@@ -798,7 +784,7 @@ Renderer 不提交文件路径、Prompt Profile、Capability、Permission 或 Co
 
 - 新增纯路径布局；
 - 新增无状态 `AgentWorkspaceManager`；
-- 创建 Lane shared 和 Session control/work/result；
+- 创建 Workspace 与独立的 Session 元数据；
 - 原子写入并读取 `AgentSessionManifestV1`；
 - 使用 portable path 支持 macOS / Windows；
 - 实现 staging 和历史 Session 清理边界；

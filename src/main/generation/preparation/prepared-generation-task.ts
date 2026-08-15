@@ -22,5 +22,4 @@ export interface PreparedGenerationTask {
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly manifestRef: string;
 }
