@@ -26,6 +26,7 @@ import { assignGenerationTaskConnectionMigration } from './migrations/0018-assig
 import { createAssetAttachmentsMigration } from './migrations/0019-create-asset-attachments';
 import { reconcileLegacyBranchSchemaMigration } from './migrations/0020-reconcile-legacy-branch-schema';
 import { storeGenerationPreparedDataMigration } from './migrations/0021-store-generation-prepared-data';
+import { retireLegacyGenerationPreparedDataMigration } from './migrations/0022-retire-legacy-generation-prepared-data';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
@@ -64,6 +65,7 @@ const migrations: readonly DatabaseMigration[] = [
   createAssetAttachmentsMigration,
   reconcileLegacyBranchSchemaMigration,
   storeGenerationPreparedDataMigration,
+  retireLegacyGenerationPreparedDataMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,

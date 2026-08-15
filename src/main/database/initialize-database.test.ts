@@ -34,7 +34,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -151,7 +151,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        21,
+        22,
       );
     } finally {
       secondContext.close();
@@ -201,7 +201,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -307,7 +307,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<
@@ -403,7 +403,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -471,7 +471,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -792,7 +792,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -898,7 +898,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(21);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -987,13 +987,70 @@ describe('initializeDatabase', () => {
     }
   });
 
+  it('retires unfinished prepared tasks written by the earlier version 21 branch', async () => {
+    const databaseFile = await createDatabaseFile();
+    const earlier = initializeDatabase(databaseFile);
+    earlier.sqlite.exec(`
+      INSERT INTO projects (id, name, icon, created_time, pinned, workspace_path)
+      VALUES ('project', 'Project', 'book', 1, 0, 'C:/workspace');
+      INSERT INTO generation_tasks (
+        id, project_id, definition_id, definition_version,
+        instruction_json, asset_references_json,
+        prepared_time, prepared_data_json,
+        agent_calls_json, metrics_json, failure_json,
+        created_time, updated_time
+      ) VALUES (
+        'legacy-task', 'project', 'mindmap.generate', 1,
+        '{"format":"test","version":1}', '{"sources":[]}',
+        2, '{"legacyManifestRef":"control/prepared-manifest.json"}',
+        '[]',
+        '{"prepareDurationMs":1,"agentExecutions":[],"totalActiveDurationMs":1}',
+        '{"phase":"process","failedTime":3,"message":"legacy failure"}',
+        1, 3
+      );
+      PRAGMA user_version = 21;
+    `);
+    earlier.close();
+
+    const context = initializeDatabase(databaseFile);
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      const migrated = context.sqlite
+        .prepare<
+          [],
+          {
+            cancelledTime: number;
+            failure: string | null;
+            preparedData: string;
+          }
+        >(
+          `SELECT
+             cancelled_time AS cancelledTime,
+             failure_json AS failure,
+             prepared_data_json AS preparedData
+           FROM generation_tasks
+           WHERE id = 'legacy-task'`,
+        )
+        .get();
+      expect(migrated).toMatchObject({ cancelledTime: 3, failure: null });
+      expect(JSON.parse(migrated!.preparedData)).toEqual({
+        assetReferences: {},
+      });
+      const taskDatabase = new GenerationTaskDatabase(context);
+      expect(taskDatabase.get('legacy-task')?.cancelledTime).toBe(3);
+      expect(taskDatabase.listUnfinishedByProject('project')).toEqual([]);
+    } finally {
+      context.close();
+    }
+  });
+
   it('still rejects a database newer than the supported compatibility version', async () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 22');
+    newer.pragma('user_version = 23');
     newer.close();
 
-    expect(() => initializeDatabase(databaseFile)).toThrow(/22/);
+    expect(() => initializeDatabase(databaseFile)).toThrow(/23/);
   });
 });
