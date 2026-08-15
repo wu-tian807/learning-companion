@@ -1,13 +1,11 @@
 /**
  * HTML assistant conversation overlay.
  *
- * A right-side panel over the document area. Pure view: the conversation
+ * An HTML Workbench-local panel over the document area. Pure view: the conversation
  * state machine (identity, message stream, generation task subscription,
  * persistence, restore/delete/new) lives in `conversation-controller.ts`;
  * this component renders the panel and delegates every interaction.
  */
-import { createPortal } from 'react-dom';
-
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { GenerationTaskView } from '../../../shared/generation-tasks';
 import type { HtmlConversationStore } from './conversation-store';
@@ -108,20 +106,9 @@ export function ConversationOverlay(props: HtmlConversationOverlayProps) {
     return null;
   }
 
-  // 优先渲染到宿主面板贡献槽（面板打开时宿主已卸载，槽位独占整个面板）；
-  // 槽位不存在（宿主面板收起/未打开）时回退渲染在 workbench 阅读区右侧。
-  const portalHost =
-    typeof document !== 'undefined'
-      ? document.getElementById('workbench-panel-slot')
-      : null;
-
   const overlayElement = (
     <div
-      className={
-        portalHost
-          ? 'flex h-full w-full flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#21272f] shadow-[0_20px_50px_rgba(5,8,12,0.16)]'
-          : 'absolute inset-y-0 right-0 z-40 flex w-[min(320px,calc(100%-20px))] flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#21272f] shadow-[-24px_0_50px_rgba(0,0,0,0.35)]'
-      }
+      className="absolute inset-y-0 right-0 z-40 flex w-[min(320px,calc(100%-20px))] flex-col overflow-hidden rounded-[17px] border border-white/[0.055] bg-[#21272f] shadow-[-24px_0_50px_rgba(0,0,0,0.35)]"
       role="dialog"
       aria-label="AI 对话"
     >
@@ -310,9 +297,7 @@ export function ConversationOverlay(props: HtmlConversationOverlayProps) {
     </div>
   );
 
-  return portalHost
-    ? createPortal(overlayElement, portalHost)
-    : overlayElement;
+  return overlayElement;
 }
 
 export type { ConversationControllerOptions };

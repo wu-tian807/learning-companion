@@ -163,8 +163,7 @@ export function HtmlWorkbenchView({
       return true;
     });
     setAiLaunchRequest(request);
-    runtime.workbenchPanel.getState().openPanel();
-  }, [runtime]);
+  }, []);
 
   const openChat = useCallback((anchor?: JsonValue) => {
     launchRequestIdRef.current += 1;
@@ -204,20 +203,13 @@ export function HtmlWorkbenchView({
     setSelectionText(undefined);
     // 切出对话：清除持久锚点红框
     clearHighlight();
-    runtime.workbenchPanel.getState().closePanel();
-  }, [clearHighlight, runtime]);
+  }, [clearHighlight]);
 
   const handleLaunchConsumed = useCallback((requestId: number) => {
     setAiLaunchRequest((current) =>
       current?.id === requestId ? undefined : current,
     );
   }, []);
-
-  useEffect(() => {
-    return () => {
-      runtime.workbenchPanel.getState().closePanel();
-    };
-  }, [runtime]);
 
   const conversationStore = useMemo(
     () =>

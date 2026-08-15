@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { useStore } from 'zustand';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetSelectionScope } from '../project/asset-panel-selection';
@@ -117,13 +116,6 @@ export function GenerationCenter({
     : [];
   void contributionRevision;
 
-  // Workbench 面板贡献：打开时卸载本面板，由贡献面板占据整个区域
-  // （通用槽位，不关心是哪个 Workbench 贡献的）。
-  const panelOpen = useStore(
-    runtime.workbenchPanel,
-    (state) => state.open,
-  );
-
   const closeMindMapDialog = useCallback(() => {
     setMindMapSourceAssets(null);
     window.requestAnimationFrame(() => {
@@ -133,13 +125,6 @@ export function GenerationCenter({
 
   return (
     <>
-      {panelOpen ? (
-        // 贡献面板占据整个面板区域（面板组件经 portal 渲染进通用槽位）
-        <div
-          id="workbench-panel-slot"
-          className="flex h-full w-full flex-col overflow-hidden"
-        />
-      ) : (
       <AssetPanel
         id="project-generation-center"
         ariaLabel="生成中心"
@@ -318,7 +303,6 @@ export function GenerationCenter({
         onRelink={onRelink}
         onDelete={onDelete}
       />
-      )}
       {mindMapSourceAssets && (
         <MindMapGenerationDialog
           projectId={projectId}

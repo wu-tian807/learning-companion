@@ -67,6 +67,7 @@ describe('ConversationOverlay', () => {
   it('renders the overlay shell with input and tabs', () => {
     const markup = renderMarkup();
 
+    expect(markup).toContain('absolute inset-y-0 right-0');
     expect(markup).toContain('AI 对话');
     expect(markup).toContain('对话');
     expect(markup).toContain('历史');
