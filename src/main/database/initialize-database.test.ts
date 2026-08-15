@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { GenerationTaskDatabase } from '../generation/generation-task-database';
 import { createProjectsMigration } from './migrations/0001-create-projects';
 import { createAssetReferencesMigration } from './migrations/0010-create-asset-references';
 import { createGenerationTasksMigration } from './migrations/0012-create-generation-tasks';
@@ -33,7 +34,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -128,6 +129,14 @@ describe('initializeDatabase', () => {
           .all()
           .map(({ name }) => name),
       ).toContain('agent_calls_json');
+      const generationTaskColumns = context.sqlite
+        .prepare<[], { name: string }>(
+          'PRAGMA table_info(generation_tasks)',
+        )
+        .all()
+        .map(({ name }) => name);
+      expect(generationTaskColumns).toContain('prepared_data_json');
+      expect(generationTaskColumns).not.toContain('prepared_manifest_ref');
     } finally {
       context.close();
     }
@@ -142,7 +151,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        20,
+        22,
       );
     } finally {
       secondContext.close();
@@ -192,7 +201,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -212,7 +221,7 @@ describe('initializeDatabase', () => {
     }
   });
 
-  it('backfills the assigned Provider when upgrading a version 13 GenerationTask', async () => {
+  it('backfills the assigned Provider and preserves completed version 13 history', async () => {
     const databaseFile = await createDatabaseFile();
     const legacyContext = initializeDatabase(databaseFile);
 
@@ -277,7 +286,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<
@@ -300,12 +309,14 @@ describe('initializeDatabase', () => {
           [],
           {
             agentCalls: string;
+            preparedData: string;
             processCompletedTime: number;
             processResult: string;
           }
         >(
           `SELECT
              agent_calls_json AS agentCalls,
+             prepared_data_json AS preparedData,
              process_completed_time AS processCompletedTime,
              process_result_json AS processResult
            FROM generation_tasks
@@ -313,6 +324,15 @@ describe('initializeDatabase', () => {
         )
         .get();
       expect(migrated?.processCompletedTime).toBe(5);
+      expect(JSON.parse(migrated!.preparedData)).toEqual({
+        assetReferences: {},
+      });
+      expect(
+        new GenerationTaskDatabase(context).get('task')?.prepared,
+      ).toMatchObject({
+        completedTime: 2,
+        assetReferences: {},
+      });
       expect(JSON.parse(migrated!.agentCalls)).toEqual([
         {
           callKey: 'generate',
@@ -346,7 +366,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -414,7 +434,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -735,7 +755,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -841,7 +861,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(20);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -911,6 +931,8 @@ describe('initializeDatabase', () => {
         '{"contentFormat":"ai-annotation-v1","questionPreview":"question","timestamp":1}',
         NULL, NULL, 2, 1
       );
+      ALTER TABLE generation_tasks
+        ADD COLUMN prepared_manifest_ref TEXT;
       PRAGMA user_version = 20;
     `);
     legacy.close();
@@ -928,13 +950,70 @@ describe('initializeDatabase', () => {
     }
   });
 
+  it('retires unfinished prepared tasks written by the earlier version 21 branch', async () => {
+    const databaseFile = await createDatabaseFile();
+    const earlier = initializeDatabase(databaseFile);
+    earlier.sqlite.exec(`
+      INSERT INTO projects (id, name, icon, created_time, pinned, workspace_path)
+      VALUES ('project', 'Project', 'book', 1, 0, 'C:/workspace');
+      INSERT INTO generation_tasks (
+        id, project_id, definition_id, definition_version,
+        instruction_json, asset_references_json,
+        prepared_time, prepared_data_json,
+        agent_calls_json, metrics_json, failure_json,
+        created_time, updated_time
+      ) VALUES (
+        'legacy-task', 'project', 'mindmap.generate', 1,
+        '{"format":"test","version":1}', '{"sources":[]}',
+        2, '{"legacyManifestRef":"control/prepared-manifest.json"}',
+        '[]',
+        '{"prepareDurationMs":1,"agentExecutions":[],"totalActiveDurationMs":1}',
+        '{"phase":"process","failedTime":3,"message":"legacy failure"}',
+        1, 3
+      );
+      PRAGMA user_version = 21;
+    `);
+    earlier.close();
+
+    const context = initializeDatabase(databaseFile);
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      const migrated = context.sqlite
+        .prepare<
+          [],
+          {
+            cancelledTime: number;
+            failure: string | null;
+            preparedData: string;
+          }
+        >(
+          `SELECT
+             cancelled_time AS cancelledTime,
+             failure_json AS failure,
+             prepared_data_json AS preparedData
+           FROM generation_tasks
+           WHERE id = 'legacy-task'`,
+        )
+        .get();
+      expect(migrated).toMatchObject({ cancelledTime: 3, failure: null });
+      expect(JSON.parse(migrated!.preparedData)).toEqual({
+        assetReferences: {},
+      });
+      const taskDatabase = new GenerationTaskDatabase(context);
+      expect(taskDatabase.get('legacy-task')?.cancelledTime).toBe(3);
+      expect(taskDatabase.listUnfinishedByProject('project')).toEqual([]);
+    } finally {
+      context.close();
+    }
+  });
+
   it('still rejects a database newer than the supported compatibility version', async () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 21');
+    newer.pragma('user_version = 23');
     newer.close();
 
-    expect(() => initializeDatabase(databaseFile)).toThrow(/21/);
+    expect(() => initializeDatabase(databaseFile)).toThrow(/23/);
   });
 });

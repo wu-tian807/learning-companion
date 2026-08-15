@@ -33,68 +33,16 @@ describe('GenerationTaskDefinitionRegistry', () => {
     );
   });
 
-  it('validates Skill and MCP requirement identifiers and duplicates', () => {
-    const registry = new GenerationTaskDefinitionRegistry();
+  it('keeps Agent turn configuration inside process calls', () => {
     const definition = createDefinition();
 
-    expect(() =>
-      registry.register({
-        ...definition,
-        skills: [
-          { id: 'pdf-reading', availability: 'required' },
-          { id: 'pdf-reading', availability: 'optional' },
-        ],
-      }),
-    ).toThrow('INVALID_EXTENSION_DEFINITION');
-    expect(() =>
-      registry.register({
-        ...definition,
-        mcpServers: [
-          { id: '../external-server', availability: 'required' },
-        ],
-      }),
-    ).toThrow('INVALID_EXTENSION_DEFINITION');
-  });
-
-  it('validates additional tool identifiers, availability and duplicates', () => {
-    const registry = new GenerationTaskDefinitionRegistry();
-    const definition = createDefinition();
-
-    expect(() =>
-      registry.register({
-        ...definition,
-        toolRequirements: [
-          { id: 'read_asset_anchor', availability: 'required' },
-          { id: 'read_asset_anchor', availability: 'optional' },
-        ],
-      }),
-    ).toThrow('INVALID_EXTENSION_DEFINITION');
-    expect(() =>
-      registry.register({
-        ...definition,
-        toolRequirements: [
-          { id: '   ', availability: 'required' },
-        ],
-      }),
-    ).toThrow('INVALID_EXTENSION_DEFINITION');
-  });
-
-  it('keeps the Mind Map definition free of Provider default tools', () => {
-    const definition = createDefinition();
-
-    expect(definition.toolRequirements).toEqual([]);
+    expect(definition).not.toHaveProperty('systemInstruction');
+    expect(definition).not.toHaveProperty('toolRequirements');
+    expect(definition).not.toHaveProperty('skills');
+    expect(definition).not.toHaveProperty('mcpServers');
     expect(definition.primaryWorkspaceConfig.permissions).toEqual({
       read: true,
       write: true,
     });
-    expect(definition.systemInstruction).toContain(
-      'output/mindmap-candidate.json',
-    );
-    expect(definition.systemInstruction).toContain(
-      '应用会检查产物',
-    );
-    expect(definition.systemInstruction).not.toContain(
-      '重新读取并自检',
-    );
   });
 });

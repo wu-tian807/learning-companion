@@ -1230,7 +1230,7 @@
             N("generation-contracts", "Generation Contracts", {
               tag: "TASK DTO",
               caption: "definitionId · instruction · asset references · task view",
-              summary: "Renderer 只发送最小 Generation request；Main 的 TaskDefinition 决定 Prompt、能力和工作区。",
+              summary: "Renderer 只发送最小 Generation request；Main 的 TaskDefinition 声明工作区，并由 process 为每次 Agent 调用决定 Prompt 与能力。",
               files: ["src/shared/generation-tasks.ts", "src/shared/generation-definitions.ts"],
               target: "generation",
               col: 10,
@@ -2192,7 +2192,7 @@
             N("generation-question", "需要 AI 处理？", {
               tag: "OPTIONAL BRANCH",
               caption: "Instruction → GenerationTask",
-              summary: "Renderer 只收集 asset/anchor/selection 并形成 instruction；TaskDefinition 决定 Prompt、能力、工作区和 process。",
+              summary: "Renderer 只收集 asset/anchor/selection 并形成 instruction；TaskDefinition 声明工作区，process 逐次决定 Prompt 与能力。",
               child: "generation-entry",
               col: 9,
               row: 7,
@@ -2398,16 +2398,16 @@
 
         "task-definition": {
           parent: "generation",
-          title: "TaskDefinition 声明能力，process 控制业务循环",
+          title: "TaskDefinition 声明结构，process 配置每次 Agent 调用",
           kicker: "LEVEL 4 · TASK DEFINITION",
-          description: "框架提供默认 prepare、可恢复 TaskAgentSession 和持久化 checkpoint；具体 Definition 决定 instruction、Prompt、能力、Workspace、候选发现、校验/修复与最终领域提交。",
+          description: "框架提供默认 prepare、可恢复 TaskAgentSession 和持久化 checkpoint；Definition 声明 instruction 与 Workspace，process 为每次调用显式配置 Prompt/能力并负责候选发现、校验/修复与最终领域提交。",
           rows: 7,
           nodes: [
             N("definition", "TaskDefinition", {
-              tag: "DECLARATIVE + PROCESS",
-              caption: "id/version · configs · process(context)",
-              summary: "一种生成任务的唯一业务定义。静态声明与 process 组合在一个可版本化 Definition 中。",
-              responsibilities: ["声明系统提示词、能力、Workspace 和 Asset slot。", "提供 instruction factory 与 process。"],
+              tag: "STRUCTURE + PROCESS",
+              caption: "id/version · workspace/schema · process(context)",
+              summary: "一种生成任务的可版本化业务定义。它声明稳定结构，并由 process 编排每次 Agent 调用。",
+              responsibilities: ["声明 Provider Selector、Workspace 和 Asset slot。", "提供 instruction factory 与 process；不保存全任务共享的 Agent 配置。"],
               files: ["src/main/generation/contracts/task-definition.ts"],
               col: 5,
               row: 1,
@@ -2422,10 +2422,10 @@
               row: 3,
               span: 3
             }),
-            N("capabilities", "Agent Capability Requirements", {
-              tag: "STATIC DECLARATION",
-              caption: "systemInstruction · tools · skills · mcp",
-              summary: "Task 只声明所需能力 ID 和 required/optional；Provider adapter 负责解析成自己的执行配置。",
+            N("capabilities", "Per-call Agent Request", {
+              tag: "EXPLICIT PER TURN",
+              caption: "systemInstruction · userMessage · tools · skills · mcp",
+              summary: "process 的每次 agent.call 都显式提交完整提示词和能力；框架不提供 Definition 级默认值或隐式合并。",
               keys: ["toolRequirements", "skills", "mcpServers"],
               files: ["src/main/generation/contracts/task-definition.ts", "src/main/agents/function-tools/"],
               col: 5,
@@ -2444,8 +2444,8 @@
             }),
             N("preparer", "GenerationTaskPreparer", {
               tag: "FRAMEWORK DEFAULT",
-              caption: "workspace · materialize · copy · manifest · message",
-              summary: "所有任务共用：创建 Workspace，验证/物化 AssetReference，写 prepared manifest，并把 alias/path 追加到 user message。",
+              caption: "workspace · materialize · copy · prepared message",
+              summary: "所有任务共用：创建 Workspace，验证/物化 AssetReference，把引用 checkpoint 写入任务状态，并准备带 alias/path 的 user message。",
               files: ["src/main/generation/preparation/generation-task-preparer.ts", "src/main/generation/preparation/generation-asset-reference-preparer.ts"],
               col: 1,
               row: 5,
@@ -2454,7 +2454,7 @@
             N("process", "Feature process(context)", {
               tag: "BUSINESS CONTROL LOOP",
               caption: "call → inspect → validate → repair → commit",
-              summary: "具体产物由 process 自己发现。它可以在同一 Session 顺序 call Agent，读取候选，校验，发修复 turn，并调用领域 Service 提交。",
+              summary: "具体产物由 process 自己发现。每次 call 可使用不同提示词和能力，再读取候选、校验、修复并调用领域 Service 提交。",
               files: ["src/workbenches/mindmap/generation/mindmap-generation-processor.ts"],
               col: 5,
               row: 5,
@@ -2484,7 +2484,7 @@
           ],
           edges: [
             { from: "definition", to: "instruction", label: "defines" },
-            { from: "definition", to: "capabilities", label: "declares" },
+            { from: "process", to: "capabilities", label: "builds each call" },
             { from: "definition", to: "workspace-config", label: "declares" },
             { from: "instruction", to: "preparer", label: "toUserMessage" },
             { from: "workspace-config", to: "preparer", label: "prepare inputs" },
@@ -2532,7 +2532,7 @@
             N("codex", "CodexAgentProvider", {
               tag: "PROVIDER ADAPTER",
               caption: "request translation · stream · tool calls · metrics",
-              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用，合并 Provider 默认工具与 TaskDefinition 额外能力。",
+              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用，合并 Provider 默认工具与本次 Agent 调用显式声明的额外能力。",
               files: ["src/main/agents/providers/codex-agent-provider.ts"],
               col: 5,
               row: 3,

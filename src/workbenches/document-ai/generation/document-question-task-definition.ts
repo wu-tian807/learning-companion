@@ -28,12 +28,6 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
     id: DOCUMENT_QUESTION_TASK_DEFINITION_ID,
     version: DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
     providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
-    systemInstruction: DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V1,
-    toolRequirements: Object.freeze([
-      { id: PDF_READ_FUNCTION_TOOL_ID, availability: 'required' as const },
-    ]),
-    skills: Object.freeze([]),
-    mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'document-question',
       permissions: Object.freeze({ read: true, write: false }),
@@ -61,6 +55,16 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
       const call = await context.agent.call({
         callKey: 'answer',
         purpose: 'document-question',
+        systemInstruction: DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V1,
+        userMessage: context.preparedUserMessage,
+        toolRequirements: [
+          {
+            id: PDF_READ_FUNCTION_TOOL_ID,
+            availability: 'required' as const,
+          },
+        ],
+        skills: [],
+        mcpServers: [],
       });
       const answer = call.assistantOutput?.trim();
 

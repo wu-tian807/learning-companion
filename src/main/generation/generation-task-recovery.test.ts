@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,13 +74,17 @@ describe('GenerationTask recovery', () => {
     const directory = await mkdtemp(join(tmpdir(), 'generation-recovery-'));
     temporaryDirectories.push(directory);
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
-    await mkdir(join(primaryPath, 'control'), { recursive: true });
     let commitCount = 0;
     const definition = createMindMapGenerationTaskDefinitionV1({
       async process(context) {
         await context.agent.call({
           callKey: 'generate',
           purpose: 'generation',
+          systemInstruction: 'Generate the test artifact.',
+          userMessage: context.preparedUserMessage,
+          toolRequirements: [],
+          skills: [],
+          mcpServers: [],
         });
         commitCount += 1;
         if (commitCount === 1) {
@@ -98,11 +102,7 @@ describe('GenerationTask recovery', () => {
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
       instruction: new MindMapGenerationInstruction(),
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage: createTextAgentUserMessage('generate'),
-      toolRequirements: definition.toolRequirements,
-      skills: definition.skills,
-      mcpServers: definition.mcpServers,
+      preparedUserMessage: createTextAgentUserMessage('generate'),
       workspaces: {
         primary: {
           ...definition.primaryWorkspaceConfig,
@@ -123,7 +123,6 @@ describe('GenerationTask recovery', () => {
           },
         ],
       },
-      manifestRef: 'control/prepared-manifest.json',
     };
     const preparer = {
       prepare: async () => prepared,
@@ -203,7 +202,6 @@ describe('GenerationTask recovery', () => {
       agentCalls: [{ callKey: 'generate', sessionId: 'session-1' }],
       failure: { phase: 'process' },
     });
-
     let resumedRunnerCalls = 0;
     const resumedRunner: GenerationAgentRunner = {
       providerId: 'codex',
@@ -239,7 +237,9 @@ describe('GenerationTask recovery', () => {
     expect(commitCount).toBe(2);
     expect(database.tasks.size).toBe(1);
     expect(database.get(task.id)?.completed).toBeDefined();
-
+    expect(
+      database.get(task.id)?.prepared?.assetReferences?.sources[0]?.assetId,
+    ).toBe('asset-1');
     const reloadedService = createService({
       resolveSelectorConfiguration() {
         return {
