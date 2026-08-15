@@ -12,12 +12,12 @@
 
 ## 1. 目标与结论
 
-本设计补齐 `TaskDefinition.toolRequirements` 从声明到真实执行的最后一段链路，同时固定
+本设计补齐 `TaskAgentCallRequest.toolRequirements` 从声明到真实执行的最后一段链路，同时固定
 Function Tool、Skill 和 MCP 在 Learning Companion 中的职责边界。
 
 > 2026-08-08 更新：Provider 基础工具改由
 > `2026-08-08-provider-default-generation-tools-design.md` 定义。本文的工具声明均指
-> TaskDefinition 的额外工具，不再包含重复的 Workspace 基础工具。
+> 单次 Agent 调用的额外工具，不再包含重复的 Workspace 基础工具。
 
 最终分工如下：
 
@@ -29,7 +29,7 @@ Function Tool、Skill 和 MCP 在 Learning Companion 中的职责边界。
 
 主要决策：
 
-1. `TaskDefinition.toolRequirements` 作为任务工具需求声明，不新增平行的
+1. `TaskAgentCallRequest.toolRequirements` 作为本轮工具需求声明，不新增平行的
    `functionTools` 字段；
 2. Provider 原生工具和应用 Function Tool 使用同一份 required / optional 语义；
 3. Function Tool 使用应用内代码 Registry，不使用文件 Manifest；
@@ -37,9 +37,9 @@ Function Tool、Skill 和 MCP 在 Learning Companion 中的职责边界。
 5. 每次调用的 Task、Project、Workspace 和取消信号通过执行上下文传入；
 6. Function Tool 是应用内受信任代码，不建设通用审批或插件沙箱；
 7. Codex Adapter 只负责协议翻译和调用路由，不拥有工具业务逻辑；
-8. Skills 使用应用自己的固定目录，由 TaskDefinition 显式声明，不读取用户
+8. Skills 使用应用自己的固定目录，由 `TaskDefinition.process()` 在每次调用中显式声明，不读取用户
    Codex Home 中的环境 Skills；
-9. MCP 定义也由应用自己的固定目录维护，TaskDefinition 显式选择，Codex app-server
+9. MCP 定义也由应用自己的固定目录维护，`TaskDefinition.process()` 为每次调用显式选择，Codex app-server
    负责连接、工具调用循环与生命周期；
 10. `mindmap.generate@1` 首版不强行声明 Function Tool、Skill 或 MCP，继续使用准备好的
     AssetReference 副本、系统提示词和原生 Workspace 读取能力。
@@ -53,7 +53,8 @@ Learning Companion 只负责启动 Turn、消费流式事件，并在动态 Func
 
 ```mermaid
 flowchart LR
-    DEFINITION["TaskDefinition<br/>toolRequirements / skills / mcpServers"]
+    DEFINITION["TaskDefinition.process<br/>agent.call(request)"]
+    REQUEST["TaskAgentCallRequest<br/>instruction / tools / skills / mcp"]
     TASK["GenerationTaskExecution<br/>prepared request"]
     PROVIDERS["AgentProviderService<br/>selected provider"]
     CODEX["CodexAgentProvider"]
@@ -64,9 +65,9 @@ flowchart LR
     TOOL["AgentFunctionTool"]
     SERVICE["AssetService / Workspace / Converter"]
 
-    DEFINITION --> TASK --> PROVIDERS --> CODEX --> SERVER
-    DEFINITION --> SKILLS --> CODEX
-    DEFINITION --> MCP --> CODEX
+    DEFINITION --> REQUEST --> TASK --> PROVIDERS --> CODEX --> SERVER
+    REQUEST --> SKILLS --> CODEX
+    REQUEST --> MCP --> CODEX
     SERVER -- "item/tool/call" --> CODEX
     CODEX --> REGISTRY --> TOOL --> SERVICE
     TOOL --> CODEX --> SERVER
@@ -184,7 +185,7 @@ await tool.execute(argumentsValue, {
 
 Feature 模块决定注册哪些工具，Registry 只提供注册和查询机制。
 
-## 4. TaskDefinition 工具声明
+## 4. 单次 Agent 调用的工具声明
 
 任务额外工具使用统一的 Provider-neutral 需求：
 
@@ -195,12 +196,20 @@ interface AgentToolRequirement {
 }
 ```
 
-示例：
+`TaskDefinition.process()` 必须在每次 `agent.call()` 中显式提供；框架没有 Definition 级默认值：
 
 ```ts
-toolRequirements: [
-  { id: "read_asset_anchor", availability: "optional" },
-]
+await context.agent.call({
+  callKey: "inspect",
+  purpose: "analysis",
+  systemInstruction: INSPECT_SYSTEM_INSTRUCTION,
+  userMessage: context.preparedUserMessage,
+  toolRequirements: [
+    { id: "read_asset_anchor", availability: "optional" },
+  ],
+  skills: [],
+  mcpServers: [],
+});
 ```
 
 Provider Adapter 先加入自身默认工具，再把额外声明解析为两类能力：
@@ -213,10 +222,9 @@ Provider Adapter 先加入自身默认工具，再把额外声明解析为两类
 - required 原生工具不受 Provider 支持：执行前返回 `FEATURE_NOT_SUPPORTED`；
 - required Function Tool 未注册：执行前返回 `FEATURE_NOT_SUPPORTED`；
 - optional 能力不可用：安静省略；
-- 同一工具 ID 不允许重复声明；该约束继续由
-  `GenerationTaskDefinitionRegistry` 校验；
-- TaskDefinition 不增加 `kind: native | function`，避免把 Provider 支持情况写入领域定义；
-- TaskDefinition 只决定本类任务额外需要哪些工具；Provider 默认工具、Registry 是否存在
+- 同一调用内不允许重复工具 ID；该约束由 `TaskAgentSession` 在执行边界校验；
+- 调用请求不增加 `kind: native | function`，避免把 Provider 支持情况写入领域流程；
+- 每次调用只决定本轮额外需要哪些工具；Provider 默认工具、Registry 是否存在
   某项能力以及 Workspace 权限共同决定本次最终有效工具集。
 
 ## 5. Codex 动态工具适配
@@ -277,7 +285,7 @@ Turn 生命周期、取消、流式事件和最终结果聚合。
 }
 ```
 
-TaskDefinition 中仍使用内部工具 ID `read_asset_anchor`；`learning_companion` 只属于
+TaskAgentCallRequest 中仍使用内部工具 ID `read_asset_anchor`；`learning_companion` 只属于
 Codex wire protocol。这样不会把 Codex namespace 泄漏到 Provider-neutral 领域模型，
 也不会与 Codex 内置工具发生名称碰撞。
 
@@ -312,7 +320,7 @@ Codex dynamic tools 在 `thread/start` 提供。恢复已有 Thread 时依赖 Co
 2. turn id 与当前 active turn 一致；
 3. `callId`、`tool` 是非空字符串；
 4. `namespace === "learning_companion"`；
-5. 工具已被本次 TaskDefinition 声明并成功解析；
+5. 工具已被本次 Agent 调用声明并成功解析；
 6. `arguments` 是合法 JSON value；
 7. 调用对应 Definition 的 `execute()`。
 
@@ -397,9 +405,9 @@ Function Tool。
 
 ## 7. Skill 设计
 
-### 7.1 TaskDefinition 声明
+### 7.1 Agent 调用声明
 
-Function Tool 闭环稳定后，TaskDefinition 增加独立的 Skill 声明：
+Function Tool 闭环稳定后，Agent 调用增加独立的 Skill 声明：
 
 ```ts
 interface AgentSkillRequirement {
@@ -407,8 +415,8 @@ interface AgentSkillRequirement {
   readonly availability: "required" | "optional";
 }
 
-interface TaskDefinition {
-  // existing fields
+interface TaskAgentCallRequest {
+  // other turn fields
   readonly skills: readonly AgentSkillRequirement[];
 }
 ```
@@ -460,9 +468,9 @@ Skills。当前“禁用用户环境 Skills”的隔离逻辑继续保留，只�
 应用安装的 Skill 本身。
 
 未来 Claude Code Adapter 可以把同一 Requirement 映射为自己的 Skill / instruction 机制，
-TaskDefinition 不保存 Codex 专用 path DTO。
+TaskAgentCallRequest 不保存 Codex 专用 path DTO。
 
-`mindmap.generate@1` 当前使用 `skills: []`。其输出结构可以直接写入 system instruction，
+`mindmap.generate@1` 的当前调用使用 `skills: []`。其输出结构可以直接写入 system instruction，
 不为了形式完整而创建没有复用价值的 Skill。
 
 ## 8. MCP 定义与 Provider 映射
@@ -503,7 +511,7 @@ interface AgentMcpServerDefinition {
 - required Definition 缺失时在登录检查和 Thread 创建前失败；
 - optional Definition 缺失时安静省略；
 - required MCP 配置写入 `required: true`，启动失败即阻止本次 Thread；
-- TaskDefinition 已明确允许的 MCP 使用 `default_tools_approval_mode: "approve"`，避免
+- 本次 Agent 调用已明确允许的 MCP 使用 `default_tools_approval_mode: "approve"`，避免
   非交互 Generation 中出现审批请求；
 - 用户 Codex Home 中的 ambient MCP 仍逐项禁用，只有本次声明的应用 MCP 被重新启用；
 - MCP 工具事件映射为 `mcp:<internal-id>/<tool-name>`；未知 Server 调用视为协议错误；
@@ -585,7 +593,7 @@ src/main/bootstrap/
 1. Registry 校验 ID、版本、Schema 和重复注册；
 2. required 未注册工具在环境枚举、Thread 创建和模型请求前失败；
 3. optional 未注册工具被省略，不影响任务；
-4. Codex 只收到当前 TaskDefinition 声明的 Function Tool；
+4. Codex 只收到当前 Agent 调用声明的 Function Tool；
 5. 工具定义变化会改变 Session 配置指纹；
 6. `item/tool/call` 能把正确的 Task、Project、Workspace 和 Signal 传给 handler；
 7. handler 成功结果返回 Codex，模型可以继续并完成同一 Turn；

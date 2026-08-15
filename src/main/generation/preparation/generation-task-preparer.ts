@@ -57,20 +57,6 @@ function validateDefinitionIdentity(
   }
 }
 
-function cloneToolRequirements(definition: AnyTaskDefinition) {
-  return Object.freeze(
-    definition.toolRequirements.map((tool) => Object.freeze({ ...tool })),
-  );
-}
-
-function cloneCapabilityRequirements<
-  T extends { readonly id: string; readonly availability: 'required' | 'optional' },
->(requirements: readonly T[]): readonly T[] {
-  return Object.freeze(
-    requirements.map((requirement) => Object.freeze({ ...requirement }) as T),
-  );
-}
-
 export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   constructor(
     private readonly workspaceManager: AgentWorkspaceManagerApi,
@@ -197,7 +183,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       workspaces,
       assetReferences,
     };
-    const defaultUserMessage = appendAssetReferencesToUserMessage(
+    const preparedUserMessage = appendAssetReferencesToUserMessage(
       instruction.toUserMessage(context),
       assetReferences,
     );
@@ -209,11 +195,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definitionVersion: task.definitionVersion,
       providerSelectorId: definition.providerSelectorId,
       instruction,
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage,
-      toolRequirements: cloneToolRequirements(definition),
-      skills: cloneCapabilityRequirements(definition.skills),
-      mcpServers: cloneCapabilityRequirements(definition.mcpServers),
+      preparedUserMessage,
       workspaces,
       assetReferences,
     });

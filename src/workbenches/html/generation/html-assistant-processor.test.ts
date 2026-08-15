@@ -74,7 +74,7 @@ function createContext(options: {
           }),
         ]),
       }),
-      defaultUserMessage: createTextAgentUserMessage('问题'),
+      preparedUserMessage: createTextAgentUserMessage('问题'),
       agent,
       reportStatus: vi.fn(),
       reportOutputRejected: vi.fn(),
@@ -95,6 +95,11 @@ describe('createHtmlAssistantProcessor', () => {
       expect.objectContaining({
         callKey: 'ask',
         purpose: 'answer',
+        systemInstruction: expect.stringContaining('HTML 资料阅读器'),
+        userMessage: context.preparedUserMessage,
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
       }),
     );
     expect(result).toEqual({ answer: '最终回答' });

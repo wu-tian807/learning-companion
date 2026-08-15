@@ -94,44 +94,56 @@ interface GenerationInstructionFactory<TInstruction> {
 `TaskDefinition` 当前包含：
 
 ```ts
-interface TaskDefinition<
-  TInstruction,
-  TPreparedData,
-  TResult
-> {
+interface TaskDefinition<TInstruction, TResult> {
   id: string;
   version: number;
-  systemInstruction: string;
-  toolRequirements: readonly AgentToolRequirement[];
-  skills: readonly AgentSkillRequirement[];
-  mcpServers: readonly AgentMcpServerRequirement[];
+  providerSelectorId: string;
   primaryWorkspaceConfig: AgentWorkspaceConfig;
   secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   assetReferenceSchema: GenerationAssetReferenceSchema;
   instruction: GenerationInstructionFactory<TInstruction>;
-  prepareExtension?: GenerationTaskPrepareExtension<...>;
-  postProcessor: GenerationTaskPostProcessor<...>;
+  process(context: GenerationTaskProcessContext<TInstruction>): Promise<TResult>;
 }
 ```
 
-Definition 可以声明额外 prepare 数据，但不要求调用方派生新的 `GenerationTask` 子类。
-差异通过组合进入：
+TaskDefinition 只声明稳定的任务身份、Provider Selector、Workspace、AssetReference、Instruction
+协议和业务流程，不保存一套全任务共享的 Agent 提示词或能力配置。`process()` 中的每次调用都必须
+显式构造完整 Turn：
 
-- Instruction Factory；
-- 可选 Prepare Extension；
-- PostProcessor。
+```ts
+interface TaskAgentCallRequest {
+  callKey: string;
+  purpose: string;
+  systemInstruction: string;
+  userMessage: AgentUserMessage;
+  toolRequirements: readonly AgentToolRequirement[];
+  skills: readonly AgentSkillRequirement[];
+  mcpServers: readonly AgentMcpServerRequirement[];
+  assistantEvents?: "none" | "runtime";
+}
+```
 
-通用 Definition 不声明 Agent 产物路径、数量或格式。Agent 在 Workspace 中产生了什么、如何发现、
-如何校验以及如何导入，全部由具体 `postProcessor` 负责。这样 HTML 可以发现入口文件和资源目录，
-Mind Map 可以读取自己的候选文件，核心层不假设“每个任务只有一个输出文件”。
+不存在 `defaultSystemInstruction`，也不把 Definition 级工具、Skill 或 MCP 与调用参数隐式合并。
+同一个 `process()` 可以让 generate、review、repair 等调用使用完全不同的系统提示词和能力组合。
+框架只提供已经完成 AssetReference 拼装的 `context.preparedUserMessage`；具体流程仍须在调用时
+明确选择是否发送它。
+
+`callKey` 是 GenerationTask 内的稳定调用身份，用于 checkpoint 与恢复去重；`purpose` 只作为
+观测和 metrics 标签，不参与提示词、工具或执行策略。TaskAgentSession 负责 Session 延续、恢复与
+Provider 路由，但不会替 TaskDefinition 猜测本轮 Agent 行为。
+
+具体产物由 `process()` 自己发现、校验、修复和提交。这样 HTML 可以直接使用最终 Assistant
+回答，Mind Map 可以读取候选文件，核心层不假设“每个任务只有一个输出形式”。
 
 Registry 使用 `id + version` 定位 Definition。版本进入 Task Snapshot，因此应用升级后仍能找到
 创建任务时使用的协议。
+修改某个 `callKey` 的提示词、能力或业务含义时必须提升 Definition version；已完成的同名
+call checkpoint 会继续返回持久化结果，而不会因代码变化偷偷重跑。
 
-`toolRequirements`、`skills` 和 `mcpServers` 分别表达任务工具需求、方法上下文和外部
-MCP Server，都使用 required / optional 语义，但由 Provider Adapter 分别映射。
-`mindmap.generate@1` 当前三者均为空；Provider 根据它的 writable Workspace 自动提供
-Workspace read / search / write，直到出现真实复用需求才增加任务专属能力。
+每次调用中的 `toolRequirements`、`skills` 和 `mcpServers` 分别表达本轮工具需求、方法上下文
+和外部 MCP Server，都使用 required / optional 语义，并由 Provider Adapter 分别映射。
+`mindmap.generate@1` 当前每轮三者均为空；Provider 根据 writable Workspace 自动提供
+Workspace read / search / write。
 
 ## 4. AssetReference 输入
 

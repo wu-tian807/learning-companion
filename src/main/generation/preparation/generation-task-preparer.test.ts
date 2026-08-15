@@ -119,7 +119,7 @@ describe('GenerationTaskPreparer', () => {
         'utf8',
       ),
     ).toBe('# Lesson\n');
-    const messageText = prepared.defaultUserMessage.content
+    const messageText = prepared.preparedUserMessage.content
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
       .join('\n');

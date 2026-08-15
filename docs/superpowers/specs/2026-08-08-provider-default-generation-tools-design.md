@@ -21,38 +21,37 @@
 
 本设计将契约调整为：
 
-`有效工具集 = Provider 默认工具需求 + TaskDefinition.toolRequirements`
+`有效工具集 = Provider 默认工具需求 + TaskAgentCallRequest.toolRequirements`
 
-TaskDefinition 继续决定业务任务特有的 Tool、Skill 和 MCP；Provider 决定基础执行工具及其
-真实实现。Workspace 权限仍然是授权上限，TaskDefinition 和 Provider 默认值都不能扩大它。
+`TaskDefinition.process()` 在每次 Agent 调用中决定本轮特有的 Tool、Skill 和 MCP；Provider
+决定基础执行工具及其真实实现。Workspace 权限仍然是授权上限，调用参数和 Provider 默认值
+都不能扩大它。
 
 ## 2. 职责边界
 
 ### 2.1 TaskDefinition
 
-TaskDefinition 声明：
+TaskDefinition 静态声明：
 
-- `toolRequirements`：该任务对 Agent 工具的 required / optional 需求；
-- `skills`：该任务显式需要的方法说明和随附资源；
-- `mcpServers`：该任务显式允许连接的 MCP Server；
 - Workspace 的 read / write 权限；
-- system instruction、instruction、输出协议和后处理。
+- instruction、AssetReference 协议和 `process()`。
 
-TaskDefinition 不再声明所有任务都会重复使用的 Workspace 基础工具。
+`process()` 的每次 `agent.call()` 显式声明 system instruction、user message、额外工具、Skill
+与 MCP；TaskDefinition 不保存全任务共享的 Agent 配置，也不重复声明 Workspace 基础工具。
 
 ### 2.2 Provider
 
 每个 Provider Adapter 负责：
 
 1. 根据 Prepared Workspace 计算本次默认工具；
-2. 合并 Provider 注册的其他默认工具和 `toolRequirements`；
+2. 合并 Provider 注册的其他默认工具和本次调用的 `toolRequirements`；
 3. 对每个中立工具 ID 优先选择 Provider 原生能力；
 4. 原生能力不可用时尝试应用 Function Tool；
 5. required 工具不可满足时在登录、环境检查和 Thread 创建前失败；
 6. optional 工具不可满足时省略；
 7. 将最终有效工具集用于请求配置、事件白名单和 Session 配置指纹。
 
-Provider 不负责 GenerationTask 的业务语义，TaskDefinition 也不携带 Codex
+Provider 不负责 GenerationTask 的业务语义，TaskAgentCallRequest 也不携带 Codex
 `dynamicTools`、shell 或其他 wire protocol DTO。
 
 ### 2.3 Workspace 权限
@@ -89,7 +88,7 @@ Companion，图片读取使用 Codex 原生 `view_image`。只要有 readable Wo
       readonly availability: 'required' | 'optional';
     }
 
-`TaskDefinition`、`PreparedGenerationTask` 和 `GenerationAgentTurnRequest` 统一使用：
+`TaskAgentCallRequest` 和 `GenerationAgentTurnRequest` 统一使用：
 
     readonly toolRequirements: readonly AgentToolRequirement[];
 
@@ -102,7 +101,7 @@ Provider 注册的默认工具需求，按以下顺序处理：
 
 1. 从 Workspace 权限派生 read / search / write / image；
 2. 合并 Bootstrap 为 Provider 组装的默认 Function Tool 需求；
-3. 合并 TaskDefinition 的 `toolRequirements`；
+3. 合并本次 Agent 调用的 `toolRequirements`；
 4. 同 ID 去重，required 优先于 optional；
 5. 根据当前授权过滤 Workspace 工具；
 6. 原生 Codex 工具优先，否则查询应用 Function Tool Registry；
@@ -134,7 +133,7 @@ Selection 是本次执行的唯一事实：
 
 ## 6. PDF、Video 与后续内置能力
 
-PDF、Video 等媒体处理能力同样属于 Provider 默认工具集，而不是每个 TaskDefinition 重复声明。
+PDF、Video 等媒体处理能力同样属于 Provider 默认工具集，而不是每次 Agent 调用重复声明。
 
 当前已经实现：
 
@@ -180,7 +179,7 @@ Workbench 返回与预览界面相同的缓存 PDF；准备结果同时保留原
 
 ## 7. Mind Map 结果
 
-`mindmap.generate@1` 改为：
+`mindmap.generate@1` 的 process 在每次调用中显式使用：
 
     toolRequirements: []
     skills: []
@@ -194,9 +193,10 @@ TaskDefinition 的 `process()`
 
 ## 8. 数据流
 
-    TaskDefinition
+    TaskDefinition.process
       -> prepare: instruction + asset copies + workspaces
-      -> GenerationAgentTurnRequest.toolRequirements
+      -> TaskAgentCallRequest: prompt + tools + skills + mcp
+      -> GenerationAgentTurnRequest
       -> selected Provider
       -> Provider default tool policy
       -> effective tool selection
@@ -211,12 +211,12 @@ TaskDefinition 的 `process()`
 1. `mindmap.generate@1` 不再声明 read / search；
 2. read-only Workspace 自动获得 Shell read / search、PDF / image，不获得有效写权限；
 3. writable Workspace 额外获得由 permission profile 限定路径的原生 write；
-4. TaskDefinition 的额外 Function Tool 仍能声明、解析和回调；
+4. 单次 Agent 调用的额外 Function Tool 仍能声明、解析和回调；
 5. required 缺失额外工具在账号检查和 Thread 创建前失败；
 6. optional 缺失额外工具被省略；
 7. 动态工具与原生工具事件只按最终 Selection 放行；
 8. 默认工具和 Function Tool 版本进入 Session 指纹；
-9. TaskDefinition Registry 校验 `toolRequirements` 的 ID、availability 和重复项；
+9. TaskAgentSession 校验每次调用 `toolRequirements` 的 ID、availability 和重复项；
 10. Shell 默认开启，但不能越过 Codex permission profile 的路径读写边界；
 11. 路径越界、read / write profile、真实 PDF 文字提取和逐页图片渲染测试通过；
 12. 针对性测试、TypeScript、ESLint 和完整 `pnpm check` 通过。
@@ -224,7 +224,7 @@ TaskDefinition 的 `process()`
 ## 10. 明确不做
 
 - 不自己实现 Codex Agent Loop；
-- 不让 TaskDefinition 重复声明 Provider 基础工具；
+- 不让 Agent 调用重复声明 Provider 基础工具；
 - 不让工具声明绕过 Workspace 权限；
 - 不让模型通过 Shell 自行寻找 PDF 解析依赖或生成临时解析脚本；
 - 不在本轮虚构 Video 处理器；
@@ -239,7 +239,7 @@ TaskDefinition 的 `process()`
   Dynamic Tool，图片走原生 `view_image`；
 - Provider 可由 Bootstrap 注入默认 Function Tool 需求，供后续按依赖可用性注册的 Video 等
   能力使用；
-- `toolRequirements` 已贯通 Definition、prepare、repair Turn 和 Provider request；
+- `toolRequirements` 已从每次 `agent.call()` 贯通 Agent Session、Executor 和 Provider request；
 - 请求配置、事件白名单和 Session 指纹统一消费同一份有效 Selection；
 - `mindmap.generate@1` 已移除重复的 Workspace 工具声明；
 - 完整 `pnpm check` 通过：207 个测试文件，868 项通过，1 项跳过。

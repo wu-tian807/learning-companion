@@ -14,7 +14,10 @@ import {
   MIND_MAP_GENERATION_CANDIDATE_VERSION,
   validateMindMapGenerationCandidateV1,
 } from './mindmap-generation-output';
-import { MindMapGenerationProcessor } from './mindmap-generation-processor';
+import {
+  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+  MindMapGenerationProcessor,
+} from './mindmap-generation-processor';
 
 const context = {
   assetReferences: {
@@ -105,7 +108,7 @@ function createProcessContext(
       secondary: [],
     },
     assetReferences: context.assetReferences,
-    defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
+    preparedUserMessage: createTextAgentUserMessage('生成思维导图'),
     agent,
     reportStatus: vi.fn(),
     reportOutputRejected: vi.fn(),
@@ -274,6 +277,29 @@ describe('Mind Map generation contracts', () => {
       ]),
     });
     expect(processContext.agent.call).toHaveBeenCalledTimes(4);
+    expect(processContext.agent.call).toHaveBeenNthCalledWith(
+      1,
+      {
+        callKey: 'generate',
+        purpose: 'generation',
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+        userMessage: processContext.preparedUserMessage,
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
+      },
+    );
+    expect(processContext.agent.call).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        callKey: 'repair-1',
+        purpose: 'repair',
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
+      }),
+    );
     expect(processContext.reportOutputRejected).toHaveBeenCalledTimes(3);
     expect(assets.stageGeneratedFile).not.toHaveBeenCalled();
   });

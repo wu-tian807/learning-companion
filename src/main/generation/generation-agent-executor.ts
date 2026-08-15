@@ -6,6 +6,11 @@ import {
   type GenerationAgentExecutionMetrics,
 } from './contracts/generation-metrics';
 import type {
+  AgentMcpServerRequirement,
+  AgentSkillRequirement,
+  AgentToolRequirement,
+} from './contracts/task-definition';
+import type {
   GenerationAgentEvent,
   GenerationAgentRunner,
   GenerationAgentTurnResult,
@@ -26,7 +31,11 @@ export interface CompletedGenerationAgentRun {
 export interface GenerationAgentExecutionRequest {
   readonly callKey: string;
   readonly purpose: string;
+  readonly systemInstruction: string;
   readonly userMessage: AgentUserMessage;
+  readonly toolRequirements: readonly AgentToolRequirement[];
+  readonly skills: readonly AgentSkillRequirement[];
+  readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly expectedSessionId?: string;
   readonly modelId?: string;
   readonly reasoningEffort?: string;
@@ -99,11 +108,11 @@ export class GenerationAgentExecutor {
       ...(request.reasoningEffort
         ? { reasoningEffort: request.reasoningEffort }
         : {}),
-      systemInstruction: prepared.systemInstruction,
+      systemInstruction: request.systemInstruction,
       userMessage: request.userMessage,
-      toolRequirements: prepared.toolRequirements,
-      skills: prepared.skills,
-      mcpServers: prepared.mcpServers,
+      toolRequirements: request.toolRequirements,
+      skills: request.skills,
+      mcpServers: request.mcpServers,
       workspaces: prepared.workspaces,
       signal,
     });

@@ -195,11 +195,7 @@ describe('GenerationTask IPC handlers', () => {
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
       instruction: new HtmlAssistantInstruction({ conversationId: 'conversation-1', question: 'question' }),
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage: createTextAgentUserMessage('question'),
-      toolRequirements: [],
-      skills: [],
-      mcpServers: [],
+      preparedUserMessage: createTextAgentUserMessage('question'),
       workspaces: {
         primary: { ...definition.primaryWorkspaceConfig, instanceKey: 'conversation-1', path: '/tmp/html-assistant' },
         secondary: [],

@@ -221,8 +221,9 @@ describe('createHtmlAssistantTaskDefinitionV1', () => {
       cardinality: 'one',
       minItems: 1,
     });
-    expect(definition.toolRequirements).toEqual([]);
-    expect(definition.skills).toEqual([]);
-    expect(definition.mcpServers).toEqual([]);
+    expect(definition).not.toHaveProperty('systemInstruction');
+    expect(definition).not.toHaveProperty('toolRequirements');
+    expect(definition).not.toHaveProperty('skills');
+    expect(definition).not.toHaveProperty('mcpServers');
   });
 });

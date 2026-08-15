@@ -7,7 +7,10 @@ import {
   EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
 } from '../shared';
 import { EpubExplanationInstruction } from './instruction';
-import { EpubExplanationProcessor } from './processor';
+import {
+  EPUB_EXPLANATION_SYSTEM_INSTRUCTION_V1,
+  EpubExplanationProcessor,
+} from './processor';
 import { createEpubExplanationTaskDefinitionV1 } from './task-definition';
 
 function createInstruction() {
@@ -89,13 +92,22 @@ describe('EPUB explanation generation', () => {
       projectId: 'project-1',
       instruction,
       agent: { call },
-      defaultUserMessage: { role: 'user', content: [] },
+      preparedUserMessage: { role: 'user', content: [] },
       reportStatus: vi.fn(),
     } as never);
 
     expect(result).toEqual({ attachmentId: 'attachment-1' });
     expect(call).toHaveBeenCalledWith(
-      expect.objectContaining({ assistantEvents: 'none' }),
+      {
+        callKey: 'explain',
+        purpose: 'generation',
+        systemInstruction: EPUB_EXPLANATION_SYSTEM_INSTRUCTION_V1,
+        userMessage: { role: 'user', content: [] },
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
+        assistantEvents: 'none',
+      },
     );
     expect(createWithContent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -150,7 +162,7 @@ describe('EPUB explanation generation', () => {
       agent: {
         call: vi.fn(async () => ({ assistantOutput: '已完成的回答' })),
       },
-      defaultUserMessage: { role: 'user', content: [] },
+      preparedUserMessage: { role: 'user', content: [] },
       reportStatus: vi.fn(),
     } as never);
 

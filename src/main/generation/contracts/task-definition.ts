@@ -39,7 +39,12 @@ export interface TaskAgentCallRequest {
    */
   readonly callKey: string;
   readonly purpose: string;
-  readonly userMessage?: AgentUserMessage;
+  /** Complete instructions for this turn. No Task-level default is applied. */
+  readonly systemInstruction: string;
+  readonly userMessage: AgentUserMessage;
+  readonly toolRequirements: readonly AgentToolRequirement[];
+  readonly skills: readonly AgentSkillRequirement[];
+  readonly mcpServers: readonly AgentMcpServerRequirement[];
   /** Final output is always returned; this only controls runtime UI events. */
   readonly assistantEvents?: 'none' | 'runtime';
 }
@@ -75,7 +80,8 @@ export interface GenerationTaskProcessContext<
   readonly instruction: TInstruction;
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly defaultUserMessage: AgentUserMessage;
+  /** Instruction message prepared with the declared Asset references. */
+  readonly preparedUserMessage: AgentUserMessage;
   readonly agent: TaskAgentSession;
   readonly signal?: AbortSignal;
   reportStatus(message: string): void;
@@ -102,10 +108,6 @@ export interface TaskDefinition<
   readonly version: number;
   /** Stable business slot used to resolve the execution configuration. */
   readonly providerSelectorId: string;
-  readonly systemInstruction: string;
-  readonly toolRequirements: readonly AgentToolRequirement[];
-  readonly skills: readonly AgentSkillRequirement[];
-  readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;

@@ -90,6 +90,11 @@ describe('GenerationTaskService', () => {
         await context.agent.call({
           callKey: 'generate',
           purpose: 'generation',
+          systemInstruction: 'Generate the test artifact.',
+          userMessage: context.preparedUserMessage,
+          toolRequirements: [],
+          skills: [],
+          mcpServers: [],
         });
         committedCandidates.push(
           JSON.parse(
@@ -114,11 +119,7 @@ describe('GenerationTaskService', () => {
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
       instruction: new MindMapGenerationInstruction(),
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
-      toolRequirements: definition.toolRequirements,
-      skills: definition.skills,
-      mcpServers: definition.mcpServers,
+      preparedUserMessage: createTextAgentUserMessage('生成思维导图'),
       workspaces: {
         primary: {
           ...definition.primaryWorkspaceConfig,
@@ -472,7 +473,15 @@ describe('GenerationTaskService', () => {
     await mkdir(join(primaryPath, 'control'), { recursive: true });
     const definition = createMindMapGenerationTaskDefinitionV1({
       async process(context) {
-        await context.agent.call({ callKey: 'generate', purpose: 'generation' });
+        await context.agent.call({
+          callKey: 'generate',
+          purpose: 'generation',
+          systemInstruction: 'Generate the test artifact.',
+          userMessage: context.preparedUserMessage,
+          toolRequirements: [],
+          skills: [],
+          mcpServers: [],
+        });
         return { resultAssetId: 'generated-mindmap' };
       },
     });
@@ -485,11 +494,7 @@ describe('GenerationTaskService', () => {
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
       instruction: new MindMapGenerationInstruction(),
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
-      toolRequirements: definition.toolRequirements,
-      skills: definition.skills,
-      mcpServers: definition.mcpServers,
+      preparedUserMessage: createTextAgentUserMessage('生成思维导图'),
       workspaces: {
         primary: {
           ...definition.primaryWorkspaceConfig,

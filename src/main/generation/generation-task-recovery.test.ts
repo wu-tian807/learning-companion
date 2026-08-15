@@ -81,6 +81,11 @@ describe('GenerationTask recovery', () => {
         await context.agent.call({
           callKey: 'generate',
           purpose: 'generation',
+          systemInstruction: 'Generate the test artifact.',
+          userMessage: context.preparedUserMessage,
+          toolRequirements: [],
+          skills: [],
+          mcpServers: [],
         });
         commitCount += 1;
         if (commitCount === 1) {
@@ -98,11 +103,7 @@ describe('GenerationTask recovery', () => {
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
       instruction: new MindMapGenerationInstruction(),
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage: createTextAgentUserMessage('generate'),
-      toolRequirements: definition.toolRequirements,
-      skills: definition.skills,
-      mcpServers: definition.mcpServers,
+      preparedUserMessage: createTextAgentUserMessage('generate'),
       workspaces: {
         primary: {
           ...definition.primaryWorkspaceConfig,

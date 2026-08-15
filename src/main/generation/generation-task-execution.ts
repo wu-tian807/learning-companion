@@ -284,7 +284,7 @@ export class GenerationTaskExecution {
           instruction: prepared.instruction,
           workspaces: prepared.workspaces,
           assetReferences: prepared.assetReferences,
-          defaultUserMessage: prepared.defaultUserMessage,
+          preparedUserMessage: prepared.preparedUserMessage,
           agent,
           signal,
           reportStatus(message) {
