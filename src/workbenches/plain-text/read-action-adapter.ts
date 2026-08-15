@@ -15,7 +15,8 @@ import {
 } from './shared';
 
 export interface PlainTextReadActionAdapterOptions {
-  readonly getContainer: () => HTMLElement | null | undefined;
+  readonly getScrollContainer: () => HTMLElement | null | undefined;
+  readonly getContentElement: () => HTMLElement | null | undefined;
   readonly getSource: () => string;
   readonly clipboard?: {
     readonly readText: () => Promise<string>;
@@ -88,6 +89,53 @@ function rangeContainsPoint(
   }
 }
 
+function selectionFromDomRange(
+  range: Range,
+  contentElement: HTMLElement,
+  source: string,
+): WorkbenchSelectionSnapshot | undefined {
+  if (
+    range.collapsed ||
+    !rangeBelongsToElement(range, contentElement)
+  ) {
+    return undefined;
+  }
+
+  try {
+    const startRange = contentElement.ownerDocument.createRange();
+    startRange.selectNodeContents(contentElement);
+    startRange.setEnd(range.startContainer, range.startOffset);
+
+    const endRange = contentElement.ownerDocument.createRange();
+    endRange.selectNodeContents(contentElement);
+    endRange.setEnd(range.endContainer, range.endOffset);
+
+    const start = startRange.toString().length;
+    const end = endRange.toString().length;
+    const text = source.slice(start, end);
+
+    if (
+      start < 0 ||
+      end <= start ||
+      end > source.length ||
+      text !== range.toString()
+    ) {
+      return undefined;
+    }
+
+    return {
+      text,
+      target: createTextRangeTarget(
+        PLAIN_TEXT_RANGE_ANCHOR_TYPE,
+        source,
+        [{ start, end }],
+      ),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export class PlainTextReadActionAdapter
   implements EditorActionAdapter
 {
@@ -105,11 +153,12 @@ export class PlainTextReadActionAdapter
   }
 
   getState(): EditorActionState {
-    const ready = Boolean(this.options.getContainer());
+    const ready = Boolean(this.options.getContentElement());
     const hasSelection =
       ready &&
       this.frozenRange !== undefined &&
-      !this.frozenRange.collapsed;
+      !this.frozenRange.collapsed &&
+      this.frozenText.length > 0;
 
     return {
       canUndo: false,
@@ -123,7 +172,7 @@ export class PlainTextReadActionAdapter
   }
 
   captureInteraction(): WorkbenchInteractionSnapshot {
-    const element = this.options.getContainer();
+    const element = this.options.getContentElement();
     const selection =
       element?.ownerDocument.defaultView?.getSelection();
 
@@ -133,21 +182,20 @@ export class PlainTextReadActionAdapter
 
     const range = selection.getRangeAt(0);
 
-    if (
-      range.collapsed ||
-      !rangeBelongsToElement(range, element)
-    ) {
-      return { inputs: [] };
-    }
-
-    return this.createInteraction(range.toString(), true);
+    return interactionFromTextSelection(
+      selectionFromDomRange(
+        range,
+        element,
+        this.options.getSource(),
+      ),
+    );
   }
 
   captureContextMenu(
     clientX: number,
     clientY: number,
   ): EditorContextMenuCapture {
-    const element = this.requireContainer();
+    const element = this.requireContentElement();
     const ownerDocument = element.ownerDocument;
     const selection = ownerDocument.defaultView?.getSelection();
     const currentRange =
@@ -186,15 +234,15 @@ export class PlainTextReadActionAdapter
     }
 
     this.frozenRange = capturedRange;
-    this.frozenText = capturedRange.collapsed
-      ? ''
-      : capturedRange.toString();
+    const frozenSelection = selectionFromDomRange(
+      capturedRange,
+      element,
+      this.options.getSource(),
+    );
+    this.frozenText = frozenSelection?.text ?? '';
 
     return {
-      interaction: this.createInteraction(
-        this.frozenText,
-        true,
-      ),
+      interaction: interactionFromTextSelection(frozenSelection),
       onWheel: (event) => this.scrollByWheel(event),
     };
   }
@@ -222,7 +270,7 @@ export class PlainTextReadActionAdapter
   }
 
   selectAll(): void {
-    const element = this.requireContainer();
+    const element = this.requireContentElement();
     const range = element.ownerDocument.createRange();
     range.selectNodeContents(element);
     const selection =
@@ -235,8 +283,8 @@ export class PlainTextReadActionAdapter
     throw new Error('阅读模式暂不支持查找');
   }
 
-  private requireContainer(): HTMLElement {
-    const element = this.options.getContainer();
+  private requireContentElement(): HTMLElement {
+    const element = this.options.getContentElement();
 
     if (!element) {
       throw new Error('纯文本阅读视图尚未准备完成');
@@ -244,34 +292,8 @@ export class PlainTextReadActionAdapter
     return element;
   }
 
-  private createInteraction(
-    text: string,
-    includeEmptyTarget = false,
-  ): WorkbenchInteractionSnapshot {
-    if (!text && !includeEmptyTarget) {
-      return { inputs: [] };
-    }
-
-    const source = this.options.getSource();
-    const normalizedSource = source.replace(/\r\n/g, '\n');
-    const start = text ? normalizedSource.indexOf(text) : -1;
-    const selection: WorkbenchSelectionSnapshot | undefined =
-      text && start >= 0
-        ? {
-            text,
-            target: createTextRangeTarget(
-              PLAIN_TEXT_RANGE_ANCHOR_TYPE,
-              source,
-              [{ start, end: start + text.length }],
-            ),
-          }
-        : undefined;
-
-    return interactionFromTextSelection(selection);
-  }
-
   private scrollByWheel(event: WorkbenchContextMenuWheelEvent): void {
-    const element = this.options.getContainer();
+    const element = this.options.getScrollContainer();
 
     if (!element) {
       return;

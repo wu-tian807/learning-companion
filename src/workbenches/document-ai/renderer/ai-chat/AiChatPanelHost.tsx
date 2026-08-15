@@ -7,7 +7,7 @@ import { AiChatPanel } from './AiChatPanel';
 export interface AiChatPanelHostProps {
   readonly projectId: string;
   readonly assetId: string;
-  readonly onAttachAnswer: (
+  readonly onAttachAnswer?: (
     messageId: string,
     text: string,
     anchor?: AiChatMessage['anchor'],

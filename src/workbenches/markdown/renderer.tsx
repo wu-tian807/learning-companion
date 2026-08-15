@@ -1081,6 +1081,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         refreshAttachments ?? (async () => undefined)
       }
       onError={onError}
+      allowAnswerAttachments={false}
     >
       <div className="flex h-full min-h-0 flex-col bg-[#171c22]">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.065] bg-[#1d2229] px-3">

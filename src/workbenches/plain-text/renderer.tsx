@@ -331,10 +331,12 @@ export function PlainTextWorkbenchView({
     [recovery],
   );
   const readHostRef = useRef<HTMLDivElement>(null);
+  const readContentRef = useRef<HTMLDivElement>(null);
   const readActionAdapter = useMemo(
     () =>
       new PlainTextReadActionAdapter({
-        getContainer: () => readHostRef.current,
+        getScrollContainer: () => readHostRef.current,
+        getContentElement: () => readContentRef.current,
         getSource: () => latestContentRef.current,
       }),
     [],
@@ -754,6 +756,7 @@ export function PlainTextWorkbenchView({
         refreshAttachments ?? (async () => undefined)
       }
       onError={onError}
+      allowAnswerAttachments={false}
     >
       <div
       className="relative flex h-full min-h-0 flex-col bg-[#171c22]"
@@ -848,7 +851,10 @@ export function PlainTextWorkbenchView({
                 runtime.closeContextMenu();
               }}
             >
-              <div className="mx-auto max-w-[780px] whitespace-pre-wrap text-[15px] leading-8 text-slate-200 [overflow-wrap:anywhere]">
+              <div
+                ref={readContentRef}
+                className="mx-auto max-w-[780px] whitespace-pre-wrap text-[15px] leading-8 text-slate-200 [overflow-wrap:anywhere]"
+              >
                 {content.length > 0
                   ? content
                   : (
