@@ -521,7 +521,6 @@ src/main/generation/
 ├── contracts/                         # 纯协议和状态校验
 ├── preparation/
 │   ├── generation-asset-reference-preparer.ts
-│   ├── legacy-generation-prepared-manifest-file.ts # 仅兼容 v20 未完成任务
 │   ├── generation-task-preparer.ts
 │   └── generation-user-message-composer.ts
 ├── generation-agent-executor.ts       # 单次 Agent Turn 与执行指标

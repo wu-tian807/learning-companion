@@ -215,13 +215,6 @@ export class GenerationTaskExecution {
           signal,
         );
 
-        if (snapshot.prepared.legacyManifestRef !== undefined) {
-          task.migrateLegacyPreparedCheckpoint(
-            prepared.assetReferences,
-          );
-          this.database.update(task.getSnapshot());
-        }
-
         return prepared;
       } catch (error) {
         if (

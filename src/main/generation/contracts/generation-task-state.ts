@@ -18,16 +18,9 @@ import {
   type GenerationTaskMetrics,
 } from './generation-metrics';
 
-export type GenerationTaskPreparedData =
-  | {
-      readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-      readonly legacyManifestRef?: never;
-    }
-  | {
-      /** Compatibility only for unfinished tasks prepared before database v21. */
-      readonly assetReferences?: never;
-      readonly legacyManifestRef: string;
-    };
+export interface GenerationTaskPreparedData {
+  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
+}
 
 export type GenerationTaskPreparedCheckpoint = Readonly<
   { readonly completedTime: number } & GenerationTaskPreparedData
@@ -125,25 +118,6 @@ function requireAssistantOutput(value: string, field: string): string {
   return value;
 }
 
-function requireRelativePath(value: string, field: string): string {
-  const normalized = requireText(value, field);
-
-  if (
-    normalized.includes('\\') ||
-    normalized.startsWith('/') ||
-    normalized
-      .split('/')
-      .some(
-        (segment) =>
-          segment.length === 0 || segment === '.' || segment === '..',
-      )
-  ) {
-    throw new Error(`GenerationTask ${field} 必须是可移植相对路径`);
-  }
-
-  return normalized;
-}
-
 function clonePreparedCheckpoint(
   checkpoint: GenerationTaskPreparedCheckpoint,
 ): GenerationTaskPreparedCheckpoint {
@@ -152,28 +126,10 @@ function clonePreparedCheckpoint(
     'prepared.completedTime',
   );
 
-  if (checkpoint.assetReferences !== undefined) {
-    if (checkpoint.legacyManifestRef !== undefined) {
-      throw new Error('GenerationTask prepared checkpoint 数据无效');
-    }
-
-    return Object.freeze({
-      completedTime,
-      assetReferences: clonePreparedGenerationAssetReferenceBindings(
-        checkpoint.assetReferences,
-      ),
-    });
-  }
-
-  if (checkpoint.legacyManifestRef === undefined) {
-    throw new Error('GenerationTask prepared checkpoint 数据无效');
-  }
-
   return Object.freeze({
     completedTime,
-    legacyManifestRef: requireRelativePath(
-      checkpoint.legacyManifestRef,
-      'prepared.legacyManifestRef',
+    assetReferences: clonePreparedGenerationAssetReferenceBindings(
+      checkpoint.assetReferences,
     ),
   });
 }

@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -207,81 +207,6 @@ describe('GenerationTaskPreparer', () => {
         'html-assistant',
         'conversation-1',
       ),
-    );
-  });
-
-  it('restores a migrated v20 checkpoint through the read-only legacy manifest adapter', async () => {
-    const workspaceRoot = await mkdtemp(
-      join(tmpdir(), 'learning-companion-generation-legacy-'),
-    );
-    temporaryDirectories.push(workspaceRoot);
-    const workspaceManager = new AgentWorkspaceManager(workspaceRoot);
-    const definition = createMindMapGenerationTaskDefinitionV1({
-      async process() {
-        return { resultAssetId: 'unused' };
-      },
-    });
-    const task = GenerationTask.create({
-      id: 'task-legacy',
-      projectId: 'project-1',
-      definitionId: definition.id,
-      definitionVersion: definition.version,
-      instruction: new MindMapGenerationInstruction({
-        additionalInstructions: '',
-      }).toSnapshot(),
-      assetReferences: { sources: [{ assetId: 'asset-1' }] },
-      createdTime: 10,
-    });
-    const legacyManifestRef =
-      'control/tasks/task-legacy/prepared-manifest.json';
-    task.recordPrepared({
-      checkpoint: { completedTime: 20, legacyManifestRef },
-      durationMs: 10,
-      updatedTime: 20,
-    });
-    const workspacePath = await workspaceManager.prepare([
-      'project-1',
-      'generation-mindmap',
-      'task-legacy',
-    ]);
-    const manifestPath = join(
-      workspacePath,
-      ...legacyManifestRef.split('/'),
-    );
-    await mkdir(dirname(manifestPath), { recursive: true });
-    const legacyReferences = references('asset-1');
-    await writeFile(
-      manifestPath,
-      JSON.stringify({
-        format: 'learning-companion/generation-prepared-manifest',
-        version: 1,
-        taskId: 'task-legacy',
-        projectId: 'project-1',
-        definitionId: definition.id,
-        definitionVersion: definition.version,
-        assetReferences: legacyReferences,
-      }),
-      'utf8',
-    );
-    const verify = vi.fn(async () => legacyReferences);
-    const preparer = new GenerationTaskPreparer(workspaceManager, {
-      prepare: vi.fn(async () => {
-        throw new Error('legacy restore must not prepare current assets');
-      }),
-      verify,
-    });
-
-    const restored = await preparer.restore(
-      task.getSnapshot(),
-      definition,
-    );
-
-    expect(restored.assetReferences).toEqual(legacyReferences);
-    expect(verify).toHaveBeenCalledWith(
-      workspacePath,
-      definition.assetReferenceSchema,
-      legacyReferences,
-      undefined,
     );
   });
 

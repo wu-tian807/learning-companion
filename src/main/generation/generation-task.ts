@@ -14,7 +14,6 @@ import {
   type GenerationTaskSnapshot,
   type GenerationTaskStatus,
 } from './contracts/generation-task-state';
-import type { PreparedGenerationAssetReferenceBindings } from './contracts/generation-asset-reference';
 
 export {
   cloneGenerationTaskSnapshot,
@@ -151,29 +150,6 @@ export class GenerationTask {
       ),
       failure: undefined,
       updatedTime: input.updatedTime,
-    });
-  }
-
-  migrateLegacyPreparedCheckpoint(
-    assetReferences: PreparedGenerationAssetReferenceBindings,
-  ): void {
-    this.requireActive();
-    const prepared = this.snapshot.prepared;
-
-    if (!prepared || this.snapshot.completed) {
-      throw new Error('GenerationTask prepare checkpoint 迁移顺序无效');
-    }
-
-    if (prepared.assetReferences !== undefined) {
-      return;
-    }
-
-    this.replace({
-      ...this.snapshot,
-      prepared: {
-        completedTime: prepared.completedTime,
-        assetReferences,
-      },
     });
   }
 

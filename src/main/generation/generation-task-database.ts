@@ -181,9 +181,7 @@ function toRow(task: GenerationTaskSnapshot) {
     preparedData:
       snapshot.prepared === undefined
         ? null
-        : snapshot.prepared.assetReferences !== undefined
-          ? { assetReferences: snapshot.prepared.assetReferences }
-          : { legacyManifestRef: snapshot.prepared.legacyManifestRef },
+        : { assetReferences: snapshot.prepared.assetReferences },
     assignedProviderId: snapshot.assignedProviderId ?? null,
     assignedConnectionId: snapshot.assignedConnectionId ?? null,
     assignedModelId: snapshot.assignedModelId ?? null,

@@ -8,10 +8,6 @@ import {
 } from '../contracts/generation-workspace';
 import type { GenerationTaskSnapshot } from '../generation-task';
 import type { GenerationAssetReferencePreparerApi } from './generation-asset-reference-preparer';
-import {
-  LegacyGenerationPreparedManifestFile,
-  type LegacyGenerationPreparedManifestFileApi,
-} from './legacy-generation-prepared-manifest-file';
 import { appendAssetReferencesToUserMessage } from './generation-user-message-composer';
 import type { PreparedGenerationTask } from './prepared-generation-task';
 
@@ -61,8 +57,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   constructor(
     private readonly workspaceManager: AgentWorkspaceManagerApi,
     private readonly assetReferencePreparer: GenerationAssetReferencePreparerApi,
-    private readonly legacyManifestFile: LegacyGenerationPreparedManifestFileApi =
-      new LegacyGenerationPreparedManifestFile(),
   ) {}
 
   async prepare(
@@ -116,17 +110,10 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definition,
       instruction,
     );
-    const persistedReferences =
-      task.prepared.assetReferences ??
-      (await this.legacyManifestFile.read(
-        workspaces.primary.path,
-        task.prepared.legacyManifestRef!,
-        task,
-      ));
     const assetReferences = await this.assetReferencePreparer.verify(
       workspaces.primary.path,
       definition.assetReferenceSchema,
-      persistedReferences,
+      task.prepared.assetReferences,
       signal,
     );
 

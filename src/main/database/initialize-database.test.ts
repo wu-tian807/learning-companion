@@ -221,7 +221,7 @@ describe('initializeDatabase', () => {
     }
   });
 
-  it('backfills the assigned Provider when upgrading a version 13 GenerationTask', async () => {
+  it('preserves completed version 13 history and retires prepared unfinished tasks', async () => {
     const databaseFile = await createDatabaseFile();
     const legacyContext = initializeDatabase(databaseFile);
 
@@ -236,8 +236,7 @@ describe('initializeDatabase', () => {
         ) VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run('project', 'Project', '📘', 1, 0, '/tmp/projects/project');
-    legacyContext.sqlite
-      .prepare(
+    const insertLegacyTask = legacyContext.sqlite.prepare(
         `INSERT INTO generation_tasks (
           id, project_id, definition_id, definition_version,
           instruction_json, asset_references_json,
@@ -246,8 +245,8 @@ describe('initializeDatabase', () => {
           post_processed_time, post_process_result_json,
           metrics_json, created_time, updated_time
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+      );
+    insertLegacyTask.run(
         'task',
         'project',
         'mindmap.generate',
@@ -280,6 +279,28 @@ describe('initializeDatabase', () => {
         1,
         5,
       );
+    insertLegacyTask.run(
+      'unfinished-task',
+      'project',
+      'mindmap.generate',
+      1,
+      JSON.stringify({ format: 'test', version: 1 }),
+      JSON.stringify({ sources: [] }),
+      2,
+      'control/prepared-manifest.json',
+      null,
+      null,
+      null,
+      null,
+      null,
+      JSON.stringify({
+        prepareDurationMs: 1,
+        agentExecutions: [],
+        totalActiveDurationMs: 1,
+      }),
+      1,
+      3,
+    );
     legacyContext.sqlite.pragma('user_version = 13');
     legacyContext.close();
 
@@ -325,13 +346,13 @@ describe('initializeDatabase', () => {
         .get();
       expect(migrated?.processCompletedTime).toBe(5);
       expect(JSON.parse(migrated!.preparedData)).toEqual({
-        legacyManifestRef: 'control/prepared-manifest.json',
+        assetReferences: {},
       });
       expect(
         new GenerationTaskDatabase(context).get('task')?.prepared,
       ).toMatchObject({
         completedTime: 2,
-        legacyManifestRef: 'control/prepared-manifest.json',
+        assetReferences: {},
       });
       expect(JSON.parse(migrated!.agentCalls)).toEqual([
         {
@@ -344,6 +365,22 @@ describe('initializeDatabase', () => {
       expect(JSON.parse(migrated!.processResult)).toEqual({
         resultAssetId: 'mindmap-1',
       });
+      const unfinished = context.sqlite
+        .prepare<[], { cancelledTime: number; preparedData: string }>(
+          `SELECT
+             cancelled_time AS cancelledTime,
+             prepared_data_json AS preparedData
+           FROM generation_tasks
+           WHERE id = 'unfinished-task'`,
+        )
+        .get();
+      expect(unfinished?.cancelledTime).toBe(3);
+      expect(JSON.parse(unfinished!.preparedData)).toEqual({
+        assetReferences: {},
+      });
+      const taskDatabase = new GenerationTaskDatabase(context);
+      expect(taskDatabase.get('unfinished-task')?.cancelledTime).toBe(3);
+      expect(taskDatabase.listUnfinishedByProject('project')).toEqual([]);
     } finally {
       context.close();
     }

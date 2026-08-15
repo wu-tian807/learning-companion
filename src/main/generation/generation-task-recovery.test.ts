@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,7 +74,6 @@ describe('GenerationTask recovery', () => {
     const directory = await mkdtemp(join(tmpdir(), 'generation-recovery-'));
     temporaryDirectories.push(directory);
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
-    await mkdir(join(primaryPath, 'control'), { recursive: true });
     let commitCount = 0;
     const definition = createMindMapGenerationTaskDefinitionV1({
       async process(context) {
@@ -203,16 +202,6 @@ describe('GenerationTask recovery', () => {
       agentCalls: [{ callKey: 'generate', sessionId: 'session-1' }],
       failure: { phase: 'process' },
     });
-    const interrupted = database.get(task.id)!;
-    database.tasks.set(task.id, {
-      ...interrupted,
-      prepared: {
-        completedTime: interrupted.prepared!.completedTime,
-        legacyManifestRef:
-          'control/tasks/task-1/prepared-manifest.json',
-      },
-    });
-
     let resumedRunnerCalls = 0;
     const resumedRunner: GenerationAgentRunner = {
       providerId: 'codex',
@@ -251,10 +240,6 @@ describe('GenerationTask recovery', () => {
     expect(
       database.get(task.id)?.prepared?.assetReferences?.sources[0]?.assetId,
     ).toBe('asset-1');
-    expect(
-      database.get(task.id)?.prepared?.legacyManifestRef,
-    ).toBeUndefined();
-
     const reloadedService = createService({
       resolveSelectorConfiguration() {
         return {
