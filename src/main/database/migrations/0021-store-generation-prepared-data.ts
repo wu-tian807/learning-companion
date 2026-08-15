@@ -104,7 +104,7 @@ export const storeGenerationPreparedDataMigration = Object.freeze({
       prepared_time,
       CASE
         WHEN prepared_time IS NULL THEN NULL
-        ELSE json_object('assetReferences', json('{}'))
+        ELSE json_object('legacyManifestRef', prepared_manifest_ref)
       END,
       assigned_provider_id,
       assigned_connection_id,
@@ -114,20 +114,8 @@ export const storeGenerationPreparedDataMigration = Object.freeze({
       process_completed_time,
       process_result_json,
       metrics_json,
-      CASE
-        WHEN prepared_time IS NOT NULL
-          AND process_completed_time IS NULL
-          AND cancelled_time IS NULL
-        THEN NULL
-        ELSE failure_json
-      END,
-      CASE
-        WHEN prepared_time IS NOT NULL
-          AND process_completed_time IS NULL
-          AND cancelled_time IS NULL
-        THEN updated_time
-        ELSE cancelled_time
-      END,
+      failure_json,
+      cancelled_time,
       created_time,
       updated_time
     FROM generation_tasks_v20;
