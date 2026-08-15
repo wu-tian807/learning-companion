@@ -1,4 +1,4 @@
-import type { MainWorkbenchFeatureDefinition } from '../../catalog/main-workbench-features';
+import type { MainWorkbenchContribution } from '../../catalog/register-main-workbenches';
 import { MindMapGenerationProcessor } from './mindmap-generation-processor';
 import { createMindMapGenerationTaskDefinitionV1 } from './mindmap-generation-task-definition';
 
@@ -15,4 +15,4 @@ export const mindMapGenerationMainFeature = Object.freeze({
       ),
     );
   },
-} satisfies MainWorkbenchFeatureDefinition);
+} satisfies MainWorkbenchContribution);

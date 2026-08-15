@@ -16,6 +16,7 @@ import type {
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
+import { documentAiClient } from '../document-ai/renderer/document-ai-client';
 import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
@@ -433,7 +434,7 @@ export function PdfDocumentWorkbenchView({
 
   useEffect(() => () => {
     for (const requestId of activeDocumentRequestIdsRef.current) {
-      void window.learningCompanion.cancelDocumentAi(requestId).catch(() => undefined);
+      documentAiClient.cancel(requestId);
     }
     activeDocumentRequestIdsRef.current.clear();
   }, []);
@@ -1173,7 +1174,7 @@ export function PdfDocumentWorkbenchView({
           const userMessage = updated.messages.at(-1)!;
           const requestId = `document-ai-${globalThis.crypto.randomUUID()}`;
           activeDocumentRequestIdsRef.current.add(requestId);
-          void window.learningCompanion.askDocumentAi({
+          void documentAiClient.ask({
             projectId: asset.projectId,
             assetId: asset.id,
             requestId,

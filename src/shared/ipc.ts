@@ -96,6 +96,7 @@ export const IPC_CHANNELS = {
   revealAssetInFolder: "asset:reveal-in-folder",
   assetChanged: "asset:changed",
   listGenerationTasks: "generation-task:list",
+  getGenerationTask: "generation-task:get",
   startGenerationTask: "generation-task:start",
   retryGenerationTask: "generation-task:retry",
   cancelGenerationTask: "generation-task:cancel",
@@ -211,6 +212,9 @@ export interface LearningCompanionApi {
   listGenerationTasks: (
     request: GenerationTaskProjectRequest,
   ) => Promise<GenerationTaskView[]>;
+  getGenerationTask: (
+    request: GenerationTaskIdRequest,
+  ) => Promise<GenerationTaskView | undefined>;
   startGenerationTask: (
     request: StartGenerationTaskRequest,
   ) => Promise<GenerationTaskView>;

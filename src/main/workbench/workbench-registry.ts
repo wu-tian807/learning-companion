@@ -150,5 +150,35 @@ export class WorkbenchRegistry {
     ) {
       throw new AppError('INVALID_EXTENSION_DEFINITION');
     }
+
+    const adapterKeys = new Set<string>();
+    for (const adapter of provider.facilityAdapters ?? []) {
+      const definition = this.facilityRegistry.get(
+        adapter.facilityId,
+        adapter.facilityVersion,
+      );
+      const declared = provider.manifest.facilities.some(
+        (facility) =>
+          facility.id === adapter.facilityId &&
+          facility.version === adapter.facilityVersion,
+      );
+      const triggers = new Set(adapter.triggers);
+      const key = `${adapter.facilityId}@${adapter.facilityVersion}`;
+
+      if (
+        adapter.workbenchId !== provider.manifest.id ||
+        !declared ||
+        !definition?.validateEvent ||
+        adapter.triggers.length === 0 ||
+        triggers.size !== adapter.triggers.length ||
+        adapter.triggers.some(
+          (trigger) => !trigger.trim() || trigger !== trigger.trim(),
+        ) ||
+        adapterKeys.has(key)
+      ) {
+        throw new AppError('INVALID_EXTENSION_DEFINITION');
+      }
+      adapterKeys.add(key);
+    }
   }
 }

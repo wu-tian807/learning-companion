@@ -8,7 +8,7 @@ import type { WorkbenchTransportBinding } from '../../shared/workbench/facilitie
 import type { Asset } from '../assets/asset';
 import type { ResolvedAssetContent } from '../content/content-ref';
 import type { WorkbenchStateRecord } from './workbench-state-database';
-import type { MainWorkbenchFacilityAdapter } from './interaction/main-facility-adapter-registry';
+import type { MainWorkbenchFacilityAdapter } from './interaction/main-workbench-facility-adapter';
 
 export type WorkbenchSelectionReason =
   | 'matched'

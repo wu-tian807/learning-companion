@@ -1,4 +1,4 @@
-import type { MainWorkbenchFeatureDefinition } from '../../catalog/main-workbench-features';
+import type { MainWorkbenchContribution } from '../../catalog/register-main-workbenches';
 import {
   EPUB_CFI_RANGE_ANCHOR_TYPE,
   EPUB_CFI_RANGE_ANCHOR_VERSION,
@@ -66,4 +66,4 @@ export const epubExplanationMainFeature = Object.freeze({
       },
     });
   },
-} satisfies MainWorkbenchFeatureDefinition);
+} satisfies MainWorkbenchContribution);

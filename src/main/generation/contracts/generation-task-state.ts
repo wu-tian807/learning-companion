@@ -9,17 +9,22 @@ import {
 } from '../../../shared/agent-providers';
 import {
   cloneGenerationAssetReferenceBindings,
+  clonePreparedGenerationAssetReferenceBindings,
   type GenerationAssetReferenceBindings,
+  type PreparedGenerationAssetReferenceBindings,
 } from './generation-asset-reference';
 import {
   cloneGenerationTaskMetrics,
   type GenerationTaskMetrics,
 } from './generation-metrics';
 
-export interface GenerationTaskPreparedCheckpoint {
-  readonly completedTime: number;
-  readonly manifestRef: string;
+export interface GenerationTaskPreparedData {
+  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
 }
+
+export type GenerationTaskPreparedCheckpoint = Readonly<
+  { readonly completedTime: number } & GenerationTaskPreparedData
+>;
 
 export interface GenerationTaskAgentCallCheckpoint {
   readonly callKey: string;
@@ -113,36 +118,18 @@ function requireAssistantOutput(value: string, field: string): string {
   return value;
 }
 
-function requireRelativePath(value: string, field: string): string {
-  const normalized = requireText(value, field);
-
-  if (
-    normalized.includes('\\') ||
-    normalized.startsWith('/') ||
-    normalized
-      .split('/')
-      .some(
-        (segment) =>
-          segment.length === 0 || segment === '.' || segment === '..',
-      )
-  ) {
-    throw new Error(`GenerationTask ${field} 必须是可移植相对路径`);
-  }
-
-  return normalized;
-}
-
 function clonePreparedCheckpoint(
   checkpoint: GenerationTaskPreparedCheckpoint,
 ): GenerationTaskPreparedCheckpoint {
+  const completedTime = requireTime(
+    checkpoint.completedTime,
+    'prepared.completedTime',
+  );
+
   return Object.freeze({
-    completedTime: requireTime(
-      checkpoint.completedTime,
-      'prepared.completedTime',
-    ),
-    manifestRef: requireRelativePath(
-      checkpoint.manifestRef,
-      'prepared.manifestRef',
+    completedTime,
+    assetReferences: clonePreparedGenerationAssetReferenceBindings(
+      checkpoint.assetReferences,
     ),
   });
 }

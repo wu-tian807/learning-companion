@@ -1,5 +1,7 @@
-import type { AgentProviderSelectorRegistry } from '../../main/agents/agent-provider-selector-registry';
-import type { AgentProviderSelectorDefinitionSnapshot } from '../../shared/agent-providers';
+import type {
+  AgentProviderSelectorDefinition,
+  AgentProviderSelectorRegistry,
+} from '../../main/agents/agent-provider-selector-registry';
 import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 
 export const WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION =
@@ -7,7 +9,13 @@ export const WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION =
     id: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
     displayName: '工作台 AI',
     description: '用于 EPUB、PDF 等 Workbench 中的解释、问答与辅助操作。',
-  }) satisfies AgentProviderSelectorDefinitionSnapshot;
+    defaultSelection: Object.freeze({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-5.6-sol',
+      reasoningEffort: 'medium',
+    }),
+  }) satisfies AgentProviderSelectorDefinition;
 
 export function registerWorkbenchAgentProviderSelectors(
   registry: AgentProviderSelectorRegistry,

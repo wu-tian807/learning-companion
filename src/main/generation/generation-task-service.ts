@@ -192,7 +192,19 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
 
   get(taskId: string): GenerationTaskSnapshot | undefined {
     this.requireActiveProjectId();
-    return this.tasks.get(requireId(taskId, 'taskId'))?.getSnapshot();
+    const normalizedTaskId = requireId(taskId, 'taskId');
+    const task = this.tasks.get(normalizedTaskId);
+    if (task) {
+      return task.getSnapshot();
+    }
+
+    // Completed/cancelled tasks are deliberately released from the in-memory
+    // lifecycle map, but their persisted snapshot remains the authoritative
+    // recovery record. Keep the project boundary explicit when reading it.
+    const persisted = this.database.get(normalizedTaskId);
+    return persisted?.projectId === this.activeProjectId
+      ? persisted
+      : undefined;
   }
 
   create(request: CreateGenerationTaskRequest): GenerationTaskSnapshot {

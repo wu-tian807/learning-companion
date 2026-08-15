@@ -20,11 +20,11 @@ import {
 } from '../content/content-ref';
 import { createAssetSnapshot } from '../assets/asset';
 import type { AssetServiceApi } from '../assets/asset-service';
-import { EmptyAttachmentService } from '../attachments/attachment-service';
+import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import type { MainWorkbenchProvider } from './workbench-session';
 import { WorkbenchSessionService } from './workbench-session-service';
 import { WorkbenchRegistry } from './workbench-registry';
-import { EmptyWorkbenchStateDatabase } from './workbench-state-database';
+import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
 
 function createProvider(
   id: string,
@@ -125,8 +125,12 @@ function createManager(
   return new WorkbenchSessionService(
     assetService,
     registry,
-    new EmptyAttachmentService(),
-    new EmptyWorkbenchStateDatabase(),
+    {
+      listByAsset: vi.fn(async () => []),
+    } as unknown as AttachmentServiceApi,
+    {
+      get: vi.fn(async () => undefined),
+    } as unknown as WorkbenchStateDatabaseApi,
     {
       createId: () => 'session',
       ...(transportBindingRegistry
@@ -379,6 +383,7 @@ describe('WorkbenchSessionService', () => {
             CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
         }),
       ]),
+      [],
     );
 
     await manager.close('session');

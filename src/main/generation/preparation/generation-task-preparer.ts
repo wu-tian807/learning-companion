@@ -8,12 +8,8 @@ import {
 } from '../contracts/generation-workspace';
 import type { GenerationTaskSnapshot } from '../generation-task';
 import type { GenerationAssetReferencePreparerApi } from './generation-asset-reference-preparer';
-import type { GenerationPreparedManifestFileApi } from './generation-prepared-manifest-file';
-import { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-file';
 import { appendAssetReferencesToUserMessage } from './generation-user-message-composer';
 import type { PreparedGenerationTask } from './prepared-generation-task';
-
-export { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-file';
 
 export interface GenerationTaskPreparerApi {
   prepare(
@@ -57,25 +53,10 @@ function validateDefinitionIdentity(
   }
 }
 
-function cloneToolRequirements(definition: AnyTaskDefinition) {
-  return Object.freeze(
-    definition.toolRequirements.map((tool) => Object.freeze({ ...tool })),
-  );
-}
-
-function cloneCapabilityRequirements<
-  T extends { readonly id: string; readonly availability: 'required' | 'optional' },
->(requirements: readonly T[]): readonly T[] {
-  return Object.freeze(
-    requirements.map((requirement) => Object.freeze({ ...requirement }) as T),
-  );
-}
-
 export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   constructor(
     private readonly workspaceManager: AgentWorkspaceManagerApi,
     private readonly assetReferencePreparer: GenerationAssetReferencePreparerApi,
-    private readonly manifestFile: GenerationPreparedManifestFileApi,
   ) {}
 
   async prepare(
@@ -101,11 +82,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       signal,
     );
     signal?.throwIfAborted();
-    await this.manifestFile.write(
-      workspaces.primary.path,
-      task,
-      assetReferences,
-    );
 
     return this.createPreparedRuntime(
       task,
@@ -134,15 +110,10 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definition,
       instruction,
     );
-    const manifest = await this.manifestFile.read(
-      workspaces.primary.path,
-      task.prepared.manifestRef,
-      task,
-    );
     const assetReferences = await this.assetReferencePreparer.verify(
       workspaces.primary.path,
       definition.assetReferenceSchema,
-      manifest.assetReferences,
+      task.prepared.assetReferences,
       signal,
     );
 
@@ -199,7 +170,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       workspaces,
       assetReferences,
     };
-    const defaultUserMessage = appendAssetReferencesToUserMessage(
+    const preparedUserMessage = appendAssetReferencesToUserMessage(
       instruction.toUserMessage(context),
       assetReferences,
     );
@@ -211,14 +182,9 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definitionVersion: task.definitionVersion,
       providerSelectorId: definition.providerSelectorId,
       instruction,
-      systemInstruction: definition.systemInstruction,
-      defaultUserMessage,
-      toolRequirements: cloneToolRequirements(definition),
-      skills: cloneCapabilityRequirements(definition.skills),
-      mcpServers: cloneCapabilityRequirements(definition.mcpServers),
+      preparedUserMessage,
       workspaces,
       assetReferences,
-      manifestRef: GENERATION_PREPARED_MANIFEST_REF,
     });
   }
 }

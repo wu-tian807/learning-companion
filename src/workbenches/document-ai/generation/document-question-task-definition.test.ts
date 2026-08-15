@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import { DocumentQuestionInstruction, documentQuestionInstructionFactory } from './document-question-instruction';
-import { createDocumentQuestionTaskDefinitionV1 } from './document-question-task-definition';
+import {
+  createDocumentQuestionTaskDefinitionV1,
+  DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V1,
+} from './document-question-task-definition';
 
 describe('DocumentQuestion generation contract', () => {
   it('round-trips page and region targets through the instruction snapshot', () => {
@@ -56,9 +59,28 @@ describe('DocumentQuestion generation contract', () => {
         target: { scope: 'asset' },
       }).toSnapshot(),
     })).toBe('conversation-1');
-    await expect(definition.process({ agent: { call } } as never)).resolves.toEqual({
+    const preparedUserMessage = {
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text: '为什么？' }],
+    };
+    await expect(
+      definition.process({
+        agent: { call },
+        preparedUserMessage,
+      } as never),
+    ).resolves.toEqual({
       answer: '这是最终回答。', providerId: 'codex', modelId: 'gpt-test',
     });
-    expect(call).toHaveBeenCalledWith({ callKey: 'answer', purpose: 'document-question' });
+    expect(call).toHaveBeenCalledWith({
+      callKey: 'answer',
+      purpose: 'document-question',
+      systemInstruction: DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V1,
+      userMessage: preparedUserMessage,
+      toolRequirements: [
+        { id: 'workspace_read_pdf', availability: 'required' },
+      ],
+      skills: [],
+      mcpServers: [],
+    });
   });
 });

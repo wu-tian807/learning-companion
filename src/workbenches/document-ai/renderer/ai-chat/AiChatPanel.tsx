@@ -27,6 +27,10 @@ import {
   normalizeAiMarkdown,
   normalizeSelectedAnswerText,
 } from './ai-markdown';
+import {
+  documentAiClient,
+  type DocumentAiClient,
+} from '../document-ai-client';
 
 export function AiMarkdownContent({ content }: { readonly content: string }) {
   return (
@@ -94,11 +98,14 @@ function createDocumentAiRequestId(): string {
   return `document-ai-${globalThis.crypto.randomUUID()}`;
 }
 
-export async function cancelActiveDocumentAiRequest(assetId: string): Promise<void> {
+export function cancelActiveDocumentAiRequest(
+  assetId: string,
+  client: Pick<DocumentAiClient, 'cancel'> = documentAiClient,
+): void {
   const requestId = activeRequestIds.get(assetId);
   if (!requestId) return;
   activeRequestIds.delete(assetId);
-  await window.learningCompanion.cancelDocumentAi(requestId).catch(() => undefined);
+  client.cancel(requestId);
 }
 
 export async function sendDocumentAiMessage(input: {
@@ -107,7 +114,7 @@ export async function sendDocumentAiMessage(input: {
   readonly assetId: string;
   readonly content: string;
   readonly anchor?: AiChatMessage['anchor'];
-  readonly ask: typeof window.learningCompanion.askDocumentAi;
+  readonly ask: DocumentAiClient['ask'];
 }): Promise<boolean> {
   const { store, projectId, assetId, content, anchor, ask } = input;
   if (store.getSession(assetId)?.loading) return false;
@@ -174,7 +181,7 @@ export function useAiChat(
     async (content: string, anchor?: AiChatMessage['anchor']) => {
       await sendDocumentAiMessage({
         store, projectId, assetId, content, anchor,
-        ask: window.learningCompanion.askDocumentAi,
+        ask: documentAiClient.ask,
       });
     },
     [store, projectId, assetId],

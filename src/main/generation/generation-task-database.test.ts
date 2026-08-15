@@ -51,7 +51,7 @@ describe('GenerationTaskDatabase', () => {
       task.recordPrepared({
         checkpoint: {
           completedTime: 20,
-          manifestRef: 'control/prepared-manifest.json',
+          assetReferences: {},
         },
         durationMs: 10,
         updatedTime: 20,
@@ -83,6 +83,16 @@ describe('GenerationTaskDatabase', () => {
       database.update(task.getSnapshot());
 
       expect(database.get('task-1')).toEqual(task.getSnapshot());
+      const preparedData = context.sqlite
+        .prepare<[], { value: string }>(
+          `SELECT prepared_data_json AS value
+           FROM generation_tasks
+           WHERE id = 'task-1'`,
+        )
+        .get();
+      expect(JSON.parse(preparedData!.value)).toEqual({
+        assetReferences: {},
+      });
       expect(database.listByProject('project-1')).toEqual([
         task.getSnapshot(),
       ]);

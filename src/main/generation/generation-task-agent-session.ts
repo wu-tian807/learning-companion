@@ -1,9 +1,13 @@
 import { cloneAgentUserMessage } from './contracts/agent-message';
 import type {
+  AgentMcpServerRequirement,
+  AgentSkillRequirement,
+  AgentToolRequirement,
   TaskAgentCallRequest,
   TaskAgentCallResult,
   TaskAgentSession,
 } from './contracts/task-definition';
+import { requireAgentCapabilityId } from '../agents/capabilities/agent-capability-id';
 import type {
   GenerationAgentRunner,
   GenerationAgentRunnerResolver,
@@ -33,6 +37,60 @@ function requireCallText(
   }
 
   return normalized;
+}
+
+function requireSystemInstruction(value: string): string {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    throw new Error('GenerationTask Agent systemInstruction 不能为空');
+  }
+
+  return normalized;
+}
+
+function cloneToolRequirements(
+  requirements: readonly AgentToolRequirement[],
+): readonly AgentToolRequirement[] {
+  const cloned = requirements.map(({ id, availability }) => {
+    const normalizedId = id.trim();
+
+    if (
+      normalizedId.length === 0 ||
+      (availability !== 'required' && availability !== 'optional')
+    ) {
+      throw new Error('GenerationTask Agent tool requirement 数据无效');
+    }
+
+    return Object.freeze({ id: normalizedId, availability });
+  });
+
+  if (new Set(cloned.map(({ id }) => id)).size !== cloned.length) {
+    throw new Error('GenerationTask Agent tool requirement 重复');
+  }
+
+  return Object.freeze(cloned);
+}
+
+function cloneCapabilityRequirements<
+  T extends AgentSkillRequirement | AgentMcpServerRequirement,
+>(requirements: readonly T[]): readonly T[] {
+  const cloned = requirements.map(({ id, availability }) => {
+    if (availability !== 'required' && availability !== 'optional') {
+      throw new Error('GenerationTask Agent capability requirement 数据无效');
+    }
+
+    return Object.freeze({
+      id: requireAgentCapabilityId(id),
+      availability,
+    }) as T;
+  });
+
+  if (new Set(cloned.map(({ id }) => id)).size !== cloned.length) {
+    throw new Error('GenerationTask Agent capability requirement 重复');
+  }
+
+  return Object.freeze(cloned);
 }
 
 export class GenerationTaskAgentSession implements TaskAgentSession {
@@ -81,6 +139,15 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
     this.signal.throwIfAborted();
     const callKey = requireCallText(request.callKey, 'callKey');
     const purpose = requireCallText(request.purpose, 'purpose');
+    const systemInstruction = requireSystemInstruction(
+      request.systemInstruction,
+    );
+    const userMessage = cloneAgentUserMessage(request.userMessage);
+    const toolRequirements = cloneToolRequirements(
+      request.toolRequirements,
+    );
+    const skills = cloneCapabilityRequirements(request.skills);
+    const mcpServers = cloneCapabilityRequirements(request.mcpServers);
     const existing = this.completedCalls.find(
       (call) => call.callKey === callKey,
     );
@@ -113,9 +180,11 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
         {
           callKey,
           purpose,
-          userMessage: cloneAgentUserMessage(
-            request.userMessage ?? this.prepared.defaultUserMessage,
-          ),
+          systemInstruction,
+          userMessage,
+          toolRequirements,
+          skills,
+          mcpServers,
           ...(expectedSessionId ? { expectedSessionId } : {}),
           ...(executionConfiguration.assignedModelId
             ? { modelId: executionConfiguration.assignedModelId }

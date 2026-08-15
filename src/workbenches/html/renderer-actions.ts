@@ -1,22 +1,37 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
 import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
+import {
+  findTextSelectionInput,
+} from '../../shared/workbench/selection';
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import { createHtmlQuoteTarget, isHtmlQuoteTarget } from './shared';
 
 export interface HtmlRendererActionsOptions {
   readonly getContext: () =>
     | CoreContextMenuFacilityEvent
     | undefined;
+  /** AI 回答进行中：一键命令（解释/总结）不可用。 */
+  readonly aiBusy?: boolean;
   readonly onCopySelection: (text: string) => Promise<void> | void;
   readonly onOpenLink: (url: string) => Promise<void> | void;
   readonly onReload: () => void;
   readonly onReveal: () => Promise<void> | void;
+  /** 引用选中内容：传入待引用锚点（文本选区 → quote，右键元素 → element）。 */
+  readonly onExplainSelection: (target: ContentAnchorTarget) => void;
+  readonly onSummarizePage: () => void;
+  readonly onOpenChat: () => void;
 }
 
 export function createHtmlRendererActions({
   getContext,
+  aiBusy = false,
   onCopySelection,
   onOpenLink,
   onReload,
   onReveal,
+  onExplainSelection,
+  onSummarizePage,
+  onOpenChat,
 }: HtmlRendererActionsOptions): WorkbenchActionBundle {
   return {
     actions: [
@@ -54,13 +69,48 @@ export function createHtmlRendererActions({
       },
       {
         id: 'html.ai.explain-selection',
-        enabled: false,
-        execute: () => undefined,
+        // 有「选中」即可用：非空文本选区，或右键命中的元素/链接；
+        // 空白处右键（无选区无目标）才禁用。AI 回答中同样禁用。
+        enabled: () => {
+          if (aiBusy) {
+            return false;
+          }
+          const context = getContext();
+          return Boolean(
+            context?.selectionText?.trim() ||
+              context?.target ||
+              context?.linkUrl,
+          );
+        },
+        execute: (context) => {
+          // 优先使用右键菜单冻结的选区输入（不会随 contextRef 变化）。
+          const selection = findTextSelectionInput(context);
+
+          // 无选区时使用右键菜单 invocation 冻结的元素/链接 target。
+          const fallbackTarget = context.focus;
+
+          if (selection && selection.text.trim().length > 0) {
+            const target = isHtmlQuoteTarget(selection.target)
+              ? selection.target
+              : createHtmlQuoteTarget(selection.text);
+            onExplainSelection(target);
+            return;
+          }
+          if (fallbackTarget) {
+            onExplainSelection(fallbackTarget);
+          }
+        },
       },
       {
         id: 'html.ai.summarize-page',
-        enabled: false,
-        execute: () => undefined,
+        enabled: () => !aiBusy,
+        // 总结整页：明确忽略 invocation 中的选区、元素与链接。
+        execute: () => onSummarizePage(),
+      },
+      {
+        id: 'html.ai.open-chat',
+        enabled: true,
+        execute: onOpenChat,
       },
     ],
     contributions: [
@@ -131,9 +181,9 @@ export function createHtmlRendererActions({
         order: 10,
         presentation: {
           kind: 'generation-tool',
-          label: '解释选中内容',
-          description: '将选区和 HTML 来源锚点交给 AI',
-          disabledReason: '等待 HTML AI 工具接入',
+          label: '引用选中内容',
+          description: '引用选区或当前 HTML 内容后自主提问',
+          disabledReason: '请选择文本或右键可引用内容；AI 回答中请稍候',
         },
       },
       {
@@ -146,7 +196,19 @@ export function createHtmlRendererActions({
           kind: 'generation-tool',
           label: '总结当前页面',
           description: '以完整 HTML 页面作为生成上下文',
-          disabledReason: '等待 HTML AI 工具接入',
+          disabledReason: '请等待当前 AI 回答完成',
+        },
+      },
+      {
+        id: 'html.ai.open-chat.generation-center',
+        actionId: 'html.ai.open-chat',
+        surface: 'generation-center',
+        group: '80-ai',
+        order: 10,
+        presentation: {
+          kind: 'generation-tool',
+          label: 'AI 对话',
+          description: '打开对话栏，可结合选中的内容提问',
         },
       },
       {

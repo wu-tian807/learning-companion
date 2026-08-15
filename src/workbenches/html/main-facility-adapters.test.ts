@@ -40,6 +40,7 @@ describe('HTML Main Facility adapters', () => {
     const executeJavaScript = vi.fn(async () => ({
       tagName: 'div',
       domPath: [1, 2, 0],
+      rect: { x: 8, y: 12, width: 200, height: 60 },
       id: 'lesson-card',
       role: 'article',
       ariaLabel: '课程内容',
@@ -102,7 +103,10 @@ describe('HTML Main Facility adapters', () => {
   });
 
   it('publishes an HTML quote Anchor for settled selection', async () => {
-    const executeJavaScript = vi.fn(async () => '选中的正文');
+    const executeJavaScript = vi.fn(async () => ({
+      text: '选中的正文',
+      rect: { x: 10, y: 20, width: 120, height: 18 },
+    }));
     const sourceFrame = frame(executeJavaScript);
     const payload = await new HtmlTextSelectionFacilityAdapter().capture(
       context(sourceFrame),

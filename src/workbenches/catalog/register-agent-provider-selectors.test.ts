@@ -19,5 +19,11 @@ describe('registerWorkbenchAgentProviderSelectors', () => {
     expect(registry.require(WORKBENCH_AGENT_PROVIDER_SELECTOR_ID)).toEqual(
       WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION,
     );
+    expect(WORKBENCH_AGENT_PROVIDER_SELECTOR_DEFINITION.defaultSelection).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-5.6-sol',
+      reasoningEffort: 'medium',
+    });
   });
 });

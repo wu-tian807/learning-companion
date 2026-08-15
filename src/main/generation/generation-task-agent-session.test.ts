@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTextAgentUserMessage } from './contracts/agent-message';
+import type { TaskAgentCallRequest } from './contracts/task-definition';
 import { GenerationAgentExecutor } from './generation-agent-executor';
 import type {
   GenerationAgentRunner,
@@ -25,7 +26,7 @@ describe('GenerationTaskAgentSession', () => {
     task.recordPrepared({
       checkpoint: {
         completedTime: 2,
-        manifestRef: 'control/prepared-manifest.json',
+        assetReferences: {},
       },
       durationMs: 1,
       updatedTime: 2,
@@ -40,11 +41,7 @@ describe('GenerationTaskAgentSession', () => {
         toSnapshot: () => null,
         toUserMessage: () => createTextAgentUserMessage('generate'),
       },
-      systemInstruction: 'Generate a candidate.',
-      defaultUserMessage: createTextAgentUserMessage('generate'),
-      toolRequirements: [],
-      skills: [],
-      mcpServers: [],
+      preparedUserMessage: createTextAgentUserMessage('generate'),
       workspaces: {
         primary: {
           key: 'generation-mindmap',
@@ -55,7 +52,6 @@ describe('GenerationTaskAgentSession', () => {
         secondary: [],
       },
       assetReferences: { sources: [] },
-      manifestRef: 'control/prepared-manifest.json',
     };
     const updates: unknown[] = [];
     const database = {
@@ -107,15 +103,50 @@ describe('GenerationTaskAgentSession', () => {
       },
     );
 
-    const generated = await session.call({
+    const generateRequest = {
       callKey: 'generate',
       purpose: 'generation',
-    });
-    await session.call({
+      systemInstruction: 'Generate a candidate.',
+      userMessage: createTextAgentUserMessage('generate'),
+      toolRequirements: [
+        { id: 'generate_candidate', availability: 'required' },
+      ],
+      skills: [{ id: 'mindmap', availability: 'optional' }],
+      mcpServers: [],
+    } satisfies TaskAgentCallRequest;
+    const repairRequest = {
       callKey: 'repair-1',
       purpose: 'repair',
+      systemInstruction: 'Repair only the rejected output.',
       userMessage: createTextAgentUserMessage('repair it'),
-    });
+      toolRequirements: [
+        { id: 'repair_candidate', availability: 'required' },
+      ],
+      skills: [],
+      mcpServers: [{ id: 'validator', availability: 'optional' }],
+    } satisfies TaskAgentCallRequest;
+
+    await expect(
+      session.call({
+        ...generateRequest,
+        callKey: 'invalid-system-instruction',
+        systemInstruction: '   ',
+      }),
+    ).rejects.toThrow('systemInstruction 不能为空');
+    await expect(
+      session.call({
+        ...generateRequest,
+        callKey: 'duplicate-tools',
+        toolRequirements: [
+          { id: 'generate_candidate', availability: 'required' },
+          { id: 'generate_candidate', availability: 'optional' },
+        ],
+      }),
+    ).rejects.toThrow('tool requirement 重复');
+    expect(resolveRunner).not.toHaveBeenCalled();
+
+    const generated = await session.call(generateRequest);
+    await session.call(repairRequest);
 
     expect(resolveRunner).toHaveBeenCalledOnce();
     expect(generated.assistantOutput).toBe('answer-1');
@@ -124,6 +155,24 @@ describe('GenerationTaskAgentSession', () => {
         { callKey: 'generate', sessionId: undefined },
         { callKey: 'repair-1', sessionId: 'session-1' },
       ]);
+    expect(requests).toMatchObject([
+      {
+        systemInstruction: 'Generate a candidate.',
+        toolRequirements: [
+          { id: 'generate_candidate', availability: 'required' },
+        ],
+        skills: [{ id: 'mindmap', availability: 'optional' }],
+        mcpServers: [],
+      },
+      {
+        systemInstruction: 'Repair only the rejected output.',
+        toolRequirements: [
+          { id: 'repair_candidate', availability: 'required' },
+        ],
+        skills: [],
+        mcpServers: [{ id: 'validator', availability: 'optional' }],
+      },
+    ]);
     expect(task.getSnapshot()).toMatchObject({
       assignedProviderId: 'codex',
       assignedConnectionId: 'codex-account',
@@ -157,7 +206,7 @@ describe('GenerationTaskAgentSession', () => {
     );
 
     await expect(
-      recovered.call({ callKey: 'repair-1', purpose: 'repair' }),
+      recovered.call(repairRequest),
     ).resolves.toMatchObject({
       callKey: 'repair-1',
       sessionId: 'session-1',

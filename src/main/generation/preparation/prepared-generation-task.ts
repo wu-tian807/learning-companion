@@ -1,11 +1,6 @@
 import type { AgentUserMessage } from '../contracts/agent-message';
 import type { PreparedGenerationAssetReferenceBindings } from '../contracts/generation-asset-reference';
 import type { GenerationInstruction } from '../contracts/generation-instruction';
-import type {
-  AgentMcpServerRequirement,
-  AgentSkillRequirement,
-  AgentToolRequirement,
-} from '../contracts/task-definition';
 import type { PreparedAgentWorkspaces } from '../contracts/generation-workspace';
 
 export interface PreparedGenerationTask {
@@ -15,12 +10,7 @@ export interface PreparedGenerationTask {
   readonly definitionVersion: number;
   readonly providerSelectorId: string;
   readonly instruction: GenerationInstruction;
-  readonly systemInstruction: string;
-  readonly defaultUserMessage: AgentUserMessage;
-  readonly toolRequirements: readonly AgentToolRequirement[];
-  readonly skills: readonly AgentSkillRequirement[];
-  readonly mcpServers: readonly AgentMcpServerRequirement[];
+  readonly preparedUserMessage: AgentUserMessage;
   readonly workspaces: PreparedAgentWorkspaces;
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
-  readonly manifestRef: string;
 }
