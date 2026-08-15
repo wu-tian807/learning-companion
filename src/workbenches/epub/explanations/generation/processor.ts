@@ -45,7 +45,7 @@ export class EpubExplanationProcessor
       toolRequirements: [],
       skills: [],
       mcpServers: [],
-      assistantEvents: 'none',
+      assistantEvents: 'runtime',
     });
     context.signal?.throwIfAborted();
 
@@ -55,6 +55,7 @@ export class EpubExplanationProcessor
         cause: new Error('EPUB 解释最终回答为空或长度超出限制'),
       });
     }
+    context.reportStatus('正在保存 AI 解释…');
 
     const existing = (
       await this.attachments.listByAsset(

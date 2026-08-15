@@ -26,6 +26,11 @@ import {
 } from './explanations/shared';
 import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
 import {
+  projectEpubExplanationGenerationEvent,
+  removeEpubExplanationRuntime,
+  type EpubExplanationRuntimeMap,
+} from './explanations/epub-explanation-runtime';
+import {
   interactionFromTextSelection,
   type WorkbenchSelectionSnapshot,
 } from '../../shared/workbench/selection';
@@ -211,6 +216,24 @@ export function EpubWorkbenchView({
     EpubExplanationView[]
   >([]);
   const [activeExplanationId, setActiveExplanationId] = useState<string>();
+  const explanationTaskIdsRef = useRef(new Set<string>());
+  const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
+    useState<EpubExplanationRuntimeMap>({});
+
+  const registerExplanationTask = useCallback(
+    (explanation: EpubExplanationView) => {
+      if (explanation.kind === 'task') {
+        explanationTaskIdsRef.current.add(explanation.id);
+      }
+    },
+    [],
+  );
+  const clearExplanationRuntime = useCallback((taskId: string) => {
+    explanationTaskIdsRef.current.delete(taskId);
+    setExplanationRuntimeByTaskId((current) =>
+      removeEpubExplanationRuntime(current, taskId),
+    );
+  }, []);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -313,6 +336,7 @@ export function EpubWorkbenchView({
           assetId: asset.id,
           target,
         });
+        registerExplanationTask(created);
         setExplanations((current) => [
           ...current.filter((item) => item.id !== created.id),
           created,
@@ -322,7 +346,13 @@ export function EpubWorkbenchView({
         reportError(error, '无法启动 AI 解释。');
       }
     },
-    [asset.id, asset.projectId, explanations, reportError],
+    [
+      asset.id,
+      asset.projectId,
+      explanations,
+      registerExplanationTask,
+      reportError,
+    ],
   );
 
   const rendererActions = useMemo(
@@ -353,6 +383,7 @@ export function EpubWorkbenchView({
           ) {
             return;
           }
+          registerExplanationTask(event.explanation);
           setExplanations((current) => [
             ...current.filter(
               (item) => item.id !== event.explanation.id,
@@ -368,6 +399,7 @@ export function EpubWorkbenchView({
           ) {
             return;
           }
+          clearExplanationRuntime(event.previousExplanationId);
           setExplanations((current) => [
             ...current.filter(
               (item) =>
@@ -389,6 +421,7 @@ export function EpubWorkbenchView({
         ) {
           return;
         }
+        clearExplanationRuntime(event.explanationId);
         setExplanations((current) =>
           current.filter((item) => item.id !== event.explanationId),
         );
@@ -404,6 +437,7 @@ export function EpubWorkbenchView({
       })
       .then((items) => {
         if (active) {
+          for (const item of items) registerExplanationTask(item);
           setExplanations([...items]);
         }
       })
@@ -416,10 +450,50 @@ export function EpubWorkbenchView({
     return () => {
       active = false;
       removeSubscription();
+      explanationTaskIdsRef.current.clear();
+      setExplanationRuntimeByTaskId({});
       setExplanations([]);
       setActiveExplanationId(undefined);
     };
-  }, [asset.id, asset.projectId, reportError]);
+  }, [
+    asset.id,
+    asset.projectId,
+    clearExplanationRuntime,
+    registerExplanationTask,
+    reportError,
+  ]);
+
+  useEffect(() => {
+    return window.learningCompanion.onGenerationTaskChanged((event) => {
+      if (
+        event.type === 'task-discarded' &&
+        event.projectId === asset.projectId &&
+        explanationTaskIdsRef.current.has(event.taskId)
+      ) {
+        clearExplanationRuntime(event.taskId);
+        return;
+      }
+
+      if (
+        event.type === 'task-changed' &&
+        event.snapshot.projectId === asset.projectId &&
+        event.snapshot.status === 'cancelled' &&
+        explanationTaskIdsRef.current.has(event.snapshot.id)
+      ) {
+        clearExplanationRuntime(event.snapshot.id);
+        return;
+      }
+
+      setExplanationRuntimeByTaskId((current) =>
+        projectEpubExplanationGenerationEvent(
+          current,
+          event,
+          asset.projectId,
+          explanationTaskIdsRef.current,
+        ),
+      );
+    });
+  }, [asset.projectId, clearExplanationRuntime]);
 
   useEffect(() => {
     const host = viewerHostRef.current;
@@ -705,6 +779,9 @@ export function EpubWorkbenchView({
 
   const retryExplanation = useCallback(
     async (explanation: EpubExplanationView) => {
+      setExplanationRuntimeByTaskId((current) =>
+        removeEpubExplanationRuntime(current, explanation.id),
+      );
       try {
         const retried =
           await window.learningCompanion.retryEpubExplanation({
@@ -717,11 +794,12 @@ export function EpubWorkbenchView({
           ...current.filter((item) => item.id !== retried.id),
           retried,
         ]);
+        registerExplanationTask(retried);
       } catch (error) {
         reportError(error, '无法重试 AI 解释。');
       }
     },
-    [asset.id, asset.projectId, reportError],
+    [asset.id, asset.projectId, registerExplanationTask, reportError],
   );
 
   const deleteExplanation = useCallback(
@@ -733,6 +811,7 @@ export function EpubWorkbenchView({
           kind: explanation.kind,
           explanationId: explanation.id,
         });
+        clearExplanationRuntime(explanation.id);
         setExplanations((current) =>
           current.filter((item) => item.id !== explanation.id),
         );
@@ -741,7 +820,7 @@ export function EpubWorkbenchView({
         reportError(error, '无法删除 AI 解释。');
       }
     },
-    [asset.id, asset.projectId, reportError],
+    [asset.id, asset.projectId, clearExplanationRuntime, reportError],
   );
 
   const navigate = useCallback(
@@ -941,8 +1020,13 @@ export function EpubWorkbenchView({
           )}
 
           {activeExplanation && (
-        <EpubExplanationPanel
+            <EpubExplanationPanel
               explanation={activeExplanation}
+              runtime={
+                activeExplanation.kind === 'task'
+                  ? explanationRuntimeByTaskId[activeExplanation.id]
+                  : undefined
+              }
               onClose={() => setActiveExplanationId(undefined)}
               onRetry={() => void retryExplanation(activeExplanation)}
               onDelete={() => void deleteExplanation(activeExplanation)}

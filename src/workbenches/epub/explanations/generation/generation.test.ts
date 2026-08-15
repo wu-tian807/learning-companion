@@ -86,6 +86,7 @@ describe('EPUB explanation generation', () => {
       createWithContent,
     } as never);
     const instruction = createInstruction();
+    const reportStatus = vi.fn();
 
     const result = await processor.process({
       taskId: 'task-1',
@@ -93,7 +94,7 @@ describe('EPUB explanation generation', () => {
       instruction,
       agent: { call },
       preparedUserMessage: { role: 'user', content: [] },
-      reportStatus: vi.fn(),
+      reportStatus,
     } as never);
 
     expect(result).toEqual({ attachmentId: 'attachment-1' });
@@ -106,9 +107,13 @@ describe('EPUB explanation generation', () => {
         toolRequirements: [],
         skills: [],
         mcpServers: [],
-        assistantEvents: 'none',
+        assistantEvents: 'runtime',
       },
     );
+    expect(reportStatus.mock.calls).toEqual([
+      ['正在解释选中的文字…'],
+      ['正在保存 AI 解释…'],
+    ]);
     expect(createWithContent).toHaveBeenCalledWith(
       expect.objectContaining({
         assetId: 'asset-1',
