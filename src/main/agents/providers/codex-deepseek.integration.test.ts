@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { CodexAppServerConnectionFactory } from '../codex/codex-app-server-process';
 import { resolveCodexExecutablePath } from '../codex/codex-runtime-paths';
 import { CodexRuntimeService } from '../codex/codex-runtime-service';
-import { codexAssistantOutputFromTurn } from './codex-generation-response';
 import { normalizeCodexResponsesBaseUrl } from './codex-responses-url';
 
 const deepSeekApiKey = process.env.CI
@@ -96,6 +95,7 @@ describe.runIf(Boolean(deepSeekApiKey))('Codex DeepSeek live integration', () =>
           configOverrides,
         });
 
+        let assistantText = '';
         const turn = service.startTurn({
           threadId: thread.thread.id,
           input: [
@@ -118,13 +118,14 @@ describe.runIf(Boolean(deepSeekApiKey))('Codex DeepSeek live integration', () =>
             result = next.value;
             break;
           }
+          if (next.value.type === 'assistant-message-delta') {
+            assistantText += next.value.delta;
+          }
         }
 
         expect(result.threadId).toBe(thread.thread.id);
         expect(result.turn.status).toBe('completed');
-        expect(
-          codexAssistantOutputFromTurn(result.turn),
-        ).toContain('LC_DEEPSEEK_OK');
+        expect(assistantText).toContain('LC_DEEPSEEK_OK');
       } finally {
         await service.shutdown();
         await rm(temporaryDirectory, { recursive: true, force: true });

@@ -15,6 +15,9 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
+import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
+import { documentAiClient } from '../document-ai/renderer/document-ai-client';
+import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   findTextSelectionInput,
@@ -23,6 +26,14 @@ import {
 import type {
   WorkbenchInteractionSnapshot,
 } from '../../shared/workbench/interaction';
+import type { AssetTarget } from '../../shared/workbench/anchor';
+import {
+  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+  WORKBENCH_RESOLVE_ANCHOR_EVENT,
+  WORKBENCH_REVEAL_ANCHOR_EVENT,
+  type ResolveWorkbenchAnchorDetail,
+  type RevealWorkbenchAnchorDetail,
+} from '../../renderer/workbench/host/workbench-anchor-bridge';
 import type {
   PdfDocumentSummary,
   PdfFindStatus,
@@ -36,6 +47,8 @@ import {
   createPdfPageTarget,
   createPdfSaveViewStateCommand,
   DEFAULT_PDF_WORKBENCH_STATE,
+  PDF_REGION_ANCHOR_TYPE,
+  PDF_REGION_ANCHOR_VERSION,
   isPdfSaveViewStateResult,
   isPdfWorkbenchPayload,
   pdfWorkbenchManifest,
@@ -51,6 +64,11 @@ import {
   hasPdfHorizontalOverflow,
   type PdfPanOrigin,
 } from './pdf-pan';
+import {
+  completePdfRegionPointer,
+  movePdfRegionPointer,
+  shouldDismissPdfRegionMenu,
+} from './pdf-region-interaction';
 
 type PdfLoadState =
   | {
@@ -69,6 +87,29 @@ const SCALE_PRESETS = [50, 75, 100, 125, 150, 200, 300, 400];
 interface ActivePdfPan extends PdfPanOrigin {
   readonly pointerId: number;
 }
+
+interface PdfRegionSelection {
+  readonly pointerId: number;
+  readonly pageNumber: number;
+  readonly page: HTMLElement;
+  readonly canvas: HTMLCanvasElement;
+  readonly startX: number;
+  readonly startY: number;
+  readonly currentX: number;
+  readonly currentY: number;
+  readonly explicit: boolean;
+}
+
+interface PdfRegionActionMenu {
+  readonly top: number;
+}
+
+const PDF_REGION_QUICK_QUESTIONS = [
+  ['解释', '请用通俗易懂的语言解释我框选的内容。'],
+  ['举例', '请针对我框选的内容给出一个具体、容易理解的例子。'],
+  ['翻译', '请翻译我框选的内容；如果主要是中文则翻译成英文，否则翻译成中文。'],
+  ['总结', '请简洁总结我框选内容的核心信息。'],
+] as const;
 
 function isPdfPanBlockedTarget(target: EventTarget | null): boolean {
   return (
@@ -349,9 +390,11 @@ interface PdfDocumentWorkbenchViewProps
   readonly mapInteraction?: (
     interaction: WorkbenchInteractionSnapshot,
   ) => WorkbenchInteractionSnapshot;
+  readonly mapAnchorTarget?: (target: AssetTarget) => AssetTarget;
 }
 
 export function PdfDocumentWorkbenchView({
+  asset,
   bootstrap,
   executeCommand,
   onRelink,
@@ -365,6 +408,7 @@ export function PdfDocumentWorkbenchView({
     createPdfSaveViewStateCommand,
   isSaveViewStateResult = isPdfSaveViewStateResult,
   mapInteraction = identityInteraction,
+  mapAnchorTarget = (target) => target,
 }: PdfDocumentWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isPdfWorkbenchPayload(bootstrap.payload)
@@ -384,6 +428,68 @@ export function PdfDocumentWorkbenchView({
   const savedViewStateVersionRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
+  const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
+  const regionMenuRef = useRef<HTMLDivElement>(null);
+  const activeDocumentRequestIdsRef = useRef(new Set<string>());
+
+  useEffect(() => () => {
+    for (const requestId of activeDocumentRequestIdsRef.current) {
+      documentAiClient.cancel(requestId);
+    }
+    activeDocumentRequestIdsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    const findPage = (target: AssetTarget): HTMLElement | undefined => {
+      const mapped = mapAnchorTarget(target);
+      if (mapped.scope !== 'content') return undefined;
+      const payload = mapped.anchorPayload as Record<string, unknown>;
+      const start = payload.start as Record<string, unknown> | undefined;
+      const pageNumber = typeof payload.pageNumber === 'number'
+        ? payload.pageNumber
+        : typeof start?.pageNumber === 'number' ? start.pageNumber : undefined;
+      if (!pageNumber) return undefined;
+      return viewerRef.current?.querySelector<HTMLElement>(
+        `.page[data-page-number="${pageNumber}"]`,
+      ) ?? undefined;
+    };
+    const resolve = (event: Event) => {
+      const detail = (event as CustomEvent<ResolveWorkbenchAnchorDetail>).detail;
+      if (detail.assetId !== asset.id) return;
+      const mapped = mapAnchorTarget(detail.target);
+      const page = findPage(mapped);
+      if (!page || mapped.scope !== 'content') return;
+      const payload = mapped.anchorPayload as Record<string, unknown>;
+      const pageRect = page.getBoundingClientRect();
+      const x = typeof payload.x === 'number' ? payload.x : 1;
+      const y = typeof payload.y === 'number' ? payload.y : 0;
+      const width = typeof payload.width === 'number' ? payload.width : 0;
+      const height = typeof payload.height === 'number' ? payload.height : 0;
+      detail.respond({
+        left: pageRect.left + x * pageRect.width,
+        top: pageRect.top + y * pageRect.height,
+        width: width * pageRect.width,
+        height: height * pageRect.height,
+      });
+    };
+    const reveal = (event: Event) => {
+      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>).detail;
+      if (detail.assetId !== asset.id) return;
+      findPage(detail.target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    const notifyLayout = () => window.dispatchEvent(
+      new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
+    );
+    const container = containerRef.current;
+    window.addEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    container?.addEventListener('scroll', notifyLayout, { passive: true });
+    return () => {
+      window.removeEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+      container?.removeEventListener('scroll', notifyLayout);
+    };
+  }, [asset.id, mapAnchorTarget]);
   const [loadState, setLoadState] = useState<PdfLoadState>({
     kind: 'loading',
   });
@@ -406,6 +512,22 @@ export function PdfDocumentWorkbenchView({
   const [scaleMenuOpen, setScaleMenuOpen] = useState(false);
   const [panAvailable, setPanAvailable] = useState(false);
   const [panning, setPanning] = useState(false);
+  const [regionMode, setRegionMode] = useState(true);
+  const [regionSelection, setRegionSelection] =
+    useState<PdfRegionSelection>();
+  const [regionActionMenu, setRegionActionMenu] =
+    useState<PdfRegionActionMenu>();
+
+  useEffect(() => {
+    if (!regionActionMenu) return;
+    const dismiss = (event: PointerEvent) => {
+      if (shouldDismissPdfRegionMenu(regionMenuRef.current, event.target)) {
+        setRegionActionMenu(undefined);
+      }
+    };
+    document.addEventListener('pointerdown', dismiss, true);
+    return () => document.removeEventListener('pointerdown', dismiss, true);
+  }, [regionActionMenu]);
 
   const persistViewState = useCallback(
     async (state: PdfWorkbenchViewState, version: number) => {
@@ -634,6 +756,25 @@ export function PdfDocumentWorkbenchView({
         return;
       }
       if (event.key === 'Escape') {
+        if (activeRegionRef.current || regionMode) {
+          const activeRegion = activeRegionRef.current;
+          if (
+            activeRegion &&
+            containerRef.current?.hasPointerCapture(activeRegion.pointerId)
+          ) {
+            containerRef.current.releasePointerCapture(
+              activeRegion.pointerId,
+            );
+          }
+          activeRegionRef.current = undefined;
+          setRegionSelection(undefined);
+          setRegionActionMenu(undefined);
+          setRegionMode(false);
+          const store = getGlobalAiChatStore();
+          store.setPendingAnchor(asset.id, undefined);
+          store.setPanelOpen(false);
+          return;
+        }
         if (scaleMenuOpen) {
           setScaleMenuOpen(false);
         } else if (searchOpen) {
@@ -671,7 +812,7 @@ export function PdfDocumentWorkbenchView({
     return () => {
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [scaleMenuOpen, searchOpen]);
+  }, [asset.id, regionMode, scaleMenuOpen, searchOpen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -681,6 +822,22 @@ export function PdfDocumentWorkbenchView({
       return;
     }
 
+    let layoutFrame: number | undefined;
+    const updateLayout = () => {
+      if (layoutFrame !== undefined) {
+        window.cancelAnimationFrame(layoutFrame);
+      }
+      layoutFrame = window.requestAnimationFrame(() => {
+        layoutFrame = undefined;
+        adapterRef.current?.refreshLayout();
+        setPanAvailable(
+          hasPdfHorizontalOverflow(
+            container.scrollWidth,
+            container.clientWidth,
+          ),
+        );
+      });
+    };
     const updateAvailability = () => {
       setPanAvailable(
         hasPdfHorizontalOverflow(
@@ -693,12 +850,14 @@ export function PdfDocumentWorkbenchView({
     const observer =
       typeof ResizeObserver === 'undefined'
         ? undefined
-        : new ResizeObserver(updateAvailability);
+        : new ResizeObserver(updateLayout);
     observer?.observe(container);
-    observer?.observe(viewer);
 
     return () => {
       window.cancelAnimationFrame(frame);
+      if (layoutFrame !== undefined) {
+        window.cancelAnimationFrame(layoutFrame);
+      }
       observer?.disconnect();
     };
   }, [
@@ -727,6 +886,48 @@ export function PdfDocumentWorkbenchView({
 
   const startPanning = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      const target = event.target;
+      const page =
+        target instanceof Element
+          ? target.closest<HTMLElement>('.page[data-page-number]')
+          : null;
+      const startsOnInteractiveElement =
+        target instanceof Element &&
+        target.closest(
+          '.annotationLayer a, button, input, textarea, select, [role="button"]',
+        ) !== null;
+      const shouldSelectRegion =
+        regionMode && Boolean(page) && !startsOnInteractiveElement;
+
+      if (shouldSelectRegion) {
+        const canvas = page?.querySelector<HTMLCanvasElement>('canvas');
+        const pageNumber = Number(page?.dataset.pageNumber);
+        if (
+          event.button === 0 &&
+          event.isPrimary &&
+          page &&
+          canvas &&
+          Number.isSafeInteger(pageNumber) &&
+          pageNumber > 0
+        ) {
+          const selection: PdfRegionSelection = {
+            pointerId: event.pointerId,
+            pageNumber,
+            page,
+            canvas,
+            startX: event.clientX,
+            startY: event.clientY,
+            currentX: event.clientX,
+            currentY: event.clientY,
+            explicit: regionMode,
+          };
+          activeRegionRef.current = selection;
+          setRegionSelection(selection);
+          event.currentTarget.setPointerCapture(event.pointerId);
+          event.preventDefault();
+        }
+        return;
+      }
       const container = event.currentTarget;
 
       if (
@@ -752,11 +953,21 @@ export function PdfDocumentWorkbenchView({
       setPanning(true);
       event.preventDefault();
     },
-    [],
+    [panAvailable, regionMode],
   );
 
   const movePanning = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      const region = activeRegionRef.current;
+      if (region?.pointerId === event.pointerId) {
+        const next = movePdfRegionPointer(
+          region, event.pointerId, event.clientX, event.clientY,
+        )!;
+        activeRegionRef.current = next;
+        setRegionSelection(next);
+        event.preventDefault();
+        return;
+      }
       const origin = activePanRef.current;
 
       if (!origin || origin.pointerId !== event.pointerId) {
@@ -773,6 +984,73 @@ export function PdfDocumentWorkbenchView({
       event.preventDefault();
     },
     [],
+  );
+
+  const finishPointerInteraction = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const region = activeRegionRef.current;
+      if (region?.pointerId === event.pointerId) {
+        activeRegionRef.current = undefined;
+        setRegionSelection(undefined);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+
+        const pageRect = region.page.getBoundingClientRect();
+        const completed = completePdfRegionPointer(
+          region, event.pointerId, event.clientX, event.clientY, pageRect,
+        )!;
+        if (completed.kind === 'too-small') {
+          if (region.explicit) {
+            onError('框选区域太小，请重新拖动选择公式或图像。');
+          }
+          return;
+        }
+
+        const store = getGlobalAiChatStore();
+        store.ensureSession(asset.projectId, asset.id);
+        store.setPendingAnchor(asset.id, {
+          target: {
+            scope: 'content',
+            anchorType: PDF_REGION_ANCHOR_TYPE,
+            anchorVersion: PDF_REGION_ANCHOR_VERSION,
+            anchorPayload: {
+              pageNumber: region.pageNumber,
+              x: completed.x,
+              y: completed.y,
+              width: completed.width,
+              height: completed.height,
+            },
+          },
+          pageNumber: region.pageNumber,
+        });
+        store.setPanelOpen(true);
+        store.setDraft('');
+        const containerRect = event.currentTarget.getBoundingClientRect();
+        setRegionActionMenu({
+          top: Math.max(12, completed.top - containerRect.top - 46),
+        });
+        event.preventDefault();
+        return;
+      }
+      stopPanning(event);
+    },
+    [asset.id, asset.projectId, onError, stopPanning],
+  );
+
+  const cancelPointerInteraction = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (activeRegionRef.current?.pointerId === event.pointerId) {
+        activeRegionRef.current = undefined;
+        setRegionSelection(undefined);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        return;
+      }
+      stopPanning(event);
+    },
+    [stopPanning],
   );
 
   useEffect(() => {
@@ -867,8 +1145,61 @@ export function PdfDocumentWorkbenchView({
         },
         onCopySelection: copySelection,
         onReveal: reveal,
+        onAiExplain: (text, anchor) => {
+          const store = getGlobalAiChatStore();
+          store.ensureSession(asset.projectId, asset.id);
+          store.setPendingAnchor(asset.id, {
+            target: anchor,
+            pageNumber:
+              typeof (anchor.anchorPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
+                ? ((anchor.anchorPayload as Record<string, unknown>).pageNumber as number)
+                : undefined,
+            selectedText: text,
+          });
+          store.setPanelOpen(true);
+          store.setDraft('');
+        },
+        onAiSummarize: (pageNumber, anchor) => {
+          const store = getGlobalAiChatStore();
+          const session = store.ensureSession(asset.projectId, asset.id);
+          store.setPanelOpen(true);
+          const updated = store.addUserMessage(
+            asset.id,
+            `请总结 PDF 第 ${pageNumber} 页的主要内容。`,
+            {
+              target: anchor,
+              pageNumber,
+            },
+          );
+          const userMessage = updated.messages.at(-1)!;
+          const requestId = `document-ai-${globalThis.crypto.randomUUID()}`;
+          activeDocumentRequestIdsRef.current.add(requestId);
+          void documentAiClient.ask({
+            projectId: asset.projectId,
+            assetId: asset.id,
+            requestId,
+            conversationId: session.id,
+            question: userMessage.content,
+            target: anchor,
+          }).then((result) => {
+            store.addAssistantMessage(
+              asset.id,
+              result.answer,
+              userMessage.id,
+              `${result.providerId}/${result.modelId}`,
+            );
+          }).catch((error: unknown) => {
+            store.setLoading(asset.id, false);
+            onError('AI 回答失败，请检查 Agent 登录状态后重试。');
+            console.error('[document-ai] 总结页面失败', error);
+          }).finally(() => {
+            activeDocumentRequestIdsRef.current.delete(requestId);
+          });
+        },
       }),
     [
+      asset.id,
+      asset.projectId,
       copySelection,
       outlineAvailable,
       ready,
@@ -939,6 +1270,7 @@ export function PdfDocumentWorkbenchView({
         .learning-pdf-workbench .pdfViewer {
           padding: 22px 20px 96px;
           --page-border: 1px solid rgba(255, 255, 255, 0.06);
+          background: #20262e;
         }
         .learning-pdf-workbench .pdfViewer .page {
           margin: 0 auto 18px;
@@ -1034,8 +1366,10 @@ export function PdfDocumentWorkbenchView({
           <div
             ref={containerRef}
             className={[
-              'absolute inset-0 overflow-auto bg-[#14191f] [scrollbar-color:rgba(120,135,165,.48)_rgba(20,25,31,.6)] [scrollbar-gutter:stable] [scrollbar-width:thin]',
-              panning
+              'absolute inset-0 overflow-auto bg-[#20262e] [scrollbar-color:rgba(120,135,165,.48)_rgba(32,38,46,.8)] [scrollbar-gutter:stable] [scrollbar-width:thin]',
+              regionMode
+                ? 'cursor-crosshair select-none'
+                : panning
                 ? 'cursor-grabbing select-none'
                 : panAvailable
                   ? 'cursor-grab'
@@ -1044,12 +1378,76 @@ export function PdfDocumentWorkbenchView({
             aria-label="PDF 页面画布"
             onPointerDown={startPanning}
             onPointerMove={movePanning}
-            onPointerUp={stopPanning}
-            onPointerCancel={stopPanning}
-            onLostPointerCapture={stopPanning}
+            onPointerUp={finishPointerInteraction}
+            onPointerCancel={cancelPointerInteraction}
+            onLostPointerCapture={cancelPointerInteraction}
           >
             <div ref={viewerRef} className="pdfViewer" />
           </div>
+
+          {regionSelection && containerRef.current && (
+            <div
+              className="pointer-events-none absolute z-40 border-2 border-indigo-400 bg-indigo-400/15"
+              style={{
+                left:
+                  Math.min(regionSelection.startX, regionSelection.currentX) -
+                  containerRef.current.getBoundingClientRect().left,
+                top:
+                  Math.min(regionSelection.startY, regionSelection.currentY) -
+                  containerRef.current.getBoundingClientRect().top,
+                width: Math.abs(regionSelection.currentX - regionSelection.startX),
+                height: Math.abs(regionSelection.currentY - regionSelection.startY),
+              }}
+            />
+          )}
+
+          {regionActionMenu && (
+            <div
+              ref={regionMenuRef}
+              className="absolute right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto whitespace-nowrap rounded-xl border border-white/15 bg-[#171c25]/95 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.45)] backdrop-blur [scrollbar-width:none]"
+              style={{ top: regionActionMenu.top }}
+            >
+              {PDF_REGION_QUICK_QUESTIONS.map(([label, question]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent('learning-companion:ai-quick-question', {
+                        detail: { assetId: asset.id, question },
+                      }),
+                    );
+                    setRegionActionMenu(undefined);
+                  }}
+                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-indigo-400/20 hover:text-white"
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('learning-companion:ai-quick-question', {
+                      detail: { assetId: asset.id, focusOnly: true },
+                    }),
+                  );
+                  setRegionActionMenu(undefined);
+                }}
+                className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-400/20 hover:text-white"
+              >
+                自由提问
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegionActionMenu(undefined)}
+                className="shrink-0 rounded-lg px-2 py-1.5 text-[11px] text-slate-500 hover:bg-white/5 hover:text-slate-200"
+                aria-label="关闭快捷提问"
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           {searchOpen && ready && (
             <div
@@ -1212,6 +1610,30 @@ export function PdfDocumentWorkbenchView({
               <span className="mx-1 h-5 w-px bg-white/[0.1]" />
               <button
                 type="button"
+                aria-pressed={regionMode}
+                onClick={() => {
+                  if (regionMode) {
+                    activeRegionRef.current = undefined;
+                    setRegionSelection(undefined);
+                    const store = getGlobalAiChatStore();
+                    store.setPendingAnchor(asset.id, undefined);
+                    store.setPanelOpen(false);
+                    setRegionMode(false);
+                  } else {
+                    setRegionMode(true);
+                  }
+                }}
+                className={`ui-button h-7 shrink-0 whitespace-nowrap rounded-lg px-2 text-[11px] ${
+                  regionMode
+                    ? 'bg-indigo-400/20 text-indigo-200'
+                    : 'text-slate-300'
+                }`}
+                title={regionMode ? '退出框选模式（也可按 Esc）' : '进入框选模式'}
+              >
+                {regionMode ? '退出框选' : '框选内容'}
+              </button>
+              <button
+                type="button"
                 aria-label="缩小 PDF"
                 onClick={() => adapterRef.current?.zoomOut()}
                 className="ui-icon-button grid size-7 place-items-center rounded-lg text-base text-slate-300"
@@ -1285,10 +1707,18 @@ export function PdfWorkbenchView(
   props: RendererWorkbenchViewProps,
 ) {
   return (
-    <PdfDocumentWorkbenchView
-      {...props}
-      contributionOwnerId={pdfWorkbenchManifest.id}
-    />
+    <DocumentAiWorkbenchShell
+      projectId={props.asset.projectId}
+      assetId={props.asset.id}
+      attachments={props.attachments ?? []}
+      refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
+      onError={props.onError}
+    >
+      <PdfDocumentWorkbenchView
+        {...props}
+        contributionOwnerId={pdfWorkbenchManifest.id}
+      />
+    </DocumentAiWorkbenchShell>
   );
 }
 

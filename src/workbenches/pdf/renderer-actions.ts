@@ -1,4 +1,5 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
 import type {
   PdfReadingMode,
@@ -22,6 +23,8 @@ export interface PdfRendererActionsOptions {
   readonly hasSelection: () => boolean;
   readonly onCopySelection: (text: string) => Promise<void> | void;
   readonly onReveal: () => Promise<void> | void;
+  readonly onAiExplain?: (text: string, anchor: ContentAnchorTarget) => void;
+  readonly onAiSummarize?: (pageNumber: number, anchor: ContentAnchorTarget) => void;
 }
 
 export function createPdfRendererActions({
@@ -41,8 +44,12 @@ export function createPdfRendererActions({
   hasSelection,
   onCopySelection,
   onReveal,
+  onAiExplain,
+  onAiSummarize,
 }: PdfRendererActionsOptions): WorkbenchActionBundle {
   const notReadyReason = ready ? undefined : 'PDF 尚未加载完成';
+  const hasAiExplain = typeof onAiExplain === 'function';
+  const hasAiSummarize = typeof onAiSummarize === 'function';
 
   return {
     actions: [
@@ -113,13 +120,36 @@ export function createPdfRendererActions({
       },
       {
         id: 'pdf.ai.explain-selection',
-        enabled: false,
-        execute: () => undefined,
+        enabled: hasAiExplain ? hasSelection : false,
+        execute: (context) => {
+          if (!onAiExplain) return;
+
+          const selection = findTextSelectionInput(context);
+          if (!selection?.text) return;
+
+          const anchor = context.focus;
+          if (!anchor) return;
+
+          onAiExplain(selection.text, anchor);
+        },
       },
       {
         id: 'pdf.ai.summarize-page',
-        enabled: false,
-        execute: () => undefined,
+        enabled: hasAiSummarize ? ready : false,
+        execute: (context) => {
+          if (!onAiSummarize) return;
+
+          const anchor = context.focus;
+          if (!anchor) return;
+
+          const anchorPayload = anchor.anchorPayload as Record<string, unknown> | undefined;
+          const pageNumber =
+            anchorPayload && typeof anchorPayload.pageNumber === 'number'
+              ? anchorPayload.pageNumber
+              : 1;
+
+          onAiSummarize(pageNumber, anchor);
+        },
       },
     ],
     contributions: [
@@ -318,10 +348,11 @@ export function createPdfRendererActions({
         groupLabel: 'PDF AI',
         order: 10,
         presentation: {
-          kind: 'generation-tool',
-          label: '解释选中内容',
-          description: '连同页码和 PDF 文字锚点一起提交',
-          disabledReason: '等待 PDF AI 工具接入',
+          kind: 'action',
+          label: '就选中内容问 AI',
+          disabledReason: hasAiExplain
+            ? '请先在 PDF 中选择文本'
+            : 'AI 功能未配置',
         },
       },
       {
@@ -331,10 +362,11 @@ export function createPdfRendererActions({
         group: '80-ai',
         order: 20,
         presentation: {
-          kind: 'generation-tool',
-          label: '总结当前页',
-          description: '以当前 PDF 页作为生成上下文',
-          disabledReason: '等待 PDF AI 工具接入',
+          kind: 'action',
+          label: 'AI 总结当前页',
+          disabledReason: hasAiSummarize
+            ? notReadyReason
+            : 'AI 功能未配置',
         },
       },
       {

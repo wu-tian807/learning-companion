@@ -52,22 +52,21 @@ import {
 } from '../projects/project-workspace-manager';
 import { JsonSettingsRepository } from '../settings/json-settings-repository';
 import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
-import { MainFacilityAdapterRegistry } from '../workbench/interaction/main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
-import { registerMainWorkbenches } from '../../workbenches/catalog/register-main-workbenches';
 import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
 import {
-  registerMainWorkbenchArtifactProducers,
-  registerMainWorkbenchAttachmentTypes,
-  registerMainWorkbenchGenerationTaskDefinitions,
-  startMainWorkbenchFeatures,
-  type MainWorkbenchFeatureRuntime,
-} from '../../workbenches/catalog/main-workbench-features';
+  registerMainWorkbenchArtifacts,
+  registerMainWorkbenchAttachments,
+  registerMainWorkbenchGeneration,
+  registerMainWorkbenchProviders,
+  startMainWorkbenchContributions,
+  type MainWorkbenchRuntime,
+} from '../../workbenches/catalog/register-main-workbenches';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
 import {
   ApplicationRuntime,
@@ -104,7 +103,7 @@ export async function createApplicationRuntime({
     | undefined;
   let workbenchSessionService: WorkbenchSessionService | undefined;
   let generationTaskService: GenerationTaskService | undefined;
-  let mainWorkbenchFeatures: MainWorkbenchFeatureRuntime | undefined;
+  let mainWorkbenchFeatures: MainWorkbenchRuntime | undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -178,7 +177,7 @@ export async function createApplicationRuntime({
       agentToolRegistration.defaultToolRequirements,
     );
     const artifactRegistry = new AssetArtifactRegistry();
-    registerMainWorkbenchArtifactProducers({
+    registerMainWorkbenchArtifacts({
       artifacts: artifactRegistry,
       externalLibraries: externalLibraryService,
       externalLibraryProfilesDirectory:
@@ -203,19 +202,9 @@ export async function createApplicationRuntime({
     contentResourceService = new ContentResourceService();
     registerContentProtocol(contentResourceService);
     contentProtocolRegistered = true;
-    const assetService = new AssetService(
-      assetDatabase,
-      contentResolverRegistry,
-      projectDatabase,
-      workspaceManager,
-      {
-        artifactCleanup: artifactService,
-        deletionObserver: associationService,
-      },
-    );
     const attachmentRegistry = new AttachmentRegistry();
     const anchorRegistry = new AnchorRegistry();
-    registerMainWorkbenchAttachmentTypes({
+    registerMainWorkbenchAttachments({
       attachments: attachmentRegistry,
       anchors: anchorRegistry,
     });
@@ -225,21 +214,35 @@ export async function createApplicationRuntime({
       attachmentRegistry,
       anchorRegistry,
       attachmentFiles,
-      assetService,
+      assetDatabase,
     );
-    assetService.registerAttachmentCleanup(attachmentService);
+    const assetService = new AssetService(
+      assetDatabase,
+      contentResolverRegistry,
+      projectDatabase,
+      workspaceManager,
+      {
+        artifactCleanup: artifactService,
+        attachmentCleanup: attachmentService,
+        deletionObserver: associationService,
+      },
+    );
+    attachmentService.subscribe(({ attachment }) => {
+      assetService.touch(
+        attachment.projectId,
+        attachment.assetId,
+        attachment.updatedTime,
+      );
+    });
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
     const transportBindingRegistry =
       new WorkbenchTransportBindingRegistry(
         workbenchFacilityRegistry,
       );
-    const mainFacilityAdapterRegistry =
-      new MainFacilityAdapterRegistry(workbenchFacilityRegistry);
     sandboxFrameInteractionBridge =
       new SandboxFrameInteractionBridge(
         transportBindingRegistry,
-        mainFacilityAdapterRegistry,
         workbenchFacilityRegistry,
       );
     const workbenchRegistry = new WorkbenchRegistry(
@@ -250,23 +253,25 @@ export async function createApplicationRuntime({
       new WorkbenchStateDatabase(databaseContext);
     const workbenchStateDataRepository =
       new WorkbenchStateDataDatabase(databaseContext);
-    registerMainWorkbenches(workbenchRegistry, {
-      associationService,
-      artifactService,
-      contentResourceService,
-      externalLibraryService,
-      facilityAdapterRegistry: mainFacilityAdapterRegistry,
-      frameScriptExecutor: sandboxFrameInteractionBridge,
-      projectLookup: projectDatabase,
-      stateDatabase: workbenchStateRepository,
-      stateDataDatabase: workbenchStateDataRepository,
-    });
+    registerMainWorkbenchProviders(
+      workbenchRegistry,
+      {
+        associationService,
+        artifactService,
+        contentResourceService,
+        externalLibraryService,
+        projectLookup: projectDatabase,
+        stateDatabase: workbenchStateRepository,
+        stateDataDatabase: workbenchStateDataRepository,
+        sandboxFrameScripts: sandboxFrameInteractionBridge,
+      },
+    );
     const generationTaskDatabase = new GenerationTaskDatabase(
       databaseContext,
     );
     const generationTaskDefinitions =
       new GenerationTaskDefinitionRegistry();
-    registerMainWorkbenchGenerationTaskDefinitions({
+    registerMainWorkbenchGeneration({
       definitions: generationTaskDefinitions,
       assets: assetService,
       associations: associationService,
@@ -311,13 +316,14 @@ export async function createApplicationRuntime({
     disposeIpc = registerApplicationIpc({
       agentProviderService,
       assetService,
+      attachmentService,
       externalLibraryService,
       generationTaskService,
       projectService,
       settingsRepository,
       workbenchSessionService,
     });
-    mainWorkbenchFeatures = startMainWorkbenchFeatures({
+    mainWorkbenchFeatures = startMainWorkbenchContributions({
       attachments: attachmentService,
       attachmentFiles,
       generationTasks: generationTaskService,

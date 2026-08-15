@@ -81,9 +81,10 @@ function decodeConversationIndex(
       return normalized;
     }
   } catch {
-    // 损坏数据按空索引处理，不阻塞对话栏。
+    throw new AppError('DATA_INTEGRITY_ERROR');
   }
-  return createHtmlConversationIndex();
+
+  throw new AppError('DATA_INTEGRITY_ERROR');
 }
 
 export class HtmlWorkbenchProvider implements MainWorkbenchProvider {

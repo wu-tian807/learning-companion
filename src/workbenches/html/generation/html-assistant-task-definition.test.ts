@@ -190,7 +190,7 @@ describe('HtmlAssistantInstruction', () => {
 });
 
 describe('createHtmlAssistantTaskDefinitionV1', () => {
-  it('maps each validated conversation to a named workspace', () => {
+  it('maps each validated conversation to a stable workspace instance', () => {
     const processor = {
       async process() {
         return Object.freeze({
@@ -202,18 +202,19 @@ describe('createHtmlAssistantTaskDefinitionV1', () => {
 
     expect(definition.id).toBe(HTML_ASSISTANT_TASK_DEFINITION_ID);
     expect(definition.version).toBe(HTML_ASSISTANT_TASK_DEFINITION_VERSION);
-    expect(definition.primaryWorkspaceConfig).toEqual({
-      key: 'html-assistant',
-      scope: 'named',
-      permissions: { read: true, write: false },
+    expect(definition.primaryWorkspaceConfig.key).toBe('html-assistant');
+    expect(definition.primaryWorkspaceConfig.permissions).toEqual({
+      read: true,
+      write: false,
     });
     expect(
-      definition.resolvePrimaryWorkspaceInstanceKey?.(
-        new HtmlAssistantInstruction({
+      definition.primaryWorkspaceConfig.resolveInstanceKey?.({
+        taskId: 'task-1',
+        instruction: new HtmlAssistantInstruction({
           conversationId: 'conversation-1',
           question: '问题',
-        }),
-      ),
+        }).toSnapshot(),
+      }),
     ).toBe('conversation-1');
     expect(definition.assetReferenceSchema.sources).toEqual({
       required: true,

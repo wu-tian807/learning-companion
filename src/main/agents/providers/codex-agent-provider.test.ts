@@ -135,7 +135,6 @@ function createGenerationRequest(
       instanceKey: 'task-1',
     },
     systemInstruction: 'Generate a mind map candidate.',
-    outputMode: 'workspace-artifact',
     userMessage: {
       role: 'user',
       content: [{ type: 'text', text: 'Read sources and respond.' }],
@@ -146,7 +145,6 @@ function createGenerationRequest(
     workspaces: {
       primary: {
         key: 'generation-mindmap',
-        scope: 'task',
         instanceKey: 'task-1',
         path: workspacePath,
         permissions: { read: true, write: false },
@@ -438,10 +436,10 @@ describe('CodexAgentProvider', () => {
       connectionId: 'codex-account',
       modelId: 'gpt-test-fast',
       providerExecutionId: 'turn-1',
-      assistantOutput: '{"ok":true}',
       startedTime: 1_000,
       completedTime: 2_000,
       activeDurationMs: 800,
+      assistantOutput: '{"ok":true}',
       usage: {
         inputTokens: 820,
         cachedInputTokens: 600,
@@ -527,63 +525,6 @@ describe('CodexAgentProvider', () => {
     );
   });
 
-  it('delivers item/completed final output when Codex emits no delta', async () => {
-    const sessions = createSessions();
-    const startTurn = vi.fn(async function* () {
-      yield {
-        type: 'turn-started' as const,
-        threadId: 'thread-1',
-        turn: { id: 'turn-1', status: 'inProgress' },
-      };
-      yield {
-        type: 'item-completed' as const,
-        threadId: 'thread-1',
-        turnId: 'turn-1',
-        item: {
-          id: 'message-1',
-          type: 'agentMessage',
-          phase: 'final_answer',
-          text: 'DeepSeek 最终回答',
-        },
-      };
-      return {
-        threadId: 'thread-1',
-        turn: {
-          id: 'turn-1',
-          status: 'completed',
-          items: [
-            {
-              id: 'message-1',
-              type: 'agentMessage',
-              phase: 'final_answer',
-              text: 'DeepSeek 最终回答',
-            },
-          ],
-        },
-      };
-    });
-    const runtime = createRuntime({
-      getAccount: vi.fn(async () => ({
-        account: { type: 'chatgpt' },
-        requiresOpenaiAuth: true,
-      })),
-      createThread: vi.fn(async () => selection('thread-1')),
-      startTurn,
-      interruptTurn: vi.fn(async () => undefined),
-    });
-    const provider = new CodexAgentProvider(runtime, sessions.service);
-
-    const completed = await collectTurn(
-      runAccountTurn(provider, createGenerationRequest()),
-    );
-
-    expect(completed.events).toEqual([
-      { type: 'session-resolved', sessionId: 'thread-1' },
-      { type: 'assistant-completed', text: 'DeepSeek 最终回答' },
-    ]);
-    expect(completed.result.assistantOutput).toBe('DeepSeek 最终回答');
-  });
-
   it('preserves mixed workspace permissions through the mocked Codex runtime', async () => {
     const sessions = createSessions();
     const createThread = vi.fn(async () => selection('thread-mixed'));
@@ -621,7 +562,6 @@ describe('CodexAgentProvider', () => {
         secondary: [
           {
             key: 'reference-material',
-            scope: 'task',
             instanceKey: 'task-1',
             path: secondaryPath,
             permissions: { read: true, write: false },
@@ -1000,7 +940,6 @@ describe('CodexAgentProvider', () => {
     const baseRequest = createGenerationRequest();
     const sharedWorkspace = {
       ...baseRequest.workspaces.primary,
-      scope: 'shared' as const,
       instanceKey: 'shared',
     };
     const sharedLocator = {

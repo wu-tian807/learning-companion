@@ -160,18 +160,15 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
     definition: AnyTaskDefinition,
     instruction: GenerationInstruction,
   ): Promise<PreparedAgentWorkspaces> {
-    const primaryInstanceKey =
-      definition.primaryWorkspaceConfig.scope === 'named'
-        ? definition.resolvePrimaryWorkspaceInstanceKey?.(
-            instruction,
-          )
-        : undefined;
+    const context = Object.freeze({
+      taskId: task.id,
+      instruction: instruction.toSnapshot(),
+    });
     const primary = await prepareAgentWorkspace(
       this.workspaceManager,
       definition.primaryWorkspaceConfig,
-      task.id,
+      context,
       [task.projectId],
-      primaryInstanceKey,
     );
     const secondary = [];
 
@@ -180,7 +177,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
         await prepareAgentWorkspace(
           this.workspaceManager,
           config,
-          task.id,
+          context,
           [task.projectId],
         ),
       );
@@ -213,7 +210,6 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definitionId: task.definitionId,
       definitionVersion: task.definitionVersion,
       providerSelectorId: definition.providerSelectorId,
-      outputMode: definition.outputMode ?? 'workspace-artifact',
       instruction,
       systemInstruction: definition.systemInstruction,
       defaultUserMessage,

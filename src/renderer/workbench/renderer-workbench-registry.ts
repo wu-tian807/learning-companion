@@ -14,10 +14,13 @@ import type {
 } from '../../shared/workbench/protocol';
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import type { AssetSnapshot } from '../../shared/assets';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 
 export interface RendererWorkbenchViewProps {
   readonly asset: AssetSnapshot;
   readonly bootstrap: WorkbenchBootstrap;
+  readonly attachments?: readonly AssetAttachment[];
+  readonly refreshAttachments?: () => Promise<void>;
   readonly executeCommand: (
     command: WorkbenchCommand,
   ) => Promise<WorkbenchCommandResult>;

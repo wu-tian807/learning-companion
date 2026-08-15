@@ -619,7 +619,7 @@ describe('useConversationController 生命周期', () => {
       await Promise.resolve();
     });
 
-    // 两轮共享同一个 conversationId → 同一 named workspace / Codex thread
+    // 两轮共享同一个 conversationId → 同一 workspace instance / Codex thread
     expect(conversationIds).toHaveLength(2);
     expect(conversationIds[0]).toBe(conversationIds[1]);
   });

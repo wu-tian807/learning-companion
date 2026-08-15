@@ -180,8 +180,11 @@ Agent 只看到 Workspace 相对路径，不接触 Learning Companion 的原始�
 ```ts
 interface AgentWorkspaceConfig {
   key: string;
-  scope: "shared" | "task";
   permissions: { read: boolean; write: boolean };
+  resolveInstanceKey?: (context: {
+    taskId: string;
+    instruction: JsonValue;
+  }) => string;
 }
 ```
 
@@ -198,20 +201,19 @@ project-outline
 路径规则：
 
 ```text
-workspace_root/<key>/shared
-workspace_root/<key>/<taskId>
+workspace_root/<key>/<instanceKey>
 ```
 
-- `scope: shared` 固定使用 `shared`；
-- `scope: task` 使用 `taskId`；
-- `scope` 只决定稳定的 Workspace 实例键，不隐含读写策略；shared Workspace 是否可写
-  完全由 `permissions` 声明。需要避免并发写入时，由使用该 Workspace 的业务 Service
+- 未声明 `resolveInstanceKey` 时默认使用 `taskId`，每个 GenerationTask 独立；
+- 需要跨 Task 延续 Conversation 时，由 Definition 返回 Conversation ID 等稳定业务键；
+- 真正需要单例时可以明确返回 `shared`，不再额外维护 `scope`；
+- `instanceKey` 同时确定 Workspace 实例和 Provider Session，不隐含读写策略。Workspace
+  是否可写完全由 `permissions` 声明。需要避免并发写入时，由使用该实例的业务 Service
   负责串行化或冲突控制。
 
-两种 scope 使用完全相同的 `TaskDefinition -> GenerationTask` 执行链路。每次外部
-Agent 业务请求都创建一个新的 GenerationTask；`shared` 不表示一个永不结束的 Task，
-只表示这些独立 Task 使用相同的 Workspace 实例和 Provider Session。`task` 则让每个
-GenerationTask 使用自己的 Workspace 实例和 Provider Session。
+所有实例策略使用完全相同的 `TaskDefinition -> GenerationTask` 执行链路。每次外部
+Agent 业务请求都创建一个新的 GenerationTask；复用稳定 `instanceKey` 不表示一个永不结束
+的 Task，只表示这些独立 Task 使用相同的 Workspace 实例和 Provider Session。
 
 ### 5.2 主副 Workspace
 
@@ -227,7 +229,7 @@ Session Locator 只由主 Workspace 产生：
 {
   projectId,
   workspaceKey: primary.key,
-  instanceKey: primary.scope === "shared" ? "shared" : taskId
+  instanceKey: primary.instanceKey
 }
 ```
 
@@ -431,7 +433,7 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
   避免重复扣费；
 - 只有明确的 `no rollout found for thread id` 才替换失效 binding，网络和连接错误不会被误判成
   Thread 丢失；
-- 同一个 `workspaceKey + instanceKey` 的 Turn 全程串行，支持未来 shared Workspace；
+- 同一个 `workspaceKey + instanceKey` 的 Turn 全程串行，支持命名 Workspace 复用；
 - usage 只采信 Codex `thread/tokenUsage/updated`，恢复时无法取得的 usage 保持缺省。
 
 ## 11. `mindmap.generate@1`
@@ -441,7 +443,7 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
 - id：`mindmap.generate`；
 - version：`1`；
 - primary key：`generation-mindmap`；
-- primary scope：`task`；
+- primary instance：使用默认 `taskId`，每个任务独立；
 - Asset Slot：必需的多值 `sources`；
 - Provider 默认工具：Workspace Shell read / search、按权限开放的 write、PDF 与 image；
 - Agent 必须在 Workspace 中写入 `output/mindmap-candidate.json`；

@@ -2,73 +2,74 @@ import type {
   RendererWorkbenchLoader,
   RendererWorkbenchRegistry,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import {
-  builtinWorkbenchCatalog,
-  type BuiltinWorkbenchId,
-} from './builtin-workbenches';
+import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
+import { audioWorkbenchManifest } from '../audio/shared';
+import { epubWorkbenchManifest } from '../epub/shared';
+import { htmlWorkbenchManifest } from '../html/shared';
+import { imageWorkbenchManifest } from '../image/shared';
+import { markdownWorkbenchManifest } from '../markdown/shared';
+import { mindMapWorkbenchManifest } from '../mindmap/shared';
+import { officeWorkbenchManifest } from '../office/shared';
+import { pdfWorkbenchManifest } from '../pdf/shared';
+import { plainTextWorkbenchManifest } from '../plain-text/shared';
+import { videoWorkbenchManifest } from '../video/shared';
 
-const rendererLoaders: Readonly<
+export interface RendererWorkbenchContribution {
+  readonly manifest: AssetWorkbenchManifest;
+  readonly load: RendererWorkbenchLoader;
+}
+
+export const rendererWorkbenchContributions: readonly RendererWorkbenchContribution[] = [
   {
-    [TId in BuiltinWorkbenchId]: RendererWorkbenchLoader<TId>;
-  }
-> = {
-  'builtin.plain-text': async () => {
-    const { plainTextRendererWorkbenchModule } = await import(
-      '../plain-text/renderer'
-    );
-    return plainTextRendererWorkbenchModule;
+    manifest: plainTextWorkbenchManifest,
+    load: async () =>
+      (await import('../plain-text/renderer')).plainTextRendererWorkbenchModule,
   },
-  'builtin.markdown': async () => {
-    const { markdownRendererWorkbenchModule } = await import(
-      '../markdown/renderer'
-    );
-    return markdownRendererWorkbenchModule;
+  {
+    manifest: markdownWorkbenchManifest,
+    load: async () =>
+      (await import('../markdown/renderer')).markdownRendererWorkbenchModule,
   },
-  'builtin.mindmap': async () => {
-    const { mindMapRendererWorkbenchModule } = await import(
-      '../mindmap/renderer'
-    );
-    return mindMapRendererWorkbenchModule;
+  {
+    manifest: mindMapWorkbenchManifest,
+    load: async () =>
+      (await import('../mindmap/renderer')).mindMapRendererWorkbenchModule,
   },
-  'builtin.pdf': async () => {
-    const { default: module } = await import('../pdf/renderer');
-    return module;
+  {
+    manifest: pdfWorkbenchManifest,
+    load: async () => (await import('../pdf/renderer')).default,
   },
-  'builtin.office': async () => {
-    const { default: module } = await import('../office/renderer');
-    return module;
+  {
+    manifest: officeWorkbenchManifest,
+    load: async () => (await import('../office/renderer')).default,
   },
-  'builtin.html': async () => {
-    const { default: module } = await import('../html/renderer');
-    return module;
+  {
+    manifest: htmlWorkbenchManifest,
+    load: async () => (await import('../html/renderer')).default,
   },
-  'builtin.epub': async () => {
-    const { default: module } = await import('../epub/renderer');
-    return module;
+  {
+    manifest: epubWorkbenchManifest,
+    load: async () => (await import('../epub/renderer')).default,
   },
-  'builtin.image': async () => {
-    const { imageRendererWorkbenchModule } = await import(
-      '../image/renderer'
-    );
-    return imageRendererWorkbenchModule;
+  {
+    manifest: imageWorkbenchManifest,
+    load: async () =>
+      (await import('../image/renderer')).imageRendererWorkbenchModule,
   },
-  'builtin.audio': async () => {
-    const { default: module } = await import('../audio/renderer');
-    return module;
+  {
+    manifest: audioWorkbenchManifest,
+    load: async () => (await import('../audio/renderer')).default,
   },
-  'builtin.video': async () => {
-    const { default: module } = await import('../video/renderer');
-    return module;
+  {
+    manifest: videoWorkbenchManifest,
+    load: async () => (await import('../video/renderer')).default,
   },
-};
+];
 
 export function registerRendererWorkbenches(
   registry: Pick<RendererWorkbenchRegistry, 'registerLoader'>,
 ): void {
-  for (const entry of builtinWorkbenchCatalog) {
-    registry.registerLoader(
-      entry.manifest,
-      rendererLoaders[entry.id],
-    );
+  for (const { manifest, load } of rendererWorkbenchContributions) {
+    registry.registerLoader(manifest, load);
   }
 }

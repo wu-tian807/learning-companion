@@ -194,7 +194,6 @@ describe('GenerationTask IPC handlers', () => {
       definitionId: definition.id,
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
-      outputMode: 'assistant-message',
       instruction: new HtmlAssistantInstruction({ conversationId: 'conversation-1', question: 'question' }),
       systemInstruction: definition.systemInstruction,
       defaultUserMessage: createTextAgentUserMessage('question'),

@@ -63,12 +63,7 @@ function validateDefinition(
     definition.secondaryWorkspaceConfigs,
   );
 
-  if (
-    secondary.some(({ key }) => key === primary.key) ||
-    secondary.some(({ scope }) => scope === 'named') ||
-    (primary.scope === 'named') !==
-      (typeof definition.resolvePrimaryWorkspaceInstanceKey === 'function')
-  ) {
+  if (secondary.some(({ key }) => key === primary.key)) {
     throw new AppError('INVALID_EXTENSION_DEFINITION');
   }
 

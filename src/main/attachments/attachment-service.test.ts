@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../shared/attachments/contracts';
+import type { AssetLookup } from '../assets/asset-database';
 import { AnchorRegistry } from './anchor-registry';
 import type { AttachmentContentFile } from './attachment-content-file';
 import type { AttachmentDatabaseApi } from './attachment-database';
@@ -54,21 +55,22 @@ function createHarness() {
     removeAttachment: vi.fn(async () => undefined),
     removeProject: vi.fn(async () => undefined),
   } as unknown as AttachmentContentFile;
-  const tracker = { touch: vi.fn() };
+  const assetLookupGet = vi.fn<AssetLookup['get']>(() => ({} as never));
+  const assets: AssetLookup = { get: assetLookupGet };
   const service = new AttachmentService(
     database,
     attachments,
     anchors,
     contentFiles,
-    tracker,
+    assets,
     { createId: () => 'attachment-1', now: () => 10 },
   );
-  return { service, stored, contentFiles, tracker };
+  return { service, stored, contentFiles, assetLookupGet };
 }
 
 describe('AttachmentService', () => {
-  it('owns identity, timestamps, validation and Asset tracking', async () => {
-    const { service, tracker } = createHarness();
+  it('owns identity, timestamps and validation against an existing Asset', async () => {
+    const { service, assetLookupGet } = createHarness();
     const created = await service.create({
       projectId: 'project-1',
       assetId: 'asset-1',
@@ -88,11 +90,7 @@ describe('AttachmentService', () => {
       createdTime: 10,
       updatedTime: 10,
     });
-    expect(tracker.touch).toHaveBeenCalledWith(
-      'project-1',
-      'asset-1',
-      10,
-    );
+    expect(assetLookupGet).toHaveBeenCalledWith('project-1', 'asset-1');
     await expect(
       service.create({
         projectId: 'project-1',
@@ -103,6 +101,21 @@ describe('AttachmentService', () => {
         metadata: {},
       }),
     ).rejects.toThrow('ATTACHMENT_TYPE_NOT_REGISTERED');
+  });
+
+  it('does not persist an Attachment for a missing Asset', async () => {
+    const { service, assetLookupGet, stored } = createHarness();
+    assetLookupGet.mockReturnValue(undefined);
+
+    await expect(service.create({
+      projectId: 'project-1',
+      assetId: 'missing',
+      typeId: 'epub.note',
+      typeVersion: 1,
+      target: { scope: 'asset' },
+      metadata: { status: 'pending' },
+    })).rejects.toThrow('ASSET_NOT_FOUND');
+    expect(stored.size).toBe(0);
   });
 
   it('cleans files and publishes typed deletion events', async () => {
@@ -164,16 +177,14 @@ describe('AttachmentService', () => {
     expect(stored.get(created.id)).toEqual(created);
   });
 
-  it('rolls back both content and database state when Asset tracking fails', async () => {
-    const { service, stored, contentFiles, tracker } = createHarness();
-    tracker.touch.mockImplementationOnce(() => {
-      throw new Error('asset tracking failed');
-    });
+  it('removes staged content when the referenced Asset is missing', async () => {
+    const { service, stored, contentFiles, assetLookupGet } = createHarness();
+    assetLookupGet.mockReturnValue(undefined);
 
     await expect(
       service.createWithContent({
         projectId: 'project-1',
-        assetId: 'asset-1',
+        assetId: 'missing',
         typeId: 'epub.note',
         typeVersion: 1,
         target: { scope: 'asset' },
@@ -184,7 +195,7 @@ describe('AttachmentService', () => {
           data: '# 回答\n',
         },
       }),
-    ).rejects.toThrow('asset tracking failed');
+    ).rejects.toThrow('ASSET_NOT_FOUND');
 
     expect(stored.size).toBe(0);
     expect(contentFiles.removeAttachment).toHaveBeenCalledWith(

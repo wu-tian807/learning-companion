@@ -8,6 +8,7 @@ import type {
   GenerationTaskProcessor,
   TaskDefinition,
 } from '../../../main/generation/contracts/task-definition';
+import type { AgentWorkspaceInstanceContext } from '../../../main/generation/contracts/generation-workspace';
 import {
   HtmlAssistantInstruction,
   htmlAssistantInstructionFactory,
@@ -41,21 +42,21 @@ export function createHtmlAssistantTaskDefinitionV1(
     id: HTML_ASSISTANT_TASK_DEFINITION_ID,
     version: HTML_ASSISTANT_TASK_DEFINITION_VERSION,
     providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
-    outputMode: 'assistant-message' as const,
     systemInstruction: HTML_ASSISTANT_SYSTEM_INSTRUCTION_V1,
     toolRequirements: Object.freeze([]),
     skills: Object.freeze([]),
     mcpServers: Object.freeze([]),
     primaryWorkspaceConfig: Object.freeze({
       key: 'html-assistant',
-      scope: 'named' as const,
       permissions: Object.freeze({ read: true, write: false }),
+      resolveInstanceKey({ instruction }: AgentWorkspaceInstanceContext) {
+        const parsed = htmlAssistantInstructionFactory.parse(instruction);
+        if (!parsed.ok) {
+          throw new Error('HtmlAssistant instruction 数据无效');
+        }
+        return parsed.value.conversationId;
+      },
     }),
-    resolvePrimaryWorkspaceInstanceKey(
-      instruction: HtmlAssistantInstruction,
-    ) {
-      return instruction.conversationId;
-    },
     secondaryWorkspaceConfigs: Object.freeze([]),
     assetReferenceSchema: Object.freeze({
       sources: Object.freeze({

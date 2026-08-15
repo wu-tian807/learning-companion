@@ -28,7 +28,9 @@ async function createRequest(name = 'course.docx') {
     source: {
       assetId: 'asset',
       mediaType:
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        name.endsWith('.pptx')
+          ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       absolutePath: sourcePath,
       revision: 'source-revision',
     },
@@ -64,14 +66,120 @@ afterEach(async () => {
 });
 
 describe('LibreOfficePreviewProducer', () => {
+  it('uses an injectable native PowerPoint exporter and skips LibreOffice after valid output', async () => {
+    const request = await createRequest('slides.pptx');
+    const libreOfficeRunner = { run: vi.fn() };
+    const nativeRunner = {
+      run: vi.fn(async (command) => {
+        const script = command.args.at(-1) as string;
+        const match = /\$outputPath='([^']+)'/u.exec(script);
+        await writeFile(match![1].replaceAll("''", "'"), '%PDF-1.7\nnative\n%%EOF\n');
+        return { stdout: '', stderr: '' };
+      }),
+    };
+    const producer = new LibreOfficePreviewProducer(
+      createExternalLibraries(),
+      join(request.workspacePath, 'profile'),
+      { commandRunner: libreOfficeRunner, nativePowerPointCommandRunner: nativeRunner, platform: 'win32' },
+    );
+
+    await expect(producer.produce(request, new AbortController().signal))
+      .resolves.toMatchObject({ mediaType: 'application/pdf' });
+    expect(nativeRunner.run).toHaveBeenCalledOnce();
+    expect(libreOfficeRunner.run).not.toHaveBeenCalled();
+  });
+
+  it('falls back to LibreOffice when native PowerPoint is unavailable or writes a bad PDF', async () => {
+    const request = await createRequest('slides.pptx');
+    const nativeRunner = {
+      run: vi.fn(async (command) => {
+        const script = command.args.at(-1) as string;
+        const match = /\$outputPath='([^']+)'/u.exec(script);
+        await writeFile(match![1].replaceAll("''", "'"), 'bad pdf');
+        return { stdout: '', stderr: '' };
+      }),
+    };
+    const libreOfficeRunner = {
+      run: vi.fn(async (command) => {
+        const outputDirectory = command.args[command.args.indexOf('--outdir') + 1];
+        await writeFile(join(outputDirectory, 'source.pdf'), '%PDF-1.7\nfallback\n%%EOF\n');
+        return { stdout: '', stderr: '' };
+      }),
+    };
+    const producer = new LibreOfficePreviewProducer(
+      createExternalLibraries(),
+      join(request.workspacePath, 'profile'),
+      { commandRunner: libreOfficeRunner, nativePowerPointCommandRunner: nativeRunner, platform: 'win32' },
+    );
+
+    await expect(producer.produce(request, new AbortController().signal))
+      .resolves.toMatchObject({ mediaType: 'application/pdf' });
+    expect(nativeRunner.run).toHaveBeenCalledOnce();
+    expect(libreOfficeRunner.run).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to LibreOffice when PowerPoint COM is unavailable', async () => {
+    const request = await createRequest('slides.pptx');
+    const nativeRunner = {
+      run: vi.fn(async () => { throw new Error('PowerPoint COM unavailable'); }),
+    };
+    const libreOfficeRunner = {
+      run: vi.fn(async (command) => {
+        const outputDirectory = command.args[command.args.indexOf('--outdir') + 1];
+        await writeFile(join(outputDirectory, 'source.pdf'), '%PDF-1.7\nfallback\n%%EOF\n');
+        return { stdout: '', stderr: '' };
+      }),
+    };
+    const producer = new LibreOfficePreviewProducer(
+      createExternalLibraries(), join(request.workspacePath, 'profile'),
+      { commandRunner: libreOfficeRunner, nativePowerPointCommandRunner: nativeRunner, platform: 'win32' },
+    );
+
+    await expect(producer.produce(request, new AbortController().signal))
+      .resolves.toMatchObject({ mediaType: 'application/pdf' });
+    expect(nativeRunner.run).toHaveBeenCalledOnce();
+    expect(libreOfficeRunner.run).toHaveBeenCalledOnce();
+  });
+
+  it('propagates native PowerPoint cancellation without starting LibreOffice', async () => {
+    const request = await createRequest('slides.pptx');
+    const libreOfficeRunner = { run: vi.fn() };
+    const nativeRunner = {
+      run: vi.fn(async () => {
+        throw new DOMException('cancelled', 'AbortError');
+      }),
+    };
+    const conversionDirectory = await mkdtemp(join(tmpdir(), 'learning-companion-native-cancel-'));
+    temporaryDirectories.push(conversionDirectory);
+    const removeConversionDirectory = vi.fn(async (path: string) => {
+      await rm(path, { recursive: true, force: true });
+    });
+    const producer = new LibreOfficePreviewProducer(
+      createExternalLibraries(),
+      join(request.workspacePath, 'profile'),
+      {
+        commandRunner: libreOfficeRunner,
+        nativePowerPointCommandRunner: nativeRunner,
+        platform: 'win32',
+        createConversionDirectory: async () => conversionDirectory,
+        removeConversionDirectory,
+      },
+    );
+
+    await expect(producer.produce(request, new AbortController().signal))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(libreOfficeRunner.run).not.toHaveBeenCalled();
+    expect(removeConversionDirectory).toHaveBeenCalledWith(conversionDirectory);
+  });
+
   it('runs a headless isolated conversion and validates the PDF', async () => {
-    const request = await createRequest();
+    const request = await createRequest('中文课程.docx');
     const commandRunner = {
       run: vi.fn(async (command) => {
         const outputDirectory =
           command.args[command.args.indexOf('--outdir') + 1];
         await writeFile(
-          join(outputDirectory, 'course.pdf'),
+          join(outputDirectory, 'source.pdf'),
           '%PDF-1.7\npreview\n%%EOF\n',
         );
         return { stdout: '', stderr: '' };
@@ -97,7 +205,7 @@ describe('LibreOfficePreviewProducer', () => {
           '--headless',
           '--convert-to',
           'pdf',
-          request.source.absolutePath,
+          expect.stringMatching(/[\\/]source\.docx$/u),
         ]),
         signal: expect.any(AbortSignal),
       }),
@@ -123,7 +231,7 @@ describe('LibreOfficePreviewProducer', () => {
             const outputDirectory =
               command.args[command.args.indexOf('--outdir') + 1];
             await writeFile(
-              join(outputDirectory, 'course.pdf'),
+              join(outputDirectory, 'source.pdf'),
               'not a pdf',
             );
             return { stdout: '', stderr: '' };
@@ -173,29 +281,26 @@ describe('LibreOfficePreviewProducer', () => {
     });
     let activeCommands = 0;
     let maximumCommands = 0;
+    let commandCount = 0;
     const producer = new LibreOfficePreviewProducer(
       createExternalLibraries(),
       join(firstRequest.workspacePath, 'libreoffice-profile'),
       {
         commandRunner: {
           run: vi.fn(async (command) => {
+            const commandIndex = commandCount;
+            commandCount += 1;
             activeCommands += 1;
             maximumCommands = Math.max(maximumCommands, activeCommands);
-            const sourcePath = command.args.at(-1)!;
 
-            if (sourcePath.endsWith('first.docx')) {
+            if (commandIndex === 0) {
               await firstGate;
             }
 
             const outputDirectory =
               command.args[command.args.indexOf('--outdir') + 1];
             await writeFile(
-              join(
-                outputDirectory,
-                sourcePath.endsWith('first.docx')
-                  ? 'first.pdf'
-                  : 'second.pdf',
-              ),
+              join(outputDirectory, 'source.pdf'),
               '%PDF-1.7\npreview\n%%EOF\n',
             );
             activeCommands -= 1;

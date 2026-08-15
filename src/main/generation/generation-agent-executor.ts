@@ -100,7 +100,6 @@ export class GenerationAgentExecutor {
         ? { reasoningEffort: request.reasoningEffort }
         : {}),
       systemInstruction: prepared.systemInstruction,
-      outputMode: prepared.outputMode,
       userMessage: request.userMessage,
       toolRequirements: prepared.toolRequirements,
       skills: prepared.skills,

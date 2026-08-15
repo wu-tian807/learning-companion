@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createCoreWorkbenchFacilityDefinitionRegistry } from '../shared/workbench/facilities/core-facilities';
 import type { AssetWorkbenchManifest } from '../shared/workbench/manifest';
-import { builtinWorkbenchCatalog } from './catalog/builtin-workbenches';
+import { mainWorkbenchContributions } from './catalog/register-main-workbenches';
 import { unsupportedWorkbenchManifest } from './unsupported/shared';
 
 function facilityIds(manifest: AssetWorkbenchManifest): string[] {
@@ -12,7 +12,8 @@ function facilityIds(manifest: AssetWorkbenchManifest): string[] {
 describe('built-in Workbench Facility matrix', () => {
   const manifests = [
     unsupportedWorkbenchManifest,
-    ...builtinWorkbenchCatalog.map(({ manifest }) => manifest),
+    ...mainWorkbenchContributions.flatMap(({ manifest }) =>
+      manifest ? [manifest] : []),
   ];
 
   it('keeps every built-in manifest valid against the core registry', () => {

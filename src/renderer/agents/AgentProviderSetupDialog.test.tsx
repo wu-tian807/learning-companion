@@ -13,7 +13,6 @@ function setup(
     revision: 0,
     selectors: [],
     selections: [],
-    selectorConnections: [],
     providers: [
       {
         id: 'codex',

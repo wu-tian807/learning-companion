@@ -97,7 +97,6 @@ describe('GenerationTask recovery', () => {
       definitionId: definition.id,
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
-      outputMode: 'workspace-artifact',
       instruction: new MindMapGenerationInstruction(),
       systemInstruction: definition.systemInstruction,
       defaultUserMessage: createTextAgentUserMessage('generate'),

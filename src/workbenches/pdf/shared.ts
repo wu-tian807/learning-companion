@@ -21,6 +21,8 @@ export const PDF_TEXT_RANGE_ANCHOR_TYPE = 'pdf.text-range';
 export const PDF_TEXT_RANGE_ANCHOR_VERSION = 1;
 export const PDF_PAGE_ANCHOR_TYPE = 'pdf.page';
 export const PDF_PAGE_ANCHOR_VERSION = 1;
+export const PDF_REGION_ANCHOR_TYPE = 'pdf.region';
+export const PDF_REGION_ANCHOR_VERSION = 1;
 
 export const pdfWorkbenchManifest: AssetWorkbenchManifest<
   typeof PDF_WORKBENCH_ID
@@ -33,6 +35,7 @@ export const pdfWorkbenchManifest: AssetWorkbenchManifest<
   supportedAnchorTypes: [
     PDF_TEXT_RANGE_ANCHOR_TYPE,
     PDF_PAGE_ANCHOR_TYPE,
+    PDF_REGION_ANCHOR_TYPE,
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
@@ -104,6 +107,14 @@ export interface PdfTextRangeAnchorV1 {
 
 export interface PdfPageAnchorV1 {
   readonly pageNumber: number;
+}
+
+export interface PdfRegionAnchorV1 {
+  readonly pageNumber: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 export const DEFAULT_PDF_WORKBENCH_STATE:
@@ -365,6 +376,38 @@ export function createPdfPageTarget(
     anchorType: PDF_PAGE_ANCHOR_TYPE,
     anchorVersion: PDF_PAGE_ANCHOR_VERSION,
     anchorPayload: { pageNumber },
+  };
+}
+
+export function isPdfRegionAnchorV1(
+  value: unknown,
+): value is PdfRegionAnchorV1 {
+  if (!isRecord(value) || !isPositiveInteger(value.pageNumber)) {
+    return false;
+  }
+
+  const coordinates = [value.x, value.y, value.width, value.height];
+  return (
+    coordinates.every((coordinate) => isFiniteInRange(coordinate, 0, 1)) &&
+    Number(value.width) > 0 &&
+    Number(value.height) > 0 &&
+    Number(value.x) + Number(value.width) <= 1.000_001 &&
+    Number(value.y) + Number(value.height) <= 1.000_001
+  );
+}
+
+export function createPdfRegionTarget(
+  region: PdfRegionAnchorV1,
+): ContentAnchorTarget {
+  if (!isPdfRegionAnchorV1(region)) {
+    throw new TypeError('PDF region Anchor is invalid');
+  }
+
+  return {
+    scope: 'content',
+    anchorType: PDF_REGION_ANCHOR_TYPE,
+    anchorVersion: PDF_REGION_ANCHOR_VERSION,
+    anchorPayload: { ...region },
   };
 }
 

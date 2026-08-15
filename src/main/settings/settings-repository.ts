@@ -24,15 +24,10 @@ export interface SettingsRepository {
     connection: AgentProviderConnectionConfiguration,
   ): Promise<void>;
   deleteAgentProviderConnection(connectionId: string): Promise<void>;
-  listAgentProviderSelectorSelections(): readonly AgentProviderSelectorSelectionSnapshot[];
   getAgentProviderSelectorSelection(
     selectorId: string,
-    connectionId: string,
   ): AgentProviderSelectorSelectionSnapshot | undefined;
   updateAgentProviderSelectorSelection(
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<void>;
-  getAgentProviderSelectorConnection(
-    selectorId: string,
-  ): { providerId: string; connectionId: string } | undefined;
 }

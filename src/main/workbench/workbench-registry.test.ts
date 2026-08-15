@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { ContentCapability } from '../../shared/workbench/manifest';
 import {
+  CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+  CORE_FACILITY_VERSION,
+} from '../../shared/workbench/facilities/core-facilities';
+import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
@@ -145,5 +149,22 @@ describe('WorkbenchRegistry', () => {
         },
       }),
     ).toThrow('INVALID_EXTENSION_DEFINITION');
+  });
+
+  it('rejects Facility adapters that the provider manifest does not own', () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const registry = new WorkbenchRegistry(fallback);
+    const provider = createProvider('html', ['text/html']);
+
+    expect(() => registry.register({
+      ...provider,
+      facilityAdapters: [{
+        workbenchId: provider.manifest.id,
+        facilityId: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
+        facilityVersion: CORE_FACILITY_VERSION,
+        triggers: ['context-menu'],
+        capture: () => ({}),
+      }],
+    })).toThrow('INVALID_EXTENSION_DEFINITION');
   });
 });

@@ -36,7 +36,6 @@ describe('GenerationTaskAgentSession', () => {
       definitionId: 'mindmap.generate',
       definitionVersion: 1,
       providerSelectorId: 'generation-center',
-      outputMode: 'workspace-artifact',
       instruction: {
         toSnapshot: () => null,
         toUserMessage: () => createTextAgentUserMessage('generate'),
@@ -49,7 +48,6 @@ describe('GenerationTaskAgentSession', () => {
       workspaces: {
         primary: {
           key: 'generation-mindmap',
-          scope: 'task',
           permissions: { read: true, write: true },
           instanceKey: 'task-1',
           path: 'D:\\tmp\\task-1',

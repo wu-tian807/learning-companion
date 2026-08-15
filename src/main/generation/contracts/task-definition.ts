@@ -56,8 +56,9 @@ export interface TaskAgentCallResult {
 
 /**
  * Agent-call facade injected for one GenerationTask execution. The concrete
- * TaskDefinition chooses whether the underlying Provider session is isolated
- * to that task or shared across tasks through its primary Workspace scope.
+ * TaskDefinition chooses the underlying Provider session through its primary
+ * Workspace instance key. Definitions can use the taskId default or resolve a
+ * stable key to continue the same session across GenerationTasks.
  * Definitions can request multiple sequential turns without knowing how the
  * Provider session is selected and persisted.
  */
@@ -93,8 +94,6 @@ export interface GenerationTaskProcessor<
   ): Promise<TResult>;
 }
 
-export type TaskOutputMode = 'assistant-message' | 'workspace-artifact';
-
 export interface TaskDefinition<
   TInstruction extends GenerationInstruction = GenerationInstruction,
   TResult extends JsonValue = JsonValue,
@@ -104,21 +103,10 @@ export interface TaskDefinition<
   /** Stable business slot used to resolve the execution configuration. */
   readonly providerSelectorId: string;
   readonly systemInstruction: string;
-  /**
-   * What the task delivers: a final assistant message that IS the product
-   * (`assistant-message`, e.g. HTML chat) or a workspace file that is the
-   * product (`workspace-artifact`, e.g. MindMap). The Provider shapes its
-   * execution prompt accordingly. Defaults to `workspace-artifact`.
-   */
-  readonly outputMode?: TaskOutputMode;
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
-  /** Resolves the stable instance for a named primary Workspace. */
-  resolvePrimaryWorkspaceInstanceKey?(
-    instruction: TInstruction,
-  ): string;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;
   readonly instruction: GenerationInstructionFactory<TInstruction>;

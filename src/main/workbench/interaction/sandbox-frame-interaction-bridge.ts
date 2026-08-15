@@ -16,7 +16,6 @@ import {
 import type { WorkbenchFacilityDefinitionRegistry } from '../../../shared/workbench/facilities/facility-definition-registry';
 import type { WorkbenchFacilityEvent } from '../../../shared/workbench/facilities/facility-event';
 import { AppError } from '../../errors/app-error';
-import type { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import {
   SANDBOX_CONTEXT_MENU_TRIGGER,
   SANDBOX_SELECTION_SETTLED_TRIGGER,
@@ -44,10 +43,7 @@ interface AttachedWebContents {
 export class SandboxFrameInteractionBridge
   implements SandboxFrameScriptExecutor
 {
-  private readonly attachedWebContents = new Map<
-    number,
-    AttachedWebContents
-  >();
+  private readonly attachedWebContents = new Map<number, AttachedWebContents>();
   private readonly lastPayloadByFacility = new Map<string, string>();
   private readonly schedule: (task: () => void) => void;
   private readonly logger: Pick<Console, 'error'>;
@@ -55,7 +51,6 @@ export class SandboxFrameInteractionBridge
 
   constructor(
     private readonly bindingRegistry: WorkbenchTransportBindingRegistry,
-    private readonly adapterRegistry: MainFacilityAdapterRegistry,
     private readonly facilityRegistry: WorkbenchFacilityDefinitionRegistry,
     dependencies: Partial<SandboxFrameInteractionBridgeDependencies> = {},
   ) {
@@ -134,10 +129,7 @@ export class SandboxFrameInteractionBridge
       webContents.off('before-mouse-event', onBeforeMouseEvent);
       webContents.off('before-input-event', onBeforeInputEvent);
       webContents.off('destroyed', onDestroyed);
-      if (
-        this.attachedWebContents.get(webContents.id)?.dispose ===
-        dispose
-      ) {
+      if (this.attachedWebContents.get(webContents.id)?.dispose === dispose) {
         this.attachedWebContents.delete(webContents.id);
       }
     };
@@ -146,10 +138,7 @@ export class SandboxFrameInteractionBridge
     webContents.on('before-mouse-event', onBeforeMouseEvent);
     webContents.on('before-input-event', onBeforeInputEvent);
     webContents.on('destroyed', onDestroyed);
-    this.attachedWebContents.set(webContents.id, {
-      webContents,
-      dispose,
-    });
+    this.attachedWebContents.set(webContents.id, { webContents, dispose });
 
     return dispose;
   }
@@ -195,15 +184,17 @@ export class SandboxFrameInteractionBridge
       return;
     }
 
-    for (const facility of activeBinding.binding.facilities) {
-      const adapter = this.adapterRegistry.get(
-        activeBinding.workbenchId,
-        facility.id,
-        facility.version,
-        trigger,
+    for (const adapter of activeBinding.adapters) {
+      if (!adapter.triggers.includes(trigger)) {
+        continue;
+      }
+      const facility = activeBinding.binding.facilities.find(
+        (candidate) =>
+          candidate.id === adapter.facilityId &&
+          candidate.version === adapter.facilityVersion,
       );
 
-      if (!adapter) {
+      if (!facility) {
         continue;
       }
 
@@ -291,9 +282,7 @@ export class SandboxFrameInteractionBridge
     return matches.length === 1 ? matches[0] : undefined;
   }
 
-  private findSessionRootFrame(
-    sessionId: string,
-  ): WebFrameMain | undefined {
+  private findSessionRootFrame(sessionId: string): WebFrameMain | undefined {
     const matches = this.bindingRegistry
       .listByTransport(
         CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
@@ -312,13 +301,12 @@ export class SandboxFrameInteractionBridge
     const candidates: WebFrameMain[] = [];
 
     for (const attachment of this.attachedWebContents.values()) {
-      const webContents = attachment.webContents;
-      if (webContents.isDestroyed()) {
+      if (attachment.webContents.isDestroyed()) {
         continue;
       }
 
       try {
-        for (const frame of webContents.mainFrame.framesInSubtree) {
+        for (const frame of attachment.webContents.mainFrame.framesInSubtree) {
           if (
             !frame.isDestroyed() &&
             !frame.detached &&
@@ -328,7 +316,7 @@ export class SandboxFrameInteractionBridge
           }
         }
       } catch {
-        // Frame trees can detach while a Workbench is being replaced.
+        // Frame trees may detach while a Workbench is being replaced.
       }
     }
 

@@ -120,7 +120,10 @@ Workbench or business service
 - Let TaskDefinition define Instruction validation, user message construction, workspace configuration, tools, skills, system instruction, Provider Selector, output mode, and `process()`.
 - Let GenerationTask own persistence, checkpoint, retry, cancel, recovery, result, metrics, and runtime event publication.
 - Keep final Assistant output authoritative when the product result is a message. Treat delta as optional transient UX, never as the only result.
-- Keep workspace scope, path permissions, output mode, and session lifetime as separate decisions.
+- Keep Workspace instance selection explicit in TaskDefinition. Omitted
+  `resolveInstanceKey` means task isolation; a resolver may return a stable
+  business key for cross-task Workspace and Session reuse. Do not infer path
+  permissions, output mode, Connection, or model identity from that key.
 - Keep UI conversation history separate from Provider thread history. Never replay local messages as model history when the Provider Session already owns context.
 - Keep Session locator independent of Connection, model, and API-key identity unless an explicit provider protocol proves otherwise.
 

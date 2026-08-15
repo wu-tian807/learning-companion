@@ -24,6 +24,7 @@ import { processGenerationTasksMigration } from './migrations/0016-process-gener
 import { assignGenerationTaskModelMigration } from './migrations/0017-assign-generation-task-model';
 import { assignGenerationTaskConnectionMigration } from './migrations/0018-assign-generation-task-connection';
 import { createAssetAttachmentsMigration } from './migrations/0019-create-asset-attachments';
+import { reconcileLegacyBranchSchemaMigration } from './migrations/0020-reconcile-legacy-branch-schema';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetLinkSchema from './schema/asset-links';
@@ -36,6 +37,8 @@ import * as workbenchStateSchema from './schema/workbench-state';
 interface DatabaseMigration {
   readonly version: number;
   readonly sql: string;
+  apply?(sqlite: Database.Database): void;
+  reconcile?(sqlite: Database.Database): void;
 }
 
 const migrations: readonly DatabaseMigration[] = [
@@ -58,6 +61,7 @@ const migrations: readonly DatabaseMigration[] = [
   assignGenerationTaskModelMigration,
   assignGenerationTaskConnectionMigration,
   createAssetAttachmentsMigration,
+  reconcileLegacyBranchSchemaMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,
@@ -95,6 +99,7 @@ function applyMigrations(sqlite: Database.Database): void {
 
     for (const migration of migrations) {
       if (migration.version <= appliedVersion) {
+        migration.reconcile?.(sqlite);
         continue;
       }
 
@@ -103,6 +108,7 @@ function applyMigrations(sqlite: Database.Database): void {
       }
 
       sqlite.exec(migration.sql);
+      migration.apply?.(sqlite);
       sqlite.pragma(`user_version = ${migration.version}`);
       appliedVersion = migration.version;
     }

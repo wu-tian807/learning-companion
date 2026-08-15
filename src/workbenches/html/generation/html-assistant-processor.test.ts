@@ -57,7 +57,6 @@ function createContext(options: {
         primary: Object.freeze({
           key: 'html-assistant',
           instanceKey: 'conversation-1',
-          scope: 'named',
           permissions: Object.freeze({ read: true, write: false }),
           path: '/workspace/html-assistant/conversation-1',
         }),

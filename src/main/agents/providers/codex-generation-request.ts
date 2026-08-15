@@ -37,39 +37,6 @@ export type CodexGenerationConnection =
       readonly environmentKey: string;
     };
 
-const CODEX_GENERATION_EXECUTION_POLICY = [
-  'Learning Companion generation execution boundary:',
-  '- Use only the workspace roots and Skill resources supplied for this task and obey their filesystem permissions.',
-  '- Do not request broader filesystem or network access.',
-  '- Use only the Skills and MCP servers explicitly supplied by Learning Companion for this task; do not discover or invoke ambient capabilities.',
-  '- Do not use apps/connectors, plugins, hooks, memories, goals, or subagents.',
-  '- Use the shell for file discovery and ordinary text inspection inside the supplied workspace roots.',
-  '- Use apply_patch only when a writable workspace is supplied, and modify files only inside writable workspace roots.',
-  '- For PDFs, start with workspace_read_pdf extract_text on manageable page ranges to locate relevant sections and page numbers. It reads embedded text only and is not OCR; sparse, empty, or garbled text is not evidence that the page is blank.',
-  '- Then use workspace_read_pdf render_pages on every relevant page and whenever formulas, tables, figures, layout, or missing text matter. The default scale 1.5 suits normal pages; raise it toward 2 only for small text or formulas. Do not form the final answer from extracted text alone. Use view_image for standalone image files.',
-  '- Treat the writable workspace as the task output surface. Read-only source workspaces must never be modified.',
-  '- Keep the final assistant message brief; it reports completed work and is not itself the generated artifact.',
-].join('\n');
-
-/** Provider guidance for tasks whose final assistant message IS the product. */
-const CODEX_ASSISTANT_MESSAGE_EXECUTION_POLICY = [
-  'Learning Companion generation execution boundary:',
-  '- Use only the workspace roots and Skill resources supplied for this task and obey their filesystem permissions.',
-  '- Do not request broader filesystem or network access.',
-  '- Use only the Skills and MCP servers explicitly supplied by Learning Companion for this task; do not discover or invoke ambient capabilities.',
-  '- Do not use apps/connectors, plugins, hooks, memories, goals, or subagents.',
-  '- Use the shell for file discovery and ordinary text inspection inside the supplied workspace roots.',
-  '- The final assistant message IS the delivered answer; write it directly and completely.',
-].join('\n');
-
-function generationExecutionPolicy(
-  request: GenerationAgentTurnRequest,
-): string {
-  return request.outputMode === 'assistant-message'
-    ? CODEX_ASSISTANT_MESSAGE_EXECUTION_POLICY
-    : CODEX_GENERATION_EXECUTION_POLICY;
-}
-
 export interface CodexGenerationConfiguration {
   readonly profileId: string;
   readonly runtimeWorkspaceRoots: readonly string[];
@@ -314,7 +281,10 @@ export function createCodexGenerationConfiguration(
     approvalPolicy: 'never' as const,
     permissions: profileId,
     configOverrides,
-    developerInstructions: `${request.systemInstruction}\n\n${generationExecutionPolicy(request)}`,
+    // Task semantics belong to TaskDefinition. The Codex adapter only maps the
+    // declared instruction and capabilities; it must not append a global
+    // workflow, output, or tool-usage policy of its own.
+    developerInstructions: request.systemInstruction,
   };
 
   return Object.freeze({

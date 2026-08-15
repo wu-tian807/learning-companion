@@ -25,6 +25,7 @@ export const OFFICE_STATE_SCHEMA_VERSION = 1;
 export const OFFICE_TEXT_RANGE_ANCHOR_TYPE =
   'office.preview.text-range';
 export const OFFICE_PAGE_ANCHOR_TYPE = 'office.preview.page';
+export const OFFICE_REGION_ANCHOR_TYPE = 'office.preview.region';
 export const OFFICE_ANCHOR_VERSION = 1;
 
 export const OFFICE_MEDIA_TYPES = [
@@ -45,6 +46,7 @@ export const officeWorkbenchManifest: AssetWorkbenchManifest<
   supportedAnchorTypes: [
     OFFICE_TEXT_RANGE_ANCHOR_TYPE,
     OFFICE_PAGE_ANCHOR_TYPE,
+    OFFICE_REGION_ANCHOR_TYPE,
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
@@ -175,4 +177,3 @@ export function createOfficeSaveViewStateCommand(
     },
   };
 }
-

@@ -44,6 +44,9 @@ import type {
   WorkbenchOpenRequest,
 } from "./workbench/protocol";
 import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-event";
+import type { AssetAttachment } from "./attachments/contracts";
+import type { AssetTarget } from "./workbench/anchor";
+import type { JsonValue } from "./workbench/protocol";
 
 export const IPC_CHANNELS = {
   healthCheck: "app:health-check",
@@ -103,6 +106,10 @@ export const IPC_CHANNELS = {
   commandWorkbench: "workbench:command",
   closeWorkbench: "workbench:close",
   workbenchFacilityEvent: "workbench:facility-event",
+  listAttachments: "attachment:list",
+  createAttachment: "attachment:create",
+  readAttachmentContent: "attachment:read-content",
+  deleteAttachment: "attachment:delete",
 } as const;
 
 export const ASSET_BATCH_MAX_SIZE = 512;
@@ -231,6 +238,27 @@ export interface LearningCompanionApi {
   onWorkbenchFacilityEvent: (
     listener: (event: WorkbenchFacilityEvent) => void,
   ) => () => void;
+  listAttachments: (request: {
+    projectId: string;
+    assetId: string;
+  }) => Promise<AssetAttachment[]>;
+  createAttachment: (request: {
+    projectId: string;
+    assetId: string;
+    typeId: string;
+    typeVersion: number;
+    target: AssetTarget;
+    metadata: JsonValue;
+    body?: JsonValue;
+  }) => Promise<AssetAttachment>;
+  readAttachmentContent: (request: {
+    projectId: string;
+    attachmentId: string;
+  }) => Promise<JsonValue>;
+  deleteAttachment: (request: {
+    projectId: string;
+    attachmentId: string;
+  }) => Promise<void>;
   getPathForFile: (file: File) => string;
 }
 

@@ -244,16 +244,16 @@ describe('HtmlWorkbenchProvider conversations', () => {
     ).rejects.toThrow();
   });
 
-  it('recovers from corrupted stored data as empty index', async () => {
+  it('rejects corrupted stored data without overwriting it', async () => {
     const { provider, context } = await createProvider(
       createFakeStateDatabase(new TextEncoder().encode('not-json')),
     );
 
-    const result = await provider.command(context, {
-      type: htmlConversationCommands.list,
-    });
-
-    expect(result.payload).toEqual({ entries: [] });
+    await expect(
+      provider.command(context, {
+        type: htmlConversationCommands.list,
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 
   it('rejects unknown commands and expired sessions', async () => {

@@ -14,7 +14,7 @@ import {
 } from '../contracts/generation-asset-reference';
 import type { GenerationTaskSnapshot } from '../generation-task';
 
-/** Task-local control file ref, so tasks sharing a named workspace never
+/** Task-local control file ref, so tasks reusing a workspace never
  * overwrite each other's prepared manifest (see prepared-manifest-file.ts). */
 export function generationPreparedManifestRef(
   taskId: string,

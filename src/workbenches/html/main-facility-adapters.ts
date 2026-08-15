@@ -3,7 +3,7 @@ import type { ContextMenuParams } from 'electron';
 import type {
   MainFacilityCaptureContext,
   MainWorkbenchFacilityAdapter,
-} from '../../main/workbench/interaction/main-facility-adapter-registry';
+} from '../../main/workbench/interaction/main-workbench-facility-adapter';
 import {
   SANDBOX_CONTEXT_MENU_TRIGGER,
   SANDBOX_SELECTION_SETTLED_TRIGGER,

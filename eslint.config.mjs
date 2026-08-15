@@ -6,12 +6,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['.vite/**', 'coverage/**', 'dist/**', 'node_modules/**', 'out/**', 'externalLib/**'],
+    ignores: ['.vite/**', 'coverage/**', 'dist/**', 'node_modules/**', 'out/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/renderer/**/*.{ts,tsx}'],
+    files: [
+      'src/renderer/**/*.{ts,tsx}',
+      'src/workbenches/document-ai/renderer/**/*.{ts,tsx}',
+    ],
     languageOptions: {
       globals: globals.browser,
     },

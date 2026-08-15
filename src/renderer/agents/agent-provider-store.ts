@@ -75,9 +75,6 @@ function requireSetupSnapshot(
     providers: value.providers.map(cloneProvider),
     selectors: value.selectors.map((selector) => ({ ...selector })),
     selections: value.selections.map((selection) => ({ ...selection })),
-    selectorConnections: value.selectorConnections.map((active) => ({
-      ...active,
-    })),
   };
 }
 

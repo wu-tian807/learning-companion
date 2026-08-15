@@ -10,7 +10,7 @@ export type { HtmlAssistantTaskResult } from './html-assistant-result';
 /**
  * Single-turn processor: one agent call per question.
  *
- * Tasks carrying the same conversationId resolve to the same named workspace,
+ * Tasks carrying the same conversationId resolve to the same workspace instance,
  * so Codex maintains history and the processor never re-sends previous turns.
  * Streaming deltas remain optional execution events; the completed call output
  * is returned as the authoritative business result.

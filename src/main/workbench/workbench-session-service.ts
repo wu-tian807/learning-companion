@@ -143,6 +143,7 @@ export class WorkbenchSessionService
           session.id,
           session.provider.manifest,
           transportBindings,
+          session.provider.facilityAdapters ?? [],
         ) ?? (() => undefined);
 
       this.transportBindingDisposers.set(

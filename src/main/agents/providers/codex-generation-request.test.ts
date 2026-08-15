@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GenerationAgentTurnRequest } from '../../generation/generation-agent-runner';
+import { toThreadConfiguration } from '../codex/codex-runtime-params';
 import { AgentFunctionToolRegistry } from '../function-tools/agent-function-tool-registry';
 import {
   WORKSPACE_READ_TOOL_ID,
@@ -37,7 +38,6 @@ function request(): GenerationAgentTurnRequest {
       instanceKey: 'task-1',
     },
     systemInstruction: 'Generate a mind map candidate.',
-    outputMode: 'workspace-artifact',
     userMessage: {
       role: 'user',
       content: [{ type: 'text', text: 'Generate it.' }],
@@ -50,7 +50,6 @@ function request(): GenerationAgentTurnRequest {
     workspaces: {
       primary: {
         key: 'generation-mindmap',
-        scope: 'task',
         instanceKey: 'task-1',
         path,
         permissions: { read: true, write: false },
@@ -142,11 +141,11 @@ describe('createCodexGenerationConfiguration', () => {
     expect(readOnly.threadInput.configOverrides).not.toHaveProperty(
       'default_permissions',
     );
-    expect(readOnly.threadInput.developerInstructions).toContain(
-      'It reads embedded text only and is not OCR',
+    expect(readOnly.threadInput.developerInstructions).toBe(
+      readOnlyRequest.systemInstruction,
     );
-    expect(readOnly.threadInput.developerInstructions).toContain(
-      'Do not form the final answer from extracted text alone',
+    expect(readOnly.threadInput.developerInstructions).not.toContain(
+      'Learning Companion generation execution boundary',
     );
 
     const writableRequest = {
@@ -184,29 +183,6 @@ describe('createCodexGenerationConfiguration', () => {
       'default_permissions',
     );
     expect(writable.profileId).not.toBe(readOnly.profileId);
-  });
-
-  it('shapes the execution policy for assistant-message output mode', () => {
-    const generationRequest = {
-      ...request(),
-      outputMode: 'assistant-message' as const,
-    };
-    const config = createCodexGenerationConfiguration(
-      generationRequest,
-      { disabledMcpServers: [], disabledSkillPaths: [] },
-      resolveCodexGenerationTools(
-        generationRequest,
-        registry(1),
-      ),
-      emptyCapabilities,
-    );
-
-    expect(config.threadInput.developerInstructions).toContain(
-      'The final assistant message IS the delivered answer',
-    );
-    expect(config.threadInput.developerInstructions).not.toContain(
-      'Keep the final assistant message brief',
-    );
   });
 
   it('keeps non-permission tool configuration out of the permission profile identity', () => {
@@ -253,6 +229,49 @@ describe('createCodexGenerationConfiguration', () => {
     expect(versionOne.profileId).toBe(withUnselectedTool.profileId);
   });
 
+  it('creates a Runtime-compatible explicit profile for prompt-only document AI turns', () => {
+    const promptOnlyRequest: GenerationAgentTurnRequest = {
+      ...request(),
+      toolRequirements: [],
+      workspaces: {
+        primary: {
+          ...request().workspaces.primary,
+          permissions: { read: false, write: false },
+        },
+        secondary: [],
+      },
+    };
+    const tools = resolveCodexGenerationTools(
+      promptOnlyRequest,
+      new AgentFunctionToolRegistry(),
+    );
+    const configuration = createCodexGenerationConfiguration(
+      promptOnlyRequest,
+      { disabledMcpServers: [], disabledSkillPaths: [] },
+      tools,
+      emptyCapabilities,
+    );
+
+    expect(configuration.profileId).toMatch(/^lc-generation-/u);
+    expect(configuration.threadInput.permissions).toBe(
+      configuration.profileId,
+    );
+    expect(configuration.threadInput.configOverrides).toMatchObject({
+      permissions: {
+        [configuration.profileId]: {
+          filesystem: { ':minimal': 'read' },
+          network: { enabled: false },
+        },
+      },
+    });
+    expect(configuration.threadInput.configOverrides).not.toHaveProperty(
+      'default_permissions',
+    );
+    expect(() =>
+      toThreadConfiguration(configuration.threadInput),
+    ).not.toThrow();
+  });
+
   it('keeps model, prompt, and connection choices out of the permission profile identity', () => {
     const initialRequest = request();
     const environment = {
@@ -288,9 +307,7 @@ describe('createCodexGenerationConfiguration', () => {
     expect(changed.resumeInput).toMatchObject({
       model: 'deepseek-test',
       modelProvider: 'learning-companion-api',
-      developerInstructions: expect.stringContaining(
-        'Use a different task instruction.',
-      ),
+      developerInstructions: changedRequest.systemInstruction,
     });
     expect(changed.threadInput.configOverrides).toMatchObject({
       model_providers: {
