@@ -7,6 +7,7 @@ import {
   CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
+  generationCenterSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   sandboxFrameTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -19,6 +20,12 @@ export const HTML_LINK_ANCHOR_TYPE = 'html.link';
 export const HTML_LINK_ANCHOR_VERSION = 1;
 export const HTML_ELEMENT_ANCHOR_TYPE = 'html.element';
 export const HTML_ELEMENT_ANCHOR_VERSION = 1;
+
+export const htmlConversationCommands = {
+  list: 'html.conversations.list',
+  save: 'html.conversations.save',
+  remove: 'html.conversations.remove',
+} as const;
 
 export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   typeof HTML_WORKBENCH_ID
@@ -36,6 +43,7 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   facilities: [
     sandboxFrameTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
+    generationCenterSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
     ),
@@ -52,6 +60,13 @@ export interface HtmlWorkbenchPayload {
 export interface HtmlQuoteAnchorV1 {
   readonly exact: string;
   readonly frameUrl?: string;
+  /** 选区在 frame 内的视口矩形（用于 renderer 定位悬浮条/标注）。 */
+  readonly rect?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
 }
 
 export interface HtmlLinkAnchorV1 {
@@ -62,6 +77,12 @@ export interface HtmlElementAnchorV1 {
   readonly frameUrl: string;
   readonly tagName: string;
   readonly domPath: readonly number[];
+  readonly rect: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
   readonly id?: string;
   readonly role?: string;
   readonly ariaLabel?: string;
@@ -114,11 +135,18 @@ export function isHtmlWorkbenchPayload(
 export function isHtmlQuoteAnchorV1(
   value: unknown,
 ): value is HtmlQuoteAnchorV1 {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const allowedKeys = new Set(['exact', 'frameUrl', 'rect']);
+
   return (
-    isRecord(value) &&
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
     isBoundedText(value.exact, 16_384) &&
     (value.frameUrl === undefined ||
-      isBoundedText(value.frameUrl, 8_192))
+      isBoundedText(value.frameUrl, 8_192)) &&
+    (value.rect === undefined || isRectValue(value.rect))
   );
 }
 
@@ -139,6 +167,7 @@ export function isHtmlElementAnchorV1(
     'frameUrl',
     'tagName',
     'domPath',
+    'rect',
     'id',
     'role',
     'ariaLabel',
@@ -156,6 +185,7 @@ export function isHtmlElementAnchorV1(
       (index) =>
         Number.isSafeInteger(index) && index >= 0 && index <= 100_000,
     ) &&
+    isRectValue(value.rect) &&
     (value.id === undefined || isBoundedText(value.id, 512)) &&
     (value.role === undefined || isBoundedText(value.role, 128)) &&
     (value.ariaLabel === undefined ||
@@ -165,9 +195,32 @@ export function isHtmlElementAnchorV1(
   );
 }
 
+function isRectValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y) &&
+    typeof value.width === 'number' &&
+    Number.isFinite(value.width) &&
+    typeof value.height === 'number' &&
+    Number.isFinite(value.height) &&
+    value.x >= -100_000 &&
+    value.x <= 100_000 &&
+    value.y >= -100_000 &&
+    value.y <= 100_000 &&
+    value.width >= 0 &&
+    value.width <= 100_000 &&
+    value.height >= 0 &&
+    value.height <= 100_000
+  );
+}
+
 export function createHtmlQuoteTarget(
   exact: string,
   frameUrl?: string,
+  rect?: HtmlQuoteAnchorV1['rect'],
 ): JsonValue & ContentAnchorTarget {
   return {
     scope: 'content',
@@ -176,6 +229,7 @@ export function createHtmlQuoteTarget(
     anchorPayload: {
       exact,
       ...(frameUrl ? { frameUrl } : {}),
+      ...(rect ? { rect } : {}),
     },
   };
 }
@@ -206,6 +260,12 @@ export function createHtmlElementTarget(
       frameUrl: anchor.frameUrl,
       tagName: anchor.tagName,
       domPath: [...anchor.domPath],
+      rect: {
+        x: anchor.rect.x,
+        y: anchor.rect.y,
+        width: anchor.rect.width,
+        height: anchor.rect.height,
+      },
       ...(anchor.id ? { id: anchor.id } : {}),
       ...(anchor.role ? { role: anchor.role } : {}),
       ...(anchor.ariaLabel ? { ariaLabel: anchor.ariaLabel } : {}),

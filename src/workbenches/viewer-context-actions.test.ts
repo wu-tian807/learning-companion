@@ -53,6 +53,9 @@ describe('viewer Workbench context action bundles', () => {
       onOpenLink: vi.fn(),
       onReload: vi.fn(),
       onReveal: vi.fn(),
+      onExplainSelection: vi.fn(),
+      onSummarizePage: vi.fn(),
+      onOpenChat: vi.fn(),
     });
     const copyAction = bundle.actions.find(
       (action) => action.id === 'html.copy-selection',
@@ -64,7 +67,7 @@ describe('viewer Workbench context action bundles', () => {
     expectWorkbenchSpecificContextMenu(bundle, [
       '复制选中内容',
       '在浏览器中打开链接',
-      '解释选中内容',
+      '引用选中内容',
       '总结当前页面',
     ]);
     expect(isWorkbenchActionEnabled(copyAction!)).toBe(false);

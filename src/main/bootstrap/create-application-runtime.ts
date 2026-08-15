@@ -263,6 +263,7 @@ export async function createApplicationRuntime({
         projectLookup: projectDatabase,
         stateDatabase: workbenchStateRepository,
         stateDataDatabase: workbenchStateDataRepository,
+        sandboxFrameScripts: sandboxFrameInteractionBridge,
       },
     );
     const generationTaskDatabase = new GenerationTaskDatabase(

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AnchorRegistry } from '../../main/attachments/anchor-registry';
 import { AttachmentRegistry } from '../../main/attachments/attachment-registry';
+import { GenerationTaskDefinitionRegistry } from '../../main/generation/generation-task-definition-registry';
 import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { RendererWorkbenchLoader } from '../../renderer/workbench/renderer-workbench-registry';
@@ -12,6 +13,10 @@ import {
 } from '../../shared/workbench/facilities/core-facilities';
 import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import {
+  HTML_ASSISTANT_TASK_DEFINITION_ID,
+  HTML_ASSISTANT_TASK_DEFINITION_VERSION,
+} from '../../shared/generation-definitions';
+import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
 } from '../document-ai/ai-annotation-attachment';
@@ -21,6 +26,7 @@ import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
   registerMainWorkbenchAttachments,
+  registerMainWorkbenchGeneration,
   registerMainWorkbenchProviders,
 } from './register-main-workbenches';
 import {
@@ -55,6 +61,7 @@ describe('Workbench contribution catalogs', () => {
       projectLookup: {} as never,
       stateDatabase: {} as never,
       stateDataDatabase: {} as never,
+      sandboxFrameScripts: {} as never,
     });
 
     for (const manifest of mainManifests) {
@@ -115,5 +122,23 @@ describe('Workbench contribution catalogs', () => {
           height: 0.5,
         }),
     ).toBe(true);
+  });
+
+  it('registers the HTML assistant TaskDefinition through the same Main catalog', () => {
+    const definitions = new GenerationTaskDefinitionRegistry();
+
+    registerMainWorkbenchGeneration({
+      definitions,
+      assets: {} as never,
+      associations: {} as never,
+      attachments: {} as never,
+    });
+
+    expect(
+      definitions.get(
+        HTML_ASSISTANT_TASK_DEFINITION_ID,
+        HTML_ASSISTANT_TASK_DEFINITION_VERSION,
+      ),
+    ).toBeDefined();
   });
 });

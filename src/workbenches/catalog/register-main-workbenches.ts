@@ -15,6 +15,7 @@ import type { GenerationTaskServiceApi } from '../../main/generation/generation-
 import type { ProjectLookup } from '../../main/projects/project-database';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
+import type { SandboxFrameScriptExecutor } from '../../main/workbench/interaction/sandbox-frame-script-executor';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type { WorkbenchStateDatabaseApi } from '../../main/workbench/workbench-state-database';
 import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
@@ -26,6 +27,7 @@ import { EpubWorkbenchProvider } from '../epub/main';
 import { epubExplanationMainFeature } from '../epub/explanations/main';
 import { epubWorkbenchManifest } from '../epub/shared';
 import { HtmlWorkbenchProvider } from '../html/main';
+import { htmlAssistantMainFeature } from '../html/generation/main';
 import { htmlWorkbenchManifest } from '../html/shared';
 import { ImageWorkbenchProvider } from '../image/main';
 import { imageWorkbenchManifest } from '../image/shared';
@@ -53,6 +55,7 @@ export interface MainWorkbenchProviderContext {
   readonly projectLookup: ProjectLookup;
   readonly stateDatabase: WorkbenchStateDatabaseApi;
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
+  readonly sandboxFrameScripts: SandboxFrameScriptExecutor;
 }
 
 export interface MainWorkbenchArtifactContext {
@@ -147,8 +150,16 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = 
       ),
     officeArtifactMainFeature,
   ),
-  providerContribution(htmlWorkbenchManifest, (context) =>
-    new HtmlWorkbenchProvider(context.contentResourceService)),
+  providerContribution(
+    htmlWorkbenchManifest,
+    (context) =>
+      new HtmlWorkbenchProvider(
+        context.contentResourceService,
+        context.stateDataDatabase,
+        context.sandboxFrameScripts,
+      ),
+    htmlAssistantMainFeature,
+  ),
   providerContribution(
     epubWorkbenchManifest,
     (context) =>

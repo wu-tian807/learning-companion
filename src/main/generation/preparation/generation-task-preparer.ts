@@ -9,11 +9,11 @@ import {
 import type { GenerationTaskSnapshot } from '../generation-task';
 import type { GenerationAssetReferencePreparerApi } from './generation-asset-reference-preparer';
 import type { GenerationPreparedManifestFileApi } from './generation-prepared-manifest-file';
-import { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-file';
+import { generationPreparedManifestRef } from './generation-prepared-manifest-file';
 import { appendAssetReferencesToUserMessage } from './generation-user-message-composer';
 import type { PreparedGenerationTask } from './prepared-generation-task';
 
-export { GENERATION_PREPARED_MANIFEST_REF } from './generation-prepared-manifest-file';
+export { generationPreparedManifestRef } from './generation-prepared-manifest-file';
 
 export interface GenerationTaskPreparerApi {
   prepare(
@@ -218,7 +218,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       mcpServers: cloneCapabilityRequirements(definition.mcpServers),
       workspaces,
       assetReferences,
-      manifestRef: GENERATION_PREPARED_MANIFEST_REF,
+      manifestRef: generationPreparedManifestRef(task.id),
     });
   }
 }

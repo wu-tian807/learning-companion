@@ -14,8 +14,13 @@ import {
 } from '../contracts/generation-asset-reference';
 import type { GenerationTaskSnapshot } from '../generation-task';
 
-export const GENERATION_PREPARED_MANIFEST_REF =
-  'control/prepared-manifest.json';
+/** Task-local control file ref, so tasks reusing a workspace never
+ * overwrite each other's prepared manifest (see prepared-manifest-file.ts). */
+export function generationPreparedManifestRef(
+  taskId: string,
+): string {
+  return `control/tasks/${taskId}/prepared-manifest.json`;
+}
 
 const preparedManifestFormat =
   'learning-companion/generation-prepared-manifest';
@@ -108,25 +113,22 @@ export class GenerationPreparedManifestFile
     assetReferences: PreparedGenerationAssetReferenceBindings,
   ): Promise<GenerationPreparedManifest> {
     const manifest = createManifest(task, assetReferences);
+    const taskControlPath = join(
+      primaryWorkspacePath,
+      'control',
+      'tasks',
+      task.id,
+    );
     await this.writeJson(
-      absoluteWorkspacePath(
-        primaryWorkspacePath,
-        'request/instruction.json',
-      ),
+      join(taskControlPath, 'instruction.json'),
       task.instruction,
     );
     await this.writeJson(
-      absoluteWorkspacePath(
-        primaryWorkspacePath,
-        'request/asset-references.json',
-      ),
+      join(taskControlPath, 'asset-references.json'),
       toJsonValue(manifest.assetReferences),
     );
     await this.writeJson(
-      absoluteWorkspacePath(
-        primaryWorkspacePath,
-        GENERATION_PREPARED_MANIFEST_REF,
-      ),
+      join(taskControlPath, 'prepared-manifest.json'),
       toJsonValue(manifest),
     );
     return manifest;
