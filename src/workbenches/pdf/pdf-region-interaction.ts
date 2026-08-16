@@ -54,3 +54,24 @@ export function shouldDismissPdfRegionMenu(
 ): boolean {
   return menu !== null && !menu.contains(target);
 }
+
+export function shouldDismissPdfRegionSelection(input: {
+  readonly menu: { contains(target: unknown): boolean } | null;
+  readonly target: unknown;
+  readonly selection: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly point: { readonly x: number; readonly y: number };
+}): boolean {
+  if (input.menu?.contains(input.target)) return false;
+  const { left, top, width, height } = input.selection;
+  return !(
+    input.point.x >= left &&
+    input.point.x <= left + width &&
+    input.point.y >= top &&
+    input.point.y <= top + height
+  );
+}

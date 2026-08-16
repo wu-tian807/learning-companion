@@ -22,12 +22,17 @@ import type {
   AiChatState,
   AiChatStore,
 } from './chat-store';
+import { notifyDocumentAiQuestionCommitted } from '../question-events';
 import { createSessionId, getGlobalAiChatStore } from './chat-store';
 import {
   normalizeAiMarkdown,
   normalizeSelectedAnswerText,
 } from './ai-markdown';
-import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
+import {
+  resolveWorkbenchAnchorPreview,
+  revealWorkbenchAnchor,
+  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+} from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 
 export function AiMarkdownContent({ content }: { readonly content: string }) {
   return (
@@ -181,7 +186,13 @@ export async function sendDocumentAiMessage(input: {
   if (store.getSession(assetId)?.loading) return false;
   const session = store.ensureSession(projectId, assetId);
   const effectiveAnchor = anchor ?? store.getSession(assetId)?.pendingAnchor;
+  const currentConversationId = store.getSession(assetId)?.activeConversationId;
+  const generateTitle = !currentConversationId ||
+    !store.getSession(assetId)?.messages.some(
+      (message) => message.conversationId === currentConversationId,
+    );
   const updated = store.addUserMessage(assetId, content, effectiveAnchor);
+  notifyDocumentAiQuestionCommitted(assetId);
   const userMessage = updated.messages.at(-1)!;
   const requestId = createDocumentAiRequestId();
   activeRequestIds.set(assetId, requestId);
@@ -191,18 +202,20 @@ export async function sendDocumentAiMessage(input: {
       projectId,
       assetId,
       requestId,
-      conversationId: session.id,
+      conversationId: userMessage.conversationId ?? session.id,
       question: content,
       target: effectiveAnchor?.target ?? { scope: 'asset' },
       ...(effectiveAnchor?.selectedText
         ? { selectedText: effectiveAnchor.selectedText }
         : {}),
+      ...(generateTitle ? { generateTitle: true } : {}),
     });
     store.addAssistantMessage(
       assetId,
       result.answer,
       userMessage.id,
       `${result.providerId}/${result.modelId}`,
+      result.title,
     );
     return true;
   } catch (error) {
@@ -321,13 +334,13 @@ export function AiChatPanel({
   onClose,
   onAttachAnswer,
 }: AiChatPanelProps) {
+  const store = useAiChatStore();
   const {
     session,
     draft,
     loading,
     error,
     selectedAnswerRange,
-    pendingAnchor,
     setDraft,
     sendMessage,
     setSelectedAnswerRange,
@@ -338,10 +351,47 @@ export function AiChatPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const [attachNotice, setAttachNotice] = useState<string>();
   const [copiedMessageId, setCopiedMessageId] = useState<string>();
-  const messages = useMemo(
-    () => session?.messages ?? [],
-    [session?.messages],
+  const conversations = store.getConversations(assetId);
+  const activeConversationId = session?.activeConversationId ??
+    (session?.pendingAnchor ? undefined : conversations.at(0)?.id);
+  const messages = (session?.messages ?? []).filter(
+    (message) => message.conversationId === activeConversationId,
   );
+
+  useEffect(() => {
+    const restoreMissingSourcePreviews = () => {
+      for (const message of messages) {
+        if (
+          message.role !== 'user' ||
+          !message.anchor ||
+          message.anchor.previewDataUrl
+        ) {
+          continue;
+        }
+        const previewDataUrl = resolveWorkbenchAnchorPreview(
+          assetId,
+          message.anchor.target,
+        );
+        if (previewDataUrl) {
+          store.setMessageAnchorPreview(
+            assetId,
+            message.id,
+            previewDataUrl,
+          );
+        }
+      }
+    };
+
+    restoreMissingSourcePreviews();
+    window.addEventListener(
+      WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+      restoreMissingSourcePreviews,
+    );
+    return () => window.removeEventListener(
+      WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+      restoreMissingSourcePreviews,
+    );
+  }, [assetId, messages, store]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -436,7 +486,7 @@ export function AiChatPanel({
   }, [attachAnswerMessage, messages, selectedAnswerRange]);
 
   return (
-    <div className="flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-white/[0.08] bg-[#1a1f26]">
+    <div className="flex h-full min-h-0 w-[30rem] shrink-0 flex-col overflow-hidden border-l border-white/[0.08] bg-[#1a1f26]">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-white/[0.075] px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-100">AI 问答</h3>
@@ -474,6 +524,40 @@ export function AiChatPanel({
           </button>
         </div>
       </div>
+
+      <div className="flex min-h-0 flex-1">
+        <aside className="w-36 shrink-0 overflow-y-auto border-r border-white/[0.07] bg-black/10 p-2">
+          <p className="px-2 pb-2 pt-1 text-[10px] font-medium text-slate-500">最近提问</p>
+          <div className="space-y-1">
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                type="button"
+                aria-pressed={conversation.id === activeConversationId}
+                onClick={() => {
+                  store.selectConversation(assetId, conversation.id);
+                  if (conversation.anchor) {
+                    revealWorkbenchAnchor(assetId, conversation.anchor.target);
+                  }
+                }}
+                className={`w-full rounded-lg px-2 py-2 text-left text-[11px] leading-4 transition-colors ${
+                  conversation.id === activeConversationId
+                    ? 'bg-indigo-400/15 text-indigo-100'
+                    : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200'
+                }`}
+                title={conversation.title}
+              >
+                <span className="line-clamp-2">{conversation.title}</span>
+                {conversation.anchor?.pageNumber && (
+                  <span className="mt-1 block text-[9px] text-slate-600">
+                    第 {conversation.anchor.pageNumber} 页
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
 
       {/* Messages */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -601,12 +685,6 @@ export function AiChatPanel({
             {error}
           </div>
         )}
-        {pendingAnchor && (
-          <QuestionSourceCard
-            assetId={assetId}
-            anchor={pendingAnchor}
-          />
-        )}
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -640,6 +718,8 @@ export function AiChatPanel({
           </button>
         </div>
       </form>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createAiChatStore, type AiChatHistoryStorage } from './chat-store';
+import {
+  createAiChatStore,
+  createLegacyConversationTitle,
+  type AiChatHistoryStorage,
+} from './chat-store';
 
 function createHistoryStorage(): AiChatHistoryStorage {
   const entries = new Map<string, string>();
@@ -12,6 +16,15 @@ function createHistoryStorage(): AiChatHistoryStorage {
 }
 
 describe('Document AI chat session lifecycle', () => {
+  it('turns legacy raw questions into concise local titles without another model request', () => {
+    expect(createLegacyConversationTitle('Question: 为什么这个方法更好 Document path: file.pdf'))
+      .toBe('这个方法的优势');
+    expect(createLegacyConversationTitle('请用通俗易懂的语言解释我框选的内容'))
+      .toBe('框选内容通俗解释');
+    expect(createLegacyConversationTitle('怎么算的？')).toBe('计算过程');
+    expect(createLegacyConversationTitle('详细点过程')).toBe('详细推导过程');
+  });
+
   it('isolates assets and rotates provider conversation identity when cleared', () => {
     let sequence = 0;
     const store = createAiChatStore(() => `conversation-${++sequence}`);
@@ -133,5 +146,83 @@ describe('Document AI chat session lifecycle', () => {
       scope: 'content',
       anchorType: 'pdf.region',
     });
+  });
+
+  it('backfills and persists a preview for an existing anchored question', () => {
+    const storage = createHistoryStorage();
+    const store = createAiChatStore(() => 'conversation', storage);
+    store.ensureSession('project', 'asset');
+    const question = store.addUserMessage('asset', '旧问题', {
+      target: {
+        scope: 'content',
+        anchorType: 'pdf.region',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber: 6, x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      },
+      pageNumber: 6,
+    }).messages.at(-1)!;
+
+    store.setMessageAnchorPreview(
+      'asset',
+      question.id,
+      'data:image/jpeg;base64,cHJldmlldw==',
+    );
+
+    const restored = createAiChatStore(() => 'restored', storage)
+      .ensureSession('project', 'asset');
+    expect(restored.messages.at(0)?.anchor?.previewDataUrl).toBe(
+      'data:image/jpeg;base64,cHJldmlldw==',
+    );
+  });
+
+  it('creates an independent conversation for each selected region and resumes the chosen one', () => {
+    let sequence = 0;
+    const store = createAiChatStore(() => `id-${++sequence}`);
+    store.ensureSession('project', 'asset');
+    const anchor = (pageNumber: number) => ({
+      target: {
+        scope: 'content' as const,
+        anchorType: 'pdf.region',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber, x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      },
+      pageNumber,
+    });
+    const first = store.addUserMessage('asset', '第一个区域', anchor(1))
+      .messages.at(-1)!;
+    const second = store.addUserMessage('asset', '第二个区域', anchor(2))
+      .messages.at(-1)!;
+
+    expect(first.conversationId).not.toBe(second.conversationId);
+    expect(store.getConversations('asset').map(({ title }) => title))
+      .toEqual(['第二个区域', '第一个区域']);
+
+    store.selectConversation('asset', first.conversationId!);
+    const followUp = store.addUserMessage('asset', '继续追问').messages.at(-1)!;
+    expect(followUp.conversationId).toBe(first.conversationId);
+
+    store.clearSession('asset');
+    expect(store.getConversations('asset').map(({ title }) => title))
+      .toEqual(['第二个区域']);
+  });
+
+  it('uses and persists the AI-generated summary as the conversation title', () => {
+    let sequence = 0;
+    const storage = createHistoryStorage();
+    const store = createAiChatStore(() => `id-${++sequence}`, storage);
+    store.ensureSession('project', 'asset');
+    const question = store.addUserMessage('asset', '为什么这个方法更好').messages.at(-1)!;
+    store.addAssistantMessage(
+      'asset',
+      '因为它降低了计算复杂度。',
+      question.id,
+      'provider/model',
+      '高效注意力计算',
+    );
+
+    expect(store.getConversations('asset').at(0)?.title).toBe('高效注意力计算');
+    const restored = createAiChatStore(() => 'restored', storage);
+    restored.ensureSession('project', 'asset');
+    expect(restored.getConversations('asset').at(0)?.title).toBe('高效注意力计算');
   });
 });

@@ -28,9 +28,11 @@ import type {
 import type { AssetTarget } from '../../shared/workbench/anchor';
 import {
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+  WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
   WORKBENCH_RESOLVE_ANCHOR_EVENT,
   WORKBENCH_REVEAL_ANCHOR_EVENT,
   type ResolveWorkbenchAnchorDetail,
+  type ResolveWorkbenchAnchorPreviewDetail,
   type RevealWorkbenchAnchorDetail,
 } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import type {
@@ -66,8 +68,12 @@ import {
 import {
   completePdfRegionPointer,
   movePdfRegionPointer,
-  shouldDismissPdfRegionMenu,
+  shouldDismissPdfRegionSelection,
 } from './pdf-region-interaction';
+import {
+  DOCUMENT_AI_QUESTION_COMMITTED_EVENT,
+  type DocumentAiQuestionCommittedDetail,
+} from '../document-ai/renderer/question-events';
 
 type PdfLoadState =
   | {
@@ -489,6 +495,7 @@ export function PdfDocumentWorkbenchView({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
+  const dismissedRegionPointerRef = useRef<number | undefined>(undefined);
   const regionMenuRef = useRef<HTMLDivElement>(null);
   const activeDocumentRequestIdsRef = useRef(new Set<string>());
 
@@ -537,15 +544,49 @@ export function PdfDocumentWorkbenchView({
       if (detail.assetId !== asset.id) return;
       findPage(detail.target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
+    const resolvePreview = (event: Event) => {
+      const detail = (
+        event as CustomEvent<ResolveWorkbenchAnchorPreviewDetail>
+      ).detail;
+      if (detail.assetId !== asset.id) return;
+      const mapped = mapAnchorTarget(detail.target);
+      const page = findPage(mapped);
+      if (!page || mapped.scope !== 'content') return;
+      const payload = mapped.anchorPayload as Record<string, unknown>;
+      if (
+        typeof payload.x !== 'number' ||
+        typeof payload.y !== 'number' ||
+        typeof payload.width !== 'number' ||
+        typeof payload.height !== 'number'
+      ) {
+        return;
+      }
+      const canvas = findRenderedPdfCanvas(page);
+      if (!canvas) return;
+      detail.respond(capturePdfRegionPreview(canvas, {
+        x: payload.x,
+        y: payload.y,
+        width: payload.width,
+        height: payload.height,
+      }));
+    };
     const notifyLayout = () => window.dispatchEvent(
       new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
     );
     const container = containerRef.current;
     window.addEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+    window.addEventListener(
+      WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
+      resolvePreview,
+    );
     window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
     container?.addEventListener('scroll', notifyLayout, { passive: true });
     return () => {
       window.removeEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+      window.removeEventListener(
+        WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
+        resolvePreview,
+      );
       window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
       container?.removeEventListener('scroll', notifyLayout);
     };
@@ -581,15 +622,55 @@ export function PdfDocumentWorkbenchView({
     useState<PdfRegionActionMenu>();
 
   useEffect(() => {
-    if (!regionActionMenu) return;
+    // Document questions use one predictable interaction: a rectangular
+    // region. PDF.js' transparent text layer must not leave a second,
+    // browser-native blue selection behind it.
+    window.getSelection()?.removeAllRanges();
+  }, [regionMode]);
+
+  useEffect(() => {
+    if (!regionActionMenu || !completedRegionSelection) return;
     const dismiss = (event: PointerEvent) => {
-      if (shouldDismissPdfRegionMenu(regionMenuRef.current, event.target)) {
-        setRegionActionMenu(undefined);
-      }
+      const container = containerRef.current;
+      if (!container || !(event.target instanceof Node) ||
+        !container.contains(event.target)) return;
+      const containerRect = container.getBoundingClientRect();
+      if (!shouldDismissPdfRegionSelection({
+        menu: regionMenuRef.current,
+        target: event.target,
+        selection: completedRegionSelection,
+        point: {
+          x: event.clientX - containerRect.left + container.scrollLeft,
+          y: event.clientY - containerRect.top + container.scrollTop,
+        },
+      })) return;
+      dismissedRegionPointerRef.current = event.pointerId;
+      setCompletedRegionSelection(undefined);
+      setRegionActionMenu(undefined);
+      const store = getGlobalAiChatStore();
+      store.setPendingAnchor(asset.id, undefined);
     };
     document.addEventListener('pointerdown', dismiss, true);
     return () => document.removeEventListener('pointerdown', dismiss, true);
-  }, [regionActionMenu]);
+  }, [asset.id, completedRegionSelection, regionActionMenu]);
+
+  useEffect(() => {
+    const hideQuestionGuide = (event: Event) => {
+      const detail = (event as CustomEvent<DocumentAiQuestionCommittedDetail>)
+        .detail;
+      if (detail?.assetId === asset.id) {
+        setRegionActionMenu(undefined);
+      }
+    };
+    window.addEventListener(
+      DOCUMENT_AI_QUESTION_COMMITTED_EVENT,
+      hideQuestionGuide,
+    );
+    return () => window.removeEventListener(
+      DOCUMENT_AI_QUESTION_COMMITTED_EVENT,
+      hideQuestionGuide,
+    );
+  }, [asset.id]);
 
   const persistViewState = useCallback(
     async (state: PdfWorkbenchViewState, version: number) => {
@@ -948,6 +1029,11 @@ export function PdfDocumentWorkbenchView({
 
   const startPanning = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (dismissedRegionPointerRef.current === event.pointerId) {
+        dismissedRegionPointerRef.current = undefined;
+        event.preventDefault();
+        return;
+      }
       const target = event.target;
       const page =
         target instanceof Element
@@ -1357,8 +1443,13 @@ export function PdfDocumentWorkbenchView({
           border-radius: 2px;
           box-shadow: 0 10px 32px rgba(0, 0, 0, 0.34);
         }
+        .learning-pdf-workbench .textLayer {
+          pointer-events: none;
+          user-select: none !important;
+          -webkit-user-select: none !important;
+        }
         .learning-pdf-workbench .textLayer ::selection {
-          background: rgba(99, 102, 241, 0.38);
+          background: transparent;
         }
         .learning-pdf-workbench .textLayer .highlight {
           background: rgba(250, 204, 21, 0.32);

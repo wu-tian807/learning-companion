@@ -23,6 +23,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const DOCUMENT_AI_REQUEST_KEYS = new Set([
   'projectId', 'assetId', 'requestId', 'conversationId',
   'question', 'target', 'selectedText',
+  'generateTitle',
 ]);
 
 function isRequestId(value: unknown): value is string {
@@ -40,6 +41,7 @@ export function isDocumentAiRequest(value: unknown): value is DocumentAiRequest 
     typeof value.question === 'string' && value.question.trim().length > 0 &&
     isAssetTarget(value.target) &&
     (value.selectedText === undefined || typeof value.selectedText === 'string')
+    && (value.generateTitle === undefined || typeof value.generateTitle === 'boolean')
   );
 }
 
@@ -53,6 +55,7 @@ export async function askDocumentAi(
     conversationId: request.conversationId,
     target: request.target,
     ...(request.selectedText ? { selectedText: request.selectedText } : {}),
+    ...(request.generateTitle === true ? { generateTitle: true } : {}),
   });
   const created = tasks.create({
     projectId: request.projectId.trim(),
@@ -69,6 +72,7 @@ export async function askDocumentAi(
   const result = next.value.result as DocumentQuestionTaskResult;
   if (
     typeof result.answer !== 'string' || result.answer.trim().length === 0 ||
+    (result.title !== undefined && typeof result.title !== 'string') ||
     typeof result.providerId !== 'string' || result.providerId.trim().length === 0 ||
     typeof result.modelId !== 'string' || result.modelId.trim().length === 0
   ) throw new AppError('DATA_INTEGRITY_ERROR');

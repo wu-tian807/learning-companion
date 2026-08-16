@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completePdfRegionPointer, movePdfRegionPointer, shouldDismissPdfRegionMenu } from './pdf-region-interaction';
+import {
+  completePdfRegionPointer,
+  movePdfRegionPointer,
+  shouldDismissPdfRegionMenu,
+  shouldDismissPdfRegionSelection,
+} from './pdf-region-interaction';
 
 describe('PDF region pointer lifecycle', () => {
   const state = { pointerId: 7, startX: 20, startY: 30, currentX: 20, currentY: 30 };
@@ -25,5 +30,19 @@ describe('PDF region pointer lifecycle', () => {
     expect(shouldDismissPdfRegionMenu(menu, 'inside')).toBe(false);
     expect(shouldDismissPdfRegionMenu(menu, 'outside')).toBe(true);
     expect(shouldDismissPdfRegionMenu(null, 'outside')).toBe(false);
+  });
+
+  it('dismisses a completed region only when clicking blank canvas outside it', () => {
+    const selection = { left: 20, top: 30, width: 100, height: 60 };
+    const menu = { contains: vi.fn((target) => target === 'menu') };
+    expect(shouldDismissPdfRegionSelection({
+      menu, target: 'menu', selection, point: { x: 200, y: 200 },
+    })).toBe(false);
+    expect(shouldDismissPdfRegionSelection({
+      menu, target: 'page', selection, point: { x: 50, y: 50 },
+    })).toBe(false);
+    expect(shouldDismissPdfRegionSelection({
+      menu, target: 'page', selection, point: { x: 200, y: 200 },
+    })).toBe(true);
   });
 });

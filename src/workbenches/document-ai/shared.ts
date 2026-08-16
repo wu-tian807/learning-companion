@@ -13,10 +13,12 @@ export interface DocumentAiRequest {
   readonly question: string;
   readonly target: AssetTarget;
   readonly selectedText?: string;
+  readonly generateTitle?: boolean;
 }
 
 export interface DocumentAiResponse {
   readonly answer: string;
+  readonly title?: string;
   readonly providerId: string;
   readonly modelId: string;
 }

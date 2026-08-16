@@ -61,4 +61,25 @@ describe('DocumentQuestion generation contract', () => {
     });
     expect(call).toHaveBeenCalledWith({ callKey: 'answer', purpose: 'document-question' });
   });
+
+  it('extracts an AI-generated conversation title without leaking its marker into the answer', async () => {
+    const definition = createDocumentQuestionTaskDefinitionV1();
+    const call = vi.fn(async () => ({
+      callKey: 'answer',
+      purpose: 'document-question',
+      sessionId: 'session',
+      assistantOutput: '<conversation-title>Softmax 权重归一化</conversation-title>\n权重总和为 1。',
+      metrics: {
+        providerId: 'codex', connectionId: 'account', modelId: 'gpt-test',
+        startedTime: 1, completedTime: 2, activeDurationMs: 1,
+      },
+    }));
+
+    await expect(definition.process({ agent: { call } } as never)).resolves.toEqual({
+      title: 'Softmax 权重归一化',
+      answer: '权重总和为 1。',
+      providerId: 'codex',
+      modelId: 'gpt-test',
+    });
+  });
 });

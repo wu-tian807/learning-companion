@@ -26,6 +26,7 @@ export type DocumentQuestionInstructionSnapshot = JsonValue & {
   readonly conversationId: string;
   readonly target: JsonValue;
   readonly selectedText?: string;
+  readonly generateTitle?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -37,12 +38,14 @@ export class DocumentQuestionInstruction extends GenerationInstruction<DocumentQ
   readonly conversationId: string;
   readonly target: AssetTarget;
   readonly selectedText?: string;
+  readonly generateTitle: boolean;
 
   constructor(input: {
     readonly question: string;
     readonly conversationId: string;
     readonly target: AssetTarget;
     readonly selectedText?: string;
+    readonly generateTitle?: boolean;
   }) {
     super();
     const question = input.question.trim();
@@ -57,6 +60,7 @@ export class DocumentQuestionInstruction extends GenerationInstruction<DocumentQ
     this.conversationId = conversationId;
     this.target = cloneAssetTarget(input.target);
     this.selectedText = selectedText || undefined;
+    this.generateTitle = input.generateTitle === true;
   }
 
   toSnapshot(): DocumentQuestionInstructionSnapshot {
@@ -67,6 +71,7 @@ export class DocumentQuestionInstruction extends GenerationInstruction<DocumentQ
       conversationId: this.conversationId,
       target: this.target as unknown as JsonValue,
       ...(this.selectedText ? { selectedText: this.selectedText } : {}),
+      ...(this.generateTitle ? { generateTitle: true } : {}),
     });
   }
 
@@ -87,6 +92,9 @@ export class DocumentQuestionInstruction extends GenerationInstruction<DocumentQ
           ? `Selected text:\n${this.selectedText}`
           : 'No reliable text selection was supplied. Inspect the referenced document and the target page/region with the document tools.',
         'Answer in clear Chinese unless the user explicitly requests another language.',
+        ...(this.generateTitle
+          ? ['This is the first question in this conversation. Start the response with exactly one line in the form <conversation-title>简短主题</conversation-title>. The title must summarize the subject, not repeat the question, and contain at most 16 Chinese characters. Put the normal answer after that line.']
+          : []),
       ].join('\n\n'),
     );
   }
@@ -103,6 +111,7 @@ export const documentQuestionInstructionFactory: GenerationInstructionFactory<Do
         typeof input.conversationId !== 'string' ||
         !isAssetTarget(input.target) ||
         (input.selectedText !== undefined && typeof input.selectedText !== 'string')
+        || (input.generateTitle !== undefined && typeof input.generateTitle !== 'boolean')
       ) {
         return generationValidationFailure([
           { path: 'instruction', message: 'Document question instruction is invalid' },
@@ -118,6 +127,7 @@ export const documentQuestionInstructionFactory: GenerationInstructionFactory<Do
             ...(input.selectedText === undefined
               ? {}
               : { selectedText: input.selectedText }),
+            ...(input.generateTitle === true ? { generateTitle: true } : {}),
           }),
         );
       } catch {

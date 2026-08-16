@@ -16,6 +16,7 @@ import {
 
 export type DocumentQuestionTaskResult = JsonValue & {
   readonly answer: string;
+  readonly title?: string;
   readonly providerId: string;
   readonly modelId: string;
 };
@@ -68,7 +69,10 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
         callKey: 'answer',
         purpose: 'document-question',
       });
-      const answer = call.assistantOutput?.trim();
+      const output = call.assistantOutput?.trim();
+      const titleMatch = output?.match(/^<conversation-title>([^<>\r\n]+)<\/conversation-title>\s*/u);
+      const title = titleMatch?.[1]?.trim().slice(0, 32);
+      const answer = titleMatch ? output?.slice(titleMatch[0].length).trim() : output;
 
       if (!answer) {
         throw new Error('Document question Agent returned no assistant text');
@@ -76,6 +80,7 @@ export function createDocumentQuestionTaskDefinitionV1(): TaskDefinition<
 
       return Object.freeze({
         answer,
+        ...(title ? { title } : {}),
         providerId: call.metrics.providerId,
         modelId: call.metrics.modelId,
       });

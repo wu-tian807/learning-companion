@@ -79,6 +79,8 @@ describe('PdfWorkbenchView', () => {
     expect(markup).toContain('aria-label="PDF 页面画布"');
     expect(markup).toContain('正在载入 PDF');
     expect(markup).not.toContain('/tmp/private/learning.pdf');
+    expect(markup).toContain('user-select: none !important');
+    expect(markup).toContain('pointer-events: none');
   });
 
   it('rejects an unsafe bootstrap URL before loading PDF.js', () => {

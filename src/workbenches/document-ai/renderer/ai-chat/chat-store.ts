@@ -20,6 +20,8 @@ export interface AiChatMessage {
   readonly timestamp: number;
   readonly replyToMessageId?: string;
   readonly modelInfo?: string;
+  readonly conversationId?: string;
+  readonly conversationTitle?: string;
   /** 关联的文档锚点信息（用户提问时附带的选择区域） */
   readonly anchor?: {
     /** 完整的文档内容锚点，可直接用作附件 target */
@@ -41,6 +43,15 @@ export interface AiChatSession {
   /** 最近一次请求失败的用户可见提示 */
   readonly error?: string;
   readonly pendingAnchor?: AiChatMessage['anchor'];
+  readonly activeConversationId?: string;
+}
+
+export interface AiChatConversationSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly updatedTime: number;
+  readonly anchor?: AiChatMessage['anchor'];
+  readonly messageCount: number;
 }
 
 export interface AiChatState {
@@ -73,6 +84,10 @@ export interface AiChatActions {
   /** 获取当前 asset 的对话会话 */
   getSession(assetId: string): AiChatSession | undefined;
 
+  getConversations(assetId: string): readonly AiChatConversationSummary[];
+
+  selectConversation(assetId: string, conversationId: string): void;
+
   /** 添加一条用户消息，并设置 loading 状态 */
   addUserMessage(
     assetId: string,
@@ -86,6 +101,7 @@ export interface AiChatActions {
     content: string,
     replyToMessageId: string,
     modelInfo?: string,
+    conversationTitle?: string,
   ): AiChatSession;
 
   setLoading(assetId: string, loading: boolean): void;
@@ -93,6 +109,12 @@ export interface AiChatActions {
   setError(assetId: string, error?: string): void;
 
   setPendingAnchor(assetId: string, anchor?: AiChatMessage['anchor']): void;
+
+  setMessageAnchorPreview(
+    assetId: string,
+    messageId: string,
+    previewDataUrl: string,
+  ): void;
 
   /** 设置 AI 回答中被用户选中的文字范围 */
   setSelectedAnswerRange(
@@ -188,6 +210,12 @@ function loadHistory(
         ...(typeof message.modelInfo === 'string'
           ? { modelInfo: message.modelInfo }
           : {}),
+        ...(typeof message.conversationId === 'string'
+          ? { conversationId: message.conversationId }
+          : {}),
+        ...(typeof message.conversationTitle === 'string'
+          ? { conversationTitle: message.conversationTitle }
+          : {}),
         ...(anchor ? { anchor } : {}),
       }];
     });
@@ -260,6 +288,83 @@ function createSession(
     messages: [],
     loading: false,
   };
+}
+
+function legacyConversationId(message: AiChatMessage): string {
+  return `legacy-${message.id}`;
+}
+
+function messagesWithConversationIds(
+  session: AiChatSession,
+): readonly AiChatMessage[] {
+  let currentId: string | undefined;
+  const byMessageId = new Map<string, string>();
+  return session.messages.map((message) => {
+    let conversationId = message.conversationId;
+    if (!conversationId && message.role === 'assistant' && message.replyToMessageId) {
+      conversationId = byMessageId.get(message.replyToMessageId);
+    }
+    if (!conversationId && message.role === 'user' && message.anchor) {
+      conversationId = legacyConversationId(message);
+    }
+    conversationId ??= currentId ?? legacyConversationId(message);
+    currentId = conversationId;
+    byMessageId.set(message.id, conversationId);
+    return message.conversationId ? message : { ...message, conversationId };
+  });
+}
+
+export function createLegacyConversationTitle(content: string): string {
+  const firstLine = content
+    .replace(/^\s*Question\s*[:：]\s*/iu, '')
+    .split(/\r?\n|Document\s+path\s*[:：]/iu, 1)[0]
+    ?.trim() ?? '';
+  const normalized = firstLine
+    .replace(/^(?:请问|麻烦|请你|帮我|请帮我)\s*/u, '')
+    .replace(/^请用通俗易懂的语言解释(?:一下)?(?:我)?框选的内容[？?。！!]*$/u, '框选内容通俗解释')
+    .replace(/^详细(?:点|一下)?(?:讲讲|解释)?(?:这个)?过程[？?。！!]*$/u, '详细推导过程')
+    .replace(/^怎么算的[？?。！!]*$/u, '计算过程')
+    .replace(/^(.+?)是什么意思[？?。！!]*$/u, '$1的含义')
+    .replace(/^为什么(.+?)(?:更好|较好)[？?。！!]*$/u, '$1的优势')
+    .replace(/^为什么(.+?)[？?。！!]*$/u, '$1的原因')
+    .replace(/[？?。！!]+$/u, '')
+    .trim();
+  return normalized.slice(0, 18) || '历史问答';
+}
+
+function conversationSummaries(
+  session: AiChatSession,
+): readonly AiChatConversationSummary[] {
+  const groups = new Map<string, AiChatMessage[]>();
+  for (const message of messagesWithConversationIds(session)) {
+    const group = groups.get(message.conversationId!) ?? [];
+    group.push(message);
+    groups.set(message.conversationId!, group);
+  }
+  return [...groups.entries()].map(([id, messages], order) => {
+    const firstQuestion = messages.find(({ role }) => role === 'user');
+    return {
+      id,
+      title: messages.find(({ conversationTitle }) => conversationTitle)?.conversationTitle ??
+        createLegacyConversationTitle(firstQuestion?.content ?? ''),
+      updatedTime: messages.at(-1)?.timestamp ?? 0,
+      anchor: firstQuestion?.anchor,
+      messageCount: messages.length,
+      order,
+    };
+  }).sort((left, right) =>
+    right.updatedTime - left.updatedTime || right.order - left.order,
+  );
+}
+
+function sessionConversationId(
+  session: AiChatSession | undefined,
+  messageId: string,
+): string | undefined {
+  return session
+    ? messagesWithConversationIds(session).find(({ id }) => id === messageId)
+        ?.conversationId
+    : undefined;
 }
 
 function defaultCreateId(): string {
@@ -354,9 +459,15 @@ export function createAiChatStore(
         return session;
       }
 
-      const session = {
+      const baseSession = {
         ...createSession(createId(), projectId, assetId),
         messages: loadHistory(storage, projectId, assetId),
+      };
+      const messages = messagesWithConversationIds(baseSession);
+      const session = {
+        ...baseSession,
+        messages,
+        activeConversationId: messages.at(-1)?.conversationId,
       };
       const next = new Map(state.sessions);
       next.set(sessionId, session);
@@ -369,17 +480,41 @@ export function createAiChatStore(
       return state.sessions.get(createSessionId(assetId));
     },
 
+    getConversations(assetId: string): readonly AiChatConversationSummary[] {
+      const session = state.sessions.get(createSessionId(assetId));
+      return session ? conversationSummaries(session) : [];
+    },
+
+    selectConversation(assetId: string, conversationId: string): void {
+      mutateSession(assetId, (session) => ({
+        ...session,
+        activeConversationId: conversationId,
+        pendingAnchor: undefined,
+        error: undefined,
+      }));
+    },
+
     addUserMessage(
       assetId: string,
       content: string,
       anchor?: AiChatMessage['anchor'],
     ): AiChatSession {
+      const existing = state.sessions.get(createSessionId(assetId));
+      const matchingConversation = anchor
+        ? conversationSummaries(existing ?? createSession('', '', assetId))
+            .find((conversation) =>
+              JSON.stringify(conversation.anchor?.target) ===
+              JSON.stringify(anchor.target),
+            )?.id
+        : existing?.activeConversationId;
+      const conversationId = matchingConversation ?? createId();
       const message: AiChatMessage = {
         id: createId(),
         role: 'user',
         content,
         timestamp: Date.now(),
         anchor,
+        conversationId,
       };
 
       return mutateSession(assetId, (session) => ({
@@ -387,6 +522,7 @@ export function createAiChatStore(
         messages: [...session.messages, message],
         loading: true,
         error: undefined,
+        activeConversationId: conversationId,
       }));
     },
 
@@ -395,6 +531,7 @@ export function createAiChatStore(
       content: string,
       replyToMessageId: string,
       modelInfo?: string,
+      conversationTitle?: string,
     ): AiChatSession {
       const message: AiChatMessage = {
         id: createId(),
@@ -403,6 +540,13 @@ export function createAiChatStore(
         timestamp: Date.now(),
         replyToMessageId,
         modelInfo,
+        ...(conversationTitle?.trim()
+          ? { conversationTitle: conversationTitle.trim().slice(0, 32) }
+          : {}),
+        conversationId: sessionConversationId(
+          state.sessions.get(createSessionId(assetId)),
+          replyToMessageId,
+        ),
       };
 
       return mutateSession(assetId, (session) => ({
@@ -426,7 +570,43 @@ export function createAiChatStore(
     },
 
     setPendingAnchor(assetId: string, anchor?: AiChatMessage['anchor']): void {
-      mutateSession(assetId, (session) => ({ ...session, pendingAnchor: anchor }));
+      mutateSession(assetId, (session) => ({
+        ...session,
+        pendingAnchor: anchor,
+        ...(anchor
+          ? {
+              activeConversationId: conversationSummaries(session).find(
+                (conversation) =>
+                  JSON.stringify(conversation.anchor?.target) ===
+                  JSON.stringify(anchor.target),
+              )?.id,
+            }
+          : {}),
+      }));
+    },
+
+    setMessageAnchorPreview(
+      assetId: string,
+      messageId: string,
+      previewDataUrl: string,
+    ): void {
+      if (
+        !/^data:image\/(?:png|jpe?g);base64,/u.test(previewDataUrl) ||
+        previewDataUrl.length > MAX_HISTORY_PREVIEW_DATA_URL_LENGTH
+      ) {
+        return;
+      }
+      mutateSession(assetId, (session) => ({
+        ...session,
+        messages: session.messages.map((message) =>
+          message.id === messageId && message.anchor
+            ? {
+                ...message,
+                anchor: { ...message.anchor, previewDataUrl },
+              }
+            : message,
+        ),
+      }));
     },
 
     setSelectedAnswerRange(
@@ -445,6 +625,27 @@ export function createAiChatStore(
       }
 
       const current = state.sessions.get(sessionId)!;
+      const activeConversationId = current.activeConversationId;
+      if (activeConversationId) {
+        const messages = messagesWithConversationIds(current).filter(
+          (message) => message.conversationId !== activeConversationId,
+        );
+        if (messages.length > 0) {
+          const updated = {
+            ...current,
+            messages,
+            activeConversationId: messages.at(-1)?.conversationId,
+            loading: false,
+            error: undefined,
+          };
+          const next = new Map(state.sessions);
+          next.set(sessionId, updated);
+          state = { ...state, sessions: next };
+          persistHistory(storage, updated);
+          emit();
+          return;
+        }
+      }
       const next = new Map(state.sessions);
       next.set(sessionId, createSession(createId(), current.projectId, assetId));
       state = { ...state, sessions: next };

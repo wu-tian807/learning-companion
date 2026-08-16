@@ -301,12 +301,16 @@ export function AttachmentHost({
     update();
     window.addEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
     window.addEventListener('resize', update);
-    const observer = new MutationObserver(update);
-    observer.observe(host.parentElement ?? host, { childList: true, subtree: true });
+    const observedContainer = host.parentElement ?? host;
+    const mutationObserver = new MutationObserver(update);
+    mutationObserver.observe(observedContainer, { childList: true, subtree: true });
+    const resizeObserver = new ResizeObserver(update);
+    resizeObserver.observe(observedContainer);
     return () => {
       window.removeEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
       window.removeEventListener('resize', update);
-      observer.disconnect();
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
     };
   }, [assetId, attachments]);
 

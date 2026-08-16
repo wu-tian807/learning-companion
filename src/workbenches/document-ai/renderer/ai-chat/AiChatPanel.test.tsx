@@ -83,6 +83,43 @@ describe('AiChatPanel component state composition', () => {
     consoleError.mockRestore();
   });
 
+  it('uses the selected region conversation as the Provider conversation identity', async () => {
+    let sequence = 0;
+    const store = createAiChatStore(() => `id-${++sequence}`);
+    const requests: Array<{ conversationId: string }> = [];
+    const ask = vi.fn(async (request) => {
+      requests.push(request);
+      return { answer: 'ok', providerId: 'p', modelId: 'm' };
+    });
+    const anchor = (pageNumber: number) => ({
+      target: {
+        scope: 'content' as const,
+        anchorType: 'pdf.region',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber, x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      },
+      pageNumber,
+    });
+
+    await sendDocumentAiMessage({
+      store, projectId: 'project', assetId: 'asset', content: '区域一',
+      anchor: anchor(1), ask,
+    });
+    await sendDocumentAiMessage({
+      store, projectId: 'project', assetId: 'asset', content: '区域二',
+      anchor: anchor(2), ask,
+    });
+    const firstConversation = store.getConversations('asset')
+      .find(({ title }) => title === '区域一')!;
+    store.selectConversation('asset', firstConversation.id);
+    await sendDocumentAiMessage({
+      store, projectId: 'project', assetId: 'asset', content: '继续问', ask,
+    });
+
+    expect(requests[0]?.conversationId).not.toBe(requests[1]?.conversationId);
+    expect(requests[2]?.conversationId).toBe(requests[0]?.conversationId);
+  });
+
   it('shows a persistent model setup error instead of failing silently', async () => {
     const store = createAiChatStore(() => 'conversation');
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -176,7 +213,7 @@ describe('AiChatPanel component state composition', () => {
     expect(html).toContain('查询向量与键向量的关系');
   });
 
-  it('shows a region preview immediately after selection before a question is sent', () => {
+  it('does not add a pending selection preview to history before a question is sent', () => {
     const store = createAiChatStore(() => 'conversation');
     store.ensureSession('project', 'asset');
     store.setPendingAnchor('asset', {
@@ -206,9 +243,8 @@ describe('AiChatPanel component state composition', () => {
       </AiChatProvider>,
     );
 
-    expect(html).toContain('data-ai-question-source="selection"');
-    expect(html).toContain('data:image/jpeg;base64,cHJldmlldw==');
-    expect(html).toContain('第 3 页');
+    expect(html).not.toContain('data-ai-question-source="selection"');
+    expect(html).not.toContain('data:image/jpeg;base64,cHJldmlldw==');
   });
 
   it('renders a fresh conversation after clear without stale replies', () => {

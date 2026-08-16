@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import { AttachmentHost } from './AttachmentHost';
+import { DocumentMarkerVisibilityMenu } from './DocumentMarkerVisibilityMenu';
+import { QuestionAnchorHost } from './QuestionAnchorHost';
 
 export interface DocumentAiWorkbenchShellProps {
   readonly projectId: string;
@@ -39,6 +41,9 @@ export function DocumentAiWorkbenchShell({
   children,
 }: DocumentAiWorkbenchShellProps) {
   const [annotationSidebarOpen, setAnnotationSidebarOpen] = useState(false);
+  const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false);
+  const [showQuestionAnchors, setShowQuestionAnchors] = useState(true);
+  const [showAttachments, setShowAttachments] = useState(true);
   const projectActionSlot = useSyncExternalStore(
     subscribeProjectActionSlot,
     getProjectActionSlot,
@@ -51,10 +56,24 @@ export function DocumentAiWorkbenchShell({
         {children}
       </div>
       {projectActionSlot && createPortal(
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          <DocumentMarkerVisibilityMenu
+            open={visibilityMenuOpen}
+            showQuestionAnchors={showQuestionAnchors}
+            showAttachments={showAttachments}
+            onOpenChange={setVisibilityMenuOpen}
+            onShowQuestionAnchorsChange={setShowQuestionAnchors}
+            onShowAttachmentsChange={(show) => {
+              setShowAttachments(show);
+              if (!show) setAnnotationSidebarOpen(false);
+            }}
+          />
           <button
             type="button"
-            onClick={() => setAnnotationSidebarOpen((open) => !open)}
+            onClick={() => {
+              setShowAttachments(true);
+              setAnnotationSidebarOpen((open) => !open);
+            }}
             className="ui-icon-button grid size-[32px] place-items-center rounded-[10px] border border-white/10 text-slate-400 outline-none hover:border-indigo-300/55 hover:text-indigo-200"
             aria-label={`打开标注（${attachments.length}）`}
             title={`打开标注（${attachments.length}）`}
@@ -64,7 +83,10 @@ export function DocumentAiWorkbenchShell({
         </div>,
         projectActionSlot,
       )}
-      <AttachmentHost
+      {showQuestionAnchors && (
+        <QuestionAnchorHost projectId={projectId} assetId={assetId} />
+      )}
+      {showAttachments && <AttachmentHost
         projectId={projectId}
         assetId={assetId}
         attachments={attachments}
@@ -86,7 +108,7 @@ export function DocumentAiWorkbenchShell({
             throw error;
           }
         }}
-      />
+      />}
     </div>
   );
 }
