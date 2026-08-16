@@ -971,68 +971,6 @@ describe('CodexAgentProvider', () => {
     expect(startTurn).toHaveBeenCalledTimes(2);
   });
 
-  it('exposes a registered Provider default tool without a TaskDefinition declaration', async () => {
-    const functionTools = new AgentFunctionToolRegistry();
-    functionTools.register({
-      id: 'inspect_media',
-      version: 1,
-      description: 'Inspect media prepared in the task workspace.',
-      inputSchema: { type: 'object' },
-      deferLoading: true,
-      execute: vi.fn(async () => null),
-    });
-    const createThread = vi.fn(async () => selection('thread-1'));
-    const runtime = createRuntime({
-      getAccount: vi.fn(async () => ({
-        account: { type: 'chatgpt' },
-        requiresOpenaiAuth: true,
-      })),
-      createThread,
-      startTurn: vi.fn(async function* () {
-        yield {
-          type: 'turn-started' as const,
-          threadId: 'thread-1',
-          turn: { id: 'turn-1', status: 'inProgress' },
-        };
-        return {
-          threadId: 'thread-1',
-          turn: completedTurn('unused'),
-        };
-      }),
-      interruptTurn: vi.fn(async () => undefined),
-    });
-    const provider = new CodexAgentProvider(
-      runtime,
-      createSessions().service,
-      {
-        functionTools,
-        defaultTools: [
-          { id: 'inspect_media', availability: 'required' },
-        ],
-      },
-    );
-
-    await collectTurn(
-      runAccountTurn(provider, createGenerationRequest()),
-    );
-
-    expect(createThread).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dynamicTools: [
-          expect.objectContaining({
-            type: 'namespace',
-            tools: expect.arrayContaining([
-              expect.objectContaining({
-                name: 'inspect_media',
-                deferLoading: true,
-              }),
-            ]),
-          }),
-        ],
-      }),
-    );
-  });
-
   it('registers and dispatches a Function Tool without owning the Agent Loop', async () => {
     const execute = vi.fn(async () => ({ text: 'selected content' } as const));
     const functionTools = new AgentFunctionToolRegistry();

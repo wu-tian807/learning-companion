@@ -100,16 +100,16 @@ function toolRequest(
 }
 
 describe('Codex function tools', () => {
-  it('combines default workspace tools and additional function tools', () => {
+  it('combines default Codex-native tools with Function Tools declared by the current call', () => {
     const registry = createRegistry();
     registry.register(pdfFunctionTool);
     const selection = resolveCodexGenerationTools(
       toolRequest([
         { id: 'missing_optional', availability: 'optional' },
         { id: 'read_asset_anchor', availability: 'required' },
+        { id: PDF_READ_FUNCTION_TOOL_ID, availability: 'required' },
       ]),
       registry,
-      [{ id: PDF_READ_FUNCTION_TOOL_ID, availability: 'required' }],
     );
 
     expect(selection.effectiveRequirements).toEqual([
@@ -169,12 +169,12 @@ describe('Codex function tools', () => {
     expect(selection.dynamicTools).toHaveLength(0);
   });
 
-  it('enables write only when a prepared workspace is writable', () => {
+  it('enables Codex-native read, search, and image tools by default', () => {
     expect(
       resolveCodexGenerationTools(
         toolRequest([], false),
         createRegistry(),
-      ).nativeToolIds,
+    ).nativeToolIds,
     ).toEqual([
       WORKSPACE_READ_TOOL_ID,
       WORKSPACE_SEARCH_TOOL_ID,
@@ -196,25 +196,14 @@ describe('Codex function tools', () => {
     ).toThrowError(new AppError('DATA_INTEGRITY_ERROR'));
   });
 
-  it('merges provider defaults with required taking precedence', () => {
+  it('does not expose a registered Function Tool until the call declares it', () => {
     const selection = resolveCodexGenerationTools(
-      toolRequest([
-        { id: 'read_asset_anchor', availability: 'required' },
-      ]),
+      toolRequest(),
       createRegistry(),
-      [
-        { id: 'read_asset_anchor', availability: 'optional' },
-        { id: 'missing_optional', availability: 'optional' },
-      ],
     );
 
-    expect(selection.functionTools.map(({ id }) => id)).toContain(
-      'read_asset_anchor',
-    );
-    expect(selection.effectiveRequirements).toContainEqual({
-      id: 'read_asset_anchor',
-      availability: 'required',
-    });
+    expect(selection.functionTools).toEqual([]);
+    expect(selection.dynamicTools).toEqual([]);
   });
 
   it('dispatches a dynamic tool callback and returns its result', async () => {

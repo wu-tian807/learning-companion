@@ -105,7 +105,7 @@ describe('createCodexGenerationConfiguration', () => {
     );
   });
 
-  it('maps Provider default workspace tools to the permission profile', () => {
+  it('maps default Codex-native tools to the permission profile', () => {
     const readOnlyRequest = {
       ...request(),
       toolRequirements: [],

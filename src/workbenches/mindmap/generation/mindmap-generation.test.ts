@@ -206,9 +206,40 @@ describe('Mind Map generation contracts', () => {
       },
     );
 
-    await expect(
-      processor.process(createProcessContext()),
-    ).resolves.toEqual({ resultAssetId: 'generated-asset' });
+    const processContext = createProcessContext({
+      assetReferences: {
+        sources: [
+          {
+            alias: 'sources-0001',
+            assetId: 'asset-1',
+            name: 'slides.pptx',
+            mediaType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            materializedMediaType: 'application/pdf',
+            contentRevision: 'revision-1',
+            relativePath: 'references/sources-0001/slides.pdf',
+          },
+          {
+            alias: 'sources-0002',
+            assetId: 'asset-2',
+            name: 'diagram.png',
+            mediaType: 'image/png',
+            contentRevision: 'revision-2',
+            relativePath: 'references/sources-0002/diagram.png',
+          },
+        ],
+      },
+    });
+
+    await expect(processor.process(processContext)).resolves.toEqual({
+      resultAssetId: 'generated-asset',
+    });
+    expect(processContext.agent.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolRequirements: [
+          { id: 'workspace_read_pdf', availability: 'required' },
+        ],
+      }),
+    );
 
     expect(assets.stageGeneratedFile).toHaveBeenCalledWith(
       'project-1',

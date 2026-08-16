@@ -224,8 +224,8 @@ Provider Adapter 先加入自身默认工具，再把额外声明解析为两类
 - optional 能力不可用：安静省略；
 - 同一调用内不允许重复工具 ID；该约束由 `TaskAgentSession` 在执行边界校验；
 - 调用请求不增加 `kind: native | function`，避免把 Provider 支持情况写入领域流程；
-- 每次调用只决定本轮额外需要哪些工具；Provider 默认工具、Registry 是否存在
-  某项能力以及 Workspace 权限共同决定本次最终有效工具集。
+- 每次调用决定本轮需要的应用 Function Tool；Provider 默认提供 Workspace Shell 和自身原生
+  `view_image`，Registry 是否存在声明的能力以及 Workspace 权限共同决定最终有效工具集。
 
 ## 5. Codex 动态工具适配
 

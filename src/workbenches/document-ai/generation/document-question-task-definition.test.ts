@@ -38,7 +38,7 @@ describe('DocumentQuestion generation contract', () => {
     });
   });
 
-  it('uses the Workbench selector, preserves the conversation session, and returns the final assistant output', async () => {
+  it('uses the Workbench selector, preserves the conversation session, and requests PDF support for materialized PDFs', async () => {
     const definition = createDocumentQuestionTaskDefinitionV1();
     const call = vi.fn(async () => ({
       callKey: 'answer',
@@ -66,6 +66,17 @@ describe('DocumentQuestion generation contract', () => {
     await expect(
       definition.process({
         agent: { call },
+        assetReferences: {
+          document: [{
+            alias: 'document',
+            assetId: 'asset',
+            name: 'slides.pptx',
+            mediaType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            materializedMediaType: 'application/pdf',
+            contentRevision: 'revision',
+            relativePath: 'references/document/slides.pdf',
+          }],
+        },
         preparedUserMessage,
       } as never),
     ).resolves.toEqual({
@@ -82,5 +93,82 @@ describe('DocumentQuestion generation contract', () => {
       skills: [],
       mcpServers: [],
     });
+  });
+
+  it.each([
+    ['plain text', 'text/plain', 'notes.txt'],
+    ['Markdown', 'text/markdown', 'notes.md'],
+  ])('does not request a media tool for %s', async (_label, mediaType, name) => {
+    const definition = createDocumentQuestionTaskDefinitionV1();
+    const call = vi.fn(async () => ({
+      callKey: 'answer',
+      purpose: 'document-question',
+      sessionId: 'session',
+      assistantOutput: '回答',
+      metrics: {
+        providerId: 'codex', connectionId: 'account', modelId: 'gpt-test',
+        startedTime: 1, completedTime: 2, activeDurationMs: 1,
+      },
+    }));
+
+    await definition.process({
+      agent: { call },
+      assetReferences: {
+        document: [{
+          alias: 'document',
+          assetId: 'asset',
+          name,
+          mediaType,
+          contentRevision: 'revision',
+          relativePath: `references/document/${name}`,
+        }],
+      },
+      preparedUserMessage: {
+        role: 'user',
+        content: [{ type: 'text', text: '解释它' }],
+      },
+    } as never);
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ toolRequirements: [] }),
+    );
+  });
+
+  it('does not redundantly declare the Provider-native image tool', async () => {
+    const definition = createDocumentQuestionTaskDefinitionV1();
+    const call = vi.fn(async () => ({
+      callKey: 'answer',
+      purpose: 'document-question',
+      sessionId: 'session',
+      assistantOutput: '回答',
+      metrics: {
+        providerId: 'codex', connectionId: 'account', modelId: 'gpt-test',
+        startedTime: 1, completedTime: 2, activeDurationMs: 1,
+      },
+    }));
+
+    await definition.process({
+      agent: { call },
+      assetReferences: {
+        document: [{
+          alias: 'document',
+          assetId: 'asset',
+          name: 'diagram.png',
+          mediaType: 'image/png',
+          contentRevision: 'revision',
+          relativePath: 'references/document/diagram.png',
+        }],
+      },
+      preparedUserMessage: {
+        role: 'user',
+        content: [{ type: 'text', text: '解释它' }],
+      },
+    } as never);
+
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolRequirements: [],
+      }),
+    );
   });
 });

@@ -6,6 +6,7 @@ import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
 import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import type {
+  AgentToolRequirement,
   GenerationTaskProcessContext,
   GenerationTaskProcessor,
 } from '../../../main/generation/contracts/task-definition';
@@ -26,6 +27,7 @@ import {
   type MindMapSubjectAssociationsV1,
 } from '../document';
 import { encodeMindMapDocument } from '../mindmap-content-adapter';
+import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
 import type { MindMapGenerationInstruction } from './mindmap-generation-instruction';
 import type {
   MindMapGenerationCandidateFrameV1,
@@ -101,6 +103,29 @@ function flattenPreparedReferences(
   bindings: PreparedGenerationAssetReferenceBindings,
 ) {
   return Object.values(bindings).flatMap((references) => references);
+}
+
+function mindMapToolRequirements(
+  references: PreparedGenerationAssetReferenceBindings,
+): readonly AgentToolRequirement[] {
+  const mediaTypes = new Set(
+    flattenPreparedReferences(references).map(
+      ({ materializedMediaType, mediaType }) =>
+        materializedMediaType ?? mediaType,
+    ),
+  );
+  const requirements: AgentToolRequirement[] = [];
+
+  if (mediaTypes.has('application/pdf')) {
+    requirements.push({
+      id: PDF_READ_FUNCTION_TOOL_ID,
+      availability: 'required',
+    });
+  }
+
+  return Object.freeze(
+    requirements.map((requirement) => Object.freeze(requirement)),
+  );
 }
 
 function createSubjectAssociations(
@@ -202,12 +227,15 @@ export class MindMapGenerationProcessor
     context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
   ): Promise<MindMapGenerationTaskResult> {
     context.signal?.throwIfAborted();
+    const toolRequirements = mindMapToolRequirements(
+      context.assetReferences,
+    );
     await context.agent.call({
       callKey: 'generate',
       purpose: 'generation',
       systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
       userMessage: context.preparedUserMessage,
-      toolRequirements: [],
+      toolRequirements,
       skills: [],
       mcpServers: [],
     });
@@ -238,7 +266,7 @@ export class MindMapGenerationProcessor
           purpose: 'repair',
           systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
           userMessage: createRepairMessage(error.issues),
-          toolRequirements: [],
+          toolRequirements,
           skills: [],
           mcpServers: [],
         });
