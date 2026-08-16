@@ -21,7 +21,7 @@ import type {
 import {
   LIBREOFFICE_LIBRARY_ID,
   LIBREOFFICE_VERSION,
-} from '../../../main/external-libraries/definitions/libreoffice';
+} from '../external-libraries/libreoffice';
 import { AppError } from '../../../main/errors/app-error';
 import type {
   AssetArtifactProduceRequest,

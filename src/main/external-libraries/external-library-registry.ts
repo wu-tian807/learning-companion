@@ -16,11 +16,18 @@ export interface ExternalLibraryRegistryApi {
     libraryId: string,
     platform: ExternalLibraryPlatform,
     architecture: ExternalLibraryArchitecture,
+    variantId?: string,
   ): ExternalLibraryPackageDefinition | undefined;
+  findPackages(
+    libraryId: string,
+    platform: ExternalLibraryPlatform,
+    architecture: ExternalLibraryArchitecture,
+  ): readonly ExternalLibraryPackageDefinition[];
   selectPackage(
     libraryId: string,
     platform: ExternalLibraryPlatform,
     architecture: ExternalLibraryArchitecture,
+    variantId?: string,
   ): ExternalLibraryPackageDefinition;
 }
 
@@ -75,11 +82,13 @@ export class ExternalLibraryRegistry
     libraryId: string,
     platform: ExternalLibraryPlatform,
     architecture: ExternalLibraryArchitecture,
+    variantId?: string,
   ): ExternalLibraryPackageDefinition {
     const packageDefinition = this.findPackage(
       libraryId,
       platform,
       architecture,
+      variantId,
     );
 
     if (!packageDefinition) {
@@ -93,11 +102,31 @@ export class ExternalLibraryRegistry
     libraryId: string,
     platform: ExternalLibraryPlatform,
     architecture: ExternalLibraryArchitecture,
+    variantId?: string,
   ): ExternalLibraryPackageDefinition | undefined {
-    return this.require(libraryId).packages.find(
+    const definition = this.require(libraryId);
+    const selectedVariantId =
+      variantId ?? definition.defaultVariantId;
+
+    return definition.packages.find(
       (candidate) =>
         candidate.platform === platform &&
-        candidate.architecture === architecture,
+        candidate.architecture === architecture &&
+        candidate.variantId === selectedVariantId,
+    );
+  }
+
+  findPackages(
+    libraryId: string,
+    platform: ExternalLibraryPlatform,
+    architecture: ExternalLibraryArchitecture,
+  ): readonly ExternalLibraryPackageDefinition[] {
+    return Object.freeze(
+      this.require(libraryId).packages.filter(
+        (candidate) =>
+          candidate.platform === platform &&
+          candidate.architecture === architecture,
+      ),
     );
   }
 }

@@ -15,6 +15,8 @@ function createSnapshot(
     return {
       id: 'libreoffice',
       displayName: 'LibreOffice',
+      description: 'Office preview',
+      category: 'document',
       version: '26.2.5',
       rootPath: '/Users/student/Documents/Learning Companion/externalLib',
       status,
@@ -24,6 +26,8 @@ function createSnapshot(
   return {
     id: 'libreoffice',
     displayName: 'LibreOffice',
+    description: 'Office preview',
+    category: 'document',
     version: '26.2.5',
     expectedSize: 300_000_000,
     rootPath: '/Users/student/Documents/Learning Companion/externalLib',

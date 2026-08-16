@@ -15,6 +15,7 @@ import {
   isDeleteAssetsRequest,
   isDeleteAssetsResult,
   isExternalLibraryIdRequest,
+  isInstallExternalLibraryRequest,
   isMigrateExternalLibrariesRequest,
   isHealthCheckResponse,
   isOpenExternalRequest,
@@ -92,6 +93,21 @@ describe("external library contract", () => {
     ).toBe(true);
     expect(isExternalLibraryIdRequest({ libraryId: "../runtime" })).toBe(false);
     expect(isExternalLibraryIdRequest({ libraryId: "" })).toBe(false);
+  });
+
+  it("accepts an optional safe installation variant", () => {
+    expect(
+      isInstallExternalLibraryRequest({
+        libraryId: "media-subtitles",
+        variantId: "nvidia",
+      }),
+    ).toBe(true);
+    expect(
+      isInstallExternalLibraryRequest({
+        libraryId: "media-subtitles",
+        variantId: "../gpu",
+      }),
+    ).toBe(false);
   });
 
   it("accepts only absolute migration targets and known resolutions", () => {

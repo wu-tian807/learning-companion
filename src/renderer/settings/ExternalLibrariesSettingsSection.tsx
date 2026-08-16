@@ -8,6 +8,7 @@ import {
   isExternalLibraryActive,
 } from '../external-libraries/external-library-view';
 import type { SettingsTarget } from './settings-target';
+import type { PendingExternalLibraryInstall } from './use-external-library-settings';
 
 interface ExternalLibrariesSettingsSectionProps {
   readonly libraries: readonly ExternalLibrarySnapshot[];
@@ -18,7 +19,7 @@ interface ExternalLibrariesSettingsSectionProps {
   readonly requestPendingById: ReadonlySet<string>;
   readonly target: SettingsTarget | undefined;
   readonly targetedLibraryRef: RefObject<HTMLElement | null>;
-  readonly onInstall: (library: ExternalLibrarySnapshot) => void;
+  readonly onInstall: (request: PendingExternalLibraryInstall) => void;
   readonly onRemove: (library: ExternalLibrarySnapshot) => void;
   readonly onCancel: (library: ExternalLibrarySnapshot) => void;
   readonly onReload: () => void;
@@ -41,10 +42,10 @@ export function ExternalLibrariesSettingsSection({
   return (
     <section>
       <h3 className="text-sm font-semibold text-slate-200">
-        文档处理组件
+        外部组件
       </h3>
       <p className="mt-1 text-xs leading-5 text-slate-500">
-        仅在需要时下载；安装包来自组件官方网站并经过固定 SHA-256
+        仅在需要时下载；文件来自组件官方来源并经过固定 SHA-256
         校验。
       </p>
 
@@ -62,6 +63,13 @@ export function ExternalLibrariesSettingsSection({
             target?.section === 'external-libraries' &&
             target.libraryId === library.id;
           const progress = externalLibraryProgressPercent(library);
+          const requestInstallation = () => {
+            if (library.expectedSize === undefined) return;
+            onInstall({
+              library,
+              expectedSize: library.expectedSize,
+            });
+          };
 
           return (
             <article
@@ -80,6 +88,9 @@ export function ExternalLibrariesSettingsSection({
                       {library.displayName}
                     </h4>
                     <span className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[10px] text-slate-500">
+                      {library.category === 'document' ? '文档' : '媒体'}
+                    </span>
+                    <span className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[10px] text-slate-500">
                       {library.version}
                     </span>
                     <span
@@ -96,19 +107,18 @@ export function ExternalLibrariesSettingsSection({
                     </span>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    用于将 DOC、DOCX、PPT 和 PPTX
-                    转换为可分页、可选中文字的 PDF 预览。
+                    {library.description}
                   </p>
                   <p className="mt-1 text-[11px] text-slate-600">
                     {library.expectedSize === undefined
                       ? '当前平台没有可下载的安装包'
-                      : `官方安装包约 ${formatExternalLibrarySize(
+                      : `下载内容约 ${formatExternalLibrarySize(
                           library.expectedSize,
                         )}`}
                   </p>
                 </div>
 
-                <div className="shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
                   {library.status === 'available' ||
                   library.status === 'invalid' ? (
                     <button
@@ -148,7 +158,7 @@ export function ExternalLibrariesSettingsSection({
                         hasActiveTask ||
                         requestPendingById.has(library.id)
                       }
-                      onClick={() => onInstall(library)}
+                      onClick={requestInstallation}
                       className="ui-primary-button h-9 rounded-full bg-slate-50 px-4 text-xs font-semibold text-slate-900 disabled:opacity-40"
                     >
                       {library.status === 'failed'

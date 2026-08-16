@@ -1,11 +1,15 @@
-import { libreOfficeDefinition } from '../external-libraries/definitions/libreoffice';
+import { app } from 'electron';
+
+import { registerMainWorkbenchExternalLibraries } from '../../workbenches/catalog/register-main-workbenches';
 import { ExternalLibraryDownloader } from '../external-libraries/external-library-downloader';
+import { detectExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
 import { ExternalLibraryInstallationManifestFile } from '../external-libraries/external-library-installation-manifest-file';
 import { ExternalLibraryInstallerRegistry } from '../external-libraries/external-library-installer';
 import { ExternalLibraryPathManager } from '../external-libraries/external-library-path-manager';
 import { ExternalLibraryRegistry } from '../external-libraries/external-library-registry';
 import { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { MacosDmgInstaller } from '../external-libraries/installers/macos-dmg-installer';
+import { ExternalLibraryBundleInstaller } from '../external-libraries/installers/external-library-bundle-installer';
 import { WindowsMsiInstaller } from '../external-libraries/installers/windows-msi-installer';
 import type { SettingsRepository } from '../settings/settings-repository';
 
@@ -13,8 +17,15 @@ export async function createExternalLibraryRuntime(
   settingsRepository: SettingsRepository,
 ): Promise<ExternalLibraryService> {
   const registry = new ExternalLibraryRegistry();
-  registry.register(libreOfficeDefinition);
+  const hardware = await detectExternalLibraryHardwareCapabilities(
+    () => app.getGPUInfo('basic'),
+  );
+  registerMainWorkbenchExternalLibraries({
+    libraries: registry,
+    hardware,
+  });
   const installerRegistry = new ExternalLibraryInstallerRegistry();
+  installerRegistry.register(new ExternalLibraryBundleInstaller());
   installerRegistry.register(new MacosDmgInstaller());
   installerRegistry.register(new WindowsMsiInstaller());
   const service = new ExternalLibraryService(

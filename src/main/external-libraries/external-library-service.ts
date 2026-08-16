@@ -13,6 +13,7 @@ import type {
   ExternalLibraryPackageDefinition,
   ExternalLibraryPlatform,
 } from "./external-library-definition";
+import { externalLibraryPackageExpectedSize } from "./external-library-definition";
 import type { ExternalLibraryDownloaderApi } from "./external-library-downloader";
 import {
   type ExternalLibraryInstallationInspection,
@@ -33,15 +34,26 @@ export interface ExternalLibraryServiceApi {
   shutdown(): Promise<void>;
   list(): readonly ExternalLibrarySnapshot[];
   refresh(libraryId: string): Promise<ExternalLibrarySnapshot>;
-  startInstallation(libraryId: string): Promise<ExternalLibrarySnapshot>;
+  startInstallation(
+    libraryId: string,
+    variantId?: string,
+  ): Promise<ExternalLibrarySnapshot>;
   cancel(libraryId: string): void;
   remove(libraryId: string): Promise<ExternalLibrarySnapshot>;
   migrate(
     targetRootPath: string,
     conflictResolution?: ExternalLibraryMigrationConflictResolution,
   ): Promise<ExternalLibraryMigrationResult>;
+  requireRuntime(libraryId: string): Promise<ExternalLibraryRuntime>;
   requireExecutable(libraryId: string): Promise<string>;
   subscribe(listener: ExternalLibraryListener): () => void;
+}
+
+export interface ExternalLibraryRuntime {
+  readonly libraryId: string;
+  readonly variantId?: string;
+  readonly runtimeDirectory: string;
+  readonly executablePath?: string;
 }
 
 export interface ExternalLibraryServiceDependencies {
@@ -53,6 +65,7 @@ export interface ExternalLibraryServiceDependencies {
 
 interface ActiveInstallation {
   readonly controller: AbortController;
+  readonly variantId?: string;
   readonly promise: Promise<ExternalLibrarySnapshot>;
 }
 
@@ -207,15 +220,20 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
 
   async startInstallation(
     libraryId: string,
+    variantId?: string,
   ): Promise<ExternalLibrarySnapshot> {
     await this.initialize();
     if (this.migrationTask) {
       throw new AppError("EXTERNAL_LIBRARY_CONFLICT");
     }
     const definition = this.registry.require(libraryId);
+    const packageDefinition = this.selectPackage(definition, variantId);
     const active = this.activeInstallations.get(definition.id);
 
     if (active) {
+      if (active.variantId !== packageDefinition.variantId) {
+        throw new AppError("EXTERNAL_LIBRARY_CONFLICT");
+      }
       const snapshot = this.snapshots.get(definition.id);
 
       if (!snapshot) {
@@ -240,7 +258,10 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       return cloneExternalLibrarySnapshot(snapshot);
     }
 
-    if (current.status === "available") {
+    if (
+      current.status === "available" &&
+      current.installedVariantId === packageDefinition.variantId
+    ) {
       return current;
     }
     if (current.status === "unsupported") {
@@ -254,10 +275,20 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     this.updateSnapshot(definition, "downloading", {
       progress: {
         completedBytes: 0,
-        totalBytes: this.selectPackage(definition).expectedSize,
+        totalBytes: externalLibraryPackageExpectedSize(
+          packageDefinition,
+        ),
       },
-    });
-    const task = this.performInstallation(definition, controller.signal)
+      ...(packageDefinition.variantId === undefined
+        ? {}
+        : { operationVariantId: packageDefinition.variantId }),
+    }, packageDefinition);
+    const task = this.performInstallation(
+      definition,
+      packageDefinition,
+      current.status === "available",
+      controller.signal,
+    )
       .catch(async (error: unknown) => {
         if (isAbortError(error)) {
           try {
@@ -288,6 +319,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       });
     this.activeInstallations.set(definition.id, {
       controller,
+      ...(packageDefinition.variantId === undefined
+        ? {}
+        : { variantId: packageDefinition.variantId }),
       promise: task,
     });
 
@@ -370,9 +404,12 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     }
   }
 
-  async requireExecutable(libraryId: string): Promise<string> {
+  async requireRuntime(libraryId: string): Promise<ExternalLibraryRuntime> {
     await this.initialize();
     const definition = this.registry.require(libraryId);
+    if (this.findPackages(definition).length === 0) {
+      throw new AppError("FEATURE_NOT_SUPPORTED");
+    }
     const currentSnapshot = this.snapshots.get(definition.id);
     if (
       this.migrationTask ||
@@ -381,16 +418,35 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     ) {
       throw new AppError("EXTERNAL_LIBRARY_NOT_INSTALLED");
     }
-    const packageDefinition = this.selectPackage(definition);
-    const inspection = await this.inspect(definition, packageDefinition);
+    const installed = await this.inspectInstalledPackage(definition);
 
-    if (inspection.status !== "available") {
+    if (!installed || installed.inspection.status !== "available") {
       await this.refreshDefinition(definition);
       throw new AppError("EXTERNAL_LIBRARY_NOT_INSTALLED");
     }
 
+    const { packageDefinition, inspection } = installed;
     this.applyInspection(definition, packageDefinition, inspection);
-    return inspection.executablePath;
+    return Object.freeze({
+      libraryId: definition.id,
+      ...(packageDefinition.variantId === undefined
+        ? {}
+        : { variantId: packageDefinition.variantId }),
+      runtimeDirectory: inspection.runtimeDirectory,
+      ...(inspection.executablePath === undefined
+        ? {}
+        : { executablePath: inspection.executablePath }),
+    });
+  }
+
+  async requireExecutable(libraryId: string): Promise<string> {
+    const runtime = await this.requireRuntime(libraryId);
+
+    if (!runtime.executablePath) {
+      throw new AppError("FEATURE_NOT_SUPPORTED");
+    }
+
+    return runtime.executablePath;
   }
 
   subscribe(listener: ExternalLibraryListener): () => void {
@@ -422,14 +478,77 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   private async refreshDefinition(
     definition: ExternalLibraryDefinition,
   ): Promise<ExternalLibrarySnapshot> {
-    const packageDefinition = this.findPackage(definition);
+    const packages = this.findPackages(definition);
 
-    if (!packageDefinition) {
+    if (packages.length === 0) {
       return this.updateSnapshot(definition, "unsupported");
     }
 
-    const inspection = await this.inspect(definition, packageDefinition);
-    return this.applyInspection(definition, packageDefinition, inspection);
+    let invalid:
+      | {
+          readonly packageDefinition: ExternalLibraryPackageDefinition;
+          readonly inspection: Extract<
+            ExternalLibraryInstallationInspection,
+            { status: "invalid" }
+          >;
+        }
+      | undefined;
+
+    for (const packageDefinition of packages) {
+      const inspection = await this.inspect(
+        definition,
+        packageDefinition,
+      );
+
+      if (inspection.status === "available") {
+        return this.applyInspection(
+          definition,
+          packageDefinition,
+          inspection,
+        );
+      }
+      if (inspection.status === "invalid") {
+        invalid ??= { packageDefinition, inspection };
+      }
+    }
+
+    return invalid
+      ? this.applyInspection(
+          definition,
+          invalid.packageDefinition,
+          invalid.inspection,
+        )
+      : this.updateSnapshot(
+          definition,
+          "not-installed",
+          {},
+          this.selectPackage(definition),
+        );
+  }
+
+  private async inspectInstalledPackage(
+    definition: ExternalLibraryDefinition,
+  ): Promise<
+    | {
+        readonly packageDefinition: ExternalLibraryPackageDefinition;
+        readonly inspection: Extract<
+          ExternalLibraryInstallationInspection,
+          { status: "available" }
+        >;
+      }
+    | undefined
+  > {
+    for (const packageDefinition of this.findPackages(definition)) {
+      const inspection = await this.inspect(
+        definition,
+        packageDefinition,
+      );
+      if (inspection.status === "available") {
+        return { packageDefinition, inspection };
+      }
+    }
+
+    return undefined;
   }
 
   private async inspect(
@@ -462,36 +581,57 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     if (inspection.status === "available") {
       return this.updateSnapshot(definition, "available", {
         installationPath: paths.installationDirectory,
-      });
+        ...(packageDefinition.variantId === undefined
+          ? {}
+          : { installedVariantId: packageDefinition.variantId }),
+      }, packageDefinition);
     }
     if (inspection.status === "invalid") {
       return this.updateSnapshot(definition, "invalid", {
         installationPath: paths.installationDirectory,
         errorCode: inspection.reason,
-      });
+      }, packageDefinition);
     }
 
-    return this.updateSnapshot(definition, "not-installed");
+    return this.updateSnapshot(
+      definition,
+      "not-installed",
+      {},
+      packageDefinition,
+    );
   }
 
   private async performInstallation(
     definition: ExternalLibraryDefinition,
+    packageDefinition: ExternalLibraryPackageDefinition,
+    replaceExisting: boolean,
     signal: AbortSignal,
   ): Promise<ExternalLibrarySnapshot> {
-    const packageDefinition = this.selectPackage(definition);
     const rootPath = this.settings.getExternalLibrariesPath();
     const inspection = await this.installationWorkflow.run({
       rootPath,
       definition,
       packageDefinition,
+      replaceExisting,
       signal,
       onStage: (stage) => {
         this.updateSnapshot(
           definition,
           stage.status,
           stage.status === "downloading"
-            ? { progress: stage.progress }
-            : {},
+            ? {
+                progress: stage.progress,
+                ...(packageDefinition.variantId === undefined
+                  ? {}
+                  : {
+                      operationVariantId:
+                        packageDefinition.variantId,
+                    }),
+              }
+            : packageDefinition.variantId === undefined
+              ? {}
+              : { operationVariantId: packageDefinition.variantId },
+          packageDefinition,
         );
       },
     });
@@ -507,13 +647,15 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     targetRootPath: string,
     conflictResolution?: ExternalLibraryMigrationConflictResolution,
   ): Promise<ExternalLibraryMigrationResult> {
-    const definitions = this.registry.list().flatMap((definition) => {
-      const packageDefinition = this.findPackage(definition);
-
-      return packageDefinition
-        ? [{ definition, packageDefinition }]
-        : [];
-    });
+    const definitions = [];
+    for (const definition of this.registry.list()) {
+      const installed = await this.inspectInstalledPackage(definition);
+      const packageDefinition =
+        installed?.packageDefinition ?? this.findPackage(definition);
+      if (packageDefinition) {
+        definitions.push({ definition, packageDefinition });
+      }
+    }
     const outcome = await this.migrationWorkflow.run({
       targetRootPath,
       conflictResolution,
@@ -546,18 +688,32 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
 
   private selectPackage(
     definition: ExternalLibraryDefinition,
+    variantId?: string,
   ): ExternalLibraryPackageDefinition {
     return this.registry.selectPackage(
       definition.id,
       this.platform,
       this.architecture,
+      variantId,
     );
   }
 
   private findPackage(
     definition: ExternalLibraryDefinition,
+    variantId?: string,
   ): ExternalLibraryPackageDefinition | undefined {
     return this.registry.findPackage(
+      definition.id,
+      this.platform,
+      this.architecture,
+      variantId,
+    );
+  }
+
+  private findPackages(
+    definition: ExternalLibraryDefinition,
+  ): readonly ExternalLibraryPackageDefinition[] {
+    return this.registry.findPackages(
       definition.id,
       this.platform,
       this.architecture,
@@ -569,25 +725,72 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     status: ExternalLibraryStatus,
     changes: Pick<
       ExternalLibrarySnapshot,
-      "installationPath" | "progress" | "errorCode"
+      | "installationPath"
+      | "progress"
+      | "errorCode"
+      | "installedVariantId"
+      | "operationVariantId"
     > = {},
+    selectedPackage = this.findPackage(definition),
   ): ExternalLibrarySnapshot {
-    const packageDefinition = this.findPackage(definition);
+    const packages = this.findPackages(definition);
 
     if (
-      (status === "unsupported" && packageDefinition) ||
-      (status !== "unsupported" && !packageDefinition)
+      (status === "unsupported" && packages.length > 0) ||
+      (status !== "unsupported" && !selectedPackage)
     ) {
       throw new AppError("DATA_INTEGRITY_ERROR");
     }
 
+    const variants =
+      definition.variants === undefined || packages.length === 0
+        ? undefined
+        : definition.variants.flatMap((variant) => {
+            const packageDefinition = packages.find(
+              ({ variantId }) => variantId === variant.id,
+            );
+            return packageDefinition
+              ? [
+                  Object.freeze({
+                    id: variant.id,
+                    displayName: variant.displayName,
+                    expectedSize:
+                      externalLibraryPackageExpectedSize(
+                        packageDefinition,
+                      ),
+                  }),
+                ]
+              : [];
+          });
+
     const snapshot = cloneExternalLibrarySnapshot({
       id: definition.id,
       displayName: definition.displayName,
+      description: definition.description,
+      category: definition.category,
       version: definition.version,
-      ...(packageDefinition
-        ? { expectedSize: packageDefinition.expectedSize }
+      ...(selectedPackage
+        ? {
+            expectedSize:
+              externalLibraryPackageExpectedSize(selectedPackage),
+          }
         : {}),
+      ...(variants === undefined
+        ? {}
+        : {
+            variants: Object.freeze(variants),
+            defaultVariantId: definition.defaultVariantId,
+            ...(changes.installedVariantId === undefined
+              ? {}
+              : {
+                  installedVariantId: changes.installedVariantId,
+                }),
+            ...(changes.operationVariantId === undefined
+              ? {}
+              : {
+                  operationVariantId: changes.operationVariantId,
+                }),
+          }),
       rootPath: this.settings.getExternalLibrariesPath(),
       status,
       ...(changes.installationPath === undefined

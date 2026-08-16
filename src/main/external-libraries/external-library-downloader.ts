@@ -9,7 +9,7 @@ import { dirname, isAbsolute, normalize } from 'node:path';
 
 import { AppError } from '../errors/app-error';
 import type {
-  ExternalLibraryPackageDefinition,
+  ExternalLibraryDownloadResourceDefinition,
 } from './external-library-definition';
 
 export interface ExternalLibraryDownloadProgress {
@@ -25,7 +25,7 @@ export interface ExternalLibraryDownloadResult {
 
 export interface ExternalLibraryDownloaderApi {
   download(input: {
-    readonly packageDefinition: ExternalLibraryPackageDefinition;
+    readonly resourceDefinition: ExternalLibraryDownloadResourceDefinition;
     readonly destinationPath: string;
     readonly signal: AbortSignal;
     readonly onProgress?: (
@@ -109,7 +109,7 @@ export class ExternalLibraryDownloader
   }
 
   async download(input: {
-    readonly packageDefinition: ExternalLibraryPackageDefinition;
+    readonly resourceDefinition: ExternalLibraryDownloadResourceDefinition;
     readonly destinationPath: string;
     readonly signal: AbortSignal;
     readonly onProgress?: (
@@ -132,7 +132,7 @@ export class ExternalLibraryDownloader
       }
 
       const response = await this.fetch(
-        input.packageDefinition.downloadUrl,
+        input.resourceDefinition.downloadUrl,
         {
           method: 'GET',
           redirect: 'follow',
@@ -151,7 +151,7 @@ export class ExternalLibraryDownloader
 
       if (
         contentLength !== null &&
-        Number(contentLength) !== input.packageDefinition.expectedSize
+        Number(contentLength) !== input.resourceDefinition.expectedSize
       ) {
         throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
       }
@@ -165,7 +165,7 @@ export class ExternalLibraryDownloader
 
       input.onProgress?.({
         completedBytes,
-        totalBytes: input.packageDefinition.expectedSize,
+        totalBytes: input.resourceDefinition.expectedSize,
       });
 
       while (true) {
@@ -182,7 +182,7 @@ export class ExternalLibraryDownloader
         const chunk = result.value;
         completedBytes += chunk.byteLength;
 
-        if (completedBytes > input.packageDefinition.expectedSize) {
+        if (completedBytes > input.resourceDefinition.expectedSize) {
           throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
         }
 
@@ -190,7 +190,7 @@ export class ExternalLibraryDownloader
         hash.update(chunk);
         input.onProgress?.({
           completedBytes,
-          totalBytes: input.packageDefinition.expectedSize,
+          totalBytes: input.resourceDefinition.expectedSize,
         });
       }
 
@@ -198,8 +198,8 @@ export class ExternalLibraryDownloader
       const sha256 = hash.digest('hex');
 
       if (
-        completedBytes !== input.packageDefinition.expectedSize ||
-        sha256 !== input.packageDefinition.sha256
+        completedBytes !== input.resourceDefinition.expectedSize ||
+        sha256 !== input.resourceDefinition.sha256
       ) {
         throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
       }

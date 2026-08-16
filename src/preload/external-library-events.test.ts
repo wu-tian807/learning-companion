@@ -18,6 +18,8 @@ describe("Preload ExternalLibrary Event subscription", () => {
     const snapshot = {
       id: "libreoffice",
       displayName: "LibreOffice",
+      description: "Office 文档预览组件",
+      category: "document",
       version: "26.2.5",
       expectedSize: 297_407_265,
       rootPath: "/Users/student/Documents/Learning Companion/externalLib",

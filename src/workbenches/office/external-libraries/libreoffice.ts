@@ -1,6 +1,4 @@
-import type {
-  ExternalLibraryDefinition,
-} from '../external-library-definition';
+import type { ExternalLibraryDefinition } from '../../../main/external-libraries/external-library-definition';
 
 export const LIBREOFFICE_LIBRARY_ID = 'libreoffice';
 export const LIBREOFFICE_VERSION = '26.2.5';
@@ -9,6 +7,9 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
   Object.freeze({
     id: LIBREOFFICE_LIBRARY_ID,
     displayName: 'LibreOffice',
+    description:
+      '将 DOC、DOCX、PPT 和 PPTX 转换为可分页、可选中文字的 PDF 预览。',
+    category: 'document',
     version: LIBREOFFICE_VERSION,
     installationFormatVersion: 1,
     sourceUrl: 'https://www.libreoffice.org/',
@@ -52,9 +53,7 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
         sha256:
           'f15ba07bfcb0186986cf3171063506f5d207c11f8cc051ba0d135209e9e915f9',
         expectedSize: 372_948_992,
-        // soffice.exe is a GUI launcher and may return before a headless
-        // conversion finishes. The console entry point waits for the worker
-        // process and exposes its conversion diagnostics.
+        // The console entry point waits for headless conversion to finish.
         executableRelativePath: 'program/soffice.com',
       }),
     ]),
