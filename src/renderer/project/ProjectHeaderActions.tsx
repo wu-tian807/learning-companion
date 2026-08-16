@@ -144,6 +144,7 @@ export interface ProjectHeaderActionsProps {
   readonly onToggleLeft: () => void;
   readonly onToggleRight: () => void;
   readonly onOpenWorkspace: () => void;
+  readonly aiQuestionAvailable: boolean;
   readonly onOpenAiQuestion: () => void;
   readonly onOpenSettings: () => void;
 }
@@ -156,6 +157,7 @@ export function ProjectHeaderActions({
   onToggleLeft,
   onToggleRight,
   onOpenWorkspace,
+  aiQuestionAvailable,
   onOpenAiQuestion,
   onOpenSettings,
 }: ProjectHeaderActionsProps) {
@@ -170,12 +172,14 @@ export function ProjectHeaderActions({
         data-project-ai-context-actions
         className="flex items-center gap-2"
       />
-      <HeaderActionButton
-        label="打开 AI 问答"
-        onClick={onOpenAiQuestion}
-      >
-        <AiQuestionIcon />
-      </HeaderActionButton>
+      {aiQuestionAvailable && (
+        <HeaderActionButton
+          label="打开 AI 问答"
+          onClick={onOpenAiQuestion}
+        >
+          <AiQuestionIcon />
+        </HeaderActionButton>
+      )}
       <HeaderActionButton
         ref={leftButtonRef}
         label={leftLabel}

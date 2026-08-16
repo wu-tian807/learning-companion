@@ -1,15 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { ErrorDialog } from '../components/ErrorDialog';
+import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
 import { GenerationCenter } from '../generation/GenerationCenter';
+import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
+import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
+import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
@@ -17,10 +15,6 @@ import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeP
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
-import {
-  ProjectAiQuestionHost,
-} from './ProjectAiQuestionHost';
-import { openProjectAiQuestion } from './project-ai-question';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
 import {
@@ -58,6 +52,11 @@ export function ProjectPage({
   onBack,
   onOpenSettings,
 }: ProjectPageProps) {
+  const [conversationRuntime] = useState(
+    () => new WorkbenchConversationRuntime(),
+  );
+  const conversationSnapshot =
+    useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const leftToggleRef = useRef<HTMLButtonElement>(null);
@@ -87,9 +86,7 @@ export function ProjectPage({
       // mindmap 的产物解读：result.resultAssetId 指向生成的新 Asset。
       const result = task.result;
       const record =
-        typeof result === 'object' &&
-        result !== null &&
-        !Array.isArray(result)
+        typeof result === 'object' && result !== null && !Array.isArray(result)
           ? (result as Readonly<Record<string, unknown>>)
           : undefined;
       const assetId =
@@ -124,25 +121,15 @@ export function ProjectPage({
     [startMindMap],
   );
   const importedAssetState = useMemo(
-    () =>
-      filterAssetLoadStateByCreationKind(
-        session.loadState,
-        'imported',
-      ),
+    () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
     [session.loadState],
   );
   const generatedAssetState = useMemo(
-    () =>
-      filterAssetLoadStateByCreationKind(
-        session.loadState,
-        'generated',
-      ),
+    () => filterAssetLoadStateByCreationKind(session.loadState, 'generated'),
     [session.loadState],
   );
   const importedAssetCount =
-    importedAssetState.kind === 'ready'
-      ? importedAssetState.assets.length
-      : 0;
+    importedAssetState.kind === 'ready' ? importedAssetState.assets.length : 0;
   const generatedAssetCount =
     generatedAssetState.kind === 'ready'
       ? generatedAssetState.assets.length
@@ -198,6 +185,8 @@ export function ProjectPage({
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [closeOpenOverlay, openOverlay]);
 
+  useEffect(() => () => conversationRuntime.dispose(), [conversationRuntime]);
+
   return (
     <main
       className="flex h-screen min-w-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,rgba(121,119,190,0.16),transparent_38%),#15191f] p-2 text-slate-100 sm:p-[15px]"
@@ -214,11 +203,7 @@ export function ProjectPage({
         }
       }}
       onDragLeave={(event) => {
-        if (
-          !event.currentTarget.contains(
-            event.relatedTarget as Node | null,
-          )
-        ) {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setDragging(false);
         }
       }}
@@ -226,9 +211,7 @@ export function ProjectPage({
         event.preventDefault();
         setDragging(false);
         const paths = Array.from(event.dataTransfer.files)
-          .map((file) =>
-            window.learningCompanion.getPathForFile(file),
-          )
+          .map((file) => window.learningCompanion.getPathForFile(file))
           .filter((path) => path.length > 0);
         void assetOperations.addPaths(paths, 'copy');
       }}
@@ -247,9 +230,7 @@ export function ProjectPage({
             {project.icon}
           </span>
           <span className="min-w-0">
-            <h1 className="truncate text-base font-semibold">
-              {project.name}
-            </h1>
+            <h1 className="truncate text-base font-semibold">{project.name}</h1>
             <span className="mt-0.5 block text-[10px] text-slate-500">
               {session.loadState.kind === 'ready'
                 ? `${importedAssetCount} 份资料 · ${generatedAssetCount} 个生成内容`
@@ -267,151 +248,153 @@ export function ProjectPage({
           onOpenWorkspace={() => {
             void openProjectWorkspace();
           }}
+          aiQuestionAvailable={Boolean(conversationSnapshot.active)}
           onOpenAiQuestion={() => {
             if (!assetOperations.selectedAsset) {
               setError('请先选择一份资料，再开始 AI 问答。');
               return;
             }
-            openProjectAiQuestion();
+            try {
+              conversationRuntime.open();
+            } catch (openError) {
+              const message = userMessageFromError(
+                openError,
+                '当前资料工作台未提供 AI 问答。',
+              );
+              if (message) setError(message);
+            }
           }}
           onOpenSettings={onOpenSettings}
         />
       </header>
 
-      <WorkbenchRuntimeProvider onError={setError}>
-        <AssetSelectionCoordinatorProvider
-          coordinator={assetOperations.selectionCoordinator}
-        >
-          <section className="relative flex min-h-0 flex-1 gap-3">
-          {openOverlay && (
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label="关闭侧栏"
-              onClick={closeOpenOverlay}
-              className="absolute inset-0 z-20 cursor-default rounded-[17px] bg-black/55 backdrop-blur-[2px]"
-            />
-          )}
-          {layout.leftOpen && (
-            <div
-              className={
-                layout.leftInline
-                  ? 'h-full w-[clamp(248px,17vw,310px)] shrink-0'
-                  : 'absolute inset-y-0 left-0 z-30 h-full w-[min(360px,calc(100%-20px))] shadow-2xl'
-              }
-            >
-              <ProjectAssetPanel
-                state={importedAssetState}
-                selectedAssetId={session.selectedAssetId}
-                busy={assetOperations.busy}
-                refreshingAll={assetOperations.refreshingAll}
-                dragging={dragging}
-                now={relativeTimeNow}
-                onSelect={session.selectAsset}
-                onRemoveSelected={assetOperations.requestDelete}
-                onCopyAdd={() =>
-                  void assetOperations.chooseAndAdd('copy')
-                }
-                onLinkAdd={() =>
-                  void assetOperations.chooseAndAdd('link')
-                }
-                onRetry={session.retry}
-                onRename={assetOperations.setRenameTarget}
-                onReveal={(asset) =>
-                  void assetOperations.revealAssetInFolder(asset)
-                }
-                onRelink={(asset) =>
-                  void assetOperations.relinkAsset(asset)
-                }
-                onRefreshAll={() =>
-                  void assetOperations.refreshAllAssets()
-                }
-                onDelete={(asset) =>
-                  assetOperations.requestDelete(null, [asset])
-                }
-              />
-            </div>
-          )}
-          <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-            <AssetWorkbenchHost
-              projectId={project.id}
-              asset={assetOperations.selectedAsset}
-              mediaLabel={assetMediaLabel}
-              onRelink={() => {
-                if (assetOperations.selectedAsset) {
-                  void assetOperations.relinkAsset(
-                    assetOperations.selectedAsset,
-                  );
-                }
-              }}
-              onRefresh={() => {
-                if (assetOperations.selectedAsset) {
-                  void assetOperations.refreshAsset(
-                    assetOperations.selectedAsset,
-                  );
-                }
-              }}
-              onReveal={() =>
-                assetOperations.selectedAsset
-                  ? assetOperations.revealAssetInFolder(
-                      assetOperations.selectedAsset,
-                    )
-                  : Promise.resolve()
-              }
-              onOpenSettings={onOpenSettings}
-              onLifecycleTaskChange={
-                session.handleWorkbenchLifecycleTask
-              }
-              onError={setError}
-            />
-          </div>
-          {layout.rightOpen && (
-            <div
-              className={
-                layout.rightInline
-                  ? 'h-full w-[clamp(318px,20vw,390px)] shrink-0'
-                  : 'absolute inset-y-0 right-0 z-30 h-full w-[min(390px,calc(100%-20px))] shadow-2xl'
-              }
-            >
-              <GenerationCenter
+      <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
+        <WorkbenchRuntimeProvider onError={setError}>
+          <AssetSelectionCoordinatorProvider
+            coordinator={assetOperations.selectionCoordinator}
+          >
+            <section className="relative flex min-h-0 flex-1 gap-3">
+              {openOverlay && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label="关闭侧栏"
+                  onClick={closeOpenOverlay}
+                  className="absolute inset-0 z-20 cursor-default rounded-[17px] bg-black/55 backdrop-blur-[2px]"
+                />
+              )}
+              {layout.leftOpen && (
+                <div
+                  className={
+                    layout.leftInline
+                      ? 'h-full w-[clamp(248px,17vw,310px)] shrink-0'
+                      : 'absolute inset-y-0 left-0 z-30 h-full w-[min(360px,calc(100%-20px))] shadow-2xl'
+                  }
+                >
+                  <ProjectAssetPanel
+                    state={importedAssetState}
+                    selectedAssetId={session.selectedAssetId}
+                    busy={assetOperations.busy}
+                    refreshingAll={assetOperations.refreshingAll}
+                    dragging={dragging}
+                    now={relativeTimeNow}
+                    onSelect={session.selectAsset}
+                    onRemoveSelected={assetOperations.requestDelete}
+                    onCopyAdd={() => void assetOperations.chooseAndAdd('copy')}
+                    onLinkAdd={() => void assetOperations.chooseAndAdd('link')}
+                    onRetry={session.retry}
+                    onRename={assetOperations.setRenameTarget}
+                    onReveal={(asset) =>
+                      void assetOperations.revealAssetInFolder(asset)
+                    }
+                    onRelink={(asset) =>
+                      void assetOperations.relinkAsset(asset)
+                    }
+                    onRefreshAll={() => void assetOperations.refreshAllAssets()}
+                    onDelete={(asset) =>
+                      assetOperations.requestDelete(null, [asset])
+                    }
+                  />
+                </div>
+              )}
+              <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+                <AssetWorkbenchHost
+                  projectId={project.id}
+                  asset={assetOperations.selectedAsset}
+                  mediaLabel={assetMediaLabel}
+                  onRelink={() => {
+                    if (assetOperations.selectedAsset) {
+                      void assetOperations.relinkAsset(
+                        assetOperations.selectedAsset,
+                      );
+                    }
+                  }}
+                  onRefresh={() => {
+                    if (assetOperations.selectedAsset) {
+                      void assetOperations.refreshAsset(
+                        assetOperations.selectedAsset,
+                      );
+                    }
+                  }}
+                  onReveal={() =>
+                    assetOperations.selectedAsset
+                      ? assetOperations.revealAssetInFolder(
+                          assetOperations.selectedAsset,
+                        )
+                      : Promise.resolve()
+                  }
+                  onOpenSettings={onOpenSettings}
+                  onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
+                  onError={setError}
+                />
+              </div>
+              <ConversationPanelHost
                 projectId={project.id}
-                asset={assetOperations.selectedAsset}
-                state={generatedAssetState}
-                selectedAssetId={session.selectedAssetId}
-                busy={assetOperations.busy}
-                now={relativeTimeNow}
-                mediaLabel={assetMediaLabel}
-                onRetry={session.retry}
-                onSelect={session.selectAsset}
-                onRemoveSelected={assetOperations.requestDelete}
-                onRename={assetOperations.setRenameTarget}
-                onReveal={(asset) =>
-                  void assetOperations.revealAssetInFolder(asset)
-                }
-                onRelink={(asset) =>
-                  void assetOperations.relinkAsset(asset)
-                }
-                onDelete={(asset) =>
-                  assetOperations.requestDelete(null, [asset])
-                }
-                onRevealSources={layout.openLeft}
-                onMindMapDraftReady={startMindMapGeneration}
-                mindMapTasks={mindMapTasks}
-                onRetryMindMapTask={retryMindMapTask}
-                onCancelMindMapTask={cancelMindMapTask}
+                assetId={assetOperations.selectedAsset?.id}
+                onOpenSettings={onOpenSettings}
+                onError={setError}
               />
-            </div>
-          )}
-          <div className="absolute inset-y-0 right-0 z-40 shadow-2xl">
-            <ProjectAiQuestionHost
-              projectId={project.id}
-              assetId={assetOperations.selectedAsset?.id}
-              onError={setError}
-            />
-          </div>
-          </section>
-        </AssetSelectionCoordinatorProvider>
-      </WorkbenchRuntimeProvider>
+              {layout.rightOpen && (
+                <div
+                  className={
+                    layout.rightInline
+                      ? 'h-full w-[clamp(318px,20vw,390px)] shrink-0'
+                      : 'absolute inset-y-0 right-0 z-30 h-full w-[min(390px,calc(100%-20px))] shadow-2xl'
+                  }
+                >
+                  <GenerationCenter
+                    projectId={project.id}
+                    asset={assetOperations.selectedAsset}
+                    state={generatedAssetState}
+                    selectedAssetId={session.selectedAssetId}
+                    busy={assetOperations.busy}
+                    now={relativeTimeNow}
+                    mediaLabel={assetMediaLabel}
+                    onRetry={session.retry}
+                    onSelect={session.selectAsset}
+                    onRemoveSelected={assetOperations.requestDelete}
+                    onRename={assetOperations.setRenameTarget}
+                    onReveal={(asset) =>
+                      void assetOperations.revealAssetInFolder(asset)
+                    }
+                    onRelink={(asset) =>
+                      void assetOperations.relinkAsset(asset)
+                    }
+                    onDelete={(asset) =>
+                      assetOperations.requestDelete(null, [asset])
+                    }
+                    onRevealSources={layout.openLeft}
+                    onMindMapDraftReady={startMindMapGeneration}
+                    mindMapTasks={mindMapTasks}
+                    onRetryMindMapTask={retryMindMapTask}
+                    onCancelMindMapTask={cancelMindMapTask}
+                  />
+                </div>
+              )}
+            </section>
+          </AssetSelectionCoordinatorProvider>
+        </WorkbenchRuntimeProvider>
+      </WorkbenchConversationRuntimeProvider>
 
       {dragging && (
         <div className="pointer-events-none fixed inset-4 z-40 grid place-items-center rounded-[22px] border-2 border-dashed border-indigo-300/50 bg-[#171b22]/80 backdrop-blur-sm">
@@ -437,9 +420,7 @@ export function ProjectPage({
               setError(null);
             }
           }}
-          onSubmit={(name) =>
-            void assetOperations.renameAsset(name)
-          }
+          onSubmit={(name) => void assetOperations.renameAsset(name)}
         />
       )}
 
@@ -459,10 +440,7 @@ export function ProjectPage({
       {error &&
         !assetOperations.renameTarget &&
         !assetOperations.deleteTargets && (
-          <ErrorDialog
-            message={error}
-            onClose={() => setError(null)}
-          />
+          <ErrorDialog message={error} onClose={() => setError(null)} />
         )}
     </main>
   );

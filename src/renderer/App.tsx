@@ -65,6 +65,7 @@ export function App() {
       />
       {page.kind === 'project' ? (
         <ProjectPage
+          key={page.project.id}
           project={page.project}
           onBack={() => setPage({ kind: 'home' })}
           onOpenSettings={() =>

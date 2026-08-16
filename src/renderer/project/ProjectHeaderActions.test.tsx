@@ -12,6 +12,7 @@ describe('ProjectHeaderActions', () => {
         onToggleLeft={vi.fn()}
         onToggleRight={vi.fn()}
         onOpenWorkspace={vi.fn()}
+        aiQuestionAvailable
         onOpenAiQuestion={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
