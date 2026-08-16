@@ -8,4 +8,5 @@ dist/
 externalLib/
 scripts/__pycache__/
 .pnpm-store/
+/docs/reports/
 /.idea/

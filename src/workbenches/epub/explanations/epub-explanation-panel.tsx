@@ -9,6 +9,7 @@ import {
   sanitizeMarkdownRenderedHtml,
 } from '../../markdown/markdown-editor-adapter';
 import type { EpubExplanationView } from './shared';
+import type { EpubExplanationRuntimeView } from './epub-explanation-runtime';
 
 function MarkdownAnswer({ markdown }: { readonly markdown: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -39,11 +40,13 @@ function MarkdownAnswer({ markdown }: { readonly markdown: string }) {
 
 export function EpubExplanationPanel({
   explanation,
+  runtime,
   onClose,
   onRetry,
   onDelete,
 }: {
   readonly explanation: EpubExplanationView;
+  readonly runtime?: EpubExplanationRuntimeView;
   readonly onClose: () => void;
   readonly onRetry: () => void;
   readonly onDelete: () => void;
@@ -72,9 +75,22 @@ export function EpubExplanationPanel({
 
       <div className="max-h-[min(55vh,460px)] overflow-y-auto px-4 py-4">
         {explanation.status === 'pending' && (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
-            AI 正在解释选中的文字…
+          <div className="text-xs text-slate-300">
+            <div className="mb-3 flex items-center gap-2 text-[11px] text-slate-400">
+              <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
+              {runtime?.statusMessage ?? 'AI 正在解释选中的文字…'}
+            </div>
+            {runtime?.text && (
+              <div className="whitespace-pre-wrap break-words text-[13px] leading-6 text-slate-200">
+                {runtime.text}
+                {runtime.phase !== 'saving' && (
+                  <span
+                    data-epub-explanation-stream-caret
+                    className="ml-0.5 inline-block h-3 w-[6px] animate-pulse bg-indigo-300 align-[-2px]"
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
         {explanation.status === 'completed' && (
@@ -84,6 +100,16 @@ export function EpubExplanationPanel({
         )}
         {explanation.status === 'failed' && (
           <div>
+            {runtime?.text && (
+              <div className="mb-3 rounded-lg border border-amber-200/15 bg-amber-200/[0.04] p-3">
+                <p className="mb-2 text-[10px] font-medium text-amber-200/80">
+                  未完成，内容尚未保存
+                </p>
+                <div className="whitespace-pre-wrap break-words text-[12px] leading-5 text-slate-300">
+                  {runtime.text}
+                </div>
+              </div>
+            )}
             <p className="text-xs leading-5 text-rose-300">
               {explanation.failureMessage ?? 'AI 解释失败，请重试。'}
             </p>
