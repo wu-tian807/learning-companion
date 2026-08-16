@@ -11,6 +11,11 @@ import type { ExternalLibraryStore } from '../external-libraries/external-librar
 import { isExternalLibraryActive } from '../external-libraries/external-library-view';
 import type { SettingsTarget } from './settings-target';
 
+export interface PendingExternalLibraryInstall {
+  readonly library: ExternalLibrarySnapshot;
+  readonly expectedSize: number;
+}
+
 export function useExternalLibrarySettings(
   store: ExternalLibraryStore,
   target: SettingsTarget | undefined,
@@ -35,7 +40,7 @@ export function useExternalLibrarySettings(
   );
   const [error, setError] = useState<string | null>(null);
   const [pendingInstall, setPendingInstall] =
-    useState<ExternalLibrarySnapshot | null>(null);
+    useState<PendingExternalLibraryInstall | null>(null);
   const [pendingRemove, setPendingRemove] =
     useState<ExternalLibrarySnapshot | null>(null);
   const [migrationTarget, setMigrationTarget] =
@@ -54,7 +59,7 @@ export function useExternalLibrarySettings(
   );
   const pendingConfirmationRequest =
     (pendingInstall !== null &&
-      requestPendingById.has(pendingInstall.id)) ||
+      requestPendingById.has(pendingInstall.library.id)) ||
     (pendingRemove !== null &&
       requestPendingById.has(pendingRemove.id));
   const blockingBusy = migrationPending || pendingConfirmationRequest;
@@ -72,12 +77,12 @@ export function useExternalLibrarySettings(
   }, [librariesById, target]);
 
   const installLibrary = async (
-    library: ExternalLibrarySnapshot,
+    request: PendingExternalLibraryInstall,
   ) => {
     setError(null);
 
     try {
-      await store.getState().startInstallation(library.id);
+      await store.getState().startInstallation(request.library.id);
       setPendingInstall(null);
     } catch (operationError) {
       setError(

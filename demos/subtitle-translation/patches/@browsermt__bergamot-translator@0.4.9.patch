@@ -1,0 +1,54 @@
+diff --git a/translator.js b/translator.js
+index f27c076..f400dc8 100644
+--- a/translator.js
++++ b/translator.js
+@@ -23 +23 @@ if (!(typeof window !== 'undefined' && window.Worker)) {
+-        constructor(url) {
++        constructor(url, options) {
+@@ -26 +26 @@ if (!(typeof window !== 'undefined' && window.Worker)) {
+-                accept(new Worker(url));
++                accept(new Worker(url, options));
+@@ -118 +118,4 @@ export class CancelledError extends Error {}
+-        const worker = new Worker(new URL('./worker/translator-worker.js', import.meta.url));
++        const worker = new Worker(
++            new URL('./worker/translator-worker.js', import.meta.url),
++            {type: 'module'}
++        );
+diff --git a/worker/translator-worker.js b/worker/translator-worker.js
+index 24ff29a..f895128 100644
+--- a/worker/translator-worker.js
++++ b/worker/translator-worker.js
+@@ -13 +13,8 @@ if (typeof self === 'undefined') {
+-    global.Module = Module;
++    const [workerThreads, fs, fsPromises, path, urlModule] = await Promise.all([
++        import(/* webpackIgnore: true */ 'node:worker_threads'),
++        import(/* webpackIgnore: true */ 'node:fs'),
++        import(/* webpackIgnore: true */ 'node:fs/promises'),
++        import(/* webpackIgnore: true */ 'node:path'),
++        import(/* webpackIgnore: true */ 'node:url')
++    ]);
++    const workerDirectory = path.dirname(urlModule.fileURLToPath(import.meta.url));
+@@ -15 +22,3 @@ if (typeof self === 'undefined') {
+-    global.self = new class GlobalWorkerScope {
++    globalThis.Module = Module;
++
++    globalThis.self = new class GlobalWorkerScope {
+@@ -20,2 +29 @@ if (typeof self === 'undefined') {
+-            const {parentPort} = require(/* webpackIgnore: true */ 'node:worker_threads');
+-            this.#port = parentPort;
++            this.#port = workerThreads.parentPort;
+@@ -45,2 +52,0 @@ if (typeof self === 'undefined') {
+-            const {readFileSync} = require(/* webpackIgnore: true */ 'node:fs');
+-            const {join} = require(/* webpackIgnore: true */ 'node:path');
+@@ -48,2 +54,2 @@ if (typeof self === 'undefined') {
+-                const script = readFileSync(join(__dirname, pathname), {encoding: 'utf-8'});
+-                eval.call(global, script);
++                const script = fs.readFileSync(path.join(workerDirectory, pathname), {encoding: 'utf-8'});
++                eval.call(globalThis, script);
+@@ -62,2 +68 @@ if (typeof self === 'undefined') {
+-                const {readFile} = require(/* webpackIgnore: true */ 'node:fs/promises');
+-                const buffer = await readFile(url.pathname);
++                const buffer = await fsPromises.readFile(urlModule.fileURLToPath(url));
+@@ -79 +84 @@ if (typeof self === 'undefined') {
+-            return new URL(`file://${__filename}`);
++            return new URL(import.meta.url);

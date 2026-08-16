@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  isExternalLibraryDefinition,
-} from '../external-library-definition';
+import { isExternalLibraryDefinition } from '../../../main/external-libraries/external-library-definition';
 import {
   LIBREOFFICE_LIBRARY_ID,
   LIBREOFFICE_VERSION,
@@ -16,21 +14,21 @@ describe('LibreOffice ExternalLibraryDefinition', () => {
     expect(libreOfficeDefinition.version).toBe(LIBREOFFICE_VERSION);
     expect(
       libreOfficeDefinition.packages.map(
-        ({ platform, architecture }) =>
-          `${platform}-${architecture}`,
+        ({ platform, architecture }) => `${platform}-${architecture}`,
       ),
     ).toEqual(['darwin-arm64', 'darwin-x64', 'win32-x64']);
   });
 
   it('uses official HTTPS downloads with fixed size and SHA-256', () => {
     for (const packageDefinition of libreOfficeDefinition.packages) {
+      if (packageDefinition.packageType === 'bundle') {
+        throw new Error('LibreOffice must remain a native installer package');
+      }
       expect(packageDefinition.downloadUrl).toMatch(
         /^https:\/\/download\.documentfoundation\.org\/libreoffice\/stable\/26\.2\.5\//u,
       );
       expect(packageDefinition.sha256).toMatch(/^[a-f0-9]{64}$/u);
-      expect(packageDefinition.expectedSize).toBeGreaterThan(
-        250_000_000,
-      );
+      expect(packageDefinition.expectedSize).toBeGreaterThan(250_000_000);
     }
   });
 

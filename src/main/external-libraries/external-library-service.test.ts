@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_APP_PREFERENCES } from "../../shared/app-preferences";
 import { createAppSetupSnapshot } from "../../shared/app-setup";
+import type { ExternalLibrarySnapshot } from "../../shared/external-libraries";
 import type { SettingsRepository } from "../settings/settings-repository";
 import { ExternalLibraryDownloader } from "./external-library-downloader";
 import { ExternalLibraryInstallationManifestFile } from "./external-library-installation-manifest-file";
@@ -38,6 +39,8 @@ function createDefinition(content: Uint8Array) {
   return {
     id: "libreoffice",
     displayName: "LibreOffice",
+    description: "Office preview",
+    category: "document" as const,
     version: "25.2.5.2",
     installationFormatVersion: 1,
     sourceUrl: "https://www.libreoffice.org/",
@@ -56,6 +59,45 @@ function createDefinition(content: Uint8Array) {
         verifyCodeSignature: true,
       },
     ],
+  };
+}
+
+function createVariantDefinition(
+  content: Uint8Array,
+  defaultVariantId: 'cpu' | 'nvidia' = 'cpu',
+) {
+  const packageSha256 = createHash("sha256")
+    .update(content)
+    .digest("hex");
+  const createPackage = (variantId: "cpu" | "nvidia") => ({
+    platform: "darwin" as const,
+    architecture: "arm64" as const,
+    variantId,
+    packageType: "dmg" as const,
+    downloadUrl: `https://download.example/media-${variantId}.dmg`,
+    sha256: packageSha256,
+    expectedSize: content.byteLength,
+    executableRelativePath: "bin/media-runtime",
+    payloadRelativePath: "bin",
+    verifyCodeSignature: true,
+  });
+
+  return {
+    id: "media-subtitles",
+    displayName: "Media subtitles",
+    description: "Complete subtitle suite",
+    category: "media" as const,
+    version: "1.0.0",
+    installationFormatVersion: 1,
+    sourceUrl: "https://download.example/",
+    licenseName: "Test license",
+    licenseUrl: "https://download.example/license",
+    variants: [
+      { id: "cpu", displayName: "CPU" },
+      { id: "nvidia", displayName: "NVIDIA" },
+    ],
+    defaultVariantId,
+    packages: [createPackage("cpu"), createPackage("nvidia")],
   };
 }
 
@@ -107,6 +149,9 @@ async function createHarness(input?: {
   const installationManifestFile = new ExternalLibraryInstallationManifestFile();
   const install = vi.fn<ExternalLibraryInstaller["install"]>(
     async (request) => {
+      if (request.packageDefinition.packageType !== "dmg") {
+        throw new Error("expected dmg package");
+      }
       const executablePath = join(
         request.stagingInstallationDirectory,
         "runtime",
@@ -192,6 +237,119 @@ async function installAndWait(
 }
 
 describe("ExternalLibraryService", () => {
+  it("installs, switches and migrates one multi-variant component", async () => {
+    const harness = await createHarness();
+    const content = new TextEncoder().encode("trusted package");
+    harness.registry.register(createVariantDefinition(content));
+    await harness.service.initialize();
+
+    expect(
+      harness.service
+        .list()
+        .find(({ id }) => id === "media-subtitles"),
+    ).toMatchObject({
+      status: "not-installed",
+      defaultVariantId: "cpu",
+      variants: [
+        { id: "cpu", displayName: "CPU", expectedSize: content.byteLength },
+        {
+          id: "nvidia",
+          displayName: "NVIDIA",
+          expectedSize: content.byteLength,
+        },
+      ],
+    });
+
+    const nvidiaInstalled = new Promise<void>((resolve) => {
+      const unsubscribe = harness.service.subscribe((snapshot) => {
+        if (
+          snapshot.id === "media-subtitles" &&
+          snapshot.status === "available" &&
+          snapshot.installedVariantId === "nvidia"
+        ) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+    await expect(
+      harness.service.startInstallation("media-subtitles", "nvidia"),
+    ).resolves.toMatchObject({
+      status: "downloading",
+      operationVariantId: "nvidia",
+      expectedSize: content.byteLength,
+    });
+    await nvidiaInstalled;
+    await expect(
+      harness.service.requireRuntime("media-subtitles"),
+    ).resolves.toMatchObject({ variantId: "nvidia" });
+
+    const targetRootPath = join(dirname(harness.rootPath), "variant-target");
+    await expect(harness.service.migrate(targetRootPath)).resolves.toMatchObject({
+      status: "completed",
+    });
+    await expect(
+      harness.service.requireRuntime("media-subtitles"),
+    ).resolves.toMatchObject({ variantId: "nvidia" });
+
+    const cpuInstalled = new Promise<void>((resolve) => {
+      const unsubscribe = harness.service.subscribe((snapshot) => {
+        if (
+          snapshot.id === "media-subtitles" &&
+          snapshot.status === "available" &&
+          snapshot.installedVariantId === "cpu"
+        ) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+    await harness.service.startInstallation("media-subtitles", "cpu");
+    await cpuInstalled;
+    await expect(
+      harness.service.requireRuntime("media-subtitles"),
+    ).resolves.toMatchObject({ variantId: "cpu" });
+  });
+
+  it("rejects an unknown component variant before downloading", async () => {
+    const harness = await createHarness();
+    const content = new TextEncoder().encode("trusted package");
+    harness.registry.register(createVariantDefinition(content));
+    await harness.service.initialize();
+
+    await expect(
+      harness.service.startInstallation("media-subtitles", "amd"),
+    ).rejects.toThrow("FEATURE_NOT_SUPPORTED");
+  });
+
+  it("installs the automatically resolved default profile without a Renderer variant", async () => {
+    const harness = await createHarness();
+    const content = new TextEncoder().encode("trusted package");
+    harness.registry.register(createVariantDefinition(content, "nvidia"));
+    await harness.service.initialize();
+    const available = new Promise<ExternalLibrarySnapshot>((resolve) => {
+      const unsubscribe = harness.service.subscribe((snapshot) => {
+        if (
+          snapshot.id === "media-subtitles" &&
+          snapshot.status === "available"
+        ) {
+          unsubscribe();
+          resolve(snapshot);
+        }
+      });
+    });
+
+    await expect(
+      harness.service.startInstallation("media-subtitles"),
+    ).resolves.toMatchObject({
+      status: "downloading",
+      operationVariantId: "nvidia",
+    });
+    await expect(available).resolves.toMatchObject({
+      installedVariantId: "nvidia",
+    });
+  });
+
   it("discovers, installs and exposes a verified executable", async () => {
     const harness = await createHarness();
     const statuses: string[] = [];
@@ -265,6 +423,9 @@ describe("ExternalLibraryService", () => {
       "darwin",
       "arm64",
     );
+    if (packageDefinition.packageType !== "dmg") {
+      throw new Error("expected dmg package");
+    }
     const secondInstaller = {
       packageType: "dmg" as const,
       install: vi.fn(),
@@ -348,6 +509,8 @@ describe("ExternalLibraryService", () => {
       {
         id: "libreoffice",
         displayName: "LibreOffice",
+        description: "Office preview",
+        category: "document",
         version: "25.2.5.2",
         rootPath: harness.rootPath,
         status: "unsupported",

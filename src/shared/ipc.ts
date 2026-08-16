@@ -161,7 +161,7 @@ export interface LearningCompanionApi {
     request: ExternalLibraryIdRequest,
   ) => Promise<ExternalLibrarySnapshot>;
   startExternalLibraryInstallation: (
-    request: ExternalLibraryIdRequest,
+    request: InstallExternalLibraryRequest,
   ) => Promise<ExternalLibrarySnapshot>;
   cancelExternalLibrary: (request: ExternalLibraryIdRequest) => Promise<void>;
   removeExternalLibrary: (
@@ -377,6 +377,11 @@ export interface AssetIdRequest {
 
 export interface ExternalLibraryIdRequest {
   libraryId: string;
+}
+
+export interface InstallExternalLibraryRequest
+  extends ExternalLibraryIdRequest {
+  variantId?: string;
 }
 
 export interface MigrateExternalLibrariesRequest {
@@ -685,6 +690,19 @@ export function isExternalLibraryIdRequest(
     isRecord(value) &&
     isRequiredText(value.libraryId, 128) &&
     /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.libraryId)
+  );
+}
+
+export function isInstallExternalLibraryRequest(
+  value: unknown,
+): value is InstallExternalLibraryRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.libraryId, 128) &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.libraryId) &&
+    (value.variantId === undefined ||
+      (isRequiredText(value.variantId, 128) &&
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.variantId)))
   );
 }
 

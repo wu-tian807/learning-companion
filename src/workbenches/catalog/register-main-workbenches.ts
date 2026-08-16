@@ -11,6 +11,8 @@ import type { AttachmentServiceApi } from '../../main/attachments/attachment-ser
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import { AppError } from '../../main/errors/app-error';
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
+import type { ExternalLibraryHardwareCapabilities } from '../../main/external-libraries/external-library-hardware-capabilities';
+import type { ExternalLibraryRegistryApi } from '../../main/external-libraries/external-library-registry';
 import type { GenerationTaskDefinitionRegistry } from '../../main/generation/generation-task-definition-registry';
 import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
@@ -47,6 +49,12 @@ import { PlainTextWorkbenchProvider } from '../plain-text/main';
 import { plainTextWorkbenchManifest } from '../plain-text/shared';
 import { VideoWorkbenchProvider } from '../video/main';
 import { videoWorkbenchManifest } from '../video/shared';
+import { mediaSubtitlesMainFeature } from '../media-subtitles/main-feature';
+
+export interface MainWorkbenchExternalLibraryContext {
+  readonly libraries: ExternalLibraryRegistryApi;
+  readonly hardware: ExternalLibraryHardwareCapabilities;
+}
 
 export interface MainWorkbenchProviderContext {
   readonly associationService: AssetAssociationServiceApi;
@@ -95,6 +103,9 @@ export interface MainWorkbenchRuntime {
 export interface MainWorkbenchContribution {
   readonly id: string;
   readonly manifest?: AssetWorkbenchManifest;
+  registerExternalLibraries?(
+    context: MainWorkbenchExternalLibraryContext,
+  ): void;
   createProvider?(
     context: MainWorkbenchProviderContext,
   ): MainWorkbenchProvider;
@@ -191,6 +202,7 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = 
       context.stateDatabase,
     )),
   documentAiMainFeature,
+  mediaSubtitlesMainFeature,
 ];
 
 function forEachContribution(
@@ -222,6 +234,14 @@ export function registerMainWorkbenchProviders(
       throw new AppError('INVALID_EXTENSION_DEFINITION');
     }
     registry.register(provider);
+  });
+}
+
+export function registerMainWorkbenchExternalLibraries(
+  context: MainWorkbenchExternalLibraryContext,
+): void {
+  forEachContribution((entry) => {
+    entry.registerExternalLibraries?.(context);
   });
 }
 

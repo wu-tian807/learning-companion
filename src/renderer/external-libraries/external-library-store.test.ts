@@ -17,6 +17,8 @@ function createSnapshot(
   return {
     id: 'libreoffice',
     displayName: 'LibreOffice',
+    description: 'Office preview',
+    category: 'document',
     version: '26.2.5',
     expectedSize: 300_000_000,
     rootPath: '/Users/student/Documents/Learning Companion/externalLib',
@@ -177,8 +179,16 @@ describe('ExternalLibraryStore', () => {
     });
     const store = createExternalLibraryStore(harness.api);
 
-    const request =
-      store.getState().startInstallation('libreoffice');
+    const request = store
+      .getState()
+      .startInstallation('libreoffice', 'nvidia');
+
+    expect(
+      harness.api.startExternalLibraryInstallation,
+    ).toHaveBeenCalledWith({
+      libraryId: 'libreoffice',
+      variantId: 'nvidia',
+    });
 
     expect(store.getState().requestPendingById.has('libreoffice')).toBe(
       true,

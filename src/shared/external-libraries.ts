@@ -17,11 +17,23 @@ export interface ExternalLibraryProgress {
   readonly totalBytes: number;
 }
 
+export interface ExternalLibraryVariantSnapshot {
+  readonly id: string;
+  readonly displayName: string;
+  readonly expectedSize: number;
+}
+
 export interface ExternalLibrarySnapshot {
   readonly id: string;
   readonly displayName: string;
+  readonly description: string;
+  readonly category: 'document' | 'media';
   readonly version: string;
   readonly expectedSize?: number;
+  readonly variants?: readonly ExternalLibraryVariantSnapshot[];
+  readonly defaultVariantId?: string;
+  readonly installedVariantId?: string;
+  readonly operationVariantId?: string;
   readonly rootPath: string;
   readonly status: ExternalLibraryStatus;
   readonly installationPath?: string;
@@ -79,11 +91,58 @@ export function isExternalLibrarySnapshot(
     !isRecord(value) ||
     !isRequiredText(value.id) ||
     !isRequiredText(value.displayName) ||
+    !isRequiredText(value.description) ||
+    (value.category !== 'document' && value.category !== 'media') ||
     !isRequiredText(value.version) ||
     !isAbsoluteFileSystemPath(value.rootPath) ||
     !isExternalLibraryStatus(value.status)
   ) {
     return false;
+  }
+
+  if (value.variants === undefined) {
+    if (
+      value.defaultVariantId !== undefined ||
+      value.installedVariantId !== undefined ||
+      value.operationVariantId !== undefined
+    ) {
+      return false;
+    }
+  } else {
+    if (
+      !Array.isArray(value.variants) ||
+      value.variants.length < 2 ||
+      !value.variants.every(
+        (variant) =>
+          isRecord(variant) &&
+          isRequiredText(variant.id) &&
+          isRequiredText(variant.displayName) &&
+          typeof variant.expectedSize === 'number' &&
+          Number.isSafeInteger(variant.expectedSize) &&
+          variant.expectedSize > 0,
+      ) ||
+      !isRequiredText(value.defaultVariantId)
+    ) {
+      return false;
+    }
+
+    const variantIds = new Set(
+      (value.variants as readonly ExternalLibraryVariantSnapshot[]).map(
+        ({ id }) => id,
+      ),
+    );
+    if (
+      variantIds.size !== value.variants.length ||
+      !variantIds.has(value.defaultVariantId) ||
+      (value.installedVariantId !== undefined &&
+        (!isRequiredText(value.installedVariantId) ||
+          !variantIds.has(value.installedVariantId))) ||
+      (value.operationVariantId !== undefined &&
+        (!isRequiredText(value.operationVariantId) ||
+          !variantIds.has(value.operationVariantId)))
+    ) {
+      return false;
+    }
   }
 
   if (
@@ -133,10 +192,38 @@ export function cloneExternalLibrarySnapshot(
   return Object.freeze({
     id: value.id.trim(),
     displayName: value.displayName.trim(),
+    description: value.description.trim(),
+    category: value.category,
     version: value.version.trim(),
     ...(value.expectedSize === undefined
       ? {}
       : { expectedSize: value.expectedSize }),
+    ...(value.variants === undefined
+      ? {}
+      : {
+          variants: Object.freeze(
+            value.variants.map((variant) =>
+              Object.freeze({
+                id: variant.id.trim(),
+                displayName: variant.displayName.trim(),
+                expectedSize: variant.expectedSize,
+              }),
+            ),
+          ),
+          defaultVariantId: value.defaultVariantId!.trim(),
+          ...(value.installedVariantId === undefined
+            ? {}
+            : {
+                installedVariantId:
+                  value.installedVariantId.trim(),
+              }),
+          ...(value.operationVariantId === undefined
+            ? {}
+            : {
+                operationVariantId:
+                  value.operationVariantId.trim(),
+              }),
+        }),
     rootPath: value.rootPath.trim(),
     status: value.status,
     ...(value.installationPath === undefined

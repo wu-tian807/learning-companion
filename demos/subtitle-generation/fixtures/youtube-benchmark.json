@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "ytDlp": {
+    "version": "2026.07.04",
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp.exe",
+    "sha256": "52FE3C26DCF71FBDC85B528589020BB0B8E383155CFA81B64DD447BBE35E24B8"
+  },
+  "durationsSeconds": [60, 180, 300, 600, 1200],
+  "videos": [
+    {
+      "id": "h0e2HAPTGF4",
+      "url": "https://www.youtube.com/watch?v=h0e2HAPTGF4",
+      "title": "11. Introduction to Machine Learning",
+      "channel": "MIT OpenCourseWare",
+      "language": "en",
+      "subtitleLanguage": "en",
+      "audioFormat": "140",
+      "referenceKind": "human",
+      "usageNote": "MIT OpenCourseWare; the video itself opens with its Creative Commons notice. Local benchmark only."
+    },
+    {
+      "id": "LF9sd-2jCoY",
+      "url": "https://www.youtube.com/watch?v=LF9sd-2jCoY",
+      "title": "【漫士科普】90分钟深度！一口气看明白人工智能和神经网络",
+      "channel": "漫士沉思录 Meditation Math",
+      "language": "zh",
+      "subtitleLanguage": "zh",
+      "audioFormat": "140",
+      "referenceKind": "human",
+      "qualityExclusionRangesMs": [
+        {
+          "startMs": 272733,
+          "endMs": 320266,
+          "reason": "The source switches to an English excerpt while the manual captions contain both English speech and a Chinese translation. A single verbatim CER target is not defined for this interval."
+        }
+      ],
+      "usageNote": "Human Simplified Chinese captions. Local evaluation only; media and captions are never committed or redistributed."
+    }
+  ]
+}

@@ -8,6 +8,8 @@ function createDefinition() {
   return {
     id: 'libreoffice',
     displayName: 'LibreOffice',
+    description: 'Office preview',
+    category: 'document' as const,
     version: '25.2.5.2',
     installationFormatVersion: 1,
     sourceUrl: 'https://www.libreoffice.org/',
@@ -102,5 +104,44 @@ describe('ExternalLibraryRegistry', () => {
     expect(() => registry.require('missing')).toThrow(
       'INVALID_EXTENSION_DEFINITION',
     );
+  });
+
+  it('selects a default or explicit package variant', () => {
+    const registry = new ExternalLibraryRegistry();
+    const base = createDefinition();
+    const windowsPackage = base.packages[1]!;
+    registry.register({
+      ...base,
+      id: 'media-subtitles',
+      variants: [
+        { id: 'cpu', displayName: 'CPU' },
+        { id: 'nvidia', displayName: 'NVIDIA' },
+      ],
+      defaultVariantId: 'cpu',
+      packages: [
+        { ...windowsPackage, variantId: 'cpu' },
+        {
+          ...windowsPackage,
+          variantId: 'nvidia',
+          sha256: 'c'.repeat(64),
+        },
+      ],
+    });
+
+    expect(
+      registry.selectPackage('media-subtitles', 'win32', 'x64')
+        .variantId,
+    ).toBe('cpu');
+    expect(
+      registry.selectPackage(
+        'media-subtitles',
+        'win32',
+        'x64',
+        'nvidia',
+      ).variantId,
+    ).toBe('nvidia');
+    expect(
+      registry.findPackages('media-subtitles', 'win32', 'x64'),
+    ).toHaveLength(2);
   });
 });

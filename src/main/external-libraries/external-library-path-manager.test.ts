@@ -34,6 +34,8 @@ function createDefinition() {
     definition: {
       id: 'libreoffice',
       displayName: 'LibreOffice',
+      description: 'Office preview',
+      category: 'document' as const,
       version: '25.2.5.2',
       installationFormatVersion: 1,
       sourceUrl: 'https://www.libreoffice.org/',

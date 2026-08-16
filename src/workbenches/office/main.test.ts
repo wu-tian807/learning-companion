@@ -90,6 +90,11 @@ async function createHarness(input?: {
     cancel: vi.fn(),
     remove: vi.fn(),
     migrate: vi.fn(),
+    requireRuntime: vi.fn(async () => ({
+      libraryId: 'libreoffice',
+      runtimeDirectory: '/runtime',
+      executablePath: '/runtime/soffice',
+    })),
     requireExecutable: vi.fn(async () => {
       if (input?.runtimeAvailable === false) {
         throw new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED');

@@ -1,0 +1,1880 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Learning Companion · 视频与音频 Media AI 设计提案</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #f3f7ff;
+        --muted: #9caac0;
+        --faint: #66758c;
+        --bg: #070a0f;
+        --surface: #0e141e;
+        --surface-2: #151e2b;
+        --line: #2a3749;
+        --blue: #80a8ff;
+        --cyan: #6ce3e7;
+        --green: #70d7a8;
+        --amber: #f0bd70;
+        --violet: #c0a1ff;
+        --red: #ff8f9b;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 18% -10%, rgba(74, 107, 200, 0.2), transparent 34%),
+          radial-gradient(circle at 92% 90%, rgba(55, 156, 163, 0.12), transparent 35%),
+          #030508;
+        color: var(--ink);
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .deck-stage {
+        position: relative;
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+      }
+
+      .deck {
+        position: relative;
+        width: min(100vw, calc(100vh * 16 / 9));
+        height: min(100vh, calc(100vw * 9 / 16));
+        overflow: hidden;
+        border: 1px solid rgba(71, 88, 113, 0.55);
+        background: var(--bg);
+        box-shadow: 0 32px 100px rgba(0, 0, 0, 0.62);
+        container-type: inline-size;
+      }
+
+      .slide {
+        position: absolute;
+        inset: 0;
+        display: none;
+        overflow: hidden;
+        background:
+          linear-gradient(135deg, rgba(13, 19, 29, 0.98), rgba(7, 10, 15, 0.98)),
+          var(--bg);
+      }
+
+      .slide::before {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(rgba(107, 130, 161, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(107, 130, 161, 0.045) 1px, transparent 1px);
+        background-size: 4cqi 4cqi;
+        content: "";
+        mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+        pointer-events: none;
+      }
+
+      .slide.active {
+        display: block;
+        animation: slide-in 260ms ease both;
+      }
+
+      .slide-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        width: 100%;
+        height: 100%;
+        flex-direction: column;
+        padding: 5.2cqi 6.1cqi 4.7cqi;
+      }
+
+      .slide-kicker {
+        margin: 0 0 1.05cqi;
+        color: var(--cyan);
+        font-size: 0.9cqi;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .slide-title {
+        max-width: 92%;
+        margin: 0;
+        font-size: 2.85cqi;
+        font-weight: 770;
+        line-height: 1.13;
+        letter-spacing: -0.035em;
+      }
+
+      .slide-lead {
+        max-width: 73%;
+        margin: 1.15cqi 0 0;
+        color: #b6c2d5;
+        font-size: 1.22cqi;
+        line-height: 1.55;
+      }
+
+      .accent-line {
+        width: 6.8cqi;
+        height: 0.28cqi;
+        margin: 1.4cqi 0 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--cyan), var(--blue));
+      }
+
+      .section-label {
+        color: var(--faint);
+        font-size: 0.82cqi;
+        font-weight: 750;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .takeaway {
+        display: flex;
+        align-items: center;
+        gap: 0.85cqi;
+        margin-top: auto;
+        padding-top: 1.2cqi;
+        border-top: 1px solid var(--line);
+        color: #c9d5e8;
+        font-size: 1.05cqi;
+      }
+
+      .takeaway::before {
+        width: 0.55cqi;
+        height: 0.55cqi;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--cyan);
+        content: "";
+        box-shadow: 0 0 22px rgba(108, 227, 231, 0.65);
+      }
+
+      .speaker-notes {
+        display: none;
+      }
+
+      /* Title slide */
+      .title-slide .slide-content {
+        justify-content: center;
+        padding-right: 13cqi;
+      }
+
+      .title-slide h1 {
+        max-width: 78%;
+        margin: 0;
+        font-size: 4.7cqi;
+        line-height: 1.04;
+        letter-spacing: -0.055em;
+      }
+
+      .title-slide .subtitle {
+        max-width: 64%;
+        margin: 1.65cqi 0 0;
+        color: #b4c1d5;
+        font-size: 1.45cqi;
+        line-height: 1.55;
+      }
+
+      .title-meta {
+        display: flex;
+        gap: 1.4cqi;
+        margin-top: 2.4cqi;
+        color: var(--faint);
+        font-size: 0.86cqi;
+      }
+
+      .wavefield {
+        position: absolute;
+        right: 5.2cqi;
+        bottom: 10.5cqi;
+        display: flex;
+        width: 28cqi;
+        height: 22cqi;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.38cqi;
+        opacity: 0.76;
+        transform: rotate(-7deg);
+      }
+
+      .wavefield span {
+        width: 0.42cqi;
+        min-height: 0.7cqi;
+        border-radius: 99px;
+        background: linear-gradient(to top, var(--blue), var(--cyan));
+        box-shadow: 0 0 17px rgba(108, 227, 231, 0.3);
+      }
+
+      /* Slide 2 */
+      .experience-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3.3cqi;
+        margin-top: 4.2cqi;
+      }
+
+      .experience {
+        position: relative;
+        min-height: 17cqi;
+        padding: 0 1.1cqi 0 0;
+        border-right: 1px solid var(--line);
+      }
+
+      .experience:last-child {
+        border-right: 0;
+      }
+
+      .experience-number {
+        display: block;
+        color: rgba(128, 168, 255, 0.3);
+        font-size: 5.4cqi;
+        font-weight: 850;
+        line-height: 0.9;
+        letter-spacing: -0.06em;
+      }
+
+      .experience h3 {
+        margin: -0.45cqi 0 0;
+        font-size: 1.65cqi;
+        line-height: 1.2;
+      }
+
+      .experience p {
+        margin: 0.95cqi 0 0;
+        color: var(--muted);
+        font-size: 1.03cqi;
+        line-height: 1.55;
+      }
+
+      /* Slide 3 */
+      .lanes {
+        display: grid;
+        gap: 1.55cqi;
+        margin-top: 3.2cqi;
+      }
+
+      .lane {
+        display: grid;
+        grid-template-columns: 15cqi 1fr 7.5cqi;
+        align-items: center;
+        gap: 1.4cqi;
+      }
+
+      .lane-name strong {
+        display: block;
+        font-size: 1.28cqi;
+      }
+
+      .lane-name span {
+        display: block;
+        margin-top: 0.35cqi;
+        color: var(--faint);
+        font-size: 0.82cqi;
+      }
+
+      .lane-track {
+        position: relative;
+        height: 3.15cqi;
+        border-bottom: 1px solid #283649;
+      }
+
+      .lane-bar {
+        position: absolute;
+        top: 0.7cqi;
+        height: 1.12cqi;
+        border-radius: 999px;
+      }
+
+      .lane-bar.play {
+        right: 0;
+        left: 0;
+        background: linear-gradient(90deg, var(--green), rgba(112, 215, 168, 0.3));
+      }
+
+      .lane-bar.fast {
+        right: 11%;
+        left: 8%;
+        background: linear-gradient(90deg, var(--cyan), rgba(108, 227, 231, 0.25));
+      }
+
+      .lane-bar.background {
+        right: 0;
+        left: 26%;
+        background: linear-gradient(90deg, var(--violet), rgba(192, 161, 255, 0.18));
+      }
+
+      .lane-bar::before {
+        position: absolute;
+        top: 50%;
+        left: 0.35cqi;
+        width: 0.5cqi;
+        height: 0.5cqi;
+        border-radius: 50%;
+        background: #fff;
+        content: "";
+        transform: translateY(-50%);
+      }
+
+      .lane-result {
+        color: #c7d3e6;
+        font-size: 0.9cqi;
+        text-align: right;
+      }
+
+      .timeline-axis {
+        display: flex;
+        justify-content: space-between;
+        margin: 0.45cqi 8.9cqi 0 16.4cqi;
+        color: var(--faint);
+        font-size: 0.72cqi;
+      }
+
+      .big-principle {
+        margin-top: 2.8cqi;
+        color: var(--ink);
+        font-size: 2.05cqi;
+        font-weight: 720;
+        text-align: center;
+      }
+
+      .big-principle em {
+        color: var(--green);
+        font-style: normal;
+      }
+
+      /* Architecture */
+      .architecture {
+        display: grid;
+        grid-template-columns: 1fr 4.2cqi 1.15fr 4.2cqi 1fr;
+        grid-template-rows: 9.8cqi 4.2cqi 9.8cqi;
+        align-items: stretch;
+        margin-top: 3.1cqi;
+      }
+
+      .arch-node {
+        display: flex;
+        min-height: 8.8cqi;
+        flex-direction: column;
+        justify-content: center;
+        padding: 1.45cqi;
+        border-top: 0.18cqi solid var(--blue);
+        background: linear-gradient(135deg, rgba(30, 42, 61, 0.86), rgba(15, 23, 34, 0.86));
+      }
+
+      .arch-node h3 {
+        margin: 0;
+        font-size: 1.42cqi;
+      }
+
+      .arch-node p {
+        margin: 0.65cqi 0 0;
+        color: var(--muted);
+        font-size: 0.88cqi;
+        line-height: 1.48;
+      }
+
+      .arch-workbench { grid-column: 1; grid-row: 1; }
+      .arch-runtime { grid-column: 3; grid-row: 1; border-color: var(--cyan); }
+      .arch-data { grid-column: 5; grid-row: 1; border-color: var(--green); }
+      .arch-conversation { grid-column: 1; grid-row: 3; border-color: var(--amber); }
+      .arch-generation { grid-column: 3; grid-row: 3; border-color: var(--violet); }
+      .arch-components { grid-column: 5; grid-row: 3; border-color: #7a8ea8; }
+
+      .arch-arrow {
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+        font-size: 2.3cqi;
+      }
+
+      .arch-arrow.top-one { grid-column: 2; grid-row: 1; }
+      .arch-arrow.top-two { grid-column: 4; grid-row: 1; }
+      .arch-arrow.bottom-one { grid-column: 2; grid-row: 3; }
+      .arch-arrow.bottom-two { grid-column: 4; grid-row: 3; }
+      .arch-arrow.vertical-one { grid-column: 1; grid-row: 2; transform: rotate(90deg); }
+      .arch-arrow.vertical-two { grid-column: 3; grid-row: 2; transform: rotate(90deg); }
+      .arch-arrow.vertical-three { grid-column: 5; grid-row: 2; transform: rotate(-90deg); }
+
+      /* Process */
+      .process-flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        align-items: start;
+        margin-top: 4cqi;
+      }
+
+      .process-step {
+        position: relative;
+        min-height: 15.5cqi;
+        padding: 0 1.35cqi;
+        border-left: 1px solid var(--line);
+      }
+
+      .process-step:first-child {
+        padding-left: 0;
+        border-left: 0;
+      }
+
+      .process-step::after {
+        position: absolute;
+        top: 3.1cqi;
+        right: -0.65cqi;
+        z-index: 2;
+        color: var(--blue);
+        content: "→";
+        font-size: 1.45cqi;
+      }
+
+      .process-step:last-child::after {
+        content: none;
+      }
+
+      .process-index {
+        color: var(--cyan);
+        font-size: 0.84cqi;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+
+      .process-step h3 {
+        margin: 1cqi 0 0;
+        font-size: 1.28cqi;
+        line-height: 1.28;
+      }
+
+      .process-step p {
+        margin: 0.7cqi 0 0;
+        color: var(--muted);
+        font-size: 0.88cqi;
+        line-height: 1.48;
+      }
+
+      .fallback-line {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1.8cqi;
+        margin-top: auto;
+        padding: 1.25cqi 0;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        color: #c1cde0;
+        font-size: 0.94cqi;
+      }
+
+      .fallback-line span::before {
+        margin-right: 0.55cqi;
+        color: var(--green);
+        content: "●";
+      }
+
+      /* Split layout */
+      .split {
+        display: grid;
+        flex: 1;
+        grid-template-columns: 1fr 1fr;
+        gap: 5.3cqi;
+        align-items: center;
+        margin-top: 1.8cqi;
+      }
+
+      .statement {
+        font-size: 3.2cqi;
+        font-weight: 770;
+        line-height: 1.12;
+        letter-spacing: -0.045em;
+      }
+
+      .statement .soft {
+        color: var(--faint);
+      }
+
+      .priority-list {
+        display: grid;
+        gap: 1.2cqi;
+      }
+
+      .priority-item {
+        display: grid;
+        grid-template-columns: 3.5cqi 1fr;
+        gap: 1.2cqi;
+        align-items: center;
+        padding-bottom: 1.05cqi;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .priority-item .rank {
+        color: var(--blue);
+        font-size: 2.1cqi;
+        font-weight: 800;
+      }
+
+      .priority-item strong {
+        display: block;
+        font-size: 1.2cqi;
+      }
+
+      .priority-item span {
+        display: block;
+        margin-top: 0.32cqi;
+        color: var(--muted);
+        font-size: 0.86cqi;
+      }
+
+      .candidate-note {
+        margin-top: 1.35cqi;
+        padding-left: 1cqi;
+        border-left: 0.2cqi solid var(--amber);
+        color: #c8d3e3;
+        font-size: 0.9cqi;
+        line-height: 1.5;
+      }
+
+      /* Trust flow */
+      .trust-flow {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        margin-top: 4cqi;
+      }
+
+      .trust-step {
+        position: relative;
+        padding: 0 1.15cqi;
+        text-align: center;
+      }
+
+      .trust-step + .trust-step::before {
+        position: absolute;
+        top: 2.15cqi;
+        left: -0.55cqi;
+        color: var(--faint);
+        content: "→";
+        font-size: 1.25cqi;
+      }
+
+      .trust-icon {
+        display: grid;
+        width: 4.5cqi;
+        height: 4.5cqi;
+        margin: 0 auto 1.1cqi;
+        place-items: center;
+        border: 1px solid #3d4d64;
+        border-radius: 50%;
+        background: #101925;
+        color: var(--cyan);
+        font-size: 1.6cqi;
+      }
+
+      .trust-step strong {
+        display: block;
+        font-size: 1.06cqi;
+        line-height: 1.3;
+      }
+
+      .trust-step p {
+        margin: 0.58cqi 0 0;
+        color: var(--muted);
+        font-size: 0.78cqi;
+        line-height: 1.45;
+      }
+
+      .context-payload {
+        display: flex;
+        justify-content: center;
+        gap: 1.1cqi;
+        margin-top: 3.2cqi;
+        color: #b7c5d9;
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 0.9cqi;
+      }
+
+      .context-payload span {
+        padding: 0.55cqi 0.8cqi;
+        border-bottom: 1px solid var(--blue);
+      }
+
+      /* Conversation */
+      .conversation-layout {
+        display: grid;
+        flex: 1;
+        grid-template-columns: 1.1fr 0.78fr 1.1fr;
+        gap: 3.2cqi;
+        align-items: center;
+        margin-top: 2.1cqi;
+      }
+
+      .media-semantics,
+      .execution-spine {
+        display: grid;
+        gap: 0.9cqi;
+      }
+
+      .semantic-row,
+      .execution-row {
+        display: grid;
+        grid-template-columns: 5.5cqi 1fr;
+        gap: 0.8cqi;
+        align-items: baseline;
+        padding-bottom: 0.65cqi;
+        border-bottom: 1px solid rgba(42, 55, 73, 0.72);
+        font-size: 0.87cqi;
+      }
+
+      .semantic-row strong,
+      .execution-row strong {
+        color: #dce6f5;
+      }
+
+      .semantic-row span,
+      .execution-row span {
+        color: var(--muted);
+      }
+
+      .conversation-core {
+        display: grid;
+        min-height: 20cqi;
+        place-items: center;
+        padding: 2cqi 1.2cqi;
+        border: 1px solid #4b6386;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(79, 116, 181, 0.28), rgba(12, 18, 28, 0.94) 68%);
+        text-align: center;
+        box-shadow: 0 0 50px rgba(75, 111, 175, 0.2);
+      }
+
+      .conversation-core strong {
+        display: block;
+        font-size: 1.42cqi;
+        line-height: 1.25;
+      }
+
+      .conversation-core p {
+        margin: 0.9cqi 0 0;
+        color: var(--muted);
+        font-size: 0.84cqi;
+        line-height: 1.5;
+      }
+
+      .ownership-line {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3cqi;
+        margin-top: 1.2cqi;
+        padding-top: 1.1cqi;
+        border-top: 1px solid var(--line);
+        color: #bcc9dc;
+        font-size: 0.88cqi;
+      }
+
+      .ownership-line strong {
+        color: var(--cyan);
+      }
+
+      /* Session */
+      .session-flow {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1.35fr;
+        gap: 2.1cqi;
+        align-items: center;
+        margin-top: 4.4cqi;
+      }
+
+      .turn {
+        position: relative;
+        padding: 1.4cqi 1.2cqi;
+        border-top: 0.18cqi solid var(--blue);
+        background: rgba(20, 29, 42, 0.88);
+      }
+
+      .turn::after {
+        position: absolute;
+        top: 50%;
+        right: -1.5cqi;
+        color: var(--faint);
+        content: "→";
+        font-size: 1.1cqi;
+        transform: translateY(-50%);
+      }
+
+      .turn strong {
+        display: block;
+        font-size: 1.15cqi;
+      }
+
+      .turn span {
+        display: block;
+        margin-top: 0.45cqi;
+        color: var(--muted);
+        font-size: 0.8cqi;
+      }
+
+      .provider-session {
+        display: flex;
+        min-height: 11cqi;
+        flex-direction: column;
+        justify-content: center;
+        padding: 1.6cqi;
+        border: 1px solid #536c94;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(84, 123, 192, 0.27), rgba(13, 20, 31, 0.96));
+        text-align: center;
+      }
+
+      .provider-session strong {
+        font-size: 1.3cqi;
+      }
+
+      .provider-session span {
+        margin-top: 0.55cqi;
+        color: var(--muted);
+        font-size: 0.82cqi;
+      }
+
+      .session-key {
+        margin: 3.1cqi auto 0;
+        color: var(--cyan);
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 1.15cqi;
+        text-align: center;
+      }
+
+      .session-explain {
+        display: flex;
+        justify-content: center;
+        gap: 4cqi;
+        margin-top: 2cqi;
+        color: #bdc9db;
+        font-size: 0.95cqi;
+      }
+
+      /* Summary compare */
+      .compare {
+        display: grid;
+        flex: 1;
+        grid-template-columns: 0.82fr 1.18fr;
+        gap: 5cqi;
+        align-items: center;
+        margin-top: 1.7cqi;
+      }
+
+      .compare-bad {
+        opacity: 0.72;
+      }
+
+      .compare-label {
+        color: var(--faint);
+        font-size: 0.82cqi;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .compare-visual {
+        display: grid;
+        min-height: 16cqi;
+        margin-top: 1.3cqi;
+        place-items: center;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .film-strip {
+        display: grid;
+        width: 100%;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 0.3cqi;
+      }
+
+      .film-strip span {
+        aspect-ratio: 16 / 10;
+        background: linear-gradient(135deg, #334056, #1b2433);
+      }
+
+      .bad-cross {
+        color: var(--red);
+        font-size: 2.2cqi;
+        font-weight: 750;
+      }
+
+      .context-stack {
+        display: grid;
+        width: 100%;
+        gap: 1cqi;
+      }
+
+      .context-layer {
+        padding: 1.05cqi 1.2cqi;
+        border-left: 0.2cqi solid var(--cyan);
+        background: rgba(18, 28, 41, 0.9);
+        text-align: left;
+      }
+
+      .context-layer strong {
+        font-size: 1.08cqi;
+      }
+
+      .context-layer span {
+        display: block;
+        margin-top: 0.28cqi;
+        color: var(--muted);
+        font-size: 0.82cqi;
+      }
+
+      .summary-result {
+        margin-top: 1.2cqi;
+        color: var(--green);
+        font-size: 0.9cqi;
+      }
+
+      /* Data layers */
+      .data-layers {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3.6cqi;
+        margin-top: 4cqi;
+      }
+
+      .data-layer {
+        min-height: 18cqi;
+        padding-top: 1.4cqi;
+        border-top: 0.22cqi solid var(--cyan);
+      }
+
+      .data-layer:nth-child(2) { border-color: var(--amber); }
+      .data-layer:nth-child(3) { border-color: var(--green); }
+
+      .data-layer h3 {
+        margin: 0;
+        font-size: 1.6cqi;
+      }
+
+      .data-layer .role {
+        display: block;
+        margin-top: 0.45cqi;
+        color: var(--muted);
+        font-size: 0.9cqi;
+      }
+
+      .data-layer ul {
+        display: grid;
+        gap: 0.7cqi;
+        margin: 1.5cqi 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .data-layer li {
+        padding-bottom: 0.6cqi;
+        border-bottom: 1px solid rgba(42, 55, 73, 0.7);
+        color: #c3cee0;
+        font-size: 0.92cqi;
+      }
+
+      .relation-caption {
+        margin-top: auto;
+        color: var(--blue);
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 1.05cqi;
+        text-align: center;
+      }
+
+      /* Install */
+      .install-path {
+        display: grid;
+        grid-template-columns: 1fr 3.2cqi 1fr 3.2cqi 1fr;
+        align-items: stretch;
+        margin-top: 4cqi;
+      }
+
+      .install-stage {
+        min-height: 18cqi;
+        padding: 1.5cqi;
+        border-top: 0.2cqi solid var(--blue);
+        background: rgba(17, 25, 37, 0.82);
+      }
+
+      .install-stage:nth-of-type(3) { border-color: var(--cyan); }
+      .install-stage:nth-of-type(5) { border-color: var(--green); }
+
+      .install-stage h3 {
+        margin: 0;
+        font-size: 1.35cqi;
+      }
+
+      .install-stage p {
+        margin: 0.75cqi 0 0;
+        color: var(--muted);
+        font-size: 0.87cqi;
+        line-height: 1.5;
+      }
+
+      .install-stage ul {
+        display: grid;
+        gap: 0.6cqi;
+        margin: 1.2cqi 0 0;
+        padding: 0;
+        list-style: none;
+        color: #c3d0e2;
+        font-size: 0.85cqi;
+      }
+
+      .install-arrow {
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+        font-size: 1.8cqi;
+      }
+
+      .maintenance-warning {
+        margin-top: 1.2cqi;
+        color: var(--amber);
+        font-size: 0.82cqi;
+        line-height: 1.45;
+      }
+
+      /* Metrics */
+      .metric-timeline {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        margin-top: 4.3cqi;
+      }
+
+      .metric-timeline::before {
+        position: absolute;
+        top: 1.55cqi;
+        right: 7%;
+        left: 7%;
+        height: 2px;
+        background: linear-gradient(90deg, var(--green), var(--cyan), var(--violet));
+        content: "";
+      }
+
+      .metric-point {
+        position: relative;
+        text-align: center;
+      }
+
+      .metric-dot {
+        position: relative;
+        z-index: 2;
+        width: 1.15cqi;
+        height: 1.15cqi;
+        margin: 1cqi auto 1.35cqi;
+        border: 0.26cqi solid var(--surface);
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 20px rgba(108, 227, 231, 0.52);
+      }
+
+      .metric-point strong {
+        display: block;
+        font-size: 1.05cqi;
+      }
+
+      .metric-point span {
+        display: block;
+        margin-top: 0.42cqi;
+        color: var(--muted);
+        font-size: 0.78cqi;
+      }
+
+      .system-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.7cqi;
+        margin-top: 4cqi;
+        padding-top: 1.5cqi;
+        border-top: 1px solid var(--line);
+      }
+
+      .system-metric strong {
+        display: block;
+        color: var(--blue);
+        font-size: 1.3cqi;
+      }
+
+      .system-metric span {
+        display: block;
+        margin-top: 0.35cqi;
+        color: var(--muted);
+        font-size: 0.82cqi;
+      }
+
+      /* Roadmap */
+      .phases {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3.2cqi;
+        margin-top: 4cqi;
+      }
+
+      .phase {
+        position: relative;
+        min-height: 19cqi;
+        padding: 1.35cqi 0 0;
+        border-top: 0.25cqi solid var(--blue);
+      }
+
+      .phase:nth-child(2) { border-color: var(--cyan); }
+      .phase:nth-child(3) { border-color: var(--violet); }
+
+      .phase-index {
+        color: var(--faint);
+        font-size: 0.85cqi;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+
+      .phase h3 {
+        margin: 0.8cqi 0 0;
+        font-size: 1.45cqi;
+      }
+
+      .phase ul {
+        display: grid;
+        gap: 0.7cqi;
+        margin: 1.25cqi 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .phase li {
+        color: var(--muted);
+        font-size: 0.88cqi;
+        line-height: 1.45;
+      }
+
+      .phase li::before {
+        margin-right: 0.55cqi;
+        color: var(--cyan);
+        content: "—";
+      }
+
+      .decision-line {
+        margin-top: auto;
+        color: #d7e2f3;
+        font-size: 1.15cqi;
+        text-align: center;
+      }
+
+      .detail-link {
+        color: var(--cyan);
+        text-decoration: none;
+        border-bottom: 1px solid rgba(108, 227, 231, 0.55);
+      }
+
+      /* Deck chrome */
+      .deck-progress {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 20;
+        height: 0.28cqi;
+        background: rgba(66, 79, 101, 0.32);
+      }
+
+      .deck-progress span {
+        display: block;
+        width: 0;
+        height: 100%;
+        background: linear-gradient(90deg, var(--blue), var(--cyan));
+        transition: width 200ms ease;
+      }
+
+      .slide-counter {
+        position: absolute;
+        bottom: 1.15cqi;
+        left: 1.6cqi;
+        z-index: 21;
+        color: rgba(166, 180, 201, 0.7);
+        font-size: 0.72cqi;
+        letter-spacing: 0.1em;
+      }
+
+      .deck-hint {
+        position: absolute;
+        top: 1.15cqi;
+        right: 1.45cqi;
+        z-index: 21;
+        color: rgba(144, 158, 180, 0.56);
+        font-size: 0.68cqi;
+      }
+
+      .deck-controls {
+        position: absolute;
+        right: 1.25cqi;
+        bottom: 0.95cqi;
+        z-index: 25;
+        display: flex;
+        gap: 0.45cqi;
+      }
+
+      .deck-controls button {
+        display: grid;
+        width: 2.25cqi;
+        height: 2.25cqi;
+        padding: 0;
+        place-items: center;
+        border: 1px solid rgba(80, 99, 126, 0.68);
+        border-radius: 50%;
+        background: rgba(9, 14, 22, 0.78);
+        cursor: pointer;
+      }
+
+      .deck-controls button:hover,
+      .deck-controls button:focus-visible {
+        border-color: var(--blue);
+        outline: none;
+      }
+
+      .deck-controls button:disabled {
+        opacity: 0.25;
+        cursor: default;
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 40;
+        display: none;
+        padding: 3cqi;
+        background: rgba(5, 8, 13, 0.96);
+        backdrop-filter: blur(14px);
+      }
+
+      .overlay.open {
+        display: block;
+      }
+
+      .overlay-title {
+        margin: 0;
+        font-size: 2cqi;
+      }
+
+      .overview-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1.2cqi;
+        margin-top: 2cqi;
+      }
+
+      .overview-item {
+        min-height: 8.6cqi;
+        padding: 1cqi;
+        border: 1px solid var(--line);
+        background: rgba(15, 22, 32, 0.88);
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .overview-item:hover,
+      .overview-item:focus-visible,
+      .overview-item.current {
+        border-color: var(--blue);
+        outline: none;
+      }
+
+      .overview-item span {
+        display: block;
+        color: var(--cyan);
+        font-size: 0.72cqi;
+      }
+
+      .overview-item strong {
+        display: block;
+        margin-top: 0.65cqi;
+        font-size: 0.95cqi;
+        line-height: 1.35;
+      }
+
+      .notes-panel {
+        position: absolute;
+        right: 2.5cqi;
+        bottom: 3.3cqi;
+        left: 2.5cqi;
+        z-index: 35;
+        display: none;
+        max-height: 31%;
+        overflow: auto;
+        padding: 1.3cqi 1.55cqi;
+        border: 1px solid #41536e;
+        background: rgba(8, 13, 21, 0.97);
+        box-shadow: 0 14px 45px rgba(0, 0, 0, 0.52);
+      }
+
+      .notes-panel.open {
+        display: block;
+      }
+
+      .notes-panel h3 {
+        margin: 0;
+        color: var(--cyan);
+        font-size: 0.92cqi;
+      }
+
+      .notes-panel ul {
+        display: grid;
+        gap: 0.45cqi;
+        margin: 0.8cqi 0 0;
+        padding-left: 1.2cqi;
+      }
+
+      .notes-panel li,
+      .notes-panel p {
+        color: #b7c4d8;
+        font-size: 0.72cqi;
+        line-height: 1.45;
+      }
+
+      .notes-panel a {
+        color: var(--blue);
+      }
+
+      @keyframes slide-in {
+        from { opacity: 0; transform: translateX(1.2%); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .slide.active { animation: none; }
+        .deck-progress span { transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck-stage">
+      <div class="deck" id="deck" aria-label="视频与音频 Media AI 设计演示文稿">
+        <section class="slide title-slide active" data-title="视频与音频，不再只是预览">
+          <div class="slide-content">
+            <p class="slide-kicker">Learning Companion · Media AI Design</p>
+            <h1>视频与音频，<br />不再只是预览</h1>
+            <p class="subtitle">从即时播放，到字幕翻译、克隆配音、框选问答与快速摘要</p>
+            <div class="title-meta">
+              <span>设计提案</span>
+              <span>2026-08-14</span>
+              <span>面向 Workbench 协作者</span>
+            </div>
+            <div class="wavefield" aria-hidden="true">
+              <span style="height: 12%"></span><span style="height: 22%"></span><span style="height: 48%"></span>
+              <span style="height: 76%"></span><span style="height: 42%"></span><span style="height: 66%"></span>
+              <span style="height: 94%"></span><span style="height: 58%"></span><span style="height: 38%"></span>
+              <span style="height: 72%"></span><span style="height: 100%"></span><span style="height: 64%"></span>
+              <span style="height: 34%"></span><span style="height: 52%"></span><span style="height: 84%"></span>
+              <span style="height: 46%"></span><span style="height: 26%"></span><span style="height: 62%"></span>
+              <span style="height: 90%"></span><span style="height: 54%"></span><span style="height: 30%"></span>
+              <span style="height: 70%"></span><span style="height: 44%"></span><span style="height: 18%"></span>
+            </div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul><li>docs/architecture/media-ai-workbench-design.html</li></ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="三种不中断学习的能力">
+          <div class="slide-content">
+            <p class="slide-kicker">Product Experience</p>
+            <h2 class="slide-title">用户真正需要的，是三种不中断学习的能力</h2>
+            <div class="experience-grid">
+              <article class="experience">
+                <span class="experience-number">01</span>
+                <h3>翻译字幕与克隆配音</h3>
+                <p>原视频立即播放；字幕、翻译和声音克隆按时间 Cue 逐步可用，而不是等待整段导出。</p>
+              </article>
+              <article class="experience">
+                <span class="experience-number">02</span>
+                <h3>框选画面，直接追问</h3>
+                <p>选中画面区域后，AI 同时看到源分辨率截帧、当前时间点和邻近字幕上下文。</p>
+              </article>
+              <article class="experience">
+                <span class="experience-number">03</span>
+                <h3>快速获得视频摘要</h3>
+                <p>复用转写缓存与少量代表帧，优先产出可读摘要，再由用户决定是否保存为资料。</p>
+              </article>
+            </div>
+            <div class="takeaway">三项能力共用当前 Asset、媒体 Anchor、Provider Selector 与稳定会话；差异只在 Workbench 提供的上下文。</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>docs/architecture/media-ai-workbench-design.html</li>
+              <li>src/workbenches/video/renderer-actions.ts</li>
+              <li>src/workbenches/video/shared.ts</li>
+              <li>src/workbenches/audio/shared.ts</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="播放永远先于 AI">
+          <div class="slide-content">
+            <p class="slide-kicker">Experience Principle</p>
+            <h2 class="slide-title">第一原则：播放永远先于 AI</h2>
+            <p class="slide-lead">打开媒体时同时启动三条车道。任何后台能力缺失、失败或被取消，都不能让用户失去原始播放。</p>
+            <div class="lanes">
+              <div class="lane">
+                <div class="lane-name"><strong>原始播放</strong><span>Renderer 原生媒体链</span></div>
+                <div class="lane-track"><div class="lane-bar play"></div></div>
+                <div class="lane-result">立即可用</div>
+              </div>
+              <div class="lane">
+                <div class="lane-name"><strong>字幕快车道</strong><span>VAD → ASR → 翻译</span></div>
+                <div class="lane-track"><div class="lane-bar fast"></div></div>
+                <div class="lane-result">Cue 增量到达</div>
+              </div>
+              <div class="lane">
+                <div class="lane-name"><strong>后台生成</strong><span>分离 → 音色 → 配音 → 导出</span></div>
+                <div class="lane-track"><div class="lane-bar background"></div></div>
+                <div class="lane-result">可取消、可恢复</div>
+              </div>
+            </div>
+            <div class="timeline-axis"><span>T₀：打开</span><span>首次 Cue</span><span>当前区域可配音</span><span>完整缓存 / 导出</span></div>
+            <div class="big-principle">AI 是增强层，<em>不是播放门禁</em></div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>docs/architecture/media-ai-workbench-design.html</li>
+              <li>src/main/artifacts/asset-artifact-service.ts</li>
+              <li>MEMORY: cached media-AI design — immediate playback, incremental cues, background separation.</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="一条媒体主路服务 Video 与 Audio">
+          <div class="slide-content">
+            <p class="slide-kicker">System Shape</p>
+            <h2 class="slide-title">一条媒体主路，同时服务 Video 与 Audio</h2>
+            <p class="slide-lead">媒体语义归 Workbench，重计算归 Media Runtime，Agent 交互归 Generation 主路，所有结果进入统一数据生命周期。</p>
+            <div class="architecture">
+              <article class="arch-node arch-workbench"><h3>Video / Audio Workbench</h3><p>播放、时间段、框选、字幕轨和功能入口。</p></article>
+              <div class="arch-arrow top-one">→</div>
+              <article class="arch-node arch-runtime"><h3>Media AI Runtime</h3><p>调度解码、转写、分离、翻译、Cue TTS 与取消。</p></article>
+              <div class="arch-arrow top-two">→</div>
+              <article class="arch-node arch-data"><h3>Artifact / Asset Data</h3><p>缓存可再生结果，保存笔记和正式派生资料。</p></article>
+              <div class="arch-arrow vertical-one">→</div>
+              <div class="arch-arrow vertical-two">→</div>
+              <div class="arch-arrow vertical-three">→</div>
+              <article class="arch-node arch-conversation"><h3>Workbench Conversation</h3><p>统一消息、提交、取消、重试和任务投影。</p></article>
+              <div class="arch-arrow bottom-one">→</div>
+              <article class="arch-node arch-generation"><h3>Generation + Agent</h3><p>TaskDefinition → GenerationTask → AgentProvider。</p></article>
+              <div class="arch-arrow bottom-two">←</div>
+              <article class="arch-node arch-components"><h3>External Components</h3><p>像 LibreOffice 一样安装并探测本地媒体能力。</p></article>
+            </div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>src/workbenches/catalog/register-main-workbenches.ts</li>
+              <li>src/main/generation/contracts/task-definition.ts</li>
+              <li>src/main/artifacts/asset-artifact-service.ts</li>
+              <li>src/main/external-libraries/external-library-service.ts</li>
+              <li>docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="字幕与配音逐 Cue 跟上">
+          <div class="slide-content">
+            <p class="slide-kicker">Localization Flow</p>
+            <h2 class="slide-title">字幕先到，翻译和配音逐 Cue 跟上</h2>
+            <div class="process-flow">
+              <article class="process-step"><span class="process-index">STEP 01</span><h3>Decode + VAD</h3><p>抽取统一时间基的 PCM，按语音边界形成稳定片段。</p></article>
+              <article class="process-step"><span class="process-index">STEP 02</span><h3>原文 ASR Cue</h3><p>先显示原文；每个 Cue 有稳定 ID、起止时间和修订状态。</p></article>
+              <article class="process-step"><span class="process-index">STEP 03</span><h3>小批字幕翻译</h3><p>携带邻近 Cue 保持术语一致，失败时不影响原文轨。</p></article>
+              <article class="process-step"><span class="process-index">STEP 04</span><h3>Voice Profile</h3><p>用用户确认的短人声片段建立可追溯声音配置。</p></article>
+              <article class="process-step"><span class="process-index">STEP 05</span><h3>Cue TTS + 热替换</h3><p>单条翻译就绪即合成；播放器收到 cue.audio-ready 后试听。</p></article>
+            </div>
+            <div class="fallback-line"><span>原文轨始终保留</span><span>翻译轨可独立失败</span><span>配音 Cue 可单条重试</span><span>最终导出不阻塞预览</span></div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li><a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp official repository</a> — C/C++ Whisper implementation with stream examples and VAD support.</li>
+              <li><a href="https://github.com/OpenBMB/VoxCPM">VoxCPM official repository</a> — multilingual TTS and voice cloning candidate.</li>
+              <li>src/main/generation/contracts/task-definition.ts</li>
+              <li>docs/architecture/media-ai-workbench-design.html</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="分离是后台缓存">
+          <div class="slide-content">
+            <p class="slide-kicker">Separation Strategy</p>
+            <h2 class="slide-title">人声分离是后台缓存，不是播放前置条件</h2>
+            <div class="split">
+              <div>
+                <div class="statement"><span class="soft">后台</span><br />可抢占<br /><span class="soft">可缓存</span></div>
+                <p class="candidate-note">首轮可用 <strong>htdemucs · shifts=1</strong> 做交互基线，但 Demucs 官方仓库已经归档，因此必须同时 benchmark 维护中的替代方案，不能直接定为长期默认。</p>
+              </div>
+              <div class="priority-list">
+                <div class="priority-item"><span class="rank">01</span><div><strong>当前播放附近 Cue</strong><span>字幕与配音最先抢到计算资源。</span></div></div>
+                <div class="priority-item"><span class="rank">02</span><div><strong>用户选中的 3–10 秒片段</strong><span>快速准备音色预览，不等待全视频。</span></div></div>
+                <div class="priority-item"><span class="rank">03</span><div><strong>完整 vocals / accompaniment</strong><span>低优先级生成并缓存为版本化 Artifact。</span></div></div>
+              </div>
+            </div>
+            <div class="takeaway">分离不等于说话人识别；多人视频仍需单独设计 diarization 与 voice-profile 绑定。</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li><a href="https://github.com/facebookresearch/demucs">facebookresearch/demucs</a> — official repo archived on 2025-01-01; htdemucs is documented as the default model, and each additional shift multiplies inference time.</li>
+              <li>src/main/artifacts/asset-artifact-service.ts</li>
+              <li>MEMORY: use ordinary htdemucs with shifts=1 only as an initial interactive candidate; benchmark alternatives and audit licenses.</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="框选问答需要可信上下文">
+          <div class="slide-content">
+            <p class="slide-kicker">Visual Question Answering</p>
+            <h2 class="slide-title">框选问答的关键，是可信上下文</h2>
+            <p class="slide-lead">Renderer 只提交语义 Anchor；真正的截帧和文件物化在 Main 侧完成，避免缩放误差与任意路径注入。</p>
+            <div class="trust-flow">
+              <article class="trust-step"><div class="trust-icon">▱</div><strong>框选画面</strong><p>timestamp + 归一化矩形</p></article>
+              <article class="trust-step"><div class="trust-icon">A</div><strong>生成 Anchor</strong><p>video.frame-region v1</p></article>
+              <article class="trust-step"><div class="trust-icon">▦</div><strong>Main 截源帧</strong><p>FFmpeg + 源分辨率裁剪</p></article>
+              <article class="trust-step"><div class="trust-icon">＋</div><strong>组合上下文</strong><p>图像、时间、邻近字幕</p></article>
+              <article class="trust-step"><div class="trust-icon">AI</div><strong>GenerationTask</strong><p>VideoQuestion TaskDefinition</p></article>
+              <article class="trust-step"><div class="trust-icon">↳</div><strong>回答 / 追问</strong><p>同一 conversationId 续聊</p></article>
+            </div>
+            <div class="context-payload"><span>local-image</span><span>timestamp</span><span>nearby cues</span><span>optional local-audio</span><span>user question</span></div>
+            <div class="takeaway">选区高亮和 Anchor 语义归 Video Workbench；公共问答层只接收已经验证的 Context Bundle。</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>src/shared/workbench/anchor.ts</li>
+              <li>src/shared/workbench/interaction.ts</li>
+              <li>src/main/generation/contracts/agent-message.ts</li>
+              <li><a href="https://ffmpeg.org/documentation.html">FFmpeg official documentation</a></li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="公共问答层不吞媒体语义">
+          <div class="slide-content">
+            <p class="slide-kicker">Shared Workbench Foundation</p>
+            <h2 class="slide-title">公共问答层统一体验，不统一媒体语义</h2>
+            <div class="conversation-layout">
+              <div class="media-semantics">
+                <span class="section-label">Workbench Context Contributors</span>
+                <div class="semantic-row"><strong>PDF</strong><span>页码 / 选区 / 原文</span></div>
+                <div class="semantic-row"><strong>EPUB</strong><span>CFI / 章节 / 选文</span></div>
+                <div class="semantic-row"><strong>HTML</strong><span>DOM Range / 元素上下文</span></div>
+                <div class="semantic-row"><strong>Video</strong><span>frame-region / cues / 时间</span></div>
+                <div class="semantic-row"><strong>Audio</strong><span>time-range / transcript</span></div>
+              </div>
+              <div class="conversation-core">
+                <div><strong>Workbench<br />Conversation</strong><p>消息 UI<br />提交 / 取消 / 重试<br />taskId 投影<br />conversationId</p></div>
+              </div>
+              <div class="execution-spine">
+                <span class="section-label">Single Execution Spine</span>
+                <div class="execution-row"><strong>01</strong><span>TaskDefinition 校验输入</span></div>
+                <div class="execution-row"><strong>02</strong><span>GenerationTask 保存状态</span></div>
+                <div class="execution-row"><strong>03</strong><span>TaskAgentSession 定位 Session</span></div>
+                <div class="execution-row"><strong>04</strong><span>Selector 选择 Provider / 模型</span></div>
+                <div class="execution-row"><strong>05</strong><span>assistantOutput 回到消息投影</span></div>
+              </div>
+            </div>
+            <div class="ownership-line"><div><strong>公共层拥有：</strong> 会话 UI、生命周期、取消重试、错误与可选流式投影。</div><div><strong>Workbench 拥有：</strong> Anchor、上下文、TaskDefinition、工具和回答后的业务动作。</div></div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md</li>
+              <li>src/workbenches/document-ai/renderer/document-ai-client.ts</li>
+              <li>src/main/generation/contracts/task-definition.ts</li>
+              <li>src/main/generation/generation-task-agent-session.ts</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="连续对话复用 Provider Session">
+          <div class="slide-content">
+            <p class="slide-kicker">Conversation Continuity</p>
+            <h2 class="slide-title">连续对话靠 Provider Session，不靠 Renderer 重放历史</h2>
+            <p class="slide-lead">一次用户请求仍然是一条 GenerationTask；只要解析出相同的 workspace instance key，多个任务就可以恢复同一个 Provider thread。</p>
+            <div class="session-flow">
+              <article class="turn"><strong>Turn 01</strong><span>框选对象是什么？<br />GenerationTask A</span></article>
+              <article class="turn"><strong>Turn 02</strong><span>它为什么这样运动？<br />GenerationTask B</span></article>
+              <article class="turn"><strong>Turn 03</strong><span>总结成一条笔记。<br />GenerationTask C</span></article>
+              <article class="provider-session"><strong>同一个 Provider Session</strong><span>Codex thread / future Claude session</span></article>
+            </div>
+            <div class="session-key">workspaceKey + instanceKey(conversationId) + providerId</div>
+            <div class="session-explain"><span>Renderer 消息：用于展示</span><span>GenerationTask：用于一次请求的状态与恢复</span><span>Provider Session：上下文事实源</span></div>
+            <div class="takeaway">若某项生成需要彻底隔离，只需使用 taskId 作为 instance key；不需要另造第二套会话系统。</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>src/main/agents/sessions/agent-session-service.ts</li>
+              <li>src/main/generation/generation-task-agent-session.ts</li>
+              <li>src/main/generation/contracts/task-definition.ts</li>
+              <li>docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="快速摘要只送有界上下文">
+          <div class="slide-content">
+            <p class="slide-kicker">Quick Summary</p>
+            <h2 class="slide-title">快速摘要只需要字幕结构与稀疏关键帧</h2>
+            <div class="compare">
+              <div class="compare-bad">
+                <span class="compare-label">不要这样做</span>
+                <div class="compare-visual">
+                  <div>
+                    <div class="film-strip"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                    <p>让 Agent 从头“看完整视频”</p>
+                    <div class="bad-cross">高延迟 · 高上下文成本 · 难恢复</div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <span class="compare-label">构造有界上下文</span>
+                <div class="compare-visual">
+                  <div class="context-stack">
+                    <div class="context-layer"><strong>章节化 Transcript Artifact</strong><span>保留时间戳、主题边界与用户选择范围</span></div>
+                    <div class="context-layer"><strong>Sparse Keyframes</strong><span>依据章节、镜头变化和内容类型限制帧数</span></div>
+                    <div class="context-layer"><strong>VideoSummary TaskDefinition</strong><span>一次 GenerationTask；Selector 决定模型与思考力度</span></div>
+                  </div>
+                  <div class="summary-result">先展示摘要 → 用户再选择保存为 Attachment 或 Asset</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>src/main/artifacts/asset-artifact-service.ts</li>
+              <li>src/main/generation/contracts/generation-instruction.ts</li>
+              <li>src/main/generation/contracts/agent-message.ts</li>
+              <li>docs/architecture/media-ai-workbench-design.html</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="缓存、笔记和资料分层">
+          <div class="slide-content">
+            <p class="slide-kicker">Data Lifecycle</p>
+            <h2 class="slide-title">缓存、笔记和派生资料必须分层</h2>
+            <p class="slide-lead">不是所有 AI 结果都要变成 Asset。先判断它能否重建、是否需要长期学习、是否要参与后续引用。</p>
+            <div class="data-layers">
+              <article class="data-layer"><h3>Artifact</h3><span class="role">可删除后重建的缓存</span><ul><li>media.transcript.v1</li><li>media.stems.v1</li><li>media.voice-profile.v1</li><li>media.dub-track.v1</li></ul></article>
+              <article class="data-layer"><h3>Attachment</h3><span class="role">附着在 Asset / Anchor 上的记录</span><ul><li>某个时间点的 AI 回答</li><li>框选区域的解释</li><li>用户确认保存的摘要卡片</li><li>可跳回媒体位置的学习笔记</li></ul></article>
+              <article class="data-layer"><h3>Derived Asset</h3><span class="role">正式进入项目的派生资料</span><ul><li>克隆配音后的视频</li><li>可编辑 Markdown 摘要</li><li>后续讲义或思维导图</li><li>可再次被生成任务引用</li></ul></article>
+            </div>
+            <div class="relation-caption">Derived Asset ── AssetReference / AssetLink ──▶ Source Video / Audio</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>src/main/artifacts/asset-artifact-service.ts</li>
+              <li>src/main/attachments/attachment-service.ts</li>
+              <li>src/main/assets/asset-service.ts</li>
+              <li>src/main/asset-associations/asset-association-service.ts</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="一次安装，按能力启用">
+          <div class="slide-content">
+            <p class="slide-kicker">External Runtime</p>
+            <h2 class="slide-title">安装体验像 LibreOffice：一次安装，按能力启用</h2>
+            <p class="slide-lead">用户只看到安装、进度、取消与明确失败原因；不会被要求自己配置 Python、pip、CUDA 路径和模型目录。</p>
+            <div class="install-path">
+              <article class="install-stage"><h3>External Library</h3><p>复用现有下载、SHA-256 校验、原子提交和安装位置管理。</p><ul><li>按需触发</li><li>可取消</li><li>失败不阻塞应用</li></ul></article>
+              <div class="install-arrow">→</div>
+              <article class="install-stage"><h3>Media AI Packs</h3><p>基础包与重模型包分开，避免第一次安装就下载全部能力。</p><ul><li>Base：FFmpeg + whisper.cpp</li><li>Separation：候选模型包</li><li>Voice：VoxCPM 候选包</li></ul><div class="maintenance-warning">Demucs 官方仓库已归档；若采用必须冻结版本并保留替代路线。</div></article>
+              <div class="install-arrow">→</div>
+              <article class="install-stage"><h3>Capability Probe</h3><p>向 Workbench 暴露能力，而不是暴露二进制与模型路径。</p><ul><li>transcribe.ready</li><li>separate.ready</li><li>voice-clone.ready</li><li>device / version / diagnostics</li></ul></article>
+            </div>
+            <div class="takeaway">组件未安装时，只禁用对应 AI 动作；视频、音频与已有 Artifact 仍然可用。</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>src/main/external-libraries/external-library-service.ts</li>
+              <li>src/main/external-libraries/external-library-installation-workflow.ts</li>
+              <li><a href="https://ffmpeg.org/documentation.html">FFmpeg official documentation</a></li>
+              <li><a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp official repository</a></li>
+              <li><a href="https://github.com/facebookresearch/demucs">Demucs official archived repository</a></li>
+              <li><a href="https://github.com/OpenBMB/VoxCPM">VoxCPM official repository</a></li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="用延迟和稳定性验收">
+          <div class="slide-content">
+            <p class="slide-kicker">Acceptance Gates</p>
+            <h2 class="slide-title">首版用延迟和稳定性验收，不用模型名验收</h2>
+            <p class="slide-lead">先在代表性 Windows CPU / GPU 上采集真实基线，再决定默认模型、量化、并发和是否启用 GPU。</p>
+            <div class="metric-timeline">
+              <div class="metric-point"><div class="metric-dot"></div><strong>Open → Play</strong><span>首帧与可交互时间</span></div>
+              <div class="metric-point"><div class="metric-dot"></div><strong>First Cue</strong><span>首次稳定原文字幕</span></div>
+              <div class="metric-point"><div class="metric-dot"></div><strong>First Translation</strong><span>首次目标语言 Cue</span></div>
+              <div class="metric-point"><div class="metric-dot"></div><strong>First Audio Packet</strong><span>首次克隆配音可听</span></div>
+              <div class="metric-point"><div class="metric-dot"></div><strong>Export Complete</strong><span>最终轨道封装完成</span></div>
+            </div>
+            <div class="system-metrics">
+              <div class="system-metric"><strong>RTF</strong><span>ASR / 分离 / TTS 各自的实时率</span></div>
+              <div class="system-metric"><strong>VRAM / RAM</strong><span>并发作业的峰值与 OOM 降级</span></div>
+              <div class="system-metric"><strong>Cancel / Resume</strong><span>切换 Asset、取消与重启后的恢复</span></div>
+              <div class="system-metric"><strong>Cache Hit</strong><span>相同 source revision 是否避免重复计算</span></div>
+            </div>
+            <div class="takeaway">特别关注 8 GB GPU 下 Whisper、分离与 TTS 的竞争；调度优先用户正在看的 Cue 和选中片段。</div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>MEMORY: local benchmark required before selecting defaults; measure cold start, first cue, first audio packet, RTF, VRAM and quality.</li>
+              <li>src/main/artifacts/asset-artifact-service.ts</li>
+              <li>docs/architecture/media-ai-workbench-design.html</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="slide" data-title="先公共主路，再加重模型">
+          <div class="slide-content">
+            <p class="slide-kicker">Implementation Order</p>
+            <h2 class="slide-title">实施顺序：先公共主路，再加重模型</h2>
+            <div class="phases">
+              <article class="phase"><span class="phase-index">PHASE 01 · EXPERIENCE SPINE</span><h3>先让问答与上下文走通</h3><ul><li>Workbench Conversation Descriptor / Controller / UI</li><li>Video frame-region Anchor 与可信截帧</li><li>Transcript Artifact 与快速摘要 TaskDefinition</li><li>取消、失败、无 Provider 配置的完整反馈</li></ul></article>
+              <article class="phase"><span class="phase-index">PHASE 02 · STREAMING MEDIA AI</span><h3>再接本地字幕与配音</h3><ul><li>Media Job Scheduler 与领域事件</li><li>FFmpeg + whisper.cpp 基础包</li><li>短片段 Voice Profile 与 Cue TTS</li><li>分离候选模型的本机 benchmark</li></ul></article>
+              <article class="phase"><span class="phase-index">PHASE 03 · PRODUCTIZATION</span><h3>最后做完整导出与质量档位</h3><ul><li>全片 stems、字幕轨和配音轨缓存</li><li>配音视频 Derived Asset 与 Reference</li><li>CPU/GPU 质量档位与资源调度</li><li>Audio Workbench 复用同一能力主路</li></ul></article>
+            </div>
+            <div class="decision-line">下一步先确认公共 Conversation 契约，并以 Video Workbench 的“框选问答 + 快速摘要”作为最小闭环。　<a class="detail-link" href="../architecture/media-ai-workbench-design.html">打开完整交互架构图 ↗</a></div>
+          </div>
+          <aside class="speaker-notes">
+            <h3>[Sources]</h3>
+            <ul>
+              <li>docs/architecture/media-ai-workbench-design.html</li>
+              <li>docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md</li>
+              <li>src/workbenches/catalog/register-main-workbenches.ts</li>
+            </ul>
+          </aside>
+        </section>
+
+        <div class="deck-progress" aria-hidden="true"><span id="progressBar"></span></div>
+        <div class="slide-counter" id="slideCounter" aria-live="polite"></div>
+        <div class="deck-hint">← / → 翻页 · O 总览 · N 来源 · F 全屏</div>
+        <div class="deck-controls" aria-label="幻灯片控制">
+          <button type="button" id="previousButton" aria-label="上一页">←</button>
+          <button type="button" id="overviewButton" aria-label="幻灯片总览">⌘</button>
+          <button type="button" id="nextButton" aria-label="下一页">→</button>
+        </div>
+
+        <section class="overlay" id="overviewOverlay" aria-label="幻灯片总览">
+          <h2 class="overlay-title">演示文稿总览</h2>
+          <div class="overview-grid" id="overviewGrid"></div>
+        </section>
+
+        <section class="notes-panel" id="notesPanel" aria-label="讲者备注与来源"></section>
+      </div>
+    </main>
+
+    <script>
+      const deck = document.getElementById('deck');
+      const slides = [...document.querySelectorAll('.slide')];
+      const progressBar = document.getElementById('progressBar');
+      const slideCounter = document.getElementById('slideCounter');
+      const previousButton = document.getElementById('previousButton');
+      const nextButton = document.getElementById('nextButton');
+      const overviewButton = document.getElementById('overviewButton');
+      const overviewOverlay = document.getElementById('overviewOverlay');
+      const overviewGrid = document.getElementById('overviewGrid');
+      const notesPanel = document.getElementById('notesPanel');
+      let currentIndex = 0;
+      let touchStartX = null;
+
+      function clampIndex(index) {
+        return Math.max(0, Math.min(slides.length - 1, index));
+      }
+
+      function slideHash(index) {
+        return `#slide-${String(index + 1).padStart(2, '0')}`;
+      }
+
+      function indexFromHash() {
+        const match = location.hash.match(/^#slide-(\d{2})$/);
+        if (!match) return 0;
+        return clampIndex(Number(match[1]) - 1);
+      }
+
+      function renderSlide(index, options = {}) {
+        currentIndex = clampIndex(index);
+        slides.forEach((slide, slideIndex) => {
+          const active = slideIndex === currentIndex;
+          slide.classList.toggle('active', active);
+          slide.setAttribute('aria-hidden', String(!active));
+        });
+        const progress = ((currentIndex + 1) / slides.length) * 100;
+        progressBar.style.width = `${progress}%`;
+        slideCounter.textContent = `${String(currentIndex + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
+        previousButton.disabled = currentIndex === 0;
+        nextButton.disabled = currentIndex === slides.length - 1;
+        updateNotes();
+        updateOverviewSelection();
+        if (!options.fromHistory && location.hash !== slideHash(currentIndex)) {
+          history.pushState({ index: currentIndex }, '', slideHash(currentIndex));
+        }
+        document.title = `${slides[currentIndex].dataset.title} · Learning Companion Media AI`;
+      }
+
+      function go(delta) {
+        closeOverlays();
+        renderSlide(currentIndex + delta);
+      }
+
+      function toggleOverview(force) {
+        const shouldOpen = typeof force === 'boolean' ? force : !overviewOverlay.classList.contains('open');
+        overviewOverlay.classList.toggle('open', shouldOpen);
+        overviewOverlay.setAttribute('aria-hidden', String(!shouldOpen));
+        if (shouldOpen) notesPanel.classList.remove('open');
+      }
+
+      function toggleNotes(force) {
+        const shouldOpen = typeof force === 'boolean' ? force : !notesPanel.classList.contains('open');
+        notesPanel.classList.toggle('open', shouldOpen);
+        if (shouldOpen) overviewOverlay.classList.remove('open');
+      }
+
+      function closeOverlays() {
+        toggleOverview(false);
+        toggleNotes(false);
+      }
+
+      function updateNotes() {
+        const notes = slides[currentIndex].querySelector('.speaker-notes');
+        notesPanel.innerHTML = notes ? notes.innerHTML : '<h3>[Sources]</h3><p>本页没有外部来源。</p>';
+      }
+
+      function buildOverview() {
+        overviewGrid.replaceChildren();
+        slides.forEach((slide, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'overview-item';
+          button.dataset.index = String(index);
+          button.innerHTML = `<span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(slide.dataset.title)}</strong>`;
+          button.addEventListener('click', () => {
+            toggleOverview(false);
+            renderSlide(index);
+          });
+          overviewGrid.appendChild(button);
+        });
+      }
+
+      function updateOverviewSelection() {
+        overviewGrid.querySelectorAll('.overview-item').forEach((button) => {
+          button.classList.toggle('current', Number(button.dataset.index) === currentIndex);
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      async function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          await deck.requestFullscreen?.();
+        } else {
+          await document.exitFullscreen?.();
+        }
+      }
+
+      previousButton.addEventListener('click', () => go(-1));
+      nextButton.addEventListener('click', () => go(1));
+      overviewButton.addEventListener('click', () => toggleOverview());
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeOverlays();
+          return;
+        }
+        if (event.key === 'o' || event.key === 'O') {
+          event.preventDefault();
+          toggleOverview();
+          return;
+        }
+        if (event.key === 'n' || event.key === 'N') {
+          event.preventDefault();
+          toggleNotes();
+          return;
+        }
+        if (event.key === 'f' || event.key === 'F') {
+          event.preventDefault();
+          toggleFullscreen();
+          return;
+        }
+        if (overviewOverlay.classList.contains('open') || notesPanel.classList.contains('open')) return;
+        if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(event.key)) {
+          event.preventDefault();
+          go(1);
+        } else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) {
+          event.preventDefault();
+          go(-1);
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          renderSlide(0);
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          renderSlide(slides.length - 1);
+        }
+      });
+
+      deck.addEventListener('touchstart', (event) => {
+        touchStartX = event.changedTouches[0]?.clientX ?? null;
+      }, { passive: true });
+      deck.addEventListener('touchend', (event) => {
+        if (touchStartX === null) return;
+        const endX = event.changedTouches[0]?.clientX ?? touchStartX;
+        const delta = endX - touchStartX;
+        touchStartX = null;
+        if (Math.abs(delta) < 45) return;
+        go(delta < 0 ? 1 : -1);
+      }, { passive: true });
+
+      window.addEventListener('popstate', () => renderSlide(indexFromHash(), { fromHistory: true }));
+
+      buildOverview();
+      renderSlide(indexFromHash(), { fromHistory: true });
+      window.__MEDIA_AI_DECK_AUDIT__ = {
+        slideCount: slides.length,
+        currentIndex: () => currentIndex,
+        goTo: (index) => renderSlide(index),
+      };
+    </script>
+  </body>
+</html>

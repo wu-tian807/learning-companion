@@ -14,6 +14,8 @@ function createSnapshot(
   return {
     id: 'libreoffice',
     displayName: 'LibreOffice',
+    description: 'Office preview',
+    category: 'document',
     version: '26.2.5',
     expectedSize: 300_000_000,
     rootPath: '/Users/student/Documents/Learning Companion/externalLib',
@@ -52,6 +54,28 @@ function createStore(
   });
 }
 
+function createMediaSubtitleSnapshot(): ExternalLibrarySnapshot {
+  return {
+    id: 'media-subtitles',
+    displayName: '视频/音频字幕组件',
+    description: '一次安装完整本地能力',
+    category: 'media',
+    version: '2026.08.16',
+    expectedSize: 100,
+    variants: [
+      { id: 'cpu', displayName: 'CPU 兼容版', expectedSize: 100 },
+      {
+        id: 'nvidia',
+        displayName: 'NVIDIA GPU 加速版',
+        expectedSize: 200,
+      },
+    ],
+    defaultVariantId: 'cpu',
+    rootPath: '/Users/student/Documents/Learning Companion/externalLib',
+    status: 'not-installed',
+  };
+}
+
 describe('SettingsDialog', () => {
   it('explains the external runtime storage and trust boundary', () => {
     const markup = renderToStaticMarkup(
@@ -77,6 +101,8 @@ describe('SettingsDialog', () => {
 
     expect(markup).toContain('正在下载');
     expect(markup).toContain('取消');
+    expect(markup).toContain('Office preview');
+    expect(markup).toContain('文档');
     expect(markup).not.toContain(
       'aria-label="关闭设置" disabled=""',
     );
@@ -96,6 +122,20 @@ describe('SettingsDialog', () => {
 
     expect(markup).toContain('ring-indigo-300/10');
     expect(markup).toContain('重新安装');
+  });
+
+  it('renders one automatically configured media component', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsDialog
+        store={createStore(createMediaSubtitleSnapshot())}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(markup.match(/>视频\/音频字幕组件</gu)).toHaveLength(1);
+    expect(markup).not.toContain('<select');
+    expect(markup).not.toContain('运行版本');
+    expect(markup).toContain('安装');
   });
 
   it('exposes AI Provider as a settings tab', () => {

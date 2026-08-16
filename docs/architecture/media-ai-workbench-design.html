@@ -1,0 +1,2111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Learning Companion · Media AI 与 Workbench 问答基建设计</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090c11;
+        --panel: #111720;
+        --panel-strong: #171e29;
+        --panel-soft: #0d131b;
+        --line: #2a3442;
+        --line-strong: #3a485b;
+        --text: #eef4ff;
+        --muted: #95a3b8;
+        --faint: #68778d;
+        --accent: #82aaff;
+        --accent-soft: rgba(130, 170, 255, 0.15);
+        --green: #70d6a6;
+        --amber: #f1bd72;
+        --violet: #bd9cff;
+        --cyan: #6fd9e7;
+        --danger: #ff8f9a;
+        --shadow: 0 18px 60px rgba(0, 0, 0, 0.34);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background:
+          radial-gradient(circle at 8% -12%, rgba(84, 115, 210, 0.22), transparent 30%),
+          radial-gradient(circle at 92% 18%, rgba(64, 156, 160, 0.12), transparent 27%),
+          var(--bg);
+        color: var(--text);
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .page-shell {
+        width: min(1540px, calc(100% - 36px));
+        margin: 0 auto;
+        padding: 28px 0 42px;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 30px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(140deg, rgba(27, 36, 50, 0.98), rgba(13, 18, 26, 0.96));
+        box-shadow: var(--shadow);
+      }
+
+      .hero::after {
+        position: absolute;
+        right: -90px;
+        bottom: -120px;
+        width: 360px;
+        height: 360px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(111, 217, 231, 0.15), transparent 68%);
+        content: "";
+        pointer-events: none;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: var(--cyan);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 980px;
+        margin: 0;
+        font-size: clamp(30px, 4vw, 54px);
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+      }
+
+      .hero-copy {
+        max-width: 980px;
+        margin: 16px 0 0;
+        color: #b8c4d7;
+        font-size: 16px;
+        line-height: 1.75;
+      }
+
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 20px;
+      }
+
+      .meta-chip,
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 28px;
+        padding: 5px 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: rgba(7, 11, 17, 0.42);
+        color: #c8d3e5;
+        font-size: 12px;
+      }
+
+      .journeys {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 26px;
+      }
+
+      .journey-button {
+        min-height: 108px;
+        padding: 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        background: rgba(14, 20, 29, 0.78);
+        text-align: left;
+        cursor: pointer;
+        transition:
+          transform 160ms ease,
+          border-color 160ms ease,
+          background 160ms ease;
+      }
+
+      .journey-button:hover,
+      .journey-button:focus-visible {
+        border-color: var(--accent);
+        background: rgba(33, 45, 66, 0.88);
+        outline: none;
+        transform: translateY(-2px);
+      }
+
+      .journey-number {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+
+      .journey-title {
+        display: block;
+        font-size: 16px;
+        font-weight: 760;
+      }
+
+      .journey-copy {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .map-shell {
+        margin-top: 20px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: rgba(13, 18, 26, 0.96);
+        box-shadow: var(--shadow);
+      }
+
+      .map-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 64px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .toolbar-button {
+        flex: 0 0 auto;
+        min-width: 38px;
+        height: 38px;
+        padding: 0 12px;
+        border: 1px solid var(--line-strong);
+        border-radius: 11px;
+        background: var(--panel-strong);
+        cursor: pointer;
+      }
+
+      .toolbar-button:hover,
+      .toolbar-button:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+      }
+
+      .toolbar-button:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+
+      .breadcrumbs {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .breadcrumb-button {
+        overflow: hidden;
+        max-width: 230px;
+        padding: 5px 7px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: inherit;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .breadcrumb-button:hover,
+      .breadcrumb-button:focus-visible {
+        background: var(--accent-soft);
+        color: var(--text);
+        outline: none;
+      }
+
+      .breadcrumb-separator {
+        color: var(--faint);
+      }
+
+      .usage-hint {
+        flex: 0 0 auto;
+        color: var(--faint);
+        font-size: 11px;
+      }
+
+      .map-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 326px;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .diagram-panel,
+      .inspector {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-soft);
+      }
+
+      .diagram-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 84px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .diagram-title {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: -0.015em;
+      }
+
+      .diagram-summary {
+        max-width: 820px;
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .legend-dot,
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--faint);
+      }
+
+      [data-status="implemented"] .status-dot,
+      .legend-dot.implemented {
+        background: var(--green);
+      }
+
+      [data-status="planned"] .status-dot,
+      .legend-dot.planned {
+        background: var(--amber);
+      }
+
+      [data-status="mixed"] .status-dot,
+      .legend-dot.mixed {
+        background: var(--cyan);
+      }
+
+      [data-status="workflow"] .status-dot,
+      .legend-dot.workflow {
+        background: var(--violet);
+      }
+
+      .diagram {
+        position: relative;
+        overflow: hidden;
+        min-height: 650px;
+        background:
+          linear-gradient(rgba(91, 108, 134, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(91, 108, 134, 0.05) 1px, transparent 1px),
+          radial-gradient(circle at 50% 45%, rgba(45, 60, 86, 0.2), transparent 60%);
+        background-size: 32px 32px, 32px 32px, auto;
+      }
+
+      .edge-layer,
+      .edge-controls,
+      .node-layer {
+        position: absolute;
+        inset: 0;
+      }
+
+      .edge-layer {
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      .edge-path {
+        fill: none;
+        stroke: #52647e;
+        stroke-width: 2;
+        vector-effect: non-scaling-stroke;
+        pointer-events: stroke;
+        cursor: pointer;
+        transition:
+          stroke 150ms ease,
+          stroke-width 150ms ease,
+          opacity 150ms ease;
+      }
+
+      .edge-path:hover,
+      .edge-path:focus,
+      .edge-path.is-selected {
+        stroke: var(--accent);
+        stroke-width: 3.2;
+        outline: none;
+      }
+
+      .edge-path.is-muted {
+        opacity: 0.28;
+      }
+
+      .boundary-port {
+        fill: var(--accent);
+        stroke: var(--panel-soft);
+        stroke-width: 3;
+      }
+
+      .edge-controls {
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      .edge-control {
+        position: absolute;
+        z-index: 3;
+        max-width: 154px;
+        min-height: 24px;
+        padding: 4px 8px;
+        border: 1px solid rgba(80, 98, 124, 0.7);
+        border-radius: 999px;
+        background: rgba(8, 12, 18, 0.94);
+        color: #aebbd0;
+        font-size: 10px;
+        line-height: 1.25;
+        text-align: center;
+        transform: translate(-50%, -50%);
+        cursor: pointer;
+        pointer-events: auto;
+        white-space: normal;
+      }
+
+      .edge-control:hover,
+      .edge-control:focus-visible,
+      .edge-control.is-selected {
+        border-color: var(--accent);
+        color: var(--text);
+        outline: none;
+      }
+
+      .edge-control.is-muted {
+        opacity: 0.32;
+      }
+
+      .node-layer {
+        z-index: 3;
+        pointer-events: none;
+      }
+
+      .node {
+        position: absolute;
+        width: min(235px, 25%);
+        min-height: 148px;
+        padding: 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 15px;
+        background: linear-gradient(150deg, rgba(28, 37, 51, 0.98), rgba(18, 25, 35, 0.98));
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+        text-align: left;
+        cursor: pointer;
+        pointer-events: auto;
+        transition:
+          transform 150ms ease,
+          border-color 150ms ease,
+          box-shadow 150ms ease;
+      }
+
+      .node:hover,
+      .node:focus-visible,
+      .node.is-selected {
+        border-color: var(--accent);
+        outline: none;
+        box-shadow: 0 14px 34px rgba(19, 49, 96, 0.38);
+        transform: translateY(-2px);
+      }
+
+      .node.is-muted {
+        opacity: 0.42;
+      }
+
+      .node.is-related {
+        border-color: rgba(130, 170, 255, 0.78);
+      }
+
+      .node-topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .node-kind {
+        overflow: hidden;
+        color: var(--faint);
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.08em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .node-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex: 0 0 auto;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .node-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 11px;
+        font-size: 16px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+
+      .node-title .drill-mark {
+        color: var(--accent);
+        font-size: 13px;
+      }
+
+      .node-copy {
+        display: -webkit-box;
+        overflow: hidden;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+      }
+
+      .mobile-relations {
+        display: none;
+      }
+
+      .inspector {
+        align-self: start;
+        min-height: 650px;
+        padding: 18px;
+      }
+
+      .inspector-kicker {
+        color: var(--cyan);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .inspector-title {
+        margin: 10px 0 0;
+        font-size: 21px;
+        line-height: 1.25;
+      }
+
+      .inspector-summary {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .inspector-section {
+        margin-top: 20px;
+        padding-top: 17px;
+        border-top: 1px solid var(--line);
+      }
+
+      .inspector-section h4 {
+        margin: 0 0 10px;
+        color: #c7d3e5;
+        font-size: 12px;
+      }
+
+      .inspector-list {
+        display: grid;
+        gap: 9px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .inspector-list li {
+        position: relative;
+        padding-left: 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .inspector-list li::before {
+        position: absolute;
+        top: 0.65em;
+        left: 0;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+        content: "";
+      }
+
+      .source-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .source-path {
+        display: block;
+        overflow-wrap: anywhere;
+        padding: 8px 9px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(8, 12, 18, 0.72);
+        color: #aebbd0;
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 10px;
+        line-height: 1.45;
+        text-decoration: none;
+      }
+
+      a.source-path:hover,
+      a.source-path:focus-visible {
+        border-color: var(--accent);
+        color: var(--text);
+        outline: none;
+      }
+
+      .inspector-action {
+        width: 100%;
+        min-height: 40px;
+        margin-top: 18px;
+        padding: 8px 12px;
+        border: 1px solid var(--accent);
+        border-radius: 11px;
+        background: var(--accent-soft);
+        color: #dce8ff;
+        cursor: pointer;
+      }
+
+      .inspector-action:hover,
+      .inspector-action:focus-visible {
+        background: rgba(130, 170, 255, 0.24);
+        outline: none;
+      }
+
+      .guardrails {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .guardrail-card {
+        padding: 17px;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: rgba(17, 23, 32, 0.86);
+      }
+
+      .guardrail-card strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .guardrail-card p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      footer {
+        margin-top: 18px;
+        color: var(--faint);
+        font-size: 11px;
+        text-align: center;
+      }
+
+      @media (max-width: 1280px) {
+        .map-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .inspector {
+          min-height: 0;
+        }
+
+        .guardrails {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 960px) {
+        .page-shell {
+          width: min(100% - 20px, 760px);
+          padding-top: 10px;
+        }
+
+        .hero {
+          padding: 22px;
+          border-radius: 18px;
+        }
+
+        .journeys {
+          grid-template-columns: 1fr;
+        }
+
+        .usage-hint,
+        .legend {
+          display: none;
+        }
+
+        .map-layout {
+          padding: 9px;
+        }
+
+        .diagram-header {
+          min-height: 0;
+        }
+
+        .diagram {
+          height: auto !important;
+          min-height: 0;
+          padding: 14px;
+          background-size: 24px 24px, 24px 24px, auto;
+        }
+
+        .edge-layer,
+        .edge-controls {
+          display: none;
+        }
+
+        .node-layer {
+          position: relative;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .node {
+          position: relative;
+          top: auto !important;
+          left: auto !important;
+          width: auto;
+          min-height: 142px;
+        }
+
+        .mobile-relations {
+          display: block;
+          margin-top: 14px;
+          padding-top: 14px;
+          border-top: 1px solid var(--line);
+        }
+
+        .mobile-relations h4 {
+          margin: 0 0 9px;
+          color: var(--muted);
+          font-size: 11px;
+        }
+
+        .mobile-relation {
+          display: flex;
+          width: 100%;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-height: 42px;
+          margin-top: 7px;
+          padding: 9px 11px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          background: rgba(20, 28, 39, 0.92);
+          color: #c5d1e3;
+          font-size: 11px;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .mobile-relation:hover,
+        .mobile-relation:focus-visible,
+        .mobile-relation.is-selected {
+          border-color: var(--accent);
+          outline: none;
+        }
+
+        .mobile-relation span:last-child {
+          color: var(--accent);
+        }
+      }
+
+      @media (max-width: 620px) {
+        .map-toolbar {
+          align-items: flex-start;
+        }
+
+        .breadcrumbs {
+          flex-wrap: wrap;
+        }
+
+        .node-layer,
+        .guardrails {
+          grid-template-columns: 1fr;
+        }
+
+        .node {
+          min-height: 128px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Learning Companion · Design Target</p>
+        <h1>Media AI 与通用 Workbench 问答基建</h1>
+        <p class="hero-copy">
+          目标不是给 Video Workbench 临时塞几个 AI 按钮，而是建立一条可复用主路：媒体打开后立即播放，字幕与配音按 Cue
+          增量可用；每个 Workbench 自己描述选区语义与上下文，公共问答层统一管理会话体验，再通过
+          TaskDefinition、GenerationTask 和 AgentProvider 执行。
+        </p>
+        <div class="hero-meta">
+          <span class="meta-chip">代码基线：origin/main d5951f9</span>
+          <span class="meta-chip">文档状态：目标架构，非完成声明</span>
+          <span class="meta-chip">更新：2026-08-13</span>
+        </div>
+        <div class="journeys" aria-label="核心用户旅程">
+          <button class="journey-button" type="button" data-open-view="workflow-localization">
+            <span class="journey-number">FLOW 01</span>
+            <span class="journey-title">翻译字幕与人声克隆配音</span>
+            <span class="journey-copy">原视频立即可播，字幕、翻译与克隆配音以时间 Cue 流式到达。</span>
+          </button>
+          <button class="journey-button" type="button" data-open-view="workflow-visual-qa">
+            <span class="journey-number">FLOW 02</span>
+            <span class="journey-title">视频框选 + 截帧问答</span>
+            <span class="journey-copy">框选画面区域，可信地截取原始分辨率图像，并注入邻近字幕和时间上下文。</span>
+          </button>
+          <button class="journey-button" type="button" data-open-view="workflow-summary">
+            <span class="journey-number">FLOW 03</span>
+            <span class="journey-title">视频快速摘要</span>
+            <span class="journey-copy">复用字幕缓存与稀疏关键帧，不让 Agent 从头盲读整段视频。</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="map-shell" aria-label="交互式设计地图">
+          <div class="map-toolbar">
+            <button class="toolbar-button" id="backButton" type="button" aria-label="返回上层">←</button>
+            <button class="toolbar-button" id="overviewButton" type="button" aria-label="回到总览">⌂</button>
+            <nav class="breadcrumbs" id="breadcrumbs" aria-label="层级路径"></nav>
+            <span class="usage-hint">单击查看 · 双击或 Enter 进入</span>
+          </div>
+
+          <div class="map-layout">
+            <section class="diagram-panel">
+              <div class="diagram-header">
+                <div>
+                  <h2 class="diagram-title" id="viewTitle"></h2>
+                  <p class="diagram-summary" id="viewSummary"></p>
+                </div>
+                <div class="legend" aria-label="状态图例">
+                  <span class="legend-item"><span class="legend-dot implemented"></span>已实现基建</span>
+                  <span class="legend-item"><span class="legend-dot planned"></span>待实现</span>
+                  <span class="legend-item"><span class="legend-dot mixed"></span>已有底座 + 待扩展</span>
+                  <span class="legend-item"><span class="legend-dot workflow"></span>用户流程</span>
+                </div>
+              </div>
+
+              <div class="diagram" id="diagram" tabindex="-1">
+                <svg class="edge-layer" id="edgeLayer" aria-hidden="true">
+                  <defs>
+                    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                      <path d="M 0 0 L 9 4.5 L 0 9 z" fill="#52647e"></path>
+                    </marker>
+                    <marker id="arrowActive" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                      <path d="M 0 0 L 9 4.5 L 0 9 z" fill="#82aaff"></path>
+                    </marker>
+                  </defs>
+                  <g id="edgePaths"></g>
+                  <g id="boundaryPorts"></g>
+                </svg>
+                <div class="edge-controls" id="edgeControls"></div>
+                <div class="node-layer" id="nodeLayer"></div>
+                <div class="mobile-relations" id="mobileRelations"></div>
+              </div>
+            </section>
+
+            <aside class="inspector" id="inspector" aria-live="polite"></aside>
+          </div>
+        </section>
+
+        <section class="guardrails" aria-label="设计护栏">
+          <article class="guardrail-card">
+            <strong>播放不等待 AI</strong>
+            <p>打开媒体首先进入原始播放链；分离、转写、翻译与配音全部作为可取消后台作业。</p>
+          </article>
+          <article class="guardrail-card">
+            <strong>Workbench 拥有媒体语义</strong>
+            <p>框选、页码、DOM Range、CFI、时间段等 Anchor 都由具体 Workbench 创建和解释。</p>
+          </article>
+          <article class="guardrail-card">
+            <strong>公共问答层不直连 Provider</strong>
+            <p>它只统一会话 UI 与任务编排；Agent 请求仍走 TaskDefinition → GenerationTask → AgentProvider。</p>
+          </article>
+          <article class="guardrail-card">
+            <strong>派生产物进入 Asset 体系</strong>
+            <p>缓存使用 Artifact；需要长期学习、引用或编辑的配音视频/摘要再成为 Asset、Attachment 或 Link。</p>
+          </article>
+        </section>
+      </main>
+
+      <footer>该图将“当前已实现的底座”与“目标实现”分开标记；点击节点可查看职责、边界和源码依据。</footer>
+    </div>
+
+    <script>
+      const statusLabels = {
+        implemented: '已实现',
+        planned: '待实现',
+        mixed: '已有底座 + 待扩展',
+        workflow: '用户流程',
+      };
+
+      const globalRelations = {
+        'r.workbench-conversation': {
+          label: '语义上下文',
+          summary: 'Workbench 把媒体语义转换成可验证的 Context Contribution；公共问答层不猜测 Anchor 的含义。',
+          contract: [
+            '输入包含 conversationId、用户问题、Workbench 语义 Anchor 和已物化上下文。',
+            'Renderer 不得注入任意本地路径；文件物化在可信 Main 侧完成。',
+            '关系进入公共问答层后只保留通用消息、任务和生命周期语义。',
+          ],
+          sources: [
+            'src/shared/workbench/interaction.ts',
+            'src/shared/workbench/anchor.ts',
+            'docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md',
+          ],
+          focusView: 'conversation-foundation',
+        },
+        'r.conversation-generation': {
+          label: 'GenerationTask',
+          summary: '一条用户请求对应一个 GenerationTask；连续对话通过稳定 workspace instance key 复用 Provider Session。',
+          contract: [
+            '公共问答层创建任务，不直接调用 AgentProvider。',
+            'TaskDefinition 决定 Provider Selector、系统提示、工具、Workspace 与 Instruction。',
+            '是否显示 assistant delta 是能力开关；最终 assistantOutput 始终保存。',
+          ],
+          sources: [
+            'src/main/generation/contracts/task-definition.ts',
+            'src/main/generation/generation-task-agent-session.ts',
+            'src/main/generation/contracts/agent-message.ts',
+          ],
+          focusView: 'generation-runtime',
+        },
+        'r.generation-data': {
+          label: '结果与指标',
+          summary: 'GenerationTask 持久化任务状态、最终回答、Provider Session 与 metrics；具体 Workbench 决定是否再生成 Attachment 或 Asset。',
+          contract: [
+            'TaskDefinition.process() 负责解释结果，不要求全局统一产物契约。',
+            'Attachment、Artifact、派生 Asset 的创建语义留在具体功能中。',
+            'AssetReference/Link 继续使用 projectId/assetId 关联，不绑死到 Provider。',
+          ],
+          sources: [
+            'src/main/generation/generation-task-agent-session.ts',
+            'src/main/attachments/attachment-service.ts',
+            'src/main/asset-associations/asset-association-service.ts',
+          ],
+          focusView: 'data-lifecycle',
+        },
+        'r.components-media': {
+          label: '已安装本地能力',
+          summary: 'External Library 基建负责下载、校验、安装和能力探测；Media Runtime 只消费已经 ready 的组件。',
+          contract: [
+            '组件按需安装，体验目标接近 LibreOffice，而不是要求用户自行搭 Python 环境。',
+            '平台安装器、模型包和能力探测与具体作业调度解耦。',
+            '组件不可用时媒体播放仍然正常，只禁用对应 AI 能力并给出明确状态。',
+          ],
+          sources: [
+            'src/main/external-libraries/external-library-service.ts',
+            'src/main/external-libraries/external-library-installation-workflow.ts',
+            'docs/superpowers/specs/2026-07-30-external-library-runtime-design.md',
+          ],
+          focusView: 'media-components',
+        },
+        'r.workbench-media': {
+          label: '媒体后台作业',
+          summary: 'Video/Audio Workbench 发起转写、分离、局部截帧和配音作业，但不等待作业完成才显示媒体。',
+          contract: [
+            'Workbench 负责触发意图、当前时间和选择区域。',
+            'Media Runtime 负责解码、调度、增量事件与取消。',
+            '同一源修订与 Producer 版本可复用 Artifact，避免重复长任务。',
+          ],
+          sources: [
+            'src/workbenches/video/renderer-actions.ts',
+            'src/workbenches/video/shared.ts',
+            'src/main/artifacts/asset-artifact-service.ts',
+          ],
+          focusView: 'media-runtime',
+        },
+        'r.media-data': {
+          label: 'Artifact / 派生 Asset',
+          summary: '中间缓存进入 Artifact；可长期学习和再次引用的配音版本、摘要等再进入 Asset 及其关联体系。',
+          contract: [
+            'transcript、stems、voice-profile、dub-track 以版本化 Artifact key 缓存。',
+            '源文件修订或 Producer 版本改变时缓存失效。',
+            '导出的配音视频作为新 Asset，并以 AssetReference/Link 指回源视频。',
+          ],
+          sources: [
+            'src/main/artifacts/asset-artifact-service.ts',
+            'src/main/artifacts/asset-artifact-registry.ts',
+            'src/main/asset-associations/asset-association-service.ts',
+          ],
+          focusView: 'data-lifecycle',
+        },
+      };
+
+      const e = (relationId, from, to, labelAt, meta = undefined, via = []) => ({
+        relationId,
+        from,
+        to,
+        labelAt,
+        meta,
+        via,
+      });
+
+      const views = {
+        overview: {
+          id: 'overview',
+          title: '第一层：六个大模块',
+          summary: '先看主线：Workbench 采集意图，公共问答层统一交互，Generation 执行 Agent；本地组件驱动 Media Runtime，结果进入统一数据生命周期。',
+          parentId: null,
+          height: 650,
+          goals: [
+            '把产品功能、共享基建和本地推理运行时分开。',
+            '跨模块关系只画一次主线；点击节点再进入细节。',
+            '绿色/蓝色是已有底座，黄色是本轮之后需要实现的目标。',
+          ],
+          sources: [
+            'src/workbenches/catalog/register-main-workbenches.ts',
+            'src/main/generation/contracts/task-definition.ts',
+            'src/main/artifacts/asset-artifact-service.ts',
+          ],
+          nodes: [
+            {
+              id: 'overview.workbench',
+              kind: 'Renderer + Main Contributions',
+              title: 'Media Workbenches',
+              status: 'implemented',
+              x: 4,
+              y: 72,
+              childViewId: 'workbench-media',
+              summary: 'Video / Audio 工作台负责播放、用户选择与媒体特有 Anchor。',
+              details: [
+                '现有 Video、Audio Workbench 已通过统一 Catalog 注册。',
+                '时间段 Anchor 已存在；画面框选 Anchor 与 AI 控件仍待补充。',
+                '媒体语义不会上收到 Host 里统一猜测。',
+              ],
+              sources: [
+                'src/workbenches/catalog/register-main-workbenches.ts',
+                'src/workbenches/video/shared.ts',
+                'src/workbenches/audio/shared.ts',
+              ],
+            },
+            {
+              id: 'overview.conversation',
+              kind: 'Shared Renderer Foundation',
+              title: 'Workbench Conversation',
+              status: 'planned',
+              x: 38,
+              y: 72,
+              childViewId: 'conversation-foundation',
+              summary: '统一消息列表、提交/取消/重试、任务投影和 Provider 就绪状态。',
+              details: [
+                '公共层只拥有聊天体验与任务生命周期。',
+                '各 Workbench 注入上下文、Anchor、TaskDefinition 和结果动作。',
+                'Renderer 历史用于展示，不重复拼接成 Provider 上下文。',
+              ],
+              sources: [
+                'docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md',
+                'src/workbenches/document-ai/renderer/document-ai-client.ts',
+              ],
+            },
+            {
+              id: 'overview.generation',
+              kind: 'Main Process',
+              title: 'Generation + Agent',
+              status: 'implemented',
+              x: 72,
+              y: 72,
+              childViewId: 'generation-runtime',
+              summary: '声明任务、恢复状态、定位 Session，并交给当前 Selector 选择的 AgentProvider。',
+              details: [
+                'TaskDefinition → GenerationTask → TaskAgentSession → AgentProvider 主链已存在。',
+                '稳定 instance key 可跨 GenerationTask 继续同一个 Provider Session。',
+                'assistantOutput、metrics 和 Session 标识由任务保存。',
+              ],
+              sources: [
+                'src/main/generation/contracts/task-definition.ts',
+                'src/main/generation/generation-task-agent-session.ts',
+                'src/main/agents/agent-provider-service.ts',
+              ],
+            },
+            {
+              id: 'overview.components',
+              kind: 'External Runtime',
+              title: 'Media Components',
+              status: 'mixed',
+              x: 4,
+              y: 390,
+              childViewId: 'media-components',
+              summary: '复用 External Library 安装机制，提供 FFmpeg、转写、分离与声音克隆能力。',
+              details: [
+                '下载、SHA-256 校验、安装状态与进度已有通用底座。',
+                'Media AI 组件清单、模型包和能力探测尚未接入。',
+                '用户不需要自己维护 Python、pip 和模型路径。',
+              ],
+              sources: [
+                'src/main/external-libraries/external-library-service.ts',
+                'src/main/external-libraries/external-library-installation-workflow.ts',
+              ],
+            },
+            {
+              id: 'overview.media-runtime',
+              kind: 'Main Process',
+              title: 'Media AI Runtime',
+              status: 'planned',
+              x: 38,
+              y: 390,
+              childViewId: 'media-runtime',
+              summary: '统一调度转写、分离、翻译和 Cue 级配音，持续推送可取消的增量事件。',
+              details: [
+                '原始播放与 AI 作业并行，后台任务不锁住 Workbench 切换。',
+                '优先当前播放区字幕和局部预览，再做全视频分离。',
+                '作业结果按 Producer 版本进入 Artifact。',
+              ],
+              sources: [
+                'src/main/artifacts/asset-artifact-service.ts',
+                'src/workbenches/video/renderer-actions.ts',
+              ],
+            },
+            {
+              id: 'overview.data',
+              kind: 'Project Domain',
+              title: 'Asset Data Lifecycle',
+              status: 'implemented',
+              x: 72,
+              y: 390,
+              childViewId: 'data-lifecycle',
+              summary: 'Asset、Anchor、Artifact、Attachment、Reference 与 Link 各自承担清晰的数据职责。',
+              details: [
+                'Asset 是项目资料和派生资料的主实体。',
+                'Artifact 是可再生缓存，不等同于用户资料。',
+                'Attachment 与 Association 都通过 assetId 关联，不塞进 Asset 大对象。',
+              ],
+              sources: [
+                'src/main/assets/asset-service.ts',
+                'src/main/artifacts/asset-artifact-service.ts',
+                'src/main/attachments/attachment-service.ts',
+                'src/main/asset-associations/asset-association-service.ts',
+              ],
+            },
+          ],
+          segments: [
+            e('r.workbench-conversation', { node: 'overview.workbench', side: 'right' }, { node: 'overview.conversation', side: 'left' }, [0.32, 0.055]),
+            e('r.conversation-generation', { node: 'overview.conversation', side: 'right' }, { node: 'overview.generation', side: 'left' }, [0.66, 0.055]),
+            e('r.components-media', { node: 'overview.components', side: 'right' }, { node: 'overview.media-runtime', side: 'left' }, [0.32, 0.91]),
+            e('r.media-data', { node: 'overview.media-runtime', side: 'right' }, { node: 'overview.data', side: 'left' }, [0.66, 0.91]),
+            e('r.workbench-media', { node: 'overview.workbench', side: 'bottom' }, { node: 'overview.media-runtime', side: 'top' }, [0.30, 0.40], undefined, [[0.19, 0.48], [0.49, 0.48]]),
+            e('r.generation-data', { node: 'overview.generation', side: 'bottom' }, { node: 'overview.data', side: 'top' }, [0.93, 0.48]),
+          ],
+        },
+
+        'workbench-media': {
+          id: 'workbench-media',
+          title: 'Media Workbenches：只拥有媒体语义',
+          summary: '播放与选区留在具体 Workbench；共享 Adapter 可复用机械事件，但 Video/Audio 自己决定 Anchor、上下文物化和 AI 动作。',
+          parentId: 'overview',
+          height: 650,
+          goals: [
+            '首次加载永远先显示媒体，不等待转写或分离。',
+            'Video 与 Audio 平铺注册，不让 bootstrap 知道具体媒体功能。',
+            '框选、时间段与当前播放上下文在 Workbench 内形成语义。',
+          ],
+          sources: [
+            'src/workbenches/catalog/register-main-workbenches.ts',
+            'src/shared/workbench/interaction.ts',
+            'src/workbenches/video/renderer-actions.ts',
+          ],
+          nodes: [
+            {
+              id: 'workbench.video', kind: 'Workbench', title: 'Video Workbench', status: 'mixed', x: 4, y: 72,
+              summary: '已有视频播放、时间段 Anchor 与动作入口；补充框选 Overlay、字幕轨和 AI 面板触发。',
+              details: ['播放控件立即可用。', '新增 video.frame-region Anchor：timestamp + 归一化矩形 + 源尺寸。', '“解释当前画面”现有动作占位可转为公共问答入口。'],
+              sources: ['src/workbenches/video/shared.ts', 'src/workbenches/video/renderer-actions.ts'],
+            },
+            {
+              id: 'workbench.audio', kind: 'Workbench', title: 'Audio Workbench', status: 'mixed', x: 4, y: 390,
+              summary: '沿用相同媒体作业和字幕/配音协议，但上下文以时间段、波形选择和转写为主。',
+              details: ['已有 audio.time-range Anchor。', '不复制 Video 的 DOM 或画面框选逻辑。', '复用 Media Runtime、Conversation UI 和 Provider Selector。'],
+              sources: ['src/workbenches/audio/shared.ts', 'src/workbenches/catalog/register-main-workbenches.ts'],
+            },
+            {
+              id: 'workbench.interaction', kind: 'Shared Contract', title: 'Interaction + Anchor', status: 'implemented', x: 38, y: 72,
+              summary: 'Host 保存统一 Interaction Snapshot，具体 Workbench 生成 ContentAnchorTarget。',
+              details: ['focus 可以携带任意版本化 ContentAnchorTarget。', 'inputs 保存临时用户输入，但不替代持久 Anchor。', 'Host 只校验和运输，不解释视频矩形。'],
+              sources: ['src/shared/workbench/interaction.ts', 'src/shared/workbench/anchor.ts'],
+            },
+            {
+              id: 'workbench.controls', kind: 'Renderer Feature', title: 'Media AI Controls', status: 'planned', x: 38, y: 390,
+              summary: '字幕语言、声音克隆、框选问答和快速摘要的触发 UI，由 Workbench 注册到自己的工具区。',
+              details: ['显示安装/能力状态，但不自己安装运行时。', '作业开始后允许继续播放和切换 Asset。', '按 Cue 展示字幕与配音 ready 状态。'],
+              sources: ['预计：src/workbenches/video/renderer/media-ai/', '预计：src/workbenches/audio/renderer/media-ai/'],
+            },
+            {
+              id: 'workbench.context', kind: 'Workbench Extension', title: 'Context Contributor', status: 'planned', x: 72, y: 72,
+              summary: '把 Anchor 转成“本轮问答需要哪些可信上下文”的声明，而不是直接拼 Provider Prompt。',
+              details: ['Video 可贡献截帧、邻近字幕、时间戳与可选音频片段。', '贡献物先由 Main 侧物化，再交给 Instruction 组织消息。', '其他 Workbench 可独立实现 PDF 页区、EPUB CFI、HTML DOM Range。'],
+              sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md', 'src/main/generation/contracts/agent-message.ts'],
+            },
+            {
+              id: 'workbench.adapter', kind: 'Renderer Integration', title: 'Conversation Adapter', status: 'planned', x: 72, y: 390,
+              summary: '注册对话描述、TaskDefinition ID、Context Contributor 与回答后的可选动作。',
+              details: ['不直接调用 Provider。', '选择稳定 conversationId 时可跨 GenerationTask 续聊。', 'Attachment/派生 Asset 动作由 Workbench 决定。'],
+              sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md', 'src/workbenches/document-ai/renderer/document-ai-client.ts'],
+            },
+          ],
+          segments: [
+            e('workbench.video-interaction', { node: 'workbench.video', side: 'right' }, { node: 'workbench.interaction', side: 'left' }, [0.32, 0.055], {
+              label: '生成视频 Anchor', summary: 'Video Workbench 把当前时间、时间段或框选矩形编码成版本化 Anchor。',
+              contract: ['坐标使用归一化源画面坐标。', 'Renderer 只提交语义参数，不提交任意文件路径。'],
+              sources: ['src/shared/workbench/anchor.ts', 'src/workbenches/video/shared.ts'],
+            }),
+            e('workbench.audio-controls', { node: 'workbench.audio', side: 'right' }, { node: 'workbench.controls', side: 'left' }, [0.32, 0.91], {
+              label: '媒体操作', summary: 'Audio Workbench 使用同一控制协议发起转写、翻译与配音。',
+              contract: ['操作绑定 assetId 与时间范围。', '播放状态不依赖后台任务完成。'], sources: ['src/workbenches/audio/shared.ts'],
+            }),
+            e('workbench.interaction-context', { node: 'workbench.interaction', side: 'right' }, { node: 'workbench.context', side: 'left' }, [0.66, 0.055], {
+              label: '解释 Anchor', summary: '具体 Workbench 的 Contributor 解释自身 Anchor，并声明需要物化的上下文。',
+              contract: ['共享层不 switch anchorType。', '未知版本必须显式拒绝或降级。'], sources: ['src/shared/workbench/interaction.ts'],
+            }),
+            e('workbench.controls-adapter', { node: 'workbench.controls', side: 'right' }, { node: 'workbench.adapter', side: 'left' }, [0.66, 0.91], {
+              label: '打开/提交对话', summary: '媒体控件调用公共 Conversation Adapter，而不是复制聊天状态机。',
+              contract: ['提交、取消、重试与 stale 去重由共享层管理。', '面板位置和媒体高亮仍归 Workbench。'], sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md'],
+            }),
+            e('r.workbench-conversation', { node: 'workbench.adapter', side: 'right' }, { boundary: 'right', at: 0.68 }, [0.90, 0.95]),
+            e('r.workbench-media', { node: 'workbench.controls', side: 'bottom' }, { boundary: 'bottom', at: 0.49 }, [0.58, 0.94]),
+          ],
+        },
+
+        'conversation-foundation': {
+          id: 'conversation-foundation',
+          title: 'Workbench Conversation：统一体验，不吞掉语义',
+          summary: '共享层给所有 Workbench 一套问答入口、状态机和任务投影；每个功能通过 Descriptor 与 Context Contributor 注入差异。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['避免 PDF、EPUB、Video 各自重写聊天 UI。', '共享 Task 生命周期，不共享媒体语义。', '会话历史只是可视化投影，Provider Session 才是上下文事实源。'],
+          sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md', 'src/workbenches/document-ai/renderer/document-ai-client.ts'],
+          nodes: [
+            {
+              id: 'conversation.descriptor', kind: 'Registration', title: 'Conversation Descriptor', status: 'planned', x: 4, y: 72,
+              summary: '稳定业务槽位：声明 selector、TaskDefinition、输入工厂和能力开关。',
+              details: ['由需要问答的 Workbench 注册。', '声明是否支持取消、重试、runtime assistant events。', '注册后共享设置/面板可自动发现。'],
+              sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md'],
+            },
+            {
+              id: 'conversation.context', kind: 'Extension Point', title: 'Context Contributors', status: 'planned', x: 38, y: 72,
+              summary: '组合当前 Asset、Anchor、选区、截图、转写窗口和用户附加信息。',
+              details: ['Contributor 由具体 Workbench 实现。', '输出必须可校验并能在 Main 侧可信物化。', 'Instruction 最终把材料转为 AgentUserMessage。'],
+              sources: ['src/main/generation/contracts/generation-instruction.ts', 'src/main/generation/contracts/agent-message.ts'],
+            },
+            {
+              id: 'conversation.ui', kind: 'Shared Renderer', title: 'Conversation UI', status: 'planned', x: 72, y: 72,
+              summary: '统一消息列表、Composer、状态、耗时、错误、取消与重试。',
+              details: ['没有模型配置时必须就地报错。', '支持 final-only，也允许按需求显示 runtime delta。', 'WorkBench 决定面板停靠位置与 Anchor 高亮。'],
+              sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md'],
+            },
+            {
+              id: 'conversation.actions', kind: 'Extension Point', title: 'Answer Action Slots', status: 'planned', x: 4, y: 390,
+              summary: '回答后由 Workbench 提供“保存为笔记、生成 Asset、跳转时间点”等动作。',
+              details: ['共享层不自动创建 Attachment。', '动作拿到 task/result/context，但不能绕过领域 Service。', 'Video 可提供“保存为时间点笔记”或“生成讲义”。'],
+              sources: ['src/main/attachments/attachment-service.ts', 'src/main/asset-associations/asset-association-service.ts'],
+            },
+            {
+              id: 'conversation.controller', kind: 'Shared Renderer', title: 'Conversation Controller', status: 'planned', x: 38, y: 390,
+              summary: '维护 conversationId、消息投影、每条消息的 taskId 和 submit/cancel/retry 状态。',
+              details: ['一条用户请求创建一个 GenerationTask。', '相同 conversationId 可映射到稳定 Provider Session。', '重启后从 Task/Attachment 状态恢复，而非伪造 Provider history。'],
+              sources: ['src/workbenches/document-ai/renderer/document-ai-client.ts', 'src/main/generation/generation-task-service.ts'],
+            },
+            {
+              id: 'conversation.bridge', kind: 'Task Bridge', title: 'GenerationTask Bridge', status: 'mixed', x: 72, y: 390,
+              summary: '复用现有任务 IPC，把通用 Conversation 请求转换为具体 TaskDefinition 输入。',
+              details: ['GenerationTask 基建已实现。', 'Workbench 仍选择自己的 taskDefinitionId。', '公共 Bridge 不引入第二条 Provider 调用路径。'],
+              sources: ['src/main/generation/generation-task-service.ts', 'src/main/generation/contracts/task-definition.ts'],
+            },
+          ],
+          segments: [
+            e('conversation.descriptor-controller', { node: 'conversation.descriptor', side: 'bottom' }, { node: 'conversation.controller', side: 'top' }, [0.23, 0.48], {
+              label: '注册业务槽位', summary: 'Descriptor 告诉 Controller 如何创建当前 Workbench 的任务。',
+              contract: ['selectorId 与 taskDefinitionId 必须稳定。', '业务默认值由注册方提供。'], sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md'],
+            }),
+            e('conversation.context-controller', { node: 'conversation.context', side: 'bottom' }, { node: 'conversation.controller', side: 'top' }, [0.90, 0.48], {
+              label: 'Context Bundle', summary: 'Contributor 的结构化输出在任务创建前被验证并物化。',
+              contract: ['禁止 Renderer 任意路径。', '允许 text/local-image/local-audio 等消息部件。'], sources: ['src/main/generation/contracts/agent-message.ts'],
+            }),
+            e('conversation.ui-controller', { node: 'conversation.ui', side: 'bottom' }, { node: 'conversation.controller', side: 'top' }, [0.80, 0.48], {
+              label: '用户意图 / 状态', summary: 'UI 发起 submit/cancel/retry，并订阅统一的任务投影。',
+              contract: ['UI 不持有 Provider 客户端。', 'Task 完成与 runtime events 分开处理。'], sources: ['src/workbenches/document-ai/renderer/document-ai-client.ts'],
+            }),
+            e('conversation.controller-actions', { node: 'conversation.controller', side: 'left' }, { node: 'conversation.actions', side: 'right' }, [0.31, 0.91], {
+              label: '完成后的扩展动作', summary: '完成结果交给 Workbench 注册的动作槽。',
+              contract: ['动作可选。', '领域写入通过 AttachmentService/AssetService。'], sources: ['src/main/attachments/attachment-service.ts'],
+            }),
+            e('conversation.controller-bridge', { node: 'conversation.controller', side: 'right' }, { node: 'conversation.bridge', side: 'left' }, [0.66, 0.91], {
+              label: 'create / cancel', summary: 'Controller 用统一任务 API 创建、取消和观察 GenerationTask。',
+              contract: ['一条请求一个 taskId。', '同一 conversationId 可解析为稳定 instance key。'], sources: ['src/main/generation/generation-task-service.ts'],
+            }),
+            e('r.workbench-conversation', { boundary: 'top', at: 0.50 }, { node: 'conversation.context', side: 'top' }, [0.62, 0.04]),
+            e('r.conversation-generation', { node: 'conversation.bridge', side: 'right' }, { boundary: 'right', at: 0.68 }, [0.90, 0.95]),
+          ],
+        },
+
+        'generation-runtime': {
+          id: 'generation-runtime',
+          title: 'Generation + Agent：唯一执行主路',
+          summary: 'TaskDefinition 声明能力，GenerationTask 保存状态，TaskAgentSession 解析工作区与 Session，Selector 决定当前 Provider/模型配置。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['不为媒体问答另建 Provider 直连通道。', '一次请求一个任务，但 Session 可以跨任务复用。', 'TaskDefinition 保有对工具、Workspace 和结果解释的自由。'],
+          sources: ['src/main/generation/contracts/task-definition.ts', 'src/main/generation/generation-task-agent-session.ts', 'src/main/agents/agent-provider-service.ts'],
+          nodes: [
+            {
+              id: 'generation.selector', kind: 'Configuration Slot', title: 'Provider Selector', status: 'implemented', x: 4, y: 72,
+              summary: '按业务槽位选择 Connection、模型与思考力度；不与登录状态机混成一个对象。',
+              details: ['Generation Center 与 Workbench AI 可使用不同 Selector。', '新任务读取最新选择。', 'Provider 自己定义可用模型和 Connection。'],
+              sources: ['src/main/agents/agent-provider-service.ts', 'src/main/agents/agent-provider-selector-registry.ts', 'src/main/settings/json-settings-repository.ts'],
+            },
+            {
+              id: 'generation.definition', kind: 'Declarative Contract', title: 'TaskDefinition', status: 'implemented', x: 38, y: 72,
+              summary: '定义 Instruction、Workspace、AssetReference、工具、Skill、MCP 和 process()。',
+              details: ['媒体快速摘要、视频问答、字幕翻译分别注册定义。', 'process() 可多次 call Agent 并自己验证结果。', '没有全局强制产物格式或默认执行策略。'],
+              sources: ['src/main/generation/contracts/task-definition.ts', 'src/main/generation/contracts/generation-instruction.ts'],
+            },
+            {
+              id: 'generation.service', kind: 'Application Service', title: 'GenerationTaskService', status: 'implemented', x: 72, y: 72,
+              summary: '创建、恢复、取消任务，并只把未完成任务重新加载到内存。',
+              details: ['持久化任务阶段与结果。', '任务完成后仍保留历史记录但不常驻内存。', '通过 partial index 查询未完成任务。'],
+              sources: ['src/main/generation/generation-task-service.ts', 'src/main/generation/generation-task-database.ts'],
+            },
+            {
+              id: 'generation.task-session', kind: 'Execution Context', title: 'TaskAgentSession', status: 'implemented', x: 4, y: 390,
+              summary: '当前任务内的 Agent 调用入口；根据 Workspace instance key 找到可复用 Provider Session。',
+              details: ['对象生命周期是 task-scoped，Provider thread 生命周期不是。', 'callKey 用于同一任务恢复和去重。', '保存 assistantOutput、sessionId、executionId 与 metrics。'],
+              sources: ['src/main/generation/contracts/task-definition.ts', 'src/main/generation/generation-task-agent-session.ts'],
+            },
+            {
+              id: 'generation.provider', kind: 'Provider Boundary', title: 'AgentProvider', status: 'implemented', x: 38, y: 390,
+              summary: 'Codex、未来 Claude Code 等实现统一 Agent 执行能力，并拥有各自 Connection。',
+              details: ['Provider 负责登录/API Connection 与模型适配。', '上层核心模型不被 Codex RPC 数据结构带着走。', '工具与权限在 Provider 层翻译为具体运行时能力。'],
+              sources: ['src/main/agents/agent-provider.ts', 'src/main/agents/providers/codex-agent-provider.ts'],
+            },
+            {
+              id: 'generation.session', kind: 'File-backed Mapping', title: 'Workspace Session', status: 'implemented', x: 72, y: 390,
+              summary: 'workspaceKey + instanceKey + providerId 映射到 Provider 内部 Session/thread。',
+              details: ['instanceKey=conversationId 可跨 GenerationTask 续聊。', 'instanceKey=taskId 可隔离一次生成任务。', '切换 Connection 不人为销毁 thread 映射。'],
+              sources: ['src/main/agents/sessions/', 'src/main/agents/sessions/agent-session-service.ts'],
+            },
+          ],
+          segments: [
+            e('generation.selector-service', { node: 'generation.selector', side: 'right' }, { node: 'generation.service', side: 'left' }, [0.48, 0.42], {
+              label: '选择执行配置', summary: '任务创建时快照当前 Selector 选择，恢复任务使用已保存配置。',
+              contract: ['Connection 必须 ready。', '模型与思考力度独立于登录检查。'], sources: ['src/main/agents/agent-provider-service.ts'],
+            }, [[0.27, 0.52], [0.70, 0.52]]),
+            e('generation.definition-service', { node: 'generation.definition', side: 'right' }, { node: 'generation.service', side: 'left' }, [0.66, 0.055], {
+              label: 'definitionId + input', summary: 'Service 使用注册的 TaskDefinition 校验输入并创建任务。',
+              contract: ['定义必须可稳定重载。', '输入 schema 失败时任务不得启动。'], sources: ['src/main/generation/contracts/task-definition.ts'],
+            }),
+            e('generation.service-task-session', { node: 'generation.service', side: 'bottom' }, { node: 'generation.task-session', side: 'top' }, [0.58, 0.55], {
+              label: '执行 process()', summary: 'GenerationTask 执行 Definition.process()，并注入 TaskAgentSession。',
+              contract: ['process() 可以零次或多次调用 Agent。', 'checkpoint 与结果写回任务。'], sources: ['src/main/generation/generation-task-service.ts'],
+            }, [[0.84, 0.47], [0.16, 0.47]]),
+            e('generation.task-provider', { node: 'generation.task-session', side: 'right' }, { node: 'generation.provider', side: 'left' }, [0.32, 0.91], {
+              label: 'Agent call', summary: 'TaskAgentSession 用快照配置调用选中的 AgentProvider。',
+              contract: ['最终 assistantOutput 始终返回。', 'runtime event 是可选显示能力。'], sources: ['src/main/generation/generation-task-agent-session.ts'],
+            }),
+            e('generation.provider-session', { node: 'generation.provider', side: 'right' }, { node: 'generation.session', side: 'left' }, [0.66, 0.91], {
+              label: 'create / resume thread', summary: 'Provider 根据映射创建或恢复自己的 Session/thread。',
+              contract: ['上下文由 Provider Session 维护。', 'Renderer 消息历史不重复注入。'], sources: ['src/main/agents/sessions/', 'src/main/agents/providers/codex-agent-provider.ts'],
+            }),
+            e('r.conversation-generation', { boundary: 'top', at: 0.84 }, { node: 'generation.service', side: 'top' }, [0.52, 0.04]),
+            e('r.generation-data', { node: 'generation.service', side: 'right' }, { boundary: 'right', at: 0.68 }, [0.90, 0.95]),
+          ],
+        },
+
+        'media-components': {
+          id: 'media-components',
+          title: 'Media Components：一键安装而非环境教程',
+          summary: '复用现有 External Library 生命周期；新增一个可探测的 Media AI Bundle，把平台二进制、模型包和版本兼容封装起来。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['用户只看到安装、进度、取消与失败原因。', '组件版本和模型版本进入 Artifact Producer version。', '允许只安装所需能力，不强制一次下载全部模型。'],
+          sources: ['src/main/external-libraries/', 'docs/superpowers/specs/2026-07-30-external-library-runtime-design.md'],
+          nodes: [
+            {
+              id: 'components.service', kind: 'Existing Foundation', title: 'ExternalLibraryService', status: 'implemented', x: 4, y: 72,
+              summary: '统一状态、下载、校验、安装、取消和更换 externalLib 位置。',
+              details: ['继续作为唯一安装入口。', 'Renderer 只订阅进度和状态。', '安装失败不阻塞应用启动。'],
+              sources: ['src/main/external-libraries/external-library-service.ts', 'src/main/external-libraries/external-library-installation-workflow.ts'],
+            },
+            {
+              id: 'components.manifest', kind: 'Package Definition', title: 'Media AI Bundle', status: 'planned', x: 38, y: 72,
+              summary: '声明平台包、哈希、版本、依赖和可选模型，体验与 LibreOffice 组件一致。',
+              details: ['首版可包含 FFmpeg 与 whisper.cpp。', 'Demucs/VoxCPM 作为可选重模型能力。', '不把 Python/pip 操作暴露给用户。'],
+              sources: ['预计：src/main/external-libraries/definitions/media-ai-runtime.ts'],
+            },
+            {
+              id: 'components.probe', kind: 'Capability API', title: 'Capability Probe', status: 'planned', x: 72, y: 72,
+              summary: '回答“当前能否转写/分离/克隆/导出”，并返回模型与设备信息。',
+              details: ['区分未安装、损坏、设备不支持和 ready。', 'Workbench 根据能力禁用具体按钮。', '探测不隐式触发大型模型下载。'],
+              sources: ['预计：src/main/media-ai/media-ai-capability-service.ts'],
+            },
+            {
+              id: 'components.runtime', kind: 'Local Binaries', title: 'Decode + ASR Runtime', status: 'planned', x: 4, y: 390,
+              summary: 'FFmpeg 解码/封装，whisper.cpp + VAD 产出带时间戳的增量字幕。',
+              details: ['CPU 基线必须可用。', 'GPU 后端作为能力探测结果选择。', '首次字幕时间是验收指标。'],
+              sources: ['https://github.com/FFmpeg/FFmpeg', 'https://github.com/ggml-org/whisper.cpp'],
+            },
+            {
+              id: 'components.models', kind: 'Optional Models', title: 'Separation + Voice Models', status: 'planned', x: 38, y: 390,
+              summary: 'HTDemucs 做 vocals/accompaniment；VoxCPM 做少样本人声克隆与流式合成。',
+              details: ['默认分离参数偏速度：htdemucs、shifts=1。', '仅预览音色时优先处理 3–10 秒选段。', '完整分离在后台低优先级执行。'],
+              sources: ['https://github.com/facebookresearch/demucs', 'https://github.com/OpenBMB/VoxCPM'],
+            },
+            {
+              id: 'components.versioning', kind: 'Compatibility', title: 'Version + Model Packs', status: 'planned', x: 72, y: 390,
+              summary: '固定二进制、模型、参数和输出协议版本，保证缓存可重现与可迁移。',
+              details: ['Producer version 包含运行时与模型版本。', '模型包独立更新，不修改用户 Asset。', '回滚时保留可识别的 manifest。'],
+              sources: ['src/main/artifacts/asset-artifact-registry.ts', 'src/main/external-libraries/'],
+            },
+          ],
+          segments: [
+            e('components.service-manifest', { node: 'components.service', side: 'right' }, { node: 'components.manifest', side: 'left' }, [0.32, 0.055], {
+              label: '安装定义', summary: 'Service 按 Bundle 定义下载并原子提交组件。', contract: ['固定 SHA-256。', '安装可取消且失败可恢复。'], sources: ['src/main/external-libraries/external-library-installation-workflow.ts'],
+            }),
+            e('components.manifest-probe', { node: 'components.manifest', side: 'right' }, { node: 'components.probe', side: 'left' }, [0.66, 0.055], {
+              label: '安装状态 + 路径', summary: 'Probe 只读取已提交组件位置并验证能力。', contract: ['不依赖临时安装目录。', '探测结果可缓存并按版本失效。'], sources: ['src/main/external-libraries/'],
+            }),
+            e('components.manifest-runtime', { node: 'components.manifest', side: 'bottom' }, { node: 'components.runtime', side: 'top' }, [0.31, 0.56], {
+              label: '基础运行时', summary: 'Bundle 安装解码和 ASR 基线。', contract: ['最小安装即可产生字幕。', '不安装重模型也能播放。'], sources: ['https://github.com/ggml-org/whisper.cpp'],
+            }, [[0.50, 0.47], [0.16, 0.47]]),
+            e('components.manifest-models', { node: 'components.manifest', side: 'bottom' }, { node: 'components.models', side: 'top' }, [0.58, 0.48], {
+              label: '可选模型包', summary: '分离和声音克隆模型按需安装。', contract: ['UI 明示下载大小。', '缺失时只禁用相应能力。'], sources: ['https://github.com/facebookresearch/demucs', 'https://github.com/OpenBMB/VoxCPM'],
+            }),
+            e('components.models-version', { node: 'components.models', side: 'right' }, { node: 'components.versioning', side: 'left' }, [0.66, 0.91], {
+              label: '版本指纹', summary: '模型与参数共同决定 Artifact Producer version。', contract: ['同版本可复用缓存。', '变化时不误用旧结果。'], sources: ['src/main/artifacts/asset-artifact-registry.ts'],
+            }),
+            e('r.components-media', { node: 'components.probe', side: 'right' }, { boundary: 'right', at: 0.24 }, [0.90, 0.055]),
+          ],
+        },
+
+        'media-runtime': {
+          id: 'media-runtime',
+          title: 'Media AI Runtime：三条并行车道',
+          summary: '立即播放、快速字幕和后台高质量分离互不阻塞；调度器按用户当前行为提升局部任务优先级，并以 Cue 事件驱动配音预览。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['首帧播放不依赖任何 AI 组件。', '字幕与配音按 Cue 可用，不等整段结束。', '当前播放区和用户选段优先于全视频后台处理。'],
+          sources: ['src/main/artifacts/asset-artifact-service.ts', 'src/workbenches/video/renderer-actions.ts'],
+          nodes: [
+            {
+              id: 'media.scheduler', kind: 'Application Service', title: 'Media Job Scheduler', status: 'planned', x: 4, y: 72,
+              summary: '统一排队、优先级、取消、进度和资源占用，且不改变全局 Agent 策略。',
+              details: ['优先：音色预览 → 当前字幕 → 选段分离 → 全视频分离。', '以 projectId/assetId/sourceRevision 去重。', 'Renderer 订阅领域事件，不等待 IPC Promise 长时间挂起。'],
+              sources: ['预计：src/main/media-ai/media-job-scheduler.ts', 'src/main/artifacts/asset-artifact-service.ts'],
+            },
+            {
+              id: 'media.decode', kind: 'Pipeline', title: 'Decode + Chunk', status: 'planned', x: 38, y: 72,
+              summary: 'FFmpeg 统一解码音频、按时间切片、截原始分辨率帧并最终封装。',
+              details: ['生成稳定时间基。', '框选截图使用源视频尺寸，避免 Renderer 缩放误差。', '不同消费者复用解码片段。'],
+              sources: ['https://github.com/FFmpeg/FFmpeg', '预计：src/main/media-ai/ffmpeg/'],
+            },
+            {
+              id: 'media.subtitle', kind: 'Fast Lane', title: 'VAD + ASR + Translation', status: 'planned', x: 72, y: 72,
+              summary: '边检测语音边转写，形成稳定 Cue；翻译以小批次增量回填目标语言。',
+              details: ['原文 Cue 首先可见。', '翻译失败不丢失原文字幕。', '翻译若使用 AgentProvider，仍通过专用 TaskDefinition/GenerationTask。'],
+              sources: ['https://github.com/ggml-org/whisper.cpp', 'src/main/generation/contracts/task-definition.ts'],
+            },
+            {
+              id: 'media.separator', kind: 'Background Lane', title: 'Stem Separation', status: 'planned', x: 4, y: 390,
+              summary: 'HTDemucs 后台生成 vocals 与 accompaniment；选段预览可抢占全片任务。',
+              details: ['默认速度配置 htdemucs + shifts=1。', '全片结果可封装为单个多轨 Artifact。', '分离不是说话人分离。'],
+              sources: ['https://github.com/facebookresearch/demucs', 'src/main/artifacts/asset-artifact-service.ts'],
+            },
+            {
+              id: 'media.voice', kind: 'Streaming Synthesis', title: 'Voice Profile + Cue TTS', status: 'planned', x: 38, y: 390,
+              summary: '从干净短样本建立声音配置，每个翻译 Cue 独立合成并立即通知播放器。',
+              details: ['参考片段不足时明确提示质量风险。', '内部可产生 PCM chunk，Renderer 只需 cue.audio-ready。', '允许重生成单个 Cue。'],
+              sources: ['https://github.com/OpenBMB/VoxCPM', '预计：src/main/media-ai/voice/'],
+            },
+            {
+              id: 'media.export', kind: 'Materialization', title: 'Preview + Export', status: 'planned', x: 72, y: 390,
+              summary: '播放器混合 accompaniment 与就绪配音；完成后按需封装新的配音视频 Asset。',
+              details: ['预览不必提前生成完整视频。', '字幕轨、音轨和时间映射可独立替换。', '导出 Asset 指回原视频和使用的转写/音色来源。'],
+              sources: ['src/main/assets/asset-service.ts', 'src/main/asset-associations/asset-association-service.ts'],
+            },
+          ],
+          segments: [
+            e('media.scheduler-decode', { node: 'media.scheduler', side: 'right' }, { node: 'media.decode', side: 'left' }, [0.32, 0.055], {
+              label: '排队与取消', summary: 'Scheduler 只安排作业，解码实现不持有 UI 状态。', contract: ['作业必须支持取消。', '长任务通过事件汇报进度。'], sources: ['src/main/artifacts/asset-artifact-service.ts'],
+            }),
+            e('media.decode-subtitle', { node: 'media.decode', side: 'right' }, { node: 'media.subtitle', side: 'left' }, [0.66, 0.055], {
+              label: '增量 PCM', summary: '解码片段按时间戳进入 VAD/ASR 快车道。', contract: ['保持稳定时间基。', 'Cue 可增量修订但 ID 必须稳定。'], sources: ['https://github.com/ggml-org/whisper.cpp'],
+            }),
+            e('media.decode-separator', { node: 'media.decode', side: 'bottom' }, { node: 'media.separator', side: 'top' }, [0.30, 0.56], {
+              label: '后台音频流', summary: '同一解码源供分离任务使用，避免重复读取整段视频。', contract: ['选段任务可先完成。', '全片任务低优先级。'], sources: ['https://github.com/facebookresearch/demucs'],
+            }, [[0.50, 0.47], [0.16, 0.47]]),
+            e('media.separator-voice', { node: 'media.separator', side: 'right' }, { node: 'media.voice', side: 'left' }, [0.32, 0.91], {
+              label: '干净人声参考', summary: '声音配置优先使用分离后 vocals 或用户确认的短片段。', contract: ['样本绑定来源与时间范围。', '不要把背景音写进 voice profile。'], sources: ['https://github.com/OpenBMB/VoxCPM'],
+            }),
+            e('media.subtitle-voice', { node: 'media.subtitle', side: 'bottom' }, { node: 'media.voice', side: 'top' }, [0.73, 0.56], {
+              label: 'translated cues', summary: '每个翻译 Cue 就绪后即可排队合成，无需等待全文。', contract: ['Cue ID/时间区间保持不变。', '允许 late update 覆盖单条音频。'], sources: ['预计：src/main/media-ai/contracts/media-cue.ts'],
+            }, [[0.84, 0.47], [0.50, 0.47]]),
+            e('media.voice-export', { node: 'media.voice', side: 'right' }, { node: 'media.export', side: 'left' }, [0.66, 0.91], {
+              label: 'cue.audio-ready', summary: '播放器按 Cue 热替换配音；导出器最终封装完整轨道。', contract: ['事件不携带巨型 PCM JSON。', '音频写入受管文件后传递句柄/ID。'], sources: ['预计：src/main/media-ai/contracts/media-ai-events.ts'],
+            }),
+            e('r.workbench-media', { boundary: 'left', at: 0.19 }, { node: 'media.scheduler', side: 'top' }, [0.31, 0.38]),
+            e('r.components-media', { boundary: 'top', at: 0.16 }, { node: 'media.scheduler', side: 'top' }, [0.06, 0.055]),
+            e('r.media-data', { node: 'media.export', side: 'right' }, { boundary: 'right', at: 0.68 }, [0.90, 0.95]),
+          ],
+        },
+
+        'data-lifecycle': {
+          id: 'data-lifecycle',
+          title: 'Asset 数据生命周期：缓存、笔记与派生资料各归其位',
+          summary: '媒体 AI 不往 Asset 里不断塞新字段；中间可再生结果走 Artifact，用户可见记录走 Attachment，资料关系走 Reference/Link。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['明确什么能删后重建，什么是用户资料。', '所有关系以 projectId/assetId 定位。', '生成任务完成不等于必须产生 Asset。'],
+          sources: ['src/main/assets/asset-service.ts', 'src/main/artifacts/asset-artifact-service.ts', 'src/main/attachments/attachment-service.ts', 'src/main/asset-associations/asset-association-service.ts'],
+          nodes: [
+            {
+              id: 'data.asset', kind: 'Domain Entity', title: 'Asset', status: 'implemented', x: 4, y: 72,
+              summary: '项目中的源资料或正式派生资料，拥有 mediaType、contentRef、source 与生命周期。',
+              details: ['Video/Audio 源文件首先是 Asset。', '导出的配音视频可以是新的 generated Asset。', 'Asset 通过 projectId 归属 Project。'],
+              sources: ['src/main/assets/asset-service.ts', 'src/shared/assets.ts'],
+            },
+            {
+              id: 'data.anchor', kind: 'Semantic Location', title: 'Anchor + Interaction', status: 'implemented', x: 38, y: 72,
+              summary: '描述 Asset 内部位置：时间段、页区、DOM Range、CFI；视频框选是待新增类型。',
+              details: ['Anchor 数据是 JSON 且带版本。', 'Interaction 表示当前 Workbench 上下文。', 'Anchor 语义由 Workbench Adapter 解释。'],
+              sources: ['src/shared/workbench/anchor.ts', 'src/shared/workbench/interaction.ts'],
+            },
+            {
+              id: 'data.artifact', kind: 'Regenerable Cache', title: 'Artifact', status: 'implemented', x: 72, y: 72,
+              summary: '由 Asset 源修订和 Producer 版本决定的可再生文件缓存。',
+              details: ['适合 transcript、stems、voice-profile、dub-track。', '并发生成自动去重。', '源改变后旧 Artifact 不再命中。'],
+              sources: ['src/main/artifacts/asset-artifact-service.ts', 'src/main/artifacts/asset-artifact-registry.ts'],
+            },
+            {
+              id: 'data.attachment', kind: 'Workbench Record', title: 'Attachment', status: 'implemented', x: 4, y: 390,
+              summary: '附着到 Asset/Anchor 的用户可见记录，例如一次视频解释、批注或摘要卡片。',
+              details: ['不要求每次问答都创建。', '类型与 Anchor 校验通过 Workbench 注册。', '失败任务不应永久留下 pending 记录。'],
+              sources: ['src/main/attachments/attachment-service.ts', 'src/main/attachments/attachment-registry.ts'],
+            },
+            {
+              id: 'data.association', kind: 'Project Relation', title: 'AssetReference + Link', status: 'implemented', x: 38, y: 390,
+              summary: 'Reference 表示资料依据，Link 表示资产间语义关系；两者都由独立表和 Service 管理。',
+              details: ['生成配音视频 Reference 原视频。', '摘要讲义可以 Link 到视频与相关笔记。', '媒体内部 Cue-to-source 映射留在自身 content/Artifact。'],
+              sources: ['src/main/asset-associations/asset-association-service.ts'],
+            },
+            {
+              id: 'data.derived', kind: 'Formal Output', title: 'Derived Asset', status: 'mixed', x: 72, y: 390,
+              summary: '需要长期学习、再次生成或分享的结果，才从 Artifact/回答提升为正式 Asset。',
+              details: ['配音后视频：新 Asset。', '快速摘要：可先回答，用户选择后保存为 Attachment/Asset。', '派生创建必须通过 AssetService。'],
+              sources: ['src/main/assets/asset-service.ts', 'src/main/asset-associations/asset-association-service.ts'],
+            },
+          ],
+          segments: [
+            e('data.asset-anchor', { node: 'data.asset', side: 'right' }, { node: 'data.anchor', side: 'left' }, [0.32, 0.055], {
+              label: 'assetId + anchor', summary: 'Anchor 永远在某个 Asset 的媒体语义内定位。', contract: ['anchorType/version 可迁移。', '删除 Asset 时清理其持久 Anchor。'], sources: ['src/shared/workbench/anchor.ts'],
+            }),
+            e('data.asset-artifact', { node: 'data.anchor', side: 'right' }, { node: 'data.artifact', side: 'left' }, [0.66, 0.055], {
+              label: 'source revision', summary: 'Artifact 通过 Asset 源修订和 Producer version 计算缓存命中。', contract: ['不把缓存路径写进 Asset content。', '失败产物原子清理。'], sources: ['src/main/artifacts/asset-artifact-service.ts'],
+            }),
+            e('data.anchor-attachment', { node: 'data.anchor', side: 'bottom' }, { node: 'data.attachment', side: 'top' }, [0.58, 0.56], {
+              label: '可选批注锚点', summary: '用户保存回答时，Attachment 可以引用当前媒体 Anchor。', contract: ['创建是功能选择，不是全局默认。', 'Anchor 类型由注册表验证。'], sources: ['src/main/attachments/attachment-service.ts'],
+            }, [[0.50, 0.47], [0.16, 0.47]]),
+            e('data.derived-association', { node: 'data.derived', side: 'left' }, { node: 'data.association', side: 'right' }, [0.66, 0.91], {
+              label: 'Reference / Link', summary: '派生 Asset 建立到源 Asset 的资料依据和语义连接。', contract: ['关联操作走 AssetAssociationService。', '不要直接改 Asset JSON。'], sources: ['src/main/asset-associations/asset-association-service.ts'],
+            }),
+            e('data.association-asset', { node: 'data.association', side: 'left' }, { node: 'data.asset', side: 'bottom' }, [0.80, 0.56], {
+              label: 'source assetId', summary: 'Association 的端点都是项目内 Asset ID。', contract: ['Project 加载/卸载时同步关系内存。', '删除 Asset 时维护关系完整性。'], sources: ['src/main/asset-associations/asset-association-service.ts'],
+            }),
+            e('r.media-data', { boundary: 'right', at: 0.18 }, { node: 'data.artifact', side: 'top' }, [0.90, 0.055]),
+            e('r.generation-data', { boundary: 'bottom', at: 0.72 }, { node: 'data.derived', side: 'bottom' }, [0.93, 0.90]),
+          ],
+        },
+
+        'workflow-localization': {
+          id: 'workflow-localization',
+          title: '用户旅程 01：翻译字幕与人声克隆配音',
+          summary: '整个流程按“可感知的最早结果”排序：先播放、再原文字幕、再翻译字幕、再逐 Cue 配音，完整分离和最终导出放在后台。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['首次字幕和首次配音的延迟比总处理耗时更重要。', '任何阶段失败都保留上一阶段可用结果。', '全片分离不阻塞短片段音色预览。'],
+          sources: ['src/workbenches/video/shared.ts', 'src/main/artifacts/asset-artifact-service.ts'],
+          nodes: [
+            { id: 'flow.localize.open', kind: 'Step 1 · Video Workbench', title: '立即播放 + 调度', status: 'workflow', x: 4, y: 72, summary: '原视频直接播放，同时发起 ASR 快车道和低优先级分离作业。', details: ['不显示全屏阻塞 Loading。', '已有 Artifact 时直接复用。', '用户离开 Asset 可取消交互优先任务。'], sources: ['src/workbenches/video/shared.ts', 'src/main/artifacts/asset-artifact-service.ts'] },
+            { id: 'flow.localize.transcript', kind: 'Step 2 · Fast Lane', title: '原文字幕 Cue', status: 'workflow', x: 38, y: 72, summary: 'VAD + whisper.cpp 增量产出带时间戳的原文 Cue。', details: ['先显示稳定片段。', 'Cue ID 可在后续修订中保持。', '保存为 media.transcript.v1 Artifact。'], sources: ['https://github.com/ggml-org/whisper.cpp'] },
+            { id: 'flow.localize.translation', kind: 'Step 3 · Translation', title: '翻译字幕 Cue', status: 'workflow', x: 72, y: 72, summary: '按小批 Cue 翻译并回填目标语言；原文始终保留。', details: ['可利用前后 Cue 保持术语一致。', '若走 AgentProvider，使用专用 TaskDefinition。', '失败只影响翻译轨。'], sources: ['src/main/generation/contracts/task-definition.ts'] },
+            { id: 'flow.localize.voice-profile', kind: 'Step 4 · Background/Preview', title: '分离 + Voice Profile', status: 'workflow', x: 4, y: 390, summary: '优先对 3–10 秒参考片段分离人声并构建声音配置；全片分离继续后台运行。', details: ['用户可试听和更换样本。', '样本记录源 assetId 与时间段。', '质量差时允许退回普通 TTS。'], sources: ['https://github.com/facebookresearch/demucs', 'https://github.com/OpenBMB/VoxCPM'] },
+            { id: 'flow.localize.dub', kind: 'Step 5 · Streaming TTS', title: '逐 Cue 克隆配音', status: 'workflow', x: 38, y: 390, summary: '每个翻译 Cue 就绪后独立合成，播放器收到 cue.audio-ready 即可试听。', details: ['不等待全文。', '允许单 Cue 重试。', '当前播放附近 Cue 最高优先级。'], sources: ['https://github.com/OpenBMB/VoxCPM'] },
+            { id: 'flow.localize.export', kind: 'Step 6 · Output', title: '混音预览 / 导出 Asset', status: 'workflow', x: 72, y: 390, summary: '实时混合伴奏与配音；用户确认后封装字幕和音轨，创建派生视频 Asset。', details: ['预览与最终导出共用 Cue 数据。', '导出任务可后台运行。', '新 Asset Reference 原视频。'], sources: ['src/main/assets/asset-service.ts', 'src/main/asset-associations/asset-association-service.ts'] },
+          ],
+          segments: [
+            e('flow.localize.open-transcript', { node: 'flow.localize.open', side: 'right' }, { node: 'flow.localize.transcript', side: 'left' }, [0.32, 0.055], { label: '增量 PCM', summary: '播放与转写并行。', contract: ['不阻塞首帧。', '时间基一致。'], sources: ['src/workbenches/video/shared.ts'] }),
+            e('flow.localize.transcript-translation', { node: 'flow.localize.transcript', side: 'right' }, { node: 'flow.localize.translation', side: 'left' }, [0.66, 0.055], { label: '稳定 Cue 批次', summary: '只翻译已经稳定的 Cue。', contract: ['保留原文。', '小批次保持上下文。'], sources: ['src/main/generation/contracts/task-definition.ts'] }),
+            e('flow.localize.open-profile', { node: 'flow.localize.open', side: 'bottom' }, { node: 'flow.localize.voice-profile', side: 'top' }, [0.08, 0.48], { label: '后台/选段', summary: '音色准备独立于字幕快车道。', contract: ['短片段可抢占。', '全片低优先。'], sources: ['https://github.com/facebookresearch/demucs'] }),
+            e('flow.localize.translation-dub', { node: 'flow.localize.translation', side: 'bottom' }, { node: 'flow.localize.dub', side: 'top' }, [0.73, 0.56], { label: 'translated cue', summary: '翻译 Cue 到达即进入 TTS。', contract: ['保持 cueId。', '支持覆盖更新。'], sources: ['https://github.com/OpenBMB/VoxCPM'] }, [[0.84, 0.47], [0.50, 0.47]]),
+            e('flow.localize.profile-dub', { node: 'flow.localize.voice-profile', side: 'right' }, { node: 'flow.localize.dub', side: 'left' }, [0.32, 0.91], { label: 'voiceProfileId', summary: 'Cue TTS 使用用户确认的声音配置。', contract: ['配置可重用。', '与源样本可追溯。'], sources: ['https://github.com/OpenBMB/VoxCPM'] }),
+            e('flow.localize.dub-export', { node: 'flow.localize.dub', side: 'right' }, { node: 'flow.localize.export', side: 'left' }, [0.66, 0.91], { label: 'ready cue audio', summary: '就绪音频既用于即时预览，也用于最终导出。', contract: ['事件传 ID/路径句柄。', '最终封装原子写入。'], sources: ['src/main/artifacts/asset-artifact-service.ts'] }),
+          ],
+        },
+
+        'workflow-visual-qa': {
+          id: 'workflow-visual-qa',
+          title: '用户旅程 02：视频框选、可信截帧与上下文问答',
+          summary: '用户在画面上框选目标；Video Workbench 只记录语义矩形，Main 侧按源分辨率截帧，再和邻近字幕、时间信息一起进入公共问答主路。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['不把 Renderer canvas 截图当作源事实。', '回答既看到局部画面，也看到必要时间上下文。', '后续追问继续同一 conversationId/Provider Session。'],
+          sources: ['src/shared/workbench/anchor.ts', 'src/main/generation/contracts/agent-message.ts', 'docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md'],
+          nodes: [
+            { id: 'flow.visual.select', kind: 'Step 1 · Video Workbench', title: '框选画面区域', status: 'workflow', x: 4, y: 72, summary: 'Overlay 记录 timestamp 与归一化矩形，形成 video.frame-region Anchor。', details: ['考虑 letterbox 后映射到源画面坐标。', '选区高亮由 Video Workbench 管。', '拖拽结束后选区不应消失。'], sources: ['src/shared/workbench/anchor.ts', '预计：src/workbenches/video/renderer/frame-region/'] },
+            { id: 'flow.visual.materialize', kind: 'Step 2 · Trusted Main', title: '源分辨率截帧', status: 'workflow', x: 38, y: 72, summary: 'VideoContextMaterializer 使用 FFmpeg 在指定 timestamp 截帧并裁剪矩形。', details: ['不接受 Renderer 任意本地路径。', '结果写入任务受管目录。', '记录原始尺寸与裁剪参数。'], sources: ['https://github.com/FFmpeg/FFmpeg', '预计：src/workbenches/video/main/video-context-materializer.ts'] },
+            { id: 'flow.visual.context', kind: 'Step 3 · Contributor', title: '组合邻近上下文', status: 'workflow', x: 72, y: 72, summary: '加入裁剪图、当前时间、前后字幕 Cue、可选音频片段和用户问题。', details: ['默认上下文窗口有明确上限。', '字幕未完成时仍可只用图像提问。', '材料转成 text/local-image/local-audio message parts。'], sources: ['src/main/generation/contracts/agent-message.ts', 'src/main/generation/contracts/generation-instruction.ts'] },
+            { id: 'flow.visual.conversation', kind: 'Step 4 · Shared Foundation', title: '提交 Conversation Turn', status: 'workflow', x: 4, y: 390, summary: '共享 Controller 创建一条 GenerationTask，并显示取消、耗时和错误。', details: ['每条请求独立 taskId。', 'conversationId 稳定。', '不把历史消息重新拼进 Prompt。'], sources: ['src/main/generation/generation-task-service.ts'] },
+            { id: 'flow.visual.agent', kind: 'Step 5 · TaskDefinition', title: '视觉问答 Agent', status: 'workflow', x: 38, y: 390, summary: 'VideoQuestion TaskDefinition 组织系统提示、图像和字幕上下文，调用选中的 Provider。', details: ['AgentUserMessage 已支持 local-image/local-audio。', '可按需开放视频专用工具。', '最终 answer 与 metrics 写回 Task。'], sources: ['src/main/generation/contracts/task-definition.ts', 'src/main/generation/contracts/agent-message.ts'] },
+            { id: 'flow.visual.answer', kind: 'Step 6 · Workbench Action', title: '回答、追问或保存', status: 'workflow', x: 72, y: 390, summary: '回答显示在统一面板；追问复用 Session；用户可选择保存为 Anchor Attachment。', details: ['保存不是默认副作用。', 'Attachment 仍引用 frame-region Anchor。', '也可从回答派生讲义 Asset。'], sources: ['src/main/attachments/attachment-service.ts', 'src/main/asset-associations/asset-association-service.ts'] },
+          ],
+          segments: [
+            e('flow.visual.select-materialize', { node: 'flow.visual.select', side: 'right' }, { node: 'flow.visual.materialize', side: 'left' }, [0.32, 0.055], { label: 'frame-region Anchor', summary: '语义矩形交给可信 Main 侧物化。', contract: ['归一化坐标。', 'Anchor 版本化。'], sources: ['src/shared/workbench/anchor.ts'] }),
+            e('flow.visual.materialize-context', { node: 'flow.visual.materialize', side: 'right' }, { node: 'flow.visual.context', side: 'left' }, [0.66, 0.055], { label: 'local-image', summary: '截帧文件以受管本地图像部件进入上下文。', contract: ['路径由 Main 生成。', '任务结束按策略清理。'], sources: ['src/main/generation/contracts/agent-message.ts'] }),
+            e('flow.visual.context-conversation', { node: 'flow.visual.context', side: 'bottom' }, { node: 'flow.visual.conversation', side: 'top' }, [0.72, 0.56], { label: 'Context Bundle', summary: '结构化上下文随用户问题交给公共 Controller。', contract: ['材料有大小上限。', '不直接调用 Provider。'], sources: ['docs/superpowers/specs/2026-08-12-workbench-chat-foundation-and-document-ai-ux-follow-up.md'] }, [[0.84, 0.47], [0.16, 0.47]]),
+            e('flow.visual.conversation-agent', { node: 'flow.visual.conversation', side: 'right' }, { node: 'flow.visual.agent', side: 'left' }, [0.32, 0.91], { label: 'GenerationTask', summary: '一次提问对应一次 GenerationTask。', contract: ['TaskDefinition 校验输入。', '稳定 instanceKey 续聊。'], sources: ['src/main/generation/contracts/task-definition.ts'] }),
+            e('flow.visual.agent-answer', { node: 'flow.visual.agent', side: 'right' }, { node: 'flow.visual.answer', side: 'left' }, [0.66, 0.91], { label: 'assistantOutput', summary: '最终输出进入消息投影，并开放 Workbench 动作槽。', contract: ['final 始终可取。', 'delta 可选。'], sources: ['src/main/generation/generation-task-agent-session.ts'] }),
+          ],
+        },
+
+        'workflow-summary': {
+          id: 'workflow-summary',
+          title: '用户旅程 03：视频快速摘要',
+          summary: '快速摘要不把整段视频直接交给 Agent；先复用转写 Artifact，再按章节/时间稀疏取关键帧，构造有界上下文后执行一次生成任务。',
+          parentId: 'overview',
+          height: 650,
+          goals: ['已有 transcript 时秒级进入 Agent。', '没有 transcript 时显示可解释的准备进度。', '上下文预算随视频长度增长得比逐帧更慢。'],
+          sources: ['src/main/artifacts/asset-artifact-service.ts', 'src/main/generation/contracts/task-definition.ts'],
+          nodes: [
+            { id: 'flow.summary.request', kind: 'Step 1 · Workbench', title: '请求快速摘要', status: 'workflow', x: 4, y: 72, summary: '用户可摘要整段或当前时间范围，并选择输出风格。', details: ['输入绑定 assetId 与可选 time-range Anchor。', '没有 Provider 配置时立即报错。', '允许取消准备与 Agent 阶段。'], sources: ['src/workbenches/video/shared.ts', 'src/main/agents/agent-provider-service.ts'] },
+            { id: 'flow.summary.transcript', kind: 'Step 2 · Artifact', title: '复用 / 生成 Transcript', status: 'workflow', x: 38, y: 72, summary: '优先读取 media.transcript.v1；缺失时启动 ASR，并先使用已经稳定的章节。', details: ['按 source revision 命中。', '字幕进度独立显示。', '不重复跑已有转写。'], sources: ['src/main/artifacts/asset-artifact-service.ts'] },
+            { id: 'flow.summary.frames', kind: 'Step 3 · Sampler', title: '稀疏关键帧', status: 'workflow', x: 72, y: 72, summary: '依据章节边界、镜头变化和时长提取少量代表帧，而非逐帧上传。', details: ['帧数有硬上限。', '长静态讲座以字幕为主。', '图示密集视频提高关键帧权重。'], sources: ['https://github.com/FFmpeg/FFmpeg', '预计：src/workbenches/video/main/video-summary-context.ts'] },
+            { id: 'flow.summary.compose', kind: 'Step 4 · Instruction', title: '有界摘要上下文', status: 'workflow', x: 4, y: 390, summary: '把标题、时长、章节化字幕、关键帧与用户格式要求组合成 Task input。', details: ['不让 Renderer 直接拼巨型 Prompt。', '记录截断与采样策略。', '为未来缓存摘要上下文留版本号。'], sources: ['src/main/generation/contracts/generation-instruction.ts', 'src/main/generation/contracts/agent-message.ts'] },
+            { id: 'flow.summary.task', kind: 'Step 5 · Generation', title: 'VideoSummary Task', status: 'workflow', x: 38, y: 390, summary: '专用 TaskDefinition 执行一次 GenerationTask，模型与思考力度由 Workbench Selector 决定。', details: ['无需持续 Conversation。', '仍可请求 runtime events 显示进度。', 'Task 保存 final answer 与 metrics。'], sources: ['src/main/generation/contracts/task-definition.ts', 'src/main/generation/generation-task-agent-session.ts'] },
+            { id: 'flow.summary.result', kind: 'Step 6 · Result Choice', title: '展示 / 保存为资料', status: 'workflow', x: 72, y: 390, summary: '先在面板显示摘要；用户决定保存为 Attachment、Markdown Asset 或后续生成输入。', details: ['不强制每次创建文件。', '正式 Asset Reference 源视频。', '可跳转到摘要中的时间点。'], sources: ['src/main/attachments/attachment-service.ts', 'src/main/assets/asset-service.ts'] },
+          ],
+          segments: [
+            e('flow.summary.request-transcript', { node: 'flow.summary.request', side: 'right' }, { node: 'flow.summary.transcript', side: 'left' }, [0.32, 0.055], { label: '确保字幕上下文', summary: '摘要首先寻找 transcript Artifact。', contract: ['命中即复用。', '缺失才启动 ASR。'], sources: ['src/main/artifacts/asset-artifact-service.ts'] }),
+            e('flow.summary.transcript-frames', { node: 'flow.summary.transcript', side: 'right' }, { node: 'flow.summary.frames', side: 'left' }, [0.66, 0.055], { label: '章节 / 时间边界', summary: '字幕结构帮助关键帧采样覆盖不同主题。', contract: ['帧数有上限。', '章节都有代表。'], sources: ['预计：src/workbenches/video/main/video-summary-context.ts'] }),
+            e('flow.summary.transcript-compose', { node: 'flow.summary.transcript', side: 'bottom' }, { node: 'flow.summary.compose', side: 'top' }, [0.33, 0.56], { label: '章节化 transcript', summary: '结构化字幕进入摘要上下文。', contract: ['保留时间戳。', '按预算压缩。'], sources: ['src/main/generation/contracts/generation-instruction.ts'] }, [[0.50, 0.47], [0.16, 0.47]]),
+            e('flow.summary.frames-compose', { node: 'flow.summary.frames', side: 'bottom' }, { node: 'flow.summary.compose', side: 'top' }, [0.73, 0.56], { label: 'sparse local-images', summary: '少量代表帧作为视觉补充。', contract: ['源分辨率物化。', '记录时间戳。'], sources: ['src/main/generation/contracts/agent-message.ts'] }, [[0.84, 0.47], [0.16, 0.47]]),
+            e('flow.summary.compose-task', { node: 'flow.summary.compose', side: 'right' }, { node: 'flow.summary.task', side: 'left' }, [0.32, 0.91], { label: 'validated input', summary: 'TaskDefinition 校验有界上下文并组织用户消息。', contract: ['输入可恢复。', 'Provider 配置来自 Selector。'], sources: ['src/main/generation/contracts/task-definition.ts'] }),
+            e('flow.summary.task-result', { node: 'flow.summary.task', side: 'right' }, { node: 'flow.summary.result', side: 'left' }, [0.66, 0.91], { label: 'summary + metrics', summary: '任务返回摘要，Workbench 决定是否物化。', contract: ['默认只展示。', '保存走领域 Service。'], sources: ['src/main/generation/generation-task-agent-session.ts'] }),
+          ],
+        },
+      };
+
+      const state = {
+        viewId: 'overview',
+        selectedNodeId: null,
+        selectedRelationId: null,
+      };
+
+      const byId = (id) => document.getElementById(id);
+      const diagram = byId('diagram');
+      const nodeLayer = byId('nodeLayer');
+      const edgePaths = byId('edgePaths');
+      const boundaryPorts = byId('boundaryPorts');
+      const edgeControls = byId('edgeControls');
+      const mobileRelations = byId('mobileRelations');
+      const inspector = byId('inspector');
+
+      function validateDefinition() {
+        const nodeOwners = new Map();
+        for (const view of Object.values(views)) {
+          if (!Array.isArray(view.nodes) || !Array.isArray(view.segments)) {
+            throw new Error(`View ${view.id} must own nodes and segments.`);
+          }
+          for (const node of view.nodes) {
+            if (nodeOwners.has(node.id)) {
+              throw new Error(`Node ${node.id} appears in both ${nodeOwners.get(node.id)} and ${view.id}.`);
+            }
+            nodeOwners.set(node.id, view.id);
+            if (node.childViewId && !views[node.childViewId]) {
+              throw new Error(`Node ${node.id} points to missing child view ${node.childViewId}.`);
+            }
+          }
+          const localNodeIds = new Set(view.nodes.map((node) => node.id));
+          for (const segment of view.segments) {
+            for (const endpoint of [segment.from, segment.to]) {
+              if (endpoint.node && !localNodeIds.has(endpoint.node)) {
+                throw new Error(`Relation ${segment.relationId} in ${view.id} references non-local node ${endpoint.node}.`);
+              }
+            }
+            if (!globalRelations[segment.relationId] && !segment.meta) {
+              throw new Error(`Relation ${segment.relationId} has no metadata.`);
+            }
+          }
+        }
+      }
+
+      function relationMeta(segment) {
+        return globalRelations[segment.relationId] || segment.meta;
+      }
+
+      function relationLabel(segment) {
+        return relationMeta(segment).label || segment.relationId;
+      }
+
+      function endpointId(endpoint) {
+        return endpoint.node || `boundary-${endpoint.boundary}-${endpoint.at}`;
+      }
+
+      function currentView() {
+        return views[state.viewId] || views.overview;
+      }
+
+      function ancestors(viewId) {
+        const result = [];
+        let cursor = views[viewId];
+        while (cursor) {
+          result.unshift(cursor);
+          cursor = cursor.parentId ? views[cursor.parentId] : null;
+        }
+        return result;
+      }
+
+      function navigate(viewId, options = {}) {
+        if (!views[viewId]) return;
+        state.viewId = viewId;
+        state.selectedNodeId = null;
+        if (!options.preserveRelation) state.selectedRelationId = null;
+        if (location.hash !== `#${viewId}`) history.pushState({ viewId }, '', `#${viewId}`);
+        render();
+        document.querySelector('.map-shell').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      function renderBreadcrumbs(view) {
+        const container = byId('breadcrumbs');
+        container.replaceChildren();
+        ancestors(view.id).forEach((ancestor, index, all) => {
+          const button = document.createElement('button');
+          button.className = 'breadcrumb-button';
+          button.type = 'button';
+          button.textContent = ancestor.title.replace(/^.*?：/, '');
+          button.addEventListener('click', () => navigate(ancestor.id));
+          container.appendChild(button);
+          if (index < all.length - 1) {
+            const separator = document.createElement('span');
+            separator.className = 'breadcrumb-separator';
+            separator.textContent = '›';
+            container.appendChild(separator);
+          }
+        });
+      }
+
+      function nodeMarkup(node) {
+        const drill = node.childViewId ? '<span class="drill-mark" aria-hidden="true">↗</span>' : '';
+        return `
+          <div class="node-topline">
+            <span class="node-kind">${escapeHtml(node.kind)}</span>
+            <span class="node-status"><span class="status-dot"></span>${statusLabels[node.status]}</span>
+          </div>
+          <div class="node-title">${escapeHtml(node.title)} ${drill}</div>
+          <div class="node-copy">${escapeHtml(node.summary)}</div>
+        `;
+      }
+
+      function renderNodes(view) {
+        nodeLayer.replaceChildren();
+        for (const node of view.nodes) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'node';
+          button.id = `node-${node.id}`;
+          button.dataset.nodeId = node.id;
+          button.dataset.ownerViewId = view.id;
+          button.dataset.status = node.status;
+          button.style.left = `${node.x}%`;
+          button.style.top = `${node.y}px`;
+          button.innerHTML = nodeMarkup(node);
+          button.setAttribute('aria-label', `${node.title}，${statusLabels[node.status]}${node.childViewId ? '，按 Enter 进入子视图' : ''}`);
+          button.addEventListener('click', () => selectNode(node.id));
+          button.addEventListener('dblclick', () => {
+            if (node.childViewId) navigate(node.childViewId);
+          });
+          button.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && node.childViewId) {
+              event.preventDefault();
+              navigate(node.childViewId);
+            }
+          });
+          nodeLayer.appendChild(button);
+        }
+      }
+
+      function endpointPoint(endpoint, diagramRect) {
+        if (endpoint.node) {
+          const element = byId(`node-${endpoint.node}`);
+          const rect = element.getBoundingClientRect();
+          const local = {
+            left: rect.left - diagramRect.left,
+            right: rect.right - diagramRect.left,
+            top: rect.top - diagramRect.top,
+            bottom: rect.bottom - diagramRect.top,
+            cx: rect.left - diagramRect.left + rect.width / 2,
+            cy: rect.top - diagramRect.top + rect.height / 2,
+          };
+          if (endpoint.side === 'left') return [local.left, local.cy];
+          if (endpoint.side === 'right') return [local.right, local.cy];
+          if (endpoint.side === 'top') return [local.cx, local.top];
+          return [local.cx, local.bottom];
+        }
+
+        const at = endpoint.at ?? 0.5;
+        if (endpoint.boundary === 'left') return [6, diagramRect.height * at];
+        if (endpoint.boundary === 'right') return [diagramRect.width - 6, diagramRect.height * at];
+        if (endpoint.boundary === 'top') return [diagramRect.width * at, 6];
+        return [diagramRect.width * at, diagramRect.height - 6];
+      }
+
+      function roundedPath(points) {
+        if (points.length === 2) return `M ${points[0][0]} ${points[0][1]} L ${points[1][0]} ${points[1][1]}`;
+        const radius = 12;
+        let d = `M ${points[0][0]} ${points[0][1]}`;
+        for (let index = 1; index < points.length - 1; index += 1) {
+          const previous = points[index - 1];
+          const current = points[index];
+          const next = points[index + 1];
+          const beforeLength = Math.hypot(current[0] - previous[0], current[1] - previous[1]) || 1;
+          const afterLength = Math.hypot(next[0] - current[0], next[1] - current[1]) || 1;
+          const beforeRadius = Math.min(radius, beforeLength / 3);
+          const afterRadius = Math.min(radius, afterLength / 3);
+          const before = [
+            current[0] - ((current[0] - previous[0]) / beforeLength) * beforeRadius,
+            current[1] - ((current[1] - previous[1]) / beforeLength) * beforeRadius,
+          ];
+          const after = [
+            current[0] + ((next[0] - current[0]) / afterLength) * afterRadius,
+            current[1] + ((next[1] - current[1]) / afterLength) * afterRadius,
+          ];
+          d += ` L ${before[0]} ${before[1]} Q ${current[0]} ${current[1]} ${after[0]} ${after[1]}`;
+        }
+        const last = points[points.length - 1];
+        return `${d} L ${last[0]} ${last[1]}`;
+      }
+
+      function renderEdges(view) {
+        edgePaths.replaceChildren();
+        boundaryPorts.replaceChildren();
+        edgeControls.replaceChildren();
+        mobileRelations.replaceChildren();
+        const diagramRect = diagram.getBoundingClientRect();
+        const namespace = 'http://www.w3.org/2000/svg';
+        const drawnPorts = new Set();
+
+        for (const segment of view.segments) {
+          const start = endpointPoint(segment.from, diagramRect);
+          const end = endpointPoint(segment.to, diagramRect);
+          const via = (segment.via || []).map(([x, y]) => [diagramRect.width * x, diagramRect.height * y]);
+          const path = document.createElementNS(namespace, 'path');
+          path.classList.add('edge-path');
+          path.dataset.relationId = segment.relationId;
+          path.dataset.from = endpointId(segment.from);
+          path.dataset.to = endpointId(segment.to);
+          path.setAttribute('d', roundedPath([start, ...via, end]));
+          path.setAttribute('marker-end', state.selectedRelationId === segment.relationId ? 'url(#arrowActive)' : 'url(#arrow)');
+          path.setAttribute('tabindex', '0');
+          path.setAttribute('role', 'button');
+          path.setAttribute('aria-label', relationLabel(segment));
+          path.addEventListener('click', () => selectRelation(segment.relationId));
+          path.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              selectRelation(segment.relationId);
+            }
+          });
+          edgePaths.appendChild(path);
+
+          for (const endpoint of [segment.from, segment.to]) {
+            if (!endpoint.boundary) continue;
+            const portKey = endpointId(endpoint);
+            if (drawnPorts.has(portKey)) continue;
+            drawnPorts.add(portKey);
+            const [cx, cy] = endpointPoint(endpoint, diagramRect);
+            const circle = document.createElementNS(namespace, 'circle');
+            circle.classList.add('boundary-port');
+            circle.setAttribute('cx', cx);
+            circle.setAttribute('cy', cy);
+            circle.setAttribute('r', 5);
+            boundaryPorts.appendChild(circle);
+          }
+
+          const control = document.createElement('button');
+          control.type = 'button';
+          control.className = 'edge-control';
+          control.dataset.relationId = segment.relationId;
+          control.dataset.from = endpointId(segment.from);
+          control.dataset.to = endpointId(segment.to);
+          control.style.left = `${segment.labelAt[0] * 100}%`;
+          control.style.top = `${segment.labelAt[1] * 100}%`;
+          control.textContent = relationLabel(segment);
+          control.addEventListener('click', () => selectRelation(segment.relationId));
+          edgeControls.appendChild(control);
+
+          const mobile = document.createElement('button');
+          mobile.type = 'button';
+          mobile.className = 'mobile-relation';
+          mobile.dataset.relationId = segment.relationId;
+          mobile.dataset.from = endpointId(segment.from);
+          mobile.dataset.to = endpointId(segment.to);
+          mobile.innerHTML = `<span>${escapeHtml(relationLabel(segment))}</span><span>查看关系 →</span>`;
+          mobile.addEventListener('click', () => selectRelation(segment.relationId));
+          mobileRelations.appendChild(mobile);
+        }
+
+        if (view.segments.length) {
+          const heading = document.createElement('h4');
+          heading.textContent = '本视图关系';
+          mobileRelations.prepend(heading);
+        }
+        updateSelectionClasses();
+      }
+
+      function selectNode(nodeId) {
+        state.selectedNodeId = nodeId;
+        state.selectedRelationId = null;
+        renderInspector();
+        updateSelectionClasses();
+      }
+
+      function selectRelation(relationId) {
+        state.selectedRelationId = relationId;
+        state.selectedNodeId = null;
+        renderInspector();
+        updateSelectionClasses();
+      }
+
+      function updateSelectionClasses() {
+        const view = currentView();
+        const activeSegment = view.segments.find((segment) => segment.relationId === state.selectedRelationId);
+        const related = activeSegment
+          ? new Set([activeSegment.from.node, activeSegment.to.node].filter(Boolean))
+          : new Set();
+
+        document.querySelectorAll('.node').forEach((element) => {
+          const selected = element.dataset.nodeId === state.selectedNodeId;
+          const isRelated = related.has(element.dataset.nodeId);
+          element.classList.toggle('is-selected', selected);
+          element.classList.toggle('is-related', isRelated);
+          element.classList.toggle('is-muted', Boolean(state.selectedNodeId || state.selectedRelationId) && !selected && !isRelated);
+        });
+
+        document.querySelectorAll('.edge-path, .edge-control, .mobile-relation').forEach((element) => {
+          const selected = element.dataset.relationId === state.selectedRelationId;
+          element.classList.toggle('is-selected', selected);
+          element.classList.toggle('is-muted', Boolean(state.selectedNodeId || state.selectedRelationId) && !selected);
+          if (element.matches('.edge-path')) {
+            element.setAttribute('marker-end', selected ? 'url(#arrowActive)' : 'url(#arrow)');
+          }
+        });
+      }
+
+      function renderSource(source) {
+        if (/^https?:\/\//.test(source)) {
+          return `<a class="source-path" href="${escapeAttribute(source)}" target="_blank" rel="noreferrer">${escapeHtml(source)}</a>`;
+        }
+        return `<span class="source-path">${escapeHtml(source)}</span>`;
+      }
+
+      function renderInspector() {
+        const view = currentView();
+        const node = view.nodes.find((candidate) => candidate.id === state.selectedNodeId);
+        const segment = view.segments.find((candidate) => candidate.relationId === state.selectedRelationId);
+
+        if (node) {
+          inspector.innerHTML = `
+            <div class="inspector-kicker">模块节点</div>
+            <h3 class="inspector-title">${escapeHtml(node.title)}</h3>
+            <div class="status-chip" data-status="${node.status}"><span class="status-dot"></span>${statusLabels[node.status]}</div>
+            <p class="inspector-summary">${escapeHtml(node.summary)}</p>
+            <section class="inspector-section">
+              <h4>职责与边界</h4>
+              <ul class="inspector-list">${node.details.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+            </section>
+            <section class="inspector-section">
+              <h4>实现证据 / 规划落点</h4>
+              <div class="source-list">${node.sources.map(renderSource).join('')}</div>
+            </section>
+            ${node.childViewId ? `<button class="inspector-action" type="button" data-drill-view="${node.childViewId}">进入 ${escapeHtml(views[node.childViewId].title)}</button>` : ''}
+          `;
+          const action = inspector.querySelector('[data-drill-view]');
+          if (action) action.addEventListener('click', () => navigate(action.dataset.drillView));
+          return;
+        }
+
+        if (segment) {
+          const meta = relationMeta(segment);
+          const fromTitle = endpointTitle(segment.from, view);
+          const toTitle = endpointTitle(segment.to, view);
+          inspector.innerHTML = `
+            <div class="inspector-kicker">模块关系</div>
+            <h3 class="inspector-title">${escapeHtml(meta.label)}</h3>
+            <p class="inspector-summary">${escapeHtml(meta.summary)}</p>
+            <section class="inspector-section">
+              <h4>${escapeHtml(fromTitle)} → ${escapeHtml(toTitle)}</h4>
+              <ul class="inspector-list">${meta.contract.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+            </section>
+            <section class="inspector-section">
+              <h4>实现证据 / 设计依据</h4>
+              <div class="source-list">${meta.sources.map(renderSource).join('')}</div>
+            </section>
+            ${meta.focusView ? `<button class="inspector-action" type="button" data-follow-view="${meta.focusView}">沿关系进入 ${escapeHtml(views[meta.focusView].title)}</button>` : ''}
+          `;
+          const action = inspector.querySelector('[data-follow-view]');
+          if (action) action.addEventListener('click', () => navigate(action.dataset.followView, { preserveRelation: true }));
+          return;
+        }
+
+        inspector.innerHTML = `
+          <div class="inspector-kicker">当前视图</div>
+          <h3 class="inspector-title">${escapeHtml(view.title)}</h3>
+          <p class="inspector-summary">${escapeHtml(view.summary)}</p>
+          <section class="inspector-section">
+            <h4>本层要回答的问题</h4>
+            <ul class="inspector-list">${view.goals.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </section>
+          <section class="inspector-section">
+            <h4>主要源码依据</h4>
+            <div class="source-list">${view.sources.map(renderSource).join('')}</div>
+          </section>
+        `;
+      }
+
+      function endpointTitle(endpoint, view) {
+        if (endpoint.node) return view.nodes.find((node) => node.id === endpoint.node)?.title || endpoint.node;
+        if (endpoint.boundary === 'left') return '上游模块边界';
+        if (endpoint.boundary === 'right') return '下游模块边界';
+        if (endpoint.boundary === 'top') return '上层模块边界';
+        return '下层模块边界';
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value);
+      }
+
+      function render() {
+        const view = currentView();
+        byId('viewTitle').textContent = view.title;
+        byId('viewSummary').textContent = view.summary;
+        diagram.style.height = `${view.height}px`;
+        byId('backButton').disabled = !view.parentId;
+        byId('overviewButton').disabled = view.id === 'overview';
+        renderBreadcrumbs(view);
+        renderNodes(view);
+        renderInspector();
+        requestAnimationFrame(() => renderEdges(view));
+      }
+
+      byId('backButton').addEventListener('click', () => {
+        const parentId = currentView().parentId;
+        if (parentId) navigate(parentId);
+      });
+      byId('overviewButton').addEventListener('click', () => navigate('overview'));
+      document.querySelectorAll('[data-open-view]').forEach((button) => {
+        button.addEventListener('click', () => navigate(button.dataset.openView));
+      });
+
+      window.addEventListener('resize', () => requestAnimationFrame(() => renderEdges(currentView())));
+      window.addEventListener('popstate', () => {
+        const viewId = location.hash.slice(1);
+        state.viewId = views[viewId] ? viewId : 'overview';
+        state.selectedNodeId = null;
+        state.selectedRelationId = null;
+        render();
+      });
+
+      validateDefinition();
+      const initialView = location.hash.slice(1);
+      if (views[initialView]) state.viewId = initialView;
+      window.__HIERARCHICAL_MAP_AUDIT__ = {
+        viewIds: Object.keys(views),
+        currentViewId: () => state.viewId,
+      };
+      render();
+    </script>
+  </body>
+</html>

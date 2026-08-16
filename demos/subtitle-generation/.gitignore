@@ -1,0 +1,9 @@
+.cache/
+.downloads/
+.datasets/
+.fixtures/
+.models/
+.runtime/
+output/
+results/local/
+results/youtube/

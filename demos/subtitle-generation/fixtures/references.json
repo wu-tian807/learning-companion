@@ -1,0 +1,23 @@
+[
+  {
+    "id": "zh-cn-classroom",
+    "language": "zh",
+    "voice": "Microsoft Huihui Desktop",
+    "file": "zh-cn-classroom.wav",
+    "text": "今天我们验证一条本地字幕生成链路。视频播放不需要等待转录完成。系统应该尽快给出第一条字幕，并在后台继续处理后续内容。最终结果会保存为可以重复使用的字幕文件。"
+  },
+  {
+    "id": "en-us-classroom",
+    "language": "en",
+    "voice": "Microsoft Zira Desktop",
+    "file": "en-us-classroom.wav",
+    "text": "Today we are validating a local subtitle generation pipeline. Video playback should not wait for transcription to finish. The system should show the first subtitle quickly and continue processing in the background. The final transcript should be cached for later study."
+  },
+  {
+    "id": "en-us-long-classroom",
+    "language": "en",
+    "voice": "Microsoft Zira Desktop",
+    "file": "en-us-long-classroom.wav",
+    "text": "Welcome to this short lesson about local subtitle generation. We begin by opening the video immediately, because playback must never wait for an artificial intelligence task. In a separate background lane, the application extracts a small audio stream and detects where speech is present. The transcription engine should publish each stable subtitle as soon as it becomes available. Students can read the early lines while the remaining lecture is still being processed. When recognition finishes, the application stores one canonical transcript with timestamps and language information. The same artifact can support search, translation, summaries, questions, and later study sessions. If the user opens the same media again, the system should reuse that artifact instead of loading the model a second time. A fast first subtitle matters, but accuracy on technical terms matters as well. This experiment therefore records latency, total processing time, real time factor, and word error rate. Synthetic speech is useful for repeatable engineering tests, although it cannot represent accents, music, noise, or several speakers. Before choosing a product default, we still need a small collection of real lectures and videos."
+  }
+]

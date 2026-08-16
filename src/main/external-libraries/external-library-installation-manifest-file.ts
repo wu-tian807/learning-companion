@@ -13,6 +13,8 @@ import { join } from 'node:path';
 import { isUnixMilliseconds } from '../../shared/projects';
 import { AppError } from '../errors/app-error';
 import {
+  externalLibraryPackageFingerprint,
+  externalLibraryRequiredRelativePaths,
   isExternalLibraryDefinition,
   isExternalLibraryPackageDefinition,
   type ExternalLibraryArchitecture,
@@ -52,7 +54,8 @@ export type ExternalLibraryInstallationInspection =
   | {
       readonly status: 'available';
       readonly marker: ExternalLibraryInstallationMarker;
-      readonly executablePath: string;
+      readonly runtimeDirectory: string;
+      readonly executablePath?: string;
     };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,7 +84,8 @@ export function createExternalLibraryInstallationMarker(input: {
         candidate.platform === input.packageDefinition.platform &&
         candidate.architecture ===
           input.packageDefinition.architecture &&
-        candidate.sha256 === input.packageDefinition.sha256,
+        externalLibraryPackageFingerprint(candidate) ===
+          externalLibraryPackageFingerprint(input.packageDefinition),
     ) ||
     !isUnixMilliseconds(input.installedTime)
   ) {
@@ -96,7 +100,9 @@ export function createExternalLibraryInstallationMarker(input: {
       input.definition.installationFormatVersion,
     platform: input.packageDefinition.platform,
     architecture: input.packageDefinition.architecture,
-    packageSha256: input.packageDefinition.sha256,
+    packageSha256: externalLibraryPackageFingerprint(
+      input.packageDefinition,
+    ),
     installedTime: input.installedTime,
   });
 }
@@ -148,7 +154,8 @@ function markerMatches(
       definition.installationFormatVersion &&
     marker.platform === packageDefinition.platform &&
     marker.architecture === packageDefinition.architecture &&
-    marker.packageSha256 === packageDefinition.sha256
+    marker.packageSha256 ===
+      externalLibraryPackageFingerprint(packageDefinition)
   );
 }
 
@@ -243,23 +250,38 @@ export class ExternalLibraryInstallationManifestFile {
       });
     }
 
-    const executablePath = join(
+    const runtimeDirectory = join(
       installationDirectory,
       EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
-      ...packageDefinition.executableRelativePath.split('/'),
     );
 
     try {
-      const stats = await lstat(executablePath);
+      for (const relativePath of externalLibraryRequiredRelativePaths(
+        packageDefinition,
+      )) {
+        const requiredPath = join(
+          runtimeDirectory,
+          ...relativePath.split('/'),
+        );
+        const stats = await lstat(requiredPath);
 
-      if (!stats.isFile() || stats.isSymbolicLink()) {
-        return Object.freeze({
-          status: 'invalid',
-          reason: 'runtime-missing',
-        });
+        if (!stats.isFile() || stats.isSymbolicLink()) {
+          return Object.freeze({
+            status: 'invalid',
+            reason: 'runtime-missing',
+          });
+        }
       }
 
-      await access(executablePath, constants.X_OK);
+      if (packageDefinition.executableRelativePath) {
+        await access(
+          join(
+            runtimeDirectory,
+            ...packageDefinition.executableRelativePath.split('/'),
+          ),
+          constants.X_OK,
+        );
+      }
     } catch (error) {
       if (isFileNotFoundError(error)) {
         return Object.freeze({
@@ -286,7 +308,15 @@ export class ExternalLibraryInstallationManifestFile {
     return Object.freeze({
       status: 'available',
       marker,
-      executablePath,
+      runtimeDirectory,
+      ...(packageDefinition.executableRelativePath === undefined
+        ? {}
+        : {
+            executablePath: join(
+              runtimeDirectory,
+              ...packageDefinition.executableRelativePath.split('/'),
+            ),
+          }),
     });
   }
 }

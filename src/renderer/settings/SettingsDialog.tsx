@@ -266,15 +266,16 @@ export function SettingsDialog({
           )}
         </div>
 
-        {pendingInstall &&
-          pendingInstall.expectedSize !== undefined && (
+        {pendingInstall && (
             <ConfirmationPanel
-              title={`安装 ${pendingInstall.displayName}？`}
+              title={`安装 ${pendingInstall.library.displayName}？`}
               description={`将从官方网站下载约 ${formatExternalLibrarySize(
                 pendingInstall.expectedSize,
-              )} 的安装包，并安装到“${pendingInstall.rootPath}”。如需更换磁盘，请先取消并使用“更换位置”。`}
+              )} 的完整配套包，并安装到“${pendingInstall.library.rootPath}”。如需更换磁盘，请先取消并使用“更换位置”。`}
               confirmLabel="下载并安装"
-              busy={requestPendingById.has(pendingInstall.id)}
+              busy={requestPendingById.has(
+                pendingInstall.library.id,
+              )}
               onCancel={() => setPendingInstall(null)}
               onConfirm={() => {
                 void installLibrary(pendingInstall);

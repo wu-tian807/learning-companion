@@ -39,6 +39,7 @@ import type {
   ConfigureAgentProviderApiConnectionRequest,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
+  InstallExternalLibraryRequest,
   MigrateExternalLibrariesRequest,
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
@@ -165,7 +166,9 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
       IPC_CHANNELS.refreshExternalLibrary,
       request,
     ),
-  startExternalLibraryInstallation: (request: ExternalLibraryIdRequest) =>
+  startExternalLibraryInstallation: (
+    request: InstallExternalLibraryRequest,
+  ) =>
     invoke<ExternalLibrarySnapshot>(
       IPC_CHANNELS.startExternalLibraryInstallation,
       request,
