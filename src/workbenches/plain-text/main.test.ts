@@ -288,12 +288,14 @@ describe('PlainTextWorkbenchProvider', () => {
       payload: {
         wordWrap: false,
         lineNumbers: false,
+        readMode: true,
       },
     });
 
     expect(result.payload).toEqual({
       wordWrap: false,
       lineNumbers: false,
+      readMode: true,
     });
     expect(
       await states.get('asset', PLAIN_TEXT_WORKBENCH_ID),
@@ -303,7 +305,44 @@ describe('PlainTextWorkbenchProvider', () => {
         viewOptions: {
           wordWrap: false,
           lineNumbers: false,
+          readMode: true,
         },
+      },
+    });
+  });
+
+  it('migrates legacy V2 view options without readMode', async () => {
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
+    const legacyState = {
+      assetId: 'asset',
+      workbenchId: PLAIN_TEXT_WORKBENCH_ID,
+      schemaVersion: 2,
+      payload: {
+        viewState,
+        viewOptions: {
+          wordWrap: false,
+          lineNumbers: true,
+        },
+      },
+      updatedTime: 100,
+    };
+    await states.save(legacyState);
+    const provider = new PlainTextWorkbenchProvider(states, data);
+    const { handle } = createHandle(source);
+    const context = createContext(
+      'session',
+      handle,
+      legacyState,
+    );
+
+    const opened = await provider.open(context);
+
+    expect(opened.payload).toMatchObject({
+      viewOptions: {
+        wordWrap: false,
+        lineNumbers: true,
+        readMode: false,
       },
     });
   });

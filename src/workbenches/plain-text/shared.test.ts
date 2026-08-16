@@ -48,9 +48,18 @@ describe('Plain Text shared protocol', () => {
         viewOptions: {
           wordWrap: false,
           lineNumbers: true,
+          readMode: false,
         },
       }),
     ).toBe(true);
+    expect(
+      isPlainTextWorkbenchStateV2({
+        viewOptions: {
+          wordWrap: false,
+          lineNumbers: true,
+        },
+      }),
+    ).toBe(false);
     expect(
       isPlainTextWorkbenchStateV2({
         viewOptions: {

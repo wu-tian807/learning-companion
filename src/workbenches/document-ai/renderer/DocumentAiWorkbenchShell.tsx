@@ -2,7 +2,10 @@ import type { ReactNode } from 'react';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
-import { AiChatPanelHost } from './ai-chat/AiChatPanelHost';
+import {
+  AiChatPanelHost,
+  type AiChatPanelHostProps,
+} from './ai-chat/AiChatPanelHost';
 import { getGlobalAiChatStore } from './ai-chat/chat-store';
 import { AttachmentHost } from './AttachmentHost';
 import {
@@ -16,6 +19,7 @@ export interface DocumentAiWorkbenchShellProps {
   readonly attachments: readonly AssetAttachment[];
   readonly refreshAttachments: () => Promise<void>;
   readonly onError: (message: string) => void;
+  readonly allowAnswerAttachments: boolean;
   readonly children: ReactNode;
 }
 
@@ -25,17 +29,12 @@ export function DocumentAiWorkbenchShell({
   attachments,
   refreshAttachments,
   onError,
+  allowAnswerAttachments,
   children,
 }: DocumentAiWorkbenchShellProps) {
-  return (
-    <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
-      <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-        {children}
-      </div>
-      <AiChatPanelHost
-        projectId={projectId}
-        assetId={assetId}
-        onAttachAnswer={async (messageId, text, anchor) => {
+  const onAttachAnswer: AiChatPanelHostProps['onAttachAnswer'] =
+    allowAnswerAttachments
+      ? async (messageId, text, anchor) => {
           const session = getGlobalAiChatStore().getSession(assetId);
           const answerMessage = session?.messages.find(
             (message) => message.id === messageId,
@@ -75,7 +74,18 @@ export function DocumentAiWorkbenchShell({
             if (message) onError(message);
             throw error;
           }
-        }}
+        }
+      : undefined;
+
+  return (
+    <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
+      <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+        {children}
+      </div>
+      <AiChatPanelHost
+        projectId={projectId}
+        assetId={assetId}
+        onAttachAnswer={onAttachAnswer}
       />
       <AttachmentHost
         projectId={projectId}

@@ -236,7 +236,7 @@ export interface AiChatPanelProps {
   readonly projectId: string;
   readonly assetId: string;
   readonly onClose: () => void;
-  readonly onAttachAnswer: (
+  readonly onAttachAnswer?: (
     messageId: string,
     text: string,
     anchor?: AiChatMessage['anchor'],
@@ -336,6 +336,9 @@ export function AiChatPanel({
 
   const attachAnswerMessage = useCallback(
     async (answer: AiChatMessage, text: string) => {
+      if (!onAttachAnswer) {
+        return;
+      }
       const userQuestion = messages.find(
         (message) => message.id === answer.replyToMessageId,
       );
@@ -370,7 +373,7 @@ export function AiChatPanel({
           {attachNotice && (
             <span className="text-[11px] text-emerald-300">{attachNotice}</span>
           )}
-          {selectedAnswerRange && (
+          {selectedAnswerRange && onAttachAnswer && (
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -406,7 +409,11 @@ export function AiChatPanel({
         {messages.length === 0 && !loading && (
           <div className="py-8 text-center text-xs text-slate-600">
             <p>选中文档内容，右键选择「就选中内容问 AI」</p>
-            <p className="mt-1">可以输入任何问题，并附着回答中的任意片段</p>
+            <p className="mt-1">
+              {onAttachAnswer
+                ? '可以输入任何问题，并附着回答中的任意片段'
+                : '可以输入任何问题并继续追问'}
+            </p>
           </div>
         )}
 
@@ -414,7 +421,9 @@ export function AiChatPanel({
           <div
             key={msg.id}
             onMouseUp={() =>
-              msg.role === 'assistant' && handleMessageMouseUp(msg.id)
+              msg.role === 'assistant' &&
+              onAttachAnswer &&
+              handleMessageMouseUp(msg.id)
             }
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
@@ -438,14 +447,16 @@ export function AiChatPanel({
                     className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-white/[0.07] pt-2"
                     onMouseUp={(event) => event.stopPropagation()}
                   >
-                    <button
-                      type="button"
-                      onClick={() => void attachAnswerMessage(msg, msg.content)}
-                      className="rounded-md px-1.5 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
-                      title="将整条回答附着到原文选区"
-                    >
-                      附着整段
-                    </button>
+                    {onAttachAnswer && (
+                      <button
+                        type="button"
+                        onClick={() => void attachAnswerMessage(msg, msg.content)}
+                        className="rounded-md px-1.5 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
+                        title="将整条回答附着到原文选区"
+                      >
+                        附着整段
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {

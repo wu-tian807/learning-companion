@@ -128,4 +128,39 @@ describe('AiChatPanel component state composition', () => {
     expect(html).not.toContain('old question');
     expect(html).not.toContain('late answer');
   });
+
+  it('hides unavailable attachment actions while keeping answer tools', () => {
+    const store = createAiChatStore(() => 'conversation');
+    store.ensureSession('project', 'asset');
+    const question = store.addUserMessage('asset', 'question').messages.at(-1)!;
+    store.addAssistantMessage('asset', 'answer', question.id);
+
+    const html = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+
+    expect(html).not.toContain('附着整段');
+    expect(html).not.toContain('附着选中内容');
+    expect(html).toContain('复制');
+    expect(html).toContain('继续追问');
+
+    const attachmentHtml = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+          onAttachAnswer={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+
+    expect(attachmentHtml).toContain('附着整段');
+  });
 });
