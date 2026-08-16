@@ -29,12 +29,36 @@ describe('HTML Workbench shared protocol', () => {
     const target = createHtmlQuoteTarget(
       '正文内容',
       'learning-content://resource/token',
+      { x: 10, y: 20, width: 80, height: 18 },
+      {
+        domRange: {
+          start: { path: [1, 0, 0], offset: 2 },
+          end: { path: [1, 0, 0], offset: 6 },
+        },
+      },
     );
 
     expect(isHtmlQuoteAnchorV1(target.anchorPayload)).toBe(true);
     expect(
       isHtmlQuoteAnchorV1({
         exact: '',
+      }),
+    ).toBe(false);
+    expect(
+      isHtmlQuoteAnchorV1({
+        exact: '正文内容',
+        domRange: {
+          start: { path: [1, -1], offset: 0 },
+          end: { path: [1, 0], offset: 4 },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isHtmlQuoteAnchorV1({
+        exact: '正文内容',
+        domRange: {
+          start: { path: [1, 0], offset: 0 },
+        },
       }),
     ).toBe(false);
   });

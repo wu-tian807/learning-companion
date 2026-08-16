@@ -60,6 +60,8 @@ export interface HtmlWorkbenchPayload {
 export interface HtmlQuoteAnchorV1 {
   readonly exact: string;
   readonly frameUrl?: string;
+  /** Stable DOM boundary captured from the original Selection Range. */
+  readonly domRange?: HtmlDomRangeV1;
   /** 选区在 frame 内的视口矩形（用于 renderer 定位悬浮条/标注）。 */
   readonly rect?: {
     readonly x: number;
@@ -67,6 +69,17 @@ export interface HtmlQuoteAnchorV1 {
     readonly width: number;
     readonly height: number;
   };
+}
+
+export interface HtmlDomPointV1 {
+  /** childNodes indexes from document.documentElement to the boundary node. */
+  readonly path: readonly number[];
+  readonly offset: number;
+}
+
+export interface HtmlDomRangeV1 {
+  readonly start: HtmlDomPointV1;
+  readonly end: HtmlDomPointV1;
 }
 
 export interface HtmlLinkAnchorV1 {
@@ -139,14 +152,48 @@ export function isHtmlQuoteAnchorV1(
     return false;
   }
 
-  const allowedKeys = new Set(['exact', 'frameUrl', 'rect']);
+  const allowedKeys = new Set([
+    'exact',
+    'frameUrl',
+    'domRange',
+    'rect',
+  ]);
 
   return (
     Object.keys(value).every((key) => allowedKeys.has(key)) &&
     isBoundedText(value.exact, 16_384) &&
     (value.frameUrl === undefined ||
       isBoundedText(value.frameUrl, 8_192)) &&
+    (value.domRange === undefined || isHtmlDomRangeV1(value.domRange)) &&
     (value.rect === undefined || isRectValue(value.rect))
+  );
+}
+
+export function isHtmlDomRangeV1(
+  value: unknown,
+): value is HtmlDomRangeV1 {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 2 &&
+    isHtmlDomPointV1(value.start) &&
+    isHtmlDomPointV1(value.end)
+  );
+}
+
+function isHtmlDomPointV1(value: unknown): value is HtmlDomPointV1 {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 2 &&
+    Array.isArray(value.path) &&
+    value.path.length <= 128 &&
+    value.path.every(
+      (index) =>
+        Number.isSafeInteger(index) && index >= 0 && index <= 100_000,
+    ) &&
+    typeof value.offset === 'number' &&
+    Number.isSafeInteger(value.offset) &&
+    value.offset >= 0 &&
+    value.offset <= 1_000_000
   );
 }
 
@@ -221,6 +268,10 @@ export function createHtmlQuoteTarget(
   exact: string,
   frameUrl?: string,
   rect?: HtmlQuoteAnchorV1['rect'],
+  locator?: Pick<
+    HtmlQuoteAnchorV1,
+    'domRange'
+  >,
 ): JsonValue & ContentAnchorTarget {
   return {
     scope: 'content',
@@ -229,6 +280,20 @@ export function createHtmlQuoteTarget(
     anchorPayload: {
       exact,
       ...(frameUrl ? { frameUrl } : {}),
+      ...(locator?.domRange
+        ? {
+            domRange: {
+              start: {
+                path: [...locator.domRange.start.path],
+                offset: locator.domRange.start.offset,
+              },
+              end: {
+                path: [...locator.domRange.end.path],
+                offset: locator.domRange.end.offset,
+              },
+            },
+          }
+        : {}),
       ...(rect ? { rect } : {}),
     },
   };

@@ -31,6 +31,7 @@ import {
 import { createHtmlConversationStore } from './conversation/conversation-store';
 import {
   isHtmlAnchorTarget,
+  isSameHtmlQuoteLocation,
   type HtmlAnchorTarget,
 } from './anchor-commands';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
@@ -318,9 +319,25 @@ export function HtmlWorkbenchView({
         }
 
         if (mapped.kind === 'selection') {
-          onInteractionChange(mapped.interaction);
           // 有选区文本时显示「引用选中内容」悬浮条（锚点携带 frame 内 rect）
           const selection = findTextSelectionInput(mapped.interaction);
+          if (
+            selection?.target &&
+            isSameHtmlQuoteLocation(
+              selection.target,
+              highlightTargetRef.current,
+            )
+          ) {
+            // Clicking the float bar opens the chat panel, which resizes the
+            // iframe. Electron may publish the still-native selection again
+            // with a different rect. It is already the active context, so do
+            // not resurrect the consumed float bar or generic selection.
+            onInteractionChange({ inputs: [] });
+            setSelectionText(undefined);
+            setSelectionRect(undefined);
+            return;
+          }
+          onInteractionChange(mapped.interaction);
           const payload =
             selection?.target &&
             selection.target.scope === 'content' &&

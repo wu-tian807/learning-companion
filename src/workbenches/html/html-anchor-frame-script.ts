@@ -106,6 +106,24 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     return element;
   }
 
+  function nodeFromDomPath(path: unknown): Node | undefined {
+    if (!Array.isArray(path)) {
+      return undefined;
+    }
+    let node: Node = document.documentElement;
+    for (const index of path) {
+      if (!Number.isSafeInteger(index) || Number(index) < 0) {
+        return undefined;
+      }
+      const child = node.childNodes.item(Number(index));
+      if (!child) {
+        return undefined;
+      }
+      node = child;
+    }
+    return node;
+  }
+
   function matchesElement(element: Element | undefined): element is Element {
     if (!element || !payload) {
       return false;
@@ -158,10 +176,55 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     );
   }
 
+  function resolveDomRange(exact: string): Range | undefined {
+    const domRange =
+      typeof payload?.domRange === 'object' && payload.domRange !== null
+        ? (payload.domRange as Record<string, unknown>)
+        : undefined;
+    const start =
+      typeof domRange?.start === 'object' && domRange.start !== null
+        ? (domRange.start as Record<string, unknown>)
+        : undefined;
+    const end =
+      typeof domRange?.end === 'object' && domRange.end !== null
+        ? (domRange.end as Record<string, unknown>)
+        : undefined;
+    const startNode = nodeFromDomPath(start?.path);
+    const endNode = nodeFromDomPath(end?.path);
+    const startOffset = Number(start?.offset);
+    const endOffset = Number(end?.offset);
+
+    if (
+      !startNode ||
+      !endNode ||
+      !Number.isSafeInteger(startOffset) ||
+      !Number.isSafeInteger(endOffset) ||
+      startOffset < 0 ||
+      endOffset < 0
+    ) {
+      return undefined;
+    }
+
+    try {
+      const range = document.createRange();
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      return normalizedText(range.toString()) === exact
+        ? range
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   function resolveQuote(): Range | undefined {
     const exact = normalizedText(payload?.exact);
     if (!exact || !document.body) {
       return undefined;
+    }
+    const directRange = resolveDomRange(exact);
+    if (directRange) {
+      return directRange;
     }
     const walker = document.createTreeWalker(
       document.body,
@@ -187,8 +250,11 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
       }
     }
 
+    if (characters.length === 0) {
+      return undefined;
+    }
     const startIndex = indexedText.indexOf(exact);
-    if (startIndex < 0 || characters.length === 0) {
+    if (startIndex < 0) {
       return undefined;
     }
     const endIndex = startIndex + exact.length - 1;

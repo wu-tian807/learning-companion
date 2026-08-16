@@ -106,6 +106,10 @@ describe('HTML Main Facility adapters', () => {
     const executeJavaScript = vi.fn(async () => ({
       text: '选中的正文',
       rect: { x: 10, y: 20, width: 120, height: 18 },
+      domRange: {
+        start: { path: [1, 0, 0], offset: 0 },
+        end: { path: [1, 0, 0], offset: 6 },
+      },
     }));
     const sourceFrame = frame(executeJavaScript);
     const payload = await new HtmlTextSelectionFacilityAdapter().capture(
@@ -121,5 +125,41 @@ describe('HTML Main Facility adapters', () => {
         !Array.isArray(payload) &&
         isHtmlQuoteTarget(payload.target),
     ).toBe(true);
+    expect(payload).toMatchObject({
+      target: {
+        anchorPayload: {
+          exact: '选中的正文',
+          domRange: {
+            start: { path: [1, 0, 0], offset: 0 },
+            end: { path: [1, 0, 0], offset: 6 },
+          },
+        },
+      },
+    });
+  });
+
+  it('keeps the selected text when optional DOM boundaries are malformed', async () => {
+    const sourceFrame = frame(
+      vi.fn(async () => ({
+        text: '仍可引用的正文',
+        rect: { x: 10, y: 20, width: 120, height: 18 },
+        domRange: {
+          start: { path: [-1], offset: 0 },
+          end: { path: [1], offset: 6 },
+        },
+      })),
+    );
+    const payload = await new HtmlTextSelectionFacilityAdapter().capture(
+      context(sourceFrame),
+    );
+
+    expect(payload).toMatchObject({
+      text: '仍可引用的正文',
+      target: { anchorPayload: { exact: '仍可引用的正文' } },
+    });
+    expect(
+      (payload as { target?: { anchorPayload?: Record<string, unknown> } })
+        .target?.anchorPayload,
+    ).not.toHaveProperty('domRange');
   });
 });

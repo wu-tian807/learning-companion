@@ -20,6 +20,7 @@ import {
   createHtmlElementTarget,
   createHtmlQuoteTarget,
   HTML_WORKBENCH_ID,
+  isHtmlDomRangeV1,
   isHtmlElementAnchorV1,
   type HtmlQuoteAnchorV1,
 } from './shared';
@@ -30,6 +31,7 @@ export const READ_HTML_FRAME_SELECTION_SCRIPT = `(() => {
     : null;
   const text = selection ? selection.toString() : '';
   let rect;
+  let domRange;
   try {
     if (selection && selection.rangeCount > 0) {
       const r = selection.getRangeAt(0).getBoundingClientRect();
@@ -41,11 +43,36 @@ export const READ_HTML_FRAME_SELECTION_SCRIPT = `(() => {
           height: Math.round(r.height),
         };
       }
+
+      const range = selection.getRangeAt(0);
+      const nodePath = (node) => {
+        const path = [];
+        let current = node;
+        while (current && current !== document.documentElement) {
+          const parent = current.parentNode;
+          if (!parent || path.length >= 128) return undefined;
+          const index = Array.prototype.indexOf.call(parent.childNodes, current);
+          if (index < 0 || index > 100000) return undefined;
+          path.unshift(index);
+          current = parent;
+        }
+        return current === document.documentElement ? path : undefined;
+      };
+      const startPath = nodePath(range.startContainer);
+      const endPath = nodePath(range.endContainer);
+      if (startPath && endPath) {
+        domRange = {
+          start: { path: startPath, offset: range.startOffset },
+          end: { path: endPath, offset: range.endOffset },
+        };
+      }
+
     }
   } catch {
     rect = undefined;
+    domRange = undefined;
   }
-  return { text, rect };
+  return { text, rect, domRange };
 })()`;
 
 export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
@@ -234,13 +261,20 @@ export class HtmlTextSelectionFacilityAdapter
     );
     const parsed =
       typeof result === 'object' && result !== null && !Array.isArray(result)
-        ? (result as { readonly text?: unknown; readonly rect?: unknown })
+        ? (result as {
+            readonly text?: unknown;
+            readonly rect?: unknown;
+            readonly domRange?: unknown;
+          })
         : {};
     const text =
       typeof parsed.text === 'string'
         ? parsed.text.slice(0, CORE_TEXT_SELECTION_MAX_LENGTH)
         : '';
     const frameUrl = context.frame.url || 'about:blank';
+    const domRange = isHtmlDomRangeV1(parsed.domRange)
+      ? parsed.domRange
+      : undefined;
     const rect =
       typeof parsed.rect === 'object' && parsed.rect !== null
         ? (parsed.rect as HtmlQuoteAnchorV1['rect'])
@@ -250,7 +284,11 @@ export class HtmlTextSelectionFacilityAdapter
       ...(text.trim()
         ? {
             text,
-            target: createHtmlQuoteTarget(text, frameUrl, rect),
+            target: createHtmlQuoteTarget(text, frameUrl, rect, {
+              ...(domRange === undefined
+                ? {}
+                : { domRange }),
+            }),
           }
         : {}),
       frameUrl,

@@ -24,8 +24,18 @@ export interface SelectionFloatBarProps {
   readonly onDismiss: () => void;
 }
 
-function readFrameOffset(): { x: number; y: number } {
-  const frame = document.querySelector('iframe[src^="learning-content://"]');
+function readFrame(): HTMLIFrameElement | undefined {
+  const frame = document.querySelector<HTMLIFrameElement>(
+    'iframe[src^="learning-content://"]',
+  );
+
+  return frame ?? undefined;
+}
+
+function readFrameOffset(frame: HTMLIFrameElement | undefined): {
+  x: number;
+  y: number;
+} {
   const r = frame?.getBoundingClientRect();
   return r ? { x: r.left, y: r.top } : { x: 0, y: 0 };
 }
@@ -47,19 +57,50 @@ export function SelectionFloatBar({
     }
 
     const update = () => {
-      const offset = readFrameOffset();
+      const frame = readFrame();
+      const offset = readFrameOffset(frame);
+      const width = ref.current?.offsetWidth ?? 300;
+      const height = ref.current?.offsetHeight ?? 36;
+      const preferredLeft = offset.x + rect.x + 10;
+      const preferredTop = offset.y + rect.y + rect.height + 8;
+      const fallbackTop = offset.y + rect.y - height - 8;
       setPosition({
-        left: offset.x + rect.x + 10,
-        top: offset.y + rect.y + rect.height + 8,
+        left: Math.max(
+          8,
+          Math.min(preferredLeft, globalThis.innerWidth - width - 8),
+        ),
+        top: Math.max(
+          8,
+          Math.min(
+            preferredTop + height <= globalThis.innerHeight - 8
+              ? preferredTop
+              : fallbackTop,
+            globalThis.innerHeight - height - 8,
+          ),
+        ),
       });
     };
     update();
-    const doc = document.getElementById('doc');
-    doc?.addEventListener('scroll', update, { passive: true });
+    document.addEventListener('scroll', update, {
+      capture: true,
+      passive: true,
+    });
     window.addEventListener('resize', update);
+    const frame = readFrame();
+    const resizeObserver =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(update)
+        : undefined;
+    if (frame) {
+      resizeObserver?.observe(frame);
+      if (frame.parentElement) {
+        resizeObserver?.observe(frame.parentElement);
+      }
+    }
     return () => {
-      doc?.removeEventListener('scroll', update);
+      document.removeEventListener('scroll', update, true);
       window.removeEventListener('resize', update);
+      resizeObserver?.disconnect();
     };
   }, [rect]);
 
