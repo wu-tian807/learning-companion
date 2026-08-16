@@ -350,6 +350,108 @@ describe('shared Conversation controller', () => {
     expect(latest.state.historyLoading).toBe(false);
   });
 
+  it('deletes the current saved conversation without saving it again', async () => {
+    const saved: ConversationRecord = {
+      id: 'saved-conversation',
+      title: '待删除对话',
+      messages: [
+        { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },
+        { id: 'a', role: 'assistant', text: '旧回答', createdTime: 2 },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const historyStore = createMemoryHistory([saved]);
+    render({ contribution: createContribution({ historyStore }) });
+    await flush();
+
+    act(() => latest.actions.restore(saved));
+    act(() => latest.actions.remove(saved));
+    await flush();
+
+    expect(historyStore.remove).toHaveBeenCalledOnce();
+    expect(historyStore.remove).toHaveBeenCalledWith(saved.id);
+    expect(historyStore.save).not.toHaveBeenCalled();
+    expect(latest.state.history).toEqual([]);
+    expect(latest.state.conversation.id).not.toBe(saved.id);
+  });
+
+  it('serializes a delete behind an in-flight save and ignores duplicate deletes', async () => {
+    let saveCount = 0;
+    let resolveFinalSave!: (records: readonly ConversationRecord[]) => void;
+    const historyStore: ConversationHistoryStore = {
+      list: vi.fn(async () => []),
+      save: vi.fn((record) => {
+        saveCount += 1;
+        if (saveCount === 1) return Promise.resolve([record]);
+        return new Promise<readonly ConversationRecord[]>((resolve) => {
+          resolveFinalSave = resolve;
+        });
+      }),
+      remove: vi.fn(async () => []),
+    };
+    render({ contribution: createContribution({ historyStore }) });
+
+    act(() => latest.actions.submit('问题'));
+    await flush();
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', { answer: '最终回答' }),
+    });
+    await flush();
+    expect(historyStore.save).toHaveBeenCalledTimes(2);
+
+    const completed = latest.state.conversation;
+    act(() => latest.actions.remove(completed));
+    act(() => latest.actions.remove(completed));
+    expect(historyStore.remove).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveFinalSave([completed]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(historyStore.remove).toHaveBeenCalledOnce();
+    expect(historyStore.remove).toHaveBeenCalledWith(completed.id);
+    expect(latest.state.history).toEqual([]);
+    expect(latest.state.conversation.id).not.toBe(completed.id);
+  });
+
+  it('restores an optimistically removed history item when deletion fails and allows retry', async () => {
+    const saved: ConversationRecord = {
+      id: 'saved-conversation',
+      title: '可重试删除',
+      messages: [
+        { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },
+        { id: 'a', role: 'assistant', text: '旧回答', createdTime: 2 },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const historyStore: ConversationHistoryStore = {
+      list: vi.fn(async () => [saved]),
+      save: vi.fn(async (record) => [record]),
+      remove: vi.fn()
+        .mockRejectedValueOnce(new Error('remove failed'))
+        .mockResolvedValueOnce([]),
+    };
+    render({ contribution: createContribution({ historyStore }) });
+    await flush();
+    act(() => latest.actions.restore(saved));
+
+    act(() => latest.actions.remove(saved));
+    expect(latest.state.history).toEqual([]);
+    await flush();
+    expect(latest.state.history).toContainEqual(saved);
+    expect(latest.state.error?.message).toBe('无法删除对话记录，请稍后重试。');
+
+    act(() => latest.actions.remove(saved));
+    await flush();
+    expect(historyStore.remove).toHaveBeenCalledTimes(2);
+    expect(latest.state.history).toEqual([]);
+  });
+
   it('surfaces a completed Task with no valid answer as a retryable result error', async () => {
     client.start = vi.fn(async () => ({
       taskId: 'task-1',

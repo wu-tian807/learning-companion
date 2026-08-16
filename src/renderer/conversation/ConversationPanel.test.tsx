@@ -122,6 +122,41 @@ describe('ConversationPanel', () => {
     expect(html).toContain('删除');
   });
 
+  it('keeps the history tab available while the current answer is generating', () => {
+    const conversation = {
+      id: 'active',
+      title: '生成中的问题',
+      messages: [
+        { id: 'q', role: 'user' as const, text: '问题', createdTime: 1 },
+        { id: 'a', role: 'assistant' as const, text: '', createdTime: 2 },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const html = render(state({
+      busy: true,
+      activeTaskId: 'task-1',
+      conversation,
+      history: [conversation],
+    }));
+    const historyButton = html.match(/<button[^>]*>历史 1<\/button>/u)?.[0];
+
+    expect(historyButton).toBeDefined();
+    expect(historyButton).not.toContain(' disabled=""');
+    expect(html).toContain('正在等待回答');
+
+    const historyHtml = render(state({
+      tab: 'history',
+      busy: true,
+      activeTaskId: 'task-1',
+      conversation,
+      history: [conversation],
+    }));
+    expect(historyHtml).toContain('生成中的问题');
+    expect(historyHtml).toContain('当前回答完成或停止后可切换对话');
+    expect(historyHtml).toContain('当前回答生成中，停止后可删除');
+  });
+
   it('renders Markdown answers and optional Attachment actions supplied by the Workbench', () => {
     const html = render(state({
       conversation: {

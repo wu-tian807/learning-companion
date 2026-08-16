@@ -106,12 +106,25 @@ export function useConversationController({
   const lastLaunchIdRef = useRef<number | undefined>(undefined);
   const contributionRef = useRef(contribution);
   const onPersistenceErrorRef = useRef(onPersistenceError);
+  const deletedConversationIdsRef = useRef(new Set<string>());
+  const historyMutationTailRef = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     contributionRef.current = contribution;
   }, [contribution]);
   useEffect(() => {
     onPersistenceErrorRef.current = onPersistenceError;
   }, [onPersistenceError]);
+
+  const enqueueHistoryMutation = useCallback(<T,>(
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    const result = historyMutationTailRef.current.then(operation, operation);
+    historyMutationTailRef.current = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }, []);
 
   const replaceConversation = useCallback((next: ConversationRecord) => {
     conversationRef.current = next;
@@ -143,17 +156,33 @@ export function useConversationController({
   }, [writePendingContext]);
 
   const persist = useCallback(async (record = conversationRef.current) => {
-    if (record.messages.length === 0) return;
+    if (
+      record.messages.length === 0 ||
+      deletedConversationIdsRef.current.has(record.id)
+    ) {
+      return;
+    }
     try {
-      const records = await contribution.historyStore.save(record);
-      if (mountedRef.current) setHistory(records);
+      const records = await enqueueHistoryMutation(() => {
+        if (deletedConversationIdsRef.current.has(record.id)) {
+          return Promise.resolve<readonly ConversationRecord[] | undefined>(
+            undefined,
+          );
+        }
+        return contribution.historyStore.save(record);
+      });
+      if (mountedRef.current && records) {
+        setHistory(records.filter(
+          ({ id }) => !deletedConversationIdsRef.current.has(id),
+        ));
+      }
     } catch (persistenceError) {
       if (mountedRef.current) {
         setError({ message: '无法保存对话记录，请稍后重试。' });
       }
       onPersistenceErrorRef.current?.(persistenceError);
     }
-  }, [contribution.historyStore]);
+  }, [contribution.historyStore, enqueueHistoryMutation]);
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
@@ -303,9 +332,7 @@ export function useConversationController({
     }
   }), [applyTerminalTask, projectId, taskClient, updateConversation]);
 
-  const startNew = useCallback((context?: JsonValue) => {
-    if (activeTaskIdRef.current) return;
-    void persistRef.current();
+  const resetConversation = useCallback((context?: JsonValue) => {
     if (context === undefined) {
       clearTransientContext();
     } else {
@@ -317,6 +344,12 @@ export function useConversationController({
     setActivityLabel(undefined);
     setTab('chat');
   }, [clearTransientContext, createId, now, replaceConversation, setPendingContext]);
+
+  const startNew = useCallback((context?: JsonValue) => {
+    if (activeTaskIdRef.current) return;
+    void persistRef.current();
+    resetConversation(context);
+  }, [resetConversation]);
 
   const restore = useCallback((record: ConversationRecord) => {
     if (activeTaskIdRef.current) return;
@@ -534,18 +567,41 @@ export function useConversationController({
   }, [applyTerminalTask, bindTask, error?.retryTaskId, projectId, taskClient]);
 
   const remove = useCallback((record: ConversationRecord) => {
-    if (record.id === conversationRef.current.id && activeTaskIdRef.current) return;
-    void contribution.historyStore.remove(record.id).then(
+    if (
+      deletedConversationIdsRef.current.has(record.id) ||
+      (record.id === conversationRef.current.id && activeTaskIdRef.current)
+    ) {
+      return;
+    }
+    deletedConversationIdsRef.current.add(record.id);
+    setHistory((current) => current.filter(({ id }) => id !== record.id));
+    if (record.id === conversationRef.current.id) {
+      resetConversation();
+    }
+    void enqueueHistoryMutation(async () => {
+      const records = await contribution.historyStore.remove(record.id);
+      if (records.some(({ id }) => id === record.id)) {
+        throw new Error('Conversation 删除后仍存在');
+      }
+      return records;
+    }).then(
       (records) => {
-        setHistory(records);
-        if (record.id === conversationRef.current.id) startNew();
+        if (!mountedRef.current) return;
+        setHistory(records.filter(
+          ({ id }) => !deletedConversationIdsRef.current.has(id),
+        ));
       },
       (removeError: unknown) => {
+        deletedConversationIdsRef.current.delete(record.id);
+        if (!mountedRef.current) return;
+        setHistory((current) => current.some(({ id }) => id === record.id)
+          ? current
+          : [...current, record]);
         setError({ message: '无法删除对话记录，请稍后重试。' });
         onPersistenceErrorRef.current?.(removeError);
       },
     );
-  }, [contribution.historyStore, startNew]);
+  }, [contribution.historyStore, enqueueHistoryMutation, resetConversation]);
 
   return {
     state: {

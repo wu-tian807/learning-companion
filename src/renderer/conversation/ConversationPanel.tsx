@@ -200,6 +200,8 @@ function MessageBubble({
 function HistoryView({
   history,
   loading,
+  busy,
+  currentConversationId,
   contribution,
   onRestore,
   onRemove,
@@ -207,6 +209,8 @@ function HistoryView({
 }: {
   readonly history: readonly ConversationRecord[];
   readonly loading: boolean;
+  readonly busy: boolean;
+  readonly currentConversationId: string;
   readonly contribution: WorkbenchConversationContribution;
   readonly onRestore: (record: ConversationRecord) => void;
   readonly onRemove: (record: ConversationRecord) => void;
@@ -226,6 +230,7 @@ function HistoryView({
     <div className="space-y-2 overflow-y-auto p-3">
       {[...history].sort((left, right) => right.updatedTime - left.updatedTime).map((record) => {
         const firstQuestion = record.messages.find((message) => message.role === 'user');
+        const currentIsGenerating = busy && record.id === currentConversationId;
         const latestContext = [...record.messages].reverse().find(
           (message) => message.role === 'user' && message.context !== undefined,
         )?.context;
@@ -234,7 +239,13 @@ function HistoryView({
             key={record.id}
             className="group rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 hover:border-indigo-300/25 hover:bg-indigo-400/[0.07]"
           >
-            <button type="button" onClick={() => onRestore(record)} className="block w-full text-left">
+            <button
+              type="button"
+              disabled={busy}
+              title={busy ? '当前回答完成或停止后可切换对话' : undefined}
+              onClick={() => onRestore(record)}
+              className="block w-full text-left disabled:cursor-not-allowed disabled:opacity-60"
+            >
               <span className="block truncate text-[13px] font-medium text-slate-200">{record.title}</span>
               <span className="mt-1 block line-clamp-2 text-[11px] leading-5 text-slate-500">
                 {firstQuestion?.text ?? '（空对话）'}
@@ -247,7 +258,7 @@ function HistoryView({
               <button
                 type="button"
                 onClick={() => {
-                  onRestore(record);
+                  if (!busy) onRestore(record);
                   if (latestContext !== undefined) {
                     void Promise.resolve(
                       contribution.revealContext?.(latestContext),
@@ -260,8 +271,10 @@ function HistoryView({
               </button>
               <button
                 type="button"
+                disabled={currentIsGenerating}
+                title={currentIsGenerating ? '当前回答生成中，停止后可删除' : undefined}
                 onClick={() => onRemove(record)}
-                className="text-[11px] text-slate-500 hover:text-rose-300"
+                className="text-[11px] text-slate-500 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 删除
               </button>
@@ -382,7 +395,6 @@ export function ConversationPanel({
             <button
               key={tab}
               type="button"
-              disabled={tab === 'history' && state.busy}
               onClick={() => actions.setTab(tab)}
               className={`rounded-t-md px-3 py-1.5 text-[11px] ${
                 state.tab === tab
@@ -400,6 +412,8 @@ export function ConversationPanel({
         <HistoryView
           history={state.history}
           loading={state.historyLoading}
+          busy={state.busy}
+          currentConversationId={state.conversation.id}
           contribution={contribution}
           onRestore={actions.restore}
           onRemove={actions.remove}
