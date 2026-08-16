@@ -147,6 +147,35 @@ describe('AiChatPanel component state composition', () => {
     expect(html).toContain('disabled=""');
   });
 
+  it('renders a persisted question source card with its page and selected text', () => {
+    const store = createAiChatStore(() => 'conversation');
+    store.ensureSession('project', 'asset');
+    store.addUserMessage('asset', '这是什么意思？', {
+      target: {
+        scope: 'content',
+        anchorType: 'pdf.text-range',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber: 6, start: 1, end: 8 },
+      },
+      pageNumber: 6,
+      selectedText: '查询向量与键向量的关系',
+    });
+
+    const html = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+
+    expect(html).toContain('data-ai-question-source="selection"');
+    expect(html).toContain('第 6 页');
+    expect(html).toContain('查询向量与键向量的关系');
+  });
+
   it('renders a fresh conversation after clear without stale replies', () => {
     let sequence = 0;
     const store = createAiChatStore(() => `conversation-${++sequence}`);

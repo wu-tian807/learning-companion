@@ -6,7 +6,10 @@
  * 让组件订阅 store 变化时自动重渲染。
  */
 
-import type { ContentAnchorTarget } from '../../../../shared/workbench/anchor';
+import {
+  isAssetTarget,
+  type ContentAnchorTarget,
+} from '../../../../shared/workbench/anchor';
 
 export interface AiChatMessage {
   readonly id: string;
@@ -23,6 +26,8 @@ export interface AiChatMessage {
     readonly target: ContentAnchorTarget;
     readonly pageNumber?: number;
     readonly selectedText?: string;
+    /** A small local preview for image/formula region selections. */
+    readonly previewDataUrl?: string;
   };
 }
 
@@ -108,6 +113,7 @@ export type AiChatStore = AiChatActions;
 
 const SESSION_ID_PREFIX = 'ai-chat-';
 const DOCUMENT_AI_HISTORY_PREFIX = 'learning-companion:document-ai-history:v1';
+const MAX_HISTORY_PREVIEW_DATA_URL_LENGTH = 48_000;
 
 export interface AiChatHistoryStorage {
   getItem(key: string): string | null;
@@ -146,6 +152,31 @@ function loadHistory(
         typeof (value as AiChatMessage).timestamp !== 'number'
       ) return [];
       const message = value as AiChatMessage;
+      const rawAnchor = message.anchor;
+      const anchor = rawAnchor &&
+        typeof rawAnchor === 'object' &&
+        isAssetTarget(rawAnchor.target) &&
+        rawAnchor.target.scope === 'content'
+        ? {
+            target: rawAnchor.target,
+            ...(typeof rawAnchor.pageNumber === 'number' &&
+              Number.isSafeInteger(rawAnchor.pageNumber) &&
+              rawAnchor.pageNumber > 0
+              ? { pageNumber: rawAnchor.pageNumber }
+              : {}),
+            ...(typeof rawAnchor.selectedText === 'string'
+              ? { selectedText: rawAnchor.selectedText.slice(0, 20_000) }
+              : {}),
+            ...(typeof rawAnchor.previewDataUrl === 'string' &&
+              /^data:image\/(?:png|jpe?g);base64,/u.test(
+                rawAnchor.previewDataUrl,
+              ) &&
+              rawAnchor.previewDataUrl.length <=
+                MAX_HISTORY_PREVIEW_DATA_URL_LENGTH
+              ? { previewDataUrl: rawAnchor.previewDataUrl }
+              : {}),
+          }
+        : undefined;
       return [{
         id: message.id,
         role: message.role,
@@ -157,6 +188,7 @@ function loadHistory(
         ...(typeof message.modelInfo === 'string'
           ? { modelInfo: message.modelInfo }
           : {}),
+        ...(anchor ? { anchor } : {}),
       }];
     });
   } catch {
@@ -170,9 +202,28 @@ function persistHistory(
 ): void {
   if (!storage || !session.projectId) return;
   try {
+    const messages = session.messages.slice(-100).map((message) => {
+      if (
+        !message.anchor?.previewDataUrl ||
+        message.anchor.previewDataUrl.length <=
+          MAX_HISTORY_PREVIEW_DATA_URL_LENGTH
+      ) {
+        return message;
+      }
+      const anchor = {
+        target: message.anchor.target,
+        ...(message.anchor.pageNumber === undefined
+          ? {}
+          : { pageNumber: message.anchor.pageNumber }),
+        ...(message.anchor.selectedText === undefined
+          ? {}
+          : { selectedText: message.anchor.selectedText }),
+      };
+      return { ...message, anchor };
+    });
     storage.setItem(
       historyKey(session.projectId, session.assetId),
-      JSON.stringify(session.messages.slice(-100)),
+      JSON.stringify(messages),
     );
   } catch {
     // 本地历史不能影响当前问答；例如浏览器存储空间不足时继续使用内存会话。

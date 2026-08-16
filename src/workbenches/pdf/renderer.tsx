@@ -110,6 +110,50 @@ interface CompletedPdfRegionSelection {
   readonly height: number;
 }
 
+interface PdfRegionPreviewInput {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Captures a compact, local-only visual reference for a formula/image region.
+ * It is intentionally small because question history is stored in localStorage.
+ */
+export function capturePdfRegionPreview(
+  source: HTMLCanvasElement,
+  region: PdfRegionPreviewInput,
+): string | undefined {
+  const sourceWidth = source.width;
+  const sourceHeight = source.height;
+  if (sourceWidth < 1 || sourceHeight < 1) return undefined;
+
+  const sx = Math.max(0, Math.floor(region.x * sourceWidth));
+  const sy = Math.max(0, Math.floor(region.y * sourceHeight));
+  const sw = Math.min(
+    sourceWidth - sx,
+    Math.max(1, Math.ceil(region.width * sourceWidth)),
+  );
+  const sh = Math.min(
+    sourceHeight - sy,
+    Math.max(1, Math.ceil(region.height * sourceHeight)),
+  );
+  const scale = Math.min(1, 180 / Math.max(sw, sh));
+  const preview = document.createElement('canvas');
+  preview.width = Math.max(1, Math.round(sw * scale));
+  preview.height = Math.max(1, Math.round(sh * scale));
+  const context = preview.getContext('2d');
+  if (!context) return undefined;
+
+  try {
+    context.drawImage(source, sx, sy, sw, sh, 0, 0, preview.width, preview.height);
+    return preview.toDataURL('image/jpeg', 0.68);
+  } catch {
+    return undefined;
+  }
+}
+
 const PDF_REGION_QUICK_QUESTIONS = [
   ['解释', '请用通俗易懂的语言解释我框选的内容。'],
   ['举例', '请针对我框选的内容给出一个具体、容易理解的例子。'],
@@ -1016,6 +1060,10 @@ export function PdfDocumentWorkbenchView({
           return;
         }
 
+        const previewDataUrl = capturePdfRegionPreview(
+          region.canvas,
+          completed,
+        );
         const store = getGlobalAiChatStore();
         store.ensureSession(asset.projectId, asset.id);
         store.setPendingAnchor(asset.id, {
@@ -1032,6 +1080,9 @@ export function PdfDocumentWorkbenchView({
             },
           },
           pageNumber: region.pageNumber,
+          ...(previewDataUrl
+            ? { previewDataUrl }
+            : {}),
         });
         store.setPanelOpen(true);
         store.setDraft('');

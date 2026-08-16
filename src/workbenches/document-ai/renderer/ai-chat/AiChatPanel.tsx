@@ -27,6 +27,7 @@ import {
   normalizeAiMarkdown,
   normalizeSelectedAnswerText,
 } from './ai-markdown';
+import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 
 export function AiMarkdownContent({ content }: { readonly content: string }) {
   return (
@@ -35,6 +36,61 @@ export function AiMarkdownContent({ content }: { readonly content: string }) {
         {normalizeAiMarkdown(content)}
       </ReactMarkdown>
     </div>
+  );
+}
+
+function QuestionSourceCard({
+  assetId,
+  anchor,
+}: {
+  readonly assetId: string;
+  readonly anchor?: AiChatMessage['anchor'];
+}) {
+  const pageLabel = anchor?.pageNumber
+    ? `第 ${anchor.pageNumber} 页`
+    : '整份资料';
+  const selectedText = anchor?.selectedText?.trim();
+
+  if (!anchor) {
+    return (
+      <div
+        data-ai-question-source="asset"
+        className="mb-1.5 rounded-xl border border-white/[0.08] bg-black/15 px-3 py-2 text-left text-[11px] text-slate-400"
+      >
+        <span className="font-medium text-slate-300">提问范围 · </span>
+        {pageLabel}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-ai-question-source="selection"
+      onClick={() => revealWorkbenchAnchor(assetId, anchor.target)}
+      className="mb-1.5 w-full rounded-xl border border-indigo-300/20 bg-indigo-400/[0.08] px-3 py-2 text-left transition-colors hover:border-indigo-300/45 hover:bg-indigo-400/[0.14]"
+      title="点击回到原始选区"
+    >
+      <span className="block text-[10px] font-medium text-indigo-200">
+        选区来源 · {pageLabel} · 点击定位
+      </span>
+      {anchor.previewDataUrl && (
+        <img
+          src={anchor.previewDataUrl}
+          alt={`第 ${anchor.pageNumber ?? ''} 页框选预览`}
+          className="mt-1.5 max-h-28 w-full rounded-md border border-white/10 bg-white object-contain"
+        />
+      )}
+      {selectedText ? (
+        <span className="mt-1 block line-clamp-3 whitespace-pre-wrap text-[11px] leading-5 text-slate-300">
+          {selectedText}
+        </span>
+      ) : (
+        <span className="mt-1 block text-[11px] text-slate-400">
+          已框选该页区域（图表、公式或图片）
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -432,7 +488,14 @@ export function AiChatPanel({
             }
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div
+            <div className="max-w-[85%]">
+              {msg.role === 'user' && (
+                <QuestionSourceCard
+                  assetId={assetId}
+                  anchor={msg.anchor}
+                />
+              )}
+              <div
               className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                 msg.role === 'user'
                   ? 'bg-indigo-500/25 text-slate-100 rounded-br-md'
@@ -501,6 +564,7 @@ export function AiChatPanel({
               ) : (
                 <p className="whitespace-pre-wrap select-text">{msg.content}</p>
               )}
+              </div>
             </div>
           </div>
         ))}

@@ -97,4 +97,41 @@ describe('Document AI chat session lifecycle', () => {
       .ensureSession('project', 'asset');
     expect(afterClear.messages).toHaveLength(0);
   });
+
+  it('restores the source anchor with local question history', () => {
+    const storage = createHistoryStorage();
+    const firstStore = createAiChatStore(() => 'first', storage);
+    firstStore.ensureSession('project', 'asset');
+    firstStore.addUserMessage('asset', '解释这个公式', {
+      target: {
+        scope: 'content',
+        anchorType: 'pdf.region',
+        anchorVersion: 1,
+        anchorPayload: {
+          pageNumber: 4,
+          x: 0.2,
+          y: 0.3,
+          width: 0.4,
+          height: 0.2,
+        },
+      },
+      pageNumber: 4,
+      selectedText: 'softmax 注意力权重',
+      previewDataUrl: 'data:image/jpeg;base64,cHJldmlldw==',
+    });
+
+    const restored = createAiChatStore(() => 'second', storage)
+      .ensureSession('project', 'asset');
+    const question = restored.messages.at(0);
+
+    expect(question?.anchor?.pageNumber).toBe(4);
+    expect(question?.anchor?.selectedText).toBe('softmax 注意力权重');
+    expect(question?.anchor?.previewDataUrl).toBe(
+      'data:image/jpeg;base64,cHJldmlldw==',
+    );
+    expect(question?.anchor?.target).toMatchObject({
+      scope: 'content',
+      anchorType: 'pdf.region',
+    });
+  });
 });
