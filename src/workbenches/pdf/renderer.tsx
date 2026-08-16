@@ -154,6 +154,16 @@ export function capturePdfRegionPreview(
   }
 }
 
+function findRenderedPdfCanvas(
+  page: HTMLElement,
+): HTMLCanvasElement | undefined {
+  return [...page.querySelectorAll<HTMLCanvasElement>('canvas')]
+    .filter((canvas) => canvas.width > 0 && canvas.height > 0)
+    .sort((left, right) =>
+      right.width * right.height - left.width * left.height,
+    )[0];
+}
+
 const PDF_REGION_QUICK_QUESTIONS = [
   ['解释', '请用通俗易懂的语言解释我框选的内容。'],
   ['举例', '请针对我框选的内容给出一个具体、容易理解的例子。'],
@@ -952,7 +962,7 @@ export function PdfDocumentWorkbenchView({
         regionMode && Boolean(page) && !startsOnInteractiveElement;
 
       if (shouldSelectRegion) {
-        const canvas = page?.querySelector<HTMLCanvasElement>('canvas');
+        const canvas = page ? findRenderedPdfCanvas(page) : undefined;
         const pageNumber = Number(page?.dataset.pageNumber);
         if (
           event.button === 0 &&
