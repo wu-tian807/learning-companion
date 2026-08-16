@@ -50,6 +50,11 @@ function createExternalLibraries(): ExternalLibraryServiceApi {
     cancel: vi.fn(),
     remove: vi.fn(),
     migrate: vi.fn(),
+    requireRuntime: vi.fn(async () => ({
+      libraryId: 'libreoffice',
+      runtimeDirectory: '/runtime',
+      executablePath: '/runtime/soffice',
+    })),
     requireExecutable: vi.fn(async () => '/runtime/soffice'),
     subscribe: vi.fn(() => () => undefined),
   };

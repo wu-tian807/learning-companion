@@ -41,7 +41,7 @@ describe('GenerationTask', () => {
     task.recordPrepared({
       checkpoint: {
         completedTime: 110,
-        manifestRef: 'control/prepared-manifest.json',
+        assetReferences: {},
       },
       durationMs: 10,
       updatedTime: 110,
@@ -107,7 +107,7 @@ describe('GenerationTask', () => {
     const task = createTask();
 
     task.recordPrepared({
-      checkpoint: { completedTime: 105, manifestRef: 'control/old.json' },
+      checkpoint: { completedTime: 105, assetReferences: {} },
       durationMs: 5,
       updatedTime: 105,
     });
@@ -117,14 +117,28 @@ describe('GenerationTask', () => {
       message: 'interrupted',
     });
     task.recordPrepared({
-      checkpoint: { completedTime: 110, manifestRef: 'control/new.json' },
+      checkpoint: {
+        completedTime: 110,
+        assetReferences: {
+          sources: [
+            {
+              alias: 'sources-0001',
+              assetId: 'asset-1',
+              name: 'lesson.md',
+              mediaType: 'text/markdown',
+              contentRevision: 'revision-1',
+              relativePath: 'references/sources-0001/source.md',
+            },
+          ],
+        },
+      },
       durationMs: 4,
       updatedTime: 110,
     });
 
-    expect(task.getSnapshot().prepared?.manifestRef).toBe(
-      'control/new.json',
-    );
+    expect(
+      task.getSnapshot().prepared?.assetReferences?.sources?.[0]?.assetId,
+    ).toBe('asset-1');
     expect(task.getSnapshot().failure).toBeUndefined();
     expect(task.getSnapshot().metrics.prepareDurationMs).toBe(4);
   });
@@ -163,7 +177,7 @@ describe('GenerationTask', () => {
     task.recordPrepared({
       checkpoint: {
         completedTime: 105,
-        manifestRef: 'control/prepared-manifest.json',
+        assetReferences: {},
       },
       durationMs: 5,
       updatedTime: 105,

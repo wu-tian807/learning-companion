@@ -61,6 +61,8 @@ function createSnapshot(
   return {
     id: "libreoffice",
     displayName: "LibreOffice",
+    description: "Office preview",
+    category: "document",
     version: "26.2.5",
     expectedSize: 297_407_265,
     rootPath: "/Users/student/Documents/Learning Companion/externalLib",
@@ -87,6 +89,11 @@ function createService() {
       libraries: [snapshot],
     })),
     requireExecutable: vi.fn(async () => "/tmp/soffice"),
+    requireRuntime: vi.fn(async () => ({
+      libraryId: "libreoffice",
+      runtimeDirectory: "/tmp/libreoffice",
+      executablePath: "/tmp/soffice",
+    })),
     subscribe: vi.fn((nextListener: ExternalLibraryListener) => {
       listener = nextListener;
       return unsubscribe;
@@ -150,6 +157,21 @@ describe("ExternalLibrary IPC handlers", () => {
       status: "downloading",
     });
     expect(service.startInstallation).toHaveBeenCalledWith("libreoffice");
+  });
+
+  it("passes a validated component variant to the service", async () => {
+    const { service } = createService();
+    registerExternalLibraryHandlers(service);
+
+    await findHandler(IPC_CHANNELS.startExternalLibraryInstallation)({
+      libraryId: "libreoffice",
+      variantId: "nvidia",
+    });
+
+    expect(service.startInstallation).toHaveBeenCalledWith(
+      "libreoffice",
+      "nvidia",
+    );
   });
 
   it("selects and migrates the external library root", async () => {

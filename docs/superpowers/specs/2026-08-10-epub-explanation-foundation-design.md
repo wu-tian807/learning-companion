@@ -10,7 +10,7 @@
 |---|---|---|
 | 交互语义 | 即时解释（锚定 Note） | 用户操作是固定选区上的一次解释，结果需要保存和定位，不包含追问输入框 |
 | Note 正文来源 | Agent 最终回答 | 产物只有一份短 Markdown，不需要 Agent 在工作区编辑文件或执行多文件自检 |
-| 是否显示 delta | 否 | 当前入口是异步 Note 生成；UI 展示 pending/failed/completed 状态，避免临时文本与持久结果出现双重真相 |
+| 是否显示 delta | 是，仅运行时预览 | 真实 delta 减少无反馈等待；临时文本不持久化，最终 Attachment 仍是唯一业务结果 |
 | Session 生命周期 | `task` | 每个选区可独立复现，避免其他段落的历史上下文污染解释 |
 | 稳定实例边界 | 不适用 | 当前功能不继承前文；未来问答使用显式 Conversation 作为稳定边界 |
 | 重试策略 | 重试原 GenerationTask | 保留 prepare、Agent call、Session 和 metrics checkpoint，只重新执行未完成的 process |
@@ -36,10 +36,12 @@ Renderer 不直接调用 Provider，EPUB IPC 也不提供第二条 AI 调用路�
 
 Provider 事件统一为 session、assistant delta、assistant completed、tool、usage 和 status。调用方通过单次 `agent.call()` 的选项决定是否把 assistant 运行时事件送到 GenerationTask 事件出口：
 
-- `assistantEvents: 'none'`：仍返回并持久化最终回答，但不向 Renderer 广播正文事件；适合 EPUB Note 和文件型生成。
-- `assistantEvents: 'runtime'`：转发真实 delta 和最终 completed snapshot；适合未来自由问答。
+- `assistantEvents: 'none'`：仍返回并持久化最终回答，但不向 Renderer 广播正文事件；适合不需要正文预览的文件型生成。
+- `assistantEvents: 'runtime'`：转发真实 delta 和最终 completed snapshot；EPUB 用它显示临时解释预览，自由问答也可使用。
 - 没有真实 delta 的 Provider 只产生 completed snapshot，不能在结束时把全文伪装成 delta。
 - 高频 delta 只存在于运行时事件流，不逐块写入数据库。
+
+EPUB Renderer 按 GenerationTask ID 在内存中隔离并拼接临时 delta。`assistant-completed` 只校正运行时预览并显示“正在保存”；只有 Processor 校验 `assistantOutput`、成功创建 Attachment 后，界面才切换到正式 Markdown Note。失败或取消不会把半成品写入 Attachment。
 
 ## Attachment 边界
 

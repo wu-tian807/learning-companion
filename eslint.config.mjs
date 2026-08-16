@@ -6,7 +6,21 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['.vite/**', 'coverage/**', 'dist/**', 'node_modules/**', 'out/**'],
+    ignores: [
+      '.pnpm-store/**',
+      '.vite/**',
+      'coverage/**',
+      'demos/**/.cache/**',
+      'demos/**/.downloads/**',
+      'demos/**/.fixtures/**',
+      'demos/**/.models/**',
+      'demos/**/.patch-work/**',
+      'demos/**/.runtime/**',
+      'demos/**/results/**',
+      'dist/**',
+      'node_modules/**',
+      'out/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -90,6 +104,7 @@ export default tseslint.config(
       'forge.config.ts',
       'vite.*.config.ts',
       'vitest.config.ts',
+      'demos/**/*.mjs',
       'scripts/**/*.mjs',
       'src/main/**/*.ts',
       'src/preload/**/*.ts',

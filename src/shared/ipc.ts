@@ -96,6 +96,7 @@ export const IPC_CHANNELS = {
   revealAssetInFolder: "asset:reveal-in-folder",
   assetChanged: "asset:changed",
   listGenerationTasks: "generation-task:list",
+  getGenerationTask: "generation-task:get",
   startGenerationTask: "generation-task:start",
   retryGenerationTask: "generation-task:retry",
   cancelGenerationTask: "generation-task:cancel",
@@ -160,7 +161,7 @@ export interface LearningCompanionApi {
     request: ExternalLibraryIdRequest,
   ) => Promise<ExternalLibrarySnapshot>;
   startExternalLibraryInstallation: (
-    request: ExternalLibraryIdRequest,
+    request: InstallExternalLibraryRequest,
   ) => Promise<ExternalLibrarySnapshot>;
   cancelExternalLibrary: (request: ExternalLibraryIdRequest) => Promise<void>;
   removeExternalLibrary: (
@@ -211,6 +212,9 @@ export interface LearningCompanionApi {
   listGenerationTasks: (
     request: GenerationTaskProjectRequest,
   ) => Promise<GenerationTaskView[]>;
+  getGenerationTask: (
+    request: GenerationTaskIdRequest,
+  ) => Promise<GenerationTaskView | undefined>;
   startGenerationTask: (
     request: StartGenerationTaskRequest,
   ) => Promise<GenerationTaskView>;
@@ -373,6 +377,11 @@ export interface AssetIdRequest {
 
 export interface ExternalLibraryIdRequest {
   libraryId: string;
+}
+
+export interface InstallExternalLibraryRequest
+  extends ExternalLibraryIdRequest {
+  variantId?: string;
 }
 
 export interface MigrateExternalLibrariesRequest {
@@ -681,6 +690,19 @@ export function isExternalLibraryIdRequest(
     isRecord(value) &&
     isRequiredText(value.libraryId, 128) &&
     /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.libraryId)
+  );
+}
+
+export function isInstallExternalLibraryRequest(
+  value: unknown,
+): value is InstallExternalLibraryRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.libraryId, 128) &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.libraryId) &&
+    (value.variantId === undefined ||
+      (isRequiredText(value.variantId, 128) &&
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value.variantId)))
   );
 }
 

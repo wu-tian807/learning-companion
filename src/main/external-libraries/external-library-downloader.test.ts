@@ -27,6 +27,7 @@ async function createDestinationPath(): Promise<string> {
 
 function createPackage(content: Uint8Array) {
   return {
+    id: 'package-dmg',
     platform: 'darwin' as const,
     architecture: 'arm64' as const,
     packageType: 'dmg' as const,
@@ -64,7 +65,7 @@ describe('ExternalLibraryDownloader', () => {
     const onProgress = vi.fn();
 
     const result = await downloader.download({
-      packageDefinition: createPackage(content),
+      resourceDefinition: createPackage(content),
       destinationPath,
       signal: new AbortController().signal,
       onProgress,
@@ -98,7 +99,7 @@ describe('ExternalLibraryDownloader', () => {
 
     await expect(
       downloader.download({
-        packageDefinition: createPackage(trusted),
+        resourceDefinition: createPackage(trusted),
         destinationPath,
         signal: new AbortController().signal,
       }),
@@ -135,7 +136,7 @@ describe('ExternalLibraryDownloader', () => {
 
     await expect(
       downloader.download({
-        packageDefinition: createPackage(content),
+        resourceDefinition: createPackage(content),
         destinationPath,
         signal: controller.signal,
       }),
@@ -161,7 +162,7 @@ describe('ExternalLibraryDownloader', () => {
 
     await expect(
       downloader.download({
-        packageDefinition: createPackage(content),
+        resourceDefinition: createPackage(content),
         destinationPath,
         signal: new AbortController().signal,
       }),
@@ -178,7 +179,7 @@ describe('ExternalLibraryDownloader', () => {
 
     await expect(
       downloader.download({
-        packageDefinition: createPackage(content),
+        resourceDefinition: createPackage(content),
         destinationPath: await createDestinationPath(),
         signal: new AbortController().signal,
       }),

@@ -26,16 +26,6 @@ export interface MacosDmgInstallerDependencies {
   readonly logger: Pick<Console, 'warn'>;
 }
 
-function requireDmgPackage(
-  request: ExternalLibraryInstallRequest,
-): ExternalLibraryDmgPackageDefinition {
-  if (request.packageDefinition.packageType !== 'dmg') {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  return request.packageDefinition;
-}
-
 export class MacosDmgInstaller implements ExternalLibraryInstaller {
   readonly packageType = 'dmg' as const;
   private readonly commandRunner: ExternalCommandRunnerApi;
@@ -53,7 +43,15 @@ export class MacosDmgInstaller implements ExternalLibraryInstaller {
     request: ExternalLibraryInstallRequest,
     signal: AbortSignal,
   ): Promise<void> {
-    const packageDefinition = requireDmgPackage(request);
+    if (
+      request.packageDefinition.packageType !== 'dmg' ||
+      !('packagePath' in request)
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const packageDefinition: ExternalLibraryDmgPackageDefinition =
+      request.packageDefinition;
     const packagePath = requireInstallerAbsolutePath(request.packagePath);
     const stagingInstallationDirectory =
       requireInstallerAbsolutePath(
@@ -111,7 +109,11 @@ export class MacosDmgInstaller implements ExternalLibraryInstaller {
         dereference: false,
         verbatimSymlinks: true,
       });
-      await validateInstalledExecutable(request);
+      await validateInstalledExecutable(
+        stagingInstallationDirectory,
+        packageDefinition.executableRelativePath,
+        packageDefinition.platform,
+      );
 
       if (packageDefinition.verifyCodeSignature) {
         await this.commandRunner.run({

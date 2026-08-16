@@ -19,10 +19,6 @@ import {
   agentProviderStore,
   type AgentProviderStore,
 } from './agent-provider-store';
-import {
-  findActiveSelectorConnectionSelection,
-  findSelectorConnectionSelection,
-} from './selector-connection-selection';
 import { SelectMenu } from '../components/SelectMenu';
 
 const CUSTOM_REASONING_EFFORTS = [
@@ -34,7 +30,6 @@ const CUSTOM_REASONING_EFFORTS = [
   'max',
   'ultra',
 ] as const;
-const DEFAULT_REASONING_EFFORT = 'high';
 
 interface SelectorConnection {
   readonly provider: AgentProviderSnapshot;
@@ -63,16 +58,14 @@ function defaultReasoningEffort(
   model: AgentProviderModelCatalogSnapshot['models'][number] | undefined,
 ): string {
   const supported = model?.reasoningEfforts.map((effort) => effort.id) ?? [];
-  if (supported.length === 0 || supported.includes(DEFAULT_REASONING_EFFORT)) {
-    return DEFAULT_REASONING_EFFORT;
-  }
   if (
     model?.defaultReasoningEffort &&
-    supported.includes(model.defaultReasoningEffort)
+    (supported.length === 0 ||
+      supported.includes(model.defaultReasoningEffort))
   ) {
     return model.defaultReasoningEffort;
   }
-  return supported[0] ?? DEFAULT_REASONING_EFFORT;
+  return supported[0] ?? '';
 }
 
 function AgentProviderSelectorForm({
@@ -93,12 +86,14 @@ function AgentProviderSelectorForm({
     initial ? connectionValue(initial.provider.id, initial.connection.id) : '',
   );
   const [modelId, setModelId] = useState(
-    reusesSavedSelection ? selection?.modelId ?? '' : '',
+    reusesSavedSelection
+      ? selection?.modelId ?? ''
+      : '',
   );
   const [reasoningEffort, setReasoningEffort] = useState(
     reusesSavedSelection
       ? selection?.reasoningEffort ?? ''
-      : DEFAULT_REASONING_EFFORT,
+      : '',
   );
   const [catalog, setCatalog] = useState<AgentProviderModelCatalogSnapshot>();
   const [loadingCatalog, setLoadingCatalog] = useState(Boolean(initial));
@@ -175,24 +170,23 @@ function AgentProviderSelectorForm({
       ? selectedModel.reasoningEfforts.map((effort) => effort.id)
       : CUSTOM_REASONING_EFFORTS;
 
-  /** 恢复某个 Connection 已保存的模型/思考力度配置（没有则回落默认）。 */
   const restoreConnectionSelection = (
     connection: SelectorConnection | undefined,
   ) => {
     if (!connection) {
       return;
     }
-    const saved = findSelectorConnectionSelection(
-      store.getState().setup,
-      definition.id,
-      connection.connection.id,
-    );
+    const saved =
+      selection?.providerId === connection.provider.id &&
+      selection.connectionId === connection.connection.id
+        ? selection
+        : undefined;
     if (saved?.modelId) {
       setModelId(saved.modelId);
       setReasoningEffort(saved.reasoningEffort ?? '');
     } else {
       setModelId('');
-      setReasoningEffort(DEFAULT_REASONING_EFFORT);
+      setReasoningEffort('');
     }
   };
 
@@ -363,7 +357,9 @@ export function AgentProviderSelector({
   const definition = setup?.selectors.find(
     (candidate) => candidate.id === selectorId,
   );
-  const selection = findActiveSelectorConnectionSelection(setup, selectorId);
+  const selection = setup?.selections.find(
+    (candidate) => candidate.selectorId === selectorId,
+  );
   const connections = useMemo(
     () =>
       setup?.providers.flatMap((provider) =>

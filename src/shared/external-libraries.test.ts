@@ -10,6 +10,8 @@ describe('ExternalLibrarySnapshot', () => {
     const snapshot = cloneExternalLibrarySnapshot({
       id: 'libreoffice',
       displayName: 'LibreOffice',
+      description: 'Office preview',
+      category: 'document',
       version: '25.2.5.2',
       expectedSize: 300_000_000,
       rootPath: '/Users/student/Documents/Learning Companion/externalLib',
@@ -53,6 +55,8 @@ describe('ExternalLibrarySnapshot', () => {
     const unsupported = cloneExternalLibrarySnapshot({
       id: 'libreoffice',
       displayName: 'LibreOffice',
+      description: 'Office preview',
+      category: 'document',
       version: '1',
       rootPath: '/externalLib',
       status: 'unsupported',
@@ -72,6 +76,34 @@ describe('ExternalLibrarySnapshot', () => {
         version: '1',
         rootPath: '/externalLib',
         status: 'not-installed',
+      }),
+    ).toBe(false);
+  });
+
+  it('validates one component with selectable installation variants', () => {
+    const snapshot = cloneExternalLibrarySnapshot({
+      id: 'media-subtitles',
+      displayName: 'Media subtitles',
+      description: 'Complete subtitle suite',
+      category: 'media',
+      version: '1',
+      expectedSize: 100,
+      variants: [
+        { id: 'cpu', displayName: 'CPU', expectedSize: 100 },
+        { id: 'nvidia', displayName: 'NVIDIA', expectedSize: 200 },
+      ],
+      defaultVariantId: 'cpu',
+      installedVariantId: 'nvidia',
+      rootPath: '/externalLib',
+      status: 'available',
+    });
+
+    expect(snapshot.installedVariantId).toBe('nvidia');
+    expect(Object.isFrozen(snapshot.variants)).toBe(true);
+    expect(
+      isExternalLibrarySnapshot({
+        ...snapshot,
+        installedVariantId: 'unknown',
       }),
     ).toBe(false);
   });

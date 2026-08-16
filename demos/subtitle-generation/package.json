@@ -1,0 +1,21 @@
+{
+  "name": "learning-companion-subtitle-generation-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "fixtures": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/create-fixtures.ps1",
+    "dataset:youtube": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/prepare-youtube-dataset.ps1",
+    "setup:cpu": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-whisper-cpp.ps1 -Backend cpu",
+    "setup:cpu:quality": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-whisper-cpp.ps1 -Backend cpu -Model small-q5_1",
+    "setup:cuda": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-whisper-cpp.ps1 -Backend cuda",
+    "setup:sensevoice": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-funasr.ps1 -Model sensevoice",
+    "setup:paraformer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-funasr.ps1 -Model paraformer",
+    "validate:cpu": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-validation.ps1 -Backend cpu",
+    "validate:cpu:quality": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-validation.ps1 -Backend cpu -Model small-q5_1",
+    "validate:cuda": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-validation.ps1 -Backend cuda"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

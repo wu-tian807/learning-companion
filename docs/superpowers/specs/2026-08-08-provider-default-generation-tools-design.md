@@ -2,7 +2,7 @@
 
 > 日期：2026-08-08
 >
-> 状态：已实现
+> 状态：已实现；2026-08-16 修订为仅 Provider 原生基础能力默认开启
 >
 > 前置设计：
 >
@@ -21,38 +21,37 @@
 
 本设计将契约调整为：
 
-`有效工具集 = Provider 默认工具需求 + TaskDefinition.toolRequirements`
+`有效工具集 = Provider 原生默认能力 + TaskAgentCallRequest.toolRequirements`
 
-TaskDefinition 继续决定业务任务特有的 Tool、Skill 和 MCP；Provider 决定基础执行工具及其
-真实实现。Workspace 权限仍然是授权上限，TaskDefinition 和 Provider 默认值都不能扩大它。
+`TaskDefinition.process()` 在每次 Agent 调用中决定应用 Function Tool、Skill 和 MCP；Provider
+根据 Workspace 权限提供 Shell 读写与自身原生 `view_image`，并把调用声明适配成真实实现。
+Workspace 权限仍然是授权上限，调用参数不能扩大它。
 
 ## 2. 职责边界
 
 ### 2.1 TaskDefinition
 
-TaskDefinition 声明：
+TaskDefinition 静态声明：
 
-- `toolRequirements`：该任务对 Agent 工具的 required / optional 需求；
-- `skills`：该任务显式需要的方法说明和随附资源；
-- `mcpServers`：该任务显式允许连接的 MCP Server；
 - Workspace 的 read / write 权限；
-- system instruction、instruction、输出协议和后处理。
+- instruction、AssetReference 协议和 `process()`。
 
-TaskDefinition 不再声明所有任务都会重复使用的 Workspace 基础工具。
+`process()` 的每次 `agent.call()` 显式声明 system instruction、user message、额外工具、Skill
+与 MCP；TaskDefinition 不保存全任务共享的 Agent 配置，也不重复声明 Workspace 基础工具。
 
 ### 2.2 Provider
 
 每个 Provider Adapter 负责：
 
 1. 根据 Prepared Workspace 计算本次默认工具；
-2. 合并 Provider 注册的其他默认工具和 `toolRequirements`；
+2. 合并 Provider 原生默认能力和本次调用的 `toolRequirements`；
 3. 对每个中立工具 ID 优先选择 Provider 原生能力；
 4. 原生能力不可用时尝试应用 Function Tool；
 5. required 工具不可满足时在登录、环境检查和 Thread 创建前失败；
 6. optional 工具不可满足时省略；
 7. 将最终有效工具集用于请求配置、事件白名单和 Session 配置指纹。
 
-Provider 不负责 GenerationTask 的业务语义，TaskDefinition 也不携带 Codex
+Provider 不负责 GenerationTask 的业务语义，TaskAgentCallRequest 也不携带 Codex
 `dynamicTools`、shell 或其他 wire protocol DTO。
 
 ### 2.3 Workspace 权限
@@ -65,19 +64,18 @@ Provider 不负责 GenerationTask 的业务语义，TaskDefinition 也不携带 
 Codex 默认规则：
 
 - 只要存在 readable Workspace，默认启用映射到 Codex Shell 的 `workspace.read`、
-  `workspace.search`；应用启动时由 Workbench 能力目录把 `workspace_read_pdf` 注册为
-  Provider 默认工具；
-- readable Workspace 同时启用 Codex 原生只读 `view_image`，领域工具 ID 为
-  `workspace.view_image`；
+  `workspace.search`；
+- readable Workspace 同时默认启用 Codex 原生只读 `view_image`；
 - 只有存在 writable Workspace 时，默认启用 `workspace.write`，对应 Codex 原生
   `apply_patch` 与 Shell 写入；
+- PDF、Video 等应用 Function Tool 只有被本次 `agent.call()` 显式声明后才启用；
 - Codex permission profile 按 Prepared Workspace 分别授予 read / write；该边界同时约束
   Shell 命令、脚本和 `apply_patch`，而不只是约束某一个工具入口；
 - `toolRequirements` 不能把只读 Workspace 提升为可写。
 
 Codex App Server 没有独立的原生文本 read / search 开关，普通文件操作因此保留其默认
-Shell；写能力由同一 permission profile 决定。PDF 通过 `dynamicTools` 回调 Learning
-Companion，图片读取使用 Codex 原生 `view_image`。只要有 readable Workspace，
+Shell；写能力由同一 permission profile 决定。PDF 在调用声明后通过 `dynamicTools` 回调
+Learning Companion，图片读取默认使用 Codex 原生 `view_image`。只要有 readable Workspace，
 `features.shell_tool` 就设为 `true`。
 
 ## 3. Provider-neutral 契约
@@ -89,7 +87,7 @@ Companion，图片读取使用 Codex 原生 `view_image`。只要有 readable Wo
       readonly availability: 'required' | 'optional';
     }
 
-`TaskDefinition`、`PreparedGenerationTask` 和 `GenerationAgentTurnRequest` 统一使用：
+`TaskAgentCallRequest` 和 `GenerationAgentTurnRequest` 统一使用：
 
     readonly toolRequirements: readonly AgentToolRequirement[];
 
@@ -97,17 +95,16 @@ Companion，图片读取使用 Codex 原生 `view_image`。只要有 readable Wo
 
 ## 4. Codex 有效工具解析
 
-`resolveCodexGenerationTools` 接收完整 Generation request、Function Tool Registry 和
-Provider 注册的默认工具需求，按以下顺序处理：
+`resolveCodexGenerationTools` 接收完整 Generation request 和 Function Tool Registry，按以下
+顺序处理：
 
-1. 从 Workspace 权限派生 read / search / write / image；
-2. 合并 Bootstrap 为 Provider 组装的默认 Function Tool 需求；
-3. 合并 TaskDefinition 的 `toolRequirements`；
-4. 同 ID 去重，required 优先于 optional；
-5. 根据当前授权过滤 Workspace 工具；
-6. 原生 Codex 工具优先，否则查询应用 Function Tool Registry；
-7. required 缺失时报错，optional 缺失时省略；
-8. 输出冻结、稳定排序的 Selection。
+1. 从 Workspace 权限派生 read / search / write Shell 能力和原生 image；
+2. 合并本次 Agent 调用的 `toolRequirements`；
+3. 同 ID 去重，required 优先于 optional；
+4. 根据当前授权过滤 Workspace 工具；
+5. 原生 Codex 工具优先，否则查询应用 Function Tool Registry；
+6. required 缺失时报错，optional 缺失时省略；
+7. 输出冻结、稳定排序的 Selection。
 
 Selection 是本次执行的唯一事实：
 
@@ -130,11 +127,13 @@ Selection 是本次执行的唯一事实：
 - Workspace 最终读写权限；
 - Skill 与 MCP 的解析结果。
 
-因此默认工具、工具版本或 Workspace 写权限变化后，不会静默恢复到配置不一致的旧 Thread。
+因此有效工具、工具版本或 Workspace 写权限变化后，不会静默恢复到配置不一致的旧 Thread。
 
 ## 6. PDF、Video 与后续内置能力
 
-PDF、Video 等媒体处理能力同样属于 Provider 默认工具集，而不是每个 TaskDefinition 重复声明。
+PDF、Video 等应用 Function Tool 不属于 Provider 默认工具集。Workbench 注册实现，具体
+`TaskDefinition.process()` 在需要它的那次 `agent.call()` 中声明；Codex 原生 `view_image`
+属于 Provider 默认基础能力。
 
 当前已经实现：
 
@@ -149,21 +148,22 @@ PDF、Video 等媒体处理能力同样属于 Provider 默认工具集，而不�
 扩展方式固定为：
 
 1. Feature 模块拥有并导出一个 Provider-neutral Function Tool Definition；
-2. Workbench 能力目录在 Bootstrap 阶段注册 Definition，并将它加入对应 Provider 的默认
-   工具需求；Provider 本身不感知 PDF、Video 等具体实现；
-3. Provider 若已有等价原生能力，优先映射到原生工具；
-4. 否则映射到注册的 Function Tool；
-5. 重型媒体工具使用 `deferLoading`，避免每次 Turn 都加载完整 Schema；
-6. handler 通过执行上下文中的 Prepared Workspaces 读取材料，并遵守 Workspace / 领域
+2. Workbench Main Contribution 在 Bootstrap 阶段只注册 Definition；
+3. `TaskDefinition.process()` 根据本次资料和任务声明工具需求；Provider 本身不感知 PDF、
+   Video 等具体实现；
+4. Provider 若已有等价原生能力，优先映射到原生工具；
+5. 否则映射到注册的 Function Tool；
+6. 重型媒体工具使用 `deferLoading`，避免每次 Turn 都加载完整 Schema；
+7. handler 通过执行上下文中的 Prepared Workspaces 读取材料，并遵守 Workspace / 领域
    Service 不变量。
 
-依赖外部工具包的能力只在依赖可用时注册；缺失依赖时 optional 默认需求可以被省略，required
-任务需求则在 Agent 启动前明确失败。若要支持运行期间安装或卸载依赖，能力目录还需增加
+依赖外部工具包的能力只在依赖可用时注册；缺失依赖时 optional 调用需求可以被省略，required
+调用需求则在 Agent 启动前明确失败。若要支持运行期间安装或卸载依赖，能力目录还需增加
 刷新和注销生命周期，而不是把探测逻辑写入 Provider。
 
 Video 等后续工具仍需在确定真实转换器、输入协议和输出格式后独立实现。Mind Map 的参考
-资料副本和模型友好表示仍由 GenerationTask prepare 阶段放入主 Workspace，Codex 使用
-默认 Shell / image / PDF 工具消费。
+资料副本和模型友好表示仍由 GenerationTask prepare 阶段放入主 Workspace；Shell 和原生
+image 默认可用，PDF 工具由 Mind Map 的 `process()` 根据物化后的资料类型声明。
 
 PDF 提示要求 Agent 先用 `extract_text` 定位相关章节和页码，再对真正相关的页调用
 `render_pages` 检查公式、图表、版式与完整局部上下文；不能只根据内嵌文字形成最终判断。
@@ -180,25 +180,26 @@ Workbench 返回与预览界面相同的缓存 PDF；准备结果同时保留原
 
 ## 7. Mind Map 结果
 
-`mindmap.generate@1` 改为：
+`mindmap.generate@1` 的 process 在每次调用中显式使用：
 
     toolRequirements: []
     skills: []
     mcpServers: []
 
 它使用默认按 `taskId` 隔离、可写的 `generation-mindmap` Workspace。Provider 自动提供 Shell
-read / search、原生 write、PDF text / page image 与 image view；Agent 将候选树写入任务 Workspace，
-TaskDefinition 的 `process()`
+read / search、原生 image 和可写时的 write；`process()` 根据参考资料声明 PDF 工具。Agent 将
+候选树写入任务 Workspace，TaskDefinition 的 `process()`
 负责校验、在同一 Session 请求修复，并将通过校验的候选提交为正式 Asset。Agent 不直接
 改写正式 Asset。
 
 ## 8. 数据流
 
-    TaskDefinition
+    TaskDefinition.process
       -> prepare: instruction + asset copies + workspaces
-      -> GenerationAgentTurnRequest.toolRequirements
+      -> TaskAgentCallRequest: prompt + tools + skills + mcp
+      -> GenerationAgentTurnRequest
       -> selected Provider
-      -> Provider default tool policy
+      -> Provider native defaults + per-call tool mapping
       -> effective tool selection
       -> permission profile + dynamic tools + fingerprint
       -> Provider-owned agent loop writes workspace artifact
@@ -209,14 +210,14 @@ TaskDefinition 的 `process()`
 ## 9. 验收标准
 
 1. `mindmap.generate@1` 不再声明 read / search；
-2. read-only Workspace 自动获得 Shell read / search、PDF / image，不获得有效写权限；
+2. read-only Workspace 自动获得 Shell read / search 与原生 image，不获得 PDF 或有效写权限；
 3. writable Workspace 额外获得由 permission profile 限定路径的原生 write；
-4. TaskDefinition 的额外 Function Tool 仍能声明、解析和回调；
+4. 单次 Agent 调用的额外 Function Tool 仍能声明、解析和回调；
 5. required 缺失额外工具在账号检查和 Thread 创建前失败；
 6. optional 缺失额外工具被省略；
 7. 动态工具与原生工具事件只按最终 Selection 放行；
-8. 默认工具和 Function Tool 版本进入 Session 指纹；
-9. TaskDefinition Registry 校验 `toolRequirements` 的 ID、availability 和重复项；
+8. 最终有效工具和 Function Tool 版本进入 Session 指纹；
+9. TaskAgentSession 校验每次调用 `toolRequirements` 的 ID、availability 和重复项；
 10. Shell 默认开启，但不能越过 Codex permission profile 的路径读写边界；
 11. 路径越界、read / write profile、真实 PDF 文字提取和逐页图片渲染测试通过；
 12. 针对性测试、TypeScript、ESLint 和完整 `pnpm check` 通过。
@@ -224,7 +225,7 @@ TaskDefinition 的 `process()`
 ## 10. 明确不做
 
 - 不自己实现 Codex Agent Loop；
-- 不让 TaskDefinition 重复声明 Provider 基础工具；
+- 不让 Agent 调用重复声明 Provider 基础工具；
 - 不让工具声明绕过 Workspace 权限；
 - 不让模型通过 Shell 自行寻找 PDF 解析依赖或生成临时解析脚本；
 - 不在本轮虚构 Video 处理器；
@@ -233,13 +234,11 @@ TaskDefinition 的 `process()`
 
 ## 11. 实施结果
 
-- Provider 默认 read / search / write / image 已按 Prepared Workspace 权限派生；PDF 由
-  PDF Feature 注册，并由 Bootstrap 作为默认 Function Tool 注入；
-- Codex Shell 负责普通文件操作，原生编辑只在 writable Workspace 生效；PDF 走应用
-  Dynamic Tool，图片走原生 `view_image`；
-- Provider 可由 Bootstrap 注入默认 Function Tool 需求，供后续按依赖可用性注册的 Video 等
-  能力使用；
-- `toolRequirements` 已贯通 Definition、prepare、repair Turn 和 Provider request；
+- Provider 按 Prepared Workspace 权限派生默认 read / search / write Shell 能力与原生 image；
+- PDF Feature 通过 Workbench Main Contribution 注册实现，只有调用声明后才走应用 Dynamic
+  Tool；图片默认映射原生 `view_image`；
+- Provider 不接受 Bootstrap 注入的媒体默认工具需求；
+- `toolRequirements` 已从每次 `agent.call()` 贯通 Agent Session、Executor 和 Provider request；
 - 请求配置、事件白名单和 Session 指纹统一消费同一份有效 Selection；
 - `mindmap.generate@1` 已移除重复的 Workspace 工具声明；
 - 完整 `pnpm check` 通过：207 个测试文件，868 项通过，1 项跳过。

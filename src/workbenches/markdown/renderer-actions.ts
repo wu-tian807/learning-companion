@@ -1,4 +1,6 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import type {
   MarkdownEncoding,
   MarkdownLineEnding,
@@ -11,6 +13,11 @@ export interface MarkdownRendererActionsOptions {
   readonly encoding: MarkdownEncoding;
   readonly lineEnding: MarkdownLineEnding;
   readonly viewState: MarkdownWorkbenchViewState;
+  readonly hasSelection: () => boolean;
+  readonly onAiExplain: (
+    text: string,
+    anchor: ContentAnchorTarget,
+  ) => Promise<void> | void;
   readonly onSetEncoding: (encoding: MarkdownEncoding) => Promise<void>;
   readonly onSetLineEnding: (
     lineEnding: MarkdownLineEnding,
@@ -27,6 +34,8 @@ export function createMarkdownRendererActions({
   encoding,
   lineEnding,
   viewState,
+  hasSelection,
+  onAiExplain,
   onSetEncoding,
   onSetLineEnding,
   onSetViewState,
@@ -75,6 +84,20 @@ export function createMarkdownRendererActions({
         id: 'markdown.reveal',
         enabled: true,
         execute: onReveal,
+      },
+      {
+        id: 'markdown.ai.explain-selection',
+        enabled: hasSelection,
+        execute: (context) => {
+          const selection = findTextSelectionInput(context);
+          const anchor = context.focus;
+
+          if (!selection?.text || !anchor) {
+            return;
+          }
+
+          return onAiExplain(selection.text, anchor);
+        },
       },
     ],
     contributions: [
@@ -148,6 +171,19 @@ export function createMarkdownRendererActions({
           kind: 'action',
           label: '在文件夹中显示',
           closePolicy: 'on-success',
+        },
+      },
+      {
+        id: 'markdown.ai.explain-selection.context-menu',
+        actionId: 'markdown.ai.explain-selection',
+        surface: 'context-menu',
+        group: '80-ai',
+        groupLabel: 'Markdown AI',
+        order: 10,
+        presentation: {
+          kind: 'action',
+          label: '就选中内容问 AI',
+          disabledReason: '请先在 Markdown 中选择文本',
         },
       },
     ],

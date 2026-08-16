@@ -1230,7 +1230,7 @@
             N("generation-contracts", "Generation Contracts", {
               tag: "TASK DTO",
               caption: "definitionId · instruction · asset references · task view",
-              summary: "Renderer 只发送最小 Generation request；Main 的 TaskDefinition 决定 Prompt、能力和工作区。",
+              summary: "Renderer 只发送最小 Generation request；Main 的 TaskDefinition 声明工作区，并由 process 为每次 Agent 调用决定 Prompt 与能力。",
               files: ["src/shared/generation-tasks.ts", "src/shared/generation-definitions.ts"],
               target: "generation",
               col: 10,
@@ -1409,10 +1409,9 @@
             N("attachment", "AssetAttachment", {
               tag: "LOCAL ANNOTATION",
               caption: "assetId + AssetTarget / Anchor",
-              summary: "面向某个 Asset 或内容 Anchor 的笔记/附件契约已经定义，但 Main 目前仍使用 EmptyAttachmentService，没有持久化实现。",
-              status: "partial",
+              summary: "面向某个 Asset 或内容 Anchor 的持久化学习沉淀。元数据写 SQLite，可选正文写入 Project Workspace，并随 Attachment、Asset 或 Project 删除。",
               keys: ["id", "projectId", "assetId", "typeId", "target"],
-              files: ["src/shared/workbench/attachment.ts", "src/main/attachments/attachment-service.ts"],
+              files: ["src/shared/attachments/contracts.ts", "src/main/attachments/attachment-service.ts"],
               child: "attachment",
               col: 5,
               row: 5,
@@ -1642,68 +1641,74 @@
 
         attachment: {
           parent: "asset-extensions",
-          title: "Attachment 契约已存在，持久化尚未实现",
+          title: "Attachment 是已落地的 Asset 局部沉淀",
           kicker: "LEVEL 5 · ATTACHMENT",
-          description: "这条链现在故意保持显式占位：共享数据和 Host 已经有了，但 Main 注入 EmptyAttachmentService，因此不要误以为附件已经可以长期保存。",
-          rows: 5,
+          description: "AttachmentService 是唯一行为入口：校验 Asset、Attachment Type 和媒体 Anchor，协调 SQLite 与可选内容文件，并发布变更事件。具体 EPUB 解释、AI 标注等语义仍由对应 Workbench 注册。",
+          rows: 6,
           nodes: [
             N("contract", "AssetAttachment Contract", {
               tag: "SHARED DATA",
               caption: "assetId · typeId · AssetTarget · metadata · content?",
               summary: "附件可以绑定整个 Asset 或某种媒体 Anchor，也可以携带 Project Workspace 中的附属文件。",
-              status: "partial",
               keys: ["assetId", "typeId", "target", "metadata", "content.ref"],
-              files: ["src/shared/workbench/attachment.ts", "src/shared/workbench/anchor.ts"],
+              files: ["src/shared/attachments/contracts.ts", "src/shared/workbench/anchor.ts"],
               col: 1,
               row: 2,
               span: 3
             }),
-            N("service-api", "AttachmentService API", {
-              tag: "MAIN PORT",
-              caption: "listByAsset · create · update · delete",
-              summary: "WorkbenchSessionService 只依赖该端口，因此未来可替换实现而无需改 Workbench 生命周期。",
-              status: "partial",
+            N("service-api", "AttachmentService", {
+              tag: "MAIN SERVICE",
+              caption: "list · create · update · delete · cleanup",
+              summary: "拥有 Attachment 身份、时间戳、类型与 Anchor 校验；只依赖 AssetLookup，不反向依赖 AssetService。变更事件由组合根用于刷新 Asset 更新时间。",
               files: ["src/main/attachments/attachment-service.ts"],
               col: 5,
               row: 2,
               span: 3
             }),
-            N("empty", "EmptyAttachmentService", {
-              tag: "CURRENT IMPLEMENTATION",
-              caption: "list = [] · writes unsupported",
-              summary: "当前 Main 的真实注入。读取返回空列表，创建、更新和删除都明确报 FEATURE_NOT_SUPPORTED。",
-              status: "partial",
-              files: ["src/main/bootstrap/create-application-runtime.ts", "src/main/attachments/attachment-service.ts"],
+            N("database", "AttachmentDatabase", {
+              tag: "SQLITE ADAPTER",
+              caption: "asset_attachments",
+              summary: "保存 Attachment 元数据、Target、可选 contentRef 与时间戳；不保存大段正文。",
+              files: ["src/main/attachments/attachment-database.ts", "src/main/database/schema/asset-attachments.ts"],
               col: 9,
               row: 2,
               span: 3
             }),
             N("host", "AttachmentHost", {
-              tag: "RENDERER PLACEHOLDER",
-              caption: "Workbench 下方的附件展示入口",
-              summary: "Renderer Host 已预留，但当前 AssetWorkbenchHost 传入空数组。",
-              status: "partial",
-              files: ["src/renderer/workbench/host/AttachmentHost.tsx", "src/renderer/workbench/host/AssetWorkbenchHost.tsx"],
+              tag: "RENDERER PROJECTION",
+              caption: "Anchor marker · list · reveal · delete",
+              summary: "Document AI Workbench shell 把通用 Attachment 投影为内容标记和侧栏；媒体定位仍通过各 Workbench 的 Anchor 实现。",
+              files: ["src/workbenches/document-ai/renderer/AttachmentHost.tsx", "src/workbenches/document-ai/renderer/DocumentAiWorkbenchShell.tsx"],
               col: 1,
-              row: 4,
+              row: 5,
               span: 3
             }),
-            N("future", "Attachment Persistence", {
-              tag: "NEXT IMPLEMENTATION",
-              caption: "Database + optional File + cleanup",
-              summary: "后续应实现独立 Database/File adapter，并由 Asset 删除与 Project 生命周期协调清理，而不是写进 Asset JSON。",
-              status: "planned",
-              responsibilities: ["新增 attachment table。", "可选内容文件落 Project Workspace。", "AssetService 删除后触发清理。"],
-              col: 7,
-              row: 4,
-              span: 4
+            N("file", "AttachmentContentFile", {
+              tag: "PROJECT FILE ADAPTER",
+              caption: "attachments/<attachmentId>/<file>",
+              summary: "保存较大的 Markdown 等正文，使用受控 Project Workspace 相对路径，并实现 Attachment/Project 级清理。",
+              files: ["src/main/attachments/attachment-content-file.ts"],
+              col: 5,
+              row: 5,
+              span: 3
+            }),
+            N("registry", "Attachment + Anchor Registries", {
+              tag: "FEATURE EXTENSION",
+              caption: "typeId/version · anchorType/version",
+              summary: "具体 Workbench 通过 Main contribution 注册自己的 metadata 与 Anchor payload 校验器；通用 Service 不理解 EPUB CFI、PDF 区域等媒体语义。",
+              files: ["src/main/attachments/attachment-registry.ts", "src/main/attachments/anchor-registry.ts", "src/workbenches/catalog/register-main-workbenches.ts"],
+              col: 9,
+              row: 5,
+              span: 3
             })
           ],
           edges: [
             { from: "contract", to: "service-api", label: "domain shape", tone: "contract" },
-            { from: "service-api", to: "empty", label: "当前注入" },
+            { from: "service-api", to: "database", label: "metadata", tone: "persist" },
+            { from: "service-api", to: "file", label: "optional content", tone: "persist" },
+            { from: "registry", to: "service-api", label: "validate", tone: "contract" },
             { from: "contract", to: "host", label: "render" },
-            { from: "service-api", to: "future", label: "替换端口", tone: "contract" }
+            { from: "file", to: "host", label: "read body" }
           ]
         },
 
@@ -1919,11 +1924,11 @@
               row: 1,
               span: 5
             }),
-            N("main-registry", "Main Workbench Registries", {
-              tag: "PROVIDER + FACILITY REGISTRIES",
-              caption: "provider selection · workbench-scoped capture",
-              summary: "WorkbenchRegistry 依 Manifest 选择 Provider；MainFacilityAdapterRegistry 以 workbenchId + facility 选择该媒体自己的沙箱采集逻辑，Host 不理解 HTML DOM、EPUB CFI 或 PDF 坐标。",
-              files: ["src/main/workbench/workbench-registry.ts", "src/main/workbench/interaction/main-facility-adapter-registry.ts", "src/main/workbench/interaction/sandbox-frame-interaction-bridge.ts"],
+            N("main-registry", "Workbench Registry + Session Bindings", {
+              tag: "PROVIDER SELECTION + ACTIVE TRANSPORT",
+              caption: "select provider · bind provider-owned adapters",
+              summary: "WorkbenchRegistry 校验并选择 Provider；Session 打开后把该 Provider 的 Transport Binding 与 Facility Adapters 一次性交给 Bridge。不存在第二份全局 Adapter 注册表。",
+              files: ["src/main/workbench/workbench-registry.ts", "src/main/workbench/interaction/workbench-transport-binding-registry.ts", "src/main/workbench/interaction/sandbox-frame-interaction-bridge.ts"],
               col: 4,
               row: 3,
               span: 5
@@ -1965,7 +1970,7 @@
             { id: "workbench.main-ipc", from: "preload-port", to: "session", label: "validated request", summary: "Preload/Main IPC handler 校验 Workbench 请求，并调用注入的 WorkbenchSessionService。" },
             { id: "workbench.content-handle", from: "content-port", to: "session", label: "resolve handle", summary: "WorkbenchSessionService 从 Content Runtime 获取有生命周期的 ContentHandle，并在关闭 Session 时释放。" },
             { from: "session", to: "main-registry", label: "select" },
-            { id: "workbench.main-catalog", from: "catalog-port", to: "main-registry", label: "providers + adapters", tone: "contract", summary: "Builtin catalog 在 Main 侧创建 Provider，并自动注册其声明的 Workbench-scoped Facility Adapters；Adapter 归属必须与 Manifest ID 一致。" },
+            { id: "workbench.main-catalog", from: "catalog-port", to: "main-registry", label: "provider contributions", tone: "contract", summary: "Main contribution catalog 创建 Provider；WorkbenchRegistry 同时校验 Manifest 与 Provider 自己拥有的 Facility Adapters。" },
             { from: "main-registry", to: "bootstrap", label: "ID + versions" },
             { id: "workbench.bootstrap-via-ipc", from: "bootstrap", to: "renderer-port", label: "contract handshake", tone: "both", summary: "WorkbenchBootstrap 经 Preload 返回后，Renderer 使用 ID 解析 lazy module，并核对 Workbench 版本、协议版本与 Manifest。" }
           ]
@@ -2150,8 +2155,8 @@
             N("catalogs", "Typed Main + Renderer Registration", {
               tag: "REQUIRED",
               caption: "同一 Manifest 注册 Provider 与 lazy loader",
-              summary: "把 Manifest 加入 builtin catalog；Main Factory 与 Renderer Loader 的返回 ID 在编译期绑定，运行时核对完整 Manifest，并验证 Main Facility Adapter 的 Workbench 归属。",
-              files: ["src/workbenches/catalog/builtin-workbenches.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
+              summary: "把 Main contribution 与 Renderer lazy loader 分别加入两个进程入口；测试核对 Manifest 集合一致，运行时核对完整 Manifest，并验证 Facility Adapter 归属。",
+              files: ["src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
               target: "workbench",
               col: 5,
               row: 5,
@@ -2187,7 +2192,7 @@
             N("generation-question", "需要 AI 处理？", {
               tag: "OPTIONAL BRANCH",
               caption: "Instruction → GenerationTask",
-              summary: "Renderer 只收集 asset/anchor/selection 并形成 instruction；TaskDefinition 决定 Prompt、能力、工作区和 process。",
+              summary: "Renderer 只收集 asset/anchor/selection 并形成 instruction；TaskDefinition 声明工作区，process 逐次决定 Prompt 与能力。",
               child: "generation-entry",
               col: 9,
               row: 7,
@@ -2352,11 +2357,11 @@
               row: 5,
               span: 3
             }),
-            N("launcher", "GenerationTaskLauncher", {
-              tag: "PLANNED SHARED CLIENT",
-              caption: "validate request · call Preload · optimistic state",
-              summary: "Global Registry 与 Workbench Action 共用的薄客户端。它只发起任务，不保存 TaskDefinition 配置。",
-              status: "planned",
+            N("launcher", "runGenerationTask", {
+              tag: "IMPLEMENTED SHARED CLIENT",
+              caption: "start · await terminal event · cancel",
+              summary: "Renderer 的薄客户端只复用通用 GenerationTask Preload API，处理启动/完成竞态和 AbortSignal。Document AI 已使用它，不再自建 feature IPC。",
+              files: ["src/renderer/generation/run-generation-task.ts", "src/workbenches/document-ai/renderer/document-ai-client.ts"],
               col: 5,
               row: 3,
               span: 3
@@ -2393,16 +2398,16 @@
 
         "task-definition": {
           parent: "generation",
-          title: "TaskDefinition 声明能力，process 控制业务循环",
+          title: "TaskDefinition 声明结构，process 配置每次 Agent 调用",
           kicker: "LEVEL 4 · TASK DEFINITION",
-          description: "框架提供默认 prepare、可恢复 TaskAgentSession 和持久化 checkpoint；具体 Definition 决定 instruction、Prompt、能力、Workspace、候选发现、校验/修复与最终领域提交。",
+          description: "框架提供默认 prepare、可恢复 TaskAgentSession 和持久化 checkpoint；Definition 声明 instruction 与 Workspace，process 为每次调用显式配置 Prompt/能力并负责候选发现、校验/修复与最终领域提交。",
           rows: 7,
           nodes: [
             N("definition", "TaskDefinition", {
-              tag: "DECLARATIVE + PROCESS",
-              caption: "id/version · configs · process(context)",
-              summary: "一种生成任务的唯一业务定义。静态声明与 process 组合在一个可版本化 Definition 中。",
-              responsibilities: ["声明系统提示词、能力、Workspace 和 Asset slot。", "提供 instruction factory 与 process。"],
+              tag: "STRUCTURE + PROCESS",
+              caption: "id/version · workspace/schema · process(context)",
+              summary: "一种生成任务的可版本化业务定义。它声明稳定结构，并由 process 编排每次 Agent 调用。",
+              responsibilities: ["声明 Provider Selector、Workspace 和 Asset slot。", "提供 instruction factory 与 process；不保存全任务共享的 Agent 配置。"],
               files: ["src/main/generation/contracts/task-definition.ts"],
               col: 5,
               row: 1,
@@ -2417,10 +2422,10 @@
               row: 3,
               span: 3
             }),
-            N("capabilities", "Agent Capability Requirements", {
-              tag: "STATIC DECLARATION",
-              caption: "systemInstruction · tools · skills · mcp",
-              summary: "Task 只声明所需能力 ID 和 required/optional；Provider adapter 负责解析成自己的执行配置。",
+            N("capabilities", "Per-call Agent Request", {
+              tag: "EXPLICIT PER TURN",
+              caption: "systemInstruction · userMessage · tools · skills · mcp",
+              summary: "process 的每次 agent.call 都显式提交完整提示词和能力；框架不提供 Definition 级默认值或隐式合并。",
               keys: ["toolRequirements", "skills", "mcpServers"],
               files: ["src/main/generation/contracts/task-definition.ts", "src/main/agents/function-tools/"],
               col: 5,
@@ -2439,8 +2444,8 @@
             }),
             N("preparer", "GenerationTaskPreparer", {
               tag: "FRAMEWORK DEFAULT",
-              caption: "workspace · materialize · copy · manifest · message",
-              summary: "所有任务共用：创建 Workspace，验证/物化 AssetReference，写 prepared manifest，并把 alias/path 追加到 user message。",
+              caption: "workspace · materialize · copy · prepared message",
+              summary: "所有任务共用：创建 Workspace，验证/物化 AssetReference，把引用 checkpoint 写入任务状态，并准备带 alias/path 的 user message。",
               files: ["src/main/generation/preparation/generation-task-preparer.ts", "src/main/generation/preparation/generation-asset-reference-preparer.ts"],
               col: 1,
               row: 5,
@@ -2449,7 +2454,7 @@
             N("process", "Feature process(context)", {
               tag: "BUSINESS CONTROL LOOP",
               caption: "call → inspect → validate → repair → commit",
-              summary: "具体产物由 process 自己发现。它可以在同一 Session 顺序 call Agent，读取候选，校验，发修复 turn，并调用领域 Service 提交。",
+              summary: "具体产物由 process 自己发现。每次 call 可使用不同提示词和能力，再读取候选、校验、修复并调用领域 Service 提交。",
               files: ["src/workbenches/mindmap/generation/mindmap-generation-processor.ts"],
               col: 5,
               row: 5,
@@ -2479,7 +2484,7 @@
           ],
           edges: [
             { from: "definition", to: "instruction", label: "defines" },
-            { from: "definition", to: "capabilities", label: "declares" },
+            { from: "process", to: "capabilities", label: "builds each call" },
             { from: "definition", to: "workspace-config", label: "declares" },
             { from: "instruction", to: "preparer", label: "toUserMessage" },
             { from: "workspace-config", to: "preparer", label: "prepare inputs" },
@@ -2527,7 +2532,7 @@
             N("codex", "CodexAgentProvider", {
               tag: "PROVIDER ADAPTER",
               caption: "request translation · stream · tool calls · metrics",
-              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用，合并 Provider 默认工具与 TaskDefinition 额外能力。",
+              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用；默认提供 Workspace Shell 与 Codex 原生 view_image，PDF 等应用 Function Tool 必须由本次 Agent 调用显式声明。",
               files: ["src/main/agents/providers/codex-agent-provider.ts"],
               col: 5,
               row: 3,

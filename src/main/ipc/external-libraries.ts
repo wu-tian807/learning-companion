@@ -3,6 +3,7 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import {
   IPC_CHANNELS,
   isExternalLibraryIdRequest,
+  isInstallExternalLibraryRequest,
   isMigrateExternalLibrariesRequest,
 } from "../../shared/ipc";
 import { AppError } from "../errors/app-error";
@@ -43,6 +44,14 @@ function requireRequest(value: unknown) {
   return value;
 }
 
+function requireInstallRequest(value: unknown) {
+  if (!isInstallExternalLibraryRequest(value)) {
+    throw new AppError("INVALID_IPC_REQUEST");
+  }
+
+  return value;
+}
+
 export function registerExternalLibraryHandlers(
   service: ExternalLibraryServiceApi,
   dependencies: ExternalLibraryHandlerDependencies = defaultDependencies,
@@ -63,8 +72,15 @@ export function registerExternalLibraryHandlers(
   );
   registerIpcHandler(
     IPC_CHANNELS.startExternalLibraryInstallation,
-    (_event, request: unknown) =>
-      service.startInstallation(requireRequest(request).libraryId),
+    (_event, request: unknown) => {
+      const validated = requireInstallRequest(request);
+      return validated.variantId === undefined
+        ? service.startInstallation(validated.libraryId)
+        : service.startInstallation(
+            validated.libraryId,
+            validated.variantId,
+          );
+    },
   );
   registerIpcHandler(
     IPC_CHANNELS.cancelExternalLibrary,

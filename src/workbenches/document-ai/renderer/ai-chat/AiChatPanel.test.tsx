@@ -13,8 +13,7 @@ import { createAiChatStore } from './chat-store';
 
 describe('AiChatPanel component state composition', () => {
   it('cancels the active GenerationTask when the component is cleared or unmounted', async () => {
-    const cancelDocumentAi = vi.fn(async () => undefined);
-    vi.stubGlobal('window', { learningCompanion: { cancelDocumentAi } });
+    const cancelGenerationTask = vi.fn(async () => undefined);
     const store = createAiChatStore(() => 'conversation');
     let resolveRequest!: (value: { answer: string; providerId: string; modelId: string }) => void;
     let requestId = '';
@@ -28,11 +27,12 @@ describe('AiChatPanel component state composition', () => {
       }),
     });
 
-    await cancelActiveDocumentAiRequest('asset');
-    expect(cancelDocumentAi).toHaveBeenCalledWith(requestId);
+    await cancelActiveDocumentAiRequest('asset', {
+      cancel: cancelGenerationTask,
+    });
+    expect(cancelGenerationTask).toHaveBeenCalledWith(requestId);
     resolveRequest({ answer: 'ignored', providerId: 'p', modelId: 'm' });
     await pending;
-    vi.unstubAllGlobals();
   });
 
   it('blocks duplicate sends, ignores a cleared in-flight reply, and permits retry', async () => {
@@ -268,5 +268,40 @@ describe('AiChatPanel component state composition', () => {
 
     expect(html).not.toContain('old question');
     expect(html).not.toContain('late answer');
+  });
+
+  it('hides unavailable attachment actions while keeping answer tools', () => {
+    const store = createAiChatStore(() => 'conversation');
+    store.ensureSession('project', 'asset');
+    const question = store.addUserMessage('asset', 'question').messages.at(-1)!;
+    store.addAssistantMessage('asset', 'answer', question.id);
+
+    const html = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+
+    expect(html).not.toContain('附着整段');
+    expect(html).not.toContain('附着选中内容');
+    expect(html).toContain('复制');
+    expect(html).toContain('继续追问');
+
+    const attachmentHtml = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+          onAttachAnswer={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+
+    expect(attachmentHtml).toContain('附着整段');
   });
 });

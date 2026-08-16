@@ -33,6 +33,10 @@ import {
   revealWorkbenchAnchor,
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
 } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
+import {
+  documentAiClient,
+  type DocumentAiClient,
+} from '../document-ai-client';
 
 export function AiMarkdownContent({ content }: { readonly content: string }) {
   return (
@@ -167,11 +171,14 @@ export function documentAiErrorMessage(error: unknown): string {
     : 'AI 回答失败，请检查网络与模型配置后重试。';
 }
 
-export async function cancelActiveDocumentAiRequest(assetId: string): Promise<void> {
+export function cancelActiveDocumentAiRequest(
+  assetId: string,
+  client: Pick<DocumentAiClient, 'cancel'> = documentAiClient,
+): void {
   const requestId = activeRequestIds.get(assetId);
   if (!requestId) return;
   activeRequestIds.delete(assetId);
-  await window.learningCompanion.cancelDocumentAi(requestId).catch(() => undefined);
+  client.cancel(requestId);
 }
 
 export async function sendDocumentAiMessage(input: {
@@ -180,7 +187,7 @@ export async function sendDocumentAiMessage(input: {
   readonly assetId: string;
   readonly content: string;
   readonly anchor?: AiChatMessage['anchor'];
-  readonly ask: typeof window.learningCompanion.askDocumentAi;
+  readonly ask: DocumentAiClient['ask'];
 }): Promise<boolean> {
   const { store, projectId, assetId, content, anchor, ask } = input;
   if (store.getSession(assetId)?.loading) return false;
@@ -260,7 +267,7 @@ export function useAiChat(
     async (content: string, anchor?: AiChatMessage['anchor']) => {
       await sendDocumentAiMessage({
         store, projectId, assetId, content, anchor,
-        ask: window.learningCompanion.askDocumentAi,
+        ask: documentAiClient.ask,
       });
     },
     [store, projectId, assetId],
@@ -459,6 +466,9 @@ export function AiChatPanel({
 
   const attachAnswerMessage = useCallback(
     async (answer: AiChatMessage, text: string) => {
+      if (!onAttachAnswer) {
+        return;
+      }
       const userQuestion = messages.find(
         (message) => message.id === answer.replyToMessageId,
       );
@@ -564,7 +574,11 @@ export function AiChatPanel({
         {messages.length === 0 && !loading && (
           <div className="py-8 text-center text-xs text-slate-600">
             <p>选中文档内容，右键选择「就选中内容问 AI」</p>
-            <p className="mt-1">可以输入任何问题，并附着回答中的任意片段</p>
+            <p className="mt-1">
+              {onAttachAnswer
+                ? '可以输入任何问题，并附着回答中的任意片段'
+                : '可以输入任何问题并继续追问'}
+            </p>
           </div>
         )}
 
@@ -572,7 +586,9 @@ export function AiChatPanel({
           <div
             key={msg.id}
             onMouseUp={() =>
-              msg.role === 'assistant' && handleMessageMouseUp(msg.id)
+              msg.role === 'assistant' &&
+              onAttachAnswer &&
+              handleMessageMouseUp(msg.id)
             }
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
@@ -599,18 +615,20 @@ export function AiChatPanel({
               {msg.role === 'assistant' ? (
                 <>
                   <AiMarkdownContent content={msg.content} />
-                  {onAttachAnswer && <div
+                  <div
                     className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-white/[0.07] pt-2"
                     onMouseUp={(event) => event.stopPropagation()}
                   >
-                    <button
-                      type="button"
-                      onClick={() => void attachAnswerMessage(msg, msg.content)}
-                      className="rounded-md px-1.5 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
-                      title="将整条回答附着到原文选区"
-                    >
-                      附着整段
-                    </button>
+                    {onAttachAnswer && (
+                      <button
+                        type="button"
+                        onClick={() => void attachAnswerMessage(msg, msg.content)}
+                        className="rounded-md px-1.5 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
+                        title="将整条回答附着到原文选区"
+                      >
+                        附着整段
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -647,7 +665,7 @@ export function AiChatPanel({
                     >
                       重新回答
                     </button>
-                  </div>}
+                  </div>
                 </>
               ) : (
                 <p className="whitespace-pre-wrap select-text">{msg.content}</p>

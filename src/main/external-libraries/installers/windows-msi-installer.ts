@@ -77,7 +77,10 @@ export class WindowsMsiInstaller implements ExternalLibraryInstaller {
     request: ExternalLibraryInstallRequest,
     signal: AbortSignal,
   ): Promise<void> {
-    if (request.packageDefinition.packageType !== 'msi') {
+    if (
+      request.packageDefinition.packageType !== 'msi' ||
+      !('packagePath' in request)
+    ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
@@ -132,6 +135,10 @@ export class WindowsMsiInstaller implements ExternalLibraryInstaller {
           : error,
       });
     }
-    await validateInstalledExecutable(request);
+    await validateInstalledExecutable(
+      stagingInstallationDirectory,
+      request.packageDefinition.executableRelativePath,
+      request.packageDefinition.platform,
+    );
   }
 }

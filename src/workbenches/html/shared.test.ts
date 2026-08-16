@@ -57,6 +57,7 @@ describe('HTML Workbench shared protocol', () => {
       frameUrl: 'learning-content://resource/token',
       tagName: 'div',
       domPath: [1, 3, 0],
+      rect: { x: 10, y: 20, width: 100, height: 30 },
       id: 'chapter',
       textQuote: '章节正文',
     });

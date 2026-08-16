@@ -7,7 +7,6 @@ import {
   type AgentWorkspaceConfig,
 } from './contracts/generation-workspace';
 import { cloneGenerationAssetReferenceSchema } from './contracts/generation-asset-reference';
-import { requireAgentCapabilityId } from '../agents/capabilities/agent-capability-id';
 
 type StoredTaskDefinition = TaskDefinition<
   GenerationInstruction,
@@ -49,7 +48,6 @@ function validateDefinition(
   if (
     !Number.isSafeInteger(definition.version) ||
     definition.version <= 0 ||
-    definition.systemInstruction.trim().length === 0 ||
     typeof definition.instruction?.parse !== 'function' ||
     typeof definition.process !== 'function'
   ) {
@@ -68,45 +66,6 @@ function validateDefinition(
   }
 
   cloneGenerationAssetReferenceSchema(definition.assetReferenceSchema);
-
-  const toolIds = definition.toolRequirements.map(({ id, availability }) => {
-    const normalizedId = id.trim();
-
-    if (
-      normalizedId.length === 0 ||
-      (availability !== 'required' && availability !== 'optional')
-    ) {
-      throw new AppError('INVALID_EXTENSION_DEFINITION');
-    }
-
-    return normalizedId;
-  });
-
-  if (new Set(toolIds).size !== toolIds.length) {
-    throw new AppError('INVALID_EXTENSION_DEFINITION');
-  }
-
-  validateCapabilityRequirements(definition.skills);
-  validateCapabilityRequirements(definition.mcpServers);
-}
-
-function validateCapabilityRequirements(
-  requirements: readonly {
-    readonly id: string;
-    readonly availability: 'required' | 'optional';
-  }[],
-): void {
-  const ids = requirements.map(({ id, availability }) => {
-    if (availability !== 'required' && availability !== 'optional') {
-      throw new AppError('INVALID_EXTENSION_DEFINITION');
-    }
-
-    return requireAgentCapabilityId(id);
-  });
-
-  if (new Set(ids).size !== ids.length) {
-    throw new AppError('INVALID_EXTENSION_DEFINITION');
-  }
 }
 
 export class GenerationTaskDefinitionRegistry {

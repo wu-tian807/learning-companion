@@ -3,7 +3,16 @@ import { createPortal } from 'react-dom';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
+import {
+  AI_ANNOTATION_ATTACHMENT_TYPE,
+  AI_ANNOTATION_ATTACHMENT_VERSION,
+} from '../ai-annotation-attachment';
 import { AttachmentHost } from './AttachmentHost';
+import {
+  AiChatPanelHost,
+  type AiChatPanelHostProps,
+} from './ai-chat/AiChatPanelHost';
+import { getGlobalAiChatStore } from './ai-chat/chat-store';
 import { DocumentMarkerVisibilityMenu } from './DocumentMarkerVisibilityMenu';
 import { QuestionAnchorHost } from './QuestionAnchorHost';
 
@@ -13,6 +22,7 @@ export interface DocumentAiWorkbenchShellProps {
   readonly attachments: readonly AssetAttachment[];
   readonly refreshAttachments: () => Promise<void>;
   readonly onError: (message: string) => void;
+  readonly allowAnswerAttachments: boolean;
   readonly children: ReactNode;
 }
 
@@ -38,6 +48,7 @@ export function DocumentAiWorkbenchShell({
   attachments,
   refreshAttachments,
   onError,
+  allowAnswerAttachments,
   children,
 }: DocumentAiWorkbenchShellProps) {
   const [annotationSidebarOpen, setAnnotationSidebarOpen] = useState(false);
@@ -49,6 +60,50 @@ export function DocumentAiWorkbenchShell({
     getProjectActionSlot,
     () => null,
   );
+  const onAttachAnswer: AiChatPanelHostProps['onAttachAnswer'] =
+    allowAnswerAttachments
+      ? async (messageId, text, anchor) => {
+          const session = getGlobalAiChatStore().getSession(assetId);
+          const answerMessage = session?.messages.find(
+            (message) => message.id === messageId,
+          );
+          const userMessage = session?.messages.find(
+            (message) => message.id === answerMessage?.replyToMessageId,
+          );
+          try {
+            await window.learningCompanion.createAttachment({
+              projectId,
+              assetId,
+              typeId: AI_ANNOTATION_ATTACHMENT_TYPE,
+              typeVersion: AI_ANNOTATION_ATTACHMENT_VERSION,
+              target: anchor?.target ?? { scope: 'asset' },
+              metadata: {
+                contentFormat: 'ai-annotation-v1',
+                questionPreview: Array.from(userMessage?.content ?? '')
+                  .slice(0, 200)
+                  .join(''),
+                ...(answerMessage?.modelInfo
+                  ? { modelInfo: answerMessage.modelInfo }
+                  : {}),
+                timestamp: Date.now(),
+              },
+              body: {
+                question: userMessage?.content ?? '',
+                answer: answerMessage?.content ?? text,
+                selectedAnswer: text,
+              },
+            });
+            await refreshAttachments();
+          } catch (error) {
+            const message = userMessageFromError(
+              error,
+              '无法保存 AI 标注到文档。',
+            );
+            if (message) onError(message);
+            throw error;
+          }
+        }
+      : undefined;
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
@@ -86,29 +141,36 @@ export function DocumentAiWorkbenchShell({
       {showQuestionAnchors && (
         <QuestionAnchorHost projectId={projectId} assetId={assetId} />
       )}
-      {showAttachments && <AttachmentHost
+      <AiChatPanelHost
         projectId={projectId}
         assetId={assetId}
-        attachments={attachments}
-        sidebarOpen={annotationSidebarOpen}
-        onSidebarOpenChange={setAnnotationSidebarOpen}
-        onDeleteAttachment={async (attachmentId) => {
-          try {
-            await window.learningCompanion.deleteAttachment({
-              projectId,
-              attachmentId,
-            });
-            await refreshAttachments();
-          } catch (error) {
-            const message = userMessageFromError(
-              error,
-              '无法删除附着内容，请重试。',
-            );
-            if (message) onError(message);
-            throw error;
-          }
-        }}
-      />}
+        onAttachAnswer={onAttachAnswer}
+      />
+      {showAttachments && (
+        <AttachmentHost
+          projectId={projectId}
+          assetId={assetId}
+          attachments={attachments}
+          sidebarOpen={annotationSidebarOpen}
+          onSidebarOpenChange={setAnnotationSidebarOpen}
+          onDeleteAttachment={async (attachmentId) => {
+            try {
+              await window.learningCompanion.deleteAttachment({
+                projectId,
+                attachmentId,
+              });
+              await refreshAttachments();
+            } catch (error) {
+              const message = userMessageFromError(
+                error,
+                '无法删除附着内容，请重试。',
+              );
+              if (message) onError(message);
+              throw error;
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

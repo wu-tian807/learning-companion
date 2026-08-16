@@ -4,15 +4,40 @@ import { isAbsolute, join } from 'node:path';
 
 import { AppError } from '../errors/app-error';
 import type {
-  ExternalLibraryPackageDefinition,
+  ExternalLibraryBundlePackageDefinition,
+  ExternalLibraryBundleResourceDefinition,
+  ExternalLibraryDmgPackageDefinition,
+  ExternalLibraryMsiPackageDefinition,
   ExternalLibraryPackageType,
+  ExternalLibraryPlatform,
 } from './external-library-definition';
 
-export interface ExternalLibraryInstallRequest {
-  readonly packagePath: string;
+interface ExternalLibraryInstallRequestBase {
   readonly stagingInstallationDirectory: string;
-  readonly packageDefinition: ExternalLibraryPackageDefinition;
 }
+
+export interface ExternalLibraryDownloadedBundleResource {
+  readonly definition: ExternalLibraryBundleResourceDefinition;
+  readonly path: string;
+}
+
+export interface ExternalLibrarySinglePackageInstallRequest
+  extends ExternalLibraryInstallRequestBase {
+  readonly packagePath: string;
+  readonly packageDefinition:
+    | ExternalLibraryDmgPackageDefinition
+    | ExternalLibraryMsiPackageDefinition;
+}
+
+export interface ExternalLibraryBundleInstallRequest
+  extends ExternalLibraryInstallRequestBase {
+  readonly packageDefinition: ExternalLibraryBundlePackageDefinition;
+  readonly resources: readonly ExternalLibraryDownloadedBundleResource[];
+}
+
+export type ExternalLibraryInstallRequest =
+  | ExternalLibraryBundleInstallRequest
+  | ExternalLibrarySinglePackageInstallRequest;
 
 export interface ExternalLibraryInstaller {
   readonly packageType: ExternalLibraryPackageType;
@@ -38,14 +63,38 @@ export function requireInstallerAbsolutePath(value: string): string {
 }
 
 export async function validateInstalledExecutable(
-  request: ExternalLibraryInstallRequest,
+  stagingInstallationDirectory: string,
+  executableRelativePath: string,
+  platform: ExternalLibraryPlatform,
+): Promise<string> {
+  const executablePath = await validateInstalledRuntimeFile(
+    stagingInstallationDirectory,
+    executableRelativePath,
+  );
+
+  try {
+    await access(
+      executablePath,
+      platform === 'darwin' ? constants.X_OK : constants.F_OK,
+    );
+    return executablePath;
+  } catch (error) {
+    throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
+      cause: error,
+    });
+  }
+}
+
+export async function validateInstalledRuntimeFile(
+  stagingInstallationDirectory: string,
+  relativePath: string,
 ): Promise<string> {
   const executablePath = join(
     requireInstallerAbsolutePath(
-      request.stagingInstallationDirectory,
+      stagingInstallationDirectory,
     ),
     'runtime',
-    ...request.packageDefinition.executableRelativePath.split('/'),
+    ...relativePath.split('/'),
   );
 
   try {
@@ -55,7 +104,6 @@ export async function validateInstalledExecutable(
       throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
     }
 
-    await access(executablePath, constants.X_OK);
     return executablePath;
   } catch (error) {
     if (error instanceof AppError) {
@@ -76,7 +124,8 @@ export class ExternalLibraryInstallerRegistry
 
   register(installer: ExternalLibraryInstaller): void {
     if (
-      (installer.packageType !== 'dmg' &&
+      (installer.packageType !== 'bundle' &&
+        installer.packageType !== 'dmg' &&
         installer.packageType !== 'msi') ||
       typeof installer.install !== 'function'
     ) {

@@ -79,6 +79,7 @@ export interface AssetServiceDependencies {
   readonly createDefaultName: typeof createDefaultAssetName;
   readonly isRelinkMediaCompatible: typeof isAssetRelinkMediaCompatible;
   readonly artifactCleanup?: AssetArtifactCleanupApi;
+  readonly attachmentCleanup?: AssetAttachmentCleanupApi;
   readonly deletionObserver?: AssetDeletionObserver;
   readonly now: () => number;
 }
@@ -185,7 +186,6 @@ export class AssetService implements AssetServiceApi {
   private lifecycleVersion = 0;
   private readonly listeners = new Set<AssetChangedListener>();
   private readonly dependencies: AssetServiceDependencies;
-  private attachmentCleanup: AssetAttachmentCleanupApi | undefined;
 
   constructor(
     private readonly assetDatabase: AssetDatabaseApi,
@@ -202,17 +202,10 @@ export class AssetService implements AssetServiceApi {
         dependencies.isRelinkMediaCompatible ??
         isAssetRelinkMediaCompatible,
       artifactCleanup: dependencies.artifactCleanup,
+      attachmentCleanup: dependencies.attachmentCleanup,
       deletionObserver: dependencies.deletionObserver,
       now: dependencies.now ?? Date.now,
     };
-  }
-
-  registerAttachmentCleanup(cleanup: AssetAttachmentCleanupApi): void {
-    if (this.attachmentCleanup) {
-      throw new AppError('REGISTRATION_CONFLICT');
-    }
-
-    this.attachmentCleanup = cleanup;
   }
 
   touch(projectId: string, assetId: string, updatedTime: number): void {
@@ -579,7 +572,7 @@ export class AssetService implements AssetServiceApi {
       throw new AppError('PROJECT_NOT_FOUND');
     }
 
-    await this.attachmentCleanup?.removeByAsset(
+    await this.dependencies.attachmentCleanup?.removeByAsset(
       projectId,
       assetId,
     );
@@ -634,7 +627,7 @@ export class AssetService implements AssetServiceApi {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
 
-    await this.attachmentCleanup?.removeByProject(projectId);
+    await this.dependencies.attachmentCleanup?.removeByProject(projectId);
 
     for (const asset of this.assetDatabase.listByProject(projectId)) {
       await this.workspaceManager.removeManagedAssetFile(

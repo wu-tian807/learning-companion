@@ -44,7 +44,7 @@ describe('generation workspace contracts', () => {
     });
   });
 
-  it('reuses a named workspace and session across tasks without conflating conversations', async () => {
+  it('reuses a resolved workspace instance across tasks without conflating conversations', async () => {
     const manager = createManager();
     const config = {
       key: 'document-question',

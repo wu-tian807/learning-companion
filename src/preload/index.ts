@@ -39,6 +39,7 @@ import type {
   ConfigureAgentProviderApiConnectionRequest,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
+  InstallExternalLibraryRequest,
   MigrateExternalLibrariesRequest,
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
@@ -165,7 +166,9 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
       IPC_CHANNELS.refreshExternalLibrary,
       request,
     ),
-  startExternalLibraryInstallation: (request: ExternalLibraryIdRequest) =>
+  startExternalLibraryInstallation: (
+    request: InstallExternalLibraryRequest,
+  ) =>
     invoke<ExternalLibrarySnapshot>(
       IPC_CHANNELS.startExternalLibraryInstallation,
       request,
@@ -229,6 +232,8 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     subscribeAssetEvents(ipcRenderer, listener),
   listGenerationTasks: (request: GenerationTaskProjectRequest) =>
     invoke<GenerationTaskView[]>(IPC_CHANNELS.listGenerationTasks, request),
+  getGenerationTask: (request: GenerationTaskIdRequest) =>
+    invoke<GenerationTaskView | undefined>(IPC_CHANNELS.getGenerationTask, request),
   startGenerationTask: (request: StartGenerationTaskRequest) =>
     invoke<GenerationTaskView>(IPC_CHANNELS.startGenerationTask, request),
   retryGenerationTask: (request: GenerationTaskIdRequest) =>

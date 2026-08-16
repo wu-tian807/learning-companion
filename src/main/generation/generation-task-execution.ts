@@ -209,7 +209,13 @@ export class GenerationTaskExecution {
 
     if (snapshot.prepared) {
       try {
-        return await this.preparer.restore(snapshot, definition, signal);
+        const prepared = await this.preparer.restore(
+          snapshot,
+          definition,
+          signal,
+        );
+
+        return prepared;
       } catch (error) {
         if (
           isAbortError(error) ||
@@ -233,7 +239,7 @@ export class GenerationTaskExecution {
     task.recordPrepared({
       checkpoint: {
         completedTime,
-        manifestRef: prepared.manifestRef,
+        assetReferences: prepared.assetReferences,
       },
       durationMs: Math.max(0, completedWallTime - startedTime),
       updatedTime: completedTime,
@@ -271,7 +277,7 @@ export class GenerationTaskExecution {
           instruction: prepared.instruction,
           workspaces: prepared.workspaces,
           assetReferences: prepared.assetReferences,
-          defaultUserMessage: prepared.defaultUserMessage,
+          preparedUserMessage: prepared.preparedUserMessage,
           agent,
           signal,
           reportStatus(message) {

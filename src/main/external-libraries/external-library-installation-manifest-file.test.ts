@@ -35,6 +35,8 @@ function createDefinition() {
     definition: {
       id: 'libreoffice',
       displayName: 'LibreOffice',
+      description: 'Office preview',
+      category: 'document' as const,
       version: '25.2.5.2',
       installationFormatVersion: 1,
       sourceUrl: 'https://www.libreoffice.org/',
@@ -94,6 +96,10 @@ describe('ExternalLibraryInstallationManifestFile', () => {
     ).resolves.toEqual({
       status: 'available',
       marker,
+      runtimeDirectory: join(
+        installationDirectory,
+        EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+      ),
       executablePath,
     });
   });
@@ -156,6 +162,73 @@ describe('ExternalLibraryInstallationManifestFile', () => {
     ).resolves.toEqual({
       status: 'invalid',
       reason: 'definition-mismatch',
+    });
+  });
+
+  it('accepts a models-only bundle without inventing an executable', async () => {
+    const installationDirectory =
+      await createInstallationDirectory();
+    const definition = {
+      id: 'subtitle-translation-fast',
+      displayName: 'Subtitle translation',
+      description: 'Local translation models',
+      category: 'media' as const,
+      version: '1.0.0',
+      installationFormatVersion: 1,
+      sourceUrl: 'https://example.com/source',
+      licenseName: 'MPL-2.0',
+      licenseUrl: 'https://example.com/license',
+      packages: [
+        {
+          platform: 'win32' as const,
+          architecture: 'x64' as const,
+          packageType: 'bundle' as const,
+          resources: [
+            {
+              id: 'model',
+              downloadUrl: 'https://example.com/model.bin',
+              sha256: 'b'.repeat(64),
+              expectedSize: 10,
+              installation: {
+                type: 'file' as const,
+                destinationRelativePath: 'models/model.bin',
+              },
+            },
+          ],
+          requiredRelativePaths: ['models/model.bin'],
+        },
+      ],
+    };
+    const packageDefinition = definition.packages[0];
+    const modelPath = join(
+      installationDirectory,
+      EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+      'models',
+      'model.bin',
+    );
+    await mkdir(dirname(modelPath), { recursive: true });
+    await writeFile(modelPath, 'model');
+    const manifestFile = new ExternalLibraryInstallationManifestFile();
+    const marker = createExternalLibraryInstallationMarker({
+      definition,
+      packageDefinition,
+      installedTime: 1,
+    });
+    await manifestFile.write(installationDirectory, marker);
+
+    await expect(
+      manifestFile.inspect(
+        installationDirectory,
+        definition,
+        packageDefinition,
+      ),
+    ).resolves.toEqual({
+      status: 'available',
+      marker,
+      runtimeDirectory: join(
+        installationDirectory,
+        EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+      ),
     });
   });
 

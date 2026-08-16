@@ -1,0 +1,7 @@
+.cache/
+.downloads/
+.models/
+.patch-work/
+.runtime/
+node_modules/
+results/

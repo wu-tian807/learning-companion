@@ -80,7 +80,7 @@ function allWorkspaces(request: CodexGenerationToolRequest) {
   return [request.workspaces.primary, ...request.workspaces.secondary];
 }
 
-function workspaceDefaultToolRequirements(
+function workspaceNativeToolRequirements(
   request: CodexGenerationToolRequest,
 ): readonly AgentToolRequirement[] {
   const workspaces = allWorkspaces(request);
@@ -177,14 +177,12 @@ function toDynamicTools(
 export function resolveCodexGenerationTools(
   request: CodexGenerationToolRequest,
   registry: AgentFunctionToolRegistryApi,
-  providerDefaultTools: readonly AgentToolRequirement[] = [],
 ): CodexGenerationToolSelection {
   const nativeToolIds = new Set<string>();
   const functionTools = new Map<string, AgentFunctionToolDefinition>();
   const effectiveRequirements: AgentToolRequirement[] = [];
   const requirements = mergeToolRequirements(
-    workspaceDefaultToolRequirements(request),
-    providerDefaultTools,
+    workspaceNativeToolRequirements(request),
     request.toolRequirements,
   );
 

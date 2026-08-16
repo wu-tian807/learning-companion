@@ -7,7 +7,10 @@ import {
   EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
 } from '../shared';
 import { EpubExplanationInstruction } from './instruction';
-import { EpubExplanationProcessor } from './processor';
+import {
+  EPUB_EXPLANATION_SYSTEM_INSTRUCTION_V1,
+  EpubExplanationProcessor,
+} from './processor';
 import { createEpubExplanationTaskDefinitionV1 } from './task-definition';
 
 function createInstruction() {
@@ -83,20 +86,34 @@ describe('EPUB explanation generation', () => {
       createWithContent,
     } as never);
     const instruction = createInstruction();
+    const reportStatus = vi.fn();
 
     const result = await processor.process({
       taskId: 'task-1',
       projectId: 'project-1',
       instruction,
       agent: { call },
-      defaultUserMessage: { role: 'user', content: [] },
-      reportStatus: vi.fn(),
+      preparedUserMessage: { role: 'user', content: [] },
+      reportStatus,
     } as never);
 
     expect(result).toEqual({ attachmentId: 'attachment-1' });
     expect(call).toHaveBeenCalledWith(
-      expect.objectContaining({ assistantEvents: 'none' }),
+      {
+        callKey: 'explain',
+        purpose: 'generation',
+        systemInstruction: EPUB_EXPLANATION_SYSTEM_INSTRUCTION_V1,
+        userMessage: { role: 'user', content: [] },
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
+        assistantEvents: 'runtime',
+      },
     );
+    expect(reportStatus.mock.calls).toEqual([
+      ['正在解释选中的文字…'],
+      ['正在保存 AI 解释…'],
+    ]);
     expect(createWithContent).toHaveBeenCalledWith(
       expect.objectContaining({
         assetId: 'asset-1',
@@ -150,7 +167,7 @@ describe('EPUB explanation generation', () => {
       agent: {
         call: vi.fn(async () => ({ assistantOutput: '已完成的回答' })),
       },
-      defaultUserMessage: { role: 'user', content: [] },
+      preparedUserMessage: { role: 'user', content: [] },
       reportStatus: vi.fn(),
     } as never);
 

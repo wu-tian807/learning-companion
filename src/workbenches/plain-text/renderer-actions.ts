@@ -1,4 +1,6 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import type {
   PlainTextEncoding,
   PlainTextLineEnding,
@@ -11,6 +13,11 @@ export interface PlainTextRendererActionsOptions {
   readonly encoding: PlainTextEncoding;
   readonly lineEnding: PlainTextLineEnding;
   readonly viewOptions: PlainTextViewOptions;
+  readonly hasSelection: () => boolean;
+  readonly onAiExplain: (
+    text: string,
+    anchor: ContentAnchorTarget,
+  ) => Promise<void> | void;
   readonly onSetEncoding: (encoding: PlainTextEncoding) => Promise<void>;
   readonly onSetLineEnding: (
     lineEnding: PlainTextLineEnding,
@@ -26,6 +33,8 @@ export function createPlainTextRendererActions({
   encoding,
   lineEnding,
   viewOptions,
+  hasSelection,
+  onAiExplain,
   onSetEncoding,
   onSetLineEnding,
   onSetViewOptions,
@@ -58,6 +67,29 @@ export function createPlainTextRendererActions({
             ...viewOptions,
             lineNumbers: !viewOptions.lineNumbers,
           }),
+      },
+      {
+        id: 'plain-text.toggle-read-mode',
+        enabled: !disabled,
+        execute: () =>
+          onSetViewOptions({
+            ...viewOptions,
+            readMode: !viewOptions.readMode,
+          }),
+      },
+      {
+        id: 'plain-text.ai.explain-selection',
+        enabled: hasSelection,
+        execute: (context) => {
+          const selection = findTextSelectionInput(context);
+          const anchor = context.focus;
+
+          if (!selection?.text || !anchor) {
+            return;
+          }
+
+          return onAiExplain(selection.text, anchor);
+        },
       },
       ...(['lf', 'crlf'] as const).map((candidate) => ({
         id: `plain-text.line-ending.${candidate}`,
@@ -99,6 +131,20 @@ export function createPlainTextRendererActions({
           closePolicy: 'never',
         },
       },
+      {
+        id: 'plain-text.toggle-read-mode.overflow',
+        actionId: 'plain-text.toggle-read-mode',
+        surface: 'overflow',
+        group: '10-view',
+        order: 15,
+        presentation: {
+          kind: 'checkbox',
+          label: '阅读模式',
+          checked: viewOptions.readMode,
+          disabledReason: actionDisabledReason,
+          closePolicy: 'never',
+        },
+      },
       ...(['lf', 'crlf'] as const).map((candidate, index) => ({
         id: `plain-text.line-ending.${candidate}.overflow`,
         actionId: `plain-text.line-ending.${candidate}`,
@@ -131,6 +177,19 @@ export function createPlainTextRendererActions({
           closePolicy: 'on-success' as const,
         },
       })),
+      {
+        id: 'plain-text.ai.explain-selection.context-menu',
+        actionId: 'plain-text.ai.explain-selection',
+        surface: 'context-menu',
+        group: '80-ai',
+        groupLabel: '纯文本 AI',
+        order: 10,
+        presentation: {
+          kind: 'action',
+          label: '就选中内容问 AI',
+          disabledReason: '请先在文本中选择内容',
+        },
+      },
     ],
   };
 }

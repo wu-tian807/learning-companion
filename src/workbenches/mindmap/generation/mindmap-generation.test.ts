@@ -14,7 +14,10 @@ import {
   MIND_MAP_GENERATION_CANDIDATE_VERSION,
   validateMindMapGenerationCandidateV1,
 } from './mindmap-generation-output';
-import { MindMapGenerationProcessor } from './mindmap-generation-processor';
+import {
+  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+  MindMapGenerationProcessor,
+} from './mindmap-generation-processor';
 
 const context = {
   assetReferences: {
@@ -105,7 +108,7 @@ function createProcessContext(
       secondary: [],
     },
     assetReferences: context.assetReferences,
-    defaultUserMessage: createTextAgentUserMessage('生成思维导图'),
+    preparedUserMessage: createTextAgentUserMessage('生成思维导图'),
     agent,
     reportStatus: vi.fn(),
     reportOutputRejected: vi.fn(),
@@ -203,9 +206,40 @@ describe('Mind Map generation contracts', () => {
       },
     );
 
-    await expect(
-      processor.process(createProcessContext()),
-    ).resolves.toEqual({ resultAssetId: 'generated-asset' });
+    const processContext = createProcessContext({
+      assetReferences: {
+        sources: [
+          {
+            alias: 'sources-0001',
+            assetId: 'asset-1',
+            name: 'slides.pptx',
+            mediaType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            materializedMediaType: 'application/pdf',
+            contentRevision: 'revision-1',
+            relativePath: 'references/sources-0001/slides.pdf',
+          },
+          {
+            alias: 'sources-0002',
+            assetId: 'asset-2',
+            name: 'diagram.png',
+            mediaType: 'image/png',
+            contentRevision: 'revision-2',
+            relativePath: 'references/sources-0002/diagram.png',
+          },
+        ],
+      },
+    });
+
+    await expect(processor.process(processContext)).resolves.toEqual({
+      resultAssetId: 'generated-asset',
+    });
+    expect(processContext.agent.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolRequirements: [
+          { id: 'workspace_read_pdf', availability: 'required' },
+        ],
+      }),
+    );
 
     expect(assets.stageGeneratedFile).toHaveBeenCalledWith(
       'project-1',
@@ -274,6 +308,29 @@ describe('Mind Map generation contracts', () => {
       ]),
     });
     expect(processContext.agent.call).toHaveBeenCalledTimes(4);
+    expect(processContext.agent.call).toHaveBeenNthCalledWith(
+      1,
+      {
+        callKey: 'generate',
+        purpose: 'generation',
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+        userMessage: processContext.preparedUserMessage,
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
+      },
+    );
+    expect(processContext.agent.call).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        callKey: 'repair-1',
+        purpose: 'repair',
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+        toolRequirements: [],
+        skills: [],
+        mcpServers: [],
+      }),
+    );
     expect(processContext.reportOutputRejected).toHaveBeenCalledTimes(3);
     expect(assets.stageGeneratedFile).not.toHaveBeenCalled();
   });

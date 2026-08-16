@@ -35,7 +35,10 @@ export interface ExternalLibraryRendererState {
   connect(listener?: ExternalLibraryTransitionListener): () => void;
   reload(): Promise<void>;
   refreshLibrary(libraryId: string): Promise<ExternalLibrarySnapshot>;
-  startInstallation(libraryId: string): Promise<ExternalLibrarySnapshot>;
+  startInstallation(
+    libraryId: string,
+    variantId?: string,
+  ): Promise<ExternalLibrarySnapshot>;
   cancelInstallation(libraryId: string): Promise<void>;
   removeLibrary(libraryId: string): Promise<ExternalLibrarySnapshot>;
   selectDirectory(): Promise<string | undefined>;
@@ -67,6 +70,7 @@ export interface ExternalLibraryRendererApi {
   }): Promise<ExternalLibrarySnapshot>;
   startExternalLibraryInstallation(request: {
     libraryId: string;
+    variantId?: string;
   }): Promise<ExternalLibrarySnapshot>;
   cancelExternalLibrary(request: { libraryId: string }): Promise<void>;
   removeExternalLibrary(request: {
@@ -361,10 +365,11 @@ export function createExternalLibraryStore(
         }),
       ),
 
-    startInstallation: (libraryId) =>
+    startInstallation: (libraryId, variantId) =>
       runLibraryRequest(libraryId, () =>
         api.startExternalLibraryInstallation({
           libraryId: requireLibraryId(libraryId),
+          ...(variantId === undefined ? {} : { variantId }),
         }),
       ),
 

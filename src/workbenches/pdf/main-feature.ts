@@ -1,4 +1,5 @@
-import type { MainWorkbenchFeatureDefinition } from '../catalog/main-workbench-features';
+import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
+import { pdfFunctionTool } from './agent/pdf-function-tool';
 import {
   PDF_PAGE_ANCHOR_TYPE,
   PDF_PAGE_ANCHOR_VERSION,
@@ -11,11 +12,14 @@ import {
   isPdfTextRangeAnchorV1,
 } from './shared';
 
-export const pdfAnchorMainFeature = Object.freeze({
+export const pdfMainFeature = Object.freeze({
   id: 'builtin.pdf.anchors',
+  registerAgentFunctionTools({ functionTools }): void {
+    functionTools.register(pdfFunctionTool);
+  },
   registerAttachmentTypes({ anchors }): void {
     anchors.register({ anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE, version: PDF_TEXT_RANGE_ANCHOR_VERSION, isPayload: isPdfTextRangeAnchorV1 });
     anchors.register({ anchorType: PDF_PAGE_ANCHOR_TYPE, version: PDF_PAGE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 });
     anchors.register({ anchorType: PDF_REGION_ANCHOR_TYPE, version: PDF_REGION_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 });
   },
-} satisfies MainWorkbenchFeatureDefinition);
+} satisfies MainWorkbenchContribution);

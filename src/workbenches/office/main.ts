@@ -16,7 +16,7 @@ import type {
 } from '../../main/content/content-resource-service';
 import { LocalFileContentHandle } from '../../main/content/resolvers/local-file/local-file-content-resolver';
 import { AppError } from '../../main/errors/app-error';
-import { LIBREOFFICE_LIBRARY_ID } from '../../main/external-libraries/definitions/libreoffice';
+import { LIBREOFFICE_LIBRARY_ID } from './external-libraries/libreoffice';
 import type {
   ExternalLibraryServiceApi,
 } from '../../main/external-libraries/external-library-service';

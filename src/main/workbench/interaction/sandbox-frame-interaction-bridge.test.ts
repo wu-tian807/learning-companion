@@ -20,8 +20,8 @@ import { htmlWorkbenchManifest } from '../../../workbenches/html/shared';
 import {
   HtmlContextMenuFacilityAdapter,
   HtmlTextSelectionFacilityAdapter,
+  READ_HTML_FRAME_SELECTION_SCRIPT,
 } from '../../../workbenches/html/main-facility-adapters';
-import { MainFacilityAdapterRegistry } from './main-facility-adapter-registry';
 import { SandboxFrameInteractionBridge } from './sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from './workbench-transport-binding-registry';
 
@@ -34,6 +34,9 @@ interface TestFrame {
 class TestWebContents extends EventEmitter {
   readonly id: number;
   readonly send = vi.fn();
+  readonly mainFrame = {
+    framesInSubtree: [] as WebFrameMain[],
+  };
   focusedFrame: WebFrameMain | null = null;
   private destroyed = false;
 
@@ -58,11 +61,16 @@ function createFrame(
   selection = '选中的文字',
 ): TestFrame {
   let destroyed = false;
-  const executeJavaScript = vi.fn(async () => selection);
+  const executeJavaScript = vi.fn(async (script: string) =>
+    script === READ_HTML_FRAME_SELECTION_SCRIPT
+      ? { text: selection }
+      : null,
+  );
   const frame = {
     url,
     parent,
     detached: false,
+    framesInSubtree: [] as WebFrameMain[],
     isDestroyed: () => destroyed,
     executeJavaScript,
   } as unknown as WebFrameMain;
@@ -115,15 +123,13 @@ function createFixture() {
   const bindingRegistry = new WorkbenchTransportBindingRegistry(
     facilityRegistry,
   );
-  const adapterRegistry = new MainFacilityAdapterRegistry(
-    facilityRegistry,
-  );
-  adapterRegistry.register(new HtmlContextMenuFacilityAdapter());
-  adapterRegistry.register(new HtmlTextSelectionFacilityAdapter());
+  const adapters = [
+    new HtmlContextMenuFacilityAdapter(),
+    new HtmlTextSelectionFacilityAdapter(),
+  ];
   const logger = { error: vi.fn() };
   const bridge = new SandboxFrameInteractionBridge(
     bindingRegistry,
-    adapterRegistry,
     facilityRegistry,
     {
       schedule: (task) => task(),
@@ -134,7 +140,7 @@ function createFixture() {
   bridge.attach(webContents as unknown as WebContents);
 
   return {
-    adapterRegistry,
+    adapters,
     bindingRegistry,
     bridge,
     logger,
@@ -156,6 +162,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(rootUrl)],
+      fixture.adapters,
     );
 
     fixture.webContents.emit(
@@ -202,6 +209,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(firstRoot.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.emit(
       'context-menu',
@@ -220,6 +228,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-2',
       htmlWorkbenchManifest,
       [binding(nestedRoot.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.emit(
       'context-menu',
@@ -242,6 +251,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.focusedFrame = root.frame;
 
@@ -267,6 +277,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-2',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.emit(
       'before-mouse-event',
@@ -293,6 +304,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-1',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     fixture.webContents.focusedFrame = root.frame;
     fixture.webContents.emit(
@@ -310,6 +322,7 @@ describe('SandboxFrameInteractionBridge', () => {
       'session-2',
       htmlWorkbenchManifest,
       [binding(root.frame.url)],
+      fixture.adapters,
     );
     root.executeJavaScript.mockRejectedValueOnce(
       new Error('frame destroyed'),
@@ -336,5 +349,130 @@ describe('SandboxFrameInteractionBridge', () => {
     expect(
       fixture.webContents.listenerCount('before-mouse-event'),
     ).toBe(0);
+  });
+
+  it('executes a trusted script only in the exact session root frame', async () => {
+    const fixture = createFixture();
+    const root = createFrame('learning-content://resource/token');
+    const similar = createFrame(
+      'learning-content://resource/token-copy',
+    );
+    fixture.webContents.mainFrame.framesInSubtree.push(
+      similar.frame,
+      root.frame,
+    );
+    fixture.bindingRegistry.registerSession(
+      'session-1',
+      htmlWorkbenchManifest,
+      [binding(root.frame.url)],
+    );
+    root.executeJavaScript.mockResolvedValueOnce({ found: true });
+
+    await expect(
+      fixture.bridge.executeJavaScript(
+        'session-1',
+        'trusted-anchor-script',
+      ),
+    ).resolves.toEqual({ found: true });
+    expect(root.executeJavaScript).toHaveBeenCalledWith(
+      'trusted-anchor-script',
+    );
+    expect(similar.executeJavaScript).not.toHaveBeenCalled();
+  });
+
+  it('executes only in a uniquely addressed descendant of the session root', async () => {
+    const fixture = createFixture();
+    const root = createFrame('learning-content://resource/token');
+    const child = createFrame(
+      'https://widgets.example.com/chapter',
+      root.frame,
+    );
+    const unrelated = createFrame(child.frame.url);
+    root.frame.framesInSubtree.push(child.frame);
+    fixture.webContents.mainFrame.framesInSubtree.push(
+      root.frame,
+      unrelated.frame,
+    );
+    fixture.bindingRegistry.registerSession(
+      'session-1',
+      htmlWorkbenchManifest,
+      [binding(root.frame.url)],
+    );
+    child.executeJavaScript.mockResolvedValueOnce({ found: true });
+
+    await expect(
+      fixture.bridge.executeJavaScript(
+        'session-1',
+        'trusted-anchor-script',
+        { frameUrl: child.frame.url },
+      ),
+    ).resolves.toEqual({ found: true });
+    expect(child.executeJavaScript).toHaveBeenCalledWith(
+      'trusted-anchor-script',
+    );
+    expect(unrelated.executeJavaScript).not.toHaveBeenCalled();
+
+    root.frame.framesInSubtree.push(
+      createFrame(child.frame.url, root.frame).frame,
+    );
+    await expect(
+      fixture.bridge.executeJavaScript(
+        'session-1',
+        'script',
+        { frameUrl: child.frame.url },
+      ),
+    ).rejects.toMatchObject({ code: 'SERVICE_NOT_READY' });
+  });
+
+  it('rejects missing, ambiguous, detached, and destroyed root frames', async () => {
+    const fixture = createFixture();
+    const rootUrl = 'learning-content://resource/token';
+    const first = createFrame(rootUrl);
+    const second = createFrame(rootUrl);
+    fixture.bindingRegistry.registerSession(
+      'session-1',
+      htmlWorkbenchManifest,
+      [binding(rootUrl)],
+    );
+
+    await expect(
+      fixture.bridge.executeJavaScript('session-1', 'script'),
+    ).rejects.toMatchObject({ code: 'SERVICE_NOT_READY' });
+
+    fixture.webContents.mainFrame.framesInSubtree.push(
+      first.frame,
+      second.frame,
+    );
+    await expect(
+      fixture.bridge.executeJavaScript('session-1', 'script'),
+    ).rejects.toMatchObject({ code: 'SERVICE_NOT_READY' });
+
+    fixture.webContents.mainFrame.framesInSubtree.splice(1);
+    Object.defineProperty(first.frame, 'detached', { value: true });
+    await expect(
+      fixture.bridge.executeJavaScript('session-1', 'script'),
+    ).rejects.toMatchObject({ code: 'SERVICE_NOT_READY' });
+
+    Object.defineProperty(first.frame, 'detached', { value: false });
+    first.destroy();
+    await expect(
+      fixture.bridge.executeJavaScript('session-1', 'script'),
+    ).rejects.toMatchObject({ code: 'SERVICE_NOT_READY' });
+  });
+
+  it('stops exposing root frames when the web contents is destroyed', async () => {
+    const fixture = createFixture();
+    const root = createFrame('learning-content://resource/token');
+    fixture.webContents.mainFrame.framesInSubtree.push(root.frame);
+    fixture.bindingRegistry.registerSession(
+      'session-1',
+      htmlWorkbenchManifest,
+      [binding(root.frame.url)],
+    );
+    fixture.webContents.destroy();
+
+    await expect(
+      fixture.bridge.executeJavaScript('session-1', 'script'),
+    ).rejects.toMatchObject({ code: 'SERVICE_NOT_READY' });
   });
 });

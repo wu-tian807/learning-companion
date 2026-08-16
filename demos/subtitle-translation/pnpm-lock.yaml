@@ -1,0 +1,27 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+patchedDependencies:
+  '@browsermt/bergamot-translator@0.4.9':
+    hash: 395bbe65352dc2926be32506cffb05d8d6a3812d26264489d6c325ab6258c38e
+    path: patches/@browsermt__bergamot-translator@0.4.9.patch
+
+importers:
+
+  .:
+    dependencies:
+      '@browsermt/bergamot-translator':
+        specifier: 0.4.9
+        version: 0.4.9(patch_hash=395bbe65352dc2926be32506cffb05d8d6a3812d26264489d6c325ab6258c38e)
+
+packages:
+
+  '@browsermt/bergamot-translator@0.4.9':
+    resolution: {integrity: sha512-bNuuCwM/JnsIYQCKXcYKFT4Qc5vLMoB8Nbvz8ReIgs7xzebK8Sa+R8iEK8mLvNBe/WaZ6zrPaUQilLsRT/ea8Q==}
+
+snapshots:
+
+  '@browsermt/bergamot-translator@0.4.9(patch_hash=395bbe65352dc2926be32506cffb05d8d6a3812d26264489d6c325ab6258c38e)': {}
