@@ -14,6 +14,7 @@ import type { JsonValue } from '../../../shared/workbench/protocol';
 import { AiMarkdownContent } from './ai-chat/AiChatPanel';
 import {
   resolveWorkbenchAnchor,
+  revealWorkbenchAnchor,
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
   type WorkbenchAnchorRect,
 } from '../../../renderer/workbench/host/workbench-anchor-bridge';
@@ -265,6 +266,9 @@ export function AttachmentHost({
   const hostRef = useRef<HTMLDivElement>(null);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const [activeBody, setActiveBody] = useState<JsonValue>();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
+  const focusTimerRef = useRef<number | undefined>(undefined);
   const [anchorRects, setAnchorRects] = useState<
     ReadonlyMap<string, WorkbenchAnchorRect>
   >(
@@ -333,6 +337,15 @@ export function AttachmentHost({
     return () => { cancelled = true; };
   }, [activePopupId, projectId]);
 
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current !== undefined) {
+        window.clearTimeout(focusTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const markerGroups = useMemo(() => {
     const groups = new Map<string, AssetAttachment[]>();
     for (const attachment of attachments) {
@@ -343,6 +356,19 @@ export function AttachmentHost({
     }
     return [...groups.values()];
   }, [attachments]);
+
+  const revealAttachment = useCallback((attachment: AssetAttachment) => {
+    revealWorkbenchAnchor(assetId, attachment.target);
+    setFocusedAttachmentId(attachment.id);
+    setSidebarOpen(false);
+    if (focusTimerRef.current !== undefined) {
+      window.clearTimeout(focusTimerRef.current);
+    }
+    focusTimerRef.current = window.setTimeout(
+      () => setFocusedAttachmentId(null),
+      1800,
+    );
+  }, [assetId]);
 
   if (attachments.length === 0) {
     return null;
@@ -359,7 +385,8 @@ export function AttachmentHost({
         const quote = extractQuote(att.target);
         const preview = extractMetadataPreview(att.metadata);
         const isActive =
-          group.some((item) => item.id === activeAttachmentId);
+          group.some((item) => item.id === activeAttachmentId) ||
+          group.some((item) => item.id === focusedAttachmentId);
 
         if (!anchorRect) return null;
 
@@ -392,6 +419,71 @@ export function AttachmentHost({
           </button>
         );
       })}
+
+      <>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            className="pointer-events-auto absolute right-3 top-14 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
+          >
+            <span>✦</span>
+            标注 {attachments.length}
+          </button>
+          {sidebarOpen && (
+            <aside className="pointer-events-auto absolute bottom-4 right-3 top-24 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
+              <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-100">文档标注</h3>
+                  <p className="mt-0.5 text-[10px] text-slate-500">点击定位到原文选区</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  className="rounded-lg px-2 py-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+                {attachments.map((attachment) => {
+                  const position = extractPosition(attachment.target);
+                  const preview = extractMetadataPreview(attachment.metadata) || '无内容摘要';
+                  return (
+                    <div
+                      key={attachment.id}
+                      className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3 hover:border-indigo-300/25"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="shrink-0 rounded-md bg-indigo-400/10 px-1.5 py-0.5 text-[10px] text-indigo-300">
+                          第 {position?.pageNumber ?? 1} 页
+                        </span>
+                        <p className="line-clamp-3 min-w-0 flex-1 text-xs leading-5 text-slate-300">
+                          {preview}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => revealAttachment(attachment)}
+                          className="rounded-lg px-2 py-1 text-[10px] text-indigo-300 hover:bg-indigo-400/10"
+                        >
+                          定位
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActivePopupId(attachment.id)}
+                          className="rounded-lg bg-white/[0.06] px-2 py-1 text-[10px] text-slate-300 hover:bg-white/[0.1]"
+                        >
+                          查看
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </aside>
+          )}
+        </>
 
       {activePopupId && (
         <AnnotationPopup
