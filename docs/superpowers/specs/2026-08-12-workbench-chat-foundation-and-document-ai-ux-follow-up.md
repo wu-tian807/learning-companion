@@ -1,7 +1,7 @@
 # Workbench 共享聊天基建与 Document AI 体验整改记录
 
 日期：2026-08-12  
-状态：实测问题已确认；共享基建方向待拆分为实现计划
+状态：共享 Renderer 基建已实现；媒体专用能力继续按 Workbench 扩展
 
 ## 1. 结论
 
@@ -28,6 +28,24 @@ PDF Anchor
 同时，PDF、Office、HTML、EPUB 及后续其他 Workbench 都会需要问答、连续追问、取消、错误、流式输出和 Attachment 等能力。如果继续由每个 Workbench 各写一套 Chat Store、面板和 GenerationTask 编排，交互语义和故障处理会持续分叉。
 
 因此后续应建立一套 **Workbench 共享聊天基建**。共享层统一对话运行机制和基础 UI，但不吞并媒体 Anchor、TaskDefinition、工具、提示词和 Attachment 业务语义。
+
+### 1.1 当前实现落点
+
+PR #35 的后续改造已经建立唯一共享主路：
+
+```text
+WorkbenchConversationContribution
+  -> WorkbenchConversationRuntime
+  -> ConversationPanelHost / Conversation Controller
+  -> GenerationTask Preload API
+  -> Workbench 自己的 TaskDefinition
+```
+
+- `src/renderer/conversation/`：统一面板、历史页签、消息投影、提交、停止、重试、恢复、错误与可选 delta；
+- `src/workbenches/*/...conversation*`：各 Workbench 构造上下文和任务输入，解析最终结果，并实现“查看原文”与可选 Attachment；
+- `src/renderer/project/ProjectPage.tsx`：只承载一个共享问答面板，不再为 HTML、PDF 等分别挂载私有面板；
+- PDF、Office、Markdown、Plain Text 与 HTML 已迁移；HTML 继续复用原有文件型历史，文档类历史使用统一的本地投影 Store；
+- 同一个 `conversationId` 跨 GenerationTask 继续 Provider Session，Renderer 历史只用于展示，从不重新拼入 Prompt。
 
 ## 2. 本次真实验收范围
 
@@ -278,7 +296,7 @@ right: 1.25rem
 - 通用消息模型和错误消息；
 - 通用 Chat Panel、Message List、Composer 和运行状态；
 - Provider Selector 未配置时的统一引导；
-- `conversationId` 创建、清空和传递；
+- `conversationId` 创建、新建对话和传递；
 - 通用 Markdown/公式展示；
 - Workbench 扩展动作插槽。
 
@@ -293,7 +311,7 @@ right: 1.25rem
 - 需要哪些工具、Skill、MCP 和 Workspace；
 - 回答是否允许附着，以及创建什么 Attachment；
 - 标注如何在该媒体中渲染；
-- 面板放在 Workbench 的哪个位置。
+- 什么操作打开共享面板，以及何时注入或释放当前媒体上下文。
 
 ### 6.3 共享层明确不负责
 
@@ -358,14 +376,7 @@ Workbench 创建媒体语义输入
 - Attachment 只保存用户明确留下的结果；
 - Renderer 消息不得被重新拼入 Prompt 来“恢复上下文”。
 
-尚未决定的是：应用重启后是否恢复聊天的可视化历史。
-
-如果未来需要恢复展示，可以：
-
-1. 从 Provider Thread 读取投影；或
-2. 保存只用于 UI 展示的 Conversation Projection。
-
-无论选择哪一种，该 Projection 都不能取代 Provider Session，也不能成为重复注入上下文的来源。
+当前已经保存一份只用于 UI 展示的 Conversation Projection：HTML 沿用 Workbench 文件存储，文档类 Workbench 使用按 contribution/project/asset 隔离的本地 Store。该 Projection 不取代 Provider Session，也不会成为重复注入上下文的来源。
 
 ## 9. 流式输出与即时反馈
 
@@ -416,7 +427,7 @@ Workbench 创建媒体语义输入
 - 两个 GenerationTask 使用同一 Conversation 时复用同一 Provider Session；
 - 新建 Conversation 后使用新的 Session 边界；
 - 切换 Asset 不串消息、草稿、选区或 loading；
-- 清空/关闭会取消活跃任务，迟到回答不能重新写回；
+- 显式“停止”会取消活跃任务；关闭面板允许任务在后台继续，重新打开或重启后可按 taskId 恢复；
 - retry 使用原 GenerationTask 的恢复机制；
 - 有 delta 和无 delta Provider 都能正确结束；
 - Attachment 创建失败不会伪装成回答失败，反之亦然；

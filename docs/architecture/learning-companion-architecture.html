@@ -2361,7 +2361,7 @@
               tag: "IMPLEMENTED SHARED CLIENT",
               caption: "start · await terminal event · cancel",
               summary: "Renderer 的薄客户端只复用通用 GenerationTask Preload API，处理启动/完成竞态和 AbortSignal。Document AI 已使用它，不再自建 feature IPC。",
-              files: ["src/renderer/generation/run-generation-task.ts", "src/workbenches/document-ai/renderer/document-ai-client.ts"],
+              files: ["src/renderer/conversation/conversation-task-client.ts", "src/renderer/conversation/conversation-controller.ts"],
               col: 5,
               row: 3,
               span: 3
