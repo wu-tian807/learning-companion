@@ -17,10 +17,16 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchConversationContribution } from '../../renderer/conversation/workbench-conversation-context';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
-import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
+import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
+import {
+  createDocumentConversationContext,
+  createDocumentConversationContribution,
+  createDocumentConversationHistoryStore,
+} from '../document-ai/renderer/conversation/document-conversation-contribution';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -598,6 +604,39 @@ export function PlainTextWorkbenchView({
     reportError,
   ]);
 
+  const conversationContributionId =
+    `${plainTextWorkbenchManifest.id}.document-question`;
+  const conversationHistoryStore = useMemo(
+    () => createDocumentConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+    ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
+  const conversationContribution = useMemo(
+    () => createDocumentConversationContribution({
+      projectId: asset.projectId,
+      assetId: asset.id,
+      workbenchId: plainTextWorkbenchManifest.id,
+      contributionId: conversationContributionId,
+      historyStore: conversationHistoryStore,
+      contextLabel: '文本选区',
+    }),
+    [
+      asset.id,
+      asset.projectId,
+      conversationContributionId,
+      conversationHistoryStore,
+    ],
+  );
+  const conversationOwnerId =
+    `${plainTextWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
+
   const rendererActions = useMemo(
     () =>
       createPlainTextRendererActions({
@@ -609,14 +648,13 @@ export function PlainTextWorkbenchView({
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
         onAiExplain: (text, anchor) => {
-          const store = getGlobalAiChatStore();
-          store.ensureSession(asset.projectId, asset.id);
-          store.setPendingAnchor(asset.id, {
-            target: anchor,
-            selectedText: text,
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context: createDocumentConversationContext({
+              target: anchor,
+              selectedText: text,
+            }),
           });
-          store.setPanelOpen(true);
-          store.setDraft('');
         },
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
@@ -631,7 +669,8 @@ export function PlainTextWorkbenchView({
       saving,
       activeEditorActionAdapter,
       asset.id,
-      asset.projectId,
+      conversationOwnerId,
+      conversationRuntime,
       updateLineEnding,
       updateViewOptions,
       viewOptions,
@@ -756,7 +795,6 @@ export function PlainTextWorkbenchView({
         refreshAttachments ?? (async () => undefined)
       }
       onError={onError}
-      allowAnswerAttachments={false}
     >
       <div
       className="relative flex h-full min-h-0 flex-col bg-[#171c22]"
@@ -954,6 +992,12 @@ export function PlainTextWorkbenchView({
           onDiscard={() => void discardRecovery()}
         />
       )}
+      <QuestionAnchorHost
+        assetId={asset.id}
+        ownerId={conversationOwnerId}
+        historyStore={conversationHistoryStore}
+        runtime={conversationRuntime}
+      />
       </div>
     </DocumentAiWorkbenchShell>
   );

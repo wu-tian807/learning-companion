@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AiChatMessage } from './ai-chat/chat-store';
-import { groupQuestionAnchors } from './question-anchor-groups';
+import type { ConversationRecord } from '../../../renderer/conversation/conversation-contracts';
+import { createDocumentConversationContext } from './conversation/document-conversation-contribution';
+import { groupConversationQuestionAnchors } from './conversation/conversation-question-anchors';
 
 const target = {
   scope: 'content' as const,
@@ -10,17 +11,23 @@ const target = {
   anchorPayload: { pageNumber: 2, x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
 };
 
-describe('groupQuestionAnchors', () => {
+describe('groupConversationQuestionAnchors', () => {
   it('keeps only anchored user questions and groups repeated questions at one location', () => {
-    const messages: AiChatMessage[] = [
-      { id: 'q1', role: 'user', content: '这是什么？', timestamp: 1, anchor: { target } },
-      { id: 'a1', role: 'assistant', content: '回答', timestamp: 2 },
-      { id: 'q2', role: 'user', content: '再解释一次', timestamp: 3, anchor: { target } },
-      { id: 'q3', role: 'user', content: '无选区问题', timestamp: 4 },
-    ];
+    const history: readonly ConversationRecord[] = [{
+      id: 'conversation',
+      title: '问题',
+      messages: [
+        { id: 'q1', role: 'user', text: '这是什么？', createdTime: 1, context: createDocumentConversationContext({ target }) },
+        { id: 'a1', role: 'assistant', text: '回答', createdTime: 2 },
+        { id: 'q2', role: 'user', text: '再解释一次', createdTime: 3, context: createDocumentConversationContext({ target }) },
+        { id: 'q3', role: 'user', text: '无选区问题', createdTime: 4 },
+      ],
+      createdTime: 1,
+      updatedTime: 4,
+    }];
 
-    const groups = groupQuestionAnchors(messages);
+    const groups = groupConversationQuestionAnchors(history);
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.questions.map((message) => message.id)).toEqual(['q1', 'q2']);
+    expect(groups[0]?.entries.map(({ message }) => message.id)).toEqual(['q1', 'q2']);
   });
 });

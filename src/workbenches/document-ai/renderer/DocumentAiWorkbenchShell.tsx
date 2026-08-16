@@ -1,11 +1,15 @@
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import { AttachmentHost } from './AttachmentHost';
+import { DocumentQuestionAnchorsVisibleContext } from './document-question-anchor-visibility';
 import { DocumentMarkerVisibilityMenu } from './DocumentMarkerVisibilityMenu';
-import { QuestionAnchorHost } from './QuestionAnchorHost';
 
 export interface DocumentAiWorkbenchShellProps {
   readonly projectId: string;
@@ -13,7 +17,6 @@ export interface DocumentAiWorkbenchShellProps {
   readonly attachments: readonly AssetAttachment[];
   readonly refreshAttachments: () => Promise<void>;
   readonly onError: (message: string) => void;
-  readonly allowAnswerAttachments: boolean;
   readonly children: ReactNode;
 }
 
@@ -53,7 +56,9 @@ export function DocumentAiWorkbenchShell({
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-        {children}
+        <DocumentQuestionAnchorsVisibleContext.Provider value={showQuestionAnchors}>
+          {children}
+        </DocumentQuestionAnchorsVisibleContext.Provider>
       </div>
       {projectActionSlot && createPortal(
         <div className="flex items-center gap-2">
@@ -82,9 +87,6 @@ export function DocumentAiWorkbenchShell({
           </button>
         </div>,
         projectActionSlot,
-      )}
-      {showQuestionAnchors && (
-        <QuestionAnchorHost projectId={projectId} assetId={assetId} />
       )}
       {showAttachments && (
         <AttachmentHost

@@ -1,25 +1,13 @@
-import type { AssetTarget } from '../../shared/workbench/anchor';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
-export interface DocumentAiRequest {
-  readonly projectId: string;
-  readonly assetId: string;
-  readonly requestId: string;
-  readonly conversationId: string;
-  readonly question: string;
-  readonly target: AssetTarget;
-  readonly selectedText?: string;
-  readonly generateTitle?: boolean;
-}
-
-export interface DocumentAiResponse {
+interface DocumentQuestionResultFields {
   readonly answer: string;
   readonly title?: string;
   readonly providerId: string;
   readonly modelId: string;
 }
 
-export type DocumentQuestionTaskResult = JsonValue & DocumentAiResponse;
+export type DocumentQuestionTaskResult = JsonValue & DocumentQuestionResultFields;
 
 export function isDocumentQuestionTaskResult(
   value: unknown,

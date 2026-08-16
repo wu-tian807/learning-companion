@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
+import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import {
@@ -43,19 +44,21 @@ function render(payload: WorkbenchBootstrap['payload']) {
   };
 
   return renderToStaticMarkup(
-    <WorkbenchRuntimeProvider onError={vi.fn()}>
-      <HtmlWorkbenchView
-        asset={asset}
-        bootstrap={bootstrap}
-        executeCommand={vi.fn()}
-        onRelink={vi.fn()}
-        onRefresh={vi.fn()}
-        onReveal={vi.fn()}
-        onInteractionChange={vi.fn()}
-        onOpenExternal={vi.fn(async () => undefined)}
-        onError={vi.fn()}
-      />
-    </WorkbenchRuntimeProvider>,
+    <WorkbenchConversationRuntimeProvider>
+      <WorkbenchRuntimeProvider onError={vi.fn()}>
+        <HtmlWorkbenchView
+          asset={asset}
+          bootstrap={bootstrap}
+          executeCommand={vi.fn()}
+          onRelink={vi.fn()}
+          onRefresh={vi.fn()}
+          onReveal={vi.fn()}
+          onInteractionChange={vi.fn()}
+          onOpenExternal={vi.fn(async () => undefined)}
+          onError={vi.fn()}
+        />
+      </WorkbenchRuntimeProvider>
+    </WorkbenchConversationRuntimeProvider>,
   );
 }
 

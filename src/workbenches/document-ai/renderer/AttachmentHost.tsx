@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import type { AssetTarget } from '../../../shared/workbench/anchor';
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import { AiMarkdownContent } from './ai-chat/AiChatPanel';
+import { ConversationMarkdown } from '../../../renderer/conversation/conversation-markdown';
 import {
   resolveWorkbenchAnchor,
   revealWorkbenchAnchor,
@@ -224,7 +224,7 @@ function AnnotationPopup({
               附着内容
             </span>
             <div className="mt-1.5 break-words rounded-xl bg-black/15 p-3 text-sm leading-6 text-slate-200">
-              <AiMarkdownContent content={selectedAnswer ?? answer ?? '无内容'} />
+              <ConversationMarkdown text={selectedAnswer ?? answer ?? '无内容'} />
             </div>
           </div>
         </div>

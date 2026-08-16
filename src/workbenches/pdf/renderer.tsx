@@ -15,9 +15,11 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
-import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
-import { documentAiClient } from '../document-ai/renderer/document-ai-client';
-import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
+import { useWorkbenchConversationContribution } from '../../renderer/conversation/workbench-conversation-context';
+import {
+  DocumentAiWorkbenchShell,
+} from '../document-ai/renderer/DocumentAiWorkbenchShell';
+import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   findTextSelectionInput,
@@ -72,9 +74,11 @@ import {
   shouldDismissPdfRegionSelection,
 } from './pdf-region-interaction';
 import {
-  DOCUMENT_AI_QUESTION_COMMITTED_EVENT,
-  type DocumentAiQuestionCommittedDetail,
-} from '../document-ai/renderer/question-events';
+  createDocumentConversationContext,
+  createDocumentConversationContribution,
+  createDocumentConversationHistoryStore,
+  type DocumentConversationContext,
+} from '../document-ai/renderer/conversation/document-conversation-contribution';
 
 type PdfLoadState =
   | {
@@ -498,14 +502,6 @@ export function PdfDocumentWorkbenchView({
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
   const dismissedRegionPointerRef = useRef<number | undefined>(undefined);
   const regionMenuRef = useRef<HTMLDivElement>(null);
-  const activeDocumentRequestIdsRef = useRef(new Set<string>());
-
-  useEffect(() => () => {
-    for (const requestId of activeDocumentRequestIdsRef.current) {
-      documentAiClient.cancel(requestId);
-    }
-    activeDocumentRequestIdsRef.current.clear();
-  }, []);
 
   useEffect(() => {
     const findPage = (target: AssetTarget): HTMLElement | undefined => {
@@ -619,8 +615,46 @@ export function PdfDocumentWorkbenchView({
     useState<PdfRegionSelection>();
   const [completedRegionSelection, setCompletedRegionSelection] =
     useState<CompletedPdfRegionSelection>();
+  const [completedRegionContext, setCompletedRegionContext] =
+    useState<DocumentConversationContext>();
   const [regionActionMenu, setRegionActionMenu] =
     useState<PdfRegionActionMenu>();
+  const conversationContributionId = `${contributionOwnerId}.document-question`;
+  const conversationOwnerId =
+    `${contributionOwnerId}:${bootstrap.sessionId}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () => createDocumentConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+    ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
+  const conversationContribution = useMemo(
+    () => createDocumentConversationContribution({
+      projectId: asset.projectId,
+      assetId: asset.id,
+      workbenchId: contributionOwnerId,
+      contributionId: conversationContributionId,
+      historyStore: conversationHistoryStore,
+      contextLabel: 'PDF 内容',
+      allowAnswerAttachments: true,
+      onContextReleased() {
+        setRegionActionMenu(undefined);
+      },
+    }),
+    [
+      asset.id,
+      asset.projectId,
+      contributionOwnerId,
+      conversationContributionId,
+      conversationHistoryStore,
+    ],
+  );
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
 
   useEffect(() => {
     // Document questions use one predictable interaction: a rectangular
@@ -647,31 +681,12 @@ export function PdfDocumentWorkbenchView({
       })) return;
       dismissedRegionPointerRef.current = event.pointerId;
       setCompletedRegionSelection(undefined);
+      setCompletedRegionContext(undefined);
       setRegionActionMenu(undefined);
-      const store = getGlobalAiChatStore();
-      store.setPendingAnchor(asset.id, undefined);
     };
     document.addEventListener('pointerdown', dismiss, true);
     return () => document.removeEventListener('pointerdown', dismiss, true);
-  }, [asset.id, completedRegionSelection, regionActionMenu]);
-
-  useEffect(() => {
-    const hideQuestionGuide = (event: Event) => {
-      const detail = (event as CustomEvent<DocumentAiQuestionCommittedDetail>)
-        .detail;
-      if (detail?.assetId === asset.id) {
-        setRegionActionMenu(undefined);
-      }
-    };
-    window.addEventListener(
-      DOCUMENT_AI_QUESTION_COMMITTED_EVENT,
-      hideQuestionGuide,
-    );
-    return () => window.removeEventListener(
-      DOCUMENT_AI_QUESTION_COMMITTED_EVENT,
-      hideQuestionGuide,
-    );
-  }, [asset.id]);
+  }, [completedRegionSelection, regionActionMenu]);
 
   const persistViewState = useCallback(
     async (state: PdfWorkbenchViewState, version: number) => {
@@ -912,11 +927,10 @@ export function PdfDocumentWorkbenchView({
           }
           activeRegionRef.current = undefined;
           setRegionSelection(undefined);
+          setCompletedRegionSelection(undefined);
+          setCompletedRegionContext(undefined);
           setRegionActionMenu(undefined);
           setRegionMode(false);
-          const store = getGlobalAiChatStore();
-          store.setPendingAnchor(asset.id, undefined);
-          store.setPanelOpen(false);
           return;
         }
         if (scaleMenuOpen) {
@@ -1161,28 +1175,24 @@ export function PdfDocumentWorkbenchView({
           region.canvas,
           completed,
         );
-        const store = getGlobalAiChatStore();
-        store.ensureSession(asset.projectId, asset.id);
-        store.setPendingAnchor(asset.id, {
-          target: {
-            scope: 'content',
-            anchorType: PDF_REGION_ANCHOR_TYPE,
-            anchorVersion: PDF_REGION_ANCHOR_VERSION,
-            anchorPayload: {
-              pageNumber: region.pageNumber,
-              x: completed.x,
-              y: completed.y,
-              width: completed.width,
-              height: completed.height,
-            },
+        const rawTarget: AssetTarget = {
+          scope: 'content',
+          anchorType: PDF_REGION_ANCHOR_TYPE,
+          anchorVersion: PDF_REGION_ANCHOR_VERSION,
+          anchorPayload: {
+            pageNumber: region.pageNumber,
+            x: completed.x,
+            y: completed.y,
+            width: completed.width,
+            height: completed.height,
           },
+        };
+        const target = mapInteraction({ focus: rawTarget, inputs: [] }).focus ?? rawTarget;
+        setCompletedRegionContext(createDocumentConversationContext({
+          target,
           pageNumber: region.pageNumber,
-          ...(previewDataUrl
-            ? { previewDataUrl }
-            : {}),
-        });
-        store.setPanelOpen(true);
-        store.setDraft('');
+          ...(previewDataUrl ? { previewDataUrl } : {}),
+        }));
         const containerRect = event.currentTarget.getBoundingClientRect();
         setCompletedRegionSelection({
           left:
@@ -1202,7 +1212,7 @@ export function PdfDocumentWorkbenchView({
       }
       stopPanning(event);
     },
-    [asset.id, asset.projectId, onError, stopPanning],
+    [mapInteraction, onError, stopPanning],
   );
 
   const cancelPointerInteraction = useCallback(
@@ -1313,60 +1323,35 @@ export function PdfDocumentWorkbenchView({
         onCopySelection: copySelection,
         onReveal: reveal,
         onAiExplain: (text, anchor) => {
-          const store = getGlobalAiChatStore();
-          store.ensureSession(asset.projectId, asset.id);
-          store.setPendingAnchor(asset.id, {
-            target: anchor,
-            pageNumber:
-              typeof (anchor.anchorPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
-                ? ((anchor.anchorPayload as Record<string, unknown>).pageNumber as number)
-                : undefined,
-            selectedText: text,
+          const pageNumber =
+            typeof (anchor.anchorPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
+              ? ((anchor.anchorPayload as Record<string, unknown>).pageNumber as number)
+              : undefined;
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context: createDocumentConversationContext({
+              target: anchor,
+              ...(pageNumber === undefined ? {} : { pageNumber }),
+              selectedText: text,
+            }),
           });
-          store.setPanelOpen(true);
-          store.setDraft('');
         },
         onAiSummarize: (pageNumber, anchor) => {
-          const store = getGlobalAiChatStore();
-          const session = store.ensureSession(asset.projectId, asset.id);
-          store.setPanelOpen(true);
-          const updated = store.addUserMessage(
-            asset.id,
-            `请总结 PDF 第 ${pageNumber} 页的主要内容。`,
-            {
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context: createDocumentConversationContext({
               target: anchor,
               pageNumber,
-            },
-          );
-          const userMessage = updated.messages.at(-1)!;
-          const requestId = `document-ai-${globalThis.crypto.randomUUID()}`;
-          activeDocumentRequestIdsRef.current.add(requestId);
-          void documentAiClient.ask({
-            projectId: asset.projectId,
-            assetId: asset.id,
-            requestId,
-            conversationId: session.id,
-            question: userMessage.content,
-            target: anchor,
-          }).then((result) => {
-            store.addAssistantMessage(
-              asset.id,
-              result.answer,
-              userMessage.id,
-              `${result.providerId}/${result.modelId}`,
-            );
-          }).catch((error: unknown) => {
-            store.setLoading(asset.id, false);
-            onError('AI 回答失败，请检查 Agent 登录状态后重试。');
-            console.error('[document-ai] 总结页面失败', error);
-          }).finally(() => {
-            activeDocumentRequestIdsRef.current.delete(requestId);
+            }),
+            question: `请总结第 ${pageNumber} 页的主要内容。`,
+            submit: true,
           });
         },
       }),
     [
-      asset.id,
-      asset.projectId,
+      contributionOwnerId,
+      conversationOwnerId,
+      conversationRuntime,
       copySelection,
       outlineAvailable,
       ready,
@@ -1590,30 +1575,34 @@ export function PdfDocumentWorkbenchView({
                 <button
                   key={label}
                   type="button"
+                  disabled={!completedRegionContext}
                   onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent('learning-companion:ai-quick-question', {
-                        detail: { assetId: asset.id, question },
-                      }),
-                    );
+                    if (!completedRegionContext) return;
+                    conversationRuntime.open({
+                      ownerId: conversationOwnerId,
+                      context: completedRegionContext,
+                      question,
+                      submit: true,
+                    });
                     setRegionActionMenu(undefined);
                   }}
-                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-indigo-400/20 hover:text-white"
+                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-indigo-400/20 hover:text-white disabled:opacity-40"
                 >
                   {label}
                 </button>
               ))}
               <button
                 type="button"
+                disabled={!completedRegionContext}
                 onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent('learning-companion:ai-quick-question', {
-                      detail: { assetId: asset.id, focusOnly: true },
-                    }),
-                  );
+                  if (!completedRegionContext) return;
+                  conversationRuntime.open({
+                    ownerId: conversationOwnerId,
+                    context: completedRegionContext,
+                  });
                   setRegionActionMenu(undefined);
                 }}
-                className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-400/20 hover:text-white"
+                className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-400/20 hover:text-white disabled:opacity-40"
               >
                 自由提问
               </button>
@@ -1795,9 +1784,8 @@ export function PdfDocumentWorkbenchView({
                     activeRegionRef.current = undefined;
                     setRegionSelection(undefined);
                     setCompletedRegionSelection(undefined);
-                    const store = getGlobalAiChatStore();
-                    store.setPendingAnchor(asset.id, undefined);
-                    store.setPanelOpen(false);
+                    setCompletedRegionContext(undefined);
+                    setRegionActionMenu(undefined);
                     setRegionMode(false);
                   } else {
                     setRegionMode(true);
@@ -1879,6 +1867,12 @@ export function PdfDocumentWorkbenchView({
           )}
         </div>
       </div>
+      <QuestionAnchorHost
+        assetId={asset.id}
+        ownerId={conversationOwnerId}
+        historyStore={conversationHistoryStore}
+        runtime={conversationRuntime}
+      />
     </div>
   );
 }
@@ -1893,7 +1887,6 @@ export function PdfWorkbenchView(
       attachments={props.attachments ?? []}
       refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
       onError={props.onError}
-      allowAnswerAttachments
     >
       <PdfDocumentWorkbenchView
         {...props}
