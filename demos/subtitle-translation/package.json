@@ -1,0 +1,22 @@
+{
+  "name": "learning-companion-subtitle-translation-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "setup:bergamot": "node ./scripts/setup-bergamot.mjs",
+    "setup:ct2": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-ct2.ps1",
+    "setup:hymt2": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-hymt2.ps1",
+    "prepare:human": "node ./src/prepare-human-captions.mjs",
+    "smoke:bergamot": "node ./src/bergamot-smoke.mjs",
+    "benchmark:youtube": "node ./src/youtube-benchmark.mjs",
+    "benchmark:ct2": "node ./src/ct2-youtube-benchmark.mjs",
+    "benchmark:hymt2": "node ./src/hymt2-benchmark.mjs"
+  },
+  "dependencies": {
+    "@browsermt/bergamot-translator": "0.4.9"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

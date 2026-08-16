@@ -1,0 +1,2 @@
+patchedDependencies:
+  '@browsermt/bergamot-translator@0.4.9': patches/@browsermt__bergamot-translator@0.4.9.patch
