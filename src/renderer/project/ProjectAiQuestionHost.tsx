@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import { getGlobalAiChatStore } from '../../workbenches/document-ai/renderer/ai-chat/chat-store';
 import { AiChatPanelHost } from '../../workbenches/document-ai/renderer/ai-chat/AiChatPanelHost';
 import {
@@ -25,12 +27,19 @@ export function ProjectAiQuestionHost({
   assetId,
   onError,
 }: ProjectAiQuestionHostProps) {
+  const store = getGlobalAiChatStore();
+
+  useEffect(() => {
+    if (assetId) store.ensureSession(projectId, assetId);
+  }, [assetId, projectId, store]);
+
   if (!assetId) return null;
 
   return (
     <AiChatPanelHost
       projectId={projectId}
       assetId={assetId}
+      store={store}
       onAttachAnswer={async (messageId, text, anchor) => {
         const session = getGlobalAiChatStore().getSession(assetId);
         const answerMessage = session?.messages.find(

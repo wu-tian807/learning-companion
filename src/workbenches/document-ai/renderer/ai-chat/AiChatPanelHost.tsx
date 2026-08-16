@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 
 import type { AiChatMessage, AiChatStore } from './chat-store';
 import { getGlobalAiChatStore } from './chat-store';
-import { AiChatPanel } from './AiChatPanel';
+import { AiChatPanel, AiChatProvider } from './AiChatPanel';
 
 export interface AiChatPanelHostProps {
   readonly projectId: string;
@@ -38,11 +38,13 @@ export function AiChatPanelHost({
   }
 
   return (
-    <AiChatPanel
-      projectId={projectId}
-      assetId={assetId}
-      onClose={() => store.setPanelOpen(false)}
-      onAttachAnswer={onAttachAnswer}
-    />
+    <AiChatProvider store={store}>
+      <AiChatPanel
+        projectId={projectId}
+        assetId={assetId}
+        onClose={() => store.setPanelOpen(false)}
+        onAttachAnswer={onAttachAnswer}
+      />
+    </AiChatProvider>
   );
 }

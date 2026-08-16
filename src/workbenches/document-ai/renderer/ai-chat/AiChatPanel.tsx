@@ -230,6 +230,10 @@ export function useAiChat(
 
   const session = state.sessions.get(createSessionId(assetId));
 
+  useEffect(() => {
+    store.ensureSession(projectId, assetId);
+  }, [assetId, projectId, store]);
+
   const togglePanel = useCallback(() => {
     store.setPanelOpen(!state.panelOpen);
   }, [store, state.panelOpen]);
@@ -597,10 +601,11 @@ export function AiChatPanel({
             {error}
           </div>
         )}
-        {pendingAnchor?.selectedText && (
-          <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-indigo-500/10 px-3 py-2 text-[11px] text-indigo-200">
-            <span className="line-clamp-2">当前选区：{pendingAnchor.selectedText}</span>
-          </div>
+        {pendingAnchor && (
+          <QuestionSourceCard
+            assetId={assetId}
+            anchor={pendingAnchor}
+          />
         )}
         <div className="flex items-center gap-2">
           <input

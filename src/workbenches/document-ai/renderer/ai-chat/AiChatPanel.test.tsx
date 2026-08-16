@@ -176,6 +176,41 @@ describe('AiChatPanel component state composition', () => {
     expect(html).toContain('查询向量与键向量的关系');
   });
 
+  it('shows a region preview immediately after selection before a question is sent', () => {
+    const store = createAiChatStore(() => 'conversation');
+    store.ensureSession('project', 'asset');
+    store.setPendingAnchor('asset', {
+      target: {
+        scope: 'content',
+        anchorType: 'pdf.region',
+        anchorVersion: 1,
+        anchorPayload: {
+          pageNumber: 3,
+          x: 0.1,
+          y: 0.2,
+          width: 0.5,
+          height: 0.3,
+        },
+      },
+      pageNumber: 3,
+      previewDataUrl: 'data:image/jpeg;base64,cHJldmlldw==',
+    });
+
+    const html = renderToStaticMarkup(
+      <AiChatProvider store={store}>
+        <AiChatPanel
+          projectId="project"
+          assetId="asset"
+          onClose={vi.fn()}
+        />
+      </AiChatProvider>,
+    );
+
+    expect(html).toContain('data-ai-question-source="selection"');
+    expect(html).toContain('data:image/jpeg;base64,cHJldmlldw==');
+    expect(html).toContain('第 3 页');
+  });
+
   it('renders a fresh conversation after clear without stale replies', () => {
     let sequence = 0;
     const store = createAiChatStore(() => `conversation-${++sequence}`);
