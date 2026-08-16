@@ -424,7 +424,7 @@ export function AttachmentHost({
           <button
             type="button"
             onClick={() => setSidebarOpen((open) => !open)}
-            className="pointer-events-auto absolute right-3 top-14 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
+            className="pointer-events-auto fixed bottom-5 right-5 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
           >
             <span>✦</span>
             标注 {attachments.length}

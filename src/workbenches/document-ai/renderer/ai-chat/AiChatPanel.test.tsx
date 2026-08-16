@@ -120,6 +120,7 @@ describe('AiChatPanel component state composition', () => {
     );
     expect(html).toContain('AI 问答');
     expect(html).toContain('打开当前文档的 AI 问答');
+    expect(html).toContain('fixed bottom-20 right-5');
   });
 
   it('renders only the current Asset conversation and its loading state', () => {
