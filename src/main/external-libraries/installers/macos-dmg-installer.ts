@@ -112,6 +112,7 @@ export class MacosDmgInstaller implements ExternalLibraryInstaller {
       await validateInstalledExecutable(
         stagingInstallationDirectory,
         packageDefinition.executableRelativePath,
+        packageDefinition.platform,
       );
 
       if (packageDefinition.verifyCodeSignature) {

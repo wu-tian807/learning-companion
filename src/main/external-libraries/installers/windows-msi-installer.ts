@@ -138,6 +138,7 @@ export class WindowsMsiInstaller implements ExternalLibraryInstaller {
     await validateInstalledExecutable(
       stagingInstallationDirectory,
       request.packageDefinition.executableRelativePath,
+      request.packageDefinition.platform,
     );
   }
 }

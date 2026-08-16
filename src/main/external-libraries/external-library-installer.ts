@@ -9,6 +9,7 @@ import type {
   ExternalLibraryDmgPackageDefinition,
   ExternalLibraryMsiPackageDefinition,
   ExternalLibraryPackageType,
+  ExternalLibraryPlatform,
 } from './external-library-definition';
 
 interface ExternalLibraryInstallRequestBase {
@@ -64,6 +65,7 @@ export function requireInstallerAbsolutePath(value: string): string {
 export async function validateInstalledExecutable(
   stagingInstallationDirectory: string,
   executableRelativePath: string,
+  platform: ExternalLibraryPlatform,
 ): Promise<string> {
   const executablePath = await validateInstalledRuntimeFile(
     stagingInstallationDirectory,
@@ -71,7 +73,10 @@ export async function validateInstalledExecutable(
   );
 
   try {
-    await access(executablePath, constants.X_OK);
+    await access(
+      executablePath,
+      platform === 'darwin' ? constants.X_OK : constants.F_OK,
+    );
     return executablePath;
   } catch (error) {
     throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {

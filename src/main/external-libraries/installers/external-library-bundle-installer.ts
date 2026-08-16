@@ -202,6 +202,7 @@ export class ExternalLibraryBundleInstaller
           await validateInstalledExecutable(
             installationDirectory,
             relativePath,
+            packageDefinition.platform,
           );
         } else {
           await validateInstalledRuntimeFile(
