@@ -2,14 +2,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 const capture = vi.hoisted(() => ({
-  hostProps: undefined as
-    | { readonly onAttachAnswer?: unknown }
-    | undefined,
+  hostRenderCount: 0,
 }));
 
 vi.mock('./ai-chat/AiChatPanelHost', () => ({
   AiChatPanelHost: (props: { readonly onAttachAnswer?: unknown }) => {
-    capture.hostProps = props;
+    void props;
+    capture.hostRenderCount += 1;
     return null;
   },
 }));
@@ -36,11 +35,10 @@ function renderShell(allowAnswerAttachments: boolean): void {
 }
 
 describe('DocumentAiWorkbenchShell', () => {
-  it('only provides answer attachment behavior when the Workbench enables it', () => {
+  it('does not mount a second AI panel below the Project-level question host', () => {
+    capture.hostRenderCount = 0;
     renderShell(false);
-    expect(capture.hostProps?.onAttachAnswer).toBeUndefined();
-
     renderShell(true);
-    expect(capture.hostProps?.onAttachAnswer).toEqual(expect.any(Function));
+    expect(capture.hostRenderCount).toBe(0);
   });
 });
