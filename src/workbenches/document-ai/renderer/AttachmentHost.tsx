@@ -30,6 +30,8 @@ export interface AttachmentHostProps {
   readonly onDeleteAttachment?: (
     attachmentId: string,
   ) => Promise<void> | void;
+  readonly sidebarOpen: boolean;
+  readonly onSidebarOpenChange: (open: boolean) => void;
 }
 
 interface AnchorPosition {
@@ -262,11 +264,12 @@ export function AttachmentHost({
   onAttachmentClick,
   activeAttachmentId,
   onDeleteAttachment,
+  sidebarOpen,
+  onSidebarOpenChange,
 }: AttachmentHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const [activeBody, setActiveBody] = useState<JsonValue>();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
   const focusTimerRef = useRef<number | undefined>(undefined);
   const [anchorRects, setAnchorRects] = useState<
@@ -360,7 +363,7 @@ export function AttachmentHost({
   const revealAttachment = useCallback((attachment: AssetAttachment) => {
     revealWorkbenchAnchor(assetId, attachment.target);
     setFocusedAttachmentId(attachment.id);
-    setSidebarOpen(false);
+    onSidebarOpenChange(false);
     if (focusTimerRef.current !== undefined) {
       window.clearTimeout(focusTimerRef.current);
     }
@@ -368,7 +371,7 @@ export function AttachmentHost({
       () => setFocusedAttachmentId(null),
       1800,
     );
-  }, [assetId]);
+  }, [assetId, onSidebarOpenChange]);
 
   if (attachments.length === 0) {
     return null;
@@ -420,16 +423,7 @@ export function AttachmentHost({
         );
       })}
 
-      <>
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((open) => !open)}
-            className="pointer-events-auto fixed bottom-5 right-5 z-[70] flex items-center gap-2 rounded-full border border-indigo-300/25 bg-[#242b3b]/95 px-3.5 py-2 text-xs font-medium text-indigo-100 shadow-[0_10px_30px_rgba(0,0,0,.45)] backdrop-blur hover:border-indigo-300/50 hover:bg-[#2b3448]"
-          >
-            <span>✦</span>
-            标注 {attachments.length}
-          </button>
-          {sidebarOpen && (
+      {sidebarOpen && (
             <aside className="pointer-events-auto absolute bottom-4 right-3 top-24 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                 <div>
@@ -438,7 +432,7 @@ export function AttachmentHost({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSidebarOpen(false)}
+                  onClick={() => onSidebarOpenChange(false)}
                   className="rounded-lg px-2 py-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"
                 >
                   ×
@@ -483,7 +477,6 @@ export function AttachmentHost({
               </div>
             </aside>
           )}
-        </>
 
       {activePopupId && (
         <AnnotationPopup

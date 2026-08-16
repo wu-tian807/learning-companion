@@ -1,4 +1,9 @@
-import type { ReactNode } from 'react';
+import {
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
@@ -19,6 +24,16 @@ export interface DocumentAiWorkbenchShellProps {
   readonly children: ReactNode;
 }
 
+function subscribeHeaderActionSlot(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.body, { childList: true, subtree: true });
+  return () => observer.disconnect();
+}
+
+function getHeaderActionSlot(): Element | null {
+  return document.querySelector('[data-workbench-header-actions]');
+}
+
 export function DocumentAiWorkbenchShell({
   projectId,
   assetId,
@@ -27,6 +42,13 @@ export function DocumentAiWorkbenchShell({
   onError,
   children,
 }: DocumentAiWorkbenchShellProps) {
+  const [annotationSidebarOpen, setAnnotationSidebarOpen] = useState(false);
+  const headerActionSlot = useSyncExternalStore(
+    subscribeHeaderActionSlot,
+    getHeaderActionSlot,
+    () => null,
+  );
+
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -77,10 +99,33 @@ export function DocumentAiWorkbenchShell({
           }
         }}
       />
+      {headerActionSlot && createPortal(
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setAnnotationSidebarOpen((open) => !open)}
+            className="rounded-lg border border-indigo-300/25 bg-indigo-400/[0.08] px-2.5 py-1 text-[10px] font-medium text-indigo-200 hover:bg-indigo-400/[0.16]"
+            title="查看当前文档的标注"
+          >
+            ✦ 标注 {attachments.length}
+          </button>
+          <button
+            type="button"
+            onClick={() => getGlobalAiChatStore().setPanelOpen(true)}
+            className="rounded-lg border border-indigo-300/25 bg-indigo-400/[0.08] px-2.5 py-1 text-[10px] font-medium text-indigo-200 hover:bg-indigo-400/[0.16]"
+            title="打开当前文档的 AI 问答"
+          >
+            ✦ AI 问答
+          </button>
+        </div>,
+        headerActionSlot,
+      )}
       <AttachmentHost
         projectId={projectId}
         assetId={assetId}
         attachments={attachments}
+        sidebarOpen={annotationSidebarOpen}
+        onSidebarOpenChange={setAnnotationSidebarOpen}
         onDeleteAttachment={async (attachmentId) => {
           try {
             await window.learningCompanion.deleteAttachment({

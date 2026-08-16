@@ -17,12 +17,18 @@ const attachment: AssetAttachment = {
 };
 
 describe('AttachmentHost', () => {
-  it('places the annotation launcher in the lower-right empty area', () => {
+  it('renders the annotation sidebar only when the header action opens it', () => {
     const html = renderToStaticMarkup(
-      <AttachmentHost attachments={[attachment]} assetId="asset" projectId="project" />,
+      <AttachmentHost
+        attachments={[attachment]}
+        assetId="asset"
+        projectId="project"
+        sidebarOpen={false}
+        onSidebarOpenChange={() => undefined}
+      />,
     );
 
-    expect(html).toContain('标注 1');
-    expect(html).toContain('fixed bottom-5 right-5');
+    expect(html).not.toContain('标注 1');
+    expect(html).not.toContain('文档标注');
   });
 });

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { createAiChatStore } from './chat-store';
+import { createAiChatStore, type AiChatHistoryStorage } from './chat-store';
+
+function createHistoryStorage(): AiChatHistoryStorage {
+  const entries = new Map<string, string>();
+  return {
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => entries.set(key, value),
+    removeItem: (key) => entries.delete(key),
+  };
+}
 
 describe('Document AI chat session lifecycle', () => {
   it('isolates assets and rotates provider conversation identity when cleared', () => {
@@ -68,5 +77,24 @@ describe('Document AI chat session lifecycle', () => {
     expect(afterRestart.ensureSession('project', 'asset').id)
       .toBe('conversation-after-restart');
     expect(afterRestart.getSession('asset')?.messages).toHaveLength(0);
+  });
+
+  it('restores local question and answer history without reusing the provider conversation', () => {
+    const storage = createHistoryStorage();
+    const firstStore = createAiChatStore(() => 'first-conversation', storage);
+    const firstSession = firstStore.ensureSession('project', 'asset');
+    const question = firstStore.addUserMessage('asset', '旧问题').messages.at(-1)!;
+    firstStore.addAssistantMessage('asset', '旧回答', question.id, 'provider/model');
+
+    const restartedStore = createAiChatStore(() => 'new-conversation', storage);
+    const restartedSession = restartedStore.ensureSession('project', 'asset');
+    expect(restartedSession.id).not.toBe(firstSession.id);
+    expect(restartedSession.messages.map(({ content }) => content))
+      .toEqual(['旧问题', '旧回答']);
+
+    restartedStore.clearSession('asset');
+    const afterClear = createAiChatStore(() => 'after-clear', storage)
+      .ensureSession('project', 'asset');
+    expect(afterClear.messages).toHaveLength(0);
   });
 });

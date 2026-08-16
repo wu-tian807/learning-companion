@@ -107,6 +107,77 @@ export interface AiChatActions {
 export type AiChatStore = AiChatActions;
 
 const SESSION_ID_PREFIX = 'ai-chat-';
+const DOCUMENT_AI_HISTORY_PREFIX = 'learning-companion:document-ai-history:v1';
+
+export interface AiChatHistoryStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+function historyKey(projectId: string, assetId: string): string {
+  return `${DOCUMENT_AI_HISTORY_PREFIX}:${encodeURIComponent(projectId)}:${encodeURIComponent(assetId)}`;
+}
+
+function defaultHistoryStorage(): AiChatHistoryStorage | undefined {
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function loadHistory(
+  storage: AiChatHistoryStorage | undefined,
+  projectId: string,
+  assetId: string,
+): readonly AiChatMessage[] {
+  if (!storage) return [];
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(historyKey(projectId, assetId)) ?? '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((value): AiChatMessage[] => {
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        typeof (value as AiChatMessage).id !== 'string' ||
+        ((value as AiChatMessage).role !== 'user' && (value as AiChatMessage).role !== 'assistant') ||
+        typeof (value as AiChatMessage).content !== 'string' ||
+        typeof (value as AiChatMessage).timestamp !== 'number'
+      ) return [];
+      const message = value as AiChatMessage;
+      return [{
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        timestamp: message.timestamp,
+        ...(typeof message.replyToMessageId === 'string'
+          ? { replyToMessageId: message.replyToMessageId }
+          : {}),
+        ...(typeof message.modelInfo === 'string'
+          ? { modelInfo: message.modelInfo }
+          : {}),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function persistHistory(
+  storage: AiChatHistoryStorage | undefined,
+  session: AiChatSession,
+): void {
+  if (!storage || !session.projectId) return;
+  try {
+    storage.setItem(
+      historyKey(session.projectId, session.assetId),
+      JSON.stringify(session.messages.slice(-100)),
+    );
+  } catch {
+    // 本地历史不能影响当前问答；例如浏览器存储空间不足时继续使用内存会话。
+  }
+}
 
 /**
  * 全局单例 store。
@@ -148,6 +219,7 @@ function defaultCreateId(): string {
 
 export function createAiChatStore(
   createId: () => string = defaultCreateId,
+  storage: AiChatHistoryStorage | undefined = defaultHistoryStorage(),
 ): AiChatStore {
   let state: AiChatState = {
     sessions: new Map<string, AiChatSession>(),
@@ -189,6 +261,7 @@ export function createAiChatStore(
     next.set(sessionId, updated);
 
     state = { ...state, sessions: next };
+    persistHistory(storage, updated);
     emit();
     return updated;
   };
@@ -221,10 +294,19 @@ export function createAiChatStore(
       const sessionId = createSessionId(assetId);
       const existing = state.sessions.get(sessionId);
       if (existing) {
-        return existing;
+        if (existing.projectId) return existing;
+        const session = { ...existing, projectId };
+        const next = new Map(state.sessions);
+        next.set(sessionId, session);
+        state = { ...state, sessions: next };
+        emit();
+        return session;
       }
 
-    const session = createSession(createId(), projectId, assetId);
+      const session = {
+        ...createSession(createId(), projectId, assetId),
+        messages: loadHistory(storage, projectId, assetId),
+      };
       const next = new Map(state.sessions);
       next.set(sessionId, session);
       state = { ...state, sessions: next };
@@ -315,6 +397,13 @@ export function createAiChatStore(
       const next = new Map(state.sessions);
       next.set(sessionId, createSession(createId(), current.projectId, assetId));
       state = { ...state, sessions: next };
+      if (current.projectId) {
+        try {
+          storage?.removeItem(historyKey(current.projectId, assetId));
+        } catch {
+          // 清理历史失败不会阻止用户开始新会话。
+        }
+      }
       emit();
     },
   };
