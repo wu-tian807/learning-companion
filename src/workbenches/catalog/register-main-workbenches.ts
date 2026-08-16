@@ -1,4 +1,5 @@
 import type { AssetAssociationServiceApi } from '../../main/asset-associations/asset-association-service';
+import type { AgentFunctionToolRegistryApi } from '../../main/agents/function-tools/agent-function-tool-registry';
 import type { AssetArtifactRegistryApi } from '../../main/artifacts/asset-artifact-registry';
 import type { AssetArtifactServiceApi } from '../../main/artifacts/asset-artifact-service';
 import type { AssetLookup } from '../../main/assets/asset-database';
@@ -40,7 +41,7 @@ import { OfficeWorkbenchProvider } from '../office/main';
 import { officeArtifactMainFeature } from '../office/main-feature';
 import { officeWorkbenchManifest } from '../office/shared';
 import { PdfWorkbenchProvider } from '../pdf/main';
-import { pdfAnchorMainFeature } from '../pdf/main-feature';
+import { pdfMainFeature } from '../pdf/main-feature';
 import { pdfWorkbenchManifest } from '../pdf/shared';
 import { PlainTextWorkbenchProvider } from '../plain-text/main';
 import { plainTextWorkbenchManifest } from '../plain-text/shared';
@@ -69,6 +70,10 @@ export interface MainWorkbenchAttachmentContext {
   readonly anchors: AnchorRegistry;
 }
 
+export interface MainWorkbenchAgentToolContext {
+  readonly functionTools: AgentFunctionToolRegistryApi;
+}
+
 export interface MainWorkbenchGenerationContext {
   readonly definitions: GenerationTaskDefinitionRegistry;
   readonly assets: AssetServiceApi;
@@ -95,6 +100,7 @@ export interface MainWorkbenchContribution {
   ): MainWorkbenchProvider;
   registerArtifactProducers?(context: MainWorkbenchArtifactContext): void;
   registerAttachmentTypes?(context: MainWorkbenchAttachmentContext): void;
+  registerAgentFunctionTools?(context: MainWorkbenchAgentToolContext): void;
   registerGenerationTaskDefinitions?(
     context: MainWorkbenchGenerationContext,
   ): void;
@@ -136,7 +142,7 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = 
         context.contentResourceService,
         context.stateDatabase,
       ),
-    pdfAnchorMainFeature,
+    pdfMainFeature,
   ),
   providerContribution(
     officeWorkbenchManifest,
@@ -232,6 +238,14 @@ export function registerMainWorkbenchAttachments(
 ): void {
   forEachContribution((entry) => {
     entry.registerAttachmentTypes?.(context);
+  });
+}
+
+export function registerMainWorkbenchAgentFunctionTools(
+  context: MainWorkbenchAgentToolContext,
+): void {
+  forEachContribution((entry) => {
+    entry.registerAgentFunctionTools?.(context);
   });
 }
 

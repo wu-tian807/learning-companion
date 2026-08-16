@@ -455,7 +455,8 @@ Session 配置指纹只包含任务声明的稳定能力，不包含当前机器
 - primary key：`generation-mindmap`；
 - primary instance：使用默认 `taskId`，每个任务独立；
 - Asset Slot：必需的多值 `sources`；
-- Provider 默认工具：Workspace Shell read / search、按权限开放的 write、PDF 与 image；
+- Provider 默认提供 Workspace Shell read / search、按权限开放的 write 和 Codex 原生 image；
+  `process()` 根据本次参考资料的物化媒体类型声明 PDF；
 - Agent 必须在 Workspace 中写入 `output/mindmap-candidate.json`；
 - assistant 最终回复只报告完成状态，不承载产物。
 

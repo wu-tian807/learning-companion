@@ -4,7 +4,7 @@
 >
 > 日期：2026-08-08
 >
-> 状态：已完成
+> 状态：已完成；应用 Function Tool 默认方案已被 2026-08-16 的按调用声明方案取代
 
 ## 1. 领域契约迁移
 
@@ -16,13 +16,10 @@
 
 ## 2. Codex 默认工具策略
 
-1. 从本次 Prepared Workspaces 派生默认 read / search / write / image；
-2. 文本读取和搜索映射 Codex 原生 Shell，写入映射原生 `apply_patch` / Shell，图片映射
-   Codex 原生 `view_image`；PDF Feature 拥有受控 Dynamic Tool，并在 Workbench 能力目录中
-   注册；
-3. 合并默认需求与 TaskDefinition 额外需求，同 ID 下 required 优先；
-4. Bootstrap 将已注册的内置 Workbench 能力作为 Provider 默认需求注入，Provider 不硬编码
-   PDF、Video 等具体工具；
+1. 从本次 Prepared Workspaces 派生默认 read / search / write Shell 能力和 Codex 原生 image；
+2. PDF、Video 等应用 Function Tool 由 Workbench 注册实现，由每次 `agent.call()` 显式声明；
+3. 合并 Provider 原生默认能力与本次调用需求，同 ID 下 required 优先；
+4. Bootstrap 不向 Provider 注入媒体默认工具；
 5. 原生工具优先，否则仅查询 Function Tool Registry；
 6. optional 缺失省略，required 缺失提前失败；
 7. Selection 保存最终有效需求、原生工具、Function Tool 和 dynamicTools。
@@ -38,9 +35,9 @@
 
 ## 4. Mind Map 迁移
 
-1. `mindmap.generate@1` 使用空 `toolRequirements`；
+1. `mindmap.generate@1` 根据参考资料的物化媒体类型声明 PDF；
 2. 主 Workspace 保持可写；
-3. 验证 Provider 自动开启 Shell、可写时的原生编辑、PDF Function Tool 和 image 读取；
+3. 验证 Provider 自动开启 Shell、原生 image 和可写时的原生编辑，并只启用调用声明的 PDF；
 4. 后续 Process 执行模型迁移见
    `2026-08-08-generation-task-process-execution-design.md`。
 

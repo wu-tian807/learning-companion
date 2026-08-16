@@ -57,8 +57,8 @@ import { WorkbenchRegistry } from '../workbench/workbench-registry';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
-import { registerWorkbenchAgentFunctionTools } from '../../workbenches/catalog/register-agent-function-tools';
 import {
+  registerMainWorkbenchAgentFunctionTools,
   registerMainWorkbenchArtifacts,
   registerMainWorkbenchAttachments,
   registerMainWorkbenchGeneration,
@@ -145,8 +145,9 @@ export async function createApplicationRuntime({
     projectDatabase.initialize();
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
-    const agentToolRegistration =
-      registerWorkbenchAgentFunctionTools(agentFunctionTools);
+    registerMainWorkbenchAgentFunctionTools({
+      functionTools: agentFunctionTools,
+    });
     const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
     const agentSkills = new AgentSkillService(
       agentCapabilityPaths.skillsPath,
@@ -173,7 +174,6 @@ export async function createApplicationRuntime({
       agentFunctionTools,
       agentSkills,
       agentMcpServers,
-      agentToolRegistration.defaultToolRequirements,
     );
     const artifactRegistry = new AssetArtifactRegistry();
     registerMainWorkbenchArtifacts({

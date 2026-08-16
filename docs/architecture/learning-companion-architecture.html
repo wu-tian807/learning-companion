@@ -2532,7 +2532,7 @@
             N("codex", "CodexAgentProvider", {
               tag: "PROVIDER ADAPTER",
               caption: "request translation · stream · tool calls · metrics",
-              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用，合并 Provider 默认工具与本次 Agent 调用显式声明的额外能力。",
+              summary: "把通用 GenerationAgentTurnRequest 转为 Codex app-server 调用；默认提供 Workspace Shell 与 Codex 原生 view_image，PDF 等应用 Function Tool 必须由本次 Agent 调用显式声明。",
               files: ["src/main/agents/providers/codex-agent-provider.ts"],
               col: 5,
               row: 3,

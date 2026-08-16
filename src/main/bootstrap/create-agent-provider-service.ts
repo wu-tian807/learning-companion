@@ -12,7 +12,6 @@ import type { AgentSessionServiceApi } from '../agents/sessions/agent-session-se
 import type { AgentFunctionToolRegistryApi } from '../agents/function-tools/agent-function-tool-registry';
 import type { AgentMcpServiceApi } from '../agents/mcp/agent-mcp-service';
 import type { AgentSkillServiceApi } from '../agents/skills/agent-skill-service';
-import type { AgentToolRequirement } from '../generation/contracts/task-definition';
 import type { SettingsRepository } from '../settings/settings-repository';
 import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 import { registerWorkbenchAgentProviderSelectors } from '../../workbenches/catalog/register-agent-provider-selectors';
@@ -41,7 +40,6 @@ export function createAgentProviderService(
   functionTools: AgentFunctionToolRegistryApi,
   skills: AgentSkillServiceApi,
   mcpServers: AgentMcpServiceApi,
-  codexDefaultTools: readonly AgentToolRequirement[] = [],
 ): AgentProviderService {
   const registry = new AgentProviderRegistry();
   const selectors = new AgentProviderSelectorRegistry();
@@ -52,7 +50,6 @@ export function createAgentProviderService(
       functionTools,
       skills,
       mcpServers,
-      defaultTools: codexDefaultTools,
       createRuntime: createCodexConnectionRuntime,
     }),
   );
