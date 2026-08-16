@@ -329,6 +329,27 @@ describe('shared Conversation controller', () => {
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
   });
 
+  it('does not reload history when the persistence reporter identity changes', async () => {
+    const historyStore = createMemoryHistory();
+    const contribution = createContribution({ historyStore });
+
+    render({
+      contribution,
+      onPersistenceError: vi.fn(),
+    });
+    await flush();
+    expect(historyStore.list).toHaveBeenCalledTimes(1);
+    expect(latest.state.historyLoading).toBe(false);
+
+    render({
+      contribution,
+      onPersistenceError: vi.fn(),
+    });
+    await flush();
+    expect(historyStore.list).toHaveBeenCalledTimes(1);
+    expect(latest.state.historyLoading).toBe(false);
+  });
+
   it('surfaces a completed Task with no valid answer as a retryable result error', async () => {
     client.start = vi.fn(async () => ({
       taskId: 'task-1',

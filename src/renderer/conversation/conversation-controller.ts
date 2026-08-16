@@ -105,9 +105,13 @@ export function useConversationController({
   const mountedRef = useRef(true);
   const lastLaunchIdRef = useRef<number | undefined>(undefined);
   const contributionRef = useRef(contribution);
+  const onPersistenceErrorRef = useRef(onPersistenceError);
   useEffect(() => {
     contributionRef.current = contribution;
   }, [contribution]);
+  useEffect(() => {
+    onPersistenceErrorRef.current = onPersistenceError;
+  }, [onPersistenceError]);
 
   const replaceConversation = useCallback((next: ConversationRecord) => {
     conversationRef.current = next;
@@ -147,9 +151,9 @@ export function useConversationController({
       if (mountedRef.current) {
         setError({ message: '无法保存对话记录，请稍后重试。' });
       }
-      onPersistenceError?.(persistenceError);
+      onPersistenceErrorRef.current?.(persistenceError);
     }
-  }, [contribution.historyStore, onPersistenceError]);
+  }, [contribution.historyStore]);
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
@@ -263,12 +267,12 @@ export function useConversationController({
           setHistoryLoading(false);
           setHistoryReady(true);
           setError({ message: '无法读取对话记录。' });
-          onPersistenceError?.(historyError);
+          onPersistenceErrorRef.current?.(historyError);
         },
       );
     });
     return () => { active = false; };
-  }, [contribution.historyStore, onPersistenceError, open]);
+  }, [contribution.historyStore, open]);
 
   useEffect(() => taskClient.subscribe((event) => {
     const taskId = activeTaskIdRef.current;
@@ -538,10 +542,10 @@ export function useConversationController({
       },
       (removeError: unknown) => {
         setError({ message: '无法删除对话记录，请稍后重试。' });
-        onPersistenceError?.(removeError);
+        onPersistenceErrorRef.current?.(removeError);
       },
     );
-  }, [contribution.historyStore, onPersistenceError, startNew]);
+  }, [contribution.historyStore, startNew]);
 
   return {
     state: {
