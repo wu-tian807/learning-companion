@@ -88,6 +88,10 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
       : '';
   }
 
+  function compactText(value: unknown): string {
+    return normalizedText(value).replace(/\s+/g, '');
+  }
+
   function elementFromDomPath(path: unknown): Element | undefined {
     if (!Array.isArray(path)) {
       return undefined;
@@ -209,7 +213,11 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
       const range = document.createRange();
       range.setStart(startNode, startOffset);
       range.setEnd(endNode, endOffset);
-      return normalizedText(range.toString()) === exact
+      const reconstructed = normalizedText(range.toString());
+      return (
+        reconstructed === exact ||
+        compactText(reconstructed) === compactText(exact)
+      )
         ? range
         : undefined;
     } catch {
@@ -253,13 +261,32 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     if (characters.length === 0) {
       return undefined;
     }
-    const startIndex = indexedText.indexOf(exact);
+    let startIndex = indexedText.indexOf(exact);
+    let matchedCharacters = characters;
+    let matchedLength = exact.length;
     if (startIndex < 0) {
+      const compactExact = compactText(exact);
+      const compactCharacters: typeof characters = [];
+      let compactIndexedText = '';
+      for (let index = 0; index < indexedText.length; index += 1) {
+        const character = indexedText[index];
+        const location = characters[index];
+        if (!character || !location || /\s/.test(character)) {
+          continue;
+        }
+        compactIndexedText += character;
+        compactCharacters.push(location);
+      }
+      startIndex = compactIndexedText.indexOf(compactExact);
+      matchedCharacters = compactCharacters;
+      matchedLength = compactExact.length;
+    }
+    if (startIndex < 0 || matchedLength === 0) {
       return undefined;
     }
-    const endIndex = startIndex + exact.length - 1;
-    const start = characters[startIndex];
-    const end = characters[endIndex];
+    const endIndex = startIndex + matchedLength - 1;
+    const start = matchedCharacters[startIndex];
+    const end = matchedCharacters[endIndex];
     if (!start || !end) {
       return undefined;
     }

@@ -5,13 +5,16 @@ import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/Workb
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
+import { interactionFromTextSelection } from '../../shared/workbench/selection';
 import {
   HTML_DOCUMENT_SANDBOX,
   HtmlDocumentFrame,
   HtmlWorkbenchView,
+  pendingHtmlTextSelection,
 } from './renderer';
 import {
   HTML_WORKBENCH_ID,
+  createHtmlQuoteTarget,
   htmlWorkbenchManifest,
 } from './shared';
 
@@ -99,5 +102,39 @@ describe('HtmlWorkbenchView', () => {
     });
 
     expect(markup).toContain('HTML Workbench 数据无效');
+  });
+
+  it('keeps the captured DOM Range when the text selection is consumed', () => {
+    const target = createHtmlQuoteTarget(
+      '表格里的重复文字',
+      'learning-content://resource/html',
+      { x: 20, y: 40, width: 120, height: 36 },
+      {
+        domRange: {
+          start: { path: [1, 2, 0], offset: 0 },
+          end: { path: [1, 2, 2], offset: 6 },
+        },
+      },
+    );
+    const pending = pendingHtmlTextSelection(
+      interactionFromTextSelection({
+        text: '表格里的重复文字',
+        target,
+      }),
+    );
+
+    expect(pending?.target).toBe(target);
+    expect(pending?.target.anchorPayload).toMatchObject({
+      domRange: {
+        start: { path: [1, 2, 0], offset: 0 },
+        end: { path: [1, 2, 2], offset: 6 },
+      },
+    });
+    expect(pending?.rect).toEqual({
+      x: 20,
+      y: 40,
+      width: 120,
+      height: 36,
+    });
   });
 });

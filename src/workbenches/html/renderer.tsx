@@ -37,7 +37,6 @@ import {
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
-  createHtmlQuoteTarget,
   htmlWorkbenchManifest,
   isHtmlWorkbenchPayload,
 } from './shared';
@@ -56,6 +55,38 @@ interface HtmlDocumentFrameProps {
   readonly frameKey?: string;
   readonly onLoad?: () => void;
   readonly onError?: () => void;
+}
+
+interface PendingHtmlTextSelection {
+  readonly text: string;
+  readonly target: HtmlAnchorTarget;
+  readonly rect?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+}
+
+export function pendingHtmlTextSelection(
+  interaction: Parameters<typeof findTextSelectionInput>[0],
+): PendingHtmlTextSelection | undefined {
+  const selection = findTextSelectionInput(interaction);
+  if (!selection || !isHtmlAnchorTarget(selection.target)) {
+    return undefined;
+  }
+  const payload =
+    selection.target.anchorType === 'html.quote'
+      ? (selection.target.anchorPayload as {
+          readonly rect?: PendingHtmlTextSelection['rect'];
+        })
+      : undefined;
+
+  return {
+    text: selection.text,
+    target: selection.target,
+    ...(payload?.rect === undefined ? {} : { rect: payload.rect }),
+  };
 }
 
 export function HtmlDocumentFrame({
@@ -104,10 +135,8 @@ export function HtmlWorkbenchView({
   const [frameRevision, setFrameRevision] = useState(0);
   const [loadedFrameKey, setLoadedFrameKey] = useState<string>();
   const [frameFailed, setFrameFailed] = useState(false);
-  const [selectionText, setSelectionText] = useState<string>();
-  const [selectionRect, setSelectionRect] = useState<
-    { x: number; y: number; width: number; height: number } | undefined
-  >();
+  const [pendingSelection, setPendingSelection] =
+    useState<PendingHtmlTextSelection>();
   const [highlightTarget, setHighlightTarget] =
     useState<HtmlAnchorTarget>();
   const highlightTargetRef = useRef<HtmlAnchorTarget | undefined>(undefined);
@@ -231,8 +260,7 @@ export function HtmlWorkbenchView({
     if (isHtmlAnchorTarget(target)) {
       showHighlight(target, { reveal: false, durationMs: 0 });
     }
-    setSelectionText(undefined);
-    setSelectionRect(undefined);
+    setPendingSelection(undefined);
     conversationRuntime.open({
       ownerId: conversationOwnerId,
       context: target as unknown as JsonValue,
@@ -240,8 +268,7 @@ export function HtmlWorkbenchView({
   }, [conversationOwnerId, conversationRuntime, showHighlight]);
 
   const summarizePage = useCallback(() => {
-    setSelectionText(undefined);
-    setSelectionRect(undefined);
+    setPendingSelection(undefined);
     clearHighlight();
     conversationRuntime.open({
       ownerId: conversationOwnerId,
@@ -320,7 +347,7 @@ export function HtmlWorkbenchView({
 
         if (mapped.kind === 'selection') {
           // 有选区文本时显示「引用选中内容」悬浮条（锚点携带 frame 内 rect）
-          const selection = findTextSelectionInput(mapped.interaction);
+          const selection = pendingHtmlTextSelection(mapped.interaction);
           if (
             selection?.target &&
             isSameHtmlQuoteLocation(
@@ -333,26 +360,11 @@ export function HtmlWorkbenchView({
             // with a different rect. It is already the active context, so do
             // not resurrect the consumed float bar or generic selection.
             onInteractionChange({ inputs: [] });
-            setSelectionText(undefined);
-            setSelectionRect(undefined);
+            setPendingSelection(undefined);
             return;
           }
           onInteractionChange(mapped.interaction);
-          const payload =
-            selection?.target &&
-            selection.target.scope === 'content' &&
-            selection.target.anchorType === 'html.quote'
-              ? (selection.target.anchorPayload as {
-                  readonly rect?: {
-                    readonly x: number;
-                    readonly y: number;
-                    readonly width: number;
-                    readonly height: number;
-                  };
-                } | undefined)
-              : undefined;
-          setSelectionText(selection?.text);
-          setSelectionRect(payload?.rect);
+          setPendingSelection(selection);
           return;
         }
 
@@ -450,23 +462,13 @@ export function HtmlWorkbenchView({
 
       {/* 选中文本后的「引用选中内容」悬浮条（对话栏打开时也显示：
           点击后把新选中内容更新到对话栏锚点，而不是被对话栏状态挡住） */}
-      {selectionText && (
+      {pendingSelection && (
         <SelectionFloatBar
-          text={selectionText}
-          rect={selectionRect}
-          onExplain={(text) => {
-            setSelectionText(undefined);
-            explainSelection(
-              createHtmlQuoteTarget(
-                text,
-                payload.contentUrl,
-                selectionRect,
-              ),
-            );
-          }}
+          text={pendingSelection.text}
+          rect={pendingSelection.rect}
+          onExplain={() => explainSelection(pendingSelection.target)}
           onDismiss={() => {
-            setSelectionText(undefined);
-            setSelectionRect(undefined);
+            setPendingSelection(undefined);
           }}
         />
       )}

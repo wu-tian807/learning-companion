@@ -111,6 +111,46 @@ describe('HTML anchor frame scripts', () => {
     expect(highlightedTop()).toBe('198px');
   });
 
+  it('resolves a DOM Range whose browser selection inserts table separators', async () => {
+    document.body.innerHTML =
+      '<table><tbody><tr>' +
+      '<td id="start">MSE 损失</td>' +
+      '<td>高</td>' +
+      '<td id="end">会算单样本损失、batch 平均损失</td>' +
+      '</tr></tbody></table>';
+    installRangeRects();
+    const start = document.querySelector('#start')?.firstChild;
+    const end = document.querySelector('#end')?.firstChild;
+    if (!start?.textContent || !end?.textContent) {
+      throw new Error('Expected table text nodes');
+    }
+    const target = createHtmlQuoteTarget(
+      'MSE 损失\t高\t会算单样本损失、batch 平均损失',
+      undefined,
+      undefined,
+      {
+        domRange: {
+          start: { path: pathFromDocumentElement(start), offset: 0 },
+          end: {
+            path: pathFromDocumentElement(end),
+            offset: end.textContent.length,
+          },
+        },
+      },
+    );
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target,
+          revision: 3,
+          reveal: false,
+          durationMs: 0,
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
+  });
+
   it('keeps resolving legacy quote anchors that have no DOM Range', async () => {
     document.body.innerHTML = '<p id="first">旧版唯一锚点</p>';
     installRangeRects();
@@ -126,6 +166,28 @@ describe('HTML anchor frame scripts', () => {
       ),
     ).resolves.toEqual({ found: true });
     expect(highlightedTop()).toBe('18px');
+  });
+
+  it('resolves legacy table selections without a DOM Range', async () => {
+    document.body.innerHTML =
+      '<table><tbody><tr>' +
+      '<td>MSE 损失</td><td>高</td>' +
+      '<td>会算单样本损失、batch 平均损失</td>' +
+      '</tr></tbody></table>';
+    installRangeRects();
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target: createHtmlQuoteTarget(
+            'MSE 损失\t高\t会算单样本损失、batch 平均损失',
+          ),
+          revision: 4,
+          reveal: false,
+          durationMs: 0,
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
   });
 
 });

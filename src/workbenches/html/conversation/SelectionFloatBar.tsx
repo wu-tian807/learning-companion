@@ -20,7 +20,7 @@ export interface SelectionRect {
 export interface SelectionFloatBarProps {
   readonly text: string;
   readonly rect?: SelectionRect;
-  readonly onExplain: (text: string) => void;
+  readonly onExplain: () => void;
   readonly onDismiss: () => void;
 }
 
@@ -133,7 +133,7 @@ export function SelectionFloatBar({
       </span>
       <button
         type="button"
-        onClick={() => onExplain(text)}
+        onClick={onExplain}
         className="rounded-full border border-indigo-300/25 bg-indigo-400/15 px-2.5 py-1 text-[10px] font-semibold text-indigo-200 hover:bg-indigo-400/25"
       >
         引用选中内容
