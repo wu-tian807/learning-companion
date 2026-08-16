@@ -12,6 +12,7 @@ describe('ProjectHeaderActions', () => {
         onToggleLeft={vi.fn()}
         onToggleRight={vi.fn()}
         onOpenWorkspace={vi.fn()}
+        onOpenAiQuestion={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
     );
@@ -27,5 +28,7 @@ describe('ProjectHeaderActions', () => {
     );
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('role="tooltip"');
+    expect(markup).toContain('aria-label="打开 AI 问答"');
+    expect(markup).toContain('data-project-ai-context-actions');
   });
 });

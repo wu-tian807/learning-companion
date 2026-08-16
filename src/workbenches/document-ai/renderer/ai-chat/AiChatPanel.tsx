@@ -243,7 +243,12 @@ export interface AiChatPanelProps {
   readonly projectId: string;
   readonly assetId: string;
   readonly onClose: () => void;
-  readonly onAttachAnswer: (
+  /**
+   * Optional so the question module can be mounted at Project scope. A
+   * workbench that supports annotations may provide this capability, while
+   * other media workbenches still get the same conversation UI.
+   */
+  readonly onAttachAnswer?: (
     messageId: string,
     text: string,
     anchor?: AiChatMessage['anchor'],
@@ -348,6 +353,7 @@ export function AiChatPanel({
         (message) => message.id === answer.replyToMessageId,
       );
       try {
+        if (!onAttachAnswer) return;
         await onAttachAnswer(answer.id, text, userQuestion?.anchor);
         setSelectedAnswerRange(null);
         setAttachNotice('已附着到当前文档');
@@ -378,7 +384,7 @@ export function AiChatPanel({
           {attachNotice && (
             <span className="text-[11px] text-emerald-300">{attachNotice}</span>
           )}
-          {selectedAnswerRange && (
+          {selectedAnswerRange && onAttachAnswer && (
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -442,7 +448,7 @@ export function AiChatPanel({
               {msg.role === 'assistant' ? (
                 <>
                   <AiMarkdownContent content={msg.content} />
-                  <div
+                  {onAttachAnswer && <div
                     className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-white/[0.07] pt-2"
                     onMouseUp={(event) => event.stopPropagation()}
                   >
@@ -490,7 +496,7 @@ export function AiChatPanel({
                     >
                       重新回答
                     </button>
-                  </div>
+                  </div>}
                 </>
               ) : (
                 <p className="whitespace-pre-wrap select-text">{msg.content}</p>

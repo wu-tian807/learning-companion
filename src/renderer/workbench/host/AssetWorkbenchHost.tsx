@@ -159,6 +159,31 @@ export function AssetWorkbenchHost({
   }, [readySessionId, refreshAttachments]);
 
   useEffect(() => {
+    const refreshChangedAssetAttachments = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        projectId?: string;
+        assetId?: string;
+      }>).detail;
+      if (
+        detail?.projectId !== projectId ||
+        detail.assetId !== assetId
+      ) {
+        return;
+      }
+      void refreshAttachments();
+    };
+
+    window.addEventListener(
+      'learning-companion:attachments-changed',
+      refreshChangedAssetAttachments,
+    );
+    return () => window.removeEventListener(
+      'learning-companion:attachments-changed',
+      refreshChangedAssetAttachments,
+    );
+  }, [assetId, projectId, refreshAttachments]);
+
+  useEffect(() => {
     let active = true;
     let openedSessionId: string | undefined;
     let commandTail: Promise<void> = Promise.resolve();

@@ -17,6 +17,10 @@ import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeP
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
+import {
+  ProjectAiQuestionHost,
+} from './ProjectAiQuestionHost';
+import { openProjectAiQuestion } from './project-ai-question';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
 import {
@@ -263,6 +267,13 @@ export function ProjectPage({
           onOpenWorkspace={() => {
             void openProjectWorkspace();
           }}
+          onOpenAiQuestion={() => {
+            if (!assetOperations.selectedAsset) {
+              setError('请先选择一份资料，再开始 AI 问答。');
+              return;
+            }
+            openProjectAiQuestion();
+          }}
           onOpenSettings={onOpenSettings}
         />
       </header>
@@ -391,6 +402,13 @@ export function ProjectPage({
               />
             </div>
           )}
+          <div className="absolute inset-y-0 right-0 z-40 shadow-2xl">
+            <ProjectAiQuestionHost
+              projectId={project.id}
+              assetId={assetOperations.selectedAsset?.id}
+              onError={setError}
+            />
+          </div>
           </section>
         </AssetSelectionCoordinatorProvider>
       </WorkbenchRuntimeProvider>
