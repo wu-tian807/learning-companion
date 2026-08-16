@@ -22,6 +22,8 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
+import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
+import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -221,11 +223,14 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const {
     bootstrap,
+    asset,
     executeCommand,
     onReveal,
     onInteractionChange,
     onOpenExternal,
     onError,
+    attachments,
+    refreshAttachments,
   } = props;
   const payload = isMarkdownWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
@@ -1019,6 +1024,18 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         encoding,
         lineEnding,
         viewState,
+        hasSelection: () =>
+          activeEditorActionAdapter.getState().canCopy,
+        onAiExplain: (text, anchor) => {
+          const store = getGlobalAiChatStore();
+          store.ensureSession(asset.projectId, asset.id);
+          store.setPendingAnchor(asset.id, {
+            target: anchor,
+            selectedText: text,
+          });
+          store.setPanelOpen(true);
+          store.setDraft('');
+        },
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
         onSetViewState: updateViewState,
@@ -1028,6 +1045,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       dirty,
       encoding,
       lineEnding,
+      activeEditorActionAdapter,
+      asset.id,
+      asset.projectId,
       onReveal,
       recovery,
       reopenWithEncoding,
@@ -1053,7 +1073,17 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#171c22]">
+    <DocumentAiWorkbenchShell
+      projectId={asset.projectId}
+      assetId={asset.id}
+      attachments={attachments ?? []}
+      refreshAttachments={
+        refreshAttachments ?? (async () => undefined)
+      }
+      onError={onError}
+      allowAnswerAttachments={false}
+    >
+      <div className="flex h-full min-h-0 flex-col bg-[#171c22]">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.065] bg-[#1d2229] px-3">
         <div
           role="group"
@@ -1200,7 +1230,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           />,
           document.body,
         )}
-    </div>
+      </div>
+    </DocumentAiWorkbenchShell>
   );
 }
 

@@ -21,6 +21,7 @@ import {
   isPlainTextEncodingPayload,
   isPlainTextBufferPayload,
   isPlainTextLineEndingPayload,
+  normalizePlainTextViewOptions,
   isPlainTextViewOptions,
   isPlainTextViewStatePayload,
   isPlainTextWorkbenchStateV1,
@@ -63,6 +64,7 @@ function cloneViewOptions(
   return {
     wordWrap: viewOptions.wordWrap,
     lineNumbers: viewOptions.lineNumbers,
+    readMode: viewOptions.readMode,
   };
 }
 
@@ -394,6 +396,34 @@ export class PlainTextWorkbenchProvider
         viewOptions: cloneViewOptions(record.payload.viewOptions),
         recovery: record.payload.recovery,
       };
+    }
+
+    if (record.schemaVersion === PLAIN_TEXT_STATE_SCHEMA_VERSION) {
+      const rawPayload = record.payload;
+      const payload =
+        typeof rawPayload === 'object' &&
+        rawPayload !== null &&
+        !Array.isArray(rawPayload)
+          ? (rawPayload as Record<string, unknown>)
+          : undefined;
+      const viewOptions = normalizePlainTextViewOptions(
+        payload?.viewOptions,
+      );
+      const candidate = {
+        ...payload,
+        ...(viewOptions ? { viewOptions } : {}),
+      };
+
+      if (
+        viewOptions &&
+        isPlainTextWorkbenchStateV2(candidate)
+      ) {
+        return {
+          viewState: candidate.viewState,
+          viewOptions: cloneViewOptions(viewOptions),
+          recovery: candidate.recovery,
+        };
+      }
     }
 
     if (

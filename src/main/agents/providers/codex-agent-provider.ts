@@ -7,7 +7,6 @@ import type {
   AgentProviderModelSnapshot,
 } from '../../../shared/agent-providers';
 import type { GenerationTokenUsage } from '../../generation/contracts/generation-metrics';
-import type { AgentToolRequirement } from '../../generation/contracts/task-definition';
 import type {
   GenerationAgentEvent,
   GenerationAgentRunner,
@@ -87,7 +86,6 @@ interface CodexAgentProviderDependencies {
   readonly functionTools: AgentFunctionToolRegistryApi;
   readonly skills: AgentSkillLookup;
   readonly mcpServers: AgentMcpServerLookup;
-  readonly defaultTools: readonly AgentToolRequirement[];
   readonly createRuntime: (
     environment: Readonly<NodeJS.ProcessEnv>,
   ) => CodexRuntimeServiceApi;
@@ -181,11 +179,6 @@ export class CodexAgentProvider implements AgentProvider {
         dependencies.functionTools ?? new AgentFunctionToolRegistry(),
       skills: dependencies.skills ?? emptySkillLookup,
       mcpServers: dependencies.mcpServers ?? emptyMcpServerLookup,
-      defaultTools: Object.freeze(
-        (dependencies.defaultTools ?? []).map((tool) =>
-          Object.freeze({ ...tool }),
-        ),
-      ),
       createRuntime: dependencies.createRuntime ?? (() => accountRuntime),
     };
     this.threadCoordinator = new CodexThreadCoordinator(sessions);
@@ -383,7 +376,6 @@ export class CodexAgentProvider implements AgentProvider {
     const tools = resolveCodexGenerationTools(
       request,
       this.dependencies.functionTools,
-      this.dependencies.defaultTools,
     );
     const capabilities = await resolveCodexGenerationCapabilities(
       request.skills,

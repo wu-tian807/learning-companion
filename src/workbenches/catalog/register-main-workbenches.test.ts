@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AnchorRegistry } from '../../main/attachments/anchor-registry';
 import { AttachmentRegistry } from '../../main/attachments/attachment-registry';
 import { GenerationTaskDefinitionRegistry } from '../../main/generation/generation-task-definition-registry';
+import { AgentFunctionToolRegistry } from '../../main/agents/function-tools/agent-function-tool-registry';
 import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import type { RendererWorkbenchLoader } from '../../renderer/workbench/renderer-workbench-registry';
@@ -22,9 +23,11 @@ import {
 } from '../document-ai/ai-annotation-attachment';
 import { OFFICE_ANCHOR_VERSION, OFFICE_REGION_ANCHOR_TYPE } from '../office/shared';
 import { PDF_REGION_ANCHOR_TYPE, PDF_REGION_ANCHOR_VERSION } from '../pdf/shared';
+import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
 import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
+  registerMainWorkbenchAgentFunctionTools,
   registerMainWorkbenchAttachments,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchProviders,
@@ -122,6 +125,14 @@ describe('Workbench contribution catalogs', () => {
           height: 0.5,
         }),
     ).toBe(true);
+  });
+
+  it('registers Workbench-owned Agent tools without enabling them globally', () => {
+    const functionTools = new AgentFunctionToolRegistry();
+
+    registerMainWorkbenchAgentFunctionTools({ functionTools });
+
+    expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
   });
 
   it('registers the HTML assistant TaskDefinition through the same Main catalog', () => {
