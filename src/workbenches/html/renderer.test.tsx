@@ -14,7 +14,7 @@ import {
 } from './renderer';
 import {
   HTML_WORKBENCH_ID,
-  createHtmlQuoteTarget,
+  createHtmlDomTarget,
   htmlWorkbenchManifest,
 } from './shared';
 
@@ -104,37 +104,30 @@ describe('HtmlWorkbenchView', () => {
     expect(markup).toContain('HTML Workbench 数据无效');
   });
 
-  it('keeps the captured DOM Range when the text selection is consumed', () => {
-    const target = createHtmlQuoteTarget(
-      '表格里的重复文字',
-      'learning-content://resource/html',
-      { x: 20, y: 40, width: 120, height: 36 },
-      {
-        domRange: {
-          start: { path: [1, 2, 0], offset: 0 },
-          end: { path: [1, 2, 2], offset: 6 },
-        },
+  it('keeps the inferred DOM element when the text gesture is consumed', () => {
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/html',
+      element: {
+        path: [1, 2],
+        tagName: 'tr',
+        textQuote: '表格里的重复文字',
       },
-    );
+    });
+    const rect = { x: 20, y: 40, width: 120, height: 36 };
     const pending = pendingHtmlTextSelection(
       interactionFromTextSelection({
         text: '表格里的重复文字',
         target,
       }),
+      rect,
     );
 
     expect(pending?.target).toBe(target);
     expect(pending?.target.anchorPayload).toMatchObject({
-      domRange: {
-        start: { path: [1, 2, 0], offset: 0 },
-        end: { path: [1, 2, 2], offset: 6 },
-      },
+      element: { path: [1, 2], tagName: 'tr' },
     });
-    expect(pending?.rect).toEqual({
-      x: 20,
-      y: 40,
-      width: 120,
-      height: 36,
-    });
+    expect(pending?.rect).toEqual(rect);
+    expect(pending?.target.anchorPayload).not.toHaveProperty('rect');
+    expect(pending?.target.anchorPayload).not.toHaveProperty('range');
   });
 });

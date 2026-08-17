@@ -7,7 +7,10 @@ import { createTextSelectionInput } from '../../shared/workbench/selection';
 import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selection';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import { createHtmlRendererActions } from './renderer-actions';
-import { createHtmlLinkTarget, createHtmlQuoteTarget } from './shared';
+import {
+  createHtmlDomTarget,
+  createHtmlLinkTarget,
+} from './shared';
 
 const baseInvocation: WorkbenchInvocationContext = {
   projectId: 'project',
@@ -18,20 +21,21 @@ const baseInvocation: WorkbenchInvocationContext = {
   inputs: [],
 };
 
-function quoteSelection(
+function domSelection(
   text: string,
-  target = createHtmlQuoteTarget(text),
+  target: ContentAnchorTarget = createHtmlDomTarget({
+    frameUrl: 'learning-content://resource/session',
+    element: { path: [1], tagName: 'p', textQuote: text },
+  }),
 ): WorkbenchSelectionSnapshot {
   return { text, target };
 }
 
 function elementTarget(): ContentAnchorTarget {
-  return {
-    scope: 'content',
-    anchorType: 'html.element',
-    anchorVersion: 1,
-    anchorPayload: { id: 'btn-mha', tagName: 'button' },
-  };
+  return createHtmlDomTarget({
+    frameUrl: 'learning-content://resource/session',
+    element: { path: [1], tagName: 'button', id: 'btn-mha' },
+  });
 }
 
 function contextWith(
@@ -132,8 +136,8 @@ describe('html AI renderer actions', () => {
     const { context, explainAction, onExplainSelection } =
       rendererActions();
     context.value = contextWith({ target: elementTarget() });
-    const target = createHtmlQuoteTarget('自注意力机制');
-    const selection = quoteSelection('自注意力机制', target);
+    const target = domSelection('自注意力机制').target;
+    const selection = domSelection('自注意力机制', target);
     const invocation: WorkbenchInvocationContext = {
       ...baseInvocation,
       inputs: [createTextSelectionInput(selection)],
@@ -143,7 +147,7 @@ describe('html AI renderer actions', () => {
 
     expect(onExplainSelection).toHaveBeenCalledTimes(1);
     const [targetArg] = onExplainSelection.mock.calls[0];
-    expect(targetArg.anchorType).toBe('html.quote');
+    expect(targetArg.anchorType).toBe('html.dom');
     expect(targetArg).toBe(target);
   });
 
@@ -160,7 +164,7 @@ describe('html AI renderer actions', () => {
 
     expect(onExplainSelection).toHaveBeenCalledTimes(1);
     const [targetArg] = onExplainSelection.mock.calls[0];
-    expect(targetArg.anchorType).toBe('html.element');
+    expect(targetArg.anchorType).toBe('html.dom');
   });
 
   it('解释 action 无选区时回退到右键链接 target', async () => {
@@ -183,7 +187,7 @@ describe('html AI renderer actions', () => {
     const { context, summarizeAction, onSummarizePage, onExplainSelection } =
       rendererActions();
     context.value = contextWith({ target: elementTarget() });
-    const selection = quoteSelection('选区文本');
+    const selection = domSelection('选区文本');
     const invocation: WorkbenchInvocationContext = {
       ...baseInvocation,
       inputs: [createTextSelectionInput(selection)],

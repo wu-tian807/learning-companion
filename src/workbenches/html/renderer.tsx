@@ -18,7 +18,10 @@ import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
-import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
+import type {
+  CoreContextMenuFacilityEvent,
+  CoreViewportRect,
+} from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import { AnchorHighlight } from './conversation/AnchorHighlight';
@@ -31,7 +34,7 @@ import {
 import { createHtmlConversationStore } from './conversation/conversation-store';
 import {
   isHtmlAnchorTarget,
-  isSameHtmlQuoteLocation,
+  isSameHtmlAnchorLocation,
   type HtmlAnchorTarget,
 } from './anchor-commands';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
@@ -60,32 +63,21 @@ interface HtmlDocumentFrameProps {
 interface PendingHtmlTextSelection {
   readonly text: string;
   readonly target: HtmlAnchorTarget;
-  readonly rect?: {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-  };
+  readonly rect?: CoreViewportRect;
 }
 
 export function pendingHtmlTextSelection(
   interaction: Parameters<typeof findTextSelectionInput>[0],
+  rect?: CoreViewportRect,
 ): PendingHtmlTextSelection | undefined {
   const selection = findTextSelectionInput(interaction);
   if (!selection || !isHtmlAnchorTarget(selection.target)) {
     return undefined;
   }
-  const payload =
-    selection.target.anchorType === 'html.quote'
-      ? (selection.target.anchorPayload as {
-          readonly rect?: PendingHtmlTextSelection['rect'];
-        })
-      : undefined;
-
   return {
     text: selection.text,
     target: selection.target,
-    ...(payload?.rect === undefined ? {} : { rect: payload.rect }),
+    ...(rect === undefined ? {} : { rect }),
   };
 }
 
@@ -346,11 +338,14 @@ export function HtmlWorkbenchView({
         }
 
         if (mapped.kind === 'selection') {
-          // 有选区文本时显示「引用选中内容」悬浮条（锚点携带 frame 内 rect）
-          const selection = pendingHtmlTextSelection(mapped.interaction);
+          // 有选区文本时显示悬浮条；rect 仅用于本次 UI 定位，不写入 DOM Anchor。
+          const selection = pendingHtmlTextSelection(
+            mapped.interaction,
+            mapped.rect,
+          );
           if (
             selection?.target &&
-            isSameHtmlQuoteLocation(
+            isSameHtmlAnchorLocation(
               selection.target,
               highlightTargetRef.current,
             )

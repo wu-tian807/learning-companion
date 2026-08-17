@@ -1,9 +1,11 @@
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import {
+  isHtmlDomTarget,
   isHtmlElementTarget,
   isHtmlLinkTarget,
   isHtmlQuoteTarget,
+  type HtmlDomAnchorV1,
   type HtmlQuoteAnchorV1,
 } from './shared';
 
@@ -42,6 +44,7 @@ export function isHtmlAnchorTarget(
   value: unknown,
 ): value is HtmlAnchorTarget {
   return (
+    isHtmlDomTarget(value) ||
     isHtmlElementTarget(value) ||
     isHtmlQuoteTarget(value) ||
     isHtmlLinkTarget(value)
@@ -57,10 +60,20 @@ function payloadOf<T>(target: ContentAnchorTarget): T {
  * ignoring their viewport rectangles, which change when the chat panel
  * causes the document to reflow.
  */
-export function isSameHtmlQuoteLocation(
+export function isSameHtmlAnchorLocation(
   left: unknown,
   right: unknown,
 ): boolean {
+  if (isHtmlDomTarget(left) && isHtmlDomTarget(right)) {
+    const a = payloadOf<HtmlDomAnchorV1>(left);
+    const b = payloadOf<HtmlDomAnchorV1>(right);
+    return (
+      a.frameUrl === b.frameUrl &&
+      a.element.tagName === b.element.tagName &&
+      a.element.id === b.element.id &&
+      JSON.stringify(a.element.path) === JSON.stringify(b.element.path)
+    );
+  }
   if (!isHtmlQuoteTarget(left) || !isHtmlQuoteTarget(right)) {
     return false;
   }

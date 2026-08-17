@@ -49,7 +49,9 @@ function isValidHtmlAnchor(value: unknown): value is JsonValue {
 function describeAnchor(anchor: JsonValue): string {
   if (isRecord(anchor)) {
     const kind =
-      anchor.anchorType === 'html.element'
+      anchor.anchorType === 'html.dom'
+        ? 'HTML 内容'
+        : anchor.anchorType === 'html.element'
         ? '元素'
         : anchor.anchorType === 'html.quote'
           ? '选中文本'
@@ -59,6 +61,24 @@ function describeAnchor(anchor: JsonValue): string {
     const payload = isRecord(anchor.anchorPayload)
       ? anchor.anchorPayload
       : undefined;
+
+    if (anchor.anchorType === 'html.dom') {
+      const element = isRecord(payload?.element) ? payload.element : undefined;
+      const parts: string[] = [];
+      if (typeof element?.id === 'string' && element.id.trim().length > 0) {
+        parts.push(`#${element.id}`);
+      }
+      if (typeof element?.tagName === 'string') {
+        parts.push(element.tagName);
+      }
+      if (
+        typeof element?.textQuote === 'string' &&
+        element.textQuote.trim().length > 0
+      ) {
+        parts.push(`「${element.textQuote.slice(0, 80)}」`);
+      }
+      return parts.length > 0 ? `${kind}：${parts.join(' ')}` : kind;
+    }
 
     if (anchor.anchorType === 'html.quote') {
       const exact =

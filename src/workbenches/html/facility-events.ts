@@ -5,13 +5,14 @@ import {
   isCoreContextMenuFacilityEvent,
   isCoreTextSelectionFacilityEvent,
   type CoreContextMenuFacilityEvent,
+  type CoreViewportRect,
 } from '../../shared/workbench/facilities/core-facilities';
 import type { WorkbenchFacilityEvent } from '../../shared/workbench/facilities/facility-event';
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import { interactionFromTextSelection } from '../../shared/workbench/selection';
 import {
   createHtmlLinkTarget,
-  createHtmlQuoteTarget,
+  isHtmlDomTarget,
   isHtmlElementTarget,
   isHtmlQuoteTarget,
 } from './shared';
@@ -20,6 +21,7 @@ export type HtmlWorkbenchFacilityResult =
   | {
       readonly kind: 'selection';
       readonly interaction: WorkbenchInteractionSnapshot;
+      readonly rect?: CoreViewportRect;
     }
   | {
       readonly kind: 'context-menu';
@@ -48,20 +50,22 @@ export function mapHtmlWorkbenchFacilityEvent(
     isCoreTextSelectionFacilityEvent(event.payload)
   ) {
     const selection = event.payload.text
+      && (
+        isHtmlDomTarget(event.payload.target) ||
+        isHtmlQuoteTarget(event.payload.target)
+      )
       ? {
           text: event.payload.text,
-          target: isHtmlQuoteTarget(event.payload.target)
-            ? event.payload.target
-            : createHtmlQuoteTarget(
-                event.payload.text,
-                event.payload.frameUrl,
-              ),
+          target: event.payload.target,
         }
       : undefined;
 
     return {
       kind: 'selection',
       interaction: interactionFromTextSelection(selection),
+      ...(event.payload.rect === undefined
+        ? {}
+        : { rect: event.payload.rect }),
     };
   }
 
@@ -71,17 +75,21 @@ export function mapHtmlWorkbenchFacilityEvent(
     isCoreContextMenuFacilityEvent(event.payload)
   ) {
     const context = event.payload;
-    const selection = context.selectionText
+    const selectionTarget =
+      isHtmlDomTarget(context.target) ||
+      isHtmlQuoteTarget(context.target)
+        ? context.target
+        : undefined;
+    const selection = context.selectionText && selectionTarget
       ? {
           text: context.selectionText,
-          target: createHtmlQuoteTarget(
-            context.selectionText,
-            context.frameUrl,
-          ),
+          target: selectionTarget,
         }
       : undefined;
     const target =
-      (isHtmlElementTarget(context.target)
+      (isHtmlDomTarget(context.target) ||
+      isHtmlElementTarget(context.target) ||
+      isHtmlQuoteTarget(context.target)
         ? context.target
         : undefined) ??
       selection?.target ??

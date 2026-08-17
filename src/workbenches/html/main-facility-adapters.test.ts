@@ -8,12 +8,12 @@ import {
   HtmlContextMenuFacilityAdapter,
   HtmlTextSelectionFacilityAdapter,
   READ_HTML_CONTEXT_ELEMENT_SCRIPT,
+  READ_HTML_CONTEXT_SELECTION_SCRIPT,
   READ_HTML_FRAME_SELECTION_SCRIPT,
 } from './main-facility-adapters';
 import {
   HTML_WORKBENCH_ID,
-  isHtmlElementTarget,
-  isHtmlQuoteTarget,
+  isHtmlDomTarget,
 } from './shared';
 
 function frame(
@@ -38,13 +38,15 @@ function context(sourceFrame: WebFrameMain, source?: unknown) {
 describe('HTML Main Facility adapters', () => {
   it('captures a DOM-owned element Anchor with the context menu', async () => {
     const executeJavaScript = vi.fn(async () => ({
-      tagName: 'div',
-      domPath: [1, 2, 0],
+      element: {
+        tagName: 'div',
+        path: [1, 2, 0],
+        id: 'lesson-card',
+        role: 'article',
+        ariaLabel: '课程内容',
+        textQuote: '这里是课程正文',
+      },
       rect: { x: 8, y: 12, width: 200, height: 60 },
-      id: 'lesson-card',
-      role: 'article',
-      ariaLabel: '课程内容',
-      textQuote: '这里是课程正文',
     }));
     const sourceFrame = frame(executeJavaScript);
     const adapter = new HtmlContextMenuFacilityAdapter();
@@ -73,7 +75,7 @@ describe('HTML Main Facility adapters', () => {
       payload &&
         typeof payload === 'object' &&
         !Array.isArray(payload) &&
-        isHtmlElementTarget(payload.target),
+        isHtmlDomTarget(payload.target),
     ).toBe(true);
   });
 
@@ -102,13 +104,14 @@ describe('HTML Main Facility adapters', () => {
     expect(payload).not.toHaveProperty('target');
   });
 
-  it('publishes an HTML quote Anchor for settled selection', async () => {
+  it('publishes an HTML DOM Anchor and ephemeral rect for settled selection', async () => {
     const executeJavaScript = vi.fn(async () => ({
       text: '选中的正文',
       rect: { x: 10, y: 20, width: 120, height: 18 },
-      domRange: {
-        start: { path: [1, 0, 0], offset: 0 },
-        end: { path: [1, 0, 0], offset: 6 },
+      element: {
+        path: [1, 0],
+        tagName: 'p',
+        textQuote: '选中的正文',
       },
     }));
     const sourceFrame = frame(executeJavaScript);
@@ -123,43 +126,67 @@ describe('HTML Main Facility adapters', () => {
       payload &&
         typeof payload === 'object' &&
         !Array.isArray(payload) &&
-        isHtmlQuoteTarget(payload.target),
+        isHtmlDomTarget(payload.target),
     ).toBe(true);
     expect(payload).toMatchObject({
       target: {
+        anchorType: 'html.dom',
         anchorPayload: {
-          exact: '选中的正文',
-          domRange: {
-            start: { path: [1, 0, 0], offset: 0 },
-            end: { path: [1, 0, 0], offset: 6 },
-          },
+          element: { path: [1, 0], tagName: 'p' },
         },
       },
+      rect: { x: 10, y: 20, width: 120, height: 18 },
     });
+    expect(
+      (payload as { target?: { anchorPayload?: Record<string, unknown> } })
+        .target?.anchorPayload,
+    ).not.toHaveProperty('rect');
   });
 
-  it('keeps the selected text when optional DOM boundaries are malformed', async () => {
+  it('does not publish a target when the inferred DOM element is malformed', async () => {
     const sourceFrame = frame(
       vi.fn(async () => ({
         text: '仍可引用的正文',
         rect: { x: 10, y: 20, width: 120, height: 18 },
-        domRange: {
-          start: { path: [-1], offset: 0 },
-          end: { path: [1], offset: 6 },
-        },
+        element: { path: [-1], tagName: 'p' },
       })),
     );
     const payload = await new HtmlTextSelectionFacilityAdapter().capture(
       context(sourceFrame),
     );
 
-    expect(payload).toMatchObject({
-      text: '仍可引用的正文',
-      target: { anchorPayload: { exact: '仍可引用的正文' } },
+    expect(payload).toEqual({
+      frameUrl: 'learning-content://resource/html',
     });
+  });
+
+  it('uses the same DOM Anchor shape for a context-menu text selection', async () => {
+    const executeJavaScript = vi.fn(async () => ({
+      text: '右键选区',
+      element: { path: [1, 2], tagName: 'td', textQuote: '右键选区' },
+      rect: { x: 20, y: 30, width: 80, height: 20 },
+    }));
+    const sourceFrame = frame(executeJavaScript);
+    const payload = await new HtmlContextMenuFacilityAdapter().capture(
+      context(sourceFrame, {
+        x: 20,
+        y: 30,
+        frameURL: sourceFrame.url,
+        selectionText: '右键选区',
+        linkURL: '',
+        mediaType: 'none',
+        srcURL: '',
+      } as ContextMenuParams),
+    );
+
+    expect(executeJavaScript).toHaveBeenCalledWith(
+      READ_HTML_CONTEXT_SELECTION_SCRIPT,
+    );
     expect(
-      (payload as { target?: { anchorPayload?: Record<string, unknown> } })
-        .target?.anchorPayload,
-    ).not.toHaveProperty('domRange');
+      payload &&
+        typeof payload === 'object' &&
+        !Array.isArray(payload) &&
+        isHtmlDomTarget(payload.target),
+    ).toBe(true);
   });
 });

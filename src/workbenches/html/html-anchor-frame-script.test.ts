@@ -2,19 +2,23 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createHtmlQuoteTarget } from './shared';
+import {
+  createHtmlDomTarget,
+  createHtmlElementTarget,
+  createHtmlQuoteTarget,
+} from './shared';
 import {
   createHtmlAnchorClearFrameScript,
   createHtmlAnchorHighlightFrameScript,
 } from './html-anchor-frame-script';
 
-function pathFromDocumentElement(node: Node): readonly number[] {
+function elementPathFromDocumentElement(element: Element): readonly number[] {
   const path: number[] = [];
-  let current: Node | null = node;
+  let current: Element | null = element;
   while (current && current !== document.documentElement) {
-    const parent: Node | null = current.parentNode;
-    if (!parent) throw new Error('Node is outside the document');
-    path.unshift(Array.prototype.indexOf.call(parent.childNodes, current));
+    const parent: Element | null = current.parentElement;
+    if (!parent) throw new Error('Element is outside the document');
+    path.unshift(Array.prototype.indexOf.call(parent.children, current));
     current = parent;
   }
   return path;
@@ -53,14 +57,17 @@ describe('HTML anchor frame scripts', () => {
 
   it('embeds only the validated command data in a self-contained resolver', () => {
     const script = createHtmlAnchorHighlightFrameScript({
-      target: createHtmlQuoteTarget('包含 ` 与 ${danger} 的文本'),
+      target: createHtmlDomTarget({
+        frameUrl: 'learning-content://resource/token',
+        element: { path: [1], tagName: 'p' },
+      }),
       revision: 7,
       reveal: true,
       durationMs: 2_800,
     });
 
     expect(script).toContain('runHtmlAnchorFrameCommand');
-    expect(script).toContain('html.quote');
+    expect(script).toContain('html.dom');
     expect(script).toContain('"revision":7');
     expect(script).toContain('"reveal":true');
   });
@@ -75,28 +82,24 @@ describe('HTML anchor frame scripts', () => {
     expect(script).toContain('"revision":9');
   });
 
-  it('resolves the original DOM Range after responsive layout reflow', async () => {
+  it('resolves the inferred DOM element after responsive layout reflow', async () => {
     document.body.innerHTML =
       '<p id="first">第一段前文 重复正文 第一段后文</p>' +
       '<p id="second">第二段前文 重复正文 第二段后文</p>';
-    installRangeRects();
-    const text = document.querySelector('#second')?.firstChild;
-    if (!text?.textContent) throw new Error('Expected second text node');
-    const start = text.textContent.indexOf('重复正文');
-    const target = createHtmlQuoteTarget(
-      '重复正文',
-      undefined,
-      { x: 300, y: 80, width: 200, height: 18 },
-      {
-        domRange: {
-          start: { path: pathFromDocumentElement(text), offset: start },
-          end: {
-            path: pathFromDocumentElement(text),
-            offset: start + '重复正文'.length,
-          },
-        },
+    const second = document.querySelector('#second');
+    if (!second) throw new Error('Expected second paragraph');
+    Object.defineProperty(second, 'getBoundingClientRect', {
+      value: () => ({ left: 12, top: 200, width: 80, height: 18 }),
+    });
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: elementPathFromDocumentElement(second),
+        tagName: 'p',
+        id: 'second',
+        textQuote: second.textContent ?? undefined,
       },
-    );
+    });
 
     await expect(
       globalThis.eval(
@@ -111,39 +114,87 @@ describe('HTML anchor frame scripts', () => {
     expect(highlightedTop()).toBe('198px');
   });
 
-  it('resolves a DOM Range whose browser selection inserts table separators', async () => {
+  it('resolves the table row inferred from a cross-cell text gesture', async () => {
     document.body.innerHTML =
       '<table><tbody><tr>' +
       '<td id="start">MSE 损失</td>' +
       '<td>高</td>' +
       '<td id="end">会算单样本损失、batch 平均损失</td>' +
       '</tr></tbody></table>';
-    installRangeRects();
-    const start = document.querySelector('#start')?.firstChild;
-    const end = document.querySelector('#end')?.firstChild;
-    if (!start?.textContent || !end?.textContent) {
-      throw new Error('Expected table text nodes');
-    }
-    const target = createHtmlQuoteTarget(
-      'MSE 损失\t高\t会算单样本损失、batch 平均损失',
-      undefined,
-      undefined,
-      {
-        domRange: {
-          start: { path: pathFromDocumentElement(start), offset: 0 },
-          end: {
-            path: pathFromDocumentElement(end),
-            offset: end.textContent.length,
-          },
-        },
+    const row = document.querySelector('tr');
+    if (!row) throw new Error('Expected table row');
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: elementPathFromDocumentElement(row),
+        tagName: 'tr',
+        textQuote: row.textContent ?? undefined,
       },
-    );
+    });
 
     await expect(
       globalThis.eval(
         createHtmlAnchorHighlightFrameScript({
           target,
           revision: 3,
+          reveal: false,
+          durationMs: 0,
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
+  });
+
+  it('uses the captured element identity instead of matching duplicate page text', async () => {
+    document.body.innerHTML =
+      '<p id="first">前文 重复正文 后文</p>' +
+      '<p id="second">前文 重复正文 后文</p>';
+    const second = document.querySelector('#second');
+    if (!second) throw new Error('Expected second paragraph');
+    Object.defineProperty(second, 'getBoundingClientRect', {
+      value: () => ({ left: 12, top: 200, width: 80, height: 18 }),
+    });
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: [999],
+        tagName: 'p',
+        id: 'second',
+        textQuote: '前文 重复正文 后文',
+      },
+    });
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target,
+          revision: 5,
+          reveal: false,
+          durationMs: 0,
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
+    expect(highlightedTop()).toBe('198px');
+  });
+
+  it('resolves a whole-element DOM anchor without a second anchor type', async () => {
+    document.body.innerHTML = '<section id="lesson">完整章节</section>';
+    const lesson = document.querySelector('#lesson');
+    if (!lesson) throw new Error('Expected lesson element');
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: elementPathFromDocumentElement(lesson),
+        tagName: 'section',
+        id: 'lesson',
+        textQuote: '完整章节',
+      },
+    });
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target,
+          revision: 6,
           reveal: false,
           durationMs: 0,
         }),
@@ -166,6 +217,30 @@ describe('HTML anchor frame scripts', () => {
       ),
     ).resolves.toEqual({ found: true });
     expect(highlightedTop()).toBe('18px');
+  });
+
+  it('keeps resolving persisted legacy element anchors', async () => {
+    document.body.innerHTML = '<section id="legacy">旧版元素</section>';
+    const legacy = document.querySelector('#legacy');
+    if (!legacy) throw new Error('Expected legacy element');
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target: createHtmlElementTarget({
+            frameUrl: 'learning-content://resource/token',
+            tagName: 'section',
+            domPath: elementPathFromDocumentElement(legacy),
+            rect: { x: 0, y: 0, width: 100, height: 20 },
+            id: 'legacy',
+            textQuote: '旧版元素',
+          }),
+          revision: 7,
+          reveal: false,
+          durationMs: 0,
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
   });
 
   it('resolves legacy table selections without a DOM Range', async () => {

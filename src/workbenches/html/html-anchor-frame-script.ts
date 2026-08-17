@@ -128,31 +128,42 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     return node;
   }
 
-  function matchesElement(element: Element | undefined): element is Element {
-    if (!element || !payload) {
+  function asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : undefined;
+  }
+
+  function matchesElement(
+    element: Element | undefined,
+    locator: Record<string, unknown> | undefined,
+  ): element is Element {
+    if (!element || !locator) {
       return false;
     }
-    const tagName = normalizedText(payload.tagName).toLowerCase();
+    const tagName = normalizedText(locator.tagName).toLowerCase();
     return !tagName || element.tagName.toLowerCase() === tagName;
   }
 
-  function resolveElement(): Element | undefined {
-    if (!payload) {
+  function resolveElement(
+    locator: Record<string, unknown> | undefined,
+  ): Element | undefined {
+    if (!locator) {
       return undefined;
     }
-    const id = normalizedText(payload.id);
+    const id = normalizedText(locator.id);
     const byId = id ? document.getElementById(id) ?? undefined : undefined;
-    if (matchesElement(byId)) {
+    if (matchesElement(byId, locator)) {
       return byId;
     }
-    const byPath = elementFromDomPath(payload.domPath);
-    if (matchesElement(byPath)) {
+    const byPath = elementFromDomPath(locator.path ?? locator.domPath);
+    if (matchesElement(byPath, locator)) {
       return byPath;
     }
 
-    const tagName = normalizedText(payload.tagName).toLowerCase();
-    const textQuote = normalizedText(payload.textQuote);
-    const ariaLabel = normalizedText(payload.ariaLabel);
+    const tagName = normalizedText(locator.tagName).toLowerCase();
+    const textQuote = normalizedText(locator.textQuote);
+    const ariaLabel = normalizedText(locator.ariaLabel);
     if (!tagName) {
       return undefined;
     }
@@ -180,11 +191,11 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     );
   }
 
-  function resolveDomRange(exact: string): Range | undefined {
-    const domRange =
-      typeof payload?.domRange === 'object' && payload.domRange !== null
-        ? (payload.domRange as Record<string, unknown>)
-        : undefined;
+  function resolveDomRange(
+    domRange: Record<string, unknown> | undefined,
+    exact: string,
+    container?: Element,
+  ): Range | undefined {
     const start =
       typeof domRange?.start === 'object' && domRange.start !== null
         ? (domRange.start as Record<string, unknown>)
@@ -208,6 +219,12 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     ) {
       return undefined;
     }
+    if (
+      container &&
+      (!container.contains(startNode) || !container.contains(endNode))
+    ) {
+      return undefined;
+    }
 
     try {
       const range = document.createRange();
@@ -225,17 +242,15 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     }
   }
 
-  function resolveQuote(): Range | undefined {
-    const exact = normalizedText(payload?.exact);
-    if (!exact || !document.body) {
+  function resolveQuoteWithin(
+    container: Element | undefined,
+    exact: string,
+  ): Range | undefined {
+    if (!exact || !container) {
       return undefined;
     }
-    const directRange = resolveDomRange(exact);
-    if (directRange) {
-      return directRange;
-    }
     const walker = document.createTreeWalker(
-      document.body,
+      container,
       NodeFilter.SHOW_TEXT,
     );
     const characters: Array<{ readonly node: Text; readonly offset: number }> = [];
@@ -297,14 +312,38 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     return range;
   }
 
+  function resolveDomAnchor(): Element | Range | undefined {
+    if (!record || !payload) {
+      return undefined;
+    }
+
+    if (record.anchorType === 'html.dom') {
+      const locator = asRecord(payload.element);
+      return resolveElement(locator);
+    }
+
+    if (record.anchorType === 'html.element') {
+      return resolveElement(payload);
+    }
+
+    if (record.anchorType === 'html.quote') {
+      const exact = normalizedText(payload.exact);
+      if (!exact) {
+        return undefined;
+      }
+      return (
+        resolveDomRange(asRecord(payload.domRange), exact) ??
+        resolveQuoteWithin(document.body ?? undefined, exact)
+      );
+    }
+
+    return undefined;
+  }
+
   const resolved: Element | Range | undefined =
-    record?.anchorType === 'html.element'
-      ? resolveElement()
-      : record?.anchorType === 'html.quote'
-        ? resolveQuote()
-        : record?.anchorType === 'html.link'
-          ? resolveLink()
-          : undefined;
+    record?.anchorType === 'html.link'
+      ? resolveLink()
+      : resolveDomAnchor();
 
   if (!resolved) {
     state.cleanup();

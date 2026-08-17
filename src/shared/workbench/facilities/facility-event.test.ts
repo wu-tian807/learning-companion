@@ -36,6 +36,7 @@ describe('Workbench Facility Event', () => {
           payload: {
             text: '选区',
             frameUrl: 'learning-content://resource/token',
+            rect: { x: 10, y: 20, width: 80, height: 18 },
           },
         },
         registry,
@@ -48,6 +49,20 @@ describe('Workbench Facility Event', () => {
           facilityId: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
           facilityVersion: CORE_FACILITY_VERSION,
           payload: { text: 42 },
+        },
+        registry,
+      ),
+    ).toBe(false);
+    expect(
+      isKnownWorkbenchFacilityEvent(
+        {
+          sessionId: 'session-1',
+          facilityId: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
+          facilityVersion: CORE_FACILITY_VERSION,
+          payload: {
+            text: '选区',
+            rect: { x: 10, y: 20, width: -1, height: 18 },
+          },
         },
         registry,
       ),

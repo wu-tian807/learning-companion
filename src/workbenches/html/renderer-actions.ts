@@ -4,7 +4,6 @@ import {
   findTextSelectionInput,
 } from '../../shared/workbench/selection';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
-import { createHtmlQuoteTarget, isHtmlQuoteTarget } from './shared';
 
 export interface HtmlRendererActionsOptions {
   readonly getContext: () =>
@@ -16,7 +15,7 @@ export interface HtmlRendererActionsOptions {
   readonly onOpenLink: (url: string) => Promise<void> | void;
   readonly onReload: () => void;
   readonly onReveal: () => Promise<void> | void;
-  /** 引用选中内容：传入待引用锚点（文本选区 → quote，右键元素 → element）。 */
+  /** 引用选中内容：文本滑选与右键点击都传入 Workbench 推断出的 DOM 元素。 */
   readonly onExplainSelection: (target: ContentAnchorTarget) => void;
   readonly onSummarizePage: () => void;
   readonly onOpenChat: () => void;
@@ -90,10 +89,7 @@ export function createHtmlRendererActions({
           const fallbackTarget = context.focus;
 
           if (selection && selection.text.trim().length > 0) {
-            const target = isHtmlQuoteTarget(selection.target)
-              ? selection.target
-              : createHtmlQuoteTarget(selection.text);
-            onExplainSelection(target);
+            onExplainSelection(selection.target);
             return;
           }
           if (fallbackTarget) {
