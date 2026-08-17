@@ -11,6 +11,7 @@ import {
 import { HtmlWorkbenchProvider } from './main';
 import { htmlAnchorCommands } from './anchor-commands';
 import {
+  createHtmlDomTarget,
   createHtmlQuoteTarget,
   htmlConversationCommands,
   htmlWorkbenchManifest,
@@ -277,10 +278,10 @@ describe('HtmlWorkbenchProvider conversations', () => {
   it('executes validated anchor highlight and clear commands in the session frame', async () => {
     const { provider, context, frameScriptExecutor } =
       await createProvider();
-    const target = createHtmlQuoteTarget(
-      '锚点正文',
-      'https://widgets.example.com/chapter',
-    );
+    const target = createHtmlDomTarget({
+      frameUrl: 'https://widgets.example.com/chapter',
+      element: { path: [1], tagName: 'p', textQuote: '锚点正文' },
+    });
 
     await expect(
       provider.command(context, {

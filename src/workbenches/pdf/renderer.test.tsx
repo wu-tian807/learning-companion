@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
+import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { PdfWorkbenchView } from './renderer';
@@ -48,8 +49,9 @@ function createBootstrap(
 
 function render(payload: WorkbenchBootstrap['payload']) {
   return renderToStaticMarkup(
-    <WorkbenchRuntimeProvider onError={vi.fn()}>
-      <PdfWorkbenchView
+    <WorkbenchConversationRuntimeProvider>
+      <WorkbenchRuntimeProvider onError={vi.fn()}>
+        <PdfWorkbenchView
         asset={asset}
         bootstrap={createBootstrap(payload)}
         executeCommand={vi.fn(async () => ({
@@ -61,8 +63,9 @@ function render(payload: WorkbenchBootstrap['payload']) {
         onInteractionChange={vi.fn()}
         onOpenExternal={vi.fn(async () => undefined)}
         onError={vi.fn()}
-      />
-    </WorkbenchRuntimeProvider>,
+        />
+      </WorkbenchRuntimeProvider>
+    </WorkbenchConversationRuntimeProvider>,
   );
 }
 
@@ -79,6 +82,8 @@ describe('PdfWorkbenchView', () => {
     expect(markup).toContain('aria-label="PDF 页面画布"');
     expect(markup).toContain('正在载入 PDF');
     expect(markup).not.toContain('/tmp/private/learning.pdf');
+    expect(markup).toContain('user-select: none !important');
+    expect(markup).toContain('pointer-events: none');
   });
 
   it('rejects an unsafe bootstrap URL before loading PDF.js', () => {

@@ -21,9 +21,15 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { useWorkbenchConversationContribution } from '../../renderer/conversation/workbench-conversation-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
-import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
+import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
+import {
+  createDocumentConversationContext,
+  createDocumentConversationContribution,
+  createDocumentConversationHistoryStore,
+} from '../document-ai/renderer/conversation/document-conversation-contribution';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -1016,6 +1022,39 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [executeCommand, reportError],
   );
 
+  const conversationContributionId =
+    `${markdownWorkbenchManifest.id}.document-question`;
+  const conversationHistoryStore = useMemo(
+    () => createDocumentConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+    ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
+  const conversationContribution = useMemo(
+    () => createDocumentConversationContribution({
+      projectId: asset.projectId,
+      assetId: asset.id,
+      workbenchId: markdownWorkbenchManifest.id,
+      contributionId: conversationContributionId,
+      historyStore: conversationHistoryStore,
+      contextLabel: 'Markdown 选区',
+    }),
+    [
+      asset.id,
+      asset.projectId,
+      conversationContributionId,
+      conversationHistoryStore,
+    ],
+  );
+  const conversationOwnerId =
+    `${markdownWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
+
   const rendererActions = useMemo(
     () =>
       createMarkdownRendererActions({
@@ -1027,14 +1066,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
         onAiExplain: (text, anchor) => {
-          const store = getGlobalAiChatStore();
-          store.ensureSession(asset.projectId, asset.id);
-          store.setPendingAnchor(asset.id, {
-            target: anchor,
-            selectedText: text,
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context: createDocumentConversationContext({
+              target: anchor,
+              selectedText: text,
+            }),
           });
-          store.setPanelOpen(true);
-          store.setDraft('');
         },
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
@@ -1047,7 +1085,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       lineEnding,
       activeEditorActionAdapter,
       asset.id,
-      asset.projectId,
+      conversationOwnerId,
+      conversationRuntime,
       onReveal,
       recovery,
       reopenWithEncoding,
@@ -1081,9 +1120,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         refreshAttachments ?? (async () => undefined)
       }
       onError={onError}
-      allowAnswerAttachments={false}
     >
-      <div className="flex h-full min-h-0 flex-col bg-[#171c22]">
+      <div className="relative flex h-full min-h-0 flex-col bg-[#171c22]">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.065] bg-[#1d2229] px-3">
         <div
           role="group"
@@ -1230,6 +1268,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           />,
           document.body,
         )}
+      <QuestionAnchorHost
+        assetId={asset.id}
+        ownerId={conversationOwnerId}
+        historyStore={conversationHistoryStore}
+        runtime={conversationRuntime}
+      />
       </div>
     </DocumentAiWorkbenchShell>
   );

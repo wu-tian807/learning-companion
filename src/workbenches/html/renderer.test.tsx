@@ -2,15 +2,19 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
+import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
+import { interactionFromTextSelection } from '../../shared/workbench/selection';
 import {
   HTML_DOCUMENT_SANDBOX,
   HtmlDocumentFrame,
   HtmlWorkbenchView,
+  pendingHtmlTextSelection,
 } from './renderer';
 import {
   HTML_WORKBENCH_ID,
+  createHtmlDomTarget,
   htmlWorkbenchManifest,
 } from './shared';
 
@@ -43,19 +47,21 @@ function render(payload: WorkbenchBootstrap['payload']) {
   };
 
   return renderToStaticMarkup(
-    <WorkbenchRuntimeProvider onError={vi.fn()}>
-      <HtmlWorkbenchView
-        asset={asset}
-        bootstrap={bootstrap}
-        executeCommand={vi.fn()}
-        onRelink={vi.fn()}
-        onRefresh={vi.fn()}
-        onReveal={vi.fn()}
-        onInteractionChange={vi.fn()}
-        onOpenExternal={vi.fn(async () => undefined)}
-        onError={vi.fn()}
-      />
-    </WorkbenchRuntimeProvider>,
+    <WorkbenchConversationRuntimeProvider>
+      <WorkbenchRuntimeProvider onError={vi.fn()}>
+        <HtmlWorkbenchView
+          asset={asset}
+          bootstrap={bootstrap}
+          executeCommand={vi.fn()}
+          onRelink={vi.fn()}
+          onRefresh={vi.fn()}
+          onReveal={vi.fn()}
+          onInteractionChange={vi.fn()}
+          onOpenExternal={vi.fn(async () => undefined)}
+          onError={vi.fn()}
+        />
+      </WorkbenchRuntimeProvider>
+    </WorkbenchConversationRuntimeProvider>,
   );
 }
 
@@ -96,5 +102,32 @@ describe('HtmlWorkbenchView', () => {
     });
 
     expect(markup).toContain('HTML Workbench 数据无效');
+  });
+
+  it('keeps the inferred DOM element when the text gesture is consumed', () => {
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/html',
+      element: {
+        path: [1, 2],
+        tagName: 'tr',
+        textQuote: '表格里的重复文字',
+      },
+    });
+    const rect = { x: 20, y: 40, width: 120, height: 36 };
+    const pending = pendingHtmlTextSelection(
+      interactionFromTextSelection({
+        text: '表格里的重复文字',
+        target,
+      }),
+      rect,
+    );
+
+    expect(pending?.target).toBe(target);
+    expect(pending?.target.anchorPayload).toMatchObject({
+      element: { path: [1, 2], tagName: 'tr' },
+    });
+    expect(pending?.rect).toEqual(rect);
+    expect(pending?.target.anchorPayload).not.toHaveProperty('rect');
+    expect(pending?.target.anchorPayload).not.toHaveProperty('range');
   });
 });

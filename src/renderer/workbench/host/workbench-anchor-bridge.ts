@@ -11,6 +11,8 @@ export const WORKBENCH_RESOLVE_ANCHOR_EVENT =
   'learning-companion:resolve-workbench-anchor';
 export const WORKBENCH_REVEAL_ANCHOR_EVENT =
   'learning-companion:reveal-workbench-anchor';
+export const WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT =
+  'learning-companion:resolve-workbench-anchor-preview';
 export const WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT =
   'learning-companion:workbench-anchor-layout-changed';
 
@@ -23,6 +25,12 @@ export interface ResolveWorkbenchAnchorDetail {
 export interface RevealWorkbenchAnchorDetail {
   readonly assetId: string;
   readonly target: AssetTarget;
+}
+
+export interface ResolveWorkbenchAnchorPreviewDetail {
+  readonly assetId: string;
+  readonly target: AssetTarget;
+  readonly respond: (dataUrl: string | undefined) => void;
 }
 
 export function resolveWorkbenchAnchor(
@@ -45,4 +53,16 @@ export function revealWorkbenchAnchor(
     WORKBENCH_REVEAL_ANCHOR_EVENT,
     { detail: { assetId, target } },
   ));
+}
+
+export function resolveWorkbenchAnchorPreview(
+  assetId: string,
+  target: AssetTarget,
+): string | undefined {
+  let result: string | undefined;
+  window.dispatchEvent(new CustomEvent<ResolveWorkbenchAnchorPreviewDetail>(
+    WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
+    { detail: { assetId, target, respond: (dataUrl) => { result = dataUrl; } } },
+  ));
+  return result;
 }

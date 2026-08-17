@@ -13,11 +13,18 @@ import {
 import { createHtmlAssistantTaskDefinitionV1 } from './html-assistant-task-definition';
 import type { HtmlAssistantTaskResult } from './html-assistant-processor';
 
-const quoteAnchor = Object.freeze({
+const domAnchor = Object.freeze({
   scope: 'content',
-  anchorType: 'html.quote',
+  anchorType: 'html.dom',
   anchorVersion: 1,
-  anchorPayload: Object.freeze({ exact: '自注意力机制' }),
+  anchorPayload: Object.freeze({
+    frameUrl: 'learning-content://resource/token',
+    element: Object.freeze({
+      path: Object.freeze([1, 0]),
+      tagName: 'p',
+      textQuote: '自注意力机制',
+    }),
+  }),
 });
 
 describe('htmlAssistantInstructionFactory', () => {
@@ -27,7 +34,7 @@ describe('htmlAssistantInstructionFactory', () => {
       version: HTML_ASSISTANT_INSTRUCTION_VERSION,
       conversationId: 'conversation-1',
       question: ' 什么是自注意力？ ',
-      anchor: quoteAnchor,
+      anchor: domAnchor,
     });
 
     expect(result.ok).toBe(true);
@@ -36,7 +43,7 @@ describe('htmlAssistantInstructionFactory', () => {
     }
     expect(result.value.question).toBe('什么是自注意力？');
     expect(result.value.conversationId).toBe('conversation-1');
-    expect(result.value.anchor).toEqual(quoteAnchor);
+    expect(result.value.anchor).toEqual(domAnchor);
   });
 
   it('parses an instruction without anchor', () => {
@@ -106,9 +113,16 @@ describe('htmlAssistantInstructionFactory', () => {
         question: 'ok',
         anchor: {
           scope: 'content',
-          anchorType: 'html.quote',
+          anchorType: 'html.dom',
           anchorVersion: 1,
-          anchorPayload: { exact: 'x'.repeat(10_000) },
+          anchorPayload: {
+            frameUrl: 'learning-content://resource/token',
+            element: {
+              path: [1],
+              tagName: 'p',
+              textQuote: 'x'.repeat(2_000),
+            },
+          },
         },
       }).ok,
     ).toBe(false);
@@ -120,7 +134,7 @@ describe('HtmlAssistantInstruction', () => {
     const instruction = new HtmlAssistantInstruction({
       conversationId: 'conversation-1',
       question: '什么是自注意力？',
-      anchor: quoteAnchor,
+      anchor: domAnchor,
     });
     const message = instruction.toUserMessage();
 

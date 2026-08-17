@@ -1,5 +1,6 @@
 /**
- * Readable summary of a HTML anchor (html.quote / html.element / html.link).
+ * Readable summary of an HTML anchor. New interactions use html.dom while the
+ * legacy quote/element variants remain readable for persisted conversations.
  * Pure presentation: takes the serialized anchorPayload and renders a chip.
  */
 import type { JsonValue } from '../../../shared/workbench/protocol';
@@ -22,6 +23,28 @@ function text(value: unknown): string | undefined {
 export function summarizeHtmlAnchor(anchor: JsonValue): HtmlAnchorSummary {
   if (!isRecord(anchor)) {
     return { kindLabel: '内容' };
+  }
+
+  if (anchor.anchorType === 'html.dom') {
+    const payload = isRecord(anchor.anchorPayload) ? anchor.anchorPayload : {};
+    const element = isRecord(payload.element) ? payload.element : {};
+    const id = text(element.id);
+    const tag = text(element.tagName);
+    const textQuote = text(element.textQuote);
+    const parts = [
+      id ? `#${id}` : undefined,
+      tag ? `<${tag}>` : undefined,
+    ].filter((part): part is string => part !== undefined);
+
+    return {
+      kindLabel: '元素',
+      detail: [
+        parts.join(' '),
+        textQuote ? `“${textQuote.slice(0, 40)}”` : undefined,
+      ]
+        .filter((part): part is string => part !== undefined)
+        .join(' '),
+    };
   }
 
   if (anchor.anchorType === 'html.quote') {

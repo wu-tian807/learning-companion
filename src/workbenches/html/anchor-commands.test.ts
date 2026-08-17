@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { createHtmlElementTarget, createHtmlQuoteTarget } from './shared';
+import { createHtmlDomTarget, createHtmlQuoteTarget } from './shared';
 import {
   isHtmlAnchorClearCommandPayload,
   isHtmlAnchorCommandResult,
   isHtmlAnchorHighlightCommandPayload,
   isHtmlAnchorTarget,
+  isSameHtmlAnchorLocation,
 } from './anchor-commands';
 
 describe('HTML anchor commands', () => {
   it('accepts validated HTML targets and bounded highlight options', () => {
-    const target = createHtmlQuoteTarget('锚点正文');
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: { path: [1], tagName: 'p', textQuote: '锚点正文' },
+    });
 
     expect(isHtmlAnchorTarget(target)).toBe(true);
     expect(
@@ -38,11 +42,9 @@ describe('HTML anchor commands', () => {
     ).toBe(false);
     expect(
       isHtmlAnchorHighlightCommandPayload({
-        target: createHtmlElementTarget({
+        target: createHtmlDomTarget({
           frameUrl: 'learning-content://resource/token',
-          tagName: 'div',
-          domPath: [0],
-          rect: { x: 0, y: 0, width: 10, height: 10 },
+          element: { tagName: 'div', path: [0] },
         }),
         revision: 1,
         reveal: false,
@@ -56,5 +58,33 @@ describe('HTML anchor commands', () => {
       }),
     ).toBe(false);
     expect(isHtmlAnchorCommandResult({ found: 'yes' })).toBe(false);
+  });
+
+  it('treats the same DOM element as the same location after responsive reflow', () => {
+    const anchor = (path: readonly number[]) => createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: { path, tagName: 'p', textQuote: '选中正文' },
+    });
+    const selected = anchor([1, 0]);
+    const sameSelection = anchor([1, 0]);
+    const otherOccurrence = anchor([1, 1]);
+
+    expect(isSameHtmlAnchorLocation(selected, sameSelection)).toBe(true);
+    expect(isSameHtmlAnchorLocation(selected, otherOccurrence)).toBe(false);
+  });
+
+  it('keeps comparing legacy quote ranges during compatibility reads', () => {
+    const locator = {
+      domRange: {
+        start: { path: [1, 0, 0], offset: 0 },
+        end: { path: [1, 0, 0], offset: 4 },
+      },
+    } as const;
+    expect(
+      isSameHtmlAnchorLocation(
+        createHtmlQuoteTarget('选中正文', undefined, undefined, locator),
+        createHtmlQuoteTarget('选中正文', undefined, undefined, locator),
+      ),
+    ).toBe(true);
   });
 });

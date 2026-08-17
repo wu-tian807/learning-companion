@@ -8,6 +8,7 @@ vi.mock('vditor', () => ({
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
+import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import { MarkdownWorkbenchView } from './renderer';
 import {
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
@@ -51,8 +52,9 @@ function createBootstrap(
 
 function render(payload: WorkbenchBootstrap['payload']) {
   return renderToStaticMarkup(
-    <WorkbenchRuntimeProvider onError={vi.fn()}>
-      <MarkdownWorkbenchView
+    <WorkbenchConversationRuntimeProvider>
+      <WorkbenchRuntimeProvider onError={vi.fn()}>
+        <MarkdownWorkbenchView
         asset={asset}
         bootstrap={createBootstrap(payload)}
         executeCommand={vi.fn(async () => ({
@@ -64,8 +66,9 @@ function render(payload: WorkbenchBootstrap['payload']) {
         onInteractionChange={vi.fn()}
         onOpenExternal={vi.fn(async () => undefined)}
         onError={vi.fn()}
-      />
-    </WorkbenchRuntimeProvider>,
+        />
+      </WorkbenchRuntimeProvider>
+    </WorkbenchConversationRuntimeProvider>,
   );
 }
 

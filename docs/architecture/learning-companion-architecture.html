@@ -2036,7 +2036,7 @@
             N("html", "HTML", {
               tag: "builtin.html",
               caption: "sandbox frame · DOM-owned Anchor",
-              summary: "通过隔离 Frame 展示原始 HTML；HTML 自己注册 Main Facility Adapters，在对应 Frame 中探测 DOM，并把 html.element / html.quote Anchor 经通用 Bridge 返回 Runtime。",
+              summary: "通过隔离 Frame 展示原始 HTML；HTML 自己注册 Main Facility Adapters，在对应 Frame 中探测 DOM，并把统一的 html.dom Anchor 经通用 Bridge 返回 Runtime。元素点击与文本滑选最终都只保存自动推断出的 DOM 元素；选中文字只作为当次交互输入，不参与持久定位。旧 html.element / html.quote 仅兼容读取。",
               files: ["src/workbenches/html/main-facility-adapters.ts", "src/workbenches/html/facility-events.ts", "src/workbenches/html/shared.ts"],
               child: "workbench-extension",
               col: 11,
@@ -2361,7 +2361,7 @@
               tag: "IMPLEMENTED SHARED CLIENT",
               caption: "start · await terminal event · cancel",
               summary: "Renderer 的薄客户端只复用通用 GenerationTask Preload API，处理启动/完成竞态和 AbortSignal。Document AI 已使用它，不再自建 feature IPC。",
-              files: ["src/renderer/generation/run-generation-task.ts", "src/workbenches/document-ai/renderer/document-ai-client.ts"],
+              files: ["src/renderer/conversation/conversation-task-client.ts", "src/renderer/conversation/conversation-controller.ts"],
               col: 5,
               row: 3,
               span: 3

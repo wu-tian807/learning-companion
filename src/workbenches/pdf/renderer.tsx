@@ -15,9 +15,11 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
-import { getGlobalAiChatStore } from '../document-ai/renderer/ai-chat/chat-store';
-import { documentAiClient } from '../document-ai/renderer/document-ai-client';
-import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
+import { useWorkbenchConversationContribution } from '../../renderer/conversation/workbench-conversation-context';
+import {
+  DocumentAiWorkbenchShell,
+} from '../document-ai/renderer/DocumentAiWorkbenchShell';
+import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   findTextSelectionInput,
@@ -29,9 +31,11 @@ import type {
 import type { AssetTarget } from '../../shared/workbench/anchor';
 import {
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
+  WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
   WORKBENCH_RESOLVE_ANCHOR_EVENT,
   WORKBENCH_REVEAL_ANCHOR_EVENT,
   type ResolveWorkbenchAnchorDetail,
+  type ResolveWorkbenchAnchorPreviewDetail,
   type RevealWorkbenchAnchorDetail,
 } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import type {
@@ -67,8 +71,14 @@ import {
 import {
   completePdfRegionPointer,
   movePdfRegionPointer,
-  shouldDismissPdfRegionMenu,
+  shouldDismissPdfRegionSelection,
 } from './pdf-region-interaction';
+import {
+  createDocumentConversationContext,
+  createDocumentConversationContribution,
+  createDocumentConversationHistoryStore,
+  type DocumentConversationContext,
+} from '../document-ai/renderer/conversation/document-conversation-contribution';
 
 type PdfLoadState =
   | {
@@ -102,6 +112,67 @@ interface PdfRegionSelection {
 
 interface PdfRegionActionMenu {
   readonly top: number;
+}
+
+interface CompletedPdfRegionSelection {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+interface PdfRegionPreviewInput {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Captures a compact, local-only visual reference for a formula/image region.
+ * It is intentionally small because question history is stored in localStorage.
+ */
+export function capturePdfRegionPreview(
+  source: HTMLCanvasElement,
+  region: PdfRegionPreviewInput,
+): string | undefined {
+  const sourceWidth = source.width;
+  const sourceHeight = source.height;
+  if (sourceWidth < 1 || sourceHeight < 1) return undefined;
+
+  const sx = Math.max(0, Math.floor(region.x * sourceWidth));
+  const sy = Math.max(0, Math.floor(region.y * sourceHeight));
+  const sw = Math.min(
+    sourceWidth - sx,
+    Math.max(1, Math.ceil(region.width * sourceWidth)),
+  );
+  const sh = Math.min(
+    sourceHeight - sy,
+    Math.max(1, Math.ceil(region.height * sourceHeight)),
+  );
+  const scale = Math.min(1, 180 / Math.max(sw, sh));
+  const preview = document.createElement('canvas');
+  preview.width = Math.max(1, Math.round(sw * scale));
+  preview.height = Math.max(1, Math.round(sh * scale));
+  const context = preview.getContext('2d');
+  if (!context) return undefined;
+
+  try {
+    context.drawImage(source, sx, sy, sw, sh, 0, 0, preview.width, preview.height);
+    return preview.toDataURL('image/jpeg', 0.68);
+  } catch {
+    return undefined;
+  }
+}
+
+function findRenderedPdfCanvas(
+  page: HTMLElement,
+): HTMLCanvasElement | undefined {
+  return [...page.querySelectorAll<HTMLCanvasElement>('canvas')]
+    .filter((canvas) => canvas.width > 0 && canvas.height > 0)
+    .sort((left, right) =>
+      right.width * right.height - left.width * left.height,
+    )[0];
 }
 
 const PDF_REGION_QUICK_QUESTIONS = [
@@ -429,15 +500,8 @@ export function PdfDocumentWorkbenchView({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activePanRef = useRef<ActivePdfPan | undefined>(undefined);
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
+  const dismissedRegionPointerRef = useRef<number | undefined>(undefined);
   const regionMenuRef = useRef<HTMLDivElement>(null);
-  const activeDocumentRequestIdsRef = useRef(new Set<string>());
-
-  useEffect(() => () => {
-    for (const requestId of activeDocumentRequestIdsRef.current) {
-      documentAiClient.cancel(requestId);
-    }
-    activeDocumentRequestIdsRef.current.clear();
-  }, []);
 
   useEffect(() => {
     const findPage = (target: AssetTarget): HTMLElement | undefined => {
@@ -477,15 +541,49 @@ export function PdfDocumentWorkbenchView({
       if (detail.assetId !== asset.id) return;
       findPage(detail.target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
+    const resolvePreview = (event: Event) => {
+      const detail = (
+        event as CustomEvent<ResolveWorkbenchAnchorPreviewDetail>
+      ).detail;
+      if (detail.assetId !== asset.id) return;
+      const mapped = mapAnchorTarget(detail.target);
+      const page = findPage(mapped);
+      if (!page || mapped.scope !== 'content') return;
+      const payload = mapped.anchorPayload as Record<string, unknown>;
+      if (
+        typeof payload.x !== 'number' ||
+        typeof payload.y !== 'number' ||
+        typeof payload.width !== 'number' ||
+        typeof payload.height !== 'number'
+      ) {
+        return;
+      }
+      const canvas = findRenderedPdfCanvas(page);
+      if (!canvas) return;
+      detail.respond(capturePdfRegionPreview(canvas, {
+        x: payload.x,
+        y: payload.y,
+        width: payload.width,
+        height: payload.height,
+      }));
+    };
     const notifyLayout = () => window.dispatchEvent(
       new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
     );
     const container = containerRef.current;
     window.addEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+    window.addEventListener(
+      WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
+      resolvePreview,
+    );
     window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
     container?.addEventListener('scroll', notifyLayout, { passive: true });
     return () => {
       window.removeEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
+      window.removeEventListener(
+        WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
+        resolvePreview,
+      );
       window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
       container?.removeEventListener('scroll', notifyLayout);
     };
@@ -515,19 +613,80 @@ export function PdfDocumentWorkbenchView({
   const [regionMode, setRegionMode] = useState(true);
   const [regionSelection, setRegionSelection] =
     useState<PdfRegionSelection>();
+  const [completedRegionSelection, setCompletedRegionSelection] =
+    useState<CompletedPdfRegionSelection>();
+  const [completedRegionContext, setCompletedRegionContext] =
+    useState<DocumentConversationContext>();
   const [regionActionMenu, setRegionActionMenu] =
     useState<PdfRegionActionMenu>();
+  const conversationContributionId = `${contributionOwnerId}.document-question`;
+  const conversationOwnerId =
+    `${contributionOwnerId}:${bootstrap.sessionId}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () => createDocumentConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+    ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
+  const conversationContribution = useMemo(
+    () => createDocumentConversationContribution({
+      projectId: asset.projectId,
+      assetId: asset.id,
+      workbenchId: contributionOwnerId,
+      contributionId: conversationContributionId,
+      historyStore: conversationHistoryStore,
+      contextLabel: 'PDF 内容',
+      allowAnswerAttachments: true,
+      onContextReleased() {
+        setRegionActionMenu(undefined);
+      },
+    }),
+    [
+      asset.id,
+      asset.projectId,
+      contributionOwnerId,
+      conversationContributionId,
+      conversationHistoryStore,
+    ],
+  );
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
 
   useEffect(() => {
-    if (!regionActionMenu) return;
+    // Document questions use one predictable interaction: a rectangular
+    // region. PDF.js' transparent text layer must not leave a second,
+    // browser-native blue selection behind it.
+    window.getSelection()?.removeAllRanges();
+  }, [regionMode]);
+
+  useEffect(() => {
+    if (!regionActionMenu || !completedRegionSelection) return;
     const dismiss = (event: PointerEvent) => {
-      if (shouldDismissPdfRegionMenu(regionMenuRef.current, event.target)) {
-        setRegionActionMenu(undefined);
-      }
+      const container = containerRef.current;
+      if (!container || !(event.target instanceof Node) ||
+        !container.contains(event.target)) return;
+      const containerRect = container.getBoundingClientRect();
+      if (!shouldDismissPdfRegionSelection({
+        menu: regionMenuRef.current,
+        target: event.target,
+        selection: completedRegionSelection,
+        point: {
+          x: event.clientX - containerRect.left + container.scrollLeft,
+          y: event.clientY - containerRect.top + container.scrollTop,
+        },
+      })) return;
+      dismissedRegionPointerRef.current = event.pointerId;
+      setCompletedRegionSelection(undefined);
+      setCompletedRegionContext(undefined);
+      setRegionActionMenu(undefined);
     };
     document.addEventListener('pointerdown', dismiss, true);
     return () => document.removeEventListener('pointerdown', dismiss, true);
-  }, [regionActionMenu]);
+  }, [completedRegionSelection, regionActionMenu]);
 
   const persistViewState = useCallback(
     async (state: PdfWorkbenchViewState, version: number) => {
@@ -768,11 +927,10 @@ export function PdfDocumentWorkbenchView({
           }
           activeRegionRef.current = undefined;
           setRegionSelection(undefined);
+          setCompletedRegionSelection(undefined);
+          setCompletedRegionContext(undefined);
           setRegionActionMenu(undefined);
           setRegionMode(false);
-          const store = getGlobalAiChatStore();
-          store.setPendingAnchor(asset.id, undefined);
-          store.setPanelOpen(false);
           return;
         }
         if (scaleMenuOpen) {
@@ -886,6 +1044,11 @@ export function PdfDocumentWorkbenchView({
 
   const startPanning = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (dismissedRegionPointerRef.current === event.pointerId) {
+        dismissedRegionPointerRef.current = undefined;
+        event.preventDefault();
+        return;
+      }
       const target = event.target;
       const page =
         target instanceof Element
@@ -900,7 +1063,7 @@ export function PdfDocumentWorkbenchView({
         regionMode && Boolean(page) && !startsOnInteractiveElement;
 
       if (shouldSelectRegion) {
-        const canvas = page?.querySelector<HTMLCanvasElement>('canvas');
+        const canvas = page ? findRenderedPdfCanvas(page) : undefined;
         const pageNumber = Number(page?.dataset.pageNumber);
         if (
           event.button === 0 &&
@@ -923,6 +1086,7 @@ export function PdfDocumentWorkbenchView({
           };
           activeRegionRef.current = selection;
           setRegionSelection(selection);
+          setCompletedRegionSelection(undefined);
           event.currentTarget.setPointerCapture(event.pointerId);
           event.preventDefault();
         }
@@ -1007,26 +1171,39 @@ export function PdfDocumentWorkbenchView({
           return;
         }
 
-        const store = getGlobalAiChatStore();
-        store.ensureSession(asset.projectId, asset.id);
-        store.setPendingAnchor(asset.id, {
-          target: {
-            scope: 'content',
-            anchorType: PDF_REGION_ANCHOR_TYPE,
-            anchorVersion: PDF_REGION_ANCHOR_VERSION,
-            anchorPayload: {
-              pageNumber: region.pageNumber,
-              x: completed.x,
-              y: completed.y,
-              width: completed.width,
-              height: completed.height,
-            },
+        const previewDataUrl = capturePdfRegionPreview(
+          region.canvas,
+          completed,
+        );
+        const rawTarget: AssetTarget = {
+          scope: 'content',
+          anchorType: PDF_REGION_ANCHOR_TYPE,
+          anchorVersion: PDF_REGION_ANCHOR_VERSION,
+          anchorPayload: {
+            pageNumber: region.pageNumber,
+            x: completed.x,
+            y: completed.y,
+            width: completed.width,
+            height: completed.height,
           },
+        };
+        const target = mapInteraction({ focus: rawTarget, inputs: [] }).focus ?? rawTarget;
+        setCompletedRegionContext(createDocumentConversationContext({
+          target,
           pageNumber: region.pageNumber,
-        });
-        store.setPanelOpen(true);
-        store.setDraft('');
+          ...(previewDataUrl ? { previewDataUrl } : {}),
+        }));
         const containerRect = event.currentTarget.getBoundingClientRect();
+        setCompletedRegionSelection({
+          left:
+            pageRect.left + completed.x * pageRect.width - containerRect.left +
+            event.currentTarget.scrollLeft,
+          top:
+            pageRect.top + completed.y * pageRect.height - containerRect.top +
+            event.currentTarget.scrollTop,
+          width: completed.width * pageRect.width,
+          height: completed.height * pageRect.height,
+        });
         setRegionActionMenu({
           top: Math.max(12, completed.top - containerRect.top - 46),
         });
@@ -1035,7 +1212,7 @@ export function PdfDocumentWorkbenchView({
       }
       stopPanning(event);
     },
-    [asset.id, asset.projectId, onError, stopPanning],
+    [mapInteraction, onError, stopPanning],
   );
 
   const cancelPointerInteraction = useCallback(
@@ -1146,60 +1323,35 @@ export function PdfDocumentWorkbenchView({
         onCopySelection: copySelection,
         onReveal: reveal,
         onAiExplain: (text, anchor) => {
-          const store = getGlobalAiChatStore();
-          store.ensureSession(asset.projectId, asset.id);
-          store.setPendingAnchor(asset.id, {
-            target: anchor,
-            pageNumber:
-              typeof (anchor.anchorPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
-                ? ((anchor.anchorPayload as Record<string, unknown>).pageNumber as number)
-                : undefined,
-            selectedText: text,
+          const pageNumber =
+            typeof (anchor.anchorPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
+              ? ((anchor.anchorPayload as Record<string, unknown>).pageNumber as number)
+              : undefined;
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context: createDocumentConversationContext({
+              target: anchor,
+              ...(pageNumber === undefined ? {} : { pageNumber }),
+              selectedText: text,
+            }),
           });
-          store.setPanelOpen(true);
-          store.setDraft('');
         },
         onAiSummarize: (pageNumber, anchor) => {
-          const store = getGlobalAiChatStore();
-          const session = store.ensureSession(asset.projectId, asset.id);
-          store.setPanelOpen(true);
-          const updated = store.addUserMessage(
-            asset.id,
-            `请总结 PDF 第 ${pageNumber} 页的主要内容。`,
-            {
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context: createDocumentConversationContext({
               target: anchor,
               pageNumber,
-            },
-          );
-          const userMessage = updated.messages.at(-1)!;
-          const requestId = `document-ai-${globalThis.crypto.randomUUID()}`;
-          activeDocumentRequestIdsRef.current.add(requestId);
-          void documentAiClient.ask({
-            projectId: asset.projectId,
-            assetId: asset.id,
-            requestId,
-            conversationId: session.id,
-            question: userMessage.content,
-            target: anchor,
-          }).then((result) => {
-            store.addAssistantMessage(
-              asset.id,
-              result.answer,
-              userMessage.id,
-              `${result.providerId}/${result.modelId}`,
-            );
-          }).catch((error: unknown) => {
-            store.setLoading(asset.id, false);
-            onError('AI 回答失败，请检查 Agent 登录状态后重试。');
-            console.error('[document-ai] 总结页面失败', error);
-          }).finally(() => {
-            activeDocumentRequestIdsRef.current.delete(requestId);
+            }),
+            question: `请总结第 ${pageNumber} 页的主要内容。`,
+            submit: true,
           });
         },
       }),
     [
-      asset.id,
-      asset.projectId,
+      contributionOwnerId,
+      conversationOwnerId,
+      conversationRuntime,
       copySelection,
       outlineAvailable,
       ready,
@@ -1277,8 +1429,13 @@ export function PdfDocumentWorkbenchView({
           border-radius: 2px;
           box-shadow: 0 10px 32px rgba(0, 0, 0, 0.34);
         }
+        .learning-pdf-workbench .textLayer {
+          pointer-events: none;
+          user-select: none !important;
+          -webkit-user-select: none !important;
+        }
         .learning-pdf-workbench .textLayer ::selection {
-          background: rgba(99, 102, 241, 0.38);
+          background: transparent;
         }
         .learning-pdf-workbench .textLayer .highlight {
           background: rgba(250, 204, 21, 0.32);
@@ -1383,6 +1540,13 @@ export function PdfDocumentWorkbenchView({
             onLostPointerCapture={cancelPointerInteraction}
           >
             <div ref={viewerRef} className="pdfViewer" />
+            {completedRegionSelection && (
+              <div
+                aria-label="已框选区域"
+                className="pointer-events-none absolute z-40 border-2 border-indigo-300 bg-indigo-400/20 shadow-[0_0_0_1px_rgba(15,23,42,.7)]"
+                style={completedRegionSelection}
+              />
+            )}
           </div>
 
           {regionSelection && containerRef.current && (
@@ -1411,30 +1575,34 @@ export function PdfDocumentWorkbenchView({
                 <button
                   key={label}
                   type="button"
+                  disabled={!completedRegionContext}
                   onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent('learning-companion:ai-quick-question', {
-                        detail: { assetId: asset.id, question },
-                      }),
-                    );
+                    if (!completedRegionContext) return;
+                    conversationRuntime.open({
+                      ownerId: conversationOwnerId,
+                      context: completedRegionContext,
+                      question,
+                      submit: true,
+                    });
                     setRegionActionMenu(undefined);
                   }}
-                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-indigo-400/20 hover:text-white"
+                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-indigo-400/20 hover:text-white disabled:opacity-40"
                 >
                   {label}
                 </button>
               ))}
               <button
                 type="button"
+                disabled={!completedRegionContext}
                 onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent('learning-companion:ai-quick-question', {
-                      detail: { assetId: asset.id, focusOnly: true },
-                    }),
-                  );
+                  if (!completedRegionContext) return;
+                  conversationRuntime.open({
+                    ownerId: conversationOwnerId,
+                    context: completedRegionContext,
+                  });
                   setRegionActionMenu(undefined);
                 }}
-                className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-400/20 hover:text-white"
+                className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-400/20 hover:text-white disabled:opacity-40"
               >
                 自由提问
               </button>
@@ -1615,9 +1783,9 @@ export function PdfDocumentWorkbenchView({
                   if (regionMode) {
                     activeRegionRef.current = undefined;
                     setRegionSelection(undefined);
-                    const store = getGlobalAiChatStore();
-                    store.setPendingAnchor(asset.id, undefined);
-                    store.setPanelOpen(false);
+                    setCompletedRegionSelection(undefined);
+                    setCompletedRegionContext(undefined);
+                    setRegionActionMenu(undefined);
                     setRegionMode(false);
                   } else {
                     setRegionMode(true);
@@ -1699,6 +1867,12 @@ export function PdfDocumentWorkbenchView({
           )}
         </div>
       </div>
+      <QuestionAnchorHost
+        assetId={asset.id}
+        ownerId={conversationOwnerId}
+        historyStore={conversationHistoryStore}
+        runtime={conversationRuntime}
+      />
     </div>
   );
 }
@@ -1713,7 +1887,6 @@ export function PdfWorkbenchView(
       attachments={props.attachments ?? []}
       refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
       onError={props.onError}
-      allowAnswerAttachments
     >
       <PdfDocumentWorkbenchView
         {...props}

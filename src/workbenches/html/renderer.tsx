@@ -10,38 +10,36 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import {
+  useWorkbenchConversationContribution,
+  useWorkbenchConversationSnapshot,
+} from '../../renderer/conversation/workbench-conversation-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
-import { useWorkbenchRuntimeSelector } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
-import {
-  HTML_ASSISTANT_INSTRUCTION_FORMAT,
-  HTML_ASSISTANT_INSTRUCTION_VERSION,
-  HTML_ASSISTANT_TASK_DEFINITION_ID,
-  HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-} from '../../shared/generation-definitions';
-import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
+import type {
+  CoreContextMenuFacilityEvent,
+  CoreViewportRect,
+} from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
-import { ConversationOverlay } from './conversation/ConversationOverlay';
 import { AnchorHighlight } from './conversation/AnchorHighlight';
 import { SelectionFloatBar } from './conversation/SelectionFloatBar';
 import {
-  createExplainSelectionRequest,
-  createOpenChatRequest,
-  createSummarizePageRequest,
-  type HtmlAiLaunchRequest,
-} from './conversation/html-ai-launch';
+  adaptHtmlConversationHistoryStore,
+  createHtmlConversationContribution,
+  shouldClearHtmlConversationHighlight,
+} from './conversation/html-conversation-contribution';
 import { createHtmlConversationStore } from './conversation/conversation-store';
 import {
   isHtmlAnchorTarget,
+  isSameHtmlAnchorLocation,
   type HtmlAnchorTarget,
 } from './anchor-commands';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
-  createHtmlQuoteTarget,
   htmlWorkbenchManifest,
   isHtmlWorkbenchPayload,
 } from './shared';
@@ -60,6 +58,27 @@ interface HtmlDocumentFrameProps {
   readonly frameKey?: string;
   readonly onLoad?: () => void;
   readonly onError?: () => void;
+}
+
+interface PendingHtmlTextSelection {
+  readonly text: string;
+  readonly target: HtmlAnchorTarget;
+  readonly rect?: CoreViewportRect;
+}
+
+export function pendingHtmlTextSelection(
+  interaction: Parameters<typeof findTextSelectionInput>[0],
+  rect?: CoreViewportRect,
+): PendingHtmlTextSelection | undefined {
+  const selection = findTextSelectionInput(interaction);
+  if (!selection || !isHtmlAnchorTarget(selection.target)) {
+    return undefined;
+  }
+  return {
+    text: selection.text,
+    target: selection.target,
+    ...(rect === undefined ? {} : { rect }),
+  };
 }
 
 export function HtmlDocumentFrame({
@@ -97,10 +116,6 @@ export function HtmlWorkbenchView({
   onError,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
-  const identity = useWorkbenchRuntimeSelector(
-    (state) => state.identity,
-  );
-  const projectId = identity?.projectId;
   const payload = isHtmlWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -112,22 +127,11 @@ export function HtmlWorkbenchView({
   const [frameRevision, setFrameRevision] = useState(0);
   const [loadedFrameKey, setLoadedFrameKey] = useState<string>();
   const [frameFailed, setFrameFailed] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiSessionKey, setAiSessionKey] = useState(0);
-  const [aiLaunchRequest, setAiLaunchRequest] = useState<HtmlAiLaunchRequest>();
-  const launchRequestIdRef = useRef(0);
-  /** 当前进行中的任务 ID（cancelAnswer 用；终态时由 onAnswerSettled 同步清除）。 */
-  const activeTaskIdRef = useRef<string | undefined>(undefined);
-  const [aiBusy, setAiBusyState] = useState(false);
-  const setAiBusy = useCallback((busy: boolean) => {
-    setAiBusyState(busy);
-  }, []);
-  const [selectionText, setSelectionText] = useState<string>();
-  const [selectionRect, setSelectionRect] = useState<
-    { x: number; y: number; width: number; height: number } | undefined
-  >();
+  const [pendingSelection, setPendingSelection] =
+    useState<PendingHtmlTextSelection>();
   const [highlightTarget, setHighlightTarget] =
     useState<HtmlAnchorTarget>();
+  const highlightTargetRef = useRef<HtmlAnchorTarget | undefined>(undefined);
   const [highlightReveal, setHighlightReveal] = useState(false);
   const [highlightDurationMs, setHighlightDurationMs] = useState(0);
   const [highlightRevision, setHighlightRevision] = useState(0);
@@ -136,6 +140,7 @@ export function HtmlWorkbenchView({
     : 'invalid';
 
   const clearHighlight = useCallback(() => {
+    highlightTargetRef.current = undefined;
     setHighlightTarget(undefined);
     setHighlightReveal(false);
     setHighlightDurationMs(0);
@@ -146,6 +151,7 @@ export function HtmlWorkbenchView({
       target: HtmlAnchorTarget,
       options: { readonly reveal: boolean; readonly durationMs: number },
     ) => {
+      highlightTargetRef.current = target;
       setHighlightTarget(target);
       setHighlightReveal(options.reveal);
       setHighlightDurationMs(options.durationMs);
@@ -154,62 +160,16 @@ export function HtmlWorkbenchView({
     [],
   );
 
-  /** 打开 AI 对话栏并交给 Overlay 一个启动请求（open-chat / explain-selection / summarize-page）。 */
-  const launchAi = useCallback((request: HtmlAiLaunchRequest) => {
-    setAiOpen((currentlyOpen) => {
-      if (!currentlyOpen) {
-        setAiSessionKey((current) => current + 1);
-      }
-      return true;
-    });
-    setAiLaunchRequest(request);
-  }, []);
-
-  const openChat = useCallback((anchor?: JsonValue) => {
-    launchRequestIdRef.current += 1;
-    // 普通打开对话：不自动提交，可携带当前焦点锚点。
-    launchAi(createOpenChatRequest(launchRequestIdRef.current, anchor));
-  }, [launchAi]);
-
-  const explainSelection = useCallback((target: ContentAnchorTarget) => {
-    launchRequestIdRef.current += 1;
-    if (isHtmlAnchorTarget(target)) {
-      // 当前引用常驻，但不改变用户刚刚选中的滚动位置。
-      showHighlight(target, { reveal: false, durationMs: 0 });
+  const releaseConversationContext = useCallback((context: JsonValue | undefined) => {
+    if (
+      shouldClearHtmlConversationHighlight(
+        context,
+        highlightTargetRef.current,
+      )
+    ) {
+      clearHighlight();
     }
-    // 关闭悬浮选区条，避免对话打开后旧浮条残留。
-    setSelectionText(undefined);
-    setSelectionRect(undefined);
-    launchAi(
-      createExplainSelectionRequest(
-        launchRequestIdRef.current,
-        target as unknown as JsonValue,
-      ),
-    );
-  }, [launchAi, showHighlight]);
-
-  const summarizePage = useCallback(() => {
-    launchRequestIdRef.current += 1;
-    // 总结整页：明确忽略当前选区、右键元素与链接。
-    setSelectionText(undefined);
-    setSelectionRect(undefined);
-    clearHighlight();
-    launchAi(createSummarizePageRequest(launchRequestIdRef.current));
-  }, [clearHighlight, launchAi]);
-
-  const closeAi = useCallback(() => {
-    setAiOpen(false);
-    setAiLaunchRequest(undefined);
-    setSelectionText(undefined);
-    // 切出对话：清除持久锚点红框
-    clearHighlight();
   }, [clearHighlight]);
-
-  const handleLaunchConsumed = useCallback((requestId: number) => {
-    setAiLaunchRequest((current) =>
-      current?.id === requestId ? undefined : current,
-    );
-  }, []);
 
   const conversationStore = useMemo(
     () =>
@@ -218,99 +178,9 @@ export function HtmlWorkbenchView({
       }),
     [executeCommand],
   );
-
-  const startAssistantTask = useCallback(
-    async (
-      conversationId: string,
-      question: string,
-      anchor?: JsonValue,
-    ) => {
-      try {
-        if (!projectId) {
-          throw new Error('Project 上下文缺失');
-        }
-        const started = await window.learningCompanion.startGenerationTask({
-          projectId,
-          definitionId: HTML_ASSISTANT_TASK_DEFINITION_ID,
-          definitionVersion: HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-          instruction: {
-            format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
-            version: HTML_ASSISTANT_INSTRUCTION_VERSION,
-            conversationId,
-            question,
-            ...(anchor ? { anchor } : {}),
-          },
-          assetReferences: {
-            sources: [{ assetId: asset.id }],
-          },
-        });
-        activeTaskIdRef.current = started.id;
-
-        // 竞态校准：start IPC 返回可能晚于快 task 完成广播（mock / 缓存恢复 /
-        // 快速 Provider）。start 返回后立即读取一次权威快照，随结果返回；
-        // controller 据此落定终态，不依赖已错过的广播事件。
-        try {
-          const latest = await window.learningCompanion.getGenerationTask({
-            projectId,
-            taskId: started.id,
-          });
-          return {
-            taskId: started.id,
-            snapshot: latest,
-          };
-        } catch {
-          return { taskId: started.id };
-        }
-      } catch (error) {
-        const message = userMessageFromError(
-          error,
-          '无法发起 AI 对话。',
-        );
-        if (message) {
-          console.error(message, error);
-          onError(message);
-        }
-        return undefined;
-      }
-    },
-    [asset.id, onError, projectId],
-  );
-
-  /** 重跑失败的 GenerationTask：保留原 instruction 与 conversationId，
-   * 复用与 start 相同的竞态校准（返回任务 id + 权威快照）。 */
-  const retryAssistantTask = useCallback(
-    async (taskId: string) => {
-      try {
-        if (!projectId) {
-          throw new Error('Project 上下文缺失');
-        }
-        const retried = await window.learningCompanion.retryGenerationTask({
-          projectId,
-          taskId,
-        });
-        activeTaskIdRef.current = retried.id;
-        try {
-          const latest = await window.learningCompanion.getGenerationTask({
-            projectId,
-            taskId: retried.id,
-          });
-          return {
-            taskId: retried.id,
-            snapshot: latest,
-          };
-        } catch {
-          return { taskId: retried.id };
-        }
-      } catch (error) {
-        const message = userMessageFromError(error, '无法重试 AI 对话。');
-        if (message) {
-          console.error(message, error);
-          onError(message);
-        }
-        return undefined;
-      }
-    },
-    [onError, projectId],
+  const conversationHistoryStore = useMemo(
+    () => adaptHtmlConversationHistoryStore(conversationStore),
+    [conversationStore],
   );
 
   const reportError = useCallback(
@@ -347,28 +217,58 @@ export function HtmlWorkbenchView({
     [reportError],
   );
 
-  /** 一次回答终态时同步清除进行中任务引用（取消按钮据此不再瞄准已结束任务）。 */
-  const handleAnswerSettled = useCallback((taskId: string) => {
-    if (activeTaskIdRef.current === taskId) {
-      activeTaskIdRef.current = undefined;
-    }
-  }, []);
+  const conversationContribution = useMemo(
+    () => createHtmlConversationContribution({
+      assetId: asset.id,
+      historyStore: conversationHistoryStore,
+      revealContext: activateConversationAnchor,
+      onContextReleased: releaseConversationContext,
+    }),
+    [
+      activateConversationAnchor,
+      asset.id,
+      conversationHistoryStore,
+      releaseConversationContext,
+    ],
+  );
+  const conversationOwnerId = `${htmlWorkbenchManifest.id}:${bootstrap.sessionId}`;
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
+  const conversationSnapshot = useWorkbenchConversationSnapshot(conversationRuntime);
+  const aiBusy =
+    conversationSnapshot.active?.ownerId === conversationOwnerId &&
+    conversationSnapshot.busy;
 
-  const cancelAnswer = useCallback(async (taskId: string) => {
-    // 校验取消目标仍为进行中任务；task-completed 广播与停止点击的竞态下，
-    // 按钮可能持有已结束/已释放的任务引用（service 侧会抛 DATA_INTEGRITY_ERROR）。
-    if (activeTaskIdRef.current !== taskId || !projectId) {
-      return;
+  const openChat = useCallback((anchor?: JsonValue) => {
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      ...(anchor === undefined ? {} : { context: anchor }),
+    });
+  }, [conversationOwnerId, conversationRuntime]);
+
+  const explainSelection = useCallback((target: ContentAnchorTarget) => {
+    if (isHtmlAnchorTarget(target)) {
+      showHighlight(target, { reveal: false, durationMs: 0 });
     }
-    try {
-      await window.learningCompanion.cancelGenerationTask({
-        projectId,
-        taskId,
-      });
-    } catch (error) {
-      reportError(error, '无法停止 AI 回答。');
-    }
-  }, [projectId, reportError]);
+    setPendingSelection(undefined);
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      context: target as unknown as JsonValue,
+    });
+  }, [conversationOwnerId, conversationRuntime, showHighlight]);
+
+  const summarizePage = useCallback(() => {
+    setPendingSelection(undefined);
+    clearHighlight();
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      question:
+        '请总结当前 HTML 页面。先概括页面主题和核心结论，再按结构梳理主要内容、关键概念与重要细节；不要只解释当前选区。',
+      submit: true,
+    });
+  }, [clearHighlight, conversationOwnerId, conversationRuntime]);
 
   const reload = useCallback(() => {
     contextRef.current = undefined;
@@ -438,24 +338,28 @@ export function HtmlWorkbenchView({
         }
 
         if (mapped.kind === 'selection') {
-          onInteractionChange(mapped.interaction);
-          // 有选区文本时显示「引用选中内容」悬浮条（锚点携带 frame 内 rect）
-          const selection = findTextSelectionInput(mapped.interaction);
-          const payload =
+          // 有选区文本时显示悬浮条；rect 仅用于本次 UI 定位，不写入 DOM Anchor。
+          const selection = pendingHtmlTextSelection(
+            mapped.interaction,
+            mapped.rect,
+          );
+          if (
             selection?.target &&
-            selection.target.scope === 'content' &&
-            selection.target.anchorType === 'html.quote'
-              ? (selection.target.anchorPayload as {
-                  readonly rect?: {
-                    readonly x: number;
-                    readonly y: number;
-                    readonly width: number;
-                    readonly height: number;
-                  };
-                } | undefined)
-              : undefined;
-          setSelectionText(selection?.text);
-          setSelectionRect(payload?.rect);
+            isSameHtmlAnchorLocation(
+              selection.target,
+              highlightTargetRef.current,
+            )
+          ) {
+            // Clicking the float bar opens the chat panel, which resizes the
+            // iframe. Electron may publish the still-native selection again
+            // with a different rect. It is already the active context, so do
+            // not resurrect the consumed float bar or generic selection.
+            onInteractionChange({ inputs: [] });
+            setPendingSelection(undefined);
+            return;
+          }
+          onInteractionChange(mapped.interaction);
+          setPendingSelection(selection);
           return;
         }
 
@@ -493,7 +397,7 @@ export function HtmlWorkbenchView({
     // 点击别处（非对话栏、非浮动条）取消当前待发送锚点的红框。
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      const overlay = document.querySelector('[role="dialog"][aria-label="AI 对话"]');
+      const overlay = document.querySelector('[role="dialog"][aria-label="AI 问答"]');
       const floatBar = document.querySelector('[role="toolbar"][aria-label="选中内容操作"]');
       if (
         target &&
@@ -541,52 +445,6 @@ export function HtmlWorkbenchView({
         }}
       />
 
-      <ConversationOverlay
-        key={aiSessionKey}
-        open={aiOpen}
-        launchRequest={aiLaunchRequest}
-        onLaunchConsumed={handleLaunchConsumed}
-        store={conversationStore}
-        onClose={closeAi}
-        onAsk={startAssistantTask}
-        onGetTask={async (taskId) => {
-          if (!projectId) {
-            return undefined;
-          }
-          return window.learningCompanion.getGenerationTask({
-            projectId,
-            taskId,
-          });
-        }}
-        onTaskActivated={(taskId) => {
-          activeTaskIdRef.current = taskId;
-        }}
-        onRetryTask={retryAssistantTask}
-        onBusyChange={setAiBusy}
-        onAnswerSettled={handleAnswerSettled}
-        onCancelAnswer={(taskId) => {
-          void cancelAnswer(taskId);
-        }}
-        onPersistenceError={(error) => {
-          reportError(error, '无法保存 HTML AI 对话记录。');
-        }}
-        onRestore={() => {
-          clearHighlight();
-        }}
-        onAnchorActivate={activateConversationAnchor}
-        onAnchorConsumed={() => {
-          clearHighlight();
-        }}
-        onAnchorRemoved={() => {
-          clearHighlight();
-        }}
-        onStartNew={() => {
-          // 主动开启新对话：重置为空白对话（清空红框）。
-          setAiLaunchRequest(undefined);
-          clearHighlight();
-          setAiSessionKey((current) => current + 1);
-        }}
-      />
       <AnchorHighlight
         target={highlightTarget}
         revision={highlightRevision}
@@ -599,23 +457,13 @@ export function HtmlWorkbenchView({
 
       {/* 选中文本后的「引用选中内容」悬浮条（对话栏打开时也显示：
           点击后把新选中内容更新到对话栏锚点，而不是被对话栏状态挡住） */}
-      {selectionText && (
+      {pendingSelection && (
         <SelectionFloatBar
-          text={selectionText}
-          rect={selectionRect}
-          onExplain={(text) => {
-            setSelectionText(undefined);
-            explainSelection(
-              createHtmlQuoteTarget(
-                text,
-                payload.contentUrl,
-                selectionRect,
-              ),
-            );
-          }}
+          text={pendingSelection.text}
+          rect={pendingSelection.rect}
+          onExplain={() => explainSelection(pendingSelection.target)}
           onDismiss={() => {
-            setSelectionText(undefined);
-            setSelectionRect(undefined);
+            setPendingSelection(undefined);
           }}
         />
       )}

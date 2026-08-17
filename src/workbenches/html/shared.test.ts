@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createHtmlDomTarget,
   createHtmlLinkTarget,
   createHtmlElementTarget,
   createHtmlQuoteTarget,
+  isHtmlDomAnchorV1,
+  isHtmlDomTarget,
   isHtmlLinkAnchorV1,
   isHtmlElementAnchorV1,
   isHtmlElementTarget,
@@ -25,16 +28,71 @@ describe('HTML Workbench shared protocol', () => {
     ).toBe(false);
   });
 
-  it('creates quote-backed selection anchors from the isolated frame', () => {
+  it('uses the same element-only DOM anchor for click and drag selection', () => {
+    const element = {
+      path: [1, 3, 0],
+      tagName: 'section',
+      id: 'chapter',
+      textQuote: '章节正文',
+    } as const;
+    const wholeElement = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element,
+    });
+    const dragSelection = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element,
+    });
+
+    expect(isHtmlDomTarget(wholeElement)).toBe(true);
+    expect(isHtmlDomTarget(dragSelection)).toBe(true);
+    expect(dragSelection).toEqual(wholeElement);
+    expect(isHtmlDomAnchorV1(dragSelection.anchorPayload)).toBe(true);
+    expect(dragSelection.anchorPayload).not.toHaveProperty('rect');
+    expect(dragSelection.anchorPayload).not.toHaveProperty('range');
+    expect(
+      isHtmlDomAnchorV1({
+        frameUrl: 'learning-content://resource/token',
+        element,
+        range: { exact: '章节' },
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps validating legacy quote anchors for persisted conversations', () => {
     const target = createHtmlQuoteTarget(
       '正文内容',
       'learning-content://resource/token',
+      { x: 10, y: 20, width: 80, height: 18 },
+      {
+        domRange: {
+          start: { path: [1, 0, 0], offset: 2 },
+          end: { path: [1, 0, 0], offset: 6 },
+        },
+      },
     );
 
     expect(isHtmlQuoteAnchorV1(target.anchorPayload)).toBe(true);
     expect(
       isHtmlQuoteAnchorV1({
         exact: '',
+      }),
+    ).toBe(false);
+    expect(
+      isHtmlQuoteAnchorV1({
+        exact: '正文内容',
+        domRange: {
+          start: { path: [1, -1], offset: 0 },
+          end: { path: [1, 0], offset: 4 },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isHtmlQuoteAnchorV1({
+        exact: '正文内容',
+        domRange: {
+          start: { path: [1, 0], offset: 0 },
+        },
       }),
     ).toBe(false);
   });

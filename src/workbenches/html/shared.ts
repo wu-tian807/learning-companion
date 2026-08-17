@@ -14,10 +14,14 @@ import {
 import type { JsonValue } from '../../shared/workbench/protocol';
 
 export const HTML_WORKBENCH_ID = 'builtin.html';
+export const HTML_DOM_ANCHOR_TYPE = 'html.dom';
+export const HTML_DOM_ANCHOR_VERSION = 1;
+/** @deprecated Kept only for persisted anchors created before html.dom. */
 export const HTML_QUOTE_ANCHOR_TYPE = 'html.quote';
 export const HTML_QUOTE_ANCHOR_VERSION = 1;
 export const HTML_LINK_ANCHOR_TYPE = 'html.link';
 export const HTML_LINK_ANCHOR_VERSION = 1;
+/** @deprecated Kept only for persisted anchors created before html.dom. */
 export const HTML_ELEMENT_ANCHOR_TYPE = 'html.element';
 export const HTML_ELEMENT_ANCHOR_VERSION = 1;
 
@@ -36,6 +40,7 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   supportedMediaTypes: ['text/html'],
   requiredContentCapabilities: ['read-stream'],
   supportedAnchorTypes: [
+    HTML_DOM_ANCHOR_TYPE,
     HTML_QUOTE_ANCHOR_TYPE,
     HTML_LINK_ANCHOR_TYPE,
     HTML_ELEMENT_ANCHOR_TYPE,
@@ -57,9 +62,32 @@ export interface HtmlWorkbenchPayload {
   readonly contentUrl: string;
 }
 
+export interface HtmlDomElementV1 {
+  /** Element-only indexes from document.documentElement to this element. */
+  readonly path: readonly number[];
+  readonly tagName: string;
+  readonly id?: string;
+  readonly role?: string;
+  readonly ariaLabel?: string;
+  readonly textQuote?: string;
+}
+
+/**
+ * The single persisted DOM anchor used by new HTML interactions.
+ * Text selection is only a gesture for choosing this element. Exact text
+ * ranges and viewport rectangles intentionally stay out of the persisted
+ * anchor, so click and drag selection share the same locator.
+ */
+export interface HtmlDomAnchorV1 {
+  readonly frameUrl: string;
+  readonly element: HtmlDomElementV1;
+}
+
 export interface HtmlQuoteAnchorV1 {
   readonly exact: string;
   readonly frameUrl?: string;
+  /** Stable DOM boundary captured from the original Selection Range. */
+  readonly domRange?: HtmlDomRangeV1;
   /** 选区在 frame 内的视口矩形（用于 renderer 定位悬浮条/标注）。 */
   readonly rect?: {
     readonly x: number;
@@ -67,6 +95,17 @@ export interface HtmlQuoteAnchorV1 {
     readonly width: number;
     readonly height: number;
   };
+}
+
+export interface HtmlDomPointV1 {
+  /** childNodes indexes from document.documentElement to the boundary node. */
+  readonly path: readonly number[];
+  readonly offset: number;
+}
+
+export interface HtmlDomRangeV1 {
+  readonly start: HtmlDomPointV1;
+  readonly end: HtmlDomPointV1;
 }
 
 export interface HtmlLinkAnchorV1 {
@@ -139,14 +178,100 @@ export function isHtmlQuoteAnchorV1(
     return false;
   }
 
-  const allowedKeys = new Set(['exact', 'frameUrl', 'rect']);
+  const allowedKeys = new Set([
+    'exact',
+    'frameUrl',
+    'domRange',
+    'rect',
+  ]);
 
   return (
     Object.keys(value).every((key) => allowedKeys.has(key)) &&
     isBoundedText(value.exact, 16_384) &&
     (value.frameUrl === undefined ||
       isBoundedText(value.frameUrl, 8_192)) &&
+    (value.domRange === undefined || isHtmlDomRangeV1(value.domRange)) &&
     (value.rect === undefined || isRectValue(value.rect))
+  );
+}
+
+export function isHtmlDomAnchorV1(
+  value: unknown,
+): value is HtmlDomAnchorV1 {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every(
+      (key) => key === 'frameUrl' || key === 'element',
+    ) &&
+    isBoundedText(value.frameUrl, 8_192) &&
+    isHtmlDomElementV1(value.element)
+  );
+}
+
+export function isHtmlDomElementV1(
+  value: unknown,
+): value is HtmlDomElementV1 {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const allowedKeys = new Set([
+    'path',
+    'tagName',
+    'id',
+    'role',
+    'ariaLabel',
+    'textQuote',
+  ]);
+
+  return (
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
+    isDomPath(value.path) &&
+    typeof value.tagName === 'string' &&
+    /^[a-z][a-z0-9-]*$/.test(value.tagName) &&
+    (value.id === undefined || isBoundedText(value.id, 512)) &&
+    (value.role === undefined || isBoundedText(value.role, 128)) &&
+    (value.ariaLabel === undefined || isBoundedText(value.ariaLabel, 512)) &&
+    (value.textQuote === undefined || isBoundedText(value.textQuote, 1_024))
+  );
+}
+
+export function isHtmlDomRangeV1(
+  value: unknown,
+): value is HtmlDomRangeV1 {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 2 &&
+    isHtmlDomPointV1(value.start) &&
+    isHtmlDomPointV1(value.end)
+  );
+}
+
+function isHtmlDomPointV1(value: unknown): value is HtmlDomPointV1 {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 2 &&
+    Array.isArray(value.path) &&
+    value.path.length <= 128 &&
+    value.path.every(
+      (index) =>
+        Number.isSafeInteger(index) && index >= 0 && index <= 100_000,
+    ) &&
+    typeof value.offset === 'number' &&
+    Number.isSafeInteger(value.offset) &&
+    value.offset >= 0 &&
+    value.offset <= 1_000_000
+  );
+}
+
+function isDomPath(value: unknown): value is readonly number[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 128 &&
+    value.every(
+      (index) =>
+        Number.isSafeInteger(index) && index >= 0 && index <= 100_000,
+    )
   );
 }
 
@@ -179,12 +304,7 @@ export function isHtmlElementAnchorV1(
     isBoundedText(value.frameUrl, 8_192) &&
     typeof value.tagName === 'string' &&
     /^[a-z][a-z0-9-]*$/.test(value.tagName) &&
-    Array.isArray(value.domPath) &&
-    value.domPath.length <= 128 &&
-    value.domPath.every(
-      (index) =>
-        Number.isSafeInteger(index) && index >= 0 && index <= 100_000,
-    ) &&
+    isDomPath(value.domPath) &&
     isRectValue(value.rect) &&
     (value.id === undefined || isBoundedText(value.id, 512)) &&
     (value.role === undefined || isBoundedText(value.role, 128)) &&
@@ -221,6 +341,10 @@ export function createHtmlQuoteTarget(
   exact: string,
   frameUrl?: string,
   rect?: HtmlQuoteAnchorV1['rect'],
+  locator?: Pick<
+    HtmlQuoteAnchorV1,
+    'domRange'
+  >,
 ): JsonValue & ContentAnchorTarget {
   return {
     scope: 'content',
@@ -229,7 +353,50 @@ export function createHtmlQuoteTarget(
     anchorPayload: {
       exact,
       ...(frameUrl ? { frameUrl } : {}),
+      ...(locator?.domRange
+        ? {
+            domRange: {
+              start: {
+                path: [...locator.domRange.start.path],
+                offset: locator.domRange.start.offset,
+              },
+              end: {
+                path: [...locator.domRange.end.path],
+                offset: locator.domRange.end.offset,
+              },
+            },
+          }
+        : {}),
       ...(rect ? { rect } : {}),
+    },
+  };
+}
+
+export function createHtmlDomTarget(
+  anchor: HtmlDomAnchorV1,
+): JsonValue & ContentAnchorTarget {
+  if (!isHtmlDomAnchorV1(anchor)) {
+    throw new Error('HTML DOM Anchor 无效');
+  }
+
+  return {
+    scope: 'content',
+    anchorType: HTML_DOM_ANCHOR_TYPE,
+    anchorVersion: HTML_DOM_ANCHOR_VERSION,
+    anchorPayload: {
+      frameUrl: anchor.frameUrl,
+      element: {
+        path: [...anchor.element.path],
+        tagName: anchor.element.tagName,
+        ...(anchor.element.id ? { id: anchor.element.id } : {}),
+        ...(anchor.element.role ? { role: anchor.element.role } : {}),
+        ...(anchor.element.ariaLabel
+          ? { ariaLabel: anchor.element.ariaLabel }
+          : {}),
+        ...(anchor.element.textQuote
+          ? { textQuote: anchor.element.textQuote }
+          : {}),
+      },
     },
   };
 }
@@ -282,6 +449,17 @@ export function isHtmlElementTarget(
     HTML_ELEMENT_ANCHOR_TYPE,
     HTML_ELEMENT_ANCHOR_VERSION,
     isHtmlElementAnchorV1,
+  );
+}
+
+export function isHtmlDomTarget(
+  value: unknown,
+): value is JsonValue & ContentAnchorTarget {
+  return isHtmlTarget(
+    value,
+    HTML_DOM_ANCHOR_TYPE,
+    HTML_DOM_ANCHOR_VERSION,
+    isHtmlDomAnchorV1,
   );
 }
 

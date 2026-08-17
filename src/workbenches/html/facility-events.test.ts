@@ -5,11 +5,15 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
 } from '../../shared/workbench/facilities/core-facilities';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
-import { createHtmlElementTarget } from './shared';
+import { createHtmlDomTarget } from './shared';
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 
 describe('HTML Workbench Facility event mapper', () => {
   it('publishes a settled text selection without waiting for a context menu', () => {
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: { path: [1, 0], tagName: 'p', textQuote: '即时选区' },
+    });
     const mapped = mapHtmlWorkbenchFacilityEvent(
       {
         sessionId: 'session-1',
@@ -18,6 +22,8 @@ describe('HTML Workbench Facility event mapper', () => {
         payload: {
           text: '即时选区',
           frameUrl: 'learning-content://resource/token',
+          target,
+          rect: { x: 5, y: 6, width: 50, height: 20 },
         },
       },
       'session-1',
@@ -29,12 +35,18 @@ describe('HTML Workbench Facility event mapper', () => {
     ).toMatchObject({
       text: '即时选区',
       target: {
-        anchorType: 'html.quote',
+        anchorType: 'html.dom',
         anchorPayload: {
-          exact: '即时选区',
           frameUrl: 'learning-content://resource/token',
+          element: { path: [1, 0], tagName: 'p' },
         },
       },
+    });
+    expect(mapped?.kind === 'selection' ? mapped.rect : undefined).toEqual({
+      x: 5,
+      y: 6,
+      width: 50,
+      height: 20,
     });
   });
 
@@ -58,12 +70,9 @@ describe('HTML Workbench Facility event mapper', () => {
   });
 
   it('maps context text and links into one frozen menu interaction', () => {
-    const elementTarget = createHtmlElementTarget({
+    const elementTarget = createHtmlDomTarget({
       frameUrl: 'learning-content://resource/token',
-      tagName: 'div',
-      domPath: [1, 2],
-      rect: { x: 5, y: 6, width: 50, height: 20 },
-      id: 'chapter',
+      element: { tagName: 'div', path: [1, 2], id: 'chapter' },
     });
     const mapped = mapHtmlWorkbenchFacilityEvent(
       {

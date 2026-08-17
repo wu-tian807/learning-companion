@@ -20,6 +20,7 @@ import { htmlWorkbenchManifest } from '../../../workbenches/html/shared';
 import {
   HtmlContextMenuFacilityAdapter,
   HtmlTextSelectionFacilityAdapter,
+  READ_HTML_CONTEXT_SELECTION_SCRIPT,
   READ_HTML_FRAME_SELECTION_SCRIPT,
 } from '../../../workbenches/html/main-facility-adapters';
 import { SandboxFrameInteractionBridge } from './sandbox-frame-interaction-bridge';
@@ -62,8 +63,13 @@ function createFrame(
 ): TestFrame {
   let destroyed = false;
   const executeJavaScript = vi.fn(async (script: string) =>
-    script === READ_HTML_FRAME_SELECTION_SCRIPT
-      ? { text: selection }
+    script === READ_HTML_FRAME_SELECTION_SCRIPT ||
+    script === READ_HTML_CONTEXT_SELECTION_SCRIPT
+      ? {
+          text: selection,
+          element: { path: [1], tagName: 'p', textQuote: selection },
+          rect: { x: 10, y: 20, width: 80, height: 18 },
+        }
       : null,
   );
   const frame = {

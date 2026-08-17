@@ -38,6 +38,13 @@ export type CoreWorkbenchTransportFacilityId =
   | typeof CORE_RENDERER_TRANSPORT_FACILITY_ID
   | typeof CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID;
 
+export type CoreViewportRect = JsonValue & {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+};
+
 interface CaptureFacilityOptions {
   readonly capture: CoreWorkbenchTransportFacilityId;
 }
@@ -50,6 +57,8 @@ export interface CoreTextSelectionFacilityEvent {
   readonly text?: string;
   readonly frameUrl?: string;
   readonly target?: ContentAnchorTarget;
+  /** Ephemeral frame viewport geometry; never part of a persisted Anchor. */
+  readonly rect?: CoreViewportRect;
 }
 
 interface TextSelectionInputPayload {
@@ -128,6 +137,29 @@ function isContentAnchorTarget(
   return isAssetTarget(value) && value.scope === 'content';
 }
 
+export function isCoreViewportRect(value: unknown): value is CoreViewportRect {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 4 &&
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    value.x >= -100_000 &&
+    value.x <= 100_000 &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y) &&
+    value.y >= -100_000 &&
+    value.y <= 100_000 &&
+    typeof value.width === 'number' &&
+    Number.isFinite(value.width) &&
+    value.width >= 0 &&
+    value.width <= 100_000 &&
+    typeof value.height === 'number' &&
+    Number.isFinite(value.height) &&
+    value.height >= 0 &&
+    value.height <= 100_000
+  );
+}
+
 export function isSandboxFrameTransportBindingPayload(
   value: JsonValue,
 ): value is JsonValue & SandboxFrameTransportBindingPayload {
@@ -185,7 +217,10 @@ export function isCoreTextSelectionFacilityEvent(
     isRecord(value) &&
     Object.keys(value).every(
       (key) =>
-        key === 'text' || key === 'frameUrl' || key === 'target',
+        key === 'text' ||
+        key === 'frameUrl' ||
+        key === 'target' ||
+        key === 'rect',
     ) &&
     (value.text === undefined ||
       (typeof value.text === 'string' &&
@@ -193,7 +228,8 @@ export function isCoreTextSelectionFacilityEvent(
     (value.frameUrl === undefined ||
       isBoundedUrl(value.frameUrl)) &&
     (value.target === undefined ||
-      isContentAnchorTarget(value.target))
+      isContentAnchorTarget(value.target)) &&
+    (value.rect === undefined || isCoreViewportRect(value.rect))
   );
 }
 

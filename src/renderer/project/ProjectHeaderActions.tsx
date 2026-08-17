@@ -118,6 +118,24 @@ function SettingsIcon() {
   );
 }
 
+function AiQuestionIcon() {
+  return (
+    <svg
+      className="size-4"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 4.5h13v8.2h-7l-3.8 2.8v-2.8h-2.2v-8.2Z" />
+      <path d="M7 8.5h.01M10 8.5h.01M13 8.5h.01" />
+    </svg>
+  );
+}
+
 export interface ProjectHeaderActionsProps {
   readonly leftOpen: boolean;
   readonly rightOpen: boolean;
@@ -126,6 +144,8 @@ export interface ProjectHeaderActionsProps {
   readonly onToggleLeft: () => void;
   readonly onToggleRight: () => void;
   readonly onOpenWorkspace: () => void;
+  readonly aiQuestionAvailable: boolean;
+  readonly onOpenAiQuestion: () => void;
   readonly onOpenSettings: () => void;
 }
 
@@ -137,6 +157,8 @@ export function ProjectHeaderActions({
   onToggleLeft,
   onToggleRight,
   onOpenWorkspace,
+  aiQuestionAvailable,
+  onOpenAiQuestion,
   onOpenSettings,
 }: ProjectHeaderActionsProps) {
   const leftLabel = leftOpen ? '收起学习资料' : '展开学习资料';
@@ -146,6 +168,18 @@ export function ProjectHeaderActions({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <div
+        data-project-ai-context-actions
+        className="flex items-center gap-2"
+      />
+      {aiQuestionAvailable && (
+        <HeaderActionButton
+          label="打开 AI 问答"
+          onClick={onOpenAiQuestion}
+        >
+          <AiQuestionIcon />
+        </HeaderActionButton>
+      )}
       <HeaderActionButton
         ref={leftButtonRef}
         label={leftLabel}

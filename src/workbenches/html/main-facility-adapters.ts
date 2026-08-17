@@ -14,56 +14,38 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
   CORE_TEXT_SELECTION_MAX_LENGTH,
   coreContextMediaTypes,
+  isCoreViewportRect,
   type CoreContextMediaType,
+  type CoreViewportRect,
 } from '../../shared/workbench/facilities/core-facilities';
 import {
-  createHtmlElementTarget,
-  createHtmlQuoteTarget,
+  createHtmlDomTarget,
   HTML_WORKBENCH_ID,
-  isHtmlElementAnchorV1,
-  type HtmlQuoteAnchorV1,
+  isHtmlDomAnchorV1,
 } from './shared';
 
-export const READ_HTML_FRAME_SELECTION_SCRIPT = `(() => {
-  const selection = typeof globalThis.getSelection === 'function'
-    ? globalThis.getSelection()
-    : null;
-  const text = selection ? selection.toString() : '';
-  let rect;
-  try {
-    if (selection && selection.rangeCount > 0) {
-      const r = selection.getRangeAt(0).getBoundingClientRect();
-      if (r.width > 0 || r.height > 0) {
-        rect = {
-          x: Math.round(r.x),
-          y: Math.round(r.y),
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-        };
-      }
-    }
-  } catch {
-    rect = undefined;
-  }
-  return { text, rect };
-})()`;
+type HtmlDomProbeMode = 'required-selection' | 'prefer-selection' | 'element';
 
-export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
+function readHtmlDomAnchor(mode: HtmlDomProbeMode) {
   try {
     const hovered = Array.from(document.querySelectorAll(':hover'));
     const selection = typeof globalThis.getSelection === 'function'
       ? globalThis.getSelection()
       : null;
-    const selectedNode = selection && selection.rangeCount > 0
-      ? selection.getRangeAt(0).commonAncestorContainer
+    const selectedRange = selection && selection.rangeCount > 0 && !selection.isCollapsed
+      ? selection.getRangeAt(0)
       : null;
+    const selectedText = selectedRange ? selection?.toString() ?? '' : '';
+    const useSelection = mode !== 'element' && selectedText.trim().length > 0;
+    if (mode === 'required-selection' && !useSelection) return null;
+    const selectedNode = useSelection ? selectedRange?.commonAncestorContainer : null;
     const selectedElement = selectedNode
       ? (selectedNode.nodeType === Node.ELEMENT_NODE
           ? selectedNode
           : selectedNode.parentElement)
       : null;
-    const candidate = hovered[hovered.length - 1]
-      || selectedElement
+    const candidate = selectedElement
+      || hovered[hovered.length - 1]
       || document.activeElement
       || document.body
       || document.documentElement;
@@ -72,13 +54,13 @@ export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
       return null;
     }
 
-    const domPath = [];
+    const elementPath = [];
     let current = candidate;
 
     while (current !== document.documentElement) {
       const parent = current.parentElement;
 
-      if (!parent || domPath.length >= 128) {
+      if (!parent || elementPath.length >= 128) {
         return null;
       }
 
@@ -91,11 +73,11 @@ export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
         return null;
       }
 
-      domPath.unshift(index);
+      elementPath.unshift(index);
       current = parent;
     }
 
-    const bounded = (value, limit) => {
+    const bounded = (value: unknown, limit: number) => {
       const normalized = typeof value === 'string'
         ? value.replace(/\\s+/g, ' ').trim()
         : '';
@@ -121,19 +103,60 @@ export const READ_HTML_CONTEXT_ELEMENT_SCRIPT = `(() => {
       height: Math.round(frameRect.height),
     };
 
-    return {
+    const element = {
+      path: elementPath,
       tagName: candidate.tagName.toLowerCase(),
-      domPath,
-      rect,
       ...(id ? { id } : {}),
       ...(role ? { role } : {}),
       ...(ariaLabel ? { ariaLabel } : {}),
       ...(text ? { textQuote: text } : {}),
     };
+    return {
+      ...(useSelection ? { text: selectedText } : {}),
+      element,
+      rect,
+    };
   } catch {
     return null;
   }
-})()`;
+}
+
+export function createHtmlDomProbeFrameScript(mode: HtmlDomProbeMode): string {
+  return `(${readHtmlDomAnchor.toString()})(${JSON.stringify(mode)})`;
+}
+
+export const READ_HTML_FRAME_SELECTION_SCRIPT =
+  createHtmlDomProbeFrameScript('required-selection');
+export const READ_HTML_CONTEXT_ELEMENT_SCRIPT =
+  createHtmlDomProbeFrameScript('element');
+export const READ_HTML_CONTEXT_SELECTION_SCRIPT =
+  createHtmlDomProbeFrameScript('prefer-selection');
+
+function parseHtmlDomProbe(
+  value: unknown,
+  frameUrl: string,
+): {
+  readonly target: ReturnType<typeof createHtmlDomTarget>;
+  readonly text?: string;
+  readonly rect?: CoreViewportRect;
+} | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const probe = value as Record<string, unknown>;
+  const anchor = {
+    frameUrl,
+    element: probe.element,
+  };
+  if (!isHtmlDomAnchorV1(anchor)) {
+    return undefined;
+  }
+  return {
+    target: createHtmlDomTarget(anchor),
+    ...(typeof probe.text === 'string' ? { text: probe.text } : {}),
+    ...(isCoreViewportRect(probe.rect) ? { rect: probe.rect } : {}),
+  };
+}
 
 function isExternalHttpUrl(value: string): boolean {
   try {
@@ -179,22 +202,15 @@ export class HtmlContextMenuFacilityAdapter
       0,
       CORE_TEXT_SELECTION_MAX_LENGTH,
     );
-    let target:
-      | ReturnType<typeof createHtmlElementTarget>
-      | undefined;
+    let probe: ReturnType<typeof parseHtmlDomProbe> = undefined;
 
     try {
-      const probe = await context.frame.executeJavaScript(
-        READ_HTML_CONTEXT_ELEMENT_SCRIPT,
+      const result = await context.frame.executeJavaScript(
+        selectionText.trim()
+          ? READ_HTML_CONTEXT_SELECTION_SCRIPT
+          : READ_HTML_CONTEXT_ELEMENT_SCRIPT,
       );
-      const anchor = {
-        ...(typeof probe === 'object' && probe !== null ? probe : {}),
-        frameUrl,
-      };
-
-      if (isHtmlElementAnchorV1(anchor)) {
-        target = createHtmlElementTarget(anchor);
-      }
+      probe = parseHtmlDomProbe(result, frameUrl);
     } catch {
       // DOM 定位失败不应阻断基础右键菜单。
     }
@@ -211,7 +227,7 @@ export class HtmlContextMenuFacilityAdapter
       ...(isExternalHttpUrl(params.srcURL)
         ? { sourceUrl: params.srcURL }
         : {}),
-      ...(target ? { target } : {}),
+      ...(probe ? { target: probe.target } : {}),
     };
   }
 }
@@ -232,25 +248,16 @@ export class HtmlTextSelectionFacilityAdapter
     const result = await context.frame.executeJavaScript(
       READ_HTML_FRAME_SELECTION_SCRIPT,
     );
-    const parsed =
-      typeof result === 'object' && result !== null && !Array.isArray(result)
-        ? (result as { readonly text?: unknown; readonly rect?: unknown })
-        : {};
-    const text =
-      typeof parsed.text === 'string'
-        ? parsed.text.slice(0, CORE_TEXT_SELECTION_MAX_LENGTH)
-        : '';
     const frameUrl = context.frame.url || 'about:blank';
-    const rect =
-      typeof parsed.rect === 'object' && parsed.rect !== null
-        ? (parsed.rect as HtmlQuoteAnchorV1['rect'])
-        : undefined;
+    const probe = parseHtmlDomProbe(result, frameUrl);
+    const text = probe?.text?.slice(0, CORE_TEXT_SELECTION_MAX_LENGTH) ?? '';
 
     return {
-      ...(text.trim()
+      ...(text.trim() && probe
         ? {
             text,
-            target: createHtmlQuoteTarget(text, frameUrl, rect),
+            target: probe.target,
+            ...(probe.rect ? { rect: probe.rect } : {}),
           }
         : {}),
       frameUrl,

@@ -88,6 +88,10 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
       : '';
   }
 
+  function compactText(value: unknown): string {
+    return normalizedText(value).replace(/\s+/g, '');
+  }
+
   function elementFromDomPath(path: unknown): Element | undefined {
     if (!Array.isArray(path)) {
       return undefined;
@@ -106,31 +110,60 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     return element;
   }
 
-  function matchesElement(element: Element | undefined): element is Element {
-    if (!element || !payload) {
+  function nodeFromDomPath(path: unknown): Node | undefined {
+    if (!Array.isArray(path)) {
+      return undefined;
+    }
+    let node: Node = document.documentElement;
+    for (const index of path) {
+      if (!Number.isSafeInteger(index) || Number(index) < 0) {
+        return undefined;
+      }
+      const child = node.childNodes.item(Number(index));
+      if (!child) {
+        return undefined;
+      }
+      node = child;
+    }
+    return node;
+  }
+
+  function asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : undefined;
+  }
+
+  function matchesElement(
+    element: Element | undefined,
+    locator: Record<string, unknown> | undefined,
+  ): element is Element {
+    if (!element || !locator) {
       return false;
     }
-    const tagName = normalizedText(payload.tagName).toLowerCase();
+    const tagName = normalizedText(locator.tagName).toLowerCase();
     return !tagName || element.tagName.toLowerCase() === tagName;
   }
 
-  function resolveElement(): Element | undefined {
-    if (!payload) {
+  function resolveElement(
+    locator: Record<string, unknown> | undefined,
+  ): Element | undefined {
+    if (!locator) {
       return undefined;
     }
-    const id = normalizedText(payload.id);
+    const id = normalizedText(locator.id);
     const byId = id ? document.getElementById(id) ?? undefined : undefined;
-    if (matchesElement(byId)) {
+    if (matchesElement(byId, locator)) {
       return byId;
     }
-    const byPath = elementFromDomPath(payload.domPath);
-    if (matchesElement(byPath)) {
+    const byPath = elementFromDomPath(locator.path ?? locator.domPath);
+    if (matchesElement(byPath, locator)) {
       return byPath;
     }
 
-    const tagName = normalizedText(payload.tagName).toLowerCase();
-    const textQuote = normalizedText(payload.textQuote);
-    const ariaLabel = normalizedText(payload.ariaLabel);
+    const tagName = normalizedText(locator.tagName).toLowerCase();
+    const textQuote = normalizedText(locator.textQuote);
+    const ariaLabel = normalizedText(locator.ariaLabel);
     if (!tagName) {
       return undefined;
     }
@@ -158,13 +191,66 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     );
   }
 
-  function resolveQuote(): Range | undefined {
-    const exact = normalizedText(payload?.exact);
-    if (!exact || !document.body) {
+  function resolveDomRange(
+    domRange: Record<string, unknown> | undefined,
+    exact: string,
+    container?: Element,
+  ): Range | undefined {
+    const start =
+      typeof domRange?.start === 'object' && domRange.start !== null
+        ? (domRange.start as Record<string, unknown>)
+        : undefined;
+    const end =
+      typeof domRange?.end === 'object' && domRange.end !== null
+        ? (domRange.end as Record<string, unknown>)
+        : undefined;
+    const startNode = nodeFromDomPath(start?.path);
+    const endNode = nodeFromDomPath(end?.path);
+    const startOffset = Number(start?.offset);
+    const endOffset = Number(end?.offset);
+
+    if (
+      !startNode ||
+      !endNode ||
+      !Number.isSafeInteger(startOffset) ||
+      !Number.isSafeInteger(endOffset) ||
+      startOffset < 0 ||
+      endOffset < 0
+    ) {
+      return undefined;
+    }
+    if (
+      container &&
+      (!container.contains(startNode) || !container.contains(endNode))
+    ) {
+      return undefined;
+    }
+
+    try {
+      const range = document.createRange();
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      const reconstructed = normalizedText(range.toString());
+      return (
+        reconstructed === exact ||
+        compactText(reconstructed) === compactText(exact)
+      )
+        ? range
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function resolveQuoteWithin(
+    container: Element | undefined,
+    exact: string,
+  ): Range | undefined {
+    if (!exact || !container) {
       return undefined;
     }
     const walker = document.createTreeWalker(
-      document.body,
+      container,
       NodeFilter.SHOW_TEXT,
     );
     const characters: Array<{ readonly node: Text; readonly offset: number }> = [];
@@ -187,13 +273,35 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
       }
     }
 
-    const startIndex = indexedText.indexOf(exact);
-    if (startIndex < 0 || characters.length === 0) {
+    if (characters.length === 0) {
       return undefined;
     }
-    const endIndex = startIndex + exact.length - 1;
-    const start = characters[startIndex];
-    const end = characters[endIndex];
+    let startIndex = indexedText.indexOf(exact);
+    let matchedCharacters = characters;
+    let matchedLength = exact.length;
+    if (startIndex < 0) {
+      const compactExact = compactText(exact);
+      const compactCharacters: typeof characters = [];
+      let compactIndexedText = '';
+      for (let index = 0; index < indexedText.length; index += 1) {
+        const character = indexedText[index];
+        const location = characters[index];
+        if (!character || !location || /\s/.test(character)) {
+          continue;
+        }
+        compactIndexedText += character;
+        compactCharacters.push(location);
+      }
+      startIndex = compactIndexedText.indexOf(compactExact);
+      matchedCharacters = compactCharacters;
+      matchedLength = compactExact.length;
+    }
+    if (startIndex < 0 || matchedLength === 0) {
+      return undefined;
+    }
+    const endIndex = startIndex + matchedLength - 1;
+    const start = matchedCharacters[startIndex];
+    const end = matchedCharacters[endIndex];
     if (!start || !end) {
       return undefined;
     }
@@ -204,14 +312,38 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     return range;
   }
 
+  function resolveDomAnchor(): Element | Range | undefined {
+    if (!record || !payload) {
+      return undefined;
+    }
+
+    if (record.anchorType === 'html.dom') {
+      const locator = asRecord(payload.element);
+      return resolveElement(locator);
+    }
+
+    if (record.anchorType === 'html.element') {
+      return resolveElement(payload);
+    }
+
+    if (record.anchorType === 'html.quote') {
+      const exact = normalizedText(payload.exact);
+      if (!exact) {
+        return undefined;
+      }
+      return (
+        resolveDomRange(asRecord(payload.domRange), exact) ??
+        resolveQuoteWithin(document.body ?? undefined, exact)
+      );
+    }
+
+    return undefined;
+  }
+
   const resolved: Element | Range | undefined =
-    record?.anchorType === 'html.element'
-      ? resolveElement()
-      : record?.anchorType === 'html.quote'
-        ? resolveQuote()
-        : record?.anchorType === 'html.link'
-          ? resolveLink()
-          : undefined;
+    record?.anchorType === 'html.link'
+      ? resolveLink()
+      : resolveDomAnchor();
 
   if (!resolved) {
     state.cleanup();

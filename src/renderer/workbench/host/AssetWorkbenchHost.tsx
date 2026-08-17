@@ -159,6 +159,31 @@ export function AssetWorkbenchHost({
   }, [readySessionId, refreshAttachments]);
 
   useEffect(() => {
+    const refreshChangedAssetAttachments = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        projectId?: string;
+        assetId?: string;
+      }>).detail;
+      if (
+        detail?.projectId !== projectId ||
+        detail.assetId !== assetId
+      ) {
+        return;
+      }
+      void refreshAttachments();
+    };
+
+    window.addEventListener(
+      'learning-companion:attachments-changed',
+      refreshChangedAssetAttachments,
+    );
+    return () => window.removeEventListener(
+      'learning-companion:attachments-changed',
+      refreshChangedAssetAttachments,
+    );
+  }, [assetId, projectId, refreshAttachments]);
+
+  useEffect(() => {
     let active = true;
     let openedSessionId: string | undefined;
     let commandTail: Promise<void> = Promise.resolve();
@@ -375,6 +400,10 @@ export function AssetWorkbenchHost({
         </h2>
         {asset && (
           <div className="flex shrink-0 items-center gap-1.5">
+            <div
+              data-workbench-header-actions
+              className="flex shrink-0 items-center gap-1.5"
+            />
             <span className="rounded-lg border border-white/[0.08] px-2 py-1 text-[10px] text-slate-400">
               {mediaLabel(asset.mediaType)}
             </span>
