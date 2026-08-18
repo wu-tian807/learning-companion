@@ -67,6 +67,7 @@ describe('EpubWorkbenchView', () => {
     });
 
     expect(markup).toContain('aria-label="EPUB 阅读区域"');
+    expect(markup).toContain('aria-label="切换 EPUB 标注索引（0）"');
     expect(markup).toContain('正在解析 EPUB');
     expect(markup).not.toContain('/private/book.epub');
   });

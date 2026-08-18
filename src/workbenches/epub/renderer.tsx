@@ -25,6 +25,8 @@ import {
   type EpubExplanationView,
 } from './explanations/shared';
 import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
+import { EpubExplanationIndex } from './explanations/epub-explanation-index';
+import { displayEpubExplanationLocation } from './explanations/epub-explanation-navigation';
 import {
   projectEpubExplanationGenerationEvent,
   removeEpubExplanationRuntime,
@@ -216,6 +218,7 @@ export function EpubWorkbenchView({
     EpubExplanationView[]
   >([]);
   const [activeExplanationId, setActiveExplanationId] = useState<string>();
+  const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
   const explanationTaskIdsRef = useRef(new Set<string>());
   const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
     useState<EpubExplanationRuntimeMap>({});
@@ -823,6 +826,28 @@ export function EpubWorkbenchView({
     [asset.id, asset.projectId, clearExplanationRuntime, reportError],
   );
 
+  const revealExplanation = useCallback(
+    async (explanation: EpubExplanationView) => {
+      const rendition = renditionRef.current;
+      if (!rendition || loadState.kind !== 'ready') {
+        reportError(
+          new Error('EPUB 阅读器尚未就绪'),
+          '暂时无法定位这条标注。',
+        );
+        return;
+      }
+
+      try {
+        await displayEpubExplanationLocation(rendition, explanation);
+        setActiveExplanationId(explanation.id);
+        setExplanationIndexOpen(false);
+      } catch (error) {
+        reportError(error, '无法定位到这条 EPUB 标注。');
+      }
+    },
+    [loadState.kind, reportError],
+  );
+
   const navigate = useCallback(
     (direction: 'previous' | 'next') => {
       const rendition = renditionRef.current;
@@ -869,18 +894,43 @@ export function EpubWorkbenchView({
             type="button"
             aria-label="切换 EPUB 目录"
             aria-expanded={viewState.tocOpen}
-            onClick={() =>
+            onClick={() => {
+              setExplanationIndexOpen(false);
               updateViewState(
                 {
                   ...viewStateRef.current,
                   tocOpen: !viewStateRef.current.tocOpen,
                 },
                 true,
-              )
-            }
+              );
+            }}
             className="ui-control rounded-md border border-white/[0.08] px-2 py-1 text-[11px] text-slate-400"
           >
             目录
+          </button>
+          <button
+            type="button"
+            aria-label={`切换 EPUB 标注索引（${explanations.length}）`}
+            aria-expanded={explanationIndexOpen}
+            onClick={() => {
+              const nextOpen = !explanationIndexOpen;
+              setExplanationIndexOpen(nextOpen);
+              if (nextOpen && viewStateRef.current.tocOpen) {
+                updateViewState(
+                  {
+                    ...viewStateRef.current,
+                    tocOpen: false,
+                  },
+                  true,
+                );
+              }
+            }}
+            className="ui-control rounded-md border border-white/[0.08] px-2 py-1 text-[11px] text-slate-400"
+          >
+            标注
+            <span className="ml-1 tabular-nums text-slate-600">
+              {explanations.length}
+            </span>
           </button>
           <span className="truncate text-[11px] text-slate-400">
             {metadata.title}
@@ -982,6 +1032,16 @@ export function EpubWorkbenchView({
                 );
               }
             }}
+          />
+        )}
+        {explanationIndexOpen && (
+          <EpubExplanationIndex
+            explanations={explanations}
+            activeExplanationId={activeExplanationId}
+            onActivate={(explanation) => {
+              void revealExplanation(explanation);
+            }}
+            onClose={() => setExplanationIndexOpen(false)}
           />
         )}
         <div className="relative min-w-0 flex-1">
