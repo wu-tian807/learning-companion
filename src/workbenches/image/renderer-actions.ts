@@ -2,6 +2,7 @@ import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/wor
 
 export interface ImageRendererActionsOptions {
   readonly ready: boolean;
+  readonly aiBusy?: boolean;
   readonly onFit: () => void;
   readonly onActualSize: () => void;
   readonly onRotateClockwise: () => void;
@@ -13,6 +14,7 @@ export interface ImageRendererActionsOptions {
 
 export function createImageRendererActions({
   ready,
+  aiBusy = false,
   onFit,
   onActualSize,
   onRotateClockwise,
@@ -62,7 +64,7 @@ export function createImageRendererActions({
       },
       {
         id: 'image.ai.explain-region',
-        enabled: ready,
+        enabled: ready && !aiBusy,
         execute: onExplainRegion,
       },
     ],
@@ -205,7 +207,9 @@ export function createImageRendererActions({
           kind: 'generation-tool',
           label: '框选区域并解释',
           description: '结合整张图片理解你感兴趣的区域',
-          disabledReason,
+          disabledReason:
+            disabledReason ??
+            (aiBusy ? '请先等待当前 AI 回答完成或停止生成' : undefined),
         },
       },
       {

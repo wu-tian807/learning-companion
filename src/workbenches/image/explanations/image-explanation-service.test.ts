@@ -125,4 +125,38 @@ describe('ImageExplanationService', () => {
     expect(deleteAttachment).toHaveBeenCalledWith('project-1', 'attachment-1');
     service.dispose();
   });
+
+  it('does not project a follow-up task in the same Session as another image marker', async () => {
+    const instruction = new ImageExplanationInstruction({
+      assetId: 'asset-1',
+      conversationId: 'conversation-1',
+      question: '能换一种方式说明吗？',
+      saveAsNote: false,
+    });
+    const task = GenerationTask.create({
+      id: 'follow-up-task',
+      projectId: 'project-1',
+      definitionId: 'image.explain-region',
+      definitionVersion: 1,
+      instruction: instruction.toSnapshot(),
+      assetReferences: { image: [{ assetId: 'asset-1' }] },
+      createdTime: 1,
+    });
+    const service = new ImageExplanationService(
+      {
+        listByAsset: async () => [],
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      { readText: vi.fn() } as never,
+      {
+        getActiveProjectId: () => 'project-1',
+        list: () => [task.getSnapshot()],
+        subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      { get: () => ({ mediaType: 'image/png' }) } as never,
+    );
+    await expect(service.list({ projectId: 'project-1', assetId: 'asset-1' }))
+      .resolves.toEqual([]);
+    service.dispose();
+  });
 });

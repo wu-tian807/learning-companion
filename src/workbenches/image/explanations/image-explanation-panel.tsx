@@ -71,6 +71,8 @@ export function ImageExplanationPanel({
   onClose,
   onRetry,
   onDelete,
+  onContinueQuestion,
+  continueQuestionDisabled = false,
 }: {
   readonly explanation: ImageExplanationView;
   readonly runtime?: ImageExplanationRuntimeView;
@@ -78,6 +80,8 @@ export function ImageExplanationPanel({
   readonly onClose: () => void;
   readonly onRetry: () => void;
   readonly onDelete: () => void;
+  readonly onContinueQuestion?: () => void;
+  readonly continueQuestionDisabled?: boolean;
 }) {
   return (
     <aside aria-label="图片 AI 解释" className="learning-markdown-workbench absolute right-4 top-4 z-30 w-[min(400px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl">
@@ -110,7 +114,19 @@ export function ImageExplanationPanel({
           )}
         </div>
       </div>
-      <div className="flex justify-end border-t border-white/[0.07] px-3 py-2">
+      <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-2">
+        {explanation.status === 'completed' && onContinueQuestion ? (
+          <button
+            type="button"
+            disabled={continueQuestionDisabled}
+            onClick={onContinueQuestion}
+            className="ui-control rounded-full border border-indigo-300/15 bg-indigo-300/[0.06] px-3 py-1.5 text-[11px] text-indigo-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            继续追问
+          </button>
+        ) : (
+          <span />
+        )}
         <button type="button" onClick={onDelete} className="ui-control rounded-full border border-rose-300/15 bg-rose-300/[0.04] px-3 py-1.5 text-[11px] text-rose-300/80 hover:border-rose-300/30 hover:text-rose-200">
           {explanation.kind === 'attachment' ? '删除解释' : explanation.status === 'pending' ? '取消生成' : '移除任务'}
         </button>

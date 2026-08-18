@@ -9,6 +9,10 @@ import {
 } from 'react';
 import OpenSeadragon from 'openseadragon';
 
+import {
+  useWorkbenchConversationContribution,
+  useWorkbenchConversationSnapshot,
+} from '../../renderer/conversation/workbench-conversation-context';
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
@@ -32,6 +36,12 @@ import {
 import { createImageRendererActions } from './renderer-actions';
 import { createImageRegionFromImagePoints } from './image-region';
 import { ImageExplanationPanel } from './explanations/image-explanation-panel';
+import {
+  createImageConversationContext,
+  createImageConversationContribution,
+  createImageConversationHistoryStore,
+  type ImageConversationContext,
+} from './explanations/image-conversation-contribution';
 import { ImageExplanationHeaderActions } from './explanations/image-explanation-header-actions';
 import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
 import {
@@ -48,6 +58,7 @@ import {
   type ImageExplanationRuntimeMap,
 } from './explanations/image-explanation-runtime';
 import {
+  IMAGE_DEFAULT_EXPLANATION_QUESTION,
   type ImageExplanationView,
   type ImageRegionTarget,
 } from './explanations/shared';
@@ -427,6 +438,52 @@ export function ImageWorkbenchView({
     [onError],
   );
 
+  const conversationContributionId = `${imageWorkbenchManifest.id}.reading-conversation`;
+  const conversationOwnerId =
+    `${imageWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () => createImageConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+    ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
+  const revealConversationContext = useCallback(
+    (context: ImageConversationContext) => {
+      const viewer = viewerRef.current;
+      const item = viewer ? getImageItem(viewer) : undefined;
+      if (!viewer || !item || loadStateRef.current.kind !== 'ready') {
+        reportError(
+          new Error('图片阅读器尚未就绪'),
+          '暂时无法定位这段图片兴趣区域。',
+        );
+        return;
+      }
+      displayImageExplanationLocation(item, viewer.viewport, context.target);
+      modeRef.current = 'manual';
+      setExplanationIndexOpen(false);
+    },
+    [reportError],
+  );
+  const conversationContribution = useMemo(
+    () => createImageConversationContribution({
+      historyStore: conversationHistoryStore,
+      revealContext: revealConversationContext,
+    }),
+    [conversationHistoryStore, revealConversationContext],
+  );
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
+  const conversationSnapshot = useWorkbenchConversationSnapshot(
+    conversationRuntime,
+  );
+  const conversationBusy =
+    conversationSnapshot.active?.ownerId === conversationOwnerId &&
+    conversationSnapshot.busy;
+
   const startRegionSelection = useCallback(() => {
     runtime.closeContextMenu();
     setActiveExplanationId(undefined);
@@ -444,7 +501,7 @@ export function ImageWorkbenchView({
     setSelectedTarget(undefined);
   }, []);
 
-  const createExplanation = useCallback(async () => {
+  const createExplanation = useCallback(() => {
     if (!selectedTarget) return;
     const existing = explanations.find((candidate) => {
       const left = candidate.target.anchorPayload;
@@ -456,20 +513,19 @@ export function ImageWorkbenchView({
       setSelectedTarget(undefined);
       return;
     }
-    try {
-      const created = await window.learningCompanion.createImageExplanation({
-        projectId: asset.projectId,
-        assetId: asset.id,
-        target: selectedTarget,
-      });
-      registerExplanationTask(created);
-      setExplanations((current) => [...current.filter((item) => item.id !== created.id), created]);
-      setActiveExplanationId(created.id);
-      setSelectedTarget(undefined);
-    } catch (error) {
-      reportError(error, '无法启动图片 AI 解释。');
-    }
-  }, [asset.id, asset.projectId, explanations, registerExplanationTask, reportError, selectedTarget]);
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      context: createImageConversationContext(selectedTarget),
+      question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
+      submit: true,
+    });
+    setSelectedTarget(undefined);
+  }, [
+    conversationOwnerId,
+    conversationRuntime,
+    explanations,
+    selectedTarget,
+  ]);
 
   const retryExplanation = useCallback(async (explanation: ImageExplanationView) => {
     setExplanationRuntimeByTaskId((current) => removeImageExplanationRuntime(current, explanation.id));
@@ -897,6 +953,7 @@ export function ImageWorkbenchView({
     () =>
       createImageRendererActions({
         ready,
+        aiBusy: conversationBusy,
         onFit: fit,
         onActualSize: actualSize,
         onRotateClockwise: () => rotate(90),
@@ -905,7 +962,7 @@ export function ImageWorkbenchView({
         onExplainRegion: startRegionSelection,
         onReveal,
       }),
-    [actualSize, fit, onReveal, ready, reset, rotate, startRegionSelection],
+    [actualSize, conversationBusy, fit, onReveal, ready, reset, rotate, startRegionSelection],
   );
   useWorkbenchContributions(imageWorkbenchManifest.id, rendererActions);
 
@@ -1047,7 +1104,7 @@ export function ImageWorkbenchView({
             explanationCount={explanations.length}
             indexOpen={explanationIndexOpen}
             markersVisible={explanationMarkersVisible}
-            canStartSelection={!selectionMode && !selectedTarget && !activeExplanation}
+            canStartSelection={!conversationBusy && !selectionMode && !selectedTarget && !activeExplanation}
             canToggleIndex={!selectionMode && !selectedTarget}
             onStartSelection={startRegionSelection}
             onToggleIndex={() => {
@@ -1104,7 +1161,7 @@ export function ImageWorkbenchView({
       {selectedTarget && !selectionMode && (
         <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-white/[0.1] bg-[#20262e]/94 p-2 shadow-xl backdrop-blur">
           <span className="px-2 text-xs text-slate-300">已选中兴趣区域</span>
-          <button type="button" onClick={() => void createExplanation()} className="ui-control rounded-lg bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-100">AI 解释</button>
+          <button type="button" disabled={conversationBusy} onClick={createExplanation} className="ui-control rounded-lg bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">AI 解释</button>
           <button type="button" onClick={startRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-400">重选</button>
           <button type="button" onClick={cancelRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-500">取消</button>
         </div>
@@ -1257,6 +1314,20 @@ export function ImageWorkbenchView({
           onClose={() => setActiveExplanationId(undefined)}
           onRetry={() => void retryExplanation(activeExplanation)}
           onDelete={() => void deleteExplanation(activeExplanation)}
+          onContinueQuestion={
+            activeExplanation.status === 'completed'
+              ? () => {
+                  setActiveExplanationId(undefined);
+                  conversationRuntime.open({
+                    ownerId: conversationOwnerId,
+                    context: createImageConversationContext(
+                      activeExplanation.target,
+                    ),
+                  });
+                }
+              : undefined
+          }
+          continueQuestionDisabled={conversationBusy}
         />
       )}
 

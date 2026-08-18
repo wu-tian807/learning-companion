@@ -4,6 +4,7 @@ import {
   isImageRegionAnchorV1,
   type ImageRegionTarget,
 } from '../shared';
+import type { JsonValue } from '../../../shared/workbench/protocol';
 
 export type { ImageRegionTarget } from '../shared';
 
@@ -14,6 +15,15 @@ export const IMAGE_EXPLANATION_TASK_DEFINITION_VERSION = 1;
 export const IMAGE_EXPLANATION_INSTRUCTION_FORMAT =
   'learning-companion/image-explanation-instruction';
 export const IMAGE_EXPLANATION_INSTRUCTION_VERSION = 1;
+export const IMAGE_DEFAULT_EXPLANATION_QUESTION = '请解释这个图片区域。';
+
+export type ImageExplanationTaskResult = JsonValue & {
+  readonly answer: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly title?: string;
+  readonly attachmentId?: string;
+};
 
 export const IMAGE_EXPLANATION_IPC_CHANNELS = Object.freeze({
   list: 'image-explanation:list',
@@ -139,6 +149,19 @@ export function isImageExplanationMetadata(
     value.format === 'learning-companion/image-explanation' &&
     value.version === 1 &&
     isRequiredText(value.sourceRevision, 256)
+  );
+}
+
+export function isImageExplanationTaskResult(
+  value: unknown,
+): value is ImageExplanationTaskResult {
+  if (!isRecord(value)) return false;
+  return (
+    isRequiredText(value.answer, 64_000) &&
+    isRequiredText(value.providerId, 256) &&
+    isRequiredText(value.modelId, 256) &&
+    (value.title === undefined || isRequiredText(value.title, 128)) &&
+    (value.attachmentId === undefined || isRequiredText(value.attachmentId, 256))
   );
 }
 

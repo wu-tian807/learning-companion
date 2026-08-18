@@ -12,17 +12,25 @@ import {
 } from '../../../../main/generation/contracts/generation-validation';
 import type { JsonValue } from '../../../../shared/workbench/protocol';
 import {
+  IMAGE_DEFAULT_EXPLANATION_QUESTION,
   IMAGE_EXPLANATION_INSTRUCTION_FORMAT,
   IMAGE_EXPLANATION_INSTRUCTION_VERSION,
   isImageRegionTarget,
   type ImageRegionTarget,
 } from '../shared';
 
+const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/u;
+const MAX_QUESTION_LENGTH = 32_768;
+
 export type ImageExplanationInstructionSnapshot = JsonValue & {
   readonly format: typeof IMAGE_EXPLANATION_INSTRUCTION_FORMAT;
   readonly version: typeof IMAGE_EXPLANATION_INSTRUCTION_VERSION;
   readonly assetId: string;
-  readonly target: JsonValue & ImageRegionTarget;
+  readonly target?: JsonValue & ImageRegionTarget;
+  readonly conversationId?: string;
+  readonly question?: string;
+  readonly saveAsNote?: boolean;
+  readonly generateTitle?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -31,31 +39,77 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class ImageExplanationInstruction extends GenerationInstruction<ImageExplanationInstructionSnapshot> {
   readonly assetId: string;
-  readonly target: ImageRegionTarget;
+  readonly target?: ImageRegionTarget;
+  readonly conversationId?: string;
+  readonly question: string;
+  readonly saveAsNote: boolean;
+  readonly generateTitle: boolean;
 
-  constructor(input: { readonly assetId: string; readonly target: ImageRegionTarget }) {
+  constructor(input: {
+    readonly assetId: string;
+    readonly target?: ImageRegionTarget;
+    readonly conversationId?: string;
+    readonly question?: string;
+    readonly saveAsNote?: boolean;
+    readonly generateTitle?: boolean;
+  }) {
     super();
-    this.assetId = input.assetId.trim();
+    const assetId = input.assetId.trim();
+    const conversationId = input.conversationId?.trim();
+    const question = (input.question ?? IMAGE_DEFAULT_EXPLANATION_QUESTION).trim();
+    const saveAsNote = input.saveAsNote ?? input.target !== undefined;
+    if (
+      !assetId ||
+      !question ||
+      question.length > MAX_QUESTION_LENGTH ||
+      (conversationId !== undefined && !CONVERSATION_ID_PATTERN.test(conversationId)) ||
+      (saveAsNote && !input.target) ||
+      (!input.target && !conversationId)
+    ) {
+      throw new Error('图片解释对话任务数据无效');
+    }
+    this.assetId = assetId;
     this.target = input.target;
+    this.conversationId = conversationId;
+    this.question = question;
+    this.saveAsNote = saveAsNote;
+    this.generateTitle = input.generateTitle === true;
   }
 
   toSnapshot(): ImageExplanationInstructionSnapshot {
+    const target = this.target
+      ? (Object.freeze({
+          scope: 'content' as const,
+          anchorType: this.target.anchorType,
+          anchorVersion: this.target.anchorVersion,
+          anchorPayload: this.target.anchorPayload,
+        }) as JsonValue & ImageRegionTarget)
+      : undefined;
     return Object.freeze({
       format: IMAGE_EXPLANATION_INSTRUCTION_FORMAT,
       version: IMAGE_EXPLANATION_INSTRUCTION_VERSION,
       assetId: this.assetId,
-      target: Object.freeze({
-        scope: 'content' as const,
-        anchorType: this.target.anchorType,
-        anchorVersion: this.target.anchorVersion,
-        anchorPayload: this.target.anchorPayload,
-      }) as JsonValue & ImageRegionTarget,
+      ...(target ? { target } : {}),
+      ...(this.conversationId ? { conversationId: this.conversationId } : {}),
+      question: this.question,
+      saveAsNote: this.saveAsNote,
+      ...(this.generateTitle ? { generateTitle: true } : {}),
     });
   }
 
   toUserMessage(): AgentUserMessage {
+    const titleInstruction = this.generateTitle
+      ? '\n\n这是本次对话的第一个问题。请先输出一行 <conversation-title>简短主题</conversation-title>，主题不超过 16 个汉字，然后再输出正常回答。'
+      : '';
+    if (!this.target) {
+      return createTextAgentUserMessage(
+        `用户在当前图片解读对话中继续追问：\n\n${this.question}\n\n请结合同一对话中已有的整张图片、兴趣区域和前文直接回答。${titleInstruction}`,
+      );
+    }
     const region = this.target.anchorPayload;
-    return createTextAgentUserMessage(`请解释用户在图片中选中的兴趣区域。
+    return createTextAgentUserMessage(`用户问题：${this.question}
+
+请解释用户在图片中选中的兴趣区域。
 
 你将依次收到三张由同一张源图片生成的图像：
 1. 未遮挡的整图，用于理解主题、场景和整体结构。
@@ -64,7 +118,7 @@ export class ImageExplanationInstruction extends GenerationInstruction<ImageExpl
 
 必须先理解整图，再结合红框位置、周边关系和局部放大图解释，不能把第三张图当成脱离语境的独立图片。说明选中内容是什么、它在整图中的作用、它与周围内容的关系，以及真正有助于理解的关键细节。若文字或细节看不清，明确说明不确定性，不要猜测。
 
-区域归一化坐标：x=${region.x.toFixed(6)}, y=${region.y.toFixed(6)}, width=${region.width.toFixed(6)}, height=${region.height.toFixed(6)}。`);
+区域归一化坐标：x=${region.x.toFixed(6)}, y=${region.y.toFixed(6)}, width=${region.width.toFixed(6)}, height=${region.height.toFixed(6)}。${titleInstruction}`);
   }
 }
 
@@ -77,14 +131,31 @@ export const imageExplanationInstructionFactory: GenerationInstructionFactory<Im
         input.version !== IMAGE_EXPLANATION_INSTRUCTION_VERSION ||
         typeof input.assetId !== 'string' ||
         input.assetId.trim().length === 0 ||
-        !isImageRegionTarget(input.target)
+        (input.target !== undefined && !isImageRegionTarget(input.target)) ||
+        (input.conversationId !== undefined && typeof input.conversationId !== 'string') ||
+        (input.question !== undefined && typeof input.question !== 'string') ||
+        (input.saveAsNote !== undefined && typeof input.saveAsNote !== 'boolean') ||
+        (input.generateTitle !== undefined && typeof input.generateTitle !== 'boolean')
       ) {
         return generationValidationFailure([
           { path: 'instruction', message: '图片区域解释任务数据无效' },
         ]);
       }
-      return generationValidationSuccess(
-        new ImageExplanationInstruction({ assetId: input.assetId, target: input.target }),
-      );
+      try {
+        return generationValidationSuccess(
+          new ImageExplanationInstruction({
+            assetId: input.assetId,
+            ...(input.target === undefined ? {} : { target: input.target }),
+            ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+            ...(input.question === undefined ? {} : { question: input.question }),
+            ...(input.saveAsNote === undefined ? {} : { saveAsNote: input.saveAsNote }),
+            ...(input.generateTitle === true ? { generateTitle: true } : {}),
+          }),
+        );
+      } catch {
+        return generationValidationFailure([
+          { path: 'instruction', message: '图片解释对话任务数据无效' },
+        ]);
+      }
     },
   });
