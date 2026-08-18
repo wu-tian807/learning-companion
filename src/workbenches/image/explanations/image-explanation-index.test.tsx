@@ -4,7 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createImageRegionTarget } from '../shared';
-import { ImageExplanationIndex, orderImageExplanations } from './image-explanation-index';
+import {
+  ImageExplanationIndex,
+  orderImageExplanations,
+  summarizeImageExplanation,
+} from './image-explanation-index';
 import type { ImageExplanationView } from './shared';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,7 +17,10 @@ const explanations: readonly ImageExplanationView[] = [
   {
     kind: 'attachment', id: 'completed-1', projectId: 'project-1', assetId: 'asset-1',
     target: createImageRegionTarget({ x: 0.1, y: 0.2, width: 0.3, height: 0.4, sourceWidth: 1000, sourceHeight: 800 }),
-    status: 'completed', answer: '# 关键节点\n它连接了上下游内容。', createdTime: 1, updatedTime: 2,
+    status: 'completed',
+    answer: '# 关键节点\n它连接了上下游内容。这是一段很长的补充说明，用于确认索引不会把整篇解释全部展示出来。索引之外的结尾内容不应出现。',
+    createdTime: 1,
+    updatedTime: 2,
   },
   {
     kind: 'task', id: 'pending-2', projectId: 'project-1', assetId: 'asset-1',
@@ -44,6 +51,16 @@ describe('ImageExplanationIndex', () => {
     ]);
   });
 
+  it('keeps only a compact plain-text preview in the index', () => {
+    const preview = summarizeImageExplanation(
+      '# 重点\n这是一个[很长的解释](https://example.com)，后面还有不应全部进入索引的补充内容。',
+      17,
+    );
+    expect(preview).toBe('重点 这是一个很长的解释，后面还有…');
+    expect(preview).not.toContain('https://example.com');
+    expect(preview).not.toContain('补充内容');
+  });
+
   it('列出图片标注、状态、位置和解释摘要', () => {
     act(() => root.render(
       <ImageExplanationIndex
@@ -57,6 +74,7 @@ describe('ImageExplanationIndex', () => {
     expect(container.textContent).toContain('2 条·点击定位到图片区域');
     expect(container.textContent).toContain('左侧 10% · 顶部 20% · 30% × 40%');
     expect(container.textContent).toContain('关键节点');
+    expect(container.textContent).not.toContain('索引之外的结尾内容不应出现');
     expect(container.textContent).toContain('生成中');
     expect(container.querySelector('[aria-current="location"]')?.textContent).toContain('标注 1');
   });

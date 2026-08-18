@@ -13,6 +13,30 @@ export interface ImageExplanationLocationViewport<Bounds> {
   fitBoundsWithConstraints(bounds: Bounds, immediately?: boolean): void;
 }
 
+export interface ImageExplanationMarkerItem<Point> {
+  imageToViewportCoordinates(x: number, y: number): Point;
+}
+
+export interface ImageExplanationMarkerViewport<Point> {
+  pixelFromPoint(point: Point, current?: boolean): { readonly x: number; readonly y: number };
+}
+
+export function imageExplanationMarkerPosition<Point>(
+  item: ImageExplanationMarkerItem<Point>,
+  viewport: ImageExplanationMarkerViewport<Point>,
+  target: ImageRegionTarget,
+): { readonly x: number; readonly y: number } {
+  const region = target.anchorPayload;
+  const point = viewport.pixelFromPoint(
+    item.imageToViewportCoordinates(
+      region.x * region.sourceWidth,
+      region.y * region.sourceHeight,
+    ),
+    true,
+  );
+  return { x: point.x, y: point.y };
+}
+
 export function displayImageExplanationLocation<Bounds>(
   item: ImageExplanationLocationItem<Bounds>,
   viewport: ImageExplanationLocationViewport<Bounds>,

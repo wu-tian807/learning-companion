@@ -35,7 +35,10 @@ import {
   ImageExplanationIndex,
   orderImageExplanations,
 } from './explanations/image-explanation-index';
-import { displayImageExplanationLocation } from './explanations/image-explanation-navigation';
+import {
+  displayImageExplanationLocation,
+  imageExplanationMarkerPosition,
+} from './explanations/image-explanation-navigation';
 import {
   projectImageExplanationGenerationEvent,
   removeImageExplanationRuntime,
@@ -170,22 +173,14 @@ function targetPolygon(
     .join(' ');
 }
 
-function targetCenter(
+function targetMarkerPosition(
   viewer: OpenSeadragon.Viewer | undefined,
   target: ImageRegionTarget,
 ): ScreenPoint | undefined {
   if (!viewer) return undefined;
   const item = getImageItem(viewer);
   if (!item) return undefined;
-  const region = target.anchorPayload;
-  const point = viewer.viewport.pixelFromPoint(
-    item.imageToViewportCoordinates(
-      (region.x + region.width / 2) * region.sourceWidth,
-      (region.y + region.height / 2) * region.sourceHeight,
-    ),
-    true,
-  );
-  return { x: point.x, y: point.y };
+  return imageExplanationMarkerPosition(item, viewer.viewport, target);
 }
 
 function readViewState(
@@ -937,7 +932,7 @@ export function ImageWorkbenchView({
         explanation,
         number: index + 1,
         points: targetPolygon(viewerRef.current, explanation.target),
-        center: targetCenter(viewerRef.current, explanation.target),
+        markerPosition: targetMarkerPosition(viewerRef.current, explanation.target),
       })),
     [orderedExplanations, overlayRevision],
   );
@@ -1066,7 +1061,7 @@ export function ImageWorkbenchView({
 
       {ready && (
         <svg aria-label="图片兴趣区域标记" className="pointer-events-none absolute inset-0 z-[5] size-full overflow-visible">
-          {markerPolygons.map(({ explanation, number, points, center }) => points ? (
+          {markerPolygons.map(({ explanation, number, points, markerPosition }) => points ? (
             <g
               key={explanation.id}
               style={{ pointerEvents: 'auto', cursor: 'pointer' }}
@@ -1080,10 +1075,10 @@ export function ImageWorkbenchView({
                 strokeDasharray={explanation.status === 'completed' ? undefined : '5 4'}
                 vectorEffect="non-scaling-stroke"
               />
-              {center && (
+              {markerPosition && (
                 <>
-                  <circle cx={center.x} cy={center.y} r="10" fill="#4f46e5" stroke="#c7d2fe" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                  <text x={center.x} y={center.y} fill="#eef2ff" fontSize="10" fontWeight="700" textAnchor="middle" dominantBaseline="central">{number}</text>
+                  <circle cx={markerPosition.x} cy={markerPosition.y} r="9" fill="#4f46e5" stroke="#c7d2fe" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  <text x={markerPosition.x} y={markerPosition.y} fill="#eef2ff" fontSize="9" fontWeight="700" textAnchor="middle" dominantBaseline="central">{number}</text>
                 </>
               )}
             </g>

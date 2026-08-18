@@ -8,6 +8,22 @@ export function orderImageExplanations(
   );
 }
 
+export function summarizeImageExplanation(
+  answer: string,
+  maxCharacters = 40,
+): string {
+  const plainText = answer
+    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
+    .replace(/[#*_`>~]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  const characters = Array.from(plainText);
+  return characters.length > maxCharacters
+    ? `${characters.slice(0, maxCharacters).join('')}…`
+    : plainText;
+}
+
 function explanationStatusLabel(explanation: ImageExplanationView): string {
   if (explanation.status === 'completed') return '已完成';
   if (explanation.status === 'failed') return '生成失败';
@@ -105,8 +121,8 @@ export function ImageExplanationIndex({
                       {regionSummary(explanation)}
                     </span>
                     {explanation.kind === 'attachment' && (
-                      <span className="mt-1 line-clamp-2 block break-words text-[11px] leading-4 text-slate-300">
-                        {explanation.answer.replace(/[#*_`>\n]/gu, ' ').trim() || 'AI 图片解释'}
+                      <span className="mt-1 block truncate text-[11px] leading-4 text-slate-300">
+                        {summarizeImageExplanation(explanation.answer) || 'AI 图片解释'}
                       </span>
                     )}
                   </button>
