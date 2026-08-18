@@ -29,7 +29,13 @@ function MarkdownAnswer({ markdown }: { readonly markdown: string }) {
       host.textContent = markdown;
     });
   }, [markdown]);
-  return <div ref={hostRef} className="vditor-reset text-[13px] leading-6 text-slate-200 [&_a]:text-indigo-300 [&_code]:rounded [&_code]:bg-black/20 [&_code]:px-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm" />;
+  return (
+    <div
+      ref={hostRef}
+      data-image-explanation-markdown
+      className="vditor-reset text-[13px] leading-6 text-slate-200 [&_.katex]:!text-white [&_.katex]:!opacity-100 [&_.language-math]:!text-white [&_.language-math]:!opacity-100 [&_a]:text-indigo-300 [&_code]:rounded [&_code]:bg-black/20 [&_code]:px-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm"
+    />
+  );
 }
 
 function RegionOverview({

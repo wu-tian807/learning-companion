@@ -105,6 +105,14 @@ describe('ImageExplanationPanel', () => {
       '行内 $x^2$，块级：\n$$\ny=1\n$$\n',
       expect.objectContaining({ mode: 'dark' }),
     );
+    const markdownHost = container.querySelector(
+      '[data-image-explanation-markdown]',
+    );
+    expect(markdownHost?.className).toContain(
+      '[&_.language-math]:!text-white',
+    );
+    expect(markdownHost?.className).toContain('[&_.katex]:!text-white');
+    expect(markdownHost?.className).toContain('[&_.katex]:!opacity-100');
     act(() => root.unmount());
     container.remove();
   });
