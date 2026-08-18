@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cloneVideoSubtitleSnapshot,
   createVideoSaveViewStateCommand,
   createVideoTimeRangeTarget,
+  DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+  EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
   DEFAULT_VIDEO_VIEW_STATE,
   isVideoSaveViewStatePayload,
   isVideoTimeRangeAnchorV1,
@@ -30,6 +33,8 @@ describe('Video Workbench shared protocol', () => {
       isVideoWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
         viewState: DEFAULT_VIDEO_VIEW_STATE,
+        subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
       }),
     ).toBe(true);
     expect(
@@ -53,6 +58,20 @@ describe('Video Workbench shared protocol', () => {
         volume: 2,
       }),
     ).toBe(false);
+  });
+
+  it('omits undefined optional fields when cloning subtitle snapshots', () => {
+    const snapshot = cloneVideoSubtitleSnapshot({
+      ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+      source: undefined,
+      translation: undefined,
+      message: undefined,
+    });
+
+    expect(snapshot).toEqual(EMPTY_VIDEO_SUBTITLE_SNAPSHOT);
+    expect(Object.hasOwn(snapshot, 'source')).toBe(false);
+    expect(Object.hasOwn(snapshot, 'translation')).toBe(false);
+    expect(Object.hasOwn(snapshot, 'message')).toBe(false);
   });
 
   it('creates a validated time-range anchor', () => {

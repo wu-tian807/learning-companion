@@ -48,9 +48,8 @@ import { pdfMainFeature } from '../pdf/main-feature';
 import { pdfWorkbenchManifest } from '../pdf/shared';
 import { PlainTextWorkbenchProvider } from '../plain-text/main';
 import { plainTextWorkbenchManifest } from '../plain-text/shared';
-import { VideoWorkbenchProvider } from '../video/main';
-import { videoWorkbenchManifest } from '../video/shared';
 import { mediaSubtitlesMainFeature } from '../media-subtitles/main-feature';
+import { videoMainContribution } from '../video/main-feature';
 
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
@@ -200,11 +199,7 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = 
       context.contentResourceService,
       context.stateDatabase,
     )),
-  providerContribution(videoWorkbenchManifest, (context) =>
-    new VideoWorkbenchProvider(
-      context.contentResourceService,
-      context.stateDatabase,
-    )),
+  videoMainContribution,
   documentAiMainFeature,
   mediaSubtitlesMainFeature,
 ];
