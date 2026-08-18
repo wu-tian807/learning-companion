@@ -8,6 +8,7 @@ import {
   resolveVditorResourceBaseUrl,
   sanitizeMarkdownRenderedHtml,
 } from '../../markdown/markdown-editor-adapter';
+import { normalizeConversationMarkdown } from '../../../renderer/conversation/conversation-text';
 import type { ImageExplanationRuntimeView } from './image-explanation-runtime';
 import type { ImageExplanationView } from './shared';
 
@@ -17,7 +18,7 @@ function MarkdownAnswer({ markdown }: { readonly markdown: string }) {
     const host = hostRef.current;
     if (!host) return;
     host.textContent = '';
-    void Vditor.preview(host, markdown, {
+    void Vditor.preview(host, normalizeConversationMarkdown(markdown), {
       cdn: resolveVditorResourceBaseUrl(),
       mode: 'dark',
       markdown: { sanitize: true },
@@ -84,15 +85,15 @@ export function ImageExplanationPanel({
   readonly continueQuestionDisabled?: boolean;
 }) {
   return (
-    <aside aria-label="图片 AI 解释" className="learning-markdown-workbench absolute right-4 top-4 z-30 w-[min(400px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl">
-      <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+    <aside aria-label="图片 AI 解释" className="learning-markdown-workbench absolute right-4 top-4 z-30 flex max-h-[calc(100%-2rem)] w-[min(400px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.1] bg-[#20262e]/95 shadow-2xl backdrop-blur-xl">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-4 py-3">
         <div>
           <p className="text-xs font-semibold text-slate-100">解释兴趣区域</p>
           <p className="mt-0.5 text-[10px] text-slate-500">结合整张图片理解，不孤立分析选区</p>
         </div>
         <button type="button" aria-label="关闭图片 AI 解释" onClick={onClose} className="ui-icon-button grid size-7 place-items-center rounded-full text-sm text-slate-500">×</button>
       </div>
-      <div className="max-h-[min(72vh,620px)] overflow-y-auto px-4 py-4">
+      <div data-image-explanation-body className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <RegionOverview contentUrl={contentUrl} explanation={explanation} />
         <div className="mt-4">
           {explanation.status === 'pending' && (
@@ -114,7 +115,7 @@ export function ImageExplanationPanel({
           )}
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-2">
+      <div data-image-explanation-actions className="flex shrink-0 items-center justify-between border-t border-white/[0.07] px-3 py-2">
         {explanation.status === 'completed' && onContinueQuestion ? (
           <button
             type="button"
