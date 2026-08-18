@@ -7,6 +7,7 @@ export interface ImageRendererActionsOptions {
   readonly onRotateClockwise: () => void;
   readonly onRotateCounterclockwise: () => void;
   readonly onReset: () => void;
+  readonly onExplainRegion: () => void;
   readonly onReveal: () => Promise<void> | void;
 }
 
@@ -17,6 +18,7 @@ export function createImageRendererActions({
   onRotateClockwise,
   onRotateCounterclockwise,
   onReset,
+  onExplainRegion,
   onReveal,
 }: ImageRendererActionsOptions): WorkbenchActionBundle {
   const disabledReason = ready ? undefined : '图片尚未加载完成';
@@ -59,9 +61,9 @@ export function createImageRendererActions({
         execute: () => undefined,
       },
       {
-        id: 'image.ai.analyze-viewport',
-        enabled: false,
-        execute: () => undefined,
+        id: 'image.ai.explain-region',
+        enabled: ready,
+        execute: onExplainRegion,
       },
     ],
     contributions: [
@@ -194,16 +196,16 @@ export function createImageRendererActions({
         },
       },
       {
-        id: 'image.ai.analyze-viewport.context-menu',
-        actionId: 'image.ai.analyze-viewport',
+        id: 'image.ai.explain-region.context-menu',
+        actionId: 'image.ai.explain-region',
         surface: 'context-menu',
         group: '80-ai',
         order: 20,
         presentation: {
           kind: 'generation-tool',
-          label: '分析当前视野',
-          description: '使用当前缩放、中心点和旋转状态',
-          disabledReason: '等待 Image AI 工具接入',
+          label: '框选区域并解释',
+          description: '结合整张图片理解你感兴趣的区域',
+          disabledReason,
         },
       },
       {

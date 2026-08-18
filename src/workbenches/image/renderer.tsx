@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import OpenSeadragon from 'openseadragon';
 
@@ -28,6 +29,17 @@ import {
   type ImageWorkbenchViewState,
 } from './shared';
 import { createImageRendererActions } from './renderer-actions';
+import { createImageRegionFromImagePoints } from './image-region';
+import { ImageExplanationPanel } from './explanations/image-explanation-panel';
+import {
+  projectImageExplanationGenerationEvent,
+  removeImageExplanationRuntime,
+  type ImageExplanationRuntimeMap,
+} from './explanations/image-explanation-runtime';
+import {
+  type ImageExplanationView,
+  type ImageRegionTarget,
+} from './explanations/shared';
 
 type ImageLoadState =
   | { readonly kind: 'loading' }
@@ -41,6 +53,19 @@ type ImageLoadState =
 const MIN_IMAGE_SCALE = 0.01;
 const MAX_IMAGE_SCALE = 64;
 const ZOOM_STEP = 1.25;
+const MIN_SELECTION_SIZE = 8;
+
+interface ScreenPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+interface ScreenRectangle {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
@@ -78,6 +103,66 @@ function getImageItem(
   return viewer.world.getItemCount() > 0
     ? viewer.world.getItemAt(0)
     : undefined;
+}
+
+function screenRectangle(start: ScreenPoint, end: ScreenPoint): ScreenRectangle {
+  return {
+    left: Math.min(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  };
+}
+
+function targetFromScreenRectangle(
+  viewer: OpenSeadragon.Viewer,
+  rectangle: ScreenRectangle,
+): ImageRegionTarget | undefined {
+  const item = getImageItem(viewer);
+  if (!item || rectangle.width < MIN_SELECTION_SIZE || rectangle.height < MIN_SELECTION_SIZE) {
+    return undefined;
+  }
+  const corners = [
+    [rectangle.left, rectangle.top],
+    [rectangle.left + rectangle.width, rectangle.top],
+    [rectangle.left + rectangle.width, rectangle.top + rectangle.height],
+    [rectangle.left, rectangle.top + rectangle.height],
+  ].map(([x, y]) =>
+    item.viewportToImageCoordinates(
+      viewer.viewport.pointFromPixel(new OpenSeadragon.Point(x!, y!), true),
+      true,
+    ),
+  );
+  const size = item.getContentSize();
+  return createImageRegionFromImagePoints(corners, Math.round(size.x), Math.round(size.y));
+}
+
+function targetPolygon(
+  viewer: OpenSeadragon.Viewer | undefined,
+  target: ImageRegionTarget,
+): string | undefined {
+  if (!viewer) return undefined;
+  const item = getImageItem(viewer);
+  if (!item) return undefined;
+  const region = target.anchorPayload;
+  const left = region.x * region.sourceWidth;
+  const top = region.y * region.sourceHeight;
+  const right = left + region.width * region.sourceWidth;
+  const bottom = top + region.height * region.sourceHeight;
+  return [
+    [left, top],
+    [right, top],
+    [right, bottom],
+    [left, bottom],
+  ]
+    .map(([x, y]) => {
+      const point = viewer.viewport.pixelFromPoint(
+        item.imageToViewportCoordinates(x!, y!),
+        true,
+      );
+      return `${point.x},${point.y}`;
+    })
+    .join(' ');
 }
 
 function readViewState(
@@ -251,6 +336,7 @@ function RotateIcon() {
 }
 
 export function ImageWorkbenchView({
+  asset,
   bootstrap,
   executeCommand,
   onRelink,
@@ -279,6 +365,27 @@ export function ImageWorkbenchView({
     Math.round((payload?.viewState.scale ?? 1) * 100),
   );
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionStart, setSelectionStart] = useState<ScreenPoint>();
+  const [selectionRectangle, setSelectionRectangle] = useState<ScreenRectangle>();
+  const [selectedTarget, setSelectedTarget] = useState<ImageRegionTarget>();
+  const [overlayRevision, setOverlayRevision] = useState(0);
+  const [explanations, setExplanations] = useState<ImageExplanationView[]>([]);
+  const [activeExplanationId, setActiveExplanationId] = useState<string>();
+  const explanationTaskIdsRef = useRef(new Set<string>());
+  const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
+    useState<ImageExplanationRuntimeMap>({});
+
+  const registerExplanationTask = useCallback((explanation: ImageExplanationView) => {
+    if (explanation.kind === 'task') explanationTaskIdsRef.current.add(explanation.id);
+  }, []);
+
+  const clearExplanationRuntime = useCallback((taskId: string) => {
+    explanationTaskIdsRef.current.delete(taskId);
+    setExplanationRuntimeByTaskId((current) =>
+      removeImageExplanationRuntime(current, taskId),
+    );
+  }, []);
 
   const updateLoadState = useCallback((state: ImageLoadState) => {
     loadStateRef.current = state;
@@ -296,6 +403,81 @@ export function ImageWorkbenchView({
     },
     [onError],
   );
+
+  const startRegionSelection = useCallback(() => {
+    runtime.closeContextMenu();
+    setActiveExplanationId(undefined);
+    setSelectedTarget(undefined);
+    setSelectionRectangle(undefined);
+    setSelectionStart(undefined);
+    setSelectionMode(true);
+  }, [runtime]);
+
+  const cancelRegionSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectionStart(undefined);
+    setSelectionRectangle(undefined);
+    setSelectedTarget(undefined);
+  }, []);
+
+  const createExplanation = useCallback(async () => {
+    if (!selectedTarget) return;
+    const existing = explanations.find((candidate) => {
+      const left = candidate.target.anchorPayload;
+      const right = selectedTarget.anchorPayload;
+      return left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height;
+    });
+    if (existing) {
+      setActiveExplanationId(existing.id);
+      setSelectedTarget(undefined);
+      return;
+    }
+    try {
+      const created = await window.learningCompanion.createImageExplanation({
+        projectId: asset.projectId,
+        assetId: asset.id,
+        target: selectedTarget,
+      });
+      registerExplanationTask(created);
+      setExplanations((current) => [...current.filter((item) => item.id !== created.id), created]);
+      setActiveExplanationId(created.id);
+      setSelectedTarget(undefined);
+    } catch (error) {
+      reportError(error, '无法启动图片 AI 解释。');
+    }
+  }, [asset.id, asset.projectId, explanations, registerExplanationTask, reportError, selectedTarget]);
+
+  const retryExplanation = useCallback(async (explanation: ImageExplanationView) => {
+    setExplanationRuntimeByTaskId((current) => removeImageExplanationRuntime(current, explanation.id));
+    try {
+      const retried = await window.learningCompanion.retryImageExplanation({
+        projectId: asset.projectId,
+        assetId: asset.id,
+        kind: explanation.kind,
+        explanationId: explanation.id,
+      });
+      setExplanations((current) => [...current.filter((item) => item.id !== retried.id), retried]);
+      registerExplanationTask(retried);
+    } catch (error) {
+      reportError(error, '无法重试图片 AI 解释。');
+    }
+  }, [asset.id, asset.projectId, registerExplanationTask, reportError]);
+
+  const deleteExplanation = useCallback(async (explanation: ImageExplanationView) => {
+    try {
+      await window.learningCompanion.deleteImageExplanation({
+        projectId: asset.projectId,
+        assetId: asset.id,
+        kind: explanation.kind,
+        explanationId: explanation.id,
+      });
+      clearExplanationRuntime(explanation.id);
+      setExplanations((current) => current.filter((item) => item.id !== explanation.id));
+      setActiveExplanationId(undefined);
+    } catch (error) {
+      reportError(error, '无法删除图片 AI 解释。');
+    }
+  }, [asset.id, asset.projectId, clearExplanationRuntime, reportError]);
 
   const persistViewState = useCallback(
     async (state: ImageWorkbenchViewState) => {
@@ -448,6 +630,66 @@ export function ImageWorkbenchView({
   }, [captureViewState]);
 
   useEffect(() => {
+    let active = true;
+    const removeSubscription = window.learningCompanion.onImageExplanationChanged((event) => {
+      if (event.type === 'changed') {
+        if (event.explanation.projectId !== asset.projectId || event.explanation.assetId !== asset.id) return;
+        registerExplanationTask(event.explanation);
+        setExplanations((current) => [...current.filter((item) => item.id !== event.explanation.id), event.explanation]);
+        return;
+      }
+      if (event.type === 'replaced') {
+        if (event.projectId !== asset.projectId || event.assetId !== asset.id) return;
+        clearExplanationRuntime(event.previousExplanationId);
+        setExplanations((current) => [
+          ...current.filter((item) => item.id !== event.previousExplanationId && item.id !== event.explanation.id),
+          event.explanation,
+        ]);
+        setActiveExplanationId((current) => current === event.previousExplanationId ? event.explanation.id : current);
+        return;
+      }
+      if (event.projectId !== asset.projectId || event.assetId !== asset.id) return;
+      clearExplanationRuntime(event.explanationId);
+      setExplanations((current) => current.filter((item) => item.id !== event.explanationId));
+      setActiveExplanationId((current) => current === event.explanationId ? undefined : current);
+    });
+
+    void window.learningCompanion.listImageExplanations({ projectId: asset.projectId, assetId: asset.id })
+      .then((items) => {
+        if (!active) return;
+        for (const item of items) registerExplanationTask(item);
+        setExplanations([...items]);
+      })
+      .catch((error) => {
+        if (active) reportError(error, '无法加载图片的 AI 解释。');
+      });
+
+    return () => {
+      active = false;
+      removeSubscription();
+      explanationTaskIdsRef.current.clear();
+      setExplanationRuntimeByTaskId({});
+      setExplanations([]);
+      setActiveExplanationId(undefined);
+    };
+  }, [asset.id, asset.projectId, clearExplanationRuntime, registerExplanationTask, reportError]);
+
+  useEffect(() => window.learningCompanion.onGenerationTaskChanged((event) => {
+    setExplanationRuntimeByTaskId((current) =>
+      projectImageExplanationGenerationEvent(
+        current,
+        event,
+        asset.projectId,
+        explanationTaskIdsRef.current,
+      ),
+    );
+  }), [asset.projectId]);
+
+  useEffect(() => {
+    viewerRef.current?.setMouseNavEnabled(!selectionMode);
+  }, [selectionMode]);
+
+  useEffect(() => {
     const host = viewerHostRef.current;
 
     if (!payload || !host) {
@@ -520,6 +762,7 @@ export function ImageWorkbenchView({
         latestViewStateRef.current = state;
         setZoomPercent(Math.round(state.scale * 100));
       }
+      setOverlayRevision((current) => current + 1);
     });
     viewer.addHandler('after-resize', () => {
       if (modeRef.current === 'fit') {
@@ -528,6 +771,7 @@ export function ImageWorkbenchView({
           normalizeRotation(viewer.viewport.getRotation()),
         );
       }
+      setOverlayRevision((current) => current + 1);
     });
     viewer.addHandler('add-item-failed', (event) => {
       if (disposed) {
@@ -573,6 +817,7 @@ export function ImageWorkbenchView({
           width: Math.round(size.x),
           height: Math.round(size.y),
         });
+        setOverlayRevision((current) => current + 1);
       },
       error: (error) => {
         if (!disposed) {
@@ -619,9 +864,10 @@ export function ImageWorkbenchView({
         onRotateClockwise: () => rotate(90),
         onRotateCounterclockwise: () => rotate(-90),
         onReset: reset,
+        onExplainRegion: startRegionSelection,
         onReveal,
       }),
-    [actualSize, fit, onReveal, ready, reset, rotate],
+    [actualSize, fit, onReveal, ready, reset, rotate, startRegionSelection],
   );
   useWorkbenchContributions(imageWorkbenchManifest.id, rendererActions);
 
@@ -641,6 +887,52 @@ export function ImageWorkbenchView({
     [bootstrap.sessionId, runtime],
   );
 
+  const markerPolygons = useMemo(
+    () =>
+      explanations.map((explanation) => ({
+        explanation,
+        points: targetPolygon(viewerRef.current, explanation.target),
+      })),
+    [explanations, overlayRevision],
+  );
+  const selectedPolygon = useMemo(
+    () => selectedTarget ? targetPolygon(viewerRef.current, selectedTarget) : undefined,
+    [overlayRevision, selectedTarget],
+  );
+  const activeExplanation = explanations.find((item) => item.id === activeExplanationId);
+
+  const pointerPosition = useCallback((event: ReactPointerEvent<HTMLDivElement>): ScreenPoint => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  }, []);
+
+  const beginSelection = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const point = pointerPosition(event);
+    setSelectionStart(point);
+    setSelectionRectangle({ left: point.x, top: point.y, width: 0, height: 0 });
+  }, [pointerPosition]);
+
+  const updateSelection = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionStart) return;
+    setSelectionRectangle(screenRectangle(selectionStart, pointerPosition(event)));
+  }, [pointerPosition, selectionStart]);
+
+  const finishSelection = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionStart) return;
+    const rectangle = screenRectangle(selectionStart, pointerPosition(event));
+    const target = viewerRef.current
+      ? targetFromScreenRectangle(viewerRef.current, rectangle)
+      : undefined;
+    setSelectionStart(undefined);
+    setSelectionRectangle(undefined);
+    if (!target) return;
+    setSelectedTarget(target);
+    setSelectionMode(false);
+    setOverlayRevision((current) => current + 1);
+  }, [pointerPosition, selectionStart]);
+
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -659,6 +951,12 @@ export function ImageWorkbenchView({
       onContextMenuCapture={openContextMenu}
       onKeyDown={(event) => {
         if (!ready) {
+          return;
+        }
+
+        if (event.key === 'Escape' && (selectionMode || selectedTarget)) {
+          event.preventDefault();
+          cancelRegionSelection();
           return;
         }
 
@@ -693,6 +991,63 @@ export function ImageWorkbenchView({
         aria-label="图片查看画布"
         className="h-full min-h-0 w-full"
       />
+
+      {ready && (
+        <svg aria-label="图片兴趣区域标记" className="pointer-events-none absolute inset-0 z-[5] size-full overflow-visible">
+          {markerPolygons.map(({ explanation, points }) => points ? (
+            <polygon
+              key={explanation.id}
+              points={points}
+              fill={explanation.status === 'completed' ? 'rgba(99,102,241,0.08)' : 'rgba(148,163,184,0.06)'}
+              stroke={explanation.status === 'failed' ? '#fb7185' : explanation.status === 'pending' ? '#94a3b8' : '#a5b4fc'}
+              strokeWidth="2"
+              strokeDasharray={explanation.status === 'completed' ? undefined : '5 4'}
+              vectorEffect="non-scaling-stroke"
+              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+              onClick={() => setActiveExplanationId(explanation.id)}
+            />
+          ) : null)}
+          {selectedPolygon && (
+            <polygon points={selectedPolygon} fill="rgba(99,102,241,0.14)" stroke="#c7d2fe" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      )}
+
+      {selectionMode && ready && (
+        <div
+          role="application"
+          aria-label="拖动框选要解释的图片区域"
+          className="absolute inset-0 z-20 cursor-crosshair bg-black/10"
+          onPointerDown={beginSelection}
+          onPointerMove={updateSelection}
+          onPointerUp={finishSelection}
+          onPointerCancel={() => {
+            setSelectionStart(undefined);
+            setSelectionRectangle(undefined);
+          }}
+        >
+          <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full border border-indigo-300/20 bg-[#20262e]/92 px-4 py-2 text-xs text-indigo-100 shadow-xl backdrop-blur">拖动框选兴趣区域 · Esc 取消</div>
+          {selectionRectangle && (
+            <div
+              className="pointer-events-none absolute border-2 border-indigo-300 bg-indigo-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+              style={{ left: selectionRectangle.left, top: selectionRectangle.top, width: selectionRectangle.width, height: selectionRectangle.height }}
+            />
+          )}
+        </div>
+      )}
+
+      {selectedTarget && !selectionMode && (
+        <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-white/[0.1] bg-[#20262e]/94 p-2 shadow-xl backdrop-blur">
+          <span className="px-2 text-xs text-slate-300">已选中兴趣区域</span>
+          <button type="button" onClick={() => void createExplanation()} className="ui-control rounded-lg bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-100">AI 解释</button>
+          <button type="button" onClick={startRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-400">重选</button>
+          <button type="button" onClick={cancelRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-500">取消</button>
+        </div>
+      )}
+
+      {ready && !selectionMode && !selectedTarget && !activeExplanation && (
+        <button type="button" onClick={startRegionSelection} className="ui-control absolute right-3 top-3 z-10 rounded-xl border border-indigo-300/15 bg-[#20262e]/88 px-3 py-2 text-xs text-indigo-200 shadow-lg backdrop-blur" title="框选一个区域，AI 会结合整张图片进行解释">框选区域解释</button>
+      )}
 
       {loadState.kind === 'loading' && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#12161b]/72">
@@ -831,6 +1186,17 @@ export function ImageWorkbenchView({
             </button>
           </div>
         </>
+      )}
+
+      {activeExplanation && (
+        <ImageExplanationPanel
+          explanation={activeExplanation}
+          runtime={activeExplanation.kind === 'task' ? explanationRuntimeByTaskId[activeExplanation.id] : undefined}
+          contentUrl={payload.contentUrl}
+          onClose={() => setActiveExplanationId(undefined)}
+          onRetry={() => void retryExplanation(activeExplanation)}
+          onDelete={() => void deleteExplanation(activeExplanation)}
+        />
       )}
 
     </div>

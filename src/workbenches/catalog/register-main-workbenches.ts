@@ -33,6 +33,7 @@ import { HtmlWorkbenchProvider } from '../html/main';
 import { htmlAssistantMainFeature } from '../html/generation/main';
 import { htmlWorkbenchManifest } from '../html/shared';
 import { ImageWorkbenchProvider } from '../image/main';
+import { imageExplanationMainFeature } from '../image/explanations/main';
 import { imageWorkbenchManifest } from '../image/shared';
 import { MarkdownWorkbenchProvider } from '../markdown/main';
 import { markdownWorkbenchManifest } from '../markdown/shared';
@@ -186,11 +187,15 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = 
       ),
     epubExplanationMainFeature,
   ),
-  providerContribution(imageWorkbenchManifest, (context) =>
-    new ImageWorkbenchProvider(
-      context.contentResourceService,
-      context.stateDatabase,
-    )),
+  providerContribution(
+    imageWorkbenchManifest,
+    (context) =>
+      new ImageWorkbenchProvider(
+        context.contentResourceService,
+        context.stateDatabase,
+      ),
+    imageExplanationMainFeature,
+  ),
   providerContribution(audioWorkbenchManifest, (context) =>
     new AudioWorkbenchProvider(
       context.contentResourceService,
