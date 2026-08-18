@@ -32,6 +32,11 @@ import { createImageRendererActions } from './renderer-actions';
 import { createImageRegionFromImagePoints } from './image-region';
 import { ImageExplanationPanel } from './explanations/image-explanation-panel';
 import {
+  ImageExplanationIndex,
+  orderImageExplanations,
+} from './explanations/image-explanation-index';
+import { displayImageExplanationLocation } from './explanations/image-explanation-navigation';
+import {
   projectImageExplanationGenerationEvent,
   removeImageExplanationRuntime,
   type ImageExplanationRuntimeMap,
@@ -163,6 +168,24 @@ function targetPolygon(
       return `${point.x},${point.y}`;
     })
     .join(' ');
+}
+
+function targetCenter(
+  viewer: OpenSeadragon.Viewer | undefined,
+  target: ImageRegionTarget,
+): ScreenPoint | undefined {
+  if (!viewer) return undefined;
+  const item = getImageItem(viewer);
+  if (!item) return undefined;
+  const region = target.anchorPayload;
+  const point = viewer.viewport.pixelFromPoint(
+    item.imageToViewportCoordinates(
+      (region.x + region.width / 2) * region.sourceWidth,
+      (region.y + region.height / 2) * region.sourceHeight,
+    ),
+    true,
+  );
+  return { x: point.x, y: point.y };
 }
 
 function readViewState(
@@ -372,6 +395,7 @@ export function ImageWorkbenchView({
   const [overlayRevision, setOverlayRevision] = useState(0);
   const [explanations, setExplanations] = useState<ImageExplanationView[]>([]);
   const [activeExplanationId, setActiveExplanationId] = useState<string>();
+  const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
   const explanationTaskIdsRef = useRef(new Set<string>());
   const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
     useState<ImageExplanationRuntimeMap>({});
@@ -407,6 +431,7 @@ export function ImageWorkbenchView({
   const startRegionSelection = useCallback(() => {
     runtime.closeContextMenu();
     setActiveExplanationId(undefined);
+    setExplanationIndexOpen(false);
     setSelectedTarget(undefined);
     setSelectionRectangle(undefined);
     setSelectionStart(undefined);
@@ -473,11 +498,24 @@ export function ImageWorkbenchView({
       });
       clearExplanationRuntime(explanation.id);
       setExplanations((current) => current.filter((item) => item.id !== explanation.id));
-      setActiveExplanationId(undefined);
+      setActiveExplanationId((current) => current === explanation.id ? undefined : current);
     } catch (error) {
       reportError(error, '无法删除图片 AI 解释。');
     }
   }, [asset.id, asset.projectId, clearExplanationRuntime, reportError]);
+
+  const revealExplanation = useCallback((explanation: ImageExplanationView) => {
+    const viewer = viewerRef.current;
+    const item = viewer ? getImageItem(viewer) : undefined;
+    if (!viewer || !item || loadStateRef.current.kind !== 'ready') {
+      reportError(new Error('图片阅读器尚未就绪'), '暂时无法定位这条图片标注。');
+      return;
+    }
+    displayImageExplanationLocation(item, viewer.viewport, explanation.target);
+    modeRef.current = 'manual';
+    setActiveExplanationId(explanation.id);
+    setExplanationIndexOpen(false);
+  }, [reportError]);
 
   const persistViewState = useCallback(
     async (state: ImageWorkbenchViewState) => {
@@ -671,6 +709,7 @@ export function ImageWorkbenchView({
       setExplanationRuntimeByTaskId({});
       setExplanations([]);
       setActiveExplanationId(undefined);
+      setExplanationIndexOpen(false);
     };
   }, [asset.id, asset.projectId, clearExplanationRuntime, registerExplanationTask, reportError]);
 
@@ -887,13 +926,20 @@ export function ImageWorkbenchView({
     [bootstrap.sessionId, runtime],
   );
 
+  const orderedExplanations = useMemo(
+    () => orderImageExplanations(explanations),
+    [explanations],
+  );
+
   const markerPolygons = useMemo(
     () =>
-      explanations.map((explanation) => ({
+      orderedExplanations.map((explanation, index) => ({
         explanation,
+        number: index + 1,
         points: targetPolygon(viewerRef.current, explanation.target),
+        center: targetCenter(viewerRef.current, explanation.target),
       })),
-    [explanations, overlayRevision],
+    [orderedExplanations, overlayRevision],
   );
   const selectedPolygon = useMemo(
     () => selectedTarget ? targetPolygon(viewerRef.current, selectedTarget) : undefined,
@@ -992,20 +1038,55 @@ export function ImageWorkbenchView({
         className="h-full min-h-0 w-full"
       />
 
+      {ready && !explanationIndexOpen && (
+        <button
+          type="button"
+          aria-label={`切换图片标注索引（${explanations.length}）`}
+          aria-expanded={false}
+          onClick={() => {
+            setActiveExplanationId(undefined);
+            setExplanationIndexOpen(true);
+          }}
+          className="ui-control absolute left-3 top-3 z-10 rounded-xl border border-white/[0.09] bg-[#20262e]/88 px-3 py-2 text-xs text-slate-300 shadow-lg backdrop-blur"
+        >
+          标注
+          <span className="ml-1 tabular-nums text-slate-500">{explanations.length}</span>
+        </button>
+      )}
+
+      {explanationIndexOpen && (
+        <ImageExplanationIndex
+          explanations={orderedExplanations}
+          activeExplanationId={activeExplanationId}
+          onActivate={revealExplanation}
+          onDelete={(explanation) => void deleteExplanation(explanation)}
+          onClose={() => setExplanationIndexOpen(false)}
+        />
+      )}
+
       {ready && (
         <svg aria-label="图片兴趣区域标记" className="pointer-events-none absolute inset-0 z-[5] size-full overflow-visible">
-          {markerPolygons.map(({ explanation, points }) => points ? (
-            <polygon
+          {markerPolygons.map(({ explanation, number, points, center }) => points ? (
+            <g
               key={explanation.id}
-              points={points}
-              fill={explanation.status === 'completed' ? 'rgba(99,102,241,0.08)' : 'rgba(148,163,184,0.06)'}
-              stroke={explanation.status === 'failed' ? '#fb7185' : explanation.status === 'pending' ? '#94a3b8' : '#a5b4fc'}
-              strokeWidth="2"
-              strokeDasharray={explanation.status === 'completed' ? undefined : '5 4'}
-              vectorEffect="non-scaling-stroke"
               style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onClick={() => setActiveExplanationId(explanation.id)}
-            />
+              onClick={() => revealExplanation(explanation)}
+            >
+              <polygon
+                points={points}
+                fill={explanation.status === 'completed' ? 'rgba(99,102,241,0.08)' : 'rgba(148,163,184,0.06)'}
+                stroke={explanation.status === 'failed' ? '#fb7185' : explanation.status === 'pending' ? '#94a3b8' : '#a5b4fc'}
+                strokeWidth="2"
+                strokeDasharray={explanation.status === 'completed' ? undefined : '5 4'}
+                vectorEffect="non-scaling-stroke"
+              />
+              {center && (
+                <>
+                  <circle cx={center.x} cy={center.y} r="10" fill="#4f46e5" stroke="#c7d2fe" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  <text x={center.x} y={center.y} fill="#eef2ff" fontSize="10" fontWeight="700" textAnchor="middle" dominantBaseline="central">{number}</text>
+                </>
+              )}
+            </g>
           ) : null)}
           {selectedPolygon && (
             <polygon points={selectedPolygon} fill="rgba(99,102,241,0.14)" stroke="#c7d2fe" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />

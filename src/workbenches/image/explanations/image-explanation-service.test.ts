@@ -4,6 +4,7 @@ import type { AttachmentServiceApi } from '../../../main/attachments/attachment-
 import { GenerationTask } from '../../../main/generation/generation-task';
 import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import { createImageRegionTarget } from '../shared';
+import { ImageExplanationInstruction } from './generation/instruction';
 import { ImageExplanationService } from './image-explanation-service';
 
 const target = createImageRegionTarget({
@@ -71,6 +72,57 @@ describe('ImageExplanationService', () => {
     await expect(service.create({ projectId: 'project-1', assetId: 'asset-1', target }))
       .rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
     expect(start).not.toHaveBeenCalled();
+    service.dispose();
+  });
+
+  it('cancels a pending task when its explanation is deleted', async () => {
+    const instruction = new ImageExplanationInstruction({ assetId: 'asset-1', target });
+    const task = GenerationTask.create({
+      id: 'task-1', projectId: 'project-1', definitionId: 'image.explain-region',
+      definitionVersion: 1,
+      instruction: instruction.toSnapshot(),
+      assetReferences: { image: [{ assetId: 'asset-1' }] }, createdTime: 1,
+    });
+    const cancel = vi.fn();
+    const service = new ImageExplanationService(
+      { subscribe: () => () => undefined } as unknown as AttachmentServiceApi,
+      {} as never,
+      {
+        get: () => task.getSnapshot(), cancel,
+        getActiveProjectId: () => 'project-1', subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      { get: () => ({ mediaType: 'image/png' }) } as never,
+    );
+    await service.delete({ projectId: 'project-1', assetId: 'asset-1', kind: 'task', explanationId: 'task-1' });
+    expect(cancel).toHaveBeenCalledWith('task-1');
+    service.dispose();
+  });
+
+  it('deletes a completed explanation through Attachment ownership', async () => {
+    const attachment = {
+      id: 'attachment-1', projectId: 'project-1', assetId: 'asset-1',
+      typeId: 'image.ai-explanation', typeVersion: 1, target,
+      metadata: { format: 'learning-companion/image-explanation', version: 1, sourceRevision: 'r1' },
+      content: {
+        ref: { kind: 'local-file', base: 'project-workspace', path: 'attachments/attachment-1/answer.md' },
+        mediaType: 'text/markdown',
+      },
+      createdTime: 1, updatedTime: 1,
+    } as const;
+    const deleteAttachment = vi.fn(async () => undefined);
+    const service = new ImageExplanationService(
+      {
+        get: vi.fn(async () => attachment), delete: deleteAttachment,
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      {} as never,
+      {
+        getActiveProjectId: () => 'project-1', subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      { get: () => ({ mediaType: 'image/png' }) } as never,
+    );
+    await service.delete({ projectId: 'project-1', assetId: 'asset-1', kind: 'attachment', explanationId: 'attachment-1' });
+    expect(deleteAttachment).toHaveBeenCalledWith('project-1', 'attachment-1');
     service.dispose();
   });
 });

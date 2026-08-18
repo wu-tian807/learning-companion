@@ -111,7 +111,7 @@ export function ImageExplanationPanel({
         </div>
       </div>
       <div className="flex justify-end border-t border-white/[0.07] px-3 py-2">
-        <button type="button" onClick={onDelete} className="ui-control rounded-full px-3 py-1.5 text-[11px] text-slate-500 hover:text-rose-300">
+        <button type="button" onClick={onDelete} className="ui-control rounded-full border border-rose-300/15 bg-rose-300/[0.04] px-3 py-1.5 text-[11px] text-rose-300/80 hover:border-rose-300/30 hover:text-rose-200">
           {explanation.kind === 'attachment' ? '删除解释' : explanation.status === 'pending' ? '取消生成' : '移除任务'}
         </button>
       </div>

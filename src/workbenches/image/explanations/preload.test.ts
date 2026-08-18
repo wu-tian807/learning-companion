@@ -16,6 +16,10 @@ describe('image explanation preload API', () => {
     const request = { projectId: 'project-1', assetId: 'asset-1' };
     await api.listImageExplanations(request);
     expect(invoke).toHaveBeenCalledWith('image-explanation:list', request);
+    await api.deleteImageExplanation({ ...request, kind: 'attachment', explanationId: 'attachment-1' });
+    expect(invoke).toHaveBeenCalledWith('image-explanation:delete', {
+      ...request, kind: 'attachment', explanationId: 'attachment-1',
+    });
 
     const listener = vi.fn();
     const remove = api.onImageExplanationChanged(listener);

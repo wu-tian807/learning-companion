@@ -38,5 +38,6 @@ describe('ImageExplanationPanel', () => {
     expect(markup).toContain('y="120"');
     expect(markup).toContain('这是选中的结构');
     expect(markup).toContain('data-image-explanation-stream-caret');
+    expect(markup).toContain('取消生成');
   });
 });
