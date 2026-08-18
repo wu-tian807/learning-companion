@@ -32,6 +32,7 @@ const completedExplanation = {
   id: 'attachment-1',
   status: 'completed' as const,
   answer: '完整解释',
+  sourceRevision: 'revision-1',
 };
 
 describe('ImageExplanationPanel', () => {

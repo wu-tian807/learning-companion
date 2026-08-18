@@ -19,6 +19,7 @@ const explanations: readonly ImageExplanationView[] = [
     target: createImageRegionTarget({ x: 0.1, y: 0.2, width: 0.3, height: 0.4, sourceWidth: 1000, sourceHeight: 800 }),
     status: 'completed',
     answer: '# 关键节点\n它连接了上下游内容。这是一段很长的补充说明，用于确认索引不会把整篇解释全部展示出来。索引之外的结尾内容不应出现。',
+    sourceRevision: 'revision-1',
     createdTime: 1,
     updatedTime: 2,
   },

@@ -77,6 +77,7 @@ describe('ImageWorkbenchView', () => {
   it('renders a stable full-height canvas and loading state', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'revision-1',
       viewState: cloneImageViewState(DEFAULT_IMAGE_VIEW_STATE),
     });
 
@@ -89,6 +90,7 @@ describe('ImageWorkbenchView', () => {
   it('rejects an invalid bootstrap payload before creating a viewer', () => {
     const markup = render({
       contentUrl: 'file:///tmp/private/diagram.png',
+      sourceRevision: 'revision-1',
       viewState: cloneImageViewState(DEFAULT_IMAGE_VIEW_STATE),
     });
 

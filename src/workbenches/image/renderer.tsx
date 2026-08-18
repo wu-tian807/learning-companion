@@ -58,6 +58,10 @@ import {
   type ImageExplanationRuntimeMap,
 } from './explanations/image-explanation-runtime';
 import {
+  findImageExplanationAtTarget,
+  isImageExplanationForRevision,
+} from './explanations/image-explanation-revision';
+import {
   IMAGE_DEFAULT_EXPLANATION_QUESTION,
   type ImageExplanationView,
   type ImageRegionTarget,
@@ -503,11 +507,13 @@ export function ImageWorkbenchView({
 
   const createExplanation = useCallback(() => {
     if (!selectedTarget) return;
-    const existing = explanations.find((candidate) => {
-      const left = candidate.target.anchorPayload;
-      const right = selectedTarget.anchorPayload;
-      return left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height;
-    });
+    const existing = payload
+      ? findImageExplanationAtTarget(
+          explanations,
+          selectedTarget,
+          payload.sourceRevision,
+        )
+      : undefined;
     if (existing) {
       setActiveExplanationId(existing.id);
       setSelectedTarget(undefined);
@@ -524,6 +530,7 @@ export function ImageWorkbenchView({
     conversationOwnerId,
     conversationRuntime,
     explanations,
+    payload,
     selectedTarget,
   ]);
 
@@ -723,10 +730,15 @@ export function ImageWorkbenchView({
   }, [captureViewState]);
 
   useEffect(() => {
+    if (!payload) return;
     let active = true;
     const removeSubscription = window.learningCompanion.onImageExplanationChanged((event) => {
       if (event.type === 'changed') {
         if (event.explanation.projectId !== asset.projectId || event.explanation.assetId !== asset.id) return;
+        if (!isImageExplanationForRevision(event.explanation, payload.sourceRevision)) {
+          setExplanations((current) => current.filter((item) => item.id !== event.explanation.id));
+          return;
+        }
         registerExplanationTask(event.explanation);
         setExplanations((current) => [...current.filter((item) => item.id !== event.explanation.id), event.explanation]);
         return;
@@ -734,11 +746,19 @@ export function ImageWorkbenchView({
       if (event.type === 'replaced') {
         if (event.projectId !== asset.projectId || event.assetId !== asset.id) return;
         clearExplanationRuntime(event.previousExplanationId);
+        const isCurrent = isImageExplanationForRevision(
+          event.explanation,
+          payload.sourceRevision,
+        );
         setExplanations((current) => [
           ...current.filter((item) => item.id !== event.previousExplanationId && item.id !== event.explanation.id),
-          event.explanation,
+          ...(isCurrent ? [event.explanation] : []),
         ]);
-        setActiveExplanationId((current) => current === event.previousExplanationId ? event.explanation.id : current);
+        setActiveExplanationId((current) =>
+          current === event.previousExplanationId
+            ? (isCurrent ? event.explanation.id : undefined)
+            : current,
+        );
         return;
       }
       if (event.projectId !== asset.projectId || event.assetId !== asset.id) return;
@@ -747,7 +767,11 @@ export function ImageWorkbenchView({
       setActiveExplanationId((current) => current === event.explanationId ? undefined : current);
     });
 
-    void window.learningCompanion.listImageExplanations({ projectId: asset.projectId, assetId: asset.id })
+    void window.learningCompanion.listImageExplanations({
+      projectId: asset.projectId,
+      assetId: asset.id,
+      sourceRevision: payload.sourceRevision,
+    })
       .then((items) => {
         if (!active) return;
         for (const item of items) registerExplanationTask(item);
@@ -766,7 +790,7 @@ export function ImageWorkbenchView({
       setActiveExplanationId(undefined);
       setExplanationIndexOpen(false);
     };
-  }, [asset.id, asset.projectId, clearExplanationRuntime, registerExplanationTask, reportError]);
+  }, [asset.id, asset.projectId, clearExplanationRuntime, payload, registerExplanationTask, reportError]);
 
   useEffect(() => window.learningCompanion.onGenerationTaskChanged((event) => {
     setExplanationRuntimeByTaskId((current) =>

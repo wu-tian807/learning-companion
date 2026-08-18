@@ -52,6 +52,7 @@ export interface ImageExplanationTaskView extends ImageExplanationViewBase {
   readonly kind: 'task';
   readonly status: 'pending' | 'failed';
   readonly failureMessage?: string;
+  readonly sourceRevision?: string;
 }
 
 export interface ImageExplanationAttachmentView
@@ -59,15 +60,21 @@ export interface ImageExplanationAttachmentView
   readonly kind: 'attachment';
   readonly status: 'completed';
   readonly answer: string;
+  readonly sourceRevision: string;
 }
 
 export type ImageExplanationView =
   | ImageExplanationTaskView
   | ImageExplanationAttachmentView;
 
-export interface ListImageExplanationsRequest {
+interface ImageExplanationAssetRequest {
   readonly projectId: string;
   readonly assetId: string;
+}
+
+export interface ListImageExplanationsRequest
+  extends ImageExplanationAssetRequest {
+  readonly sourceRevision: string;
 }
 
 export interface CreateImageExplanationRequest
@@ -76,7 +83,7 @@ export interface CreateImageExplanationRequest
 }
 
 export interface ImageExplanationIdRequest
-  extends ListImageExplanationsRequest {
+  extends ImageExplanationAssetRequest {
   readonly kind: ImageExplanationView['kind'];
   readonly explanationId: string;
 }
@@ -171,7 +178,8 @@ export function isListImageExplanationsRequest(
   return (
     isRecord(value) &&
     isRequiredText(value.projectId, 256) &&
-    isRequiredText(value.assetId, 256)
+    isRequiredText(value.assetId, 256) &&
+    isRequiredText(value.sourceRevision, 256)
   );
 }
 
@@ -190,7 +198,8 @@ export function isImageExplanationIdRequest(
 ): value is ImageExplanationIdRequest {
   return (
     isRecord(value) &&
-    isListImageExplanationsRequest(value) &&
+    isRequiredText(value.projectId, 256) &&
+    isRequiredText(value.assetId, 256) &&
     (value.kind === 'task' || value.kind === 'attachment') &&
     isRequiredText(value.explanationId, 256)
   );
@@ -208,11 +217,14 @@ export function isImageExplanationView(
     ((value.kind === 'task' &&
       (value.status === 'pending' || value.status === 'failed') &&
       value.answer === undefined &&
+      (value.sourceRevision === undefined ||
+        isRequiredText(value.sourceRevision, 256)) &&
       (value.failureMessage === undefined ||
         typeof value.failureMessage === 'string')) ||
       (value.kind === 'attachment' &&
         value.status === 'completed' &&
         typeof value.answer === 'string' &&
+        isRequiredText(value.sourceRevision, 256) &&
         value.failureMessage === undefined)) &&
     isTime(value.createdTime) &&
     isTime(value.updatedTime)

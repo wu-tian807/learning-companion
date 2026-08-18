@@ -15,6 +15,7 @@ const explanation: ImageExplanationView = {
   }),
   status: 'completed',
   answer: '解释',
+  sourceRevision: 'revision-1',
   createdTime: 1,
   updatedTime: 2,
 };

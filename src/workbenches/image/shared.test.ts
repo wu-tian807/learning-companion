@@ -68,6 +68,7 @@ describe('Image Workbench shared protocol', () => {
     expect(
       isImageWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: 'revision-1',
         viewState: DEFAULT_IMAGE_VIEW_STATE,
       }),
     ).toBe(true);
@@ -77,6 +78,7 @@ describe('Image Workbench shared protocol', () => {
     expect(
       isImageWorkbenchPayload({
         contentUrl: 'file:///Users/test/private.png',
+        sourceRevision: 'revision-1',
         viewState: DEFAULT_IMAGE_VIEW_STATE,
       }),
     ).toBe(false);

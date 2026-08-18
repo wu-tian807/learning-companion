@@ -64,6 +64,7 @@ export interface ImageWorkbenchStateV1 {
 
 export interface ImageWorkbenchPayload {
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly viewState: ImageWorkbenchViewState;
 }
 
@@ -168,6 +169,9 @@ export function isImageWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     value.contentUrl.startsWith('learning-content://resource/') &&
+    typeof value.sourceRevision === 'string' &&
+    value.sourceRevision.length > 0 &&
+    value.sourceRevision.length <= 256 &&
     isImageWorkbenchViewState(value.viewState)
   );
 }

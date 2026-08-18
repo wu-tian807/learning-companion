@@ -13,12 +13,22 @@ describe('image explanation preload API', () => {
     } as never;
     const invoke = vi.fn(async () => []);
     const api = createImageExplanationPreloadApi(ipcRenderer, invoke as never);
-    const request = { projectId: 'project-1', assetId: 'asset-1' };
+    const request = {
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-1',
+    };
     await api.listImageExplanations(request);
     expect(invoke).toHaveBeenCalledWith('image-explanation:list', request);
-    await api.deleteImageExplanation({ ...request, kind: 'attachment', explanationId: 'attachment-1' });
+    await api.deleteImageExplanation({
+      projectId: request.projectId,
+      assetId: request.assetId,
+      kind: 'attachment',
+      explanationId: 'attachment-1',
+    });
     expect(invoke).toHaveBeenCalledWith('image-explanation:delete', {
-      ...request, kind: 'attachment', explanationId: 'attachment-1',
+      projectId: request.projectId, assetId: request.assetId,
+      kind: 'attachment', explanationId: 'attachment-1',
     });
 
     const listener = vi.fn();

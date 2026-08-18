@@ -44,8 +44,8 @@ describe('ImageExplanationService', () => {
       { get: () => ({ mediaType: 'image/png' }) } as never,
     );
 
-    const first = await service.create({ projectId: 'project-1', assetId: 'asset-1', target });
-    const duplicate = await service.create({ projectId: 'project-1', assetId: 'asset-1', target });
+    const first = await service.create({ projectId: 'project-1', assetId: 'asset-1', sourceRevision: 'revision-1', target });
+    const duplicate = await service.create({ projectId: 'project-1', assetId: 'asset-1', sourceRevision: 'revision-1', target });
 
     expect(first).toMatchObject({ kind: 'task', id: 'task-1', status: 'pending', target });
     expect(duplicate.id).toBe('task-1');
@@ -69,9 +69,97 @@ describe('ImageExplanationService', () => {
       } as unknown as GenerationTaskServiceApi,
       { get: () => ({ mediaType: 'text/plain' }) } as never,
     );
-    await expect(service.create({ projectId: 'project-1', assetId: 'asset-1', target }))
+    await expect(service.create({ projectId: 'project-1', assetId: 'asset-1', sourceRevision: 'revision-1', target }))
       .rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
     expect(start).not.toHaveBeenCalled();
+    service.dispose();
+  });
+
+  it('filters stale Attachments and lets the same region be explained for a new source revision', async () => {
+    const attachment = (id: string, sourceRevision: string) => ({
+      id,
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'image.ai-explanation',
+      typeVersion: 1,
+      target,
+      metadata: {
+        format: 'learning-companion/image-explanation',
+        version: 1,
+        sourceRevision,
+      },
+      content: {
+        ref: {
+          kind: 'local-file',
+          base: 'project-workspace',
+          path: `attachments/${id}/answer.md`,
+        },
+        mediaType: 'text/markdown',
+      },
+      createdTime: sourceRevision === 'revision-1' ? 1 : 2,
+      updatedTime: sourceRevision === 'revision-1' ? 1 : 2,
+    } as const);
+    const attachments = [
+      attachment('attachment-old', 'revision-1'),
+      attachment('attachment-current', 'revision-2'),
+    ];
+    const tasks = new Map<string, ReturnType<GenerationTask['getSnapshot']>>();
+    const start = vi.fn((request) => {
+      const task = GenerationTask.create({
+        id: 'task-new-revision',
+        projectId: request.projectId,
+        definitionId: request.definitionId,
+        definitionVersion: request.definitionVersion,
+        instruction: request.instruction,
+        assetReferences: request.assetReferences,
+        createdTime: 3,
+      });
+      const snapshot = task.getSnapshot();
+      tasks.set(snapshot.id, snapshot);
+      return snapshot;
+    });
+    const service = new ImageExplanationService(
+      {
+        listByAsset: vi.fn(async () => attachments),
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      {
+        readText: vi.fn(async (_projectId, ref) =>
+          ref.path.includes('current') ? '当前解释' : '旧解释'),
+      } as never,
+      {
+        start,
+        list: () => [...tasks.values()],
+        getActiveProjectId: () => 'project-1',
+        subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      { get: () => ({ mediaType: 'image/png' }) } as never,
+    );
+
+    await expect(service.list({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-2',
+    })).resolves.toEqual([
+      expect.objectContaining({
+        id: 'attachment-current',
+        answer: '当前解释',
+        sourceRevision: 'revision-2',
+      }),
+    ]);
+    await expect(service.create({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-2',
+      target,
+    })).resolves.toMatchObject({ id: 'attachment-current' });
+    await expect(service.create({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-3',
+      target,
+    })).resolves.toMatchObject({ id: 'task-new-revision', kind: 'task' });
+    expect(start).toHaveBeenCalledOnce();
     service.dispose();
   });
 
@@ -155,7 +243,7 @@ describe('ImageExplanationService', () => {
       } as unknown as GenerationTaskServiceApi,
       { get: () => ({ mediaType: 'image/png' }) } as never,
     );
-    await expect(service.list({ projectId: 'project-1', assetId: 'asset-1' }))
+    await expect(service.list({ projectId: 'project-1', assetId: 'asset-1', sourceRevision: 'revision-1' }))
       .resolves.toEqual([]);
     service.dispose();
   });

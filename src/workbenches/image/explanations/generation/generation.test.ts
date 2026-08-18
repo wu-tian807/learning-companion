@@ -225,6 +225,50 @@ describe('image explanation generation', () => {
     expect(createWithContent).not.toHaveBeenCalled();
   });
 
+  it('creates a new Attachment for the same region when the source revision changed', async () => {
+    const instruction = createInstruction();
+    const createWithContent = vi.fn(async (input) => ({
+      ...input,
+      id: 'attachment-current',
+    }));
+    const processor = new ImageExplanationProcessor({
+      listByAsset: vi.fn(async () => [{
+        id: 'attachment-stale',
+        typeId: 'image.ai-explanation',
+        typeVersion: 1,
+        target: instruction.target,
+        metadata: {
+          format: 'learning-companion/image-explanation',
+          version: 1,
+          sourceRevision: 'revision-1',
+        },
+        content: { mediaType: 'text/markdown' },
+      }]),
+      createWithContent,
+    } as never);
+
+    const result = await processor.process({
+      projectId: 'project-1',
+      instruction,
+      workspaces: { primary: { path: 'C:\\workspace' } },
+      assetReferences: { image: [{
+        contentRevision: 'revision-2',
+        relativePath: 'references/image-0001/source.png',
+      }] },
+      preparedUserMessage: instruction.toUserMessage(),
+      agent: { call: vi.fn(async () => ({
+        assistantOutput: '新图片的解释',
+        metrics: { providerId: 'codex', modelId: 'gpt-test' },
+      })) },
+      reportStatus: vi.fn(),
+    } as never);
+
+    expect(result).toMatchObject({ attachmentId: 'attachment-current' });
+    expect(createWithContent).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ sourceRevision: 'revision-2' }),
+    }));
+  });
+
   it('answers a follow-up in the same conversation without reprocessing images or creating a Note', async () => {
     vi.mocked(prepareImageExplanationInputs).mockClear();
     const listByAsset = vi.fn();
