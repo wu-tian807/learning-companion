@@ -60,8 +60,10 @@ describe('Workbench contribution catalogs', () => {
     );
     registerMainWorkbenchProviders(providers, {
       associationService: {} as never,
-      assetService: {} as never,
-      artifactRegistry: {} as never,
+      assetService: {
+        subscribe: vi.fn(() => () => undefined),
+      } as never,
+      artifactRegistry: { register: vi.fn() } as never,
       artifactService: {} as never,
       contentResourceService: {} as never,
       externalLibraryService: {} as never,

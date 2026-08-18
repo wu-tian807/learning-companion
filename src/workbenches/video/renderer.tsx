@@ -17,12 +17,19 @@ import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
 import {
   cloneVideoViewState,
+  createVideoRetrySubtitlesCommand,
   createVideoSaveViewStateCommand,
+  createVideoSetSubtitleModeCommand,
   createVideoTimeRangeTarget,
   DEFAULT_VIDEO_VIEW_STATE,
+  isVideoSubtitleCueFinalPayload,
+  isVideoSubtitleSnapshot,
   isVideoSaveViewStateResult,
   isVideoWorkbenchPayload,
+  type VideoSubtitleDisplayMode,
+  type VideoSubtitleSnapshot,
   type VideoWorkbenchViewState,
+  videoEventTypes,
   videoWorkbenchManifest,
 } from './shared';
 
@@ -34,6 +41,40 @@ type VideoLoadState =
 const SAVE_DELAY_MS = 750;
 const VIDEO_HAVE_METADATA = 1;
 const VIDEO_METADATA_TIMEOUT_MS = 15_000;
+
+function formatVttTime(milliseconds: number): string {
+  const safe = Math.max(0, Math.round(milliseconds));
+  const hours = Math.floor(safe / 3_600_000);
+  const minutes = Math.floor((safe % 3_600_000) / 60_000);
+  const seconds = Math.floor((safe % 60_000) / 1_000);
+  const millis = safe % 1_000;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
+}
+
+export function createVideoSubtitleVtt(
+  snapshot: VideoSubtitleSnapshot,
+  mode: VideoSubtitleDisplayMode,
+): string | undefined {
+  if (mode === 'off' || !snapshot.source) return undefined;
+  const translations = new Map(
+    (snapshot.translation?.cues ?? snapshot.partialTranslations).map((cue) => [
+      cue.sourceCueId,
+      cue.text,
+    ]),
+  );
+  const blocks = snapshot.source.cues.map((cue) => {
+    const translation = translations.get(cue.id);
+    let text = cue.text;
+
+    if (mode === 'translated') {
+      text = translation ?? `〔原文 · 译文生成中〕${cue.text}`;
+    } else if (mode === 'bilingual') {
+      text = `${cue.text}\n${translation ?? '〔正在翻译…〕'}`;
+    }
+    return `${formatVttTime(cue.startMs)} --> ${formatVttTime(cue.endMs)}\n${text}`;
+  });
+  return `WEBVTT\n\n${blocks.join('\n\n')}\n`;
+}
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
@@ -81,7 +122,9 @@ export function VideoWorkbenchView({
   onRelink,
   onRefresh,
   onReveal,
+  onOpenSettings,
   onError,
+  subscribeEvent,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isVideoWorkbenchPayload(bootstrap.payload)
@@ -99,6 +142,19 @@ export function VideoWorkbenchView({
   const [currentTime, setCurrentTime] = useState(
     payload?.viewState.currentTime ?? 0,
   );
+  const [subtitleMode, setSubtitleMode] = useState<VideoSubtitleDisplayMode>(
+    payload?.subtitleState.displayMode ?? 'off',
+  );
+  const [subtitleSnapshot, setSubtitleSnapshot] =
+    useState<VideoSubtitleSnapshot>(
+      payload?.subtitleSnapshot ?? {
+        phase: 'idle',
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      },
+    );
+  const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string>();
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -127,6 +183,66 @@ export function VideoWorkbenchView({
     },
     [executeCommand, reportError],
   );
+
+  useEffect(() => {
+    if (!payload) return;
+    setSubtitleMode(payload.subtitleState.displayMode);
+    setSubtitleSnapshot(payload.subtitleSnapshot);
+  }, [payload]);
+
+  useEffect(() => {
+    if (!subscribeEvent) {
+      throw new Error('Video Workbench 缺少异步事件通道');
+    }
+    return subscribeEvent((event) => {
+      if (
+        event.type === videoEventTypes.subtitleSnapshot &&
+        isVideoSubtitleSnapshot(event.payload)
+      ) {
+        setSubtitleSnapshot(event.payload);
+        return;
+      }
+      if (
+        event.type === videoEventTypes.subtitleCueFinal &&
+        isVideoSubtitleCueFinalPayload(event.payload)
+      ) {
+        const payload = event.payload;
+        setSubtitleSnapshot((current) => {
+          const translations = new Map(
+            current.partialTranslations.map((cue) => [cue.sourceCueId, cue]),
+          );
+          translations.set(payload.cue.sourceCueId, payload.cue);
+          const ordered = current.source?.cues.flatMap((cue) => {
+            const translation = translations.get(cue.id);
+            return translation ? [translation] : [];
+          }) ?? [...translations.values()];
+          return {
+            ...current,
+            phase: 'translating',
+            partialTranslations: ordered,
+            completedCues: payload.completedCues,
+            totalCues: payload.totalCues,
+          };
+        });
+      }
+    });
+  }, [subscribeEvent]);
+
+  const subtitleVtt = useMemo(
+    () => createVideoSubtitleVtt(subtitleSnapshot, subtitleMode),
+    [subtitleMode, subtitleSnapshot],
+  );
+  useEffect(() => {
+    if (!subtitleVtt) {
+      setSubtitleTrackUrl(undefined);
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([subtitleVtt], { type: 'text/vtt' }),
+    );
+    setSubtitleTrackUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [subtitleVtt]);
 
   const captureAndScheduleSave = useCallback(
     (immediate = false) => {
@@ -283,6 +399,30 @@ export function VideoWorkbenchView({
   );
   useWorkbenchContributions(videoWorkbenchManifest.id, rendererActions);
 
+  const selectSubtitleMode = useCallback(
+    async (mode: VideoSubtitleDisplayMode) => {
+      setSubtitleMode(mode);
+      try {
+        const result = await executeCommand(
+          createVideoSetSubtitleModeCommand(mode),
+        );
+        if (!isVideoSaveViewStateResult(result.payload)) {
+          throw new Error('Video Workbench 字幕状态响应无效');
+        }
+      } catch (error) {
+        reportError(error, '无法切换字幕模式。');
+      }
+    },
+    [executeCommand, reportError],
+  );
+  const retrySubtitles = useCallback(async () => {
+    try {
+      await executeCommand(createVideoRetrySubtitlesCommand());
+    } catch (error) {
+      reportError(error, '无法重新处理字幕。');
+    }
+  }, [executeCommand, reportError]);
+
   const openContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -326,7 +466,85 @@ export function VideoWorkbenchView({
           controls
           playsInline
           preload="metadata"
-        />
+        >
+          {subtitleTrackUrl && (
+            <track
+              key={subtitleTrackUrl}
+              kind="subtitles"
+              src={subtitleTrackUrl}
+              srcLang={subtitleSnapshot.source?.language ?? 'und'}
+              label="Learning Companion 字幕"
+              default
+            />
+          )}
+        </video>
+      </div>
+
+      <div className="absolute bottom-14 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#151a21]/90 p-1.5 shadow-xl backdrop-blur-md">
+        {(['off', 'source', 'translated', 'bilingual'] as const).map((mode) => {
+          const label = {
+            off: '关闭',
+            source: '原文',
+            translated: '译文',
+            bilingual: '双语',
+          }[mode];
+          const disabled =
+            mode !== 'off' &&
+            (!subtitleSnapshot.source ||
+              ((mode === 'translated' || mode === 'bilingual') &&
+                subtitleSnapshot.source.language === 'unknown'));
+          return (
+            <button
+              key={mode}
+              type="button"
+              disabled={disabled}
+              onClick={() => void selectSubtitleMode(mode)}
+              className={`ui-control rounded-lg px-2.5 py-1.5 text-[11px] ${
+                subtitleMode === mode
+                  ? 'bg-indigo-400/20 text-indigo-100'
+                  : 'text-slate-400'
+              } disabled:cursor-not-allowed disabled:opacity-35`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        <span className="ml-1 border-l border-white/10 pl-2 text-[10px] text-slate-500">
+          {subtitleSnapshot.phase === 'transcribing' ||
+          subtitleSnapshot.phase === 'queued'
+            ? '正在准备字幕…'
+            : subtitleSnapshot.phase === 'translating'
+              ? `翻译 ${subtitleSnapshot.completedCues}/${subtitleSnapshot.totalCues}`
+              : subtitleSnapshot.phase === 'ready'
+                ? '翻译完成'
+                : subtitleSnapshot.phase === 'source-ready'
+                  ? '原文可用'
+                  : subtitleSnapshot.phase === 'unsupported-language'
+                    ? '仅支持中英互译'
+                    : subtitleSnapshot.phase === 'runtime-required'
+                      ? '需要字幕组件'
+                      : subtitleSnapshot.phase === 'failed'
+                        ? '字幕处理失败'
+                        : '字幕未准备'}
+        </span>
+        {subtitleSnapshot.phase === 'runtime-required' && onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="ui-control rounded-lg px-2 py-1 text-[10px] text-indigo-200"
+          >
+            设置
+          </button>
+        )}
+        {subtitleSnapshot.phase === 'failed' && (
+          <button
+            type="button"
+            onClick={() => void retrySubtitles()}
+            className="ui-control rounded-lg px-2 py-1 text-[10px] text-rose-200"
+          >
+            重试
+          </button>
+        )}
       </div>
 
       {loadState.kind === 'loading' && (
