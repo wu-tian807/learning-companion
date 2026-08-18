@@ -17,7 +17,7 @@ export function ImageExplanationVisibilityToggle({
       aria-pressed={!visible}
       title={visible ? '隐藏图片上的区域边框和编号' : '重新显示图片上的区域边框和编号'}
       onClick={onToggle}
-      className={`ui-control rounded-xl border px-3 py-2 text-xs shadow-lg backdrop-blur ${
+      className={`ui-control h-8 rounded-lg border px-2.5 text-xs ${
         visible
           ? 'border-white/[0.09] bg-[#20262e]/88 text-slate-400'
           : 'border-indigo-300/20 bg-indigo-400/10 text-indigo-200'

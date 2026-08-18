@@ -13,6 +13,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { WorkbenchHeaderActionsPortal } from '../../renderer/workbench/host/WorkbenchHeaderActionsPortal';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -31,8 +32,8 @@ import {
 import { createImageRendererActions } from './renderer-actions';
 import { createImageRegionFromImagePoints } from './image-region';
 import { ImageExplanationPanel } from './explanations/image-explanation-panel';
+import { ImageExplanationHeaderActions } from './explanations/image-explanation-header-actions';
 import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
-import { ImageExplanationVisibilityToggle } from './explanations/image-explanation-visibility-toggle';
 import {
   ImageExplanationIndex,
   orderImageExplanations,
@@ -1041,28 +1042,21 @@ export function ImageWorkbenchView({
       />
 
       {ready && (
-        <div className={`absolute top-3 z-10 flex items-center gap-2 ${explanationIndexOpen ? 'left-[268px]' : 'left-3'}`}>
-          {!explanationIndexOpen && (
-            <button
-              type="button"
-              aria-label={`切换图片标注索引（${explanations.length}）`}
-              aria-expanded={false}
-              onClick={() => {
-                setActiveExplanationId(undefined);
-                setExplanationIndexOpen(true);
-              }}
-              className="ui-control rounded-xl border border-white/[0.09] bg-[#20262e]/88 px-3 py-2 text-xs text-slate-300 shadow-lg backdrop-blur"
-            >
-              标注
-              <span className="ml-1 tabular-nums text-slate-500">{explanations.length}</span>
-            </button>
-          )}
-          <ImageExplanationVisibilityToggle
-            visible={explanationMarkersVisible}
-            count={explanations.length}
-            onToggle={() => setExplanationMarkersVisible((current) => !current)}
+        <WorkbenchHeaderActionsPortal>
+          <ImageExplanationHeaderActions
+            explanationCount={explanations.length}
+            indexOpen={explanationIndexOpen}
+            markersVisible={explanationMarkersVisible}
+            canStartSelection={!selectionMode && !selectedTarget && !activeExplanation}
+            canToggleIndex={!selectionMode && !selectedTarget}
+            onStartSelection={startRegionSelection}
+            onToggleIndex={() => {
+              setActiveExplanationId(undefined);
+              setExplanationIndexOpen((current) => !current);
+            }}
+            onToggleMarkers={() => setExplanationMarkersVisible((current) => !current)}
           />
-        </div>
+        </WorkbenchHeaderActionsPortal>
       )}
 
       {explanationIndexOpen && (
@@ -1114,10 +1108,6 @@ export function ImageWorkbenchView({
           <button type="button" onClick={startRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-400">重选</button>
           <button type="button" onClick={cancelRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-500">取消</button>
         </div>
-      )}
-
-      {ready && !selectionMode && !selectedTarget && !activeExplanation && (
-        <button type="button" onClick={startRegionSelection} className="ui-control absolute right-3 top-3 z-10 rounded-xl border border-indigo-300/15 bg-[#20262e]/88 px-3 py-2 text-xs text-indigo-200 shadow-lg backdrop-blur" title="框选一个区域，AI 会结合整张图片进行解释">框选区域解释</button>
       )}
 
       {loadState.kind === 'loading' && (
