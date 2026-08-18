@@ -41,6 +41,7 @@ import type {
   WorkbenchCloseRequest,
   WorkbenchCommandRequest,
   WorkbenchCommandResult,
+  WorkbenchEvent,
   WorkbenchOpenRequest,
 } from "./workbench/protocol";
 import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-event";
@@ -105,6 +106,7 @@ export const IPC_CHANNELS = {
   openWorkbench: "workbench:open",
   commandWorkbench: "workbench:command",
   closeWorkbench: "workbench:close",
+  workbenchEvent: "workbench:event",
   workbenchFacilityEvent: "workbench:facility-event",
   listAttachments: "attachment:list",
   createAttachment: "attachment:create",
@@ -234,6 +236,9 @@ export interface LearningCompanionApi {
   commandWorkbench: (
     request: WorkbenchCommandRequest,
   ) => Promise<WorkbenchCommandResult>;
+  onWorkbenchEvent: (
+    listener: (event: WorkbenchEvent) => void,
+  ) => () => void;
   closeWorkbench: (request: WorkbenchCloseRequest) => Promise<void>;
   onWorkbenchFacilityEvent: (
     listener: (event: WorkbenchFacilityEvent) => void,

@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
 import { WORKBENCH_PROTOCOL_VERSION } from '../../shared/workbench/manifest';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
+import { WorkbenchEventBus } from '../workbench/workbench-event-bus';
 import {
   registerWorkbenchHandlers,
   removeWorkbenchHandlers,
@@ -12,12 +13,16 @@ import {
 const electronMocks = vi.hoisted(() => ({
   handle: vi.fn(),
   removeHandler: vi.fn(),
+  getAllWindows: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
   ipcMain: {
     handle: electronMocks.handle,
     removeHandler: electronMocks.removeHandler,
+  },
+  BrowserWindow: {
+    getAllWindows: electronMocks.getAllWindows,
   },
 }));
 
@@ -70,12 +75,13 @@ function createManager() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  electronMocks.getAllWindows.mockReturnValue([]);
 });
 
 describe('Workbench IPC handlers', () => {
   it('forwards validated lifecycle requests to the service', async () => {
     const manager = createManager();
-    registerWorkbenchHandlers(manager);
+    registerWorkbenchHandlers(manager, new WorkbenchEventBus());
 
     await expect(
       findHandler(IPC_CHANNELS.openWorkbench)({ assetId: 'asset' }),
@@ -103,7 +109,7 @@ describe('Workbench IPC handlers', () => {
 
   it('rejects malformed requests before calling the manager', async () => {
     const manager = createManager();
-    registerWorkbenchHandlers(manager);
+    registerWorkbenchHandlers(manager, new WorkbenchEventBus());
 
     await expect(
       findHandler(IPC_CHANNELS.openWorkbench)({ assetId: '' }),
@@ -128,5 +134,28 @@ describe('Workbench IPC handlers', () => {
       [IPC_CHANNELS.commandWorkbench],
       [IPC_CHANNELS.closeWorkbench],
     ]);
+  });
+
+  it('delivers Main events to live renderer windows and unsubscribes on removal', () => {
+    const send = vi.fn();
+    electronMocks.getAllWindows.mockReturnValue([
+      { isDestroyed: () => false, webContents: { send } },
+      { isDestroyed: () => true, webContents: { send } },
+    ]);
+    const events = new WorkbenchEventBus();
+    registerWorkbenchHandlers(createManager(), events);
+    const event = {
+      sessionId: 'session',
+      type: 'test:status',
+      payload: { phase: 'ready' },
+    };
+
+    events.publish(event);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(IPC_CHANNELS.workbenchEvent, event);
+
+    removeWorkbenchHandlers();
+    events.publish(event);
+    expect(send).toHaveBeenCalledOnce();
   });
 });

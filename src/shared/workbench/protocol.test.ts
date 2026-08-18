@@ -6,6 +6,7 @@ import {
   isWorkbenchBootstrap,
   isWorkbenchCloseRequest,
   isWorkbenchCommandRequest,
+  isWorkbenchEvent,
   isWorkbenchOpenRequest,
 } from './protocol';
 
@@ -38,6 +39,20 @@ describe('Workbench protocol', () => {
       }),
     ).toBe(false);
     expect(isWorkbenchCloseRequest({ sessionId: 'session' })).toBe(true);
+    expect(
+      isWorkbenchEvent({
+        sessionId: 'session',
+        type: 'test:status',
+        payload: { phase: 'ready' },
+      }),
+    ).toBe(true);
+    expect(
+      isWorkbenchEvent({
+        sessionId: '',
+        type: 'test:status',
+        payload: Number.NaN,
+      }),
+    ).toBe(false);
     expect(
       isWorkbenchBootstrap({
         sessionId: 'session',

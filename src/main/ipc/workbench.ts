@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
 import {
@@ -8,7 +8,10 @@ import {
 } from '../../shared/workbench/protocol';
 import { AppError } from '../errors/app-error';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
+import type { WorkbenchEventBusApi } from '../workbench/workbench-event-bus';
 import { registerIpcHandler } from './register-handler';
+
+let removeEventSubscription: (() => void) | undefined;
 
 function invalidRequest(): Error {
   return new AppError('INVALID_IPC_REQUEST');
@@ -16,7 +19,16 @@ function invalidRequest(): Error {
 
 export function registerWorkbenchHandlers(
   service: WorkbenchSessionServiceApi,
+  events: WorkbenchEventBusApi,
 ): void {
+  removeEventSubscription?.();
+  removeEventSubscription = events.subscribe((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(IPC_CHANNELS.workbenchEvent, event);
+      }
+    }
+  });
   registerIpcHandler(
     IPC_CHANNELS.openWorkbench,
     async (_event, request: unknown) => {
@@ -52,6 +64,8 @@ export function registerWorkbenchHandlers(
 }
 
 export function removeWorkbenchHandlers(): void {
+  removeEventSubscription?.();
+  removeEventSubscription = undefined;
   ipcMain.removeHandler(IPC_CHANNELS.openWorkbench);
   ipcMain.removeHandler(IPC_CHANNELS.commandWorkbench);
   ipcMain.removeHandler(IPC_CHANNELS.closeWorkbench);

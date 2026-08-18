@@ -39,6 +39,12 @@ export interface WorkbenchCommandResult {
   readonly payload: JsonValue;
 }
 
+export interface WorkbenchEvent {
+  readonly sessionId: string;
+  readonly type: string;
+  readonly payload: JsonValue;
+}
+
 export interface WorkbenchCloseRequest {
   readonly sessionId: string;
 }
@@ -128,6 +134,15 @@ export function isWorkbenchCloseRequest(
   value: unknown,
 ): value is WorkbenchCloseRequest {
   return isRecord(value) && isRequiredText(value.sessionId);
+}
+
+export function isWorkbenchEvent(value: unknown): value is WorkbenchEvent {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.sessionId) &&
+    isRequiredText(value.type) &&
+    isJsonValue(value.payload)
+  );
 }
 
 export function isWorkbenchBootstrap(
