@@ -31,6 +31,8 @@ import {
 import { createImageRendererActions } from './renderer-actions';
 import { createImageRegionFromImagePoints } from './image-region';
 import { ImageExplanationPanel } from './explanations/image-explanation-panel';
+import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
+import { ImageExplanationVisibilityToggle } from './explanations/image-explanation-visibility-toggle';
 import {
   ImageExplanationIndex,
   orderImageExplanations,
@@ -391,6 +393,7 @@ export function ImageWorkbenchView({
   const [explanations, setExplanations] = useState<ImageExplanationView[]>([]);
   const [activeExplanationId, setActiveExplanationId] = useState<string>();
   const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
+  const [explanationMarkersVisible, setExplanationMarkersVisible] = useState(true);
   const explanationTaskIdsRef = useRef(new Set<string>());
   const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
     useState<ImageExplanationRuntimeMap>({});
@@ -926,6 +929,10 @@ export function ImageWorkbenchView({
     [explanations],
   );
 
+  useEffect(() => {
+    if (explanations.length === 0) setExplanationMarkersVisible(true);
+  }, [explanations.length]);
+
   const markerPolygons = useMemo(
     () =>
       orderedExplanations.map((explanation, index) => ({
@@ -1033,20 +1040,29 @@ export function ImageWorkbenchView({
         className="h-full min-h-0 w-full"
       />
 
-      {ready && !explanationIndexOpen && (
-        <button
-          type="button"
-          aria-label={`切换图片标注索引（${explanations.length}）`}
-          aria-expanded={false}
-          onClick={() => {
-            setActiveExplanationId(undefined);
-            setExplanationIndexOpen(true);
-          }}
-          className="ui-control absolute left-3 top-3 z-10 rounded-xl border border-white/[0.09] bg-[#20262e]/88 px-3 py-2 text-xs text-slate-300 shadow-lg backdrop-blur"
-        >
-          标注
-          <span className="ml-1 tabular-nums text-slate-500">{explanations.length}</span>
-        </button>
+      {ready && (
+        <div className={`absolute top-3 z-10 flex items-center gap-2 ${explanationIndexOpen ? 'left-[268px]' : 'left-3'}`}>
+          {!explanationIndexOpen && (
+            <button
+              type="button"
+              aria-label={`切换图片标注索引（${explanations.length}）`}
+              aria-expanded={false}
+              onClick={() => {
+                setActiveExplanationId(undefined);
+                setExplanationIndexOpen(true);
+              }}
+              className="ui-control rounded-xl border border-white/[0.09] bg-[#20262e]/88 px-3 py-2 text-xs text-slate-300 shadow-lg backdrop-blur"
+            >
+              标注
+              <span className="ml-1 tabular-nums text-slate-500">{explanations.length}</span>
+            </button>
+          )}
+          <ImageExplanationVisibilityToggle
+            visible={explanationMarkersVisible}
+            count={explanations.length}
+            onToggle={() => setExplanationMarkersVisible((current) => !current)}
+          />
+        </div>
       )}
 
       {explanationIndexOpen && (
@@ -1060,33 +1076,12 @@ export function ImageWorkbenchView({
       )}
 
       {ready && (
-        <svg aria-label="图片兴趣区域标记" className="pointer-events-none absolute inset-0 z-[5] size-full overflow-visible">
-          {markerPolygons.map(({ explanation, number, points, markerPosition }) => points ? (
-            <g
-              key={explanation.id}
-              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onClick={() => revealExplanation(explanation)}
-            >
-              <polygon
-                points={points}
-                fill={explanation.status === 'completed' ? 'rgba(99,102,241,0.08)' : 'rgba(148,163,184,0.06)'}
-                stroke={explanation.status === 'failed' ? '#fb7185' : explanation.status === 'pending' ? '#94a3b8' : '#a5b4fc'}
-                strokeWidth="2"
-                strokeDasharray={explanation.status === 'completed' ? undefined : '5 4'}
-                vectorEffect="non-scaling-stroke"
-              />
-              {markerPosition && (
-                <>
-                  <circle cx={markerPosition.x} cy={markerPosition.y} r="9" fill="#4f46e5" stroke="#c7d2fe" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                  <text x={markerPosition.x} y={markerPosition.y} fill="#eef2ff" fontSize="9" fontWeight="700" textAnchor="middle" dominantBaseline="central">{number}</text>
-                </>
-              )}
-            </g>
-          ) : null)}
-          {selectedPolygon && (
-            <polygon points={selectedPolygon} fill="rgba(99,102,241,0.14)" stroke="#c7d2fe" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-          )}
-        </svg>
+        <ImageExplanationMarkerOverlay
+          visible={explanationMarkersVisible}
+          markers={markerPolygons}
+          selectedPolygon={selectedPolygon}
+          onActivate={revealExplanation}
+        />
       )}
 
       {selectionMode && ready && (
