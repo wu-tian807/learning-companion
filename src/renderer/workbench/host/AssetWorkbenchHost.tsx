@@ -105,6 +105,17 @@ export function AssetWorkbenchHost({
     },
     [assetId, readySessionId, runtime],
   );
+  const subscribeEvent = useCallback(
+    (
+      listener: Parameters<
+        typeof window.learningCompanion.onWorkbenchEvent
+      >[0],
+    ) =>
+      window.learningCompanion.onWorkbenchEvent((event) => {
+        if (event.sessionId === readySessionId) listener(event);
+      }),
+    [readySessionId],
+  );
   const openExternal = useCallback(
     async (url: string) => {
       try {
@@ -375,6 +386,7 @@ export function AssetWorkbenchHost({
               attachments={attachments}
               refreshAttachments={refreshAttachments}
               executeCommand={state.executeCommand}
+              subscribeEvent={subscribeEvent}
               onRelink={onRelink}
               onRefresh={onRefresh}
               onReveal={onReveal}
