@@ -3,10 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../../shared/agent-provider-selectors';
 import { createEpubCfiRangeTarget } from '../../shared';
 import {
+  EPUB_DEFAULT_EXPLANATION_QUESTION,
+  EPUB_EXPLANATION_INSTRUCTION_FORMAT,
+  EPUB_EXPLANATION_INSTRUCTION_VERSION,
   EPUB_EXPLANATION_TASK_DEFINITION_ID,
   EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
 } from '../shared';
-import { EpubExplanationInstruction } from './instruction';
+import {
+  EpubExplanationInstruction,
+  epubExplanationInstructionFactory,
+} from './instruction';
 import {
   EPUB_EXPLANATION_SYSTEM_INSTRUCTION_V1,
   EpubExplanationProcessor,
@@ -47,7 +53,7 @@ describe('EPUB explanation generation', () => {
     );
   });
 
-  it('uses the default task-isolated, tool-free workspace', () => {
+  it('keeps legacy notes task-isolated and reuses a stable conversation workspace', () => {
     const definition = createEpubExplanationTaskDefinitionV1({
       process: vi.fn(),
     });
@@ -62,12 +68,52 @@ describe('EPUB explanation generation', () => {
     expect(definition.primaryWorkspaceConfig).toMatchObject({
       permissions: { read: false, write: false },
     });
-    expect(definition.primaryWorkspaceConfig.resolveInstanceKey).toBeUndefined();
+    const resolveInstanceKey =
+      definition.primaryWorkspaceConfig.resolveInstanceKey!;
+    expect(
+      resolveInstanceKey({
+        taskId: 'legacy-task',
+        instruction: createInstruction().toSnapshot(),
+      }),
+    ).toBe('legacy-task');
+    expect(
+      resolveInstanceKey({
+        taskId: 'conversation-task',
+        instruction: new EpubExplanationInstruction({
+          assetId: 'asset-1',
+          conversationId: 'conversation-1',
+          question: '这句话还有什么含义？',
+          saveAsNote: false,
+        }).toSnapshot(),
+      }),
+    ).toBe('conversation-1');
     expect(definition.assetReferenceSchema).toEqual({});
   });
 
+  it('continues to parse pre-conversation note snapshots for recovery', () => {
+    const target = createInstruction().target!;
+    const parsed = epubExplanationInstructionFactory.parse({
+      format: EPUB_EXPLANATION_INSTRUCTION_FORMAT,
+      version: EPUB_EXPLANATION_INSTRUCTION_VERSION,
+      assetId: 'asset-1',
+      target: target as never,
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value).toMatchObject({
+      conversationId: undefined,
+      question: EPUB_DEFAULT_EXPLANATION_QUESTION,
+      saveAsNote: true,
+      target,
+    });
+  });
+
   it('creates a complete Attachment only after the Agent answer succeeds', async () => {
-    const call = vi.fn(async () => ({ assistantOutput: '# 通俗解释\n正文' }));
+    const call = vi.fn(async () => ({
+      assistantOutput: '# 通俗解释\n正文',
+      metrics: { providerId: 'codex', modelId: 'gpt-test' },
+    }));
     const createWithContent = vi.fn(async (input) => ({
       ...input,
       id: 'attachment-1',
@@ -97,7 +143,12 @@ describe('EPUB explanation generation', () => {
       reportStatus,
     } as never);
 
-    expect(result).toEqual({ attachmentId: 'attachment-1' });
+    expect(result).toEqual({
+      answer: '# 通俗解释\n正文',
+      providerId: 'codex',
+      modelId: 'gpt-test',
+      attachmentId: 'attachment-1',
+    });
     expect(call).toHaveBeenCalledWith(
       {
         callKey: 'explain',
@@ -112,7 +163,7 @@ describe('EPUB explanation generation', () => {
     );
     expect(reportStatus.mock.calls).toEqual([
       ['正在解释选中的文字…'],
-      ['正在保存 AI 解释…'],
+      ['回答已生成，正在保存解释标注…'],
     ]);
     expect(createWithContent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -165,13 +216,64 @@ describe('EPUB explanation generation', () => {
       projectId: 'project-1',
       instruction,
       agent: {
-        call: vi.fn(async () => ({ assistantOutput: '已完成的回答' })),
+        call: vi.fn(async () => ({
+          assistantOutput: '已完成的回答',
+          metrics: { providerId: 'codex', modelId: 'gpt-test' },
+        })),
       },
       preparedUserMessage: { role: 'user', content: [] },
       reportStatus: vi.fn(),
     } as never);
 
-    expect(result).toEqual({ attachmentId: 'attachment-1' });
+    expect(result).toEqual({
+      answer: '已完成的回答',
+      providerId: 'codex',
+      modelId: 'gpt-test',
+      attachmentId: 'attachment-1',
+    });
+    expect(createWithContent).not.toHaveBeenCalled();
+  });
+
+  it('returns a follow-up answer in the same conversation without creating another Attachment', async () => {
+    const createWithContent = vi.fn();
+    const processor = new EpubExplanationProcessor({
+      listByAsset: vi.fn(),
+      createWithContent,
+    } as never);
+    const instruction = new EpubExplanationInstruction({
+      assetId: 'asset-1',
+      conversationId: 'conversation-1',
+      question: '能再举一个例子吗？',
+      saveAsNote: false,
+    });
+    const reportStatus = vi.fn();
+    const call = vi.fn(async () => ({
+      assistantOutput: '可以，例如……',
+      metrics: { providerId: 'codex', modelId: 'gpt-test' },
+    }));
+
+    const result = await processor.process({
+      taskId: 'task-2',
+      projectId: 'project-1',
+      instruction,
+      agent: { call },
+      preparedUserMessage: { role: 'user', content: [] },
+      reportStatus,
+    } as never);
+
+    expect(result).toEqual({
+      answer: '可以，例如……',
+      providerId: 'codex',
+      modelId: 'gpt-test',
+    });
+    expect(reportStatus).toHaveBeenCalledWith('正在回答追问…');
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callKey: 'answer',
+        purpose: 'epub-reading-conversation',
+        assistantEvents: 'runtime',
+      }),
+    );
     expect(createWithContent).not.toHaveBeenCalled();
   });
 });

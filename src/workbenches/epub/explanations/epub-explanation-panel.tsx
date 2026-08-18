@@ -44,12 +44,16 @@ export function EpubExplanationPanel({
   onClose,
   onRetry,
   onDelete,
+  onContinueQuestion,
+  continueQuestionDisabled = false,
 }: {
   readonly explanation: EpubExplanationView;
   readonly runtime?: EpubExplanationRuntimeView;
   readonly onClose: () => void;
   readonly onRetry: () => void;
   readonly onDelete: () => void;
+  readonly onContinueQuestion?: () => void;
+  readonly continueQuestionDisabled?: boolean;
 }) {
   return (
     <aside
@@ -124,7 +128,19 @@ export function EpubExplanationPanel({
         )}
       </div>
 
-      <div className="flex justify-end border-t border-white/[0.07] px-3 py-2">
+      <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-2">
+        {explanation.status === 'completed' && onContinueQuestion ? (
+          <button
+            type="button"
+            disabled={continueQuestionDisabled}
+            onClick={onContinueQuestion}
+            className="ui-control rounded-full border border-indigo-300/15 bg-indigo-300/[0.06] px-3 py-1.5 text-[11px] text-indigo-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            继续追问
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           type="button"
           onClick={onDelete}

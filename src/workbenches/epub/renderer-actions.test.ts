@@ -84,6 +84,29 @@ describe('EPUB renderer actions', () => {
     expect(onExplainSelection).toHaveBeenCalledWith(selection);
   });
 
+  it('当前对话生成中时禁止再发起一个 EPUB 解释', () => {
+    const bundle = createEpubRendererActions({
+      ready: true,
+      aiBusy: true,
+      hasSelection: () => true,
+      onCopySelection: vi.fn(),
+      onExplainSelection: vi.fn(),
+      onReload: vi.fn(),
+      onReveal: vi.fn(),
+    });
+    const explain = bundle.actions.find(
+      (action) => action.id === 'epub.ai.explain-selection',
+    )!;
+    const contribution = bundle.contributions.find(
+      (entry) => entry.id === 'epub.ai.explain-selection.context-menu',
+    );
+
+    expect(isWorkbenchActionEnabled(explain)).toBe(false);
+    expect(contribution?.presentation.disabledReason).toContain(
+      '当前 AI 回答',
+    );
+  });
+
   it('copies from the frozen invocation while preserving the CFI anchor', async () => {
     const onCopySelection = vi.fn();
     const bundle = createEpubRendererActions({

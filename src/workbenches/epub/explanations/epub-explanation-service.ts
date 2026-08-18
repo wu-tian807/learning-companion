@@ -292,7 +292,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     snapshot: GenerationTaskSnapshot,
   ): EpubExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
-    if (!instruction) return undefined;
+    if (!instruction?.saveAsNote || !instruction.target) return undefined;
     const status = new GenerationTask(snapshot).getStatus();
     if (status === 'completed' || status === 'cancelled') return undefined;
     return Object.freeze({
@@ -370,7 +370,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     }
 
     const instruction = this.taskInstruction(event.snapshot);
-    if (!instruction) return;
+    if (!instruction?.saveAsNote || !instruction.target) return;
     const location = {
       projectId: event.snapshot.projectId,
       assetId: instruction.assetId,
