@@ -2,21 +2,25 @@ import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/wor
 
 export interface ImageRendererActionsOptions {
   readonly ready: boolean;
+  readonly aiBusy?: boolean;
   readonly onFit: () => void;
   readonly onActualSize: () => void;
   readonly onRotateClockwise: () => void;
   readonly onRotateCounterclockwise: () => void;
   readonly onReset: () => void;
+  readonly onExplainRegion: () => void;
   readonly onReveal: () => Promise<void> | void;
 }
 
 export function createImageRendererActions({
   ready,
+  aiBusy = false,
   onFit,
   onActualSize,
   onRotateClockwise,
   onRotateCounterclockwise,
   onReset,
+  onExplainRegion,
   onReveal,
 }: ImageRendererActionsOptions): WorkbenchActionBundle {
   const disabledReason = ready ? undefined : '图片尚未加载完成';
@@ -59,9 +63,9 @@ export function createImageRendererActions({
         execute: () => undefined,
       },
       {
-        id: 'image.ai.analyze-viewport',
-        enabled: false,
-        execute: () => undefined,
+        id: 'image.ai.explain-region',
+        enabled: ready && !aiBusy,
+        execute: onExplainRegion,
       },
     ],
     contributions: [
@@ -194,16 +198,18 @@ export function createImageRendererActions({
         },
       },
       {
-        id: 'image.ai.analyze-viewport.context-menu',
-        actionId: 'image.ai.analyze-viewport',
+        id: 'image.ai.explain-region.context-menu',
+        actionId: 'image.ai.explain-region',
         surface: 'context-menu',
         group: '80-ai',
         order: 20,
         presentation: {
           kind: 'generation-tool',
-          label: '分析当前视野',
-          description: '使用当前缩放、中心点和旋转状态',
-          disabledReason: '等待 Image AI 工具接入',
+          label: '框选区域并解释',
+          description: '结合整张图片理解你感兴趣的区域',
+          disabledReason:
+            disabledReason ??
+            (aiBusy ? '请先等待当前 AI 回答完成或停止生成' : undefined),
         },
       },
       {

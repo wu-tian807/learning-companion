@@ -78,7 +78,15 @@ function createContext(
     options.handle ??
     ({
       capabilities: new Set(['read-stream']),
-      openByteStream: vi.fn(),
+      openByteStream: vi.fn(async () => ({
+        stream: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        byteLength: 0,
+        revision: 'resolver-specific-revision',
+      })),
       close: vi.fn(async () => undefined),
     } satisfies ContentHandle);
 
@@ -108,6 +116,8 @@ describe('ImageWorkbenchProvider', () => {
     expect(isImageWorkbenchPayload(opened.payload)).toBe(true);
     expect(opened.payload).toEqual({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision:
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       viewState: DEFAULT_IMAGE_VIEW_STATE,
     });
     expect(resources.register).toHaveBeenCalledWith(

@@ -120,6 +120,7 @@ describe('viewer Workbench context action bundles', () => {
       onRotateClockwise: vi.fn(),
       onRotateCounterclockwise: vi.fn(),
       onReset: vi.fn(),
+      onExplainRegion: vi.fn(),
       onReveal: vi.fn(),
     });
 
@@ -127,7 +128,7 @@ describe('viewer Workbench context action bundles', () => {
       '适应窗口',
       '顺时针旋转',
       '分析整张图片',
-      '分析当前视野',
+      '框选区域并解释',
     ]);
   });
 

@@ -1,6 +1,11 @@
+import { createHash } from 'node:crypto';
+
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import { AppError } from '../../main/errors/app-error';
-import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
+import type {
+  MainWorkbenchProvider,
+  WorkbenchProviderContext,
+} from '../../main/workbench/workbench-session';
 import type {
   WorkbenchStateRecord,
   WorkbenchStateDatabaseApi,
@@ -23,6 +28,30 @@ import {
 
 export interface ImageWorkbenchProviderDependencies {
   readonly now: () => number;
+}
+
+async function readContentRevision(
+  openByteStream: NonNullable<
+    WorkbenchProviderContext['content']['handle']
+  >['openByteStream'],
+): Promise<string> {
+  if (!openByteStream) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  const resolved = await openByteStream();
+  const reader = resolved.stream.getReader();
+  const hash = createHash('sha256');
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      hash.update(result.value);
+    }
+    return hash.digest('hex');
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function toJsonState(viewState: ImageWorkbenchViewState): JsonValue {
@@ -64,6 +93,9 @@ export class ImageWorkbenchProvider implements MainWorkbenchProvider {
     }
 
     const viewState = this.readViewState(context.state);
+    const sourceRevision = await readContentRevision(
+      handle.openByteStream.bind(handle),
+    );
     const contentUrl = this.resourceService.register(
       context.sessionId,
       handle,
@@ -74,6 +106,7 @@ export class ImageWorkbenchProvider implements MainWorkbenchProvider {
     return {
       payload: {
         contentUrl,
+        sourceRevision,
         viewState: cloneImageViewState(viewState),
       },
     };

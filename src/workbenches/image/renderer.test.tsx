@@ -8,6 +8,7 @@ vi.mock('openseadragon', () => ({
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
+import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import { ImageWorkbenchView } from './renderer';
 import {
   cloneImageViewState,
@@ -52,8 +53,9 @@ function createBootstrap(
 
 function render(payload: WorkbenchBootstrap['payload']) {
   return renderToStaticMarkup(
-    <WorkbenchRuntimeProvider onError={vi.fn()}>
-      <ImageWorkbenchView
+    <WorkbenchConversationRuntimeProvider>
+      <WorkbenchRuntimeProvider onError={vi.fn()}>
+        <ImageWorkbenchView
         asset={asset}
         bootstrap={createBootstrap(payload)}
         executeCommand={vi.fn(async () => ({
@@ -65,8 +67,9 @@ function render(payload: WorkbenchBootstrap['payload']) {
         onInteractionChange={vi.fn()}
         onOpenExternal={vi.fn(async () => undefined)}
         onError={vi.fn()}
-      />
-    </WorkbenchRuntimeProvider>,
+        />
+      </WorkbenchRuntimeProvider>
+    </WorkbenchConversationRuntimeProvider>,
   );
 }
 
@@ -74,6 +77,7 @@ describe('ImageWorkbenchView', () => {
   it('renders a stable full-height canvas and loading state', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'revision-1',
       viewState: cloneImageViewState(DEFAULT_IMAGE_VIEW_STATE),
     });
 
@@ -86,6 +90,7 @@ describe('ImageWorkbenchView', () => {
   it('rejects an invalid bootstrap payload before creating a viewer', () => {
     const markup = render({
       contentUrl: 'file:///tmp/private/diagram.png',
+      sourceRevision: 'revision-1',
       viewState: cloneImageViewState(DEFAULT_IMAGE_VIEW_STATE),
     });
 

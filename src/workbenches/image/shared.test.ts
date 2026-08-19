@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createImageSaveViewStateCommand,
+  createImageRegionTarget,
   createImageViewportTarget,
   DEFAULT_IMAGE_VIEW_STATE,
   imageCommands,
@@ -11,6 +12,7 @@ import {
   isImageWorkbenchPayload,
   isImageWorkbenchStateV1,
   isImageWorkbenchViewState,
+  isImageRegionAnchorV1,
 } from './shared';
 
 describe('Image Workbench shared protocol', () => {
@@ -26,7 +28,28 @@ describe('Image Workbench shared protocol', () => {
     ]);
     expect(imageWorkbenchManifest.supportedAnchorTypes).toEqual([
       'image.viewport',
+      'image.region',
     ]);
+  });
+
+  it('creates a stable normalized interest-region anchor', () => {
+    const target = createImageRegionTarget({
+      x: 0.1,
+      y: 0.2,
+      width: 0.3,
+      height: 0.4,
+      sourceWidth: 2000,
+      sourceHeight: 1000,
+    });
+    expect(target).toMatchObject({
+      scope: 'content',
+      anchorType: 'image.region',
+      anchorVersion: 1,
+    });
+    expect(isImageRegionAnchorV1(target.anchorPayload)).toBe(true);
+    const payload = target.anchorPayload as unknown as Record<string, unknown>;
+    expect(isImageRegionAnchorV1({ ...payload, x: 0.8, width: 0.3 })).toBe(false);
+    expect(isImageRegionAnchorV1({ ...payload, width: 0 })).toBe(false);
   });
 
   it('validates bootstrap and persisted view state', () => {
@@ -45,6 +68,7 @@ describe('Image Workbench shared protocol', () => {
     expect(
       isImageWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: 'revision-1',
         viewState: DEFAULT_IMAGE_VIEW_STATE,
       }),
     ).toBe(true);
@@ -54,6 +78,7 @@ describe('Image Workbench shared protocol', () => {
     expect(
       isImageWorkbenchPayload({
         contentUrl: 'file:///Users/test/private.png',
+        sourceRevision: 'revision-1',
         viewState: DEFAULT_IMAGE_VIEW_STATE,
       }),
     ).toBe(false);
