@@ -177,27 +177,35 @@ interface AssetAttachment {
 - 后续实现 Attachment Service 时，为序列化后的 `metadata` 设置 16 KiB 上限；
 - 本轮只修正骨架契约，不创建表、不迁移数据、不实现 Attachment 功能。
 
-## 7. Workbench 双端 Catalog
+## 7. Workbench 三端 Contribution Root 与薄 Catalog
 
 ### 7.1 目录
 
 ```text
 src/workbenches/catalog/
-├── builtin-workbenches.ts
 ├── register-main-workbenches.ts
+├── register-preload-workbench-features.ts
 ├── register-renderer-workbenches.ts
-└── builtin-workbenches.test.ts
+└── workbench-contribution-boundaries.test.ts
+
+src/workbenches/<workbench>/
+├── main-contribution.ts
+├── preload-contribution.ts
+└── renderer-contribution.ts
 ```
 
 ### 7.2 职责
 
-`builtin-workbenches.ts` 只包含稳定 Workbench ID、Manifest 和双端注册描述，不导入
-Electron Main Provider 或 React 组件。
+每个 Workbench 在自己的目录内拥有 Main、Preload、Renderer 三个进程入口。
+入口只组合本 Workbench 的 Provider、Feature、白名单 Preload API 与 Renderer
+lazy loader；具体实现仍按需加载，避免把 Vditor 等重型依赖带入启动路径。
 
-`register-main-workbenches.ts` 根据 Catalog 创建并注册 Main Provider。
+`src/workbenches/catalog/` 下的三个文件只是组合根，不再识别某个 Workbench
+内部有哪些 Feature。给现有 Workbench 增加功能时只修改该 Workbench 目录；
+只有新增一个全新的 Workbench 类型时，才需要分别把三个稳定入口加入 Catalog。
 
-`register-renderer-workbenches.ts` 根据 Catalog 注册 Renderer 动态 Loader。具体
-Workbench 继续懒加载，避免再次触发 Vditor 等重型依赖的启动问题。
+空的 Preload contribution 也显式存在。这样未来为该 Workbench 增加受限 IPC
+能力时，只扩展自己的入口；统一组合器负责贡献 ID、API 名称冲突和返回对象校验。
 
 `unsupported` Workbench 继续作为 fallback，不强制成为普通内置项。
 
@@ -205,12 +213,14 @@ Workbench 继续懒加载，避免再次触发 Vditor 等重型依赖的启动�
 
 新增测试保证：
 
-- 每个内置 Workbench ID 都存在 Main 注册；
-- 每个内置 Workbench ID 都存在 Renderer 注册；
-- 两端引用的 Manifest ID 一致；
+- 每个内置 Workbench ID 都存在 Main、Preload、Renderer 注册；
+- 三端引用的 Workbench ID 与 Manifest 顺序一致；
+- Catalog 只能导入 `<workbench>/<process>-contribution`；
+- Workbench 实现不得反向依赖 Catalog，也不得向 Host 注入 Portal；
 - `AssetWorkbenchHost` 不直接识别具体 Workbench。
 
-Catalog 统一注册事实，不把 Main 和 Renderer 可执行代码打入同一个模块。
+Catalog 统一注册事实，不拥有媒体 Feature，也不把三个进程的可执行代码打入
+同一个模块。
 
 ## 8. Main 启动与装配
 

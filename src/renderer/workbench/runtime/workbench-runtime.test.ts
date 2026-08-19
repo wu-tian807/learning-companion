@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CORE_FACILITY_VERSION,
   createCoreWorkbenchFacilityDefinitionRegistry,
+  headerSurfaceFacilityDeclaration,
 } from '../../../shared/workbench/facilities/core-facilities';
 import type { AssetWorkbenchManifest } from '../../../shared/workbench/manifest';
 import {
@@ -10,6 +11,7 @@ import {
   interactionFromTextSelection,
 } from '../../../shared/workbench/selection';
 import { plainTextWorkbenchManifest } from '../../../workbenches/plain-text/shared';
+import type { WorkbenchActionBundle } from '../actions/workbench-action-bundle';
 import { WorkbenchRuntime } from './workbench-runtime';
 
 const identity = {
@@ -21,6 +23,25 @@ const identity = {
 
 const regionSelectionFacilityId = 'test.input.region-selection';
 const regionAnchorType = 'test.region';
+const headerBundle = {
+  actions: [
+    {
+      id: 'test.header-action',
+      enabled: true,
+      execute: vi.fn(),
+    },
+  ],
+  contributions: [
+    {
+      id: 'test.header-action.header',
+      actionId: 'test.header-action',
+      surface: 'header',
+      group: '10-test',
+      order: 10,
+      presentation: { kind: 'action', label: '测试操作' },
+    },
+  ],
+} satisfies WorkbenchActionBundle;
 
 function createRegionSelectionFixture(): {
   manifest: AssetWorkbenchManifest;
@@ -205,5 +226,30 @@ describe('WorkbenchRuntime', () => {
         inputs: [input, input],
       }),
     ).toBe(false);
+  });
+
+  it('rejects header contributions unless the active Workbench declares the surface', () => {
+    const runtime = new WorkbenchRuntime(vi.fn());
+    runtime.activate(identity, plainTextWorkbenchManifest);
+
+    expect(() =>
+      runtime.registerContributions('test.header', headerBundle),
+    ).toThrow('Workbench 未声明 header Facility');
+  });
+
+  it('accepts header contributions through the declared surface facility', () => {
+    const runtime = new WorkbenchRuntime(vi.fn());
+    runtime.activate(identity, {
+      ...plainTextWorkbenchManifest,
+      facilities: [
+        ...plainTextWorkbenchManifest.facilities,
+        headerSurfaceFacilityDeclaration,
+      ],
+    });
+
+    expect(() =>
+      runtime.registerContributions('test.header', headerBundle),
+    ).not.toThrow();
+    expect(runtime.contributions('header')).toHaveLength(1);
   });
 });

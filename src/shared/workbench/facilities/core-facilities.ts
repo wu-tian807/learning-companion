@@ -11,6 +11,8 @@ export const CORE_RENDERER_TRANSPORT_FACILITY_ID =
   'core.transport.renderer';
 export const CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID =
   'core.transport.sandbox-frame';
+export const CORE_HEADER_SURFACE_FACILITY_ID =
+  'core.surface.header';
 export const CORE_OVERFLOW_SURFACE_FACILITY_ID =
   'core.surface.overflow';
 export const CORE_CONTEXT_MENU_SURFACE_FACILITY_ID =
@@ -332,6 +334,13 @@ const overflowSurfaceDefinition = defineWorkbenchFacility({
   validateOptions: noOptions,
 });
 
+const headerSurfaceDefinition = defineWorkbenchFacility({
+  id: CORE_HEADER_SURFACE_FACILITY_ID,
+  version: CORE_FACILITY_VERSION,
+  role: 'surface',
+  validateOptions: noOptions,
+});
+
 const contextMenuSurfaceDefinition = defineWorkbenchFacility({
   id: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
   version: CORE_FACILITY_VERSION,
@@ -364,6 +373,7 @@ export function createCoreWorkbenchFacilityDefinitionRegistry(): WorkbenchFacili
 
   registry.register(rendererTransportDefinition);
   registry.register(sandboxFrameTransportDefinition);
+  registry.register(headerSurfaceDefinition);
   registry.register(overflowSurfaceDefinition);
   registry.register(contextMenuSurfaceDefinition);
   registry.register(generationCenterSurfaceDefinition);
@@ -387,6 +397,12 @@ export const sandboxFrameTransportFacilityDeclaration:
 export const overflowSurfaceFacilityDeclaration:
   WorkbenchFacilityDeclaration = Object.freeze({
     id: CORE_OVERFLOW_SURFACE_FACILITY_ID,
+    version: CORE_FACILITY_VERSION,
+  });
+
+export const headerSurfaceFacilityDeclaration:
+  WorkbenchFacilityDeclaration = Object.freeze({
+    id: CORE_HEADER_SURFACE_FACILITY_ID,
     version: CORE_FACILITY_VERSION,
   });
 

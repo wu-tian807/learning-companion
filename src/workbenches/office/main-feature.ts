@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
+import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main-workbench-contribution';
 import { LibreOfficePreviewProducer } from './artifacts/libreoffice-preview-producer';
 import {
   LIBREOFFICE_LIBRARY_ID,
@@ -45,4 +45,4 @@ export const officeArtifactMainFeature = Object.freeze({
       ),
     );
   },
-} satisfies MainWorkbenchContribution);
+} satisfies MainWorkbenchFeatureContribution);

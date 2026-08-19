@@ -70,6 +70,7 @@ describe('built-in Workbench Facility matrix', () => {
       ],
       'builtin.image': [
         'core.surface.context-menu',
+        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],

@@ -1,4 +1,4 @@
-import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
+import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main-workbench-contribution';
 import {
   createMediaSubtitleSuiteDefinition,
   MEDIA_SUBTITLE_CPU_VARIANT_ID,
@@ -16,4 +16,4 @@ export const mediaSubtitlesMainFeature = Object.freeze({
       ),
     );
   },
-} satisfies MainWorkbenchContribution);
+} satisfies MainWorkbenchFeatureContribution);

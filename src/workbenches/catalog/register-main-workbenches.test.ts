@@ -34,6 +34,7 @@ import {
   registerMainWorkbenchExternalLibraries,
   registerMainWorkbenchProviders,
 } from './register-main-workbenches';
+import { preloadWorkbenchContributions } from './register-preload-workbench-features';
 import {
   registerRendererWorkbenches,
   rendererWorkbenchContributions,
@@ -43,9 +44,12 @@ const mainManifests = mainWorkbenchContributions.flatMap(({ manifest }) =>
   manifest ? [manifest] : []);
 
 describe('Workbench contribution catalogs', () => {
-  it('keeps Main and Renderer manifests aligned', () => {
+  it('keeps Main, Preload, and Renderer Workbench roots aligned', () => {
     expect(mainManifests.map(({ id }) => id)).toEqual(
       rendererWorkbenchContributions.map(({ manifest }) => manifest.id),
+    );
+    expect(mainManifests.map(({ id }) => id)).toEqual(
+      preloadWorkbenchContributions.map(({ id }) => id),
     );
     expect(new Set(mainWorkbenchContributions.map(({ id }) => id)).size).toBe(
       mainWorkbenchContributions.length,

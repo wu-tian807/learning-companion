@@ -1,4 +1,4 @@
-import type { MainWorkbenchContribution } from '../../catalog/register-main-workbenches';
+import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
 import {
   IMAGE_REGION_ANCHOR_TYPE,
   IMAGE_REGION_ANCHOR_VERSION,
@@ -50,4 +50,4 @@ export const imageExplanationMainFeature = Object.freeze({
       },
     });
   },
-} satisfies MainWorkbenchContribution);
+} satisfies MainWorkbenchFeatureContribution);

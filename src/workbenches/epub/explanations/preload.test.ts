@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { WorkbenchFeatureIpcInvoke } from '../../../preload/workbench-preload-contribution';
 import { createEpubCfiRangeTarget } from '../shared';
-import {
-  createEpubExplanationPreloadApi,
-  type WorkbenchFeatureIpcInvoke,
-} from './preload';
+import { createEpubExplanationPreloadApi } from './preload';
 import { EPUB_EXPLANATION_IPC_CHANNELS } from './shared';
 
 describe('EPUB explanation Preload API', () => {

@@ -2,15 +2,16 @@
 
 > 日期：2026-07-28
 >
-> 状态：已实施；2026-07-28 扩展到媒体特化右键菜单
+> 状态：已实施；2026-08-20 增补受控标题栏快捷操作 Surface
 
 ## 1. 背景
 
-当前资料工作台已经存在三类外部交互入口：
+当前资料工作台存在四类受控交互入口：
 
-1. 资料工作台标题栏右上角的 `...`；
-2. 编辑器内部的右键菜单；
-3. Project 页面右侧的生成中心。
+1. 资料工作台标题栏中的高频快捷操作；
+2. 标题栏右上角的 `...`；
+3. 编辑器或查看器内部的右键菜单；
+4. Project 页面右侧的生成中心。
 
 目前四个内置 Workbench 分别通过 `headerActionsTarget` 和
 `createPortal()` 渲染自己的标题栏菜单，纯文本和 Markdown 源码模式
@@ -24,11 +25,13 @@ Vditor、PDF.js 和图片查看器的内部能力差异很大，不能通过一�
 编辑器接口强行抹平。
 
 本设计采用“行为与入口分离”的方式：Workbench 提供能力、Action 和
-交互上下文，应用外壳拥有三个 UI 入口，并通过统一 Runtime 将二者连接。
+交互上下文，应用外壳拥有四个 UI 入口，并通过统一 Runtime 将二者连接。
 
 ## 2. 目标
 
 - 统一四个内置 Workbench 的右上角 `...`。
+- 允许媒体 Workbench 通过受控数据声明少量高频标题栏操作，而不是注入
+  React 节点或 Portal。
 - 统一纯文本、Markdown 源码和 Markdown WYSIWYG 三个编辑面的右键菜单。
 - 让生成中心能够读取当前 Workbench、Asset、Session、选区和锚点。
 - 同一个 Action 可以被多个入口复用，而不重复执行逻辑。
@@ -54,7 +57,7 @@ Vditor、PDF.js 和图片查看器的内部能力差异很大，不能通过一�
 
 ## 4. 方案比较
 
-### 4.1 各 Workbench 独立实现三个入口
+### 4.1 各 Workbench 独立实现各个入口
 
 优点是局部实现直接，不需要新增 Runtime。缺点是菜单样式、生命周期、
 选区处理、AI Action 和错误处理会持续复制，当前代码已经出现该问题。
@@ -98,6 +101,7 @@ flowchart TB
     end
 
     subgraph SURFACES["应用级入口"]
+        HEADER["标题栏快捷操作"]
         OVERFLOW["右上角 ..."]
         CONTEXT["右键菜单"]
         GENERATION["生成中心"]
@@ -115,11 +119,13 @@ flowchart TB
     PROVIDER --> ACTIONS
     PROVIDER --> CONTRIBUTIONS
 
+    CONTRIBUTIONS --> HEADER
     CONTRIBUTIONS --> OVERFLOW
     CONTRIBUTIONS --> CONTEXT
     CONTRIBUTIONS --> GENERATION
     STORE --> SNAPSHOT
 
+    HEADER --> SNAPSHOT
     OVERFLOW --> SNAPSHOT
     CONTEXT --> SNAPSHOT
     GENERATION --> SNAPSHOT
@@ -134,7 +140,18 @@ flowchart TB
 Workbench 不再直接渲染外部菜单。它只注册 Action、Contribution，
 发布 Interaction，并通过 Adapter 执行内部操作。
 
-## 6. 三个入口的语义边界
+## 6. 四个入口的语义边界
+
+### 6.0 标题栏快捷操作
+
+只承载当前 Workbench 的少量高频、短标签操作，例如图片的“框选解释”、
+标注索引开关与标注可见性。Workbench 仍只提交 Action、Contribution 和
+受控 Presentation 数据；`WorkbenchHeaderActionsHost` 统一生成按钮、
+disabled/busy 状态和 ARIA 属性。
+
+标题栏 Surface 必须由 Manifest 显式声明 `core.surface.header`。不允许
+Workbench 传入 ReactNode、DOM 目标或 Portal，因此新增标题栏能力不会反向
+依赖 Host 实现。
 
 ### 6.1 右上角 `...`
 
@@ -202,6 +219,7 @@ Renderer Workbench 注册，可以调用本地 Adapter、现有
 
 ```ts
 type WorkbenchSurface =
+  | 'header'
   | 'overflow'
   | 'context-menu'
   | 'generation-center';
@@ -281,6 +299,7 @@ Renderer 专用的编辑器实例、DOM Range 和回调不得进入该共享契�
 interface WorkbenchInvocationContext
   extends WorkbenchInteractionContext {
   readonly origin:
+    | 'header'
     | 'overflow'
     | 'context-menu'
     | 'generation-center';
@@ -321,7 +340,8 @@ Runtime Store。切换 Asset 时先清理旧 Interaction，再装载新 Session�
 - macOS 和 Windows 快捷键标签；
 - Action 抛错后的统一上报。
 
-`WorkbenchOverflowHost` 固定安装在资料工作台标题栏。
+`WorkbenchHeaderActionsHost` 与 `WorkbenchOverflowHost` 固定安装在资料
+工作台标题栏。前者只渲染受控快捷按钮，后者渲染分组菜单。
 
 `WorkbenchContextMenuHost` 在当前 Workbench Host 内只安装一次，并通过
 Portal 渲染到应用顶层；Workbenches 不再自己创建 Portal。
@@ -499,6 +519,8 @@ src/
 - 让纯文本和 Markdown 发布标准选区；
 - 将 PDF 已有选区接入 Runtime；
 - 为 PDF、HTML、图片和视频注册各自的右键菜单 Contribution；
+- 将图片高频操作迁移为 `header` Contribution，删除图片 View 到 Host 的
+  Portal 依赖；
 - 为 HTML 沙箱、PDF 当前页、图片视野和视频时间点冻结媒体特化锚点；
 - 删除 `headerActionsTarget`；
 - 删除 Workbench 菜单 Portal 和四个 `workbench-menu.tsx`；
@@ -517,6 +539,7 @@ src/
 - Interaction Store 忽略旧 Session 更新；
 - CodeMirror 和 Vditor Adapter 的能力映射；
 - 通用菜单 action、checkbox、radio 和 disabled 语义。
+- 标题栏 Contribution 的 Facility 校验、排序、busy、disabled 与调用来源。
 
 ### 15.2 Renderer 集成测试
 
@@ -552,6 +575,7 @@ src/
 - PDF、HTML、图片和视频共用菜单宿主，但不共用 Editor Action Preset。
 - 纯文本和 Markdown 源码共用 CodeMirror Adapter。
 - Workbench 卸载后 Registry 中没有其 Action 或 Contribution。
+- 标题栏只渲染受控 Contribution；Workbench View 不依赖 Host Portal。
 - 右键 Action 使用打开菜单时的稳定选区。
 - 生成中心读取统一 Runtime Context，不直接读取编辑器实例。
 - 所有现有自动化测试通过，新增 Runtime 与菜单测试通过。

@@ -80,6 +80,57 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/workbenches/**/main-contribution.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../../preload/**', '../../renderer/**'],
+              message:
+                'Workbench Main contribution roots may only compose Main and shared code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/workbenches/**/preload-contribution.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../../main/**', '../../renderer/**'],
+              message:
+                'Workbench Preload contribution roots may only compose Preload and shared code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/workbenches/**/renderer-contribution.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../../main/**', '../../preload/**'],
+              message:
+                'Workbench Renderer contribution roots may only compose Renderer and shared code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: [
       'src/workbenches/**/renderer.tsx',
       'src/workbenches/**/renderer-actions.ts',

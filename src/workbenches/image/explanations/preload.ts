@@ -1,6 +1,6 @@
 import type { IpcRenderer, IpcRendererEvent } from 'electron';
 
-import type { WorkbenchFeatureIpcInvoke } from '../../epub/explanations/preload';
+import type { WorkbenchFeatureIpcInvoke } from '../../../preload/workbench-preload-contribution';
 import {
   IMAGE_EXPLANATION_IPC_CHANNELS,
   isImageExplanationEvent,

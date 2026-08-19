@@ -8,6 +8,7 @@ import { isWorkbenchInteractionSnapshot } from '../../../shared/workbench/intera
 import {
   CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
   CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
+  CORE_HEADER_SURFACE_FACILITY_ID,
   CORE_OVERFLOW_SURFACE_FACILITY_ID,
   createCoreWorkbenchFacilityDefinitionRegistry,
 } from '../../../shared/workbench/facilities/core-facilities';
@@ -326,6 +327,7 @@ export class WorkbenchRuntime {
     const requiredFacilityBySurface: Readonly<
       Record<WorkbenchSurface, string>
     > = {
+      header: CORE_HEADER_SURFACE_FACILITY_ID,
       overflow: CORE_OVERFLOW_SURFACE_FACILITY_ID,
       'context-menu': CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
       'generation-center':

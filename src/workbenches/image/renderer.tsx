@@ -17,7 +17,6 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { WorkbenchHeaderActionsPortal } from '../../renderer/workbench/host/WorkbenchHeaderActionsPortal';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -42,7 +41,6 @@ import {
   createImageConversationHistoryStore,
   type ImageConversationContext,
 } from './explanations/image-conversation-contribution';
-import { ImageExplanationHeaderActions } from './explanations/image-explanation-header-actions';
 import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
 import {
   ImageExplanationIndex,
@@ -993,20 +991,60 @@ export function ImageWorkbenchView({
   ]);
 
   const ready = loadState.kind === 'ready';
+  const toggleExplanationIndex = useCallback(() => {
+    setActiveExplanationId(undefined);
+    setExplanationIndexOpen((current) => !current);
+  }, []);
+  const toggleExplanationMarkers = useCallback(() => {
+    setExplanationMarkersVisible((current) => !current);
+  }, []);
+  const canStartSelection =
+    ready &&
+    !conversationBusy &&
+    !selectionMode &&
+    !selectedTarget &&
+    !explanations.some(
+      (explanation) => explanation.id === activeExplanationId,
+    );
+  const canToggleExplanationIndex =
+    !selectionMode && !selectedTarget;
   const rendererActions = useMemo(
     () =>
       createImageRendererActions({
         ready,
         aiBusy: conversationBusy,
+        canStartSelection,
+        explanationCount: explanations.length,
+        indexOpen: explanationIndexOpen,
+        markersVisible: explanationMarkersVisible,
+        canToggleIndex: canToggleExplanationIndex,
         onFit: fit,
         onActualSize: actualSize,
         onRotateClockwise: () => rotate(90),
         onRotateCounterclockwise: () => rotate(-90),
         onReset: reset,
         onExplainRegion: startRegionSelection,
+        onToggleIndex: toggleExplanationIndex,
+        onToggleMarkers: toggleExplanationMarkers,
         onReveal,
       }),
-    [actualSize, conversationBusy, fit, onReveal, ready, reset, rotate, startRegionSelection],
+    [
+      actualSize,
+      canStartSelection,
+      canToggleExplanationIndex,
+      conversationBusy,
+      explanationIndexOpen,
+      explanationMarkersVisible,
+      explanations.length,
+      fit,
+      onReveal,
+      ready,
+      reset,
+      rotate,
+      startRegionSelection,
+      toggleExplanationIndex,
+      toggleExplanationMarkers,
+    ],
   );
   useWorkbenchContributions(imageWorkbenchManifest.id, rendererActions);
 
@@ -1141,24 +1179,6 @@ export function ImageWorkbenchView({
         aria-label="图片查看画布"
         className="h-full min-h-0 w-full"
       />
-
-      {ready && (
-        <WorkbenchHeaderActionsPortal>
-          <ImageExplanationHeaderActions
-            explanationCount={explanations.length}
-            indexOpen={explanationIndexOpen}
-            markersVisible={explanationMarkersVisible}
-            canStartSelection={!conversationBusy && !selectionMode && !selectedTarget && !activeExplanation}
-            canToggleIndex={!selectionMode && !selectedTarget}
-            onStartSelection={startRegionSelection}
-            onToggleIndex={() => {
-              setActiveExplanationId(undefined);
-              setExplanationIndexOpen((current) => !current);
-            }}
-            onToggleMarkers={() => setExplanationMarkersVisible((current) => !current)}
-          />
-        </WorkbenchHeaderActionsPortal>
-      )}
 
       {explanationIndexOpen && (
         <ImageExplanationIndex
