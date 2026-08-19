@@ -2,8 +2,7 @@ import type {
   GenerationExecutionEvent,
   GenerationTaskEvent,
 } from '../../../shared/generation-tasks';
-
-const MAX_RUNTIME_ANSWER_LENGTH = 64_000;
+import { IMAGE_EXPLANATION_ANSWER_MAX_LENGTH } from './shared';
 
 export interface ImageExplanationRuntimeView {
   readonly text: string;
@@ -29,14 +28,17 @@ function reduceRuntime(
   if (event.type === 'assistant-delta') {
     if (!event.delta) return current;
     return Object.freeze({
-      text: (previous.text + event.delta).slice(0, MAX_RUNTIME_ANSWER_LENGTH),
+      text: (previous.text + event.delta).slice(
+        0,
+        IMAGE_EXPLANATION_ANSWER_MAX_LENGTH,
+      ),
       phase: 'answering',
       statusMessage: 'AI 正在结合整图解释兴趣区域…',
     });
   }
   if (event.type === 'assistant-completed') {
     return Object.freeze({
-      text: event.text.slice(0, MAX_RUNTIME_ANSWER_LENGTH),
+      text: event.text.slice(0, IMAGE_EXPLANATION_ANSWER_MAX_LENGTH),
       phase: 'saving',
       statusMessage: '解释已生成，正在保存…',
     });

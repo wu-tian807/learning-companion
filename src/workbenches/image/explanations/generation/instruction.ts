@@ -20,12 +20,14 @@ import {
 } from '../shared';
 
 const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/u;
+const SOURCE_REVISION_PATTERN = /^[A-Za-z0-9._-]{1,256}$/u;
 const MAX_QUESTION_LENGTH = 32_768;
 
 export type ImageExplanationInstructionSnapshot = JsonValue & {
   readonly format: typeof IMAGE_EXPLANATION_INSTRUCTION_FORMAT;
   readonly version: typeof IMAGE_EXPLANATION_INSTRUCTION_VERSION;
   readonly assetId: string;
+  readonly sourceRevision?: string;
   readonly target?: JsonValue & ImageRegionTarget;
   readonly conversationId?: string;
   readonly question?: string;
@@ -39,6 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class ImageExplanationInstruction extends GenerationInstruction<ImageExplanationInstructionSnapshot> {
   readonly assetId: string;
+  readonly sourceRevision?: string;
   readonly target?: ImageRegionTarget;
   readonly conversationId?: string;
   readonly question: string;
@@ -47,6 +50,7 @@ export class ImageExplanationInstruction extends GenerationInstruction<ImageExpl
 
   constructor(input: {
     readonly assetId: string;
+    readonly sourceRevision?: string;
     readonly target?: ImageRegionTarget;
     readonly conversationId?: string;
     readonly question?: string;
@@ -55,11 +59,14 @@ export class ImageExplanationInstruction extends GenerationInstruction<ImageExpl
   }) {
     super();
     const assetId = input.assetId.trim();
+    const sourceRevision = input.sourceRevision?.trim();
     const conversationId = input.conversationId?.trim();
     const question = (input.question ?? IMAGE_DEFAULT_EXPLANATION_QUESTION).trim();
     const saveAsNote = input.saveAsNote ?? input.target !== undefined;
     if (
       !assetId ||
+      (sourceRevision !== undefined &&
+        !SOURCE_REVISION_PATTERN.test(sourceRevision)) ||
       !question ||
       question.length > MAX_QUESTION_LENGTH ||
       (conversationId !== undefined && !CONVERSATION_ID_PATTERN.test(conversationId)) ||
@@ -69,6 +76,7 @@ export class ImageExplanationInstruction extends GenerationInstruction<ImageExpl
       throw new Error('图片解释对话任务数据无效');
     }
     this.assetId = assetId;
+    this.sourceRevision = sourceRevision;
     this.target = input.target;
     this.conversationId = conversationId;
     this.question = question;
@@ -89,6 +97,9 @@ export class ImageExplanationInstruction extends GenerationInstruction<ImageExpl
       format: IMAGE_EXPLANATION_INSTRUCTION_FORMAT,
       version: IMAGE_EXPLANATION_INSTRUCTION_VERSION,
       assetId: this.assetId,
+      ...(this.sourceRevision
+        ? { sourceRevision: this.sourceRevision }
+        : {}),
       ...(target ? { target } : {}),
       ...(this.conversationId ? { conversationId: this.conversationId } : {}),
       question: this.question,
@@ -131,6 +142,8 @@ export const imageExplanationInstructionFactory: GenerationInstructionFactory<Im
         input.version !== IMAGE_EXPLANATION_INSTRUCTION_VERSION ||
         typeof input.assetId !== 'string' ||
         input.assetId.trim().length === 0 ||
+        (input.sourceRevision !== undefined &&
+          typeof input.sourceRevision !== 'string') ||
         (input.target !== undefined && !isImageRegionTarget(input.target)) ||
         (input.conversationId !== undefined && typeof input.conversationId !== 'string') ||
         (input.question !== undefined && typeof input.question !== 'string') ||
@@ -145,6 +158,9 @@ export const imageExplanationInstructionFactory: GenerationInstructionFactory<Im
         return generationValidationSuccess(
           new ImageExplanationInstruction({
             assetId: input.assetId,
+            ...(input.sourceRevision === undefined
+              ? {}
+              : { sourceRevision: input.sourceRevision }),
             ...(input.target === undefined ? {} : { target: input.target }),
             ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
             ...(input.question === undefined ? {} : { question: input.question }),

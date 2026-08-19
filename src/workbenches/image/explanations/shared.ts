@@ -16,6 +16,7 @@ export const IMAGE_EXPLANATION_INSTRUCTION_FORMAT =
   'learning-companion/image-explanation-instruction';
 export const IMAGE_EXPLANATION_INSTRUCTION_VERSION = 1;
 export const IMAGE_DEFAULT_EXPLANATION_QUESTION = '请解释这个图片区域。';
+export const IMAGE_EXPLANATION_ANSWER_MAX_LENGTH = 32_768;
 
 export type ImageExplanationTaskResult = JsonValue & {
   readonly answer: string;
@@ -164,7 +165,7 @@ export function isImageExplanationTaskResult(
 ): value is ImageExplanationTaskResult {
   if (!isRecord(value)) return false;
   return (
-    isRequiredText(value.answer, 64_000) &&
+    isRequiredText(value.answer, IMAGE_EXPLANATION_ANSWER_MAX_LENGTH) &&
     isRequiredText(value.providerId, 256) &&
     isRequiredText(value.modelId, 256) &&
     (value.title === undefined || isRequiredText(value.title, 128)) &&

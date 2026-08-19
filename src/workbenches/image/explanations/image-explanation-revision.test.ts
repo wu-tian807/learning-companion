@@ -36,7 +36,7 @@ describe('image explanation revision projection', () => {
     ).toBe(stale);
   });
 
-  it('filters a prepared Task from an old revision but keeps an unprepared Task', () => {
+  it('filters Tasks whose source revision is stale or still unknown', () => {
     const prepared: ImageExplanationView = {
       kind: 'task',
       id: 'task-prepared',
@@ -60,6 +60,6 @@ describe('image explanation revision projection', () => {
     ).toBeUndefined();
     expect(
       findImageExplanationAtTarget([unprepared], target, 'revision-2'),
-    ).toBe(unprepared);
+    ).toBeUndefined();
   });
 });

@@ -20,8 +20,11 @@ import {
 } from './shared';
 
 export type ImageConversationContext = JsonValue & {
+  readonly sourceRevision: string;
   readonly target: ImageRegionTarget;
 };
+
+const SOURCE_REVISION_PATTERN = /^[A-Za-z0-9._-]{1,256}$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -30,31 +33,58 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function isImageConversationContext(
   value: unknown,
 ): value is ImageConversationContext {
-  return isRecord(value) && isImageRegionTarget(value.target);
+  return (
+    isRecord(value) &&
+    typeof value.sourceRevision === 'string' &&
+    SOURCE_REVISION_PATTERN.test(value.sourceRevision) &&
+    isImageRegionTarget(value.target)
+  );
 }
 
 export function createImageConversationContext(
   target: ImageRegionTarget,
+  sourceRevision: string,
 ): ImageConversationContext {
-  return Object.freeze({ target }) as ImageConversationContext;
+  const normalizedRevision = sourceRevision.trim();
+  if (!SOURCE_REVISION_PATTERN.test(normalizedRevision)) {
+    throw new Error('图片内容版本无效');
+  }
+  return Object.freeze({
+    sourceRevision: normalizedRevision,
+    target,
+  }) as ImageConversationContext;
 }
 
 export function createImageConversationHistoryStore(
   projectId: string,
   assetId: string,
   contributionId: string,
+  sourceRevision: string,
 ): ConversationHistoryStore {
+  const normalizedRevision = sourceRevision.trim();
+  if (!SOURCE_REVISION_PATTERN.test(normalizedRevision)) {
+    throw new Error('图片内容版本无效');
+  }
   return createLocalConversationHistoryStore({
-    key: createConversationHistoryKey({ contributionId, projectId, assetId }),
+    key: createConversationHistoryKey({
+      contributionId: `${contributionId}.revision.${normalizedRevision}`,
+      projectId,
+      assetId,
+    }),
   });
 }
 
 export function createImageConversationContribution(input: {
+  readonly sourceRevision: string;
   readonly historyStore: ConversationHistoryStore;
   readonly revealContext: (
     context: ImageConversationContext,
   ) => Promise<void> | void;
 }): WorkbenchConversationContribution {
+  const sourceRevision = input.sourceRevision.trim();
+  if (!SOURCE_REVISION_PATTERN.test(sourceRevision)) {
+    throw new Error('图片内容版本无效');
+  }
   const contribution: WorkbenchConversationContribution = {
     id: `${imageWorkbenchManifest.id}.reading-conversation`,
     workbenchId: imageWorkbenchManifest.id,
@@ -69,6 +99,9 @@ export function createImageConversationContribution(input: {
       if (taskInput.generateTitle && !context) {
         throw new Error('请先在图片中框选一个兴趣区域再开始问答');
       }
+      if (context && context.sourceRevision !== sourceRevision) {
+        throw new Error('图片内容已更新，请重新选择兴趣区域');
+      }
       const saveAsNote =
         context !== undefined &&
         taskInput.question.trim() === IMAGE_DEFAULT_EXPLANATION_QUESTION;
@@ -80,6 +113,7 @@ export function createImageConversationContribution(input: {
           format: IMAGE_EXPLANATION_INSTRUCTION_FORMAT,
           version: IMAGE_EXPLANATION_INSTRUCTION_VERSION,
           assetId: taskInput.assetId,
+          sourceRevision,
           conversationId: taskInput.conversationId,
           question: taskInput.question,
           ...(context ? { target: context.target as unknown as JsonValue } : {}),

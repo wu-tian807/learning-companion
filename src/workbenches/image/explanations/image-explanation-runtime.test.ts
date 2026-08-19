@@ -25,4 +25,19 @@ describe('image explanation runtime projection', () => {
       event: { type: 'assistant-delta', delta: 'ignored' },
     }, 'project-1', tracked)).toBe(next);
   });
+
+  it('never retains more text than conversation history can persist', () => {
+    const next = projectImageExplanationGenerationEvent(
+      {},
+      {
+        type: 'execution-event',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        event: { type: 'assistant-completed', text: 'x'.repeat(70_000) },
+      },
+      'project-1',
+      new Set(['task-1']),
+    );
+    expect(next['task-1']?.text).toHaveLength(32_768);
+  });
 });

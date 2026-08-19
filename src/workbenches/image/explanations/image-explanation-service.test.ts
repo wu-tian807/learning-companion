@@ -47,11 +47,15 @@ describe('ImageExplanationService', () => {
     const first = await service.create({ projectId: 'project-1', assetId: 'asset-1', sourceRevision: 'revision-1', target });
     const duplicate = await service.create({ projectId: 'project-1', assetId: 'asset-1', sourceRevision: 'revision-1', target });
 
-    expect(first).toMatchObject({ kind: 'task', id: 'task-1', status: 'pending', target });
+    expect(first).toMatchObject({
+      kind: 'task', id: 'task-1', status: 'pending', target,
+      sourceRevision: 'revision-1',
+    });
     expect(duplicate.id).toBe('task-1');
     expect(start).toHaveBeenCalledOnce();
     expect(start).toHaveBeenCalledWith(expect.objectContaining({
       definitionId: 'image.explain-region',
+      instruction: expect.objectContaining({ sourceRevision: 'revision-1' }),
       assetReferences: { image: [{ assetId: 'asset-1' }] },
     }));
     service.dispose();
@@ -158,7 +162,9 @@ describe('ImageExplanationService', () => {
       assetId: 'asset-1',
       sourceRevision: 'revision-3',
       target,
-    })).resolves.toMatchObject({ id: 'task-new-revision', kind: 'task' });
+    })).resolves.toMatchObject({
+      id: 'task-new-revision', kind: 'task', sourceRevision: 'revision-3',
+    });
     expect(start).toHaveBeenCalledOnce();
     service.dispose();
   });

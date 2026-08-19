@@ -5,10 +5,7 @@ export function isImageExplanationForRevision(
   explanation: ImageExplanationView,
   sourceRevision: string,
 ): boolean {
-  return (
-    explanation.sourceRevision === undefined ||
-    explanation.sourceRevision === sourceRevision
-  );
+  return explanation.sourceRevision === sourceRevision;
 }
 
 export function findImageExplanationAtTarget(

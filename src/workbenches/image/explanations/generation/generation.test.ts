@@ -27,9 +27,10 @@ import {
 } from './processor';
 import { createImageExplanationTaskDefinitionV1 } from './task-definition';
 
-function createInstruction() {
+function createInstruction(sourceRevision = 'revision-1') {
   return new ImageExplanationInstruction({
     assetId: 'asset-1',
+    sourceRevision,
     target: createImageRegionTarget({
       x: 0.1, y: 0.2, width: 0.3, height: 0.4,
       sourceWidth: 1200, sourceHeight: 800,
@@ -51,11 +52,22 @@ describe('image explanation generation', () => {
       taskId: 'conversation-task',
       instruction: new ImageExplanationInstruction({
         assetId: 'asset-1',
+        sourceRevision: 'revision-1',
         conversationId: 'conversation-1',
         question: '这个箭头表示什么？',
         saveAsNote: false,
       }).toSnapshot(),
-    })).toBe('conversation-1');
+    })).toBe('conversation-1--revision-1');
+    expect(resolveInstanceKey({
+      taskId: 'conversation-task-new-revision',
+      instruction: new ImageExplanationInstruction({
+        assetId: 'asset-1',
+        sourceRevision: 'revision-2',
+        conversationId: 'conversation-1',
+        question: '新图片的追问',
+        saveAsNote: false,
+      }).toSnapshot(),
+    })).toBe('conversation-1--revision-2');
     expect(definition.assetReferenceSchema.image).toMatchObject({
       required: true,
       cardinality: 'one',
@@ -75,6 +87,7 @@ describe('image explanation generation', () => {
     if (!parsed.ok) return;
     expect(parsed.value).toMatchObject({
       conversationId: undefined,
+      sourceRevision: undefined,
       question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
       saveAsNote: true,
       target,
@@ -94,6 +107,13 @@ describe('image explanation generation', () => {
       assetId: 'asset-1',
       conversationId: '包含 空格',
       question: '无效会话',
+      saveAsNote: false,
+    })).toThrow('图片解释对话任务数据无效');
+    expect(() => new ImageExplanationInstruction({
+      assetId: 'asset-1',
+      sourceRevision: '../outside',
+      conversationId: 'conversation-1',
+      question: '无效版本',
       saveAsNote: false,
     })).toThrow('图片解释对话任务数据无效');
   });
@@ -177,8 +197,37 @@ describe('image explanation generation', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
+  it('rejects content prepared from a different source revision before image work or Agent calls', async () => {
+    vi.mocked(prepareImageExplanationInputs).mockClear();
+    const call = vi.fn(async () => ({
+      assistantOutput: '不应生成的回答',
+      metrics: { providerId: 'codex', modelId: 'gpt-test' },
+    }));
+    const createWithContent = vi.fn();
+    const processor = new ImageExplanationProcessor({
+      listByAsset: vi.fn(async () => []),
+      createWithContent,
+    } as never);
+
+    await expect(processor.process({
+      projectId: 'project-1',
+      instruction: createInstruction('revision-1'),
+      workspaces: { primary: { path: 'C:\\workspace' } },
+      assetReferences: { image: [{
+        contentRevision: 'revision-2',
+        relativePath: 'references/image-0001/source.png',
+      }] },
+      preparedUserMessage: { role: 'user', content: [] },
+      agent: { call },
+      reportStatus: vi.fn(),
+    } as never)).rejects.toMatchObject({ code: 'CONTENT_CHANGED_EXTERNALLY' });
+    expect(prepareImageExplanationInputs).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+    expect(createWithContent).not.toHaveBeenCalled();
+  });
+
   it('reuses an Attachment with the same region and source revision after recovering an answer', async () => {
-    const instruction = createInstruction();
+    const instruction = createInstruction('revision-1');
     const call = vi.fn(async () => ({
       assistantOutput: '恢复后的解释',
       metrics: { providerId: 'codex', modelId: 'gpt-test' },
@@ -226,7 +275,7 @@ describe('image explanation generation', () => {
   });
 
   it('creates a new Attachment for the same region when the source revision changed', async () => {
-    const instruction = createInstruction();
+    const instruction = createInstruction('revision-2');
     const createWithContent = vi.fn(async (input) => ({
       ...input,
       id: 'attachment-current',
@@ -279,6 +328,7 @@ describe('image explanation generation', () => {
     } as never);
     const instruction = new ImageExplanationInstruction({
       assetId: 'asset-1',
+      sourceRevision: 'revision-1',
       conversationId: 'conversation-1',
       question: '这个节点为什么重要？',
       saveAsNote: false,
@@ -324,6 +374,7 @@ describe('image explanation generation', () => {
     } as never);
     const instruction = new ImageExplanationInstruction({
       assetId: 'asset-1',
+      sourceRevision: 'revision-1',
       target: createInstruction().target,
       conversationId: 'conversation-1',
       question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
@@ -366,6 +417,7 @@ describe('image explanation generation', () => {
     } as never);
     const instruction = new ImageExplanationInstruction({
       assetId: 'asset-1',
+      sourceRevision: 'revision-1',
       target: createInstruction().target,
       conversationId: 'conversation-1',
       question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
@@ -383,6 +435,32 @@ describe('image explanation generation', () => {
       preparedUserMessage: instruction.toUserMessage(),
       agent: { call: vi.fn(async () => ({
         assistantOutput: '<conversation-title>只有标题</conversation-title>',
+        metrics: { providerId: 'codex', modelId: 'gpt-test' },
+      })) },
+      reportStatus: vi.fn(),
+    } as never)).rejects.toMatchObject({ code: 'GENERATION_OUTPUT_INVALID' });
+    expect(createWithContent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an answer that the conversation history cannot persist', async () => {
+    const createWithContent = vi.fn();
+    const processor = new ImageExplanationProcessor({
+      listByAsset: vi.fn(async () => []),
+      createWithContent,
+    } as never);
+    const instruction = createInstruction();
+
+    await expect(processor.process({
+      projectId: 'project-1',
+      instruction,
+      workspaces: { primary: { path: 'C:\\workspace' } },
+      assetReferences: { image: [{
+        contentRevision: 'revision-1',
+        relativePath: 'references/image-0001/source.png',
+      }] },
+      preparedUserMessage: instruction.toUserMessage(),
+      agent: { call: vi.fn(async () => ({
+        assistantOutput: 'x'.repeat(32_769),
         metrics: { providerId: 'codex', modelId: 'gpt-test' },
       })) },
       reportStatus: vi.fn(),

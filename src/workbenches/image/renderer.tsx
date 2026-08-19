@@ -443,18 +443,32 @@ export function ImageWorkbenchView({
   );
 
   const conversationContributionId = `${imageWorkbenchManifest.id}.reading-conversation`;
+  const currentSourceRevision = payload?.sourceRevision ?? 'unavailable';
   const conversationOwnerId =
-    `${imageWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
+    `${imageWorkbenchManifest.id}:${bootstrap.sessionId}:${currentSourceRevision}.conversation`;
   const conversationHistoryStore = useMemo(
     () => createImageConversationHistoryStore(
       asset.projectId,
       asset.id,
       conversationContributionId,
+      currentSourceRevision,
     ),
-    [asset.id, asset.projectId, conversationContributionId],
+    [
+      asset.id,
+      asset.projectId,
+      conversationContributionId,
+      currentSourceRevision,
+    ],
   );
   const revealConversationContext = useCallback(
     (context: ImageConversationContext) => {
+      if (context.sourceRevision !== currentSourceRevision) {
+        reportError(
+          new Error('图片内容已更新'),
+          '这段问答属于旧版图片，无法在当前图片中定位。',
+        );
+        return;
+      }
       const viewer = viewerRef.current;
       const item = viewer ? getImageItem(viewer) : undefined;
       if (!viewer || !item || loadStateRef.current.kind !== 'ready') {
@@ -468,14 +482,19 @@ export function ImageWorkbenchView({
       modeRef.current = 'manual';
       setExplanationIndexOpen(false);
     },
-    [reportError],
+    [currentSourceRevision, reportError],
   );
   const conversationContribution = useMemo(
     () => createImageConversationContribution({
+      sourceRevision: currentSourceRevision,
       historyStore: conversationHistoryStore,
       revealContext: revealConversationContext,
     }),
-    [conversationHistoryStore, revealConversationContext],
+    [
+      conversationHistoryStore,
+      currentSourceRevision,
+      revealConversationContext,
+    ],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
@@ -506,14 +525,12 @@ export function ImageWorkbenchView({
   }, []);
 
   const createExplanation = useCallback(() => {
-    if (!selectedTarget) return;
-    const existing = payload
-      ? findImageExplanationAtTarget(
-          explanations,
-          selectedTarget,
-          payload.sourceRevision,
-        )
-      : undefined;
+    if (!selectedTarget || !payload) return;
+    const existing = findImageExplanationAtTarget(
+      explanations,
+      selectedTarget,
+      payload.sourceRevision,
+    );
     if (existing) {
       setActiveExplanationId(existing.id);
       setSelectedTarget(undefined);
@@ -521,7 +538,10 @@ export function ImageWorkbenchView({
     }
     conversationRuntime.open({
       ownerId: conversationOwnerId,
-      context: createImageConversationContext(selectedTarget),
+      context: createImageConversationContext(
+        selectedTarget,
+        payload.sourceRevision,
+      ),
       question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
       submit: true,
     });
@@ -1346,6 +1366,7 @@ export function ImageWorkbenchView({
                     ownerId: conversationOwnerId,
                     context: createImageConversationContext(
                       activeExplanation.target,
+                      activeExplanation.sourceRevision,
                     ),
                   });
                 }

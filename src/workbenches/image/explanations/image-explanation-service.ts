@@ -152,7 +152,11 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
         sameTarget(view.target, request.target));
     if (existingTask) return existingTask;
 
-    const instruction = new ImageExplanationInstruction({ assetId: request.assetId, target: request.target });
+    const instruction = new ImageExplanationInstruction({
+      assetId: request.assetId,
+      sourceRevision: request.sourceRevision,
+      target: request.target,
+    });
     const task = this.generationTasks.start({
       projectId: request.projectId,
       definitionId: IMAGE_EXPLANATION_TASK_DEFINITION_ID,
@@ -236,6 +240,9 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     if (!instruction?.saveAsNote || !instruction.target) return undefined;
     const status = new GenerationTask(snapshot).getStatus();
     if (status === 'completed' || status === 'cancelled') return undefined;
+    const sourceRevision =
+      instruction.sourceRevision ??
+      snapshot.prepared?.assetReferences.image?.[0]?.contentRevision;
     return Object.freeze({
       kind: 'task',
       id: snapshot.id,
@@ -243,12 +250,7 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
       assetId: instruction.assetId,
       target: instruction.target,
       status: status === 'failed' ? 'failed' : 'pending',
-      ...(snapshot.prepared?.assetReferences.image?.[0]?.contentRevision
-        ? {
-            sourceRevision:
-              snapshot.prepared.assetReferences.image[0].contentRevision,
-          }
-        : {}),
+      ...(sourceRevision ? { sourceRevision } : {}),
       ...(snapshot.failure ? { failureMessage: snapshot.failure.message } : {}),
       createdTime: snapshot.createdTime,
       updatedTime: snapshot.updatedTime,

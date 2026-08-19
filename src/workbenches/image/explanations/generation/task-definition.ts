@@ -37,7 +37,10 @@ export function createImageExplanationTaskDefinitionV1(
       }) => {
         const parsed = imageExplanationInstructionFactory.parse(instruction);
         if (!parsed.ok) throw new Error('Invalid image explanation instruction');
-        return parsed.value.conversationId ?? taskId;
+        const conversationId = parsed.value.conversationId;
+        return conversationId && parsed.value.sourceRevision
+          ? `${conversationId}--${parsed.value.sourceRevision}`
+          : (conversationId ?? taskId);
       },
     }),
     secondaryWorkspaceConfigs: Object.freeze([]),
