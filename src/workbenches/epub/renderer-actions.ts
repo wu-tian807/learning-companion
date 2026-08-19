@@ -4,6 +4,7 @@ import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selectio
 
 export interface EpubRendererActionsOptions {
   readonly ready: boolean;
+  readonly aiBusy?: boolean;
   readonly hasSelection: () => boolean;
   readonly onCopySelection: (text: string) => Promise<void> | void;
   readonly onExplainSelection: (
@@ -15,6 +16,7 @@ export interface EpubRendererActionsOptions {
 
 export function createEpubRendererActions({
   ready,
+  aiBusy = false,
   hasSelection,
   onCopySelection,
   onExplainSelection,
@@ -48,7 +50,7 @@ export function createEpubRendererActions({
       },
       {
         id: 'epub.ai.explain-selection',
-        enabled: () => ready && hasSelection(),
+        enabled: () => ready && !aiBusy && hasSelection(),
         execute: (context) => {
           const selection = findTextSelectionInput(context);
 
@@ -96,7 +98,10 @@ export function createEpubRendererActions({
           label: '解释这段话',
           description: '将选区和 EPUB CFI 锚点交给 AI',
           disabledReason:
-            notReadyReason ?? '请先在 EPUB 中选择文本',
+            notReadyReason ??
+            (aiBusy
+              ? '请先等待当前 AI 回答完成或停止生成'
+              : '请先在 EPUB 中选择文本'),
         },
       },
       {

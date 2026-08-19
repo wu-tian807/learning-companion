@@ -4,7 +4,9 @@ import type {
   GenerationTaskProcessor,
   TaskDefinition,
 } from '../../../../main/generation/contracts/task-definition';
+import type { JsonValue } from '../../../../shared/workbench/protocol';
 import {
+  type EpubExplanationTaskResult,
   EPUB_EXPLANATION_TASK_DEFINITION_ID,
   EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
 } from '../shared';
@@ -12,7 +14,6 @@ import {
   EpubExplanationInstruction,
   epubExplanationInstructionFactory,
 } from './instruction';
-import type { EpubExplanationTaskResult } from './processor';
 
 export function createEpubExplanationTaskDefinitionV1(
   processor: GenerationTaskProcessor<
@@ -27,6 +28,19 @@ export function createEpubExplanationTaskDefinitionV1(
     primaryWorkspaceConfig: Object.freeze({
       key: 'generation-epub-explanation',
       permissions: Object.freeze({ read: false, write: false }),
+      resolveInstanceKey: ({
+        taskId,
+        instruction,
+      }: {
+        readonly taskId: string;
+        readonly instruction: JsonValue;
+      }) => {
+        const parsed = epubExplanationInstructionFactory.parse(instruction);
+        if (!parsed.ok) {
+          throw new Error('Invalid EPUB explanation instruction');
+        }
+        return parsed.value.conversationId ?? taskId;
+      },
     }),
     secondaryWorkspaceConfigs: Object.freeze([]),
     assetReferenceSchema: Object.freeze({}),

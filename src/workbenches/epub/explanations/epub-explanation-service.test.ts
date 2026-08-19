@@ -251,4 +251,42 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
     });
     service.dispose();
   });
+
+  it('不把同一 Session 中的后续追问投影成新标注', async () => {
+    const instruction = new EpubExplanationInstruction({
+      assetId: 'asset-1',
+      conversationId: 'conversation-1',
+      question: '能换一种说法吗？',
+      saveAsNote: false,
+    });
+    const task = GenerationTask.create({
+      id: 'follow-up-task',
+      projectId: 'project-1',
+      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
+      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      instruction: instruction.toSnapshot(),
+      assetReferences: {},
+      createdTime: 1,
+    });
+    const service = new EpubExplanationService(
+      {
+        listByAsset: async () => [],
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      { readText: vi.fn() } as never,
+      {
+        getActiveProjectId: () => 'project-1',
+        list: () => [task.getSnapshot()],
+        subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      {
+        get: () => ({ mediaType: 'application/epub+zip' }),
+      } as never,
+    );
+
+    await expect(
+      service.list({ projectId: 'project-1', assetId: 'asset-1' }),
+    ).resolves.toEqual([]);
+    service.dispose();
+  });
 });

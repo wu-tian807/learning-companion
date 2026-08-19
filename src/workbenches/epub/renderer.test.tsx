@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
+import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { EpubWorkbenchView } from './renderer';
@@ -41,21 +42,23 @@ function render(payload: WorkbenchBootstrap['payload']) {
   };
 
   return renderToStaticMarkup(
-    <WorkbenchRuntimeProvider onError={vi.fn()}>
-      <EpubWorkbenchView
-        asset={asset}
-        bootstrap={bootstrap}
-        executeCommand={vi.fn(async () => ({
-          payload: { saved: true, savedTime: 100 },
-        }))}
-        onRelink={vi.fn()}
-        onRefresh={vi.fn()}
-        onReveal={vi.fn()}
-        onInteractionChange={vi.fn()}
-        onOpenExternal={vi.fn(async () => undefined)}
-        onError={vi.fn()}
-      />
-    </WorkbenchRuntimeProvider>,
+    <WorkbenchConversationRuntimeProvider>
+      <WorkbenchRuntimeProvider onError={vi.fn()}>
+        <EpubWorkbenchView
+          asset={asset}
+          bootstrap={bootstrap}
+          executeCommand={vi.fn(async () => ({
+            payload: { saved: true, savedTime: 100 },
+          }))}
+          onRelink={vi.fn()}
+          onRefresh={vi.fn()}
+          onReveal={vi.fn()}
+          onInteractionChange={vi.fn()}
+          onOpenExternal={vi.fn(async () => undefined)}
+          onError={vi.fn()}
+        />
+      </WorkbenchRuntimeProvider>
+    </WorkbenchConversationRuntimeProvider>,
   );
 }
 
@@ -67,6 +70,7 @@ describe('EpubWorkbenchView', () => {
     });
 
     expect(markup).toContain('aria-label="EPUB 阅读区域"');
+    expect(markup).toContain('aria-label="切换 EPUB 标注索引（0）"');
     expect(markup).toContain('正在解析 EPUB');
     expect(markup).not.toContain('/private/book.epub');
   });

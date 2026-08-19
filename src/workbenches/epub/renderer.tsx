@@ -17,6 +17,10 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import {
+  useWorkbenchConversationContribution,
+  useWorkbenchConversationSnapshot,
+} from '../../renderer/conversation/workbench-conversation-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -25,11 +29,20 @@ import {
   type EpubExplanationView,
 } from './explanations/shared';
 import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
+import { EpubExplanationIndex } from './explanations/epub-explanation-index';
+import { displayEpubExplanationLocation } from './explanations/epub-explanation-navigation';
+import {
+  createEpubConversationContext,
+  createEpubConversationContribution,
+  createEpubConversationHistoryStore,
+  type EpubConversationContext,
+} from './explanations/epub-conversation-contribution';
 import {
   projectEpubExplanationGenerationEvent,
   removeEpubExplanationRuntime,
   type EpubExplanationRuntimeMap,
 } from './explanations/epub-explanation-runtime';
+import { EPUB_DEFAULT_EXPLANATION_QUESTION } from './explanations/shared';
 import {
   interactionFromTextSelection,
   type WorkbenchSelectionSnapshot,
@@ -216,6 +229,7 @@ export function EpubWorkbenchView({
     EpubExplanationView[]
   >([]);
   const [activeExplanationId, setActiveExplanationId] = useState<string>();
+  const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
   const explanationTaskIdsRef = useRef(new Set<string>());
   const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
     useState<EpubExplanationRuntimeMap>({});
@@ -245,6 +259,56 @@ export function EpubWorkbenchView({
     },
     [onError],
   );
+
+  const conversationContributionId = `${epubWorkbenchManifest.id}.reading-conversation`;
+  const conversationOwnerId =
+    `${epubWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () =>
+      createEpubConversationHistoryStore(
+        asset.projectId,
+        asset.id,
+        conversationContributionId,
+      ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
+  const revealConversationContext = useCallback(
+    async (context: EpubConversationContext) => {
+      const rendition = renditionRef.current;
+      if (!rendition || loadState.kind !== 'ready') {
+        reportError(
+          new Error('EPUB 阅读器尚未就绪'),
+          '暂时无法定位这段 EPUB 原文。',
+        );
+        return;
+      }
+      try {
+        await rendition.display(context.target.anchorPayload.cfiRange);
+      } catch (error) {
+        reportError(error, '无法定位到这段 EPUB 原文。');
+      }
+    },
+    [loadState.kind, reportError],
+  );
+  const conversationContribution = useMemo(
+    () =>
+      createEpubConversationContribution({
+        assetId: asset.id,
+        historyStore: conversationHistoryStore,
+        revealContext: revealConversationContext,
+      }),
+    [asset.id, conversationHistoryStore, revealConversationContext],
+  );
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
+  const conversationSnapshot = useWorkbenchConversationSnapshot(
+    conversationRuntime,
+  );
+  const conversationBusy =
+    conversationSnapshot.active?.ownerId === conversationOwnerId &&
+    conversationSnapshot.busy;
 
   const persistViewState = useCallback(
     async (state: EpubWorkbenchViewState) => {
@@ -310,7 +374,7 @@ export function EpubWorkbenchView({
   );
 
   const explainSelection = useCallback(
-    async (selection: WorkbenchSelectionSnapshot) => {
+    (selection: WorkbenchSelectionSnapshot) => {
       if (!isEpubCfiRangeTarget(selection.target)) {
         reportError(
           new Error('EPUB 选区锚点无效'),
@@ -330,27 +394,17 @@ export function EpubWorkbenchView({
         return;
       }
 
-      try {
-        const created = await window.learningCompanion.createEpubExplanation({
-          projectId: asset.projectId,
-          assetId: asset.id,
-          target,
-        });
-        registerExplanationTask(created);
-        setExplanations((current) => [
-          ...current.filter((item) => item.id !== created.id),
-          created,
-        ]);
-        setActiveExplanationId(created.id);
-      } catch (error) {
-        reportError(error, '无法启动 AI 解释。');
-      }
+      conversationRuntime.open({
+        ownerId: conversationOwnerId,
+        context: createEpubConversationContext(target),
+        question: EPUB_DEFAULT_EXPLANATION_QUESTION,
+        submit: true,
+      });
     },
     [
-      asset.id,
-      asset.projectId,
+      conversationOwnerId,
+      conversationRuntime,
       explanations,
-      registerExplanationTask,
       reportError,
     ],
   );
@@ -359,13 +413,21 @@ export function EpubWorkbenchView({
     () =>
       createEpubRendererActions({
         ready: loadState.kind === 'ready',
+        aiBusy: conversationBusy,
         hasSelection: () => selectionRef.current !== undefined,
         onCopySelection: copySelection,
         onExplainSelection: explainSelection,
         onReload: reload,
         onReveal: reveal,
       }),
-    [copySelection, explainSelection, loadState.kind, reload, reveal],
+    [
+      conversationBusy,
+      copySelection,
+      explainSelection,
+      loadState.kind,
+      reload,
+      reveal,
+    ],
   );
   useWorkbenchContributions(
     `${epubWorkbenchManifest.id}.viewer`,
@@ -823,6 +885,28 @@ export function EpubWorkbenchView({
     [asset.id, asset.projectId, clearExplanationRuntime, reportError],
   );
 
+  const revealExplanation = useCallback(
+    async (explanation: EpubExplanationView) => {
+      const rendition = renditionRef.current;
+      if (!rendition || loadState.kind !== 'ready') {
+        reportError(
+          new Error('EPUB 阅读器尚未就绪'),
+          '暂时无法定位这条标注。',
+        );
+        return;
+      }
+
+      try {
+        await displayEpubExplanationLocation(rendition, explanation);
+        setActiveExplanationId(explanation.id);
+        setExplanationIndexOpen(false);
+      } catch (error) {
+        reportError(error, '无法定位到这条 EPUB 标注。');
+      }
+    },
+    [loadState.kind, reportError],
+  );
+
   const navigate = useCallback(
     (direction: 'previous' | 'next') => {
       const rendition = renditionRef.current;
@@ -869,18 +953,43 @@ export function EpubWorkbenchView({
             type="button"
             aria-label="切换 EPUB 目录"
             aria-expanded={viewState.tocOpen}
-            onClick={() =>
+            onClick={() => {
+              setExplanationIndexOpen(false);
               updateViewState(
                 {
                   ...viewStateRef.current,
                   tocOpen: !viewStateRef.current.tocOpen,
                 },
                 true,
-              )
-            }
+              );
+            }}
             className="ui-control rounded-md border border-white/[0.08] px-2 py-1 text-[11px] text-slate-400"
           >
             目录
+          </button>
+          <button
+            type="button"
+            aria-label={`切换 EPUB 标注索引（${explanations.length}）`}
+            aria-expanded={explanationIndexOpen}
+            onClick={() => {
+              const nextOpen = !explanationIndexOpen;
+              setExplanationIndexOpen(nextOpen);
+              if (nextOpen && viewStateRef.current.tocOpen) {
+                updateViewState(
+                  {
+                    ...viewStateRef.current,
+                    tocOpen: false,
+                  },
+                  true,
+                );
+              }
+            }}
+            className="ui-control rounded-md border border-white/[0.08] px-2 py-1 text-[11px] text-slate-400"
+          >
+            标注
+            <span className="ml-1 tabular-nums text-slate-600">
+              {explanations.length}
+            </span>
           </button>
           <span className="truncate text-[11px] text-slate-400">
             {metadata.title}
@@ -984,6 +1093,16 @@ export function EpubWorkbenchView({
             }}
           />
         )}
+        {explanationIndexOpen && (
+          <EpubExplanationIndex
+            explanations={explanations}
+            activeExplanationId={activeExplanationId}
+            onActivate={(explanation) => {
+              void revealExplanation(explanation);
+            }}
+            onClose={() => setExplanationIndexOpen(false)}
+          />
+        )}
         <div className="relative min-w-0 flex-1">
           <div
             ref={viewerHostRef}
@@ -1030,6 +1149,20 @@ export function EpubWorkbenchView({
               onClose={() => setActiveExplanationId(undefined)}
               onRetry={() => void retryExplanation(activeExplanation)}
               onDelete={() => void deleteExplanation(activeExplanation)}
+              onContinueQuestion={
+                activeExplanation.status === 'completed'
+                  ? () => {
+                      setActiveExplanationId(undefined);
+                      conversationRuntime.open({
+                        ownerId: conversationOwnerId,
+                        context: createEpubConversationContext(
+                          activeExplanation.target,
+                        ),
+                      });
+                    }
+                  : undefined
+              }
+              continueQuestionDisabled={conversationBusy}
             />
           )}
         </div>

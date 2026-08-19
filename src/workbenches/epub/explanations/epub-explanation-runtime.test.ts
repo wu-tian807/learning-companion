@@ -74,7 +74,7 @@ describe('EPUB explanation runtime projection', () => {
       text: 'x'.repeat(70_000),
     });
 
-    expect(runtime?.text).toHaveLength(64_000);
+    expect(runtime?.text).toHaveLength(32_768);
   });
 
   it('projects only tracked tasks from the active Project and clears cancellation', () => {
