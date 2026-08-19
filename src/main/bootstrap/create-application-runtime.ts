@@ -54,6 +54,7 @@ import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/work
 import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
+import { WorkbenchEventBus } from '../workbench/workbench-event-bus';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
@@ -252,10 +253,13 @@ export async function createApplicationRuntime({
       new WorkbenchStateDatabase(databaseContext);
     const workbenchStateDataRepository =
       new WorkbenchStateDataDatabase(databaseContext);
+    const workbenchEvents = new WorkbenchEventBus();
     registerMainWorkbenchProviders(
       workbenchRegistry,
       {
         associationService,
+        assetService,
+        artifactRegistry,
         artifactService,
         contentResourceService,
         externalLibraryService,
@@ -263,6 +267,7 @@ export async function createApplicationRuntime({
         stateDatabase: workbenchStateRepository,
         stateDataDatabase: workbenchStateDataRepository,
         sandboxFrameScripts: sandboxFrameInteractionBridge,
+        workbenchEvents,
       },
     );
     const generationTaskDatabase = new GenerationTaskDatabase(
@@ -320,6 +325,7 @@ export async function createApplicationRuntime({
       projectService,
       settingsRepository,
       workbenchSessionService,
+      workbenchEvents,
     });
     mainWorkbenchFeatures = startMainWorkbenchContributions({
       attachments: attachmentService,

@@ -349,6 +349,8 @@ describe('AssetService', () => {
       createDefaultName: vi.fn(() => '资料'),
     });
     await service.loadFromProject('project');
+    const listener = vi.fn();
+    service.subscribe(listener);
 
     const created = await service.addLocalFile(
       'project',
@@ -371,6 +373,10 @@ describe('AssetService', () => {
       contentStatus: { availability: 'available' },
     });
     expect(handles[0]?.close).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith({
+      projectId: 'project',
+      asset: created,
+    });
   });
 
   it('refreshes runtime status without writing Asset data', async () => {

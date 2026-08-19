@@ -12,13 +12,19 @@ import type {
   WorkbenchStateRecord,
   WorkbenchStateDatabaseApi,
 } from '../../main/workbench/workbench-state-database';
+import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
 import { VideoWorkbenchProvider } from './main';
 import {
   createVideoSaveViewStateCommand,
+  createVideoSetSubtitleModeCommand,
   DEFAULT_VIDEO_VIEW_STATE,
   VIDEO_STATE_SCHEMA_VERSION,
   VIDEO_WORKBENCH_ID,
 } from './shared';
+import type {
+  VideoSubtitleServiceApi,
+  VideoSubtitleServiceListener,
+} from './subtitles/video-subtitle-service';
 
 class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
@@ -43,6 +49,44 @@ function createResources(): ContentResourceServiceApi {
     handle: vi.fn(async () => new Response()),
     dispose: vi.fn(),
   };
+}
+
+function createSubtitles(): VideoSubtitleServiceApi {
+  return {
+    getSnapshot: vi.fn(() => ({
+      phase: 'idle' as const,
+      partialTranslations: [],
+      completedCues: 0,
+      totalCues: 0,
+    })),
+    subscribe: vi.fn(() => () => undefined),
+    ensureSource: vi.fn(async () => undefined),
+    ensureTranslation: vi.fn(async () => undefined),
+    retry: vi.fn(async () => undefined),
+  };
+}
+
+function createEvents(): WorkbenchEventBusApi {
+  return {
+    publish: vi.fn(),
+    subscribe: vi.fn(() => () => undefined),
+  };
+}
+
+function createProvider(
+  resources: ContentResourceServiceApi,
+  states: WorkbenchStateDatabaseApi,
+  options: {
+    readonly now?: () => number;
+    readonly subtitles?: VideoSubtitleServiceApi;
+    readonly events?: WorkbenchEventBusApi;
+  } = {},
+): VideoWorkbenchProvider {
+  return new VideoWorkbenchProvider(resources, states, {
+    subtitles: options.subtitles ?? createSubtitles(),
+    events: options.events ?? createEvents(),
+    now: options.now,
+  });
 }
 
 function createContext(
@@ -88,7 +132,7 @@ describe('VideoWorkbenchProvider', () => {
   it('opens a scoped resource URL and restores persisted state', async () => {
     const resources = createResources();
     const states = new MemoryStateDatabase();
-    const provider = new VideoWorkbenchProvider(resources, states);
+    const provider = createProvider(resources, states);
     const viewState = {
       currentTime: 42,
       volume: 0.6,
@@ -99,7 +143,7 @@ describe('VideoWorkbenchProvider', () => {
       state: {
         assetId: 'asset',
         workbenchId: VIDEO_WORKBENCH_ID,
-        schemaVersion: VIDEO_STATE_SCHEMA_VERSION,
+        schemaVersion: 1,
         payload: { viewState },
         updatedTime: 100,
       },
@@ -109,6 +153,13 @@ describe('VideoWorkbenchProvider', () => {
       payload: {
         contentUrl: 'learning-content://resource/video',
         viewState,
+        subtitleState: { displayMode: 'off' },
+        subtitleSnapshot: {
+          phase: 'idle',
+          partialTranslations: [],
+          completedCues: 0,
+          totalCues: 0,
+        },
       },
     });
     expect(resources.register).toHaveBeenCalledWith(
@@ -121,7 +172,7 @@ describe('VideoWorkbenchProvider', () => {
   it('persists validated view state and revokes the session', async () => {
     const resources = createResources();
     const states = new MemoryStateDatabase();
-    const provider = new VideoWorkbenchProvider(resources, states, {
+    const provider = createProvider(resources, states, {
       now: () => 300,
     });
     const context = createContext();
@@ -153,7 +204,7 @@ describe('VideoWorkbenchProvider', () => {
 
   it('falls back from invalid state and rejects unsupported content', async () => {
     const resources = createResources();
-    const provider = new VideoWorkbenchProvider(
+    const provider = createProvider(
       resources,
       new MemoryStateDatabase(),
     );
@@ -176,10 +227,79 @@ describe('VideoWorkbenchProvider', () => {
       mediaType: 'audio/mp4',
     });
     await expect(
-      new VideoWorkbenchProvider(
+      createProvider(
         createResources(),
         new MemoryStateDatabase(),
       ).open(unsupported),
     ).rejects.toThrow('DATA_INTEGRITY_ERROR');
+  });
+
+  it('starts source subtitles on open and translates only for a requested mode', async () => {
+    const resources = createResources();
+    const states = new MemoryStateDatabase();
+    let listener: VideoSubtitleServiceListener | undefined;
+    const unsubscribe = vi.fn();
+    const subtitles: VideoSubtitleServiceApi = {
+      getSnapshot: vi.fn(() => ({
+        phase: 'idle' as const,
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      })),
+      subscribe: vi.fn((_assetId, nextListener) => {
+        listener = nextListener;
+        return unsubscribe;
+      }),
+      ensureSource: vi.fn(async () => undefined),
+      ensureTranslation: vi.fn(async () => undefined),
+      retry: vi.fn(async () => undefined),
+    };
+    const events: WorkbenchEventBusApi = {
+      publish: vi.fn(),
+      subscribe: vi.fn(() => () => undefined),
+    };
+    const provider = createProvider(
+      resources,
+      states,
+      { now: () => 400, subtitles, events },
+    );
+    const context = createContext();
+
+    await provider.open(context);
+    expect(subtitles.ensureSource).toHaveBeenCalledWith('project', 'asset');
+    expect(subtitles.ensureTranslation).not.toHaveBeenCalled();
+
+    await provider.command(
+      context,
+      createVideoSetSubtitleModeCommand('source'),
+    );
+    expect(subtitles.ensureTranslation).not.toHaveBeenCalled();
+
+    await provider.command(
+      context,
+      createVideoSetSubtitleModeCommand('bilingual'),
+    );
+    expect(subtitles.ensureTranslation).toHaveBeenCalledOnce();
+    await expect(states.get('asset', VIDEO_WORKBENCH_ID)).resolves.toMatchObject({
+      schemaVersion: 2,
+      payload: { subtitleState: { displayMode: 'bilingual' } },
+    });
+
+    listener?.({
+      type: 'snapshot',
+      snapshot: {
+        phase: 'transcribing',
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      },
+    });
+    expect(events.publish).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session',
+      type: 'video:subtitle-snapshot',
+    }));
+
+    await provider.close(context);
+    expect(unsubscribe).toHaveBeenCalledOnce();
   });
 });

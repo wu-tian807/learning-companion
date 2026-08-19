@@ -53,13 +53,23 @@ export interface BergamotSubtitleRuntime {
 export interface HyMtSubtitleRuntime {
   readonly executablePath: string;
   readonly modelPath: string;
+  readonly backend: 'cpu' | 'vulkan';
+}
+
+export interface MediaSubtitleRuntimeResolverApi {
+  requireMediaDecoder(): Promise<MediaDecoderRuntime>;
+  requireTranscription(): Promise<SubtitleTranscriptionRuntime>;
+  requireFastTranslation(): Promise<BergamotSubtitleRuntime>;
+  requireQualityTranslation(): Promise<HyMtSubtitleRuntime>;
 }
 
 function runtimePath(root: string, relativePath: string): string {
   return join(root, ...relativePath.split('/'));
 }
 
-export class MediaSubtitleRuntimeResolver {
+export class MediaSubtitleRuntimeResolver
+  implements MediaSubtitleRuntimeResolverApi
+{
   constructor(
     private readonly externalLibraries: ExternalLibraryServiceApi,
   ) {}
@@ -182,6 +192,10 @@ export class MediaSubtitleRuntimeResolver {
         runtime.runtimeDirectory,
         'translation/hymt/models/Hy-MT2-1.8B-Q4_K_M.gguf',
       ),
+      backend:
+        runtime.variantId === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
+          ? 'vulkan'
+          : 'cpu',
     });
   }
 }
