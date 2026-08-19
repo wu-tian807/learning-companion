@@ -11,6 +11,7 @@ import type {
   WorkbenchBootstrap,
   WorkbenchCommand,
   WorkbenchCommandResult,
+  WorkbenchEvent,
 } from '../../shared/workbench/protocol';
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import type { AssetSnapshot } from '../../shared/assets';
@@ -24,6 +25,9 @@ export interface RendererWorkbenchViewProps {
   readonly executeCommand: (
     command: WorkbenchCommand,
   ) => Promise<WorkbenchCommandResult>;
+  readonly subscribeEvent?: (
+    listener: (event: WorkbenchEvent) => void,
+  ) => () => void;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;

@@ -17,6 +17,7 @@ import type { GenerationTaskDefinitionRegistry } from '../../main/generation/gen
 import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
+import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { SandboxFrameScriptExecutor } from '../../main/workbench/interaction/sandbox-frame-script-executor';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
@@ -47,9 +48,8 @@ import { pdfMainFeature } from '../pdf/main-feature';
 import { pdfWorkbenchManifest } from '../pdf/shared';
 import { PlainTextWorkbenchProvider } from '../plain-text/main';
 import { plainTextWorkbenchManifest } from '../plain-text/shared';
-import { VideoWorkbenchProvider } from '../video/main';
-import { videoWorkbenchManifest } from '../video/shared';
 import { mediaSubtitlesMainFeature } from '../media-subtitles/main-feature';
+import { videoMainContribution } from '../video/main-feature';
 
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
@@ -58,6 +58,8 @@ export interface MainWorkbenchExternalLibraryContext {
 
 export interface MainWorkbenchProviderContext {
   readonly associationService: AssetAssociationServiceApi;
+  readonly assetService: AssetServiceApi;
+  readonly artifactRegistry: AssetArtifactRegistryApi;
   readonly artifactService: AssetArtifactServiceApi;
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
@@ -65,6 +67,7 @@ export interface MainWorkbenchProviderContext {
   readonly stateDatabase: WorkbenchStateDatabaseApi;
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
   readonly sandboxFrameScripts: SandboxFrameScriptExecutor;
+  readonly workbenchEvents: WorkbenchEventBusApi;
 }
 
 export interface MainWorkbenchArtifactContext {
@@ -196,11 +199,7 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = 
       context.contentResourceService,
       context.stateDatabase,
     )),
-  providerContribution(videoWorkbenchManifest, (context) =>
-    new VideoWorkbenchProvider(
-      context.contentResourceService,
-      context.stateDatabase,
-    )),
+  videoMainContribution,
   documentAiMainFeature,
   mediaSubtitlesMainFeature,
 ];

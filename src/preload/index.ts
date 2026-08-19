@@ -25,6 +25,7 @@ import type {
   WorkbenchCloseRequest,
   WorkbenchCommandRequest,
   WorkbenchCommandResult,
+  WorkbenchEvent,
   WorkbenchOpenRequest,
 } from "../shared/workbench/protocol";
 import type { AssetAttachment } from "../shared/attachments/contracts";
@@ -60,6 +61,7 @@ import type {
 } from "../shared/ipc";
 import { IPC_CHANNELS } from "../shared/ipc";
 import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
+import { subscribeWorkbenchEvents } from "./workbench-events";
 import { subscribeExternalLibraryEvents } from "./external-library-events";
 import { subscribeAgentProviderEvents } from "./agent-provider-events";
 import { subscribeAssetEvents } from "./asset-events";
@@ -251,6 +253,8 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<WorkbenchCommandResult>(IPC_CHANNELS.commandWorkbench, request),
   closeWorkbench: (request: WorkbenchCloseRequest) =>
     invoke<void>(IPC_CHANNELS.closeWorkbench, request),
+  onWorkbenchEvent: (listener: (event: WorkbenchEvent) => void) =>
+    subscribeWorkbenchEvents(ipcRenderer, listener),
   onWorkbenchFacilityEvent: (listener) =>
     subscribeWorkbenchFacilityEvents(ipcRenderer, listener),
   listAttachments: (request: {

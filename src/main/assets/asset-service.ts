@@ -389,6 +389,7 @@ export class AssetService implements AssetServiceApi {
       });
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
+      this.publishChanged(snapshot);
 
       return cloneAssetSnapshot(snapshot);
     } catch (error) {

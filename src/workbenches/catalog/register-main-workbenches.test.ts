@@ -60,6 +60,10 @@ describe('Workbench contribution catalogs', () => {
     );
     registerMainWorkbenchProviders(providers, {
       associationService: {} as never,
+      assetService: {
+        subscribe: vi.fn(() => () => undefined),
+      } as never,
+      artifactRegistry: { register: vi.fn() } as never,
       artifactService: {} as never,
       contentResourceService: {} as never,
       externalLibraryService: {} as never,
@@ -67,6 +71,7 @@ describe('Workbench contribution catalogs', () => {
       stateDatabase: {} as never,
       stateDataDatabase: {} as never,
       sandboxFrameScripts: {} as never,
+      workbenchEvents: {} as never,
     });
 
     for (const manifest of mainManifests) {
