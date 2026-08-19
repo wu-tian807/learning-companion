@@ -181,6 +181,29 @@ describe('EPUB explanation generation', () => {
     );
   });
 
+  it('rejects an answer that the conversation history cannot persist', async () => {
+    const createWithContent = vi.fn();
+    const processor = new EpubExplanationProcessor({
+      listByAsset: vi.fn(async () => []),
+      createWithContent,
+    } as never);
+
+    await expect(processor.process({
+      taskId: 'task-too-long',
+      projectId: 'project-1',
+      instruction: createInstruction(),
+      agent: {
+        call: vi.fn(async () => ({
+          assistantOutput: 'x'.repeat(32_769),
+          metrics: { providerId: 'codex', modelId: 'gpt-test' },
+        })),
+      },
+      preparedUserMessage: { role: 'user', content: [] },
+      reportStatus: vi.fn(),
+    } as never)).rejects.toMatchObject({ code: 'GENERATION_OUTPUT_INVALID' });
+    expect(createWithContent).not.toHaveBeenCalled();
+  });
+
   it('reuses the completed Attachment when process is replayed after a crash', async () => {
     const instruction = createInstruction();
     const createWithContent = vi.fn();

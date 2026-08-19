@@ -16,6 +16,7 @@ export const EPUB_EXPLANATION_INSTRUCTION_FORMAT =
   'learning-companion/epub-explanation-instruction';
 export const EPUB_EXPLANATION_INSTRUCTION_VERSION = 1;
 export const EPUB_DEFAULT_EXPLANATION_QUESTION = '请解释这段话。';
+export const EPUB_EXPLANATION_ANSWER_MAX_LENGTH = 32_768;
 
 export const EPUB_EXPLANATION_IPC_CHANNELS = Object.freeze({
   list: 'epub-explanation:list',
@@ -161,7 +162,7 @@ export function isEpubExplanationTaskResult(
 ): value is EpubExplanationTaskResult {
   if (!isRecord(value)) return false;
   return (
-    isRequiredText(value.answer, 64_000) &&
+    isRequiredText(value.answer, EPUB_EXPLANATION_ANSWER_MAX_LENGTH) &&
     isRequiredText(value.providerId, 256) &&
     isRequiredText(value.modelId, 256) &&
     (value.title === undefined || isRequiredText(value.title, 128)) &&

@@ -2,8 +2,7 @@ import type {
   GenerationExecutionEvent,
   GenerationTaskEvent,
 } from '../../../shared/generation-tasks';
-
-const MAX_RUNTIME_ANSWER_LENGTH = 64_000;
+import { EPUB_EXPLANATION_ANSWER_MAX_LENGTH } from './shared';
 
 export type EpubExplanationRuntimePhase =
   | 'waiting'
@@ -27,7 +26,7 @@ const initialRuntimeView: EpubExplanationRuntimeView = Object.freeze({
 });
 
 function constrainRuntimeText(value: string): string {
-  return value.slice(0, MAX_RUNTIME_ANSWER_LENGTH);
+  return value.slice(0, EPUB_EXPLANATION_ANSWER_MAX_LENGTH);
 }
 
 export function reduceEpubExplanationRuntime(

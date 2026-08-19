@@ -129,6 +129,20 @@ describe('EPUB conversation contribution', () => {
     const invalid = contribution.readTaskResult({
       result: { answer: '' },
     } as unknown as GenerationTaskView);
+    const atPersistenceLimit = contribution.readTaskResult({
+      result: {
+        answer: 'x'.repeat(32_768),
+        providerId: 'codex',
+        modelId: 'gpt-test',
+      },
+    } as unknown as GenerationTaskView);
+    const beyondPersistenceLimit = contribution.readTaskResult({
+      result: {
+        answer: 'x'.repeat(32_769),
+        providerId: 'codex',
+        modelId: 'gpt-test',
+      },
+    } as unknown as GenerationTaskView);
 
     expect(valid).toEqual({
       answer: '解释结果',
@@ -136,6 +150,8 @@ describe('EPUB conversation contribution', () => {
       modelInfo: 'codex/gpt-test',
     });
     expect(invalid).toBeUndefined();
+    expect(atPersistenceLimit?.answer).toHaveLength(32_768);
+    expect(beyondPersistenceLimit).toBeUndefined();
   });
 
   it('展示选中原文并把定位交回 EPUB Workbench', async () => {
