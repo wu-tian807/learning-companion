@@ -1,225 +1,89 @@
-import type { AssetAssociationServiceApi } from '../../main/asset-associations/asset-association-service';
-import type { AgentFunctionToolRegistryApi } from '../../main/agents/function-tools/agent-function-tool-registry';
-import type { AssetArtifactRegistryApi } from '../../main/artifacts/asset-artifact-registry';
-import type { AssetArtifactServiceApi } from '../../main/artifacts/asset-artifact-service';
-import type { AssetLookup } from '../../main/assets/asset-database';
-import type { AssetServiceApi } from '../../main/assets/asset-service';
-import type { AnchorRegistry } from '../../main/attachments/anchor-registry';
-import type { AttachmentContentFile } from '../../main/attachments/attachment-content-file';
-import type { AttachmentRegistry } from '../../main/attachments/attachment-registry';
-import type { AttachmentServiceApi } from '../../main/attachments/attachment-service';
-import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import { AppError } from '../../main/errors/app-error';
-import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
-import type { ExternalLibraryHardwareCapabilities } from '../../main/external-libraries/external-library-hardware-capabilities';
-import type { ExternalLibraryRegistryApi } from '../../main/external-libraries/external-library-registry';
-import type { GenerationTaskDefinitionRegistry } from '../../main/generation/generation-task-definition-registry';
-import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
-import type { ProjectLookup } from '../../main/projects/project-database';
+import type {
+  MainWorkbenchAgentToolContext,
+  MainWorkbenchArtifactContext,
+  MainWorkbenchAttachmentContext,
+  MainWorkbenchContribution,
+  MainWorkbenchExternalLibraryContext,
+  MainWorkbenchGenerationContext,
+  MainWorkbenchProviderContext,
+  MainWorkbenchRuntime,
+  MainWorkbenchStartContext,
+} from '../../main/workbench/main-workbench-contribution';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
-import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
-import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
-import type { SandboxFrameScriptExecutor } from '../../main/workbench/interaction/sandbox-frame-script-executor';
-import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
-import type { WorkbenchStateDatabaseApi } from '../../main/workbench/workbench-state-database';
-import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import { areAssetWorkbenchManifestsEqual } from '../../shared/workbench/manifest';
-import { AudioWorkbenchProvider } from '../audio/main';
-import { audioWorkbenchManifest } from '../audio/shared';
-import { documentAiMainFeature } from '../document-ai/main';
-import { EpubWorkbenchProvider } from '../epub/main';
-import { epubExplanationMainFeature } from '../epub/explanations/main';
-import { epubWorkbenchManifest } from '../epub/shared';
-import { HtmlWorkbenchProvider } from '../html/main';
-import { htmlAssistantMainFeature } from '../html/generation/main';
-import { htmlWorkbenchManifest } from '../html/shared';
-import { ImageWorkbenchProvider } from '../image/main';
-import { imageExplanationMainFeature } from '../image/explanations/main';
-import { imageWorkbenchManifest } from '../image/shared';
-import { MarkdownWorkbenchProvider } from '../markdown/main';
-import { markdownWorkbenchManifest } from '../markdown/shared';
-import { MindMapWorkbenchProvider } from '../mindmap/main';
-import { mindMapGenerationMainFeature } from '../mindmap/generation/main';
-import { mindMapWorkbenchManifest } from '../mindmap/shared';
-import { OfficeWorkbenchProvider } from '../office/main';
-import { officeArtifactMainFeature } from '../office/main-feature';
-import { officeWorkbenchManifest } from '../office/shared';
-import { PdfWorkbenchProvider } from '../pdf/main';
-import { pdfMainFeature } from '../pdf/main-feature';
-import { pdfWorkbenchManifest } from '../pdf/shared';
-import { PlainTextWorkbenchProvider } from '../plain-text/main';
-import { plainTextWorkbenchManifest } from '../plain-text/shared';
-import { mediaSubtitlesMainFeature } from '../media-subtitles/main-feature';
-import { videoMainContribution } from '../video/main-feature';
+import { audioMainWorkbenchContribution } from '../audio/main-contribution';
+import { documentAiMainWorkbenchContribution } from '../document-ai/main-contribution';
+import { epubMainWorkbenchContribution } from '../epub/main-contribution';
+import { htmlMainWorkbenchContribution } from '../html/main-contribution';
+import { imageMainWorkbenchContribution } from '../image/main-contribution';
+import { markdownMainWorkbenchContribution } from '../markdown/main-contribution';
+import { mediaSubtitlesMainWorkbenchContribution } from '../media-subtitles/main-contribution';
+import { mindMapMainWorkbenchContribution } from '../mindmap/main-contribution';
+import { officeMainWorkbenchContribution } from '../office/main-contribution';
+import { pdfMainWorkbenchContribution } from '../pdf/main-contribution';
+import { plainTextMainWorkbenchContribution } from '../plain-text/main-contribution';
+import { videoMainWorkbenchContribution } from '../video/main-contribution';
 
-export interface MainWorkbenchExternalLibraryContext {
-  readonly libraries: ExternalLibraryRegistryApi;
-  readonly hardware: ExternalLibraryHardwareCapabilities;
-}
+export type {
+  MainWorkbenchAgentToolContext,
+  MainWorkbenchArtifactContext,
+  MainWorkbenchAttachmentContext,
+  MainWorkbenchContribution,
+  MainWorkbenchExternalLibraryContext,
+  MainWorkbenchGenerationContext,
+  MainWorkbenchProviderContext,
+  MainWorkbenchRuntime,
+  MainWorkbenchStartContext,
+} from '../../main/workbench/main-workbench-contribution';
 
-export interface MainWorkbenchProviderContext {
-  readonly associationService: AssetAssociationServiceApi;
-  readonly assetService: AssetServiceApi;
-  readonly artifactRegistry: AssetArtifactRegistryApi;
-  readonly artifactService: AssetArtifactServiceApi;
-  readonly contentResourceService: ContentResourceServiceApi;
-  readonly externalLibraryService: ExternalLibraryServiceApi;
-  readonly projectLookup: ProjectLookup;
-  readonly stateDatabase: WorkbenchStateDatabaseApi;
-  readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
-  readonly sandboxFrameScripts: SandboxFrameScriptExecutor;
-  readonly workbenchEvents: WorkbenchEventBusApi;
-}
-
-export interface MainWorkbenchArtifactContext {
-  readonly artifacts: AssetArtifactRegistryApi;
-  readonly externalLibraries: ExternalLibraryServiceApi;
-  readonly externalLibraryProfilesDirectory: string;
-}
-
-export interface MainWorkbenchAttachmentContext {
-  readonly attachments: AttachmentRegistry;
-  readonly anchors: AnchorRegistry;
-}
-
-export interface MainWorkbenchAgentToolContext {
-  readonly functionTools: AgentFunctionToolRegistryApi;
-}
-
-export interface MainWorkbenchGenerationContext {
-  readonly definitions: GenerationTaskDefinitionRegistry;
-  readonly assets: AssetServiceApi;
-  readonly associations: AssetAssociationServiceApi;
-  readonly attachments: AttachmentServiceApi;
-}
-
-export interface MainWorkbenchStartContext {
-  readonly attachments: AttachmentServiceApi;
-  readonly attachmentFiles: AttachmentContentFile;
-  readonly generationTasks: GenerationTaskServiceApi;
-  readonly assets: AssetLookup;
-}
-
-export interface MainWorkbenchRuntime {
-  dispose(): void;
-}
-
-export interface MainWorkbenchContribution {
-  readonly id: string;
-  readonly manifest?: AssetWorkbenchManifest;
-  registerExternalLibraries?(
-    context: MainWorkbenchExternalLibraryContext,
-  ): void;
-  createProvider?(
-    context: MainWorkbenchProviderContext,
-  ): MainWorkbenchProvider;
-  registerArtifactProducers?(context: MainWorkbenchArtifactContext): void;
-  registerAttachmentTypes?(context: MainWorkbenchAttachmentContext): void;
-  registerAgentFunctionTools?(context: MainWorkbenchAgentToolContext): void;
-  registerGenerationTaskDefinitions?(
-    context: MainWorkbenchGenerationContext,
-  ): void;
-  start?(context: MainWorkbenchStartContext): MainWorkbenchRuntime;
-}
-
-function providerContribution(
-  manifest: AssetWorkbenchManifest,
-  createProvider: MainWorkbenchContribution['createProvider'],
-  feature: Partial<MainWorkbenchContribution> = {},
-): MainWorkbenchContribution {
-  return { ...feature, id: manifest.id, manifest, createProvider };
-}
-
-export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] = [
-  providerContribution(plainTextWorkbenchManifest, (context) =>
-    new PlainTextWorkbenchProvider(
-      context.stateDatabase,
-      context.stateDataDatabase,
-    )),
-  providerContribution(markdownWorkbenchManifest, (context) =>
-    new MarkdownWorkbenchProvider(
-      context.stateDatabase,
-      context.stateDataDatabase,
-    )),
-  providerContribution(
-    mindMapWorkbenchManifest,
-    (context) =>
-      new MindMapWorkbenchProvider(
-        context.stateDatabase,
-        context.associationService,
-      ),
-    mindMapGenerationMainFeature,
-  ),
-  providerContribution(
-    pdfWorkbenchManifest,
-    (context) =>
-      new PdfWorkbenchProvider(
-        context.contentResourceService,
-        context.stateDatabase,
-      ),
-    pdfMainFeature,
-  ),
-  providerContribution(
-    officeWorkbenchManifest,
-    (context) =>
-      new OfficeWorkbenchProvider(
-        context.artifactService,
-        context.contentResourceService,
-        context.externalLibraryService,
-        context.projectLookup,
-        context.stateDatabase,
-      ),
-    officeArtifactMainFeature,
-  ),
-  providerContribution(
-    htmlWorkbenchManifest,
-    (context) =>
-      new HtmlWorkbenchProvider(
-        context.contentResourceService,
-        context.stateDataDatabase,
-        context.sandboxFrameScripts,
-      ),
-    htmlAssistantMainFeature,
-  ),
-  providerContribution(
-    epubWorkbenchManifest,
-    (context) =>
-      new EpubWorkbenchProvider(
-        context.contentResourceService,
-        context.stateDatabase,
-      ),
-    epubExplanationMainFeature,
-  ),
-  providerContribution(
-    imageWorkbenchManifest,
-    (context) =>
-      new ImageWorkbenchProvider(
-        context.contentResourceService,
-        context.stateDatabase,
-      ),
-    imageExplanationMainFeature,
-  ),
-  providerContribution(audioWorkbenchManifest, (context) =>
-    new AudioWorkbenchProvider(
-      context.contentResourceService,
-      context.stateDatabase,
-    )),
-  videoMainContribution,
-  documentAiMainFeature,
-  mediaSubtitlesMainFeature,
-];
+export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] =
+  Object.freeze([
+    plainTextMainWorkbenchContribution,
+    markdownMainWorkbenchContribution,
+    mindMapMainWorkbenchContribution,
+    pdfMainWorkbenchContribution,
+    officeMainWorkbenchContribution,
+    htmlMainWorkbenchContribution,
+    epubMainWorkbenchContribution,
+    imageMainWorkbenchContribution,
+    audioMainWorkbenchContribution,
+    videoMainWorkbenchContribution,
+    documentAiMainWorkbenchContribution,
+    mediaSubtitlesMainWorkbenchContribution,
+  ]);
 
 function forEachContribution(
   action: (contribution: MainWorkbenchContribution) => void,
 ): void {
   const ids = new Set<string>();
   for (const contribution of mainWorkbenchContributions) {
-    if (!contribution.id.trim() || ids.has(contribution.id)) {
-      throw new AppError('INVALID_EXTENSION_DEFINITION');
+    const ownedIds = [
+      contribution.id,
+      ...(contribution.features?.map((feature) => feature.id) ?? []),
+    ];
+    for (const id of ownedIds) {
+      if (!id.trim() || ids.has(id)) {
+        throw new AppError('INVALID_EXTENSION_DEFINITION');
+      }
+      ids.add(id);
     }
-    ids.add(contribution.id);
     action(contribution);
   }
+}
+
+function disposeRuntimes(
+  runtimes: MainWorkbenchRuntime[],
+): void {
+  let disposalError: unknown;
+  for (const runtime of runtimes.splice(0).reverse()) {
+    try {
+      runtime.dispose();
+    } catch (error) {
+      disposalError ??= error;
+    }
+  }
+  if (disposalError !== undefined) throw disposalError;
 }
 
 export function registerMainWorkbenchProviders(
@@ -291,13 +155,17 @@ export function startMainWorkbenchContributions(
       if (runtime) runtimes.push(runtime);
     });
   } catch (error) {
-    for (const runtime of runtimes.reverse()) runtime.dispose();
+    try {
+      disposeRuntimes(runtimes);
+    } catch {
+      // Preserve the contribution start failure after best-effort rollback.
+    }
     throw error;
   }
 
-  return {
+  return Object.freeze({
     dispose(): void {
-      for (const runtime of runtimes.splice(0).reverse()) runtime.dispose();
+      disposeRuntimes(runtimes);
     },
-  };
+  });
 }

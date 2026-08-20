@@ -1,0 +1,187 @@
+import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
+import type { AgentFunctionToolRegistryApi } from '../agents/function-tools/agent-function-tool-registry';
+import type { AssetArtifactRegistryApi } from '../artifacts/asset-artifact-registry';
+import type { AssetArtifactServiceApi } from '../artifacts/asset-artifact-service';
+import type { AssetLookup } from '../assets/asset-database';
+import type { AssetServiceApi } from '../assets/asset-service';
+import type { AnchorRegistry } from '../attachments/anchor-registry';
+import type { AttachmentContentFile } from '../attachments/attachment-content-file';
+import type { AttachmentRegistry } from '../attachments/attachment-registry';
+import type { AttachmentServiceApi } from '../attachments/attachment-service';
+import type { ContentResourceServiceApi } from '../content/content-resource-service';
+import { AppError } from '../errors/app-error';
+import type { ExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
+import type { ExternalLibraryRegistryApi } from '../external-libraries/external-library-registry';
+import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
+import type { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
+import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
+import type { ProjectLookup } from '../projects/project-database';
+import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
+import type { SandboxFrameScriptExecutor } from './interaction/sandbox-frame-script-executor';
+import type { WorkbenchEventBusApi } from './workbench-event-bus';
+import type { MainWorkbenchProvider } from './workbench-session';
+import type { WorkbenchStateDataDatabaseApi } from './workbench-state-data-database';
+import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
+
+export interface MainWorkbenchExternalLibraryContext {
+  readonly libraries: ExternalLibraryRegistryApi;
+  readonly hardware: ExternalLibraryHardwareCapabilities;
+}
+
+export interface MainWorkbenchProviderContext {
+  readonly associationService: AssetAssociationServiceApi;
+  readonly assetService: AssetServiceApi;
+  readonly artifactRegistry: AssetArtifactRegistryApi;
+  readonly artifactService: AssetArtifactServiceApi;
+  readonly contentResourceService: ContentResourceServiceApi;
+  readonly externalLibraryService: ExternalLibraryServiceApi;
+  readonly projectLookup: ProjectLookup;
+  readonly stateDatabase: WorkbenchStateDatabaseApi;
+  readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
+  readonly sandboxFrameScripts: SandboxFrameScriptExecutor;
+  readonly workbenchEvents: WorkbenchEventBusApi;
+}
+
+export interface MainWorkbenchArtifactContext {
+  readonly artifacts: AssetArtifactRegistryApi;
+  readonly externalLibraries: ExternalLibraryServiceApi;
+  readonly externalLibraryProfilesDirectory: string;
+}
+
+export interface MainWorkbenchAttachmentContext {
+  readonly attachments: AttachmentRegistry;
+  readonly anchors: AnchorRegistry;
+}
+
+export interface MainWorkbenchAgentToolContext {
+  readonly functionTools: AgentFunctionToolRegistryApi;
+}
+
+export interface MainWorkbenchGenerationContext {
+  readonly definitions: GenerationTaskDefinitionRegistry;
+  readonly assets: AssetServiceApi;
+  readonly associations: AssetAssociationServiceApi;
+  readonly attachments: AttachmentServiceApi;
+}
+
+export interface MainWorkbenchStartContext {
+  readonly attachments: AttachmentServiceApi;
+  readonly attachmentFiles: AttachmentContentFile;
+  readonly generationTasks: GenerationTaskServiceApi;
+  readonly assets: AssetLookup;
+}
+
+export interface MainWorkbenchRuntime {
+  dispose(): void;
+}
+
+export interface MainWorkbenchFeatureContribution {
+  readonly id: string;
+  registerExternalLibraries?(
+    context: MainWorkbenchExternalLibraryContext,
+  ): void;
+  registerArtifactProducers?(context: MainWorkbenchArtifactContext): void;
+  registerAttachmentTypes?(context: MainWorkbenchAttachmentContext): void;
+  registerAgentFunctionTools?(context: MainWorkbenchAgentToolContext): void;
+  registerGenerationTaskDefinitions?(
+    context: MainWorkbenchGenerationContext,
+  ): void;
+  start?(context: MainWorkbenchStartContext): MainWorkbenchRuntime;
+}
+
+export interface MainWorkbenchContribution
+  extends MainWorkbenchFeatureContribution {
+  readonly manifest?: AssetWorkbenchManifest;
+  readonly features?: readonly MainWorkbenchFeatureContribution[];
+  createProvider?(
+    context: MainWorkbenchProviderContext,
+  ): MainWorkbenchProvider;
+}
+
+function requireValidFeatures(
+  features: readonly MainWorkbenchFeatureContribution[],
+): void {
+  const ids = new Set<string>();
+  for (const feature of features) {
+    if (!feature.id.trim() || ids.has(feature.id)) {
+      throw new AppError('INVALID_EXTENSION_DEFINITION');
+    }
+    ids.add(feature.id);
+  }
+}
+
+function disposeRuntimes(
+  runtimes: MainWorkbenchRuntime[],
+): void {
+  let disposalError: unknown;
+  for (const runtime of runtimes.splice(0).reverse()) {
+    try {
+      runtime.dispose();
+    } catch (error) {
+      disposalError ??= error;
+    }
+  }
+  if (disposalError !== undefined) throw disposalError;
+}
+
+export function composeMainWorkbenchContribution(
+  manifest: AssetWorkbenchManifest,
+  createProvider: NonNullable<MainWorkbenchContribution['createProvider']>,
+  features: readonly MainWorkbenchFeatureContribution[] = [],
+): MainWorkbenchContribution {
+  requireValidFeatures(features);
+  const ownedFeatures = Object.freeze([...features]);
+
+  return Object.freeze({
+    id: manifest.id,
+    manifest,
+    features: ownedFeatures,
+    createProvider,
+    registerExternalLibraries(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerExternalLibraries?.(context);
+      }
+    },
+    registerArtifactProducers(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerArtifactProducers?.(context);
+      }
+    },
+    registerAttachmentTypes(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerAttachmentTypes?.(context);
+      }
+    },
+    registerAgentFunctionTools(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerAgentFunctionTools?.(context);
+      }
+    },
+    registerGenerationTaskDefinitions(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerGenerationTaskDefinitions?.(context);
+      }
+    },
+    start(context): MainWorkbenchRuntime {
+      const runtimes: MainWorkbenchRuntime[] = [];
+      try {
+        for (const feature of ownedFeatures) {
+          const runtime = feature.start?.(context);
+          if (runtime) runtimes.push(runtime);
+        }
+      } catch (error) {
+        try {
+          disposeRuntimes(runtimes);
+        } catch {
+          // Preserve the feature start failure after best-effort rollback.
+        }
+        throw error;
+      }
+      return Object.freeze({
+        dispose(): void {
+          disposeRuntimes(runtimes);
+        },
+      });
+    },
+  } satisfies MainWorkbenchContribution);
+}

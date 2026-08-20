@@ -1,4 +1,4 @@
-import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
+import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main-workbench-contribution';
 import { createDocumentQuestionTaskDefinitionV1 } from './generation/document-question-task-definition';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
@@ -18,4 +18,4 @@ export const documentAiMainFeature = Object.freeze({
   registerGenerationTaskDefinitions({ definitions }): void {
     definitions.register(createDocumentQuestionTaskDefinitionV1());
   },
-} satisfies MainWorkbenchContribution);
+} satisfies MainWorkbenchFeatureContribution);

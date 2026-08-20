@@ -6,6 +6,7 @@ import { isJsonValue, type JsonValue } from './protocol';
 import { isWorkbenchFacilityId } from './facilities/facility-declaration';
 
 export const workbenchInvocationOrigins = [
+  'header',
   'overflow',
   'context-menu',
   'generation-center',

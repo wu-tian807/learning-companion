@@ -16,6 +16,7 @@ import {
 import { registerRendererWorkbenches } from '../../../workbenches/catalog/register-renderer-workbenches';
 import { unsupportedRendererWorkbenchModule } from '../../../workbenches/unsupported/renderer';
 import { WorkbenchContextMenuHost } from './WorkbenchContextMenuHost';
+import { WorkbenchHeaderActionsHost } from './WorkbenchHeaderActionsHost';
 import { WorkbenchOverflowHost } from './WorkbenchOverflowHost';
 import { WorkbenchViewErrorBoundary } from './WorkbenchViewErrorBoundary';
 import {
@@ -412,10 +413,7 @@ export function AssetWorkbenchHost({
         </h2>
         {asset && (
           <div className="flex shrink-0 items-center gap-1.5">
-            <div
-              data-workbench-header-actions
-              className="flex shrink-0 items-center gap-1.5"
-            />
+            <WorkbenchHeaderActionsHost />
             <span className="rounded-lg border border-white/[0.08] px-2 py-1 text-[10px] text-slate-400">
               {mediaLabel(asset.mediaType)}
             </span>

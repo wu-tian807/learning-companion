@@ -1,4 +1,5 @@
 export const workbenchSurfaces = [
+  'header',
   'overflow',
   'context-menu',
   'generation-center',
@@ -13,6 +14,10 @@ export type WorkbenchActionClosePolicy =
 
 interface WorkbenchPresentationBase {
   readonly label: string;
+  readonly ariaLabel?: string;
+  readonly badge?: string;
+  readonly expanded?: boolean;
+  readonly tone?: 'default' | 'accent';
   readonly shortcut?: string;
   readonly description?: string;
   readonly disabledReason?: string;

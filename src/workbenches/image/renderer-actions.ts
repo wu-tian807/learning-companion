@@ -1,29 +1,107 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
+import type { WorkbenchContribution } from '../../renderer/workbench/actions/workbench-contribution';
 
 export interface ImageRendererActionsOptions {
   readonly ready: boolean;
   readonly aiBusy?: boolean;
+  readonly canStartSelection?: boolean;
+  readonly explanationCount?: number;
+  readonly indexOpen?: boolean;
+  readonly markersVisible?: boolean;
+  readonly canToggleIndex?: boolean;
   readonly onFit: () => void;
   readonly onActualSize: () => void;
   readonly onRotateClockwise: () => void;
   readonly onRotateCounterclockwise: () => void;
   readonly onReset: () => void;
   readonly onExplainRegion: () => void;
+  readonly onToggleIndex?: () => void;
+  readonly onToggleMarkers?: () => void;
   readonly onReveal: () => Promise<void> | void;
 }
 
 export function createImageRendererActions({
   ready,
   aiBusy = false,
+  canStartSelection = ready && !aiBusy,
+  explanationCount = 0,
+  indexOpen = false,
+  markersVisible = true,
+  canToggleIndex = true,
   onFit,
   onActualSize,
   onRotateClockwise,
   onRotateCounterclockwise,
   onReset,
   onExplainRegion,
+  onToggleIndex = () => undefined,
+  onToggleMarkers = () => undefined,
   onReveal,
 }: ImageRendererActionsOptions): WorkbenchActionBundle {
   const disabledReason = ready ? undefined : '图片尚未加载完成';
+  const explanationDisabledReason =
+    disabledReason ??
+    (!canStartSelection
+      ? aiBusy
+        ? '请先等待当前 AI 回答完成或停止生成'
+        : '请先完成当前图片操作'
+      : undefined);
+  const headerContributions: readonly WorkbenchContribution[] = ready
+    ? [
+        {
+          id: 'image.ai.explain-region.header',
+          actionId: 'image.ai.explain-region',
+          surface: 'header',
+          group: '10-image-explanations',
+          order: 10,
+          presentation: {
+            kind: 'action',
+            label: '框选解释',
+            tone: 'accent',
+            description: '框选一个区域，AI 会结合整张图片进行解释',
+            disabledReason: explanationDisabledReason,
+          },
+        },
+        {
+          id: 'image.explanations.toggle-index.header',
+          actionId: 'image.explanations.toggle-index',
+          surface: 'header',
+          group: '10-image-explanations',
+          order: 20,
+          presentation: {
+            kind: 'action',
+            label: '标注',
+            ariaLabel: `切换图片标注索引（${explanationCount}）`,
+            badge: String(explanationCount),
+            expanded: indexOpen,
+            disabledReason: canToggleIndex
+              ? undefined
+              : '请先完成当前图片操作',
+          },
+        },
+        ...(explanationCount > 0
+          ? [
+              {
+                id: 'image.explanations.toggle-markers.header',
+                actionId: 'image.explanations.toggle-markers',
+                surface: 'header' as const,
+                group: '10-image-explanations',
+                order: 30,
+                presentation: {
+                  kind: 'checkbox' as const,
+                  label: markersVisible ? '隐藏标注' : '显示标注',
+                  ariaLabel: `${markersVisible ? '隐藏标注' : '显示标注'}（${explanationCount}）`,
+                  badge: String(explanationCount),
+                  checked: !markersVisible,
+                  description: markersVisible
+                    ? '隐藏图片上的区域边框和编号'
+                    : '重新显示图片上的区域边框和编号',
+                },
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   return {
     actions: [
@@ -64,11 +142,22 @@ export function createImageRendererActions({
       },
       {
         id: 'image.ai.explain-region',
-        enabled: ready && !aiBusy,
+        enabled: ready && canStartSelection,
         execute: onExplainRegion,
+      },
+      {
+        id: 'image.explanations.toggle-index',
+        enabled: ready && canToggleIndex,
+        execute: onToggleIndex,
+      },
+      {
+        id: 'image.explanations.toggle-markers',
+        enabled: ready && explanationCount > 0,
+        execute: onToggleMarkers,
       },
     ],
     contributions: [
+      ...headerContributions,
       {
         id: 'image.fit.overflow',
         actionId: 'image.fit',
@@ -208,8 +297,7 @@ export function createImageRendererActions({
           label: '框选区域并解释',
           description: '结合整张图片理解你感兴趣的区域',
           disabledReason:
-            disabledReason ??
-            (aiBusy ? '请先等待当前 AI 回答完成或停止生成' : undefined),
+            explanationDisabledReason,
         },
       },
       {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { MainWorkbenchProviderContext } from '../catalog/register-main-workbenches';
+import type { MainWorkbenchProviderContext } from '../../main/workbench/main-workbench-contribution';
 import { videoMainContribution } from './main-feature';
 import { videoWorkbenchManifest } from './shared';
 

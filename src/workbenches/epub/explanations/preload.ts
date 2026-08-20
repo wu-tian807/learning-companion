@@ -1,5 +1,7 @@
 import type { IpcRenderer, IpcRendererEvent } from 'electron';
 
+import type { WorkbenchFeatureIpcInvoke } from '../../../preload/workbench-preload-contribution';
+
 import {
   EPUB_EXPLANATION_IPC_CHANNELS,
   isEpubExplanationEvent,
@@ -7,10 +9,6 @@ import {
   type EpubExplanationPreloadApi,
   type EpubExplanationView,
 } from './shared';
-
-export interface WorkbenchFeatureIpcInvoke {
-  <Response>(channel: string, ...args: unknown[]): Promise<Response>;
-}
 
 function subscribeEpubExplanationEvents(
   ipcRenderer: IpcRenderer,

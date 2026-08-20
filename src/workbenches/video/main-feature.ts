@@ -1,4 +1,4 @@
-import type { MainWorkbenchContribution } from '../catalog/register-main-workbenches';
+import type { MainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
 import { MediaSubtitleRuntimeResolver } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import { VideoWorkbenchProvider } from './main';
 import { videoWorkbenchManifest } from './shared';

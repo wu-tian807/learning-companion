@@ -1980,7 +1980,7 @@
           parent: "workbench",
           title: "内置 Workbench 是平铺的同级 Feature",
           kicker: "LEVEL 4 · WORKBENCH CATALOG",
-          description: "每个媒体 Workbench 都是 src/workbenches 下独立的 vertical feature；不存在继承层级。单击任意节点查看其特有 Main 依赖，进入后查看统一接入模板。",
+          description: "每个媒体 Workbench 都是 src/workbenches 下独立的 vertical feature，并在目录内拥有 Main、Preload、Renderer 三个 contribution root；中央 Catalog 只汇总这些根，不拥有媒体 Feature。",
           rows: 6,
           nodes: [
             N("plain", "Plain Text", {
@@ -2055,8 +2055,8 @@
             }),
             N("image", "Image", {
               tag: "builtin.image",
-              caption: "viewer · pan/zoom · context actions",
-              summary: "图片查看器，使用 ContentResource URL 和通用 Workbench 菜单设施。",
+              caption: "viewer · pan/zoom · controlled header actions",
+              summary: "图片查看器使用 ContentResource URL，并通过 header/context-menu/overflow Contribution 接入通用 Host；不向标题栏注入 React Portal。",
               files: ["src/workbenches/image/"],
               child: "workbench-extension",
               col: 3,
@@ -2095,8 +2095,8 @@
             }),
             N("template", "统一接入模板", {
               tag: "CONTRIBUTOR PATH",
-              caption: "shared + main + renderer + typed registrations",
-              summary: "所有 Workbench 都沿同一条注册和生命周期路径接入；类型检查、启动校验和版本握手共同防止两端漂移。",
+              caption: "shared + three process roots + thin catalogs",
+              summary: "现有 Workbench 增加 Feature 时只改自己的目录；新增 Workbench 才把三个稳定 contribution root 各加入一次薄 Catalog。",
               child: "workbench-extension",
               col: 4,
               row: 6,
@@ -2108,16 +2108,16 @@
 
         "workbench-extension": {
           parent: "workbench-catalog",
-          title: "新增 Workbench 的统一实现路径",
+          title: "新增或扩展 Workbench 的统一实现路径",
           kicker: "LEVEL 5 · CONTRIBUTOR BLUEPRINT",
-          description: "先完成 shared/main/renderer 最小闭环，再按真实需求选择 Action、External Library、Artifact、Generated Asset 或 GenerationTask 分支；不要自建 IPC 和菜单容器。",
+          description: "先在 Workbench 目录内完成 shared/main/preload/renderer 最小闭环及三个 contribution root，再按真实需求选择 Action、External Library、Artifact、Generated Asset 或 GenerationTask 分支；不要让 Feature 反向依赖 Catalog、Host Portal 或任意 IPC。",
           rows: 7,
           nodes: [
             N("folder", "src/workbenches/<feature>/", {
               tag: "VERTICAL FEATURE",
               caption: "媒体特有代码放在同一目录",
-              summary: "每个 Workbench feature 自包含 shared 契约、Main Provider、Renderer View 和可选能力。",
-              responsibilities: ["优先复制最相近媒体 Workbench 的结构。", "通用基础设施留在 main/shared/renderer/workbench。"],
+              summary: "每个 Workbench feature 自包含 shared 契约、Main Provider、受限 Preload API、Renderer View、三个进程 contribution root 和可选能力。",
+              responsibilities: ["扩展现有 Workbench 时只修改本目录。", "通用组合器留在 main/preload/renderer/workbench；Catalog 只导入贡献根。"],
               files: ["src/workbenches/"],
               col: 5,
               row: 1,
@@ -2152,11 +2152,11 @@
               row: 3,
               span: 3
             }),
-            N("catalogs", "Typed Main + Renderer Registration", {
+            N("catalogs", "Three Process Contribution Roots", {
               tag: "REQUIRED",
-              caption: "同一 Manifest 注册 Provider 与 lazy loader",
-              summary: "把 Main contribution 与 Renderer lazy loader 分别加入两个进程入口；测试核对 Manifest 集合一致，运行时核对完整 Manifest，并验证 Facility Adapter 归属。",
-              files: ["src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
+              caption: "main · preload · renderer",
+              summary: "每个目录的 main-contribution 组合 Provider 与 Main Feature，preload-contribution 组合白名单 API，renderer-contribution 绑定 Manifest 与 lazy loader。中央三张 Catalog 只列根入口；测试核对 ID 集合并阻止反向依赖。",
+              files: ["src/workbenches/image/main-contribution.ts", "src/workbenches/image/preload-contribution.ts", "src/workbenches/image/renderer-contribution.ts", "src/workbenches/catalog/register-main-workbenches.ts", "src/workbenches/catalog/register-preload-workbench-features.ts", "src/workbenches/catalog/register-renderer-workbenches.ts"],
               target: "workbench",
               col: 5,
               row: 5,
@@ -2164,8 +2164,8 @@
             }),
             N("actions", "renderer-actions.ts", {
               tag: "OPTIONAL UI",
-              caption: "context menu · overflow · generation surface",
-              summary: "通过 Workbench Action Contribution 接入统一菜单和生成入口，不要在 View 内另造一套右键菜单。",
+              caption: "header · context menu · overflow · generation",
+              summary: "通过受控 Workbench Action Contribution 接入标题栏、菜单和生成入口；View 不得向 Host 注入 React 节点或另造 Portal。",
               files: ["src/renderer/workbench/actions/", "src/workbenches/mindmap/renderer-actions.ts"],
               col: 1,
               row: 5,

@@ -1,4 +1,4 @@
-import type { MainWorkbenchContribution } from '../../catalog/register-main-workbenches';
+import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
 import { createHtmlAssistantProcessor } from './html-assistant-processor';
 import { createHtmlAssistantTaskDefinitionV1 } from './html-assistant-task-definition';
 
@@ -9,4 +9,4 @@ export const htmlAssistantMainFeature = Object.freeze({
       createHtmlAssistantTaskDefinitionV1(createHtmlAssistantProcessor()),
     );
   },
-} satisfies MainWorkbenchContribution);
+} satisfies MainWorkbenchFeatureContribution);
