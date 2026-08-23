@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cloneVideoSubtitleSnapshot,
+  createVideoGetSubtitleSnapshotCommand,
   createVideoSaveViewStateCommand,
   createVideoTimeRangeTarget,
   DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
@@ -43,6 +44,12 @@ describe('Video Workbench shared protocol', () => {
         createVideoSaveViewStateCommand(DEFAULT_VIDEO_VIEW_STATE).payload,
       ),
     ).toBe(true);
+  });
+
+  it('declares a command for reconciling the current subtitle snapshot', () => {
+    expect(createVideoGetSubtitleSnapshotCommand()).toEqual({
+      type: 'video:get-subtitle-snapshot',
+    });
   });
 
   it('rejects unsafe URLs and invalid playback state', () => {
