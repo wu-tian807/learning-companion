@@ -173,6 +173,7 @@ export const EMPTY_VIDEO_SUBTITLE_SNAPSHOT: Readonly<VideoSubtitleSnapshot> =
 export const videoCommands = {
   saveViewState: 'video:save-view-state',
   setSubtitleMode: 'video:set-subtitle-mode',
+  getSubtitleSnapshot: 'video:get-subtitle-snapshot',
   retrySubtitles: 'video:retry-subtitles',
 } as const;
 
@@ -366,6 +367,10 @@ export function createVideoSetSubtitleModeCommand(
 
 export function createVideoRetrySubtitlesCommand(): WorkbenchCommand {
   return { type: videoCommands.retrySubtitles };
+}
+
+export function createVideoGetSubtitleSnapshotCommand(): WorkbenchCommand {
+  return { type: videoCommands.getSubtitleSnapshot };
 }
 
 export function isVideoSaveViewStatePayload(

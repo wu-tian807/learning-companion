@@ -44,6 +44,7 @@ import { useVideoExplanations } from './explanations/use-video-explanations';
 import { VideoPlaybackControls } from './video-playback-controls';
 import {
   cloneVideoViewState,
+  createVideoGetSubtitleSnapshotCommand,
   createVideoRetrySubtitlesCommand,
   createVideoSaveViewStateCommand,
   createVideoSetSubtitleModeCommand,
@@ -481,11 +482,14 @@ export function VideoWorkbenchView({
     if (!subscribeEvent) {
       throw new Error('Video Workbench 缺少异步事件通道');
     }
-    return subscribeEvent((event) => {
+    let disposed = false;
+    let receivedSubtitleEvent = false;
+    const unsubscribe = subscribeEvent((event) => {
       if (
         event.type === videoEventTypes.subtitleSnapshot &&
         isVideoSubtitleSnapshot(event.payload)
       ) {
+        receivedSubtitleEvent = true;
         setSubtitleSnapshot(event.payload);
         return;
       }
@@ -493,6 +497,7 @@ export function VideoWorkbenchView({
         event.type === videoEventTypes.subtitleCueFinal &&
         isVideoSubtitleCueFinalPayload(event.payload)
       ) {
+        receivedSubtitleEvent = true;
         const payload = event.payload;
         setSubtitleSnapshot((current) => {
           const translations = new Map(
@@ -513,7 +518,26 @@ export function VideoWorkbenchView({
         });
       }
     });
-  }, [subscribeEvent]);
+
+    void executeCommand(createVideoGetSubtitleSnapshotCommand())
+      .then((result) => {
+        if (disposed || receivedSubtitleEvent) return;
+        if (!isVideoSubtitleSnapshot(result.payload)) {
+          throw new Error('Video Workbench 字幕状态响应无效');
+        }
+        setSubtitleSnapshot(result.payload);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          reportError(error, '无法同步字幕状态。');
+        }
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [executeCommand, reportError, subscribeEvent]);
 
   const subtitleVtt = useMemo(
     () => createVideoSubtitleVtt(subtitleSnapshot, subtitleMode),

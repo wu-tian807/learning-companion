@@ -166,6 +166,14 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
       return createResult({ started: true });
     }
 
+    if (command.type === videoCommands.getSubtitleSnapshot) {
+      return createResult(
+        cloneVideoSubtitleSnapshot(
+          this.subtitles.getSnapshot(context.asset.id),
+        ),
+      );
+    }
+
     throw new AppError('FEATURE_NOT_SUPPORTED');
   }
 
