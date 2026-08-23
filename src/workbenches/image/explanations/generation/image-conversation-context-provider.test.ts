@@ -1,3 +1,5 @@
+import { join, resolve } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./image-input-preparer', () => ({
@@ -22,6 +24,7 @@ const target = createImageRegionTarget({
   sourceWidth: 1000,
   sourceHeight: 800,
 });
+const workspacePath = resolve('workspace');
 
 function context(input: {
   readonly revision?: string;
@@ -43,7 +46,7 @@ function context(input: {
       commitAnswer: selection !== undefined,
     }),
     workspaces: {
-      primary: { path: 'C:\\workspace' },
+      primary: { path: workspacePath },
       secondary: [],
     },
     assetReferences: {
@@ -70,9 +73,9 @@ describe('Image conversation context provider', () => {
     const prepared = await provider.prepare(context());
 
     expect(prepareImageExplanationInputs).toHaveBeenCalledWith(
-      'C:\\workspace\\sources-0001\\source.png',
+      join(workspacePath, 'sources-0001', 'source.png'),
       target,
-      'C:\\workspace',
+      workspacePath,
     );
     expect(prepared.userMessage.content).toEqual(
       expect.arrayContaining([
