@@ -25,11 +25,13 @@ const target = createVideoFrameRegionTarget({
   sourceHeight: 1_080,
 });
 
-function instruction(input: {
-  readonly question?: string;
-  readonly context?: boolean;
-  readonly commitAnswer?: boolean;
-} = {}) {
+function instruction(
+  input: {
+    readonly question?: string;
+    readonly context?: boolean;
+    readonly commitAnswer?: boolean;
+  } = {},
+) {
   return new WorkbenchConversationInstruction({
     contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
     assetId: 'asset-1',
@@ -84,14 +86,17 @@ function attachment(sourceRevision = '100') {
   } as const;
 }
 
-function createService(input: {
-  readonly attachments?: Partial<AttachmentServiceApi>;
-  readonly generationTasks?: Partial<GenerationTaskServiceApi>;
-  readonly tasks?: readonly ReturnType<typeof pendingTask>[];
-  readonly mediaType?: string;
-} = {}) {
+function createService(
+  input: {
+    readonly attachments?: Partial<AttachmentServiceApi>;
+    readonly generationTasks?: Partial<GenerationTaskServiceApi>;
+    readonly tasks?: readonly ReturnType<typeof pendingTask>[];
+    readonly mediaType?: string;
+  } = {},
+) {
   const attachments = {
     listByAsset: vi.fn(async () => []),
+    readTextContent: vi.fn(async () => '模型回答'),
     subscribe: vi.fn(() => () => undefined),
     ...input.attachments,
   } as unknown as AttachmentServiceApi;
@@ -101,18 +106,10 @@ function createService(input: {
     subscribe: vi.fn(() => () => undefined),
     ...input.generationTasks,
   } as unknown as GenerationTaskServiceApi;
-  const contentFiles = {
-    readText: vi.fn(async () => '模型回答'),
-  };
-  const service = new VideoExplanationService(
-    attachments,
-    contentFiles as never,
-    generationTasks,
-    {
-      get: vi.fn(() => ({ mediaType: input.mediaType ?? 'video/mp4' })),
-    } as never,
-  );
-  return { service, attachments, generationTasks, contentFiles };
+  const service = new VideoExplanationService(attachments, generationTasks, {
+    get: vi.fn(() => ({ mediaType: input.mediaType ?? 'video/mp4' })),
+  } as never);
+  return { service, attachments, generationTasks };
 }
 
 describe('VideoExplanationService', () => {
@@ -124,10 +121,7 @@ describe('VideoExplanationService', () => {
     });
     const { service } = createService({
       attachments: {
-        listByAsset: vi.fn(async () => [
-          attachment('99'),
-          attachment('100'),
-        ]),
+        listByAsset: vi.fn(async () => [attachment('99'), attachment('100')]),
       },
       tasks: [currentTask, followUp],
     });
@@ -184,10 +178,48 @@ describe('VideoExplanationService', () => {
     });
 
     expect(cancel).toHaveBeenCalledWith('task-1');
-    expect(deleteAttachment).toHaveBeenCalledWith(
-      'project-1',
-      'attachment-1',
-    );
+    expect(deleteAttachment).toHaveBeenCalledWith('project-1', 'attachment-1');
+    service.dispose();
+  });
+
+  it('retries and discards the same failed GenerationTask', async () => {
+    const failed = new GenerationTask(pendingTask());
+    failed.recordFailure({
+      phase: 'process',
+      failedTime: 3,
+      message: '模型请求失败',
+    });
+    const retry = vi.fn(() => {
+      const retried = new GenerationTask(failed.getSnapshot());
+      retried.clearFailure(4);
+      return retried.getSnapshot();
+    });
+    const discard = vi.fn();
+    const { service } = createService({
+      generationTasks: {
+        get: vi.fn(() => failed.getSnapshot()),
+        retry,
+        discard,
+      },
+    });
+
+    await expect(
+      service.retry({
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        kind: 'task',
+        explanationId: 'task-1',
+      }),
+    ).resolves.toMatchObject({ status: 'pending' });
+    await service.delete({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      kind: 'task',
+      explanationId: 'task-1',
+    });
+
+    expect(retry).toHaveBeenCalledWith('task-1');
+    expect(discard).toHaveBeenCalledWith('task-1');
     service.dispose();
   });
 

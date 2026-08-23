@@ -79,14 +79,9 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
       getActiveProjectId: () => 'project-1',
       subscribe: () => () => undefined,
     } as unknown as GenerationTaskServiceApi;
-    const service = new EpubExplanationService(
-      attachments,
-      { readText: vi.fn() } as never,
-      generationTasks,
-      {
-        get: () => ({ mediaType: 'application/epub+zip' }),
-      } as never,
-    );
+    const service = new EpubExplanationService(attachments, generationTasks, {
+      get: () => ({ mediaType: 'application/epub+zip' }),
+    } as never);
 
     const created = await service.create({
       projectId: 'project-1',
@@ -147,7 +142,6 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
         listByAsset: async () => [],
         subscribe: () => () => undefined,
       } as unknown as AttachmentServiceApi,
-      { readText: vi.fn() } as never,
       {
         getActiveProjectId: () => 'project-1',
         list: () => [task.getSnapshot()],
@@ -209,15 +203,14 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
       updatedTime: 2,
     } as const;
     let generationListener:
-      | Parameters<GenerationTaskServiceApi['subscribe']>[0]
-      | undefined;
+      Parameters<GenerationTaskServiceApi['subscribe']>[0] | undefined;
     const service = new EpubExplanationService(
       {
         get: async (id: string) =>
           id === attachment.id ? attachment : undefined,
+        readTextContent: vi.fn(async () => '# 解释\n正文'),
         subscribe: () => () => undefined,
       } as unknown as AttachmentServiceApi,
-      { readText: vi.fn(async () => '# 解释\n正文') } as never,
       {
         getActiveProjectId: () => 'project-1',
         subscribe: (
@@ -286,7 +279,6 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
         listByAsset: async () => [],
         subscribe: () => () => undefined,
       } as unknown as AttachmentServiceApi,
-      { readText: vi.fn() } as never,
       {
         getActiveProjectId: () => 'project-1',
         list: () => [task.getSnapshot()],

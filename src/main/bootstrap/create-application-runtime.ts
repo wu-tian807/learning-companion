@@ -312,7 +312,6 @@ export async function createApplicationRuntime({
     });
     mainWorkbenchFeatures = startMainWorkbenchContributions({
       attachments: attachmentService,
-      attachmentFiles,
       generationTasks: generationTaskService,
       assets: assetDatabase,
     });

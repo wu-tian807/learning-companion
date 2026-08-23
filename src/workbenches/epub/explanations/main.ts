@@ -35,10 +35,9 @@ export const epubExplanationMainFeature = Object.freeze({
       new EpubConversationContextProvider(attachments),
     );
   },
-  start({ attachments, attachmentFiles, generationTasks, assets }) {
+  start({ attachments, generationTasks, assets }) {
     const service = new EpubExplanationService(
       attachments,
-      attachmentFiles,
       generationTasks,
       assets,
     );

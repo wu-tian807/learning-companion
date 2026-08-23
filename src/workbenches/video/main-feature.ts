@@ -1,6 +1,6 @@
 import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
 import { MediaSubtitleRuntimeResolver } from '../media-subtitles/external-libraries/media-subtitle-runtime';
-import { videoConversationMainFeature } from './conversation/main';
+import { videoExplanationMainFeature } from './explanations/main';
 import { VideoWorkbenchProvider } from './main';
 import { videoWorkbenchManifest } from './shared';
 import { VideoSubtitleService } from './subtitles/video-subtitle-service';
@@ -25,5 +25,5 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       },
     );
   },
-  [videoConversationMainFeature],
+  [videoExplanationMainFeature],
 );

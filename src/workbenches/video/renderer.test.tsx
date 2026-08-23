@@ -199,6 +199,7 @@ describe('VideoWorkbenchView', () => {
   it('renders the native video element without exposing its file path', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: '100',
       viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
       subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
       subtitleSnapshot: cloneVideoSubtitleSnapshot(

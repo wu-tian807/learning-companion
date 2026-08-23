@@ -1,9 +1,9 @@
 import type { AssetLookup } from '../../../main/assets/asset-database';
-import type { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
-import type {
-  AttachmentServiceApi,
-  AttachmentServiceEvent,
-} from '../../../main/attachments/attachment-service';
+import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
+import {
+  WorkbenchConversationAttachmentProjection,
+  type WorkbenchConversationProjectionLocation,
+} from '../../../main/conversation/workbench-conversation-attachment-projection';
 import {
   type WorkbenchConversationInstruction,
   workbenchConversationInstructionFactory,
@@ -13,15 +13,11 @@ import {
   GenerationTask,
   type GenerationTaskSnapshot,
 } from '../../../main/generation/generation-task';
-import type {
-  GenerationTaskServiceApi,
-  GenerationTaskServiceEvent,
-} from '../../../main/generation/generation-task-service';
+import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
-  isWorkbenchConversationTaskResult,
 } from '../../../shared/workbench-conversation';
 import {
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
@@ -77,44 +73,44 @@ function isExplanationAttachment(
   );
 }
 
-function resultAttachmentId(value: unknown): string | undefined {
-  if (!isWorkbenchConversationTaskResult(value)) return undefined;
-  const contextResult = value.contextResult;
-  if (
-    typeof contextResult !== 'object' ||
-    contextResult === null ||
-    Array.isArray(contextResult)
-  ) {
-    return undefined;
-  }
-  const attachmentId = Reflect.get(contextResult, 'attachmentId');
-  return typeof attachmentId === 'string' && attachmentId.trim()
-    ? attachmentId
-    : undefined;
-}
-
 export class VideoExplanationService implements VideoExplanationServiceApi {
-  private readonly listeners = new Set<VideoExplanationListener>();
-  private readonly taskLocations = new Map<
-    string,
-    { readonly projectId: string; readonly assetId: string }
-  >();
-  private readonly removeAttachmentSubscription: () => void;
-  private readonly removeGenerationSubscription: () => void;
+  private readonly projection: WorkbenchConversationAttachmentProjection<
+    VideoExplanationAttachment,
+    VideoExplanationTaskView,
+    VideoExplanationAttachmentView,
+    VideoExplanationEvent
+  >;
 
   constructor(
     private readonly attachments: AttachmentServiceApi,
-    private readonly contentFiles: AttachmentContentFile,
     private readonly generationTasks: GenerationTaskServiceApi,
     private readonly assets: AssetLookup,
   ) {
-    this.removeAttachmentSubscription = attachments.subscribe((event) =>
-      this.handleAttachmentEvent(event),
-    );
-    this.removeGenerationSubscription = generationTasks.subscribe((event) => {
-      void this.handleGenerationEvent(event).catch((error: unknown) => {
-        console.error('同步视频解释任务状态失败', error);
-      });
+    this.projection = new WorkbenchConversationAttachmentProjection<
+      VideoExplanationAttachment,
+      VideoExplanationTaskView,
+      VideoExplanationAttachmentView,
+      VideoExplanationEvent
+    >(attachments, generationTasks, {
+      label: '视频解释投影',
+      isAttachment: isExplanationAttachment,
+      locateTask: (snapshot) => this.taskLocation(snapshot),
+      toTaskView: (snapshot) => this.toTaskView(snapshot),
+      toAttachmentView: (attachment) => this.toAttachmentView(attachment),
+      events: {
+        changed: (explanation) => ({ type: 'changed', explanation }),
+        replaced: (location, previousExplanationId, explanation) => ({
+          type: 'replaced',
+          ...location,
+          previousExplanationId,
+          explanation,
+        }),
+        deleted: (location, explanationId) => ({
+          type: 'deleted',
+          ...location,
+          explanationId,
+        }),
+      },
     });
   }
 
@@ -142,10 +138,7 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
           isVideoExplanationForRevision(view, request.sourceRevision),
       );
     for (const view of taskViews) {
-      this.taskLocations.set(view.id, {
-        projectId: view.projectId,
-        assetId: view.assetId,
-      });
+      this.projection.trackTask(view);
     }
     return [...attachmentViews, ...taskViews].sort(
       (left, right) =>
@@ -170,6 +163,7 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
       this.generationTasks.retry(request.explanationId),
     );
     if (!retried) throw new AppError('DATA_INTEGRITY_ERROR');
+    this.projection.trackTask(retried);
     return retried;
   }
 
@@ -188,15 +182,11 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
   }
 
   subscribe(listener: VideoExplanationListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return this.projection.subscribe(listener);
   }
 
   dispose(): void {
-    this.removeAttachmentSubscription();
-    this.removeGenerationSubscription();
-    this.taskLocations.clear();
-    this.listeners.clear();
+    this.projection.dispose();
   }
 
   private requireAsset(projectId: string, assetId: string): void {
@@ -253,9 +243,18 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
       snapshot.instruction,
     );
     return parsed.ok &&
-      parsed.value.contextProviderId ===
-        VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID
+      parsed.value.contextProviderId === VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID
       ? parsed.value
+      : undefined;
+  }
+
+  private taskLocation(
+    snapshot: GenerationTaskSnapshot,
+  ): WorkbenchConversationProjectionLocation | undefined {
+    const instruction = this.taskInstruction(snapshot);
+    return instruction?.commitAnswer &&
+      isVideoConversationContext(instruction.context)
+      ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
   }
 
@@ -281,9 +280,7 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
       sourceRevision: conversationContext.sourceRevision,
       question: instruction.question,
       status: status === 'failed' ? 'failed' : 'pending',
-      ...(snapshot.failure
-        ? { failureMessage: snapshot.failure.message }
-        : {}),
+      ...(snapshot.failure ? { failureMessage: snapshot.failure.message } : {}),
       createdTime: snapshot.createdTime,
       updatedTime: snapshot.updatedTime,
     });
@@ -293,9 +290,9 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
     attachment: VideoExplanationAttachment,
   ): Promise<VideoExplanationAttachmentView> {
     if (!attachment.content) throw new AppError('DATA_INTEGRITY_ERROR');
-    const answer = await this.contentFiles.readText(
+    const answer = await this.attachments.readTextContent(
       attachment.projectId,
-      attachment.content.ref,
+      attachment.id,
     );
     if (answer === undefined) throw new AppError('DATA_INTEGRITY_ERROR');
     return Object.freeze({
@@ -311,101 +308,5 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
       createdTime: attachment.createdTime,
       updatedTime: attachment.updatedTime,
     });
-  }
-
-  private async handleAttachmentEvent(
-    event: AttachmentServiceEvent,
-  ): Promise<void> {
-    if (!isExplanationAttachment(event.attachment)) return;
-    if (event.type === 'deleted') {
-      this.publish({
-        type: 'deleted',
-        projectId: event.attachment.projectId,
-        assetId: event.attachment.assetId,
-        explanationId: event.attachment.id,
-      });
-      return;
-    }
-    this.publish({
-      type: 'changed',
-      explanation: await this.toAttachmentView(event.attachment),
-    });
-  }
-
-  private async handleGenerationEvent(
-    event: GenerationTaskServiceEvent,
-  ): Promise<void> {
-    if (event.type === 'execution-event') return;
-    if (event.type === 'task-discarded') {
-      const location = this.taskLocations.get(event.taskId);
-      if (!location) return;
-      this.taskLocations.delete(event.taskId);
-      this.publish({
-        type: 'deleted',
-        ...location,
-        explanationId: event.taskId,
-      });
-      return;
-    }
-
-    const instruction = this.taskInstruction(event.snapshot);
-    const conversationContext = instruction?.context;
-    if (
-      !instruction?.commitAnswer ||
-      !isVideoConversationContext(conversationContext)
-    ) {
-      return;
-    }
-    const location = {
-      projectId: event.snapshot.projectId,
-      assetId: instruction.assetId,
-    };
-    this.taskLocations.set(event.snapshot.id, location);
-    if (event.type === 'task-completed') {
-      this.taskLocations.delete(event.snapshot.id);
-      const attachmentId = resultAttachmentId(event.result.result);
-      const attachment = attachmentId
-        ? await this.attachments.get(attachmentId)
-        : undefined;
-      if (
-        !attachment ||
-        attachment.projectId !== location.projectId ||
-        attachment.assetId !== location.assetId ||
-        !isExplanationAttachment(attachment)
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      this.publish({
-        type: 'replaced',
-        ...location,
-        previousExplanationId: event.snapshot.id,
-        explanation: await this.toAttachmentView(attachment),
-      });
-      return;
-    }
-    if (new GenerationTask(event.snapshot).getStatus() === 'completed') return;
-    const view = this.toTaskView(event.snapshot);
-    if (!view) {
-      this.taskLocations.delete(event.snapshot.id);
-      this.publish({
-        type: 'deleted',
-        ...location,
-        explanationId: event.snapshot.id,
-      });
-      return;
-    }
-    this.publish({ type: 'changed', explanation: view });
-  }
-
-  private publish(event: VideoExplanationEvent): void {
-    for (const listener of this.listeners) {
-      try {
-        Promise.resolve(listener(event)).catch((error: unknown) =>
-          console.error('异步视频解释订阅者执行失败', error),
-        );
-      } catch (error) {
-        console.error('发布视频解释事件失败', error);
-      }
-    }
   }
 }

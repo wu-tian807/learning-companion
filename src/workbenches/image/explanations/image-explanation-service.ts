@@ -1,20 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AssetLookup } from '../../../main/assets/asset-database';
-import type { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
-import type {
-  AttachmentServiceApi,
-  AttachmentServiceEvent,
-} from '../../../main/attachments/attachment-service';
+import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
+import {
+  WorkbenchConversationAttachmentProjection,
+  type WorkbenchConversationProjectionLocation,
+} from '../../../main/conversation/workbench-conversation-attachment-projection';
 import { AppError } from '../../../main/errors/app-error';
 import {
   GenerationTask,
   type GenerationTaskSnapshot,
 } from '../../../main/generation/generation-task';
-import type {
-  GenerationTaskServiceApi,
-  GenerationTaskServiceEvent,
-} from '../../../main/generation/generation-task-service';
+import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
   WorkbenchConversationInstruction,
@@ -24,7 +21,6 @@ import {
   WORKBENCH_CONVERSATION_SOURCE_SLOT,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
-  isWorkbenchConversationTaskResult,
 } from '../../../shared/workbench-conversation';
 import {
   createImageConversationContext,
@@ -53,7 +49,9 @@ export type ImageExplanationListener = (
 ) => void | Promise<void>;
 
 export interface ImageExplanationServiceApi {
-  list(request: ListImageExplanationsRequest): Promise<readonly ImageExplanationView[]>;
+  list(
+    request: ListImageExplanationsRequest,
+  ): Promise<readonly ImageExplanationView[]>;
   create(request: CreateImageExplanationRequest): Promise<ImageExplanationView>;
   retry(request: ImageExplanationIdRequest): Promise<ImageExplanationView>;
   delete(request: ImageExplanationIdRequest): Promise<void>;
@@ -62,7 +60,9 @@ export interface ImageExplanationServiceApi {
 }
 
 function isSupportedImage(mediaType: string): boolean {
-  return ['image/png', 'image/jpeg', 'image/webp', 'image/bmp'].includes(mediaType);
+  return ['image/png', 'image/jpeg', 'image/webp', 'image/bmp'].includes(
+    mediaType,
+  );
 }
 
 type ImageExplanationAttachment = AssetAttachment & {
@@ -82,44 +82,66 @@ function isExplanationAttachment(
   );
 }
 
-function sameTarget(left: ImageExplanationView['target'], right: ImageExplanationView['target']): boolean {
+function sameTarget(
+  left: ImageExplanationView['target'],
+  right: ImageExplanationView['target'],
+): boolean {
   const a = left.anchorPayload;
   const b = right.anchorPayload;
-  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height &&
-    a.sourceWidth === b.sourceWidth && a.sourceHeight === b.sourceHeight;
-}
-
-function resultAttachmentId(value: unknown): string | undefined {
-  if (!isWorkbenchConversationTaskResult(value)) return undefined;
-  const contextResult = value.contextResult;
-  if (typeof contextResult !== 'object' || contextResult === null || Array.isArray(contextResult)) return undefined;
-  const attachmentId = Reflect.get(contextResult, 'attachmentId');
-  return typeof attachmentId === 'string' && attachmentId.trim() ? attachmentId : undefined;
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.sourceWidth === b.sourceWidth &&
+    a.sourceHeight === b.sourceHeight
+  );
 }
 
 export class ImageExplanationService implements ImageExplanationServiceApi {
-  private readonly listeners = new Set<ImageExplanationListener>();
-  private readonly taskLocations = new Map<string, { readonly projectId: string; readonly assetId: string }>();
-  private readonly removeAttachmentSubscription: () => void;
-  private readonly removeGenerationSubscription: () => void;
+  private readonly projection: WorkbenchConversationAttachmentProjection<
+    ImageExplanationAttachment,
+    ImageExplanationTaskView,
+    ImageExplanationAttachmentView,
+    ImageExplanationEvent
+  >;
 
   constructor(
     private readonly attachments: AttachmentServiceApi,
-    private readonly contentFiles: AttachmentContentFile,
     private readonly generationTasks: GenerationTaskServiceApi,
     private readonly assets: AssetLookup,
   ) {
-    this.removeAttachmentSubscription = attachments.subscribe((event) =>
-      this.handleAttachmentEvent(event),
-    );
-    this.removeGenerationSubscription = generationTasks.subscribe((event) => {
-      void this.handleGenerationEvent(event).catch((error: unknown) => {
-        console.error('同步图片解释任务状态失败', error);
-      });
+    this.projection = new WorkbenchConversationAttachmentProjection<
+      ImageExplanationAttachment,
+      ImageExplanationTaskView,
+      ImageExplanationAttachmentView,
+      ImageExplanationEvent
+    >(attachments, generationTasks, {
+      label: '图片解释投影',
+      isAttachment: isExplanationAttachment,
+      locateTask: (snapshot) => this.taskLocation(snapshot),
+      toTaskView: (snapshot) => this.toTaskView(snapshot),
+      toAttachmentView: (attachment) => this.toAttachmentView(attachment),
+      events: {
+        changed: (explanation) => ({ type: 'changed', explanation }),
+        replaced: (location, previousExplanationId, explanation) => ({
+          type: 'replaced',
+          ...location,
+          previousExplanationId,
+          explanation,
+        }),
+        deleted: (location, explanationId) => ({
+          type: 'deleted',
+          ...location,
+          explanationId,
+        }),
+      },
     });
   }
 
-  async list(request: ListImageExplanationsRequest): Promise<readonly ImageExplanationView[]> {
+  async list(
+    request: ListImageExplanationsRequest,
+  ): Promise<readonly ImageExplanationView[]> {
     this.requireAsset(request.projectId, request.assetId);
     const attachmentViews = await Promise.all(
       (await this.attachments.listByAsset(request.projectId, request.assetId))
@@ -130,25 +152,32 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
         )
         .map((attachment) => this.toAttachmentView(attachment)),
     );
-    const taskViews = this.generationTasks.list()
+    const taskViews = this.generationTasks
+      .list()
       .map((snapshot) => this.toTaskView(snapshot))
-      .filter((view): view is ImageExplanationTaskView =>
-        view !== undefined &&
-        view.projectId === request.projectId &&
-        view.assetId === request.assetId &&
-        isImageExplanationForRevision(view, request.sourceRevision),
+      .filter(
+        (view): view is ImageExplanationTaskView =>
+          view !== undefined &&
+          view.projectId === request.projectId &&
+          view.assetId === request.assetId &&
+          isImageExplanationForRevision(view, request.sourceRevision),
       );
     for (const view of taskViews) {
-      this.taskLocations.set(view.id, { projectId: view.projectId, assetId: view.assetId });
+      this.projection.trackTask(view);
     }
     return [...attachmentViews, ...taskViews].sort(
-      (left, right) => left.createdTime - right.createdTime || left.id.localeCompare(right.id),
+      (left, right) =>
+        left.createdTime - right.createdTime || left.id.localeCompare(right.id),
     );
   }
 
-  async create(request: CreateImageExplanationRequest): Promise<ImageExplanationView> {
+  async create(
+    request: CreateImageExplanationRequest,
+  ): Promise<ImageExplanationView> {
     this.requireAsset(request.projectId, request.assetId);
-    const existingAttachment = (await this.attachments.listByAsset(request.projectId, request.assetId))
+    const existingAttachment = (
+      await this.attachments.listByAsset(request.projectId, request.assetId)
+    )
       .filter(isExplanationAttachment)
       .find(
         (attachment) =>
@@ -157,13 +186,16 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
       );
     if (existingAttachment) return this.toAttachmentView(existingAttachment);
 
-    const existingTask = this.generationTasks.list()
+    const existingTask = this.generationTasks
+      .list()
       .map((snapshot) => this.toTaskView(snapshot))
-      .find((view) =>
-        view?.projectId === request.projectId &&
-        view.assetId === request.assetId &&
-        isImageExplanationForRevision(view, request.sourceRevision) &&
-        sameTarget(view.target, request.target));
+      .find(
+        (view) =>
+          view?.projectId === request.projectId &&
+          view.assetId === request.assetId &&
+          isImageExplanationForRevision(view, request.sourceRevision) &&
+          sameTarget(view.target, request.target),
+      );
     if (existingTask) return existingTask;
 
     const instruction = new WorkbenchConversationInstruction({
@@ -183,23 +215,26 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
       definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
       assetReferences: {
-        [WORKBENCH_CONVERSATION_SOURCE_SLOT]: [
-          { assetId: request.assetId },
-        ],
+        [WORKBENCH_CONVERSATION_SOURCE_SLOT]: [{ assetId: request.assetId }],
       },
     });
     const view = this.toTaskView(task);
     if (!view) throw new AppError('DATA_INTEGRITY_ERROR');
-    this.taskLocations.set(view.id, { projectId: view.projectId, assetId: view.assetId });
+    this.projection.trackTask(view);
     return view;
   }
 
-  async retry(request: ImageExplanationIdRequest): Promise<ImageExplanationView> {
+  async retry(
+    request: ImageExplanationIdRequest,
+  ): Promise<ImageExplanationView> {
     if (request.kind !== 'task') throw new AppError('OPERATION_SUPERSEDED');
     const current = this.requireTask(request);
     if (current.status !== 'failed') throw new AppError('OPERATION_SUPERSEDED');
-    const retried = this.toTaskView(this.generationTasks.retry(request.explanationId));
+    const retried = this.toTaskView(
+      this.generationTasks.retry(request.explanationId),
+    );
     if (!retried) throw new AppError('DATA_INTEGRITY_ERROR');
+    this.projection.trackTask(retried);
     return retried;
   }
 
@@ -215,30 +250,33 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
   }
 
   subscribe(listener: ImageExplanationListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return this.projection.subscribe(listener);
   }
 
   dispose(): void {
-    this.removeAttachmentSubscription();
-    this.removeGenerationSubscription();
-    this.taskLocations.clear();
-    this.listeners.clear();
+    this.projection.dispose();
   }
 
   private requireAsset(projectId: string, assetId: string): void {
     const asset = this.assets.get(projectId.trim(), assetId.trim());
-    if (!asset || !isSupportedImage(asset.mediaType)) throw new AppError('ASSET_NOT_FOUND');
+    if (!asset || !isSupportedImage(asset.mediaType))
+      throw new AppError('ASSET_NOT_FOUND');
     if (this.generationTasks.getActiveProjectId() !== projectId.trim()) {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
   }
 
-  private requireTask(request: ImageExplanationIdRequest): ImageExplanationTaskView {
+  private requireTask(
+    request: ImageExplanationIdRequest,
+  ): ImageExplanationTaskView {
     this.requireAsset(request.projectId, request.assetId);
     const snapshot = this.generationTasks.get(request.explanationId);
     const view = snapshot ? this.toTaskView(snapshot) : undefined;
-    if (!view || view.projectId !== request.projectId || view.assetId !== request.assetId) {
+    if (
+      !view ||
+      view.projectId !== request.projectId ||
+      view.assetId !== request.assetId
+    ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     return view;
@@ -247,24 +285,55 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
   private async requireAttachment(request: ImageExplanationIdRequest) {
     this.requireAsset(request.projectId, request.assetId);
     const attachment = await this.attachments.get(request.explanationId);
-    if (!attachment || attachment.projectId !== request.projectId || attachment.assetId !== request.assetId || !isExplanationAttachment(attachment)) {
+    if (
+      !attachment ||
+      attachment.projectId !== request.projectId ||
+      attachment.assetId !== request.assetId ||
+      !isExplanationAttachment(attachment)
+    ) {
       throw new AppError('ATTACHMENT_NOT_FOUND');
     }
     return attachment;
   }
 
-  private taskInstruction(snapshot: GenerationTaskSnapshot): WorkbenchConversationInstruction | undefined {
-    if (snapshot.definitionId !== WORKBENCH_CONVERSATION_TASK_DEFINITION_ID || snapshot.definitionVersion !== WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION) return undefined;
-    const parsed = workbenchConversationInstructionFactory.parse(snapshot.instruction);
-    return parsed.ok && parsed.value.contextProviderId === IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID
+  private taskInstruction(
+    snapshot: GenerationTaskSnapshot,
+  ): WorkbenchConversationInstruction | undefined {
+    if (
+      snapshot.definitionId !== WORKBENCH_CONVERSATION_TASK_DEFINITION_ID ||
+      snapshot.definitionVersion !==
+        WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION
+    )
+      return undefined;
+    const parsed = workbenchConversationInstructionFactory.parse(
+      snapshot.instruction,
+    );
+    return parsed.ok &&
+      parsed.value.contextProviderId === IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID
       ? parsed.value
       : undefined;
   }
 
-  private toTaskView(snapshot: GenerationTaskSnapshot): ImageExplanationTaskView | undefined {
+  private taskLocation(
+    snapshot: GenerationTaskSnapshot,
+  ): WorkbenchConversationProjectionLocation | undefined {
+    const instruction = this.taskInstruction(snapshot);
+    return instruction?.commitAnswer &&
+      isImageConversationContext(instruction.context)
+      ? { projectId: snapshot.projectId, assetId: instruction.assetId }
+      : undefined;
+  }
+
+  private toTaskView(
+    snapshot: GenerationTaskSnapshot,
+  ): ImageExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
     const conversationContext = instruction?.context;
-    if (!instruction?.commitAnswer || !isImageConversationContext(conversationContext)) return undefined;
+    if (
+      !instruction?.commitAnswer ||
+      !isImageConversationContext(conversationContext)
+    )
+      return undefined;
     const status = new GenerationTask(snapshot).getStatus();
     if (status === 'completed' || status === 'cancelled') return undefined;
     const sourceRevision =
@@ -288,66 +357,22 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     attachment: ImageExplanationAttachment,
   ): Promise<ImageExplanationAttachmentView> {
     if (!attachment.content) throw new AppError('DATA_INTEGRITY_ERROR');
-    const answer = await this.contentFiles.readText(attachment.projectId, attachment.content.ref);
+    const answer = await this.attachments.readTextContent(
+      attachment.projectId,
+      attachment.id,
+    );
     if (answer === undefined) throw new AppError('DATA_INTEGRITY_ERROR');
     return Object.freeze({
-      kind: 'attachment', id: attachment.id, projectId: attachment.projectId,
-      assetId: attachment.assetId, target: attachment.target, status: 'completed', answer,
+      kind: 'attachment',
+      id: attachment.id,
+      projectId: attachment.projectId,
+      assetId: attachment.assetId,
+      target: attachment.target,
+      status: 'completed',
+      answer,
       sourceRevision: attachment.metadata.sourceRevision,
-      createdTime: attachment.createdTime, updatedTime: attachment.updatedTime,
+      createdTime: attachment.createdTime,
+      updatedTime: attachment.updatedTime,
     });
-  }
-
-  private async handleAttachmentEvent(event: AttachmentServiceEvent): Promise<void> {
-    if (!isExplanationAttachment(event.attachment)) return;
-    if (event.type === 'deleted') {
-      this.publish({ type: 'deleted', projectId: event.attachment.projectId, assetId: event.attachment.assetId, explanationId: event.attachment.id });
-      return;
-    }
-    this.publish({ type: 'changed', explanation: await this.toAttachmentView(event.attachment) });
-  }
-
-  private async handleGenerationEvent(event: GenerationTaskServiceEvent): Promise<void> {
-    if (event.type === 'execution-event') return;
-    if (event.type === 'task-discarded') {
-      const location = this.taskLocations.get(event.taskId);
-      if (!location) return;
-      this.taskLocations.delete(event.taskId);
-      this.publish({ type: 'deleted', ...location, explanationId: event.taskId });
-      return;
-    }
-    const instruction = this.taskInstruction(event.snapshot);
-    const conversationContext = instruction?.context;
-    if (!instruction?.commitAnswer || !isImageConversationContext(conversationContext)) return;
-    const location = { projectId: event.snapshot.projectId, assetId: instruction.assetId };
-    this.taskLocations.set(event.snapshot.id, location);
-    if (event.type === 'task-completed') {
-      this.taskLocations.delete(event.snapshot.id);
-      const attachmentId = resultAttachmentId(event.result.result);
-      const attachment = attachmentId ? await this.attachments.get(attachmentId) : undefined;
-      if (!attachment || attachment.projectId !== location.projectId || attachment.assetId !== location.assetId || !isExplanationAttachment(attachment)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      this.publish({ type: 'replaced', ...location, previousExplanationId: event.snapshot.id, explanation: await this.toAttachmentView(attachment) });
-      return;
-    }
-    if (new GenerationTask(event.snapshot).getStatus() === 'completed') return;
-    const view = this.toTaskView(event.snapshot);
-    if (!view) {
-      this.taskLocations.delete(event.snapshot.id);
-      this.publish({ type: 'deleted', ...location, explanationId: event.snapshot.id });
-      return;
-    }
-    this.publish({ type: 'changed', explanation: view });
-  }
-
-  private publish(event: ImageExplanationEvent): void {
-    for (const listener of this.listeners) {
-      try {
-        Promise.resolve(listener(event)).catch((error: unknown) => console.error('异步图片解释订阅者执行失败', error));
-      } catch (error) {
-        console.error('发布图片解释事件失败', error);
-      }
-    }
   }
 }

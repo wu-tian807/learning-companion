@@ -6,6 +6,7 @@ import {
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  headerSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -49,6 +50,7 @@ export const videoWorkbenchManifest: AssetWorkbenchManifest<
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
+    headerSurfaceFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
@@ -68,10 +70,7 @@ export interface VideoWorkbenchStateV1 {
 }
 
 export type VideoSubtitleDisplayMode =
-  | 'off'
-  | 'source'
-  | 'translated'
-  | 'bilingual';
+  'off' | 'source' | 'translated' | 'bilingual';
 
 export interface VideoSubtitleViewState {
   readonly displayMode: VideoSubtitleDisplayMode;
@@ -112,6 +111,7 @@ export interface VideoSubtitleCueFinalPayload {
 
 export interface VideoWorkbenchPayload {
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly viewState: VideoWorkbenchViewState;
   readonly subtitleState: VideoSubtitleViewState;
   readonly subtitleSnapshot: VideoSubtitleSnapshot;
@@ -295,9 +295,7 @@ export function cloneVideoSubtitleSnapshot(
   }
   const normalized = {
     phase: snapshot.phase,
-    ...(snapshot.source === undefined
-      ? {}
-      : { source: snapshot.source }),
+    ...(snapshot.source === undefined ? {} : { source: snapshot.source }),
     ...(snapshot.translation === undefined
       ? {}
       : { translation: snapshot.translation }),
@@ -342,6 +340,9 @@ export function isVideoWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     value.contentUrl.startsWith('learning-content://resource/') &&
+    typeof value.sourceRevision === 'string' &&
+    value.sourceRevision.trim().length > 0 &&
+    value.sourceRevision.length <= 256 &&
     isVideoWorkbenchViewState(value.viewState) &&
     isVideoSubtitleViewState(value.subtitleState) &&
     isVideoSubtitleSnapshot(value.subtitleSnapshot)

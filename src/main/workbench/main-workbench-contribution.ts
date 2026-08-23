@@ -5,7 +5,6 @@ import type { AssetArtifactServiceApi } from '../artifacts/asset-artifact-servic
 import type { AssetLookup } from '../assets/asset-database';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { AnchorRegistry } from '../attachments/anchor-registry';
-import type { AttachmentContentFile } from '../attachments/attachment-content-file';
 import type { AttachmentRegistry } from '../attachments/attachment-registry';
 import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import type { ContentResourceServiceApi } from '../content/content-resource-service';
@@ -71,7 +70,6 @@ export interface MainWorkbenchGenerationContext {
 
 export interface MainWorkbenchStartContext {
   readonly attachments: AttachmentServiceApi;
-  readonly attachmentFiles: AttachmentContentFile;
   readonly generationTasks: GenerationTaskServiceApi;
   readonly assets: AssetLookup;
 }

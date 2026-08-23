@@ -85,9 +85,11 @@ function setup(
     readonly availability?: 'available' | 'missing';
     readonly run?: ReturnType<typeof vi.fn>;
     readonly readSubtitles?: ReturnType<typeof vi.fn>;
+    readonly touchAssetOnCreate?: boolean;
   } = {},
 ) {
   const close = vi.fn(async () => undefined);
+  let assetUpdatedTime = 100;
   const asset = {
     id: 'asset-1',
     projectId: 'project-1',
@@ -97,13 +99,14 @@ function setup(
   const assets = {
     get: vi.fn(() => ({
       ...asset,
-      updatedTime: Number(input.currentRevision ?? '100'),
+      updatedTime: assetUpdatedTime,
     })),
     resolveContent: vi.fn(async () => ({
       contentStatus: {
         availability: input.availability ?? 'available',
         checkedTime: 1,
       },
+      observedUpdatedTime: Number(input.currentRevision ?? '100'),
       ...(input.availability === 'missing'
         ? {}
         : {
@@ -131,25 +134,30 @@ function setup(
   const readSubtitles = input.readSubtitles ?? vi.fn(async () => undefined);
   const attachments = {
     listByAsset: vi.fn(async () => []),
-    createWithContent: vi.fn(async (request: CreateAttachmentWithContentInput) => ({
-      id: 'attachment-1',
-      projectId: request.projectId,
-      assetId: request.assetId,
-      typeId: request.typeId,
-      typeVersion: request.typeVersion,
-      target: request.target,
-      metadata: request.metadata,
-      content: {
-        ref: {
-          kind: 'local-file' as const,
-          base: 'project-workspace' as const,
-          path: 'attachments/attachment-1/answer.md',
-        },
-        mediaType: request.content.mediaType,
+    createWithContent: vi.fn(
+      async (request: CreateAttachmentWithContentInput) => {
+        if (input.touchAssetOnCreate) assetUpdatedTime = 999;
+        return {
+          id: 'attachment-1',
+          projectId: request.projectId,
+          assetId: request.assetId,
+          typeId: request.typeId,
+          typeVersion: request.typeVersion,
+          target: request.target,
+          metadata: request.metadata,
+          content: {
+            ref: {
+              kind: 'local-file' as const,
+              base: 'project-workspace' as const,
+              path: 'attachments/attachment-1/answer.md',
+            },
+            mediaType: request.content.mediaType,
+          },
+          createdTime: 1,
+          updatedTime: 1,
+        };
       },
-      createdTime: 1,
-      updatedTime: 1,
-    })),
+    ),
   };
   return {
     provider: new VideoConversationContextProvider(
@@ -442,6 +450,25 @@ describe('Video conversation context provider', () => {
     );
 
     expect(attachments.createWithContent).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the frame revision valid when saving an Attachment only touches Asset activity', async () => {
+    await withDirectory(async (directory) => {
+      const { provider, assets } = setup({ touchAssetOnCreate: true });
+      const context = processContext(directory, {
+        question: '解释这个区域',
+        commitAnswer: true,
+      });
+
+      await expect(
+        provider.commitAnswer(context, { answer: '区域解释' }),
+      ).resolves.toEqual({ attachmentId: 'attachment-1' });
+      expect(assets.get()).toMatchObject({ updatedTime: 999 });
+
+      await expect(provider.prepare(context)).resolves.toMatchObject({
+        purpose: 'video-frame-conversation',
+      });
+    });
   });
 
   it('refuses to attach an answer after the video revision changed', async () => {
