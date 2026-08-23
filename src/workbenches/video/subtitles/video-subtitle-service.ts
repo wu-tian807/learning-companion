@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-
 import type { AssetArtifactRegistryApi } from '../../../main/artifacts/asset-artifact-registry';
 import type {
   AssetArtifactRequest,
@@ -13,12 +11,9 @@ import type { ProjectLookup } from '../../../main/projects/project-database';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
-  isSubtitleSourceTrackV1,
-  isSubtitleTranslationTrackV1,
   isTranslatableSubtitleLanguage,
   oppositeSubtitleLanguage,
   type SubtitleSourceTrackV1,
-  type SubtitleTranslationTrackV1,
 } from '../../media-subtitles/contracts';
 import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
@@ -32,6 +27,10 @@ import {
   createSubtitleTranslationArtifactKey,
   type SubtitleTranslationProgress,
 } from '../../media-subtitles/translation-producer';
+import {
+  readSubtitleSourceTrackFile,
+  readSubtitleTranslationTrackFile,
+} from '../../media-subtitles/subtitle-artifact-files';
 import {
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
   type VideoSubtitleCueFinalPayload,
@@ -86,34 +85,6 @@ function userFailureMessage(error: unknown): string {
     return '字幕处理失败，可以稍后重试。';
   }
   return '字幕处理没有完成。';
-}
-
-async function readSourceTrack(path: string): Promise<SubtitleSourceTrackV1> {
-  const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
-  if (!isSubtitleSourceTrackV1(value)) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-  return value;
-}
-
-async function readTranslationTrack(
-  path: string,
-  source: SubtitleSourceTrackV1,
-  sourceTrackRevision: string,
-): Promise<SubtitleTranslationTrackV1> {
-  const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
-  if (
-    !isSubtitleTranslationTrackV1(value) ||
-    value.sourceTrackRevision !== sourceTrackRevision ||
-    value.sourceLanguage !== source.language ||
-    value.cues.length !== source.cues.length ||
-    value.cues.some(
-      (cue, index) => cue.sourceCueId !== source.cues[index]?.id,
-    )
-  ) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-  return value;
 }
 
 export class VideoSubtitleService implements VideoSubtitleServiceApi {
@@ -225,7 +196,7 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
       if (artifact.artifact.mediaType !== SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
-      const track = await readSourceTrack(artifact.absolutePath);
+      const track = await readSubtitleSourceTrackFile(artifact.absolutePath);
       if (track.sourceRevision !== artifact.artifact.sourceRevision) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
@@ -317,7 +288,7 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
       ) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
-      const translation = await readTranslationTrack(
+      const translation = await readSubtitleTranslationTrackFile(
         artifact.absolutePath,
         source.track,
         sourceTrackRevision,

@@ -13,6 +13,7 @@ import { AppError } from '../errors/app-error';
 import type { ExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
 import type { ExternalLibraryRegistryApi } from '../external-libraries/external-library-registry';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
+import type { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
 import type { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
 import type { GenerationTaskServiceApi } from '../generation/generation-task-service';
 import type { ProjectLookup } from '../projects/project-database';
@@ -59,9 +60,13 @@ export interface MainWorkbenchAgentToolContext {
 
 export interface MainWorkbenchGenerationContext {
   readonly definitions: GenerationTaskDefinitionRegistry;
+  readonly conversationContexts: WorkbenchConversationContextProviderRegistry;
   readonly assets: AssetServiceApi;
+  readonly artifacts: AssetArtifactServiceApi;
   readonly associations: AssetAssociationServiceApi;
   readonly attachments: AttachmentServiceApi;
+  readonly externalLibraries: ExternalLibraryServiceApi;
+  readonly projects: ProjectLookup;
 }
 
 export interface MainWorkbenchStartContext {
@@ -83,19 +88,14 @@ export interface MainWorkbenchFeatureContribution {
   registerArtifactProducers?(context: MainWorkbenchArtifactContext): void;
   registerAttachmentTypes?(context: MainWorkbenchAttachmentContext): void;
   registerAgentFunctionTools?(context: MainWorkbenchAgentToolContext): void;
-  registerGenerationTaskDefinitions?(
-    context: MainWorkbenchGenerationContext,
-  ): void;
+  registerGeneration?(context: MainWorkbenchGenerationContext): void;
   start?(context: MainWorkbenchStartContext): MainWorkbenchRuntime;
 }
 
-export interface MainWorkbenchContribution
-  extends MainWorkbenchFeatureContribution {
+export interface MainWorkbenchContribution extends MainWorkbenchFeatureContribution {
   readonly manifest?: AssetWorkbenchManifest;
   readonly features?: readonly MainWorkbenchFeatureContribution[];
-  createProvider?(
-    context: MainWorkbenchProviderContext,
-  ): MainWorkbenchProvider;
+  createProvider?(context: MainWorkbenchProviderContext): MainWorkbenchProvider;
 }
 
 function requireValidFeatures(
@@ -110,9 +110,7 @@ function requireValidFeatures(
   }
 }
 
-function disposeRuntimes(
-  runtimes: MainWorkbenchRuntime[],
-): void {
+function disposeRuntimes(runtimes: MainWorkbenchRuntime[]): void {
   let disposalError: unknown;
   for (const runtime of runtimes.splice(0).reverse()) {
     try {
@@ -157,9 +155,9 @@ export function composeMainWorkbenchContribution(
         feature.registerAgentFunctionTools?.(context);
       }
     },
-    registerGenerationTaskDefinitions(context): void {
+    registerGeneration(context): void {
       for (const feature of ownedFeatures) {
-        feature.registerGenerationTaskDefinitions?.(context);
+        feature.registerGeneration?.(context);
       }
     },
     start(context): MainWorkbenchRuntime {

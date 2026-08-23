@@ -3,17 +3,11 @@ import type {
   ConversationRecord,
   WorkbenchConversationContribution,
 } from '../../../renderer/conversation/conversation-contracts';
-import {
-  HTML_ASSISTANT_INSTRUCTION_FORMAT,
-  HTML_ASSISTANT_INSTRUCTION_VERSION,
-  HTML_ASSISTANT_TASK_DEFINITION_ID,
-  HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-} from '../../../shared/generation-definitions';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { isHtmlAnchorTarget, type HtmlAnchorTarget } from '../anchor-commands';
-import { isHtmlAssistantTaskResult } from '../generation/html-assistant-result';
 import { htmlWorkbenchManifest } from '../shared';
 import { summarizeHtmlAnchor } from './anchor-summary';
+import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './html-conversation-context';
 import type { HtmlConversationStore } from './conversation-store';
 
 function titleFromRecord(record: ConversationRecord): string {
@@ -102,36 +96,12 @@ export function createHtmlConversationContribution(input: {
   const contribution: WorkbenchConversationContribution = {
     id: 'html.assistant',
     workbenchId: htmlWorkbenchManifest.id,
+    contextProviderId: HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
+    includeSourceAssetReference: true,
     title: '网页问答',
     emptyLabel: '选中网页文字或元素后开始提问，也可以直接针对整份 HTML 资料提问。',
     historyStore: input.historyStore,
-    createTaskRequest(taskInput) {
-      return {
-        projectId: taskInput.projectId,
-        definitionId: HTML_ASSISTANT_TASK_DEFINITION_ID,
-        definitionVersion: HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-        instruction: {
-          format: HTML_ASSISTANT_INSTRUCTION_FORMAT,
-          version: HTML_ASSISTANT_INSTRUCTION_VERSION,
-          conversationId: taskInput.conversationId,
-          question: taskInput.question,
-          ...(taskInput.context === undefined ? {} : { anchor: taskInput.context }),
-        },
-        assetReferences: {
-          sources: [{ assetId: taskInput.assetId }],
-        },
-      };
-    },
-    readTaskResult(task) {
-      if (!isHtmlAssistantTaskResult(task.result)) return undefined;
-      const modelInfo = task.assignedProviderId && task.assignedModelId
-        ? `${task.assignedProviderId}/${task.assignedModelId}`
-        : undefined;
-      return {
-        answer: task.result.answer,
-        ...(modelInfo ? { modelInfo } : {}),
-      };
-    },
+    isContext: isHtmlAnchorTarget,
     describeContext(context) {
       if (!isHtmlAnchorTarget(context)) return { label: 'HTML 内容' };
       const summary = summarizeHtmlAnchor(context);

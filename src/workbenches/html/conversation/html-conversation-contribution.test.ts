@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ConversationRecord } from '../../../renderer/conversation/conversation-contracts';
+import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
-  HTML_ASSISTANT_TASK_DEFINITION_ID,
-  HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-} from '../../../shared/generation-definitions';
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../../shared/workbench-conversation';
+import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './html-conversation-context';
 import {
   adaptHtmlConversationHistoryStore,
   createHtmlConversationContribution,
@@ -26,7 +28,13 @@ function record(): ConversationRecord {
           scope: 'content',
           anchorType: 'html.element',
           anchorVersion: 1,
-          anchorPayload: { tagName: 'button', id: 'run' },
+          anchorPayload: {
+            frameUrl: 'learning-content://resource/session',
+            tagName: 'button',
+            domPath: [1, 2],
+            rect: { x: 10, y: 20, width: 80, height: 32 },
+            id: 'run',
+          },
         },
       },
       {
@@ -98,7 +106,7 @@ describe('HTML conversation contribution', () => {
     });
   });
 
-  it('owns HTML task input, result decoding and original-element reveal', () => {
+  it('declares HTML context while the shared conversation layer owns the task', () => {
     const revealContext = vi.fn();
     const historyStore = {
       list: async () => [],
@@ -112,7 +120,7 @@ describe('HTML conversation contribution', () => {
     });
     const context = record().messages[0]!.context!;
 
-    expect(contribution.createTaskRequest({
+    expect(createWorkbenchConversationTaskRequest(contribution, {
       projectId: 'project',
       assetId: 'asset',
       conversationId: 'conversation-1',
@@ -120,14 +128,15 @@ describe('HTML conversation contribution', () => {
       context,
       generateTitle: true,
     })).toMatchObject({
-      definitionId: HTML_ASSISTANT_TASK_DEFINITION_ID,
-      definitionVersion: HTML_ASSISTANT_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: {
+        contextProviderId: HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
         conversationId: 'conversation-1',
         question: '解释按钮',
-        anchor: context,
+        context,
       },
-      assetReferences: { sources: [{ assetId: 'asset' }] },
+      assetReferences: { source: [{ assetId: 'asset' }] },
     });
 
     contribution.revealContext?.(context);

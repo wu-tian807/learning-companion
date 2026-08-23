@@ -1,5 +1,5 @@
 import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main-workbench-contribution';
-import { createDocumentQuestionTaskDefinitionV1 } from './generation/document-question-task-definition';
+import { DocumentConversationContextProvider } from './generation/document-conversation-context-provider';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
@@ -15,7 +15,7 @@ export const documentAiMainFeature = Object.freeze({
       isMetadata: isAiAnnotationMetadata,
     });
   },
-  registerGenerationTaskDefinitions({ definitions }): void {
-    definitions.register(createDocumentQuestionTaskDefinitionV1());
+  registerGeneration({ conversationContexts }): void {
+    conversationContexts.register(new DocumentConversationContextProvider());
   },
 } satisfies MainWorkbenchFeatureContribution);

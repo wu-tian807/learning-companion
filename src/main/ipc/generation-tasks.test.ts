@@ -8,6 +8,9 @@ import {
 } from '../../shared/generation-definitions';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isIpcResult } from '../../shared/ipc-error';
+import { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
+import { WorkbenchConversationInstruction } from '../conversation/workbench-conversation-instruction';
+import { createWorkbenchConversationTaskDefinitionV1 } from '../conversation/workbench-conversation-task-definition';
 import { GenerationTask } from '../generation/generation-task';
 import { createTextAgentUserMessage } from '../generation/contracts/agent-message';
 import { GenerationAgentExecutor } from '../generation/generation-agent-executor';
@@ -18,9 +21,6 @@ import { GenerationTaskExecution } from '../generation/generation-task-execution
 import { GenerationTaskService } from '../generation/generation-task-service';
 import type { GenerationTaskPreparerApi } from '../generation/preparation/generation-task-preparer';
 import type { PreparedGenerationTask } from '../generation/preparation/prepared-generation-task';
-import { HtmlAssistantInstruction } from '../../workbenches/html/generation/html-assistant-instruction';
-import { createHtmlAssistantProcessor } from '../../workbenches/html/generation/html-assistant-processor';
-import { createHtmlAssistantTaskDefinitionV1 } from '../../workbenches/html/generation/html-assistant-task-definition';
 import type {
   GenerationTaskServiceApi,
   GenerationTaskServiceEvent,
@@ -152,7 +152,28 @@ describe('GenerationTask IPC handlers', () => {
   });
 
   it('real Service + IPC returns a completed snapshot released from memory', async () => {
-    const definition = createHtmlAssistantTaskDefinitionV1(createHtmlAssistantProcessor());
+    const conversationContexts = new WorkbenchConversationContextProviderRegistry();
+    conversationContexts.register({
+      id: 'test.context',
+      async prepare(context) {
+        return {
+          purpose: 'ipc-conversation-test',
+          statusMessage: '正在测试…',
+          systemInstruction: '直接回答问题。',
+          userMessage: context.instruction.toUserMessage(),
+          toolRequirements: [],
+        };
+      },
+    });
+    const definition = createWorkbenchConversationTaskDefinitionV1(
+      conversationContexts,
+    );
+    const instruction = () => new WorkbenchConversationInstruction({
+      contextProviderId: 'test.context',
+      assetId: 'asset-1',
+      conversationId: 'conversation-1',
+      question: 'question',
+    });
     const registry = new GenerationTaskDefinitionRegistry();
     registry.register(definition);
     const completed = new Map<string, unknown>();
@@ -188,23 +209,23 @@ describe('GenerationTask IPC handlers', () => {
         };
       },
     };
-    const createPrepared = (task: { id: string; projectId: string }, definition: ReturnType<typeof createHtmlAssistantTaskDefinitionV1>): PreparedGenerationTask => ({
+    const createPrepared = (task: { id: string; projectId: string }): PreparedGenerationTask => ({
       taskId: task.id,
       projectId: task.projectId,
       definitionId: definition.id,
       definitionVersion: definition.version,
       providerSelectorId: definition.providerSelectorId,
-      instruction: new HtmlAssistantInstruction({ conversationId: 'conversation-1', question: 'question' }),
+      instruction: instruction(),
       preparedUserMessage: createTextAgentUserMessage('question'),
       workspaces: {
-        primary: { ...definition.primaryWorkspaceConfig, instanceKey: 'conversation-1', path: '/tmp/html-assistant' },
+        primary: { ...definition.primaryWorkspaceConfig, instanceKey: 'conversation-1', path: '/tmp/workbench-conversation' },
         secondary: [],
       },
-      assetReferences: { sources: [{ alias: 'sources-0001', assetId: 'asset-1', name: 'index.html', mediaType: 'text/html', contentRevision: 'r1', relativePath: 'references/sources-0001/source.html' }] },
+      assetReferences: {},
     });
     const preparer: GenerationTaskPreparerApi = {
-      async prepare(task) { return createPrepared(task, definition); },
-      async restore(task) { return createPrepared(task, definition); },
+      async prepare(task) { return createPrepared(task); },
+      async restore(task) { return createPrepared(task); },
     };
     const service = new GenerationTaskService(
       database,
@@ -221,8 +242,8 @@ describe('GenerationTask IPC handlers', () => {
       projectId: 'project-1',
       definitionId: definition.id,
       definitionVersion: definition.version,
-      instruction: new HtmlAssistantInstruction({ conversationId: 'conversation-1', question: 'question' }).toSnapshot(),
-      assetReferences: { sources: [{ assetId: 'asset-1' }] },
+      instruction: instruction().toSnapshot(),
+      assetReferences: {},
     });
 
     await vi.waitFor(() => {

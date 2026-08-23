@@ -5,8 +5,7 @@ import {
   isEpubCfiRangeAnchorV1,
 } from '../shared';
 import { EpubExplanationService } from './epub-explanation-service';
-import { EpubExplanationProcessor } from './generation/processor';
-import { createEpubExplanationTaskDefinitionV1 } from './generation/task-definition';
+import { EpubConversationContextProvider } from './generation/epub-conversation-context-provider';
 import {
   registerEpubExplanationHandlers,
   removeEpubExplanationHandlers,
@@ -31,11 +30,9 @@ export const epubExplanationMainFeature = Object.freeze({
       isMetadata: isEpubExplanationMetadata,
     });
   },
-  registerGenerationTaskDefinitions({ definitions, attachments }): void {
-    definitions.register(
-      createEpubExplanationTaskDefinitionV1(
-        new EpubExplanationProcessor(attachments),
-      ),
+  registerGeneration({ conversationContexts, attachments }): void {
+    conversationContexts.register(
+      new EpubConversationContextProvider(attachments),
     );
   },
   start({ attachments, attachmentFiles, generationTasks, assets }) {

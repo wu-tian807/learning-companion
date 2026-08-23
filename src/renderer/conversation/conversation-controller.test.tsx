@@ -76,36 +76,15 @@ function createMemoryHistory(
 function createContribution(input: {
   readonly historyStore?: ConversationHistoryStore;
   readonly onContextReleased?: WorkbenchConversationContribution['onContextReleased'];
-  readonly requests?: Array<Record<string, unknown>>;
 } = {}): WorkbenchConversationContribution {
   return {
     id: 'test.question',
     workbenchId: 'test',
+    contextProviderId: 'test.context',
+    includeSourceAssetReference: true,
     title: '测试问答',
     emptyLabel: 'empty',
     historyStore: input.historyStore ?? createMemoryHistory(),
-    createTaskRequest(request) {
-      input.requests?.push(request as unknown as Record<string, unknown>);
-      return {
-        projectId: request.projectId,
-        definitionId: 'question',
-        definitionVersion: 1,
-        instruction: {
-          conversationId: request.conversationId,
-          question: request.question,
-        },
-        assetReferences: { source: [{ assetId: request.assetId }] },
-      };
-    },
-    readTaskResult(snapshot) {
-      const result = snapshot.result as { answer?: unknown; title?: unknown } | undefined;
-      return typeof result?.answer === 'string'
-        ? {
-            answer: result.answer,
-            ...(typeof result.title === 'string' ? { title: result.title } : {}),
-          }
-        : undefined;
-    },
     onContextReleased: input.onContextReleased,
   };
 }
@@ -176,13 +155,14 @@ describe('shared Conversation controller', () => {
   }
 
   it('keeps one conversation identity across Tasks, projects optional deltas, and trusts the final result', async () => {
-    const requests: Array<Record<string, unknown>> = [];
+    const requests: Array<Parameters<ConversationTaskClient['start']>[0]> = [];
     let taskIndex = 0;
-    client.start = vi.fn(async () => {
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
       taskIndex += 1;
       return { taskId: `task-${taskIndex}`, snapshot: task(`task-${taskIndex}`) };
     });
-    render({ contribution: createContribution({ requests }) });
+    render();
 
     act(() => latest.actions.submit('第一问'));
     await flush();
@@ -193,13 +173,26 @@ describe('shared Conversation controller', () => {
       event: { type: 'assistant-delta', delta: '临时' },
     });
     expect(latest.state.conversation.messages.at(-1)?.text).toBe('临时');
-    emit({ type: 'task-completed', snapshot: task('task-1', 'completed', { answer: '第一答' }) });
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '第一答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
     expect(latest.state.conversation.messages.at(-1)?.text).toBe('第一答');
 
     act(() => latest.actions.submit('第二问'));
     await flush();
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.conversationId).toBe(requests[1]?.conversationId);
+    expect(
+      (requests[0]?.instruction as { conversationId?: string })
+        .conversationId,
+    ).toBe(
+      (requests[1]?.instruction as { conversationId?: string })
+        .conversationId,
+    );
   });
 
   it('rolls back an unstarted optimistic message and shows a configurable Provider error', async () => {
@@ -396,7 +389,11 @@ describe('shared Conversation controller', () => {
     await flush();
     emit({
       type: 'task-completed',
-      snapshot: task('task-1', 'completed', { answer: '最终回答' }),
+      snapshot: task('task-1', 'completed', {
+        answer: '最终回答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
     });
     await flush();
     expect(historyStore.save).toHaveBeenCalledTimes(2);

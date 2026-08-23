@@ -4,7 +4,7 @@ import { createMindMapGenerationTaskDefinitionV1 } from './mindmap-generation-ta
 
 export const mindMapGenerationMainFeature = Object.freeze({
   id: 'builtin.mindmap.generation',
-  registerGenerationTaskDefinitions({
+  registerGeneration({
     definitions,
     assets,
     associations,

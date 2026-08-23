@@ -1,7 +1,3 @@
-import type {
-  GenerationTaskView,
-  StartGenerationTaskRequest,
-} from '../../shared/generation-tasks';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
 export type ConversationRole = 'user' | 'assistant';
@@ -40,12 +36,6 @@ export interface ConversationContextPresentation {
   readonly previewDataUrl?: string;
 }
 
-export interface ConversationTaskResult {
-  readonly answer: string;
-  readonly title?: string;
-  readonly modelInfo?: string;
-}
-
 export interface ConversationTaskInput {
   readonly projectId: string;
   readonly assetId: string;
@@ -67,19 +57,26 @@ export interface ConversationAnswerActionInput {
 /**
  * Renderer contribution supplied by one active Workbench.
  *
- * The shared conversation layer owns task lifecycle and UI projection. The
- * contribution owns media context, TaskDefinition input, result decoding,
- * source location and optional media actions such as creating Attachments.
+ * The shared conversation layer owns the TaskDefinition, Agent Session,
+ * Provider call, task lifecycle and result projection. The contribution only
+ * declares Renderer-side media context and optional UI actions. Main-side
+ * media semantics live in the matching context provider.
  */
 export interface WorkbenchConversationContribution {
   readonly id: string;
   readonly workbenchId: string;
+  /** Main-side provider that turns the opaque Workbench context into Agent input. */
+  readonly contextProviderId: string;
+  /** Copies the current Asset into the conversation Workspace when true. */
+  readonly includeSourceAssetReference?: boolean;
+  readonly initialContextRequired?: boolean;
+  readonly initialContextRequiredMessage?: string;
   readonly title: string;
   readonly emptyLabel: string;
   readonly inputPlaceholder?: string;
   readonly historyStore: ConversationHistoryStore;
-  createTaskRequest(input: ConversationTaskInput): StartGenerationTaskRequest;
-  readTaskResult(task: GenerationTaskView): ConversationTaskResult | undefined;
+  isContext?(context: JsonValue): boolean;
+  shouldCommitAnswer?(input: ConversationTaskInput): boolean;
   describeContext?(context: JsonValue): ConversationContextPresentation;
   revealContext?(context: JsonValue): Promise<void> | void;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */

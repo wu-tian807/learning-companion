@@ -2,13 +2,17 @@ import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/wor
 
 export interface VideoRendererActionsOptions {
   readonly ready: boolean;
+  readonly canExplainFrame: boolean;
   readonly onTogglePlayback: () => Promise<void> | void;
+  readonly onExplainFrame: () => Promise<void> | void;
   readonly onReveal: () => Promise<void> | void;
 }
 
 export function createVideoRendererActions({
   ready,
+  canExplainFrame,
   onTogglePlayback,
+  onExplainFrame,
   onReveal,
 }: VideoRendererActionsOptions): WorkbenchActionBundle {
   const disabledReason = ready ? undefined : '视频尚未载入完成';
@@ -27,8 +31,8 @@ export function createVideoRendererActions({
       },
       {
         id: 'video.ai.explain-frame',
-        enabled: false,
-        execute: () => undefined,
+        enabled: canExplainFrame,
+        execute: onExplainFrame,
       },
       {
         id: 'video.ai.notes-from-here',
@@ -71,8 +75,10 @@ export function createVideoRendererActions({
         presentation: {
           kind: 'generation-tool',
           label: '解释当前画面',
-          description: '把当前时间点和视频画面交给视觉模型',
-          disabledReason: '等待 Video AI 工具接入',
+          description: '把右键框选的当前画面区域交给视觉模型',
+          ...(!canExplainFrame
+            ? { disabledReason: '请先在画面上按住右键并框选区域' }
+            : {}),
         },
       },
       {

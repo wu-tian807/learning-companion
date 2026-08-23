@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AnchorRegistry } from '../../main/attachments/anchor-registry';
 import { AttachmentRegistry } from '../../main/attachments/attachment-registry';
 import { GenerationTaskDefinitionRegistry } from '../../main/generation/generation-task-definition-registry';
+import { WorkbenchConversationContextProviderRegistry } from '../../main/conversation/workbench-conversation-context-provider-registry';
 import { AgentFunctionToolRegistry } from '../../main/agents/function-tools/agent-function-tool-registry';
 import { ExternalLibraryRegistry } from '../../main/external-libraries/external-library-registry';
 import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
@@ -15,16 +16,27 @@ import {
 } from '../../shared/workbench/facilities/core-facilities';
 import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import {
-  HTML_ASSISTANT_TASK_DEFINITION_ID,
-  HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-} from '../../shared/generation-definitions';
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../shared/workbench-conversation';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
 } from '../document-ai/ai-annotation-attachment';
-import { OFFICE_ANCHOR_VERSION, OFFICE_REGION_ANCHOR_TYPE } from '../office/shared';
-import { PDF_REGION_ANCHOR_TYPE, PDF_REGION_ANCHOR_VERSION } from '../pdf/shared';
+import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../document-ai/document-conversation-context';
+import { EPUB_CONVERSATION_CONTEXT_PROVIDER_ID } from '../epub/explanations/epub-conversation-context';
+import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../html/conversation/html-conversation-context';
+import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from '../image/explanations/image-conversation-context';
+import {
+  OFFICE_ANCHOR_VERSION,
+  OFFICE_REGION_ANCHOR_TYPE,
+} from '../office/shared';
+import {
+  PDF_REGION_ANCHOR_TYPE,
+  PDF_REGION_ANCHOR_VERSION,
+} from '../pdf/shared';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
+import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../video/conversation/video-conversation-context';
 import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
@@ -41,7 +53,8 @@ import {
 } from './register-renderer-workbenches';
 
 const mainManifests = mainWorkbenchContributions.flatMap(({ manifest }) =>
-  manifest ? [manifest] : []);
+  manifest ? [manifest] : [],
+);
 
 describe('Workbench contribution catalogs', () => {
   it('keeps Main, Preload, and Renderer Workbench roots aligned', () => {
@@ -82,12 +95,14 @@ describe('Workbench contribution catalogs', () => {
       expect(providers.get(manifest.id)?.manifest).toBe(manifest);
     }
     expect(
-      providers.get('builtin.html')?.facilityAdapters?.find(
-        (adapter) =>
-          adapter.facilityId === CORE_CONTEXT_MENU_SURFACE_FACILITY_ID &&
-          adapter.facilityVersion === CORE_FACILITY_VERSION &&
-          adapter.triggers.includes(SANDBOX_CONTEXT_MENU_TRIGGER),
-      )?.workbenchId,
+      providers
+        .get('builtin.html')
+        ?.facilityAdapters?.find(
+          (adapter) =>
+            adapter.facilityId === CORE_CONTEXT_MENU_SURFACE_FACILITY_ID &&
+            adapter.facilityVersion === CORE_FACILITY_VERSION &&
+            adapter.triggers.includes(SANDBOX_CONTEXT_MENU_TRIGGER),
+        )?.workbenchId,
     ).toBe('builtin.html');
   });
 
@@ -103,9 +118,7 @@ describe('Workbench contribution catalogs', () => {
       'libreoffice',
       'media-subtitles',
     ]);
-    expect(libraries.require('media-subtitles').defaultVariantId).toBe(
-      'cpu',
-    );
+    expect(libraries.require('media-subtitles').defaultVariantId).toBe('cpu');
     expect(
       libraries.selectPackage('media-subtitles', 'win32', 'x64').variantId,
     ).toBe('cpu');
@@ -141,7 +154,9 @@ describe('Workbench contribution catalogs', () => {
     registerRendererWorkbenches({ registerLoader });
 
     expect([...loaders.keys()]).toEqual(mainManifests.map(({ id }) => id));
-    expect([...loaders.values()].every(({ loader }) => typeof loader === 'function')).toBe(true);
+    expect(
+      [...loaders.values()].every(({ loader }) => typeof loader === 'function'),
+    ).toBe(true);
   });
 
   it('registers Attachment and Anchor extensions through the same Main catalog', () => {
@@ -162,15 +177,13 @@ describe('Workbench contribution catalogs', () => {
         ?.isPayload({ pageNumber: 1, x: 0, y: 0, width: 0.5, height: 0.5 }),
     ).toBe(true);
     expect(
-      anchors
-        .get(OFFICE_REGION_ANCHOR_TYPE, OFFICE_ANCHOR_VERSION)
-        ?.isPayload({
-          pageNumber: 1,
-          x: 0.5,
-          y: 0.5,
-          width: 0.5,
-          height: 0.5,
-        }),
+      anchors.get(OFFICE_REGION_ANCHOR_TYPE, OFFICE_ANCHOR_VERSION)?.isPayload({
+        pageNumber: 1,
+        x: 0.5,
+        y: 0.5,
+        width: 0.5,
+        height: 0.5,
+      }),
     ).toBe(true);
   });
 
@@ -182,21 +195,36 @@ describe('Workbench contribution catalogs', () => {
     expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
   });
 
-  it('registers the HTML assistant TaskDefinition through the same Main catalog', () => {
+  it('registers Workbench conversation context providers through the same Main catalog', () => {
     const definitions = new GenerationTaskDefinitionRegistry();
+    const conversationContexts =
+      new WorkbenchConversationContextProviderRegistry();
 
     registerMainWorkbenchGeneration({
       definitions,
+      conversationContexts,
       assets: {} as never,
+      artifacts: {} as never,
       associations: {} as never,
       attachments: {} as never,
+      externalLibraries: {} as never,
+      projects: {} as never,
     });
 
+    for (const id of [
+      DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
+      EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+      HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
+      IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+      VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
+    ]) {
+      expect(conversationContexts.require(id).id).toBe(id);
+    }
     expect(
-      definitions.get(
-        HTML_ASSISTANT_TASK_DEFINITION_ID,
-        HTML_ASSISTANT_TASK_DEFINITION_VERSION,
-      ),
-    ).toBeDefined();
+      definitions.require(
+        WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+        WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+      ).id,
+    ).toBe(WORKBENCH_CONVERSATION_TASK_DEFINITION_ID);
   });
 });

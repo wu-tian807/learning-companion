@@ -1,12 +1,9 @@
 import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
-import { createHtmlAssistantProcessor } from './html-assistant-processor';
-import { createHtmlAssistantTaskDefinitionV1 } from './html-assistant-task-definition';
+import { HtmlConversationContextProvider } from '../conversation/html-conversation-context-provider';
 
 export const htmlAssistantMainFeature = Object.freeze({
   id: 'builtin.html.assistant',
-  registerGenerationTaskDefinitions({ definitions }): void {
-    definitions.register(
-      createHtmlAssistantTaskDefinitionV1(createHtmlAssistantProcessor()),
-    );
+  registerGeneration({ conversationContexts }): void {
+    conversationContexts.register(new HtmlConversationContextProvider());
   },
 } satisfies MainWorkbenchFeatureContribution);

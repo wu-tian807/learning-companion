@@ -157,7 +157,9 @@ describe('viewer Workbench context action bundles', () => {
   it('keeps video commands timeline- and frame-oriented', () => {
     const bundle = createVideoRendererActions({
       ready: true,
+      canExplainFrame: true,
       onTogglePlayback: vi.fn(),
+      onExplainFrame: vi.fn(),
       onReveal: vi.fn(),
     });
 

@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { GenerationTaskView } from '../../../shared/generation-tasks';
+import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import {
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../../shared/workbench-conversation';
 import { createEpubCfiRangeTarget } from '../shared';
 import {
   createEpubConversationContext,
   createEpubConversationContribution,
 } from './epub-conversation-contribution';
+import { EPUB_CONVERSATION_CONTEXT_PROVIDER_ID } from './epub-conversation-context';
 import { EPUB_DEFAULT_EXPLANATION_QUESTION } from './shared';
-import { createEpubExplanationTaskDefinitionV1 } from './generation/task-definition';
 
 const target = createEpubCfiRangeTarget({
   cfiRange: 'epubcfi(/6/4!/4/2/1:0,/1:8)',
@@ -20,7 +24,6 @@ const target = createEpubCfiRangeTarget({
 
 function createContribution() {
   return createEpubConversationContribution({
-    assetId: 'asset-1',
     historyStore: {
       list: async () => [],
       save: async (record) => [record],
@@ -31,82 +34,60 @@ function createContribution() {
 }
 
 describe('EPUB conversation contribution', () => {
-  it('首次解释携带 CFI 选区并要求保存 Note', () => {
-    const contribution = createContribution();
-    const request = contribution.createTaskRequest({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      conversationId: 'conversation-1',
-      question: EPUB_DEFAULT_EXPLANATION_QUESTION,
-      context: createEpubConversationContext(target),
-      generateTitle: true,
-    });
+  it('declares CFI context while the shared task owns execution and Note commit', () => {
+    const context = createEpubConversationContext(target);
+    const request = createWorkbenchConversationTaskRequest(
+      createContribution(),
+      {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-1',
+        question: EPUB_DEFAULT_EXPLANATION_QUESTION,
+        context,
+        generateTitle: true,
+      },
+    );
 
     expect(request).toMatchObject({
       projectId: 'project-1',
-      definitionId: 'epub.explain-selection',
-      definitionVersion: 1,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: {
+        contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
         conversationId: 'conversation-1',
         question: EPUB_DEFAULT_EXPLANATION_QUESTION,
-        target,
-        saveAsNote: true,
+        context,
+        commitAnswer: true,
         generateTitle: true,
       },
       assetReferences: {},
     });
   });
 
-  it('后续追问仅继续稳定对话，不重复创建 Note', () => {
-    const request = createContribution().createTaskRequest({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      conversationId: 'conversation-1',
-      question: '这里的“它”指什么？',
-      generateTitle: false,
-    });
+  it('continues the stable conversation without duplicating the Note', () => {
+    const request = createWorkbenchConversationTaskRequest(
+      createContribution(),
+      {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-1',
+        question: '这里的“它”指什么？',
+        generateTitle: false,
+      },
+    );
 
     expect(request.instruction).toMatchObject({
+      contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
       conversationId: 'conversation-1',
       question: '这里的“它”指什么？',
-      saveAsNote: false,
     });
-    expect(request.instruction).not.toHaveProperty('target');
+    expect(request.instruction).not.toHaveProperty('context');
+    expect(request.instruction).not.toHaveProperty('commitAnswer');
   });
 
-  it('从 Renderer 请求到 TaskDefinition 都用同一 conversationId 分区 Session', () => {
-    const contribution = createContribution();
-    const first = contribution.createTaskRequest({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      conversationId: 'conversation-stable',
-      question: EPUB_DEFAULT_EXPLANATION_QUESTION,
-      context: createEpubConversationContext(target),
-      generateTitle: true,
-    });
-    const followUp = contribution.createTaskRequest({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      conversationId: 'conversation-stable',
-      question: '再详细一点',
-      generateTitle: false,
-    });
-    const definition = createEpubExplanationTaskDefinitionV1({
-      process: vi.fn(),
-    });
-    const resolve = definition.primaryWorkspaceConfig.resolveInstanceKey!;
-
-    expect(
-      resolve({ taskId: 'task-1', instruction: first.instruction }),
-    ).toBe('conversation-stable');
-    expect(
-      resolve({ taskId: 'task-2', instruction: followUp.instruction }),
-    ).toBe('conversation-stable');
-  });
-
-  it('拒绝在没有 EPUB 选区时开始新对话', () => {
+  it('rejects starting a new conversation without an EPUB selection', () => {
     expect(() =>
-      createContribution().createTaskRequest({
+      createWorkbenchConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -116,48 +97,9 @@ describe('EPUB conversation contribution', () => {
     ).toThrow('请先在 EPUB 中选中一段文字');
   });
 
-  it('只消费经过验证的最终回答，并保留模型信息', () => {
-    const contribution = createContribution();
-    const valid = contribution.readTaskResult({
-      result: {
-        answer: '解释结果',
-        title: '主题',
-        providerId: 'codex',
-        modelId: 'gpt-test',
-      },
-    } as unknown as GenerationTaskView);
-    const invalid = contribution.readTaskResult({
-      result: { answer: '' },
-    } as unknown as GenerationTaskView);
-    const atPersistenceLimit = contribution.readTaskResult({
-      result: {
-        answer: 'x'.repeat(32_768),
-        providerId: 'codex',
-        modelId: 'gpt-test',
-      },
-    } as unknown as GenerationTaskView);
-    const beyondPersistenceLimit = contribution.readTaskResult({
-      result: {
-        answer: 'x'.repeat(32_769),
-        providerId: 'codex',
-        modelId: 'gpt-test',
-      },
-    } as unknown as GenerationTaskView);
-
-    expect(valid).toEqual({
-      answer: '解释结果',
-      title: '主题',
-      modelInfo: 'codex/gpt-test',
-    });
-    expect(invalid).toBeUndefined();
-    expect(atPersistenceLimit?.answer).toHaveLength(32_768);
-    expect(beyondPersistenceLimit).toBeUndefined();
-  });
-
-  it('展示选中原文并把定位交回 EPUB Workbench', async () => {
+  it('presents the selected quote and delegates reveal to EPUB', async () => {
     const revealContext = vi.fn();
     const contribution = createEpubConversationContribution({
-      assetId: 'asset-1',
       historyStore: {
         list: async () => [],
         save: async (record) => [record],

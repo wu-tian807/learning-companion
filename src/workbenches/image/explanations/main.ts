@@ -5,8 +5,7 @@ import {
   isImageRegionAnchorV1,
 } from '../shared';
 import { ImageExplanationService } from './image-explanation-service';
-import { ImageExplanationProcessor } from './generation/processor';
-import { createImageExplanationTaskDefinitionV1 } from './generation/task-definition';
+import { ImageConversationContextProvider } from './generation/image-conversation-context-provider';
 import { registerImageExplanationHandlers, removeImageExplanationHandlers } from './ipc';
 import {
   IMAGE_EXPLANATION_ATTACHMENT_TYPE,
@@ -28,8 +27,10 @@ export const imageExplanationMainFeature = Object.freeze({
       isMetadata: isImageExplanationMetadata,
     });
   },
-  registerGenerationTaskDefinitions({ definitions, attachments }): void {
-    definitions.register(createImageExplanationTaskDefinitionV1(new ImageExplanationProcessor(attachments)));
+  registerGeneration({ conversationContexts, attachments }): void {
+    conversationContexts.register(
+      new ImageConversationContextProvider(attachments),
+    );
   },
   start({ attachments, attachmentFiles, generationTasks, assets }) {
     const service = new ImageExplanationService(attachments, attachmentFiles, generationTasks, assets);

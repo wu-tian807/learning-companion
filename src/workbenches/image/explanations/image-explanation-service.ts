@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { AssetLookup } from '../../../main/assets/asset-database';
 import type { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
 import type {
@@ -15,14 +17,24 @@ import type {
 } from '../../../main/generation/generation-task-service';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
-  ImageExplanationInstruction,
-  imageExplanationInstructionFactory,
-} from './generation/instruction';
+  WorkbenchConversationInstruction,
+  workbenchConversationInstructionFactory,
+} from '../../../main/conversation/workbench-conversation-instruction';
+import {
+  WORKBENCH_CONVERSATION_SOURCE_SLOT,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+  isWorkbenchConversationTaskResult,
+} from '../../../shared/workbench-conversation';
+import {
+  createImageConversationContext,
+  IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+  isImageConversationContext,
+} from './image-conversation-context';
 import {
   IMAGE_EXPLANATION_ATTACHMENT_TYPE,
   IMAGE_EXPLANATION_ATTACHMENT_VERSION,
-  IMAGE_EXPLANATION_TASK_DEFINITION_ID,
-  IMAGE_EXPLANATION_TASK_DEFINITION_VERSION,
+  IMAGE_DEFAULT_EXPLANATION_QUESTION,
   isImageExplanationMetadata,
   isImageRegionTarget,
   type CreateImageExplanationRequest,
@@ -78,8 +90,10 @@ function sameTarget(left: ImageExplanationView['target'], right: ImageExplanatio
 }
 
 function resultAttachmentId(value: unknown): string | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const attachmentId = Reflect.get(value, 'attachmentId');
+  if (!isWorkbenchConversationTaskResult(value)) return undefined;
+  const contextResult = value.contextResult;
+  if (typeof contextResult !== 'object' || contextResult === null || Array.isArray(contextResult)) return undefined;
+  const attachmentId = Reflect.get(contextResult, 'attachmentId');
   return typeof attachmentId === 'string' && attachmentId.trim() ? attachmentId : undefined;
 }
 
@@ -152,17 +166,27 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
         sameTarget(view.target, request.target));
     if (existingTask) return existingTask;
 
-    const instruction = new ImageExplanationInstruction({
+    const instruction = new WorkbenchConversationInstruction({
+      contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: request.assetId,
-      sourceRevision: request.sourceRevision,
-      target: request.target,
+      conversationId: randomUUID(),
+      question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
+      context: createImageConversationContext(
+        request.target,
+        request.sourceRevision,
+      ),
+      commitAnswer: true,
     });
     const task = this.generationTasks.start({
       projectId: request.projectId,
-      definitionId: IMAGE_EXPLANATION_TASK_DEFINITION_ID,
-      definitionVersion: IMAGE_EXPLANATION_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
-      assetReferences: { image: [{ assetId: request.assetId }] },
+      assetReferences: {
+        [WORKBENCH_CONVERSATION_SOURCE_SLOT]: [
+          { assetId: request.assetId },
+        ],
+      },
     });
     const view = this.toTaskView(task);
     if (!view) throw new AppError('DATA_INTEGRITY_ERROR');
@@ -229,26 +253,29 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     return attachment;
   }
 
-  private taskInstruction(snapshot: GenerationTaskSnapshot): ImageExplanationInstruction | undefined {
-    if (snapshot.definitionId !== IMAGE_EXPLANATION_TASK_DEFINITION_ID || snapshot.definitionVersion !== IMAGE_EXPLANATION_TASK_DEFINITION_VERSION) return undefined;
-    const parsed = imageExplanationInstructionFactory.parse(snapshot.instruction);
-    return parsed.ok ? parsed.value : undefined;
+  private taskInstruction(snapshot: GenerationTaskSnapshot): WorkbenchConversationInstruction | undefined {
+    if (snapshot.definitionId !== WORKBENCH_CONVERSATION_TASK_DEFINITION_ID || snapshot.definitionVersion !== WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION) return undefined;
+    const parsed = workbenchConversationInstructionFactory.parse(snapshot.instruction);
+    return parsed.ok && parsed.value.contextProviderId === IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID
+      ? parsed.value
+      : undefined;
   }
 
   private toTaskView(snapshot: GenerationTaskSnapshot): ImageExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
-    if (!instruction?.saveAsNote || !instruction.target) return undefined;
+    const conversationContext = instruction?.context;
+    if (!instruction?.commitAnswer || !isImageConversationContext(conversationContext)) return undefined;
     const status = new GenerationTask(snapshot).getStatus();
     if (status === 'completed' || status === 'cancelled') return undefined;
     const sourceRevision =
-      instruction.sourceRevision ??
-      snapshot.prepared?.assetReferences.image?.[0]?.contentRevision;
+      conversationContext.sourceRevision ??
+      snapshot.prepared?.assetReferences.source?.[0]?.contentRevision;
     return Object.freeze({
       kind: 'task',
       id: snapshot.id,
       projectId: snapshot.projectId,
       assetId: instruction.assetId,
-      target: instruction.target,
+      target: conversationContext.target,
       status: status === 'failed' ? 'failed' : 'pending',
       ...(sourceRevision ? { sourceRevision } : {}),
       ...(snapshot.failure ? { failureMessage: snapshot.failure.message } : {}),
@@ -290,7 +317,8 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
       return;
     }
     const instruction = this.taskInstruction(event.snapshot);
-    if (!instruction?.saveAsNote || !instruction.target) return;
+    const conversationContext = instruction?.context;
+    if (!instruction?.commitAnswer || !isImageConversationContext(conversationContext)) return;
     const location = { projectId: event.snapshot.projectId, assetId: instruction.assetId };
     this.taskLocations.set(event.snapshot.id, location);
     if (event.type === 'task-completed') {

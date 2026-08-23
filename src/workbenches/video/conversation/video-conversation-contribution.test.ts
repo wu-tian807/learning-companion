@@ -1,0 +1,199 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import {
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../../shared/workbench-conversation';
+import { createVideoFrameRegionTarget } from '../shared';
+import {
+  createVideoConversationContribution,
+  createVideoConversationHistoryStore,
+  createVideoFrameConversationLaunch,
+} from './video-conversation-contribution';
+import {
+  createVideoConversationContext,
+  shouldReleaseVideoConversationContext,
+  VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
+} from './video-conversation-context';
+
+const target = createVideoFrameRegionTarget({
+  timeSeconds: 12.345,
+  x: 0.1,
+  y: 0.2,
+  width: 0.3,
+  height: 0.4,
+  sourceWidth: 1920,
+  sourceHeight: 1080,
+});
+
+function contribution(sourceRevision = '100', revealContext = vi.fn()) {
+  return createVideoConversationContribution({
+    sourceRevision,
+    historyStore: {
+      list: async () => [],
+      save: async (record) => [record],
+      remove: async () => [],
+    },
+    revealContext,
+  });
+}
+
+describe('video conversation contribution', () => {
+  it('uses the shared conversation task without copying the full video', () => {
+    const context = createVideoConversationContext(target, '100');
+    expect(
+      createWorkbenchConversationTaskRequest(contribution(), {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-1',
+        question: '画面中的公式是什么意思？',
+        context,
+        generateTitle: true,
+      }),
+    ).toMatchObject({
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+      instruction: {
+        contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
+        conversationId: 'conversation-1',
+        question: '画面中的公式是什么意思？',
+        context,
+        generateTitle: true,
+      },
+      assetReferences: {},
+    });
+  });
+
+  it('attaches the selected frame without injecting or submitting a default question', () => {
+    const context = createVideoConversationContext(target, '100');
+
+    const launch = createVideoFrameConversationLaunch(context);
+
+    expect(launch).toEqual({ context });
+    expect(launch).not.toHaveProperty('question');
+    expect(launch).not.toHaveProperty('submit');
+  });
+
+  it('requires a current-revision frame only for the initial turn', () => {
+    expect(() =>
+      createWorkbenchConversationTaskRequest(contribution(), {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-1',
+        question: '解释这里',
+        generateTitle: true,
+      }),
+    ).toThrow('请先在视频画面上按住右键并框选一个区域');
+
+    expect(() =>
+      createWorkbenchConversationTaskRequest(contribution(), {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-1',
+        question: '解释这里',
+        context: createVideoConversationContext(target, '101'),
+        generateTitle: true,
+      }),
+    ).toThrow('当前聊天上下文无效');
+
+    expect(
+      createWorkbenchConversationTaskRequest(contribution(), {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-1',
+        question: '刚才框内的文字是什么意思？',
+        generateTitle: false,
+      }).instruction,
+    ).not.toHaveProperty('context');
+  });
+
+  it('describes and reveals the exact time-bound frame region', async () => {
+    const revealContext = vi.fn();
+    const context = createVideoConversationContext(target, '100');
+    const value = contribution('100', revealContext);
+    expect(value.describeContext?.(context)).toEqual({
+      label: '视频 12.3 秒',
+      detail: '左侧 10% · 顶部 20% · 30% × 40%',
+    });
+    await value.revealContext?.(context);
+    expect(revealContext).toHaveBeenCalledWith(context);
+  });
+
+  it('releases only the Video-owned context through the shared lifecycle hook', () => {
+    const onContextReleased = vi.fn();
+    const context = createVideoConversationContext(target, '100');
+    const value = createVideoConversationContribution({
+      sourceRevision: '100',
+      historyStore: {
+        list: async () => [],
+        save: async (record) => [record],
+        remove: async () => [],
+      },
+      revealContext: vi.fn(),
+      onContextReleased,
+    });
+    value.onContextReleased?.(context);
+    value.onContextReleased?.(undefined);
+    expect(onContextReleased).toHaveBeenNthCalledWith(1, context);
+    expect(onContextReleased).toHaveBeenNthCalledWith(2, undefined);
+  });
+
+  it('does not let a stale task release a newer frame selection', () => {
+    const oldContext = createVideoConversationContext(target, '100');
+    const newContext = createVideoConversationContext(
+      createVideoFrameRegionTarget({
+        timeSeconds: 20,
+        x: 0.1,
+        y: 0.2,
+        width: 0.3,
+        height: 0.4,
+        sourceWidth: 1920,
+        sourceHeight: 1080,
+      }),
+      '100',
+    );
+    expect(
+      shouldReleaseVideoConversationContext(newContext, oldContext),
+    ).toBe(false);
+    expect(
+      shouldReleaseVideoConversationContext(newContext, newContext),
+    ).toBe(true);
+    expect(
+      shouldReleaseVideoConversationContext(newContext, undefined),
+    ).toBe(true);
+  });
+
+  it('isolates persisted conversations by video source revision', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    try {
+      const oldStore = createVideoConversationHistoryStore(
+        'project-1',
+        'asset-1',
+        'video.frame-conversation',
+        '100',
+      );
+      const newStore = createVideoConversationHistoryStore(
+        'project-1',
+        'asset-1',
+        'video.frame-conversation',
+        '101',
+      );
+      await oldStore.save({
+        id: 'conversation-1',
+        title: '旧视频画面',
+        messages: [],
+        createdTime: 1,
+        updatedTime: 1,
+      });
+      await expect(newStore.list()).resolves.toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

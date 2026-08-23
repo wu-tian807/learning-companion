@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   GenerationTaskView,
 } from '../../shared/generation-tasks';
+import { isWorkbenchConversationTaskResult } from '../../shared/workbench-conversation';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
@@ -15,6 +16,7 @@ import {
   conversationTaskClient,
   type ConversationTaskClient,
 } from './conversation-task-client';
+import { createWorkbenchConversationTaskRequest } from './conversation-task-request';
 import {
   activityFromExecutionEvent,
   conversationContextsEqual,
@@ -205,7 +207,13 @@ export function useConversationController({
     if (!taskId || task.id !== taskId || !messageId) return false;
 
     if (task.status === 'completed') {
-      const result = contributionRef.current.readTaskResult(task);
+      const result = isWorkbenchConversationTaskResult(task.result)
+        ? {
+            answer: task.result.answer,
+            ...(task.result.title ? { title: task.result.title } : {}),
+            modelInfo: `${task.result.providerId}/${task.result.modelId}`,
+          }
+        : undefined;
       if (!result?.answer.trim()) {
         finishTask();
         setError({ message: 'AI 任务已完成，但最终回答无效，请重试。', retryTaskId: task.id });
@@ -427,7 +435,7 @@ export function useConversationController({
 
     let request;
     try {
-      request = contribution.createTaskRequest({
+      request = createWorkbenchConversationTaskRequest(contribution, {
         projectId,
         assetId,
         conversationId: current.id,

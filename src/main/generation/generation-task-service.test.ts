@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTextAgentUserMessage } from './contracts/agent-message';
 import type { GenerationTaskDatabaseApi } from './generation-task-database';
 import { GenerationTaskDefinitionRegistry } from './generation-task-definition-registry';
-import type { GenerationTaskSnapshot } from './generation-task';
+import {
+  GenerationTask,
+  type GenerationTaskSnapshot,
+} from './generation-task';
 import { GenerationAgentExecutor } from './generation-agent-executor';
 import { GenerationTaskExecution } from './generation-task-execution';
 import { GenerationTaskService } from './generation-task-service';
@@ -79,6 +82,67 @@ afterEach(async () => {
 });
 
 describe('GenerationTaskService', () => {
+  it('marks a recovered task as failed when its retired definition no longer exists', async () => {
+    const database = new MemoryGenerationTaskDatabase();
+    database.create(
+      GenerationTask.create({
+        id: 'retired-task',
+        projectId: 'project-1',
+        definitionId: 'retired.workbench-chat',
+        definitionVersion: 1,
+        instruction: {},
+        assetReferences: {},
+        createdTime: 1,
+      }).getSnapshot(),
+    );
+    const service = new GenerationTaskService(
+      database,
+      new GenerationTaskDefinitionRegistry(),
+      new GenerationTaskExecution(
+        database,
+        {
+          prepare: vi.fn(),
+          restore: vi.fn(),
+        } as never,
+        new GenerationAgentExecutor(),
+      ),
+      {
+        get: () => ({
+          id: 'project-1',
+          name: 'Project',
+          icon: 'P',
+          createdTime: 1,
+          pinned: false,
+          workspacePath: '/tmp',
+        }),
+      },
+      {} as never,
+      { now: () => 2 },
+    );
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    try {
+      service.loadFromProject('project-1');
+      await vi.waitFor(() =>
+        expect(database.get('retired-task')?.failure).toMatchObject({
+          phase: 'prepare',
+          code: 'INVALID_EXTENSION_DEFINITION',
+        }),
+      );
+      expect(service.list()).toEqual([
+        expect.objectContaining({
+          id: 'retired-task',
+          failure: expect.objectContaining({
+            code: 'INVALID_EXTENSION_DEFINITION',
+          }),
+        }),
+      ]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('uses an Agent-authored workspace file and records actual usage', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'generation-service-'));
     temporaryDirectories.push(directory);

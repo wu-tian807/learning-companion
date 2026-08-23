@@ -23,6 +23,7 @@ const actions: ConversationControllerActions = {
 const contribution: WorkbenchConversationContribution = {
   id: 'pdf.question',
   workbenchId: 'pdf',
+  contextProviderId: 'pdf.context',
   title: '资料问答',
   emptyLabel: '选择内容后提问',
   historyStore: {
@@ -30,14 +31,6 @@ const contribution: WorkbenchConversationContribution = {
     save: async (record) => [record],
     remove: async () => [],
   },
-  createTaskRequest: () => ({
-    projectId: 'project',
-    definitionId: 'question',
-    definitionVersion: 1,
-    instruction: {},
-    assetReferences: {},
-  }),
-  readTaskResult: () => undefined,
   describeContext: () => ({ label: '第 2 页', detail: '框选内容' }),
   revealContext: vi.fn(),
   attachAnswer: vi.fn(),

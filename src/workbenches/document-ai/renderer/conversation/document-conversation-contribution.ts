@@ -8,57 +8,20 @@ import {
 } from '../../../../renderer/conversation/conversation-history-store';
 import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 import {
-  DOCUMENT_QUESTION_INSTRUCTION_FORMAT,
-  DOCUMENT_QUESTION_INSTRUCTION_VERSION,
-  DOCUMENT_QUESTION_TASK_DEFINITION_ID,
-  DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
-} from '../../../../shared/generation-definitions';
-import { isAssetTarget, type AssetTarget } from '../../../../shared/workbench/anchor';
-import type { JsonValue } from '../../../../shared/workbench/protocol';
-import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
 } from '../../ai-annotation-attachment';
-import { isDocumentQuestionTaskResult } from '../../shared';
+import {
+  DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
+  isDocumentConversationContext,
+  type DocumentConversationContext,
+} from '../../document-conversation-context';
 
-export type DocumentConversationContext = JsonValue & {
-  readonly target: AssetTarget;
-  readonly pageNumber?: number;
-  readonly selectedText?: string;
-  readonly previewDataUrl?: string;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function isDocumentConversationContext(
-  value: unknown,
-): value is DocumentConversationContext {
-  if (!isRecord(value) || !isAssetTarget(value.target)) return false;
-  return (
-    (value.pageNumber === undefined ||
-      (Number.isSafeInteger(value.pageNumber) && Number(value.pageNumber) > 0)) &&
-    (value.selectedText === undefined || typeof value.selectedText === 'string') &&
-    (value.previewDataUrl === undefined ||
-      (typeof value.previewDataUrl === 'string' &&
-        /^data:image\/(?:png|jpe?g);base64,/u.test(value.previewDataUrl)))
-  );
-}
-
-export function createDocumentConversationContext(input: {
-  readonly target: AssetTarget;
-  readonly pageNumber?: number;
-  readonly selectedText?: string;
-  readonly previewDataUrl?: string;
-}): DocumentConversationContext {
-  return Object.freeze({
-    target: input.target,
-    ...(input.pageNumber === undefined ? {} : { pageNumber: input.pageNumber }),
-    ...(input.selectedText?.trim() ? { selectedText: input.selectedText.trim() } : {}),
-    ...(input.previewDataUrl ? { previewDataUrl: input.previewDataUrl } : {}),
-  }) as DocumentConversationContext;
-}
+export {
+  createDocumentConversationContext,
+  isDocumentConversationContext,
+  type DocumentConversationContext,
+} from '../../document-conversation-context';
 
 export function createDocumentConversationHistoryStore(
   projectId: string,
@@ -123,42 +86,15 @@ export function createDocumentConversationContribution(input: {
   const contribution: WorkbenchConversationContribution = {
     id: input.contributionId,
     workbenchId: input.workbenchId,
+    contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
+    includeSourceAssetReference: true,
     title: input.title ?? '资料问答',
     emptyLabel:
       input.emptyLabel ??
       '选择资料中的内容后开始提问，也可以直接针对整份资料提问。',
     inputPlaceholder: '输入问题…（Enter 发送 / Shift+Enter 换行）',
     historyStore: input.historyStore,
-    createTaskRequest(taskInput) {
-      const context = isDocumentConversationContext(taskInput.context)
-        ? taskInput.context
-        : undefined;
-      return {
-        projectId: taskInput.projectId,
-        definitionId: DOCUMENT_QUESTION_TASK_DEFINITION_ID,
-        definitionVersion: DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
-        instruction: {
-          format: DOCUMENT_QUESTION_INSTRUCTION_FORMAT,
-          version: DOCUMENT_QUESTION_INSTRUCTION_VERSION,
-          question: taskInput.question,
-          conversationId: taskInput.conversationId,
-          target: (context?.target ?? { scope: 'asset' }) as JsonValue,
-          ...(context?.selectedText ? { selectedText: context.selectedText } : {}),
-          ...(taskInput.generateTitle ? { generateTitle: true } : {}),
-        },
-        assetReferences: {
-          document: [{ assetId: taskInput.assetId }],
-        },
-      };
-    },
-    readTaskResult(task) {
-      if (!isDocumentQuestionTaskResult(task.result)) return undefined;
-      return {
-        answer: task.result.answer,
-        ...(task.result.title ? { title: task.result.title } : {}),
-        modelInfo: `${task.result.providerId}/${task.result.modelId}`,
-      };
-    },
+    isContext: isDocumentConversationContext,
     describeContext(context) {
       if (!isDocumentConversationContext(context)) {
         return { label: input.contextLabel ?? '资料内容' };
