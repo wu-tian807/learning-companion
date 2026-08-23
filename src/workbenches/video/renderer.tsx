@@ -33,21 +33,14 @@ import {
   shouldReleaseVideoConversationContext,
   type VideoConversationContext,
 } from './conversation/video-conversation-context';
-import { VideoExplanationIndex, orderVideoExplanations } from './explanations/video-explanation-index';
+import {
+  VideoExplanationIndex,
+} from './explanations/video-explanation-index';
 import { VideoExplanationMarkerOverlay } from './explanations/video-explanation-marker-overlay';
 import { VideoExplanationPanel } from './explanations/video-explanation-panel';
-import {
-  projectVideoExplanationGenerationEvent,
-  removeVideoExplanationRuntime,
-  type VideoExplanationRuntimeMap,
-} from './explanations/video-explanation-runtime';
-import {
-  type VideoExplanationView,
-} from './explanations/shared';
-import {
-  isVideoExplanationForRevision,
-  videoExplanationVisibleAtTime,
-} from './explanations/video-explanation-revision';
+import type { VideoExplanationView } from './explanations/shared';
+import { videoExplanationVisibleAtTime } from './explanations/video-explanation-revision';
+import { useVideoExplanations } from './explanations/use-video-explanations';
 import {
   cloneVideoViewState,
   createVideoRetrySubtitlesCommand,
@@ -273,30 +266,6 @@ export function VideoWorkbenchView({
   const [currentTime, setCurrentTime] = useState(
     payload?.viewState.currentTime ?? 0,
   );
-  const [explanations, setExplanations] = useState<VideoExplanationView[]>([]);
-  const [activeExplanationId, setActiveExplanationId] = useState<string>();
-  const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
-  const [explanationMarkersVisible, setExplanationMarkersVisible] =
-    useState(true);
-  const explanationTaskIdsRef = useRef(new Set<string>());
-  const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
-    useState<VideoExplanationRuntimeMap>({});
-
-  const registerExplanationTask = useCallback(
-    (explanation: VideoExplanationView) => {
-      if (explanation.kind === 'task') {
-        explanationTaskIdsRef.current.add(explanation.id);
-      }
-    },
-    [],
-  );
-  const clearExplanationRuntime = useCallback((taskId: string) => {
-    explanationTaskIdsRef.current.delete(taskId);
-    setExplanationRuntimeByTaskId((current) =>
-      removeVideoExplanationRuntime(current, taskId),
-    );
-  }, []);
-
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
       const message = userMessageFromError(error, fallback);
@@ -310,7 +279,7 @@ export function VideoWorkbenchView({
   );
 
   const conversationContributionId = `${videoWorkbenchManifest.id}.frame-conversation`;
-  const sourceRevision = String(asset.updatedTime);
+  const sourceRevision = payload?.sourceRevision ?? '';
   const conversationOwnerId = `${videoWorkbenchManifest.id}:${bootstrap.sessionId}:${sourceRevision}.conversation`;
   const conversationHistoryStore = useMemo(
     () =>
@@ -341,6 +310,27 @@ export function VideoWorkbenchView({
       setDraftSelection(undefined);
     },
     [],
+  );
+  const revealExplanationTarget = useCallback(
+    (explanation: VideoExplanationView) => {
+      const video = videoRef.current;
+      if (!video || !hasLoadedVideoMetadata(video)) {
+        reportError(new Error('视频尚未就绪'), '暂时无法定位这条视频标注。');
+        return false;
+      }
+      video.pause();
+      const targetTime = Math.min(
+        explanation.target.anchorPayload.timeSeconds,
+        Number.isFinite(video.duration)
+          ? Math.max(0, video.duration)
+          : explanation.target.anchorPayload.timeSeconds,
+      );
+      video.currentTime = targetTime;
+      setCurrentTime(targetTime);
+      releaseConversationContext(undefined);
+      return true;
+    },
+    [releaseConversationContext, reportError],
   );
   const revealConversationContext = useCallback(
     (context: VideoConversationContext) => {
@@ -392,75 +382,30 @@ export function VideoWorkbenchView({
     conversationSnapshot.active?.ownerId === conversationOwnerId &&
     conversationSnapshot.busy;
 
-  const retryExplanation = useCallback(
-    async (explanation: VideoExplanationView) => {
-      setExplanationRuntimeByTaskId((current) =>
-        removeVideoExplanationRuntime(current, explanation.id),
-      );
-      try {
-        const retried = await window.learningCompanion.retryVideoExplanation({
-          projectId: asset.projectId,
-          assetId: asset.id,
-          kind: explanation.kind,
-          explanationId: explanation.id,
-        });
-        setExplanations((current) => [
-          ...current.filter((item) => item.id !== retried.id),
-          retried,
-        ]);
-        registerExplanationTask(retried);
-      } catch (error) {
-        reportError(error, '无法重试视频 AI 解释。');
-      }
-    },
-    [asset.id, asset.projectId, registerExplanationTask, reportError],
-  );
-
-  const deleteExplanation = useCallback(
-    async (explanation: VideoExplanationView) => {
-      try {
-        await window.learningCompanion.deleteVideoExplanation({
-          projectId: asset.projectId,
-          assetId: asset.id,
-          kind: explanation.kind,
-          explanationId: explanation.id,
-        });
-        clearExplanationRuntime(explanation.id);
-        setExplanations((current) =>
-          current.filter((item) => item.id !== explanation.id),
-        );
-        setActiveExplanationId((current) =>
-          current === explanation.id ? undefined : current,
-        );
-      } catch (error) {
-        reportError(error, '无法删除视频 AI 解释。');
-      }
-    },
-    [asset.id, asset.projectId, clearExplanationRuntime, reportError],
-  );
-
-  const revealExplanation = useCallback(
-    (explanation: VideoExplanationView) => {
-      const video = videoRef.current;
-      if (!video || !hasLoadedVideoMetadata(video)) {
-        reportError(new Error('视频尚未就绪'), '暂时无法定位这条视频标注。');
-        return;
-      }
-      video.pause();
-      const targetTime = Math.min(
-        explanation.target.anchorPayload.timeSeconds,
-        Number.isFinite(video.duration)
-          ? Math.max(0, video.duration)
-          : explanation.target.anchorPayload.timeSeconds,
-      );
-      video.currentTime = targetTime;
-      setCurrentTime(targetTime);
-      releaseConversationContext(undefined);
-      setActiveExplanationId(explanation.id);
-      setExplanationIndexOpen(false);
-    },
-    [releaseConversationContext, reportError],
-  );
+  const {
+    items: explanations,
+    ordered: orderedExplanations,
+    active: activeExplanation,
+    indexOpen: explanationIndexOpen,
+    markersVisible: explanationMarkersVisible,
+    markers: visibleExplanationMarkers,
+    runtimeByTaskId: explanationRuntimeByTaskId,
+    retry: retryExplanation,
+    remove: deleteExplanation,
+    reveal: revealExplanation,
+    toggleIndex: toggleExplanationIndex,
+    toggleMarkers: toggleExplanationMarkers,
+    closeIndex: closeExplanationIndex,
+    closeActive: closeActiveExplanation,
+  } = useVideoExplanations({
+    enabled: payload !== undefined,
+    projectId: asset.projectId,
+    assetId: asset.id,
+    sourceRevision,
+    currentTime,
+    reportError,
+    revealTarget: revealExplanationTarget,
+  });
 
   useEffect(() => {
     if (!contextMenuOpen || !selectedConversationContext) return;
@@ -500,124 +445,6 @@ export function VideoWorkbenchView({
     releaseConversationContext,
     selectedConversationContext,
   ]);
-
-  useEffect(() => {
-    let active = true;
-    const removeSubscription =
-      window.learningCompanion.onVideoExplanationChanged((event) => {
-        if (event.type === 'changed') {
-          if (
-            event.explanation.projectId !== asset.projectId ||
-            event.explanation.assetId !== asset.id
-          ) {
-            return;
-          }
-          if (
-            !isVideoExplanationForRevision(
-              event.explanation,
-              sourceRevision,
-            )
-          ) {
-            setExplanations((current) =>
-              current.filter((item) => item.id !== event.explanation.id),
-            );
-            return;
-          }
-          registerExplanationTask(event.explanation);
-          setExplanations((current) => [
-            ...current.filter((item) => item.id !== event.explanation.id),
-            event.explanation,
-          ]);
-          return;
-        }
-        if (event.type === 'replaced') {
-          if (
-            event.projectId !== asset.projectId ||
-            event.assetId !== asset.id
-          ) {
-            return;
-          }
-          clearExplanationRuntime(event.previousExplanationId);
-          const isCurrent = isVideoExplanationForRevision(
-            event.explanation,
-            sourceRevision,
-          );
-          setExplanations((current) => [
-            ...current.filter(
-              (item) =>
-                item.id !== event.previousExplanationId &&
-                item.id !== event.explanation.id,
-            ),
-            ...(isCurrent ? [event.explanation] : []),
-          ]);
-          setActiveExplanationId((current) =>
-            current === event.previousExplanationId
-              ? isCurrent
-                ? event.explanation.id
-                : undefined
-              : current,
-          );
-          return;
-        }
-        if (event.projectId !== asset.projectId || event.assetId !== asset.id) {
-          return;
-        }
-        clearExplanationRuntime(event.explanationId);
-        setExplanations((current) =>
-          current.filter((item) => item.id !== event.explanationId),
-        );
-        setActiveExplanationId((current) =>
-          current === event.explanationId ? undefined : current,
-        );
-      });
-
-    void window.learningCompanion
-      .listVideoExplanations({
-        projectId: asset.projectId,
-        assetId: asset.id,
-        sourceRevision,
-      })
-      .then((items) => {
-        if (!active) return;
-        for (const item of items) registerExplanationTask(item);
-        setExplanations([...items]);
-      })
-      .catch((error: unknown) => {
-        if (active) reportError(error, '无法加载视频的 AI 解释。');
-      });
-
-    return () => {
-      active = false;
-      removeSubscription();
-      explanationTaskIdsRef.current.clear();
-      setExplanationRuntimeByTaskId({});
-      setExplanations([]);
-      setActiveExplanationId(undefined);
-      setExplanationIndexOpen(false);
-    };
-  }, [
-    asset.id,
-    asset.projectId,
-    clearExplanationRuntime,
-    registerExplanationTask,
-    reportError,
-    sourceRevision,
-  ]);
-
-  useEffect(
-    () =>
-      window.learningCompanion.onGenerationTaskChanged((event) => {
-        setExplanationRuntimeByTaskId((current) =>
-          projectVideoExplanationGenerationEvent(
-            current,
-            event,
-            asset.projectId,
-            explanationTaskIdsRef.current,
-          ),
-        );
-      }),
-    [asset.projectId],
-  );
 
   const persistViewState = useCallback(
     async (state: VideoWorkbenchViewState) => {
@@ -853,36 +680,6 @@ export function VideoWorkbenchView({
       ...createVideoFrameConversationLaunch(context),
     });
   }, [conversationBusy, conversationOwnerId, conversationRuntime, runtime]);
-  const toggleExplanationIndex = useCallback(() => {
-    setActiveExplanationId(undefined);
-    setExplanationIndexOpen((current) => !current);
-  }, []);
-  const toggleExplanationMarkers = useCallback(() => {
-    setExplanationMarkersVisible((current) => !current);
-  }, []);
-  const orderedExplanations = useMemo(
-    () => orderVideoExplanations(explanations),
-    [explanations],
-  );
-  const activeExplanation = explanations.find(
-    (item) => item.id === activeExplanationId,
-  );
-  const visibleExplanationMarkers = useMemo(
-    () =>
-      orderedExplanations
-        .map((explanation, index) => ({
-          explanation,
-          number: index + 1,
-        }))
-        .filter(({ explanation }) =>
-          videoExplanationVisibleAtTime(explanation, currentTime),
-        ),
-    [currentTime, orderedExplanations],
-  );
-  useEffect(() => {
-    if (explanations.length === 0) setExplanationMarkersVisible(true);
-  }, [explanations.length]);
-
   const rendererActions = useMemo(
     () =>
       createVideoRendererActions({
@@ -1062,10 +859,10 @@ export function VideoWorkbenchView({
       {explanationIndexOpen && (
         <VideoExplanationIndex
           explanations={orderedExplanations}
-          activeExplanationId={activeExplanationId}
+          activeExplanationId={activeExplanation?.id}
           onActivate={revealExplanation}
           onDelete={(explanation) => void deleteExplanation(explanation)}
-          onClose={() => setExplanationIndexOpen(false)}
+          onClose={closeExplanationIndex}
         />
       )}
 
@@ -1248,13 +1045,13 @@ export function VideoWorkbenchView({
               ? explanationRuntimeByTaskId[activeExplanation.id]
               : undefined
           }
-          onClose={() => setActiveExplanationId(undefined)}
+          onClose={closeActiveExplanation}
           onRetry={() => void retryExplanation(activeExplanation)}
           onDelete={() => void deleteExplanation(activeExplanation)}
           onContinueQuestion={
             activeExplanation.status === 'completed'
               ? () => {
-                  setActiveExplanationId(undefined);
+                  closeActiveExplanation();
                   conversationRuntime.open({
                     ownerId: conversationOwnerId,
                     context: createVideoConversationContext(

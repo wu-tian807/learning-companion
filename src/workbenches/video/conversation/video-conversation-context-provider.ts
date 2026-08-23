@@ -28,6 +28,7 @@ import {
   sameVideoExplanationTarget,
 } from '../explanations/shared';
 import { isVideoFrameRegionTarget } from '../shared';
+import { videoContentRevision } from '../video-content-revision';
 
 const FRAME_EXTRACTION_TIMEOUT_MS = 60_000;
 
@@ -81,20 +82,16 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     context.reportStatus('正在截取选中的视频画面…');
     const resolved = await this.assets.resolveContent(asset.id);
     try {
-      const current = this.assets.get(asset.id);
-      if (
-        !current ||
-        String(current.updatedTime) !== selection.sourceRevision
-      ) {
-        throw new AppError('CONTENT_CHANGED_EXTERNALLY', {
-          cause: new Error('视频内容在选择画面后已更新'),
-        });
-      }
       if (
         resolved.contentStatus.availability !== 'available' ||
         !resolved.location
       ) {
         throw new AppError('ASSET_UNAVAILABLE');
+      }
+      if (videoContentRevision(resolved) !== selection.sourceRevision) {
+        throw new AppError('CONTENT_CHANGED_EXTERNALLY', {
+          cause: new Error('视频内容在选择画面后已更新'),
+        });
       }
       const project = this.projects.get(context.projectId);
       if (!project) throw new AppError('PROJECT_NOT_FOUND');
@@ -243,50 +240,61 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     if (
       !asset ||
       asset.projectId !== context.projectId ||
-      !asset.mediaType.startsWith('video/') ||
-      String(asset.updatedTime) !== selection.sourceRevision
+      !asset.mediaType.startsWith('video/')
     ) {
-      throw new AppError('CONTENT_CHANGED_EXTERNALLY');
+      throw new AppError('ASSET_NOT_FOUND');
     }
 
-    const existing = (
-      await this.attachments.listByAsset(context.projectId, asset.id)
-    ).find(
-      (attachment) =>
-        attachment.typeId === VIDEO_EXPLANATION_ATTACHMENT_TYPE &&
-        attachment.typeVersion === VIDEO_EXPLANATION_ATTACHMENT_VERSION &&
-        isVideoFrameRegionTarget(attachment.target) &&
-        sameVideoExplanationTarget(attachment.target, selection.target) &&
-        isVideoExplanationMetadata(attachment.metadata) &&
-        attachment.metadata.sourceRevision === selection.sourceRevision &&
-        attachment.metadata.question === context.instruction.question,
-    );
-    if (existing) {
-      if (existing.content?.mediaType !== 'text/markdown') {
-        throw new AppError('DATA_INTEGRITY_ERROR');
+    const resolved = await this.assets.resolveContent(asset.id);
+    try {
+      if (
+        resolved.contentStatus.availability !== 'available' ||
+        videoContentRevision(resolved) !== selection.sourceRevision
+      ) {
+        throw new AppError('CONTENT_CHANGED_EXTERNALLY');
       }
-      return Object.freeze({ attachmentId: existing.id });
-    }
 
-    context.signal?.throwIfAborted();
-    const attachment = await this.attachments.createWithContent({
-      projectId: context.projectId,
-      assetId: asset.id,
-      typeId: VIDEO_EXPLANATION_ATTACHMENT_TYPE,
-      typeVersion: VIDEO_EXPLANATION_ATTACHMENT_VERSION,
-      target: selection.target,
-      metadata: {
-        format: 'learning-companion/video-explanation',
-        version: 1,
-        sourceRevision: selection.sourceRevision,
-        question: context.instruction.question,
-      },
-      content: {
-        fileName: 'answer.md',
-        mediaType: 'text/markdown',
-        data: `${answer.answer}\n`,
-      },
-    });
-    return Object.freeze({ attachmentId: attachment.id });
+      const existing = (
+        await this.attachments.listByAsset(context.projectId, asset.id)
+      ).find(
+        (attachment) =>
+          attachment.typeId === VIDEO_EXPLANATION_ATTACHMENT_TYPE &&
+          attachment.typeVersion === VIDEO_EXPLANATION_ATTACHMENT_VERSION &&
+          isVideoFrameRegionTarget(attachment.target) &&
+          sameVideoExplanationTarget(attachment.target, selection.target) &&
+          isVideoExplanationMetadata(attachment.metadata) &&
+          attachment.metadata.sourceRevision === selection.sourceRevision &&
+          attachment.metadata.question === context.instruction.question,
+      );
+      if (existing) {
+        if (existing.content?.mediaType !== 'text/markdown') {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+        return Object.freeze({ attachmentId: existing.id });
+      }
+
+      context.signal?.throwIfAborted();
+      const attachment = await this.attachments.createWithContent({
+        projectId: context.projectId,
+        assetId: asset.id,
+        typeId: VIDEO_EXPLANATION_ATTACHMENT_TYPE,
+        typeVersion: VIDEO_EXPLANATION_ATTACHMENT_VERSION,
+        target: selection.target,
+        metadata: {
+          format: 'learning-companion/video-explanation',
+          version: 1,
+          sourceRevision: selection.sourceRevision,
+          question: context.instruction.question,
+        },
+        content: {
+          fileName: 'answer.md',
+          mediaType: 'text/markdown',
+          data: `${answer.answer}\n`,
+        },
+      });
+      return Object.freeze({ attachmentId: attachment.id });
+    } finally {
+      await resolved.handle?.close();
+    }
   }
 }

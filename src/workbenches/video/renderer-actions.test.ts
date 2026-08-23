@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { WorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime';
 import { createVideoRendererActions } from './renderer-actions';
+import { VIDEO_WORKBENCH_ID, videoWorkbenchManifest } from './shared';
 
 function createActions(input: { readonly ready?: boolean; readonly count?: number } = {}) {
   return createVideoRendererActions({
@@ -18,6 +20,24 @@ function createActions(input: { readonly ready?: boolean; readonly count?: numbe
 }
 
 describe('video renderer annotation actions', () => {
+  it('registers its ready-state header controls against the declared Video facilities', () => {
+    const runtime = new WorkbenchRuntime(vi.fn());
+    runtime.activate(
+      {
+        projectId: 'project-1',
+        assetId: 'video-1',
+        workbenchId: VIDEO_WORKBENCH_ID,
+        sessionId: 'session-1',
+      },
+      videoWorkbenchManifest,
+    );
+
+    expect(() =>
+      runtime.registerContributions('video.renderer', createActions({ count: 2 })),
+    ).not.toThrow();
+    expect(runtime.contributions('header')).toHaveLength(2);
+  });
+
   it('keeps region selection on the existing right-drag context action', () => {
     const bundle = createActions();
     expect(

@@ -32,6 +32,7 @@ describe('Video Workbench shared protocol', () => {
     expect(
       isVideoWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: '100',
         viewState: DEFAULT_VIDEO_VIEW_STATE,
         subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
         subtitleSnapshot: EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
@@ -39,8 +40,7 @@ describe('Video Workbench shared protocol', () => {
     ).toBe(true);
     expect(
       isVideoSaveViewStatePayload(
-        createVideoSaveViewStateCommand(DEFAULT_VIDEO_VIEW_STATE)
-          .payload,
+        createVideoSaveViewStateCommand(DEFAULT_VIDEO_VIEW_STATE).payload,
       ),
     ).toBe(true);
   });

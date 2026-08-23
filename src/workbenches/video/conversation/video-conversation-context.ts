@@ -15,13 +15,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isContentRevision(value: unknown): value is string {
+  return (
+    typeof value === 'string' && value.trim().length > 0 && value.length <= 256
+  );
+}
+
 export function isVideoConversationContext(
   value: unknown,
 ): value is VideoConversationContext {
   return (
     isRecord(value) &&
-    typeof value.sourceRevision === 'string' &&
-    /^\d{1,20}$/u.test(value.sourceRevision) &&
+    isContentRevision(value.sourceRevision) &&
     isVideoFrameRegionTarget(value.target)
   );
 }
@@ -31,7 +36,7 @@ export function createVideoConversationContext(
   sourceRevision: string,
 ): VideoConversationContext {
   const normalizedRevision = sourceRevision.trim();
-  if (!/^\d{1,20}$/u.test(normalizedRevision)) {
+  if (!isContentRevision(normalizedRevision)) {
     throw new Error('视频内容版本无效');
   }
   return Object.freeze({

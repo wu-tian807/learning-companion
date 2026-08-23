@@ -32,6 +32,7 @@ import type {
   VideoSubtitleServiceApi,
   VideoSubtitleServiceEvent,
 } from './subtitles/video-subtitle-service';
+import { videoContentRevision } from './video-content-revision';
 
 interface VideoSession {
   viewState: VideoWorkbenchViewState;
@@ -84,6 +85,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
     }
 
     const state = this.readState(context.state);
+    const sourceRevision = videoContentRevision(context.content);
     const contentUrl = this.resourceService.register(
       context.sessionId,
       handle,
@@ -112,12 +114,12 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
     return {
       payload: {
         contentUrl,
+        sourceRevision,
         viewState: cloneVideoViewState(state.viewState),
         subtitleState: { ...state.subtitleState },
-        subtitleSnapshot:
-          cloneVideoSubtitleSnapshot(
-            this.subtitles.getSnapshot(context.asset.id),
-          ),
+        subtitleSnapshot: cloneVideoSubtitleSnapshot(
+          this.subtitles.getSnapshot(context.asset.id),
+        ),
       },
     };
   }
@@ -178,9 +180,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
     }
   }
 
-  private readState(
-    record: WorkbenchStateRecord | undefined,
-  ): {
+  private readState(record: WorkbenchStateRecord | undefined): {
     readonly viewState: VideoWorkbenchViewState;
     readonly subtitleState: VideoSubtitleViewState;
   } {

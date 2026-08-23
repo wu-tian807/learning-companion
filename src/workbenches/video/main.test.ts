@@ -114,6 +114,7 @@ function createContext(
     content: {
       contentRef,
       contentStatus: createAssetContentStatus('available', 100),
+      observedUpdatedTime: 100,
       handle:
         options.handle ??
         ({
@@ -152,6 +153,7 @@ describe('VideoWorkbenchProvider', () => {
     await expect(provider.open(context)).resolves.toEqual({
       payload: {
         contentUrl: 'learning-content://resource/video',
+        sourceRevision: '100',
         viewState,
         subtitleState: { displayMode: 'off' },
         subtitleSnapshot: {
@@ -185,10 +187,7 @@ describe('VideoWorkbenchProvider', () => {
     await provider.open(context);
 
     await expect(
-      provider.command(
-        context,
-        createVideoSaveViewStateCommand(viewState),
-      ),
+      provider.command(context, createVideoSaveViewStateCommand(viewState)),
     ).resolves.toEqual({
       payload: { saved: true, savedTime: 300 },
     });
@@ -204,10 +203,7 @@ describe('VideoWorkbenchProvider', () => {
 
   it('falls back from invalid state and rejects unsupported content', async () => {
     const resources = createResources();
-    const provider = createProvider(
-      resources,
-      new MemoryStateDatabase(),
-    );
+    const provider = createProvider(resources, new MemoryStateDatabase());
     const invalidState = createContext({
       state: {
         assetId: 'asset',
@@ -227,10 +223,9 @@ describe('VideoWorkbenchProvider', () => {
       mediaType: 'audio/mp4',
     });
     await expect(
-      createProvider(
-        createResources(),
-        new MemoryStateDatabase(),
-      ).open(unsupported),
+      createProvider(createResources(), new MemoryStateDatabase()).open(
+        unsupported,
+      ),
     ).rejects.toThrow('DATA_INTEGRITY_ERROR');
   });
 
@@ -258,11 +253,11 @@ describe('VideoWorkbenchProvider', () => {
       publish: vi.fn(),
       subscribe: vi.fn(() => () => undefined),
     };
-    const provider = createProvider(
-      resources,
-      states,
-      { now: () => 400, subtitles, events },
-    );
+    const provider = createProvider(resources, states, {
+      now: () => 400,
+      subtitles,
+      events,
+    });
     const context = createContext();
 
     await provider.open(context);
@@ -280,7 +275,9 @@ describe('VideoWorkbenchProvider', () => {
       createVideoSetSubtitleModeCommand('bilingual'),
     );
     expect(subtitles.ensureTranslation).toHaveBeenCalledOnce();
-    await expect(states.get('asset', VIDEO_WORKBENCH_ID)).resolves.toMatchObject({
+    await expect(
+      states.get('asset', VIDEO_WORKBENCH_ID),
+    ).resolves.toMatchObject({
       schemaVersion: 2,
       payload: { subtitleState: { displayMode: 'bilingual' } },
     });
@@ -294,10 +291,12 @@ describe('VideoWorkbenchProvider', () => {
         totalCues: 0,
       },
     });
-    expect(events.publish).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'session',
-      type: 'video:subtitle-snapshot',
-    }));
+    expect(events.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session',
+        type: 'video:subtitle-snapshot',
+      }),
+    );
 
     await provider.close(context);
     expect(unsubscribe).toHaveBeenCalledOnce();
