@@ -160,7 +160,15 @@ Context 被删除、成功发送或聊天关闭时也会取消。旧请求晚到
 匹配，不能清掉用户随后创建的新选区。
 
 选择“解释当前画面”只附加这个画面 Context 并打开公共聊天输入框，不预填、更不会自动
-发送默认问题。用户输入的问题才会创建 GenerationTask。
+发送默认问题。用户输入的问题才会创建 GenerationTask；该首轮回答会提交为
+`video.ai-explanation` Attachment，问题、回答与 `video.frame-region` Anchor 一起保存。
+同一聊天内不再携带 Context 的后续追问不会重复创建标注。
+
+视频不复制 Image Workbench 的左键框选模式，也不增加第二个选择状态。右键拖动仍是唯一的
+画面框选入口。已完成与执行中的首轮回答通过现有 GenerationTask/Attachment 投影为编号
+标注；顶部只提供标注索引与显隐操作。点击索引会暂停视频、跳转到 Anchor 的真实
+`timeSeconds` 并恢复归一化矩形。为了避免伪造时间范围，画面标记只在对应时间点附近显示，
+不会根据文本长度猜测持续时间。
 
 截帧与图像预处理都发生在本轮任务的工作区中，并沿用现有媒体外部组件与公共视觉区域
 处理器。资源不可用、版本变化和取消都会在进入 Agent 调用前终止。
@@ -169,9 +177,10 @@ Context 被删除、成功发送或聊天关闭时也会取消。旧请求晚到
 
 Attachment 是可选结果，不是聊天执行协议：
 
-- EPUB 和 Image 的默认“解释并留下 Note”会设置 `commitAnswer`；
+- EPUB 和 Image 的默认“解释并留下 Note”会设置 `commitAnswer`；Video 的右键框选首轮
+  问答同样会提交为带真实时间点的标注；
 - Main Context Provider 在 Agent 返回有效答案后创建 Attachment；
-- 普通追问不设置 `commitAnswer`，不会额外造 Note；
+- 无 Anchor 的普通追问不设置 `commitAnswer`，不会额外造 Note；
 - Attachment 的 pending/failed/retry 状态仍由 GenerationTask 投影，不增加 Attachment Job；
 - Document 的“附着回答”也可以继续作为 Renderer 中的显式用户动作。
 
@@ -207,5 +216,5 @@ GenerationTask 的 `contextProviderId + context + commitAnswer`，不拥有第�
 - 不带真实 delta 的 Provider 仍以最终任务结果正确结束；
 - Provider 未配置、取消、失败、迟到结果均进入统一 UI 状态；
 - Video 不复制完整媒体，精确截帧后才进入 Agent；
-- EPUB/Image 的 Attachment 提交不影响普通追问；
+- EPUB/Image/Video 的 Attachment 提交不影响无 Anchor 的普通追问；
 - 新 Workbench 不需要触碰 bootstrap、公共 TaskDefinition 或聊天 IPC。

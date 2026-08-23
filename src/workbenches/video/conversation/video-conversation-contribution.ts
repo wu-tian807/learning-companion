@@ -52,13 +52,20 @@ export function createVideoConversationContribution(input: {
     initialContextRequired: true,
     initialContextRequiredMessage: '请先在视频画面上按住右键并框选一个区域',
     title: '视频画面问答',
-    emptyLabel: '在视频画面上按住右键拖动框选，然后针对当前画面提问。',
+    emptyLabel:
+      '在视频画面上按住右键拖动框选，然后针对当前画面提问；首轮回答会保存为可定位标注。',
     inputPlaceholder: '针对当前画面提问…（Enter 发送 / Shift+Enter 换行）',
     historyStore: input.historyStore,
     isContext(context) {
       return (
         isVideoConversationContext(context) &&
         context.sourceRevision === sourceRevision
+      );
+    },
+    shouldCommitAnswer(taskInput) {
+      return (
+        isVideoConversationContext(taskInput.context) &&
+        taskInput.context.sourceRevision === sourceRevision
       );
     },
     describeContext(context) {

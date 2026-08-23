@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { CreateAttachmentWithContentInput } from '../../../main/attachments/attachment-service';
+
 vi.mock('../../../main/conversation/visual-region-input-preparer', () => ({
   prepareVisualRegionInputs: vi.fn(async () => ({
     overviewPath: 'C:\\prepared\\overview.png',
@@ -48,6 +50,8 @@ function processContext(
     readonly withSelection?: boolean;
     readonly sourceRevision?: string;
     readonly signal?: AbortSignal;
+    readonly question?: string;
+    readonly commitAnswer?: boolean;
   } = {},
 ) {
   const selection =
@@ -61,8 +65,9 @@ function processContext(
       contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: 'asset-1',
       conversationId: 'conversation-1',
-      question: '解释这里',
+      question: input.question ?? '解释这里',
       ...(selection ? { context: selection } : {}),
+      commitAnswer: input.commitAnswer ?? false,
     }),
     workspaces: {
       primary: { path: workspacePath },
@@ -124,15 +129,39 @@ function setup(
     })),
   };
   const readSubtitles = input.readSubtitles ?? vi.fn(async () => undefined);
+  const attachments = {
+    listByAsset: vi.fn(async () => []),
+    createWithContent: vi.fn(async (request: CreateAttachmentWithContentInput) => ({
+      id: 'attachment-1',
+      projectId: request.projectId,
+      assetId: request.assetId,
+      typeId: request.typeId,
+      typeVersion: request.typeVersion,
+      target: request.target,
+      metadata: request.metadata,
+      content: {
+        ref: {
+          kind: 'local-file' as const,
+          base: 'project-workspace' as const,
+          path: 'attachments/attachment-1/answer.md',
+        },
+        mediaType: request.content.mediaType,
+      },
+      createdTime: 1,
+      updatedTime: 1,
+    })),
+  };
   return {
     provider: new VideoConversationContextProvider(
       assets as never,
+      attachments as never,
       runtime as never,
       projects as never,
       { read: readSubtitles } as never,
       { run } as never,
     ),
     assets,
+    attachments,
     runtime,
     run,
     projects,
@@ -337,5 +366,93 @@ describe('Video conversation context provider', () => {
       expect(prepareVisualRegionInputs).not.toHaveBeenCalled();
       expect(close).toHaveBeenCalledOnce();
     });
+  });
+
+  it('stores the initial frame question as one revision-bound Attachment and reuses it on replay', async () => {
+    const { provider, attachments } = setup();
+    const context = processContext('C:\\workspace', {
+      question: '这段代码在做什么？',
+      commitAnswer: true,
+    });
+
+    await expect(
+      provider.commitAnswer(context, { answer: '它在更新模型参数。' }),
+    ).resolves.toEqual({ attachmentId: 'attachment-1' });
+    expect(attachments.createWithContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target,
+        metadata: {
+          format: 'learning-companion/video-explanation',
+          version: 1,
+          sourceRevision: '100',
+          question: '这段代码在做什么？',
+        },
+        content: expect.objectContaining({
+          mediaType: 'text/markdown',
+          data: '它在更新模型参数。\n',
+        }),
+      }),
+    );
+
+    attachments.listByAsset.mockResolvedValueOnce([
+      {
+        id: 'attachment-existing',
+        typeId: 'video.ai-explanation',
+        typeVersion: 1,
+        target,
+        metadata: {
+          format: 'learning-companion/video-explanation',
+          version: 1,
+          sourceRevision: '100',
+          question: '这段代码在做什么？',
+        },
+        content: { mediaType: 'text/markdown' },
+      },
+    ] as never);
+    await expect(
+      provider.commitAnswer(context, { answer: '重复执行' }),
+    ).resolves.toEqual({ attachmentId: 'attachment-existing' });
+    expect(attachments.createWithContent).toHaveBeenCalledOnce();
+  });
+
+  it('does not deduplicate a different question at the same video anchor', async () => {
+    const { provider, attachments } = setup();
+    attachments.listByAsset.mockResolvedValueOnce([
+      {
+        id: 'attachment-existing',
+        typeId: 'video.ai-explanation',
+        typeVersion: 1,
+        target,
+        metadata: {
+          format: 'learning-companion/video-explanation',
+          version: 1,
+          sourceRevision: '100',
+          question: '原来的问题',
+        },
+        content: { mediaType: 'text/markdown' },
+      },
+    ] as never);
+
+    await provider.commitAnswer(
+      processContext('C:\\workspace', {
+        question: '新的问题',
+        commitAnswer: true,
+      }),
+      { answer: '新的回答' },
+    );
+
+    expect(attachments.createWithContent).toHaveBeenCalledOnce();
+  });
+
+  it('refuses to attach an answer after the video revision changed', async () => {
+    const { provider, attachments } = setup({ currentRevision: '101' });
+
+    await expect(
+      provider.commitAnswer(
+        processContext('C:\\workspace', { commitAnswer: true }),
+        { answer: '过期回答' },
+      ),
+    ).rejects.toMatchObject({ code: 'CONTENT_CHANGED_EXTERNALLY' });
+    expect(attachments.createWithContent).not.toHaveBeenCalled();
   });
 });

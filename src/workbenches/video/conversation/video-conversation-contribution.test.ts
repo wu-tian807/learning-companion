@@ -108,6 +108,23 @@ describe('video conversation contribution', () => {
     ).not.toHaveProperty('context');
   });
 
+  it('persists any initial frame answer as a marker but keeps follow-ups conversational', () => {
+    const value = contribution();
+    const context = createVideoConversationContext(target, '100');
+
+    expect(
+      value.shouldCommitAnswer?.({
+        question: '公式中的 λ 表示什么？',
+        context,
+      } as never),
+    ).toBe(true);
+    expect(
+      value.shouldCommitAnswer?.({
+        question: '换一种说法',
+      } as never),
+    ).toBe(false);
+  });
+
   it('describes and reveals the exact time-bound frame region', async () => {
     const revealContext = vi.fn();
     const context = createVideoConversationContext(target, '100');

@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
+import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
 import type { WorkbenchConversationContextProvider } from '../../../main/conversation/workbench-conversation-context-provider';
 import type { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { prepareVisualRegionInputs } from '../../../main/conversation/visual-region-input-preparer';
@@ -20,6 +21,13 @@ import {
   isVideoConversationContext,
 } from './video-conversation-context';
 import { createVideoSubtitleConversationContext } from './video-subtitle-conversation-context';
+import {
+  VIDEO_EXPLANATION_ATTACHMENT_TYPE,
+  VIDEO_EXPLANATION_ATTACHMENT_VERSION,
+  isVideoExplanationMetadata,
+  sameVideoExplanationTarget,
+} from '../explanations/shared';
+import { isVideoFrameRegionTarget } from '../shared';
 
 const FRAME_EXTRACTION_TIMEOUT_MS = 60_000;
 
@@ -35,6 +43,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
 
   constructor(
     private readonly assets: AssetServiceApi,
+    private readonly attachments: AttachmentServiceApi,
     private readonly runtime: MediaSubtitleRuntimeResolver,
     private readonly projects: ProjectLookup,
     private readonly subtitleTracks: CachedSubtitleTrackReaderApi,
@@ -166,7 +175,9 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
 
       return Object.freeze({
         purpose: 'video-frame-conversation',
-        statusMessage: '正在理解选中的视频画面…',
+        statusMessage: context.instruction.commitAnswer
+          ? '正在结合完整画面解释兴趣区域…'
+          : '正在理解选中的视频画面…',
         systemInstruction: VIDEO_CONVERSATION_SYSTEM_INSTRUCTION_V1,
         userMessage: Object.freeze({
           role: 'user' as const,
@@ -213,9 +224,69 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
           ]),
         }),
         toolRequirements: Object.freeze([]),
+        commitStatusMessage: '回答已生成，正在保存视频解释标注…',
       });
     } finally {
       await resolved.handle?.close();
     }
+  }
+
+  async commitAnswer(
+    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
+    answer: { readonly answer: string },
+  ) {
+    const selection = context.instruction.context;
+    if (!isVideoConversationContext(selection)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    const asset = this.assets.get(context.instruction.assetId);
+    if (
+      !asset ||
+      asset.projectId !== context.projectId ||
+      !asset.mediaType.startsWith('video/') ||
+      String(asset.updatedTime) !== selection.sourceRevision
+    ) {
+      throw new AppError('CONTENT_CHANGED_EXTERNALLY');
+    }
+
+    const existing = (
+      await this.attachments.listByAsset(context.projectId, asset.id)
+    ).find(
+      (attachment) =>
+        attachment.typeId === VIDEO_EXPLANATION_ATTACHMENT_TYPE &&
+        attachment.typeVersion === VIDEO_EXPLANATION_ATTACHMENT_VERSION &&
+        isVideoFrameRegionTarget(attachment.target) &&
+        sameVideoExplanationTarget(attachment.target, selection.target) &&
+        isVideoExplanationMetadata(attachment.metadata) &&
+        attachment.metadata.sourceRevision === selection.sourceRevision &&
+        attachment.metadata.question === context.instruction.question,
+    );
+    if (existing) {
+      if (existing.content?.mediaType !== 'text/markdown') {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      return Object.freeze({ attachmentId: existing.id });
+    }
+
+    context.signal?.throwIfAborted();
+    const attachment = await this.attachments.createWithContent({
+      projectId: context.projectId,
+      assetId: asset.id,
+      typeId: VIDEO_EXPLANATION_ATTACHMENT_TYPE,
+      typeVersion: VIDEO_EXPLANATION_ATTACHMENT_VERSION,
+      target: selection.target,
+      metadata: {
+        format: 'learning-companion/video-explanation',
+        version: 1,
+        sourceRevision: selection.sourceRevision,
+        question: context.instruction.question,
+      },
+      content: {
+        fileName: 'answer.md',
+        mediaType: 'text/markdown',
+        data: `${answer.answer}\n`,
+      },
+    });
+    return Object.freeze({ attachmentId: attachment.id });
   }
 }
