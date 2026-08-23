@@ -67,7 +67,7 @@ describe('media subtitle contracts', () => {
     expect(oppositeSubtitleLanguage('zh-Hans')).toBe('en');
   });
 
-  it('rejects zero-duration, unordered, duplicate, and reused source cues', () => {
+  it('rejects zero-duration, unordered, overlapping, duplicate, and reused source cues', () => {
     expect(isSubtitleSourceTrackV1({
       ...source,
       cues: [{ ...source.cues[0], endMs: 0 }],
@@ -75,6 +75,13 @@ describe('media subtitle contracts', () => {
     expect(isSubtitleSourceTrackV1({
       ...source,
       cues: [source.cues[1], source.cues[0]],
+    })).toBe(false);
+    expect(isSubtitleSourceTrackV1({
+      ...source,
+      cues: [
+        source.cues[0],
+        { ...source.cues[1], startMs: 800 },
+      ],
     })).toBe(false);
     expect(isSubtitleSourceTrackV1({
       ...source,

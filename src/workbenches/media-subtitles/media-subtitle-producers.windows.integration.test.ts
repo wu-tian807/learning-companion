@@ -8,6 +8,8 @@ import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   isSubtitleSourceTrackV1,
   isSubtitleTranslationTrackV1,
+  isTranslatableSubtitleLanguage,
+  oppositeSubtitleLanguage,
 } from './contracts';
 import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media-subtitle-runtime';
 import {
@@ -150,12 +152,17 @@ integrationDescribe('installed media subtitle component', () => {
     };
     const directory = await mkdtemp(join(tmpdir(), 'lc-media-subtitle-real-'));
     try {
-      const fixture = resolve(
+      const fixture = process.env.MEDIA_SUBTITLE_INTEGRATION_FIXTURE ?? resolve(
         'demos',
         'subtitle-generation',
         '.fixtures',
         'en-us-classroom.wav',
       );
+      const expectedLanguage =
+        process.env.MEDIA_SUBTITLE_INTEGRATION_LANGUAGE ?? 'en';
+      if (!isTranslatableSubtitleLanguage(expectedLanguage)) {
+        throw new Error('MEDIA_SUBTITLE_INTEGRATION_LANGUAGE must be en or zh-Hans');
+      }
       const transcription = new MediaSubtitleTranscriptionProducer(runtimes);
       const sourceArtifact = await transcription.produce({
         artifactKey: MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
@@ -172,8 +179,24 @@ integrationDescribe('installed media subtitle component', () => {
         await readFile(sourceArtifact.filePath, 'utf8'),
       ) as unknown;
       expect(isSubtitleSourceTrackV1(source)).toBe(true);
-      if (!isSubtitleSourceTrackV1(source) || source.language !== 'en') {
-        throw new Error('Integration fixture was not recognized as English');
+      if (
+        !isSubtitleSourceTrackV1(source) ||
+        source.language !== expectedLanguage
+      ) {
+        throw new Error(
+          `Integration fixture was not recognized as ${expectedLanguage}`,
+        );
+      }
+      if (nvidia) {
+        expect(source.cues.every(
+          ({ startMs, endMs }) => endMs - startMs <= 6_000,
+        )).toBe(true);
+      }
+      const expectedCueCount = Number(
+        process.env.MEDIA_SUBTITLE_INTEGRATION_EXPECTED_CUES,
+      );
+      if (Number.isSafeInteger(expectedCueCount) && expectedCueCount > 0) {
+        expect(source.cues).toHaveLength(expectedCueCount);
       }
 
       const progress: string[] = [];
@@ -181,8 +204,12 @@ integrationDescribe('installed media subtitle component', () => {
         runtimes,
         ({ cue }) => progress.push(cue.sourceCueId),
       );
+      const targetLanguage = oppositeSubtitleLanguage(expectedLanguage);
       const translatedArtifact = await translation.produce({
-        artifactKey: createSubtitleTranslationArtifactKey('en', 'zh-Hans'),
+        artifactKey: createSubtitleTranslationArtifactKey(
+          expectedLanguage,
+          targetLanguage,
+        ),
         workspacePath: directory,
         stagingDirectory: directory,
         source: {
