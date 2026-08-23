@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +25,14 @@ import {
   VIDEO_WORKBENCH_ID,
   videoWorkbenchManifest,
 } from './shared';
+
+vi.mock('../../renderer/workbench/runtime/use-workbench-contributions', () => ({
+  useWorkbenchContributions: vi.fn(),
+}));
+
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const asset: AssetSnapshot = {
   id: 'asset',
@@ -124,6 +135,228 @@ describe('VideoWorkbenchView', () => {
     expect(hasLoadedVideoMetadata({ readyState: 0 })).toBe(false);
     expect(hasLoadedVideoMetadata({ readyState: 1 })).toBe(true);
     expect(mediaErrorMessage({ code: 4 })).toContain('不支持');
+  });
+
+  it('refreshes a queued first-open bootstrap when the completion event was missed', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const previousBridge = window.learningCompanion;
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, 'pause')
+      .mockImplementation(() => undefined);
+    Object.defineProperty(window, 'learningCompanion', {
+      configurable: true,
+      value: {
+        listVideoExplanations: vi.fn(async () => []),
+        onVideoExplanationChanged: vi.fn(() => () => undefined),
+        onGenerationTaskChanged: vi.fn(() => () => undefined),
+      },
+    });
+    const executeCommand = vi.fn(async () => ({
+      payload: {
+        phase: 'runtime-required',
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      },
+    }));
+    const bootstrap: WorkbenchBootstrap = {
+      sessionId: 'session',
+      workbenchId: VIDEO_WORKBENCH_ID,
+      workbenchVersion: videoWorkbenchManifest.version,
+      protocolVersion: videoWorkbenchManifest.protocolVersion,
+      assetId: asset.id,
+      mediaType: asset.mediaType,
+      availability: 'available',
+      payload: {
+        contentUrl: 'learning-content://resource/token',
+        sourceRevision: '100',
+        viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
+        subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: {
+          phase: 'queued',
+          partialTranslations: [],
+          completedCues: 0,
+          totalCues: 0,
+        },
+      },
+    };
+
+    try {
+      await act(async () => {
+        root.render(
+          <WorkbenchConversationRuntimeProvider>
+            <WorkbenchRuntimeProvider onError={vi.fn()}>
+              <VideoWorkbenchView
+                asset={asset}
+                bootstrap={bootstrap}
+                executeCommand={executeCommand}
+                subscribeEvent={vi.fn(() => () => undefined)}
+                onRelink={vi.fn()}
+                onRefresh={vi.fn()}
+                onReveal={vi.fn()}
+                onInteractionChange={vi.fn()}
+                onOpenExternal={vi.fn(async () => undefined)}
+                onError={vi.fn()}
+              />
+            </WorkbenchRuntimeProvider>
+          </WorkbenchConversationRuntimeProvider>,
+        );
+      });
+
+      expect(executeCommand).toHaveBeenCalledWith({
+        type: 'video:get-subtitle-snapshot',
+      });
+      expect(container.textContent).toContain('需要字幕组件');
+      expect(container.textContent).not.toContain('正在准备字幕…');
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      Object.defineProperty(window, 'learningCompanion', {
+        configurable: true,
+        value: previousBridge,
+      });
+      pause.mockRestore();
+    }
+  });
+
+  it('reconciles a missed first-open subtitle event without overwriting a newer event', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const previousBridge = window.learningCompanion;
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, 'pause')
+      .mockImplementation(() => undefined);
+    Object.defineProperty(window, 'learningCompanion', {
+      configurable: true,
+      value: {
+        listVideoExplanations: vi.fn(async () => []),
+        onVideoExplanationChanged: vi.fn(() => () => undefined),
+        onGenerationTaskChanged: vi.fn(() => () => undefined),
+      },
+    });
+    const queued = {
+      phase: 'queued' as const,
+      partialTranslations: [],
+      completedCues: 0,
+      totalCues: 0,
+    };
+    const ready = {
+      phase: 'source-ready' as const,
+      source: {
+        version: 1 as const,
+        kind: 'subtitle-source' as const,
+        sourceRevision: '100',
+        language: 'zh-Hans' as const,
+        origin: 'asr' as const,
+        engine: {
+          id: 'sense-voice',
+          version: '1',
+          model: 'small',
+          backend: 'cpu',
+        },
+        generatedTime: 200,
+        cues: [
+          {
+            id: 'cue-1',
+            startMs: 0,
+            endMs: 1_000,
+            text: '第一句字幕',
+            sourceCueIds: ['raw-1'],
+          },
+        ],
+      },
+      partialTranslations: [],
+      completedCues: 0,
+      totalCues: 0,
+    };
+    let resolveSnapshot:
+      ((value: { payload: typeof queued }) => void) | undefined;
+    const executeCommand = vi.fn(
+      () =>
+        new Promise<{ payload: typeof queued }>((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    );
+    let publishEvent:
+      | ((event: {
+          sessionId: string;
+          type: string;
+          payload: typeof ready;
+        }) => void)
+      | undefined;
+    const bootstrap: WorkbenchBootstrap = {
+      sessionId: 'session',
+      workbenchId: VIDEO_WORKBENCH_ID,
+      workbenchVersion: videoWorkbenchManifest.version,
+      protocolVersion: videoWorkbenchManifest.protocolVersion,
+      assetId: asset.id,
+      mediaType: asset.mediaType,
+      availability: 'available',
+      payload: {
+        contentUrl: 'learning-content://resource/token',
+        sourceRevision: '100',
+        viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
+        subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: queued,
+      },
+    };
+
+    try {
+      await act(async () => {
+        root.render(
+          <WorkbenchConversationRuntimeProvider>
+            <WorkbenchRuntimeProvider onError={vi.fn()}>
+              <VideoWorkbenchView
+                asset={asset}
+                bootstrap={bootstrap}
+                executeCommand={executeCommand}
+                subscribeEvent={(listener) => {
+                  publishEvent = listener;
+                  return () => undefined;
+                }}
+                onRelink={vi.fn()}
+                onRefresh={vi.fn()}
+                onReveal={vi.fn()}
+                onInteractionChange={vi.fn()}
+                onOpenExternal={vi.fn(async () => undefined)}
+                onError={vi.fn()}
+              />
+            </WorkbenchRuntimeProvider>
+          </WorkbenchConversationRuntimeProvider>,
+        );
+      });
+
+      expect(executeCommand).toHaveBeenCalledWith({
+        type: 'video:get-subtitle-snapshot',
+      });
+      expect(container.textContent).toContain('正在准备字幕…');
+
+      act(() => {
+        publishEvent?.({
+          sessionId: 'session',
+          type: 'video:subtitle-snapshot',
+          payload: ready,
+        });
+      });
+      expect(container.textContent).toContain('原文可用');
+
+      await act(async () => {
+        resolveSnapshot?.({ payload: queued });
+      });
+      expect(container.textContent).toContain('原文可用');
+      expect(container.textContent).not.toContain('正在准备字幕…');
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      Object.defineProperty(window, 'learningCompanion', {
+        configurable: true,
+        value: previousBridge,
+      });
+      pause.mockRestore();
+    }
   });
 
   it('turns a right-button drag into a normalized frame region without guessing time', () => {

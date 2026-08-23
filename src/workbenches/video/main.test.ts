@@ -15,6 +15,7 @@ import type {
 import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
 import { VideoWorkbenchProvider } from './main';
 import {
+  createVideoGetSubtitleSnapshotCommand,
   createVideoSaveViewStateCommand,
   createVideoSetSubtitleModeCommand,
   DEFAULT_VIDEO_VIEW_STATE,
@@ -300,5 +301,60 @@ describe('VideoWorkbenchProvider', () => {
 
     await provider.close(context);
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('returns the current subtitle snapshot after a first-open event was missed', async () => {
+    const queued = {
+      phase: 'queued' as const,
+      partialTranslations: [],
+      completedCues: 0,
+      totalCues: 0,
+    };
+    const ready = {
+      phase: 'source-ready' as const,
+      source: {
+        version: 1 as const,
+        kind: 'subtitle-source' as const,
+        sourceRevision: '100',
+        language: 'zh-Hans' as const,
+        origin: 'asr' as const,
+        engine: {
+          id: 'sense-voice',
+          version: '1',
+          model: 'small',
+          backend: 'cpu' as const,
+        },
+        generatedTime: 200,
+        cues: [
+          {
+            id: 'cue-1',
+            startMs: 0,
+            endMs: 1_000,
+            text: '第一句字幕',
+            sourceCueIds: ['raw-1'],
+          },
+        ],
+      },
+      partialTranslations: [],
+      completedCues: 0,
+      totalCues: 0,
+    };
+    const subtitles = createSubtitles();
+    vi.mocked(subtitles.getSnapshot)
+      .mockReturnValueOnce(queued)
+      .mockReturnValue(ready);
+    const provider = createProvider(
+      createResources(),
+      new MemoryStateDatabase(),
+      { subtitles },
+    );
+    const context = createContext();
+
+    await expect(provider.open(context)).resolves.toMatchObject({
+      payload: { subtitleSnapshot: queued },
+    });
+    await expect(
+      provider.command(context, createVideoGetSubtitleSnapshotCommand()),
+    ).resolves.toEqual({ payload: ready });
   });
 });
