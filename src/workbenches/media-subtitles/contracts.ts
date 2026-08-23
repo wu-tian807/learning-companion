@@ -107,10 +107,10 @@ export function isSubtitleCueV1(value: unknown): value is SubtitleCueV1 {
 function hasValidCueOrder(cues: readonly SubtitleCueV1[]): boolean {
   const ids = new Set<string>();
   const sourceCueIds = new Set<string>();
-  let previousStart = -1;
+  let previousEnd = -1;
 
   for (const cue of cues) {
-    if (ids.has(cue.id) || cue.startMs < previousStart) {
+    if (ids.has(cue.id) || cue.startMs < previousEnd) {
       return false;
     }
     ids.add(cue.id);
@@ -118,7 +118,7 @@ function hasValidCueOrder(cues: readonly SubtitleCueV1[]): boolean {
       if (sourceCueIds.has(sourceCueId)) return false;
       sourceCueIds.add(sourceCueId);
     }
-    previousStart = cue.startMs;
+    previousEnd = cue.endMs;
   }
   return true;
 }

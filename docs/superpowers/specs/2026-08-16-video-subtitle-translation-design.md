@@ -181,8 +181,9 @@ flowchart LR
     SERVICE --> CACHE["AssetArtifactService.getOrCreate"]
     CACHE --> NORMALIZE["FFmpeg: 16 kHz mono WAV"]
     NORMALIZE --> ASR["当前安装档位的 ASR"]
-    ASR --> MERGE["稳定 Cue 聚合"]
-    MERGE --> ARTIFACT["原字幕 Artifact 原子提交"]
+    ASR --> ALIGN["模型 Token / VAD 时间"]
+    ALIGN --> SEGMENT["稳定 Cue 分段"]
+    SEGMENT --> ARTIFACT["原字幕 Artifact 原子提交"]
 ```
 
 运行时选择由已安装字幕组件决定：
@@ -191,16 +192,29 @@ flowchart LR
 - CPU 档：SenseVoice Small Q8 + FSMN-VAD；
 - 两者都复用配套 FFmpeg 将输入音轨规范化。
 
-Whisper 碎片按以下边界聚合：
+Whisper 使用完整 JSON 中的 DTW Token 对齐点生成字幕 Cue。GPU 转写关闭 Flash
+Attention 并启用 `large.v3.turbo` DTW；同时不启用 Whisper 内置 VAD，因为该版本会
+压缩静音，却仍把 JSON Token `offsets` 留在压缩后的时间轴上，造成字幕随停顿累计
+提前。分段器只使用原音频轴上的 `t_dtw` 对齐点，不按字符比例推算时间：
 
-- 相邻间隔不超过 `700 ms`；
-- 合并后不超过 `8 s`；
-- 中文最多 `64` 字符，英文最多 `180` 字符；
-- 完整句末标点立即结束当前 Cue；
-- 保留全部原始 `sourceCueIds`。
+- 优先选择句末、分句标点和超过 `700 ms` 的语音停顿；
+- 其次选择完整中文词或英文单词边界；
+- 理想时长为 `2–4.5 s`，可靠 Token 时间存在时不超过 `6 s`；
+- 中文理想不超过 `22` 字、硬上限 `30` 字，英文理想不超过 `56` 字符、
+  硬上限 `72` 字符；
+- 相邻间隔超过 `700 ms` 时不得合并；
+- 保留全部原始 Token `sourceCueIds`，且最终 Cue 文本拼接后必须等于原转写文本。
+- DTW 点只表示 Token 输出时刻；显示时仅增加固定的 `250 ms` 前置和 `200 ms`
+  后置窗口，相邻窗口重叠时在两个真实对齐点之间收口，不填满真实静音。
 
-因此类似 `GPT / 大语言 / 模型` 的连续碎片会合成可读 Cue，但长静音、过长句子和
-完整句末不会被错误跨越。
+因此类似 `GPT / 大语言 / 模型` 的连续碎片会合成可读 Cue，单个十九秒长 Segment
+也会沿真实 Token 时间拆成字幕。DTW 点缺失、倒序或无法形成合法边界时，回退到
+未压缩原音频上的普通 Token `offsets`；Token 数据整体不可用时再回退为基于原始
+Segment 的保守聚合，宁可保留较长字幕，也不伪造时间。
+
+当前便携版 SenseVoice C++ Runtime 只暴露识别文本和 FSMN-VAD 段级时间。因此 CPU
+档只保存真实 VAD Cue，不再把 VAD 区间按字符数拆分。后续 Runtime 暴露 CTC Token
+对齐后，直接复用同一分段器，不建立第二套字幕算法。
 
 ## 5. 翻译流程
 
@@ -323,6 +337,10 @@ src/workbenches/video/
 
 - 导入可用视频会触发原字幕 Artifact；
 - 相同视频修订和 Producer 版本命中现有缓存；
+- Whisper 长 Segment 按原音频轴上的 DTW Token 对齐点生成 Cue，可靠时间存在时
+  单 Cue 不超过 `6 s`；
+- Cue 文本完整守恒、时间单调且不重叠，不按字符比例推算时间；
+- SenseVoice 未提供 CTC Token 时间时保持真实 VAD 区间；
 - 用户只选原文时不启动翻译；
 - 用户选译文或双语时创建译文 Artifact；
 - 非中英文源轨不启动翻译；
