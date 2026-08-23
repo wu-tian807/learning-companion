@@ -1,5 +1,10 @@
-import { emptyWorkbenchPreloadContribution } from '../../preload/workbench-preload-contribution';
+import { defineWorkbenchPreloadContribution } from '../../preload/workbench-preload-contribution';
+import { createVideoExplanationPreloadApi } from './explanations/preload';
 import { videoWorkbenchManifest } from './shared';
 
 export const videoPreloadWorkbenchContribution =
-  emptyWorkbenchPreloadContribution(videoWorkbenchManifest.id);
+  defineWorkbenchPreloadContribution({
+    id: videoWorkbenchManifest.id,
+    createApi: ({ ipcRenderer, invoke }) =>
+      createVideoExplanationPreloadApi(ipcRenderer, invoke),
+  });

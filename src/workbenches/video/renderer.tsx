@@ -5,22 +5,55 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import {
+  useWorkbenchConversationContribution,
+  useWorkbenchConversationSnapshot,
+} from '../../renderer/conversation/workbench-conversation-context';
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
-import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
+import {
+  useWorkbenchRuntime,
+  useWorkbenchRuntimeSelector,
+} from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
+import {
+  createVideoConversationContribution,
+  createVideoConversationHistoryStore,
+  createVideoFrameConversationLaunch,
+} from './conversation/video-conversation-contribution';
+import {
+  createVideoConversationContext,
+  shouldReleaseVideoConversationContext,
+  type VideoConversationContext,
+} from './conversation/video-conversation-context';
+import { VideoExplanationIndex, orderVideoExplanations } from './explanations/video-explanation-index';
+import { VideoExplanationMarkerOverlay } from './explanations/video-explanation-marker-overlay';
+import { VideoExplanationPanel } from './explanations/video-explanation-panel';
+import {
+  projectVideoExplanationGenerationEvent,
+  removeVideoExplanationRuntime,
+  type VideoExplanationRuntimeMap,
+} from './explanations/video-explanation-runtime';
+import {
+  type VideoExplanationView,
+} from './explanations/shared';
+import {
+  isVideoExplanationForRevision,
+  videoExplanationVisibleAtTime,
+} from './explanations/video-explanation-revision';
 import {
   cloneVideoViewState,
   createVideoRetrySubtitlesCommand,
   createVideoSaveViewStateCommand,
   createVideoSetSubtitleModeCommand,
-  createVideoTimeRangeTarget,
+  createVideoFrameRegionTarget,
   DEFAULT_VIDEO_VIEW_STATE,
   isVideoSubtitleCueFinalPayload,
   isVideoSubtitleSnapshot,
@@ -29,6 +62,7 @@ import {
   type VideoSubtitleDisplayMode,
   type VideoSubtitleSnapshot,
   type VideoWorkbenchViewState,
+  type VideoFrameRegionTarget,
   videoEventTypes,
   videoWorkbenchManifest,
 } from './shared';
@@ -41,6 +75,81 @@ type VideoLoadState =
 const SAVE_DELAY_MS = 750;
 const VIDEO_HAVE_METADATA = 1;
 const VIDEO_METADATA_TIMEOUT_MS = 15_000;
+const MIN_FRAME_SELECTION_SIZE = 8;
+
+interface ScreenPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+interface ScreenRectangle {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+function screenRectangle(
+  start: ScreenPoint,
+  end: ScreenPoint,
+): ScreenRectangle {
+  return {
+    left: Math.min(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  };
+}
+
+export function createVideoFrameRegionFromClientPoints(
+  video: Pick<
+    HTMLVideoElement,
+    'videoWidth' | 'videoHeight' | 'currentTime' | 'getBoundingClientRect'
+  >,
+  start: ScreenPoint,
+  end: ScreenPoint,
+): VideoFrameRegionTarget | undefined {
+  if (video.videoWidth <= 0 || video.videoHeight <= 0) return undefined;
+  const bounds = video.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return undefined;
+  const clampClient = (point: ScreenPoint) => ({
+    x: clamp(point.x, bounds.left, bounds.right),
+    y: clamp(point.y, bounds.top, bounds.bottom),
+  });
+  const boundedStart = clampClient(start);
+  const boundedEnd = clampClient(end);
+  const rectangle = screenRectangle(boundedStart, boundedEnd);
+  const useWholeFrame =
+    rectangle.width < MIN_FRAME_SELECTION_SIZE ||
+    rectangle.height < MIN_FRAME_SELECTION_SIZE;
+
+  return createVideoFrameRegionTarget({
+    timeSeconds: Math.max(0, video.currentTime),
+    x: useWholeFrame ? 0 : (rectangle.left - bounds.left) / bounds.width,
+    y: useWholeFrame ? 0 : (rectangle.top - bounds.top) / bounds.height,
+    width: useWholeFrame ? 1 : rectangle.width / bounds.width,
+    height: useWholeFrame ? 1 : rectangle.height / bounds.height,
+    sourceWidth: video.videoWidth,
+    sourceHeight: video.videoHeight,
+  });
+}
+
+export function isClientPointInsideVideoFrameRegion(
+  video: Pick<HTMLVideoElement, 'getBoundingClientRect'>,
+  target: VideoFrameRegionTarget,
+  point: ScreenPoint,
+): boolean {
+  const bounds = video.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return false;
+  const region = target.anchorPayload;
+  const left = bounds.left + region.x * bounds.width;
+  const top = bounds.top + region.y * bounds.height;
+  const right = left + region.width * bounds.width;
+  const bottom = top + region.height * bounds.height;
+  return (
+    point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
+  );
+}
 
 function formatVttTime(milliseconds: number): string {
   const safe = Math.max(0, Math.round(milliseconds));
@@ -103,9 +212,7 @@ export function hasLoadedVideoMetadata(
   return media.readyState >= VIDEO_HAVE_METADATA;
 }
 
-function captureVideoState(
-  video: HTMLVideoElement,
-): VideoWorkbenchViewState {
+function captureVideoState(video: HTMLVideoElement): VideoWorkbenchViewState {
   return {
     currentTime: Number.isFinite(video.currentTime)
       ? clamp(video.currentTime, 0, 1_000_000_000)
@@ -117,6 +224,7 @@ function captureVideoState(
 }
 
 export function VideoWorkbenchView({
+  asset,
   bootstrap,
   executeCommand,
   onRelink,
@@ -127,21 +235,25 @@ export function VideoWorkbenchView({
   subscribeEvent,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
+  const contextMenuOpen = useWorkbenchRuntimeSelector(
+    (state) => state.contextMenu !== undefined,
+  );
   const payload = isVideoWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
   const videoRef = useRef<HTMLVideoElement>(null);
+  const rightSelectionStartRef = useRef<ScreenPoint | undefined>(undefined);
+  const suppressNativeContextMenuRef = useRef(false);
+  const selectedConversationContextRef = useRef<
+    VideoConversationContext | undefined
+  >(undefined);
   const saveTimerRef = useRef<number | undefined>(undefined);
   const latestViewStateRef = useRef<VideoWorkbenchViewState>(
-    payload?.viewState ??
-      cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
+    payload?.viewState ?? cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
   );
   const [loadState, setLoadState] = useState<VideoLoadState>({
     kind: 'loading',
   });
-  const [currentTime, setCurrentTime] = useState(
-    payload?.viewState.currentTime ?? 0,
-  );
   const [subtitleMode, setSubtitleMode] = useState<VideoSubtitleDisplayMode>(
     payload?.subtitleState.displayMode ?? 'off',
   );
@@ -155,6 +267,35 @@ export function VideoWorkbenchView({
       },
     );
   const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string>();
+  const [draftSelection, setDraftSelection] = useState<ScreenRectangle>();
+  const [selectedConversationContext, setSelectedConversationContext] =
+    useState<VideoConversationContext>();
+  const [currentTime, setCurrentTime] = useState(
+    payload?.viewState.currentTime ?? 0,
+  );
+  const [explanations, setExplanations] = useState<VideoExplanationView[]>([]);
+  const [activeExplanationId, setActiveExplanationId] = useState<string>();
+  const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
+  const [explanationMarkersVisible, setExplanationMarkersVisible] =
+    useState(true);
+  const explanationTaskIdsRef = useRef(new Set<string>());
+  const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
+    useState<VideoExplanationRuntimeMap>({});
+
+  const registerExplanationTask = useCallback(
+    (explanation: VideoExplanationView) => {
+      if (explanation.kind === 'task') {
+        explanationTaskIdsRef.current.add(explanation.id);
+      }
+    },
+    [],
+  );
+  const clearExplanationRuntime = useCallback((taskId: string) => {
+    explanationTaskIdsRef.current.delete(taskId);
+    setExplanationRuntimeByTaskId((current) =>
+      removeVideoExplanationRuntime(current, taskId),
+    );
+  }, []);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -166,6 +307,316 @@ export function VideoWorkbenchView({
       }
     },
     [onError],
+  );
+
+  const conversationContributionId = `${videoWorkbenchManifest.id}.frame-conversation`;
+  const sourceRevision = String(asset.updatedTime);
+  const conversationOwnerId = `${videoWorkbenchManifest.id}:${bootstrap.sessionId}:${sourceRevision}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () =>
+      createVideoConversationHistoryStore(
+        asset.projectId,
+        asset.id,
+        conversationContributionId,
+        sourceRevision,
+      ),
+    [asset.id, asset.projectId, conversationContributionId, sourceRevision],
+  );
+  const commitConversationContext = useCallback(
+    (context: VideoConversationContext) => {
+      selectedConversationContextRef.current = context;
+      setSelectedConversationContext(context);
+    },
+    [],
+  );
+  const releaseConversationContext = useCallback(
+    (released: VideoConversationContext | undefined) => {
+      const current = selectedConversationContextRef.current;
+      if (!shouldReleaseVideoConversationContext(current, released)) {
+        return;
+      }
+      selectedConversationContextRef.current = undefined;
+      rightSelectionStartRef.current = undefined;
+      setSelectedConversationContext(undefined);
+      setDraftSelection(undefined);
+    },
+    [],
+  );
+  const revealConversationContext = useCallback(
+    (context: VideoConversationContext) => {
+      if (context.sourceRevision !== sourceRevision) {
+        reportError(
+          new Error('视频内容已更新'),
+          '这段问答属于旧版视频，无法在当前视频中定位。',
+        );
+        return;
+      }
+      const video = videoRef.current;
+      if (!video || !hasLoadedVideoMetadata(video)) {
+        reportError(new Error('视频尚未就绪'), '暂时无法定位这个视频画面。');
+        return;
+      }
+      video.pause();
+      video.currentTime = Math.min(
+        context.target.anchorPayload.timeSeconds,
+        Number.isFinite(video.duration)
+          ? Math.max(0, video.duration)
+          : context.target.anchorPayload.timeSeconds,
+      );
+      commitConversationContext(context);
+    },
+    [commitConversationContext, reportError, sourceRevision],
+  );
+  const conversationContribution = useMemo(
+    () =>
+      createVideoConversationContribution({
+        sourceRevision,
+        historyStore: conversationHistoryStore,
+        revealContext: revealConversationContext,
+        onContextReleased: releaseConversationContext,
+      }),
+    [
+      conversationHistoryStore,
+      releaseConversationContext,
+      revealConversationContext,
+      sourceRevision,
+    ],
+  );
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    conversationContribution,
+  );
+  const conversationSnapshot =
+    useWorkbenchConversationSnapshot(conversationRuntime);
+  const conversationBusy =
+    conversationSnapshot.active?.ownerId === conversationOwnerId &&
+    conversationSnapshot.busy;
+
+  const retryExplanation = useCallback(
+    async (explanation: VideoExplanationView) => {
+      setExplanationRuntimeByTaskId((current) =>
+        removeVideoExplanationRuntime(current, explanation.id),
+      );
+      try {
+        const retried = await window.learningCompanion.retryVideoExplanation({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          kind: explanation.kind,
+          explanationId: explanation.id,
+        });
+        setExplanations((current) => [
+          ...current.filter((item) => item.id !== retried.id),
+          retried,
+        ]);
+        registerExplanationTask(retried);
+      } catch (error) {
+        reportError(error, '无法重试视频 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, registerExplanationTask, reportError],
+  );
+
+  const deleteExplanation = useCallback(
+    async (explanation: VideoExplanationView) => {
+      try {
+        await window.learningCompanion.deleteVideoExplanation({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          kind: explanation.kind,
+          explanationId: explanation.id,
+        });
+        clearExplanationRuntime(explanation.id);
+        setExplanations((current) =>
+          current.filter((item) => item.id !== explanation.id),
+        );
+        setActiveExplanationId((current) =>
+          current === explanation.id ? undefined : current,
+        );
+      } catch (error) {
+        reportError(error, '无法删除视频 AI 解释。');
+      }
+    },
+    [asset.id, asset.projectId, clearExplanationRuntime, reportError],
+  );
+
+  const revealExplanation = useCallback(
+    (explanation: VideoExplanationView) => {
+      const video = videoRef.current;
+      if (!video || !hasLoadedVideoMetadata(video)) {
+        reportError(new Error('视频尚未就绪'), '暂时无法定位这条视频标注。');
+        return;
+      }
+      video.pause();
+      const targetTime = Math.min(
+        explanation.target.anchorPayload.timeSeconds,
+        Number.isFinite(video.duration)
+          ? Math.max(0, video.duration)
+          : explanation.target.anchorPayload.timeSeconds,
+      );
+      video.currentTime = targetTime;
+      setCurrentTime(targetTime);
+      releaseConversationContext(undefined);
+      setActiveExplanationId(explanation.id);
+      setExplanationIndexOpen(false);
+    },
+    [releaseConversationContext, reportError],
+  );
+
+  useEffect(() => {
+    if (!contextMenuOpen || !selectedConversationContext) return;
+    const dismiss = (event: PointerEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="menu"]')
+      ) {
+        return;
+      }
+      const video = videoRef.current;
+      if (
+        video &&
+        isClientPointInsideVideoFrameRegion(
+          video,
+          selectedConversationContext.target,
+          { x: event.clientX, y: event.clientY },
+        )
+      ) {
+        return;
+      }
+      releaseConversationContext(selectedConversationContext);
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        releaseConversationContext(selectedConversationContext);
+      }
+    };
+    document.addEventListener('pointerdown', dismiss, true);
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true);
+      document.removeEventListener('keydown', dismissOnEscape);
+    };
+  }, [
+    contextMenuOpen,
+    releaseConversationContext,
+    selectedConversationContext,
+  ]);
+
+  useEffect(() => {
+    let active = true;
+    const removeSubscription =
+      window.learningCompanion.onVideoExplanationChanged((event) => {
+        if (event.type === 'changed') {
+          if (
+            event.explanation.projectId !== asset.projectId ||
+            event.explanation.assetId !== asset.id
+          ) {
+            return;
+          }
+          if (
+            !isVideoExplanationForRevision(
+              event.explanation,
+              sourceRevision,
+            )
+          ) {
+            setExplanations((current) =>
+              current.filter((item) => item.id !== event.explanation.id),
+            );
+            return;
+          }
+          registerExplanationTask(event.explanation);
+          setExplanations((current) => [
+            ...current.filter((item) => item.id !== event.explanation.id),
+            event.explanation,
+          ]);
+          return;
+        }
+        if (event.type === 'replaced') {
+          if (
+            event.projectId !== asset.projectId ||
+            event.assetId !== asset.id
+          ) {
+            return;
+          }
+          clearExplanationRuntime(event.previousExplanationId);
+          const isCurrent = isVideoExplanationForRevision(
+            event.explanation,
+            sourceRevision,
+          );
+          setExplanations((current) => [
+            ...current.filter(
+              (item) =>
+                item.id !== event.previousExplanationId &&
+                item.id !== event.explanation.id,
+            ),
+            ...(isCurrent ? [event.explanation] : []),
+          ]);
+          setActiveExplanationId((current) =>
+            current === event.previousExplanationId
+              ? isCurrent
+                ? event.explanation.id
+                : undefined
+              : current,
+          );
+          return;
+        }
+        if (event.projectId !== asset.projectId || event.assetId !== asset.id) {
+          return;
+        }
+        clearExplanationRuntime(event.explanationId);
+        setExplanations((current) =>
+          current.filter((item) => item.id !== event.explanationId),
+        );
+        setActiveExplanationId((current) =>
+          current === event.explanationId ? undefined : current,
+        );
+      });
+
+    void window.learningCompanion
+      .listVideoExplanations({
+        projectId: asset.projectId,
+        assetId: asset.id,
+        sourceRevision,
+      })
+      .then((items) => {
+        if (!active) return;
+        for (const item of items) registerExplanationTask(item);
+        setExplanations([...items]);
+      })
+      .catch((error: unknown) => {
+        if (active) reportError(error, '无法加载视频的 AI 解释。');
+      });
+
+    return () => {
+      active = false;
+      removeSubscription();
+      explanationTaskIdsRef.current.clear();
+      setExplanationRuntimeByTaskId({});
+      setExplanations([]);
+      setActiveExplanationId(undefined);
+      setExplanationIndexOpen(false);
+    };
+  }, [
+    asset.id,
+    asset.projectId,
+    clearExplanationRuntime,
+    registerExplanationTask,
+    reportError,
+    sourceRevision,
+  ]);
+
+  useEffect(
+    () =>
+      window.learningCompanion.onGenerationTaskChanged((event) => {
+        setExplanationRuntimeByTaskId((current) =>
+          projectVideoExplanationGenerationEvent(
+            current,
+            event,
+            asset.projectId,
+            explanationTaskIdsRef.current,
+          ),
+        );
+      }),
+    [asset.projectId],
   );
 
   const persistViewState = useCallback(
@@ -253,7 +704,6 @@ export function VideoWorkbenchView({
       }
       const state = captureVideoState(video);
       latestViewStateRef.current = state;
-      setCurrentTime(state.currentTime);
 
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
@@ -311,8 +761,14 @@ export function VideoWorkbenchView({
         message: mediaErrorMessage(video.error),
       });
     };
-    const onTimeUpdate = () => captureAndScheduleSave(false);
-    const onSettingChange = () => captureAndScheduleSave(true);
+    const onTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+      captureAndScheduleSave(false);
+    };
+    const onSettingChange = () => {
+      setCurrentTime(video.currentTime);
+      captureAndScheduleSave(true);
+    };
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('error', onErrorEvent);
@@ -388,14 +844,75 @@ export function VideoWorkbenchView({
       reportError(error, '无法在文件夹中显示视频。');
     }
   }, [onReveal, reportError]);
+  const explainSelectedFrame = useCallback(() => {
+    const context = selectedConversationContextRef.current;
+    if (!context || conversationBusy) return;
+    runtime.closeContextMenu();
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      ...createVideoFrameConversationLaunch(context),
+    });
+  }, [conversationBusy, conversationOwnerId, conversationRuntime, runtime]);
+  const toggleExplanationIndex = useCallback(() => {
+    setActiveExplanationId(undefined);
+    setExplanationIndexOpen((current) => !current);
+  }, []);
+  const toggleExplanationMarkers = useCallback(() => {
+    setExplanationMarkersVisible((current) => !current);
+  }, []);
+  const orderedExplanations = useMemo(
+    () => orderVideoExplanations(explanations),
+    [explanations],
+  );
+  const activeExplanation = explanations.find(
+    (item) => item.id === activeExplanationId,
+  );
+  const visibleExplanationMarkers = useMemo(
+    () =>
+      orderedExplanations
+        .map((explanation, index) => ({
+          explanation,
+          number: index + 1,
+        }))
+        .filter(({ explanation }) =>
+          videoExplanationVisibleAtTime(explanation, currentTime),
+        ),
+    [currentTime, orderedExplanations],
+  );
+  useEffect(() => {
+    if (explanations.length === 0) setExplanationMarkersVisible(true);
+  }, [explanations.length]);
+
   const rendererActions = useMemo(
     () =>
       createVideoRendererActions({
         ready,
+        canExplainFrame:
+          ready &&
+          !conversationBusy &&
+          selectedConversationContext !== undefined,
+        explanationCount: explanations.length,
+        indexOpen: explanationIndexOpen,
+        markersVisible: explanationMarkersVisible,
         onTogglePlayback: togglePlayback,
+        onExplainFrame: explainSelectedFrame,
+        onToggleIndex: toggleExplanationIndex,
+        onToggleMarkers: toggleExplanationMarkers,
         onReveal: reveal,
       }),
-    [ready, reveal, togglePlayback],
+    [
+      conversationBusy,
+      explainSelectedFrame,
+      explanationIndexOpen,
+      explanationMarkersVisible,
+      explanations.length,
+      ready,
+      reveal,
+      selectedConversationContext,
+      togglePlayback,
+      toggleExplanationIndex,
+      toggleExplanationMarkers,
+    ],
   );
   useWorkbenchContributions(videoWorkbenchManifest.id, rendererActions);
 
@@ -423,61 +940,199 @@ export function VideoWorkbenchView({
     }
   }, [executeCommand, reportError]);
 
+  const openFrameContextMenu = useCallback(
+    (point: ScreenPoint, target: VideoFrameRegionTarget) => {
+      const context = createVideoConversationContext(target, sourceRevision);
+      commitConversationContext(context);
+      runtime.openContextMenu(bootstrap.sessionId, point, {
+        focus: target,
+        inputs: [],
+      });
+    },
+    [bootstrap.sessionId, commitConversationContext, runtime, sourceRevision],
+  );
+  const beginFrameSelection = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 2 || !ready) return;
+      const video = videoRef.current;
+      if (!video || !hasLoadedVideoMetadata(video)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runtime.closeContextMenu();
+      releaseConversationContext(undefined);
+      video.pause();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const point = { x: event.clientX, y: event.clientY };
+      rightSelectionStartRef.current = point;
+      const bounds = video.getBoundingClientRect();
+      setDraftSelection({
+        left: clamp(point.x, bounds.left, bounds.right) - bounds.left,
+        top: clamp(point.y, bounds.top, bounds.bottom) - bounds.top,
+        width: 0,
+        height: 0,
+      });
+    },
+    [ready, releaseConversationContext, runtime],
+  );
+  const updateFrameSelection = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = rightSelectionStartRef.current;
+      const video = videoRef.current;
+      if (!start || !video) return;
+      event.preventDefault();
+      const bounds = video.getBoundingClientRect();
+      const boundedStart = {
+        x: clamp(start.x, bounds.left, bounds.right),
+        y: clamp(start.y, bounds.top, bounds.bottom),
+      };
+      const boundedEnd = {
+        x: clamp(event.clientX, bounds.left, bounds.right),
+        y: clamp(event.clientY, bounds.top, bounds.bottom),
+      };
+      const rectangle = screenRectangle(boundedStart, boundedEnd);
+      setDraftSelection({
+        left: rectangle.left - bounds.left,
+        top: rectangle.top - bounds.top,
+        width: rectangle.width,
+        height: rectangle.height,
+      });
+    },
+    [],
+  );
+  const finishFrameSelection = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = rightSelectionStartRef.current;
+      const video = videoRef.current;
+      if (!start || !video) return;
+      event.preventDefault();
+      event.stopPropagation();
+      rightSelectionStartRef.current = undefined;
+      setDraftSelection(undefined);
+      const target = createVideoFrameRegionFromClientPoints(video, start, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      if (!target) return;
+      suppressNativeContextMenuRef.current = true;
+      openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
+      window.setTimeout(() => {
+        suppressNativeContextMenuRef.current = false;
+      }, 0);
+    },
+    [openFrameContextMenu],
+  );
+  const cancelFrameSelection = useCallback(() => {
+    rightSelectionStartRef.current = undefined;
+    setDraftSelection(undefined);
+  }, []);
   const openContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (suppressNativeContextMenuRef.current) {
+        return;
+      }
       const video = videoRef.current;
-      const seconds = video
-        ? captureVideoState(video).currentTime
-        : currentTime;
-
-      runtime.openContextMenu(
-        bootstrap.sessionId,
+      if (!video || !ready) return;
+      const target = createVideoFrameRegionFromClientPoints(
+        video,
         { x: event.clientX, y: event.clientY },
-        {
-          focus: createVideoTimeRangeTarget(seconds),
-          inputs: [],
-        },
+        { x: event.clientX, y: event.clientY },
       );
+      if (target) {
+        openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
+      }
     },
-    [bootstrap.sessionId, currentTime, runtime],
+    [openFrameContextMenu, ready],
   );
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
-        <p className="text-sm text-rose-300">
-          Video Workbench 数据无效
-        </p>
+        <p className="text-sm text-rose-300">Video Workbench 数据无效</p>
       </div>
     );
   }
 
   return (
     <div
+      tabIndex={0}
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1116]"
+      onPointerDown={(event) => event.currentTarget.focus()}
       onContextMenuCapture={openContextMenu}
     >
+      {explanationIndexOpen && (
+        <VideoExplanationIndex
+          explanations={orderedExplanations}
+          activeExplanationId={activeExplanationId}
+          onActivate={revealExplanation}
+          onDelete={(explanation) => void deleteExplanation(explanation)}
+          onClose={() => setExplanationIndexOpen(false)}
+        />
+      )}
+
       <div className="flex min-h-0 flex-1 items-center justify-center bg-[radial-gradient(circle_at_50%_45%,rgba(68,78,101,0.16),transparent_58%),#0d1116] p-3">
-        <video
-          ref={videoRef}
-          aria-label="视频播放器"
-          className="max-h-full max-w-full rounded-md bg-black shadow-[0_20px_60px_rgba(0,0,0,0.42)]"
-          src={payload.contentUrl}
-          controls
-          playsInline
-          preload="metadata"
+        <div
+          className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-md bg-black shadow-[0_20px_60px_rgba(0,0,0,0.42)]"
+          onPointerDownCapture={beginFrameSelection}
+          onPointerMoveCapture={updateFrameSelection}
+          onPointerUpCapture={finishFrameSelection}
+          onPointerCancelCapture={cancelFrameSelection}
         >
-          {subtitleTrackUrl && (
-            <track
-              key={subtitleTrackUrl}
-              kind="subtitles"
-              src={subtitleTrackUrl}
-              srcLang={subtitleSnapshot.source?.language ?? 'und'}
-              label="Learning Companion 字幕"
-              default
+          <video
+            ref={videoRef}
+            aria-label="视频播放器"
+            className="block max-h-full max-w-full bg-black"
+            src={payload.contentUrl}
+            controls
+            playsInline
+            preload="metadata"
+          >
+            {subtitleTrackUrl && (
+              <track
+                key={subtitleTrackUrl}
+                kind="subtitles"
+                src={subtitleTrackUrl}
+                srcLang={subtitleSnapshot.source?.language ?? 'und'}
+                label="Learning Companion 字幕"
+                default
+              />
+            )}
+          </video>
+          <VideoExplanationMarkerOverlay
+            visible={explanationMarkersVisible}
+            markers={visibleExplanationMarkers}
+            selectedTarget={
+              activeExplanation &&
+              videoExplanationVisibleAtTime(activeExplanation, currentTime)
+                ? activeExplanation.target
+                : undefined
+            }
+            onActivate={revealExplanation}
+          />
+          {selectedConversationContext && (
+            <div
+              aria-label="已选择的视频画面区域"
+              className="pointer-events-none absolute border-2 border-indigo-300 bg-indigo-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
+              style={{
+                left: `${selectedConversationContext.target.anchorPayload.x * 100}%`,
+                top: `${selectedConversationContext.target.anchorPayload.y * 100}%`,
+                width: `${selectedConversationContext.target.anchorPayload.width * 100}%`,
+                height: `${selectedConversationContext.target.anchorPayload.height * 100}%`,
+              }}
             />
           )}
-        </video>
+          {draftSelection && (
+            <div
+              aria-label="正在框选视频画面区域"
+              className="pointer-events-none absolute border-2 border-indigo-200 bg-indigo-300/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]"
+              style={{
+                left: draftSelection.left,
+                top: draftSelection.top,
+                width: draftSelection.width,
+                height: draftSelection.height,
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <div className="absolute bottom-14 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#151a21]/90 p-1.5 shadow-xl backdrop-blur-md">
@@ -583,6 +1238,35 @@ export function VideoWorkbenchView({
             </div>
           </div>
         </div>
+      )}
+
+      {activeExplanation && (
+        <VideoExplanationPanel
+          explanation={activeExplanation}
+          runtime={
+            activeExplanation.kind === 'task'
+              ? explanationRuntimeByTaskId[activeExplanation.id]
+              : undefined
+          }
+          onClose={() => setActiveExplanationId(undefined)}
+          onRetry={() => void retryExplanation(activeExplanation)}
+          onDelete={() => void deleteExplanation(activeExplanation)}
+          onContinueQuestion={
+            activeExplanation.status === 'completed'
+              ? () => {
+                  setActiveExplanationId(undefined);
+                  conversationRuntime.open({
+                    ownerId: conversationOwnerId,
+                    context: createVideoConversationContext(
+                      activeExplanation.target,
+                      activeExplanation.sourceRevision,
+                    ),
+                  });
+                }
+              : undefined
+          }
+          continueQuestionDisabled={conversationBusy}
+        />
       )}
     </div>
   );

@@ -4,17 +4,10 @@ import {
   isEpubCfiRangeAnchorV1,
   type EpubCfiRangeTarget,
 } from '../shared';
-import type { JsonValue } from '../../../shared/workbench/protocol';
-
 export type { EpubCfiRangeTarget } from '../shared';
 
 export const EPUB_EXPLANATION_ATTACHMENT_TYPE = 'epub.ai-explanation';
 export const EPUB_EXPLANATION_ATTACHMENT_VERSION = 1;
-export const EPUB_EXPLANATION_TASK_DEFINITION_ID = 'epub.explain-selection';
-export const EPUB_EXPLANATION_TASK_DEFINITION_VERSION = 1;
-export const EPUB_EXPLANATION_INSTRUCTION_FORMAT =
-  'learning-companion/epub-explanation-instruction';
-export const EPUB_EXPLANATION_INSTRUCTION_VERSION = 1;
 export const EPUB_DEFAULT_EXPLANATION_QUESTION = '请解释这段话。';
 export const EPUB_EXPLANATION_ANSWER_MAX_LENGTH = 32_768;
 
@@ -30,14 +23,6 @@ export interface EpubExplanationMetadata {
   readonly format: 'learning-companion/epub-explanation';
   readonly version: 1;
 }
-
-export type EpubExplanationTaskResult = JsonValue & {
-  readonly answer: string;
-  readonly providerId: string;
-  readonly modelId: string;
-  readonly title?: string;
-  readonly attachmentId?: string;
-};
 
 interface EpubExplanationViewBase {
   readonly id: string;
@@ -154,20 +139,6 @@ export function isEpubExplanationMetadata(
     isRecord(value) &&
     value.format === 'learning-companion/epub-explanation' &&
     value.version === 1
-  );
-}
-
-export function isEpubExplanationTaskResult(
-  value: unknown,
-): value is EpubExplanationTaskResult {
-  if (!isRecord(value)) return false;
-  return (
-    isRequiredText(value.answer, EPUB_EXPLANATION_ANSWER_MAX_LENGTH) &&
-    isRequiredText(value.providerId, 256) &&
-    isRequiredText(value.modelId, 256) &&
-    (value.title === undefined || isRequiredText(value.title, 128)) &&
-    (value.attachmentId === undefined ||
-      isRequiredText(value.attachmentId, 256))
   );
 }
 

@@ -1,16 +1,41 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
+import { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { GenerationTask } from '../../../main/generation/generation-task';
 import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
+import {
+  WORKBENCH_CONVERSATION_SOURCE_SLOT,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../../shared/workbench-conversation';
 import { createImageRegionTarget } from '../shared';
-import { ImageExplanationInstruction } from './generation/instruction';
+import {
+  createImageConversationContext,
+  IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+} from './image-conversation-context';
 import { ImageExplanationService } from './image-explanation-service';
 
 const target = createImageRegionTarget({
   x: 0.1, y: 0.2, width: 0.3, height: 0.4,
   sourceWidth: 1000, sourceHeight: 800,
 });
+
+function createInstruction(input: {
+  readonly context?: boolean;
+  readonly commitAnswer?: boolean;
+} = {}) {
+  return new WorkbenchConversationInstruction({
+    contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+    assetId: 'asset-1',
+    conversationId: 'conversation-1',
+    question: '请解释这个图片区域。',
+    ...(input.context === false
+      ? {}
+      : { context: createImageConversationContext(target, 'revision-1') }),
+    commitAnswer: input.commitAnswer ?? true,
+  });
+}
 
 describe('ImageExplanationService', () => {
   it('creates one task with the source image bound as an asset reference', async () => {
@@ -54,9 +79,15 @@ describe('ImageExplanationService', () => {
     expect(duplicate.id).toBe('task-1');
     expect(start).toHaveBeenCalledOnce();
     expect(start).toHaveBeenCalledWith(expect.objectContaining({
-      definitionId: 'image.explain-region',
-      instruction: expect.objectContaining({ sourceRevision: 'revision-1' }),
-      assetReferences: { image: [{ assetId: 'asset-1' }] },
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+      instruction: expect.objectContaining({
+        contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+        context: expect.objectContaining({ sourceRevision: 'revision-1' }),
+      }),
+      assetReferences: {
+        [WORKBENCH_CONVERSATION_SOURCE_SLOT]: [{ assetId: 'asset-1' }],
+      },
     }));
     service.dispose();
   });
@@ -170,12 +201,16 @@ describe('ImageExplanationService', () => {
   });
 
   it('cancels a pending task when its explanation is deleted', async () => {
-    const instruction = new ImageExplanationInstruction({ assetId: 'asset-1', target });
+    const instruction = createInstruction();
     const task = GenerationTask.create({
-      id: 'task-1', projectId: 'project-1', definitionId: 'image.explain-region',
-      definitionVersion: 1,
+      id: 'task-1', projectId: 'project-1',
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
-      assetReferences: { image: [{ assetId: 'asset-1' }] }, createdTime: 1,
+      assetReferences: {
+        [WORKBENCH_CONVERSATION_SOURCE_SLOT]: [{ assetId: 'asset-1' }],
+      },
+      createdTime: 1,
     });
     const cancel = vi.fn();
     const service = new ImageExplanationService(
@@ -221,19 +256,19 @@ describe('ImageExplanationService', () => {
   });
 
   it('does not project a follow-up task in the same Session as another image marker', async () => {
-    const instruction = new ImageExplanationInstruction({
+    const instruction = new WorkbenchConversationInstruction({
+      contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: 'asset-1',
       conversationId: 'conversation-1',
       question: '能换一种方式说明吗？',
-      saveAsNote: false,
     });
     const task = GenerationTask.create({
       id: 'follow-up-task',
       projectId: 'project-1',
-      definitionId: 'image.explain-region',
-      definitionVersion: 1,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
-      assetReferences: { image: [{ assetId: 'asset-1' }] },
+      assetReferences: {},
       createdTime: 1,
     });
     const service = new ImageExplanationService(

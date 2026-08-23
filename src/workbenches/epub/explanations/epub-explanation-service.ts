@@ -15,10 +15,9 @@ import type {
   GenerationTaskServiceEvent,
 } from '../../../main/generation/generation-task-service';
 import {
+  EPUB_DEFAULT_EXPLANATION_QUESTION,
   EPUB_EXPLANATION_ATTACHMENT_TYPE,
   EPUB_EXPLANATION_ATTACHMENT_VERSION,
-  EPUB_EXPLANATION_TASK_DEFINITION_ID,
-  EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
   isEpubCfiRangeTarget,
   isEpubExplanationMetadata,
   type CreateEpubExplanationRequest,
@@ -30,9 +29,19 @@ import {
   type ListEpubExplanationsRequest,
 } from './shared';
 import {
-  EpubExplanationInstruction,
-  epubExplanationInstructionFactory,
-} from './generation/instruction';
+  WorkbenchConversationInstruction,
+  workbenchConversationInstructionFactory,
+} from '../../../main/conversation/workbench-conversation-instruction';
+import {
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+  isWorkbenchConversationTaskResult,
+} from '../../../shared/workbench-conversation';
+import {
+  createEpubConversationContext,
+  EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+  isEpubConversationContext,
+} from './epub-conversation-context';
 
 export type EpubExplanationListener = (
   event: EpubExplanationEvent,
@@ -73,10 +82,18 @@ function sameTarget(
 }
 
 function resultAttachmentId(value: unknown): string | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isWorkbenchConversationTaskResult(value)) {
     return undefined;
   }
-  const attachmentId = Reflect.get(value, 'attachmentId');
+  const contextResult = value.contextResult;
+  if (
+    typeof contextResult !== 'object' ||
+    contextResult === null ||
+    Array.isArray(contextResult)
+  ) {
+    return undefined;
+  }
+  const attachmentId = Reflect.get(contextResult, 'attachmentId');
   return typeof attachmentId === 'string' && attachmentId.trim().length > 0
     ? attachmentId
     : undefined;
@@ -168,14 +185,18 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       );
     if (existingTask) return existingTask;
 
-    const instruction = new EpubExplanationInstruction({
+    const instruction = new WorkbenchConversationInstruction({
+      contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: request.assetId,
-      target: request.target,
+      conversationId: randomUUID(),
+      question: EPUB_DEFAULT_EXPLANATION_QUESTION,
+      context: createEpubConversationContext(request.target),
+      commitAnswer: true,
     });
     const task = this.generationTasks.start({
       projectId: request.projectId,
-      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
-      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
       assetReferences: {},
     });
@@ -274,25 +295,35 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
 
   private taskInstruction(
     snapshot: GenerationTaskSnapshot,
-  ): EpubExplanationInstruction | undefined {
+  ): WorkbenchConversationInstruction | undefined {
     if (
-      snapshot.definitionId !== EPUB_EXPLANATION_TASK_DEFINITION_ID ||
+      snapshot.definitionId !== WORKBENCH_CONVERSATION_TASK_DEFINITION_ID ||
       snapshot.definitionVersion !==
-        EPUB_EXPLANATION_TASK_DEFINITION_VERSION
+        WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION
     ) {
       return undefined;
     }
-    const parsed = epubExplanationInstructionFactory.parse(
+    const parsed = workbenchConversationInstructionFactory.parse(
       snapshot.instruction,
     );
-    return parsed.ok ? parsed.value : undefined;
+    return parsed.ok &&
+      parsed.value.contextProviderId ===
+        EPUB_CONVERSATION_CONTEXT_PROVIDER_ID
+      ? parsed.value
+      : undefined;
   }
 
   private toTaskView(
     snapshot: GenerationTaskSnapshot,
   ): EpubExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
-    if (!instruction?.saveAsNote || !instruction.target) return undefined;
+    const conversationContext = instruction?.context;
+    if (
+      !instruction?.commitAnswer ||
+      !isEpubConversationContext(conversationContext)
+    ) {
+      return undefined;
+    }
     const status = new GenerationTask(snapshot).getStatus();
     if (status === 'completed' || status === 'cancelled') return undefined;
     return Object.freeze({
@@ -300,7 +331,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       id: snapshot.id,
       projectId: snapshot.projectId,
       assetId: instruction.assetId,
-      target: instruction.target,
+      target: conversationContext.target,
       status: status === 'failed' ? 'failed' : 'pending',
       ...(snapshot.failure
         ? { failureMessage: snapshot.failure.message }
@@ -370,7 +401,13 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     }
 
     const instruction = this.taskInstruction(event.snapshot);
-    if (!instruction?.saveAsNote || !instruction.target) return;
+    const conversationContext = instruction?.context;
+    if (
+      !instruction?.commitAnswer ||
+      !isEpubConversationContext(conversationContext)
+    ) {
+      return;
+    }
     const location = {
       projectId: event.snapshot.projectId,
       assetId: instruction.assetId,
@@ -431,3 +468,4 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     }
   }
 }
+import { randomUUID } from 'node:crypto';

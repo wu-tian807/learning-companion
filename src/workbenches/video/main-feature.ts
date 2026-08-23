@@ -1,13 +1,13 @@
-import type { MainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
+import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
 import { MediaSubtitleRuntimeResolver } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import { videoConversationMainFeature } from './conversation/main';
 import { VideoWorkbenchProvider } from './main';
 import { videoWorkbenchManifest } from './shared';
 import { VideoSubtitleService } from './subtitles/video-subtitle-service';
 
-export const videoMainContribution = Object.freeze({
-  id: videoWorkbenchManifest.id,
-  manifest: videoWorkbenchManifest,
-  createProvider(context) {
+export const videoMainContribution = composeMainWorkbenchContribution(
+  videoWorkbenchManifest,
+  (context) => {
     const subtitles = new VideoSubtitleService(
       context.assetService,
       context.projectLookup,
@@ -25,4 +25,5 @@ export const videoMainContribution = Object.freeze({
       },
     );
   },
-} satisfies MainWorkbenchContribution);
+  [videoConversationMainFeature],
+);

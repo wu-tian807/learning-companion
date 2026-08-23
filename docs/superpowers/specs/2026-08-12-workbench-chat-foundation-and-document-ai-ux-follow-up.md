@@ -1,5 +1,11 @@
 # Workbench 共享聊天基建与 Document AI 体验整改记录
 
+> 历史记录提示：本文保留 PR #18/#35 阶段的问题与决策背景。其“每个
+> Workbench 自建 TaskDefinition”的方案已经被 2026-08-23 的统一实现取代；
+> 当前实现与扩展规则以
+> [统一 Workbench Conversation 架构](./2026-08-23-unified-workbench-conversation-design.md)
+> 为准。
+
 日期：2026-08-12  
 状态：共享 Renderer 基建已实现；媒体专用能力继续按 Workbench 扩展
 

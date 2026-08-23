@@ -1,4 +1,5 @@
 import { AppError } from '../../main/errors/app-error';
+import { createWorkbenchConversationTaskDefinitionV1 } from '../../main/conversation/workbench-conversation-task-definition';
 import type {
   MainWorkbenchAgentToolContext,
   MainWorkbenchArtifactContext,
@@ -141,8 +142,13 @@ export function registerMainWorkbenchGeneration(
   context: MainWorkbenchGenerationContext,
 ): void {
   forEachContribution((entry) => {
-    entry.registerGenerationTaskDefinitions?.(context);
+    entry.registerGeneration?.(context);
   });
+  context.definitions.register(
+    createWorkbenchConversationTaskDefinitionV1(
+      context.conversationContexts,
+    ),
+  );
 }
 
 export function startMainWorkbenchContributions(

@@ -2,11 +2,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ConversationHistoryStore } from '../../../../renderer/conversation/conversation-contracts';
-import type { GenerationTaskView } from '../../../../shared/generation-tasks';
+import { createWorkbenchConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
 import {
-  DOCUMENT_QUESTION_TASK_DEFINITION_ID,
-  DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
-} from '../../../../shared/generation-definitions';
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../../../shared/workbench-conversation';
+import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../../document-conversation-context';
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
@@ -17,25 +18,6 @@ const historyStore: ConversationHistoryStore = {
   save: async (record) => [record],
   remove: async () => [],
 };
-
-function completedTask(): GenerationTaskView {
-  return {
-    id: 'task',
-    projectId: 'project',
-    definitionId: DOCUMENT_QUESTION_TASK_DEFINITION_ID,
-    definitionVersion: DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
-    status: 'completed',
-    result: {
-      answer: '最终回答',
-      title: '标题',
-      providerId: 'codex',
-      modelId: 'gpt',
-    },
-    metrics: {},
-    createdTime: 1,
-    updatedTime: 2,
-  };
-}
 
 describe('Document conversation contribution', () => {
   beforeEach(() => {
@@ -65,7 +47,7 @@ describe('Document conversation contribution', () => {
       selectedText: 'selected',
     });
 
-    expect(contribution.createTaskRequest({
+    expect(createWorkbenchConversationTaskRequest(contribution, {
       projectId: 'project',
       assetId: 'asset',
       conversationId: 'conversation-1',
@@ -74,21 +56,16 @@ describe('Document conversation contribution', () => {
       generateTitle: true,
     })).toMatchObject({
       projectId: 'project',
-      definitionId: DOCUMENT_QUESTION_TASK_DEFINITION_ID,
-      definitionVersion: DOCUMENT_QUESTION_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: {
+        contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
         conversationId: 'conversation-1',
         question: '解释这里',
-        selectedText: 'selected',
-        target: context.target,
+        context,
         generateTitle: true,
       },
-      assetReferences: { document: [{ assetId: 'asset' }] },
-    });
-    expect(contribution.readTaskResult(completedTask())).toEqual({
-      answer: '最终回答',
-      title: '标题',
-      modelInfo: 'codex/gpt',
+      assetReferences: { source: [{ assetId: 'asset' }] },
     });
   });
 

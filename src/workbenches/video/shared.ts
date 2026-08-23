@@ -27,6 +27,8 @@ export const VIDEO_WORKBENCH_ID = 'builtin.video';
 export const VIDEO_STATE_SCHEMA_VERSION = 2;
 export const VIDEO_TIME_RANGE_ANCHOR_TYPE = 'video.time-range';
 export const VIDEO_TIME_RANGE_ANCHOR_VERSION = 1;
+export const VIDEO_FRAME_REGION_ANCHOR_TYPE = 'video.frame-region';
+export const VIDEO_FRAME_REGION_ANCHOR_VERSION = 1;
 
 export const videoWorkbenchManifest: AssetWorkbenchManifest<
   typeof VIDEO_WORKBENCH_ID
@@ -41,7 +43,10 @@ export const videoWorkbenchManifest: AssetWorkbenchManifest<
     'video/quicktime',
   ],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [VIDEO_TIME_RANGE_ANCHOR_TYPE],
+  supportedAnchorTypes: [
+    VIDEO_TIME_RANGE_ANCHOR_TYPE,
+    VIDEO_FRAME_REGION_ANCHOR_TYPE,
+  ],
   facilities: [
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
@@ -129,6 +134,22 @@ export interface VideoTimeRangeAnchorV1 {
   readonly startSeconds: number;
   readonly endSeconds: number;
 }
+
+export interface VideoFrameRegionAnchorV1 {
+  readonly timeSeconds: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly sourceWidth: number;
+  readonly sourceHeight: number;
+}
+
+export type VideoFrameRegionTarget = ContentAnchorTarget & {
+  readonly anchorType: typeof VIDEO_FRAME_REGION_ANCHOR_TYPE;
+  readonly anchorVersion: typeof VIDEO_FRAME_REGION_ANCHOR_VERSION;
+  readonly anchorPayload: VideoFrameRegionAnchorV1;
+};
 
 export const DEFAULT_VIDEO_VIEW_STATE: Readonly<VideoWorkbenchViewState> =
   Object.freeze({
@@ -373,6 +394,51 @@ export function isVideoTimeRangeAnchorV1(
     isFiniteInRange(value.endSeconds, 0, 1_000_000_000) &&
     value.endSeconds >= value.startSeconds
   );
+}
+
+export function isVideoFrameRegionAnchorV1(
+  value: unknown,
+): value is VideoFrameRegionAnchorV1 {
+  return (
+    isRecord(value) &&
+    isFiniteInRange(value.timeSeconds, 0, 1_000_000_000) &&
+    isFiniteInRange(value.x, 0, 1) &&
+    isFiniteInRange(value.y, 0, 1) &&
+    isFiniteInRange(value.width, 0.000_001, 1) &&
+    isFiniteInRange(value.height, 0.000_001, 1) &&
+    Number(value.x) + Number(value.width) <= 1.000_001 &&
+    Number(value.y) + Number(value.height) <= 1.000_001 &&
+    Number.isSafeInteger(value.sourceWidth) &&
+    Number(value.sourceWidth) > 0 &&
+    Number.isSafeInteger(value.sourceHeight) &&
+    Number(value.sourceHeight) > 0
+  );
+}
+
+export function isVideoFrameRegionTarget(
+  value: unknown,
+): value is VideoFrameRegionTarget {
+  return (
+    isRecord(value) &&
+    value.scope === 'content' &&
+    value.anchorType === VIDEO_FRAME_REGION_ANCHOR_TYPE &&
+    value.anchorVersion === VIDEO_FRAME_REGION_ANCHOR_VERSION &&
+    isVideoFrameRegionAnchorV1(value.anchorPayload)
+  );
+}
+
+export function createVideoFrameRegionTarget(
+  input: VideoFrameRegionAnchorV1,
+): VideoFrameRegionTarget {
+  if (!isVideoFrameRegionAnchorV1(input)) {
+    throw new Error('视频画面区域无效');
+  }
+  return Object.freeze({
+    scope: 'content' as const,
+    anchorType: VIDEO_FRAME_REGION_ANCHOR_TYPE,
+    anchorVersion: VIDEO_FRAME_REGION_ANCHOR_VERSION,
+    anchorPayload: Object.freeze({ ...input }),
+  });
 }
 
 export function createVideoTimeRangeTarget(

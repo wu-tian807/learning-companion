@@ -25,6 +25,7 @@ import { AttachmentRegistry } from '../attachments/attachment-registry';
 import { AttachmentService } from '../attachments/attachment-service';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
+import { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
 import {
   registerContentProtocol,
   removeContentProtocol,
@@ -68,9 +69,7 @@ import {
   type MainWorkbenchRuntime,
 } from '../../workbenches/catalog/register-main-workbenches';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
-import {
-  ApplicationRuntime,
-} from './application-runtime';
+import { ApplicationRuntime } from './application-runtime';
 import { createAgentProviderService } from './create-agent-provider-service';
 import { createCodexRuntime } from './create-codex-runtime';
 import { createExternalLibraryRuntime } from './create-external-library-runtime';
@@ -93,14 +92,9 @@ export async function createApplicationRuntime({
   let contentResourceService: ContentResourceService | undefined;
   let externalLibraryService: ExternalLibraryService | undefined;
   let agentProviderService:
-    | ReturnType<typeof createAgentProviderService>
-    | undefined;
-  let codexRuntimeService:
-    | ReturnType<typeof createCodexRuntime>
-    | undefined;
-  let sandboxFrameInteractionBridge:
-    | SandboxFrameInteractionBridge
-    | undefined;
+    ReturnType<typeof createAgentProviderService> | undefined;
+  let codexRuntimeService: ReturnType<typeof createCodexRuntime> | undefined;
+  let sandboxFrameInteractionBridge: SandboxFrameInteractionBridge | undefined;
   let workbenchSessionService: WorkbenchSessionService | undefined;
   let generationTaskService: GenerationTaskService | undefined;
   let mainWorkbenchFeatures: MainWorkbenchRuntime | undefined;
@@ -132,9 +126,8 @@ export async function createApplicationRuntime({
       },
     );
     await settingsRepository.initialize();
-    externalLibraryService = await createExternalLibraryRuntime(
-      settingsRepository,
-    );
+    externalLibraryService =
+      await createExternalLibraryRuntime(settingsRepository);
     databaseContext = initializeDatabase(appPaths.databaseFile);
     const workspaceManager = new ProjectWorkspaceManager();
     await migrateProjectWorkspaces(
@@ -150,16 +143,9 @@ export async function createApplicationRuntime({
       functionTools: agentFunctionTools,
     });
     const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
-    const agentSkills = new AgentSkillService(
-      agentCapabilityPaths.skillsPath,
-    );
-    const agentMcpServers = new AgentMcpService(
-      agentCapabilityPaths.mcpPath,
-    );
-    await Promise.all([
-      agentSkills.initialize(),
-      agentMcpServers.initialize(),
-    ]);
+    const agentSkills = new AgentSkillService(agentCapabilityPaths.skillsPath);
+    const agentMcpServers = new AgentMcpService(agentCapabilityPaths.mcpPath);
+    await Promise.all([agentSkills.initialize(), agentMcpServers.initialize()]);
     agentProviderService = createAgentProviderService(
       settingsRepository,
       agentProviderSecrets,
@@ -236,57 +222,54 @@ export async function createApplicationRuntime({
     });
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
-    const transportBindingRegistry =
-      new WorkbenchTransportBindingRegistry(
-        workbenchFacilityRegistry,
-      );
-    sandboxFrameInteractionBridge =
-      new SandboxFrameInteractionBridge(
-        transportBindingRegistry,
-        workbenchFacilityRegistry,
-      );
+    const transportBindingRegistry = new WorkbenchTransportBindingRegistry(
+      workbenchFacilityRegistry,
+    );
+    sandboxFrameInteractionBridge = new SandboxFrameInteractionBridge(
+      transportBindingRegistry,
+      workbenchFacilityRegistry,
+    );
     const workbenchRegistry = new WorkbenchRegistry(
       new UnsupportedWorkbenchProvider(),
       workbenchFacilityRegistry,
     );
-    const workbenchStateRepository =
-      new WorkbenchStateDatabase(databaseContext);
-    const workbenchStateDataRepository =
-      new WorkbenchStateDataDatabase(databaseContext);
-    const workbenchEvents = new WorkbenchEventBus();
-    registerMainWorkbenchProviders(
-      workbenchRegistry,
-      {
-        associationService,
-        assetService,
-        artifactRegistry,
-        artifactService,
-        contentResourceService,
-        externalLibraryService,
-        projectLookup: projectDatabase,
-        stateDatabase: workbenchStateRepository,
-        stateDataDatabase: workbenchStateDataRepository,
-        sandboxFrameScripts: sandboxFrameInteractionBridge,
-        workbenchEvents,
-      },
-    );
-    const generationTaskDatabase = new GenerationTaskDatabase(
+    const workbenchStateRepository = new WorkbenchStateDatabase(
       databaseContext,
     );
-    const generationTaskDefinitions =
-      new GenerationTaskDefinitionRegistry();
+    const workbenchStateDataRepository = new WorkbenchStateDataDatabase(
+      databaseContext,
+    );
+    const workbenchEvents = new WorkbenchEventBus();
+    registerMainWorkbenchProviders(workbenchRegistry, {
+      associationService,
+      assetService,
+      artifactRegistry,
+      artifactService,
+      contentResourceService,
+      externalLibraryService,
+      projectLookup: projectDatabase,
+      stateDatabase: workbenchStateRepository,
+      stateDataDatabase: workbenchStateDataRepository,
+      sandboxFrameScripts: sandboxFrameInteractionBridge,
+      workbenchEvents,
+    });
+    const generationTaskDatabase = new GenerationTaskDatabase(databaseContext);
+    const generationTaskDefinitions = new GenerationTaskDefinitionRegistry();
+    const conversationContexts =
+      new WorkbenchConversationContextProviderRegistry();
     registerMainWorkbenchGeneration({
       definitions: generationTaskDefinitions,
+      conversationContexts,
       assets: assetService,
+      artifacts: artifactService,
       associations: associationService,
       attachments: attachmentService,
+      externalLibraries: externalLibraryService,
+      projects: projectDatabase,
     });
     const generationTaskPreparer = new GenerationTaskPreparer(
       new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
-      new GenerationAssetReferencePreparer(
-        assetService,
-        workbenchRegistry,
-      ),
+      new GenerationAssetReferencePreparer(assetService, workbenchRegistry),
     );
     generationTaskService = new GenerationTaskService(
       generationTaskDatabase,
@@ -345,8 +328,7 @@ export async function createApplicationRuntime({
       workbenchSessionService,
       disposeContentProtocol: removeContentProtocol,
       disposeIpc,
-      disposeWorkbenchFeatures: () =>
-        mainWorkbenchFeatures?.dispose(),
+      disposeWorkbenchFeatures: () => mainWorkbenchFeatures?.dispose(),
     });
   } catch (error) {
     await Promise.allSettled([

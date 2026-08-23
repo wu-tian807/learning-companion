@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { JsonValue } from '../../shared/workbench/protocol';
-import { AppError } from '../errors/app-error';
+import { AppError, describeAppError } from '../errors/app-error';
 import type { ProjectLookup } from '../projects/project-database';
 import {
   validateGenerationAssetReferenceBindings,
@@ -307,15 +307,15 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       throw new AppError('CODEX_TURN_ACTIVE');
     }
 
-    const definition = this.definitions.require(
-      initialSnapshot.definitionId,
-      initialSnapshot.definitionVersion,
-    );
     const controller = new AbortController();
     const runSignal = createCombinedSignal(controller, signal);
     this.activeRuns.set(initialSnapshot.id, controller);
 
     try {
+      const definition = this.definitions.require(
+        initialSnapshot.definitionId,
+        initialSnapshot.definitionVersion,
+      );
       const result = yield* this.execution.run(
         task,
         definition,
@@ -324,6 +324,9 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       );
       runSignal.throwIfAborted();
       return result;
+    } catch (error) {
+      this.persistUnhandledRunFailure(task, error);
+      throw error;
     } finally {
       if (this.activeRuns.get(initialSnapshot.id) === controller) {
         this.activeRuns.delete(initialSnapshot.id);
@@ -378,6 +381,34 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
 
   private releaseCompletedTask(taskId: string): void {
     this.tasks.delete(taskId);
+  }
+
+  private persistUnhandledRunFailure(
+    task: GenerationTask,
+    error: unknown,
+  ): void {
+    const snapshot = task.getSnapshot();
+    if (
+      isAbortError(error) ||
+      snapshot.failure ||
+      snapshot.completed ||
+      snapshot.cancelledTime !== undefined
+    ) {
+      return;
+    }
+
+    const description = describeAppError(error);
+    task.recordFailure({
+      phase: snapshot.prepared ? 'process' : 'prepare',
+      failedTime: Math.max(
+        this.dependencies.now(),
+        snapshot.updatedTime,
+      ),
+      message: description.userMessage ?? 'GenerationTask 执行失败',
+      code: description.code,
+      ...(description.detail ? { detail: description.detail } : {}),
+    });
+    this.database.update(task.getSnapshot());
   }
 
   private requireTask(taskId: string): GenerationTask {

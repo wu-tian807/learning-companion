@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { WorkbenchConversationContribution } from './conversation-contracts';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
@@ -7,6 +7,7 @@ function contribution(id: string): WorkbenchConversationContribution {
   return {
     id,
     workbenchId: `${id}.workbench`,
+    contextProviderId: `${id}.context`,
     title: id,
     emptyLabel: 'empty',
     historyStore: {
@@ -14,14 +15,6 @@ function contribution(id: string): WorkbenchConversationContribution {
       save: async (record) => [record],
       remove: async () => [],
     },
-    createTaskRequest: vi.fn(() => ({
-      projectId: 'project',
-      definitionId: 'definition',
-      definitionVersion: 1,
-      instruction: {},
-      assetReferences: {},
-    })),
-    readTaskResult: vi.fn(),
   };
 }
 

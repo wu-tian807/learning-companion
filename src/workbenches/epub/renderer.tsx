@@ -293,11 +293,10 @@ export function EpubWorkbenchView({
   const conversationContribution = useMemo(
     () =>
       createEpubConversationContribution({
-        assetId: asset.id,
         historyStore: conversationHistoryStore,
         revealContext: revealConversationContext,
       }),
-    [asset.id, conversationHistoryStore, revealConversationContext],
+    [conversationHistoryStore, revealConversationContext],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,

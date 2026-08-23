@@ -1,20 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
+import { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { GenerationTask } from '../../../main/generation/generation-task';
 import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import { createEpubCfiRangeTarget } from '../shared';
 import {
-  EPUB_EXPLANATION_TASK_DEFINITION_ID,
-  EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
-} from './shared';
-import { EpubExplanationInstruction } from './generation/instruction';
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+  WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
+} from '../../../shared/workbench-conversation';
+import {
+  createEpubConversationContext,
+  EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+} from './epub-conversation-context';
 import { EpubExplanationService } from './epub-explanation-service';
 
 function createTarget() {
   return createEpubCfiRangeTarget({
     cfiRange: 'epubcfi(/6/2!/4/2/1:0,/1:4)',
     quote: { exact: '文字', prefix: '前文', suffix: '后文' },
+  });
+}
+
+function createInstruction(input: { readonly commitAnswer?: boolean } = {}) {
+  return new WorkbenchConversationInstruction({
+    contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+    assetId: 'asset-1',
+    conversationId: 'conversation-1',
+    question: '请解释这段话。',
+    context: createEpubConversationContext(createTarget()),
+    commitAnswer: input.commitAnswer ?? true,
   });
 }
 
@@ -112,16 +127,12 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
   });
 
   it('restores failed UI state from the unfinished GenerationTask itself', async () => {
-    const target = createTarget();
-    const instruction = new EpubExplanationInstruction({
-      assetId: 'asset-1',
-      target,
-    });
+    const instruction = createInstruction();
     const task = GenerationTask.create({
       id: 'task-1',
       projectId: 'project-1',
-      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
-      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
       assetReferences: {},
       createdTime: 1,
@@ -165,15 +176,12 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
 
   it('replaces the active task projection with its completed Attachment', async () => {
     const target = createTarget();
-    const instruction = new EpubExplanationInstruction({
-      assetId: 'asset-1',
-      target,
-    });
+    const instruction = createInstruction();
     const task = GenerationTask.create({
       id: 'task-1',
       projectId: 'project-1',
-      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
-      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
       assetReferences: {},
       createdTime: 1,
@@ -234,7 +242,12 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
       snapshot: task.getSnapshot(),
       result: {
         taskId: 'task-1',
-        result: { attachmentId: 'attachment-1' },
+        result: {
+          answer: '# 解释\n正文',
+          providerId: 'codex',
+          modelId: 'gpt',
+          contextResult: { attachmentId: 'attachment-1' },
+        },
         metrics: task.getSnapshot().metrics,
       },
     });
@@ -253,17 +266,17 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
   });
 
   it('不把同一 Session 中的后续追问投影成新标注', async () => {
-    const instruction = new EpubExplanationInstruction({
+    const instruction = new WorkbenchConversationInstruction({
+      contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: 'asset-1',
       conversationId: 'conversation-1',
       question: '能换一种说法吗？',
-      saveAsNote: false,
     });
     const task = GenerationTask.create({
       id: 'follow-up-task',
       projectId: 'project-1',
-      definitionId: EPUB_EXPLANATION_TASK_DEFINITION_ID,
-      definitionVersion: EPUB_EXPLANATION_TASK_DEFINITION_VERSION,
+      definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
+      definitionVersion: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       instruction: instruction.toSnapshot(),
       assetReferences: {},
       createdTime: 1,
