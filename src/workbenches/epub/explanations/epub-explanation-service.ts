@@ -1,19 +1,18 @@
+import { randomUUID } from 'node:crypto';
+
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import type { AssetLookup } from '../../../main/assets/asset-database';
-import type { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
-import type {
-  AttachmentServiceApi,
-  AttachmentServiceEvent,
-} from '../../../main/attachments/attachment-service';
+import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
+import {
+  WorkbenchConversationAttachmentProjection,
+  type WorkbenchConversationProjectionLocation,
+} from '../../../main/conversation/workbench-conversation-attachment-projection';
 import { AppError } from '../../../main/errors/app-error';
 import {
   GenerationTask,
   type GenerationTaskSnapshot,
 } from '../../../main/generation/generation-task';
-import type {
-  GenerationTaskServiceApi,
-  GenerationTaskServiceEvent,
-} from '../../../main/generation/generation-task-service';
+import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import {
   EPUB_DEFAULT_EXPLANATION_QUESTION,
   EPUB_EXPLANATION_ATTACHMENT_TYPE,
@@ -35,7 +34,6 @@ import {
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
-  isWorkbenchConversationTaskResult,
 } from '../../../shared/workbench-conversation';
 import {
   createEpubConversationContext,
@@ -51,9 +49,7 @@ export interface EpubExplanationServiceApi {
   list(
     request: ListEpubExplanationsRequest,
   ): Promise<readonly EpubExplanationView[]>;
-  create(
-    request: CreateEpubExplanationRequest,
-  ): Promise<EpubExplanationView>;
+  create(request: CreateEpubExplanationRequest): Promise<EpubExplanationView>;
   retry(request: EpubExplanationIdRequest): Promise<EpubExplanationView>;
   delete(request: EpubExplanationIdRequest): Promise<void>;
   subscribe(listener: EpubExplanationListener): () => void;
@@ -81,46 +77,48 @@ function sameTarget(
   return left.anchorPayload.cfiRange === right.anchorPayload.cfiRange;
 }
 
-function resultAttachmentId(value: unknown): string | undefined {
-  if (!isWorkbenchConversationTaskResult(value)) {
-    return undefined;
-  }
-  const contextResult = value.contextResult;
-  if (
-    typeof contextResult !== 'object' ||
-    contextResult === null ||
-    Array.isArray(contextResult)
-  ) {
-    return undefined;
-  }
-  const attachmentId = Reflect.get(contextResult, 'attachmentId');
-  return typeof attachmentId === 'string' && attachmentId.trim().length > 0
-    ? attachmentId
-    : undefined;
-}
-
 export class EpubExplanationService implements EpubExplanationServiceApi {
-  private readonly listeners = new Set<EpubExplanationListener>();
-  private readonly taskLocations = new Map<
-    string,
-    { readonly projectId: string; readonly assetId: string }
-  >();
-  private readonly removeAttachmentSubscription: () => void;
-  private readonly removeGenerationSubscription: () => void;
+  private readonly projection: WorkbenchConversationAttachmentProjection<
+    AssetAttachment & {
+      readonly target: EpubExplanationAttachmentView['target'];
+    },
+    EpubExplanationTaskView,
+    EpubExplanationAttachmentView,
+    EpubExplanationEvent
+  >;
 
   constructor(
     private readonly attachments: AttachmentServiceApi,
-    private readonly contentFiles: AttachmentContentFile,
     private readonly generationTasks: GenerationTaskServiceApi,
     private readonly assets: AssetLookup,
   ) {
-    this.removeAttachmentSubscription = attachments.subscribe((event) =>
-      this.handleAttachmentEvent(event),
-    );
-    this.removeGenerationSubscription = generationTasks.subscribe((event) => {
-      void this.handleGenerationEvent(event).catch((error: unknown) => {
-        console.error('同步 EPUB 解释任务状态失败', error);
-      });
+    this.projection = new WorkbenchConversationAttachmentProjection<
+      AssetAttachment & {
+        readonly target: EpubExplanationAttachmentView['target'];
+      },
+      EpubExplanationTaskView,
+      EpubExplanationAttachmentView,
+      EpubExplanationEvent
+    >(attachments, generationTasks, {
+      label: 'EPUB 解释投影',
+      isAttachment: isExplanationAttachment,
+      locateTask: (snapshot) => this.taskLocation(snapshot),
+      toTaskView: (snapshot) => this.toTaskView(snapshot),
+      toAttachmentView: (attachment) => this.toAttachmentView(attachment),
+      events: {
+        changed: (explanation) => ({ type: 'changed', explanation }),
+        replaced: (location, previousExplanationId, explanation) => ({
+          type: 'replaced',
+          ...location,
+          previousExplanationId,
+          explanation,
+        }),
+        deleted: (location, explanationId) => ({
+          type: 'deleted',
+          ...location,
+          explanationId,
+        }),
+      },
     });
   }
 
@@ -129,12 +127,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   ): Promise<readonly EpubExplanationView[]> {
     this.requireAsset(request.projectId, request.assetId);
     const attachmentViews = await Promise.all(
-      (
-        await this.attachments.listByAsset(
-          request.projectId,
-          request.assetId,
-        )
-      )
+      (await this.attachments.listByAsset(request.projectId, request.assetId))
         .filter(isExplanationAttachment)
         .map((attachment) => this.toAttachmentView(attachment)),
     );
@@ -149,10 +142,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       );
 
     for (const view of taskViews) {
-      this.taskLocations.set(view.id, {
-        projectId: view.projectId,
-        assetId: view.assetId,
-      });
+      this.projection.trackTask(view);
     }
 
     return [...attachmentViews, ...taskViews].sort(
@@ -202,10 +192,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     });
     const view = this.toTaskView(task);
     if (!view) throw new AppError('DATA_INTEGRITY_ERROR');
-    this.taskLocations.set(view.id, {
-      projectId: view.projectId,
-      assetId: view.assetId,
-    });
+    this.projection.trackTask(view);
     return view;
   }
 
@@ -221,6 +208,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       this.generationTasks.retry(request.explanationId),
     );
     if (!retried) throw new AppError('DATA_INTEGRITY_ERROR');
+    this.projection.trackTask(retried);
     return retried;
   }
 
@@ -240,15 +228,11 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   }
 
   subscribe(listener: EpubExplanationListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return this.projection.subscribe(listener);
   }
 
   dispose(): void {
-    this.removeAttachmentSubscription();
-    this.removeGenerationSubscription();
-    this.taskLocations.clear();
-    this.listeners.clear();
+    this.projection.dispose();
   }
 
   private requireAsset(projectId: string, assetId: string): void {
@@ -261,7 +245,9 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     }
   }
 
-  private requireTask(request: EpubExplanationIdRequest): EpubExplanationTaskView {
+  private requireTask(
+    request: EpubExplanationIdRequest,
+  ): EpubExplanationTaskView {
     this.requireAsset(request.projectId, request.assetId);
     const snapshot = this.generationTasks.get(request.explanationId);
     const view = snapshot ? this.toTaskView(snapshot) : undefined;
@@ -275,11 +261,11 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     return view;
   }
 
-  private async requireAttachment(
-    request: EpubExplanationIdRequest,
-  ): Promise<AssetAttachment & {
-    readonly target: EpubExplanationAttachmentView['target'];
-  }> {
+  private async requireAttachment(request: EpubExplanationIdRequest): Promise<
+    AssetAttachment & {
+      readonly target: EpubExplanationAttachmentView['target'];
+    }
+  > {
     this.requireAsset(request.projectId, request.assetId);
     const attachment = await this.attachments.get(request.explanationId);
     if (
@@ -307,9 +293,18 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       snapshot.instruction,
     );
     return parsed.ok &&
-      parsed.value.contextProviderId ===
-        EPUB_CONVERSATION_CONTEXT_PROVIDER_ID
+      parsed.value.contextProviderId === EPUB_CONVERSATION_CONTEXT_PROVIDER_ID
       ? parsed.value
+      : undefined;
+  }
+
+  private taskLocation(
+    snapshot: GenerationTaskSnapshot,
+  ): WorkbenchConversationProjectionLocation | undefined {
+    const instruction = this.taskInstruction(snapshot);
+    return instruction?.commitAnswer &&
+      isEpubConversationContext(instruction.context)
+      ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
   }
 
@@ -333,9 +328,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       assetId: instruction.assetId,
       target: conversationContext.target,
       status: status === 'failed' ? 'failed' : 'pending',
-      ...(snapshot.failure
-        ? { failureMessage: snapshot.failure.message }
-        : {}),
+      ...(snapshot.failure ? { failureMessage: snapshot.failure.message } : {}),
       createdTime: snapshot.createdTime,
       updatedTime: snapshot.updatedTime,
     });
@@ -347,9 +340,9 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     },
   ): Promise<EpubExplanationAttachmentView> {
     if (!attachment.content) throw new AppError('DATA_INTEGRITY_ERROR');
-    const answer = await this.contentFiles.readText(
+    const answer = await this.attachments.readTextContent(
       attachment.projectId,
-      attachment.content.ref,
+      attachment.id,
     );
     if (answer === undefined) throw new AppError('DATA_INTEGRITY_ERROR');
     return Object.freeze({
@@ -364,108 +357,4 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       updatedTime: attachment.updatedTime,
     });
   }
-
-  private async handleAttachmentEvent(
-    event: AttachmentServiceEvent,
-  ): Promise<void> {
-    if (!isExplanationAttachment(event.attachment)) return;
-    if (event.type === 'deleted') {
-      this.publish({
-        type: 'deleted',
-        projectId: event.attachment.projectId,
-        assetId: event.attachment.assetId,
-        explanationId: event.attachment.id,
-      });
-      return;
-    }
-    this.publish({
-      type: 'changed',
-      explanation: await this.toAttachmentView(event.attachment),
-    });
-  }
-
-  private async handleGenerationEvent(
-    event: GenerationTaskServiceEvent,
-  ): Promise<void> {
-    if (event.type === 'execution-event') return;
-    if (event.type === 'task-discarded') {
-      const location = this.taskLocations.get(event.taskId);
-      if (!location) return;
-      this.taskLocations.delete(event.taskId);
-      this.publish({
-        type: 'deleted',
-        ...location,
-        explanationId: event.taskId,
-      });
-      return;
-    }
-
-    const instruction = this.taskInstruction(event.snapshot);
-    const conversationContext = instruction?.context;
-    if (
-      !instruction?.commitAnswer ||
-      !isEpubConversationContext(conversationContext)
-    ) {
-      return;
-    }
-    const location = {
-      projectId: event.snapshot.projectId,
-      assetId: instruction.assetId,
-    };
-    this.taskLocations.set(event.snapshot.id, location);
-
-    if (event.type === 'task-completed') {
-      this.taskLocations.delete(event.snapshot.id);
-      const attachmentId = resultAttachmentId(event.result.result);
-      const attachment = attachmentId
-        ? await this.attachments.get(attachmentId)
-        : undefined;
-      if (
-        !attachment ||
-        attachment.projectId !== location.projectId ||
-        attachment.assetId !== location.assetId ||
-        !isExplanationAttachment(attachment)
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      this.publish({
-        type: 'replaced',
-        ...location,
-        previousExplanationId: event.snapshot.id,
-        explanation: await this.toAttachmentView(attachment),
-      });
-      return;
-    }
-
-    const status = new GenerationTask(event.snapshot).getStatus();
-    if (status === 'completed') {
-      // task-completed carries the result Attachment ID and performs the
-      // renderer projection replacement atomically.
-      return;
-    }
-    const view = this.toTaskView(event.snapshot);
-    if (!view) {
-      this.taskLocations.delete(event.snapshot.id);
-      this.publish({
-        type: 'deleted',
-        ...location,
-        explanationId: event.snapshot.id,
-      });
-      return;
-    }
-    this.publish({ type: 'changed', explanation: view });
-  }
-
-  private publish(event: EpubExplanationEvent): void {
-    for (const listener of this.listeners) {
-      try {
-        Promise.resolve(listener(event)).catch((error: unknown) => {
-          console.error('异步 EPUB 解释订阅者执行失败', error);
-        });
-      } catch (error) {
-        console.error('发布 EPUB 解释事件失败', error);
-      }
-    }
-  }
 }
-import { randomUUID } from 'node:crypto';

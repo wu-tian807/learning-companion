@@ -1,24 +1,24 @@
 import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
 import { CachedSubtitleTrackReader } from '../../media-subtitles/cached-subtitle-track-reader';
 import { MediaSubtitleRuntimeResolver } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
-import {
-  VIDEO_EXPLANATION_ATTACHMENT_TYPE,
-  VIDEO_EXPLANATION_ATTACHMENT_VERSION,
-  isVideoExplanationMetadata,
-} from '../explanations/shared';
-import {
-  registerVideoExplanationHandlers,
-  removeVideoExplanationHandlers,
-} from '../explanations/ipc';
-import { VideoExplanationService } from '../explanations/video-explanation-service';
+import { VideoConversationContextProvider } from '../conversation/video-conversation-context-provider';
 import {
   VIDEO_FRAME_REGION_ANCHOR_TYPE,
   VIDEO_FRAME_REGION_ANCHOR_VERSION,
   isVideoFrameRegionAnchorV1,
 } from '../shared';
-import { VideoConversationContextProvider } from './video-conversation-context-provider';
+import {
+  registerVideoExplanationHandlers,
+  removeVideoExplanationHandlers,
+} from './ipc';
+import {
+  VIDEO_EXPLANATION_ATTACHMENT_TYPE,
+  VIDEO_EXPLANATION_ATTACHMENT_VERSION,
+  isVideoExplanationMetadata,
+} from './shared';
+import { VideoExplanationService } from './video-explanation-service';
 
-export const videoConversationMainFeature = Object.freeze({
+export const videoExplanationMainFeature = Object.freeze({
   id: 'builtin.video.frame-conversation',
   registerAttachmentTypes({ attachments, anchors }): void {
     anchors.register({
@@ -50,10 +50,9 @@ export const videoConversationMainFeature = Object.freeze({
       ),
     );
   },
-  start({ attachments, attachmentFiles, generationTasks, assets }) {
+  start({ attachments, generationTasks, assets }) {
     const service = new VideoExplanationService(
       attachments,
-      attachmentFiles,
       generationTasks,
       assets,
     );

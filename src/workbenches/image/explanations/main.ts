@@ -6,7 +6,10 @@ import {
 } from '../shared';
 import { ImageExplanationService } from './image-explanation-service';
 import { ImageConversationContextProvider } from './generation/image-conversation-context-provider';
-import { registerImageExplanationHandlers, removeImageExplanationHandlers } from './ipc';
+import {
+  registerImageExplanationHandlers,
+  removeImageExplanationHandlers,
+} from './ipc';
 import {
   IMAGE_EXPLANATION_ATTACHMENT_TYPE,
   IMAGE_EXPLANATION_ATTACHMENT_VERSION,
@@ -32,8 +35,12 @@ export const imageExplanationMainFeature = Object.freeze({
       new ImageConversationContextProvider(attachments),
     );
   },
-  start({ attachments, attachmentFiles, generationTasks, assets }) {
-    const service = new ImageExplanationService(attachments, attachmentFiles, generationTasks, assets);
+  start({ attachments, generationTasks, assets }) {
+    const service = new ImageExplanationService(
+      attachments,
+      generationTasks,
+      assets,
+    );
     try {
       registerImageExplanationHandlers(service);
     } catch (error) {
