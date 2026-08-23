@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -196,7 +197,7 @@ describe('VideoWorkbenchView', () => {
     ).toBe(false);
   });
 
-  it('renders the native video element without exposing its file path', () => {
+  it('keeps frame overlays on the picture and playback controls in a separate dock', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
       sourceRevision: '100',
@@ -206,9 +207,44 @@ describe('VideoWorkbenchView', () => {
         EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
       ),
     });
+    const renderedDocument = new DOMParser().parseFromString(
+      markup,
+      'text/html',
+    );
+    const frameSurface = renderedDocument.querySelector(
+      '[data-video-frame-surface="true"]',
+    );
+    const markerOverlay = renderedDocument.querySelector(
+      '[aria-label="视频兴趣区域标记"]',
+    );
+    const controlDock = renderedDocument.querySelector(
+      '[data-video-control-dock="true"]',
+    );
+    const playbackControls = renderedDocument.querySelector(
+      '[data-video-playback-controls="true"]',
+    );
+    const video = renderedDocument.querySelector('video');
 
-    expect(markup).toContain('aria-label="视频播放器"');
-    expect(markup).toContain('controls=""');
+    expect(frameSurface).not.toBeNull();
+    expect(frameSurface?.contains(markerOverlay)).toBe(true);
+    expect(frameSurface?.contains(playbackControls)).toBe(false);
+    expect(controlDock?.contains(playbackControls)).toBe(true);
+    expect(
+      [...(playbackControls?.querySelectorAll('button, input') ?? [])].every(
+        (control) => (control as HTMLButtonElement | HTMLInputElement).disabled,
+      ),
+    ).toBe(true);
+    expect(video?.getAttribute('aria-label')).toBe('视频播放器');
+    expect(video?.hasAttribute('controls')).toBe(false);
+    expect(
+      renderedDocument.querySelector('[aria-label="播放视频"]'),
+    ).not.toBeNull();
+    expect(
+      renderedDocument.querySelector('[aria-label="视频播放进度"]'),
+    ).not.toBeNull();
+    expect(
+      renderedDocument.querySelector('[aria-label="视频音量"]'),
+    ).not.toBeNull();
     expect(markup).toContain('learning-content://resource/token');
     expect(markup).not.toContain('标记当前时间');
     expect(markup).not.toContain('/tmp/private/lesson.mp4');

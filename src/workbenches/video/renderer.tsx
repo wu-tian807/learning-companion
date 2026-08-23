@@ -41,6 +41,7 @@ import { VideoExplanationPanel } from './explanations/video-explanation-panel';
 import type { VideoExplanationView } from './explanations/shared';
 import { videoExplanationVisibleAtTime } from './explanations/video-explanation-revision';
 import { useVideoExplanations } from './explanations/use-video-explanations';
+import { VideoPlaybackControls } from './video-playback-controls';
 import {
   cloneVideoViewState,
   createVideoRetrySubtitlesCommand,
@@ -234,6 +235,7 @@ export function VideoWorkbenchView({
   const payload = isVideoWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
+  const playerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const rightSelectionStartRef = useRef<ScreenPoint | undefined>(undefined);
   const suppressNativeContextMenuRef = useRef(false);
@@ -265,6 +267,13 @@ export function VideoWorkbenchView({
     useState<VideoConversationContext>();
   const [currentTime, setCurrentTime] = useState(
     payload?.viewState.currentTime ?? 0,
+  );
+  const [duration, setDuration] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [volume, setVolume] = useState(payload?.viewState.volume ?? 1);
+  const [muted, setMuted] = useState(payload?.viewState.muted ?? false);
+  const [playbackRate, setPlaybackRate] = useState(
+    payload?.viewState.playbackRate ?? 1,
   );
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -579,6 +588,13 @@ export function VideoWorkbenchView({
           : Math.min(viewState.currentTime, video.duration);
       }
       setCurrentTime(video.currentTime);
+      setDuration(
+        Number.isFinite(video.duration) ? Math.max(0, video.duration) : 0,
+      );
+      setPlaying(!video.paused && !video.ended);
+      setVolume(video.volume);
+      setMuted(video.muted);
+      setPlaybackRate(video.playbackRate);
       setLoadState({ kind: 'ready' });
     };
     const onErrorEvent = () => {
@@ -592,17 +608,34 @@ export function VideoWorkbenchView({
       setCurrentTime(video.currentTime);
       captureAndScheduleSave(false);
     };
-    const onSettingChange = () => {
+    const onDurationChange = () => {
+      setDuration(
+        Number.isFinite(video.duration) ? Math.max(0, video.duration) : 0,
+      );
+    };
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onSeeked = () => {
       setCurrentTime(video.currentTime);
+      captureAndScheduleSave(true);
+    };
+    const onMediaSettingChange = () => {
+      setVolume(video.volume);
+      setMuted(video.muted);
+      setPlaybackRate(video.playbackRate);
       captureAndScheduleSave(true);
     };
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('error', onErrorEvent);
     video.addEventListener('timeupdate', onTimeUpdate);
-    video.addEventListener('seeked', onSettingChange);
-    video.addEventListener('ratechange', onSettingChange);
-    video.addEventListener('volumechange', onSettingChange);
+    video.addEventListener('durationchange', onDurationChange);
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onPause);
+    video.addEventListener('seeked', onSeeked);
+    video.addEventListener('ratechange', onMediaSettingChange);
+    video.addEventListener('volumechange', onMediaSettingChange);
 
     metadataTimeoutId = window.setTimeout(() => {
       if (video.error) {
@@ -630,9 +663,13 @@ export function VideoWorkbenchView({
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
       video.removeEventListener('error', onErrorEvent);
       video.removeEventListener('timeupdate', onTimeUpdate);
-      video.removeEventListener('seeked', onSettingChange);
-      video.removeEventListener('ratechange', onSettingChange);
-      video.removeEventListener('volumechange', onSettingChange);
+      video.removeEventListener('durationchange', onDurationChange);
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onPause);
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('ratechange', onMediaSettingChange);
+      video.removeEventListener('volumechange', onMediaSettingChange);
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = undefined;
@@ -662,6 +699,45 @@ export function VideoWorkbenchView({
       }
     } catch (error) {
       reportError(error, '无法切换视频播放状态。');
+    }
+  }, [reportError]);
+  const seekVideo = useCallback((seconds: number) => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
+      return;
+    }
+    video.currentTime = clamp(seconds, 0, video.duration);
+    setCurrentTime(video.currentTime);
+  }, []);
+  const toggleMuted = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+  }, []);
+  const changeVolume = useCallback((nextVolume: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = clamp(nextVolume, 0, 1);
+    if (video.volume > 0 && video.muted) {
+      video.muted = false;
+    }
+  }, []);
+  const changePlaybackRate = useCallback((rate: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = rate;
+  }, []);
+  const toggleFullscreen = useCallback(async () => {
+    const player = playerRef.current;
+    if (!player) return;
+    try {
+      if (document.fullscreenElement === player) {
+        await document.exitFullscreen();
+      } else {
+        await player.requestFullscreen();
+      }
+    } catch (error) {
+      reportError(error, '无法切换视频全屏状态。');
     }
   }, [reportError]);
   const reveal = useCallback(async () => {
@@ -851,10 +927,9 @@ export function VideoWorkbenchView({
 
   return (
     <div
+      ref={playerRef}
       tabIndex={0}
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1116]"
-      onPointerDown={(event) => event.currentTarget.focus()}
-      onContextMenuCapture={openContextMenu}
     >
       {explanationIndexOpen && (
         <VideoExplanationIndex
@@ -868,7 +943,9 @@ export function VideoWorkbenchView({
 
       <div className="flex min-h-0 flex-1 items-center justify-center bg-[radial-gradient(circle_at_50%_45%,rgba(68,78,101,0.16),transparent_58%),#0d1116] p-3">
         <div
+          data-video-frame-surface="true"
           className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-md bg-black shadow-[0_20px_60px_rgba(0,0,0,0.42)]"
+          onContextMenuCapture={openContextMenu}
           onPointerDownCapture={beginFrameSelection}
           onPointerMoveCapture={updateFrameSelection}
           onPointerUpCapture={finishFrameSelection}
@@ -879,7 +956,6 @@ export function VideoWorkbenchView({
             aria-label="视频播放器"
             className="block max-h-full max-w-full bg-black"
             src={payload.contentUrl}
-            controls
             playsInline
             preload="metadata"
           >
@@ -930,6 +1006,27 @@ export function VideoWorkbenchView({
             />
           )}
         </div>
+      </div>
+
+      <div
+        data-video-control-dock="true"
+        className="shrink-0 border-t border-white/[0.08] bg-[#151a21] shadow-[0_-10px_30px_rgba(0,0,0,0.18)]"
+      >
+        <VideoPlaybackControls
+          ready={ready}
+          playing={playing}
+          currentTime={currentTime}
+          duration={duration}
+          volume={volume}
+          muted={muted}
+          playbackRate={playbackRate}
+          onTogglePlayback={() => void togglePlayback()}
+          onSeek={seekVideo}
+          onToggleMuted={toggleMuted}
+          onVolumeChange={changeVolume}
+          onPlaybackRateChange={changePlaybackRate}
+          onToggleFullscreen={() => void toggleFullscreen()}
+        />
       </div>
 
       <div className="absolute bottom-14 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#151a21]/90 p-1.5 shadow-xl backdrop-blur-md">
@@ -1000,7 +1097,7 @@ export function VideoWorkbenchView({
       </div>
 
       {loadState.kind === 'loading' && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#0d1116]/68">
+        <div className="pointer-events-none absolute inset-0 bottom-12 grid place-items-center bg-[#0d1116]/68">
           <div className="flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-[#20262e]/80 px-4 py-2 text-xs text-slate-400 shadow-xl backdrop-blur-sm">
             <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
             正在读取视频信息…
@@ -1009,7 +1106,7 @@ export function VideoWorkbenchView({
       )}
 
       {loadState.kind === 'failed' && (
-        <div className="absolute inset-0 grid place-items-center bg-[#0d1116]/92 p-8 text-center">
+        <div className="absolute inset-0 bottom-12 grid place-items-center bg-[#0d1116]/92 p-8 text-center">
           <div>
             <p className="text-sm font-medium text-slate-200">
               无法播放这个视频
