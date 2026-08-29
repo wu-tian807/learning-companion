@@ -10,7 +10,6 @@ import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/Workb
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import {
   createVideoFrameRegionFromClientPoints,
-  isClientPointInsideVideoFrameRegion,
   hasLoadedVideoMetadata,
   mediaErrorMessage,
   createVideoSubtitleVtt,
@@ -378,46 +377,7 @@ describe('VideoWorkbenchView', () => {
     });
   });
 
-  it('dismisses a completed frame region only outside its real bounds', () => {
-    const target = createVideoFrameRegionFromClientPoints(
-      {
-        videoWidth: 1_920,
-        videoHeight: 1_080,
-        currentTime: 12.5,
-        getBoundingClientRect: () =>
-          ({
-            left: 100,
-            top: 50,
-            right: 900,
-            bottom: 500,
-            width: 800,
-            height: 450,
-          }) as DOMRect,
-      },
-      { x: 300, y: 140 },
-      { x: 700, y: 365 },
-    );
-    expect(target).toBeDefined();
-    const video = {
-      getBoundingClientRect: () =>
-        ({
-          left: 100,
-          top: 50,
-          right: 900,
-          bottom: 500,
-          width: 800,
-          height: 450,
-        }) as DOMRect,
-    };
-    expect(
-      isClientPointInsideVideoFrameRegion(video, target!, { x: 500, y: 250 }),
-    ).toBe(true);
-    expect(
-      isClientPointInsideVideoFrameRegion(video, target!, { x: 150, y: 75 }),
-    ).toBe(false);
-  });
-
-  it('opens the document-style quick questions after a right-button region drag', async () => {
+  it('selects by left click or drag, replaces the region, and keeps right click inactive', async () => {
     const view = await mountVideoWorkbench({
       executeCommand: vi.fn(
         async (command: { readonly type: string }) => ({
@@ -472,12 +432,13 @@ describe('VideoWorkbenchView', () => {
         type: string,
         clientX: number,
         clientY: number,
+        button = 0,
       ) => {
         const event = new MouseEvent(type, {
           bubbles: true,
           cancelable: true,
-          button: 2,
-          buttons: type === 'pointerup' ? 0 : 2,
+          button,
+          buttons: type === 'pointerup' ? 0 : button === 0 ? 1 : 2,
           clientX,
           clientY,
         });
@@ -505,11 +466,15 @@ describe('VideoWorkbenchView', () => {
         container.querySelector('[aria-label="已选择的视频画面区域"]'),
       ).not.toBeNull();
 
+      const freeQuestionButton = [...menu!.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === '自由提问',
+      )!;
+      vi.mocked(surface.setPointerCapture).mockClear();
       await act(async () => {
-        [...menu!.querySelectorAll('button')]
-          .find((button) => button.textContent?.trim() === '自由提问')
-          ?.click();
+        freeQuestionButton.dispatchEvent(pointer('pointerdown', 500, 170));
+        freeQuestionButton.click();
       });
+      expect(surface.setPointerCapture).not.toHaveBeenCalled();
       expect(
         container.querySelector('[data-video-frame-question-menu="true"]'),
       ).toBeNull();
@@ -518,12 +483,8 @@ describe('VideoWorkbenchView', () => {
       ).not.toBeNull();
 
       await act(async () => {
-        surface.dispatchEvent(pointer('pointerdown', 300, 200));
-        surface.dispatchEvent(pointer('pointermove', 700, 425));
-        surface.dispatchEvent(pointer('pointerup', 700, 425));
-      });
-      await act(async () => {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        surface.dispatchEvent(pointer('pointerdown', 500, 300));
+        surface.dispatchEvent(pointer('pointerup', 500, 300));
       });
       expect(
         container.querySelector('[data-video-frame-question-menu="true"]'),
@@ -536,12 +497,72 @@ describe('VideoWorkbenchView', () => {
         surface.dispatchEvent(pointer('pointerdown', 500, 300));
         surface.dispatchEvent(pointer('pointerup', 500, 300));
       });
+      const wholeFrameSelection = container.querySelector<HTMLElement>(
+        '[aria-label="已选择的视频画面区域"]',
+      );
+      expect(
+        container.querySelector('[data-video-frame-question-menu="true"]'),
+      ).not.toBeNull();
+      expect(wholeFrameSelection?.style.left).toBe('0%');
+      expect(wholeFrameSelection?.style.top).toBe('0%');
+      expect(wholeFrameSelection?.style.width).toBe('100%');
+      expect(wholeFrameSelection?.style.height).toBe('100%');
+
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 500, 300));
+        surface.dispatchEvent(pointer('pointerup', 500, 300));
+      });
+      expect(
+        container.querySelector('[aria-label="已选择的视频画面区域"]'),
+      ).toBeNull();
+
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 300, 200));
+        surface.dispatchEvent(pointer('pointermove', 700, 425));
+        surface.dispatchEvent(pointer('pointerup', 700, 425));
+      });
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 200, 150));
+        surface.dispatchEvent(pointer('pointermove', 400, 250));
+        surface.dispatchEvent(pointer('pointerup', 400, 250));
+      });
+      const replacedSelections = container.querySelectorAll<HTMLElement>(
+        '[aria-label="已选择的视频画面区域"]',
+      );
+      expect(replacedSelections).toHaveLength(1);
+      expect(replacedSelections[0]?.style.left).toBe('12.5%');
+      expect(replacedSelections[0]?.style.width).toBe('25%');
+
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      });
       expect(
         container.querySelector('[data-video-frame-question-menu="true"]'),
       ).toBeNull();
       expect(
         container.querySelector('[aria-label="已选择的视频画面区域"]'),
-      ).not.toBeNull();
+      ).toBeNull();
+
+      const contextMenu = new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 500,
+        clientY: 300,
+      });
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 300, 200, 2));
+        surface.dispatchEvent(pointer('pointermove', 700, 425, 2));
+        surface.dispatchEvent(pointer('pointerup', 700, 425, 2));
+        surface.dispatchEvent(contextMenu);
+      });
+      expect(contextMenu.defaultPrevented).toBe(true);
+      expect(
+        container.querySelector('[data-video-frame-question-menu="true"]'),
+      ).toBeNull();
+      expect(
+        container.querySelector('[aria-label="已选择的视频画面区域"]'),
+      ).toBeNull();
     } finally {
       view.cleanup();
     }

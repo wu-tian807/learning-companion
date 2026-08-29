@@ -154,21 +154,13 @@ describe('viewer Workbench context action bundles', () => {
     ).toEqual(['生成讲义']);
   });
 
-  it('keeps video commands timeline- and frame-oriented', () => {
+  it('keeps video region questions on the left-pointer interaction instead of a context menu', () => {
     const bundle = createVideoRendererActions({
       ready: true,
-      canExplainFrame: true,
-      onTogglePlayback: vi.fn(),
-      onExplainFrame: vi.fn(),
       onReveal: vi.fn(),
     });
 
-    expectWorkbenchSpecificContextMenu(bundle, [
-      '播放 / 暂停',
-      '解释当前画面',
-      '从这里生成学习笔记',
-    ]);
-    expect(contextLabels(bundle)).not.toContain('标记当前时间');
+    expect(contextLabels(bundle)).toEqual([]);
     expect(
       bundle.contributions
         .filter((entry) => entry.surface === 'overflow')
