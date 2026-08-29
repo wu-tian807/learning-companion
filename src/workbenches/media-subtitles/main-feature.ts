@@ -7,15 +7,7 @@ import {
 } from './external-libraries/definitions';
 import { MediaSubtitleRuntimeResolver } from './external-libraries/media-subtitle-runtime';
 import { MediaSubtitleTranscriptionProducer } from './transcription-producer';
-import {
-  MediaSubtitleTranslationProducer,
-  SubtitleTranslationProgressHub,
-} from './translation-producer';
-
-export const mediaSubtitleTranslationProducer =
-  new MediaSubtitleTranslationProducer();
-export const mediaSubtitleTranslationProgress =
-  new SubtitleTranslationProgressHub();
+import { mediaSubtitleTranslationRuntime } from './translation-runtime';
 
 export const mediaSubtitlesMainFeature = Object.freeze({
   id: 'builtin.media-subtitles',
@@ -34,7 +26,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
         new MediaSubtitleRuntimeResolver(externalLibraries),
       ),
     );
-    artifacts.register(mediaSubtitleTranslationProducer);
+    artifacts.register(mediaSubtitleTranslationRuntime.producer);
   },
   registerGeneration({ definitions, assets, artifacts, projects }): void {
     definitions.register(
@@ -42,8 +34,8 @@ export const mediaSubtitlesMainFeature = Object.freeze({
         assets,
         artifacts,
         projects,
-        producer: mediaSubtitleTranslationProducer,
-        progress: mediaSubtitleTranslationProgress,
+        producer: mediaSubtitleTranslationRuntime.producer,
+        progress: mediaSubtitleTranslationRuntime.progress,
       }),
     );
   },

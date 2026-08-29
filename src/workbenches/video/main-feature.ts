@@ -1,6 +1,6 @@
 import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
 import { MediaSubtitleRuntimeResolver } from '../media-subtitles/external-libraries/media-subtitle-runtime';
-import { mediaSubtitleTranslationProgress } from '../media-subtitles/main-feature';
+import { mediaSubtitleTranslationRuntime } from '../media-subtitles/translation-runtime';
 import { videoExplanationMainFeature } from './explanations/main';
 import {
   videoDubbingMainFeature,
@@ -25,7 +25,7 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       context.artifactService,
       mediaRuntime,
       context.generationTasks,
-      mediaSubtitleTranslationProgress,
+      mediaSubtitleTranslationRuntime.progress,
     );
     const dubbing = new VideoDubbingService(
       context.assetService,

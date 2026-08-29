@@ -40,30 +40,26 @@ import type { VideoExplanationView } from './explanations/shared';
 import { videoExplanationVisibleAtTime } from './explanations/video-explanation-revision';
 import { useVideoExplanations } from './explanations/use-video-explanations';
 import {
-  isVideoDubbingPlaybackAvailable,
-  resolveVideoDubbingPlayback,
-} from './dubbing/video-dubbing-playback';
+  useVideoDubbingPlayback,
+  VideoDubbingAudioTrack,
+} from './dubbing/use-video-dubbing-playback';
 import { VideoPlaybackControls } from './video-playback-controls';
 import { VideoLanguageControls } from './video-language-controls';
 import {
   cloneVideoViewState,
-  createVideoGetDubbingSnapshotCommand,
   createVideoGetSubtitleSnapshotCommand,
-  createVideoRetryDubbingCommand,
   createVideoRetrySubtitlesCommand,
   createVideoSaveViewStateCommand,
   createVideoSetSubtitleModeCommand,
   createVideoFrameRegionTarget,
-  createVideoStartDubbingCommand,
   DEFAULT_VIDEO_VIEW_STATE,
-  isVideoDubbingSnapshot,
+  EMPTY_VIDEO_DUBBING_SNAPSHOT,
   isVideoSubtitleCueFinalPayload,
   isVideoSubtitleSnapshot,
   isVideoSaveViewStateResult,
   isVideoWorkbenchPayload,
   type VideoSubtitleDisplayMode,
   type VideoSubtitleSnapshot,
-  type VideoDubbingSnapshot,
   type VideoWorkbenchViewState,
   type VideoFrameRegionTarget,
   videoEventTypes,
@@ -215,19 +211,6 @@ export function hasLoadedVideoMetadata(
   return media.readyState >= VIDEO_HAVE_METADATA;
 }
 
-function synchronizeMediaTime(media: HTMLMediaElement, seconds: number): void {
-  if (!Number.isFinite(seconds) || seconds < 0) return;
-  try {
-    media.currentTime = seconds;
-  } catch (error) {
-    if (!(
-      error instanceof DOMException && error.name === 'InvalidStateError'
-    )) {
-      throw error;
-    }
-  }
-}
-
 function captureVideoState(video: HTMLVideoElement): VideoWorkbenchViewState {
   return {
     currentTime: Number.isFinite(video.currentTime)
@@ -259,10 +242,7 @@ export function VideoWorkbenchView({
     : undefined;
   const playerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const dubbingAudioRef = useRef<HTMLAudioElement>(null);
   const suppressVideoVolumeEventRef = useRef(false);
-  const dubbingEnabledRef = useRef(false);
-  const dubbingAudioUrlRef = useRef<string | undefined>(undefined);
   const desiredAudioStateRef = useRef({
     volume: payload?.viewState.volume ?? 1,
     muted: payload?.viewState.muted ?? false,
@@ -292,18 +272,6 @@ export function VideoWorkbenchView({
       },
     );
   const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string>();
-  const [dubbingSnapshot, setDubbingSnapshot] = useState<VideoDubbingSnapshot>(
-    payload?.dubbingSnapshot ?? {
-      phase: 'idle',
-      completedPhrases: 0,
-      totalPhrases: 0,
-      completedDurationMs: 0,
-      durationMs: 0,
-      readySuffixStartMs: 0,
-    },
-  );
-  const [dubbingEnabled, setDubbingEnabled] = useState(false);
-  const [dubbingAudioReady, setDubbingAudioReady] = useState(false);
   const [draftSelection, setDraftSelection] = useState<ScreenRectangle>();
   const [selectedConversationContext, setSelectedConversationContext] =
     useState<VideoConversationContext>();
@@ -318,36 +286,30 @@ export function VideoWorkbenchView({
     payload?.viewState.playbackRate ?? 1,
   );
   const [fullscreen, setFullscreen] = useState(false);
-  const requestedDubbingSource = useMemo(
-    () =>
-      resolveVideoDubbingPlayback(
-        dubbingSnapshot,
-        dubbingEnabled,
-        currentTime * 1_000,
-      ),
-    [currentTime, dubbingEnabled, dubbingSnapshot],
+  const reportError = useCallback(
+    (error: unknown, fallback: string) => {
+      const message = userMessageFromError(error, fallback);
+
+      if (message) {
+        console.error(message, error);
+        onError(message);
+      }
+    },
+    [onError],
   );
-  const dubbingPlaybackSource = requestedDubbingSource;
-  const dubbingAudioUrl =
-    dubbingPlaybackSource.kind === 'original'
-      ? undefined
-      : dubbingPlaybackSource.audioUrl;
-  const dubbingPlaybackActive =
-    dubbingPlaybackSource.kind !== 'original' && dubbingAudioReady;
-  const dubbingProgressVisible =
-    dubbingSnapshot.phase === 'awaiting-translation' ||
-    dubbingSnapshot.phase === 'preparing-runtime' ||
-      dubbingSnapshot.phase === 'separating' ||
-      dubbingSnapshot.phase === 'cloning' ||
-      dubbingSnapshot.phase === 'mixing' ||
-      dubbingSnapshot.phase === 'interrupted' ||
-      dubbingSnapshot.phase === 'failed' ||
-      dubbingSnapshot.phase === 'ready';
-  const generatedSuffixStartSeconds = dubbingProgressVisible
-    ? dubbingSnapshot.durationMs > 0
-      ? dubbingSnapshot.readySuffixStartMs / 1_000
-      : duration
-    : undefined;
+  const dubbing = useVideoDubbingPlayback({
+    resetKey: `${bootstrap.sessionId}:${payload?.sourceRevision ?? 'invalid'}`,
+    initialSnapshot: payload?.dubbingSnapshot ?? EMPTY_VIDEO_DUBBING_SNAPSHOT,
+    currentTime,
+    duration,
+    desiredAudioState: { volume, muted, playbackRate },
+    videoRef,
+    suppressVideoVolumeEventRef,
+    executeCommand,
+    subscribeEvent,
+    reportError,
+  });
+  const isDubbingPlaybackActive = dubbing.isPlaybackActive;
 
   useEffect(() => {
     const syncFullscreenState = () => {
@@ -360,18 +322,6 @@ export function VideoWorkbenchView({
       document.removeEventListener('fullscreenchange', syncFullscreenState);
     };
   }, []);
-
-  const reportError = useCallback(
-    (error: unknown, fallback: string) => {
-      const message = userMessageFromError(error, fallback);
-
-      if (message) {
-        console.error(message, error);
-        onError(message);
-      }
-    },
-    [onError],
-  );
 
   const conversationContributionId = `${videoWorkbenchManifest.id}.frame-conversation`;
   const sourceRevision = payload?.sourceRevision ?? '';
@@ -561,8 +511,6 @@ export function VideoWorkbenchView({
     if (!payload) return;
     setSubtitleMode(payload.subtitleState.displayMode);
     setSubtitleSnapshot(payload.subtitleSnapshot);
-    setDubbingSnapshot(payload.dubbingSnapshot);
-    setDubbingEnabled(false);
     desiredAudioStateRef.current = {
       volume: payload.viewState.volume,
       muted: payload.viewState.muted,
@@ -570,40 +518,12 @@ export function VideoWorkbenchView({
   }, [payload]);
 
   useEffect(() => {
-    dubbingEnabledRef.current = dubbingPlaybackActive;
-    dubbingAudioUrlRef.current = dubbingAudioUrl;
-  }, [dubbingAudioUrl, dubbingPlaybackActive]);
-
-  useEffect(() => {
-    setDubbingAudioReady(false);
-  }, [dubbingAudioUrl]);
-
-  useEffect(() => {
-    if (
-      dubbingSnapshot.phase === 'idle' ||
-      dubbingSnapshot.phase === 'runtime-required' ||
-      dubbingSnapshot.phase === 'unsupported'
-    ) {
-      setDubbingEnabled(false);
-    }
-  }, [dubbingSnapshot.phase]);
-
-  useEffect(() => {
     if (!subscribeEvent) {
       throw new Error('Video Workbench 缺少异步事件通道');
     }
     let disposed = false;
     let receivedSubtitleEvent = false;
-    let receivedDubbingEvent = false;
     const unsubscribe = subscribeEvent((event) => {
-      if (
-        event.type === videoEventTypes.dubbingSnapshot &&
-        isVideoDubbingSnapshot(event.payload)
-      ) {
-        receivedDubbingEvent = true;
-        setDubbingSnapshot(event.payload);
-        return;
-      }
       if (
         event.type === videoEventTypes.subtitleSnapshot &&
         isVideoSubtitleSnapshot(event.payload)
@@ -650,18 +570,6 @@ export function VideoWorkbenchView({
         if (!disposed) {
           reportError(error, '无法同步字幕状态。');
         }
-      });
-
-    void executeCommand(createVideoGetDubbingSnapshotCommand())
-      .then((result) => {
-        if (disposed || receivedDubbingEvent) return;
-        if (!isVideoDubbingSnapshot(result.payload)) {
-          throw new Error('Video Workbench 配音状态响应无效');
-        }
-        setDubbingSnapshot(result.payload);
-      })
-      .catch((error: unknown) => {
-        if (!disposed) reportError(error, '无法同步配音状态。');
       });
 
     return () => {
@@ -768,15 +676,6 @@ export function VideoWorkbenchView({
     };
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
-      const audio = dubbingAudioRef.current;
-      if (
-        dubbingEnabledRef.current &&
-        dubbingAudioUrlRef.current &&
-        audio &&
-        Math.abs(audio.currentTime - video.currentTime) > 0.2
-      ) {
-        synchronizeMediaTime(audio, video.currentTime);
-      }
       captureAndScheduleSave(false);
     };
     const onDurationChange = () => {
@@ -786,28 +685,18 @@ export function VideoWorkbenchView({
     };
     const onPlay = () => {
       setPlaying(true);
-      const audio = dubbingAudioRef.current;
-      if (dubbingEnabledRef.current && dubbingAudioUrlRef.current && audio) {
-        synchronizeMediaTime(audio, video.currentTime);
-        void audio.play().catch(() => undefined);
-      }
     };
     const onPause = () => {
       setPlaying(false);
-      dubbingAudioRef.current?.pause();
     };
     const onSeeked = () => {
       setCurrentTime(video.currentTime);
-      const audio = dubbingAudioRef.current;
-      if (dubbingEnabledRef.current && audio) {
-        synchronizeMediaTime(audio, video.currentTime);
-      }
       captureAndScheduleSave(true);
     };
     const onMediaSettingChange = (event: Event) => {
       if (
         event.type === 'volumechange' &&
-        (suppressVideoVolumeEventRef.current || dubbingEnabledRef.current)
+        (suppressVideoVolumeEventRef.current || isDubbingPlaybackActive())
       ) {
         return;
       }
@@ -820,9 +709,6 @@ export function VideoWorkbenchView({
         setMuted(video.muted);
       }
       setPlaybackRate(video.playbackRate);
-      if (dubbingAudioRef.current) {
-        dubbingAudioRef.current.playbackRate = video.playbackRate;
-      }
       captureAndScheduleSave(true);
     };
 
@@ -884,30 +770,12 @@ export function VideoWorkbenchView({
       // `src` belongs to React. Removing it here breaks StrictMode's
       // setup-cleanup-setup replay because the DOM node itself is retained.
     };
-  }, [captureAndScheduleSave, payload, persistViewState]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    const audio = dubbingAudioRef.current;
-    if (!video || !audio) return;
-    const enabled = dubbingPlaybackActive;
-    const desired = desiredAudioStateRef.current;
-    suppressVideoVolumeEventRef.current = true;
-    video.volume = desired.volume;
-    video.muted = enabled ? true : desired.muted;
-    window.setTimeout(() => {
-      suppressVideoVolumeEventRef.current = false;
-    }, 0);
-    audio.volume = desired.volume;
-    audio.muted = desired.muted;
-    audio.playbackRate = video.playbackRate;
-    synchronizeMediaTime(audio, video.currentTime);
-    if (enabled && !video.paused) {
-      void audio.play().catch(() => undefined);
-    } else {
-      audio.pause();
-    }
-  }, [dubbingPlaybackActive]);
+  }, [
+    captureAndScheduleSave,
+    isDubbingPlaybackActive,
+    payload,
+    persistViewState,
+  ]);
 
   const ready = loadState.kind === 'ready';
   const togglePlayback = useCallback(async () => {
@@ -944,13 +812,12 @@ export function VideoWorkbenchView({
       muted: next,
     };
     setMuted(next);
-    if (dubbingEnabledRef.current && dubbingAudioRef.current) {
-      dubbingAudioRef.current.muted = next;
+    if (isDubbingPlaybackActive()) {
       captureAndScheduleSave(true);
     } else {
       video.muted = next;
     }
-  }, [captureAndScheduleSave]);
+  }, [captureAndScheduleSave, isDubbingPlaybackActive]);
   const changeVolume = useCallback(
     (nextVolume: number) => {
       const video = videoRef.current;
@@ -960,16 +827,14 @@ export function VideoWorkbenchView({
       desiredAudioStateRef.current = { volume: next, muted: nextMuted };
       setVolume(next);
       setMuted(nextMuted);
-      if (dubbingEnabledRef.current && dubbingAudioRef.current) {
-        dubbingAudioRef.current.volume = next;
-        dubbingAudioRef.current.muted = nextMuted;
+      if (isDubbingPlaybackActive()) {
         captureAndScheduleSave(true);
       } else {
         video.volume = next;
         if (next > 0 && video.muted) video.muted = false;
       }
     },
-    [captureAndScheduleSave],
+    [captureAndScheduleSave, isDubbingPlaybackActive],
   );
   const changePlaybackRate = useCallback((rate: number) => {
     const video = videoRef.current;
@@ -1061,33 +926,6 @@ export function VideoWorkbenchView({
       reportError(error, '无法重新处理字幕。');
     }
   }, [executeCommand, reportError]);
-  const startDubbing = useCallback(async () => {
-    setDubbingEnabled(true);
-    try {
-      await executeCommand(createVideoStartDubbingCommand());
-    } catch (error) {
-      setDubbingEnabled(false);
-      reportError(error, '无法开始生成视频配音。');
-    }
-  }, [executeCommand, reportError]);
-  const selectDubbingEnabled = useCallback(
-    (enabled: boolean) => {
-      if (!enabled || isVideoDubbingPlaybackAvailable(dubbingSnapshot)) {
-        setDubbingEnabled(enabled);
-      }
-    },
-    [dubbingSnapshot],
-  );
-  const retryDubbing = useCallback(async () => {
-    setDubbingEnabled(true);
-    try {
-      await executeCommand(createVideoRetryDubbingCommand());
-    } catch (error) {
-      setDubbingEnabled(false);
-      reportError(error, '无法继续生成视频配音。');
-    }
-  }, [executeCommand, reportError]);
-
   const openFrameContextMenu = useCallback(
     (point: ScreenPoint, target: VideoFrameRegionTarget) => {
       const context = createVideoConversationContext(target, sourceRevision);
@@ -1248,24 +1086,7 @@ export function VideoWorkbenchView({
               />
             )}
           </video>
-          <audio
-            ref={dubbingAudioRef}
-            aria-label="视频译制配音"
-            src={dubbingAudioUrl}
-            preload="metadata"
-            className="hidden"
-            onCanPlay={() => setDubbingAudioReady(true)}
-            onError={() => {
-              setDubbingAudioReady(false);
-              if (dubbingPlaybackSource.kind === 'final') {
-                setDubbingEnabled(false);
-                reportError(
-                  new Error('生成的配音音轨无法读取'),
-                  '无法播放生成的配音。',
-                );
-              }
-            }}
-          />
+          <VideoDubbingAudioTrack controller={dubbing} />
           <VideoExplanationMarkerOverlay
             visible={explanationMarkersVisible}
             markers={visibleExplanationMarkers}
@@ -1361,19 +1182,19 @@ export function VideoWorkbenchView({
           muted={muted}
           playbackRate={playbackRate}
           fullscreen={fullscreen}
-          generatedSuffixStartSeconds={generatedSuffixStartSeconds}
+          generatedSuffixStartSeconds={dubbing.generatedSuffixStartSeconds}
           trailingControls={
             <VideoLanguageControls
               subtitleMode={subtitleMode}
               subtitleSnapshot={subtitleSnapshot}
-              dubbingSnapshot={dubbingSnapshot}
-              dubbingEnabled={dubbingEnabled}
-              dubbingPlaybackActive={dubbingPlaybackActive}
+              dubbingSnapshot={dubbing.snapshot}
+              dubbingEnabled={dubbing.enabled}
+              dubbingPlaybackActive={dubbing.playbackActive}
               onSelectSubtitleMode={(mode) => void selectSubtitleMode(mode)}
               onRetrySubtitles={() => void retrySubtitles()}
-              onStartDubbing={() => void startDubbing()}
-              onSelectDubbingEnabled={selectDubbingEnabled}
-              onRetryDubbing={() => void retryDubbing()}
+              onStartDubbing={() => void dubbing.start()}
+              onSelectDubbingEnabled={dubbing.selectEnabled}
+              onRetryDubbing={() => void dubbing.retry()}
               onOpenSettings={onOpenSettings}
             />
           }

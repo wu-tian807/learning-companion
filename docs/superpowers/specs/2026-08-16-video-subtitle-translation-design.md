@@ -46,7 +46,7 @@ VideoSubtitleService（仅内存）
 模型、安装包与实测数据见：
 
 - [媒体字幕外部依赖与模型总表](./2026-08-16-media-subtitle-runtime-dependencies.md)
-- [视频配音与 LLM 翻译选型记录](../../../demos/voice-dubbing-technology-selection.md)
+- [视频配音与 LLM 翻译设计](./2026-08-28-video-dubbing-design.md)
 
 ## 2. 用户体验
 
