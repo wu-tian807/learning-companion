@@ -394,7 +394,7 @@ export function AttachmentHost({
       })}
 
       {sidebarOpen && (
-            <aside className="pointer-events-auto absolute bottom-4 right-3 top-24 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
+            <aside className="pointer-events-auto absolute inset-y-3 right-3 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">文档标注</h3>

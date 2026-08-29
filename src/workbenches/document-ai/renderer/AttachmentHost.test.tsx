@@ -39,4 +39,19 @@ describe('AttachmentHost', () => {
     expect(html).not.toContain('标注 1');
     expect(html).not.toContain('文档标注');
   });
+
+  it('uses the full document height when the annotation sidebar is open', () => {
+    const html = renderToStaticMarkup(
+      <AttachmentHost
+        attachments={[attachment]}
+        assetId="asset"
+        projectId="project"
+        sidebarOpen
+        onSidebarOpenChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('inset-y-3');
+    expect(html).not.toContain('top-24');
+  });
 });
