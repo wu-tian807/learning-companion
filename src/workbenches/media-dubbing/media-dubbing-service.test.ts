@@ -240,6 +240,7 @@ async function createFixture(
     warmup: vi.fn(async () => undefined),
     releaseWarmup: vi.fn(async () => undefined),
     runVoiceJob: vi.fn(async () => undefined),
+    shutdown: vi.fn(async () => undefined),
   } as VoxCpm2DubbingRuntimeResolverApi;
   const progress = new MediaDubbingProgressHub();
   const service = new MediaDubbingService(
@@ -282,17 +283,21 @@ describe('MediaDubbingService', () => {
     });
   });
 
-  it('warms one shared model process while compatible video sessions are open', async () => {
+  it('balances every compatible Workbench consumer in the shared runtime', async () => {
     const { service, dubbingRuntime } = await createFixture();
 
     service.warmup('video');
     service.warmup('video');
-    await vi.waitFor(() => expect(dubbingRuntime.warmup).toHaveBeenCalledOnce());
-    service.releaseWarmup('video');
-    expect(dubbingRuntime.releaseWarmup).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(dubbingRuntime.warmup).toHaveBeenCalledTimes(2),
+    );
     service.releaseWarmup('video');
     await vi.waitFor(() =>
       expect(dubbingRuntime.releaseWarmup).toHaveBeenCalledOnce(),
+    );
+    service.releaseWarmup('video');
+    await vi.waitFor(() =>
+      expect(dubbingRuntime.releaseWarmup).toHaveBeenCalledTimes(2),
     );
   });
 

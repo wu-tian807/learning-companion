@@ -18,6 +18,7 @@ export interface ApplicationRuntimeResources {
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly disposeContentProtocol: () => void;
   readonly disposeIpc: () => void;
+  readonly shutdownWorkbenchFeatures: () => Promise<void>;
   readonly disposeWorkbenchFeatures: () => void;
 }
 
@@ -66,8 +67,22 @@ export class ApplicationRuntime {
     const providerShutdown = this.resources.agentProviderService
       .dispose()
       .then(() => this.resources.codexRuntimeService.shutdown());
+    const workbenchShutdown = (async () => {
+      let shutdownError: unknown;
+      try {
+        await this.closeActiveWorkbench();
+      } catch (error) {
+        shutdownError = error;
+      }
+      try {
+        await this.resources.shutdownWorkbenchFeatures();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      if (shutdownError !== undefined) throw shutdownError;
+    })();
     this.shutdownTask = Promise.all([
-      this.closeActiveWorkbench(),
+      workbenchShutdown,
       providerShutdown,
       this.resources.externalLibraryService.shutdown(),
     ]).then(() => undefined);
