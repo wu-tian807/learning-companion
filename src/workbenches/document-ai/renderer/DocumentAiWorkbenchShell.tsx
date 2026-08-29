@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import { useWorkbenchContributions } from '../../../renderer/workbench/runtime/use-workbench-contributions';
 import { AttachmentHost } from './AttachmentHost';
+import { documentContentLayoutClassName } from './document-annotation-layout';
 import { createDocumentAnnotationActions } from './document-annotation-actions';
 import { DocumentQuestionAnchorsVisibleContext } from './document-question-anchor-visibility';
 
@@ -43,9 +44,15 @@ export function DocumentAiWorkbenchShell({
     },
   }), [annotationSidebarOpen, attachments.length, showAttachments, showQuestionAnchors]);
   useWorkbenchContributions(`document.annotations:${assetId}`, actionBundle);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [annotationSidebarOpen]);
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
-      <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className={documentContentLayoutClassName(annotationSidebarOpen)}>
         <DocumentQuestionAnchorsVisibleContext.Provider value={showQuestionAnchors}>
           {children}
         </DocumentQuestionAnchorsVisibleContext.Provider>
