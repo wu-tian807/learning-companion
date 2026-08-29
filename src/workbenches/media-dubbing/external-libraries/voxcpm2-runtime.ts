@@ -6,8 +6,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
@@ -19,9 +18,11 @@ import {
 import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
 import { VOXCPM2_DUBBING_WORKER_SOURCE } from '../voxcpm2-worker-sources';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
+import {
+  isVoxCpm2RuntimeReady,
+  resolveVoxCpm2ManagedEnvironment,
+} from './voxcpm2-runtime-setup';
 
-const RUNTIME_ENVIRONMENT_VERSION = 1;
-const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const MODEL_SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1_000;
 const MODEL_READY_POLL_MS = 100;
 export const VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS = 30_000;
@@ -110,41 +111,6 @@ function shutdownAbortError(): Error {
   const error = new Error('VoxCPM2 runtime is shutting down');
   error.name = 'AbortError';
   return error;
-}
-
-function runtimeEnvironment(
-  root: string,
-  pythonPath: string,
-): NodeJS.ProcessEnv {
-  const cacheRoot = join(root, 'cache');
-  const torchLibraries = join(
-    dirname(dirname(pythonPath)),
-    'Lib',
-    'site-packages',
-    'torch',
-    'lib',
-  );
-  return {
-    ...process.env,
-    PATH: [torchLibraries, process.env.PATH].filter(Boolean).join(delimiter),
-    UV_CACHE_DIR: join(cacheRoot, 'uv'),
-    UV_PYTHON_INSTALL_DIR: join(root, 'managed-python'),
-    PIP_CACHE_DIR: join(cacheRoot, 'pip'),
-    HF_HOME: join(cacheRoot, 'huggingface'),
-    HF_HUB_CACHE: join(cacheRoot, 'huggingface', 'hub'),
-    TORCH_HOME: join(cacheRoot, 'torch'),
-    TORCH_EXTENSIONS_DIR: join(cacheRoot, 'torch-extensions'),
-    TORCHINDUCTOR_CACHE_DIR: join(cacheRoot, 'torch-inductor'),
-    TRITON_CACHE_DIR: join(cacheRoot, 'triton'),
-    CUDA_CACHE_PATH: join(cacheRoot, 'cuda'),
-    XDG_CACHE_HOME: join(cacheRoot, 'xdg'),
-    NUMBA_CACHE_DIR: join(cacheRoot, 'numba'),
-    PYTHONPYCACHEPREFIX: join(cacheRoot, 'pycache'),
-    HF_HUB_DISABLE_TELEMETRY: '1',
-    PIP_DISABLE_PIP_VERSION_CHECK: '1',
-    WANDB_MODE: 'disabled',
-    DO_NOT_TRACK: '1',
-  };
 }
 
 async function exists(
@@ -365,10 +331,8 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     );
     signal.throwIfAborted();
     const root = installed.runtimeDirectory;
-    const uvPath = join(root, 'bootstrap', 'uv', 'uv.exe');
-    const environmentRoot = join(root, 'environment');
-    const pythonPath = join(environmentRoot, 'Scripts', 'python.exe');
-    const markerPath = join(environmentRoot, 'learning-companion-runtime.json');
+    const { environment, pythonPath } =
+      resolveVoxCpm2ManagedEnvironment(root);
     const modelPath = join(root, 'models', 'VoxCPM2');
     const separationModelPath = join(
       root,
@@ -389,123 +353,14 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
       '3dspeaker-campplus-zh-en.onnx',
     );
     const workerCachePath = join(root, 'cache', 'model-sessions');
-    const environment = runtimeEnvironment(root, pythonPath);
-    const ready = await this.isReady(markerPath, pythonPath);
-    signal.throwIfAborted();
-
-    if (!ready) {
-      await this.dependencies.makeDirectory(join(root, 'cache'), {
-        recursive: true,
-      });
-      const setupCache = await mkdtemp(
-        join(tmpdir(), 'lc-voxcpm2-setup-'),
-      );
-      const setupEnvironment = {
-        ...environment,
-        UV_CACHE_DIR: setupCache,
-        PIP_CACHE_DIR: setupCache,
-        TEMP: setupCache,
-        TMP: setupCache,
-      };
-      try {
-        if (!(await exists(this.dependencies.fileAccess, pythonPath))) {
-          await this.dependencies.commandRunner.run({
-            command: uvPath,
-            args: [
-              'venv',
-              environmentRoot,
-              '--python',
-              '3.12',
-              '--python-preference',
-              'only-managed',
-              '--clear',
-            ],
-            cwd: root,
-            env: setupEnvironment,
-            timeoutMs: SETUP_TIMEOUT_MS,
-            signal,
-          });
-        }
-        await this.dependencies.commandRunner.run({
-          command: uvPath,
-          args: [
-            'pip',
-            'install',
-            '--python',
-            pythonPath,
-            'torch==2.8.0+cu128',
-            'torchaudio==2.8.0+cu128',
-            '--index-url',
-            'https://download.pytorch.org/whl/cu128',
-          ],
-          cwd: root,
-          env: setupEnvironment,
-          timeoutMs: SETUP_TIMEOUT_MS,
-          signal,
-        });
-        await this.dependencies.commandRunner.run({
-          command: uvPath,
-          args: [
-            'pip',
-            'install',
-            '--python',
-            pythonPath,
-            'voxcpm==2.0.3',
-            'torchcodec==0.7.0',
-            'transformers==4.57.6',
-            'huggingface-hub==0.36.0',
-            'pydantic==2.13.4',
-            'datasets<4',
-            'sherpa-onnx==1.13.6',
-            'soundfile==0.13.1',
-          ],
-          cwd: root,
-          env: setupEnvironment,
-          timeoutMs: SETUP_TIMEOUT_MS,
-          signal,
-        });
-        await this.dependencies.commandRunner.run({
-          command: uvPath,
-          args: [
-            'pip',
-            'install',
-            '--python',
-            pythonPath,
-            '--reinstall',
-            '--no-deps',
-            'sherpa-onnx==1.13.6+cuda12.cudnn9',
-            '--find-links',
-            'https://k2-fsa.github.io/sherpa/onnx/cuda.html',
-          ],
-          cwd: root,
-          env: setupEnvironment,
-          timeoutMs: SETUP_TIMEOUT_MS,
-          signal,
-        });
-        await this.dependencies.commandRunner.run({
-          command: pythonPath,
-          args: [
-            '-c',
-            [
-              'import torch, torchaudio, sherpa_onnx, soundfile',
-              'from voxcpm import VoxCPM',
-              "assert torch.cuda.is_available(), 'NVIDIA CUDA is unavailable'",
-            ].join('; '),
-          ],
-          cwd: root,
-          env: setupEnvironment,
-          timeoutMs: 5 * 60 * 1_000,
-          signal,
-        });
-      } finally {
-        await rm(setupCache, { recursive: true, force: true });
-      }
-      signal.throwIfAborted();
-      await this.dependencies.writeText(
-        markerPath,
-        `${JSON.stringify({ version: RUNTIME_ENVIRONMENT_VERSION })}\n`,
-        'utf8',
-      );
+    if (
+      !(await isVoxCpm2RuntimeReady(
+        root,
+        this.dependencies.fileAccess,
+        this.dependencies.readText,
+      ))
+    ) {
+      throw new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED');
     }
 
     signal.throwIfAborted();
@@ -675,18 +530,4 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     await session.disposal;
   }
 
-  private async isReady(
-    markerPath: string,
-    pythonPath: string,
-  ): Promise<boolean> {
-    if (!(await exists(this.dependencies.fileAccess, pythonPath))) return false;
-    try {
-      const parsed = JSON.parse(
-        await this.dependencies.readText(markerPath, 'utf8'),
-      ) as { readonly version?: unknown };
-      return parsed.version === RUNTIME_ENVIRONMENT_VERSION;
-    } catch {
-      return false;
-    }
-  }
 }

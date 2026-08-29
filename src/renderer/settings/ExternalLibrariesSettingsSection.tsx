@@ -112,7 +112,7 @@ export function ExternalLibrariesSettingsSection({
                   <p className="mt-1 text-[11px] text-slate-600">
                     {library.expectedSize === undefined
                       ? '当前平台没有可下载的安装包'
-                      : `下载内容约 ${formatExternalLibrarySize(
+                      : `固定组件资源约 ${formatExternalLibrarySize(
                           library.expectedSize,
                         )}`}
                   </p>

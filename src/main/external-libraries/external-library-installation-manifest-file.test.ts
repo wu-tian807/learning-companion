@@ -15,6 +15,7 @@ import {
   ExternalLibraryInstallationManifestFile,
   createExternalLibraryInstallationMarker,
 } from './external-library-installation-manifest-file';
+import { ExternalLibraryRuntimeSetupRegistry } from './external-library-runtime-setup';
 
 const temporaryDirectories: string[] = [];
 
@@ -256,6 +257,58 @@ describe('ExternalLibraryInstallationManifestFile', () => {
       status: 'invalid',
       reason: 'runtime-missing',
     });
+  });
+
+  it('does not report available until the registered runtime setup is ready', async () => {
+    const installationDirectory =
+      await createInstallationDirectory();
+    const { definition, packageDefinition } = createDefinition();
+    const executablePath = join(
+      installationDirectory,
+      EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+      ...packageDefinition.executableRelativePath.split('/'),
+    );
+    await mkdir(dirname(executablePath), { recursive: true });
+    await writeFile(executablePath, '#!/bin/sh\nexit 0\n');
+    await chmod(executablePath, 0o755);
+    let ready = false;
+    const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
+    runtimeSetups.register({
+      libraryId: definition.id,
+      prepare: async () => undefined,
+      isReady: async () => ready,
+    });
+    const manifestFile = new ExternalLibraryInstallationManifestFile(
+      runtimeSetups,
+    );
+    await manifestFile.write(
+      installationDirectory,
+      createExternalLibraryInstallationMarker({
+        definition,
+        packageDefinition,
+        installedTime: 1,
+      }),
+    );
+
+    await expect(
+      manifestFile.inspect(
+        installationDirectory,
+        definition,
+        packageDefinition,
+      ),
+    ).resolves.toEqual({
+      status: 'invalid',
+      reason: 'runtime-missing',
+    });
+
+    ready = true;
+    await expect(
+      manifestFile.inspect(
+        installationDirectory,
+        definition,
+        packageDefinition,
+      ),
+    ).resolves.toMatchObject({ status: 'available' });
   });
 
   it('refuses to persist an invalid installation marker', async () => {

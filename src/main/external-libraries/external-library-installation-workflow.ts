@@ -15,6 +15,7 @@ import {
 import type { ExternalLibraryDownloaderApi } from './external-library-downloader';
 import {
   createExternalLibraryInstallationMarker,
+  EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
   type ExternalLibraryInstallationInspection,
   type ExternalLibraryInstallationManifestFile,
 } from './external-library-installation-manifest-file';
@@ -24,6 +25,7 @@ import type {
   ExternalLibraryInstallerRegistryApi,
 } from './external-library-installer';
 import type { ExternalLibraryPathManagerApi } from './external-library-path-manager';
+import type { ExternalLibraryRuntimeSetupRegistryApi } from './external-library-runtime-setup';
 
 export type ExternalLibraryInstallationStage =
   | {
@@ -39,6 +41,7 @@ export interface ExternalLibraryInstallationWorkflowDependencies {
   readonly installationManifestFile: ExternalLibraryInstallationManifestFile;
   readonly downloader: ExternalLibraryDownloaderApi;
   readonly installers: ExternalLibraryInstallerRegistryApi;
+  readonly runtimeSetups?: ExternalLibraryRuntimeSetupRegistryApi;
   readonly now: () => number;
   readonly logger: Pick<Console, 'warn'>;
 }
@@ -187,6 +190,21 @@ export class ExternalLibraryInstallationWorkflow {
         ),
         signal,
       );
+
+      const runtimeSetup = this.dependencies.runtimeSetups?.find(
+        definition.id,
+      );
+      if (runtimeSetup) {
+        const runtimeDirectory = join(
+          stagingInstallationDirectory,
+          EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+        );
+        await runtimeSetup.prepare(runtimeDirectory, signal);
+        if (signal.aborted) throw externalLibraryAbortReason(signal);
+        if (!(await runtimeSetup.isReady(runtimeDirectory))) {
+          throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+        }
+      }
 
       if (signal.aborted) throw externalLibraryAbortReason(signal);
 

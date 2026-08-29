@@ -2,6 +2,7 @@ import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
 import { mediaDubbingVoxCpm2Definition } from './external-libraries/voxcpm2-definition';
 import { VoxCpm2DubbingRuntimeResolver } from './external-libraries/voxcpm2-runtime';
+import { VoxCpm2RuntimeSetup } from './external-libraries/voxcpm2-runtime-setup';
 import { DubbingSpeakerTrackArtifactProducer } from './dubbing-speaker-track-artifact';
 import {
   MediaDubbingProgressHub,
@@ -32,8 +33,9 @@ export function resolveMediaDubbingRuntime(
 
 export const mediaDubbingMainFeature = Object.freeze({
   id: 'builtin.media-dubbing',
-  registerExternalLibraries({ libraries }): void {
+  registerExternalLibraries({ libraries, runtimeSetups }): void {
     libraries.register(mediaDubbingVoxCpm2Definition);
+    runtimeSetups.register(new VoxCpm2RuntimeSetup());
   },
   registerArtifactProducers({ artifacts }): void {
     artifacts.register(mediaDubbingProducer);
