@@ -21,7 +21,6 @@ export interface CreateAssetInput {
   readonly mediaType: string;
   readonly creationKind: AssetCreationKind;
   readonly contentRef: AssetContentRef;
-  readonly folderPath?: string;
 }
 
 export type AssetUpdateTiming =

@@ -21,17 +21,10 @@ export const assets = sqliteTable(
     contentRef: text('content_ref', { mode: 'json' })
       .$type<AssetContentRef>()
       .notNull(),
-    folderPath: text('folder_path'),
     createdTime: integer('created_time').notNull(),
     updatedTime: integer('updated_time').notNull(),
   },
-  (table) => [
-    index('assets_project_id_index').on(table.projectId),
-    index('assets_project_folder_path_index').on(
-      table.projectId,
-      table.folderPath,
-    ),
-  ],
+  (table) => [index('assets_project_id_index').on(table.projectId)],
 );
 
 export type AssetRow = typeof assets.$inferSelect;

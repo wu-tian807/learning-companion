@@ -46,6 +46,7 @@ describe('initializeDatabase', () => {
       expect(tableNames).toEqual([
         'asset_artifacts',
         'asset_attachments',
+        'asset_folder_assignments',
         'asset_folders',
         'asset_links',
         'asset_references',
@@ -143,7 +144,7 @@ describe('initializeDatabase', () => {
           .prepare<[], { name: string }>('PRAGMA table_info(assets)')
           .all()
           .map(({ name }) => name),
-      ).toContain('folder_path');
+      ).not.toContain('folder_path');
     } finally {
       context.close();
     }
@@ -165,7 +166,7 @@ describe('initializeDatabase', () => {
     }
   });
 
-  it('adds logical Asset folders to a version 22 database without losing Assets', async () => {
+  it('adds isolated logical Asset folder tables to version 22 without changing Assets', async () => {
     const databaseFile = await createDatabaseFile();
     const legacyContext = initializeDatabase(databaseFile);
     legacyContext.sqlite
@@ -197,9 +198,8 @@ describe('initializeDatabase', () => {
         2,
       );
     legacyContext.sqlite.exec(`
-      DROP INDEX assets_project_folder_path_index;
+      DROP TABLE asset_folder_assignments;
       DROP TABLE asset_folders;
-      ALTER TABLE assets DROP COLUMN folder_path;
       PRAGMA user_version = 22;
     `);
     legacyContext.close();
@@ -209,25 +209,32 @@ describe('initializeDatabase', () => {
       expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
-          .prepare<[], { id: string; folderPath: string | null }>(
-            'SELECT id, folder_path AS folderPath FROM assets',
+          .prepare<[], { id: string }>('SELECT id FROM assets')
+          .all(),
+      ).toEqual([{ id: 'asset' }]);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(assets)')
+          .all()
+          .map(({ name }) => name),
+      ).not.toContain('folder_path');
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('asset_folders', 'asset_folder_assignments') ORDER BY name",
           )
           .all(),
-      ).toEqual([{ id: 'asset', folderPath: null }]);
+      ).toEqual([
+        { name: 'asset_folder_assignments' },
+        { name: 'asset_folders' },
+      ]);
       expect(
         context.sqlite
           .prepare<[], { name: string }>(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'asset_folders'",
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'asset_folder_assignments_folder_id_index'",
           )
           .get(),
-      ).toEqual({ name: 'asset_folders' });
-      expect(
-        context.sqlite
-          .prepare<[], { name: string }>(
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'assets_project_folder_path_index'",
-          )
-          .get(),
-      ).toEqual({ name: 'assets_project_folder_path_index' });
+      ).toEqual({ name: 'asset_folder_assignments_folder_id_index' });
     } finally {
       context.close();
     }
@@ -534,7 +541,6 @@ describe('initializeDatabase', () => {
         'created_time',
         'updated_time',
         'creation_kind',
-        'folder_path',
       ]);
     } finally {
       context.close();
@@ -585,6 +591,16 @@ describe('initializeDatabase', () => {
         1_753_171_200_000,
         1_753_171_200_000,
       );
+      context.sqlite
+        .prepare(
+          'INSERT INTO asset_folders (id, project_id, path) VALUES (?, ?, ?)',
+        )
+        .run('folder', 'project', '课程');
+      context.sqlite
+        .prepare(
+          'INSERT INTO asset_folder_assignments (asset_id, folder_id) VALUES (?, ?)',
+        )
+        .run('asset', 'folder');
       context.sqlite
         .prepare(
           `INSERT INTO asset_artifacts (
@@ -670,6 +686,20 @@ describe('initializeDatabase', () => {
       expect(
         context.sqlite
           .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM assets')
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(
+        context.sqlite
+          .prepare<[], { count: number }>(
+            'SELECT COUNT(*) AS count FROM asset_folder_assignments',
+          )
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(
+        context.sqlite
+          .prepare<[], { count: number }>(
+            'SELECT COUNT(*) AS count FROM asset_folders',
+          )
           .get(),
       ).toEqual({ count: 0 });
       expect(

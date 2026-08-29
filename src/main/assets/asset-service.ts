@@ -432,10 +432,19 @@ export class AssetService implements AssetServiceApi {
         mediaType,
         creationKind: 'imported',
         contentRef: normalizedRef,
-        ...(normalizedFolderPath !== undefined
-          ? { folderPath: normalizedFolderPath }
-          : {}),
       });
+      if (normalizedFolderPath !== undefined) {
+        try {
+          this.folderDatabase.moveAssets(
+            projectId,
+            [asset.id],
+            normalizedFolderPath,
+          );
+        } catch (error) {
+          this.assetDatabase.delete(projectId, asset.id);
+          throw error;
+        }
+      }
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
       this.publishChanged(snapshot);

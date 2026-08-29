@@ -1,16 +1,23 @@
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+
+import { and, eq, inArray } from 'drizzle-orm';
 
 import {
+  assetFolderName,
   assetFolderParentPath,
   assetFolderPathKey,
   cloneAssetFolderState,
   isAssetFolderPathWithin,
+  joinAssetFolderPath,
   normalizeAssetFolderPath,
   rebaseAssetFolderPath,
   type AssetFolderState,
 } from '../../shared/asset-folders';
 import type { DatabaseContext } from '../database/database-context';
-import { assetFolders } from '../database/schema/asset-folders';
+import {
+  assetFolderAssignments,
+  assetFolders,
+} from '../database/schema/asset-folders';
 import { assets } from '../database/schema/assets';
 import { AppError } from '../errors/app-error';
 
@@ -32,6 +39,12 @@ export interface AssetFolderDatabaseApi {
   deleteTree(projectId: string, path: string): AssetFolderState;
 }
 
+interface StoredFolder {
+  readonly id: string;
+  readonly projectId: string;
+  readonly path: string;
+}
+
 function requireText(value: string): string {
   const normalized = value.trim();
   if (!normalized) {
@@ -40,23 +53,16 @@ function requireText(value: string): string {
   return normalized;
 }
 
-function folderDepth(path: string): number {
-  return path.split('/').length;
-}
-
 export class AssetFolderDatabase implements AssetFolderDatabaseApi {
   constructor(private readonly context: DatabaseContext) {}
 
   list(projectId: string): AssetFolderState {
     const normalizedProjectId = requireText(projectId);
-    const folders = this.context.db
-      .select()
-      .from(assetFolders)
-      .where(eq(assetFolders.projectId, normalizedProjectId))
-      .all()
+    const storedFolders = this.listStoredFolders(normalizedProjectId);
+    const folders = storedFolders
       .map((folder) => ({
         projectId: folder.projectId,
-        path: normalizeAssetFolderPath(folder.path),
+        path: folder.path,
       }))
       .sort((left, right) =>
         left.path.localeCompare(right.path, 'zh-CN', {
@@ -64,34 +70,38 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
           numeric: true,
         }),
       );
-    const folderKeys = new Set<string>();
+    const folderPathsById = new Map(
+      storedFolders.map((folder) => [folder.id, folder.path]),
+    );
 
-    for (const folder of folders) {
-      const key = assetFolderPathKey(folder.path);
-      if (folderKeys.has(key)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      folderKeys.add(key);
+    if (folderPathsById.size !== storedFolders.length) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
     const assignments = this.context.db
       .select({
-        assetId: assets.id,
-        folderPath: assets.folderPath,
+        assetId: assetFolderAssignments.assetId,
+        assetProjectId: assets.projectId,
+        folderId: assetFolderAssignments.folderId,
+        folderProjectId: assetFolders.projectId,
       })
-      .from(assets)
-      .where(
-        and(
-          eq(assets.projectId, normalizedProjectId),
-          isNotNull(assets.folderPath),
-        ),
+      .from(assetFolderAssignments)
+      .innerJoin(assets, eq(assetFolderAssignments.assetId, assets.id))
+      .innerJoin(
+        assetFolders,
+        eq(assetFolderAssignments.folderId, assetFolders.id),
       )
+      .where(eq(assets.projectId, normalizedProjectId))
       .all();
     const folderPathByAssetId: Record<string, string> = {};
 
     for (const assignment of assignments) {
-      const path = normalizeAssetFolderPath(assignment.folderPath!);
-      if (!folderKeys.has(assetFolderPathKey(path))) {
+      const path = folderPathsById.get(assignment.folderId);
+      if (
+        assignment.assetProjectId !== normalizedProjectId ||
+        assignment.folderProjectId !== normalizedProjectId ||
+        path === undefined
+      ) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
       folderPathByAssetId[assignment.assetId] = path;
@@ -105,35 +115,48 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
   }
 
   requireFolder(projectId: string, path: string): void {
-    const state = this.list(projectId);
-    const key = assetFolderPathKey(path);
-    if (!state.folders.some((folder) => assetFolderPathKey(folder.path) === key)) {
+    const normalizedProjectId = requireText(projectId);
+    if (!this.findFolder(normalizedProjectId, path)) {
       throw new AppError('ASSET_FOLDER_NOT_FOUND');
     }
   }
 
   create(projectId: string, path: string): AssetFolderState {
     const normalizedProjectId = requireText(projectId);
-    const normalizedPath = normalizeAssetFolderPath(path);
-    const state = this.list(normalizedProjectId);
+    const requestedPath = normalizeAssetFolderPath(path);
+    const storedFolders = this.listStoredFolders(normalizedProjectId);
+    const parentPath = assetFolderParentPath(requestedPath);
+    const parent =
+      parentPath === null
+        ? undefined
+        : storedFolders.find(
+            (folder) =>
+              assetFolderPathKey(folder.path) ===
+              assetFolderPathKey(parentPath),
+          );
+    if (parentPath !== null && !parent) {
+      throw new AppError('ASSET_FOLDER_NOT_FOUND');
+    }
+    const normalizedPath =
+      parent === undefined
+        ? requestedPath
+        : joinAssetFolderPath(parent.path, assetFolderName(requestedPath));
     const pathKey = assetFolderPathKey(normalizedPath);
-
     if (
-      state.folders.some(
+      storedFolders.some(
         (folder) => assetFolderPathKey(folder.path) === pathKey,
       )
     ) {
       throw new AppError('ASSET_FOLDER_CONFLICT');
     }
 
-    const parentPath = assetFolderParentPath(normalizedPath);
-    if (parentPath !== null) {
-      this.requireFolder(normalizedProjectId, parentPath);
-    }
-
     const result = this.context.db
       .insert(assetFolders)
-      .values({ projectId: normalizedProjectId, path: normalizedPath })
+      .values({
+        id: randomUUID(),
+        projectId: normalizedProjectId,
+        path: normalizedPath,
+      })
       .run();
     if (result.changes !== 1) {
       throw new AppError('DATABASE_WRITE_CONFLICT');
@@ -149,41 +172,63 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
   ): AssetFolderState {
     const normalizedProjectId = requireText(projectId);
     const normalizedPath = normalizeAssetFolderPath(path);
-    const normalizedNextPath = normalizeAssetFolderPath(nextPath);
-    const state = this.list(normalizedProjectId);
-    const sourceKey = assetFolderPathKey(normalizedPath);
-    const source = state.folders.find(
-      (folder) => assetFolderPathKey(folder.path) === sourceKey,
+    const requestedNextPath = normalizeAssetFolderPath(nextPath);
+    const storedFolders = this.listStoredFolders(normalizedProjectId);
+    const source = storedFolders.find(
+      (folder) =>
+        assetFolderPathKey(folder.path) === assetFolderPathKey(normalizedPath),
     );
-
     if (!source) {
       throw new AppError('ASSET_FOLDER_NOT_FOUND');
     }
-    if (source.path === normalizedNextPath) {
-      return state;
-    }
 
-    const nextKey = assetFolderPathKey(normalizedNextPath);
-    if (
-      sourceKey !== nextKey &&
-      isAssetFolderPathWithin(normalizedNextPath, source.path)
-    ) {
-      throw new AppError('ASSET_FOLDER_INVALID_MOVE');
-    }
-
-    const movingFolders = state.folders.filter((folder) =>
+    const movingFolders = storedFolders.filter((folder) =>
       isAssetFolderPathWithin(folder.path, source.path),
     );
     const movingKeys = new Set(
       movingFolders.map((folder) => assetFolderPathKey(folder.path)),
     );
+    const outsideFolders = storedFolders.filter(
+      (folder) => !movingKeys.has(assetFolderPathKey(folder.path)),
+    );
+    const parentPath = assetFolderParentPath(requestedNextPath);
+    const parent =
+      parentPath === null
+        ? undefined
+        : outsideFolders.find(
+            (folder) =>
+              assetFolderPathKey(folder.path) ===
+              assetFolderPathKey(parentPath),
+          );
+    if (
+      parentPath !== null &&
+      movingKeys.has(assetFolderPathKey(parentPath))
+    ) {
+      throw new AppError('ASSET_FOLDER_INVALID_MOVE');
+    }
+    if (parentPath !== null && !parent) {
+      throw new AppError('ASSET_FOLDER_NOT_FOUND');
+    }
+    const normalizedNextPath =
+      parent === undefined
+        ? requestedNextPath
+        : joinAssetFolderPath(parent.path, assetFolderName(requestedNextPath));
+    if (source.path === normalizedNextPath) {
+      return this.list(normalizedProjectId);
+    }
+    if (
+      assetFolderPathKey(source.path) !==
+        assetFolderPathKey(normalizedNextPath) &&
+      isAssetFolderPathWithin(normalizedNextPath, source.path)
+    ) {
+      throw new AppError('ASSET_FOLDER_INVALID_MOVE');
+    }
+
     const outsideKeys = new Set(
-      state.folders
-        .filter((folder) => !movingKeys.has(assetFolderPathKey(folder.path)))
-        .map((folder) => assetFolderPathKey(folder.path)),
+      outsideFolders.map((folder) => assetFolderPathKey(folder.path)),
     );
     const nextFolders = movingFolders.map((folder) => ({
-      currentPath: folder.path,
+      id: folder.id,
       nextPath: rebaseAssetFolderPath(
         folder.path,
         source.path,
@@ -191,7 +236,6 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
       ),
     }));
     const nextKeys = new Set<string>();
-
     for (const folder of nextFolders) {
       const key = assetFolderPathKey(folder.nextPath);
       if (outsideKeys.has(key) || nextKeys.has(key)) {
@@ -200,71 +244,17 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
       nextKeys.add(key);
     }
 
-    const parentPath = assetFolderParentPath(normalizedNextPath);
-    if (parentPath !== null) {
-      const parentKey = assetFolderPathKey(parentPath);
-      if (movingKeys.has(parentKey)) {
-        throw new AppError('ASSET_FOLDER_INVALID_MOVE');
-      }
-      if (!outsideKeys.has(parentKey)) {
-        throw new AppError('ASSET_FOLDER_NOT_FOUND');
-      }
-    }
-
-    const assignments = Object.entries(state.folderPathByAssetId)
-      .filter(([, folderPath]) =>
-        isAssetFolderPathWithin(folderPath, source.path),
-      )
-      .map(([assetId, folderPath]) => ({
-        assetId,
-        folderPath: rebaseAssetFolderPath(
-          folderPath,
-          source.path,
-          normalizedNextPath,
-        ),
-      }));
-
     this.context.db.transaction((transaction) => {
-      for (const assignment of assignments) {
+      for (const folder of nextFolders) {
         const result = transaction
-          .update(assets)
-          .set({ folderPath: assignment.folderPath })
+          .update(assetFolders)
+          .set({ path: folder.nextPath })
           .where(
             and(
-              eq(assets.projectId, normalizedProjectId),
-              eq(assets.id, assignment.assetId),
-            ),
-          )
-          .run();
-        if (result.changes !== 1) {
-          throw new AppError('DATABASE_WRITE_CONFLICT');
-        }
-      }
-
-      for (const folder of movingFolders) {
-        const result = transaction
-          .delete(assetFolders)
-          .where(
-            and(
+              eq(assetFolders.id, folder.id),
               eq(assetFolders.projectId, normalizedProjectId),
-              eq(assetFolders.path, folder.path),
             ),
           )
-          .run();
-        if (result.changes !== 1) {
-          throw new AppError('DATABASE_WRITE_CONFLICT');
-        }
-      }
-
-      for (const folder of [...nextFolders].sort(
-        (left, right) => folderDepth(left.nextPath) - folderDepth(right.nextPath),
-      )) {
-        const result = transaction
-          .insert(assetFolders)
-          .values({
-            projectId: normalizedProjectId,
-            path: folder.nextPath,
-          })
           .run();
         if (result.changes !== 1) {
           throw new AppError('DATABASE_WRITE_CONFLICT');
@@ -288,10 +278,12 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
       throw new AppError('INVALID_IPC_REQUEST');
     }
 
-    const normalizedFolderPath =
-      folderPath === null ? null : normalizeAssetFolderPath(folderPath);
-    if (normalizedFolderPath !== null) {
-      this.requireFolder(normalizedProjectId, normalizedFolderPath);
+    const targetFolder =
+      folderPath === null
+        ? undefined
+        : this.findFolder(normalizedProjectId, folderPath);
+    if (folderPath !== null && !targetFolder) {
+      throw new AppError('ASSET_FOLDER_NOT_FOUND');
     }
 
     const rows = this.context.db
@@ -311,18 +303,25 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
       throw new AppError('ASSET_NOT_FOUND');
     }
 
-    const result = this.context.db
-      .update(assets)
-      .set({ folderPath: normalizedFolderPath })
-      .where(
-        and(
-          eq(assets.projectId, normalizedProjectId),
-          inArray(assets.id, normalizedAssetIds),
-        ),
-      )
-      .run();
-    if (result.changes !== normalizedAssetIds.length) {
-      throw new AppError('DATABASE_WRITE_CONFLICT');
+    if (targetFolder === undefined) {
+      this.context.db
+        .delete(assetFolderAssignments)
+        .where(inArray(assetFolderAssignments.assetId, normalizedAssetIds))
+        .run();
+    } else {
+      this.context.db
+        .insert(assetFolderAssignments)
+        .values(
+          normalizedAssetIds.map((assetId) => ({
+            assetId,
+            folderId: targetFolder.id,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: assetFolderAssignments.assetId,
+          set: { folderId: targetFolder.id },
+        })
+        .run();
     }
 
     return this.list(normalizedProjectId);
@@ -343,10 +342,10 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
     const normalizedProjectId = requireText(projectId);
     const normalizedPath = normalizeAssetFolderPath(path);
     const state = this.list(normalizedProjectId);
-    const folders = state.folders.filter((folder) =>
-      isAssetFolderPathWithin(folder.path, normalizedPath),
+    const storedFolders = this.listStoredFolders(normalizedProjectId).filter(
+      (folder) => isAssetFolderPathWithin(folder.path, normalizedPath),
     );
-    if (folders.length === 0) {
+    if (storedFolders.length === 0) {
       throw new AppError('ASSET_FOLDER_NOT_FOUND');
     }
     if (
@@ -357,25 +356,37 @@ export class AssetFolderDatabase implements AssetFolderDatabaseApi {
       throw new AppError('DATABASE_WRITE_CONFLICT');
     }
 
-    this.context.db.transaction((transaction) => {
-      for (const folder of [...folders].sort(
-        (left, right) => folderDepth(right.path) - folderDepth(left.path),
-      )) {
-        const result = transaction
-          .delete(assetFolders)
-          .where(
-            and(
-              eq(assetFolders.projectId, normalizedProjectId),
-              eq(assetFolders.path, folder.path),
-            ),
-          )
-          .run();
-        if (result.changes !== 1) {
-          throw new AppError('DATABASE_WRITE_CONFLICT');
-        }
-      }
-    });
+    const result = this.context.db
+      .delete(assetFolders)
+      .where(inArray(assetFolders.id, storedFolders.map((folder) => folder.id)))
+      .run();
+    if (result.changes !== storedFolders.length) {
+      throw new AppError('DATABASE_WRITE_CONFLICT');
+    }
 
     return this.list(normalizedProjectId);
+  }
+
+  private listStoredFolders(projectId: string): StoredFolder[] {
+    return this.context.db
+      .select({
+        id: assetFolders.id,
+        projectId: assetFolders.projectId,
+        path: assetFolders.path,
+      })
+      .from(assetFolders)
+      .where(eq(assetFolders.projectId, projectId))
+      .all()
+      .map((folder) => ({
+        ...folder,
+        path: normalizeAssetFolderPath(folder.path),
+      }));
+  }
+
+  private findFolder(projectId: string, path: string): StoredFolder | undefined {
+    const key = assetFolderPathKey(path);
+    return this.listStoredFolders(projectId).find(
+      (folder) => assetFolderPathKey(folder.path) === key,
+    );
   }
 }

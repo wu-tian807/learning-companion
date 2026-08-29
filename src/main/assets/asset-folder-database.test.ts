@@ -2,11 +2,16 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { and, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAbsoluteLocalFileContentRef } from '../content/content-ref';
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
+import {
+  assetFolderAssignments,
+  assetFolders,
+} from '../database/schema/asset-folders';
 import { assets } from '../database/schema/assets';
 import { projects } from '../database/schema/projects';
 import { AssetFolderDatabase } from './asset-folder-database';
@@ -54,11 +59,28 @@ function addAsset(
       mediaType: 'text/plain',
       creationKind: input.creationKind ?? 'imported',
       contentRef: createAbsoluteLocalFileContentRef(`/tmp/${input.id}.txt`),
-      folderPath: input.folderPath ?? null,
       createdTime: 10,
       updatedTime: 20,
     })
     .run();
+
+  if (input.folderPath) {
+    const folder = context.db
+      .select({ id: assetFolders.id })
+      .from(assetFolders)
+      .where(
+        and(
+          eq(assetFolders.projectId, input.projectId ?? 'project'),
+          eq(assetFolders.path, input.folderPath),
+        ),
+      )
+      .get();
+    if (!folder) throw new Error('test folder missing');
+    context.db
+      .insert(assetFolderAssignments)
+      .values({ assetId: input.id, folderId: folder.id })
+      .run();
+  }
 }
 
 afterEach(async () => {
@@ -127,6 +149,7 @@ describe('AssetFolderDatabase', () => {
     database.create('project', '课程/第一章');
     database.create('project', '归档');
     addAsset(context, { id: 'note', folderPath: '课程/第一章' });
+    const assetBeforeMove = context.db.select().from(assets).get();
 
     const state = database.update('project', '课程', '归档/课程 A');
 
@@ -138,11 +161,10 @@ describe('AssetFolderDatabase', () => {
     expect(state.folderPathByAssetId).toEqual({
       note: '归档/课程 A/第一章',
     });
-    expect(context.db.select().from(assets).get()).toMatchObject({
-      id: 'note',
-      contentRef: { path: '/tmp/note.txt' },
-      updatedTime: 20,
-    });
+    expect(context.db.select().from(assets).get()).toEqual(assetBeforeMove);
+    expect(context.db.select().from(assetFolderAssignments).all()).toHaveLength(
+      1,
+    );
   });
 
   it('rejects descendant moves and collisions before rewriting anything', async () => {
@@ -215,6 +237,7 @@ describe('AssetFolderDatabase', () => {
       'DATABASE_WRITE_CONFLICT',
     );
     context.db.delete(assets).run();
+    expect(context.db.select().from(assetFolderAssignments).all()).toEqual([]);
     expect(database.deleteTree('project', '课程').folders).toEqual([]);
   });
 });

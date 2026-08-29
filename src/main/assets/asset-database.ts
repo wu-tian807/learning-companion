@@ -182,7 +182,6 @@ export class AssetDatabase implements AssetDatabaseApi {
         mediaType: asset.mediaType,
         creationKind: asset.creationKind,
         contentRef: asset.contentRef,
-        folderPath: input.folderPath ?? null,
         createdTime: asset.createdTime,
         updatedTime: asset.updatedTime,
       })

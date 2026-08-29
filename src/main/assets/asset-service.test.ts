@@ -431,8 +431,33 @@ describe('AssetService', () => {
     expect(folderDatabase.requireFolder).toHaveBeenCalledTimes(2);
     expect(database.add).toHaveBeenCalledWith(
       'project',
-      expect.objectContaining({ folderPath: '课程' }),
+      expect.not.objectContaining({ folderPath: expect.anything() }),
     );
+    expect(folderDatabase.moveAssets).toHaveBeenCalledWith(
+      'project',
+      ['created'],
+      '课程',
+    );
+  });
+
+  it('removes a newly imported Asset when its folder assignment fails', async () => {
+    const database = createDatabase([]);
+    const { registry } = createResolver();
+    const folderDatabase = createFolderDatabase();
+    vi.mocked(folderDatabase.moveAssets).mockImplementation(() => {
+      throw new Error('assignment failed');
+    });
+    const service = createService(database, registry, {
+      detectMediaType: vi.fn(async () => 'text/plain'),
+      folderDatabase,
+    });
+    await service.loadFromProject('project');
+
+    await expect(
+      service.addLocalFile('project', '/tmp/资料.txt', 'copy', '课程'),
+    ).rejects.toThrow('assignment failed');
+    expect(database.delete).toHaveBeenCalledWith('project', 'created');
+    expect(database.listByProject('project')).toEqual([]);
   });
 
   it('rejects an empty folder path instead of treating it as the root', async () => {
