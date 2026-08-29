@@ -31,6 +31,33 @@ export interface ProjectLayout extends ProjectLayoutState {
   readonly closeOverlays: () => void;
 }
 
+export interface ProjectContentLayout {
+  readonly showLeftPanel: boolean;
+  readonly showGenerationPanel: boolean;
+  readonly conversationContainerClassName?: string;
+}
+
+export function resolveProjectContentLayout(
+  layout: Pick<ProjectLayoutState, 'mode' | 'leftOpen' | 'rightOpen'>,
+  conversationOpen: boolean,
+): ProjectContentLayout {
+  if (!conversationOpen) {
+    return {
+      showLeftPanel: layout.leftOpen,
+      showGenerationPanel: layout.rightOpen,
+    };
+  }
+
+  return {
+    showLeftPanel: layout.mode === 'wide' && layout.leftOpen,
+    showGenerationPanel: false,
+    conversationContainerClassName:
+      layout.mode === 'small'
+        ? 'absolute inset-x-2 bottom-2 z-30 h-[min(52%,440px)] min-h-[260px] shadow-2xl'
+        : 'h-full w-[clamp(320px,28vw,390px)] shrink-0',
+  };
+}
+
 export function createDefaultProjectLayoutState(
   mode: ProjectLayoutMode,
 ): ProjectLayoutState {

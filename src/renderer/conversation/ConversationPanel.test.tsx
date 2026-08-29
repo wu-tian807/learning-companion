@@ -72,6 +72,19 @@ function render(value: ConversationControllerState): string {
 }
 
 describe('ConversationPanel', () => {
+  it('lets the project layout own its size instead of squeezing the workbench with a viewport width', () => {
+    const html = render(state());
+    const dialog = html.match(
+      /<section[^>]*aria-label="AI 问答"[^>]*>/u,
+    )?.[0];
+
+    expect(dialog).toBeDefined();
+    expect(dialog).toContain('w-full');
+    expect(dialog).toContain('min-w-0');
+    expect(dialog).not.toContain('w-[min(440px,40vw)]');
+    expect(dialog).not.toContain('min-w-[360px]');
+  });
+
   it('keeps source viewing, visible errors, retry/settings and new conversation in one panel', () => {
     const html = render(state({
       pendingContext: { page: 2 },

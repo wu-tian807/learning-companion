@@ -5,6 +5,7 @@ import {
   PROJECT_SMALL_LAYOUT_QUERY,
   PROJECT_WIDE_LAYOUT_QUERY,
   reduceProjectLayout,
+  resolveProjectContentLayout,
   resolveProjectLayoutMode,
 } from './use-project-layout';
 
@@ -17,6 +18,54 @@ function createMatchMedia(
 }
 
 describe('Project responsive layout', () => {
+  it('keeps the reader visible when AI conversation opens', () => {
+    expect(
+      resolveProjectContentLayout(
+        { mode: 'wide', leftOpen: true, rightOpen: true },
+        true,
+      ),
+    ).toEqual({
+      showLeftPanel: true,
+      showGenerationPanel: false,
+      conversationContainerClassName:
+        'h-full w-[clamp(320px,28vw,390px)] shrink-0',
+    });
+    expect(
+      resolveProjectContentLayout(
+        { mode: 'medium', leftOpen: true, rightOpen: false },
+        true,
+      ),
+    ).toEqual({
+      showLeftPanel: false,
+      showGenerationPanel: false,
+      conversationContainerClassName:
+        'h-full w-[clamp(320px,28vw,390px)] shrink-0',
+    });
+    expect(
+      resolveProjectContentLayout(
+        { mode: 'small', leftOpen: false, rightOpen: false },
+        true,
+      ),
+    ).toEqual({
+      showLeftPanel: false,
+      showGenerationPanel: false,
+      conversationContainerClassName:
+        'absolute inset-x-2 bottom-2 z-30 h-[min(52%,440px)] min-h-[260px] shadow-2xl',
+    });
+  });
+
+  it('restores the configured source and generation panels after AI conversation closes', () => {
+    expect(
+      resolveProjectContentLayout(
+        { mode: 'wide', leftOpen: true, rightOpen: true },
+        false,
+      ),
+    ).toEqual({
+      showLeftPanel: true,
+      showGenerationPanel: true,
+    });
+  });
+
   it('resolves wide, medium and small modes from the shared queries', () => {
     expect(
       resolveProjectLayoutMode(

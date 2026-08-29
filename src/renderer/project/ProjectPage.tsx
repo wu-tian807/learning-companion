@@ -16,13 +16,17 @@ import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
 import { AssetRenameDialog } from './AssetRenameDialog';
+import { ProjectAuxiliaryPanels } from './ProjectAuxiliaryPanels';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
 import {
   assetMediaLabel,
   filterAssetLoadStateByCreationKind,
 } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
-import { useProjectLayout } from './use-project-layout';
+import {
+  resolveProjectContentLayout,
+  useProjectLayout,
+} from './use-project-layout';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
 
@@ -63,7 +67,15 @@ export function ProjectPage({
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
-  const { closeOverlays, openOverlay } = layout;
+  const conversationPanelOpen = Boolean(
+    conversationSnapshot.active && conversationSnapshot.panelOpen,
+  );
+  const contentLayout = resolveProjectContentLayout(
+    layout,
+    conversationPanelOpen,
+  );
+  const { closeOverlays } = layout;
+  const openOverlay = conversationPanelOpen ? null : layout.openOverlay;
   const session = useProjectSession(project.id, setError);
   const assetOperations = useProjectAssets({
     projectId: project.id,
@@ -286,7 +298,7 @@ export function ProjectPage({
                   className="absolute inset-0 z-20 cursor-default rounded-[17px] bg-black/55 backdrop-blur-[2px]"
                 />
               )}
-              {layout.leftOpen && (
+              {contentLayout.showLeftPanel && (
                 <div
                   className={
                     layout.leftInline
@@ -363,49 +375,56 @@ export function ProjectPage({
                   onError={setError}
                 />
               </div>
-              <ConversationPanelHost
-                projectId={project.id}
-                assetId={assetOperations.selectedAsset?.id}
-                onOpenSettings={onOpenSettings}
-                onError={setError}
-              />
-              {layout.rightOpen && (
-                <div
-                  className={
-                    layout.rightInline
-                      ? 'h-full w-[clamp(318px,20vw,390px)] shrink-0'
-                      : 'absolute inset-y-0 right-0 z-30 h-full w-[min(390px,calc(100%-20px))] shadow-2xl'
-                  }
-                >
-                  <GenerationCenter
+              <ProjectAuxiliaryPanels
+                contentLayout={contentLayout}
+                conversationActive={Boolean(conversationSnapshot.active)}
+                conversationOpen={conversationPanelOpen}
+                conversationPanel={
+                  <ConversationPanelHost
                     projectId={project.id}
-                    asset={assetOperations.selectedAsset}
-                    state={generatedAssetState}
-                    selectedAssetId={session.selectedAssetId}
-                    busy={assetOperations.busy}
-                    now={relativeTimeNow}
-                    mediaLabel={assetMediaLabel}
-                    onRetry={session.retry}
-                    onSelect={session.selectAsset}
-                    onRemoveSelected={assetOperations.requestDelete}
-                    onRename={assetOperations.setRenameTarget}
-                    onReveal={(asset) =>
-                      void assetOperations.revealAssetInFolder(asset)
-                    }
-                    onRelink={(asset) =>
-                      void assetOperations.relinkAsset(asset)
-                    }
-                    onDelete={(asset) =>
-                      assetOperations.requestDelete(null, [asset])
-                    }
-                    onRevealSources={layout.openLeft}
-                    onMindMapDraftReady={startMindMapGeneration}
-                    mindMapTasks={mindMapTasks}
-                    onRetryMindMapTask={retryMindMapTask}
-                    onCancelMindMapTask={cancelMindMapTask}
+                    assetId={assetOperations.selectedAsset?.id}
+                    onOpenSettings={onOpenSettings}
+                    onError={setError}
                   />
-                </div>
-              )}
+                }
+                generationPanel={
+                  <div
+                    className={
+                      layout.rightInline
+                        ? 'h-full w-[clamp(318px,20vw,390px)] shrink-0'
+                        : 'absolute inset-y-0 right-0 z-30 h-full w-[min(390px,calc(100%-20px))] shadow-2xl'
+                    }
+                  >
+                    <GenerationCenter
+                      projectId={project.id}
+                      asset={assetOperations.selectedAsset}
+                      state={generatedAssetState}
+                      selectedAssetId={session.selectedAssetId}
+                      busy={assetOperations.busy}
+                      now={relativeTimeNow}
+                      mediaLabel={assetMediaLabel}
+                      onRetry={session.retry}
+                      onSelect={session.selectAsset}
+                      onRemoveSelected={assetOperations.requestDelete}
+                      onRename={assetOperations.setRenameTarget}
+                      onReveal={(asset) =>
+                        void assetOperations.revealAssetInFolder(asset)
+                      }
+                      onRelink={(asset) =>
+                        void assetOperations.relinkAsset(asset)
+                      }
+                      onDelete={(asset) =>
+                        assetOperations.requestDelete(null, [asset])
+                      }
+                      onRevealSources={layout.openLeft}
+                      onMindMapDraftReady={startMindMapGeneration}
+                      mindMapTasks={mindMapTasks}
+                      onRetryMindMapTask={retryMindMapTask}
+                      onCancelMindMapTask={cancelMindMapTask}
+                    />
+                  </div>
+                }
+              />
             </section>
           </AssetSelectionCoordinatorProvider>
         </WorkbenchRuntimeProvider>
