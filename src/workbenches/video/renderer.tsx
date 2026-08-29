@@ -47,6 +47,10 @@ import { useMediaSubtitles } from '../media-subtitles/use-media-subtitles';
 import { VideoPlaybackControls } from './video-playback-controls';
 import { VideoLanguageControls } from './video-language-controls';
 import {
+  VIDEO_FRAME_EXPLAIN_QUESTION,
+  VideoFrameQuestionMenu,
+} from './video-frame-question-menu';
+import {
   cloneVideoViewState,
   createVideoGetDubbingSnapshotCommand,
   createVideoGetSubtitleSnapshotCommand,
@@ -286,6 +290,7 @@ export function VideoWorkbenchView({
   });
   const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string>();
   const [draftSelection, setDraftSelection] = useState<ScreenRectangle>();
+  const [frameQuestionMenuOpen, setFrameQuestionMenuOpen] = useState(false);
   const [selectedConversationContext, setSelectedConversationContext] =
     useState<VideoConversationContext>();
   const [currentTime, setCurrentTime] = useState(
@@ -376,6 +381,7 @@ export function VideoWorkbenchView({
       }
       selectedConversationContextRef.current = undefined;
       rightSelectionStartRef.current = undefined;
+      setFrameQuestionMenuOpen(false);
       setSelectedConversationContext(undefined);
       setDraftSelection(undefined);
     },
@@ -478,11 +484,18 @@ export function VideoWorkbenchView({
   });
 
   useEffect(() => {
-    if (!contextMenuOpen || !selectedConversationContext) return;
+    if (
+      (!contextMenuOpen && !frameQuestionMenuOpen) ||
+      !selectedConversationContext
+    ) {
+      return;
+    }
     const dismiss = (event: PointerEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest('[role="menu"]')
+        event.target.closest(
+          '[role="menu"], [data-video-frame-question-menu="true"]',
+        )
       ) {
         return;
       }
@@ -512,6 +525,7 @@ export function VideoWorkbenchView({
     };
   }, [
     contextMenuOpen,
+    frameQuestionMenuOpen,
     releaseConversationContext,
     selectedConversationContext,
   ]);
@@ -823,15 +837,32 @@ export function VideoWorkbenchView({
       reportError(error, '无法在文件夹中显示视频。');
     }
   }, [onReveal, reportError]);
-  const explainSelectedFrame = useCallback(() => {
+  const submitSelectedFrameQuestion = useCallback((question: string) => {
     const context = selectedConversationContextRef.current;
     if (!context || conversationBusy) return;
     runtime.closeContextMenu();
+    setFrameQuestionMenuOpen(false);
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      context,
+      question,
+      submit: true,
+    });
+  }, [conversationBusy, conversationOwnerId, conversationRuntime, runtime]);
+  const openSelectedFrameQuestion = useCallback(() => {
+    const context = selectedConversationContextRef.current;
+    if (!context || conversationBusy) return;
+    runtime.closeContextMenu();
+    setFrameQuestionMenuOpen(false);
     conversationRuntime.open({
       ownerId: conversationOwnerId,
       ...createVideoFrameConversationLaunch(context),
     });
   }, [conversationBusy, conversationOwnerId, conversationRuntime, runtime]);
+  const explainSelectedFrame = useCallback(
+    () => submitSelectedFrameQuestion(VIDEO_FRAME_EXPLAIN_QUESTION),
+    [submitSelectedFrameQuestion],
+  );
   const rendererActions = useMemo(
     () =>
       createVideoRendererActions({
@@ -869,12 +900,22 @@ export function VideoWorkbenchView({
     (point: ScreenPoint, target: VideoFrameRegionTarget) => {
       const context = createVideoConversationContext(target, sourceRevision);
       commitConversationContext(context);
+      setFrameQuestionMenuOpen(false);
       runtime.openContextMenu(bootstrap.sessionId, point, {
         focus: target,
         inputs: [],
       });
     },
     [bootstrap.sessionId, commitConversationContext, runtime, sourceRevision],
+  );
+  const openFrameQuestionMenu = useCallback(
+    (target: VideoFrameRegionTarget) => {
+      const context = createVideoConversationContext(target, sourceRevision);
+      commitConversationContext(context);
+      runtime.closeContextMenu();
+      setFrameQuestionMenuOpen(true);
+    },
+    [commitConversationContext, runtime, sourceRevision],
   );
   const beginFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -939,12 +980,23 @@ export function VideoWorkbenchView({
       });
       if (!target) return;
       suppressNativeContextMenuRef.current = true;
-      openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
+      const rectangle = screenRectangle(start, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      if (
+        rectangle.width >= MIN_FRAME_SELECTION_SIZE &&
+        rectangle.height >= MIN_FRAME_SELECTION_SIZE
+      ) {
+        openFrameQuestionMenu(target);
+      } else {
+        openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
+      }
       window.setTimeout(() => {
         suppressNativeContextMenuRef.current = false;
       }, 0);
     },
-    [openFrameContextMenu],
+    [openFrameContextMenu, openFrameQuestionMenu],
   );
   const cancelFrameSelection = useCallback(() => {
     rightSelectionStartRef.current = undefined;
@@ -1060,6 +1112,27 @@ export function VideoWorkbenchView({
                 height: draftSelection.height,
               }}
             />
+          )}
+          {frameQuestionMenuOpen && selectedConversationContext && (
+            <div
+              className="pointer-events-none absolute right-2 left-2 z-50 flex justify-center"
+              style={{
+                top: `${selectedConversationContext.target.anchorPayload.y * 100}%`,
+                transform:
+                  selectedConversationContext.target.anchorPayload.y >= 0.12
+                    ? 'translateY(calc(-100% - 8px))'
+                    : 'translateY(8px)',
+              }}
+            >
+              <VideoFrameQuestionMenu
+                disabled={conversationBusy}
+                onQuestion={submitSelectedFrameQuestion}
+                onFreeQuestion={openSelectedFrameQuestion}
+                onClose={() =>
+                  releaseConversationContext(selectedConversationContext)
+                }
+              />
+            </div>
           )}
         </div>
 
