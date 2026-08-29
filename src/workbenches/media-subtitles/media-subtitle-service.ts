@@ -2,43 +2,43 @@ import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-service';
-import type { AssetServiceApi } from '../../../main/assets/asset-service';
-import { AppError, describeAppError } from '../../../main/errors/app-error';
-import type { GenerationTaskSnapshot } from '../../../main/generation/generation-task';
-import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
-import type { ProjectLookup } from '../../../main/projects/project-database';
+} from '../../main/artifacts/asset-artifact-service';
+import type { AssetServiceApi } from '../../main/assets/asset-service';
+import { AppError, describeAppError } from '../../main/errors/app-error';
+import type { GenerationTaskSnapshot } from '../../main/generation/generation-task';
+import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
+import type { ProjectLookup } from '../../main/projects/project-database';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
   isTranslatableSubtitleLanguage,
   oppositeSubtitleLanguage,
   type SubtitleSourceTrackV1,
-} from '../../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
+} from './contracts';
+import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media-subtitle-runtime';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
   createSubtitleTranslationArtifactKey,
   type SubtitleTranslationProgressHub,
   type SubtitleTranslationProgress,
-} from '../../media-subtitles/translation-producer';
+} from './translation-producer';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
   SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
   SubtitleTranslationInstruction,
   subtitleTranslationInstructionFactory,
-} from '../../media-subtitles/generation/subtitle-translation-instruction';
+} from './generation/subtitle-translation-instruction';
 import {
   readSubtitleSourceTrackFile,
   readSubtitleTranslationTrackFile,
-} from '../../media-subtitles/subtitle-artifact-files';
-import { createMediaSubtitleSourceArtifactRequest } from '../../media-subtitles/subtitle-source-artifact';
+} from './subtitle-artifact-files';
+import { createMediaSubtitleSourceArtifactRequest } from './subtitle-source-artifact';
 import {
-  EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
-  type VideoSubtitleCueFinalPayload,
-  type VideoSubtitleSnapshot,
-  videoWorkbenchManifest,
-} from '../shared';
+  EMPTY_MEDIA_SUBTITLE_SNAPSHOT,
+  type MediaSubtitleCueFinalPayload,
+  type MediaSubtitleSnapshot,
+} from './presentation';
+import type { MediaSubtitleSourceTaskQueueApi } from './source-task-queue';
 
 interface ResolvedSourceTrack {
   readonly track: SubtitleSourceTrackV1;
@@ -51,32 +51,32 @@ interface ActiveTranslationTask {
   readonly request: AssetArtifactRequest;
 }
 
-export type VideoSubtitleServiceEvent =
+export type MediaSubtitleServiceEvent =
   | {
       readonly type: 'snapshot';
-      readonly snapshot: VideoSubtitleSnapshot;
+      readonly snapshot: MediaSubtitleSnapshot;
     }
   | {
       readonly type: 'cue-final';
-      readonly payload: VideoSubtitleCueFinalPayload;
+      readonly payload: MediaSubtitleCueFinalPayload;
     };
 
-export type VideoSubtitleServiceListener = (
-  event: VideoSubtitleServiceEvent,
+export type MediaSubtitleServiceListener = (
+  event: MediaSubtitleServiceEvent,
 ) => void;
 
-export interface VideoSubtitleServiceApi {
-  getSnapshot(assetId: string): VideoSubtitleSnapshot;
+export interface MediaSubtitleServiceApi {
+  getSnapshot(assetId: string): MediaSubtitleSnapshot;
   subscribe(
     assetId: string,
-    listener: VideoSubtitleServiceListener,
+    listener: MediaSubtitleServiceListener,
   ): () => void;
   ensureSource(projectId: string, assetId: string): Promise<void>;
   ensureTranslation(projectId: string, assetId: string): Promise<void>;
   retry(projectId: string, assetId: string): Promise<void>;
 }
 
-function cloneSnapshot(snapshot: VideoSubtitleSnapshot): VideoSubtitleSnapshot {
+function cloneSnapshot(snapshot: MediaSubtitleSnapshot): MediaSubtitleSnapshot {
   return Object.freeze({
     ...snapshot,
     partialTranslations: Object.freeze([...snapshot.partialTranslations]),
@@ -99,11 +99,11 @@ function userFailureMessage(error: unknown): string {
   return '字幕处理没有完成。';
 }
 
-export class VideoSubtitleService implements VideoSubtitleServiceApi {
-  private readonly snapshots = new Map<string, VideoSubtitleSnapshot>();
+export class MediaSubtitleService implements MediaSubtitleServiceApi {
+  private readonly snapshots = new Map<string, MediaSubtitleSnapshot>();
   private readonly listeners = new Map<
     string,
-    Set<VideoSubtitleServiceListener>
+    Set<MediaSubtitleServiceListener>
   >();
   private readonly sourceTasks = new Map<string, Promise<void>>();
   private readonly translationTasks = new Map<string, Promise<void>>();
@@ -112,16 +112,19 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     string,
     ActiveTranslationTask
   >();
-  private sourceQueue: Promise<void> = Promise.resolve();
+  private readonly supportedMediaTypes: ReadonlySet<string>;
 
   constructor(
     private readonly assets: AssetServiceApi,
     private readonly projects: ProjectLookup,
     private readonly artifacts: AssetArtifactServiceApi,
     private readonly runtimes: MediaSubtitleRuntimeResolverApi,
+    private readonly sourceTaskQueue: MediaSubtitleSourceTaskQueueApi,
     private readonly generationTasks: GenerationTaskServiceApi,
     translationProgress: SubtitleTranslationProgressHub,
+    supportedMediaTypes: readonly string[],
   ) {
+    this.supportedMediaTypes = new Set(supportedMediaTypes);
     translationProgress.subscribe((progress) =>
       this.handleTranslationProgress(progress),
     );
@@ -138,22 +141,22 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     assets.subscribe(({ asset }) => {
       if (
         asset.contentStatus.availability === 'available' &&
-        videoWorkbenchManifest.supportedMediaTypes.includes(asset.mediaType)
+        this.supportedMediaTypes.has(asset.mediaType)
       ) {
         void this.ensureSource(asset.projectId, asset.id);
       }
     });
   }
 
-  getSnapshot(assetId: string): VideoSubtitleSnapshot {
+  getSnapshot(assetId: string): MediaSubtitleSnapshot {
     return cloneSnapshot(
-      this.snapshots.get(assetId) ?? EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+      this.snapshots.get(assetId) ?? EMPTY_MEDIA_SUBTITLE_SNAPSHOT,
     );
   }
 
   subscribe(
     assetId: string,
-    listener: VideoSubtitleServiceListener,
+    listener: MediaSubtitleServiceListener,
   ): () => void {
     const listeners = this.listeners.get(assetId) ?? new Set();
     listeners.add(listener);
@@ -173,12 +176,10 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
       phase: 'queued',
       message: undefined,
     });
-    const task = this.sourceQueue
-      .catch(() => undefined)
-      .then(() => this.prepareSource(projectId, assetId))
+    const task = this.sourceTaskQueue
+      .enqueue(() => this.prepareSource(projectId, assetId))
       .finally(() => this.sourceTasks.delete(assetId));
     this.sourceTasks.set(assetId, task);
-    this.sourceQueue = task;
     return task;
   }
 
@@ -366,7 +367,7 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     if (!asset || asset.projectId !== projectId) {
       throw new AppError('ASSET_NOT_FOUND');
     }
-    if (!videoWorkbenchManifest.supportedMediaTypes.includes(asset.mediaType)) {
+    if (!this.supportedMediaTypes.has(asset.mediaType)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
@@ -508,14 +509,14 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
 
   private updateSnapshot(
     assetId: string,
-    snapshot: VideoSubtitleSnapshot,
+    snapshot: MediaSubtitleSnapshot,
   ): void {
     const cloned = cloneSnapshot(snapshot);
     this.snapshots.set(assetId, cloned);
     this.publish(assetId, { type: 'snapshot', snapshot: cloned });
   }
 
-  private publish(assetId: string, event: VideoSubtitleServiceEvent): void {
+  private publish(assetId: string, event: MediaSubtitleServiceEvent): void {
     for (const listener of this.listeners.get(assetId) ?? []) {
       listener(event);
     }

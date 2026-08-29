@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   SubtitleCueV1,
   SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
+} from '../media-subtitles/contracts';
 import {
   createDubbingPhrases,
   normalizeChineseSpokenText,

@@ -83,16 +83,16 @@ describe('VideoPlaybackControls', () => {
       '[aria-label="视频音量"]',
     );
     const progressRow = container.querySelector(
-      '[data-video-progress-row="true"]',
+      '[data-media-progress-row="true"]',
     );
     const actionRow = container.querySelector(
-      '[data-video-action-row="true"]',
+      '[data-media-action-row="true"]',
     );
     const secondaryControls = container.querySelector(
-      '[data-video-secondary-controls="true"]',
+      '[data-media-secondary-controls="true"]',
     );
     const volumeSlider = container.querySelector(
-      '[data-video-volume-slider="true"]',
+      '[data-media-volume-slider="true"]',
     );
 
     expect(progressRow?.contains(progress)).toBe(true);

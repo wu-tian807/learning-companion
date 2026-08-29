@@ -1,7 +1,7 @@
 import type {
   SubtitleCueV1,
   SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
+} from '../media-subtitles/contracts';
 
 const MAXIMUM_MERGE_GAP_MS = 700;
 const MAXIMUM_REFERENCE_GAP_MS = 700;

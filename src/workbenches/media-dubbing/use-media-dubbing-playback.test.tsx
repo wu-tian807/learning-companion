@@ -6,17 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   WorkbenchCommand,
   WorkbenchCommandResult,
-} from '../../../shared/workbench/protocol';
-import type { VideoDubbingSnapshot } from '../shared';
+} from '../../shared/workbench/protocol';
+import type { MediaDubbingSnapshot } from './contracts';
+import { isMediaDubbingSnapshot } from './contracts';
 import {
-  useVideoDubbingPlayback,
-  VideoDubbingAudioTrack,
-} from './use-video-dubbing-playback';
+  useMediaDubbingPlayback,
+  MediaDubbingAudioTrack,
+  type MediaDubbingPlaybackProtocol,
+} from './use-media-dubbing-playback';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-const previewSnapshot: VideoDubbingSnapshot = {
+const previewSnapshot: MediaDubbingSnapshot = {
   phase: 'cloning',
   completedPhrases: 3,
   totalPhrases: 8,
@@ -27,7 +29,7 @@ const previewSnapshot: VideoDubbingSnapshot = {
 };
 
 function snapshotResult(
-  snapshot: VideoDubbingSnapshot,
+  snapshot: MediaDubbingSnapshot,
 ): WorkbenchCommandResult {
   return {
     payload: snapshot as unknown as WorkbenchCommandResult['payload'],
@@ -35,7 +37,7 @@ function snapshotResult(
 }
 
 interface HarnessProps {
-  readonly snapshot: VideoDubbingSnapshot;
+  readonly snapshot: MediaDubbingSnapshot;
   readonly currentTime: number;
   readonly volume?: number;
   readonly muted?: boolean;
@@ -46,6 +48,14 @@ interface HarnessProps {
   readonly reportError: (error: unknown, fallback: string) => void;
 }
 
+const protocol: MediaDubbingPlaybackProtocol = {
+  snapshotEventType: 'media:dubbing-snapshot',
+  createGetSnapshotCommand: () => ({ type: 'media:get-dubbing-snapshot' }),
+  createStartCommand: () => ({ type: 'media:start-dubbing' }),
+  createRetryCommand: () => ({ type: 'media:retry-dubbing' }),
+  isSnapshot: isMediaDubbingSnapshot,
+};
+
 function Harness({
   snapshot,
   currentTime,
@@ -55,25 +65,27 @@ function Harness({
   executeCommand,
   reportError,
 }: HarnessProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaRef = useRef<HTMLVideoElement>(null);
   const suppressVolumeEventRef = useRef(false);
-  const controller = useVideoDubbingPlayback({
+  const controller = useMediaDubbingPlayback({
     resetKey: 'session:revision',
     initialSnapshot: snapshot,
     currentTime,
     duration: 20,
     desiredAudioState: { volume, muted, playbackRate },
-    videoRef,
-    suppressVideoVolumeEventRef: suppressVolumeEventRef,
+    mediaRef,
+    suppressMediaVolumeEventRef: suppressVolumeEventRef,
     executeCommand,
     subscribeEvent: () => () => undefined,
     reportError,
+    protocol,
+    mediaLabel: '视频',
   });
 
   return (
     <>
-      <video ref={videoRef} aria-label="视频" />
-      <VideoDubbingAudioTrack controller={controller} />
+      <video ref={mediaRef} aria-label="视频" />
+      <MediaDubbingAudioTrack controller={controller} mediaLabel="视频" />
       <button type="button" onClick={() => controller.selectEnabled(true)}>
         开启配音
       </button>
@@ -84,7 +96,7 @@ function Harness({
   );
 }
 
-describe('useVideoDubbingPlayback', () => {
+describe('useMediaDubbingPlayback', () => {
   let container: HTMLDivElement;
   let root: Root;
   let executeCommand = vi.fn<HarnessProps['executeCommand']>();
@@ -201,7 +213,7 @@ describe('useVideoDubbingPlayback', () => {
   });
 
   it('falls back to original audio and reports an unreadable final track', async () => {
-    const readySnapshot: VideoDubbingSnapshot = {
+    const readySnapshot: MediaDubbingSnapshot = {
       ...previewSnapshot,
       phase: 'ready',
       completedPhrases: 8,

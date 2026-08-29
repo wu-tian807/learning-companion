@@ -1,10 +1,12 @@
 import type {
   ExternalLibraryBundleResourceDefinition,
   ExternalLibraryDefinition,
-} from '../../../../main/external-libraries/external-library-definition';
+} from '../../../main/external-libraries/external-library-definition';
 
-export const VIDEO_DUBBING_VOXCPM2_LIBRARY_ID = 'video-dubbing-voxcpm2';
-export const VIDEO_DUBBING_VOXCPM2_VERSION = '2026.08.28';
+// Persisted library identity: keep the historical value so existing
+// installations remain valid when Audio starts sharing this runtime.
+export const MEDIA_DUBBING_VOXCPM2_LIBRARY_ID = 'video-dubbing-voxcpm2';
+export const MEDIA_DUBBING_VOXCPM2_VERSION = '2026.08.28';
 export const VOXCPM2_MODEL_REVISION =
   '32279effe8c19989596f05d353d1447f51d9e915';
 
@@ -71,14 +73,14 @@ const MODEL_RESOURCES = Object.freeze([
   }),
 ]);
 
-export const videoDubbingVoxCpm2Definition: ExternalLibraryDefinition =
+export const mediaDubbingVoxCpm2Definition: ExternalLibraryDefinition =
   Object.freeze({
-    id: VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
-    displayName: 'VoxCPM2 视频配音组件',
+    id: MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
+    displayName: 'VoxCPM2 视频/音频配音组件',
     description:
       'NVIDIA GPU 专用。安装 VoxCPM2 one-shot 声音克隆、人声分离模型与隔离运行环境引导程序。',
     category: 'media',
-    version: VIDEO_DUBBING_VOXCPM2_VERSION,
+    version: MEDIA_DUBBING_VOXCPM2_VERSION,
     installationFormatVersion: 1,
     sourceUrl: 'https://github.com/OpenBMB/VoxCPM',
     licenseName: 'Apache-2.0 / model licenses',
