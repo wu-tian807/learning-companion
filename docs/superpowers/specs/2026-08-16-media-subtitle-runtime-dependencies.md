@@ -1,8 +1,8 @@
 # 媒体字幕外部依赖与模型总表
 
 > 日期：2026-08-16
-> 状态：外部依赖基础设施已实现，字幕执行链待接入
-> 范围：Video 与 Audio 共用的媒体解码、原文字幕识别和中英字幕翻译依赖。
+> 状态：已实现；2026-08-28 将字幕翻译迁移到 GenerationTask
+> 范围：Video 与 Audio 共用的媒体解码和原文字幕识别依赖。字幕翻译不再下载本地模型。
 
 ## 1. 所有组件放在哪里
 
@@ -48,12 +48,20 @@ SenseVoice；NVIDIA 只安装并运行 Whisper。SenseVoice 的时间轴来自 V
 
 ## 3. 中英字幕翻译
 
-| 内部能力 | 运行时与模型 | 产品角色 |
-| --- | --- | --- |
-| 快速翻译 | Mozilla Bergamot 英中、中英双向模型 | 默认本地快速翻译；适合尽快提供双语字幕 |
-| 高质量翻译 | Hy-MT2 1.8B Q4_K_M；CPU 包带 llama.cpp CPU，NVIDIA 包带 Vulkan Runtime | 提高术语、完整性和自然度；是否使用由任务决定，不再要求用户另装组件 |
+翻译不属于外部组件。正式链路通过工作台 Selector 使用现有 Agent：
 
-翻译只消费稳定的原文 Cue，不负责生成时间轴。原文、译文与双语视图的完整协议见
+```text
+VideoSubtitleService
+  → GenerationTask
+  → SubtitleTranslationTaskDefinition
+  → TaskAgentSession
+  → AgentProvider
+  → Translation Artifact
+```
+
+TaskDefinition 按真实 Cue 边界分段，并提供前后 Cue 作为只读语境；模型只能返回目标
+Cue 的 ID 与译文，不能修改时间轴。Bergamot、Hy-MT2 与 llama.cpp 已从字幕组件中
+移除，避免安装一套质量不足且与用户现有模型重复的翻译运行时。完整协议见
 `docs/superpowers/specs/2026-08-16-video-subtitle-translation-design.md`。
 
 ## 4. 用户实际看到的安装体验
@@ -63,21 +71,18 @@ SenseVoice；NVIDIA 只安装并运行 Whisper。SenseVoice 的时间轴来自 V
 
 | 内部配置 | 一次下载内容 | 下载量 |
 | --- | --- | ---: |
-| CPU 兼容配置 | FFmpeg、SenseVoice、Bergamot、Hy-MT2 + llama.cpp CPU | 约 1.50 GiB |
-| NVIDIA 加速配置 | FFmpeg、Whisper CUDA、Bergamot、Hy-MT2 + llama.cpp Vulkan | 约 2.43 GiB |
+| CPU 兼容配置 | FFmpeg、SenseVoice、FSMN-VAD | 约 354 MiB |
+| NVIDIA 加速配置 | FFmpeg、Whisper CUDA、Whisper 模型、Silero VAD | 约 1.26 GiB |
 
 检测到 NVIDIA GPU 时选择加速配置；检测失败、数据异常或没有 NVIDIA GPU 时使用
 CPU 兼容配置。两种配置使用同一个组件 ID 和安装目录，因此同一时刻只保留一套。
 底层仍按资源逐一下载和校验，但这些细节不暴露为多个按钮。
 
-## 5. 本轮完成边界
+## 5. 当前完成边界
 
-本轮只完成：
+当前已经完成下载校验、硬件档位选择、字幕识别、Artifact 缓存、逐 Cue 翻译事件、
+GenerationTask 恢复以及 Video Workbench UI。字幕组件仍只负责 FFmpeg 与 ASR；
+翻译所用 Connection、模型和思考力度由工作台 Provider Selector 独立决定。
 
-1. 多来源 Bundle 的下载、累计进度、大小与 SHA-256 校验；
-2. ZIP、GZip 与普通文件的安全安装和原子提交；
-3. 一个媒体字幕组件、两套自动匹配硬件且互斥的内部资源配置；
-4. Workbench 侧运行时路径解析，供后续媒体任务调用。
-
-本轮不声称字幕已经能在主应用中生成。下一步仍需实现后台媒体作业、Artifact 缓存、
-逐 Cue 事件、语言路由、取消与错误恢复，再接入 Video/Audio UI。
+Audio Workbench 尚未接入这套能力；macOS 字幕运行时也仍需独立验证和注册，不能由
+Windows 路径推断为已支持。

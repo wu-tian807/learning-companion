@@ -1,0 +1,17 @@
+{
+  "name": "learning-companion-voice-cloning-rendezvous-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean:cache": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-local-caches.ps1",
+    "reset:experiment": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-local-caches.ps1 -ResetExperiments",
+    "test": "node --test",
+    "start": "node ./src/server.mjs",
+    "setup:cuda": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-models.ps1",
+    "setup:separation": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-source-separation.ps1",
+    "benchmark:overnight": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-overnight.ps1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

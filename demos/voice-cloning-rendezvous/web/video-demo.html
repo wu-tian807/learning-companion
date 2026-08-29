@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>真实视频声音克隆实验台</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell video-demo-shell">
+      <header class="hero video-demo-hero">
+        <div>
+          <p class="eyebrow">Learning Companion · 本机真实视频实验</p>
+          <h1>三模型自适应配音</h1>
+          <p class="lede">
+            上传中文或英文视频后，自动识别语言并生成另一种语言的配音。
+            每个模型先生成时间轴最右端的一段，实测 RTF
+            后再从结尾向前扩展真实可播放后缀。
+          </p>
+        </div>
+        <a class="secondary-button page-link" href="/web/results.html"
+          >返回赛马结果</a
+        >
+      </header>
+
+      <section class="experiment-setup-card" aria-labelledby="setupHeading">
+        <div class="setup-copy">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">输入</p>
+              <h2 id="setupHeading">选择真实中 / 英文视频</h2>
+            </div>
+            <span id="runtimeState" class="state-chip">检查本地组件…</span>
+          </div>
+          <p>
+            中文视频生成英语配音，英文视频生成简体中文配音。先分离视频的人声与背景，参考人声从纯人声轨内自动截取，
+            无需手动确认；三个模型串行使用 GPU，避免互相争抢显存导致 RTF 失真。
+          </p>
+        </div>
+        <div class="upload-actions">
+          <input
+            id="videoInput"
+            class="visually-hidden"
+            type="file"
+            accept="video/mp4,video/quicktime,video/webm,.mkv,.m4v"
+          />
+          <label class="secondary-button upload-button" for="videoInput"
+            >选择视频</label
+          >
+          <button
+            id="startExperiment"
+            class="primary-button inline-primary"
+            type="button"
+            disabled
+          >
+            上传并开始
+          </button>
+          <button
+            id="cancelExperiment"
+            class="secondary-button"
+            type="button"
+            hidden
+          >
+            取消
+          </button>
+        </div>
+        <div id="selectedFile" class="selected-file">尚未选择视频</div>
+        <div class="setup-progress" aria-live="polite">
+          <div class="setup-progress-track">
+            <div id="setupProgressBar"></div>
+          </div>
+          <span id="pipelineState">等待输入</span>
+        </div>
+        <p id="errorMessage" class="inline-error" hidden></p>
+      </section>
+
+      <section id="experienceSection" class="video-experience" hidden>
+        <article class="real-video-card">
+          <div class="video-frame">
+            <video
+              id="videoPlayer"
+              controls
+              playsinline
+              preload="metadata"
+            ></video>
+            <div id="subtitleOverlay" class="dub-subtitle" hidden></div>
+          </div>
+          <div class="track-toolbar">
+            <div>
+              <span class="toolbar-label">当前声音</span>
+              <strong id="activeTrackLabel">原声</strong>
+            </div>
+            <div id="trackButtons" class="track-buttons">
+              <button
+                type="button"
+                data-model="original"
+                class="track-button is-active"
+              >
+                原声
+              </button>
+              <button
+                type="button"
+                data-model="f5tts"
+                class="track-button"
+                disabled
+              >
+                F5-TTS
+              </button>
+              <button
+                type="button"
+                data-model="voxcpm15"
+                class="track-button"
+                disabled
+              >
+                VoxCPM1.5
+              </button>
+              <button
+                type="button"
+                data-model="voxcpm2"
+                class="track-button"
+                disabled
+              >
+                VoxCPM2
+              </button>
+            </div>
+          </div>
+          <p class="playback-note">
+            白色真实生成范围外播放完整原声；范围内持续播放分离后的背景轨，
+            只在对应字幕 Cue
+            上叠加克隆人声。字幕间隙不会再切回仍有人说话的原始音轨。
+          </p>
+        </article>
+
+        <aside class="reference-preview-card">
+          <p class="eyebrow">自动 one-shot</p>
+          <h2>参考人声</h2>
+          <audio id="referencePreview" controls preload="metadata"></audio>
+          <p id="referenceText">字幕完成后显示自动选中的参考文本。</p>
+        </aside>
+      </section>
+
+      <section id="modelSection" class="model-experiment-section" hidden>
+        <div class="section-heading result-heading">
+          <div>
+            <p class="eyebrow">三条真实路线</p>
+            <h2>最右端探针与自适应后缀</h2>
+          </div>
+          <span class="section-hint">白色范围只在音频文件真正落盘后增长</span>
+        </div>
+        <div id="experimentModelGrid" class="model-grid"></div>
+      </section>
+
+      <section id="subtitleSection" class="subtitle-inspection-card" hidden>
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">复用字幕 Artifact</p>
+            <h2>原文与译文抽查</h2>
+          </div>
+          <span id="cueCount" class="state-chip">0 段</span>
+        </div>
+        <div id="cueList" class="cue-list"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/web/video-demo.mjs"></script>
+  </body>
+</html>

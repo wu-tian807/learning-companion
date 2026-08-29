@@ -33,15 +33,18 @@ import {
   shouldReleaseVideoConversationContext,
   type VideoConversationContext,
 } from './conversation/video-conversation-context';
-import {
-  VideoExplanationIndex,
-} from './explanations/video-explanation-index';
+import { VideoExplanationIndex } from './explanations/video-explanation-index';
 import { VideoExplanationMarkerOverlay } from './explanations/video-explanation-marker-overlay';
 import { VideoExplanationPanel } from './explanations/video-explanation-panel';
 import type { VideoExplanationView } from './explanations/shared';
 import { videoExplanationVisibleAtTime } from './explanations/video-explanation-revision';
 import { useVideoExplanations } from './explanations/use-video-explanations';
+import {
+  useVideoDubbingPlayback,
+  VideoDubbingAudioTrack,
+} from './dubbing/use-video-dubbing-playback';
 import { VideoPlaybackControls } from './video-playback-controls';
+import { VideoLanguageControls } from './video-language-controls';
 import {
   cloneVideoViewState,
   createVideoGetSubtitleSnapshotCommand,
@@ -50,6 +53,7 @@ import {
   createVideoSetSubtitleModeCommand,
   createVideoFrameRegionTarget,
   DEFAULT_VIDEO_VIEW_STATE,
+  EMPTY_VIDEO_DUBBING_SNAPSHOT,
   isVideoSubtitleCueFinalPayload,
   isVideoSubtitleSnapshot,
   isVideoSaveViewStateResult,
@@ -238,6 +242,11 @@ export function VideoWorkbenchView({
     : undefined;
   const playerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const suppressVideoVolumeEventRef = useRef(false);
+  const desiredAudioStateRef = useRef({
+    volume: payload?.viewState.volume ?? 1,
+    muted: payload?.viewState.muted ?? false,
+  });
   const rightSelectionStartRef = useRef<ScreenPoint | undefined>(undefined);
   const suppressNativeContextMenuRef = useRef(false);
   const selectedConversationContextRef = useRef<
@@ -276,6 +285,7 @@ export function VideoWorkbenchView({
   const [playbackRate, setPlaybackRate] = useState(
     payload?.viewState.playbackRate ?? 1,
   );
+  const [fullscreen, setFullscreen] = useState(false);
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
       const message = userMessageFromError(error, fallback);
@@ -287,6 +297,31 @@ export function VideoWorkbenchView({
     },
     [onError],
   );
+  const dubbing = useVideoDubbingPlayback({
+    resetKey: `${bootstrap.sessionId}:${payload?.sourceRevision ?? 'invalid'}`,
+    initialSnapshot: payload?.dubbingSnapshot ?? EMPTY_VIDEO_DUBBING_SNAPSHOT,
+    currentTime,
+    duration,
+    desiredAudioState: { volume, muted, playbackRate },
+    videoRef,
+    suppressVideoVolumeEventRef,
+    executeCommand,
+    subscribeEvent,
+    reportError,
+  });
+  const isDubbingPlaybackActive = dubbing.isPlaybackActive;
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      setFullscreen(document.fullscreenElement === playerRef.current);
+    };
+
+    syncFullscreenState();
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreenState);
+    };
+  }, []);
 
   const conversationContributionId = `${videoWorkbenchManifest.id}.frame-conversation`;
   const sourceRevision = payload?.sourceRevision ?? '';
@@ -476,6 +511,10 @@ export function VideoWorkbenchView({
     if (!payload) return;
     setSubtitleMode(payload.subtitleState.displayMode);
     setSubtitleSnapshot(payload.subtitleSnapshot);
+    desiredAudioStateRef.current = {
+      volume: payload.viewState.volume,
+      muted: payload.viewState.muted,
+    };
   }, [payload]);
 
   useEffect(() => {
@@ -562,7 +601,10 @@ export function VideoWorkbenchView({
       if (!video) {
         return;
       }
-      const state = captureVideoState(video);
+      const state = {
+        ...captureVideoState(video),
+        ...desiredAudioStateRef.current,
+      };
       latestViewStateRef.current = state;
 
       if (saveTimerRef.current !== undefined) {
@@ -603,6 +645,10 @@ export function VideoWorkbenchView({
       const { viewState } = payload;
       video.volume = viewState.volume;
       video.muted = viewState.muted;
+      desiredAudioStateRef.current = {
+        volume: viewState.volume,
+        muted: viewState.muted,
+      };
       video.playbackRate = viewState.playbackRate;
 
       if (Number.isFinite(video.duration) && video.duration > 0) {
@@ -637,15 +683,31 @@ export function VideoWorkbenchView({
         Number.isFinite(video.duration) ? Math.max(0, video.duration) : 0,
       );
     };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPlay = () => {
+      setPlaying(true);
+    };
+    const onPause = () => {
+      setPlaying(false);
+    };
     const onSeeked = () => {
       setCurrentTime(video.currentTime);
       captureAndScheduleSave(true);
     };
-    const onMediaSettingChange = () => {
-      setVolume(video.volume);
-      setMuted(video.muted);
+    const onMediaSettingChange = (event: Event) => {
+      if (
+        event.type === 'volumechange' &&
+        (suppressVideoVolumeEventRef.current || isDubbingPlaybackActive())
+      ) {
+        return;
+      }
+      if (event.type === 'volumechange') {
+        desiredAudioStateRef.current = {
+          volume: video.volume,
+          muted: video.muted,
+        };
+        setVolume(video.volume);
+        setMuted(video.muted);
+      }
       setPlaybackRate(video.playbackRate);
       captureAndScheduleSave(true);
     };
@@ -698,14 +760,22 @@ export function VideoWorkbenchView({
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = undefined;
       }
-      const finalState = captureVideoState(video);
+      const finalState = {
+        ...captureVideoState(video),
+        ...desiredAudioStateRef.current,
+      };
       latestViewStateRef.current = finalState;
       void persistViewState(finalState);
       video.pause();
       // `src` belongs to React. Removing it here breaks StrictMode's
       // setup-cleanup-setup replay because the DOM node itself is retained.
     };
-  }, [captureAndScheduleSave, payload, persistViewState]);
+  }, [
+    captureAndScheduleSave,
+    isDubbingPlaybackActive,
+    payload,
+    persistViewState,
+  ]);
 
   const ready = loadState.kind === 'ready';
   const togglePlayback = useCallback(async () => {
@@ -736,16 +806,36 @@ export function VideoWorkbenchView({
   const toggleMuted = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    video.muted = !video.muted;
-  }, []);
-  const changeVolume = useCallback((nextVolume: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.volume = clamp(nextVolume, 0, 1);
-    if (video.volume > 0 && video.muted) {
-      video.muted = false;
+    const next = !desiredAudioStateRef.current.muted;
+    desiredAudioStateRef.current = {
+      ...desiredAudioStateRef.current,
+      muted: next,
+    };
+    setMuted(next);
+    if (isDubbingPlaybackActive()) {
+      captureAndScheduleSave(true);
+    } else {
+      video.muted = next;
     }
-  }, []);
+  }, [captureAndScheduleSave, isDubbingPlaybackActive]);
+  const changeVolume = useCallback(
+    (nextVolume: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+      const next = clamp(nextVolume, 0, 1);
+      const nextMuted = next > 0 ? false : desiredAudioStateRef.current.muted;
+      desiredAudioStateRef.current = { volume: next, muted: nextMuted };
+      setVolume(next);
+      setMuted(nextMuted);
+      if (isDubbingPlaybackActive()) {
+        captureAndScheduleSave(true);
+      } else {
+        video.volume = next;
+        if (next > 0 && video.muted) video.muted = false;
+      }
+    },
+    [captureAndScheduleSave, isDubbingPlaybackActive],
+  );
   const changePlaybackRate = useCallback((rate: number) => {
     const video = videoRef.current;
     if (!video) return;
@@ -836,7 +926,6 @@ export function VideoWorkbenchView({
       reportError(error, '无法重新处理字幕。');
     }
   }, [executeCommand, reportError]);
-
   const openFrameContextMenu = useCallback(
     (point: ScreenPoint, target: VideoFrameRegionTarget) => {
       const context = createVideoConversationContext(target, sourceRevision);
@@ -965,7 +1054,10 @@ export function VideoWorkbenchView({
         />
       )}
 
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-[radial-gradient(circle_at_50%_45%,rgba(68,78,101,0.16),transparent_58%),#0d1116] p-3">
+      <div
+        data-video-stage="true"
+        className="relative flex min-h-0 flex-1 items-center justify-center bg-[radial-gradient(circle_at_50%_45%,rgba(68,78,101,0.16),transparent_58%),#0d1116] p-3"
+      >
         <div
           data-video-frame-surface="true"
           className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-md bg-black shadow-[0_20px_60px_rgba(0,0,0,0.42)]"
@@ -994,6 +1086,7 @@ export function VideoWorkbenchView({
               />
             )}
           </video>
+          <VideoDubbingAudioTrack controller={dubbing} />
           <VideoExplanationMarkerOverlay
             visible={explanationMarkersVisible}
             markers={visibleExplanationMarkers}
@@ -1030,6 +1123,50 @@ export function VideoWorkbenchView({
             />
           )}
         </div>
+
+        {loadState.kind === 'loading' && (
+          <div
+            data-video-stage-overlay="loading"
+            className="pointer-events-none absolute inset-0 grid place-items-center bg-[#0d1116]/68"
+          >
+            <div className="flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-[#20262e]/80 px-4 py-2 text-xs text-slate-400 shadow-xl backdrop-blur-sm">
+              <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
+              正在读取视频信息…
+            </div>
+          </div>
+        )}
+
+        {loadState.kind === 'failed' && (
+          <div
+            data-video-stage-overlay="failed"
+            className="absolute inset-0 grid place-items-center bg-[#0d1116]/92 p-8 text-center"
+          >
+            <div>
+              <p className="text-sm font-medium text-slate-200">
+                无法播放这个视频
+              </p>
+              <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">
+                {loadState.message}
+              </p>
+              <div className="mt-5 flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
+                >
+                  刷新
+                </button>
+                <button
+                  type="button"
+                  onClick={onRelink}
+                  className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
+                >
+                  重新定位
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div
@@ -1044,6 +1181,23 @@ export function VideoWorkbenchView({
           volume={volume}
           muted={muted}
           playbackRate={playbackRate}
+          fullscreen={fullscreen}
+          generatedSuffixStartSeconds={dubbing.generatedSuffixStartSeconds}
+          trailingControls={
+            <VideoLanguageControls
+              subtitleMode={subtitleMode}
+              subtitleSnapshot={subtitleSnapshot}
+              dubbingSnapshot={dubbing.snapshot}
+              dubbingEnabled={dubbing.enabled}
+              dubbingPlaybackActive={dubbing.playbackActive}
+              onSelectSubtitleMode={(mode) => void selectSubtitleMode(mode)}
+              onRetrySubtitles={() => void retrySubtitles()}
+              onStartDubbing={() => void dubbing.start()}
+              onSelectDubbingEnabled={dubbing.selectEnabled}
+              onRetryDubbing={() => void dubbing.retry()}
+              onOpenSettings={onOpenSettings}
+            />
+          }
           onTogglePlayback={() => void togglePlayback()}
           onSeek={seekVideo}
           onToggleMuted={toggleMuted}
@@ -1052,111 +1206,6 @@ export function VideoWorkbenchView({
           onToggleFullscreen={() => void toggleFullscreen()}
         />
       </div>
-
-      <div className="absolute bottom-14 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#151a21]/90 p-1.5 shadow-xl backdrop-blur-md">
-        {(['off', 'source', 'translated', 'bilingual'] as const).map((mode) => {
-          const label = {
-            off: '关闭',
-            source: '原文',
-            translated: '译文',
-            bilingual: '双语',
-          }[mode];
-          const disabled =
-            mode !== 'off' &&
-            (!subtitleSnapshot.source ||
-              ((mode === 'translated' || mode === 'bilingual') &&
-                subtitleSnapshot.source.language === 'unknown'));
-          return (
-            <button
-              key={mode}
-              type="button"
-              disabled={disabled}
-              onClick={() => void selectSubtitleMode(mode)}
-              className={`ui-control rounded-lg px-2.5 py-1.5 text-[11px] ${
-                subtitleMode === mode
-                  ? 'bg-indigo-400/20 text-indigo-100'
-                  : 'text-slate-400'
-              } disabled:cursor-not-allowed disabled:opacity-35`}
-            >
-              {label}
-            </button>
-          );
-        })}
-        <span className="ml-1 border-l border-white/10 pl-2 text-[10px] text-slate-500">
-          {subtitleSnapshot.phase === 'transcribing' ||
-          subtitleSnapshot.phase === 'queued'
-            ? '正在准备字幕…'
-            : subtitleSnapshot.phase === 'translating'
-              ? `翻译 ${subtitleSnapshot.completedCues}/${subtitleSnapshot.totalCues}`
-              : subtitleSnapshot.phase === 'ready'
-                ? '翻译完成'
-                : subtitleSnapshot.phase === 'source-ready'
-                  ? '原文可用'
-                  : subtitleSnapshot.phase === 'unsupported-language'
-                    ? '仅支持中英互译'
-                    : subtitleSnapshot.phase === 'runtime-required'
-                      ? '需要字幕组件'
-                      : subtitleSnapshot.phase === 'failed'
-                        ? '字幕处理失败'
-                        : '字幕未准备'}
-        </span>
-        {subtitleSnapshot.phase === 'runtime-required' && onOpenSettings && (
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="ui-control rounded-lg px-2 py-1 text-[10px] text-indigo-200"
-          >
-            设置
-          </button>
-        )}
-        {subtitleSnapshot.phase === 'failed' && (
-          <button
-            type="button"
-            onClick={() => void retrySubtitles()}
-            className="ui-control rounded-lg px-2 py-1 text-[10px] text-rose-200"
-          >
-            重试
-          </button>
-        )}
-      </div>
-
-      {loadState.kind === 'loading' && (
-        <div className="pointer-events-none absolute inset-0 bottom-12 grid place-items-center bg-[#0d1116]/68">
-          <div className="flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-[#20262e]/80 px-4 py-2 text-xs text-slate-400 shadow-xl backdrop-blur-sm">
-            <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
-            正在读取视频信息…
-          </div>
-        </div>
-      )}
-
-      {loadState.kind === 'failed' && (
-        <div className="absolute inset-0 bottom-12 grid place-items-center bg-[#0d1116]/92 p-8 text-center">
-          <div>
-            <p className="text-sm font-medium text-slate-200">
-              无法播放这个视频
-            </p>
-            <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">
-              {loadState.message}
-            </p>
-            <div className="mt-5 flex justify-center gap-2">
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
-              >
-                刷新
-              </button>
-              <button
-                type="button"
-                onClick={onRelink}
-                className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
-              >
-                重新定位
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {activeExplanation && (
         <VideoExplanationPanel

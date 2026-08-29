@@ -165,4 +165,10 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ['demos/**/web/**/*.mjs'],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
 );

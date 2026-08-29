@@ -31,23 +31,20 @@ describe('media subtitle external library', () => {
       true,
     );
     expect(
-      createMediaSubtitleSuiteDefinition(
-        MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
-      ).defaultVariantId,
+      createMediaSubtitleSuiteDefinition(MEDIA_SUBTITLE_NVIDIA_VARIANT_ID)
+        .defaultVariantId,
     ).toBe(MEDIA_SUBTITLE_NVIDIA_VARIANT_ID);
   });
 
-  it('gives each profile one recognition engine and both translation engines', () => {
+  it('gives each profile exactly one local recognition engine', () => {
     for (const packageDefinition of mediaSubtitleSuiteDefinition.packages) {
       expect(packageDefinition.packageType).toBe('bundle');
       if (packageDefinition.packageType !== 'bundle') continue;
 
       const resourceIds = packageDefinition.resources.map(({ id }) => id);
       expect(resourceIds).toContain('ffmpeg-runtime');
-      expect(resourceIds).toContain('bergamot-en-zh-model');
-      expect(resourceIds).toContain('bergamot-zh-en-model');
-      expect(resourceIds).toContain('hymt-runtime');
-      expect(resourceIds).toContain('hymt-model');
+      expect(resourceIds.some((id) => id.includes('translation'))).toBe(false);
+      expect(resourceIds.some((id) => id.includes('hymt'))).toBe(false);
 
       if (packageDefinition.variantId === MEDIA_SUBTITLE_CPU_VARIANT_ID) {
         expect(resourceIds).toContain('sensevoice-runtime');
@@ -71,10 +68,8 @@ describe('media subtitle external library', () => {
       ({ variantId }) => variantId === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
     )!;
 
-    expect(externalLibraryPackageExpectedSize(cpu)).toBe(1_608_809_391);
-    expect(externalLibraryPackageExpectedSize(nvidia)).toBe(
-      2_609_843_511,
-    );
+    expect(externalLibraryPackageExpectedSize(cpu)).toBe(370_574_146);
+    expect(externalLibraryPackageExpectedSize(nvidia)).toBe(1_355_265_782);
   });
 
   it('pins every downloaded resource to HTTPS, size and SHA-256', () => {

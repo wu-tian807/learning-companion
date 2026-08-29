@@ -32,6 +32,7 @@ export type AppErrorCode =
   | 'EXTERNAL_LIBRARY_MIGRATION_FAILED'
   | 'OFFICE_PREVIEW_FAILED'
   | 'MEDIA_SUBTITLE_PROCESSING_FAILED'
+  | 'MEDIA_DUBBING_FAILED'
   | 'CODEX_RUNTIME_UNAVAILABLE'
   | 'CODEX_PROTOCOL_ERROR'
   | 'CODEX_REQUEST_FAILED'
@@ -252,6 +253,12 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   MEDIA_SUBTITLE_PROCESSING_FAILED: {
     kind: 'user',
     userMessage: '字幕处理没有完成，请稍后重试。',
+    retryable: true,
+    logLevel: 'warn',
+  },
+  MEDIA_DUBBING_FAILED: {
+    kind: 'user',
+    userMessage: '视频配音没有完成，请稍后重试。',
     retryable: true,
     logLevel: 'warn',
   },

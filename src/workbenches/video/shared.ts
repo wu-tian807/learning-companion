@@ -109,12 +109,38 @@ export interface VideoSubtitleCueFinalPayload {
   readonly totalCues: number;
 }
 
+export type VideoDubbingPhase =
+  | 'idle'
+  | 'awaiting-translation'
+  | 'runtime-required'
+  | 'preparing-runtime'
+  | 'separating'
+  | 'cloning'
+  | 'mixing'
+  | 'interrupted'
+  | 'ready'
+  | 'unsupported'
+  | 'failed';
+
+export interface VideoDubbingSnapshot {
+  readonly phase: VideoDubbingPhase;
+  readonly completedPhrases: number;
+  readonly totalPhrases: number;
+  readonly completedDurationMs: number;
+  readonly durationMs: number;
+  readonly readySuffixStartMs: number;
+  readonly audioUrl?: string;
+  readonly previewAudioUrl?: string;
+  readonly message?: string;
+}
+
 export interface VideoWorkbenchPayload {
   readonly contentUrl: string;
   readonly sourceRevision: string;
   readonly viewState: VideoWorkbenchViewState;
   readonly subtitleState: VideoSubtitleViewState;
   readonly subtitleSnapshot: VideoSubtitleSnapshot;
+  readonly dubbingSnapshot: VideoDubbingSnapshot;
 }
 
 export interface VideoSaveViewStatePayload {
@@ -170,16 +196,30 @@ export const EMPTY_VIDEO_SUBTITLE_SNAPSHOT: Readonly<VideoSubtitleSnapshot> =
     totalCues: 0,
   });
 
+export const EMPTY_VIDEO_DUBBING_SNAPSHOT: Readonly<VideoDubbingSnapshot> =
+  Object.freeze({
+    phase: 'idle',
+    completedPhrases: 0,
+    totalPhrases: 0,
+    completedDurationMs: 0,
+    durationMs: 0,
+    readySuffixStartMs: 0,
+  });
+
 export const videoCommands = {
   saveViewState: 'video:save-view-state',
   setSubtitleMode: 'video:set-subtitle-mode',
   getSubtitleSnapshot: 'video:get-subtitle-snapshot',
   retrySubtitles: 'video:retry-subtitles',
+  startDubbing: 'video:start-dubbing',
+  getDubbingSnapshot: 'video:get-dubbing-snapshot',
+  retryDubbing: 'video:retry-dubbing',
 } as const;
 
 export const videoEventTypes = {
   subtitleSnapshot: 'video:subtitle-snapshot',
   subtitleCueFinal: 'video:subtitle-cue-final',
+  dubbingSnapshot: 'video:dubbing-snapshot',
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -269,6 +309,22 @@ function isVideoSubtitlePhase(value: unknown): value is VideoSubtitlePhase {
   );
 }
 
+function isVideoDubbingPhase(value: unknown): value is VideoDubbingPhase {
+  return (
+    value === 'idle' ||
+    value === 'awaiting-translation' ||
+    value === 'runtime-required' ||
+    value === 'preparing-runtime' ||
+    value === 'separating' ||
+    value === 'cloning' ||
+    value === 'mixing' ||
+    value === 'interrupted' ||
+    value === 'ready' ||
+    value === 'unsupported' ||
+    value === 'failed'
+  );
+}
+
 export function isVideoSubtitleSnapshot(
   value: unknown,
 ): value is VideoSubtitleSnapshot {
@@ -319,6 +375,43 @@ export function cloneVideoSubtitleCueFinalPayload(
     VideoSubtitleCueFinalPayload;
 }
 
+export function isVideoDubbingSnapshot(
+  value: unknown,
+): value is VideoDubbingSnapshot {
+  return (
+    isRecord(value) &&
+    isVideoDubbingPhase(value.phase) &&
+    Number.isSafeInteger(value.completedPhrases) &&
+    Number(value.completedPhrases) >= 0 &&
+    Number.isSafeInteger(value.totalPhrases) &&
+    Number(value.totalPhrases) >= Number(value.completedPhrases) &&
+    Number.isSafeInteger(value.completedDurationMs) &&
+    Number(value.completedDurationMs) >= 0 &&
+    Number.isSafeInteger(value.durationMs) &&
+    Number(value.durationMs) >= Number(value.completedDurationMs) &&
+    Number.isSafeInteger(value.readySuffixStartMs) &&
+    Number(value.readySuffixStartMs) >= 0 &&
+    Number(value.readySuffixStartMs) <= Number(value.durationMs) &&
+    (value.audioUrl === undefined ||
+      (typeof value.audioUrl === 'string' &&
+        value.audioUrl.startsWith('learning-content://resource/'))) &&
+    (value.previewAudioUrl === undefined ||
+      (typeof value.previewAudioUrl === 'string' &&
+        value.previewAudioUrl.startsWith('learning-content://resource/'))) &&
+    (value.message === undefined || typeof value.message === 'string')
+  );
+}
+
+export function cloneVideoDubbingSnapshot(
+  snapshot: VideoDubbingSnapshot,
+): JsonValue & VideoDubbingSnapshot {
+  if (!isVideoDubbingSnapshot(snapshot)) {
+    throw new Error('Video 配音状态无效');
+  }
+  return cloneJsonValue(snapshot as unknown as JsonValue) as JsonValue &
+    VideoDubbingSnapshot;
+}
+
 export function isVideoSubtitleCueFinalPayload(
   value: unknown,
 ): value is VideoSubtitleCueFinalPayload {
@@ -346,7 +439,8 @@ export function isVideoWorkbenchPayload(
     value.sourceRevision.length <= 256 &&
     isVideoWorkbenchViewState(value.viewState) &&
     isVideoSubtitleViewState(value.subtitleState) &&
-    isVideoSubtitleSnapshot(value.subtitleSnapshot)
+    isVideoSubtitleSnapshot(value.subtitleSnapshot) &&
+    isVideoDubbingSnapshot(value.dubbingSnapshot)
   );
 }
 
@@ -367,6 +461,18 @@ export function createVideoSetSubtitleModeCommand(
 
 export function createVideoRetrySubtitlesCommand(): WorkbenchCommand {
   return { type: videoCommands.retrySubtitles };
+}
+
+export function createVideoStartDubbingCommand(): WorkbenchCommand {
+  return { type: videoCommands.startDubbing };
+}
+
+export function createVideoRetryDubbingCommand(): WorkbenchCommand {
+  return { type: videoCommands.retryDubbing };
+}
+
+export function createVideoGetDubbingSnapshotCommand(): WorkbenchCommand {
+  return { type: videoCommands.getDubbingSnapshot };
 }
 
 export function createVideoGetSubtitleSnapshotCommand(): WorkbenchCommand {

@@ -240,19 +240,6 @@ export async function createApplicationRuntime({
       databaseContext,
     );
     const workbenchEvents = new WorkbenchEventBus();
-    registerMainWorkbenchProviders(workbenchRegistry, {
-      associationService,
-      assetService,
-      artifactRegistry,
-      artifactService,
-      contentResourceService,
-      externalLibraryService,
-      projectLookup: projectDatabase,
-      stateDatabase: workbenchStateRepository,
-      stateDataDatabase: workbenchStateDataRepository,
-      sandboxFrameScripts: sandboxFrameInteractionBridge,
-      workbenchEvents,
-    });
     const generationTaskDatabase = new GenerationTaskDatabase(databaseContext);
     const generationTaskDefinitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
@@ -282,6 +269,20 @@ export async function createApplicationRuntime({
       projectDatabase,
       agentProviderService,
     );
+    registerMainWorkbenchProviders(workbenchRegistry, {
+      associationService,
+      assetService,
+      artifactRegistry,
+      artifactService,
+      contentResourceService,
+      externalLibraryService,
+      generationTasks: generationTaskService,
+      projectLookup: projectDatabase,
+      stateDatabase: workbenchStateRepository,
+      stateDataDatabase: workbenchStateDataRepository,
+      sandboxFrameScripts: sandboxFrameInteractionBridge,
+      workbenchEvents,
+    });
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
       workbenchRegistry,

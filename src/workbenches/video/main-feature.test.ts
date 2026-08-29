@@ -15,6 +15,7 @@ describe('videoMainContribution', () => {
       artifactService: {} as never,
       contentResourceService: {} as never,
       externalLibraryService: {} as never,
+      generationTasks: { subscribe: vi.fn(() => () => undefined) } as never,
       projectLookup: {} as never,
       stateDatabase: {} as never,
       stateDataDatabase: {} as never,
@@ -25,7 +26,11 @@ describe('videoMainContribution', () => {
     const provider = videoMainContribution.createProvider?.(context);
 
     expect(provider?.manifest).toBe(videoWorkbenchManifest);
+    expect(videoMainContribution.features?.map(({ id }) => id)).toEqual([
+      'builtin.video.frame-conversation',
+      'builtin.video.dubbing',
+    ]);
     expect(subscribe).toHaveBeenCalledOnce();
-    expect(registerArtifact).toHaveBeenCalledTimes(2);
+    expect(registerArtifact).not.toHaveBeenCalled();
   });
 });

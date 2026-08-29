@@ -487,30 +487,19 @@ export function useConversationController({
   useEffect(() => {
     const request = launchRequest;
     if (!open || !request || request.id === lastLaunchIdRef.current) return;
-    if (
-      !historyReady &&
-      (request.conversationId !== undefined || request.context !== undefined)
-    ) {
+    if (!historyReady && request.conversationId !== undefined) {
       return;
     }
     lastLaunchIdRef.current = request.id;
 
     const matching = request.conversationId
       ? history.find((record) => record.id === request.conversationId)
-      : request.context === undefined
-        ? undefined
-        : history.find((record) => {
-          const firstContext = record.messages.find((message) => message.role === 'user')?.context;
-          return conversationContextsEqual(firstContext, request.context);
-        });
+      : undefined;
     if (matching && !activeTaskIdRef.current) {
       restore(matching);
-    } else if (request.context !== undefined) {
-      if (conversationRef.current.messages.length > 0 && !activeTaskIdRef.current) {
-        startNew(request.context);
-      } else {
-        setPendingContext(request.context);
-      }
+    }
+    if (request.context !== undefined) {
+      setPendingContext(request.context);
     }
 
     if (request.question?.trim()) {
@@ -530,7 +519,6 @@ export function useConversationController({
     open,
     restore,
     setPendingContext,
-    startNew,
   ]);
 
   const cancel = useCallback(() => {

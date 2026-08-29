@@ -322,6 +322,73 @@ describe('shared Conversation controller', () => {
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
   });
 
+  it('keeps a context launch in the currently selected conversation', async () => {
+    const historyStore = createMemoryHistory();
+    const contribution = createContribution({ historyStore });
+    render({ contribution });
+    await flush();
+
+    act(() => latest.actions.submit('当前会话中的问题'));
+    await flush();
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '当前会话中的回答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
+    await flush();
+    const selectedConversationId = latest.state.conversation.id;
+    const context = { target: { scope: 'current-page' } };
+    const onLaunchConsumed = vi.fn();
+
+    render({
+      contribution,
+      launchRequest: { id: 1, context },
+      onLaunchConsumed,
+    });
+    await flush();
+
+    expect(latest.state.conversation.id).toBe(selectedConversationId);
+    expect(latest.state.pendingContext).toEqual(context);
+    expect(onLaunchConsumed).toHaveBeenCalledWith(1);
+  });
+
+  it('keeps a user-selected new conversation instead of restoring history by context', async () => {
+    const context = { target: { scope: 'current-page' } };
+    const historyStore = createMemoryHistory();
+    const contribution = createContribution({ historyStore });
+    render({ contribution });
+    await flush();
+
+    act(() => latest.actions.submit('旧会话中的问题', context));
+    await flush();
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '旧会话中的回答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
+    await flush();
+    const previousConversationId = latest.state.conversation.id;
+
+    act(() => latest.actions.startNew());
+    const selectedConversationId = latest.state.conversation.id;
+    expect(selectedConversationId).not.toBe(previousConversationId);
+
+    render({
+      contribution,
+      launchRequest: { id: 1, context },
+    });
+    await flush();
+
+    expect(latest.state.conversation.id).toBe(selectedConversationId);
+    expect(latest.state.pendingContext).toEqual(context);
+  });
+
   it('does not reload history when the persistence reporter identity changes', async () => {
     const historyStore = createMemoryHistory();
     const contribution = createContribution({ historyStore });

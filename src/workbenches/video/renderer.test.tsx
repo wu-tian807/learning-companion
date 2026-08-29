@@ -20,6 +20,7 @@ import {
   cloneVideoViewState,
   cloneVideoSubtitleSnapshot,
   DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+  EMPTY_VIDEO_DUBBING_SNAPSHOT,
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
   DEFAULT_VIDEO_VIEW_STATE,
   VIDEO_WORKBENCH_ID,
@@ -153,14 +154,18 @@ describe('VideoWorkbenchView', () => {
         onGenerationTaskChanged: vi.fn(() => () => undefined),
       },
     });
-    const executeCommand = vi.fn(async () => ({
-      payload: {
-        phase: 'runtime-required',
-        partialTranslations: [],
-        completedCues: 0,
-        totalCues: 0,
-      },
-    }));
+    const executeCommand = vi.fn(async (command: { readonly type: string }) =>
+      command.type === 'video:get-dubbing-snapshot'
+        ? { payload: EMPTY_VIDEO_DUBBING_SNAPSHOT }
+        : {
+            payload: {
+              phase: 'runtime-required',
+              partialTranslations: [],
+              completedCues: 0,
+              totalCues: 0,
+            },
+          },
+    );
     const bootstrap: WorkbenchBootstrap = {
       sessionId: 'session',
       workbenchId: VIDEO_WORKBENCH_ID,
@@ -180,6 +185,7 @@ describe('VideoWorkbenchView', () => {
           completedCues: 0,
           totalCues: 0,
         },
+        dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
       },
     };
 
@@ -208,8 +214,8 @@ describe('VideoWorkbenchView', () => {
       expect(executeCommand).toHaveBeenCalledWith({
         type: 'video:get-subtitle-snapshot',
       });
-      expect(container.textContent).toContain('需要字幕组件');
-      expect(container.textContent).not.toContain('正在准备字幕…');
+      expect(container.textContent).toContain('安装字幕');
+      expect(container.textContent).not.toContain('字幕准备中');
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -274,11 +280,12 @@ describe('VideoWorkbenchView', () => {
     };
     let resolveSnapshot:
       ((value: { payload: typeof queued }) => void) | undefined;
-    const executeCommand = vi.fn(
-      () =>
-        new Promise<{ payload: typeof queued }>((resolve) => {
-          resolveSnapshot = resolve;
-        }),
+    const executeCommand = vi.fn((command: { readonly type: string }) =>
+      command.type === 'video:get-dubbing-snapshot'
+        ? Promise.resolve({ payload: EMPTY_VIDEO_DUBBING_SNAPSHOT })
+        : new Promise<{ payload: typeof queued }>((resolve) => {
+            resolveSnapshot = resolve;
+          }),
     );
     let publishEvent:
       | ((event: {
@@ -301,6 +308,7 @@ describe('VideoWorkbenchView', () => {
         viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
         subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
         subtitleSnapshot: queued,
+        dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
       },
     };
 
@@ -332,7 +340,7 @@ describe('VideoWorkbenchView', () => {
       expect(executeCommand).toHaveBeenCalledWith({
         type: 'video:get-subtitle-snapshot',
       });
-      expect(container.textContent).toContain('正在准备字幕…');
+      expect(container.textContent).toContain('字幕准备中');
 
       act(() => {
         publishEvent?.({
@@ -341,13 +349,13 @@ describe('VideoWorkbenchView', () => {
           payload: ready,
         });
       });
-      expect(container.textContent).toContain('原文可用');
+      expect(container.textContent).toContain('字幕关闭');
 
       await act(async () => {
         resolveSnapshot?.({ payload: queued });
       });
-      expect(container.textContent).toContain('原文可用');
-      expect(container.textContent).not.toContain('正在准备字幕…');
+      expect(container.textContent).toContain('字幕关闭');
+      expect(container.textContent).not.toContain('字幕准备中');
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -438,6 +446,7 @@ describe('VideoWorkbenchView', () => {
       subtitleSnapshot: cloneVideoSubtitleSnapshot(
         EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
       ),
+      dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
     });
     const renderedDocument = new DOMParser().parseFromString(
       markup,
@@ -446,6 +455,7 @@ describe('VideoWorkbenchView', () => {
     const frameSurface = renderedDocument.querySelector(
       '[data-video-frame-surface="true"]',
     );
+    const stage = renderedDocument.querySelector('[data-video-stage="true"]');
     const markerOverlay = renderedDocument.querySelector(
       '[aria-label="视频兴趣区域标记"]',
     );
@@ -455,14 +465,37 @@ describe('VideoWorkbenchView', () => {
     const playbackControls = renderedDocument.querySelector(
       '[data-video-playback-controls="true"]',
     );
+    const languageControls = renderedDocument.querySelector(
+      '[data-video-language-controls="true"]',
+    );
+    const progressRow = renderedDocument.querySelector(
+      '[data-video-progress-row="true"]',
+    );
+    const actionRow = renderedDocument.querySelector(
+      '[data-video-action-row="true"]',
+    );
+    const primaryControls = renderedDocument.querySelector(
+      '[data-video-primary-controls="true"]',
+    );
+    const loadingOverlay = renderedDocument.querySelector(
+      '[data-video-stage-overlay="loading"]',
+    );
     const video = renderedDocument.querySelector('video');
 
     expect(frameSurface).not.toBeNull();
+    expect(stage?.contains(frameSurface)).toBe(true);
     expect(frameSurface?.contains(markerOverlay)).toBe(true);
+    expect(stage?.contains(controlDock)).toBe(false);
     expect(frameSurface?.contains(playbackControls)).toBe(false);
     expect(controlDock?.contains(playbackControls)).toBe(true);
+    expect(frameSurface?.contains(languageControls)).toBe(false);
+    expect(controlDock?.contains(languageControls)).toBe(true);
+    expect(progressRow?.contains(languageControls)).toBe(false);
+    expect(actionRow?.contains(languageControls)).toBe(true);
+    expect(stage?.contains(loadingOverlay)).toBe(true);
+    expect(controlDock?.contains(loadingOverlay)).toBe(false);
     expect(
-      [...(playbackControls?.querySelectorAll('button, input') ?? [])].every(
+      [...(primaryControls?.querySelectorAll('button, input') ?? [])].every(
         (control) => (control as HTMLButtonElement | HTMLInputElement).disabled,
       ),
     ).toBe(true);
@@ -490,6 +523,7 @@ describe('VideoWorkbenchView', () => {
       subtitleSnapshot: cloneVideoSubtitleSnapshot(
         EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
       ),
+      dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
     });
 
     expect(markup).toContain('Video Workbench 数据无效');

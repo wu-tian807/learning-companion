@@ -16,8 +16,11 @@ import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-
 import { VideoWorkbenchProvider } from './main';
 import {
   createVideoGetSubtitleSnapshotCommand,
+  createVideoGetDubbingSnapshotCommand,
+  createVideoRetryDubbingCommand,
   createVideoSaveViewStateCommand,
   createVideoSetSubtitleModeCommand,
+  createVideoStartDubbingCommand,
   DEFAULT_VIDEO_VIEW_STATE,
   VIDEO_STATE_SCHEMA_VERSION,
   VIDEO_WORKBENCH_ID,
@@ -26,6 +29,7 @@ import type {
   VideoSubtitleServiceApi,
   VideoSubtitleServiceListener,
 } from './subtitles/video-subtitle-service';
+import type { VideoDubbingServiceApi } from './dubbing/video-dubbing-service';
 
 class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
@@ -67,6 +71,26 @@ function createSubtitles(): VideoSubtitleServiceApi {
   };
 }
 
+function createDubbing(): VideoDubbingServiceApi {
+  return {
+    getSnapshot: vi.fn(() => ({
+      phase: 'idle' as const,
+      completedPhrases: 0,
+      totalPhrases: 0,
+      completedDurationMs: 0,
+      durationMs: 0,
+      readySuffixStartMs: 0,
+    })),
+    subscribe: vi.fn(() => () => undefined),
+    refreshRuntimeAvailability: vi.fn(async () => undefined),
+    restore: vi.fn(async () => undefined),
+    warmup: vi.fn(),
+    releaseWarmup: vi.fn(),
+    ensure: vi.fn(async () => undefined),
+    retry: vi.fn(async () => undefined),
+  };
+}
+
 function createEvents(): WorkbenchEventBusApi {
   return {
     publish: vi.fn(),
@@ -80,11 +104,13 @@ function createProvider(
   options: {
     readonly now?: () => number;
     readonly subtitles?: VideoSubtitleServiceApi;
+    readonly dubbing?: VideoDubbingServiceApi;
     readonly events?: WorkbenchEventBusApi;
   } = {},
 ): VideoWorkbenchProvider {
   return new VideoWorkbenchProvider(resources, states, {
     subtitles: options.subtitles ?? createSubtitles(),
+    dubbing: options.dubbing ?? createDubbing(),
     events: options.events ?? createEvents(),
     now: options.now,
   });
@@ -162,6 +188,14 @@ describe('VideoWorkbenchProvider', () => {
           partialTranslations: [],
           completedCues: 0,
           totalCues: 0,
+        },
+        dubbingSnapshot: {
+          phase: 'idle',
+          completedPhrases: 0,
+          totalPhrases: 0,
+          completedDurationMs: 0,
+          durationMs: 0,
+          readySuffixStartMs: 0,
         },
       },
     });
@@ -356,5 +390,213 @@ describe('VideoWorkbenchProvider', () => {
     await expect(
       provider.command(context, createVideoGetSubtitleSnapshotCommand()),
     ).resolves.toEqual({ payload: ready });
+  });
+
+  it('starts, retries and reconciles video dubbing through Workbench commands', async () => {
+    const dubbing = createDubbing();
+    vi.mocked(dubbing.getSnapshot).mockReturnValue({
+      phase: 'cloning',
+      completedPhrases: 2,
+      totalPhrases: 5,
+      completedDurationMs: 4_000,
+      durationMs: 12_000,
+      readySuffixStartMs: 8_000,
+    });
+    const provider = createProvider(
+      createResources(),
+      new MemoryStateDatabase(),
+      { dubbing },
+    );
+    const context = createContext();
+    await provider.open(context);
+
+    await expect(
+      provider.command(context, createVideoStartDubbingCommand()),
+    ).resolves.toEqual({ payload: { started: true } });
+    await expect(
+      provider.command(context, createVideoRetryDubbingCommand()),
+    ).resolves.toEqual({ payload: { started: true } });
+    await expect(
+      provider.command(context, createVideoGetDubbingSnapshotCommand()),
+    ).resolves.toEqual({
+      payload: {
+        phase: 'cloning',
+        completedPhrases: 2,
+        totalPhrases: 5,
+        completedDurationMs: 4_000,
+        durationMs: 12_000,
+        readySuffixStartMs: 8_000,
+      },
+    });
+    expect(dubbing.ensure).toHaveBeenCalledWith('project', 'asset');
+    expect(dubbing.retry).toHaveBeenCalledWith('project', 'asset');
+  });
+
+  it('shows the install action on first open when the dubbing runtime is missing', async () => {
+    const dubbing = createDubbing();
+    vi.mocked(dubbing.refreshRuntimeAvailability).mockImplementation(
+      async () => {
+        vi.mocked(dubbing.getSnapshot).mockReturnValue({
+          phase: 'runtime-required',
+          completedPhrases: 0,
+          totalPhrases: 0,
+          completedDurationMs: 0,
+          durationMs: 0,
+          readySuffixStartMs: 0,
+          message: '请先在设置中安装 VoxCPM2 视频配音组件。',
+        });
+      },
+    );
+    const provider = createProvider(
+      createResources(),
+      new MemoryStateDatabase(),
+      { dubbing },
+    );
+
+    await expect(provider.open(createContext())).resolves.toMatchObject({
+      payload: {
+        dubbingSnapshot: {
+          phase: 'runtime-required',
+          message: '请先在设置中安装 VoxCPM2 视频配音组件。',
+        },
+      },
+    });
+    expect(dubbing.refreshRuntimeAvailability).toHaveBeenCalledWith('asset');
+    expect(dubbing.ensure).not.toHaveBeenCalled();
+  });
+
+  it('publishes a scoped audio URL for a completed dubbing artifact', async () => {
+    let listener:
+      | ((snapshot: ReturnType<VideoDubbingServiceApi['getSnapshot']>) => void)
+      | undefined;
+    const unsubscribe = vi.fn();
+    const dubbing = createDubbing();
+    vi.mocked(dubbing.subscribe).mockImplementation(
+      (_assetId, nextListener) => {
+        listener = nextListener;
+        return unsubscribe;
+      },
+    );
+    const resources = createResources();
+    vi.mocked(resources.register)
+      .mockReturnValueOnce('learning-content://resource/video')
+      .mockReturnValueOnce('learning-content://resource/dubbing');
+    const events = createEvents();
+    const provider = createProvider(resources, new MemoryStateDatabase(), {
+      dubbing,
+      events,
+    });
+    const context = createContext();
+    await provider.open(context);
+
+    listener?.({
+      phase: 'ready',
+      completedPhrases: 5,
+      totalPhrases: 5,
+      completedDurationMs: 12_000,
+      durationMs: 12_000,
+      readySuffixStartMs: 0,
+      artifactPath: 'C:\\private\\dubbed.m4a',
+      artifactRevision: 'dubbed-revision',
+    });
+
+    expect(events.publish).toHaveBeenCalledWith({
+      sessionId: 'session',
+      type: 'video:dubbing-snapshot',
+      payload: {
+        phase: 'ready',
+        completedPhrases: 5,
+        totalPhrases: 5,
+        completedDurationMs: 12_000,
+        durationMs: 12_000,
+        readySuffixStartMs: 0,
+        audioUrl: 'learning-content://resource/dubbing',
+      },
+    });
+    expect(JSON.stringify(vi.mocked(events.publish).mock.calls)).not.toContain(
+      'C:\\\\private',
+    );
+
+    await provider.close(context);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(dubbing.warmup).toHaveBeenCalledWith('asset');
+    expect(dubbing.restore).toHaveBeenCalledWith('project', 'asset');
+    expect(dubbing.releaseWarmup).toHaveBeenCalledWith('asset');
+  });
+
+  it('does not warm the model when a completed dubbing artifact is restored', async () => {
+    const dubbing = createDubbing();
+    vi.mocked(dubbing.getSnapshot).mockReturnValue({
+      phase: 'ready',
+      completedPhrases: 5,
+      totalPhrases: 5,
+      completedDurationMs: 12_000,
+      durationMs: 12_000,
+      readySuffixStartMs: 0,
+    });
+    const provider = createProvider(
+      createResources(),
+      new MemoryStateDatabase(),
+      { dubbing },
+    );
+    const context = createContext();
+
+    await provider.open(context);
+    await vi.waitFor(() => expect(dubbing.restore).toHaveBeenCalledOnce());
+
+    expect(dubbing.warmup).not.toHaveBeenCalled();
+    await provider.close(context);
+    expect(dubbing.releaseWarmup).not.toHaveBeenCalled();
+  });
+
+  it('publishes one playable mixed resource for each continuous suffix', async () => {
+    let listener:
+      | ((snapshot: ReturnType<VideoDubbingServiceApi['getSnapshot']>) => void)
+      | undefined;
+    const dubbing = createDubbing();
+    vi.mocked(dubbing.subscribe).mockImplementation(
+      (_assetId, nextListener) => {
+        listener = nextListener;
+        return () => undefined;
+      },
+    );
+    const resources = createResources();
+    vi.mocked(resources.register)
+      .mockReturnValueOnce('learning-content://resource/video')
+      .mockReturnValueOnce('learning-content://resource/preview');
+    const events = createEvents();
+    const provider = createProvider(resources, new MemoryStateDatabase(), {
+      dubbing,
+      events,
+    });
+    const context = createContext();
+    await provider.open(context);
+
+    listener?.({
+      phase: 'cloning',
+      completedPhrases: 2,
+      totalPhrases: 5,
+      completedDurationMs: 4_000,
+      durationMs: 12_000,
+      readySuffixStartMs: 8_000,
+      previewAudioPath: 'C:\\private\\preview.wav',
+    });
+
+    expect(events.publish).toHaveBeenCalledWith({
+      sessionId: 'session',
+      type: 'video:dubbing-snapshot',
+      payload: {
+        phase: 'cloning',
+        completedPhrases: 2,
+        totalPhrases: 5,
+        completedDurationMs: 4_000,
+        durationMs: 12_000,
+        readySuffixStartMs: 8_000,
+        previewAudioUrl: 'learning-content://resource/preview',
+      },
+    });
+    expect(JSON.stringify(vi.mocked(events.publish).mock.calls)).not.toContain(
+      'C:\\\\private',
+    );
   });
 });
