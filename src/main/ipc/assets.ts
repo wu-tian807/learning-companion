@@ -4,11 +4,15 @@ import {
   IPC_CHANNELS,
   isAddLocalAssetsRequest,
   isAssetIdRequest,
+  isCreateAssetFolderRequest,
   isDeleteAssetsRequest,
+  isMoveAssetsToFolderRequest,
   isProjectLifecycleRequest,
   isRelinkAssetRequest,
   isRenameAssetRequest,
+  isUpdateAssetFolderRequest,
   type AddLocalAssetsResult,
+  type DeleteAssetFolderResult,
   type DeleteAssetsResult,
 } from '../../shared/ipc';
 import type { AssetServiceApi } from '../assets/asset-service';
@@ -78,6 +82,7 @@ export function registerAssetHandlers(
               request.projectId,
               path,
               request.mode,
+              request.folderPath,
             ),
           );
         } catch (error) {
@@ -177,6 +182,83 @@ export function registerAssetHandlers(
   );
 
   registerIpcHandler(
+    IPC_CHANNELS.listAssetFolders,
+    (_event, request: unknown) => {
+      if (!isProjectLifecycleRequest(request)) {
+        throw invalidRequest();
+      }
+      return assetService.listAssetFolders(request.projectId);
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.createAssetFolder,
+    (_event, request: unknown) => {
+      if (!isCreateAssetFolderRequest(request)) {
+        throw invalidRequest();
+      }
+      return assetService.createAssetFolder(request.projectId, request.path);
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.updateAssetFolder,
+    (_event, request: unknown) => {
+      if (!isUpdateAssetFolderRequest(request)) {
+        throw invalidRequest();
+      }
+      return assetService.updateAssetFolder(
+        request.projectId,
+        request.path,
+        request.nextPath,
+      );
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.moveAssetsToFolder,
+    (_event, request: unknown) => {
+      if (!isMoveAssetsToFolderRequest(request)) {
+        throw invalidRequest();
+      }
+      return assetService.moveAssetsToFolder(
+        request.projectId,
+        request.assetIds,
+        request.folderPath,
+      );
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.deleteAssetFolder,
+    async (_event, request: unknown): Promise<DeleteAssetFolderResult> => {
+      if (!isCreateAssetFolderRequest(request)) {
+        throw invalidRequest();
+      }
+      const deletion = await assetService.deleteAssetFolder(
+        request.projectId,
+        request.path,
+      );
+
+      return {
+        deletedAssetIds: [...deletion.deletedAssetIds],
+        failed: deletion.failed.map(({ assetId, error }) => {
+          const handled = handleAppError(
+            `${IPC_CHANNELS.deleteAssetFolder}:${assetId}`,
+            error,
+          );
+          return {
+            assetId,
+            message: handled.message ?? '无法移除该资料，请稍后重试。',
+          };
+        }),
+        assets: [...deletion.assets],
+        folderState: deletion.folderState,
+      };
+    },
+  );
+
+  registerIpcHandler(
     IPC_CHANNELS.refreshAsset,
     async (_event, request: unknown) => {
       if (!isAssetIdRequest(request)) {
@@ -225,4 +307,9 @@ export function removeAssetHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.refreshAsset);
   ipcMain.removeHandler(IPC_CHANNELS.refreshAllAssets);
   ipcMain.removeHandler(IPC_CHANNELS.revealAssetInFolder);
+  ipcMain.removeHandler(IPC_CHANNELS.listAssetFolders);
+  ipcMain.removeHandler(IPC_CHANNELS.createAssetFolder);
+  ipcMain.removeHandler(IPC_CHANNELS.updateAssetFolder);
+  ipcMain.removeHandler(IPC_CHANNELS.deleteAssetFolder);
+  ipcMain.removeHandler(IPC_CHANNELS.moveAssetsToFolder);
 }
