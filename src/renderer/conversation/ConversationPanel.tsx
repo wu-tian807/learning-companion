@@ -108,6 +108,7 @@ function MessageBubble({
   contribution,
   busy,
   onContinue,
+  onReanswer,
   onSelectedAnswer,
   onAttach,
 }: {
@@ -115,6 +116,7 @@ function MessageBubble({
   readonly contribution: WorkbenchConversationContribution;
   readonly busy: boolean;
   readonly onContinue: () => void;
+  readonly onReanswer: (answerId: string) => void;
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
   readonly onAttach: (answer: ConversationMessageRecord, text: string) => void;
 }) {
@@ -158,15 +160,6 @@ function MessageBubble({
               className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-white/[0.07] pt-2"
               onMouseUp={(event) => event.stopPropagation()}
             >
-              {contribution.attachAnswer && (
-                <button
-                  type="button"
-                  onClick={() => onAttach(message, message.text)}
-                  className="rounded-md px-1.5 py-1 text-[11px] text-indigo-300 hover:bg-indigo-400/10"
-                >
-                  附着整段
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => {
@@ -178,6 +171,24 @@ function MessageBubble({
               >
                 {copied ? '已复制' : '复制'}
               </button>
+              <button
+                type="button"
+                disabled={busy}
+                title={busy ? '当前回答生成中，完成或停止后可重新回答' : '不满意时让 AI 重新回答'}
+                onClick={() => onReanswer(message.id)}
+                className="rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200 disabled:opacity-40"
+              >
+                重新回答
+              </button>
+              {contribution.attachAnswer && (
+                <button
+                  type="button"
+                  onClick={() => onAttach(message, message.text)}
+                  className="rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-400/10"
+                >
+                  回归原文
+                </button>
+              )}
               <button
                 type="button"
                 disabled={busy}
@@ -437,6 +448,7 @@ export function ConversationPanel({
                   actions.setDraft('请基于刚才的回答继续深入解释，并补充容易混淆的地方。');
                   inputRef.current?.focus();
                 }}
+                onReanswer={(answerId) => actions.reanswer(answerId)}
                 onSelectedAnswer={(messageId, text) => setSelectedAnswer({ messageId, text })}
                 onAttach={(answer, text) => void attach(answer, text)}
               />

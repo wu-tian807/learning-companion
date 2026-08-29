@@ -15,6 +15,7 @@ const actions: ConversationControllerActions = {
   submit: vi.fn(),
   cancel: vi.fn(),
   retry: vi.fn(),
+  reanswer: vi.fn(),
   restore: vi.fn(),
   remove: vi.fn(),
   startNew: vi.fn(),
@@ -171,7 +172,7 @@ describe('ConversationPanel', () => {
     }));
 
     expect(html).toContain('<strong>答案</strong>');
-    expect(html).toContain('附着整段');
+    expect(html).toContain('回归原文');
     expect(html).toContain('复制');
     expect(html).toContain('继续追问');
   });

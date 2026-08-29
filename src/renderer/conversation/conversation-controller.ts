@@ -52,6 +52,8 @@ export interface ConversationControllerActions {
   readonly submit: (question?: string, context?: JsonValue) => void;
   readonly cancel: () => void;
   readonly retry: () => void;
+  /** 对已完成的某条回答发起全新任务，重新生成该回答。 */
+  readonly reanswer: (answerId: string) => void;
   readonly restore: (record: ConversationRecord) => void;
   readonly remove: (record: ConversationRecord) => void;
   readonly startNew: (context?: JsonValue) => void;
@@ -562,6 +564,77 @@ export function useConversationController({
     );
   }, [applyTerminalTask, bindTask, error?.retryTaskId, projectId, taskClient]);
 
+  const reanswer = useCallback((answerId: string) => {
+    if (activeTaskIdRef.current) return;
+    const current = conversationRef.current;
+    const assistant = current.messages.find(
+      (message) => message.id === answerId && message.role === 'assistant',
+    );
+    if (!assistant) return;
+    const question = assistant.replyToMessageId
+      ? current.messages.find(
+          (message) => message.id === assistant.replyToMessageId,
+        )
+      : undefined;
+    const normalized = (question?.text ?? '').trim();
+    if (!normalized) return;
+
+    setError(undefined);
+    setActivityLabel('正在重新回答…');
+    setBusy(true);
+    updateConversation((currentState) => Object.freeze({
+      ...currentState,
+      messages: Object.freeze(currentState.messages.map((message) =>
+        message.id === answerId
+          ? Object.freeze({ ...message, stopped: false })
+          : message,
+      )),
+    }));
+
+    let request;
+    try {
+      request = createWorkbenchConversationTaskRequest(contribution, {
+        projectId,
+        assetId,
+        conversationId: current.id,
+        question: normalized,
+        ...(question?.context === undefined
+          ? {}
+          : { context: question.context }),
+        generateTitle: false,
+      });
+    } catch (requestError) {
+      setBusy(false);
+      setActivityLabel(undefined);
+      setError(failureFromError(requestError, '无法准备重新回答。'));
+      return;
+    }
+
+    void taskClient.start(request).then(
+      (started) => {
+        bindTask(started.taskId, assistant.id);
+        if (started.snapshot && applyTerminalTask(started.snapshot)) return;
+      },
+      (reanswerError: unknown) => {
+        setBusy(false);
+        setActivityLabel(undefined);
+        setError({
+          message:
+            userMessageFromError(reanswerError, '无法重新回答。') ??
+            '无法重新回答。',
+        });
+      },
+    );
+  }, [
+    applyTerminalTask,
+    assetId,
+    bindTask,
+    contribution,
+    projectId,
+    taskClient,
+    updateConversation,
+  ]);
+
   const remove = useCallback((record: ConversationRecord) => {
     if (
       deletedConversationIdsRef.current.has(record.id) ||
@@ -619,6 +692,7 @@ export function useConversationController({
       submit,
       cancel,
       retry,
+      reanswer,
       restore,
       remove,
       startNew,

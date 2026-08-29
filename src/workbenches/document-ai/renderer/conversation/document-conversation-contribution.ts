@@ -46,15 +46,34 @@ export function createDocumentConversationContribution(input: {
   readonly emptyLabel?: string;
   readonly contextLabel?: string;
   readonly allowAnswerAttachments?: boolean;
+  /**
+   * 提供该回调后，“回归原文”会直接把回复插入到原文选中位置之后，
+   * 而不是创建 Attachment 标注卡片。
+   */
+  readonly returnAnswerToSource?: (input: {
+    readonly answer: string;
+    readonly question?: string;
+    readonly context?: DocumentConversationContext;
+  }) => Promise<void> | void;
   readonly onContextReleased?: (
     context: DocumentConversationContext | undefined,
   ) => void;
 }): WorkbenchConversationContribution {
   const attachAnswer: WorkbenchConversationContribution['attachAnswer'] =
-    input.allowAnswerAttachments
+    input.allowAnswerAttachments || input.returnAnswerToSource
       ? async ({ answer, question, text }) => {
-          const context = question?.context;
-          const target = isDocumentConversationContext(context)
+          const context = isDocumentConversationContext(question?.context)
+            ? question.context
+            : undefined;
+          if (input.returnAnswerToSource) {
+            await input.returnAnswerToSource({
+              answer: answer.text,
+              ...(question?.text ? { question: question.text } : {}),
+              ...(context ? { context } : {}),
+            });
+            return;
+          }
+          const target = context
             ? context.target
             : { scope: 'asset' as const };
           await window.learningCompanion.createAttachment({

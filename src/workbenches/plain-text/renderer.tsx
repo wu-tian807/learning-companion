@@ -26,7 +26,12 @@ import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
   createDocumentConversationHistoryStore,
+  type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
+import {
+  buildPlainTextAnswerBlock,
+  insertAnswerBlockAtSelection,
+} from '../document-ai/answer-insertion';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -606,6 +611,35 @@ export function PlainTextWorkbenchView({
 
   const conversationContributionId =
     `${plainTextWorkbenchManifest.id}.document-question`;
+  const returnAnswerToSource = useCallback(
+    async (input: {
+      readonly answer: string;
+      readonly question?: string;
+      readonly context?: DocumentConversationContext;
+    }) => {
+      const content = latestContentRef.current;
+      const block = buildPlainTextAnswerBlock(input.answer, lineEnding);
+      const inserted = insertAnswerBlockAtSelection({
+        content,
+        context: input.context,
+        block,
+      });
+      if (inserted === undefined) {
+        throw new Error('无法在原文中定位选中位置，请重新选择内容后提问。');
+      }
+      latestContentRef.current = inserted;
+      setContent(inserted);
+      await executeCommand(
+        createPlainTextBufferCommand(plainTextCommands.syncBuffer, {
+          content: inserted,
+          lineEnding,
+          viewState: viewStateRef.current,
+        }),
+      );
+      await save();
+    },
+    [executeCommand, lineEnding, save],
+  );
   const conversationHistoryStore = useMemo(
     () => createDocumentConversationHistoryStore(
       asset.projectId,
@@ -622,12 +656,15 @@ export function PlainTextWorkbenchView({
       contributionId: conversationContributionId,
       historyStore: conversationHistoryStore,
       contextLabel: '文本选区',
+      allowAnswerAttachments: true,
+      returnAnswerToSource,
     }),
     [
       asset.id,
       asset.projectId,
       conversationContributionId,
       conversationHistoryStore,
+      returnAnswerToSource,
     ],
   );
   const conversationOwnerId =

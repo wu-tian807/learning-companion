@@ -285,6 +285,90 @@ describe('shared Conversation controller', () => {
       .toHaveLength(1);
   });
 
+  it('re-answers a completed answer with the same question and context without duplicating messages', async () => {
+    const requests: Array<Parameters<ConversationTaskClient['start']>[0]> = [];
+    let taskIndex = 0;
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      taskIndex += 1;
+      return { taskId: `task-${taskIndex}`, snapshot: task(`task-${taskIndex}`) };
+    });
+    render();
+
+    const context = { target: { scope: 'asset' as const } };
+    act(() => latest.actions.submit('请解释这段内容', context));
+    await flush();
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '第一版回答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
+    expect(latest.state.conversation.messages.at(-1)?.text).toBe('第一版回答');
+
+    const assistantId = latest.state.conversation.messages.at(-1)!.id;
+    act(() => latest.actions.reanswer(assistantId));
+    await flush();
+
+    expect(client.start).toHaveBeenCalledTimes(2);
+    const second = requests[1]!.instruction as {
+      question: string;
+      context?: unknown;
+      generateTitle?: boolean;
+      conversationId: string;
+    };
+    expect(second.question).toBe('请解释这段内容');
+    expect(second.context).toEqual(context);
+    expect(second.generateTitle).toBeUndefined();
+    expect(second.conversationId).toBe(latest.state.conversation.id);
+    expect(
+      latest.state.conversation.messages.filter(({ role }) => role === 'user'),
+    ).toHaveLength(1);
+    expect(latest.state.conversation.messages).toHaveLength(2);
+    expect(latest.state.activityLabel).toBe('正在重新回答…');
+
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-2', 'completed', {
+        answer: '第二版回答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
+    expect(latest.state.conversation.messages.at(-1)?.text).toBe('第二版回答');
+    expect(latest.state.conversation.messages.at(-1)?.generationTaskId).toBe(
+      'task-2',
+    );
+  });
+
+  it('reports a failed re-answer without duplicating or clearing messages', async () => {
+    client.start = vi.fn(async () => ({
+      taskId: 'task-1',
+      snapshot: task('task-1', 'completed', {
+        answer: '旧回答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    }));
+    render();
+    act(() => latest.actions.submit('问题'));
+    await flush();
+    const assistantId = latest.state.conversation.messages.at(-1)!.id;
+
+    client.start = vi.fn(async () => {
+      throw new Error('provider down');
+    });
+    act(() => latest.actions.reanswer(assistantId));
+    await flush();
+
+    expect(latest.state.error?.message).toBe('无法重新回答。');
+    expect(latest.state.busy).toBe(false);
+    expect(latest.state.conversation.messages).toHaveLength(2);
+    expect(latest.state.conversation.messages.at(-1)?.text).toBe('旧回答');
+  });
+
   it('restores an explicitly requested history tab only after asynchronous history is ready', async () => {
     let resolveHistory!: (records: readonly ConversationRecord[]) => void;
     const historyStore: ConversationHistoryStore = {

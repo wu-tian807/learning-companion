@@ -29,7 +29,12 @@ import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
   createDocumentConversationHistoryStore,
+  type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
+import {
+  buildMarkdownAnswerBlock,
+  findDocumentSelectionInsertOffset,
+} from '../document-ai/answer-insertion';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -263,6 +268,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     cloneMarkdownWorkbenchViewState(initialViewState),
   );
   const wysiwygEditedSinceMountRef = useRef(false);
+  const pendingAnswerInsertionRef = useRef<
+    | {
+        readonly context?: DocumentConversationContext;
+        readonly block: string;
+      }
+    | undefined
+  >(undefined);
   const viewStateSaveTimerRef = useRef<number | undefined>(undefined);
   const [workingBuffer, setWorkingBuffer] = useState(
     payload?.diskSource ?? '',
@@ -1024,6 +1036,103 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
   const conversationContributionId =
     `${markdownWorkbenchManifest.id}.document-question`;
+  const insertIntoMarkdownSource = useCallback(
+    async (offset: number, block: string) => {
+      const view = sourceEditorRef.current?.view;
+      if (view) {
+        view.dispatch({
+          changes: { from: offset, to: offset, insert: block },
+        });
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        });
+      } else {
+        const content = workingBufferRef.current;
+        const inserted =
+          content.slice(0, offset) + block + content.slice(offset);
+        workingBufferRef.current = inserted;
+        setWorkingBuffer(inserted);
+      }
+
+      const content = workingBufferRef.current;
+      const sourceState =
+        viewStateRef.current.sourceViewState ?? {
+          anchor: 0,
+          head: 0,
+          scrollTop: 0,
+        };
+      try {
+        await syncSourceBuffer(content, sourceState);
+        const result = await executeCommand({
+          type: markdownCommands.save,
+        });
+        requireValidResult(
+          result,
+          isMarkdownSaveResult,
+          'Markdown Workbench 保存响应无效',
+        );
+        setDiskSource(content);
+        setSavedLineEnding(lineEndingRef.current);
+        wysiwygEditedSinceMountRef.current = false;
+      } catch (error) {
+        reportError(error, '无法保存 Markdown 文件。');
+      }
+    },
+    [executeCommand, reportError, syncSourceBuffer],
+  );
+
+  useEffect(() => {
+    if (viewState.viewMode !== 'source') return;
+    const pending = pendingAnswerInsertionRef.current;
+    if (!pending) return;
+    pendingAnswerInsertionRef.current = undefined;
+    const content = workingBufferRef.current;
+    const offset = findDocumentSelectionInsertOffset(content, pending.context);
+    if (offset === undefined) {
+      reportError(
+        new Error('无法在原文中定位选中位置'),
+        '无法在原文中定位选中位置，请重新选择内容后提问。',
+        );
+        return;
+      }
+      void insertIntoMarkdownSource(offset, pending.block);
+  }, [
+    insertIntoMarkdownSource,
+    reportError,
+    sourceEditorKey,
+    viewState.viewMode,
+  ]);
+
+  const returnAnswerToSource = useCallback(
+    async (input: {
+      readonly answer: string;
+      readonly question?: string;
+      readonly context?: DocumentConversationContext;
+    }) => {
+      const offset = findDocumentSelectionInsertOffset(
+        workingBufferRef.current,
+        input.context,
+      );
+      if (offset === undefined) {
+        throw new Error('无法在原文中定位选中位置，请重新选择内容后提问。');
+      }
+      const block = buildMarkdownAnswerBlock(
+        input.answer,
+        lineEndingRef.current,
+      );
+      if (viewStateRef.current.viewMode !== 'source') {
+        pendingAnswerInsertionRef.current = {
+          ...(input.context ? { context: input.context } : {}),
+          block,
+        };
+        await switchMode('source');
+        return;
+      }
+      await insertIntoMarkdownSource(offset, block);
+    },
+    [insertIntoMarkdownSource, switchMode],
+  );
+
   const conversationHistoryStore = useMemo(
     () => createDocumentConversationHistoryStore(
       asset.projectId,
@@ -1040,12 +1149,15 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       contributionId: conversationContributionId,
       historyStore: conversationHistoryStore,
       contextLabel: 'Markdown 选区',
+      allowAnswerAttachments: true,
+      returnAnswerToSource,
     }),
     [
       asset.id,
       asset.projectId,
       conversationContributionId,
       conversationHistoryStore,
+      returnAnswerToSource,
     ],
   );
   const conversationOwnerId =

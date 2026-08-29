@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { AttachmentHost } from './AttachmentHost';
@@ -17,6 +20,38 @@ const attachment: AssetAttachment = {
 };
 
 describe('AttachmentHost', () => {
+  let containers: HTMLDivElement[];
+
+  beforeEach(() => {
+    containers = [];
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    (window as { learningCompanion?: unknown }).learningCompanion = {
+      readAttachmentContent: vi.fn(async () => ({
+        question: '解释这段内容',
+        answer: 'AI 回复内容',
+      })),
+    };
+    window.addEventListener(
+      'learning-companion:resolve-workbench-anchor',
+      (event) => {
+        const detail = (event as CustomEvent<{
+          respond: (rect: unknown) => void;
+        }>).detail;
+        detail.respond({ left: 100, top: 120, width: 60, height: 30 });
+      },
+    );
+  });
+
+  afterEach(() => {
+    for (const container of containers) {
+      container.remove();
+    }
+  });
+
   it('renders the annotation sidebar only when the header action opens it', () => {
     const html = renderToStaticMarkup(
       <AttachmentHost
@@ -30,5 +65,32 @@ describe('AttachmentHost', () => {
 
     expect(html).not.toContain('标注 1');
     expect(html).not.toContain('文档标注');
+  });
+
+  it('renders the boxed AI reply card at the original anchor position', async () => {
+    const container = document.createElement('div');
+    containers.push(container);
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <AttachmentHost
+          attachments={[attachment]}
+          assetId="asset"
+          projectId="project"
+          sidebarOpen={false}
+          onSidebarOpenChange={() => undefined}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const html = container.innerHTML;
+    expect(html).toContain('AI 回复');
+    expect(html).toContain('AI 回复内容');
+    expect(html).toContain('border-indigo-400/45');
+
+    act(() => root.unmount());
   });
 });

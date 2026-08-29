@@ -125,4 +125,60 @@ describe('Document conversation contribution', () => {
       }),
     );
   });
+
+  it('routes 回归原文 to the returnAnswerToSource callback instead of creating an attachment', async () => {
+    const returnAnswerToSource = vi.fn(async () => undefined);
+    const contribution = createDocumentConversationContribution({
+      projectId: 'project',
+      assetId: 'asset',
+      workbenchId: 'pdf',
+      contributionId: 'pdf.question',
+      historyStore,
+      returnAnswerToSource,
+    });
+    const context = createDocumentConversationContext({
+      target: {
+        scope: 'content',
+        anchorType: 'pdf.range',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber: 1, start: 1, end: 2 },
+      },
+      selectedText: '选中文字',
+    });
+    const question = {
+      id: 'q',
+      role: 'user' as const,
+      text: '问题',
+      createdTime: 1,
+      context,
+    };
+    const answer = {
+      id: 'a',
+      role: 'assistant' as const,
+      text: '完整回答',
+      createdTime: 2,
+      replyToMessageId: 'q',
+    };
+    await contribution.attachAnswer?.({
+      projectId: 'project',
+      assetId: 'asset',
+      conversation: {
+        id: 'conversation',
+        title: '问题',
+        messages: [question, answer],
+        createdTime: 1,
+        updatedTime: 2,
+      },
+      question,
+      answer,
+      text: '完整回答',
+    });
+
+    expect(returnAnswerToSource).toHaveBeenCalledWith({
+      answer: '完整回答',
+      question: '问题',
+      context,
+    });
+    expect(window.learningCompanion.createAttachment).not.toHaveBeenCalled();
+  });
 });
