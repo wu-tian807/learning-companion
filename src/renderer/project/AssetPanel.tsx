@@ -47,6 +47,7 @@ export interface AssetPanelProps extends AssetPanelListProps {
     scope: AssetSelectionScope,
     assets: readonly AssetSnapshot[],
   ) => void;
+  readonly onMoveSelected?: (assets: readonly AssetSnapshot[]) => void;
 }
 
 function TrashIcon() {
@@ -89,6 +90,7 @@ export function AssetPanel({
   onRetry,
   selection,
   onRemoveSelected,
+  onMoveSelected,
   selectedAssetId,
   busy,
   now,
@@ -96,6 +98,7 @@ export function AssetPanel({
   onRename,
   onReveal,
   onRelink,
+  onMove,
   onDelete,
 }: AssetPanelProps) {
   const assets = useMemo(
@@ -160,38 +163,53 @@ export function AssetPanel({
         )}
 
         {selection.active && (
-          <div className="mx-[17px] mt-2.5 flex min-h-9 items-center justify-between gap-2 rounded-[10px] border border-white/[0.08] bg-black/10 px-2">
-            <button
-              type="button"
-              aria-pressed={selection.allSelected}
-              disabled={busy || assets.length === 0}
-              onClick={selection.toggleAll}
-              className="ui-control flex items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-slate-300 disabled:opacity-40"
+          <div className="mx-[17px] mt-2.5 rounded-[10px] border border-white/[0.08] bg-black/10 p-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                aria-pressed={selection.allSelected}
+                disabled={busy || assets.length === 0}
+                onClick={selection.toggleAll}
+                className="ui-control flex items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-[10px] text-slate-300 disabled:opacity-40"
+              >
+                <AssetSelectionCheckbox checked={selection.allSelected} />
+                {selection.allSelected ? '取消全选' : '全选'}
+              </button>
+              <span className="whitespace-nowrap text-[9px] text-slate-500">
+                已选 {selection.selectedAssets.length} 项
+              </span>
+            </div>
+            <div
+              className={[
+                'mt-1.5 grid gap-1.5',
+                onMoveSelected ? 'grid-cols-2' : 'grid-cols-1',
+              ].join(' ')}
             >
-              <AssetSelectionCheckbox
-                checked={selection.allSelected}
-              />
-              {selection.allSelected ? '取消全选' : '全选'}
-            </button>
-            <span className="ml-auto text-[9px] text-slate-500">
-              已选 {selection.selectedAssets.length} 项
-            </span>
-            <button
-              type="button"
-              disabled={
-                busy || selection.selectedAssets.length === 0
-              }
-              onClick={() =>
-                onRemoveSelected(
-                  selection.scope,
-                  selection.selectedAssets,
-                )
-              }
-              className="ui-danger-button flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-medium text-rose-300 disabled:opacity-35"
-            >
-              <TrashIcon />
-              移除
-            </button>
+              {onMoveSelected && (
+                <button
+                  type="button"
+                  disabled={busy || selection.selectedAssets.length === 0}
+                  onClick={() => onMoveSelected(selection.selectedAssets)}
+                  className="ui-control rounded-lg px-2 py-1.5 text-[10px] font-medium text-indigo-200 disabled:opacity-35"
+                >
+                  移动到…
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={busy || selection.selectedAssets.length === 0}
+                onClick={() =>
+                  onRemoveSelected(
+                    selection.scope,
+                    selection.selectedAssets,
+                  )
+                }
+                className="ui-danger-button flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-medium text-rose-300 disabled:opacity-35"
+              >
+                <TrashIcon />
+                移除
+              </button>
+            </div>
           </div>
         )}
 
@@ -246,6 +264,7 @@ export function AssetPanel({
               onRename={onRename}
               onReveal={onReveal}
               onRelink={onRelink}
+              onMove={onMove}
               onDelete={onDelete}
             />
           )}

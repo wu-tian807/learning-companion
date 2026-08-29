@@ -10,6 +10,16 @@ import {
 } from 'react';
 
 import {
+  assetFolderName,
+  assetFolderParentPath,
+  isAssetFolderPathWithin,
+  isAssetFolderState,
+  joinAssetFolderPath,
+  rebaseAssetFolderPath,
+  type AssetFolderSnapshot,
+  type AssetFolderState,
+} from '../../shared/asset-folders';
+import {
   isAssetSnapshot,
   isAssetSnapshotList,
   type AssetSnapshot,
@@ -17,8 +27,10 @@ import {
 } from '../../shared/assets';
 import {
   isAddLocalAssetsResult,
+  isDeleteAssetFolderResult,
   isDeleteAssetsResult,
   type AddLocalAssetsResult,
+  type DeleteAssetFolderResult,
   type DeleteAssetsResult,
 } from '../../shared/ipc';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -32,6 +44,7 @@ import {
   filterAssetsByCreationKind,
   type AssetLoadState,
 } from './project-asset-view';
+import { filterAssetsInFolder } from './asset-folder-view';
 import {
   useAssetSelectionCoordinator,
   type AssetSelectionScope,
@@ -68,7 +81,21 @@ export function useProjectAssets({
     useState<AssetSnapshot | null>(null);
   const [deleteRequest, setDeleteRequest] =
     useState<AssetDeleteRequest | null>(null);
+  const [folderState, setFolderState] =
+    useState<AssetFolderState | null>(null);
+  const [folderLoadFailureProjectId, setFolderLoadFailureProjectId] =
+    useState<string | null>(null);
+  const [folderLocation, setFolderLocation] = useState<{
+    readonly projectId: string;
+    readonly path: string | null;
+  }>({ projectId, path: null });
+  const activeFolderState =
+    folderState?.projectId === projectId ? folderState : null;
+  const folderLoadFailed = folderLoadFailureProjectId === projectId;
+  const currentFolderPath =
+    folderLocation.projectId === projectId ? folderLocation.path : null;
   const mutationLockRef = useRef(false);
+  const folderRequestVersionRef = useRef(0);
   const assets = useMemo(
     () => (loadState.kind === 'ready' ? loadState.assets : []),
     [loadState],
@@ -77,9 +104,20 @@ export function useProjectAssets({
     () => assets.find((asset) => asset.id === selectedAssetId),
     [assets, selectedAssetId],
   );
-  const importedAssets = useMemo(
+  const allImportedAssets = useMemo(
     () => filterAssetsByCreationKind(assets, 'imported'),
     [assets],
+  );
+  const importedAssets = useMemo(
+    () =>
+      activeFolderState
+        ? filterAssetsInFolder(
+            allImportedAssets,
+            activeFolderState,
+            currentFolderPath,
+          )
+        : [],
+    [activeFolderState, allImportedAssets, currentFolderPath],
   );
   const generatedAssets = useMemo(
     () => filterAssetsByCreationKind(assets, 'generated'),
@@ -113,6 +151,40 @@ export function useProjectAssets({
   useEffect(() => {
     clearSelection();
   }, [clearSelection, projectId]);
+  const loadAssetFolders = useCallback(async () => {
+    const requestVersion = folderRequestVersionRef.current + 1;
+    folderRequestVersionRef.current = requestVersion;
+    try {
+      const nextState = await window.learningCompanion.listAssetFolders({
+        projectId,
+      });
+      if (!isAssetFolderState(nextState) || nextState.projectId !== projectId) {
+        throw new Error('Asset Folder 响应无效');
+      }
+      if (folderRequestVersionRef.current !== requestVersion) return;
+      setFolderState(nextState);
+      setFolderLoadFailureProjectId(null);
+    } catch (folderError) {
+      if (folderRequestVersionRef.current !== requestVersion) return;
+      const message = userMessageFromError(
+        folderError,
+        '无法读取资料文件夹。',
+      );
+      if (message) {
+        console.error(message, folderError);
+        setError(message);
+      }
+      setFolderLoadFailureProjectId(projectId);
+    }
+  }, [projectId, setError]);
+  useEffect(() => {
+    if (loadState.kind === 'ready') {
+      void Promise.resolve().then(loadAssetFolders);
+    }
+    return () => {
+      folderRequestVersionRef.current += 1;
+    };
+  }, [loadAssetFolders, loadState.kind]);
   const runMutation = useCallback(
     async (operation: () => Promise<void>, message: string) => {
       if (mutationLockRef.current) {
@@ -139,6 +211,110 @@ export function useProjectAssets({
     },
     [setError],
   );
+  const applyFolderState = useCallback(
+    (nextState: AssetFolderState) => {
+      if (
+        !isAssetFolderState(nextState) ||
+        nextState.projectId !== projectId
+      ) {
+        throw new Error('Asset Folder 响应无效');
+      }
+      setFolderState(nextState);
+    },
+    [projectId],
+  );
+  const openFolder = useCallback(
+    (path: string | null) => {
+      if (
+        path !== null &&
+        !activeFolderState?.folders.some((folder) => folder.path === path)
+      ) {
+        return;
+      }
+      clearSelection();
+      setFolderLocation({ projectId, path });
+    },
+    [activeFolderState, clearSelection, projectId],
+  );
+  const createFolder = useCallback(
+    (name: string) =>
+      runMutation(async () => {
+        const nextState = await window.learningCompanion.createAssetFolder({
+          projectId,
+          path: joinAssetFolderPath(currentFolderPath, name),
+        });
+        applyFolderState(nextState);
+      }, '无法创建资料文件夹。'),
+    [applyFolderState, currentFolderPath, projectId, runMutation],
+  );
+  const renameFolder = useCallback(
+    (folder: AssetFolderSnapshot, name: string) =>
+      runMutation(async () => {
+        const nextPath = joinAssetFolderPath(
+          assetFolderParentPath(folder.path),
+          name,
+        );
+        const nextState = await window.learningCompanion.updateAssetFolder({
+          projectId,
+          path: folder.path,
+          nextPath,
+        });
+        applyFolderState(nextState);
+        setFolderLocation((current) => ({
+          projectId,
+          path:
+            current.projectId === projectId &&
+            current.path &&
+            isAssetFolderPathWithin(current.path, folder.path)
+              ? rebaseAssetFolderPath(current.path, folder.path, nextPath)
+              : current.projectId === projectId
+                ? current.path
+                : null,
+        }));
+      }, '无法重命名资料文件夹。'),
+    [applyFolderState, projectId, runMutation],
+  );
+  const moveFolder = useCallback(
+    (folder: AssetFolderSnapshot, parentPath: string | null) =>
+      runMutation(async () => {
+        const nextPath = joinAssetFolderPath(
+          parentPath,
+          assetFolderName(folder.path),
+        );
+        const nextState = await window.learningCompanion.updateAssetFolder({
+          projectId,
+          path: folder.path,
+          nextPath,
+        });
+        applyFolderState(nextState);
+        setFolderLocation((current) => ({
+          projectId,
+          path:
+            current.projectId === projectId &&
+            current.path &&
+            isAssetFolderPathWithin(current.path, folder.path)
+              ? rebaseAssetFolderPath(current.path, folder.path, nextPath)
+              : current.projectId === projectId
+                ? current.path
+                : null,
+        }));
+      }, '无法移动资料文件夹。'),
+    [applyFolderState, projectId, runMutation],
+  );
+  const moveAssets = useCallback(
+    (targets: readonly AssetSnapshot[], folderPath: string | null) =>
+      runMutation(async () => {
+        if (targets.length === 0) return;
+        const nextState = await window.learningCompanion.moveAssetsToFolder({
+          projectId,
+          assetIds: targets.map((asset) => asset.id),
+          folderPath,
+        });
+        applyFolderState(nextState);
+        selection.imported.exit();
+      }, '无法移动所选资料。'),
+    [applyFolderState, projectId, runMutation, selection.imported],
+  );
   const importPaths = useCallback(
     async (paths: string[], mode: LocalAssetImportMode) => {
       const result: AddLocalAssetsResult =
@@ -146,6 +322,7 @@ export function useProjectAssets({
           projectId,
           paths,
           mode,
+          ...(currentFolderPath ? { folderPath: currentFolderPath } : {}),
         });
 
       if (!isAddLocalAssetsResult(result)) {
@@ -153,6 +330,24 @@ export function useProjectAssets({
       }
 
       setLoadState({ kind: 'ready', assets: result.assets });
+      if (currentFolderPath) {
+        setFolderState((current) =>
+          current?.projectId === projectId
+            ? {
+                ...current,
+                folderPathByAssetId: {
+                  ...current.folderPathByAssetId,
+                  ...Object.fromEntries(
+                    result.added.map((asset) => [
+                      asset.id,
+                      currentFolderPath,
+                    ]),
+                  ),
+                },
+              }
+            : current,
+        );
+      }
 
       if (result.added[0]) {
         selectAsset(result.added[0].id);
@@ -163,7 +358,7 @@ export function useProjectAssets({
         );
       }
     },
-    [projectId, selectAsset, setError, setLoadState],
+    [currentFolderPath, projectId, selectAsset, setError, setLoadState],
   );
   const addPaths = useCallback(
     async (
@@ -329,9 +524,18 @@ export function useProjectAssets({
       if (!isDeleteAssetsResult(result)) {
         throw new Error('批量删除 Asset 响应无效');
       }
+      const deletedAssetIds = result.deletedAssetIds;
 
       receivedResult = true;
       setLoadState({ kind: 'ready', assets: result.assets });
+      setFolderState((current) => {
+        if (!current || current.projectId !== projectId) return current;
+        const folderPathByAssetId = { ...current.folderPathByAssetId };
+        for (const assetId of deletedAssetIds) {
+          delete folderPathByAssetId[assetId];
+        }
+        return { ...current, folderPathByAssetId };
+      });
       selectAsset(
         selectAfterAssetsDeletion(
           assets,
@@ -383,6 +587,88 @@ export function useProjectAssets({
     }
   };
 
+  const deleteFolder = async (folder: AssetFolderSnapshot) => {
+    if (!activeFolderState) return false;
+    const targetIds = assets
+      .filter((asset) => {
+        const path = activeFolderState.folderPathByAssetId[asset.id];
+        return path ? isAssetFolderPathWithin(path, folder.path) : false;
+      })
+      .map((asset) => asset.id);
+    const selectedBeforeDeletion = selectedAssetId;
+    let receivedResult = false;
+    let folderDeleted = false;
+    const succeeded = await runMutation(async () => {
+      let result: DeleteAssetFolderResult | undefined;
+
+      await deleteAssetsAfterWorkbenchClose(
+        selectedBeforeDeletion,
+        targetIds,
+        workbenchLifecycleTaskRef.current,
+        () => selectAsset(null),
+        async () => {
+          result = await window.learningCompanion.deleteAssetFolder({
+            projectId,
+            path: folder.path,
+          });
+        },
+      );
+
+      if (!isDeleteAssetFolderResult(result)) {
+        throw new Error('删除 Asset Folder 响应无效');
+      }
+
+      receivedResult = true;
+      setLoadState({ kind: 'ready', assets: result.assets });
+      applyFolderState(result.folderState);
+      clearSelection();
+      selectAsset(
+        selectAfterAssetsDeletion(
+          assets,
+          result.deletedAssetIds,
+          selectedBeforeDeletion,
+        ),
+      );
+      folderDeleted = !result.folderState.folders.some(
+        (candidate) => candidate.path === folder.path,
+      );
+      if (
+        folderDeleted &&
+        currentFolderPath &&
+        isAssetFolderPathWithin(currentFolderPath, folder.path)
+      ) {
+        setFolderLocation({
+          projectId,
+          path: assetFolderParentPath(folder.path),
+        });
+      }
+      if (result.failed.length > 0) {
+        setError(
+          `已移除 ${result.deletedAssetIds.length} 项，${result.failed.length} 项失败：${result.failed[0]!.message}`,
+        );
+      }
+    }, '无法删除资料文件夹。');
+
+    if (
+      !succeeded &&
+      !receivedResult &&
+      selectedBeforeDeletion &&
+      targetIds.includes(selectedBeforeDeletion)
+    ) {
+      selectAsset(selectedBeforeDeletion);
+    }
+    return succeeded && folderDeleted;
+  };
+
+  const importedAssetState: AssetLoadState =
+    loadState.kind !== 'ready'
+      ? loadState
+      : folderLoadFailed
+        ? { kind: 'failed' }
+        : activeFolderState
+          ? { kind: 'ready', assets: importedAssets }
+          : { kind: 'loading' };
+
   return {
     assets,
     selectedAsset,
@@ -392,6 +678,16 @@ export function useProjectAssets({
     setRenameTarget,
     deleteTargets: deleteRequest?.assets ?? null,
     selectionCoordinator: selection,
+    folderState: activeFolderState,
+    currentFolderPath,
+    importedAssetState,
+    openFolder,
+    loadAssetFolders,
+    createFolder,
+    renameFolder,
+    moveFolder,
+    moveAssets,
+    deleteFolder,
     addPaths,
     chooseAndAdd,
     renameAsset,
