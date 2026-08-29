@@ -107,18 +107,20 @@ function MessageBubble({
   message,
   contribution,
   busy,
+  answerActionPending,
   onContinue,
   onReanswer,
   onSelectedAnswer,
-  onAttach,
+  onAnswerAction,
 }: {
   readonly message: ConversationMessageRecord;
   readonly contribution: WorkbenchConversationContribution;
   readonly busy: boolean;
+  readonly answerActionPending: boolean;
   readonly onContinue: () => void;
   readonly onReanswer: (answerId: string) => void;
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
-  readonly onAttach: (answer: ConversationMessageRecord, text: string) => void;
+  readonly onAnswerAction: (answer: ConversationMessageRecord, text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -131,7 +133,7 @@ function MessageBubble({
         )}
         <div
           onMouseUp={() => {
-            if (message.role !== 'assistant' || !contribution.attachAnswer) return;
+            if (message.role !== 'assistant' || !contribution.answerAction) return;
             const selected = normalizeConversationSelection(window.getSelection()?.toString() ?? '');
             if (selected) onSelectedAnswer(message.id, selected);
           }}
@@ -180,13 +182,14 @@ function MessageBubble({
               >
                 重新回答
               </button>
-              {contribution.attachAnswer && (
+              {contribution.answerAction && (
                 <button
                   type="button"
-                  onClick={() => onAttach(message, message.text)}
-                  className="rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-400/10"
+                  disabled={busy || answerActionPending}
+                  onClick={() => onAnswerAction(message, message.text)}
+                  className="rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-400/10 disabled:opacity-40"
                 >
-                  回归原文
+                  {contribution.answerAction.label}
                 </button>
               )}
               <button
@@ -320,6 +323,7 @@ export function ConversationPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<{ messageId: string; text: string }>();
   const [notice, setNotice] = useState<string>();
+  const [answerActionPending, setAnswerActionPending] = useState(false);
   const messages = state.conversation.messages;
 
   useEffect(() => {
@@ -335,11 +339,16 @@ export function ConversationPanel({
     [messages, selectedAnswer?.messageId],
   );
 
-  const attach = async (answer: ConversationMessageRecord, text: string) => {
-    if (!contribution.attachAnswer) return;
+  const executeAnswerAction = async (
+    answer: ConversationMessageRecord,
+    text: string,
+  ) => {
+    const action = contribution.answerAction;
+    if (!action || answerActionPending) return;
     const question = QuestionForAnswer(state.conversation, answer);
+    setAnswerActionPending(true);
     try {
-      await contribution.attachAnswer({
+      await action.execute({
         projectId,
         assetId,
         conversation: state.conversation,
@@ -348,11 +357,17 @@ export function ConversationPanel({
         text,
       });
       setSelectedAnswer(undefined);
-      setNotice('已附着到当前资料');
+      setNotice(action.successMessage);
       window.setTimeout(() => setNotice(undefined), 2_000);
-    } catch (attachError) {
-      setNotice('附着失败');
-      onError?.(attachError instanceof Error ? attachError.message : '无法附着回答。');
+    } catch (actionError) {
+      setNotice(action.failureMessage);
+      onError?.(
+        actionError instanceof Error
+          ? actionError.message
+          : action.failureMessage,
+      );
+    } finally {
+      setAnswerActionPending(false);
     }
   };
 
@@ -444,13 +459,16 @@ export function ConversationPanel({
                 message={message}
                 contribution={contribution}
                 busy={state.busy}
+                answerActionPending={answerActionPending}
                 onContinue={() => {
                   actions.setDraft('请基于刚才的回答继续深入解释，并补充容易混淆的地方。');
                   inputRef.current?.focus();
                 }}
                 onReanswer={(answerId) => actions.reanswer(answerId)}
                 onSelectedAnswer={(messageId, text) => setSelectedAnswer({ messageId, text })}
-                onAttach={(answer, text) => void attach(answer, text)}
+                onAnswerAction={(answer, text) =>
+                  void executeAnswerAction(answer, text)
+                }
               />
             ))}
             {state.busy && (
@@ -496,11 +514,21 @@ export function ConversationPanel({
                 </div>
               </div>
             )}
-            {selectedAnswer && selectedAnswerMessage && contribution.attachAnswer && (
+            {selectedAnswer && selectedAnswerMessage && contribution.answerAction && (
               <div className="mb-2 flex items-center gap-2 rounded-xl border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-[10px] text-indigo-200">
                 <span className="min-w-0 flex-1 truncate">已选中回答片段</span>
-                <button type="button" onClick={() => void attach(selectedAnswerMessage, selectedAnswer.text)} className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30">
-                  附着选中内容
+                <button
+                  type="button"
+                  disabled={answerActionPending}
+                  onClick={() =>
+                    void executeAnswerAction(
+                      selectedAnswerMessage,
+                      selectedAnswer.text,
+                    )
+                  }
+                  className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30 disabled:opacity-40"
+                >
+                  {contribution.answerAction.selectionLabel}
                 </button>
                 <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
               </div>

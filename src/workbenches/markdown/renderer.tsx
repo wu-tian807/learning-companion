@@ -31,10 +31,6 @@ import {
   createDocumentConversationHistoryStore,
   type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
-import {
-  buildMarkdownAnswerBlock,
-  findDocumentSelectionInsertOffset,
-} from '../document-ai/answer-insertion';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -65,11 +61,19 @@ import {
 import {
   createMarkdownRendererActions,
 } from './renderer-actions';
+import { writeMarkdownAnswerToSource } from './answer-insertion';
 
 type VisualEditorState =
   | 'loading'
   | 'ready'
   | 'failed';
+
+const MARKDOWN_ANSWER_ACTION_PRESENTATION = Object.freeze({
+  label: '回归 Markdown 原文',
+  selectionLabel: '回归选中回答片段',
+  successMessage: '已写回并保存 Markdown 原文',
+  failureMessage: '写回 Markdown 原文失败',
+});
 
 const markdownSourceTheme = EditorView.theme(
   {
@@ -271,7 +275,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const pendingAnswerInsertionRef = useRef<
     | {
         readonly context?: DocumentConversationContext;
-        readonly block: string;
+        readonly text: string;
+        readonly resolve: () => void;
+        readonly reject: (error: unknown) => void;
       }
     | undefined
   >(undefined);
@@ -747,6 +753,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         }
       } catch (error) {
         reportError(error, '无法切换 Markdown 编辑模式。');
+        throw error;
       }
     },
     [
@@ -1036,49 +1043,70 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
   const conversationContributionId =
     `${markdownWorkbenchManifest.id}.document-question`;
-  const insertIntoMarkdownSource = useCallback(
-    async (offset: number, block: string) => {
+  const applySourceContent = useCallback((content: string) => {
       const view = sourceEditorRef.current?.view;
       if (view) {
         view.dispatch({
-          changes: { from: offset, to: offset, insert: block },
+          changes: {
+            from: 0,
+            to: view.state.doc.length,
+            insert: content,
+          },
         });
-        await new Promise<void>((resolve) => {
-          window.requestAnimationFrame(() => resolve());
-        });
-      } else {
-        const content = workingBufferRef.current;
-        const inserted =
-          content.slice(0, offset) + block + content.slice(offset);
-        workingBufferRef.current = inserted;
-        setWorkingBuffer(inserted);
       }
+      workingBufferRef.current = content;
+      setWorkingBuffer(content);
+  }, []);
 
-      const content = workingBufferRef.current;
+  const persistMarkdownSource = useCallback(
+    async (content: string) => {
       const sourceState =
         viewStateRef.current.sourceViewState ?? {
           anchor: 0,
           head: 0,
           scrollTop: 0,
         };
-      try {
-        await syncSourceBuffer(content, sourceState);
-        const result = await executeCommand({
-          type: markdownCommands.save,
-        });
-        requireValidResult(
-          result,
-          isMarkdownSaveResult,
-          'Markdown Workbench 保存响应无效',
+      await syncSourceBuffer(content, sourceState);
+      const result = await executeCommand({
+        type: markdownCommands.save,
+      });
+      requireValidResult(
+        result,
+        isMarkdownSaveResult,
+        'Markdown Workbench 保存响应无效',
+      );
+      setDiskSource(content);
+      setSavedLineEnding(lineEndingRef.current);
+      wysiwygEditedSinceMountRef.current = false;
+    },
+    [executeCommand, syncSourceBuffer],
+  );
+
+  const writeAnswerInSourceMode = useCallback(
+    async (input: {
+      readonly text: string;
+      readonly context?: DocumentConversationContext;
+    }) => {
+      if (saving || recovery) {
+        throw new Error(
+          'Markdown 正在保存或等待恢复处理，请稍后再写回原文。',
         );
-        setDiskSource(content);
-        setSavedLineEnding(lineEndingRef.current);
-        wysiwygEditedSinceMountRef.current = false;
-      } catch (error) {
-        reportError(error, '无法保存 Markdown 文件。');
+      }
+      setSaving(true);
+      try {
+        await writeMarkdownAnswerToSource({
+          content: workingBufferRef.current,
+          context: input.context,
+          text: input.text,
+          lineEnding: lineEndingRef.current,
+          applyContent: applySourceContent,
+          persistContent: persistMarkdownSource,
+        });
+      } finally {
+        setSaving(false);
       }
     },
-    [executeCommand, reportError, syncSourceBuffer],
+    [applySourceContent, persistMarkdownSource, recovery, saving],
   );
 
   useEffect(() => {
@@ -1086,51 +1114,52 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     const pending = pendingAnswerInsertionRef.current;
     if (!pending) return;
     pendingAnswerInsertionRef.current = undefined;
-    const content = workingBufferRef.current;
-    const offset = findDocumentSelectionInsertOffset(content, pending.context);
-    if (offset === undefined) {
-      reportError(
-        new Error('无法在原文中定位选中位置'),
-        '无法在原文中定位选中位置，请重新选择内容后提问。',
-        );
-        return;
-      }
-      void insertIntoMarkdownSource(offset, pending.block);
+    void writeAnswerInSourceMode({
+      text: pending.text,
+      context: pending.context,
+    }).then(pending.resolve, pending.reject);
   }, [
-    insertIntoMarkdownSource,
-    reportError,
     sourceEditorKey,
     viewState.viewMode,
+    writeAnswerInSourceMode,
   ]);
+
+  useEffect(() => () => {
+    const pending = pendingAnswerInsertionRef.current;
+    pendingAnswerInsertionRef.current = undefined;
+    pending?.reject(
+      new DOMException('Markdown Workbench 已关闭', 'AbortError'),
+    );
+  }, []);
 
   const returnAnswerToSource = useCallback(
     async (input: {
-      readonly answer: string;
+      readonly text: string;
       readonly question?: string;
       readonly context?: DocumentConversationContext;
     }) => {
-      const offset = findDocumentSelectionInsertOffset(
-        workingBufferRef.current,
-        input.context,
-      );
-      if (offset === undefined) {
-        throw new Error('无法在原文中定位选中位置，请重新选择内容后提问。');
-      }
-      const block = buildMarkdownAnswerBlock(
-        input.answer,
-        lineEndingRef.current,
-      );
       if (viewStateRef.current.viewMode !== 'source') {
-        pendingAnswerInsertionRef.current = {
-          ...(input.context ? { context: input.context } : {}),
-          block,
-        };
-        await switchMode('source');
+        await new Promise<void>((resolve, reject) => {
+          pendingAnswerInsertionRef.current = {
+            ...(input.context ? { context: input.context } : {}),
+            text: input.text,
+            resolve,
+            reject,
+          };
+          void switchMode('source').catch((error: unknown) => {
+            const pending = pendingAnswerInsertionRef.current;
+            pendingAnswerInsertionRef.current = undefined;
+            pending?.reject(error);
+          });
+        });
         return;
       }
-      await insertIntoMarkdownSource(offset, block);
+      await writeAnswerInSourceMode({
+        text: input.text,
+        context: input.context,
+      });
     },
-    [insertIntoMarkdownSource, switchMode],
+    [switchMode, writeAnswerInSourceMode],
   );
 
   const conversationHistoryStore = useMemo(
@@ -1149,8 +1178,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       contributionId: conversationContributionId,
       historyStore: conversationHistoryStore,
       contextLabel: 'Markdown 选区',
-      allowAnswerAttachments: true,
       returnAnswerToSource,
+      answerActionPresentation: MARKDOWN_ANSWER_ACTION_PRESENTATION,
     }),
     [
       asset.id,
@@ -1246,7 +1275,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
               type="button"
               disabled={Boolean(recovery) || saving}
               aria-pressed={viewState.viewMode === mode}
-              onClick={() => void switchMode(mode)}
+              onClick={() => void switchMode(mode).catch(() => undefined)}
               className={`rounded-md px-2.5 py-1 text-[10px] transition ${
                 viewState.viewMode === mode
                   ? 'bg-white/[0.1] text-slate-100'
@@ -1347,7 +1376,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void switchMode('source')}
+                      onClick={() =>
+                        void switchMode('source').catch(() => undefined)
+                      }
                       className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
                     >
                       使用源码模式

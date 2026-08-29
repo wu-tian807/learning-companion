@@ -11,8 +11,13 @@ function isMarkdownVisualSelectionPayload(
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
-  const exact = (value as Record<string, unknown>).exact;
-  return typeof exact === 'string' && exact.length > 0;
+  const payload = value as Record<string, unknown>;
+  const exact = payload.exact;
+  return (
+    typeof exact === 'string' &&
+    exact.length > 0 &&
+    (payload.ranges === undefined || isTextRangePayload(payload))
+  );
 }
 
 export const markdownMainFeature = Object.freeze({

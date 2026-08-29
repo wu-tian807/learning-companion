@@ -39,6 +39,14 @@ describe('markdown anchor registration', () => {
     );
     expect(source?.isPayload(sourceTarget.anchorPayload)).toBe(true);
     expect(visual?.isPayload({ exact: '选中文字' })).toBe(true);
+    expect(visual?.isPayload({
+      exact: '选中文字',
+      ranges: [{ start: 2, end: 7 }],
+    })).toBe(true);
+    expect(visual?.isPayload({
+      exact: '选中文字',
+      ranges: [{ start: 7, end: 2 }],
+    })).toBe(false);
     expect(visual?.isPayload({ exact: '' })).toBe(false);
   });
 });

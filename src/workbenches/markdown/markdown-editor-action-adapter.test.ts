@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MarkdownEditorAdapter } from './markdown-editor-adapter';
-import { MarkdownEditorActionAdapter } from './markdown-editor-action-adapter';
+import {
+  MarkdownEditorActionAdapter,
+  resolveMarkdownVisualSelectionSourceRange,
+} from './markdown-editor-action-adapter';
 
 describe('Markdown editor action adapter', () => {
   it('maps Vditor readiness and history into shared editor capabilities', () => {
@@ -39,5 +42,59 @@ describe('Markdown editor action adapter', () => {
       canSelectAll: false,
       canFind: false,
     });
+  });
+
+  it('maps formatted visual text back to the exact Markdown source range', () => {
+    expect(resolveMarkdownVisualSelectionSourceRange({
+      source: '[hello](url) world',
+      selectedMarkdown: '[hello](url) world',
+      selectedText: 'hello world',
+      renderedPrefix: '',
+      renderedDocument: 'hello world',
+    })).toEqual({ start: 0, end: 18 });
+
+    expect(resolveMarkdownVisualSelectionSourceRange({
+      source: '[hello](url)',
+      selectedMarkdown: '[hello](url)',
+      selectedText: 'hello',
+      renderedPrefix: '',
+      renderedDocument: 'hello',
+    })).toEqual({ start: 0, end: 12 });
+  });
+
+  it('refuses to treat unformatted visual text as a safe Markdown syntax boundary', () => {
+    expect(resolveMarkdownVisualSelectionSourceRange({
+      source: '[hello](url)',
+      selectedMarkdown: 'hello',
+      selectedText: 'hello',
+      renderedPrefix: '',
+      renderedDocument: 'hello',
+    })).toBeUndefined();
+
+    expect(resolveMarkdownVisualSelectionSourceRange({
+      source: '[hello](url)',
+      selectedMarkdown: 'hello',
+      selectedText: ' hello ',
+      renderedPrefix: '',
+      renderedDocument: ' hello ',
+    })).toBeUndefined();
+  });
+
+  it('uses the rendered occurrence or an independently aligned literal boundary', () => {
+    expect(resolveMarkdownVisualSelectionSourceRange({
+      source: 'hello hello',
+      selectedMarkdown: 'hello',
+      selectedText: 'hello',
+      renderedPrefix: 'hello ',
+      renderedDocument: 'hello hello',
+    })).toEqual({ start: 6, end: 11 });
+
+    expect(resolveMarkdownVisualSelectionSourceRange({
+      source: '[hello](hello) hello',
+      selectedMarkdown: 'hello',
+      selectedText: 'hello',
+      renderedPrefix: 'hello ',
+      renderedDocument: 'hello hello',
+    })).toEqual({ start: 15, end: 20 });
   });
 });

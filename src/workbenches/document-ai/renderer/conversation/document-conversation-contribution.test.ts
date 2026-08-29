@@ -19,6 +19,13 @@ const historyStore: ConversationHistoryStore = {
   remove: async () => [],
 };
 
+const answerActionPresentation = {
+  label: '放回原文旁',
+  selectionLabel: '放回选中片段',
+  successMessage: '已放回原文旁',
+  failureMessage: '无法放回原文旁',
+} as const;
+
 describe('Document conversation contribution', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'learningCompanion', {
@@ -78,12 +85,13 @@ describe('Document conversation contribution', () => {
       historyStore,
     } as const;
     expect(
-      createDocumentConversationContribution(base).attachAnswer,
+      createDocumentConversationContribution(base).answerAction,
     ).toBeUndefined();
 
     const contribution = createDocumentConversationContribution({
       ...base,
       allowAnswerAttachments: true,
+      answerActionPresentation,
     });
     const question = {
       id: 'q',
@@ -100,7 +108,7 @@ describe('Document conversation contribution', () => {
       replyToMessageId: 'q',
       modelInfo: 'codex/gpt',
     };
-    await contribution.attachAnswer?.({
+    await contribution.answerAction?.execute({
       projectId: 'project',
       assetId: 'asset',
       conversation: {
@@ -124,6 +132,7 @@ describe('Document conversation contribution', () => {
         body: expect.objectContaining({ selectedAnswer: '选中回答' }),
       }),
     );
+    expect(contribution.answerAction).toMatchObject(answerActionPresentation);
   });
 
   it('routes 回归原文 to the returnAnswerToSource callback instead of creating an attachment', async () => {
@@ -135,6 +144,7 @@ describe('Document conversation contribution', () => {
       contributionId: 'pdf.question',
       historyStore,
       returnAnswerToSource,
+      answerActionPresentation,
     });
     const context = createDocumentConversationContext({
       target: {
@@ -159,7 +169,7 @@ describe('Document conversation contribution', () => {
       createdTime: 2,
       replyToMessageId: 'q',
     };
-    await contribution.attachAnswer?.({
+    await contribution.answerAction?.execute({
       projectId: 'project',
       assetId: 'asset',
       conversation: {
@@ -171,11 +181,11 @@ describe('Document conversation contribution', () => {
       },
       question,
       answer,
-      text: '完整回答',
+      text: '选中回答',
     });
 
     expect(returnAnswerToSource).toHaveBeenCalledWith({
-      answer: '完整回答',
+      text: '选中回答',
       question: '问题',
       context,
     });
