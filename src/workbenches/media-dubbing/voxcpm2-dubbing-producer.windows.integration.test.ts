@@ -131,6 +131,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
           },
           async warmup() {},
           async releaseWarmup() {},
+          async shutdown() {},
           async runVoiceJob(job, signal) {
             const workerPath = join(directory, 'voice-worker.py');
             const requestPath = join(directory, 'voice-request.json');

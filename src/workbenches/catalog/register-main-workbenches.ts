@@ -1,15 +1,16 @@
 import { AppError } from '../../main/errors/app-error';
 import { createWorkbenchConversationTaskDefinitionV1 } from '../../main/conversation/workbench-conversation-task-definition';
-import type {
-  MainWorkbenchAgentToolContext,
-  MainWorkbenchArtifactContext,
-  MainWorkbenchAttachmentContext,
-  MainWorkbenchContribution,
-  MainWorkbenchExternalLibraryContext,
-  MainWorkbenchGenerationContext,
-  MainWorkbenchProviderContext,
-  MainWorkbenchRuntime,
-  MainWorkbenchStartContext,
+import {
+  createMainWorkbenchRuntime,
+  type MainWorkbenchAgentToolContext,
+  type MainWorkbenchArtifactContext,
+  type MainWorkbenchAttachmentContext,
+  type MainWorkbenchContribution,
+  type MainWorkbenchExternalLibraryContext,
+  type MainWorkbenchGenerationContext,
+  type MainWorkbenchProviderContext,
+  type MainWorkbenchRuntime,
+  type MainWorkbenchStartContext,
 } from '../../main/workbench/main-workbench-contribution';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import { areAssetWorkbenchManifestsEqual } from '../../shared/workbench/manifest';
@@ -73,20 +74,6 @@ function forEachContribution(
     }
     action(contribution);
   }
-}
-
-function disposeRuntimes(
-  runtimes: MainWorkbenchRuntime[],
-): void {
-  let disposalError: unknown;
-  for (const runtime of runtimes.splice(0).reverse()) {
-    try {
-      runtime.dispose();
-    } catch (error) {
-      disposalError ??= error;
-    }
-  }
-  if (disposalError !== undefined) throw disposalError;
 }
 
 export function registerMainWorkbenchProviders(
@@ -164,16 +151,12 @@ export function startMainWorkbenchContributions(
     });
   } catch (error) {
     try {
-      disposeRuntimes(runtimes);
+      createMainWorkbenchRuntime(runtimes).dispose();
     } catch {
       // Preserve the contribution start failure after best-effort rollback.
     }
     throw error;
   }
 
-  return Object.freeze({
-    dispose(): void {
-      disposeRuntimes(runtimes);
-    },
-  });
+  return createMainWorkbenchRuntime(runtimes);
 }

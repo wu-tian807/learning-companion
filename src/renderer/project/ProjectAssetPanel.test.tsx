@@ -59,11 +59,27 @@ function createCoordinator(
   };
 }
 
+const folderProps = {
+  folderState: {
+    projectId: 'project',
+    folders: [],
+    folderPathByAssetId: {},
+  },
+  currentFolderPath: null,
+  onOpenFolder: vi.fn(),
+  onCreateFolder: vi.fn(async () => true),
+  onRenameFolder: vi.fn(async () => true),
+  onMoveFolder: vi.fn(async () => true),
+  onDeleteFolder: vi.fn(async () => true),
+  onMoveAssets: vi.fn(async () => true),
+};
+
 describe('ProjectAssetPanel', () => {
   it('keeps loading and empty states visible', () => {
     const loading = renderToStaticMarkup(
       <AssetSelectionCoordinatorProvider coordinator={createCoordinator()}>
         <ProjectAssetPanel
+          {...folderProps}
           state={{ kind: 'loading' }}
           selectedAssetId={null}
           busy={false}
@@ -95,6 +111,7 @@ describe('ProjectAssetPanel', () => {
     const markup = renderToStaticMarkup(
       <AssetSelectionCoordinatorProvider coordinator={createCoordinator()}>
         <ProjectAssetPanel
+          {...folderProps}
           state={{ kind: 'ready', assets: [createAsset()] }}
           selectedAssetId="asset"
           busy={false}
@@ -127,6 +144,7 @@ describe('ProjectAssetPanel', () => {
         coordinator={createCoordinator(createSelection('imported', true))}
       >
         <ProjectAssetPanel
+          {...folderProps}
           state={{ kind: 'ready', assets: [createAsset()] }}
           selectedAssetId="asset"
           busy={false}
@@ -153,7 +171,48 @@ describe('ProjectAssetPanel', () => {
     expect(markup).toContain('完成');
     expect(markup).toContain('已选 1 项');
     expect(markup).toContain('取消全选');
+    expect(markup).toContain('移动到…');
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).not.toContain('的更多操作');
+  });
+
+  it('renders only direct child folders with a breadcrumb path', () => {
+    const markup = renderToStaticMarkup(
+      <AssetSelectionCoordinatorProvider coordinator={createCoordinator()}>
+        <ProjectAssetPanel
+          {...folderProps}
+          folderState={{
+            projectId: 'project',
+            folders: [
+              { projectId: 'project', path: '课程' },
+              { projectId: 'project', path: '课程/第一章' },
+            ],
+            folderPathByAssetId: { asset: '课程/第一章' },
+          }}
+          currentFolderPath="课程"
+          state={{ kind: 'ready', assets: [] }}
+          selectedAssetId="asset"
+          busy={false}
+          refreshingAll={false}
+          dragging={false}
+          now={Date.parse('2026-07-31T10:00:00.000Z')}
+          onSelect={vi.fn()}
+          onRemoveSelected={vi.fn()}
+          onCopyAdd={vi.fn()}
+          onLinkAdd={vi.fn()}
+          onRetry={vi.fn()}
+          onRename={vi.fn()}
+          onReveal={vi.fn()}
+          onRelink={vi.fn()}
+          onRefreshAll={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </AssetSelectionCoordinatorProvider>,
+    );
+
+    expect(markup).toContain('资料文件夹路径');
+    expect(markup).toContain('第一章');
+    expect(markup).toContain('1 份资料');
+    expect(markup).not.toContain('课程 的更多操作');
   });
 });

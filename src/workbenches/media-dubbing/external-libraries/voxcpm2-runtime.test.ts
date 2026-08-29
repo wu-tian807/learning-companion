@@ -14,9 +14,36 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExternalCommandRunnerApi } from '../../../main/external-libraries/external-command-runner';
 import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
-import { VoxCpm2DubbingRuntimeResolver } from './voxcpm2-runtime';
+import {
+  VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+  VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
+  VoxCpm2DubbingRuntimeResolver,
+} from './voxcpm2-runtime';
 
 const temporaryDirectories: string[] = [];
+
+interface ScheduledUnload {
+  readonly callback: () => void | Promise<void>;
+  readonly delayMs: number;
+  cancelled: boolean;
+}
+
+function createUnloadScheduler() {
+  const tasks: ScheduledUnload[] = [];
+  const scheduleUnload = vi.fn((
+    callback: () => void | Promise<void>,
+    delayMs: number,
+  ) => {
+    const task: ScheduledUnload = { callback, delayMs, cancelled: false };
+    tasks.push(task);
+    return Object.freeze({
+      cancel(): void {
+        task.cancelled = true;
+      },
+    });
+  });
+  return { scheduleUnload, tasks };
+}
 
 async function createRuntimeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lc-voxcpm2-runtime-'));
@@ -193,7 +220,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await resolver.releaseWarmup();
   });
 
-  it('stops an unfinished warmup once without reporting a failure', async () => {
+  it('keeps the last warm model through a grace period and cancels stale unloads', async () => {
     const root = await createRuntimeRoot();
     const environment = join(root, 'environment');
     await mkdir(join(environment, 'Scripts'), { recursive: true });
@@ -203,9 +230,265 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
       JSON.stringify({ version: 1 }),
     );
     const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
     let sessionDirectory = '';
     const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
       sessionDirectory = dirname(request.args[0]!);
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+
+    await resolver.warmup();
+    expect(tasks.at(-1)?.delayMs).toBe(VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS);
+    await resolver.releaseWarmup();
+    const firstGrace = tasks.at(-1)!;
+    expect(firstGrace.delayMs).toBe(
+      VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+    );
+
+    await resolver.warmup();
+    expect(firstGrace.cancelled).toBe(true);
+    expect(run).toHaveBeenCalledOnce();
+    await firstGrace.callback();
+    await expect(access(sessionDirectory)).resolves.toBeUndefined();
+
+    await resolver.releaseWarmup();
+    const finalGrace = tasks.at(-1)!;
+    await finalGrace.callback();
+    await expect(access(sessionDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('unloads an unused warm model after the idle lease while a Workbench remains open', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: 1 }),
+    );
+    const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
+    const sessionDirectories: string[] = [];
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      sessionDirectories.push(dirname(request.args[0]!));
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+
+    await resolver.warmup();
+    const idleUnload = tasks.at(-1)!;
+    expect(idleUnload.delayMs).toBe(VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS);
+    await idleUnload.callback();
+    await expect(access(sessionDirectories[0]!)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    await resolver.warmup();
+    expect(run).toHaveBeenCalledTimes(2);
+    await resolver.shutdown();
+  });
+
+  it('unloads immediately when the last-consumer grace expires before warmup finishes', async () => {
+    const root = await createRuntimeRoot();
+    const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
+    let finishEnvironmentSetup: (() => void) | undefined;
+    let sessionDirectory = '';
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      if (request.args[0] === 'venv') {
+        await new Promise<void>((resolvePromise) => {
+          finishEnvironmentSetup = resolvePromise;
+        });
+        const scripts = join(root, 'environment', 'Scripts');
+        await mkdir(scripts, { recursive: true });
+        await writeFile(join(scripts, 'python.exe'), 'mock');
+        return { stdout: '', stderr: '' };
+      }
+      if (request.command.endsWith('python.exe') && request.args[0] !== '-c') {
+        sessionDirectory = dirname(request.args[0]!);
+        const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+        await writeFile(readyPath, '{"ready":true}\n');
+        await new Promise<void>((_resolvePromise, rejectPromise) => {
+          const rejectAborted = () => rejectPromise(new Error('cancelled'));
+          if (request.signal?.aborted) {
+            rejectAborted();
+          } else {
+            request.signal?.addEventListener('abort', rejectAborted, {
+              once: true,
+            });
+          }
+        });
+      }
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+
+    const warming = resolver.warmup();
+    await vi.waitFor(() => expect(finishEnvironmentSetup).toBeTypeOf('function'));
+    await resolver.releaseWarmup();
+    const expiredGrace = tasks.at(-1)!;
+    expect(expiredGrace.delayMs).toBe(
+      VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+    );
+    await expiredGrace.callback();
+
+    finishEnvironmentSetup?.();
+    await warming;
+    const postLoadUnload = tasks.at(-1)!;
+    expect(postLoadUnload).not.toBe(expiredGrace);
+    expect(postLoadUnload.delayMs).toBe(0);
+    await postLoadUnload.callback();
+    await expect(access(sessionDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('aborts an in-progress environment preparation during shutdown', async () => {
+    const root = await createRuntimeRoot();
+    const { service } = externalLibraries(root);
+    let preparationSignal: AbortSignal | undefined;
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(
+      (request) =>
+        new Promise((_resolvePromise, rejectPromise) => {
+          preparationSignal = request.signal;
+          const rejectAborted = () =>
+            rejectPromise(new DOMException('cancelled', 'AbortError'));
+          if (request.signal?.aborted) {
+            rejectAborted();
+          } else {
+            request.signal?.addEventListener('abort', rejectAborted, {
+              once: true,
+            });
+          }
+        }),
+    );
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+
+    const preparation = resolver.requireRuntime().catch((error: unknown) =>
+      error,
+    );
+    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+
+    const shutdown = resolver.shutdown();
+    expect(preparationSignal?.aborted).toBe(true);
+    await expect(preparation).resolves.toMatchObject({ name: 'AbortError' });
+    await shutdown;
+  });
+
+  it('lets a claimed voice job finish after its last Workbench closes', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: 1 }),
+    );
+    const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
+    let finishWorker: (() => void) | undefined;
+    let requestPath = '';
+    let workerSignal: AbortSignal | undefined;
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      requestPath = request.args[request.args.indexOf('--request') + 1]!;
+      workerSignal = request.signal;
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((resolvePromise) => {
+        finishWorker = resolvePromise;
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+    await resolver.warmup();
+    const job = {
+      referencePath: join(root, 'reference.wav'),
+      phrasesPath: join(root, 'phrases.json'),
+      outputDirectory: join(root, 'voice'),
+      progressPath: join(root, 'progress.json'),
+      backgroundPath: join(root, 'background.wav'),
+      previewPath: join(root, 'preview.wav'),
+      ffmpegPath: join(root, 'ffmpeg.exe'),
+      durationMs: 12_000,
+    };
+    const running = resolver.runVoiceJob(job, new AbortController().signal);
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await readFile(requestPath, 'utf8'))).toEqual(job);
+    });
+
+    await resolver.releaseWarmup();
+    const closeGrace = tasks.at(-1)!;
+    expect(closeGrace.delayMs).toBe(
+      VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+    );
+    await closeGrace.callback();
+    await vi.waitFor(() => expect(workerSignal?.aborted).toBe(false));
+
+    finishWorker?.();
+    await running;
+  });
+
+  it('aborts an active voice job and rejects new work during idempotent shutdown', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: 1 }),
+    );
+    const { service } = externalLibraries(root);
+    let requestPath = '';
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      requestPath = request.args[request.args.indexOf('--request') + 1]!;
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
       await new Promise<void>((_resolvePromise, rejectPromise) => {
         const rejectAborted = () => rejectPromise(new Error('cancelled'));
         if (request.signal?.aborted) {
@@ -222,15 +505,33 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
       commandRunner: { run },
       platform: 'win32',
     });
-
-    const warming = resolver.warmup();
-    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
-    await resolver.releaseWarmup();
-
-    await expect(warming).resolves.toBeUndefined();
-    await expect(access(sessionDirectory)).rejects.toMatchObject({
-      code: 'ENOENT',
+    await resolver.warmup();
+    const job = {
+      referencePath: join(root, 'reference.wav'),
+      phrasesPath: join(root, 'phrases.json'),
+      outputDirectory: join(root, 'voice'),
+      progressPath: join(root, 'progress.json'),
+      backgroundPath: join(root, 'background.wav'),
+      previewPath: join(root, 'preview.wav'),
+      ffmpegPath: join(root, 'ffmpeg.exe'),
+      durationMs: 12_000,
+    };
+    const running = resolver.runVoiceJob(job, new AbortController().signal);
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await readFile(requestPath, 'utf8'))).toEqual(job);
     });
+
+    const firstShutdown = resolver.shutdown();
+    const secondShutdown = resolver.shutdown();
+    expect(secondShutdown).toBe(firstShutdown);
+    await expect(running).rejects.toThrow('cancelled');
+    await firstShutdown;
+    await expect(resolver.warmup()).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    await expect(
+      resolver.runVoiceJob(job, new AbortController().signal),
+    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('resumes an incomplete environment without clearing downloaded packages', async () => {

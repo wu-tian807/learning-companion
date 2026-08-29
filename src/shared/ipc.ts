@@ -1,6 +1,11 @@
 import type { AppPreferences, HomePreferences } from "./app-preferences";
 import { isHomePreferences } from "./app-preferences";
 import type { AppSetupSnapshot } from "./app-setup";
+import {
+  isAssetFolderPath,
+  isAssetFolderState,
+  type AssetFolderState,
+} from "./asset-folders";
 import type {
   AgentProviderLoginChallenge,
   AgentProviderModelCatalogSnapshot,
@@ -96,6 +101,11 @@ export const IPC_CHANNELS = {
   refreshAllAssets: "asset:refresh-all",
   revealAssetInFolder: "asset:reveal-in-folder",
   assetChanged: "asset:changed",
+  listAssetFolders: "asset-folder:list",
+  createAssetFolder: "asset-folder:create",
+  updateAssetFolder: "asset-folder:update",
+  deleteAssetFolder: "asset-folder:delete",
+  moveAssetsToFolder: "asset-folder:move-assets",
   listGenerationTasks: "generation-task:list",
   getGenerationTask: "generation-task:get",
   startGenerationTask: "generation-task:start",
@@ -211,6 +221,21 @@ export interface LearningCompanionApi {
   onAssetChanged: (
     listener: (event: AssetChangedEvent) => void,
   ) => () => void;
+  listAssetFolders: (
+    request: ProjectLifecycleRequest,
+  ) => Promise<AssetFolderState>;
+  createAssetFolder: (
+    request: CreateAssetFolderRequest,
+  ) => Promise<AssetFolderState>;
+  updateAssetFolder: (
+    request: UpdateAssetFolderRequest,
+  ) => Promise<AssetFolderState>;
+  deleteAssetFolder: (
+    request: DeleteAssetFolderRequest,
+  ) => Promise<DeleteAssetFolderResult>;
+  moveAssetsToFolder: (
+    request: MoveAssetsToFolderRequest,
+  ) => Promise<AssetFolderState>;
   listGenerationTasks: (
     request: GenerationTaskProjectRequest,
   ) => Promise<GenerationTaskView[]>;
@@ -337,6 +362,7 @@ export interface AddLocalAssetsRequest {
   projectId: string;
   paths: string[];
   mode?: LocalAssetImportMode;
+  folderPath?: string;
 }
 
 export interface AddLocalAssetFailure {
@@ -374,6 +400,27 @@ export interface DeleteAssetsResult {
   deletedAssetIds: string[];
   failed: DeleteAssetFailure[];
   assets: AssetSnapshot[];
+}
+
+export interface CreateAssetFolderRequest {
+  projectId: string;
+  path: string;
+}
+
+export interface UpdateAssetFolderRequest extends CreateAssetFolderRequest {
+  nextPath: string;
+}
+
+export type DeleteAssetFolderRequest = CreateAssetFolderRequest;
+
+export interface MoveAssetsToFolderRequest {
+  projectId: string;
+  assetIds: string[];
+  folderPath: string | null;
+}
+
+export interface DeleteAssetFolderResult extends DeleteAssetsResult {
+  folderState: AssetFolderState;
 }
 
 export interface AssetIdRequest {
@@ -537,8 +584,47 @@ export function isAddLocalAssetsRequest(
     value.paths.length > 0 &&
     value.paths.length <= ASSET_BATCH_MAX_SIZE &&
     value.paths.every((path) => isRequiredText(path)) &&
-    (value.mode === undefined || value.mode === "copy" || value.mode === "link")
+    (value.mode === undefined || value.mode === "copy" || value.mode === "link") &&
+    (value.folderPath === undefined || isAssetFolderPath(value.folderPath))
   );
+}
+
+export function isCreateAssetFolderRequest(
+  value: unknown,
+): value is CreateAssetFolderRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    isAssetFolderPath(value.path)
+  );
+}
+
+export function isUpdateAssetFolderRequest(
+  value: unknown,
+): value is UpdateAssetFolderRequest {
+  return (
+    isRecord(value) &&
+    isCreateAssetFolderRequest(value) &&
+    isAssetFolderPath(value.nextPath)
+  );
+}
+
+export function isMoveAssetsToFolderRequest(
+  value: unknown,
+): value is MoveAssetsToFolderRequest {
+  if (
+    !isRecord(value) ||
+    !isRequiredText(value.projectId) ||
+    !Array.isArray(value.assetIds) ||
+    value.assetIds.length === 0 ||
+    value.assetIds.length > ASSET_BATCH_MAX_SIZE ||
+    !value.assetIds.every((assetId) => isRequiredText(assetId)) ||
+    !(value.folderPath === null || isAssetFolderPath(value.folderPath))
+  ) {
+    return false;
+  }
+
+  return new Set(value.assetIds).size === value.assetIds.length;
 }
 
 export function isAddLocalAssetsResult(
@@ -681,6 +767,16 @@ export function isDeleteAssetsResult(
       (assetId) => !failedAssetIds.has(assetId),
     ) &&
     value.assets.every((asset) => !deletedAssetIds.has(asset.id))
+  );
+}
+
+export function isDeleteAssetFolderResult(
+  value: unknown,
+): value is DeleteAssetFolderResult {
+  return (
+    isDeleteAssetsResult(value) &&
+    isRecord(value) &&
+    isAssetFolderState(value.folderState)
   );
 }
 

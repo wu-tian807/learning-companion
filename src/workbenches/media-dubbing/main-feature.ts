@@ -35,4 +35,16 @@ export const mediaDubbingMainFeature = Object.freeze({
   registerArtifactProducers({ artifacts }): void {
     artifacts.register(mediaDubbingProducer);
   },
+  start({ externalLibraries }) {
+    const runtime = resolveMediaDubbingRuntime(externalLibraries);
+    return Object.freeze({
+      shutdown(): Promise<void> {
+        return runtime.shutdown();
+      },
+      dispose(): void {
+        runtimeResolvers.delete(externalLibraries);
+        void runtime.shutdown().catch(() => undefined);
+      },
+    });
+  },
 } satisfies MainWorkbenchFeatureContribution);

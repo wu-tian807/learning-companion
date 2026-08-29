@@ -27,8 +27,10 @@ import { createAssetAttachmentsMigration } from './migrations/0019-create-asset-
 import { reconcileLegacyBranchSchemaMigration } from './migrations/0020-reconcile-legacy-branch-schema';
 import { storeGenerationPreparedDataMigration } from './migrations/0021-store-generation-prepared-data';
 import { retireLegacyGenerationPreparedDataMigration } from './migrations/0022-retire-legacy-generation-prepared-data';
+import { createAssetFoldersMigration } from './migrations/0023-create-asset-folders';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
+import * as assetFolderSchema from './schema/asset-folders';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
 import * as assetSchema from './schema/assets';
@@ -66,9 +68,11 @@ const migrations: readonly DatabaseMigration[] = [
   reconcileLegacyBranchSchemaMigration,
   storeGenerationPreparedDataMigration,
   retireLegacyGenerationPreparedDataMigration,
+  createAssetFoldersMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,
+  ...assetFolderSchema,
   ...projectSchema,
   ...assetSchema,
   ...assetArtifactSchema,

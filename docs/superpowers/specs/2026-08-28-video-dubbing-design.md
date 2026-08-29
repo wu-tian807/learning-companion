@@ -91,7 +91,11 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 - UVR-MDX-NET-Inst_HQ_4 人声分离模型；
 - 固定版本的 `uv` 引导程序；
 - 模型下载约 5.04 GB，所有资源都有固定大小和 SHA-256；
-- 第一次生成配音时，在同一个 External Library 根目录准备隔离 Python 3.12、PyTorch CUDA、VoxCPM 与 sherpa-onnx 环境；缓存也全部留在该根目录；
+- 只有安装状态检查确认组件可用后，兼容的 Audio/Video Workbench 才会在后台预热；未安装、平台不支持或已经恢复完整配音 Artifact 时不准备 Python、不启动 Worker；
+- 首次成功预热或生成时，在同一个 External Library 根目录准备隔离 Python 3.12、PyTorch CUDA、VoxCPM 与 sherpa-onnx 环境；缓存也全部留在该根目录；
+- Audio/Video 的所有打开会话共享一个 VoxCPM2 resolver 和一个模型进程，每个会话成对 retain/release，避免重复加载；
+- 空闲预热模型最多驻留 5 分钟；最后一个兼容 Workbench 关闭后保留 30 秒宽限，期间重新打开会取消旧卸载，避免切换页面反复冷启动；
+- 正在执行的配音任务不因普通 Workbench 关闭而中止，任务完成后释放一次性 Worker；应用退出则显式中止并等待模型进程和临时 Session 清理完成；
 - 卸载 External Library 时，模型、Python 环境和下载缓存可作为一个目录整体删除；不使用系统 Python，也不写项目数据库。
 
 当前第一版只声明 Windows x64。macOS 不以“理论可运行”冒充“已支持”；需要单独完成 Metal 模型、安装体积和真实长视频 RTF 验证后再注册 macOS package。

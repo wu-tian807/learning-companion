@@ -126,7 +126,7 @@ export function MediaPlaybackControls({
 
           <div
             data-media-volume-controls="true"
-            className="group/volume flex shrink-0 items-center"
+            className="group/volume relative flex shrink-0 items-center"
           >
             <button
               type="button"
@@ -139,21 +139,23 @@ export function MediaPlaybackControls({
             </button>
             <div
               data-media-volume-slider="true"
-              className="w-0 overflow-hidden opacity-0 transition-[width,opacity] duration-150 group-hover/volume:w-16 group-hover/volume:opacity-100 group-focus-within/volume:w-16 group-focus-within/volume:opacity-100 motion-reduce:transition-none"
+              className="pointer-events-none invisible absolute bottom-full left-1/2 z-30 w-20 -translate-x-1/2 pb-1 opacity-0 transition-opacity duration-150 group-hover/volume:pointer-events-auto group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:pointer-events-auto group-focus-within/volume:visible group-focus-within/volume:opacity-100 motion-reduce:transition-none"
             >
-              <input
-                type="range"
-                aria-label={`${mediaLabel}音量`}
-                min={0}
-                max={1}
-                step={0.01}
-                value={muted ? 0 : volume}
-                disabled={!ready}
-                onChange={(event) =>
-                  onVolumeChange(Number(event.target.value))
-                }
-                className="ml-1 h-1 w-14 cursor-pointer accent-indigo-400 disabled:cursor-not-allowed disabled:opacity-35"
-              />
+              <div className="rounded-lg border border-white/[0.1] bg-[#171c25]/95 px-2 py-2 shadow-lg backdrop-blur">
+                <input
+                  type="range"
+                  aria-label={`${mediaLabel}音量`}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={muted ? 0 : volume}
+                  disabled={!ready}
+                  onChange={(event) =>
+                    onVolumeChange(Number(event.target.value))
+                  }
+                  className="block h-1 w-full cursor-pointer accent-indigo-400 disabled:cursor-not-allowed disabled:opacity-35"
+                />
+              </div>
             </div>
           </div>
 

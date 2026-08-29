@@ -94,14 +94,18 @@ describe('VideoPlaybackControls', () => {
     const volumeSlider = container.querySelector(
       '[data-media-volume-slider="true"]',
     );
+    const volumeControls = container.querySelector(
+      '[data-media-volume-controls="true"]',
+    );
 
     expect(progressRow?.contains(progress)).toBe(true);
     expect(progressRow?.contains(secondaryControls)).toBe(false);
     expect(actionRow?.contains(secondaryControls)).toBe(true);
     expect(secondaryControls?.textContent).toBe('字幕');
-    expect(volumeSlider?.className).toContain('w-0');
-    expect(volumeSlider?.className).toContain('group-hover/volume:w-16');
-    expect(volumeSlider?.className).toContain('group-focus-within/volume:w-16');
+    expect(volumeControls?.className).toContain('relative');
+    expect(volumeSlider?.className).toContain('absolute');
+    expect(volumeSlider?.className).toContain('w-20');
+    expect(volumeSlider?.className).not.toContain('group-hover/volume:w-16');
     act(() => {
       const setInputValue = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,
