@@ -4,9 +4,12 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   realpath,
   rename,
   rm,
+  rmdir,
+  utimes,
 } from 'node:fs/promises';
 import {
   dirname,
@@ -18,8 +21,10 @@ import { AppError } from '../errors/app-error';
 import { isPathInside } from '../filesystem/file-system-path-rules';
 import type {
   ExternalLibraryDefinition,
+  ExternalLibraryDownloadResourceDefinition,
   ExternalLibraryPackageDefinition,
 } from './external-library-definition';
+import { externalLibraryPackageFingerprint } from './external-library-definition';
 import {
   requireExternalLibraryRootPath,
   requireSafeDirectorySegment,
@@ -33,6 +38,22 @@ export {
 } from './external-library-paths';
 
 export const EXTERNAL_LIBRARY_STAGING_DIRECTORY = '.staging';
+export const EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY = '.downloads';
+export const EXTERNAL_LIBRARY_STAGING_RETENTION_MS = 24 * 60 * 60 * 1_000;
+export const EXTERNAL_LIBRARY_DOWNLOAD_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+
+export interface ExternalLibraryDownloadPaths {
+  readonly rootPath: string;
+  readonly downloadDirectory: string;
+  readonly partialPath: string;
+  readonly packagePath: string;
+  readonly destinationPath: string;
+}
+
+export interface ExternalLibraryTemporaryDataCleanupResult {
+  readonly stagingDirectoriesRemoved: number;
+  readonly downloadDirectoriesRemoved: number;
+}
 
 export interface ExternalLibraryPathManagerApi {
   normalizeRootPath(rootPath: string): string;
@@ -45,6 +66,27 @@ export interface ExternalLibraryPathManagerApi {
     rootPath: string,
     libraryId: string,
   ): Promise<string>;
+  prepareDownloadPaths(input: {
+    readonly rootPath: string;
+    readonly definition: ExternalLibraryDefinition;
+    readonly packageDefinition: ExternalLibraryPackageDefinition;
+    readonly resourceDefinition: ExternalLibraryDownloadResourceDefinition;
+  }): Promise<ExternalLibraryDownloadPaths>;
+  completeDownload(paths: ExternalLibraryDownloadPaths): Promise<string>;
+  cleanupPackageDownloads(
+    rootPath: string,
+    definition: ExternalLibraryDefinition,
+    packageDefinition: ExternalLibraryPackageDefinition,
+  ): Promise<void>;
+  cleanupLibraryDownloads(
+    rootPath: string,
+    definition: ExternalLibraryDefinition,
+  ): Promise<void>;
+  cleanupExpiredTemporaryData(
+    rootPath: string,
+    currentTime: number,
+  ): Promise<ExternalLibraryTemporaryDataCleanupResult>;
+  cleanupTemporaryData(rootPath: string): Promise<void>;
   commitInstallation(input: {
     readonly rootPath: string;
     readonly definition: ExternalLibraryDefinition;
@@ -149,6 +191,201 @@ async function ensureManagedDirectory(
   return current;
 }
 
+async function existingRegularFile(path: string): Promise<boolean> {
+  try {
+    const stats = await lstat(path);
+
+    if (!stats.isFile() || stats.isSymbolicLink()) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    return true;
+  } catch (error) {
+    if (isFileSystemError(error, 'ENOENT')) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function inspectManagedRoot(
+  rootPath: string,
+  managedDirectoryName: string,
+): Promise<
+  | {
+      readonly path: string;
+      readonly realPath: string;
+    }
+  | undefined
+> {
+  const root = requireExternalLibraryRootPath(rootPath);
+  const managedPath = join(root, managedDirectoryName);
+
+  try {
+    const [rootStats, managedStats] = await Promise.all([
+      lstat(root),
+      lstat(managedPath),
+    ]);
+
+    if (
+      !rootStats.isDirectory() ||
+      rootStats.isSymbolicLink() ||
+      !managedStats.isDirectory() ||
+      managedStats.isSymbolicLink()
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const [realRoot, realManagedPath] = await Promise.all([
+      realpath(root),
+      realpath(managedPath),
+    ]);
+
+    if (!isPathInside(realRoot, realManagedPath)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    return { path: managedPath, realPath: realManagedPath };
+  } catch (error) {
+    if (isFileSystemError(error, 'ENOENT')) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
+async function requireManagedTreeLatestModification(
+  path: string,
+  realManagedRoot: string,
+): Promise<number> {
+  const stats = await lstat(path);
+
+  if (stats.isSymbolicLink()) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+  if (!stats.isDirectory() && !stats.isFile()) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+  if (!isPathInside(realManagedRoot, await realpath(path))) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  let latest = stats.mtimeMs;
+
+  if (stats.isDirectory()) {
+    for (const entry of await readdir(path)) {
+      latest = Math.max(
+        latest,
+        await requireManagedTreeLatestModification(
+          join(path, entry),
+          realManagedRoot,
+        ),
+      );
+    }
+  }
+
+  return latest;
+}
+
+async function cleanupManagedSubdirectory(
+  rootPath: string,
+  managedDirectoryName: string,
+  targetPath: string,
+): Promise<void> {
+  const managedRoot = await inspectManagedRoot(
+    rootPath,
+    managedDirectoryName,
+  );
+
+  if (!managedRoot) {
+    return;
+  }
+
+  const target = resolve(targetPath);
+
+  if (
+    target === managedRoot.path ||
+    !isPathInside(managedRoot.path, target)
+  ) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+
+  try {
+    const targetStats = await lstat(target);
+
+    if (
+      !targetStats.isDirectory() ||
+      targetStats.isSymbolicLink() ||
+      !isPathInside(managedRoot.realPath, await realpath(target))
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+  } catch (error) {
+    if (isFileSystemError(error, 'ENOENT')) {
+      return;
+    }
+
+    throw error;
+  }
+
+  await rm(target, { recursive: true, force: true });
+}
+
+async function cleanupManagedChildren(
+  rootPath: string,
+  managedDirectoryName: string,
+): Promise<void> {
+  const managedRoot = await inspectManagedRoot(
+    rootPath,
+    managedDirectoryName,
+  );
+
+  if (!managedRoot) {
+    return;
+  }
+
+  for (const entry of await readdir(managedRoot.path)) {
+    const target = join(managedRoot.path, entry);
+    await requireManagedTreeLatestModification(
+      target,
+      managedRoot.realPath,
+    );
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+function resourceFileName(
+  packageDefinition: ExternalLibraryPackageDefinition,
+  resourceId: string,
+): string {
+  const id = requireSafeDirectorySegment(resourceId);
+
+  return packageDefinition.packageType === 'bundle'
+    ? `resource.${id}`
+    : `package.${packageDefinition.packageType}`;
+}
+
+function resolveDownloadDirectory(
+  rootPath: string,
+  definition: ExternalLibraryDefinition,
+  packageDefinition: ExternalLibraryPackageDefinition,
+): string {
+  const root = requireExternalLibraryRootPath(rootPath);
+  const libraryId = requireSafeDirectorySegment(definition.id);
+  const fingerprint = requireSafeDirectorySegment(
+    externalLibraryPackageFingerprint(packageDefinition),
+  );
+
+  return join(
+    root,
+    EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+    libraryId,
+    fingerprint,
+  );
+}
+
 export class ExternalLibraryPathManager
   implements ExternalLibraryPathManagerApi
 {
@@ -189,6 +426,229 @@ export class ExternalLibraryPathManager
 
     return mkdtemp(
       join(stagingRoot, `${normalizedLibraryId}-${this.createId()}-`),
+    );
+  }
+
+  async prepareDownloadPaths(input: {
+    readonly rootPath: string;
+    readonly definition: ExternalLibraryDefinition;
+    readonly packageDefinition: ExternalLibraryPackageDefinition;
+    readonly resourceDefinition: ExternalLibraryDownloadResourceDefinition;
+  }): Promise<ExternalLibraryDownloadPaths> {
+    const root = requireExternalLibraryRootPath(input.rootPath);
+    const libraryId = requireSafeDirectorySegment(input.definition.id);
+    const fingerprint = requireSafeDirectorySegment(
+      externalLibraryPackageFingerprint(input.packageDefinition),
+    );
+    const fileName = resourceFileName(
+      input.packageDefinition,
+      input.resourceDefinition.id,
+    );
+    await ensureDirectory(root);
+    const downloadDirectory = await ensureManagedDirectory(root, [
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      libraryId,
+      fingerprint,
+    ]);
+    const partialPath = join(downloadDirectory, `${fileName}.partial`);
+    const packagePath = join(downloadDirectory, fileName);
+    const hasPackage = await existingRegularFile(packagePath);
+    await existingRegularFile(partialPath);
+    const accessTime = new Date();
+    await utimes(downloadDirectory, accessTime, accessTime);
+
+    return Object.freeze({
+      rootPath: root,
+      downloadDirectory,
+      partialPath,
+      packagePath,
+      destinationPath: hasPackage ? packagePath : partialPath,
+    });
+  }
+
+  async completeDownload(
+    paths: ExternalLibraryDownloadPaths,
+  ): Promise<string> {
+    const root = requireExternalLibraryRootPath(paths.rootPath);
+    const downloadRoot = join(root, EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY);
+    const downloadDirectory = resolve(paths.downloadDirectory);
+    const partialPath = resolve(paths.partialPath);
+    const packagePath = resolve(paths.packagePath);
+    const destinationPath = resolve(paths.destinationPath);
+
+    if (
+      !isPathInside(downloadRoot, downloadDirectory) ||
+      !isPathInside(downloadDirectory, partialPath) ||
+      !isPathInside(downloadDirectory, packagePath) ||
+      (destinationPath !== partialPath && destinationPath !== packagePath)
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    const managedRoot = await inspectManagedRoot(
+      root,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+    );
+    const downloadDirectoryStats = await lstat(downloadDirectory);
+
+    if (
+      !managedRoot ||
+      !downloadDirectoryStats.isDirectory() ||
+      downloadDirectoryStats.isSymbolicLink() ||
+      !isPathInside(
+        managedRoot.realPath,
+        await realpath(downloadDirectory),
+      )
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    if (destinationPath === packagePath) {
+      if (!(await existingRegularFile(packagePath))) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      if (await existingRegularFile(partialPath)) {
+        await rm(partialPath, { force: true });
+      }
+      return packagePath;
+    }
+
+    if (!(await existingRegularFile(partialPath))) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    await rename(partialPath, packagePath);
+    return packagePath;
+  }
+
+  async cleanupPackageDownloads(
+    rootPath: string,
+    definition: ExternalLibraryDefinition,
+    packageDefinition: ExternalLibraryPackageDefinition,
+  ): Promise<void> {
+    await cleanupManagedSubdirectory(
+      rootPath,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      resolveDownloadDirectory(rootPath, definition, packageDefinition),
+    );
+  }
+
+  async cleanupLibraryDownloads(
+    rootPath: string,
+    definition: ExternalLibraryDefinition,
+  ): Promise<void> {
+    const root = requireExternalLibraryRootPath(rootPath);
+    await cleanupManagedSubdirectory(
+      root,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      join(
+        root,
+        EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+        requireSafeDirectorySegment(definition.id),
+      ),
+    );
+  }
+
+  async cleanupExpiredTemporaryData(
+    rootPath: string,
+    currentTime: number,
+  ): Promise<ExternalLibraryTemporaryDataCleanupResult> {
+    if (!Number.isFinite(currentTime) || currentTime < 0) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    let stagingDirectoriesRemoved = 0;
+    let downloadDirectoriesRemoved = 0;
+    const stagingRoot = await inspectManagedRoot(
+      rootPath,
+      EXTERNAL_LIBRARY_STAGING_DIRECTORY,
+    );
+
+    if (stagingRoot) {
+      for (const entry of await readdir(stagingRoot.path)) {
+        const target = join(stagingRoot.path, entry);
+        const targetStats = await lstat(target);
+
+        if (!targetStats.isDirectory() || targetStats.isSymbolicLink()) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+        const latest = await requireManagedTreeLatestModification(
+          target,
+          stagingRoot.realPath,
+        );
+
+        if (latest <= currentTime - EXTERNAL_LIBRARY_STAGING_RETENTION_MS) {
+          await rm(target, { recursive: true, force: true });
+          stagingDirectoriesRemoved += 1;
+        }
+      }
+    }
+
+    const downloadRoot = await inspectManagedRoot(
+      rootPath,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+    );
+
+    if (downloadRoot) {
+      for (const libraryEntry of await readdir(downloadRoot.path)) {
+        const libraryPath = join(downloadRoot.path, libraryEntry);
+        const libraryStats = await lstat(libraryPath);
+
+        if (!libraryStats.isDirectory() || libraryStats.isSymbolicLink()) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+        if (
+          !isPathInside(
+            downloadRoot.realPath,
+            await realpath(libraryPath),
+          )
+        ) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+
+        for (const packageEntry of await readdir(libraryPath)) {
+          const packagePath = join(libraryPath, packageEntry);
+          const packageStats = await lstat(packagePath);
+
+          if (!packageStats.isDirectory() || packageStats.isSymbolicLink()) {
+            throw new AppError('DATA_INTEGRITY_ERROR');
+          }
+          const latest = await requireManagedTreeLatestModification(
+            packagePath,
+            downloadRoot.realPath,
+          );
+
+          if (latest <= currentTime - EXTERNAL_LIBRARY_DOWNLOAD_RETENTION_MS) {
+            await rm(packagePath, { recursive: true, force: true });
+            downloadDirectoriesRemoved += 1;
+          }
+        }
+
+        await rmdir(libraryPath).catch((error: unknown) => {
+          if (
+            !isFileSystemError(error, 'ENOENT') &&
+            !isFileSystemError(error, 'ENOTEMPTY')
+          ) {
+            throw error;
+          }
+        });
+      }
+    }
+
+    return Object.freeze({
+      stagingDirectoriesRemoved,
+      downloadDirectoriesRemoved,
+    });
+  }
+
+  async cleanupTemporaryData(rootPath: string): Promise<void> {
+    await cleanupManagedChildren(
+      rootPath,
+      EXTERNAL_LIBRARY_STAGING_DIRECTORY,
+    );
+    await cleanupManagedChildren(
+      rootPath,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
     );
   }
 
@@ -426,44 +886,11 @@ export class ExternalLibraryPathManager
     rootPath: string,
     stagingDirectory: string,
   ): Promise<void> {
-    const root = requireExternalLibraryRootPath(rootPath);
-    const stagingRoot = join(root, EXTERNAL_LIBRARY_STAGING_DIRECTORY);
-    const target = resolve(stagingDirectory);
-
-    if (
-      target === stagingRoot ||
-      !isPathInside(stagingRoot, target)
-    ) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-
-    try {
-      const [rootStats, targetStats] = await Promise.all([
-        lstat(stagingRoot),
-        lstat(target),
-      ]);
-
-      if (
-        !rootStats.isDirectory() ||
-        rootStats.isSymbolicLink() ||
-        !targetStats.isDirectory() ||
-        targetStats.isSymbolicLink() ||
-        !isPathInside(
-          await realpath(stagingRoot),
-          await realpath(target),
-        )
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-    } catch (error) {
-      if (isFileSystemError(error, 'ENOENT')) {
-        return;
-      }
-
-      throw error;
-    }
-
-    await rm(target, { recursive: true, force: true });
+    await cleanupManagedSubdirectory(
+      rootPath,
+      EXTERNAL_LIBRARY_STAGING_DIRECTORY,
+      stagingDirectory,
+    );
   }
 
   async removeInstallation(

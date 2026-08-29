@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -22,6 +30,7 @@ import type {
   ExternalLibraryArchitecture,
   ExternalLibraryPlatform,
 } from "./external-library-definition";
+import { externalLibraryPackageResources } from "./external-library-definition";
 
 const temporaryDirectories: string[] = [];
 
@@ -237,6 +246,19 @@ async function installAndWait(
 }
 
 describe("ExternalLibraryService", () => {
+  it("cleans expired temporary data before discovering libraries", async () => {
+    const harness = await createHarness();
+    const cleanup = vi.spyOn(
+      harness.pathManager,
+      "cleanupExpiredTemporaryData",
+    );
+
+    await harness.service.initialize();
+
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledWith(harness.rootPath, 10);
+  });
+
   it("installs, switches and migrates one multi-variant component", async () => {
     const harness = await createHarness();
     const content = new TextEncoder().encode("trusted package");
@@ -545,14 +567,17 @@ describe("ExternalLibraryService", () => {
         input: Parameters<
           ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
         >[0],
-      ) =>
-        new Promise<never>((_resolvePromise, rejectPromise) => {
+      ) => {
+        await mkdir(dirname(input.destinationPath), { recursive: true });
+        await writeFile(input.destinationPath, "partial");
+        return new Promise<never>((_resolvePromise, rejectPromise) => {
           input.signal.addEventListener(
             "abort",
             () => rejectPromise(new DOMException("cancelled", "AbortError")),
             { once: true },
           );
-        }),
+        });
+      },
     );
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
@@ -562,6 +587,9 @@ describe("ExternalLibraryService", () => {
     const second =
       await harness.service.startInstallation("libreoffice");
     await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
+    const downloadDirectory = dirname(
+      download.mock.calls[0]![0].destinationPath,
+    );
     harness.service.cancel("libreoffice");
 
     expect(first.status).toBe("downloading");
@@ -571,6 +599,9 @@ describe("ExternalLibraryService", () => {
         { status: "not-installed" },
       ]),
     );
+    await expect(access(downloadDirectory)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("reports failures through snapshots after accepting the background task", async () => {
@@ -603,14 +634,17 @@ describe("ExternalLibraryService", () => {
         input: Parameters<
           ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
         >[0],
-      ) =>
-        new Promise<never>((_resolvePromise, rejectPromise) => {
+      ) => {
+        await mkdir(dirname(input.destinationPath), { recursive: true });
+        await writeFile(input.destinationPath, "partial");
+        return new Promise<never>((_resolvePromise, rejectPromise) => {
           input.signal.addEventListener(
             "abort",
             () => rejectPromise(new DOMException("cancelled", "AbortError")),
             { once: true },
           );
-        }),
+        });
+      },
     );
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
@@ -621,6 +655,8 @@ describe("ExternalLibraryService", () => {
     await harness.service.shutdown();
 
     expect(installation.status).toBe("downloading");
+    const partialPath = download.mock.calls[0]![0].destinationPath;
+    await expect(readFile(partialPath, "utf8")).resolves.toBe("partial");
     await vi.waitFor(() =>
       expect(harness.service.list()).toMatchObject([
         { status: "not-installed" },
@@ -632,11 +668,28 @@ describe("ExternalLibraryService", () => {
     const harness = await createHarness();
     await harness.service.initialize();
     const installed = await installAndWait(harness);
+    const definition = harness.registry.require("libreoffice");
+    const packageDefinition = harness.registry.selectPackage(
+      definition.id,
+      "darwin",
+      "arm64",
+    );
+    const downloadPaths = await harness.pathManager.prepareDownloadPaths({
+      rootPath: harness.rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition:
+        externalLibraryPackageResources(packageDefinition)[0]!,
+    });
+    await writeFile(downloadPaths.partialPath, "partial");
 
     const removed = await harness.service.remove("libreoffice");
 
     expect(removed.status).toBe("not-installed");
     await expect(access(installed.installationPath!)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(downloadPaths.downloadDirectory)).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
@@ -646,6 +699,20 @@ describe("ExternalLibraryService", () => {
     await harness.service.initialize();
     const installed = await installAndWait(harness);
     const targetRootPath = join(dirname(harness.rootPath), "moved");
+    const definition = harness.registry.require("libreoffice");
+    const packageDefinition = harness.registry.selectPackage(
+      definition.id,
+      "darwin",
+      "arm64",
+    );
+    const downloadPaths = await harness.pathManager.prepareDownloadPaths({
+      rootPath: harness.rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition:
+        externalLibraryPackageResources(packageDefinition)[0]!,
+    });
+    await writeFile(downloadPaths.partialPath, "partial");
 
     const result = await harness.service.migrate(targetRootPath);
 
@@ -658,6 +725,9 @@ describe("ExternalLibraryService", () => {
       targetRootPath,
     );
     await expect(access(installed.installationPath!)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(downloadPaths.partialPath)).rejects.toMatchObject({
       code: "ENOENT",
     });
     await expect(

@@ -248,6 +248,14 @@ export class ExternalLibraryMigrationWorkflow {
             });
         }),
       );
+      await this.dependencies.pathManager
+        .cleanupTemporaryData(sourceRootPath)
+        .catch((error: unknown) => {
+          this.dependencies.logger.warn(
+            '清理旧外部运行时临时数据失败',
+            error,
+          );
+        });
 
       return Object.freeze({
         status: 'completed',
