@@ -32,6 +32,10 @@ import {
   parseDubbingSpeakerSegments,
   type DubbingSpeakerRoutingPlan,
 } from './dubbing-speaker-planner';
+import {
+  createDubbingSpeakerTrack,
+  type DubbingSpeakerTrackV1,
+} from './dubbing-speaker-track';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   markMediaDubbingCheckpointPrepared,
@@ -48,7 +52,7 @@ import {
 
 // Persisted producer ids are part of existing artifact cache keys.
 export const VOXCPM2_DUBBING_PRODUCER_ID = 'builtin.video.dubbing.voxcpm2';
-export const VOXCPM2_DUBBING_PRODUCER_VERSION = '3';
+export const VOXCPM2_DUBBING_PRODUCER_VERSION = '4';
 export const VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE = 'audio/mp4';
 
 const PROCESS_TIMEOUT_MS = 4 * 60 * 60 * 1_000;
@@ -67,6 +71,7 @@ export interface MediaDubbingProgress {
   readonly durationMs: number;
   readonly readySuffixStartMs: number;
   readonly previewAudioPath?: string;
+  readonly speakerTrack?: DubbingSpeakerTrackV1;
 }
 
 export type InterruptedMediaDubbingProgress = Omit<
@@ -266,6 +271,10 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         () => true,
         () => false,
       ));
+    const speakerTrack = await this.readPreparedSpeakerTrack(
+      checkpoint.paths.speakerPlanPath,
+      translation.sourceTrackRevision,
+    );
     return Object.freeze({
       assetId: request.source.assetId,
       sourceRevision: request.source.revision,
@@ -274,10 +283,26 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       completedDurationMs: progress?.completedDurationMs ?? 0,
       durationMs,
       readySuffixStartMs: progress?.readySuffixStartMs ?? durationMs,
+      speakerTrack,
       ...(hasPreview
         ? { previewAudioPath: checkpoint.paths.previewPath }
         : {}),
     });
+  }
+
+  async getPreparedSpeakerTrack(
+    request: AssetArtifactRequest,
+    sourceTrack: SubtitleSourceTrackV1,
+    translation: SubtitleTranslationTrackV1,
+  ): Promise<DubbingSpeakerTrackV1 | undefined> {
+    const checkpoint = await loadMediaDubbingCheckpoint(
+      checkpointIdentity(request, sourceTrack, translation),
+    );
+    if (!checkpoint) return undefined;
+    return this.readPreparedSpeakerTrack(
+      checkpoint.paths.speakerPlanPath,
+      translation.sourceTrackRevision,
+    );
   }
 
   async produce(
@@ -533,6 +558,10 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         ]);
       }
 
+      const speakerTrack = createDubbingSpeakerTrack(
+        input.translation.sourceTrackRevision,
+        plan,
+      );
       const phrases = plan.phrases;
       const phrasesPath = join(request.stagingDirectory, 'phrases.json');
       await this.dependencies.writeText(
@@ -577,6 +606,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
               audioPath: checkpoint.paths.previewPath,
             }
           : undefined,
+        speakerTrack,
       );
       await this.runVoiceWorker(
         input.dubbingRuntime.runVoiceJob(
@@ -698,6 +728,18 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     }
   }
 
+  private async readPreparedSpeakerTrack(
+    speakerPlanPath: string,
+    sourceTrackRevision: string,
+  ): Promise<DubbingSpeakerTrackV1> {
+    const plan = parseDubbingSpeakerRoutingPlan(
+      JSON.parse(
+        await this.dependencies.readText(speakerPlanPath, 'utf8'),
+      ) as unknown,
+    );
+    return createDubbingSpeakerTrack(sourceTrackRevision, plan);
+  }
+
   private publish(
     request: AssetArtifactProduceRequest,
     phase: MediaDubbingProgressPhase,
@@ -709,6 +751,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     preview?: {
       readonly audioPath: string;
     },
+    speakerTrack?: DubbingSpeakerTrackV1,
   ): void {
     this.progress.publish(
       Object.freeze({
@@ -725,6 +768,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
               previewAudioPath: preview.audioPath,
             }
           : {}),
+        ...(speakerTrack ? { speakerTrack } : {}),
       }),
     );
   }

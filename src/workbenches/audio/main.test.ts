@@ -21,6 +21,7 @@ import {
   AUDIO_WORKBENCH_ID,
   audioEventTypes,
   createAudioGetDubbingSnapshotCommand,
+  createAudioGetSpeakerTrackCommand,
   createAudioRetryDubbingCommand,
   createAudioSaveViewStateCommand,
   createAudioSetSubtitleModeCommand,
@@ -32,6 +33,7 @@ import {
 function createDependencies(now?: () => number) {
   const unsubscribeSubtitles = vi.fn();
   const unsubscribeDubbing = vi.fn();
+  const unsubscribeSpeakerTrack = vi.fn();
   const subtitles: MediaSubtitleServiceApi = {
     getSnapshot: vi.fn(() => ({
       phase: 'idle' as const,
@@ -53,7 +55,9 @@ function createDependencies(now?: () => number) {
       durationMs: 0,
       readySuffixStartMs: 0,
     })),
+    getSpeakerTrack: vi.fn(() => undefined),
     subscribe: vi.fn(() => unsubscribeDubbing),
+    subscribeSpeakerTrack: vi.fn(() => unsubscribeSpeakerTrack),
     refreshRuntimeAvailability: vi.fn(async () => undefined),
     restore: vi.fn(async () => undefined),
     warmup: vi.fn(),
@@ -72,6 +76,7 @@ function createDependencies(now?: () => number) {
     now,
     unsubscribeSubtitles,
     unsubscribeDubbing,
+    unsubscribeSpeakerTrack,
   };
 }
 
@@ -187,6 +192,7 @@ describe('AudioWorkbenchProvider', () => {
           durationMs: 0,
           readySuffixStartMs: 0,
         },
+        speakerTrackSnapshot: {},
       },
     });
     expect(resources.register).toHaveBeenCalledWith(
@@ -243,6 +249,7 @@ describe('AudioWorkbenchProvider', () => {
     expect(resources.revokeSession).toHaveBeenCalledWith('session');
     expect(dependencies.unsubscribeSubtitles).toHaveBeenCalledOnce();
     expect(dependencies.unsubscribeDubbing).toHaveBeenCalledOnce();
+    expect(dependencies.unsubscribeSpeakerTrack).toHaveBeenCalledOnce();
     expect(dependencies.dubbing.releaseWarmup).toHaveBeenCalledWith('asset');
   });
 
@@ -306,12 +313,14 @@ describe('AudioWorkbenchProvider', () => {
     await provider.command(context, createAudioStartDubbingCommand());
     await provider.command(context, createAudioRetryDubbingCommand());
     await provider.command(context, createAudioGetDubbingSnapshotCommand());
+    await provider.command(context, createAudioGetSpeakerTrackCommand());
     expect(dependencies.dubbing.ensure).toHaveBeenCalledWith('project', 'asset');
     expect(dependencies.dubbing.retry).toHaveBeenCalledWith('project', 'asset');
     expect(dependencies.dubbing.getSnapshot).toHaveBeenCalledWith('asset');
+    expect(dependencies.dubbing.getSpeakerTrack).toHaveBeenCalledWith('asset');
   });
 
-  it('publishes only active-session subtitle and dubbing progress', async () => {
+  it('publishes only active-session subtitle, dubbing and speaker updates', async () => {
     const dependencies = createDependencies();
     const provider = new AudioWorkbenchProvider(
       createResources(),
@@ -324,6 +333,9 @@ describe('AudioWorkbenchProvider', () => {
       .mock.calls[0]?.[1];
     const dubbingListener = vi.mocked(dependencies.dubbing.subscribe)
       .mock.calls[0]?.[1];
+    const speakerListener = vi.mocked(
+      dependencies.dubbing.subscribeSpeakerTrack,
+    ).mock.calls[0]?.[1];
 
     subtitleListener?.({
       type: 'snapshot',
@@ -342,6 +354,19 @@ describe('AudioWorkbenchProvider', () => {
       durationMs: 2_000,
       readySuffixStartMs: 1_000,
     });
+    speakerListener?.({
+      version: 1,
+      kind: 'dubbing-speaker-track',
+      sourceTrackRevision: 'source-track-revision',
+      cues: [
+        {
+          sourceCueId: 'cue-1',
+          speakerId: 'speaker-0001',
+          status: 'stable',
+        },
+      ],
+      profiles: [{ speakerId: 'speaker-0001', mode: 'default' }],
+    });
     expect(dependencies.events.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'session',
@@ -352,6 +377,17 @@ describe('AudioWorkbenchProvider', () => {
       expect.objectContaining({
         sessionId: 'session',
         type: audioEventTypes.dubbingSnapshot,
+      }),
+    );
+    expect(dependencies.events.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session',
+        type: audioEventTypes.speakerTrack,
+        payload: {
+          track: expect.objectContaining({
+            sourceTrackRevision: 'source-track-revision',
+          }),
+        },
       }),
     );
 
@@ -374,6 +410,7 @@ describe('AudioWorkbenchProvider', () => {
       durationMs: 0,
       readySuffixStartMs: 0,
     });
+    speakerListener?.(undefined);
     expect(dependencies.events.publish).not.toHaveBeenCalled();
   });
 

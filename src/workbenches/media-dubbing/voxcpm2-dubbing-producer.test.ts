@@ -312,6 +312,24 @@ describe('VoxCpm2DubbingProducer', () => {
       ]),
     );
     expect(
+      progress.find(({ speakerTrack }) => speakerTrack !== undefined)
+        ?.speakerTrack,
+    ).toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
+      cues: [
+        {
+          sourceCueId: 'unsafe:/cue-1',
+          speakerId: 'speaker-0001',
+          status: 'stable',
+        },
+        expect.objectContaining({ sourceCueId: 'cue-2' }),
+        expect.objectContaining({
+          sourceCueId: 'cue-3',
+          speakerId: 'speaker-0002',
+        }),
+      ],
+    });
+    expect(
       progress.find(
         ({ phase, completedPhrases }) =>
           phase === 'cloning' && completedPhrases > 0,
@@ -359,6 +377,18 @@ describe('VoxCpm2DubbingProducer', () => {
       durationMs: 12_000,
       readySuffixStartMs: 3_700,
       previewAudioPath: join(checkpointDirectory, 'preview.wav'),
+      speakerTrack: expect.objectContaining({
+        sourceTrackRevision: 'source-artifact-revision',
+      }),
+    });
+    await expect(
+      producer.getPreparedSpeakerTrack(
+        artifactRequest,
+        sourceTrack('video-revision'),
+        translationTrack(),
+      ),
+    ).resolves.toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
     });
     run.mockClear();
     progress.splice(0);

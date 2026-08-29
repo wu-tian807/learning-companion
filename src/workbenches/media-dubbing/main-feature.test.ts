@@ -7,6 +7,21 @@ import {
 } from './main-feature';
 
 describe('media dubbing Main feature lifecycle', () => {
+  it('registers both the final audio and durable speaker-track producers', () => {
+    const register = vi.fn();
+
+    mediaDubbingMainFeature.registerArtifactProducers?.({
+      artifacts: { register },
+    } as never);
+
+    expect(
+      register.mock.calls.map(([producer]) => producer.id),
+    ).toEqual([
+      'builtin.video.dubbing.voxcpm2',
+      'builtin.media-dubbing.speaker-track',
+    ]);
+  });
+
   it('shuts down and releases the app-scoped VoxCPM2 resolver', async () => {
     const externalLibraries = {
       requireRuntime: vi.fn(),
