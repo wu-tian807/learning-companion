@@ -34,7 +34,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -46,6 +46,7 @@ describe('initializeDatabase', () => {
       expect(tableNames).toEqual([
         'asset_artifacts',
         'asset_attachments',
+        'asset_folders',
         'asset_links',
         'asset_references',
         'assets',
@@ -137,6 +138,12 @@ describe('initializeDatabase', () => {
         .map(({ name }) => name);
       expect(generationTaskColumns).toContain('prepared_data_json');
       expect(generationTaskColumns).not.toContain('prepared_manifest_ref');
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(assets)')
+          .all()
+          .map(({ name }) => name),
+      ).toContain('folder_path');
     } finally {
       context.close();
     }
@@ -151,10 +158,78 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        22,
+        23,
       );
     } finally {
       secondContext.close();
+    }
+  });
+
+  it('adds logical Asset folders to a version 22 database without losing Assets', async () => {
+    const databaseFile = await createDatabaseFile();
+    const legacyContext = initializeDatabase(databaseFile);
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run('project', 'Project', '📘', 1, 0, '/tmp/projects/project');
+    legacyContext.sqlite
+      .prepare(
+        `INSERT INTO assets (
+          id, project_id, name, media_type, creation_kind, content_ref,
+          created_time, updated_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'asset',
+        'project',
+        '资料',
+        'text/plain',
+        'imported',
+        JSON.stringify({
+          kind: 'local-file',
+          base: 'absolute',
+          path: '/tmp/资料.txt',
+        }),
+        1,
+        2,
+      );
+    legacyContext.sqlite.exec(`
+      DROP INDEX assets_project_folder_path_index;
+      DROP TABLE asset_folders;
+      ALTER TABLE assets DROP COLUMN folder_path;
+      PRAGMA user_version = 22;
+    `);
+    legacyContext.close();
+
+    const context = initializeDatabase(databaseFile);
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
+      expect(
+        context.sqlite
+          .prepare<[], { id: string; folderPath: string | null }>(
+            'SELECT id, folder_path AS folderPath FROM assets',
+          )
+          .all(),
+      ).toEqual([{ id: 'asset', folderPath: null }]);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'asset_folders'",
+          )
+          .get(),
+      ).toEqual({ name: 'asset_folders' });
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'assets_project_folder_path_index'",
+          )
+          .get(),
+      ).toEqual({ name: 'assets_project_folder_path_index' });
+    } finally {
+      context.close();
     }
   });
 
@@ -201,7 +276,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -286,7 +361,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
           .prepare<
@@ -366,7 +441,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -434,7 +509,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -459,6 +534,7 @@ describe('initializeDatabase', () => {
         'created_time',
         'updated_time',
         'creation_kind',
+        'folder_path',
       ]);
     } finally {
       context.close();
@@ -755,7 +831,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -861,7 +937,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -977,7 +1053,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(22);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(23);
       const migrated = context.sqlite
         .prepare<
           [],
@@ -1011,9 +1087,9 @@ describe('initializeDatabase', () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 23');
+    newer.pragma('user_version = 24');
     newer.close();
 
-    expect(() => initializeDatabase(databaseFile)).toThrow(/23/);
+    expect(() => initializeDatabase(databaseFile)).toThrow(/24/);
   });
 });

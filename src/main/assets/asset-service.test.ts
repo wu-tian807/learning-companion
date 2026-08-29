@@ -17,6 +17,7 @@ import type { ProjectLookup } from '../projects/project-database';
 import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
 import { cloneAsset, createAssetSnapshot, type Asset } from './asset';
 import type { AssetDatabaseApi } from './asset-database';
+import type { AssetFolderDatabaseApi } from './asset-folder-database';
 import {
   AssetService,
   type AssetServiceDependencies,
@@ -130,7 +131,9 @@ function createResolver(
 function createService(
   database: AssetDatabaseApi,
   registry: ContentResolverRegistry,
-  dependencies: Partial<AssetServiceDependencies> = {},
+  dependencies: Partial<AssetServiceDependencies> & {
+    readonly folderDatabase?: AssetFolderDatabaseApi;
+  } = {},
   workspaceManagerOverrides: Partial<ProjectWorkspaceManagerApi> = {},
 ): AssetService {
   const projectLookup = {
@@ -170,17 +173,46 @@ function createService(
     revealFile: vi.fn(),
     ...workspaceManagerOverrides,
   } as unknown as ProjectWorkspaceManagerApi;
+  const {
+    folderDatabase = createFolderDatabase(),
+    ...serviceDependencies
+  } = dependencies;
 
   return new AssetService(
     database,
+    folderDatabase,
     registry,
     projectLookup,
     workspaceManager,
     {
       now: () => SERVICE_NOW,
-      ...dependencies,
+      ...serviceDependencies,
     },
   );
+}
+
+function createFolderDatabase(
+  folderPathByAssetId: Readonly<Record<string, string>> = {},
+): AssetFolderDatabaseApi {
+  const state = {
+    projectId: 'project',
+    folders: [{ projectId: 'project', path: '课程' }],
+    folderPathByAssetId,
+  } as const;
+
+  return {
+    list: vi.fn(() => state),
+    requireFolder: vi.fn(),
+    create: vi.fn(() => state),
+    update: vi.fn(() => state),
+    moveAssets: vi.fn(() => state),
+    listAssetIdsInTree: vi.fn(() => Object.keys(folderPathByAssetId)),
+    deleteTree: vi.fn(() => ({
+      projectId: 'project',
+      folders: [],
+      folderPathByAssetId: {},
+    })),
+  };
 }
 
 describe('AssetService', () => {
@@ -377,6 +409,45 @@ describe('AssetService', () => {
       projectId: 'project',
       asset: created,
     });
+  });
+
+  it('validates and persists the current logical folder during import', async () => {
+    const database = createDatabase([]);
+    const { registry } = createResolver();
+    const folderDatabase = createFolderDatabase();
+    const service = createService(database, registry, {
+      detectMediaType: vi.fn(async () => 'text/plain'),
+      folderDatabase,
+    });
+    await service.loadFromProject('project');
+
+    await service.addLocalFile(
+      'project',
+      '/tmp/资料.txt',
+      'copy',
+      '课程',
+    );
+
+    expect(folderDatabase.requireFolder).toHaveBeenCalledTimes(2);
+    expect(database.add).toHaveBeenCalledWith(
+      'project',
+      expect.objectContaining({ folderPath: '课程' }),
+    );
+  });
+
+  it('rejects an empty folder path instead of treating it as the root', async () => {
+    const database = createDatabase([]);
+    const { registry } = createResolver();
+    const service = createService(database, registry, {
+      detectMediaType: vi.fn(async () => 'text/plain'),
+      folderDatabase: createFolderDatabase(),
+    });
+    await service.loadFromProject('project');
+
+    await expect(
+      service.addLocalFile('project', '/tmp/资料.txt', 'copy', ''),
+    ).rejects.toThrow('Asset Folder');
+    expect(database.add).not.toHaveBeenCalled();
   });
 
   it('refreshes runtime status without writing Asset data', async () => {
@@ -926,5 +997,71 @@ describe('AssetService', () => {
       'project',
       'asset',
     );
+  });
+
+  it('deletes every Asset through the normal cleanup path before removing a folder', async () => {
+    const database = createDatabase([
+      createAsset('first', '/tmp/first.md'),
+      createAsset('second', '/tmp/second.md'),
+    ]);
+    const { registry } = createResolver();
+    const folderDatabase = createFolderDatabase({
+      first: '课程',
+      second: '课程',
+    });
+    const attachmentCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+    const service = createService(database, registry, {
+      attachmentCleanup,
+      folderDatabase,
+    });
+    await service.loadFromProject('project');
+
+    const result = await service.deleteAssetFolder('project', '课程');
+
+    expect(result.deletedAssetIds).toEqual(['first', 'second']);
+    expect(result.failed).toEqual([]);
+    expect(attachmentCleanup.removeByAsset).toHaveBeenCalledTimes(2);
+    expect(folderDatabase.deleteTree).toHaveBeenCalledWith('project', '课程');
+  });
+
+  it('keeps a folder available for retry when one contained Asset cannot be deleted', async () => {
+    const database = createDatabase([
+      createAsset('first', '/tmp/first.md'),
+      createAsset('locked', '/tmp/locked.md'),
+    ]);
+    const { registry } = createResolver();
+    const folderDatabase = createFolderDatabase({
+      first: '课程',
+      locked: '课程',
+    });
+    vi.mocked(folderDatabase.list).mockReturnValue({
+      projectId: 'project',
+      folders: [{ projectId: 'project', path: '课程' }],
+      folderPathByAssetId: { locked: '课程' },
+    });
+    const service = createService(
+      database,
+      registry,
+      { folderDatabase },
+      {
+        removeManagedAssetFile: vi.fn(async (_workspacePath, ref) => {
+          if (ref.path.endsWith('locked.md')) throw new Error('file locked');
+          return false;
+        }),
+      },
+    );
+    await service.loadFromProject('project');
+
+    const result = await service.deleteAssetFolder('project', '课程');
+
+    expect(result.deletedAssetIds).toEqual(['first']);
+    expect(result.failed).toEqual([
+      expect.objectContaining({ assetId: 'locked' }),
+    ]);
+    expect(result.assets.map(({ id }) => id)).toEqual(['locked']);
+    expect(folderDatabase.deleteTree).not.toHaveBeenCalled();
   });
 });

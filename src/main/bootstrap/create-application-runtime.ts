@@ -17,6 +17,7 @@ import { AssetAssociationService } from '../asset-associations/asset-association
 import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
 import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
 import { AssetDatabase } from '../assets/asset-database';
+import { AssetFolderDatabase } from '../assets/asset-folder-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
 import { AnchorRegistry } from '../attachments/anchor-registry';
@@ -204,6 +205,7 @@ export async function createApplicationRuntime({
     );
     const assetService = new AssetService(
       assetDatabase,
+      new AssetFolderDatabase(databaseContext),
       contentResolverRegistry,
       projectDatabase,
       workspaceManager,

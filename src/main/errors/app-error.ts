@@ -17,6 +17,9 @@ export type AppErrorCode =
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
+  | 'ASSET_FOLDER_NOT_FOUND'
+  | 'ASSET_FOLDER_CONFLICT'
+  | 'ASSET_FOLDER_INVALID_MOVE'
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_TYPE_NOT_REGISTERED'
   | 'ATTACHMENT_METADATA_INVALID'
@@ -164,6 +167,24 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     userMessage: '该资料已经不存在，请刷新资料列表。',
     retryable: true,
     logLevel: 'warn',
+  },
+  ASSET_FOLDER_NOT_FOUND: {
+    kind: 'user',
+    userMessage: '该资料文件夹已经不存在，请刷新后重试。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  ASSET_FOLDER_CONFLICT: {
+    kind: 'user',
+    userMessage: '目标位置已经存在同名文件夹，请使用其他名称。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  ASSET_FOLDER_INVALID_MOVE: {
+    kind: 'user',
+    userMessage: '文件夹不能移动到自身或其子文件夹中。',
+    retryable: false,
+    logLevel: 'silent',
   },
   ATTACHMENT_NOT_FOUND: {
     kind: 'user',

@@ -179,6 +179,7 @@ describe('AssetDatabase', () => {
       mediaType: 'text/markdown',
       creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef('/tmp/notes.md'),
+      folderPath: '课程/第一章',
     });
     const renamed = database.update('project', created.id, {
       name: '新标题',
@@ -202,6 +203,7 @@ describe('AssetDatabase', () => {
         base: 'absolute',
         path: '/tmp/new-notes.md',
       },
+      folderPath: '课程/第一章',
       updatedTime: Date.parse('2026-07-27T03:00:00.000Z'),
     });
 
