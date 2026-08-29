@@ -185,6 +185,7 @@ describe('VoxCpm2DubbingProducer', () => {
       })),
       warmup: vi.fn(async () => undefined),
       releaseWarmup: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
       runVoiceJob: vi.fn(async (job) => {
         await mkdir(job.outputDirectory, { recursive: true });
         await Promise.all([

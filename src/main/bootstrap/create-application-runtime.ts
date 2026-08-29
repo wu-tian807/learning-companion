@@ -315,6 +315,7 @@ export async function createApplicationRuntime({
       attachments: attachmentService,
       generationTasks: generationTaskService,
       assets: assetDatabase,
+      externalLibraries: externalLibraryService,
     });
 
     return new ApplicationRuntime({
@@ -328,12 +329,15 @@ export async function createApplicationRuntime({
       workbenchSessionService,
       disposeContentProtocol: removeContentProtocol,
       disposeIpc,
+      shutdownWorkbenchFeatures: () =>
+        mainWorkbenchFeatures?.shutdown?.() ?? Promise.resolve(),
       disposeWorkbenchFeatures: () => mainWorkbenchFeatures?.dispose(),
     });
   } catch (error) {
     await Promise.allSettled([
       workbenchSessionService?.closeActive() ?? Promise.resolve(),
       Promise.resolve(generationTaskService?.unloadProject()),
+      mainWorkbenchFeatures?.shutdown?.() ?? Promise.resolve(),
       externalLibraryService?.shutdown() ?? Promise.resolve(),
       agentProviderService?.dispose() ?? Promise.resolve(),
     ]);

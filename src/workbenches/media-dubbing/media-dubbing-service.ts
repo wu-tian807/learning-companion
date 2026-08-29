@@ -192,27 +192,23 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     ) {
       return;
     }
-    const startModel = this.warmupConsumers.size === 0;
     this.warmupConsumers.set(
       assetId,
       (this.warmupConsumers.get(assetId) ?? 0) + 1,
     );
-    if (startModel) {
-      void this.dubbingRuntime.warmup().catch((error: unknown) => {
-        this.logger.warn('[media:dubbing] VoxCPM2 后台预热失败', error);
-      });
-    }
+    void this.dubbingRuntime.warmup().catch((error: unknown) => {
+      this.logger.warn('[media:dubbing] VoxCPM2 后台预热失败', error);
+    });
   }
 
   releaseWarmup(assetId: string): void {
     const consumers = this.warmupConsumers.get(assetId) ?? 0;
     if (consumers <= 1) this.warmupConsumers.delete(assetId);
     else this.warmupConsumers.set(assetId, consumers - 1);
-    if (this.warmupConsumers.size === 0) {
-      void this.dubbingRuntime.releaseWarmup().catch((error: unknown) => {
-        this.logger.warn('[media:dubbing] 释放 VoxCPM2 预热进程失败', error);
-      });
-    }
+    if (consumers === 0) return;
+    void this.dubbingRuntime.releaseWarmup().catch((error: unknown) => {
+      this.logger.warn('[media:dubbing] 释放 VoxCPM2 预热进程失败', error);
+    });
   }
 
   async ensure(projectId: string, assetId: string): Promise<void> {

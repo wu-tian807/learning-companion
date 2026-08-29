@@ -24,6 +24,8 @@ const RUNTIME_ENVIRONMENT_VERSION = 1;
 const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const MODEL_SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1_000;
 const MODEL_READY_POLL_MS = 100;
+export const VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS = 30_000;
+export const VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS = 5 * 60 * 1_000;
 
 export interface VoxCpm2DubbingRuntime {
   readonly pythonPath: string;
@@ -50,6 +52,11 @@ export interface VoxCpm2DubbingRuntimeResolverApi {
   warmup(): Promise<void>;
   releaseWarmup(): Promise<void>;
   runVoiceJob(job: VoxCpm2VoiceJob, signal: AbortSignal): Promise<void>;
+  shutdown(): Promise<void>;
+}
+
+export interface VoxCpm2ScheduledUnload {
+  cancel(): void;
 }
 
 export interface VoxCpm2DubbingRuntimeResolverDependencies {
@@ -59,6 +66,10 @@ export interface VoxCpm2DubbingRuntimeResolverDependencies {
   readonly writeText: typeof writeFile;
   readonly makeDirectory: typeof mkdir;
   readonly fileAccess: typeof access;
+  readonly scheduleUnload: (
+    callback: () => void | Promise<void>,
+    delayMs: number,
+  ) => VoxCpm2ScheduledUnload;
 }
 
 interface ModelSession {
@@ -76,6 +87,27 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolvePromise) =>
     setTimeout(resolvePromise, milliseconds),
   );
+}
+
+function scheduleUnload(
+  callback: () => void | Promise<void>,
+  delayMs: number,
+): VoxCpm2ScheduledUnload {
+  const timer = setTimeout(() => {
+    void callback();
+  }, delayMs);
+  timer.unref();
+  return Object.freeze({
+    cancel(): void {
+      clearTimeout(timer);
+    },
+  });
+}
+
+function shutdownAbortError(): Error {
+  const error = new Error('VoxCPM2 runtime is shutting down');
+  error.name = 'AbortError';
+  return error;
 }
 
 function runtimeEnvironment(
@@ -128,10 +160,18 @@ async function exists(
 export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResolverApi {
   private readonly dependencies: VoxCpm2DubbingRuntimeResolverDependencies;
   private preparation?: Promise<VoxCpm2DubbingRuntime>;
+  private preparationController?: AbortController;
   private modelSession?: ModelSession;
   private modelSessionPreparation?: Promise<ModelSession>;
+  private modelSessionDisposal?: Promise<void>;
+  private scheduledUnload?: {
+    readonly token: object;
+    readonly handle: VoxCpm2ScheduledUnload;
+  };
   private warmupRetainCount = 0;
   private voiceQueue: Promise<void> = Promise.resolve();
+  private shuttingDown = false;
+  private shutdownTask?: Promise<void>;
 
   constructor(
     private readonly externalLibraries: ExternalLibraryServiceApi,
@@ -144,21 +184,32 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
       writeText: dependencies.writeText ?? writeFile,
       makeDirectory: dependencies.makeDirectory ?? mkdir,
       fileAccess: dependencies.fileAccess ?? access,
+      scheduleUnload: dependencies.scheduleUnload ?? scheduleUnload,
     };
   }
 
   async requireRuntime(): Promise<VoxCpm2DubbingRuntime> {
+    this.throwIfShuttingDown();
     this.assertSupportedPlatform();
     if (!this.preparation) {
-      this.preparation = this.prepare().catch((error: unknown) => {
-        this.preparation = undefined;
-        throw error;
-      });
+      const controller = new AbortController();
+      this.preparationController = controller;
+      this.preparation = this.prepare(controller.signal)
+        .catch((error: unknown) => {
+          this.preparation = undefined;
+          throw error;
+        })
+        .finally(() => {
+          if (this.preparationController === controller) {
+            this.preparationController = undefined;
+          }
+        });
     }
     return this.preparation;
   }
 
   async requireInstalledBundle(): Promise<void> {
+    this.throwIfShuttingDown();
     this.assertSupportedPlatform();
     await this.externalLibraries.requireRuntime(
       MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
@@ -166,9 +217,21 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   }
 
   async warmup(): Promise<void> {
+    this.throwIfShuttingDown();
+    this.cancelScheduledUnload();
     this.warmupRetainCount += 1;
     try {
       await this.warmModel();
+      if (!this.shuttingDown) {
+        if (this.warmupRetainCount > 0) {
+          this.scheduleModelUnload(
+            VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
+            false,
+          );
+        } else if (!this.scheduledUnload) {
+          this.scheduleModelUnload(0, true);
+        }
+      }
     } catch (error) {
       this.warmupRetainCount = Math.max(0, this.warmupRetainCount - 1);
       throw error;
@@ -191,23 +254,98 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
 
   async releaseWarmup(): Promise<void> {
     this.warmupRetainCount = Math.max(0, this.warmupRetainCount - 1);
-    let session = this.modelSession;
-    if (
-      this.warmupRetainCount === 0 &&
-      !session &&
-      this.modelSessionPreparation
-    ) {
-      session = await this.modelSessionPreparation.catch(() => undefined);
-    }
-    if (this.warmupRetainCount === 0 && session && !session.claimed) {
-      await this.discardModelSession(session, true);
+    if (!this.shuttingDown && this.warmupRetainCount === 0) {
+      this.scheduleModelUnload(
+        VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+        true,
+      );
     }
   }
 
   runVoiceJob(job: VoxCpm2VoiceJob, signal: AbortSignal): Promise<void> {
+    if (this.shuttingDown) return Promise.reject(shutdownAbortError());
+    this.cancelScheduledUnload();
     const queued = this.voiceQueue.then(() => this.executeVoiceJob(job, signal));
     this.voiceQueue = queued.catch(() => undefined);
     return queued;
+  }
+
+  shutdown(): Promise<void> {
+    if (this.shutdownTask) return this.shutdownTask;
+    this.shuttingDown = true;
+    this.warmupRetainCount = 0;
+    this.cancelScheduledUnload();
+    const runtimePreparation = this.preparation;
+    this.preparationController?.abort();
+    const task = (async () => {
+      let session = this.modelSession;
+      if (!session && this.modelSessionPreparation) {
+        session = await this.modelSessionPreparation.catch(() => undefined);
+      }
+      if (session) await this.discardModelSession(session, true);
+      await this.voiceQueue.catch(() => undefined);
+      const lateSession = this.modelSession;
+      if (lateSession) await this.discardModelSession(lateSession, true);
+      await runtimePreparation?.catch(() => undefined);
+      await this.modelSessionDisposal?.catch(() => undefined);
+    })();
+    this.shutdownTask = task;
+    return task;
+  }
+
+  private throwIfShuttingDown(): void {
+    if (this.shuttingDown) throw shutdownAbortError();
+  }
+
+  private cancelScheduledUnload(): void {
+    const scheduled = this.scheduledUnload;
+    this.scheduledUnload = undefined;
+    scheduled?.handle.cancel();
+  }
+
+  private scheduleModelUnload(
+    delayMs: number,
+    requiresNoConsumers: boolean,
+  ): void {
+    this.cancelScheduledUnload();
+    const token = {};
+    const handle = this.dependencies.scheduleUnload(async () => {
+      if (this.scheduledUnload?.token !== token) return;
+      if (
+        this.shuttingDown ||
+        (requiresNoConsumers && this.warmupRetainCount > 0)
+      ) {
+        this.scheduledUnload = undefined;
+        return;
+      }
+      try {
+        await this.discardIdleModel(
+          () =>
+            this.scheduledUnload?.token === token &&
+            !this.shuttingDown &&
+            (!requiresNoConsumers || this.warmupRetainCount === 0),
+        );
+      } catch {
+        // Timed cleanup is best-effort; shutdown still retries tracked cleanup.
+      } finally {
+        if (this.scheduledUnload?.token === token) {
+          this.scheduledUnload = undefined;
+        }
+      }
+    }, delayMs);
+    this.scheduledUnload = { token, handle };
+  }
+
+  private async discardIdleModel(
+    shouldDiscard: () => boolean = () => true,
+  ): Promise<void> {
+    let session = this.modelSession;
+    if (!session && this.modelSessionPreparation) {
+      session = await this.modelSessionPreparation.catch(() => undefined);
+    }
+    if (session && !session.claimed && shouldDiscard()) {
+      await this.discardModelSession(session, true);
+    }
   }
 
   private assertSupportedPlatform(): void {
@@ -216,10 +354,14 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     }
   }
 
-  private async prepare(): Promise<VoxCpm2DubbingRuntime> {
+  private async prepare(
+    signal: AbortSignal,
+  ): Promise<VoxCpm2DubbingRuntime> {
+    signal.throwIfAborted();
     const installed = await this.externalLibraries.requireRuntime(
       MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
+    signal.throwIfAborted();
     const root = installed.runtimeDirectory;
     const uvPath = join(root, 'bootstrap', 'uv', 'uv.exe');
     const environmentRoot = join(root, 'environment');
@@ -235,6 +377,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     const workerCachePath = join(root, 'cache', 'model-sessions');
     const environment = runtimeEnvironment(root, pythonPath);
     const ready = await this.isReady(markerPath, pythonPath);
+    signal.throwIfAborted();
 
     if (!ready) {
       await this.dependencies.makeDirectory(join(root, 'cache'), {
@@ -266,6 +409,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
             cwd: root,
             env: setupEnvironment,
             timeoutMs: SETUP_TIMEOUT_MS,
+            signal,
           });
         }
         await this.dependencies.commandRunner.run({
@@ -283,6 +427,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
           cwd: root,
           env: setupEnvironment,
           timeoutMs: SETUP_TIMEOUT_MS,
+          signal,
         });
         await this.dependencies.commandRunner.run({
           command: uvPath,
@@ -303,6 +448,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
           cwd: root,
           env: setupEnvironment,
           timeoutMs: SETUP_TIMEOUT_MS,
+          signal,
         });
         await this.dependencies.commandRunner.run({
           command: uvPath,
@@ -320,6 +466,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
           cwd: root,
           env: setupEnvironment,
           timeoutMs: SETUP_TIMEOUT_MS,
+          signal,
         });
         await this.dependencies.commandRunner.run({
           command: pythonPath,
@@ -334,10 +481,12 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
           cwd: root,
           env: setupEnvironment,
           timeoutMs: 5 * 60 * 1_000,
+          signal,
         });
       } finally {
         await rm(setupCache, { recursive: true, force: true });
       }
+      signal.throwIfAborted();
       await this.dependencies.writeText(
         markerPath,
         `${JSON.stringify({ version: RUNTIME_ENVIRONMENT_VERSION })}\n`,
@@ -345,6 +494,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
       );
     }
 
+    signal.throwIfAborted();
     return Object.freeze({
       pythonPath,
       modelPath,
@@ -358,6 +508,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     job: VoxCpm2VoiceJob,
     signal: AbortSignal,
   ): Promise<void> {
+    this.throwIfShuttingDown();
     signal.throwIfAborted();
     const runtime = await this.requireRuntime();
     const session = await this.requireModelSession(runtime);
@@ -381,8 +532,17 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     } finally {
       signal.removeEventListener('abort', abortSession);
       await this.discardModelSession(session, true);
-      if (failed && this.warmupRetainCount > 0) {
-        void this.warmModel().catch(() => undefined);
+      if (failed && !this.shuttingDown && this.warmupRetainCount > 0) {
+        void this.warmModel()
+          .then(() => {
+            if (!this.shuttingDown && this.warmupRetainCount > 0) {
+              this.scheduleModelUnload(
+                VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
+                false,
+              );
+            }
+          })
+          .catch(() => undefined);
       }
     }
   }
@@ -390,6 +550,8 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   private async requireModelSession(
     runtime: VoxCpm2DubbingRuntime,
   ): Promise<ModelSession> {
+    await this.modelSessionDisposal?.catch(() => undefined);
+    this.throwIfShuttingDown();
     if (this.modelSession) return this.modelSession;
     if (!this.modelSessionPreparation) {
       this.modelSessionPreparation = this.createModelSession(runtime).finally(
@@ -483,6 +645,14 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
           retryDelay: 100,
         });
       })();
+      const trackedDisposal = session.disposal
+        .catch(() => undefined)
+        .finally(() => {
+          if (this.modelSessionDisposal === trackedDisposal) {
+            this.modelSessionDisposal = undefined;
+          }
+        });
+      this.modelSessionDisposal = trackedDisposal;
     } else if (abort) {
       session.controller.abort();
     }
