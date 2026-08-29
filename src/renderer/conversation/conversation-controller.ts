@@ -581,21 +581,42 @@ export function useConversationController({
     if (!historyReady && request.conversationId !== undefined) {
       return;
     }
+    if (
+      (request.conversationId !== undefined ||
+        request.fallbackToNewConversation === true) &&
+      busy
+    ) {
+      return;
+    }
     lastLaunchIdRef.current = request.id;
 
+    const currentConversation = conversationRef.current;
     const matching = request.conversationId
-      ? history.find((record) => record.id === request.conversationId)
+      ? currentConversation.id === request.conversationId
+        ? currentConversation
+        : history.find((record) => record.id === request.conversationId)
       : undefined;
-    if (matching && !activeTaskIdRef.current) {
-      restore(matching);
+    const launchContext = matching ? undefined : request.context;
+    if (request.conversationId !== undefined) {
+      if (matching) {
+        restore(matching);
+      } else {
+        startNew(launchContext);
+      }
+    } else if (request.fallbackToNewConversation === true) {
+      startNew(launchContext);
     }
-    if (request.context !== undefined) {
-      setPendingContext(request.context);
+    if (
+      request.conversationId === undefined &&
+      request.fallbackToNewConversation !== true &&
+      launchContext !== undefined
+    ) {
+      setPendingContext(launchContext);
     }
 
     if (request.question?.trim()) {
       if (request.submit) {
-        queueMicrotask(() => submitRef.current(request.question, request.context));
+        queueMicrotask(() => submitRef.current(request.question, launchContext));
       } else {
         setDraft(request.question);
       }
@@ -603,6 +624,7 @@ export function useConversationController({
     setTab('chat');
     onLaunchConsumed?.(request.id);
   }, [
+    busy,
     history,
     historyReady,
     launchRequest,
@@ -610,6 +632,7 @@ export function useConversationController({
     open,
     restore,
     setPendingContext,
+    startNew,
   ]);
 
   const cancel = useCallback(() => {

@@ -1159,10 +1159,14 @@ export function VideoWorkbenchView({
                   closeActiveExplanation();
                   conversationRuntime.open({
                     ownerId: conversationOwnerId,
-                    context: createVideoConversationContext(
-                      activeExplanation.target,
-                      activeExplanation.sourceRevision,
+                    ...createVideoFrameConversationLaunch(
+                      createVideoConversationContext(
+                        activeExplanation.target,
+                        activeExplanation.sourceRevision,
+                      ),
+                      activeExplanation.conversationId,
                     ),
+                    fallbackToNewConversation: true,
                   });
                 }
               : undefined

@@ -109,6 +109,7 @@ export interface WorkbenchConversationContribution {
 export interface ConversationLaunchRequest {
   readonly id: number;
   readonly conversationId?: string;
+  readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;

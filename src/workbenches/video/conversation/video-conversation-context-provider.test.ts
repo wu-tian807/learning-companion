@@ -52,6 +52,7 @@ function processContext(
     readonly signal?: AbortSignal;
     readonly question?: string;
     readonly commitAnswer?: boolean;
+    readonly conversationId?: string;
   } = {},
 ) {
   const selection =
@@ -64,7 +65,7 @@ function processContext(
     instruction: new WorkbenchConversationInstruction({
       contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: 'asset-1',
-      conversationId: 'conversation-1',
+      conversationId: input.conversationId ?? 'conversation-1',
       question: input.question ?? '解释这里',
       ...(selection ? { context: selection } : {}),
       commitAnswer: input.commitAnswer ?? false,
@@ -395,6 +396,7 @@ describe('Video conversation context provider', () => {
           version: 1,
           sourceRevision: '100',
           question: '这段代码在做什么？',
+          conversationId: 'conversation-1',
         },
         content: expect.objectContaining({
           mediaType: 'text/markdown',
@@ -414,6 +416,7 @@ describe('Video conversation context provider', () => {
           version: 1,
           sourceRevision: '100',
           question: '这段代码在做什么？',
+          conversationId: 'conversation-1',
         },
         content: { mediaType: 'text/markdown' },
       },
@@ -437,6 +440,7 @@ describe('Video conversation context provider', () => {
           version: 1,
           sourceRevision: '100',
           question: '原来的问题',
+          conversationId: 'conversation-1',
         },
         content: { mediaType: 'text/markdown' },
       },
@@ -448,6 +452,36 @@ describe('Video conversation context provider', () => {
         commitAnswer: true,
       }),
       { answer: '新的回答' },
+    );
+
+    expect(attachments.createWithContent).toHaveBeenCalledOnce();
+  });
+
+  it('does not reuse a marker created by another conversation', async () => {
+    const { provider, attachments } = setup();
+    attachments.listByAsset.mockResolvedValueOnce([
+      {
+        id: 'attachment-existing',
+        typeId: 'video.ai-explanation',
+        typeVersion: 1,
+        target,
+        metadata: {
+          format: 'learning-companion/video-explanation',
+          version: 1,
+          sourceRevision: '100',
+          question: '解释这里',
+          conversationId: 'conversation-1',
+        },
+        content: { mediaType: 'text/markdown' },
+      },
+    ] as never);
+
+    await provider.commitAnswer(
+      processContext('C:\\workspace', {
+        commitAnswer: true,
+        conversationId: 'conversation-2',
+      }),
+      { answer: '另一个对话的回答' },
     );
 
     expect(attachments.createWithContent).toHaveBeenCalledOnce();

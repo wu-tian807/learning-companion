@@ -583,9 +583,10 @@ describe('shared Conversation controller', () => {
       updatedTime: 2,
     };
     const onLaunchConsumed = vi.fn();
+    const context = { target: { scope: 'saved-selection' } };
     render({
       contribution: createContribution({ historyStore }),
-      launchRequest: { id: 1, conversationId: saved.id },
+      launchRequest: { id: 1, conversationId: saved.id, context },
       onLaunchConsumed,
     });
     expect(latest.state.conversation.id).not.toBe(saved.id);
@@ -597,7 +598,59 @@ describe('shared Conversation controller', () => {
       await Promise.resolve();
     });
     expect(latest.state.conversation).toEqual(saved);
+    expect(latest.state.pendingContext).toBeUndefined();
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
+  });
+
+  it('reuses an exact current identity and creates context-bound fallbacks only when unavailable', async () => {
+    const historyStore = createMemoryHistory();
+    const contribution = createContribution({ historyStore });
+    render({ contribution });
+    await flush();
+    const previousConversationId = latest.state.conversation.id;
+    render({
+      contribution,
+      launchRequest: {
+        id: 1,
+        conversationId: previousConversationId,
+        context: { target: { scope: 'must-not-rebind' } },
+      },
+    });
+    await flush();
+    expect(latest.state.conversation.id).toBe(previousConversationId);
+    expect(latest.state.pendingContext).toBeUndefined();
+
+    const context = { target: { scope: 'missing-history-fallback' } };
+
+    render({
+      contribution,
+      launchRequest: {
+        id: 2,
+        conversationId: 'missing-conversation',
+        context,
+      },
+    });
+    await flush();
+
+    expect(latest.state.conversation.id).not.toBe(previousConversationId);
+    expect(latest.state.pendingContext).toEqual(context);
+
+    const unavailableConversationFallbackId = latest.state.conversation.id;
+    render({
+      contribution,
+      launchRequest: {
+        id: 3,
+        fallbackToNewConversation: true,
+        context: { target: { scope: 'unlinked-marker' } },
+      },
+    });
+    await flush();
+    expect(latest.state.conversation.id).not.toBe(
+      unavailableConversationFallbackId,
+    );
+    expect(latest.state.pendingContext).toEqual({
+      target: { scope: 'unlinked-marker' },
+    });
   });
 
   it('keeps a context launch in the currently selected conversation', async () => {
