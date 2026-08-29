@@ -6,7 +6,6 @@ import {
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
-  generationCenterSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -69,7 +68,6 @@ export const audioWorkbenchManifest: AssetWorkbenchManifest<
   facilities: [
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
-    generationCenterSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),

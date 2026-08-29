@@ -5,11 +5,6 @@ import type { AssetSelectionScope } from '../project/asset-panel-selection';
 import { useProjectAssetSelection } from '../project/asset-selection-context';
 import { AssetPanel } from '../project/AssetPanel';
 import type { AssetLoadState } from '../project/project-asset-view';
-import { isWorkbenchActionEnabled } from '../workbench/actions/workbench-action';
-import {
-  useWorkbenchRuntime,
-  useWorkbenchRuntimeSelector,
-} from '../workbench/runtime/workbench-runtime-context';
 import { MindMapGenerationDialog } from './MindMapGenerationDialog';
 import { GenerationTaskListItem } from './GenerationTaskListItem';
 import type { MindMapGenerationDraft } from './mind-map-generation-draft';
@@ -17,7 +12,6 @@ import type { GenerationTaskPresentation } from './use-generation-tasks';
 
 export interface GenerationCenterProps {
   readonly projectId: string;
-  readonly asset: AssetSnapshot | undefined;
   readonly state: AssetLoadState;
   readonly selectedAssetId: string | null;
   readonly busy: boolean;
@@ -67,7 +61,6 @@ const applicationTools = [
 
 export function GenerationCenter({
   projectId,
-  asset,
   state,
   selectedAssetId,
   busy,
@@ -93,28 +86,6 @@ export function GenerationCenter({
   const selectionCoordinator = useProjectAssetSelection();
   const sourceSelection = selectionCoordinator.imported;
   const generatedSelection = selectionCoordinator.generated;
-  const runtime = useWorkbenchRuntime();
-  const identity = useWorkbenchRuntimeSelector(
-    (runtimeState) => runtimeState.identity,
-  );
-  const busyActionIds = useWorkbenchRuntimeSelector(
-    (runtimeState) => runtimeState.busyActionIds,
-  );
-  const contributionRevision = useWorkbenchRuntimeSelector(
-    (runtimeState) => runtimeState.contributionRevision,
-  );
-  const connected =
-    asset !== undefined && identity?.assetId === asset.id;
-  const tools = connected
-    ? runtime
-        .contributions('generation-center')
-        .filter(
-          (entry) =>
-            entry.contribution.presentation.kind ===
-            'generation-tool',
-        )
-    : [];
-  void contributionRevision;
 
   const closeMindMapDialog = useCallback(() => {
     setMindMapSourceAssets(null);
@@ -202,59 +173,6 @@ export function GenerationCenter({
               );
             })}
           </div>
-          <p className="mt-5 text-[11px] font-semibold text-slate-300">
-            当前 Asset 工具
-          </p>
-          <div className="mt-2 grid gap-1.5">
-            {tools.map((entry) => {
-              const presentation = entry.contribution.presentation;
-              const actionBusy = busyActionIds.has(entry.action.id);
-              const disabled =
-                !isWorkbenchActionEnabled(entry.action) ||
-                actionBusy;
-
-              if (presentation.kind !== 'generation-tool') {
-                return null;
-              }
-
-              return (
-                <button
-                  key={`${entry.ownerId}:${entry.contribution.id}`}
-                  type="button"
-                  disabled={disabled}
-                  title={
-                    disabled
-                      ? presentation.disabledReason
-                      : presentation.description
-                  }
-                  onClick={() => {
-                    void runtime.invokeCurrent(
-                      entry.action.id,
-                      'generation-center',
-                    );
-                  }}
-                  className="ui-control rounded-[10px] border border-white/[0.065] p-3 text-left disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <span className="block text-[10px] font-medium text-slate-300">
-                    {presentation.label}
-                  </span>
-                  <span className="mt-1 block text-[9px] leading-4 text-slate-600">
-                    {presentation.description}
-                  </span>
-                </button>
-              );
-            })}
-            {tools.length === 0 && (
-              <p className="rounded-[10px] border border-white/[0.055] p-3 text-[10px] leading-5 text-slate-600">
-                {!asset
-                  ? '选择 Asset 后显示对应工具。'
-                  : !connected
-                    ? '正在装载当前资料工作台。'
-                    : `当前 ${mediaLabel(asset.mediaType)} 工作台尚未提供专属工具。`}
-              </p>
-            )}
-          </div>
-
           <div className="mt-5 h-px bg-white/[0.075]" />
           </>
         }

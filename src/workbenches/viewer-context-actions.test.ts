@@ -55,7 +55,6 @@ describe('viewer Workbench context action bundles', () => {
       onReveal: vi.fn(),
       onExplainSelection: vi.fn(),
       onSummarizePage: vi.fn(),
-      onOpenChat: vi.fn(),
     });
     const copyAction = bundle.actions.find(
       (action) => action.id === 'html.copy-selection',
@@ -147,11 +146,6 @@ describe('viewer Workbench context action bundles', () => {
       '围绕此节点提问',
       '从此节点派生资料',
     ]);
-    expect(
-      bundle.contributions
-        .filter((entry) => entry.surface === 'generation-center')
-        .map((entry) => entry.presentation.label),
-    ).toEqual(['生成讲义']);
   });
 
   it('keeps video region questions on the left-pointer interaction instead of a context menu', () => {
@@ -188,13 +182,5 @@ describe('viewer Workbench context action bundles', () => {
         .filter((entry) => entry.surface === 'overflow')
         .map((entry) => entry.presentation.label),
     ).not.toContain('标记当前时间');
-    expect(
-      bundle.contributions
-        .filter((entry) => entry.surface === 'generation-center')
-        .map((entry) => entry.presentation.label),
-    ).toEqual([
-      '解释当前音频片段',
-      '生成音频学习笔记',
-    ]);
   });
 });

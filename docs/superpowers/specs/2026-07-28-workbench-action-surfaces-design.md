@@ -3,6 +3,10 @@
 > 日期：2026-07-28
 >
 > 状态：已实施；2026-08-20 增补受控标题栏快捷操作 Surface
+>
+> 2026-08-30：`generation-center` Surface 已由
+> [Workbench 生成中心 Surface 移除设计](./2026-08-30-workbench-generation-center-surface-removal-design.md)
+> 取代；Header、Overflow 与 Context Menu Surface 保留。
 
 ## 1. 背景
 

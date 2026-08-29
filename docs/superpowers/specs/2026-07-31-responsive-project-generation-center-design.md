@@ -3,6 +3,10 @@
 > 状态：已确认，待实施
 >
 > 日期：2026-07-31
+>
+> 2026-08-30：本文中的“当前 Asset Workbench 专属工具”已由
+> [Workbench 生成中心 Surface 移除设计](./2026-08-30-workbench-generation-center-surface-removal-design.md)
+> 取代；生成中心只保留 Project 级工具、任务和生成内容。
 
 ## 1. 背景
 

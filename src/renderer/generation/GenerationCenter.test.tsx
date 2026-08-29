@@ -130,7 +130,6 @@ function createCoordinator({
 interface RenderGenerationCenterOptions {
   readonly sourceAssets?: readonly AssetSnapshot[];
   readonly generatedSelection?: AssetSelection;
-  readonly asset?: AssetSnapshot;
   readonly state?: AssetLoadState;
   readonly selectedAssetId?: string | null;
   readonly mindMapTasks?: readonly GenerationTaskPresentation[];
@@ -139,7 +138,6 @@ interface RenderGenerationCenterOptions {
 function renderGenerationCenter({
   sourceAssets = [],
   generatedSelection,
-  asset,
   state = { kind: 'ready', assets: [] },
   selectedAssetId = null,
   mindMapTasks,
@@ -154,7 +152,6 @@ function renderGenerationCenter({
       >
         <GenerationCenter
           projectId="project"
-          asset={asset}
           state={state}
           selectedAssetId={selectedAssetId}
           mindMapTasks={mindMapTasks}
@@ -176,10 +173,19 @@ describe('GenerationCenter', () => {
     expect(html).toContain(
       'data-asset-panel="project-generation-center"',
     );
-    expect(html).toContain('选择 Asset 后显示对应工具');
+    expect(html).not.toContain('当前 Asset 工具');
     expect(html).toContain('还没有生成内容');
     expect(html).not.toContain('当前资料上下文');
     expect(html).not.toContain('生成中心 Connection');
+  });
+
+  it('keeps Workbench-specific tools inside the active Workbench', () => {
+    const html = renderGenerationCenter();
+
+    expect(html).toContain('通用生成工具');
+    expect(html).not.toContain('当前 Asset 工具');
+    expect(html).not.toContain('选择 Asset 后显示对应工具');
+    expect(html).not.toContain('工作台尚未提供专属工具');
   });
 
   it('renders real generated Assets through the shared list', () => {
