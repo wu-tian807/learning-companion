@@ -10,7 +10,7 @@ describe('resolveProjectRightRail', () => {
       generationInline: false,
     })).toEqual({
       kind: 'conversation',
-      className: 'h-full w-[clamp(360px,24vw,440px)] shrink-0',
+      className: 'h-full w-[clamp(318px,20vw,390px)] shrink-0',
     });
   });
 

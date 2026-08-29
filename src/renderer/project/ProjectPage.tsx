@@ -85,6 +85,12 @@ export function ProjectPage({
     generationOpen: layout.rightOpen,
     generationInline: layout.rightInline,
   });
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [conversationOpen]);
   const {
     mindMapTasks,
     startMindMap,
