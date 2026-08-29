@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "cues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceCueId": { "type": "string" },
+          "text": { "type": "string" }
+        },
+        "required": ["sourceCueId", "text"]
+      }
+    }
+  },
+  "required": ["cues"]
+}

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>声音克隆模型赛马</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell results-shell">
+      <header class="hero results-hero">
+        <div>
+          <p class="eyebrow">Learning Companion · 本机实测产物</p>
+          <h1>声音克隆模型赛马</h1>
+          <p class="lede">
+            三个模型使用同一段参考人声、同一份参考文本与同一组中英目标句。
+            先盲听，再看速度；长程样本用来找音色漂移、断句和拼接问题。
+          </p>
+        </div>
+        <a class="secondary-button page-link" href="/">查看调度原理</a>
+      </header>
+
+      <section class="reference-card">
+        <div>
+          <p class="eyebrow">统一输入</p>
+          <h2>参考人声</h2>
+          <p>
+            所有产物都只使用这一段 one-shot 参考。VoxCPM2
+            不读取文本，另两条路线读取准确参考文本。
+          </p>
+        </div>
+        <audio id="referenceAudio" controls preload="metadata"></audio>
+      </section>
+
+      <section aria-labelledby="outputsHeading">
+        <div class="section-heading result-heading">
+          <div>
+            <p class="eyebrow">直接验收</p>
+            <h2 id="outputsHeading">可播放产物</h2>
+          </div>
+          <div class="result-actions">
+            <span id="loadState" class="state-chip">读取结果</span>
+            <button id="revealButton" class="secondary-button" type="button">
+              揭晓模型
+            </button>
+          </div>
+        </div>
+        <div id="modelGrid" class="model-grid"></div>
+      </section>
+
+      <section class="simulation-card" aria-labelledby="simulationHeading">
+        <div class="section-heading result-heading">
+          <div>
+            <p class="eyebrow">实际 RTF 驱动</p>
+            <h2 id="simulationHeading">同屏流式体验模拟</h2>
+          </div>
+          <button
+            id="simulationButton"
+            class="primary-button compact-button"
+            type="button"
+          >
+            同时模拟
+          </button>
+        </div>
+        <div class="simulation-controls">
+          <label>
+            <span>视频时长（分钟）</span>
+            <input
+              id="simulationDuration"
+              type="number"
+              min="1"
+              max="240"
+              step="1"
+              value="20"
+            />
+          </label>
+          <label>
+            <span>模拟加速</span>
+            <input
+              id="simulationSpeed"
+              type="number"
+              min="1"
+              max="1200"
+              step="10"
+              value="120"
+            />
+          </label>
+          <label>
+            <span>启动口径</span>
+            <select id="startupMode">
+              <option value="cold">本次实测冷启动</option>
+              <option value="warm">模型已加载</option>
+            </select>
+          </label>
+        </div>
+        <div id="simulationRows" class="simulation-rows"></div>
+        <p class="simulation-note">
+          紫色是播放头；白色按本次长程测试中每一段的真实完成耗时逐段增长。只有二者相遇后才切换克隆音轨，RTF
+          只负责预测。 当前无真实视频
+          Cue，三模型统一使用同一句输出时长的中位数作为代理覆盖长度；产品接入时替换为字幕真实
+          Cue。
+        </p>
+      </section>
+
+      <section class="criteria-card" aria-labelledby="criteriaHeading">
+        <p class="eyebrow">评判标准</p>
+        <h2 id="criteriaHeading">不要只听“像不像”</h2>
+        <div class="criteria-grid">
+          <article>
+            <strong>音色身份 25%</strong>
+            <p>闭眼能否认出同一说话人；中英切换后身份是否仍稳定。</p>
+          </article>
+          <article>
+            <strong>可懂度 20%</strong>
+            <p>漏字、吞字、幻觉、数字与缩写；中英分别评分。</p>
+          </article>
+          <article>
+            <strong>自然度 20%</strong>
+            <p>节奏、重音、停顿和句尾，不以“机械但清楚”冒充自然。</p>
+          </article>
+          <article>
+            <strong>长程稳定 15%</strong>
+            <p>后半段是否音色漂移、音量跳变、情绪失控或接缝突兀。</p>
+          </article>
+          <article>
+            <strong>等待体验 15%</strong>
+            <p>
+              模型加载、首段延迟、RTF 中位数与 P90，共同决定可连续观看的时点。
+            </p>
+          </article>
+          <article>
+            <strong>工程成本 5%</strong>
+            <p>模型和运行时体积、显存、许可、Windows/macOS 可移植性。</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/web/results.mjs"></script>
+  </body>
+</html>

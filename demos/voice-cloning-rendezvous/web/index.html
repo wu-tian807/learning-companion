@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>声音克隆后缀调度 Demo</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Learning Companion · 独立技术原型</p>
+          <h1>声音克隆后缀调度</h1>
+          <p class="lede">
+            用户先听原声；配音从结尾向前生成。白色细条是已经可连续播放到结尾的克隆音频，
+            播放头与白条相遇时只切换一次。
+          </p>
+        </div>
+        <div class="model-badge">
+          <span>候选基线</span>
+          <strong>VoxCPM1.5</strong>
+          <small>one-shot · CUDA</small>
+          <a class="demo-entry-link" href="/web/video-demo.html"
+            >上传真实视频体验 →</a
+          >
+        </div>
+      </header>
+
+      <section class="player-card" aria-label="后缀生成播放器原型">
+        <div class="video-stage">
+          <div class="stage-copy">
+            <span id="audioMode" class="mode-pill">原声播放</span>
+            <strong>演示视频</strong>
+            <p id="stageMessage">
+              点击“开始模拟”，观察生成后缀如何追上播放头。
+            </p>
+          </div>
+        </div>
+
+        <div class="transport">
+          <button
+            id="playButton"
+            class="icon-button"
+            type="button"
+            aria-label="播放"
+          >
+            ▶
+          </button>
+          <span id="currentTime" class="time">00:00</span>
+          <div class="timeline-wrap">
+            <div id="timeline" class="timeline" aria-hidden="true">
+              <div id="generatedRange" class="generated-range"></div>
+              <div id="playedRange" class="played-range"></div>
+              <div id="predictionMarker" class="prediction-marker"></div>
+              <div id="playhead" class="playhead"></div>
+            </div>
+            <input
+              id="seekInput"
+              class="seek-input"
+              type="range"
+              min="0"
+              max="1200"
+              step="0.1"
+              value="0"
+              aria-label="播放进度"
+            />
+          </div>
+          <span id="durationTime" class="time">20:00</span>
+        </div>
+
+        <div class="legend">
+          <span><i class="legend-dot played-dot"></i>已播放</span>
+          <span
+            ><i class="legend-line generated-line"></i
+            >已生成的连续克隆后缀</span
+          >
+          <span
+            ><i class="legend-line prediction-line"></i>按当前 RTF
+            预测的首次切换点</span
+          >
+        </div>
+      </section>
+
+      <section class="dashboard">
+        <article class="control-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">输入</p>
+              <h2>模拟参数</h2>
+            </div>
+            <button id="resetButton" class="secondary-button" type="button">
+              重置
+            </button>
+          </div>
+
+          <label>
+            <span>视频时长（分钟）</span>
+            <input
+              id="durationInput"
+              type="number"
+              min="1"
+              max="240"
+              step="1"
+              value="20"
+            />
+          </label>
+          <label>
+            <span>实测 RTF</span>
+            <input
+              id="rtfInput"
+              type="number"
+              min="0.01"
+              max="10"
+              step="0.01"
+              value="0.56"
+            />
+          </label>
+          <label>
+            <span>模型冷启动（秒）</span>
+            <input
+              id="startupInput"
+              type="number"
+              min="0"
+              max="300"
+              step="1"
+              value="5"
+            />
+          </label>
+          <label>
+            <span>播放倍速</span>
+            <input
+              id="playbackRateInput"
+              type="number"
+              min="0.25"
+              max="4"
+              step="0.25"
+              value="1"
+            />
+          </label>
+          <label>
+            <span>模拟加速倍数</span>
+            <input
+              id="simulationRateInput"
+              type="number"
+              min="1"
+              max="600"
+              step="1"
+              value="60"
+            />
+          </label>
+
+          <button id="startButton" class="primary-button" type="button">
+            开始模拟
+          </button>
+        </article>
+
+        <article class="metrics-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">输出</p>
+              <h2>首次连续切换预测</h2>
+            </div>
+            <span id="runningState" class="state-chip">等待开始</span>
+          </div>
+
+          <dl class="metrics-grid">
+            <div>
+              <dt>预计等待</dt>
+              <dd id="etaMetric">06:45</dd>
+            </div>
+            <div>
+              <dt>预计切换位置</dt>
+              <dd id="switchMetric">06:45</dd>
+            </div>
+            <div>
+              <dt>切换后连续配音</dt>
+              <dd id="suffixMetric">13:15</dd>
+            </div>
+            <div>
+              <dt>生成速度</dt>
+              <dd id="speedMetric">1.79× 实时</dd>
+            </div>
+          </dl>
+
+          <div class="coverage-copy">
+            <div>
+              <span>实际已生成后缀</span>
+              <strong id="coverageMetric">00:00</strong>
+            </div>
+            <p id="decisionCopy">
+              预测只决定 UI
+              告知用户何时可能切换；真正切换始终以白色实际覆盖条为准。
+            </p>
+          </div>
+        </article>
+      </section>
+
+      <section class="rule-card">
+        <h2>调度规则</h2>
+        <ol>
+          <li>生成顺序固定为“从结尾向前”，不依赖章节，也不伪造可播放范围。</li>
+          <li>
+            RTF
+            用来预测第一次相遇位置；每完成一个真实音频块，白色覆盖条才向左增长。
+          </li>
+          <li>
+            播放头进入白色范围后切换到克隆音轨；从该点到结尾已经连续可用。
+          </li>
+          <li>拖动进度条只重新计算相遇点，不丢弃已经完成的后缀。</li>
+        </ol>
+      </section>
+    </main>
+
+    <script type="module" src="/web/app.mjs"></script>
+  </body>
+</html>
