@@ -88,6 +88,74 @@ function render(payload: WorkbenchBootstrap['payload']) {
   );
 }
 
+type VideoViewProps = Parameters<typeof VideoWorkbenchView>[0];
+
+async function mountVideoWorkbench(input: {
+  readonly payload: WorkbenchBootstrap['payload'];
+  readonly executeCommand: VideoViewProps['executeCommand'];
+  readonly subscribeEvent?: VideoViewProps['subscribeEvent'];
+}) {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  const previousBridge = window.learningCompanion;
+  const pause = vi
+    .spyOn(HTMLMediaElement.prototype, 'pause')
+    .mockImplementation(() => undefined);
+  Object.defineProperty(window, 'learningCompanion', {
+    configurable: true,
+    value: {
+      listVideoExplanations: vi.fn(async () => []),
+      onVideoExplanationChanged: vi.fn(() => () => undefined),
+      onGenerationTaskChanged: vi.fn(() => () => undefined),
+    },
+  });
+  const bootstrap: WorkbenchBootstrap = {
+    sessionId: 'session',
+    workbenchId: VIDEO_WORKBENCH_ID,
+    workbenchVersion: videoWorkbenchManifest.version,
+    protocolVersion: videoWorkbenchManifest.protocolVersion,
+    assetId: asset.id,
+    mediaType: asset.mediaType,
+    availability: 'available',
+    payload: input.payload,
+  };
+
+  await act(async () => {
+    root.render(
+      <WorkbenchConversationRuntimeProvider>
+        <WorkbenchRuntimeProvider onError={vi.fn()}>
+          <VideoWorkbenchView
+            asset={asset}
+            bootstrap={bootstrap}
+            executeCommand={input.executeCommand}
+            subscribeEvent={input.subscribeEvent ?? vi.fn(() => () => undefined)}
+            onRelink={vi.fn()}
+            onRefresh={vi.fn()}
+            onReveal={vi.fn()}
+            onInteractionChange={vi.fn()}
+            onOpenExternal={vi.fn(async () => undefined)}
+            onError={vi.fn()}
+          />
+        </WorkbenchRuntimeProvider>
+      </WorkbenchConversationRuntimeProvider>,
+    );
+  });
+
+  return {
+    container,
+    cleanup() {
+      act(() => root.unmount());
+      container.remove();
+      Object.defineProperty(window, 'learningCompanion', {
+        configurable: true,
+        value: previousBridge,
+      });
+      pause.mockRestore();
+    },
+  };
+}
+
 describe('VideoWorkbenchView', () => {
   it('renders source, partial translation, and explicit bilingual fallback cues', () => {
     const snapshot = {
@@ -139,21 +207,6 @@ describe('VideoWorkbenchView', () => {
   });
 
   it('refreshes a queued first-open bootstrap when the completion event was missed', async () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    const root = createRoot(container);
-    const previousBridge = window.learningCompanion;
-    const pause = vi
-      .spyOn(HTMLMediaElement.prototype, 'pause')
-      .mockImplementation(() => undefined);
-    Object.defineProperty(window, 'learningCompanion', {
-      configurable: true,
-      value: {
-        listVideoExplanations: vi.fn(async () => []),
-        onVideoExplanationChanged: vi.fn(() => () => undefined),
-        onGenerationTaskChanged: vi.fn(() => () => undefined),
-      },
-    });
     const executeCommand = vi.fn(async (command: { readonly type: string }) =>
       command.type === 'video:get-dubbing-snapshot'
         ? { payload: EMPTY_VIDEO_DUBBING_SNAPSHOT }
@@ -166,14 +219,8 @@ describe('VideoWorkbenchView', () => {
             },
           },
     );
-    const bootstrap: WorkbenchBootstrap = {
-      sessionId: 'session',
-      workbenchId: VIDEO_WORKBENCH_ID,
-      workbenchVersion: videoWorkbenchManifest.version,
-      protocolVersion: videoWorkbenchManifest.protocolVersion,
-      assetId: asset.id,
-      mediaType: asset.mediaType,
-      availability: 'available',
+    const view = await mountVideoWorkbench({
+      executeCommand,
       payload: {
         contentUrl: 'learning-content://resource/token',
         sourceRevision: '100',
@@ -187,62 +234,20 @@ describe('VideoWorkbenchView', () => {
         },
         dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
       },
-    };
+    });
 
     try {
-      await act(async () => {
-        root.render(
-          <WorkbenchConversationRuntimeProvider>
-            <WorkbenchRuntimeProvider onError={vi.fn()}>
-              <VideoWorkbenchView
-                asset={asset}
-                bootstrap={bootstrap}
-                executeCommand={executeCommand}
-                subscribeEvent={vi.fn(() => () => undefined)}
-                onRelink={vi.fn()}
-                onRefresh={vi.fn()}
-                onReveal={vi.fn()}
-                onInteractionChange={vi.fn()}
-                onOpenExternal={vi.fn(async () => undefined)}
-                onError={vi.fn()}
-              />
-            </WorkbenchRuntimeProvider>
-          </WorkbenchConversationRuntimeProvider>,
-        );
-      });
-
       expect(executeCommand).toHaveBeenCalledWith({
         type: 'video:get-subtitle-snapshot',
       });
-      expect(container.textContent).toContain('安装字幕');
-      expect(container.textContent).not.toContain('字幕准备中');
+      expect(view.container.textContent).toContain('安装字幕');
+      expect(view.container.textContent).not.toContain('字幕准备中');
     } finally {
-      act(() => root.unmount());
-      container.remove();
-      Object.defineProperty(window, 'learningCompanion', {
-        configurable: true,
-        value: previousBridge,
-      });
-      pause.mockRestore();
+      view.cleanup();
     }
   });
 
   it('reconciles a missed first-open subtitle event without overwriting a newer event', async () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    const root = createRoot(container);
-    const previousBridge = window.learningCompanion;
-    const pause = vi
-      .spyOn(HTMLMediaElement.prototype, 'pause')
-      .mockImplementation(() => undefined);
-    Object.defineProperty(window, 'learningCompanion', {
-      configurable: true,
-      value: {
-        listVideoExplanations: vi.fn(async () => []),
-        onVideoExplanationChanged: vi.fn(() => () => undefined),
-        onGenerationTaskChanged: vi.fn(() => () => undefined),
-      },
-    });
     const queued = {
       phase: 'queued' as const,
       partialTranslations: [],
@@ -294,14 +299,17 @@ describe('VideoWorkbenchView', () => {
           payload: typeof ready;
         }) => void
     >();
-    const bootstrap: WorkbenchBootstrap = {
-      sessionId: 'session',
-      workbenchId: VIDEO_WORKBENCH_ID,
-      workbenchVersion: videoWorkbenchManifest.version,
-      protocolVersion: videoWorkbenchManifest.protocolVersion,
-      assetId: asset.id,
-      mediaType: asset.mediaType,
-      availability: 'available',
+    const view = await mountVideoWorkbench({
+      executeCommand,
+      subscribeEvent(listener) {
+        const typedListener = listener as (event: {
+          sessionId: string;
+          type: string;
+          payload: typeof ready;
+        }) => void;
+        eventListeners.add(typedListener);
+        return () => eventListeners.delete(typedListener);
+      },
       payload: {
         contentUrl: 'learning-content://resource/token',
         sourceRevision: '100',
@@ -310,42 +318,13 @@ describe('VideoWorkbenchView', () => {
         subtitleSnapshot: queued,
         dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
       },
-    };
+    });
 
     try {
-      await act(async () => {
-        root.render(
-          <WorkbenchConversationRuntimeProvider>
-            <WorkbenchRuntimeProvider onError={vi.fn()}>
-              <VideoWorkbenchView
-                asset={asset}
-                bootstrap={bootstrap}
-                executeCommand={executeCommand}
-                subscribeEvent={(listener) => {
-                  const typedListener = listener as (event: {
-                    sessionId: string;
-                    type: string;
-                    payload: typeof ready;
-                  }) => void;
-                  eventListeners.add(typedListener);
-                  return () => eventListeners.delete(typedListener);
-                }}
-                onRelink={vi.fn()}
-                onRefresh={vi.fn()}
-                onReveal={vi.fn()}
-                onInteractionChange={vi.fn()}
-                onOpenExternal={vi.fn(async () => undefined)}
-                onError={vi.fn()}
-              />
-            </WorkbenchRuntimeProvider>
-          </WorkbenchConversationRuntimeProvider>,
-        );
-      });
-
       expect(executeCommand).toHaveBeenCalledWith({
         type: 'video:get-subtitle-snapshot',
       });
-      expect(container.textContent).toContain('字幕准备中');
+      expect(view.container.textContent).toContain('字幕准备中');
 
       act(() => {
         for (const listener of eventListeners) {
@@ -356,21 +335,15 @@ describe('VideoWorkbenchView', () => {
           });
         }
       });
-      expect(container.textContent).toContain('字幕关闭');
+      expect(view.container.textContent).toContain('字幕关闭');
 
       await act(async () => {
         resolveSnapshot?.({ payload: queued });
       });
-      expect(container.textContent).toContain('字幕关闭');
-      expect(container.textContent).not.toContain('字幕准备中');
+      expect(view.container.textContent).toContain('字幕关闭');
+      expect(view.container.textContent).not.toContain('字幕准备中');
     } finally {
-      act(() => root.unmount());
-      container.remove();
-      Object.defineProperty(window, 'learningCompanion', {
-        configurable: true,
-        value: previousBridge,
-      });
-      pause.mockRestore();
+      view.cleanup();
     }
   });
 
@@ -442,6 +415,136 @@ describe('VideoWorkbenchView', () => {
     expect(
       isClientPointInsideVideoFrameRegion(video, target!, { x: 150, y: 75 }),
     ).toBe(false);
+  });
+
+  it('opens the document-style quick questions after a right-button region drag', async () => {
+    const view = await mountVideoWorkbench({
+      executeCommand: vi.fn(
+        async (command: { readonly type: string }) => ({
+          payload:
+            command.type === 'video:get-dubbing-snapshot'
+              ? EMPTY_VIDEO_DUBBING_SNAPSHOT
+              : command.type === 'video:get-subtitle-snapshot'
+                ? EMPTY_VIDEO_SUBTITLE_SNAPSHOT
+                : { saved: true, savedTime: 100 },
+        }),
+      ) as VideoViewProps['executeCommand'],
+      payload: {
+        contentUrl: 'learning-content://resource/token',
+        sourceRevision: '100',
+        viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
+        subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: cloneVideoSubtitleSnapshot(
+          EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+        ),
+        dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
+      },
+    });
+    const { container } = view;
+
+    try {
+      const video = container.querySelector('video')!;
+      const surface = container.querySelector<HTMLElement>(
+        '[data-video-frame-surface="true"]',
+      )!;
+      Object.defineProperties(video, {
+        readyState: { configurable: true, value: 1 },
+        videoWidth: { configurable: true, value: 1_920 },
+        videoHeight: { configurable: true, value: 1_080 },
+        duration: { configurable: true, value: 60 },
+      });
+      video.getBoundingClientRect = () =>
+        ({
+          left: 100,
+          top: 100,
+          right: 900,
+          bottom: 550,
+          width: 800,
+          height: 450,
+        }) as DOMRect;
+      surface.setPointerCapture = vi.fn();
+
+      await act(async () => {
+        video.dispatchEvent(new Event('loadedmetadata'));
+      });
+
+      const pointer = (
+        type: string,
+        clientX: number,
+        clientY: number,
+      ) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 2,
+          buttons: type === 'pointerup' ? 0 : 2,
+          clientX,
+          clientY,
+        });
+        Object.defineProperties(event, {
+          pointerId: { value: 7 },
+          isPrimary: { value: true },
+        });
+        return event;
+      };
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 300, 200));
+        surface.dispatchEvent(pointer('pointermove', 700, 425));
+        surface.dispatchEvent(pointer('pointerup', 700, 425));
+      });
+
+      const menu = container.querySelector(
+        '[data-video-frame-question-menu="true"]',
+      );
+      expect(menu?.textContent).toContain('解释');
+      expect(menu?.textContent).toContain('举例');
+      expect(menu?.textContent).toContain('翻译');
+      expect(menu?.textContent).toContain('总结');
+      expect(menu?.textContent).toContain('自由提问');
+      expect(
+        container.querySelector('[aria-label="已选择的视频画面区域"]'),
+      ).not.toBeNull();
+
+      await act(async () => {
+        [...menu!.querySelectorAll('button')]
+          .find((button) => button.textContent?.trim() === '自由提问')
+          ?.click();
+      });
+      expect(
+        container.querySelector('[data-video-frame-question-menu="true"]'),
+      ).toBeNull();
+      expect(
+        container.querySelector('[aria-label="已选择的视频画面区域"]'),
+      ).not.toBeNull();
+
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 300, 200));
+        surface.dispatchEvent(pointer('pointermove', 700, 425));
+        surface.dispatchEvent(pointer('pointerup', 700, 425));
+      });
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      });
+      expect(
+        container.querySelector('[data-video-frame-question-menu="true"]'),
+      ).toBeNull();
+      expect(
+        container.querySelector('[aria-label="已选择的视频画面区域"]'),
+      ).toBeNull();
+
+      await act(async () => {
+        surface.dispatchEvent(pointer('pointerdown', 500, 300));
+        surface.dispatchEvent(pointer('pointerup', 500, 300));
+      });
+      expect(
+        container.querySelector('[data-video-frame-question-menu="true"]'),
+      ).toBeNull();
+      expect(
+        container.querySelector('[aria-label="已选择的视频画面区域"]'),
+      ).not.toBeNull();
+    } finally {
+      view.cleanup();
+    }
   });
 
   it('keeps frame overlays on the picture and playback controls in a separate dock', () => {
