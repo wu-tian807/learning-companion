@@ -24,22 +24,31 @@ import type {
 import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
   DUBBING_PHRASE_PLANNER_VERSION,
-  createDubbingPhrases,
-  selectDubbingReferenceWindow,
 } from './dubbing-phrase-planner';
+import {
+  DUBBING_SPEAKER_PLANNER_VERSION,
+  createDubbingSpeakerRoutingPlan,
+  parseDubbingSpeakerRoutingPlan,
+  parseDubbingSpeakerSegments,
+  type DubbingSpeakerRoutingPlan,
+} from './dubbing-speaker-planner';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   markMediaDubbingCheckpointPrepared,
   loadMediaDubbingCheckpoint,
+  mediaDubbingReferencePath,
   openMediaDubbingCheckpoint,
   removeMediaDubbingCheckpoint,
   type MediaDubbingCheckpointIdentity,
 } from './media-dubbing-checkpoint-file';
-import { SOURCE_SEPARATION_WORKER_SOURCE } from './voxcpm2-worker-sources';
+import {
+  SOURCE_SEPARATION_WORKER_SOURCE,
+  SPEAKER_DIARIZATION_WORKER_SOURCE,
+} from './voxcpm2-worker-sources';
 
 // Persisted producer ids are part of existing artifact cache keys.
 export const VOXCPM2_DUBBING_PRODUCER_ID = 'builtin.video.dubbing.voxcpm2';
-export const VOXCPM2_DUBBING_PRODUCER_VERSION = '2';
+export const VOXCPM2_DUBBING_PRODUCER_VERSION = '3';
 export const VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE = 'audio/mp4';
 
 const PROCESS_TIMEOUT_MS = 4 * 60 * 60 * 1_000;
@@ -109,7 +118,8 @@ function requestKey(
 
 function checkpointIdentity(
   request: AssetArtifactRequest | AssetArtifactProduceRequest,
-  phrases: readonly unknown[],
+  sourceTrack: SubtitleSourceTrackV1,
+  translation: SubtitleTranslationTrackV1,
 ): MediaDubbingCheckpointIdentity {
   return Object.freeze({
     workspacePath: request.workspacePath,
@@ -117,10 +127,10 @@ function checkpointIdentity(
     sourceRevision: request.source.revision,
     producerVersion: VOXCPM2_DUBBING_PRODUCER_VERSION,
     phrasePlannerVersion: DUBBING_PHRASE_PLANNER_VERSION,
-    phrasesRevision: createHash('sha256')
-      .update(JSON.stringify(phrases))
+    speakerPlannerVersion: DUBBING_SPEAKER_PLANNER_VERSION,
+    inputRevision: createHash('sha256')
+      .update(JSON.stringify([sourceTrack, translation]))
       .digest('hex'),
-    totalPhrases: phrases.length,
   });
 }
 
@@ -223,8 +233,9 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     sourceTrack: SubtitleSourceTrackV1,
     translation: SubtitleTranslationTrackV1,
   ): Promise<void> {
-    const phrases = createDubbingPhrases(sourceTrack.cues, translation);
-    await removeMediaDubbingCheckpoint(checkpointIdentity(request, phrases));
+    await removeMediaDubbingCheckpoint(
+      checkpointIdentity(request, sourceTrack, translation),
+    );
   }
 
   async getInterruptedProgress(
@@ -232,19 +243,18 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     sourceTrack: SubtitleSourceTrackV1,
     translation: SubtitleTranslationTrackV1,
   ): Promise<InterruptedMediaDubbingProgress | undefined> {
-    const phrases = createDubbingPhrases(sourceTrack.cues, translation);
-    if (phrases.length === 0) return undefined;
     const checkpoint = await loadMediaDubbingCheckpoint(
-      checkpointIdentity(request, phrases),
+      checkpointIdentity(request, sourceTrack, translation),
     );
     if (!checkpoint) return undefined;
 
     const durationMs = checkpoint.manifest.durationMs;
+    const totalPhrases = checkpoint.manifest.totalPhrases;
     const stored = await this.readWorkerProgress(
       checkpoint.paths.progressPath,
     );
     const progress =
-      stored?.totalPhrases === phrases.length &&
+      stored?.totalPhrases === totalPhrases &&
       stored.completedDurationMs <= durationMs &&
       stored.readySuffixStartMs + stored.completedDurationMs === durationMs
         ? stored
@@ -260,7 +270,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       assetId: request.source.assetId,
       sourceRevision: request.source.revision,
       completedPhrases: progress?.completedPhrases ?? 0,
-      totalPhrases: phrases.length,
+      totalPhrases,
       completedDurationMs: progress?.completedDurationMs ?? 0,
       durationMs,
       readySuffixStartMs: progress?.readySuffixStartMs ?? durationMs,
@@ -283,35 +293,61 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     signal.throwIfAborted();
 
     try {
-      const phrases = createDubbingPhrases(
-        input.sourceTrack.cues,
-        input.translation,
-      );
-      if (phrases.length === 0) throw new Error('没有可生成的配音段落');
-      this.publish(request, 'preparing-runtime', 0, phrases.length, 0, 0, 0);
+      const provisionalTotal = input.sourceTrack.cues.length;
+      if (provisionalTotal === 0) throw new Error('没有可生成的配音段落');
+      this.publish(request, 'preparing-runtime', 0, provisionalTotal, 0, 0, 0);
       const [decoder, runtime] = await Promise.all([
         input.subtitleRuntime.requireMediaDecoder(),
         input.dubbingRuntime.requireRuntime(),
       ]);
       signal.throwIfAborted();
-      const identity = checkpointIdentity(request, phrases);
+      const identity = checkpointIdentity(
+        request,
+        input.sourceTrack,
+        input.translation,
+      );
       const checkpoint = await openMediaDubbingCheckpoint(identity);
-      const separationWorker = join(request.stagingDirectory, 'separate.py');
-      const phrasesPath = join(request.stagingDirectory, 'phrases.json');
-      await Promise.all([
-        this.dependencies.writeText(
-          separationWorker,
-          SOURCE_SEPARATION_WORKER_SOURCE,
-          'utf8',
-        ),
-        this.dependencies.writeText(
-          phrasesPath,
-          `${JSON.stringify({ phrases }, null, 2)}\n`,
-          'utf8',
-        ),
-      ]);
-      let durationMs = checkpoint.manifest?.durationMs;
-      if (durationMs === undefined) {
+      let durationMs: number;
+      let plan: DubbingSpeakerRoutingPlan;
+      if (checkpoint.manifest) {
+        durationMs = checkpoint.manifest.durationMs;
+        plan = parseDubbingSpeakerRoutingPlan(
+          JSON.parse(
+            await this.dependencies.readText(
+              checkpoint.paths.speakerPlanPath,
+              'utf8',
+            ),
+          ) as unknown,
+        );
+        if (plan.phrases.length !== checkpoint.manifest.totalPhrases) {
+          throw new Error('持久说话人计划与断点 phrase 数量不一致');
+        }
+      } else {
+        const separationWorker = join(request.stagingDirectory, 'separate.py');
+        const diarizationWorker = join(
+          request.stagingDirectory,
+          'diarize-speakers.py',
+        );
+        const speakerAudioPath = join(
+          request.stagingDirectory,
+          'speaker-analysis.wav',
+        );
+        const speakerResultPath = join(
+          request.stagingDirectory,
+          'speaker-analysis.json',
+        );
+        await Promise.all([
+          this.dependencies.writeText(
+            separationWorker,
+            SOURCE_SEPARATION_WORKER_SOURCE,
+            'utf8',
+          ),
+          this.dependencies.writeText(
+            diarizationWorker,
+            SPEAKER_DIARIZATION_WORKER_SOURCE,
+            'utf8',
+          ),
+        ]);
         const probe = await this.dependencies.commandRunner.run({
           command: decoder.ffprobePath,
           args: [
@@ -334,7 +370,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
           request,
           'separating',
           0,
-          phrases.length,
+          provisionalTotal,
           0,
           durationMs,
           durationMs,
@@ -380,8 +416,6 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
           timeoutMs: PROCESS_TIMEOUT_MS,
           signal,
         });
-
-        const reference = selectDubbingReferenceWindow(input.sourceTrack.cues);
         await this.dependencies.commandRunner.run({
           command: decoder.ffmpegPath,
           args: [
@@ -389,10 +423,6 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
             '-loglevel',
             'error',
             '-y',
-            '-ss',
-            (reference.startMs / 1_000).toFixed(3),
-            '-t',
-            ((reference.endMs - reference.startMs) / 1_000).toFixed(3),
             '-i',
             checkpoint.paths.vocalsPath,
             '-ar',
@@ -401,21 +431,128 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
             '1',
             '-c:a',
             'pcm_s16le',
-            checkpoint.paths.referencePath,
+            speakerAudioPath,
           ],
           timeoutMs: 5 * 60 * 1_000,
           signal,
         });
+        await this.dependencies.commandRunner.run({
+          command: runtime.pythonPath,
+          args: [
+            diarizationWorker,
+            '--input',
+            speakerAudioPath,
+            '--segmentation-model',
+            runtime.speakerSegmentationModelPath,
+            '--embedding-model',
+            runtime.speakerEmbeddingModelPath,
+            '--output',
+            speakerResultPath,
+          ],
+          cwd: request.stagingDirectory,
+          env: runtime.environment,
+          timeoutMs: PROCESS_TIMEOUT_MS,
+          signal,
+        });
+        const segments = parseDubbingSpeakerSegments(
+          JSON.parse(
+            await this.dependencies.readText(speakerResultPath, 'utf8'),
+          ) as unknown,
+          durationMs,
+        );
+        plan = createDubbingSpeakerRoutingPlan(
+          input.sourceTrack.cues,
+          input.translation,
+          segments,
+        );
+        if (plan.phrases.length === 0) {
+          throw new Error('没有可生成的配音段落');
+        }
+        const referenceProfiles = plan.voiceProfiles.filter(
+          (profile) => profile.mode === 'reference',
+        );
+        await Promise.all(
+          referenceProfiles.map((profile) =>
+            this.dependencies.commandRunner.run({
+              command: decoder.ffmpegPath,
+              args: [
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-y',
+                '-ss',
+                (profile.reference.startMs / 1_000).toFixed(3),
+                '-t',
+                (
+                  (profile.reference.endMs - profile.reference.startMs) /
+                  1_000
+                ).toFixed(3),
+                '-i',
+                checkpoint.paths.vocalsPath,
+                '-ar',
+                '16000',
+                '-ac',
+                '1',
+                '-c:a',
+                'pcm_s16le',
+                mediaDubbingReferencePath(
+                  checkpoint.paths,
+                  profile.speakerId,
+                ),
+              ],
+              timeoutMs: 5 * 60 * 1_000,
+              signal,
+            }),
+          ),
+        );
+        const serializedPlan = `${JSON.stringify(plan, null, 2)}\n`;
+        await this.dependencies.writeText(
+          checkpoint.paths.speakerPlanPath,
+          serializedPlan,
+          'utf8',
+        );
         await markMediaDubbingCheckpointPrepared(
           checkpoint.paths,
           identity,
-          durationMs,
+          {
+            durationMs,
+            totalPhrases: plan.phrases.length,
+            planRevision: createHash('sha256')
+              .update(serializedPlan)
+              .digest('hex'),
+            referenceSpeakerIds: referenceProfiles.map(
+              ({ speakerId }) => speakerId,
+            ),
+          },
         );
         await Promise.all([
           rm(checkpoint.paths.originalAudioPath, { force: true }),
           rm(checkpoint.paths.vocalsPath, { force: true }),
+          rm(speakerAudioPath, { force: true }),
+          rm(speakerResultPath, { force: true }),
         ]);
       }
+
+      const phrases = plan.phrases;
+      const phrasesPath = join(request.stagingDirectory, 'phrases.json');
+      await this.dependencies.writeText(
+        phrasesPath,
+        `${JSON.stringify({ phrases }, null, 2)}\n`,
+        'utf8',
+      );
+      const referencePaths = Object.freeze(
+        Object.fromEntries(
+          plan.voiceProfiles.map((profile) => [
+            profile.speakerId,
+            profile.mode === 'reference'
+              ? mediaDubbingReferencePath(
+                  checkpoint.paths,
+                  profile.speakerId,
+                )
+              : null,
+          ]),
+        ),
+      );
 
       const storedProgress = await this.readWorkerProgress(
         checkpoint.paths.progressPath,
@@ -444,7 +581,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       await this.runVoiceWorker(
         input.dubbingRuntime.runVoiceJob(
           {
-            referencePath: checkpoint.paths.referencePath,
+            referencePaths,
             phrasesPath,
             outputDirectory: checkpoint.paths.voiceDirectory,
             progressPath: checkpoint.paths.progressPath,
@@ -596,4 +733,5 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
 export const mediaDubbingProducerMetadata = Object.freeze({
   model: 'VoxCPM2',
   phrasePlannerVersion: DUBBING_PHRASE_PLANNER_VERSION,
+  speakerPlannerVersion: DUBBING_SPEAKER_PLANNER_VERSION,
 });

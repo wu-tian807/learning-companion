@@ -57,6 +57,90 @@ print(json.dumps({
 }), flush=True)
 `;
 
+export const SPEAKER_DIARIZATION_WORKER_SOURCE = String.raw`from __future__ import annotations
+
+import argparse
+import json
+import time
+from pathlib import Path
+
+import numpy as np
+import sherpa_onnx
+import soundfile as sf
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--input", type=Path, required=True)
+parser.add_argument("--segmentation-model", type=Path, required=True)
+parser.add_argument("--embedding-model", type=Path, required=True)
+parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--cluster-threshold", type=float, default=0.7)
+args = parser.parse_args()
+
+config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+    segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+        pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+            model=str(args.segmentation_model),
+            window_shift_ratio=0.1,
+        ),
+        num_threads=4,
+        provider="cpu",
+    ),
+    embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+        model=str(args.embedding_model),
+        num_threads=4,
+        provider="cpu",
+    ),
+    clustering=sherpa_onnx.FastClusteringConfig(
+        num_clusters=-1,
+        threshold=args.cluster_threshold,
+    ),
+    min_duration_on=0.3,
+    min_duration_off=0.5,
+)
+if not config.validate():
+    raise ValueError("invalid speaker-diarization configuration")
+
+diarizer = sherpa_onnx.OfflineSpeakerDiarization(config)
+samples, sample_rate = sf.read(args.input, dtype="float32", always_2d=True)
+if sample_rate != diarizer.sample_rate:
+    raise ValueError(
+        f"expected {diarizer.sample_rate} Hz speaker audio, received {sample_rate} Hz"
+    )
+if samples.shape[1] != 1:
+    raise ValueError(f"expected mono speaker audio, received {samples.shape[1]} channels")
+
+started = time.perf_counter()
+result = diarizer.process(
+    np.ascontiguousarray(samples[:, 0])
+).sort_by_start_time()
+segments = [
+    {
+        "speaker": int(segment.speaker),
+        "start": float(segment.start),
+        "end": float(segment.end),
+    }
+    for segment in result
+]
+payload = {
+    "elapsedSeconds": time.perf_counter() - started,
+    "sampleRate": sample_rate,
+    "speakerCount": len({segment["speaker"] for segment in segments}),
+    "segments": segments,
+}
+args.output.parent.mkdir(parents=True, exist_ok=True)
+temporary = args.output.with_suffix(".tmp")
+temporary.write_text(
+    json.dumps(payload, ensure_ascii=False) + "\n",
+    encoding="utf-8",
+)
+temporary.replace(args.output)
+print(json.dumps({
+    "elapsedSeconds": payload["elapsedSeconds"],
+    "speakerCount": payload["speakerCount"],
+}), flush=True)
+`;
+
 export const WRITABLE_AUDIO_NORMALIZER_SOURCE = String.raw`def ensure_writable_audio(path: Path) -> None:
     try:
         with sf.SoundFile(path, mode="r+"):
@@ -99,6 +183,7 @@ export const WRITABLE_AUDIO_NORMALIZER_SOURCE = String.raw`def ensure_writable_a
 export const VOXCPM2_DUBBING_WORKER_SOURCE = String.raw`from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 import subprocess
@@ -242,7 +327,22 @@ def rebuild_mixed_timeline(
 
 
 def run_job(model: VoxCPM, request: dict[str, object]) -> None:
-    reference_path = Path(str(request["referencePath"]))
+    raw_reference_paths = request.get("referencePaths")
+    if not isinstance(raw_reference_paths, dict) or not raw_reference_paths:
+        raise ValueError("referencePaths must be a non-empty object")
+    reference_paths: dict[str, Path | None] = {}
+    for speaker_id, raw_path in raw_reference_paths.items():
+        if not isinstance(speaker_id, str) or not speaker_id.strip():
+            raise ValueError("referencePaths contains an invalid speaker id")
+        if raw_path is None:
+            reference_paths[speaker_id] = None
+            continue
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            raise ValueError(f"invalid reference path for {speaker_id}")
+        reference_path = Path(raw_path)
+        if not reference_path.is_file():
+            raise ValueError(f"reference audio is missing for {speaker_id}")
+        reference_paths[speaker_id] = reference_path
     phrases_path = Path(str(request["phrasesPath"]))
     output_path = Path(str(request["outputDirectory"]))
     progress_path = Path(str(request["progressPath"]))
@@ -318,23 +418,42 @@ def run_job(model: VoxCPM, request: dict[str, object]) -> None:
         for index in range(completed, len(reverse_phrases)):
             phrase = reverse_phrases[index]
             phrase_id = str(phrase.get("id", "")).strip()
+            speaker_id = str(phrase.get("speakerId", "")).strip()
             text = str(phrase.get("spokenText") or phrase.get("text", "")).strip()
             start_ms = int(phrase.get("startMs", -1))
             end_ms = int(phrase.get("endMs", -1))
-            if not phrase_id or not text or start_ms < 0 or end_ms <= start_ms:
+            if (
+                not phrase_id
+                or not speaker_id
+                or speaker_id not in reference_paths
+                or not text
+                or start_ms < 0
+                or end_ms <= start_ms
+            ):
                 raise ValueError(f"invalid phrase at reverse index {index}")
 
-            np.random.seed(10000 + index)
-            torch.manual_seed(10000 + index)
-            torch.cuda.manual_seed_all(10000 + index)
+            speaker_seed = 10000 + int.from_bytes(
+                hashlib.sha256(speaker_id.encode("utf-8")).digest()[:4],
+                byteorder="big",
+            ) % 1000000
+            np.random.seed(speaker_seed)
+            torch.manual_seed(speaker_seed)
+            torch.cuda.manual_seed_all(speaker_seed)
+            generation_options: dict[str, object] = {
+                "text": text,
+                "cfg_value": 2.0,
+                "inference_timesteps": 10,
+                "retry_badcase": False,
+            }
+            reference_path = reference_paths[speaker_id]
+            if reference_path is not None:
+                generation_options["reference_wav_path"] = str(
+                    reference_path.resolve()
+                )
             chunks = [
                 mono_float32(chunk)
                 for chunk in model.generate_streaming(
-                    text=text,
-                    reference_wav_path=str(reference_path.resolve()),
-                    cfg_value=2.0,
-                    inference_timesteps=10,
-                    retry_badcase=False,
+                    **generation_options,
                 )
             ]
             if not chunks:

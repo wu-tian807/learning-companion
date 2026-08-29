@@ -28,6 +28,10 @@ const integrationEnvironment = {
   python: process.env.LC_VOXCPM2_TEST_PYTHON,
   model: process.env.LC_VOXCPM2_TEST_MODEL,
   separationModel: process.env.LC_VOXCPM2_TEST_SEPARATION_MODEL,
+  speakerSegmentationModel:
+    process.env.LC_VOXCPM2_TEST_SPEAKER_SEGMENTATION_MODEL,
+  speakerEmbeddingModel:
+    process.env.LC_VOXCPM2_TEST_SPEAKER_EMBEDDING_MODEL,
   ffmpeg: process.env.LC_VOXCPM2_TEST_FFMPEG,
   ffprobe: process.env.LC_VOXCPM2_TEST_FFPROBE,
 };
@@ -38,6 +42,8 @@ const enabled =
     integrationEnvironment.python,
     integrationEnvironment.model,
     integrationEnvironment.separationModel,
+    integrationEnvironment.speakerSegmentationModel,
+    integrationEnvironment.speakerEmbeddingModel,
     integrationEnvironment.ffmpeg,
     integrationEnvironment.ffprobe,
   ].every(
@@ -124,6 +130,12 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
               modelPath: resolve(integrationEnvironment.model!),
               separationModelPath: resolve(
                 integrationEnvironment.separationModel!,
+              ),
+              speakerSegmentationModelPath: resolve(
+                integrationEnvironment.speakerSegmentationModel!,
+              ),
+              speakerEmbeddingModelPath: resolve(
+                integrationEnvironment.speakerEmbeddingModel!,
               ),
               workerCachePath: join(directory, 'worker-cache'),
               environment,

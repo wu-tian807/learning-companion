@@ -4,17 +4,24 @@ import type {
 } from '../media-subtitles/contracts';
 
 const MAXIMUM_MERGE_GAP_MS = 700;
-const MAXIMUM_REFERENCE_GAP_MS = 700;
 const MAXIMUM_PHRASE_DURATION_MS = 8_000;
 const CHINESE_SHORT_CHARACTER_COUNT = 4;
 const ENGLISH_SHORT_WORD_COUNT = 2;
 const CHINESE_MAXIMUM_CHARACTER_COUNT = 34;
 const ENGLISH_MAXIMUM_WORD_COUNT = 18;
 
-export const DUBBING_PHRASE_PLANNER_VERSION = 2;
+export const DUBBING_PHRASE_PLANNER_VERSION = 3;
 
+export interface DubbingCueSpeakerAssignment {
+  readonly cueId: string;
+  readonly speakerId: string;
+  readonly referenceEligible: boolean;
+  readonly dominantOverlapMs: number;
+  readonly otherSpeakerOverlapMs: number;
+}
 export interface DubbingPhrase {
   readonly id: string;
+  readonly speakerId: string;
   readonly startMs: number;
   readonly endMs: number;
   readonly text: string;
@@ -189,6 +196,7 @@ function canMerge(
 ): boolean {
   const gap = right.startMs - left.endMs;
   return (
+    left.speakerId === right.speakerId &&
     gap >= 0 &&
     gap <= MAXIMUM_MERGE_GAP_MS &&
     right.endMs - left.startMs <= MAXIMUM_PHRASE_DURATION_MS &&
@@ -203,6 +211,7 @@ function merge(
 ): MutablePhrase {
   return {
     id: left.id,
+    speakerId: left.speakerId,
     startMs: left.startMs,
     endMs: right.endMs,
     text: joinText(left.text, right.text, language),
@@ -214,15 +223,28 @@ function merge(
 export function createDubbingPhrases(
   sourceCues: readonly SubtitleCueV1[],
   translation: SubtitleTranslationTrackV1,
+  speakerAssignments: readonly DubbingCueSpeakerAssignment[],
 ): readonly DubbingPhrase[] {
   const translations = new Map(
     translation.cues.map((cue) => [cue.sourceCueId, cleanText(cue.text)]),
   );
+  const speakers = new Map(
+    speakerAssignments.map((assignment) => [
+      assignment.cueId,
+      assignment.speakerId,
+    ]),
+  );
+  if (speakers.size !== speakerAssignments.length) {
+    throw new Error('说话人归属包含重复字幕');
+  }
   const input: MutablePhrase[] = sourceCues.map((cue, index) => {
     const text = translations.get(cue.id);
     if (!text) throw new Error(`字幕 ${cue.id} 缺少译文`);
+    const speakerId = speakers.get(cue.id);
+    if (!speakerId) throw new Error(`字幕 ${cue.id} 缺少说话人归属`);
     return {
       id: `phrase-${String(index + 1).padStart(6, '0')}`,
+      speakerId,
       startMs: cue.startMs,
       endMs: cue.endMs,
       text,
@@ -278,54 +300,4 @@ export function createDubbingPhrases(
       }),
     ),
   );
-}
-
-export interface DubbingReferenceWindow {
-  readonly startMs: number;
-  readonly endMs: number;
-  readonly sourceCueIds: readonly string[];
-}
-
-export function selectDubbingReferenceWindow(
-  cues: readonly SubtitleCueV1[],
-): DubbingReferenceWindow {
-  const candidates: DubbingReferenceWindow[] = [];
-  for (let start = 0; start < cues.length; start += 1) {
-    for (let end = start; end < Math.min(cues.length, start + 4); end += 1) {
-      const selected = cues.slice(start, end + 1);
-      const duration = selected.at(-1)!.endMs - selected[0]!.startMs;
-      const textLength = selected.reduce(
-        (sum, cue) => sum + cue.text.length,
-        0,
-      );
-      const contiguous = selected
-        .slice(1)
-        .every(
-          (cue, index) =>
-            cue.startMs - selected[index]!.endMs <= MAXIMUM_REFERENCE_GAP_MS,
-        );
-      if (
-        contiguous &&
-        duration >= 3_000 &&
-        duration <= 10_000 &&
-        textLength >= 20
-      ) {
-        candidates.push({
-          startMs: selected[0]!.startMs,
-          endMs: selected.at(-1)!.endMs,
-          sourceCueIds: selected.map(({ id }) => id),
-        });
-      }
-    }
-  }
-  const selected = candidates.sort(
-    (left, right) =>
-      Math.abs(left.endMs - left.startMs - 6_000) -
-      Math.abs(right.endMs - right.startMs - 6_000),
-  )[0];
-  if (!selected) throw new Error('找不到 3 至 10 秒的有效参考人声');
-  return Object.freeze({
-    ...selected,
-    sourceCueIds: Object.freeze([...selected.sourceCueIds]),
-  });
 }
