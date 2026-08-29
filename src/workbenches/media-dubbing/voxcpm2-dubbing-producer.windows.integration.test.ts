@@ -8,20 +8,23 @@ import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-service';
-import { ExternalCommandRunner } from '../../../main/external-libraries/external-command-runner';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
+} from '../../main/artifacts/asset-artifact-service';
+import { ExternalCommandRunner } from '../../main/external-libraries/external-command-runner';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
-  VideoDubbingProgressHub,
+  MediaDubbingProgressHub,
   VoxCpm2DubbingProducer,
   createVoxCpm2DubbingArtifactKey,
 } from './voxcpm2-dubbing-producer';
 import { VOXCPM2_DUBBING_WORKER_SOURCE } from './voxcpm2-worker-sources';
 
 const integrationEnvironment = {
-  video: process.env.LC_VOXCPM2_TEST_VIDEO,
+  media:
+    process.env.LC_VOXCPM2_TEST_MEDIA ??
+    process.env.LC_VOXCPM2_TEST_VIDEO,
+  mediaType: process.env.LC_VOXCPM2_TEST_MEDIA_TYPE ?? 'video/mp4',
   python: process.env.LC_VOXCPM2_TEST_PYTHON,
   model: process.env.LC_VOXCPM2_TEST_MODEL,
   separationModel: process.env.LC_VOXCPM2_TEST_SEPARATION_MODEL,
@@ -30,7 +33,14 @@ const integrationEnvironment = {
 };
 const enabled =
   process.platform === 'win32' &&
-  Object.values(integrationEnvironment).every(
+  [
+    integrationEnvironment.media,
+    integrationEnvironment.python,
+    integrationEnvironment.model,
+    integrationEnvironment.separationModel,
+    integrationEnvironment.ffmpeg,
+    integrationEnvironment.ffprobe,
+  ].every(
     (value) => typeof value === 'string' && value.length > 0,
   );
 
@@ -50,23 +60,23 @@ function runtimeEnvironment(pythonPath: string): NodeJS.ProcessEnv {
 
 describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
   it(
-    'separates a real soundtrack, clones in reverse order and creates playable AAC',
+    'separates a real media track, clones in reverse order and creates playable AAC',
     async () => {
       const directory = await mkdtemp(join(tmpdir(), 'lc-voxcpm2-real-'));
       try {
-        const video = resolve(integrationEnvironment.video!);
+        const inputPath = resolve(integrationEnvironment.media!);
         const producer = new VoxCpm2DubbingProducer(
-          new VideoDubbingProgressHub(),
+          new MediaDubbingProgressHub(),
         );
         const request: AssetArtifactRequest = {
-          assetId: 'video',
+          assetId: 'media',
           producerId: producer.id,
           artifactKey: createVoxCpm2DubbingArtifactKey('zh-Hans'),
           workspacePath: directory,
           source: {
-            assetId: 'video',
-            mediaType: 'video/mp4',
-            absolutePath: video,
+            assetId: 'media',
+            mediaType: integrationEnvironment.mediaType,
+            absolutePath: inputPath,
             revision: 'real-test-revision',
           },
         };
@@ -83,7 +93,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
               absolutePath: produced.filePath,
               cacheHit: false,
               artifact: {
-                assetId: 'video',
+                assetId: 'media',
                 producerId: producer.id,
                 artifactKey: request.artifactKey,
                 relativePath: 'artifacts/dubbed.m4a',

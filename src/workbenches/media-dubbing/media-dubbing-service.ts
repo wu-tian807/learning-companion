@@ -3,39 +3,39 @@ import { createHash } from 'node:crypto';
 import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
-} from '../../../main/artifacts/asset-artifact-service';
-import type { AssetServiceApi } from '../../../main/assets/asset-service';
-import { AppError, describeAppError } from '../../../main/errors/app-error';
-import type { ProjectLookup } from '../../../main/projects/project-database';
+} from '../../main/artifacts/asset-artifact-service';
+import type { AssetServiceApi } from '../../main/assets/asset-service';
+import { AppError, describeAppError } from '../../main/errors/app-error';
+import type { ProjectLookup } from '../../main/projects/project-database';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
   isTranslatableSubtitleLanguage,
   oppositeSubtitleLanguage,
   type SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
-import { readSubtitleTranslationTrackFile } from '../../media-subtitles/subtitle-artifact-files';
+} from '../media-subtitles/contracts';
+import { readSubtitleTranslationTrackFile } from '../media-subtitles/subtitle-artifact-files';
 import {
   resolveCachedMediaSubtitleSource,
   type ResolvedMediaSubtitleSource,
-} from '../../media-subtitles/subtitle-source-artifact';
+} from '../media-subtitles/subtitle-source-artifact';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
   createSubtitleTranslationArtifactKey,
-} from '../../media-subtitles/translation-producer';
-import type { VideoSubtitleServiceApi } from '../subtitles/video-subtitle-service';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
+} from '../media-subtitles/translation-producer';
+import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
   VOXCPM2_DUBBING_PRODUCER_ID,
   createVoxCpm2DubbingArtifactKey,
-  type VideoDubbingProgress,
-  type VideoDubbingProgressHub,
+  type MediaDubbingProgress,
+  type MediaDubbingProgressHub,
   type VoxCpm2DubbingProducer,
 } from './voxcpm2-dubbing-producer';
 
-export type VideoDubbingPhase =
+export type MediaDubbingServicePhase =
   | 'idle'
   | 'awaiting-translation'
   | 'runtime-required'
@@ -48,8 +48,8 @@ export type VideoDubbingPhase =
   | 'unsupported'
   | 'failed';
 
-export interface VideoDubbingServiceSnapshot {
-  readonly phase: VideoDubbingPhase;
+export interface MediaDubbingServiceSnapshot {
+  readonly phase: MediaDubbingServicePhase;
   readonly completedPhrases: number;
   readonly totalPhrases: number;
   readonly completedDurationMs: number;
@@ -61,11 +61,11 @@ export interface VideoDubbingServiceSnapshot {
   readonly message?: string;
 }
 
-export interface VideoDubbingServiceApi {
-  getSnapshot(assetId: string): VideoDubbingServiceSnapshot;
+export interface MediaDubbingServiceApi {
+  getSnapshot(assetId: string): MediaDubbingServiceSnapshot;
   subscribe(
     assetId: string,
-    listener: (snapshot: VideoDubbingServiceSnapshot) => void,
+    listener: (snapshot: MediaDubbingServiceSnapshot) => void,
   ): () => void;
   refreshRuntimeAvailability(assetId: string): Promise<void>;
   restore(projectId: string, assetId: string): Promise<void>;
@@ -75,7 +75,7 @@ export interface VideoDubbingServiceApi {
   retry(projectId: string, assetId: string): Promise<void>;
 }
 
-const EMPTY_SNAPSHOT: VideoDubbingServiceSnapshot = Object.freeze({
+const EMPTY_SNAPSHOT: MediaDubbingServiceSnapshot = Object.freeze({
   phase: 'idle',
   completedPhrases: 0,
   totalPhrases: 0,
@@ -91,8 +91,8 @@ interface ResolvedDubbingInput {
 }
 
 function cloneSnapshot(
-  snapshot: VideoDubbingServiceSnapshot,
-): VideoDubbingServiceSnapshot {
+  snapshot: MediaDubbingServiceSnapshot,
+): MediaDubbingServiceSnapshot {
   return Object.freeze({ ...snapshot });
 }
 
@@ -106,14 +106,14 @@ function dubbingSourceRevision(input: {
 
 function failureMessage(error: unknown): string {
   const described = describeAppError(error);
-  return described.userMessage ?? '视频配音没有完成。';
+  return described.userMessage ?? '媒体配音没有完成。';
 }
 
-export class VideoDubbingService implements VideoDubbingServiceApi {
-  private readonly snapshots = new Map<string, VideoDubbingServiceSnapshot>();
+export class MediaDubbingService implements MediaDubbingServiceApi {
+  private readonly snapshots = new Map<string, MediaDubbingServiceSnapshot>();
   private readonly listeners = new Map<
     string,
-    Set<(snapshot: VideoDubbingServiceSnapshot) => void>
+    Set<(snapshot: MediaDubbingServiceSnapshot) => void>
   >();
   private readonly tasks = new Map<string, Promise<void>>();
   private readonly restoreTasks = new Map<string, Promise<void>>();
@@ -124,23 +124,23 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
     private readonly assets: AssetServiceApi,
     private readonly projects: ProjectLookup,
     private readonly artifacts: AssetArtifactServiceApi,
-    private readonly subtitles: VideoSubtitleServiceApi,
+    private readonly subtitles: MediaSubtitleServiceApi,
     private readonly producer: VoxCpm2DubbingProducer,
     private readonly subtitleRuntime: MediaSubtitleRuntimeResolverApi,
     private readonly dubbingRuntime: VoxCpm2DubbingRuntimeResolverApi,
-    progress: VideoDubbingProgressHub,
+    progress: MediaDubbingProgressHub,
     private readonly logger: Pick<Console, 'error' | 'warn'> = console,
   ) {
     progress.subscribe((event) => this.handleProgress(event));
   }
 
-  getSnapshot(assetId: string): VideoDubbingServiceSnapshot {
+  getSnapshot(assetId: string): MediaDubbingServiceSnapshot {
     return cloneSnapshot(this.snapshots.get(assetId) ?? EMPTY_SNAPSHOT);
   }
 
   subscribe(
     assetId: string,
-    listener: (snapshot: VideoDubbingServiceSnapshot) => void,
+    listener: (snapshot: MediaDubbingServiceSnapshot) => void,
   ): () => void {
     const listeners = this.listeners.get(assetId) ?? new Set();
     listeners.add(listener);
@@ -199,7 +199,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
     );
     if (startModel) {
       void this.dubbingRuntime.warmup().catch((error: unknown) => {
-        this.logger.warn('[video:dubbing] VoxCPM2 后台预热失败', error);
+        this.logger.warn('[media:dubbing] VoxCPM2 后台预热失败', error);
       });
     }
   }
@@ -210,7 +210,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
     else this.warmupConsumers.set(assetId, consumers - 1);
     if (this.warmupConsumers.size === 0) {
       void this.dubbingRuntime.releaseWarmup().catch((error: unknown) => {
-        this.logger.warn('[video:dubbing] 释放 VoxCPM2 预热进程失败', error);
+        this.logger.warn('[media:dubbing] 释放 VoxCPM2 预热进程失败', error);
       });
     }
   }
@@ -276,12 +276,12 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
       await this.producer
         .removeCheckpoint(request, source.track, translation)
         .catch((error: unknown) => {
-          this.logger.warn('[video:dubbing] 清理已完成的配音检查点失败', error);
+          this.logger.warn('[media:dubbing] 清理已完成的配音检查点失败', error);
         });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
       if (this.applyRuntimeFailure(assetId, error)) return;
-      this.logger.error('[video:dubbing] 配音生成失败', error);
+      this.logger.error('[media:dubbing] 配音生成失败', error);
       this.update(assetId, {
         ...this.getSnapshot(assetId),
         phase: 'failed',
@@ -334,7 +334,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
       });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
-      this.logger.warn('[video:dubbing] 恢复配音状态失败', error);
+      this.logger.warn('[media:dubbing] 恢复配音状态失败', error);
     }
   }
 
@@ -407,7 +407,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
   private async requireTranslation(
     projectId: string,
     assetId: string,
-  ): Promise<ReturnType<VideoSubtitleServiceApi['getSnapshot']>> {
+  ): Promise<ReturnType<MediaSubtitleServiceApi['getSnapshot']>> {
     const current = this.subtitles.getSnapshot(assetId);
     if (current.phase === 'ready' && current.translation) return current;
 
@@ -427,7 +427,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
       this.update(assetId, {
         ...this.getSnapshot(assetId),
         phase: 'runtime-required',
-        message: '请先在设置中安装 VoxCPM2 视频配音组件。',
+        message: '请先在设置中安装 VoxCPM2 视频/音频配音组件。',
       });
       return true;
     }
@@ -444,7 +444,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
 
   private async waitForTranslation(
     assetId: string,
-  ): Promise<ReturnType<VideoSubtitleServiceApi['getSnapshot']>> {
+  ): Promise<ReturnType<MediaSubtitleServiceApi['getSnapshot']>> {
     const current = this.subtitles.getSnapshot(assetId);
     if (current.phase === 'ready' && current.translation) return current;
     if (
@@ -472,7 +472,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
     });
   }
 
-  private handleProgress(progress: VideoDubbingProgress): void {
+  private handleProgress(progress: MediaDubbingProgress): void {
     if (
       this.activeRevisions.get(progress.assetId) !== progress.sourceRevision
     ) {
@@ -491,7 +491,7 @@ export class VideoDubbingService implements VideoDubbingServiceApi {
     });
   }
 
-  private update(assetId: string, snapshot: VideoDubbingServiceSnapshot): void {
+  private update(assetId: string, snapshot: MediaDubbingServiceSnapshot): void {
     const cloned = cloneSnapshot(snapshot);
     this.snapshots.set(assetId, cloned);
     for (const listener of this.listeners.get(assetId) ?? []) listener(cloned);

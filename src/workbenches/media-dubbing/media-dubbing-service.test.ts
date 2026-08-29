@@ -8,29 +8,29 @@ import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-service';
-import type { AssetServiceApi } from '../../../main/assets/asset-service';
-import { AppError } from '../../../main/errors/app-error';
-import type { ProjectLookup } from '../../../main/projects/project-database';
-import type { AssetSnapshot } from '../../../shared/assets';
+} from '../../main/artifacts/asset-artifact-service';
+import type { AssetServiceApi } from '../../main/assets/asset-service';
+import { AppError } from '../../main/errors/app-error';
+import type { ProjectLookup } from '../../main/projects/project-database';
+import type { AssetSnapshot } from '../../shared/assets';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
   type SubtitleSourceTrackV1,
   type SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
-import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../../media-subtitles/transcription-producer';
-import { MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID } from '../../media-subtitles/translation-producer';
-import type { VideoSubtitleServiceApi } from '../subtitles/video-subtitle-service';
+} from '../media-subtitles/contracts';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../media-subtitles/transcription-producer';
+import { MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID } from '../media-subtitles/translation-producer';
+import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
   VOXCPM2_DUBBING_PRODUCER_ID,
-  VideoDubbingProgressHub,
+  MediaDubbingProgressHub,
   type VoxCpm2DubbingProducer,
 } from './voxcpm2-dubbing-producer';
-import { VideoDubbingService } from './video-dubbing-service';
+import { MediaDubbingService } from './media-dubbing-service';
 
 const temporaryDirectories: string[] = [];
 
@@ -120,7 +120,7 @@ async function createFixture(
     readonly installationError?: unknown;
   } = {},
 ) {
-  const directory = await mkdtemp(join(tmpdir(), 'lc-video-dubbing-service-'));
+  const directory = await mkdtemp(join(tmpdir(), 'lc-media-dubbing-service-'));
   temporaryDirectories.push(directory);
   const videoPath = join(directory, 'video.mp4');
   const sourcePath = join(directory, 'source.json');
@@ -189,7 +189,7 @@ async function createFixture(
     getCached,
     getOrCreate: vi.fn(),
   } as unknown as AssetArtifactServiceApi;
-  const subtitles: VideoSubtitleServiceApi = {
+  const subtitles: MediaSubtitleServiceApi = {
     getSnapshot: vi.fn(() => ({
       phase: 'ready' as const,
       source: sourceTrack('video-revision'),
@@ -241,8 +241,8 @@ async function createFixture(
     releaseWarmup: vi.fn(async () => undefined),
     runVoiceJob: vi.fn(async () => undefined),
   } as VoxCpm2DubbingRuntimeResolverApi;
-  const progress = new VideoDubbingProgressHub();
-  const service = new VideoDubbingService(
+  const progress = new MediaDubbingProgressHub();
+  const service = new MediaDubbingService(
     assets,
     projects,
     artifacts,
@@ -262,7 +262,7 @@ async function createFixture(
   };
 }
 
-describe('VideoDubbingService', () => {
+describe('MediaDubbingService', () => {
   it('uses an already-ready translation without requesting translation again', async () => {
     const { service, subtitles, producer } = await createFixture();
     const phases: string[] = [];
@@ -381,7 +381,7 @@ describe('VideoDubbingService', () => {
     expect(producer.materialize).not.toHaveBeenCalled();
     expect(service.getSnapshot('video')).toMatchObject({
       phase: 'runtime-required',
-      message: '请先在设置中安装 VoxCPM2 视频配音组件。',
+      message: '请先在设置中安装 VoxCPM2 视频/音频配音组件。',
     });
   });
 
@@ -398,7 +398,7 @@ describe('VideoDubbingService', () => {
     expect(producer.materialize).not.toHaveBeenCalled();
     expect(service.getSnapshot('video')).toMatchObject({
       phase: 'runtime-required',
-      message: '请先在设置中安装 VoxCPM2 视频配音组件。',
+      message: '请先在设置中安装 VoxCPM2 视频/音频配音组件。',
     });
   });
 

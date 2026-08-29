@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { VideoDubbingSnapshot } from '../shared';
+import type { MediaDubbingSnapshot } from './contracts';
 import {
-  isVideoDubbingPlaybackAvailable,
-  resolveVideoDubbingPlayback,
-} from './video-dubbing-playback';
+  isMediaDubbingPlaybackAvailable,
+  resolveMediaDubbingPlayback,
+} from './media-dubbing-playback';
 
-const preview: VideoDubbingSnapshot = {
+const preview: MediaDubbingSnapshot = {
   phase: 'cloning',
   completedPhrases: 3,
   totalPhrases: 8,
@@ -16,15 +16,15 @@ const preview: VideoDubbingSnapshot = {
   previewAudioUrl: 'learning-content://resource/preview',
 };
 
-describe('resolveVideoDubbingPlayback', () => {
+describe('resolveMediaDubbingPlayback', () => {
   it('keeps the original audio before the generated suffix reaches playback', () => {
-    expect(resolveVideoDubbingPlayback(preview, true, 11_999)).toEqual({
+    expect(resolveMediaDubbingPlayback(preview, true, 11_999)).toEqual({
       kind: 'original',
     });
   });
 
   it('switches to the playable suffix exactly when the two heads meet', () => {
-    const playback = resolveVideoDubbingPlayback(preview, true, 12_000);
+    const playback = resolveMediaDubbingPlayback(preview, true, 12_000);
 
     expect(playback).toEqual({
       kind: 'preview',
@@ -38,7 +38,7 @@ describe('resolveVideoDubbingPlayback', () => {
 
   it('never treats progress without playable files as audible', () => {
     expect(
-      resolveVideoDubbingPlayback(
+      resolveMediaDubbingPlayback(
         { ...preview, previewAudioUrl: undefined },
         true,
         18_000,
@@ -48,7 +48,7 @@ describe('resolveVideoDubbingPlayback', () => {
 
   it('uses the committed full track after generation completes', () => {
     expect(
-      resolveVideoDubbingPlayback(
+      resolveMediaDubbingPlayback(
         {
           ...preview,
           phase: 'ready',
@@ -69,8 +69,8 @@ describe('resolveVideoDubbingPlayback', () => {
     (phase) => {
       const durable = { ...preview, phase };
 
-      expect(isVideoDubbingPlaybackAvailable(durable)).toBe(true);
-      expect(resolveVideoDubbingPlayback(durable, true, 18_000)).toMatchObject({
+      expect(isMediaDubbingPlaybackAvailable(durable)).toBe(true);
+      expect(resolveMediaDubbingPlayback(durable, true, 18_000)).toMatchObject({
         kind: 'preview',
         revision: 3,
       });
@@ -78,7 +78,7 @@ describe('resolveVideoDubbingPlayback', () => {
   );
 
   it('returns to original audio when dubbing is disabled', () => {
-    expect(resolveVideoDubbingPlayback(preview, false, 18_000)).toEqual({
+    expect(resolveMediaDubbingPlayback(preview, false, 18_000)).toEqual({
       kind: 'original',
     });
   });

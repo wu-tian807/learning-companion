@@ -3,12 +3,13 @@ import { isAbsolute, join } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
-import { AppError } from '../../../main/errors/app-error';
+import { AppError } from '../../main/errors/app-error';
 
 const CHECKPOINT_VERSION = 1;
+// This directory is a persisted compatibility contract, not a Workbench owner.
 const CHECKPOINT_ROOT = '.learning-companion/checkpoints/video-dubbing';
 
-export interface VideoDubbingCheckpointIdentity {
+export interface MediaDubbingCheckpointIdentity {
   readonly workspacePath: string;
   readonly assetId: string;
   readonly sourceRevision: string;
@@ -18,11 +19,11 @@ export interface VideoDubbingCheckpointIdentity {
   readonly totalPhrases: number;
 }
 
-export interface VideoDubbingCheckpointManifest {
+export interface MediaDubbingCheckpointManifest {
   readonly durationMs: number;
 }
 
-export interface VideoDubbingCheckpointPaths {
+export interface MediaDubbingCheckpointPaths {
   readonly directory: string;
   readonly manifestPath: string;
   readonly originalAudioPath: string;
@@ -36,7 +37,7 @@ export interface VideoDubbingCheckpointPaths {
   readonly progressPath: string;
 }
 
-interface StoredManifest extends VideoDubbingCheckpointManifest {
+interface StoredManifest extends MediaDubbingCheckpointManifest {
   readonly version: typeof CHECKPOINT_VERSION;
   readonly sourceRevision: string;
   readonly producerVersion: string;
@@ -54,8 +55,8 @@ function requireSegment(value: string): string {
 }
 
 function pathsFor(
-  identity: VideoDubbingCheckpointIdentity,
-): VideoDubbingCheckpointPaths {
+  identity: MediaDubbingCheckpointIdentity,
+): MediaDubbingCheckpointPaths {
   if (!isAbsolute(identity.workspacePath)) {
     throw new AppError('PROJECT_WORKSPACE_UNAVAILABLE');
   }
@@ -84,7 +85,7 @@ function pathsFor(
 
 function isMatchingManifest(
   value: unknown,
-  identity: VideoDubbingCheckpointIdentity,
+  identity: MediaDubbingCheckpointIdentity,
 ): value is StoredManifest {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
@@ -102,11 +103,11 @@ function isMatchingManifest(
   );
 }
 
-export async function openVideoDubbingCheckpoint(
-  identity: VideoDubbingCheckpointIdentity,
+export async function openMediaDubbingCheckpoint(
+  identity: MediaDubbingCheckpointIdentity,
 ): Promise<{
-  readonly paths: VideoDubbingCheckpointPaths;
-  readonly manifest?: VideoDubbingCheckpointManifest;
+  readonly paths: MediaDubbingCheckpointPaths;
+  readonly manifest?: MediaDubbingCheckpointManifest;
 }> {
   const paths = pathsFor(identity);
   let manifest: StoredManifest | undefined;
@@ -135,12 +136,12 @@ export async function openVideoDubbingCheckpoint(
   });
 }
 
-export async function loadVideoDubbingCheckpoint(
-  identity: VideoDubbingCheckpointIdentity,
+export async function loadMediaDubbingCheckpoint(
+  identity: MediaDubbingCheckpointIdentity,
 ): Promise<
   | {
-      readonly paths: VideoDubbingCheckpointPaths;
-      readonly manifest: VideoDubbingCheckpointManifest;
+      readonly paths: MediaDubbingCheckpointPaths;
+      readonly manifest: MediaDubbingCheckpointManifest;
     }
   | undefined
 > {
@@ -163,9 +164,9 @@ export async function loadVideoDubbingCheckpoint(
   }
 }
 
-export async function markVideoDubbingCheckpointPrepared(
-  paths: VideoDubbingCheckpointPaths,
-  identity: VideoDubbingCheckpointIdentity,
+export async function markMediaDubbingCheckpointPrepared(
+  paths: MediaDubbingCheckpointPaths,
+  identity: MediaDubbingCheckpointIdentity,
   durationMs: number,
 ): Promise<void> {
   const manifest: StoredManifest = {
@@ -184,8 +185,8 @@ export async function markVideoDubbingCheckpointPrepared(
   );
 }
 
-export async function removeVideoDubbingCheckpoint(
-  identity: VideoDubbingCheckpointIdentity,
+export async function removeMediaDubbingCheckpoint(
+  identity: MediaDubbingCheckpointIdentity,
 ): Promise<void> {
   await rm(pathsFor(identity).directory, { recursive: true, force: true });
 }

@@ -287,13 +287,13 @@ describe('VideoWorkbenchView', () => {
             resolveSnapshot = resolve;
           }),
     );
-    let publishEvent:
-      | ((event: {
+    const eventListeners = new Set<
+      (event: {
           sessionId: string;
           type: string;
           payload: typeof ready;
-        }) => void)
-      | undefined;
+        }) => void
+    >();
     const bootstrap: WorkbenchBootstrap = {
       sessionId: 'session',
       workbenchId: VIDEO_WORKBENCH_ID,
@@ -322,8 +322,13 @@ describe('VideoWorkbenchView', () => {
                 bootstrap={bootstrap}
                 executeCommand={executeCommand}
                 subscribeEvent={(listener) => {
-                  publishEvent = listener;
-                  return () => undefined;
+                  const typedListener = listener as (event: {
+                    sessionId: string;
+                    type: string;
+                    payload: typeof ready;
+                  }) => void;
+                  eventListeners.add(typedListener);
+                  return () => eventListeners.delete(typedListener);
                 }}
                 onRelink={vi.fn()}
                 onRefresh={vi.fn()}
@@ -343,11 +348,13 @@ describe('VideoWorkbenchView', () => {
       expect(container.textContent).toContain('字幕准备中');
 
       act(() => {
-        publishEvent?.({
-          sessionId: 'session',
-          type: 'video:subtitle-snapshot',
-          payload: ready,
-        });
+        for (const listener of eventListeners) {
+          listener({
+            sessionId: 'session',
+            type: 'video:subtitle-snapshot',
+            payload: ready,
+          });
+        }
       });
       expect(container.textContent).toContain('字幕关闭');
 
@@ -463,19 +470,19 @@ describe('VideoWorkbenchView', () => {
       '[data-video-control-dock="true"]',
     );
     const playbackControls = renderedDocument.querySelector(
-      '[data-video-playback-controls="true"]',
+      '[data-media-playback-controls="true"]',
     );
     const languageControls = renderedDocument.querySelector(
-      '[data-video-language-controls="true"]',
+      '[data-media-language-controls="true"]',
     );
     const progressRow = renderedDocument.querySelector(
-      '[data-video-progress-row="true"]',
+      '[data-media-progress-row="true"]',
     );
     const actionRow = renderedDocument.querySelector(
-      '[data-video-action-row="true"]',
+      '[data-media-action-row="true"]',
     );
     const primaryControls = renderedDocument.querySelector(
-      '[data-video-primary-controls="true"]',
+      '[data-media-primary-controls="true"]',
     );
     const loadingOverlay = renderedDocument.querySelector(
       '[data-video-stage-overlay="loading"]',

@@ -5,7 +5,7 @@ import { videoMainContribution } from './main-feature';
 import { videoWorkbenchManifest } from './shared';
 
 describe('videoMainContribution', () => {
-  it('owns Video provider and subtitle service assembly', () => {
+  it('owns Video provider and media-service assembly', () => {
     const subscribe = vi.fn(() => () => undefined);
     const registerArtifact = vi.fn();
     const context: MainWorkbenchProviderContext = {
@@ -28,7 +28,6 @@ describe('videoMainContribution', () => {
     expect(provider?.manifest).toBe(videoWorkbenchManifest);
     expect(videoMainContribution.features?.map(({ id }) => id)).toEqual([
       'builtin.video.frame-conversation',
-      'builtin.video.dubbing',
     ]);
     expect(subscribe).toHaveBeenCalledOnce();
     expect(registerArtifact).not.toHaveBeenCalled();

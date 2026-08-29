@@ -1,6 +1,6 @@
-import type { VideoDubbingSnapshot } from '../shared';
+import type { MediaDubbingSnapshot } from './contracts';
 
-export type VideoDubbingPlaybackSource =
+export type MediaDubbingPlaybackSource =
   | { readonly kind: 'original' }
   | {
       readonly kind: 'preview';
@@ -9,8 +9,8 @@ export type VideoDubbingPlaybackSource =
     }
   | { readonly kind: 'final'; readonly audioUrl: string };
 
-export function isVideoDubbingPlaybackAvailable(
-  snapshot: VideoDubbingSnapshot,
+export function isMediaDubbingPlaybackAvailable(
+  snapshot: MediaDubbingSnapshot,
 ): boolean {
   if (snapshot.phase === 'ready') return Boolean(snapshot.audioUrl);
   return (
@@ -23,11 +23,11 @@ export function isVideoDubbingPlaybackAvailable(
   );
 }
 
-export function resolveVideoDubbingPlayback(
-  snapshot: VideoDubbingSnapshot,
+export function resolveMediaDubbingPlayback(
+  snapshot: MediaDubbingSnapshot,
   requested: boolean,
   positionMs: number,
-): VideoDubbingPlaybackSource {
+): MediaDubbingPlaybackSource {
   if (!requested || !Number.isFinite(positionMs) || positionMs < 0) {
     return { kind: 'original' };
   }

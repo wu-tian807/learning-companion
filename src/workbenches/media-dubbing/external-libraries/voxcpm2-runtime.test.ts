@@ -11,9 +11,9 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ExternalCommandRunnerApi } from '../../../../main/external-libraries/external-command-runner';
-import type { ExternalLibraryServiceApi } from '../../../../main/external-libraries/external-library-service';
-import { VIDEO_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
+import type { ExternalCommandRunnerApi } from '../../../main/external-libraries/external-command-runner';
+import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
+import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
 import { VoxCpm2DubbingRuntimeResolver } from './voxcpm2-runtime';
 
 const temporaryDirectories: string[] = [];
@@ -56,7 +56,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await resolver.requireInstalledBundle();
 
     expect(requireRuntime).toHaveBeenCalledWith(
-      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
     expect(run).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     const runtime = await resolver.requireRuntime();
 
     expect(requireRuntime).toHaveBeenCalledWith(
-      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
     expect(run).toHaveBeenCalledTimes(5);
     expect(run.mock.calls.map(([request]) => request.args[0])).toEqual([
@@ -138,7 +138,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('loads VoxCPM2 during warmup and reuses that process for the first job', async () => {
+  it('shares one warm model across Workbench consumers until the last release', async () => {
     const root = await createRuntimeRoot();
     const environment = join(root, 'environment');
     await mkdir(join(environment, 'Scripts'), { recursive: true });
@@ -164,8 +164,9 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
       platform: 'win32',
     });
 
-    await resolver.warmup();
+    await Promise.all([resolver.warmup(), resolver.warmup()]);
     expect(run).toHaveBeenCalledOnce();
+    await resolver.releaseWarmup();
 
     const job = {
       referencePath: join(root, 'reference.wav'),
@@ -189,6 +190,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
 
     expect(run).toHaveBeenCalledOnce();
     await expect(access(requestPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await resolver.releaseWarmup();
   });
 
   it('stops an unfinished warmup once without reporting a failure', async () => {
