@@ -1,6 +1,14 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,12 +33,27 @@ afterEach(async () => {
 
 describe('VoxCpm2RuntimeSetup', () => {
   it('installs and verifies the complete environment before marking it ready', async () => {
-    const root = await createRuntimeRoot();
+    const parent = await createRuntimeRoot();
+    const root = join(parent, 'stage', 'runtime');
+    await mkdir(root, { recursive: true });
     const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
       if (request.args[0] === 'venv') {
-        const scripts = join(root, 'environment', 'Scripts');
+        const environmentRoot = String(request.args[1]);
+        const runtimeRoot = dirname(environmentRoot);
+        const scripts = join(environmentRoot, 'Scripts');
         await mkdir(scripts, { recursive: true });
         await writeFile(join(scripts, 'python.exe'), 'mock');
+        const managedPython = join(
+          runtimeRoot,
+          'managed-python',
+          'cpython-3.12.14-windows-x86_64-none',
+        );
+        await mkdir(managedPython, { recursive: true });
+        await writeFile(join(managedPython, 'python.exe'), 'mock');
+        await writeFile(
+          join(environmentRoot, 'pyvenv.cfg'),
+          `home = ${managedPython}\n`,
+        );
       }
       return { stdout: '', stderr: '' };
     });
@@ -49,6 +72,7 @@ describe('VoxCpm2RuntimeSetup', () => {
       (statusDetail) => statusDetails.push(statusDetail),
     );
 
+    expect(await setup.isReady(root)).toBe(false);
     expect(run.mock.calls.map(([request]) => request.args[0])).toEqual([
       'venv',
       'pip',
@@ -56,7 +80,7 @@ describe('VoxCpm2RuntimeSetup', () => {
       'pip',
       '-c',
     ]);
-    expect(await setup.isReady(root)).toBe(true);
+    expect(await setup.isReady(root)).toBe(false);
     expect(statusDetails).toEqual([
       '正在准备 Python 运行环境',
       '正在下载并安装 PyTorch/CUDA 运行环境，首次安装可能需要数分钟',
@@ -64,14 +88,9 @@ describe('VoxCpm2RuntimeSetup', () => {
       '正在安装 GPU 人声处理运行依赖',
       '正在验证 NVIDIA GPU 配音环境',
     ]);
-    expect(
-      JSON.parse(
-        await readFile(
-          join(root, 'environment', 'learning-companion-runtime.json'),
-          'utf8',
-        ),
-      ),
-    ).toEqual({ version: 1 });
+    await expect(
+      access(join(root, 'environment', 'learning-companion-runtime.json')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
     for (const [request] of run.mock.calls) {
       expect(request.env?.UV_CACHE_DIR).toBe(join(setupCache, 'uv'));
       expect(request.env?.PIP_CACHE_DIR).toBe(join(setupCache, 'pip'));
@@ -79,13 +98,61 @@ describe('VoxCpm2RuntimeSetup', () => {
         join(root, 'cache', 'setup-temp'),
       );
     }
+
+    const finalRoot = join(parent, 'final', 'runtime');
+    await mkdir(dirname(finalRoot), { recursive: true });
+    await rename(root, finalRoot);
+    await setup.finalizeInstallation(
+      finalRoot,
+      new AbortController().signal,
+      (statusDetail) => statusDetails.push(statusDetail),
+    );
+
+    expect(await setup.isReady(finalRoot)).toBe(true);
+    expect(statusDetails.at(-1)).toBe(
+      '正在完成配音运行环境配置',
+    );
+    expect(run.mock.calls.map(([request]) => request.args[0])).toEqual([
+      'venv',
+      'pip',
+      'pip',
+      'pip',
+      '-c',
+      'venv',
+      '-c',
+    ]);
+    expect(run.mock.calls[5]?.[0]).toMatchObject({
+      command: join(finalRoot, 'bootstrap', 'uv', 'uv.exe'),
+      args: expect.arrayContaining([
+        '--python',
+        join(
+          finalRoot,
+          'managed-python',
+          'cpython-3.12.14-windows-x86_64-none',
+          'python.exe',
+        ),
+        '--allow-existing',
+      ]),
+    });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(
+            finalRoot,
+            'environment',
+            'learning-companion-runtime.json',
+          ),
+          'utf8',
+        ),
+      ),
+    ).toEqual({ version: 2 });
     await setup.prepare(
-      root,
+      finalRoot,
       setupCache,
       new AbortController().signal,
       vi.fn(),
     );
-    expect(run).toHaveBeenCalledTimes(5);
+    expect(run).toHaveBeenCalledTimes(7);
   });
 
   it('rebuilds an incomplete environment through the same install path', async () => {
@@ -98,10 +165,11 @@ describe('VoxCpm2RuntimeSetup', () => {
       stderr: '',
     }));
 
-    await new VoxCpm2RuntimeSetup({
+    const setup = new VoxCpm2RuntimeSetup({
       commandRunner: { run },
       platform: 'win32',
-    }).prepare(
+    });
+    await setup.prepare(
       root,
       join(root, 'download-cache'),
       new AbortController().signal,
@@ -116,6 +184,7 @@ describe('VoxCpm2RuntimeSetup', () => {
       '-c',
     ]);
     expect(run.mock.calls[0]?.[0].args).toContain('--clear');
+    expect(await setup.isReady(root)).toBe(false);
   });
 
   it('leaves the component unavailable when setup fails', async () => {

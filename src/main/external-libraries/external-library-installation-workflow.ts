@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import type { ExternalLibraryProgress } from '../../shared/external-libraries';
 import { AppError } from '../errors/app-error';
@@ -203,16 +203,25 @@ export class ExternalLibraryInstallationWorkflow {
           stagingInstallationDirectory,
           EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
         );
+        const setupCacheDirectory =
+          await this.dependencies.pathManager.prepareRuntimeSetupCacheDirectory(
+            rootPath,
+            definition,
+            packageDefinition,
+          );
         await runtimeSetup.prepare(
           runtimeDirectory,
-          join(dirname(downloaded[0]!.path), 'runtime-setup'),
+          setupCacheDirectory,
           signal,
           (statusDetail) => {
             onStage({ status: 'installing', statusDetail });
           },
         );
         if (signal.aborted) throw externalLibraryAbortReason(signal);
-        if (!(await runtimeSetup.isReady(runtimeDirectory))) {
+        if (
+          !runtimeSetup.finalizeInstallation &&
+          !(await runtimeSetup.isReady(runtimeDirectory))
+        ) {
           throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
         }
       }
@@ -227,28 +236,65 @@ export class ExternalLibraryInstallationWorkflow {
           installedTime: this.dependencies.now(),
         }),
       );
-      const paths =
-        await this.dependencies.pathManager.commitInstallation({
-          rootPath,
-          definition,
-          packageDefinition,
-          stagingDirectory,
-          stagingInstallationDirectory,
-          replaceExisting,
-        });
-      const inspection =
-        await this.dependencies.installationManifestFile.inspect(
-          paths.installationDirectory,
-          definition,
-          packageDefinition,
-        );
+      let installationCommitted = false;
+      try {
+        const paths =
+          await this.dependencies.pathManager.commitInstallation({
+            rootPath,
+            definition,
+            packageDefinition,
+            stagingDirectory,
+            stagingInstallationDirectory,
+            replaceExisting,
+          });
+        installationCommitted = true;
 
-      if (inspection.status !== 'available') {
-        throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+        if (runtimeSetup?.finalizeInstallation) {
+          const runtimeDirectory = join(
+            paths.installationDirectory,
+            EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+          );
+          await runtimeSetup.finalizeInstallation(
+            runtimeDirectory,
+            signal,
+            (statusDetail) => {
+              onStage({ status: 'installing', statusDetail });
+            },
+          );
+          if (signal.aborted) throw externalLibraryAbortReason(signal);
+        }
+
+        const inspection =
+          await this.dependencies.installationManifestFile.inspect(
+            paths.installationDirectory,
+            definition,
+            packageDefinition,
+          );
+
+        if (inspection.status !== 'available') {
+          throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+        }
+
+        installationAvailable = true;
+        return inspection;
+      } catch (error) {
+        if (installationCommitted) {
+          await this.dependencies.pathManager
+            .rollbackInstallationCommit({
+              rootPath,
+              definition,
+              packageDefinition,
+              stagingDirectory,
+            })
+            .catch((rollbackError: unknown) => {
+              this.dependencies.logger.warn(
+                '回滚未完成的外部运行时安装失败',
+                rollbackError,
+              );
+            });
+        }
+        throw error;
       }
-
-      installationAvailable = true;
-      return inspection;
     } finally {
       if (
         installationAvailable ||
