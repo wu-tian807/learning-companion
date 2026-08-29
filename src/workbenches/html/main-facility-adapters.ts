@@ -23,10 +23,18 @@ import {
   HTML_WORKBENCH_ID,
   isHtmlDomAnchorV1,
 } from './shared';
+import {
+  createHtmlSourceTextRuntimeExpression,
+  type HtmlSourceTextRuntime,
+} from './html-source-text-frame-script';
+import { createHtmlSourceCopyInstallerExpression } from './html-source-copy-frame-script';
 
 type HtmlDomProbeMode = 'required-selection' | 'prefer-selection' | 'element';
 
-function readHtmlDomAnchor(mode: HtmlDomProbeMode) {
+function readHtmlDomAnchor(
+  mode: HtmlDomProbeMode,
+  sourceText: HtmlSourceTextRuntime,
+) {
   try {
     const hovered = Array.from(document.querySelectorAll(':hover'));
     const selection = typeof globalThis.getSelection === 'function'
@@ -35,7 +43,7 @@ function readHtmlDomAnchor(mode: HtmlDomProbeMode) {
     const selectedRange = selection && selection.rangeCount > 0 && !selection.isCollapsed
       ? selection.getRangeAt(0)
       : null;
-    const selectedText = selectedRange ? selection?.toString() ?? '' : '';
+    const selectedText = selectedRange ? sourceText.readRange(selectedRange) : '';
     const useSelection = mode !== 'element' && selectedText.trim().length > 0;
     if (mode === 'required-selection' && !useSelection) return null;
     const selectedNode = useSelection ? selectedRange?.commonAncestorContainer : null;
@@ -44,15 +52,16 @@ function readHtmlDomAnchor(mode: HtmlDomProbeMode) {
           ? selectedNode
           : selectedNode.parentElement)
       : null;
-    const candidate = selectedElement
+    const rawCandidate = selectedElement
       || hovered[hovered.length - 1]
       || document.activeElement
       || document.body
       || document.documentElement;
 
-    if (!(candidate instanceof Element)) {
+    if (!(rawCandidate instanceof Element)) {
       return null;
     }
+    const candidate = sourceText.formulaRoot(rawCandidate) ?? rawCandidate;
 
     const elementPath = [];
     let current = candidate;
@@ -83,12 +92,7 @@ function readHtmlDomAnchor(mode: HtmlDomProbeMode) {
         : '';
       return normalized ? normalized.slice(0, limit) : undefined;
     };
-    const text = bounded(
-      'innerText' in candidate
-        ? candidate.innerText
-        : candidate.textContent,
-      1024,
-    );
+    const text = bounded(sourceText.readElement(candidate), 1024);
     const id = bounded(candidate.id, 512);
     const role = bounded(candidate.getAttribute('role'), 128);
     const ariaLabel = bounded(
@@ -122,7 +126,7 @@ function readHtmlDomAnchor(mode: HtmlDomProbeMode) {
 }
 
 export function createHtmlDomProbeFrameScript(mode: HtmlDomProbeMode): string {
-  return `(${readHtmlDomAnchor.toString()})(${JSON.stringify(mode)})`;
+  return `(() => { const sourceText = ${createHtmlSourceTextRuntimeExpression()}; ${createHtmlSourceCopyInstallerExpression()}(sourceText); return (${readHtmlDomAnchor.toString()})(${JSON.stringify(mode)},sourceText); })()`;
 }
 
 export const READ_HTML_FRAME_SELECTION_SCRIPT =
@@ -198,7 +202,7 @@ export class HtmlContextMenuFacilityAdapter
     }
 
     const frameUrl = params.frameURL || context.frame.url || 'about:blank';
-    const selectionText = params.selectionText.slice(
+    const fallbackSelectionText = params.selectionText.slice(
       0,
       CORE_TEXT_SELECTION_MAX_LENGTH,
     );
@@ -206,7 +210,7 @@ export class HtmlContextMenuFacilityAdapter
 
     try {
       const result = await context.frame.executeJavaScript(
-        selectionText.trim()
+        fallbackSelectionText.trim()
           ? READ_HTML_CONTEXT_SELECTION_SCRIPT
           : READ_HTML_CONTEXT_ELEMENT_SCRIPT,
       );
@@ -219,7 +223,14 @@ export class HtmlContextMenuFacilityAdapter
       x: params.x,
       y: params.y,
       frameUrl,
-      ...(selectionText.trim() ? { selectionText } : {}),
+      ...((probe?.text ?? fallbackSelectionText).trim()
+        ? {
+            selectionText: (probe?.text ?? fallbackSelectionText).slice(
+              0,
+              CORE_TEXT_SELECTION_MAX_LENGTH,
+            ),
+          }
+        : {}),
       ...(isExternalHttpUrl(params.linkURL)
         ? { linkUrl: params.linkURL }
         : {}),

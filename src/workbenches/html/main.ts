@@ -23,6 +23,7 @@ import {
   saveHtmlConversationEntry,
 } from './conversation/conversation-protocol';
 import {
+  htmlFrameCommands,
   htmlConversationCommands,
   htmlWorkbenchManifest,
 } from './shared';
@@ -37,6 +38,10 @@ import {
   createHtmlAnchorClearFrameScript,
   createHtmlAnchorHighlightFrameScript,
 } from './html-anchor-frame-script';
+import {
+  createHtmlSourceCopyInstallFrameScript,
+  isHtmlSourceCopyInstallResult,
+} from './html-source-copy-frame-script';
 
 function createResult(payload: JsonValue): WorkbenchCommandResult {
   return { payload };
@@ -149,6 +154,20 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   ): Promise<WorkbenchCommandResult> {
     if (!this.sessions.has(context.sessionId)) {
       throw new AppError('WORKBENCH_SESSION_NOT_FOUND');
+    }
+
+    if (command.type === htmlFrameCommands.installSourceCopy) {
+      if (command.payload !== undefined) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      const result = await this.frameScriptExecutor.executeJavaScript(
+        context.sessionId,
+        createHtmlSourceCopyInstallFrameScript(),
+      );
+      if (!isHtmlSourceCopyInstallResult(result)) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      return createResult(result);
     }
 
     if (command.type === htmlAnchorCommands.highlight) {

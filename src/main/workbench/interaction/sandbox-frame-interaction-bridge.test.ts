@@ -155,7 +155,7 @@ function createFixture() {
 }
 
 describe('SandboxFrameInteractionBridge', () => {
-  it('emits generic context and selection events for an owned nested frame', async () => {
+  it('emits source-aware context and selection events for an owned nested frame', async () => {
     const fixture = createFixture();
     const rootUrl = 'learning-content://resource/token';
     const root = createFrame(rootUrl);
@@ -186,7 +186,7 @@ describe('SandboxFrameInteractionBridge', () => {
         sessionId: 'session-1',
         facilityId: CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
         payload: expect.objectContaining({
-          selectionText: '右键选区',
+          selectionText: '嵌套帧选区',
           frameUrl: child.frame.url,
         }),
       }),

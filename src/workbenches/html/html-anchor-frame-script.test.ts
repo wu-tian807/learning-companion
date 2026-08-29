@@ -144,6 +144,42 @@ describe('HTML anchor frame scripts', () => {
     ).resolves.toEqual({ found: true });
   });
 
+  it('falls back to a formula-source text quote when the DOM path changed', async () => {
+    document.body.innerHTML =
+      '<p id="formula">公式：<span class="katex">' +
+      '<span class="katex-mathml"><math><semantics>' +
+      '<mrow><msup><mi>x</mi><mn>2</mn></msup></mrow>' +
+      '<annotation encoding="application/x-tex">x^2</annotation>' +
+      '</semantics></math></span>' +
+      '<span class="katex-html" aria-hidden="true">x2</span>' +
+      '</span></p>';
+    const formula = document.querySelector('#formula');
+    if (!formula) throw new Error('Expected formula paragraph');
+    Object.defineProperty(formula, 'getBoundingClientRect', {
+      value: () => ({ left: 12, top: 120, width: 160, height: 24 }),
+    });
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: [999],
+        tagName: 'p',
+        textQuote: '公式：$x^2$',
+      },
+    });
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target,
+          revision: 4,
+          reveal: false,
+          durationMs: 0,
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
+    expect(highlightedTop()).toBe('118px');
+  });
+
   it('uses the captured element identity instead of matching duplicate page text', async () => {
     document.body.innerHTML =
       '<p id="first">前文 重复正文 后文</p>' +

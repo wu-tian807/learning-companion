@@ -10,12 +10,14 @@ import {
   HTML_DOCUMENT_SANDBOX,
   HtmlDocumentFrame,
   HtmlWorkbenchView,
+  installHtmlSourceCopyInFrame,
   pendingHtmlTextSelection,
 } from './renderer';
 import {
   HTML_WORKBENCH_ID,
   createHtmlDomTarget,
   htmlWorkbenchManifest,
+  htmlFrameCommands,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -66,6 +68,27 @@ function render(payload: WorkbenchBootstrap['payload']) {
 }
 
 describe('HtmlWorkbenchView', () => {
+  it('installs source-aware copy behavior through the Workbench command path', async () => {
+    const executeCommand = vi.fn(async () => ({
+      payload: { installed: true },
+    }));
+
+    await expect(
+      installHtmlSourceCopyInFrame(executeCommand),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: htmlFrameCommands.installSourceCopy,
+    });
+  });
+
+  it('rejects an invalid source-copy install result', async () => {
+    await expect(
+      installHtmlSourceCopyInFrame(
+        vi.fn(async () => ({ payload: { installed: false } })),
+      ),
+    ).rejects.toThrow('source-copy installer returned invalid data');
+  });
+
   it('runs original HTML in a script-capable isolated frame', () => {
     const markup = renderToStaticMarkup(
       <HtmlDocumentFrame

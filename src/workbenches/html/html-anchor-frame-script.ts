@@ -2,6 +2,10 @@ import type {
   HtmlAnchorClearCommandPayload,
   HtmlAnchorHighlightCommandPayload,
 } from './anchor-commands';
+import {
+  createHtmlSourceTextRuntimeExpression,
+  type HtmlSourceTextRuntime,
+} from './html-source-text-frame-script';
 
 interface FrameAnchorCommand {
   readonly action: 'highlight' | 'clear';
@@ -16,7 +20,10 @@ interface FrameAnchorCommand {
  * the red outline, so the outline shares the document's own scroll/reflow
  * lifecycle instead of relying on stale cross-frame viewport coordinates.
  */
-async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
+async function runHtmlAnchorFrameCommand(
+  input: FrameAnchorCommand,
+  sourceText: HtmlSourceTextRuntime,
+) {
   const stateKey = '__learningCompanionHtmlAnchorHighlightV1';
   const root = globalThis as unknown as Record<string, unknown>;
   type RuntimeState = {
@@ -169,9 +176,7 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
     }
     return Array.from(document.querySelectorAll(tagName)).find((candidate) => {
       const candidateText = normalizedText(
-        'innerText' in candidate
-          ? (candidate as HTMLElement).innerText
-          : candidate.textContent,
+        sourceText.readElement(candidate),
       );
       return (
         (!textQuote || candidateText.includes(textQuote)) &&
@@ -230,7 +235,7 @@ async function runHtmlAnchorFrameCommand(input: FrameAnchorCommand) {
       const range = document.createRange();
       range.setStart(startNode, startOffset);
       range.setEnd(endNode, endOffset);
-      const reconstructed = normalizedText(range.toString());
+      const reconstructed = normalizedText(sourceText.readRange(range));
       return (
         reconstructed === exact ||
         compactText(reconstructed) === compactText(exact)
@@ -472,7 +477,7 @@ export function createHtmlAnchorHighlightFrameScript(
   return `(${runHtmlAnchorFrameCommand.toString()})(${JSON.stringify({
     action: 'highlight',
     ...payload,
-  })})`;
+  })},${createHtmlSourceTextRuntimeExpression()})`;
 }
 
 export function createHtmlAnchorClearFrameScript(
@@ -481,5 +486,5 @@ export function createHtmlAnchorClearFrameScript(
   return `(${runHtmlAnchorFrameCommand.toString()})(${JSON.stringify({
     action: 'clear',
     ...payload,
-  })})`;
+  })},${createHtmlSourceTextRuntimeExpression()})`;
 }

@@ -31,6 +31,10 @@ export const htmlConversationCommands = {
   remove: 'html.conversations.remove',
 } as const;
 
+export const htmlFrameCommands = {
+  installSourceCopy: 'html.frame.install-source-copy',
+} as const;
+
 export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   typeof HTML_WORKBENCH_ID
 > = {
