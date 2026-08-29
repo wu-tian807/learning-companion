@@ -96,7 +96,7 @@ export function createAudioRendererActions({
         groupLabel: 'Audio AI',
         order: 10,
         presentation: {
-          kind: 'generation-tool',
+          kind: 'action',
           label: '解释这一段',
           description: '使用当前音频时间点附近的内容',
           disabledReason: '等待 Audio AI 与转写能力接入',
@@ -109,7 +109,7 @@ export function createAudioRendererActions({
         group: '80-ai',
         order: 20,
         presentation: {
-          kind: 'generation-tool',
+          kind: 'action',
           label: '从这里生成学习笔记',
           description: '从当前时间点开始分析后续音频',
           disabledReason: '等待 Audio AI 与转写能力接入',
@@ -124,32 +124,6 @@ export function createAudioRendererActions({
         presentation: {
           kind: 'action',
           label: '在文件夹中显示',
-        },
-      },
-      {
-        id: 'audio.ai.explain-segment.generation-center',
-        actionId: 'audio.ai.explain-segment',
-        surface: 'generation-center',
-        group: '10-audio-ai',
-        order: 10,
-        presentation: {
-          kind: 'generation-tool',
-          label: '解释当前音频片段',
-          description: '结合当前时间点附近的转写内容进行解释',
-          disabledReason: '等待 Audio AI 与转写能力接入',
-        },
-      },
-      {
-        id: 'audio.ai.notes-from-here.generation-center',
-        actionId: 'audio.ai.notes-from-here',
-        surface: 'generation-center',
-        group: '10-audio-ai',
-        order: 20,
-        presentation: {
-          kind: 'generation-tool',
-          label: '生成音频学习笔记',
-          description: '从当前时间点开始整理后续音频内容',
-          disabledReason: '等待 Audio AI 与转写能力接入',
         },
       },
     ],

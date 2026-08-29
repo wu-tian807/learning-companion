@@ -280,7 +280,7 @@ export function createImageRendererActions({
         groupLabel: 'Image AI',
         order: 10,
         presentation: {
-          kind: 'generation-tool',
+          kind: 'action',
           label: '分析整张图片',
           description: '将原始图片交给视觉模型',
           disabledReason: '等待 Image AI 工具接入',
@@ -293,7 +293,7 @@ export function createImageRendererActions({
         group: '80-ai',
         order: 20,
         presentation: {
-          kind: 'generation-tool',
+          kind: 'action',
           label: '框选区域并解释',
           description: '结合整张图片理解你感兴趣的区域',
           disabledReason:
