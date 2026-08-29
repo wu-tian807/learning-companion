@@ -26,6 +26,7 @@ describe('WorkbenchConversationRuntime', () => {
     runtime.open({
       ownerId: 'pdf.owner',
       conversationId: 'conversation-1',
+      fallbackToNewConversation: true,
       context: { pageNumber: 2 },
       question: '解释这一段',
       submit: true,
@@ -36,6 +37,7 @@ describe('WorkbenchConversationRuntime', () => {
       active: { ownerId: 'pdf.owner' },
       launchRequest: {
         conversationId: 'conversation-1',
+        fallbackToNewConversation: true,
         context: { pageNumber: 2 },
         question: '解释这一段',
         submit: true,

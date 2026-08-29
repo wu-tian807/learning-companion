@@ -8,6 +8,7 @@ import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
+import { WorkbenchConversationRuntime } from '../../renderer/conversation/workbench-conversation-runtime';
 import {
   createVideoFrameRegionFromClientPoints,
   hasLoadedVideoMetadata,
@@ -18,6 +19,7 @@ import {
 import {
   cloneVideoViewState,
   cloneVideoSubtitleSnapshot,
+  createVideoFrameRegionTarget,
   DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
   EMPTY_VIDEO_DUBBING_SNAPSHOT,
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
@@ -25,6 +27,7 @@ import {
   VIDEO_WORKBENCH_ID,
   videoWorkbenchManifest,
 } from './shared';
+import type { VideoExplanationView } from './explanations/shared';
 
 vi.mock('../../renderer/workbench/runtime/use-workbench-contributions', () => ({
   useWorkbenchContributions: vi.fn(),
@@ -93,6 +96,8 @@ async function mountVideoWorkbench(input: {
   readonly payload: WorkbenchBootstrap['payload'];
   readonly executeCommand: VideoViewProps['executeCommand'];
   readonly subscribeEvent?: VideoViewProps['subscribeEvent'];
+  readonly explanations?: readonly VideoExplanationView[];
+  readonly conversationRuntime?: WorkbenchConversationRuntime;
 }) {
   const container = document.createElement('div');
   document.body.append(container);
@@ -104,7 +109,7 @@ async function mountVideoWorkbench(input: {
   Object.defineProperty(window, 'learningCompanion', {
     configurable: true,
     value: {
-      listVideoExplanations: vi.fn(async () => []),
+      listVideoExplanations: vi.fn(async () => [...(input.explanations ?? [])]),
       onVideoExplanationChanged: vi.fn(() => () => undefined),
       onGenerationTaskChanged: vi.fn(() => () => undefined),
     },
@@ -122,7 +127,7 @@ async function mountVideoWorkbench(input: {
 
   await act(async () => {
     root.render(
-      <WorkbenchConversationRuntimeProvider>
+      <WorkbenchConversationRuntimeProvider runtime={input.conversationRuntime}>
         <WorkbenchRuntimeProvider onError={vi.fn()}>
           <VideoWorkbenchView
             asset={asset}
@@ -565,6 +570,93 @@ describe('VideoWorkbenchView', () => {
       ).toBeNull();
     } finally {
       view.cleanup();
+    }
+  });
+
+  it('opens a saved video marker in the conversation that originally created it', async () => {
+    const conversationRuntime = new WorkbenchConversationRuntime();
+    const explanation: VideoExplanationView = {
+      kind: 'attachment',
+      id: 'attachment-1',
+      projectId: asset.projectId,
+      assetId: asset.id,
+      target: createVideoFrameRegionTarget({
+        timeSeconds: 0,
+        x: 0.1,
+        y: 0.2,
+        width: 0.3,
+        height: 0.4,
+        sourceWidth: 1_920,
+        sourceHeight: 1_080,
+      }),
+      sourceRevision: '100',
+      question: '这里是什么曲线？',
+      conversationId: 'conversation-original',
+      status: 'completed',
+      answer: '这是市场指标曲线。',
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const view = await mountVideoWorkbench({
+      conversationRuntime,
+      explanations: [explanation],
+      executeCommand: vi.fn(
+        async (command: { readonly type: string }) => ({
+          payload:
+            command.type === 'video:get-dubbing-snapshot'
+              ? EMPTY_VIDEO_DUBBING_SNAPSHOT
+              : command.type === 'video:get-subtitle-snapshot'
+                ? EMPTY_VIDEO_SUBTITLE_SNAPSHOT
+                : { saved: true, savedTime: 100 },
+        }),
+      ) as VideoViewProps['executeCommand'],
+      payload: {
+        contentUrl: 'learning-content://resource/token',
+        sourceRevision: '100',
+        viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
+        subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: cloneVideoSubtitleSnapshot(
+          EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+        ),
+        dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
+      },
+    });
+
+    try {
+      const video = view.container.querySelector('video')!;
+      Object.defineProperties(video, {
+        readyState: { configurable: true, value: 1 },
+        videoWidth: { configurable: true, value: 1_920 },
+        videoHeight: { configurable: true, value: 1_080 },
+        duration: { configurable: true, value: 60 },
+      });
+      await act(async () => {
+        video.dispatchEvent(new Event('loadedmetadata'));
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        view.container
+          .querySelector<HTMLButtonElement>('[data-explanation-marker="attachment-1"]')!
+          .click();
+      });
+      await act(async () => {
+        [...view.container.querySelectorAll('button')]
+          .find((button) => button.textContent?.trim() === '继续追问')!
+          .click();
+      });
+
+      expect(conversationRuntime.getSnapshot().launchRequest).toMatchObject({
+        conversationId: 'conversation-original',
+        fallbackToNewConversation: true,
+        context: {
+          target: explanation.target,
+          sourceRevision: '100',
+        },
+      });
+    } finally {
+      view.cleanup();
+      conversationRuntime.dispose();
     }
   });
 

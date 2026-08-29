@@ -13,6 +13,7 @@ interface RegisteredContribution {
 export interface OpenWorkbenchConversationInput {
   readonly ownerId?: string;
   readonly conversationId?: string;
+  readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;
@@ -94,6 +95,9 @@ export class WorkbenchConversationRuntime {
       id: this.launchId,
       ...(input.conversationId?.trim()
         ? { conversationId: input.conversationId.trim() }
+        : {}),
+      ...(input.fallbackToNewConversation === true
+        ? { fallbackToNewConversation: true }
         : {}),
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
