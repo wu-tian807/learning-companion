@@ -269,9 +269,9 @@ export function SettingsDialog({
         {pendingInstall && (
             <ConfirmationPanel
               title={`安装 ${pendingInstall.library.displayName}？`}
-              description={`将从官方网站下载约 ${formatExternalLibrarySize(
+              description={`固定组件资源约 ${formatExternalLibrarySize(
                 pendingInstall.expectedSize,
-              )} 的完整配套包，并安装到“${pendingInstall.library.rootPath}”。如需更换磁盘，请先取消并使用“更换位置”。`}
+              )}；安装时会在“${pendingInstall.library.rootPath}”内完成该组件所需的运行环境与校验。只有全部完成后才会显示“可用”；如需更换磁盘，请先取消并使用“更换位置”。`}
               confirmLabel="下载并安装"
               busy={requestPendingById.has(
                 pendingInstall.library.id,

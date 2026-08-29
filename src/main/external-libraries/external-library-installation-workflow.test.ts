@@ -24,6 +24,7 @@ import {
   type ExternalLibraryInstaller,
 } from './external-library-installer';
 import { ExternalLibraryPathManager } from './external-library-path-manager';
+import { ExternalLibraryRuntimeSetupRegistry } from './external-library-runtime-setup';
 
 const temporaryDirectories: string[] = [];
 
@@ -120,6 +121,24 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     };
     const installers = new ExternalLibraryInstallerRegistry();
     installers.register(installer);
+    const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
+    const prepareRuntime = vi.fn(async (runtimeDirectory: string) => {
+      const readyPath = join(runtimeDirectory, 'environment', 'ready.json');
+      await mkdir(dirname(readyPath), { recursive: true });
+      await writeFile(readyPath, '{}');
+    });
+    runtimeSetups.register({
+      libraryId: definition.id,
+      prepare: prepareRuntime,
+      async isReady(runtimeDirectory) {
+        try {
+          await access(join(runtimeDirectory, 'environment', 'ready.json'));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
     const stages: Array<{
       readonly status: string;
       readonly completedBytes?: number;
@@ -130,9 +149,10 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
         createId: () => 'job',
       }),
       installationManifestFile:
-        new ExternalLibraryInstallationManifestFile(),
+        new ExternalLibraryInstallationManifestFile(runtimeSetups),
       downloader: { download },
       installers,
+      runtimeSetups,
       now: () => 10,
       logger: { warn: vi.fn() },
     });
@@ -170,6 +190,7 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       'installing',
     ]);
     expect(installer.install).toHaveBeenCalledOnce();
+    expect(prepareRuntime).toHaveBeenCalledOnce();
     expect(installer.install).toHaveBeenCalledWith(
       expect.objectContaining({
         resources: expect.arrayContaining([

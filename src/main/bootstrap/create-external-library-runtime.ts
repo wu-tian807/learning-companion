@@ -7,6 +7,7 @@ import { ExternalLibraryInstallationManifestFile } from '../external-libraries/e
 import { ExternalLibraryInstallerRegistry } from '../external-libraries/external-library-installer';
 import { ExternalLibraryPathManager } from '../external-libraries/external-library-path-manager';
 import { ExternalLibraryRegistry } from '../external-libraries/external-library-registry';
+import { ExternalLibraryRuntimeSetupRegistry } from '../external-libraries/external-library-runtime-setup';
 import { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { MacosDmgInstaller } from '../external-libraries/installers/macos-dmg-installer';
 import { ExternalLibraryBundleInstaller } from '../external-libraries/installers/external-library-bundle-installer';
@@ -17,12 +18,14 @@ export async function createExternalLibraryRuntime(
   settingsRepository: SettingsRepository,
 ): Promise<ExternalLibraryService> {
   const registry = new ExternalLibraryRegistry();
+  const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
   const hardware = await detectExternalLibraryHardwareCapabilities(
     () => app.getGPUInfo('basic'),
   );
   registerMainWorkbenchExternalLibraries({
     libraries: registry,
     hardware,
+    runtimeSetups,
   });
   const installerRegistry = new ExternalLibraryInstallerRegistry();
   installerRegistry.register(new ExternalLibraryBundleInstaller());
@@ -32,9 +35,10 @@ export async function createExternalLibraryRuntime(
     settingsRepository,
     registry,
     new ExternalLibraryPathManager(),
-    new ExternalLibraryInstallationManifestFile(),
+    new ExternalLibraryInstallationManifestFile(runtimeSetups),
     new ExternalLibraryDownloader(),
     installerRegistry,
+    { runtimeSetups },
   );
 
   try {

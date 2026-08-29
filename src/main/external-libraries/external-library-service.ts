@@ -28,6 +28,7 @@ import type { ExternalLibraryInstallerRegistryApi } from "./external-library-ins
 import { ExternalLibraryMigrationWorkflow } from "./external-library-migration-workflow";
 import type { ExternalLibraryPathManagerApi } from "./external-library-path-manager";
 import type { ExternalLibraryRegistryApi } from "./external-library-registry";
+import type { ExternalLibraryRuntimeSetupRegistryApi } from "./external-library-runtime-setup";
 
 export type ExternalLibraryListener = (
   snapshot: ExternalLibrarySnapshot,
@@ -65,6 +66,7 @@ export interface ExternalLibraryServiceDependencies {
   readonly architecture: ExternalLibraryArchitecture;
   readonly now: () => number;
   readonly logger: Pick<Console, "warn">;
+  readonly runtimeSetups: ExternalLibraryRuntimeSetupRegistryApi;
 }
 
 interface ActiveInstallation {
@@ -127,6 +129,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       installationManifestFile,
       downloader,
       installers,
+      runtimeSetups: dependencies.runtimeSetups,
       now: this.now,
       logger: this.logger,
     });

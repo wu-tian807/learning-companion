@@ -11,6 +11,7 @@ import type { ContentResourceServiceApi } from '../content/content-resource-serv
 import { AppError } from '../errors/app-error';
 import type { ExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
 import type { ExternalLibraryRegistryApi } from '../external-libraries/external-library-registry';
+import type { ExternalLibraryRuntimeSetupRegistryApi } from '../external-libraries/external-library-runtime-setup';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
 import type { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
@@ -26,6 +27,7 @@ import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
   readonly hardware: ExternalLibraryHardwareCapabilities;
+  readonly runtimeSetups: ExternalLibraryRuntimeSetupRegistryApi;
 }
 
 export interface MainWorkbenchProviderContext {

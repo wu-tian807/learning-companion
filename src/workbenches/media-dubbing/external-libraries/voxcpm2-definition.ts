@@ -78,7 +78,7 @@ export const mediaDubbingVoxCpm2Definition: ExternalLibraryDefinition =
     id: MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     displayName: 'VoxCPM2 视频/音频配音组件',
     description:
-      'NVIDIA GPU 专用。安装 VoxCPM2 one-shot 声音克隆、人声分离、说话人区分模型与隔离运行环境引导程序。',
+      'NVIDIA GPU 专用。安装阶段会下载 VoxCPM2、人声分离、说话人区分模型以及额外的 Python/CUDA 运行依赖；全部完成后才可配音。',
     category: 'media',
     version: MEDIA_DUBBING_VOXCPM2_VERSION,
     installationFormatVersion: 1,

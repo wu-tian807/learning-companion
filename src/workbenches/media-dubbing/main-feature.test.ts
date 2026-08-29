@@ -7,6 +7,21 @@ import {
 } from './main-feature';
 
 describe('media dubbing Main feature lifecycle', () => {
+  it('registers the component with its installation-time runtime setup', () => {
+    const registerLibrary = vi.fn();
+    const registerRuntimeSetup = vi.fn();
+
+    mediaDubbingMainFeature.registerExternalLibraries?.({
+      libraries: { register: registerLibrary },
+      runtimeSetups: { register: registerRuntimeSetup },
+    } as never);
+
+    expect(registerLibrary).toHaveBeenCalledOnce();
+    expect(registerRuntimeSetup.mock.calls[0]?.[0].libraryId).toBe(
+      'video-dubbing-voxcpm2',
+    );
+  });
+
   it('registers both the final audio and durable speaker-track producers', () => {
     const register = vi.fn();
 
