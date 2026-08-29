@@ -8,6 +8,7 @@ import type {
   AgentProviderSetupSnapshot,
 } from "../shared/agent-providers";
 import type { AssetSnapshot } from "../shared/assets";
+import type { AssetFolderState } from "../shared/asset-folders";
 import type {
   ExternalLibraryMigrationResult,
   ExternalLibrarySnapshot,
@@ -38,10 +39,14 @@ import type {
   AgentProviderIdRequest,
   CancelAgentProviderLoginRequest,
   ConfigureAgentProviderApiConnectionRequest,
+  CreateAssetFolderRequest,
+  DeleteAssetFolderRequest,
+  DeleteAssetFolderResult,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
   InstallExternalLibraryRequest,
   MigrateExternalLibrariesRequest,
+  MoveAssetsToFolderRequest,
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
   AssetIdRequest,
@@ -58,6 +63,7 @@ import type {
   SetProjectPinnedRequest,
   SelectAgentProviderForSelectorRequest,
   UpdateHomePreferencesRequest,
+  UpdateAssetFolderRequest,
 } from "../shared/ipc";
 import { IPC_CHANNELS } from "../shared/ipc";
 import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
@@ -232,6 +238,16 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<void>(IPC_CHANNELS.revealAssetInFolder, request),
   onAssetChanged: (listener) =>
     subscribeAssetEvents(ipcRenderer, listener),
+  listAssetFolders: (request: ProjectLifecycleRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.listAssetFolders, request),
+  createAssetFolder: (request: CreateAssetFolderRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.createAssetFolder, request),
+  updateAssetFolder: (request: UpdateAssetFolderRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.updateAssetFolder, request),
+  deleteAssetFolder: (request: DeleteAssetFolderRequest) =>
+    invoke<DeleteAssetFolderResult>(IPC_CHANNELS.deleteAssetFolder, request),
+  moveAssetsToFolder: (request: MoveAssetsToFolderRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.moveAssetsToFolder, request),
   listGenerationTasks: (request: GenerationTaskProjectRequest) =>
     invoke<GenerationTaskView[]>(IPC_CHANNELS.listGenerationTasks, request),
   getGenerationTask: (request: GenerationTaskIdRequest) =>

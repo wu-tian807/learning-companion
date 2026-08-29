@@ -120,16 +120,19 @@ export function ProjectPage({
     },
     [startMindMap],
   );
-  const importedAssetState = useMemo(
+  const allImportedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
     [session.loadState],
   );
+  const importedAssetState = assetOperations.importedAssetState;
   const generatedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'generated'),
     [session.loadState],
   );
   const importedAssetCount =
-    importedAssetState.kind === 'ready' ? importedAssetState.assets.length : 0;
+    allImportedAssetState.kind === 'ready'
+      ? allImportedAssetState.assets.length
+      : 0;
   const generatedAssetCount =
     generatedAssetState.kind === 'ready'
       ? generatedAssetState.assets.length
@@ -298,11 +301,23 @@ export function ProjectPage({
                     refreshingAll={assetOperations.refreshingAll}
                     dragging={dragging}
                     now={relativeTimeNow}
+                    folderState={assetOperations.folderState}
+                    currentFolderPath={assetOperations.currentFolderPath}
                     onSelect={session.selectAsset}
                     onRemoveSelected={assetOperations.requestDelete}
                     onCopyAdd={() => void assetOperations.chooseAndAdd('copy')}
                     onLinkAdd={() => void assetOperations.chooseAndAdd('link')}
-                    onRetry={session.retry}
+                    onRetry={
+                      session.loadState.kind === 'ready'
+                        ? () => void assetOperations.loadAssetFolders()
+                        : session.retry
+                    }
+                    onOpenFolder={assetOperations.openFolder}
+                    onCreateFolder={assetOperations.createFolder}
+                    onRenameFolder={assetOperations.renameFolder}
+                    onMoveFolder={assetOperations.moveFolder}
+                    onDeleteFolder={assetOperations.deleteFolder}
+                    onMoveAssets={assetOperations.moveAssets}
                     onRename={assetOperations.setRenameTarget}
                     onReveal={(asset) =>
                       void assetOperations.revealAssetInFolder(asset)

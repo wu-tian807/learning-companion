@@ -9,14 +9,17 @@ import {
   isAddLocalAssetsRequest,
   isAddLocalAssetsResult,
   isAssetIdRequest,
+  isCreateAssetFolderRequest,
   isCreateProjectRequest,
   isChangeProjectWorkspaceRequest,
   isDeleteProjectRequest,
   isDeleteAssetsRequest,
   isDeleteAssetsResult,
+  isDeleteAssetFolderResult,
   isExternalLibraryIdRequest,
   isInstallExternalLibraryRequest,
   isMigrateExternalLibrariesRequest,
+  isMoveAssetsToFolderRequest,
   isHealthCheckResponse,
   isOpenExternalRequest,
   isProjectLifecycleRequest,
@@ -27,6 +30,7 @@ import {
   isSelectAgentProviderForSelectorRequest,
   isSelectProjectWorkspaceRequest,
   isUpdateHomePreferencesRequest,
+  isUpdateAssetFolderRequest,
 } from "./ipc";
 
 describe("health check contract", () => {
@@ -203,6 +207,23 @@ describe("Asset contracts", () => {
         assetIds: ["asset-a", "asset-b"],
       }),
     ).toBe(true);
+    expect(
+      isCreateAssetFolderRequest({ projectId: "project", path: "课程/第一章" }),
+    ).toBe(true);
+    expect(
+      isUpdateAssetFolderRequest({
+        projectId: "project",
+        path: "课程",
+        nextPath: "归档/课程",
+      }),
+    ).toBe(true);
+    expect(
+      isMoveAssetsToFolderRequest({
+        projectId: "project",
+        assetIds: ["asset-a", "asset-b"],
+        folderPath: null,
+      }),
+    ).toBe(true);
   });
 
   it("rejects malformed Asset requests", () => {
@@ -229,6 +250,30 @@ describe("Asset contracts", () => {
       false,
     );
     expect(isAssetIdRequest(null)).toBe(false);
+    expect(
+      isAddLocalAssetsRequest({
+        projectId: "project",
+        paths: ["/tmp/a.md"],
+        folderPath: "bad\\name",
+      }),
+    ).toBe(false);
+    expect(
+      isCreateAssetFolderRequest({ projectId: "project", path: "课程/" }),
+    ).toBe(false);
+    expect(
+      isUpdateAssetFolderRequest({
+        projectId: "project",
+        path: "课程",
+        nextPath: "",
+      }),
+    ).toBe(false);
+    expect(
+      isMoveAssetsToFolderRequest({
+        projectId: "project",
+        assetIds: ["asset", "asset"],
+        folderPath: "课程",
+      }),
+    ).toBe(false);
     expect(
       isDeleteAssetsRequest({
         projectId: "project",
@@ -332,6 +377,18 @@ describe("Asset contracts", () => {
         assets: [remainingAsset],
       }),
     ).toBe(false);
+    expect(
+      isDeleteAssetFolderResult({
+        deletedAssetIds: ["deleted"],
+        failed: [],
+        assets: [remainingAsset],
+        folderState: {
+          projectId: "project",
+          folders: [{ projectId: "project", path: "课程" }],
+          folderPathByAssetId: { remaining: "课程" },
+        },
+      }),
+    ).toBe(true);
     expect(
       isDeleteAssetsResult({
         deletedAssetIds: ["same"],
