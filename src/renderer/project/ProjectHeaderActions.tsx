@@ -145,7 +145,8 @@ export interface ProjectHeaderActionsProps {
   readonly onToggleRight: () => void;
   readonly onOpenWorkspace: () => void;
   readonly aiQuestionAvailable: boolean;
-  readonly onOpenAiQuestion: () => void;
+  readonly aiQuestionOpen: boolean;
+  readonly onToggleAiQuestion: () => void;
   readonly onOpenSettings: () => void;
 }
 
@@ -158,13 +159,17 @@ export function ProjectHeaderActions({
   onToggleRight,
   onOpenWorkspace,
   aiQuestionAvailable,
-  onOpenAiQuestion,
+  aiQuestionOpen,
+  onToggleAiQuestion,
   onOpenSettings,
 }: ProjectHeaderActionsProps) {
   const leftLabel = leftOpen ? '收起学习资料' : '展开学习资料';
   const rightLabel = rightOpen
     ? '收起生成中心'
     : '展开生成中心';
+  const aiQuestionLabel = aiQuestionOpen
+    ? '收起 AI 问答'
+    : '打开 AI 问答';
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -174,8 +179,15 @@ export function ProjectHeaderActions({
       />
       {aiQuestionAvailable && (
         <HeaderActionButton
-          label="打开 AI 问答"
-          onClick={onOpenAiQuestion}
+          label={aiQuestionLabel}
+          aria-controls="project-ai-question-panel"
+          aria-expanded={aiQuestionOpen}
+          onClick={onToggleAiQuestion}
+          className={
+            aiQuestionOpen
+              ? 'border-indigo-300/35 bg-indigo-300/10 text-indigo-200'
+              : ''
+          }
         >
           <AiQuestionIcon />
         </HeaderActionButton>

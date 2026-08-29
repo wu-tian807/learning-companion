@@ -46,6 +46,24 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.getSnapshot().launchRequest).toBeUndefined();
   });
 
+  it('toggles an available panel open and closed without cancelling its busy task', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('epub.owner', contribution('epub'));
+
+    runtime.toggle();
+    runtime.setBusy('epub.owner', true);
+    expect(runtime.getSnapshot()).toMatchObject({
+      panelOpen: true,
+      busy: true,
+    });
+
+    runtime.toggle();
+    expect(runtime.getSnapshot()).toMatchObject({
+      panelOpen: false,
+      busy: true,
+    });
+  });
+
   it('does not leak an open panel, launch request or busy state across Workbenches', () => {
     const runtime = new WorkbenchConversationRuntime();
     const releasePdf = runtime.register('pdf.owner', contribution('pdf'));

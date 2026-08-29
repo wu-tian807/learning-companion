@@ -264,13 +264,18 @@ export function ProjectPage({
             void openProjectWorkspace();
           }}
           aiQuestionAvailable={Boolean(conversationSnapshot.active)}
-          onOpenAiQuestion={() => {
+          aiQuestionOpen={conversationPanelOpen}
+          onToggleAiQuestion={() => {
+            if (conversationPanelOpen) {
+              conversationRuntime.toggle();
+              return;
+            }
             if (!assetOperations.selectedAsset) {
               setError('请先选择一份资料，再开始 AI 问答。');
               return;
             }
             try {
-              conversationRuntime.open();
+              conversationRuntime.toggle();
             } catch (openError) {
               const message = userMessageFromError(
                 openError,

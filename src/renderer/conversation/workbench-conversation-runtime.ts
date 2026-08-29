@@ -105,6 +105,14 @@ export class WorkbenchConversationRuntime {
     });
   }
 
+  toggle(input: OpenWorkbenchConversationInput = {}): void {
+    if (this.snapshot.panelOpen) {
+      this.close();
+      return;
+    }
+    this.open(input);
+  }
+
   close(): void {
     if (!this.snapshot.panelOpen) return;
     this.update({ ...this.snapshot, panelOpen: false, launchRequest: undefined });

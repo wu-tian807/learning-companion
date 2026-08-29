@@ -34,6 +34,7 @@ describe('Project auxiliary panels', () => {
 
     expect(html).toContain('AI 问答面板');
     expect(html).not.toContain('生成内容面板');
+    expect(html).toContain('id="project-ai-question-panel"');
     expect(html).toContain('w-[clamp(320px,28vw,390px)]');
   });
 

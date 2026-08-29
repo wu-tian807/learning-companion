@@ -19,6 +19,7 @@ export function ProjectAuxiliaryPanels({
     <>
       {conversationActive && (
         <div
+          id="project-ai-question-panel"
           data-project-panel="conversation"
           className={
             conversationOpen
