@@ -121,6 +121,22 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
       join(root, 'environment', 'Scripts', 'python.exe'),
     );
     expect(runtime.modelPath).toBe(join(root, 'models', 'VoxCPM2'));
+    expect(runtime.speakerSegmentationModelPath).toBe(
+      join(
+        root,
+        'models',
+        'speaker-diarization',
+        'pyannote-segmentation-3.0.int8.onnx',
+      ),
+    );
+    expect(runtime.speakerEmbeddingModelPath).toBe(
+      join(
+        root,
+        'models',
+        'speaker-diarization',
+        '3dspeaker-campplus-zh-en.onnx',
+      ),
+    );
     expect(runtime.workerCachePath).toBe(
       join(root, 'cache', 'model-sessions'),
     );
@@ -196,7 +212,9 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await resolver.releaseWarmup();
 
     const job = {
-      referencePath: join(root, 'reference.wav'),
+      referencePaths: {
+        'speaker-0001': join(root, 'reference.wav'),
+      },
       phrasesPath: join(root, 'phrases.json'),
       outputDirectory: join(root, 'voice'),
       progressPath: join(root, 'progress.json'),
@@ -448,7 +466,9 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     });
     await resolver.warmup();
     const job = {
-      referencePath: join(root, 'reference.wav'),
+      referencePaths: {
+        'speaker-0001': join(root, 'reference.wav'),
+      },
       phrasesPath: join(root, 'phrases.json'),
       outputDirectory: join(root, 'voice'),
       progressPath: join(root, 'progress.json'),
@@ -507,7 +527,9 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     });
     await resolver.warmup();
     const job = {
-      referencePath: join(root, 'reference.wav'),
+      referencePaths: {
+        'speaker-0001': join(root, 'reference.wav'),
+      },
       phrasesPath: join(root, 'phrases.json'),
       outputDirectory: join(root, 'voice'),
       progressPath: join(root, 'progress.json'),

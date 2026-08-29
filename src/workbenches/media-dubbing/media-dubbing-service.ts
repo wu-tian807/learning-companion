@@ -25,6 +25,16 @@ import {
 } from '../media-subtitles/translation-producer';
 import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
 import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import {
+  DUBBING_SPEAKER_TRACK_ARTIFACT_KEY,
+  DUBBING_SPEAKER_TRACK_PRODUCER_ID,
+  resolveCachedDubbingSpeakerTrack,
+  type DubbingSpeakerTrackArtifactProducerApi,
+} from './dubbing-speaker-track-artifact';
+import {
+  cloneDubbingSpeakerTrack,
+  type DubbingSpeakerTrackV1,
+} from './dubbing-speaker-track';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
@@ -63,9 +73,14 @@ export interface MediaDubbingServiceSnapshot {
 
 export interface MediaDubbingServiceApi {
   getSnapshot(assetId: string): MediaDubbingServiceSnapshot;
+  getSpeakerTrack(assetId: string): DubbingSpeakerTrackV1 | undefined;
   subscribe(
     assetId: string,
     listener: (snapshot: MediaDubbingServiceSnapshot) => void,
+  ): () => void;
+  subscribeSpeakerTrack(
+    assetId: string,
+    listener: (track: DubbingSpeakerTrackV1 | undefined) => void,
   ): () => void;
   refreshRuntimeAvailability(assetId: string): Promise<void>;
   restore(projectId: string, assetId: string): Promise<void>;
@@ -88,6 +103,7 @@ interface ResolvedDubbingInput {
   readonly source: ResolvedMediaSubtitleSource;
   readonly translation: SubtitleTranslationTrackV1;
   readonly request: AssetArtifactRequest;
+  readonly speakerTrackRequest: AssetArtifactRequest;
 }
 
 function cloneSnapshot(
@@ -115,6 +131,11 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     string,
     Set<(snapshot: MediaDubbingServiceSnapshot) => void>
   >();
+  private readonly speakerTracks = new Map<string, DubbingSpeakerTrackV1>();
+  private readonly speakerTrackListeners = new Map<
+    string,
+    Set<(track: DubbingSpeakerTrackV1 | undefined) => void>
+  >();
   private readonly tasks = new Map<string, Promise<void>>();
   private readonly restoreTasks = new Map<string, Promise<void>>();
   private readonly activeRevisions = new Map<string, string>();
@@ -126,6 +147,7 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     private readonly artifacts: AssetArtifactServiceApi,
     private readonly subtitles: MediaSubtitleServiceApi,
     private readonly producer: VoxCpm2DubbingProducer,
+    private readonly speakerTrackProducer: DubbingSpeakerTrackArtifactProducerApi,
     private readonly subtitleRuntime: MediaSubtitleRuntimeResolverApi,
     private readonly dubbingRuntime: VoxCpm2DubbingRuntimeResolverApi,
     progress: MediaDubbingProgressHub,
@@ -138,6 +160,11 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     return cloneSnapshot(this.snapshots.get(assetId) ?? EMPTY_SNAPSHOT);
   }
 
+  getSpeakerTrack(assetId: string): DubbingSpeakerTrackV1 | undefined {
+    const track = this.speakerTracks.get(assetId);
+    return track ? cloneDubbingSpeakerTrack(track) : undefined;
+  }
+
   subscribe(
     assetId: string,
     listener: (snapshot: MediaDubbingServiceSnapshot) => void,
@@ -148,6 +175,19 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     return () => {
       listeners.delete(listener);
       if (listeners.size === 0) this.listeners.delete(assetId);
+    };
+  }
+
+  subscribeSpeakerTrack(
+    assetId: string,
+    listener: (track: DubbingSpeakerTrackV1 | undefined) => void,
+  ): () => void {
+    const listeners = this.speakerTrackListeners.get(assetId) ?? new Set();
+    listeners.add(listener);
+    this.speakerTrackListeners.set(assetId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.speakerTrackListeners.delete(assetId);
     };
   }
 
@@ -232,9 +272,22 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
       await this.requireTranslation(projectId, assetId);
       const input = await this.resolveCachedInput(projectId, assetId);
       if (!input) throw new AppError('DATA_INTEGRITY_ERROR');
-      const { source, translation, request } = input;
+      const { source, translation, request, speakerTrackRequest } = input;
       const revision = request.source.revision;
       this.activeRevisions.set(assetId, revision);
+      const cachedSpeakerTrack = await resolveCachedDubbingSpeakerTrack(
+        this.artifacts,
+        speakerTrackRequest,
+        source.track,
+      );
+      if (cachedSpeakerTrack) {
+        this.updateSpeakerTrack(assetId, cachedSpeakerTrack.track);
+      } else if (
+        this.speakerTracks.get(assetId)?.sourceTrackRevision !==
+        translation.sourceTrackRevision
+      ) {
+        this.updateSpeakerTrack(assetId, undefined);
+      }
       const cached = await this.artifacts.getCached(request);
       const artifact =
         cached ??
@@ -249,6 +302,32 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
       if (artifact.artifact.mediaType !== VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
+      const speakerTrack =
+        cachedSpeakerTrack?.track ??
+        this.speakerTracks.get(assetId) ??
+        (await this.producer.getPreparedSpeakerTrack(
+          request,
+          source.track,
+          translation,
+        ));
+      if (
+        speakerTrack &&
+        speakerTrack.sourceTrackRevision !== translation.sourceTrackRevision
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      if (!speakerTrack && !cached) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      if (speakerTrack && !cachedSpeakerTrack) {
+        await this.speakerTrackProducer.materialize(
+          this.artifacts,
+          speakerTrackRequest,
+          source.track,
+          speakerTrack,
+        );
+      }
+      if (speakerTrack) this.updateSpeakerTrack(assetId, speakerTrack);
       const current = this.getSnapshot(assetId);
       const durationMs = Math.max(
         current.durationMs,
@@ -297,10 +376,51 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     try {
       const input = await this.resolveCachedInput(projectId, assetId);
       if (!input || this.tasks.has(assetId)) return;
+      const cachedSpeakerTrack = await resolveCachedDubbingSpeakerTrack(
+        this.artifacts,
+        input.speakerTrackRequest,
+        input.source.track,
+      );
+      if (cachedSpeakerTrack) {
+        this.updateSpeakerTrack(assetId, cachedSpeakerTrack.track);
+      } else if (
+        this.speakerTracks.get(assetId)?.sourceTrackRevision !==
+        input.translation.sourceTrackRevision
+      ) {
+        this.updateSpeakerTrack(assetId, undefined);
+      }
       const cached = await this.artifacts.getCached(input.request);
       if (cached) {
         if (cached.artifact.mediaType !== VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE) {
           throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+        if (!cachedSpeakerTrack) {
+          const preparedTrack = await this.producer.getPreparedSpeakerTrack(
+            input.request,
+            input.source.track,
+            input.translation,
+          );
+          if (preparedTrack) {
+            await this.speakerTrackProducer.materialize(
+              this.artifacts,
+              input.speakerTrackRequest,
+              input.source.track,
+              preparedTrack,
+            );
+            this.updateSpeakerTrack(assetId, preparedTrack);
+            await this.producer
+              .removeCheckpoint(
+                input.request,
+                input.source.track,
+                input.translation,
+              )
+              .catch((error: unknown) => {
+                this.logger.warn(
+                  '[media:dubbing] 清理已恢复的配音检查点失败',
+                  error,
+                );
+              });
+          }
         }
         const durationMs = input.source.track.cues.at(-1)?.endMs ?? 0;
         this.update(assetId, {
@@ -319,6 +439,9 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
         input.translation,
       );
       if (!progress || this.tasks.has(assetId)) return;
+      if (progress.speakerTrack) {
+        this.updateSpeakerTrack(assetId, progress.speakerTrack);
+      }
       this.update(assetId, {
         phase: 'interrupted',
         completedPhrases: progress.completedPhrases,
@@ -387,6 +510,18 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     return Object.freeze({
       source,
       translation,
+      speakerTrackRequest: Object.freeze({
+        assetId,
+        producerId: DUBBING_SPEAKER_TRACK_PRODUCER_ID,
+        artifactKey: DUBBING_SPEAKER_TRACK_ARTIFACT_KEY,
+        workspacePath: source.request.workspacePath,
+        source: Object.freeze({
+          assetId,
+          mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+          absolutePath: source.artifact.absolutePath,
+          revision: source.artifact.artifact.artifactRevision,
+        }),
+      }),
       request: Object.freeze({
         assetId,
         producerId: VOXCPM2_DUBBING_PRODUCER_ID,
@@ -474,6 +609,9 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     ) {
       return;
     }
+    if (progress.speakerTrack) {
+      this.updateSpeakerTrack(progress.assetId, progress.speakerTrack);
+    }
     this.update(progress.assetId, {
       phase: progress.phase,
       completedPhrases: progress.completedPhrases,
@@ -491,5 +629,24 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     const cloned = cloneSnapshot(snapshot);
     this.snapshots.set(assetId, cloned);
     for (const listener of this.listeners.get(assetId) ?? []) listener(cloned);
+  }
+
+  private updateSpeakerTrack(
+    assetId: string,
+    track: DubbingSpeakerTrackV1 | undefined,
+  ): void {
+    const cloned = track ? cloneDubbingSpeakerTrack(track) : undefined;
+    const current = this.speakerTracks.get(assetId);
+    if (
+      (!current && !cloned) ||
+      (current && cloned && JSON.stringify(current) === JSON.stringify(cloned))
+    ) {
+      return;
+    }
+    if (cloned) this.speakerTracks.set(assetId, cloned);
+    else this.speakerTracks.delete(assetId);
+    for (const listener of this.speakerTrackListeners.get(assetId) ?? []) {
+      listener(cloned ? cloneDubbingSpeakerTrack(cloned) : undefined);
+    }
   }
 }

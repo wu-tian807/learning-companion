@@ -18,7 +18,13 @@ import type { AssetServiceApi } from '../assets/asset-service';
 import type { GenerationTaskProjectLifecycle } from '../generation/generation-task-service';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
+import {
+  DUBBING_PHRASE_PLANNER_VERSION,
+} from '../../workbenches/media-dubbing/dubbing-phrase-planner';
 import { openMediaDubbingCheckpoint } from '../../workbenches/media-dubbing/media-dubbing-checkpoint-file';
+import {
+  DUBBING_SPEAKER_PLANNER_VERSION,
+} from '../../workbenches/media-dubbing/dubbing-speaker-planner';
 import { createProjectSnapshot } from './project';
 import type { ProjectDatabaseApi } from './project-database';
 import { ProjectService } from './project-service';
@@ -182,9 +188,9 @@ describe('Project deletion composition', () => {
       assetId: 'video-asset',
       sourceRevision: 'source-revision',
       producerVersion: 'producer-version',
-      phrasePlannerVersion: 2,
-      phrasesRevision: 'phrases-revision',
-      totalPhrases: 3,
+      phrasePlannerVersion: DUBBING_PHRASE_PLANNER_VERSION,
+      speakerPlannerVersion: DUBBING_SPEAKER_PLANNER_VERSION,
+      inputRevision: 'input-revision',
     });
     await writeFile(checkpoint.paths.originalAudioPath, 'partial audio');
     await writeFile(checkpoint.paths.progressPath, '{"completed":1}');

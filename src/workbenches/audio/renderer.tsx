@@ -23,6 +23,7 @@ import { MediaLanguageControls } from '../media-subtitles/media-language-control
 import { useMediaSubtitles } from '../media-subtitles/use-media-subtitles';
 import { AudioTranscript } from './audio-transcript';
 import { createAudioRendererActions } from './renderer-actions';
+import { useAudioSpeakerTrack } from './use-audio-speaker-track';
 import {
   AUDIO_PLAYBACK_RATES,
   AUDIO_WORKBENCH_ID,
@@ -39,6 +40,7 @@ import {
   createAudioTimeRangeTarget,
   DEFAULT_AUDIO_VIEW_STATE,
   EMPTY_AUDIO_DUBBING_SNAPSHOT,
+  EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
   EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
   isAudioDubbingSnapshot,
   isAudioSaveViewStateResult,
@@ -171,6 +173,14 @@ export function AudioWorkbenchView({
     reportError,
     protocol: AUDIO_SUBTITLE_PROTOCOL,
     mediaLabel: '音频',
+  });
+  const speakerTrack = useAudioSpeakerTrack({
+    resetKey: bootstrap.sessionId,
+    initialSnapshot:
+      payload?.speakerTrackSnapshot ?? EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+    executeCommand,
+    subscribeEvent,
+    reportError,
   });
   const dubbing = useMediaDubbingPlayback({
     resetKey: bootstrap.sessionId,
@@ -445,6 +455,7 @@ export function AudioWorkbenchView({
           snapshot={subtitles.snapshot}
           mode={subtitles.mode}
           currentTime={currentTime}
+          speakerTrack={speakerTrack}
           onSeek={seek}
         />
       </div>

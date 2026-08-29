@@ -7,7 +7,7 @@ import type {
 import {
   createDubbingPhrases,
   normalizeChineseSpokenText,
-  selectDubbingReferenceWindow,
+  type DubbingCueSpeakerAssignment,
 } from './dubbing-phrase-planner';
 
 function cue(
@@ -44,6 +44,19 @@ function translation(
   };
 }
 
+function speakers(
+  sourceCues: readonly SubtitleCueV1[],
+  speakerIds: readonly string[] = sourceCues.map(() => 'speaker-0001'),
+): readonly DubbingCueSpeakerAssignment[] {
+  return sourceCues.map((sourceCue, index) => ({
+    cueId: sourceCue.id,
+    speakerId: speakerIds[index]!,
+    referenceEligible: true,
+    dominantOverlapMs: sourceCue.endMs - sourceCue.startMs,
+    otherSpeakerOverlapMs: 0,
+  }));
+}
+
 describe('dubbing phrase planner', () => {
   it('normalizes numbers only for Chinese speech synthesis', () => {
     expect(normalizeChineseSpokenText('2026年增长12.5%，09:05编号007。')).toBe(
@@ -61,6 +74,7 @@ describe('dubbing phrase planner', () => {
     const phrases = createDubbingPhrases(
       source,
       translation(source, ['这是第一句话。', '好啊', '这一句保持独立。']),
+      speakers(source),
     );
 
     expect(phrases).toHaveLength(2);
@@ -84,30 +98,30 @@ describe('dubbing phrase planner', () => {
     ];
 
     expect(
-      createDubbingPhrases(source, translation(source, ['第一句话。', '好'])),
+      createDubbingPhrases(
+        source,
+        translation(source, ['第一句话。', '好']),
+        speakers(source),
+      ),
     ).toHaveLength(2);
   });
 
-  it('selects a 3-10 second reference using complete source cue boundaries', () => {
+  it('never merges adjacent cues from different speakers', () => {
     const source = [
-      cue('cue-1', 500, 2_700, 'A sufficiently long source sentence.'),
-      cue('cue-2', 2_900, 6_600, 'Another sufficiently long source sentence.'),
-      cue('cue-3', 8_000, 8_600, 'Short.'),
+      cue('cue-1', 0, 2_000, 'First.'),
+      cue('cue-2', 2_100, 2_500, 'Yes.'),
     ];
 
-    expect(selectDubbingReferenceWindow(source)).toEqual({
-      startMs: 500,
-      endMs: 6_600,
-      sourceCueIds: ['cue-1', 'cue-2'],
-    });
+    expect(
+      createDubbingPhrases(
+        source,
+        translation(source, ['第一句话。', '好']),
+        speakers(source, ['speaker-0001', 'speaker-0002']),
+      ),
+    ).toEqual([
+      expect.objectContaining({ speakerId: 'speaker-0001' }),
+      expect.objectContaining({ speakerId: 'speaker-0002' }),
+    ]);
   });
 
-  it('rejects media without a usable one-shot reference', () => {
-    expect(() =>
-      selectDubbingReferenceWindow([
-        cue('cue-1', 0, 500, 'Too short.'),
-        cue('cue-2', 5_000, 5_300, 'Still short.'),
-      ]),
-    ).toThrow('找不到 3 至 10 秒的有效参考人声');
-  });
 });

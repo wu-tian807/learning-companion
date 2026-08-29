@@ -75,6 +75,12 @@ describe.skipIf(!enabled)('VoxCPM2 runtime Windows integration', () => {
       await expect(access(runtime.pythonPath)).resolves.toBeUndefined();
       await expect(access(runtime.modelPath)).resolves.toBeUndefined();
       await expect(access(runtime.separationModelPath)).resolves.toBeUndefined();
+      await expect(
+        access(runtime.speakerSegmentationModelPath),
+      ).resolves.toBeUndefined();
+      await expect(
+        access(runtime.speakerEmbeddingModelPath),
+      ).resolves.toBeUndefined();
       const marker = JSON.parse(
         await readFile(
           join(root, 'environment', 'learning-companion-runtime.json'),

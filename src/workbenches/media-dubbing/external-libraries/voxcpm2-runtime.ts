@@ -31,12 +31,14 @@ export interface VoxCpm2DubbingRuntime {
   readonly pythonPath: string;
   readonly modelPath: string;
   readonly separationModelPath: string;
+  readonly speakerSegmentationModelPath: string;
+  readonly speakerEmbeddingModelPath: string;
   readonly workerCachePath: string;
   readonly environment: NodeJS.ProcessEnv;
 }
 
 export interface VoxCpm2VoiceJob {
-  readonly referencePath: string;
+  readonly referencePaths: Readonly<Record<string, string | null>>;
   readonly phrasesPath: string;
   readonly outputDirectory: string;
   readonly progressPath: string;
@@ -374,6 +376,18 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
       'source-separation',
       'UVR-MDX-NET-Inst_HQ_4.onnx',
     );
+    const speakerSegmentationModelPath = join(
+      root,
+      'models',
+      'speaker-diarization',
+      'pyannote-segmentation-3.0.int8.onnx',
+    );
+    const speakerEmbeddingModelPath = join(
+      root,
+      'models',
+      'speaker-diarization',
+      '3dspeaker-campplus-zh-en.onnx',
+    );
     const workerCachePath = join(root, 'cache', 'model-sessions');
     const environment = runtimeEnvironment(root, pythonPath);
     const ready = await this.isReady(markerPath, pythonPath);
@@ -499,6 +513,8 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
       pythonPath,
       modelPath,
       separationModelPath,
+      speakerSegmentationModelPath,
+      speakerEmbeddingModelPath,
       workerCachePath,
       environment: Object.freeze({ ...environment }),
     });

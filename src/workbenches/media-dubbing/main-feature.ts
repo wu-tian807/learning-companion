@@ -2,6 +2,7 @@ import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main
 import type { ExternalLibraryServiceApi } from '../../main/external-libraries/external-library-service';
 import { mediaDubbingVoxCpm2Definition } from './external-libraries/voxcpm2-definition';
 import { VoxCpm2DubbingRuntimeResolver } from './external-libraries/voxcpm2-runtime';
+import { DubbingSpeakerTrackArtifactProducer } from './dubbing-speaker-track-artifact';
 import {
   MediaDubbingProgressHub,
   VoxCpm2DubbingProducer,
@@ -11,6 +12,8 @@ export const mediaDubbingProgress = new MediaDubbingProgressHub();
 export const mediaDubbingProducer = new VoxCpm2DubbingProducer(
   mediaDubbingProgress,
 );
+export const mediaDubbingSpeakerTrackProducer =
+  new DubbingSpeakerTrackArtifactProducer();
 
 const runtimeResolvers = new WeakMap<
   ExternalLibraryServiceApi,
@@ -34,6 +37,7 @@ export const mediaDubbingMainFeature = Object.freeze({
   },
   registerArtifactProducers({ artifacts }): void {
     artifacts.register(mediaDubbingProducer);
+    artifacts.register(mediaDubbingSpeakerTrackProducer);
   },
   start({ externalLibraries }) {
     const runtime = resolveMediaDubbingRuntime(externalLibraries);

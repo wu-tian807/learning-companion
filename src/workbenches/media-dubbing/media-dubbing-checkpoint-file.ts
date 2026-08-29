@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { access, mkdir, readFile, rm } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
@@ -5,7 +6,7 @@ import writeFileAtomic from 'write-file-atomic';
 
 import { AppError } from '../../main/errors/app-error';
 
-const CHECKPOINT_VERSION = 1;
+const CHECKPOINT_VERSION = 2;
 // This directory is a persisted compatibility contract, not a Workbench owner.
 const CHECKPOINT_ROOT = '.learning-companion/checkpoints/video-dubbing';
 
@@ -15,22 +16,26 @@ export interface MediaDubbingCheckpointIdentity {
   readonly sourceRevision: string;
   readonly producerVersion: string;
   readonly phrasePlannerVersion: number;
-  readonly phrasesRevision: string;
-  readonly totalPhrases: number;
+  readonly speakerPlannerVersion: number;
+  readonly inputRevision: string;
 }
 
 export interface MediaDubbingCheckpointManifest {
   readonly durationMs: number;
+  readonly totalPhrases: number;
+  readonly planRevision: string;
+  readonly referenceSpeakerIds: readonly string[];
 }
 
 export interface MediaDubbingCheckpointPaths {
   readonly directory: string;
   readonly manifestPath: string;
+  readonly speakerPlanPath: string;
   readonly originalAudioPath: string;
   readonly stemsDirectory: string;
   readonly backgroundPath: string;
   readonly vocalsPath: string;
-  readonly referencePath: string;
+  readonly referencesDirectory: string;
   readonly voiceDirectory: string;
   readonly voicePath: string;
   readonly previewPath: string;
@@ -42,8 +47,8 @@ interface StoredManifest extends MediaDubbingCheckpointManifest {
   readonly sourceRevision: string;
   readonly producerVersion: string;
   readonly phrasePlannerVersion: number;
-  readonly phrasesRevision: string;
-  readonly totalPhrases: number;
+  readonly speakerPlannerVersion: number;
+  readonly inputRevision: string;
 }
 
 function requireSegment(value: string): string {
@@ -52,6 +57,10 @@ function requireSegment(value: string): string {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
   return normalized;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function pathsFor(
@@ -67,20 +76,29 @@ function pathsFor(
     requireSegment(identity.sourceRevision),
   );
   const stemsDirectory = join(directory, 'stems');
+  const referencesDirectory = join(directory, 'references');
   const voiceDirectory = join(directory, 'voice');
   return Object.freeze({
     directory,
     manifestPath: join(directory, 'checkpoint.json'),
+    speakerPlanPath: join(directory, 'speaker-plan.json'),
     originalAudioPath: join(directory, 'original.wav'),
     stemsDirectory,
     backgroundPath: join(stemsDirectory, 'background.wav'),
     vocalsPath: join(stemsDirectory, 'vocals.wav'),
-    referencePath: join(directory, 'reference.wav'),
+    referencesDirectory,
     voiceDirectory,
     voicePath: join(voiceDirectory, 'voice.wav'),
     previewPath: join(directory, 'preview.wav'),
     progressPath: join(directory, 'progress.json'),
   });
+}
+
+export function mediaDubbingReferencePath(
+  paths: MediaDubbingCheckpointPaths,
+  speakerId: string,
+): string {
+  return join(paths.referencesDirectory, `${requireSegment(speakerId)}.wav`);
 }
 
 function isMatchingManifest(
@@ -96,11 +114,56 @@ function isMatchingManifest(
     record.sourceRevision === identity.sourceRevision &&
     record.producerVersion === identity.producerVersion &&
     record.phrasePlannerVersion === identity.phrasePlannerVersion &&
-    record.phrasesRevision === identity.phrasesRevision &&
-    record.totalPhrases === identity.totalPhrases &&
+    record.speakerPlannerVersion === identity.speakerPlannerVersion &&
+    record.inputRevision === identity.inputRevision &&
     Number.isSafeInteger(record.durationMs) &&
-    Number(record.durationMs) > 0
+    Number(record.durationMs) > 0 &&
+    Number.isSafeInteger(record.totalPhrases) &&
+    Number(record.totalPhrases) > 0 &&
+    isSha256(record.planRevision) &&
+    Array.isArray(record.referenceSpeakerIds) &&
+    new Set(record.referenceSpeakerIds).size ===
+      record.referenceSpeakerIds.length &&
+    record.referenceSpeakerIds.every(
+      (speakerId) =>
+        typeof speakerId === 'string' &&
+        /^speaker-\d{4}$/u.test(speakerId),
+    )
   );
+}
+
+function publicManifest(
+  manifest: StoredManifest,
+): MediaDubbingCheckpointManifest {
+  return Object.freeze({
+    durationMs: manifest.durationMs,
+    totalPhrases: manifest.totalPhrases,
+    planRevision: manifest.planRevision,
+    referenceSpeakerIds: Object.freeze([...manifest.referenceSpeakerIds]),
+  });
+}
+
+async function readMatchingManifest(
+  paths: MediaDubbingCheckpointPaths,
+  identity: MediaDubbingCheckpointIdentity,
+): Promise<StoredManifest> {
+  const parsed = JSON.parse(
+    await readFile(paths.manifestPath, 'utf8'),
+  ) as unknown;
+  if (!isMatchingManifest(parsed, identity)) {
+    throw new Error('checkpoint manifest mismatch');
+  }
+  const plan = await readFile(paths.speakerPlanPath, 'utf8');
+  if (createHash('sha256').update(plan).digest('hex') !== parsed.planRevision) {
+    throw new Error('checkpoint speaker plan mismatch');
+  }
+  await Promise.all([
+    access(paths.backgroundPath),
+    ...parsed.referenceSpeakerIds.map((speakerId) =>
+      access(mediaDubbingReferencePath(paths, speakerId)),
+    ),
+  ]);
+  return parsed;
 }
 
 export async function openMediaDubbingCheckpoint(
@@ -112,27 +175,18 @@ export async function openMediaDubbingCheckpoint(
   const paths = pathsFor(identity);
   let manifest: StoredManifest | undefined;
   try {
-    const parsed = JSON.parse(
-      await readFile(paths.manifestPath, 'utf8'),
-    ) as unknown;
-    if (!isMatchingManifest(parsed, identity)) {
-      throw new Error('checkpoint manifest mismatch');
-    }
-    await Promise.all([
-      access(paths.backgroundPath),
-      access(paths.referencePath),
-    ]);
-    manifest = parsed;
+    manifest = await readMatchingManifest(paths, identity);
   } catch {
     await rm(paths.directory, { recursive: true, force: true });
   }
   await Promise.all([
     mkdir(paths.stemsDirectory, { recursive: true }),
+    mkdir(paths.referencesDirectory, { recursive: true }),
     mkdir(paths.voiceDirectory, { recursive: true }),
   ]);
   return Object.freeze({
     paths,
-    ...(manifest ? { manifest: { durationMs: manifest.durationMs } } : {}),
+    ...(manifest ? { manifest: publicManifest(manifest) } : {}),
   });
 }
 
@@ -147,17 +201,10 @@ export async function loadMediaDubbingCheckpoint(
 > {
   const paths = pathsFor(identity);
   try {
-    const parsed = JSON.parse(
-      await readFile(paths.manifestPath, 'utf8'),
-    ) as unknown;
-    if (!isMatchingManifest(parsed, identity)) return undefined;
-    await Promise.all([
-      access(paths.backgroundPath),
-      access(paths.referencePath),
-    ]);
+    const manifest = await readMatchingManifest(paths, identity);
     return Object.freeze({
       paths,
-      manifest: Object.freeze({ durationMs: parsed.durationMs }),
+      manifest: publicManifest(manifest),
     });
   } catch {
     return undefined;
@@ -167,16 +214,40 @@ export async function loadMediaDubbingCheckpoint(
 export async function markMediaDubbingCheckpointPrepared(
   paths: MediaDubbingCheckpointPaths,
   identity: MediaDubbingCheckpointIdentity,
-  durationMs: number,
+  prepared: MediaDubbingCheckpointManifest,
 ): Promise<void> {
+  if (
+    !Number.isSafeInteger(prepared.durationMs) ||
+    prepared.durationMs <= 0 ||
+    !Number.isSafeInteger(prepared.totalPhrases) ||
+    prepared.totalPhrases <= 0 ||
+    !isSha256(prepared.planRevision) ||
+    new Set(prepared.referenceSpeakerIds).size !==
+      prepared.referenceSpeakerIds.length ||
+    prepared.referenceSpeakerIds.some(
+      (speakerId) => !/^speaker-\d{4}$/u.test(speakerId),
+    )
+  ) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+  await Promise.all([
+    access(paths.backgroundPath),
+    access(paths.speakerPlanPath),
+    ...prepared.referenceSpeakerIds.map((speakerId) =>
+      access(mediaDubbingReferencePath(paths, speakerId)),
+    ),
+  ]);
   const manifest: StoredManifest = {
     version: CHECKPOINT_VERSION,
     sourceRevision: identity.sourceRevision,
     producerVersion: identity.producerVersion,
     phrasePlannerVersion: identity.phrasePlannerVersion,
-    phrasesRevision: identity.phrasesRevision,
-    totalPhrases: identity.totalPhrases,
-    durationMs,
+    speakerPlannerVersion: identity.speakerPlannerVersion,
+    inputRevision: identity.inputRevision,
+    durationMs: prepared.durationMs,
+    totalPhrases: prepared.totalPhrases,
+    planRevision: prepared.planRevision,
+    referenceSpeakerIds: [...prepared.referenceSpeakerIds],
   };
   await writeFileAtomic(
     paths.manifestPath,
