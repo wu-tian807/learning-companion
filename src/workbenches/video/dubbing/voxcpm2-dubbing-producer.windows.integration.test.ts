@@ -1,6 +1,6 @@
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -33,6 +33,20 @@ const enabled =
   Object.values(integrationEnvironment).every(
     (value) => typeof value === 'string' && value.length > 0,
   );
+
+function runtimeEnvironment(pythonPath: string): NodeJS.ProcessEnv {
+  const torchLibraries = join(
+    dirname(dirname(pythonPath)),
+    'Lib',
+    'site-packages',
+    'torch',
+    'lib',
+  );
+  return {
+    ...process.env,
+    PATH: [torchLibraries, process.env.PATH].filter(Boolean).join(delimiter),
+  };
+}
 
 describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
   it(
@@ -90,17 +104,19 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
             };
           },
         } as unknown as MediaSubtitleRuntimeResolverApi;
+        const pythonPath = resolve(integrationEnvironment.python!);
+        const environment = runtimeEnvironment(pythonPath);
         const dubbingRuntime: VoxCpm2DubbingRuntimeResolverApi = {
           async requireInstalledBundle() {},
           async requireRuntime() {
             return {
-              pythonPath: resolve(integrationEnvironment.python!),
+              pythonPath,
               modelPath: resolve(integrationEnvironment.model!),
               separationModelPath: resolve(
                 integrationEnvironment.separationModel!,
               ),
               workerCachePath: join(directory, 'worker-cache'),
-              environment: { ...process.env },
+              environment,
             };
           },
           async warmup() {},
@@ -114,7 +130,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
               writeFile(requestPath, `${JSON.stringify(job)}\n`, 'utf8'),
             ]);
             await new ExternalCommandRunner().run({
-              command: resolve(integrationEnvironment.python!),
+              command: pythonPath,
               args: [
                 workerPath,
                 '--model',
@@ -125,7 +141,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
                 readyPath,
               ],
               cwd: directory,
-              env: { ...process.env },
+              env: environment,
               timeoutMs: 4 * 60 * 60 * 1_000,
               signal,
             });
