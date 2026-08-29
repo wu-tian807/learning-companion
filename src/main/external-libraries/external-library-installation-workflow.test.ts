@@ -122,11 +122,30 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     const installers = new ExternalLibraryInstallerRegistry();
     installers.register(installer);
     const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
-    const prepareRuntime = vi.fn(async (runtimeDirectory: string) => {
-      const readyPath = join(runtimeDirectory, 'environment', 'ready.json');
-      await mkdir(dirname(readyPath), { recursive: true });
-      await writeFile(readyPath, '{}');
-    });
+    let runtimeSetupCacheDirectory = '';
+    const prepareRuntime = vi.fn(
+      async (
+        runtimeDirectory: string,
+        setupCacheDirectory: string,
+        _signal: AbortSignal,
+        reportStatus: (statusDetail: string) => void,
+      ) => {
+        runtimeSetupCacheDirectory = setupCacheDirectory;
+        expect(setupCacheDirectory).toContain(
+          join('.downloads', definition.id),
+        );
+        await mkdir(setupCacheDirectory, { recursive: true });
+        await writeFile(join(setupCacheDirectory, 'cache.bin'), 'cache');
+        reportStatus('Installing test runtime');
+        const readyPath = join(
+          runtimeDirectory,
+          'environment',
+          'ready.json',
+        );
+        await mkdir(dirname(readyPath), { recursive: true });
+        await writeFile(readyPath, '{}');
+      },
+    );
     runtimeSetups.register({
       libraryId: definition.id,
       prepare: prepareRuntime,
@@ -143,6 +162,7 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       readonly status: string;
       readonly completedBytes?: number;
       readonly totalBytes?: number;
+      readonly statusDetail?: string;
     }> = [];
     const workflow = new ExternalLibraryInstallationWorkflow({
       pathManager: new ExternalLibraryPathManager({
@@ -171,6 +191,9 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
                 totalBytes: stage.progress.totalBytes,
               }
             : {}),
+          ...(stage.status === 'installing' && stage.statusDetail
+            ? { statusDetail: stage.statusDetail }
+            : {}),
         });
       },
     });
@@ -185,12 +208,20 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       completedBytes: 11,
       totalBytes: 11,
     });
-    expect(stages.slice(-2).map(({ status }) => status)).toEqual([
-      'verifying',
-      'installing',
+    expect(stages.slice(-3)).toEqual([
+      { status: 'verifying' },
+      { status: 'installing' },
+      {
+        status: 'installing',
+        statusDetail: 'Installing test runtime',
+      },
     ]);
     expect(installer.install).toHaveBeenCalledOnce();
     expect(prepareRuntime).toHaveBeenCalledOnce();
+    expect(runtimeSetupCacheDirectory).not.toBe('');
+    await expect(access(runtimeSetupCacheDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
     expect(installer.install).toHaveBeenCalledWith(
       expect.objectContaining({
         resources: expect.arrayContaining([

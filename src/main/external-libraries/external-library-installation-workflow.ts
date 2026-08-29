@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { ExternalLibraryProgress } from '../../shared/external-libraries';
 import { AppError } from '../errors/app-error';
@@ -33,7 +33,11 @@ export type ExternalLibraryInstallationStage =
       readonly progress: ExternalLibraryProgress;
     }
   | {
-      readonly status: 'verifying' | 'installing';
+      readonly status: 'verifying';
+    }
+  | {
+      readonly status: 'installing';
+      readonly statusDetail?: string;
     };
 
 export interface ExternalLibraryInstallationWorkflowDependencies {
@@ -199,7 +203,14 @@ export class ExternalLibraryInstallationWorkflow {
           stagingInstallationDirectory,
           EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
         );
-        await runtimeSetup.prepare(runtimeDirectory, signal);
+        await runtimeSetup.prepare(
+          runtimeDirectory,
+          join(dirname(downloaded[0]!.path), 'runtime-setup'),
+          signal,
+          (statusDetail) => {
+            onStage({ status: 'installing', statusDetail });
+          },
+        );
         if (signal.aborted) throw externalLibraryAbortReason(signal);
         if (!(await runtimeSetup.isReady(runtimeDirectory))) {
           throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');

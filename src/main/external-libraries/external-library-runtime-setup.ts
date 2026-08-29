@@ -3,7 +3,12 @@ import { AppError } from "../errors/app-error";
 export interface ExternalLibraryRuntimeSetup {
   readonly libraryId: string;
   isReady(runtimeDirectory: string): Promise<boolean>;
-  prepare(runtimeDirectory: string, signal: AbortSignal): Promise<void>;
+  prepare(
+    runtimeDirectory: string,
+    setupCacheDirectory: string,
+    signal: AbortSignal,
+    reportStatus: (statusDetail: string) => void,
+  ): Promise<void>;
 }
 
 export interface ExternalLibraryRuntimeSetupRegistryApi {

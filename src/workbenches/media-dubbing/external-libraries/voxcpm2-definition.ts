@@ -78,7 +78,7 @@ export const mediaDubbingVoxCpm2Definition: ExternalLibraryDefinition =
     id: MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     displayName: 'VoxCPM2 视频/音频配音组件',
     description:
-      'NVIDIA GPU 专用。安装阶段会下载 VoxCPM2、人声分离、说话人区分模型以及额外的 Python/CUDA 运行依赖；全部完成后才可配音。',
+      'NVIDIA GPU 专用。固定模型下载约 4.8 GB；完整 Python/CUDA 配音环境最终约 12 GB，安装时建议至少预留 18 GB 可用空间。',
     category: 'media',
     version: MEDIA_DUBBING_VOXCPM2_VERSION,
     installationFormatVersion: 1,

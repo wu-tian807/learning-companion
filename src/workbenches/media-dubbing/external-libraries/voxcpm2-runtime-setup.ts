@@ -1,12 +1,10 @@
 import {
   access,
   mkdir,
-  mkdtemp,
   readFile,
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 
 import { AppError } from '../../../main/errors/app-error';
@@ -149,7 +147,9 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
 
   async prepare(
     runtimeDirectory: string,
+    setupCacheDirectory: string,
     signal: AbortSignal,
+    reportStatus: (statusDetail: string) => void,
   ): Promise<void> {
     if (this.dependencies.platform !== 'win32') {
       throw new AppError('FEATURE_NOT_SUPPORTED');
@@ -169,16 +169,27 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
       join(runtimeDirectory, 'cache'),
       { recursive: true },
     );
-    const setupCache = await mkdtemp(join(tmpdir(), 'lc-voxcpm2-setup-'));
+    await this.dependencies.makeDirectory(setupCacheDirectory, {
+      recursive: true,
+    });
+    const setupTemporaryDirectory = join(
+      runtimeDirectory,
+      'cache',
+      'setup-temp',
+    );
+    await this.dependencies.makeDirectory(setupTemporaryDirectory, {
+      recursive: true,
+    });
     const environment = {
       ...runtimeEnvironment(runtimeDirectory, pythonPath),
-      UV_CACHE_DIR: setupCache,
-      PIP_CACHE_DIR: setupCache,
-      TEMP: setupCache,
-      TMP: setupCache,
+      UV_CACHE_DIR: join(setupCacheDirectory, 'uv'),
+      PIP_CACHE_DIR: join(setupCacheDirectory, 'pip'),
+      TEMP: setupTemporaryDirectory,
+      TMP: setupTemporaryDirectory,
     };
 
     try {
+      reportStatus('正在准备 Python 运行环境');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'venv',
         environmentRoot,
@@ -188,6 +199,9 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'only-managed',
         '--clear',
       ]);
+      reportStatus(
+        '正在下载并安装 PyTorch/CUDA 运行环境，首次安装可能需要数分钟',
+      );
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -198,6 +212,7 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         '--index-url',
         'https://download.pytorch.org/whl/cu128',
       ]);
+      reportStatus('正在安装 VoxCPM2 配音运行依赖');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -212,6 +227,7 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'sherpa-onnx==1.13.6',
         'soundfile==0.13.1',
       ]);
+      reportStatus('正在安装 GPU 人声处理运行依赖');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -223,6 +239,7 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         '--find-links',
         'https://k2-fsa.github.io/sherpa/onnx/cuda.html',
       ]);
+      reportStatus('正在验证 NVIDIA GPU 配音环境');
       await this.dependencies.commandRunner.run({
         command: pythonPath,
         args: [
@@ -239,7 +256,10 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         signal,
       });
     } finally {
-      await rm(setupCache, { recursive: true, force: true });
+      await rm(setupTemporaryDirectory, {
+        recursive: true,
+        force: true,
+      });
     }
 
     signal.throwIfAborted();

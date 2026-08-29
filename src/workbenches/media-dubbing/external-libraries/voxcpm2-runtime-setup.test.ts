@@ -38,9 +38,16 @@ describe('VoxCpm2RuntimeSetup', () => {
       commandRunner: { run },
       platform: 'win32',
     });
+    const setupCache = join(root, 'download-cache');
+    const statusDetails: string[] = [];
 
     expect(await setup.isReady(root)).toBe(false);
-    await setup.prepare(root, new AbortController().signal);
+    await setup.prepare(
+      root,
+      setupCache,
+      new AbortController().signal,
+      (statusDetail) => statusDetails.push(statusDetail),
+    );
 
     expect(run.mock.calls.map(([request]) => request.args[0])).toEqual([
       'venv',
@@ -50,6 +57,13 @@ describe('VoxCpm2RuntimeSetup', () => {
       '-c',
     ]);
     expect(await setup.isReady(root)).toBe(true);
+    expect(statusDetails).toEqual([
+      '正在准备 Python 运行环境',
+      '正在下载并安装 PyTorch/CUDA 运行环境，首次安装可能需要数分钟',
+      '正在安装 VoxCPM2 配音运行依赖',
+      '正在安装 GPU 人声处理运行依赖',
+      '正在验证 NVIDIA GPU 配音环境',
+    ]);
     expect(
       JSON.parse(
         await readFile(
@@ -59,10 +73,18 @@ describe('VoxCpm2RuntimeSetup', () => {
       ),
     ).toEqual({ version: 1 });
     for (const [request] of run.mock.calls) {
-      expect(request.env?.UV_CACHE_DIR).not.toContain(root);
-      expect(request.env?.TEMP).toBe(request.env?.UV_CACHE_DIR);
+      expect(request.env?.UV_CACHE_DIR).toBe(join(setupCache, 'uv'));
+      expect(request.env?.PIP_CACHE_DIR).toBe(join(setupCache, 'pip'));
+      expect(request.env?.TEMP).toBe(
+        join(root, 'cache', 'setup-temp'),
+      );
     }
-    await setup.prepare(root, new AbortController().signal);
+    await setup.prepare(
+      root,
+      setupCache,
+      new AbortController().signal,
+      vi.fn(),
+    );
     expect(run).toHaveBeenCalledTimes(5);
   });
 
@@ -79,7 +101,12 @@ describe('VoxCpm2RuntimeSetup', () => {
     await new VoxCpm2RuntimeSetup({
       commandRunner: { run },
       platform: 'win32',
-    }).prepare(root, new AbortController().signal);
+    }).prepare(
+      root,
+      join(root, 'download-cache'),
+      new AbortController().signal,
+      vi.fn(),
+    );
 
     expect(run.mock.calls.map(([request]) => request.args[0])).toEqual([
       'venv',
@@ -103,7 +130,12 @@ describe('VoxCpm2RuntimeSetup', () => {
     });
 
     await expect(
-      setup.prepare(root, new AbortController().signal),
+      setup.prepare(
+        root,
+        join(root, 'download-cache'),
+        new AbortController().signal,
+        vi.fn(),
+      ),
     ).rejects.toThrow('setup failed');
     expect(await setup.isReady(root)).toBe(false);
     await expect(
@@ -111,14 +143,14 @@ describe('VoxCpm2RuntimeSetup', () => {
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('cancels setup without leaving a ready marker or setup cache', async () => {
+  it('cancels setup without a ready marker or transient files', async () => {
     const root = await createRuntimeRoot();
     const controller = new AbortController();
-    let setupCache = '';
+    let setupTemporaryDirectory = '';
     const run = vi.fn<ExternalCommandRunnerApi['run']>(
       (request) =>
         new Promise((_resolvePromise, rejectPromise) => {
-          setupCache = request.env?.TEMP ?? '';
+          setupTemporaryDirectory = request.env?.TEMP ?? '';
           request.signal?.addEventListener(
             'abort',
             () => rejectPromise(new DOMException('cancelled', 'AbortError')),
@@ -131,12 +163,23 @@ describe('VoxCpm2RuntimeSetup', () => {
       platform: 'win32',
     });
 
-    const preparing = setup.prepare(root, controller.signal);
+    const preparing = setup.prepare(
+      root,
+      join(root, 'download-cache'),
+      controller.signal,
+      vi.fn(),
+    );
     await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
     controller.abort();
 
     await expect(preparing).rejects.toMatchObject({ name: 'AbortError' });
     expect(await setup.isReady(root)).toBe(false);
-    await expect(access(setupCache)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(setupTemporaryDirectory).toBe(
+      join(root, 'cache', 'setup-temp'),
+    );
+    await expect(access(setupTemporaryDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(access(join(root, 'download-cache'))).resolves.toBeUndefined();
   });
 });

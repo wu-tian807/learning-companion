@@ -8,7 +8,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, posix, win32 } from 'node:path';
+import { basename, join, posix, win32 } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -103,6 +103,7 @@ describe('ExternalLibraryPathManager', () => {
       rootPath,
       definition.id,
     );
+    expect(basename(stagingDirectory).length).toBeLessThanOrEqual(24);
     const stagingInstallationDirectory = join(
       stagingDirectory,
       'installation',

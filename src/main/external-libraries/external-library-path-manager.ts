@@ -419,13 +419,19 @@ export class ExternalLibraryPathManager
   ): Promise<string> {
     const root = requireExternalLibraryRootPath(rootPath);
     const normalizedLibraryId = requireSafeDirectorySegment(libraryId);
+    const shortJobId = requireManagedDirectorySegment(
+      this.createId(),
+    ).slice(0, 8);
     await ensureDirectory(root);
     const stagingRoot = await ensureManagedDirectory(root, [
       EXTERNAL_LIBRARY_STAGING_DIRECTORY,
     ]);
 
     return mkdtemp(
-      join(stagingRoot, `${normalizedLibraryId}-${this.createId()}-`),
+      join(
+        stagingRoot,
+        `${normalizedLibraryId.slice(0, 8)}-${shortJobId}-`,
+      ),
     );
   }
 
