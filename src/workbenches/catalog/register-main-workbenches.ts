@@ -19,6 +19,7 @@ import { epubMainWorkbenchContribution } from '../epub/main-contribution';
 import { htmlMainWorkbenchContribution } from '../html/main-contribution';
 import { imageMainWorkbenchContribution } from '../image/main-contribution';
 import { markdownMainWorkbenchContribution } from '../markdown/main-contribution';
+import { mediaDubbingMainWorkbenchContribution } from '../media-dubbing/main-contribution';
 import { mediaSubtitlesMainWorkbenchContribution } from '../media-subtitles/main-contribution';
 import { mindMapMainWorkbenchContribution } from '../mindmap/main-contribution';
 import { officeMainWorkbenchContribution } from '../office/main-contribution';
@@ -51,6 +52,7 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] =
     audioMainWorkbenchContribution,
     videoMainWorkbenchContribution,
     documentAiMainWorkbenchContribution,
+    mediaDubbingMainWorkbenchContribution,
     mediaSubtitlesMainWorkbenchContribution,
   ]);
 

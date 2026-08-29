@@ -12,13 +12,68 @@ import type {
   WorkbenchStateRecord,
   WorkbenchStateDatabaseApi,
 } from '../../main/workbench/workbench-state-database';
+import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
+import type { MediaDubbingServiceApi } from '../media-dubbing/media-dubbing-service';
+import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
 import { AudioWorkbenchProvider } from './main';
 import {
   AUDIO_STATE_SCHEMA_VERSION,
   AUDIO_WORKBENCH_ID,
+  audioEventTypes,
+  createAudioGetDubbingSnapshotCommand,
+  createAudioRetryDubbingCommand,
   createAudioSaveViewStateCommand,
+  createAudioSetSubtitleModeCommand,
+  createAudioStartDubbingCommand,
+  DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
   DEFAULT_AUDIO_VIEW_STATE,
 } from './shared';
+
+function createDependencies(now?: () => number) {
+  const unsubscribeSubtitles = vi.fn();
+  const unsubscribeDubbing = vi.fn();
+  const subtitles: MediaSubtitleServiceApi = {
+    getSnapshot: vi.fn(() => ({
+      phase: 'idle' as const,
+      partialTranslations: [],
+      completedCues: 0,
+      totalCues: 0,
+    })),
+    subscribe: vi.fn(() => unsubscribeSubtitles),
+    ensureSource: vi.fn(async () => undefined),
+    ensureTranslation: vi.fn(async () => undefined),
+    retry: vi.fn(async () => undefined),
+  };
+  const dubbing: MediaDubbingServiceApi = {
+    getSnapshot: vi.fn(() => ({
+      phase: 'idle' as const,
+      completedPhrases: 0,
+      totalPhrases: 0,
+      completedDurationMs: 0,
+      durationMs: 0,
+      readySuffixStartMs: 0,
+    })),
+    subscribe: vi.fn(() => unsubscribeDubbing),
+    refreshRuntimeAvailability: vi.fn(async () => undefined),
+    restore: vi.fn(async () => undefined),
+    warmup: vi.fn(),
+    releaseWarmup: vi.fn(),
+    ensure: vi.fn(async () => undefined),
+    retry: vi.fn(async () => undefined),
+  };
+  const events: WorkbenchEventBusApi = {
+    publish: vi.fn(),
+    subscribe: vi.fn(() => () => undefined),
+  };
+  return {
+    subtitles,
+    dubbing,
+    events,
+    now,
+    unsubscribeSubtitles,
+    unsubscribeDubbing,
+  };
+}
 
 class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
@@ -88,7 +143,12 @@ describe('AudioWorkbenchProvider', () => {
   it('opens a scoped resource URL and restores persisted state', async () => {
     const resources = createResources();
     const states = new MemoryStateDatabase();
-    const provider = new AudioWorkbenchProvider(resources, states);
+    const dependencies = createDependencies();
+    const provider = new AudioWorkbenchProvider(
+      resources,
+      states,
+      dependencies,
+    );
     const viewState = {
       currentTime: 42,
       volume: 0.6,
@@ -100,7 +160,10 @@ describe('AudioWorkbenchProvider', () => {
         assetId: 'asset',
         workbenchId: AUDIO_WORKBENCH_ID,
         schemaVersion: AUDIO_STATE_SCHEMA_VERSION,
-        payload: { viewState },
+        payload: {
+          viewState,
+          subtitleState: { displayMode: 'source' },
+        },
         updatedTime: 100,
       },
     });
@@ -109,6 +172,21 @@ describe('AudioWorkbenchProvider', () => {
       payload: {
         contentUrl: 'learning-content://resource/audio',
         viewState,
+        subtitleState: { displayMode: 'source' },
+        subtitleSnapshot: {
+          phase: 'idle',
+          partialTranslations: [],
+          completedCues: 0,
+          totalCues: 0,
+        },
+        dubbingSnapshot: {
+          phase: 'idle',
+          completedPhrases: 0,
+          totalPhrases: 0,
+          completedDurationMs: 0,
+          durationMs: 0,
+          readySuffixStartMs: 0,
+        },
       },
     });
     expect(resources.register).toHaveBeenCalledWith(
@@ -116,14 +194,28 @@ describe('AudioWorkbenchProvider', () => {
       context.content.handle,
       'audio/mpeg',
     );
+    expect(dependencies.subtitles.ensureSource).toHaveBeenCalledWith(
+      'project',
+      'asset',
+    );
+    await vi.waitFor(() => {
+      expect(dependencies.dubbing.restore).toHaveBeenCalledWith(
+        'project',
+        'asset',
+      );
+      expect(dependencies.dubbing.warmup).toHaveBeenCalledWith('asset');
+    });
   });
 
   it('persists validated view state and revokes the session', async () => {
     const resources = createResources();
     const states = new MemoryStateDatabase();
-    const provider = new AudioWorkbenchProvider(resources, states, {
-      now: () => 300,
-    });
+    const dependencies = createDependencies(() => 300);
+    const provider = new AudioWorkbenchProvider(
+      resources,
+      states,
+      dependencies,
+    );
     const context = createContext();
     const viewState = {
       currentTime: 90,
@@ -149,6 +241,140 @@ describe('AudioWorkbenchProvider', () => {
 
     await provider.close(context);
     expect(resources.revokeSession).toHaveBeenCalledWith('session');
+    expect(dependencies.unsubscribeSubtitles).toHaveBeenCalledOnce();
+    expect(dependencies.unsubscribeDubbing).toHaveBeenCalledOnce();
+    expect(dependencies.dubbing.releaseWarmup).toHaveBeenCalledWith('asset');
+  });
+
+  it('migrates version 1 playback state and defaults to source subtitles', async () => {
+    const viewState = {
+      currentTime: 12,
+      volume: 0.5,
+      muted: false,
+      playbackRate: 1.25,
+    };
+    const provider = new AudioWorkbenchProvider(
+      createResources(),
+      new MemoryStateDatabase(),
+      createDependencies(),
+    );
+
+    await expect(
+      provider.open(
+        createContext({
+          state: {
+            assetId: 'asset',
+            workbenchId: AUDIO_WORKBENCH_ID,
+            schemaVersion: 1,
+            payload: { viewState },
+            updatedTime: 100,
+          },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      payload: {
+        viewState,
+        subtitleState: DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
+      },
+    });
+  });
+
+  it('routes translation and resumable dubbing through media services', async () => {
+    const dependencies = createDependencies(() => 400);
+    const states = new MemoryStateDatabase();
+    const provider = new AudioWorkbenchProvider(
+      createResources(),
+      states,
+      dependencies,
+    );
+    const context = createContext();
+    await provider.open(context);
+
+    await provider.command(
+      context,
+      createAudioSetSubtitleModeCommand('bilingual'),
+    );
+    expect(dependencies.subtitles.ensureTranslation).toHaveBeenCalledWith(
+      'project',
+      'asset',
+    );
+    await expect(states.get('asset', AUDIO_WORKBENCH_ID)).resolves.toMatchObject({
+      schemaVersion: 2,
+      payload: { subtitleState: { displayMode: 'bilingual' } },
+    });
+
+    await provider.command(context, createAudioStartDubbingCommand());
+    await provider.command(context, createAudioRetryDubbingCommand());
+    await provider.command(context, createAudioGetDubbingSnapshotCommand());
+    expect(dependencies.dubbing.ensure).toHaveBeenCalledWith('project', 'asset');
+    expect(dependencies.dubbing.retry).toHaveBeenCalledWith('project', 'asset');
+    expect(dependencies.dubbing.getSnapshot).toHaveBeenCalledWith('asset');
+  });
+
+  it('publishes only active-session subtitle and dubbing progress', async () => {
+    const dependencies = createDependencies();
+    const provider = new AudioWorkbenchProvider(
+      createResources(),
+      new MemoryStateDatabase(),
+      dependencies,
+    );
+    const context = createContext();
+    await provider.open(context);
+    const subtitleListener = vi.mocked(dependencies.subtitles.subscribe)
+      .mock.calls[0]?.[1];
+    const dubbingListener = vi.mocked(dependencies.dubbing.subscribe)
+      .mock.calls[0]?.[1];
+
+    subtitleListener?.({
+      type: 'snapshot',
+      snapshot: {
+        phase: 'transcribing',
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      },
+    });
+    dubbingListener?.({
+      phase: 'cloning',
+      completedPhrases: 1,
+      totalPhrases: 2,
+      completedDurationMs: 1_000,
+      durationMs: 2_000,
+      readySuffixStartMs: 1_000,
+    });
+    expect(dependencies.events.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session',
+        type: audioEventTypes.subtitleSnapshot,
+      }),
+    );
+    expect(dependencies.events.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session',
+        type: audioEventTypes.dubbingSnapshot,
+      }),
+    );
+
+    await provider.close(context);
+    vi.mocked(dependencies.events.publish).mockClear();
+    subtitleListener?.({
+      type: 'snapshot',
+      snapshot: {
+        phase: 'failed',
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      },
+    });
+    dubbingListener?.({
+      phase: 'failed',
+      completedPhrases: 0,
+      totalPhrases: 0,
+      completedDurationMs: 0,
+      durationMs: 0,
+      readySuffixStartMs: 0,
+    });
+    expect(dependencies.events.publish).not.toHaveBeenCalled();
   });
 
   it('falls back from invalid state and rejects unsupported content', async () => {
@@ -156,6 +382,7 @@ describe('AudioWorkbenchProvider', () => {
     const provider = new AudioWorkbenchProvider(
       resources,
       new MemoryStateDatabase(),
+      createDependencies(),
     );
     const invalidState = createContext({
       state: {
@@ -179,6 +406,7 @@ describe('AudioWorkbenchProvider', () => {
       new AudioWorkbenchProvider(
         createResources(),
         new MemoryStateDatabase(),
+        createDependencies(),
       ).open(unsupported),
     ).rejects.toThrow('DATA_INTEGRITY_ERROR');
   });

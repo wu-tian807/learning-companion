@@ -258,7 +258,7 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   },
   MEDIA_DUBBING_FAILED: {
     kind: 'user',
-    userMessage: '视频配音没有完成，请稍后重试。',
+    userMessage: '媒体配音没有完成，请稍后重试。',
     retryable: true,
     logLevel: 'warn',
   },

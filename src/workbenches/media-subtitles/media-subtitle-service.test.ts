@@ -8,24 +8,26 @@ import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-service';
-import type { AssetServiceApi } from '../../../main/assets/asset-service';
-import type { ProjectLookup } from '../../../main/projects/project-database';
-import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
-import type { AssetChangedEvent, AssetSnapshot } from '../../../shared/assets';
+} from '../../main/artifacts/asset-artifact-service';
+import type { AssetServiceApi } from '../../main/assets/asset-service';
+import type { ProjectLookup } from '../../main/projects/project-database';
+import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
+import { AppError } from '../../main/errors/app-error';
+import type { AssetChangedEvent, AssetSnapshot } from '../../shared/assets';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
   type SubtitleSourceTrackV1,
   type SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
-import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../../media-subtitles/transcription-producer';
+} from './contracts';
+import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media-subtitle-runtime';
+import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from './transcription-producer';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
   SubtitleTranslationProgressHub,
-} from '../../media-subtitles/translation-producer';
-import { VideoSubtitleService } from './video-subtitle-service';
+} from './translation-producer';
+import { MediaSubtitleService } from './media-subtitle-service';
+import { MediaSubtitleSourceTaskQueue } from './source-task-queue';
 
 async function withDirectory(
   run: (directory: string) => Promise<void>,
@@ -133,7 +135,48 @@ function generationTasks(): GenerationTaskServiceApi {
   } as unknown as GenerationTaskServiceApi;
 }
 
-describe('VideoSubtitleService', () => {
+describe('MediaSubtitleService', () => {
+  it('accepts audio media types supplied by the owning Workbench', async () => {
+    const audioAsset: AssetSnapshot = {
+      ...videoAsset,
+      id: 'audio',
+      name: '课程音频',
+      mediaType: 'audio/mpeg',
+      contentRef: {
+        kind: 'local-file',
+        base: 'absolute',
+        path: 'audio.mp3',
+      },
+    };
+    const requireTranscription = vi.fn(async () => {
+      throw new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED');
+    });
+    const service = new MediaSubtitleService(
+      {
+        get: vi.fn(() => audioAsset),
+        subscribe: vi.fn(() => () => undefined),
+      } as unknown as AssetServiceApi,
+      { get: vi.fn() },
+      {} as AssetArtifactServiceApi,
+      {
+        requireTranscription,
+        requireMediaDecoder: vi.fn(),
+      },
+      new MediaSubtitleSourceTaskQueue(),
+      generationTasks(),
+      new SubtitleTranslationProgressHub(),
+      ['audio/mpeg'],
+    );
+
+    await service.ensureSource('project', 'audio');
+
+    expect(requireTranscription).toHaveBeenCalledOnce();
+    expect(service.getSnapshot('audio')).toMatchObject({
+      phase: 'runtime-required',
+      message: expect.stringContaining('字幕组件'),
+    });
+  });
+
   it('starts source transcription on an imported video but translates only on demand', async () => {
     await withDirectory(async (directory) => {
       const videoPath = join(directory, 'video.mp4');
@@ -202,13 +245,15 @@ describe('VideoSubtitleService', () => {
         ),
         getOrCreate,
       } as AssetArtifactServiceApi;
-      const service = new VideoSubtitleService(
+      const service = new MediaSubtitleService(
         assets,
         projects,
         artifacts,
         runtimes(),
+        new MediaSubtitleSourceTaskQueue(),
         generationTasks(),
         new SubtitleTranslationProgressHub(),
+        ['video/mp4'],
       );
 
       assetChanged?.({ projectId: 'project', asset: videoAsset });
@@ -282,13 +327,15 @@ describe('VideoSubtitleService', () => {
           'source-artifact-revision',
         );
       });
-      const service = new VideoSubtitleService(
+      const service = new MediaSubtitleService(
         assets,
         projects,
         { getCached: vi.fn(), getOrCreate } as AssetArtifactServiceApi,
         runtimes(),
+        new MediaSubtitleSourceTaskQueue(),
         generationTasks(),
         new SubtitleTranslationProgressHub(),
+        ['video/mp4'],
       );
 
       await service.ensureTranslation('project', 'video');

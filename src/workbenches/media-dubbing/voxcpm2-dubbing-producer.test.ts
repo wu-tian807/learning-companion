@@ -8,21 +8,21 @@ import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-service';
-import type { ExternalCommandRunnerApi } from '../../../main/external-libraries/external-command-runner';
+} from '../../main/artifacts/asset-artifact-service';
+import type { ExternalCommandRunnerApi } from '../../main/external-libraries/external-command-runner';
 import type {
   SubtitleSourceTrackV1,
   SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
+} from '../media-subtitles/contracts';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
   VOXCPM2_DUBBING_PRODUCER_ID,
-  VideoDubbingProgressHub,
+  MediaDubbingProgressHub,
   VoxCpm2DubbingProducer,
   createVoxCpm2DubbingArtifactKey,
-  type VideoDubbingProgress,
+  type MediaDubbingProgress,
 } from './voxcpm2-dubbing-producer';
 
 const temporaryDirectories: string[] = [];
@@ -115,8 +115,8 @@ describe('VoxCpm2DubbingProducer', () => {
     const stagingDirectory = join(directory, 'staging');
     await mkdir(stagingDirectory, { recursive: true });
     await writeFile(join(directory, 'video.mp4'), 'video');
-    const progressHub = new VideoDubbingProgressHub();
-    const progress: VideoDubbingProgress[] = [];
+    const progressHub = new MediaDubbingProgressHub();
+    const progress: MediaDubbingProgress[] = [];
     progressHub.subscribe((event) => progress.push(event));
     const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
       if (command.command.endsWith('ffprobe.exe')) {
@@ -337,7 +337,7 @@ describe('VoxCpm2DubbingProducer', () => {
 
   it('rejects an artifact key that does not match the translation language', async () => {
     const directory = await createDirectory();
-    const producer = new VoxCpm2DubbingProducer(new VideoDubbingProgressHub());
+    const producer = new VoxCpm2DubbingProducer(new MediaDubbingProgressHub());
 
     await expect(
       producer.materialize(

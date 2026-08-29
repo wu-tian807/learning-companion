@@ -37,7 +37,7 @@ import {
 } from '../pdf/shared';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
 import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../video/conversation/video-conversation-context';
-import { VIDEO_DUBBING_VOXCPM2_LIBRARY_ID } from '../video/dubbing/external-libraries/voxcpm2-definition';
+import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from '../media-dubbing/external-libraries/voxcpm2-definition';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
   SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
@@ -122,7 +122,7 @@ describe('Workbench contribution catalogs', () => {
 
     expect(libraries.list().map(({ id }) => id)).toEqual([
       'libreoffice',
-      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
       'media-subtitles',
     ]);
     expect(libraries.require('media-subtitles').defaultVariantId).toBe('cpu');

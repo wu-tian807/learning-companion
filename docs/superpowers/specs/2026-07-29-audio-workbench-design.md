@@ -2,7 +2,7 @@
 
 > 日期：2026-07-29
 >
-> 状态：已确认，待实施
+> 状态：基础播放已实现；2026-08-29 接入共享字幕、翻译与配音能力
 
 ## 1. 背景
 
@@ -369,3 +369,15 @@ pnpm check
 
 实际打包验证不包含在本轮默认自测中；如果修改影响 Forge 配置或原生依赖，
 再追加 macOS 和 Windows 构建验证。
+
+## 15. 2026-08-29 媒体能力扩展
+
+最初非目标中的语音转写已经通过后续独立功能接入，但 Audio 仍保持独立 Workbench，
+没有与 Video 合并。当前边界为：
+
+- `media-subtitles` 提供字幕 Artifact、LLM 翻译、共享 ASR 串行队列和展示投影；
+- `media-dubbing` 提供 VoxCPM2 Artifact、断点恢复、逐段预览和播放选择；
+- Audio Main 只把上述服务映射为 `audio:*` 命令与事件；
+- Audio Renderer 保留音频特有的转写列表和控制布局；
+- 字幕、译文和配音继续使用 Workbench State、GenerationTask 与 AssetArtifact，
+  不增加 Audio 专属数据库表或 Job 系统。

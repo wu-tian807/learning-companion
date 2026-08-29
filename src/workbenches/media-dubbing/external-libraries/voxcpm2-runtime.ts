@@ -11,14 +11,14 @@ import { delimiter, dirname, join } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
-import { AppError } from '../../../../main/errors/app-error';
+import { AppError } from '../../../main/errors/app-error';
 import {
   ExternalCommandRunner,
   type ExternalCommandRunnerApi,
-} from '../../../../main/external-libraries/external-command-runner';
-import type { ExternalLibraryServiceApi } from '../../../../main/external-libraries/external-library-service';
+} from '../../../main/external-libraries/external-command-runner';
+import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
 import { VOXCPM2_DUBBING_WORKER_SOURCE } from '../voxcpm2-worker-sources';
-import { VIDEO_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
+import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
 
 const RUNTIME_ENVIRONMENT_VERSION = 1;
 const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
@@ -129,7 +129,8 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   private readonly dependencies: VoxCpm2DubbingRuntimeResolverDependencies;
   private preparation?: Promise<VoxCpm2DubbingRuntime>;
   private modelSession?: ModelSession;
-  private retainWarmup = false;
+  private modelSessionPreparation?: Promise<ModelSession>;
+  private warmupRetainCount = 0;
   private voiceQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -160,27 +161,45 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   async requireInstalledBundle(): Promise<void> {
     this.assertSupportedPlatform();
     await this.externalLibraries.requireRuntime(
-      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
   }
 
   async warmup(): Promise<void> {
-    this.retainWarmup = true;
+    this.warmupRetainCount += 1;
+    try {
+      await this.warmModel();
+    } catch (error) {
+      this.warmupRetainCount = Math.max(0, this.warmupRetainCount - 1);
+      throw error;
+    }
+  }
+
+  private async warmModel(): Promise<void> {
     const runtime = await this.requireRuntime();
     const session = await this.requireModelSession(runtime);
     try {
       await session.ready;
     } catch (error) {
       await this.discardModelSession(session, true);
-      if (!this.retainWarmup && session.controller.signal.aborted) return;
+      if (this.warmupRetainCount === 0 && session.controller.signal.aborted) {
+        return;
+      }
       throw error;
     }
   }
 
   async releaseWarmup(): Promise<void> {
-    this.retainWarmup = false;
-    const session = this.modelSession;
-    if (session && !session.claimed) {
+    this.warmupRetainCount = Math.max(0, this.warmupRetainCount - 1);
+    let session = this.modelSession;
+    if (
+      this.warmupRetainCount === 0 &&
+      !session &&
+      this.modelSessionPreparation
+    ) {
+      session = await this.modelSessionPreparation.catch(() => undefined);
+    }
+    if (this.warmupRetainCount === 0 && session && !session.claimed) {
       await this.discardModelSession(session, true);
     }
   }
@@ -199,7 +218,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
 
   private async prepare(): Promise<VoxCpm2DubbingRuntime> {
     const installed = await this.externalLibraries.requireRuntime(
-      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
     const root = installed.runtimeDirectory;
     const uvPath = join(root, 'bootstrap', 'uv', 'uv.exe');
@@ -362,8 +381,8 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     } finally {
       signal.removeEventListener('abort', abortSession);
       await this.discardModelSession(session, true);
-      if (failed && this.retainWarmup) {
-        void this.warmup().catch(() => undefined);
+      if (failed && this.warmupRetainCount > 0) {
+        void this.warmModel().catch(() => undefined);
       }
     }
   }
@@ -372,6 +391,19 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     runtime: VoxCpm2DubbingRuntime,
   ): Promise<ModelSession> {
     if (this.modelSession) return this.modelSession;
+    if (!this.modelSessionPreparation) {
+      this.modelSessionPreparation = this.createModelSession(runtime).finally(
+        () => {
+          this.modelSessionPreparation = undefined;
+        },
+      );
+    }
+    return this.modelSessionPreparation;
+  }
+
+  private async createModelSession(
+    runtime: VoxCpm2DubbingRuntime,
+  ): Promise<ModelSession> {
     await this.dependencies.makeDirectory(runtime.workerCachePath, {
       recursive: true,
     });

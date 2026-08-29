@@ -3,22 +3,22 @@ import { describe, expect, it } from 'vitest';
 import {
   externalLibraryPackageExpectedSize,
   isExternalLibraryDefinition,
-} from '../../../../main/external-libraries/external-library-definition';
+} from '../../../main/external-libraries/external-library-definition';
 import {
-  VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
-  videoDubbingVoxCpm2Definition,
+  MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
+  mediaDubbingVoxCpm2Definition,
 } from './voxcpm2-definition';
 
 describe('VoxCPM2 dubbing external library', () => {
   it('defines one pinned Windows GPU bundle', () => {
-    expect(isExternalLibraryDefinition(videoDubbingVoxCpm2Definition)).toBe(
+    expect(isExternalLibraryDefinition(mediaDubbingVoxCpm2Definition)).toBe(
       true,
     );
-    expect(videoDubbingVoxCpm2Definition.id).toBe(
-      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
+    expect(mediaDubbingVoxCpm2Definition.id).toBe(
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
-    expect(videoDubbingVoxCpm2Definition.packages).toHaveLength(1);
-    expect(videoDubbingVoxCpm2Definition.packages[0]).toMatchObject({
+    expect(mediaDubbingVoxCpm2Definition.packages).toHaveLength(1);
+    expect(mediaDubbingVoxCpm2Definition.packages[0]).toMatchObject({
       platform: 'win32',
       architecture: 'x64',
       packageType: 'bundle',
@@ -26,7 +26,7 @@ describe('VoxCPM2 dubbing external library', () => {
   });
 
   it('installs only the selected VoxCPM2, UVR and bootstrap resources', () => {
-    const packageDefinition = videoDubbingVoxCpm2Definition.packages[0]!;
+    const packageDefinition = mediaDubbingVoxCpm2Definition.packages[0]!;
     expect(packageDefinition.packageType).toBe('bundle');
     if (packageDefinition.packageType !== 'bundle') return;
 
@@ -41,7 +41,7 @@ describe('VoxCPM2 dubbing external library', () => {
   });
 
   it('pins every download to HTTPS, size and SHA-256', () => {
-    const packageDefinition = videoDubbingVoxCpm2Definition.packages[0]!;
+    const packageDefinition = mediaDubbingVoxCpm2Definition.packages[0]!;
     expect(packageDefinition.packageType).toBe('bundle');
     if (packageDefinition.packageType !== 'bundle') return;
 

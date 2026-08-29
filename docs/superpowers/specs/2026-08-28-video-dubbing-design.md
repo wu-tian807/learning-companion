@@ -1,14 +1,15 @@
-# 视频本地配音：最终选型与首版接入
+# 视频/音频本地配音：最终选型与首版接入
 
 > 更新日期：2026-08-28
-> 当前范围：Windows x64 + NVIDIA GPU；可靠整轨生成、持久断点和已完成后缀的即时预览。
+> 当前范围：Windows x64 + NVIDIA GPU；Video/Audio 的可靠整轨生成、持久断点和
+> 已完成后缀的即时预览。
 
 ## 1. 最终选择
 
 首版正式路径采用：
 
 ```text
-字幕 Artifact
+媒体字幕 Artifact
   ├─ 原文字幕：沿用真实 Cue 起止时间
   └─ LLM 翻译：TaskDefinition 分段调用同一 Agent Session
           ↓
@@ -18,7 +19,7 @@ sherpa-onnx + UVR-MDX-NET-Inst_HQ_4
   ├─ vocals.wav：选择 one-shot 参考人声
   └─ background.wav：最终保留的背景轨
           ↓
-VoxCPM2：按翻译 Cue 从视频结尾向前生成
+VoxCPM2：按翻译 Cue 从媒体结尾向前生成
           ↓
 FFmpeg：逐段适配真实 Cue 时长并混合背景轨
           ↓
@@ -38,7 +39,7 @@ Demo 最初同时验证了 F5-TTS、VoxCPM1.5 与 VoxCPM2。最终不再以安�
 - VoxCPM2 的中文和英文 one-shot 最清晰，跨语言后仍较好保持说话人身份；
 - F5-TTS 的速度和显存成本有优势，因此保留为未来“快速模式”候选；
 - VoxCPM1.5 能用，但在本轮盲听中没有形成相对 VoxCPM2 的质量优势；
-- CPU 完整视频克隆耗时不可接受，首版不提供 CPU 路径。
+- CPU 完整媒体克隆耗时不可接受，首版不提供 CPU 路径。
 
 因此产品现在只暴露一条可解释、可验证的高质量路径。只有后续真实设备数据证明需要“快速模式”时，才把 F5-TTS 接入相同 Producer 接口。
 
@@ -47,7 +48,7 @@ Demo 最初同时验证了 F5-TTS、VoxCPM1.5 与 VoxCPM2。最终不再以安�
 翻译必须走项目既有主链：
 
 ```text
-VideoSubtitleService
+MediaSubtitleService
   → GenerationTask
   → SubtitleTranslationTaskDefinition
   → TaskAgentSession
@@ -84,7 +85,7 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 
 ## 5. 安装与缓存
 
-设置页注册独立的“VoxCPM2 视频配音组件”：
+设置页注册独立的“VoxCPM2 视频/音频配音组件”：
 
 - VoxCPM2 固定 revision 的 7 个官方模型文件；
 - UVR-MDX-NET-Inst_HQ_4 人声分离模型；
@@ -97,19 +98,21 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 
 ## 6. Workbench 所有权
 
-所有特化实现都位于：
+可被两种媒体复用的实现位于：
 
 ```text
-src/workbenches/video/dubbing/
+src/workbenches/media-dubbing/
 ├─ external-libraries/       # VoxCPM2 下载定义与隔离 Runtime
 ├─ dubbing-phrase-planner.ts # Cue 合并、参考窗口、数字朗读
 ├─ voxcpm2-worker-sources.ts # UVR 与 VoxCPM2 受控 Worker
 ├─ voxcpm2-dubbing-producer.ts
-├─ video-dubbing-service.ts
-└─ main-feature.ts           # 由 Video Workbench 注册依赖与 Producer
+├─ media-dubbing-service.ts
+└─ main-feature.ts           # 通过 Workbench Catalog 注册依赖与 Producer
 ```
 
-通用层只提供已有能力：External Library、AssetArtifact、GenerationTask、Content Resource 和 Workbench Event。`bootstrap` 不判断 VoxCPM2，不包含 Video 配音流程。
+Audio/Video Workbench 分别持有自己的交互状态和事件命名，只消费同一套媒体配音服务，
+彼此不依赖。通用层只提供已有能力：External Library、AssetArtifact、GenerationTask、
+Content Resource 和 Workbench Event。`bootstrap` 不判断 VoxCPM2，也不包含媒体配音流程。
 
 ## 7. 已完成验证
 

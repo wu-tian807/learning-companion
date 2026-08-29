@@ -10,9 +10,7 @@ import type {
   WorkbenchCommandResult,
 } from '../../shared/workbench/protocol';
 import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
-import { LocalFileContentHandle } from '../../main/content/resolvers/local-file/local-file-content-resolver';
 import {
-  cloneVideoDubbingSnapshot,
   cloneVideoViewState,
   cloneVideoSubtitleCueFinalPayload,
   cloneVideoSubtitleSnapshot,
@@ -24,7 +22,6 @@ import {
   isVideoWorkbenchStateV1,
   isVideoWorkbenchStateV2,
   type VideoSubtitleViewState,
-  type VideoDubbingSnapshot,
   type VideoWorkbenchViewState,
   VIDEO_STATE_SCHEMA_VERSION,
   VIDEO_WORKBENCH_ID,
@@ -33,13 +30,14 @@ import {
   videoWorkbenchManifest,
 } from './shared';
 import type {
-  VideoDubbingServiceApi,
-  VideoDubbingServiceSnapshot,
-} from './dubbing/video-dubbing-service';
+  MediaDubbingServiceApi,
+  MediaDubbingServiceSnapshot,
+} from '../media-dubbing/media-dubbing-service';
+import { MediaDubbingSessionResources } from '../media-dubbing/media-dubbing-session-resources';
 import type {
-  VideoSubtitleServiceApi,
-  VideoSubtitleServiceEvent,
-} from './subtitles/video-subtitle-service';
+  MediaSubtitleServiceApi,
+  MediaSubtitleServiceEvent,
+} from '../media-subtitles/media-subtitle-service';
 import { videoContentRevision } from './video-content-revision';
 
 interface VideoSession {
@@ -48,20 +46,12 @@ interface VideoSession {
   readonly unsubscribeSubtitles: () => void;
   unsubscribeDubbing: () => void;
   dubbingWarmupActive: boolean;
-  dubbingHandle?: LocalFileContentHandle;
-  dubbingArtifactRevision?: string;
-  dubbingAudioUrl?: string;
-  dubbingPreview?: {
-    readonly path: string;
-    readonly handle: LocalFileContentHandle;
-    readonly url: string;
-  };
-  dubbingSnapshot: VideoDubbingSnapshot;
+  readonly dubbingResources: MediaDubbingSessionResources;
 }
 
 export interface VideoWorkbenchProviderDependencies {
-  readonly subtitles: VideoSubtitleServiceApi;
-  readonly dubbing: VideoDubbingServiceApi;
+  readonly subtitles: MediaSubtitleServiceApi;
+  readonly dubbing: MediaDubbingServiceApi;
   readonly events: WorkbenchEventBusApi;
   readonly now?: () => number;
 }
@@ -70,33 +60,11 @@ function createResult(payload: JsonValue): WorkbenchCommandResult {
   return { payload };
 }
 
-function toPublicDubbingSnapshot(
-  snapshot: VideoDubbingServiceSnapshot,
-  resources: {
-    readonly audioUrl?: string;
-    readonly previewAudioUrl?: string;
-  } = {},
-): JsonValue & VideoDubbingSnapshot {
-  return cloneVideoDubbingSnapshot({
-    phase: snapshot.phase,
-    completedPhrases: snapshot.completedPhrases,
-    totalPhrases: snapshot.totalPhrases,
-    completedDurationMs: snapshot.completedDurationMs,
-    durationMs: snapshot.durationMs,
-    readySuffixStartMs: snapshot.readySuffixStartMs,
-    ...(resources.audioUrl ? { audioUrl: resources.audioUrl } : {}),
-    ...(resources.previewAudioUrl
-      ? { previewAudioUrl: resources.previewAudioUrl }
-      : {}),
-    ...(snapshot.message ? { message: snapshot.message } : {}),
-  });
-}
-
 export class VideoWorkbenchProvider implements MainWorkbenchProvider {
   readonly manifest = videoWorkbenchManifest;
   private readonly sessions = new Map<string, VideoSession>();
-  private readonly subtitles: VideoSubtitleServiceApi;
-  private readonly dubbing: VideoDubbingServiceApi;
+  private readonly subtitles: MediaSubtitleServiceApi;
+  private readonly dubbing: MediaDubbingServiceApi;
   private readonly events: WorkbenchEventBusApi;
   private readonly now: () => number;
 
@@ -146,7 +114,11 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
       unsubscribeSubtitles,
       unsubscribeDubbing: () => undefined,
       dubbingWarmupActive: false,
-      dubbingSnapshot: cloneVideoDubbingSnapshot(EMPTY_VIDEO_DUBBING_SNAPSHOT),
+      dubbingResources: new MediaDubbingSessionResources(
+        context.sessionId,
+        this.resourceService,
+        EMPTY_VIDEO_DUBBING_SNAPSHOT,
+      ),
     };
     session.unsubscribeDubbing = this.dubbing.subscribe(
       context.asset.id,
@@ -178,9 +150,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
         subtitleSnapshot: cloneVideoSubtitleSnapshot(
           this.subtitles.getSnapshot(context.asset.id),
         ),
-        dubbingSnapshot: this.attachDubbingArtifact(
-          context.sessionId,
-          session,
+        dubbingSnapshot: session.dubbingResources.attach(
           this.dubbing.getSnapshot(context.asset.id),
         ),
       },
@@ -249,9 +219,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
 
     if (command.type === videoCommands.getDubbingSnapshot) {
       return createResult(
-        this.attachDubbingArtifact(
-          context.sessionId,
-          session,
+        session.dubbingResources.attach(
           this.dubbing.getSnapshot(context.asset.id),
         ),
       );
@@ -272,10 +240,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
         this.dubbing.releaseWarmup(context.asset.id);
       }
       this.resourceService.revokeSession(context.sessionId);
-      await Promise.all([
-        session.dubbingHandle?.close(),
-        session.dubbingPreview?.handle.close(),
-      ]);
+      await session.dubbingResources.close();
     }
   }
 
@@ -331,7 +296,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
 
   private publishSubtitleEvent(
     sessionId: string,
-    event: VideoSubtitleServiceEvent,
+    event: MediaSubtitleServiceEvent,
   ): void {
     if (!this.sessions.has(sessionId)) return;
     this.events.publish({
@@ -349,14 +314,14 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
 
   private publishDubbingSnapshot(
     sessionId: string,
-    snapshot: VideoDubbingServiceSnapshot,
+    snapshot: MediaDubbingServiceSnapshot,
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.events.publish({
       sessionId,
       type: videoEventTypes.dubbingSnapshot,
-      payload: this.attachDubbingArtifact(sessionId, session, snapshot),
+      payload: session.dubbingResources.attach(snapshot),
     });
   }
 
@@ -380,56 +345,4 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
     this.dubbing.warmup(assetId);
   }
 
-  private attachDubbingArtifact(
-    sessionId: string,
-    session: VideoSession,
-    snapshot: VideoDubbingServiceSnapshot,
-  ): JsonValue & VideoDubbingSnapshot {
-    if (
-      snapshot.phase === 'ready' &&
-      snapshot.artifactPath &&
-      snapshot.artifactRevision &&
-      session.dubbingArtifactRevision !== snapshot.artifactRevision
-    ) {
-      void session.dubbingHandle?.close();
-      const handle = new LocalFileContentHandle(snapshot.artifactPath);
-      const audioUrl = this.resourceService.register(
-        sessionId,
-        handle,
-        'audio/mp4',
-      );
-      session.dubbingHandle = handle;
-      session.dubbingArtifactRevision = snapshot.artifactRevision;
-      session.dubbingAudioUrl = audioUrl;
-    }
-    if (snapshot.phase === 'ready' && session.dubbingAudioUrl) {
-      void session.dubbingPreview?.handle.close();
-      session.dubbingPreview = undefined;
-      session.dubbingSnapshot = toPublicDubbingSnapshot(snapshot, {
-        audioUrl: session.dubbingAudioUrl,
-      });
-    } else if (
-      (snapshot.phase === 'cloning' ||
-        snapshot.phase === 'mixing' ||
-        snapshot.phase === 'interrupted' ||
-        snapshot.phase === 'failed') &&
-      snapshot.previewAudioPath
-    ) {
-      if (session.dubbingPreview?.path !== snapshot.previewAudioPath) {
-        void session.dubbingPreview?.handle.close();
-        const handle = new LocalFileContentHandle(snapshot.previewAudioPath);
-        session.dubbingPreview = {
-          path: snapshot.previewAudioPath,
-          handle,
-          url: this.resourceService.register(sessionId, handle, 'audio/wav'),
-        };
-      }
-      session.dubbingSnapshot = toPublicDubbingSnapshot(snapshot, {
-        previewAudioUrl: session.dubbingPreview.url,
-      });
-    } else {
-      session.dubbingSnapshot = toPublicDubbingSnapshot(snapshot);
-    }
-    return cloneVideoDubbingSnapshot(session.dubbingSnapshot);
-  }
 }

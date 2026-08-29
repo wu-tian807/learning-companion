@@ -10,8 +10,8 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import type { ExternalLibraryServiceApi } from '../../../../main/external-libraries/external-library-service';
-import { ExternalCommandRunner } from '../../../../main/external-libraries/external-command-runner';
+import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
+import { ExternalCommandRunner } from '../../../main/external-libraries/external-command-runner';
 import { WRITABLE_AUDIO_NORMALIZER_SOURCE } from '../voxcpm2-worker-sources';
 import { VoxCpm2DubbingRuntimeResolver } from './voxcpm2-runtime';
 

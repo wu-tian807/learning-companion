@@ -14,15 +14,27 @@ import type {
   JsonValue,
   WorkbenchCommand,
 } from '../../shared/workbench/protocol';
-import { cloneJsonValue } from '../../shared/workbench/protocol';
 import {
-  isSubtitleSourceTrackV1,
-  isSubtitleTranslationCueV1,
-  isSubtitleTranslationTrackV1,
-  type SubtitleSourceTrackV1,
-  type SubtitleTranslationCueV1,
-  type SubtitleTranslationTrackV1,
-} from '../media-subtitles/contracts';
+  cloneMediaDubbingSnapshot,
+  EMPTY_MEDIA_DUBBING_SNAPSHOT,
+  isMediaDubbingSnapshot,
+  type MediaDubbingPhase,
+  type MediaDubbingSnapshot,
+} from '../media-dubbing/contracts';
+import {
+  cloneMediaSubtitleCueFinalPayload,
+  cloneMediaSubtitleSnapshot,
+  EMPTY_MEDIA_SUBTITLE_SNAPSHOT,
+  isMediaSubtitleCueFinalPayload,
+  isMediaSubtitleDisplayMode,
+  isMediaSubtitleSnapshot,
+  isMediaSubtitleViewState,
+  type MediaSubtitleCueFinalPayload,
+  type MediaSubtitleDisplayMode,
+  type MediaSubtitlePhase,
+  type MediaSubtitleSnapshot,
+  type MediaSubtitleViewState,
+} from '../media-subtitles/presentation';
 
 export const VIDEO_WORKBENCH_ID = 'builtin.video';
 export const VIDEO_STATE_SCHEMA_VERSION = 2;
@@ -69,70 +81,19 @@ export interface VideoWorkbenchStateV1 {
   readonly viewState: VideoWorkbenchViewState;
 }
 
-export type VideoSubtitleDisplayMode =
-  'off' | 'source' | 'translated' | 'bilingual';
-
-export interface VideoSubtitleViewState {
-  readonly displayMode: VideoSubtitleDisplayMode;
-}
+export type VideoSubtitleDisplayMode = MediaSubtitleDisplayMode;
+export type VideoSubtitleViewState = MediaSubtitleViewState;
 
 export interface VideoWorkbenchStateV2 {
   readonly viewState: VideoWorkbenchViewState;
   readonly subtitleState: VideoSubtitleViewState;
 }
 
-export type VideoSubtitlePhase =
-  | 'idle'
-  | 'queued'
-  | 'runtime-required'
-  | 'transcribing'
-  | 'source-ready'
-  | 'translating'
-  | 'ready'
-  | 'unsupported-language'
-  | 'failed';
-
-export interface VideoSubtitleSnapshot {
-  readonly phase: VideoSubtitlePhase;
-  readonly source?: SubtitleSourceTrackV1;
-  readonly translation?: SubtitleTranslationTrackV1;
-  readonly partialTranslations: readonly SubtitleTranslationCueV1[];
-  readonly completedCues: number;
-  readonly totalCues: number;
-  readonly message?: string;
-}
-
-export interface VideoSubtitleCueFinalPayload {
-  readonly sourceTrackRevision: string;
-  readonly cue: SubtitleTranslationCueV1;
-  readonly completedCues: number;
-  readonly totalCues: number;
-}
-
-export type VideoDubbingPhase =
-  | 'idle'
-  | 'awaiting-translation'
-  | 'runtime-required'
-  | 'preparing-runtime'
-  | 'separating'
-  | 'cloning'
-  | 'mixing'
-  | 'interrupted'
-  | 'ready'
-  | 'unsupported'
-  | 'failed';
-
-export interface VideoDubbingSnapshot {
-  readonly phase: VideoDubbingPhase;
-  readonly completedPhrases: number;
-  readonly totalPhrases: number;
-  readonly completedDurationMs: number;
-  readonly durationMs: number;
-  readonly readySuffixStartMs: number;
-  readonly audioUrl?: string;
-  readonly previewAudioUrl?: string;
-  readonly message?: string;
-}
+export type VideoSubtitlePhase = MediaSubtitlePhase;
+export type VideoSubtitleSnapshot = MediaSubtitleSnapshot;
+export type VideoSubtitleCueFinalPayload = MediaSubtitleCueFinalPayload;
+export type VideoDubbingPhase = MediaDubbingPhase;
+export type VideoDubbingSnapshot = MediaDubbingSnapshot;
 
 export interface VideoWorkbenchPayload {
   readonly contentUrl: string;
@@ -189,22 +150,10 @@ export const DEFAULT_VIDEO_SUBTITLE_VIEW_STATE: Readonly<VideoSubtitleViewState>
   Object.freeze({ displayMode: 'off' });
 
 export const EMPTY_VIDEO_SUBTITLE_SNAPSHOT: Readonly<VideoSubtitleSnapshot> =
-  Object.freeze({
-    phase: 'idle',
-    partialTranslations: Object.freeze([]),
-    completedCues: 0,
-    totalCues: 0,
-  });
+  EMPTY_MEDIA_SUBTITLE_SNAPSHOT;
 
 export const EMPTY_VIDEO_DUBBING_SNAPSHOT: Readonly<VideoDubbingSnapshot> =
-  Object.freeze({
-    phase: 'idle',
-    completedPhrases: 0,
-    totalPhrases: 0,
-    completedDurationMs: 0,
-    durationMs: 0,
-    readySuffixStartMs: 0,
-  });
+  EMPTY_MEDIA_DUBBING_SNAPSHOT;
 
 export const videoCommands = {
   saveViewState: 'video:save-view-state',
@@ -271,18 +220,13 @@ export function isVideoWorkbenchStateV1(
 export function isVideoSubtitleDisplayMode(
   value: unknown,
 ): value is VideoSubtitleDisplayMode {
-  return (
-    value === 'off' ||
-    value === 'source' ||
-    value === 'translated' ||
-    value === 'bilingual'
-  );
+  return isMediaSubtitleDisplayMode(value);
 }
 
 export function isVideoSubtitleViewState(
   value: unknown,
 ): value is VideoSubtitleViewState {
-  return isRecord(value) && isVideoSubtitleDisplayMode(value.displayMode);
+  return isMediaSubtitleViewState(value);
 }
 
 export function isVideoWorkbenchStateV2(
@@ -295,136 +239,40 @@ export function isVideoWorkbenchStateV2(
   );
 }
 
-function isVideoSubtitlePhase(value: unknown): value is VideoSubtitlePhase {
-  return (
-    value === 'idle' ||
-    value === 'queued' ||
-    value === 'runtime-required' ||
-    value === 'transcribing' ||
-    value === 'source-ready' ||
-    value === 'translating' ||
-    value === 'ready' ||
-    value === 'unsupported-language' ||
-    value === 'failed'
-  );
-}
-
-function isVideoDubbingPhase(value: unknown): value is VideoDubbingPhase {
-  return (
-    value === 'idle' ||
-    value === 'awaiting-translation' ||
-    value === 'runtime-required' ||
-    value === 'preparing-runtime' ||
-    value === 'separating' ||
-    value === 'cloning' ||
-    value === 'mixing' ||
-    value === 'interrupted' ||
-    value === 'ready' ||
-    value === 'unsupported' ||
-    value === 'failed'
-  );
-}
-
 export function isVideoSubtitleSnapshot(
   value: unknown,
 ): value is VideoSubtitleSnapshot {
-  return (
-    isRecord(value) &&
-    isVideoSubtitlePhase(value.phase) &&
-    (value.source === undefined || isSubtitleSourceTrackV1(value.source)) &&
-    (value.translation === undefined ||
-      isSubtitleTranslationTrackV1(value.translation)) &&
-    Array.isArray(value.partialTranslations) &&
-    value.partialTranslations.every(isSubtitleTranslationCueV1) &&
-    Number.isSafeInteger(value.completedCues) &&
-    Number(value.completedCues) >= 0 &&
-    Number.isSafeInteger(value.totalCues) &&
-    Number(value.totalCues) >= Number(value.completedCues) &&
-    (value.message === undefined || typeof value.message === 'string')
-  );
+  return isMediaSubtitleSnapshot(value);
 }
 
 export function cloneVideoSubtitleSnapshot(
   snapshot: VideoSubtitleSnapshot,
 ): JsonValue & VideoSubtitleSnapshot {
-  if (!isVideoSubtitleSnapshot(snapshot)) {
-    throw new Error('Video 字幕状态无效');
-  }
-  const normalized = {
-    phase: snapshot.phase,
-    ...(snapshot.source === undefined ? {} : { source: snapshot.source }),
-    ...(snapshot.translation === undefined
-      ? {}
-      : { translation: snapshot.translation }),
-    partialTranslations: snapshot.partialTranslations,
-    completedCues: snapshot.completedCues,
-    totalCues: snapshot.totalCues,
-    ...(snapshot.message === undefined ? {} : { message: snapshot.message }),
-  };
-  return cloneJsonValue(normalized as unknown as JsonValue) as JsonValue &
-    VideoSubtitleSnapshot;
+  return cloneMediaSubtitleSnapshot(snapshot);
 }
 
 export function cloneVideoSubtitleCueFinalPayload(
   payload: VideoSubtitleCueFinalPayload,
 ): JsonValue & VideoSubtitleCueFinalPayload {
-  if (!isVideoSubtitleCueFinalPayload(payload)) {
-    throw new Error('Video 字幕 Cue 事件无效');
-  }
-  return cloneJsonValue(payload as unknown as JsonValue) as JsonValue &
-    VideoSubtitleCueFinalPayload;
+  return cloneMediaSubtitleCueFinalPayload(payload);
 }
 
 export function isVideoDubbingSnapshot(
   value: unknown,
 ): value is VideoDubbingSnapshot {
-  return (
-    isRecord(value) &&
-    isVideoDubbingPhase(value.phase) &&
-    Number.isSafeInteger(value.completedPhrases) &&
-    Number(value.completedPhrases) >= 0 &&
-    Number.isSafeInteger(value.totalPhrases) &&
-    Number(value.totalPhrases) >= Number(value.completedPhrases) &&
-    Number.isSafeInteger(value.completedDurationMs) &&
-    Number(value.completedDurationMs) >= 0 &&
-    Number.isSafeInteger(value.durationMs) &&
-    Number(value.durationMs) >= Number(value.completedDurationMs) &&
-    Number.isSafeInteger(value.readySuffixStartMs) &&
-    Number(value.readySuffixStartMs) >= 0 &&
-    Number(value.readySuffixStartMs) <= Number(value.durationMs) &&
-    (value.audioUrl === undefined ||
-      (typeof value.audioUrl === 'string' &&
-        value.audioUrl.startsWith('learning-content://resource/'))) &&
-    (value.previewAudioUrl === undefined ||
-      (typeof value.previewAudioUrl === 'string' &&
-        value.previewAudioUrl.startsWith('learning-content://resource/'))) &&
-    (value.message === undefined || typeof value.message === 'string')
-  );
+  return isMediaDubbingSnapshot(value);
 }
 
 export function cloneVideoDubbingSnapshot(
   snapshot: VideoDubbingSnapshot,
 ): JsonValue & VideoDubbingSnapshot {
-  if (!isVideoDubbingSnapshot(snapshot)) {
-    throw new Error('Video 配音状态无效');
-  }
-  return cloneJsonValue(snapshot as unknown as JsonValue) as JsonValue &
-    VideoDubbingSnapshot;
+  return cloneMediaDubbingSnapshot(snapshot);
 }
 
 export function isVideoSubtitleCueFinalPayload(
   value: unknown,
 ): value is VideoSubtitleCueFinalPayload {
-  return (
-    isRecord(value) &&
-    typeof value.sourceTrackRevision === 'string' &&
-    value.sourceTrackRevision.trim().length > 0 &&
-    isSubtitleTranslationCueV1(value.cue) &&
-    Number.isSafeInteger(value.completedCues) &&
-    Number(value.completedCues) > 0 &&
-    Number.isSafeInteger(value.totalCues) &&
-    Number(value.totalCues) >= Number(value.completedCues)
-  );
+  return isMediaSubtitleCueFinalPayload(value);
 }
 
 export function isVideoWorkbenchPayload(

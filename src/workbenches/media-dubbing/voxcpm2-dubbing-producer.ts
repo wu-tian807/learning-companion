@@ -6,22 +6,22 @@ import type {
   AssetArtifactProduceRequest,
   AssetArtifactProducer,
   ProducedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-registry';
+} from '../../main/artifacts/asset-artifact-registry';
 import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
-} from '../../../main/artifacts/asset-artifact-service';
-import { AppError } from '../../../main/errors/app-error';
+} from '../../main/artifacts/asset-artifact-service';
+import { AppError } from '../../main/errors/app-error';
 import {
   ExternalCommandRunner,
   type ExternalCommandRunnerApi,
-} from '../../../main/external-libraries/external-command-runner';
+} from '../../main/external-libraries/external-command-runner';
 import type {
   SubtitleSourceTrackV1,
   SubtitleTranslationTrackV1,
-} from '../../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
+} from '../media-subtitles/contracts';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
   DUBBING_PHRASE_PLANNER_VERSION,
   createDubbingPhrases,
@@ -29,14 +29,15 @@ import {
 } from './dubbing-phrase-planner';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
-  markVideoDubbingCheckpointPrepared,
-  loadVideoDubbingCheckpoint,
-  openVideoDubbingCheckpoint,
-  removeVideoDubbingCheckpoint,
-  type VideoDubbingCheckpointIdentity,
-} from './video-dubbing-checkpoint-file';
+  markMediaDubbingCheckpointPrepared,
+  loadMediaDubbingCheckpoint,
+  openMediaDubbingCheckpoint,
+  removeMediaDubbingCheckpoint,
+  type MediaDubbingCheckpointIdentity,
+} from './media-dubbing-checkpoint-file';
 import { SOURCE_SEPARATION_WORKER_SOURCE } from './voxcpm2-worker-sources';
 
+// Persisted producer ids are part of existing artifact cache keys.
 export const VOXCPM2_DUBBING_PRODUCER_ID = 'builtin.video.dubbing.voxcpm2';
 export const VOXCPM2_DUBBING_PRODUCER_VERSION = '2';
 export const VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE = 'audio/mp4';
@@ -44,13 +45,13 @@ export const VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE = 'audio/mp4';
 const PROCESS_TIMEOUT_MS = 4 * 60 * 60 * 1_000;
 const PROGRESS_POLL_MS = 500;
 
-export type VideoDubbingProgressPhase =
+export type MediaDubbingProgressPhase =
   'preparing-runtime' | 'separating' | 'cloning' | 'mixing';
 
-export interface VideoDubbingProgress {
+export interface MediaDubbingProgress {
   readonly assetId: string;
   readonly sourceRevision: string;
-  readonly phase: VideoDubbingProgressPhase;
+  readonly phase: MediaDubbingProgressPhase;
   readonly completedPhrases: number;
   readonly totalPhrases: number;
   readonly completedDurationMs: number;
@@ -59,21 +60,21 @@ export interface VideoDubbingProgress {
   readonly previewAudioPath?: string;
 }
 
-export type InterruptedVideoDubbingProgress = Omit<
-  VideoDubbingProgress,
+export type InterruptedMediaDubbingProgress = Omit<
+  MediaDubbingProgress,
   'phase'
 >;
 
-export class VideoDubbingProgressHub {
+export class MediaDubbingProgressHub {
   private readonly listeners = new Set<
-    (progress: VideoDubbingProgress) => void
+    (progress: MediaDubbingProgress) => void
   >();
 
-  publish(progress: VideoDubbingProgress): void {
+  publish(progress: MediaDubbingProgress): void {
     for (const listener of this.listeners) listener(progress);
   }
 
-  subscribe(listener: (progress: VideoDubbingProgress) => void): () => void {
+  subscribe(listener: (progress: MediaDubbingProgress) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -109,7 +110,7 @@ function requestKey(
 function checkpointIdentity(
   request: AssetArtifactRequest | AssetArtifactProduceRequest,
   phrases: readonly unknown[],
-): VideoDubbingCheckpointIdentity {
+): MediaDubbingCheckpointIdentity {
   return Object.freeze({
     workspacePath: request.workspacePath,
     assetId: request.source.assetId,
@@ -166,7 +167,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
   private readonly dependencies: VoxCpm2DubbingProducerDependencies;
 
   constructor(
-    private readonly progress: VideoDubbingProgressHub,
+    private readonly progress: MediaDubbingProgressHub,
     dependencies: Partial<VoxCpm2DubbingProducerDependencies> = {},
   ) {
     this.dependencies = {
@@ -223,17 +224,17 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     translation: SubtitleTranslationTrackV1,
   ): Promise<void> {
     const phrases = createDubbingPhrases(sourceTrack.cues, translation);
-    await removeVideoDubbingCheckpoint(checkpointIdentity(request, phrases));
+    await removeMediaDubbingCheckpoint(checkpointIdentity(request, phrases));
   }
 
   async getInterruptedProgress(
     request: AssetArtifactRequest,
     sourceTrack: SubtitleSourceTrackV1,
     translation: SubtitleTranslationTrackV1,
-  ): Promise<InterruptedVideoDubbingProgress | undefined> {
+  ): Promise<InterruptedMediaDubbingProgress | undefined> {
     const phrases = createDubbingPhrases(sourceTrack.cues, translation);
     if (phrases.length === 0) return undefined;
-    const checkpoint = await loadVideoDubbingCheckpoint(
+    const checkpoint = await loadMediaDubbingCheckpoint(
       checkpointIdentity(request, phrases),
     );
     if (!checkpoint) return undefined;
@@ -294,7 +295,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       ]);
       signal.throwIfAborted();
       const identity = checkpointIdentity(request, phrases);
-      const checkpoint = await openVideoDubbingCheckpoint(identity);
+      const checkpoint = await openMediaDubbingCheckpoint(identity);
       const separationWorker = join(request.stagingDirectory, 'separate.py');
       const phrasesPath = join(request.stagingDirectory, 'phrases.json');
       await Promise.all([
@@ -327,7 +328,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         });
         durationMs = Math.round(Number(probe.stdout.trim()) * 1_000);
         if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
-          throw new Error('无法读取视频时长');
+          throw new Error('无法读取媒体时长');
         }
         this.publish(
           request,
@@ -405,7 +406,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
           timeoutMs: 5 * 60 * 1_000,
           signal,
         });
-        await markVideoDubbingCheckpointPrepared(
+        await markMediaDubbingCheckpointPrepared(
           checkpoint.paths,
           identity,
           durationMs,
@@ -562,7 +563,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
 
   private publish(
     request: AssetArtifactProduceRequest,
-    phase: VideoDubbingProgressPhase,
+    phase: MediaDubbingProgressPhase,
     completedPhrases: number,
     totalPhrases: number,
     completedDurationMs: number,
@@ -592,7 +593,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
   }
 }
 
-export const videoDubbingProducerMetadata = Object.freeze({
+export const mediaDubbingProducerMetadata = Object.freeze({
   model: 'VoxCPM2',
   phrasePlannerVersion: DUBBING_PHRASE_PLANNER_VERSION,
 });

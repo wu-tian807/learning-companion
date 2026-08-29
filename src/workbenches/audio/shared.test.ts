@@ -2,12 +2,23 @@ import { describe, expect, it } from 'vitest';
 
 import {
   audioWorkbenchManifest,
+  createAudioGetDubbingSnapshotCommand,
+  createAudioGetSubtitleSnapshotCommand,
+  createAudioRetryDubbingCommand,
+  createAudioRetrySubtitlesCommand,
   createAudioSaveViewStateCommand,
+  createAudioSetSubtitleModeCommand,
+  createAudioStartDubbingCommand,
   createAudioTimeRangeTarget,
+  DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
   DEFAULT_AUDIO_VIEW_STATE,
+  EMPTY_AUDIO_DUBBING_SNAPSHOT,
+  EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
   isAudioSaveViewStatePayload,
   isAudioTimeRangeAnchorV1,
   isAudioWorkbenchPayload,
+  isAudioWorkbenchStateV1,
+  isAudioWorkbenchStateV2,
   isAudioWorkbenchViewState,
 } from './shared';
 
@@ -33,6 +44,9 @@ describe('Audio Workbench shared protocol', () => {
       isAudioWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
         viewState: DEFAULT_AUDIO_VIEW_STATE,
+        subtitleState: DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
+        dubbingSnapshot: EMPTY_AUDIO_DUBBING_SNAPSHOT,
       }),
     ).toBe(true);
     expect(
@@ -41,6 +55,30 @@ describe('Audio Workbench shared protocol', () => {
           .payload,
       ),
     ).toBe(true);
+    expect(
+      isAudioWorkbenchStateV1({ viewState: DEFAULT_AUDIO_VIEW_STATE }),
+    ).toBe(true);
+    expect(
+      isAudioWorkbenchStateV2({
+        viewState: DEFAULT_AUDIO_VIEW_STATE,
+        subtitleState: DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
+      }),
+    ).toBe(true);
+    expect([
+      createAudioSetSubtitleModeCommand('bilingual').type,
+      createAudioGetSubtitleSnapshotCommand().type,
+      createAudioRetrySubtitlesCommand().type,
+      createAudioStartDubbingCommand().type,
+      createAudioGetDubbingSnapshotCommand().type,
+      createAudioRetryDubbingCommand().type,
+    ]).toEqual([
+      'audio:set-subtitle-mode',
+      'audio:get-subtitle-snapshot',
+      'audio:retry-subtitles',
+      'audio:start-dubbing',
+      'audio:get-dubbing-snapshot',
+      'audio:retry-dubbing',
+    ]);
   });
 
   it('rejects unsafe URLs and invalid playback state', () => {
@@ -48,6 +86,9 @@ describe('Audio Workbench shared protocol', () => {
       isAudioWorkbenchPayload({
         contentUrl: 'file:///private/audio.mp3',
         viewState: DEFAULT_AUDIO_VIEW_STATE,
+        subtitleState: DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
+        dubbingSnapshot: EMPTY_AUDIO_DUBBING_SNAPSHOT,
       }),
     ).toBe(false);
     expect(
