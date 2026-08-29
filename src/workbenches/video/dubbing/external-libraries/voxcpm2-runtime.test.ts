@@ -97,10 +97,24 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     expect(runtime.workerCachePath).toBe(
       join(root, 'cache', 'model-sessions'),
     );
-    for (const [key, value] of Object.entries(runtime.environment)) {
-      if (key.endsWith('CACHE_DIR') || key.endsWith('CACHE_PATH')) {
-        expect(value?.toLowerCase()).toContain(root.toLowerCase());
-      }
+    const managedCacheKeys = [
+      'UV_CACHE_DIR',
+      'PIP_CACHE_DIR',
+      'HF_HOME',
+      'HF_HUB_CACHE',
+      'TORCH_HOME',
+      'TORCH_EXTENSIONS_DIR',
+      'TORCHINDUCTOR_CACHE_DIR',
+      'TRITON_CACHE_DIR',
+      'CUDA_CACHE_PATH',
+      'XDG_CACHE_HOME',
+      'NUMBA_CACHE_DIR',
+      'PYTHONPYCACHEPREFIX',
+    ] as const;
+    for (const key of managedCacheKeys) {
+      expect(runtime.environment[key]?.toLowerCase()).toContain(
+        root.toLowerCase(),
+      );
     }
   });
 
