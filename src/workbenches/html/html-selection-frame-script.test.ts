@@ -99,4 +99,83 @@ describe('HTML selection frame script', () => {
     });
     expect(result).not.toHaveProperty('range');
   });
+
+  it('uses the KaTeX source once for selection text and the DOM Anchor quote', () => {
+    document.body.innerHTML =
+      '<p id="formula">勾股定理：' +
+      '<span class="katex">' +
+      '<span class="katex-mathml"><math><semantics>' +
+      '<mrow><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo>' +
+      '<msup><mi>y</mi><mn>2</mn></msup><mo>=</mo>' +
+      '<msup><mi>z</mi><mn>2</mn></msup></mrow>' +
+      '<annotation encoding="application/x-tex">x^2 + y^2 = z^2</annotation>' +
+      '</semantics></math></span>' +
+      '<span class="katex-html" aria-hidden="true">x2+y2=z2</span>' +
+      '</span>。</p>';
+    const formula = document.querySelector('#formula');
+    if (!formula) throw new Error('Expected formula paragraph');
+    Object.defineProperty(formula, 'getBoundingClientRect', {
+      value: () => ({ x: 10, y: 20, width: 240, height: 24 }),
+    });
+    const range = document.createRange();
+    range.selectNodeContents(formula);
+    const selection = globalThis.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const result = globalThis.eval(
+      READ_HTML_FRAME_SELECTION_SCRIPT,
+    ) as {
+      readonly text: string;
+      readonly element: { readonly textQuote?: string };
+    };
+
+    expect(result.text).toBe('勾股定理：$x^2 + y^2 = z^2$。');
+    expect(result.element.textQuote).toBe(
+      '勾股定理：$x^2 + y^2 = z^2$。',
+    );
+  });
+
+  it('anchors a partial visual selection to the outer formula element', () => {
+    document.body.innerHTML =
+      '<p>公式：<span id="formula" class="katex">' +
+      '<math><semantics><annotation encoding="application/x-tex">x^2</annotation>' +
+      '</semantics></math><span class="katex-html">x2</span>' +
+      '</span></p>';
+    const formula = document.querySelector('#formula');
+    const visualText = document.querySelector('.katex-html')?.firstChild;
+    if (!formula || !visualText) throw new Error('Expected formula nodes');
+    Object.defineProperty(formula, 'getBoundingClientRect', {
+      value: () => ({ x: 15, y: 25, width: 48, height: 22 }),
+    });
+    const range = document.createRange();
+    range.setStart(visualText, 0);
+    range.setEnd(visualText, 1);
+    const selection = globalThis.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const result = globalThis.eval(
+      READ_HTML_FRAME_SELECTION_SCRIPT,
+    ) as {
+      readonly text: string;
+      readonly rect: unknown;
+      readonly element: {
+        readonly path: readonly number[];
+        readonly tagName: string;
+        readonly textQuote?: string;
+      };
+    };
+
+    expect(result).toEqual({
+      text: '$x^2$',
+      rect: { x: 15, y: 25, width: 48, height: 22 },
+      element: {
+        path: elementPathFromDocumentElement(formula),
+        tagName: 'span',
+        id: 'formula',
+        textQuote: '$x^2$',
+      },
+    });
+  });
 });

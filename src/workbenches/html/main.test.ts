@@ -14,8 +14,10 @@ import {
   createHtmlDomTarget,
   createHtmlQuoteTarget,
   htmlConversationCommands,
+  htmlFrameCommands,
   htmlWorkbenchManifest,
 } from './shared';
+import { createHtmlSourceCopyInstallFrameScript } from './html-source-copy-frame-script';
 
 type ProviderCommandContext = Parameters<HtmlWorkbenchProvider['command']>[0];
 type ProviderOpenContext = Parameters<HtmlWorkbenchProvider['open']>[0];
@@ -314,6 +316,44 @@ describe('HtmlWorkbenchProvider conversations', () => {
       expect.stringContaining('"action":"clear"'),
       { frameUrl: 'https://widgets.example.com/chapter' },
     );
+  });
+
+  it('installs source-aware copy behavior in the session root frame', async () => {
+    const { provider, context, frameScriptExecutor } = await createProvider();
+    frameScriptExecutor.executeJavaScript.mockResolvedValueOnce({
+      installed: true,
+    } as never);
+
+    await expect(
+      provider.command(context, {
+        type: htmlFrameCommands.installSourceCopy,
+      }),
+    ).resolves.toEqual({ payload: { installed: true } });
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenCalledWith(
+      'session-1',
+      createHtmlSourceCopyInstallFrameScript(),
+    );
+  });
+
+  it('rejects malformed source-copy commands and frame results', async () => {
+    const { provider, context, frameScriptExecutor } = await createProvider();
+
+    await expect(
+      provider.command(context, {
+        type: htmlFrameCommands.installSourceCopy,
+        payload: {},
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+    expect(frameScriptExecutor.executeJavaScript).not.toHaveBeenCalled();
+
+    frameScriptExecutor.executeJavaScript.mockResolvedValueOnce({
+      installed: false,
+    } as never);
+    await expect(
+      provider.command(context, {
+        type: htmlFrameCommands.installSourceCopy,
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 
   it('rejects invalid anchor commands and dishonest frame results', async () => {

@@ -162,8 +162,8 @@ describe('HTML Main Facility adapters', () => {
 
   it('uses the same DOM Anchor shape for a context-menu text selection', async () => {
     const executeJavaScript = vi.fn(async () => ({
-      text: '右键选区',
-      element: { path: [1, 2], tagName: 'td', textQuote: '右键选区' },
+      text: '公式：$x^2$',
+      element: { path: [1, 2], tagName: 'td', textQuote: '公式：$x^2$' },
       rect: { x: 20, y: 30, width: 80, height: 20 },
     }));
     const sourceFrame = frame(executeJavaScript);
@@ -172,7 +172,7 @@ describe('HTML Main Facility adapters', () => {
         x: 20,
         y: 30,
         frameURL: sourceFrame.url,
-        selectionText: '右键选区',
+        selectionText: '公式：x2x^2x2',
         linkURL: '',
         mediaType: 'none',
         srcURL: '',
@@ -188,5 +188,6 @@ describe('HTML Main Facility adapters', () => {
         !Array.isArray(payload) &&
         isHtmlDomTarget(payload.target),
     ).toBe(true);
+    expect(payload).toMatchObject({ selectionText: '公式：$x^2$' });
   });
 });

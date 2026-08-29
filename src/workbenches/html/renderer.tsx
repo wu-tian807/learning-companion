@@ -40,9 +40,22 @@ import {
 import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
+  htmlFrameCommands,
   htmlWorkbenchManifest,
   isHtmlWorkbenchPayload,
 } from './shared';
+import { isHtmlSourceCopyInstallResult } from './html-source-copy-frame-script';
+
+export async function installHtmlSourceCopyInFrame(
+  executeCommand: RendererWorkbenchViewProps['executeCommand'],
+): Promise<void> {
+  const result = await executeCommand({
+    type: htmlFrameCommands.installSourceCopy,
+  });
+  if (!isHtmlSourceCopyInstallResult(result.payload)) {
+    throw new Error('HTML source-copy installer returned invalid data');
+  }
+}
 
 export const HTML_DOCUMENT_SANDBOX = [
   'allow-forms',
@@ -437,7 +450,13 @@ export function HtmlWorkbenchView({
         frameKey={frameKey}
         onLoad={() => {
           setFrameFailed(false);
-          setLoadedFrameKey(frameKey);
+          void installHtmlSourceCopyInFrame(executeCommand)
+            .catch((error) => {
+              reportError(error, '无法启用 HTML 公式源码复制。');
+            })
+            .finally(() => {
+              setLoadedFrameKey(frameKey);
+            });
         }}
         onError={() => {
           setFrameFailed(true);
