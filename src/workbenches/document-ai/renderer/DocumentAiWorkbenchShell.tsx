@@ -42,7 +42,7 @@ export function DocumentAiWorkbenchShell({
       setAnnotationSidebarOpen((open) => !open);
     },
   }), [annotationSidebarOpen, attachments.length, showAttachments, showQuestionAnchors]);
-  useWorkbenchContributions(`document-annotations:${assetId}`, actionBundle);
+  useWorkbenchContributions(`document.annotations:${assetId}`, actionBundle);
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
