@@ -362,7 +362,7 @@ export function ConversationPanel({
     <section
       role="dialog"
       aria-label="AI 问答"
-      className="flex h-full min-h-0 w-[min(440px,40vw)] min-w-[360px] flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
     >
       <header className="shrink-0 border-b border-white/[0.075] px-4 pb-2 pt-3">
         <div className="flex items-center gap-2">

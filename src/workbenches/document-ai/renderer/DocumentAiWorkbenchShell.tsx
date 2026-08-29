@@ -1,15 +1,11 @@
-import {
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
+import { useWorkbenchContributions } from '../../../renderer/workbench/runtime/use-workbench-contributions';
 import { AttachmentHost } from './AttachmentHost';
+import { createDocumentAnnotationActions } from './document-annotation-actions';
 import { DocumentQuestionAnchorsVisibleContext } from './document-question-anchor-visibility';
-import { DocumentMarkerVisibilityMenu } from './DocumentMarkerVisibilityMenu';
 
 export interface DocumentAiWorkbenchShellProps {
   readonly projectId: string;
@@ -18,22 +14,6 @@ export interface DocumentAiWorkbenchShellProps {
   readonly refreshAttachments: () => Promise<void>;
   readonly onError: (message: string) => void;
   readonly children: ReactNode;
-}
-
-function subscribeProjectActionSlot(onChange: () => void): () => void {
-  let currentSlot = getProjectActionSlot();
-  const observer = new MutationObserver(() => {
-    const nextSlot = getProjectActionSlot();
-    if (nextSlot === currentSlot) return;
-    currentSlot = nextSlot;
-    onChange();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  return () => observer.disconnect();
-}
-
-function getProjectActionSlot(): Element | null {
-  return document.querySelector('[data-project-ai-context-actions]');
 }
 
 export function DocumentAiWorkbenchShell({
@@ -45,14 +25,24 @@ export function DocumentAiWorkbenchShell({
   children,
 }: DocumentAiWorkbenchShellProps) {
   const [annotationSidebarOpen, setAnnotationSidebarOpen] = useState(false);
-  const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false);
   const [showQuestionAnchors, setShowQuestionAnchors] = useState(true);
   const [showAttachments, setShowAttachments] = useState(true);
-  const projectActionSlot = useSyncExternalStore(
-    subscribeProjectActionSlot,
-    getProjectActionSlot,
-    () => null,
-  );
+  const actionBundle = useMemo(() => createDocumentAnnotationActions({
+    attachmentCount: attachments.length,
+    questionAnchorsVisible: showQuestionAnchors,
+    attachmentsVisible: showAttachments,
+    indexOpen: annotationSidebarOpen,
+    onToggleQuestionAnchors: () => setShowQuestionAnchors((visible) => !visible),
+    onToggleAttachments: () => setShowAttachments((visible) => {
+      if (visible) setAnnotationSidebarOpen(false);
+      return !visible;
+    }),
+    onToggleIndex: () => {
+      setShowAttachments(true);
+      setAnnotationSidebarOpen((open) => !open);
+    },
+  }), [annotationSidebarOpen, attachments.length, showAttachments, showQuestionAnchors]);
+  useWorkbenchContributions(`document-annotations:${assetId}`, actionBundle);
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-clip">
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -60,34 +50,6 @@ export function DocumentAiWorkbenchShell({
           {children}
         </DocumentQuestionAnchorsVisibleContext.Provider>
       </div>
-      {projectActionSlot && createPortal(
-        <div className="flex items-center gap-2">
-          <DocumentMarkerVisibilityMenu
-            open={visibilityMenuOpen}
-            showQuestionAnchors={showQuestionAnchors}
-            showAttachments={showAttachments}
-            onOpenChange={setVisibilityMenuOpen}
-            onShowQuestionAnchorsChange={setShowQuestionAnchors}
-            onShowAttachmentsChange={(show) => {
-              setShowAttachments(show);
-              if (!show) setAnnotationSidebarOpen(false);
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setShowAttachments(true);
-              setAnnotationSidebarOpen((open) => !open);
-            }}
-            className="ui-icon-button grid size-[32px] place-items-center rounded-[10px] border border-white/10 text-slate-400 outline-none hover:border-indigo-300/55 hover:text-indigo-200"
-            aria-label={`打开标注（${attachments.length}）`}
-            title={`打开标注（${attachments.length}）`}
-          >
-            <span aria-hidden="true">✦</span>
-          </button>
-        </div>,
-        projectActionSlot,
-      )}
       {showAttachments && (
         <AttachmentHost
           projectId={projectId}

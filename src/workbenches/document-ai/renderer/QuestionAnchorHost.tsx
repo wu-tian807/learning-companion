@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type {
   ConversationHistoryStore,
@@ -6,13 +6,11 @@ import type {
 } from '../../../renderer/conversation/conversation-contracts';
 import type { WorkbenchConversationRuntime } from '../../../renderer/conversation/workbench-conversation-runtime';
 import {
-  resolveWorkbenchAnchor,
   revealWorkbenchAnchor,
-  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
-  type WorkbenchAnchorRect,
 } from '../../../renderer/workbench/host/workbench-anchor-bridge';
 import { groupConversationQuestionAnchors } from './conversation/conversation-question-anchors';
 import { useDocumentQuestionAnchorsVisible } from './document-question-anchor-visibility';
+import { useWorkbenchAnchorRects } from './use-workbench-anchor-rects';
 
 function useHistory(store: ConversationHistoryStore): readonly ConversationRecord[] {
   const [history, setHistory] = useState<readonly ConversationRecord[]>(
@@ -49,51 +47,15 @@ export function QuestionAnchorHost({
   const visible = useDocumentQuestionAnchorsVisible();
   const history = useHistory(historyStore);
   const groups = useMemo(() => groupConversationQuestionAnchors(history), [history]);
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [anchorRects, setAnchorRects] = useState<
-    ReadonlyMap<string, WorkbenchAnchorRect>
-  >(new Map());
-
-  const updateRects = useCallback(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const hostRect = host.getBoundingClientRect();
-    const next = new Map<string, WorkbenchAnchorRect>();
-    for (const group of groups) {
-      const rect = resolveWorkbenchAnchor(assetId, group.target);
-      if (!rect) continue;
-      next.set(group.key, {
-        ...rect,
-        left: rect.left - hostRect.left,
-        top: rect.top - hostRect.top,
-      });
-    }
-    setAnchorRects(next);
-  }, [assetId, groups]);
-
-  useEffect(() => {
-    if (!visible) return;
-    updateRects();
-    window.addEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, updateRects);
-    window.addEventListener('resize', updateRects);
-    const host = hostRef.current;
-    const observedContainer = host?.parentElement ?? host;
-    const mutationObserver = new MutationObserver(updateRects);
-    const resizeObserver = new ResizeObserver(updateRects);
-    if (observedContainer) {
-      mutationObserver.observe(observedContainer, {
-        childList: true,
-        subtree: true,
-      });
-      resizeObserver.observe(observedContainer);
-    }
-    return () => {
-      window.removeEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, updateRects);
-      window.removeEventListener('resize', updateRects);
-      mutationObserver.disconnect();
-      resizeObserver.disconnect();
-    };
-  }, [updateRects, visible]);
+  const anchorEntries = useMemo(
+    () => groups.map((group) => ({ key: group.key, target: group.target })),
+    [groups],
+  );
+  const { hostRef, anchorRects } = useWorkbenchAnchorRects(
+    assetId,
+    anchorEntries,
+    visible,
+  );
 
   if (!visible) return null;
 

@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
-import { AttachmentHost } from './AttachmentHost';
+import {
+  ATTACHMENT_MARKER_MOTION_CLASS,
+  AttachmentHost,
+} from './AttachmentHost';
 
 const attachment: AssetAttachment = {
   id: 'attachment-1',
@@ -17,6 +20,11 @@ const attachment: AssetAttachment = {
 };
 
 describe('AttachmentHost', () => {
+  it('does not animate marker coordinates while the document scrolls', () => {
+    expect(ATTACHMENT_MARKER_MOTION_CLASS).toBe('transition-colors');
+    expect(ATTACHMENT_MARKER_MOTION_CLASS).not.toContain('transition-all');
+  });
+
   it('renders the annotation sidebar only when the header action opens it', () => {
     const html = renderToStaticMarkup(
       <AttachmentHost

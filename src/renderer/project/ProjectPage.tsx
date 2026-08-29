@@ -17,6 +17,7 @@ import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorPr
 import { ProjectHeaderActions } from './ProjectHeaderActions';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
+import { resolveProjectRightRail } from './project-right-rail';
 import {
   assetMediaLabel,
   filterAssetLoadStateByCreationKind,
@@ -73,6 +74,16 @@ export function ProjectPage({
     selectAsset: session.selectAsset,
     workbenchLifecycleTaskRef: session.workbenchLifecycleTaskRef,
     setError,
+  });
+  const conversationOpen = Boolean(
+    conversationSnapshot.panelOpen &&
+    conversationSnapshot.active &&
+    assetOperations.selectedAsset,
+  );
+  const rightRail = resolveProjectRightRail({
+    conversationOpen,
+    generationOpen: layout.rightOpen,
+    generationInline: layout.rightInline,
   });
   const {
     mindMapTasks,
@@ -348,47 +359,47 @@ export function ProjectPage({
                   onError={setError}
                 />
               </div>
-              <ConversationPanelHost
-                projectId={project.id}
-                assetId={assetOperations.selectedAsset?.id}
-                onOpenSettings={onOpenSettings}
-                onError={setError}
-              />
-              {layout.rightOpen && (
+              {rightRail && (
                 <div
-                  className={
-                    layout.rightInline
-                      ? 'h-full w-[clamp(318px,20vw,390px)] shrink-0'
-                      : 'absolute inset-y-0 right-0 z-30 h-full w-[min(390px,calc(100%-20px))] shadow-2xl'
-                  }
+                  data-project-right-rail={rightRail.kind}
+                  className={rightRail.className}
                 >
-                  <GenerationCenter
-                    projectId={project.id}
-                    asset={assetOperations.selectedAsset}
-                    state={generatedAssetState}
-                    selectedAssetId={session.selectedAssetId}
-                    busy={assetOperations.busy}
-                    now={relativeTimeNow}
-                    mediaLabel={assetMediaLabel}
-                    onRetry={session.retry}
-                    onSelect={session.selectAsset}
-                    onRemoveSelected={assetOperations.requestDelete}
-                    onRename={assetOperations.setRenameTarget}
-                    onReveal={(asset) =>
-                      void assetOperations.revealAssetInFolder(asset)
-                    }
-                    onRelink={(asset) =>
-                      void assetOperations.relinkAsset(asset)
-                    }
-                    onDelete={(asset) =>
-                      assetOperations.requestDelete(null, [asset])
-                    }
-                    onRevealSources={layout.openLeft}
-                    onMindMapDraftReady={startMindMapGeneration}
-                    mindMapTasks={mindMapTasks}
-                    onRetryMindMapTask={retryMindMapTask}
-                    onCancelMindMapTask={cancelMindMapTask}
-                  />
+                  {rightRail.kind === 'conversation' ? (
+                    <ConversationPanelHost
+                      projectId={project.id}
+                      assetId={assetOperations.selectedAsset?.id}
+                      onOpenSettings={onOpenSettings}
+                      onError={setError}
+                    />
+                  ) : (
+                    <GenerationCenter
+                      projectId={project.id}
+                      asset={assetOperations.selectedAsset}
+                      state={generatedAssetState}
+                      selectedAssetId={session.selectedAssetId}
+                      busy={assetOperations.busy}
+                      now={relativeTimeNow}
+                      mediaLabel={assetMediaLabel}
+                      onRetry={session.retry}
+                      onSelect={session.selectAsset}
+                      onRemoveSelected={assetOperations.requestDelete}
+                      onRename={assetOperations.setRenameTarget}
+                      onReveal={(asset) =>
+                        void assetOperations.revealAssetInFolder(asset)
+                      }
+                      onRelink={(asset) =>
+                        void assetOperations.relinkAsset(asset)
+                      }
+                      onDelete={(asset) =>
+                        assetOperations.requestDelete(null, [asset])
+                      }
+                      onRevealSources={layout.openLeft}
+                      onMindMapDraftReady={startMindMapGeneration}
+                      mindMapTasks={mindMapTasks}
+                      onRetryMindMapTask={retryMindMapTask}
+                      onCancelMindMapTask={cancelMindMapTask}
+                    />
+                  )}
                 </div>
               )}
             </section>
