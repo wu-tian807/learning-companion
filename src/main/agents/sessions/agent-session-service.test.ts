@@ -2,11 +2,14 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProjectLookup } from '../../projects/project-database';
 import { createAgentSessionLocator } from './agent-session';
-import { AgentSessionFile } from './agent-session-file';
+import {
+  AgentSessionFile,
+  type AgentSessionFileApi,
+} from './agent-session-file';
 import { AgentSessionService } from './agent-session-service';
 
 const temporaryDirectories: string[] = [];
@@ -35,7 +38,7 @@ async function createHarness() {
   const createService = () =>
     new AgentSessionService(projectLookup, { now: () => now++ });
 
-  return { workspacePath, createService };
+  return { workspacePath, projectLookup, createService };
 }
 
 const locator = createAgentSessionLocator({
@@ -55,6 +58,43 @@ afterEach(async () => {
 });
 
 describe('AgentSessionService', () => {
+  it('waits for in-flight session writes before finishing Project unload', async () => {
+    const { projectLookup } = await createHarness();
+    let finishWrite: (() => void) | undefined;
+    const file: AgentSessionFileApi = {
+      read: vi.fn(async () => undefined),
+      write: vi.fn(
+        () =>
+          new Promise<void>((resolvePromise) => {
+            finishWrite = resolvePromise;
+          }),
+      ),
+    };
+    const service = new AgentSessionService(projectLookup, {
+      now: () => 100,
+      createFile: () => file,
+    });
+    service.loadFromProject('project-1');
+    const binding = service.bindProvider({
+      locator,
+      providerId: 'codex',
+      sessionId: 'thread-1',
+    });
+    await vi.waitFor(() => expect(file.write).toHaveBeenCalledOnce());
+    let unloadSettled = false;
+
+    const unload = Promise.resolve(service.unloadProject()).then(() => {
+      unloadSettled = true;
+    });
+
+    await Promise.resolve();
+    expect(unloadSettled).toBe(false);
+    finishWrite!();
+    await expect(binding).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
+    await unload;
+    expect(unloadSettled).toBe(true);
+  });
+
   it('persists a binding and restores it in a new service instance', async () => {
     const { workspacePath, createService } = await createHarness();
     const first = createService();
@@ -164,7 +204,7 @@ describe('AgentSessionService', () => {
     await expect(
       service.get({ ...locator, projectId: 'project-2' }),
     ).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
-    service.unloadProject();
+    await service.unloadProject();
     expect(service.getActiveProjectId()).toBeUndefined();
   });
 });

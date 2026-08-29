@@ -36,11 +36,13 @@ describe('Asset shared contract', () => {
       asset.contentRef,
     );
     expect(
-      createProjectWorkspaceContentRef('assets/imported/notes.md'),
+      createProjectWorkspaceContentRef(
+        '.learning-companion/assets/imported/notes.md',
+      ),
     ).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: 'assets/imported/notes.md',
+      path: '.learning-companion/assets/imported/notes.md',
     });
   });
 
@@ -58,17 +60,26 @@ describe('Asset shared contract', () => {
   it('identifies only files inside application-managed Asset directories', () => {
     expect(
       getManagedProjectAssetDirectory(
-        createProjectWorkspaceContentRef('assets/imported/notes.md'),
+        createProjectWorkspaceContentRef(
+          '.learning-companion/assets/imported/notes.md',
+        ),
       ),
     ).toBe('imported');
     expect(
       getManagedProjectAssetDirectory(
-        createProjectWorkspaceContentRef('assets/generated/map.mindmap'),
+        createProjectWorkspaceContentRef(
+          '.learning-companion/assets/generated/map.mindmap',
+        ),
       ),
     ).toBe('generated');
     expect(
       getManagedProjectAssetDirectory(
         createProjectWorkspaceContentRef('notes/source.md'),
+      ),
+    ).toBeUndefined();
+    expect(
+      getManagedProjectAssetDirectory(
+        createProjectWorkspaceContentRef('assets/imported/legacy.md'),
       ),
     ).toBeUndefined();
     expect(

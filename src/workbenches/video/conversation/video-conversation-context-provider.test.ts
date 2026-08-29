@@ -149,7 +149,8 @@ function setup(
             ref: {
               kind: 'local-file' as const,
               base: 'project-workspace' as const,
-              path: 'attachments/attachment-1/answer.md',
+              path:
+                '.learning-companion/attachments/attachment-1/answer.md',
             },
             mediaType: request.content.mediaType,
           },

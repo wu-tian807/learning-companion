@@ -221,14 +221,14 @@ describe('AssetDatabase', () => {
       mediaType: 'text/markdown',
       creationKind: 'generated',
       contentRef: createProjectWorkspaceContentRef(
-        'assets/generated/讲义.md',
+        '.learning-companion/assets/generated/讲义.md',
       ),
     });
 
     expect(created.contentRef).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: 'assets/generated/讲义.md',
+      path: '.learning-companion/assets/generated/讲义.md',
     });
     expect(created.creationKind).toBe('generated');
     expect(context.db.select().from(assets).get()?.contentRef).toEqual(

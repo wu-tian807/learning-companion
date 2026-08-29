@@ -24,7 +24,7 @@ const generatedAsset: AssetSnapshot = {
   mediaType: 'text/html',
   creationKind: 'generated',
   contentRef: createProjectWorkspaceContentRef(
-    'assets/generated/machine-learning-map.html',
+    '.learning-companion/assets/generated/machine-learning-map.html',
   ),
   contentStatus: {
     availability: 'available',

@@ -67,7 +67,6 @@ export interface AttachmentServiceApi {
   update(input: UpdateAttachmentInput): Promise<AssetAttachment>;
   delete(projectId: string, attachmentId: string): Promise<void>;
   removeByAsset(projectId: string, assetId: string): Promise<void>;
-  removeByProject(projectId: string): Promise<void>;
   subscribe(listener: AttachmentServiceListener): () => void;
 }
 
@@ -217,15 +216,6 @@ export class AttachmentService implements AttachmentServiceApi {
   async removeByAsset(projectId: string, assetId: string): Promise<void> {
     for (const attachment of this.database.listByAsset(projectId, assetId)) {
       await this.contentFiles.removeAttachment(projectId, attachment.id);
-      this.database.delete(attachment.id);
-      this.publish({ type: 'deleted', attachment });
-    }
-  }
-
-  async removeByProject(projectId: string): Promise<void> {
-    const attachments = this.database.listByProject(projectId);
-    await this.contentFiles.removeProject(projectId);
-    for (const attachment of attachments) {
       this.database.delete(attachment.id);
       this.publish({ type: 'deleted', attachment });
     }

@@ -82,10 +82,7 @@ export interface AssetServiceApi {
     projectId: string,
     workspacePath: string,
   ): Promise<void>;
-  removeManagedFilesByProject(
-    projectId: string,
-    workspacePath: string,
-  ): Promise<void>;
+  cancelProjectArtifactGeneration(workspacePath: string): Promise<void>;
   refresh(assetId: string): Promise<AssetSnapshot>;
   refreshAll(): Promise<readonly AssetSnapshot[]>;
   relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
@@ -124,7 +121,6 @@ export interface AssetDeletionObserver {
 
 export interface AssetAttachmentCleanupApi {
   removeByAsset(projectId: string, assetId: string): Promise<void>;
-  removeByProject(projectId: string): Promise<void>;
 }
 
 export interface AssetServiceUpdateOptions {
@@ -740,27 +736,10 @@ export class AssetService implements AssetServiceApi {
     );
   }
 
-  async removeManagedFilesByProject(
-    projectId: string,
+  async cancelProjectArtifactGeneration(
     workspacePath: string,
   ): Promise<void> {
-    const project = this.projectLookup.get(projectId);
-
-    if (!project) {
-      throw new AppError('PROJECT_NOT_FOUND');
-    }
-    if (project.workspacePath !== workspacePath) {
-      throw new AppError('PROJECT_CONTEXT_CHANGED');
-    }
-
-    await this.dependencies.attachmentCleanup?.removeByProject(projectId);
-
-    for (const asset of this.assetDatabase.listByProject(projectId)) {
-      await this.workspaceManager.removeManagedAssetFile(
-        workspacePath,
-        asset.contentRef,
-      );
-    }
+    await this.dependencies.artifactCleanup?.cancelByWorkspace(workspacePath);
   }
 
   async refresh(assetId: string): Promise<AssetSnapshot> {

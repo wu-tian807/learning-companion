@@ -118,6 +118,10 @@ Audio/Video Workbench 分别持有自己的交互状态和事件命名，只消�
 彼此不依赖。通用层只提供已有能力：External Library、AssetArtifact、GenerationTask、
 Content Resource 和 Workbench Event。`bootstrap` 不判断 VoxCPM2，也不包含媒体配音流程。
 
+失败或中断的配音 checkpoint 保存在目录
+`.learning-companion/checkpoints/video-dubbing`。它位于统一的应用私有命名空间；
+删除 Project 时随 `.learning-companion` 整体清理，不需要媒体专属删除旁路。
+
 ## 7. 已完成验证
 
 本机 RTX 4090 D 已使用正式 Worker 对 9.9 秒真实视频完成：

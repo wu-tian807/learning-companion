@@ -47,7 +47,7 @@ describe('AssetDeleteDialog', () => {
     const copiedAsset = {
       ...createAsset('copied', '复制讲义'),
       contentRef: createProjectWorkspaceContentRef(
-        'assets/imported/copied.pdf',
+        '.learning-companion/assets/imported/copied.pdf',
       ),
     };
     const markup = renderToStaticMarkup(
