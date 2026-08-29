@@ -42,6 +42,7 @@ export interface AssetArtifactServiceApi {
 
 export interface AssetArtifactCleanupApi {
   removeByAsset(assetId: string, workspacePath: string): Promise<void>;
+  cancelByWorkspace(workspacePath: string): Promise<void>;
   removeByProject(projectId: string, workspacePath: string): Promise<void>;
 }
 
@@ -243,9 +244,7 @@ export class AssetArtifactService
   ): Promise<void> {
     const normalizedProjectId = requireText(projectId);
     const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
-    await this.cancelTasks(
-      (task) => task.workspacePath === normalizedWorkspacePath,
-    );
+    await this.cancelByWorkspace(normalizedWorkspacePath);
     const artifacts = this.database.listByProject(normalizedProjectId);
 
     await this.removeArtifactFiles(
@@ -253,6 +252,13 @@ export class AssetArtifactService
       normalizedWorkspacePath,
     );
     this.database.deleteByProject(normalizedProjectId);
+  }
+
+  async cancelByWorkspace(workspacePath: string): Promise<void> {
+    const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
+    await this.cancelTasks(
+      (task) => task.workspacePath === normalizedWorkspacePath,
+    );
   }
 
   private async resolveCached(
@@ -474,13 +480,12 @@ export class AssetArtifactService
     workspacePath: string,
   ): Promise<void> {
     await Promise.all(
-      artifacts.map(async (artifact) => {
-        await this.fileManager
-          .removeArtifactFile(workspacePath, artifact.relativePath)
-          .catch((error: unknown) => {
-            this.logger.warn('清理 Asset Artifact 文件失败', error);
-          });
-      }),
+      artifacts.map((artifact) =>
+        this.fileManager.removeArtifactFile(
+          workspacePath,
+          artifact.relativePath,
+        ),
+      ),
     );
   }
 }

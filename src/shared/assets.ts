@@ -143,10 +143,18 @@ export function getManagedProjectAssetDirectory(
   if (contentRef.base !== PROJECT_WORKSPACE_CONTENT_BASE) {
     return undefined;
   }
-  if (contentRef.path.startsWith('assets/imported/')) {
+  if (
+    contentRef.path.startsWith(
+      '.learning-companion/assets/imported/',
+    )
+  ) {
     return 'imported';
   }
-  if (contentRef.path.startsWith('assets/generated/')) {
+  if (
+    contentRef.path.startsWith(
+      '.learning-companion/assets/generated/',
+    )
+  ) {
     return 'generated';
   }
 
