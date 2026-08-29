@@ -2,19 +2,21 @@
 
 > 日期：2026-08-16
 >
-> 状态：已确认，按本文主线实现
+> 状态：已实现；2026-08-28 将本地翻译模型替换为 GenerationTask + Agent
 >
 > 范围：Video Workbench 的本地字幕识别、显示、按需翻译与缓存
 
 ## 1. 最终决策
 
-本功能不建立字幕专属数据库表、Job 表、checkpoint 文件或通用媒体任务框架。
+本功能不建立字幕专属数据库表、Job 表或通用媒体任务框架。翻译复用现有
+GenerationTask 的持久化、调用 checkpoint、重试和 Provider Session。
 
-只复用三项现有能力：
+复用四项现有能力：
 
 1. `AssetArtifactService`：保存可重建的识别结果和翻译结果；
 2. `Workbench State`：保存用户选择的字幕显示模式；
 3. Workbench Main → Renderer Event：传递内存中的状态与逐 Cue 译文。
+4. `GenerationTask`：执行、恢复并审计分段 LLM 翻译。
 
 对应关系如下：
 
@@ -37,14 +39,14 @@ VideoSubtitleService（仅内存）
 - 用户选择“译文”或“双语”后才启动翻译；
 - 原字幕和译文分别是一个现有 Asset Artifact；
 - 翻译以完整 Cue 为单位增量显示，不传模型 token delta；
-- 进度只在内存中维护；应用退出或进程中断后重新执行；
+- 当前 UI 进度在内存中投影；已完成 Agent Call 由 GenerationTask 持久化并可恢复；
 - Artifact 已完成时由现有指纹缓存直接命中，不重复计算；
 - 不把字幕正文保存为 Attachment，也不创建新的 Asset。
 
 模型、安装包与实测数据见：
 
 - [媒体字幕外部依赖与模型总表](./2026-08-16-media-subtitle-runtime-dependencies.md)
-- [中英字幕本地翻译模型选型记录](../../../demos/subtitle-translation/docs/model-selection.md)
+- [视频配音与 LLM 翻译选型记录](../../../demos/voice-dubbing-technology-selection.md)
 
 ## 2. 用户体验
 
@@ -104,7 +106,7 @@ V1 状态读取时保留播放位置、音量、静音和倍速，并将字幕�
 应用重开后：
 
 - 已完成 Artifact 直接恢复；
-- 未完成的内存进度不恢复，重新识别或翻译；
+- 原字幕依靠 Artifact 恢复；翻译任务依靠 GenerationTask 与稳定 callKey 恢复；
 - 相同输入与 Producer 版本仍由 Artifact 缓存去重；
 - 不需要额外的字幕任务恢复协议。
 
@@ -223,25 +225,28 @@ flowchart LR
     SELECT["用户选择译文或双语"] --> SOURCE["等待/读取原字幕 Artifact"]
     SOURCE --> LANGUAGE{"中文或英文?"}
     LANGUAGE -->|否| UNSUPPORTED["明确提示不支持"]
-    LANGUAGE -->|是| CACHE["翻译 Artifact getOrCreate"]
-    CACHE --> MODEL["Hy-MT2 本地会话"]
-    MODEL --> CUE["每 Cue 一次请求，并发 4"]
-    CUE --> EVENT["cue-final Workbench Event"]
+    LANGUAGE -->|是| CACHE{"翻译 Artifact 已存在?"}
+    CACHE -->|是| UI["直接恢复完整译文"]
+    CACHE -->|否| TASK["GenerationTask"]
+    TASK --> DEFINITION["SubtitleTranslationTaskDefinition"]
+    DEFINITION --> AGENT["同一 TaskAgentSession 分段调用"]
+    AGENT --> EVENT["完整 Cue cue-final Event"]
     EVENT --> UI["当前字幕立即更新"]
-    CUE --> ARTIFACT["完整后原子提交译文 Artifact"]
+    AGENT --> ARTIFACT["完整校验后原子提交译文 Artifact"]
 ```
 
-当前正式链路使用随组件安装的 Hy-MT2 1.8B Q4：
+当前正式链路使用工作台 Provider Selector：
 
-- 一次请求只翻译一个目标 Cue；
-- 前一 Cue 和后一 Cue 只作为上下文；
-- 输出必须是当前 Cue 的纯译文；
-- 并发 `4` 路；
+- 每段最多 16 个目标 Cue、约 1400 个字符，只沿真实 Cue 边界切分；
+- 前 3 个和后 3 个 Cue 只作为上下文，禁止翻译或输出；
+- 所有分段复用同一 TaskAgentSession；
+- 输出必须是一个 JSON 对象，目标 Cue 的数量、ID 和顺序必须完全一致；
+- 格式无效时在同一 Session 内修复一次，仍失败则由 GenerationTask 记录失败；
 - 所有 Cue 完成并通过校验后才提交 Artifact；
-- 失败或取消会关闭本地模型进程，不提交残缺 Artifact。
+- 失败或取消不提交残缺 Artifact，重试复用 GenerationTask 的已完成调用。
 
-Bergamot 已属于外部组件资源，但首版不为它再建立第二套执行链。以后若需要快速档，
-只增加一个同契约翻译 Producer/Engine，不改变 Workbench 和数据结构。
+Bergamot、Hy-MT2 和 llama.cpp 不再属于字幕组件资源。以后若需要完全离线翻译，只增加
+同一 TaskDefinition/Artifact 契约下的 Provider，不在 Video Renderer 中建立第二条链。
 
 ## 6. 事件与所有权边界
 
@@ -286,7 +291,7 @@ video:subtitle-cue-final
 
 - 同一 Asset 的相同阶段只启动一次；
 - ASR 队列串行，避免多个重模型同时抢 GPU/CPU；
-- 翻译队列串行，每个视频内部 Cue 并发；
+- 每个翻译 Task 内按段顺序调用同一 Agent Session；不同 Task 的调度由 GenerationTask 负责；
 - Workbench 关闭只取消 UI 订阅，不取消 Asset 级后台工作；
 - Asset 删除时现有 `AssetArtifactService.removeByAsset()` 负责取消 Artifact Producer；
 - 进程取消通过现有外部命令终止能力释放整棵 Windows 子进程树；
@@ -299,6 +304,10 @@ src/workbenches/media-subtitles/
 ├── contracts.ts
 ├── transcription-producer.ts
 ├── translation-producer.ts
+├── subtitle-source-artifact.ts
+├── generation/
+│   ├── subtitle-translation-instruction.ts
+│   └── subtitle-translation-task-definition.ts
 └── external-libraries/
     └── ...运行时定义、安装与路径解析
 
@@ -319,13 +328,12 @@ src/workbenches/video/
 本轮不实现：
 
 - 字幕专属数据库表或 Job 表；
-- 中断 checkpoint、继续按钮或跨重启进度；
+- 字幕专属 checkpoint 或第二套 Job 系统；
 - SRT 导出和字幕编辑器；
 - 外挂字幕、内嵌字幕优先级选择；
 - 自动翻译；
-- Bergamot 快速档切换；
-- 云端翻译、Agent 润色和术语修正；
-- OCR、说话人分离、声音克隆、摘要或媒体问答；
+- Bergamot / Hy-MT 本地翻译档切换；
+- OCR、说话人分离或摘要；
 - Audio Workbench UI 接入。
 
 这些功能只有在真实需求出现后沿现有 Artifact/Workbench 扩展点增加，不能以“以后也许
@@ -363,4 +371,4 @@ src/workbenches/video/
 - `pnpm check` 通过；
 - Electron package 通过；
 - Windows 外部命令取消/超时集成测试通过；
-- 已安装字幕组件的机器完成一次真实短视频识别和翻译 smoke test。
+- 已安装字幕组件的机器完成一次真实短视频识别，并通过工作台 Selector 完成真实翻译 smoke test。

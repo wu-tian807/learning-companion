@@ -4,7 +4,6 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { AssetArtifactRegistry } from '../../../main/artifacts/asset-artifact-registry';
 import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
@@ -12,6 +11,7 @@ import type {
 } from '../../../main/artifacts/asset-artifact-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import type { ProjectLookup } from '../../../main/projects/project-database';
+import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import type { AssetChangedEvent, AssetSnapshot } from '../../../shared/assets';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
@@ -20,11 +20,10 @@ import {
   type SubtitleTranslationTrackV1,
 } from '../../media-subtitles/contracts';
 import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
-import {
-  MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
-} from '../../media-subtitles/transcription-producer';
+import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../../media-subtitles/transcription-producer';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
+  SubtitleTranslationProgressHub,
 } from '../../media-subtitles/translation-producer';
 import { VideoSubtitleService } from './video-subtitle-service';
 
@@ -61,7 +60,13 @@ function sourceTrack(language: 'en' | 'unknown'): SubtitleSourceTrackV1 {
     engine: { id: 'asr', version: '1', model: 'model', backend: 'cpu' },
     generatedTime: 100,
     cues: [
-      { id: 'cue-1', startMs: 0, endMs: 1_000, text: 'Hello.', sourceCueIds: ['raw-1'] },
+      {
+        id: 'cue-1',
+        startMs: 0,
+        endMs: 1_000,
+        text: 'Hello.',
+        sourceCueIds: ['raw-1'],
+      },
     ],
   };
 }
@@ -116,13 +121,16 @@ function runtimes(): MediaSubtitleRuntimeResolverApi {
     requireMediaDecoder: vi.fn(async () => {
       throw new Error('producer not executed in this service test');
     }),
-    requireFastTranslation: vi.fn(async () => {
-      throw new Error('producer not executed in this service test');
-    }),
-    requireQualityTranslation: vi.fn(async () => {
-      throw new Error('producer not executed in this service test');
-    }),
   };
+}
+
+function generationTasks(): GenerationTaskServiceApi {
+  return {
+    subscribe: vi.fn(() => () => undefined),
+    list: vi.fn(() => []),
+    start: vi.fn(),
+    retry: vi.fn(),
+  } as unknown as GenerationTaskServiceApi;
 }
 
 describe('VideoSubtitleService', () => {
@@ -160,10 +168,13 @@ describe('VideoSubtitleService', () => {
       };
       const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
         if (request.producerId === MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID) {
-          await writeFile(sourcePath, JSON.stringify({
-            ...sourceTrack('en'),
-            sourceRevision: request.source.revision,
-          }));
+          await writeFile(
+            sourcePath,
+            JSON.stringify({
+              ...sourceTrack('en'),
+              sourceRevision: request.source.revision,
+            }),
+          );
           return resolvedArtifact(
             request,
             sourcePath,
@@ -179,16 +190,25 @@ describe('VideoSubtitleService', () => {
         );
       });
       const artifacts = {
-        getCached: vi.fn(),
+        getCached: vi.fn(async (request: AssetArtifactRequest) =>
+          request.producerId === MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID
+            ? resolvedArtifact(
+                request,
+                translationPath,
+                SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
+                'translation-artifact-revision',
+              )
+            : undefined,
+        ),
         getOrCreate,
       } as AssetArtifactServiceApi;
-      const registry = new AssetArtifactRegistry();
       const service = new VideoSubtitleService(
         assets,
         projects,
         artifacts,
-        registry,
         runtimes(),
+        generationTasks(),
+        new SubtitleTranslationProgressHub(),
       );
 
       assetChanged?.({ projectId: 'project', asset: videoAsset });
@@ -197,15 +217,14 @@ describe('VideoSubtitleService', () => {
         MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
       );
       expect(service.getSnapshot('video').phase).toBe('source-ready');
-      expect(registry.get(MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID)).toBeDefined();
-      expect(registry.get(MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID)).toBeDefined();
-
       await service.ensureTranslation('project', 'video');
 
-      const translationRequest = getOrCreate.mock.calls.find(
-        ([request]) =>
-          request.producerId === MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
-      )?.[0];
+      const translationRequest = vi
+        .mocked(artifacts.getCached)
+        .mock.calls.find(
+          ([request]) =>
+            request.producerId === MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
+        )?.[0];
       expect(translationRequest).toMatchObject({
         producerId: MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
         source: {
@@ -240,15 +259,22 @@ describe('VideoSubtitleService', () => {
       } as unknown as AssetServiceApi;
       const projects: ProjectLookup = {
         get: vi.fn(() => ({
-          id: 'project', name: 'Project', icon: 'P', createdTime: 100,
-          pinned: false, workspacePath: directory,
+          id: 'project',
+          name: 'Project',
+          icon: 'P',
+          createdTime: 100,
+          pinned: false,
+          workspacePath: directory,
         })),
       };
       const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
-        await writeFile(sourcePath, JSON.stringify({
-          ...sourceTrack('unknown'),
-          sourceRevision: request.source.revision,
-        }));
+        await writeFile(
+          sourcePath,
+          JSON.stringify({
+            ...sourceTrack('unknown'),
+            sourceRevision: request.source.revision,
+          }),
+        );
         return resolvedArtifact(
           request,
           sourcePath,
@@ -260,8 +286,9 @@ describe('VideoSubtitleService', () => {
         assets,
         projects,
         { getCached: vi.fn(), getOrCreate } as AssetArtifactServiceApi,
-        new AssetArtifactRegistry(),
         runtimes(),
+        generationTasks(),
+        new SubtitleTranslationProgressHub(),
       );
 
       await service.ensureTranslation('project', 'video');

@@ -1,6 +1,14 @@
 import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
 import { MediaSubtitleRuntimeResolver } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import { mediaSubtitleTranslationProgress } from '../media-subtitles/main-feature';
 import { videoExplanationMainFeature } from './explanations/main';
+import {
+  videoDubbingMainFeature,
+  videoDubbingProducer,
+  videoDubbingProgress,
+} from './dubbing/main-feature';
+import { VoxCpm2DubbingRuntimeResolver } from './dubbing/external-libraries/voxcpm2-runtime';
+import { VideoDubbingService } from './dubbing/video-dubbing-service';
 import { VideoWorkbenchProvider } from './main';
 import { videoWorkbenchManifest } from './shared';
 import { VideoSubtitleService } from './subtitles/video-subtitle-service';
@@ -8,12 +16,26 @@ import { VideoSubtitleService } from './subtitles/video-subtitle-service';
 export const videoMainContribution = composeMainWorkbenchContribution(
   videoWorkbenchManifest,
   (context) => {
+    const mediaRuntime = new MediaSubtitleRuntimeResolver(
+      context.externalLibraryService,
+    );
     const subtitles = new VideoSubtitleService(
       context.assetService,
       context.projectLookup,
       context.artifactService,
-      context.artifactRegistry,
-      new MediaSubtitleRuntimeResolver(context.externalLibraryService),
+      mediaRuntime,
+      context.generationTasks,
+      mediaSubtitleTranslationProgress,
+    );
+    const dubbing = new VideoDubbingService(
+      context.assetService,
+      context.projectLookup,
+      context.artifactService,
+      subtitles,
+      videoDubbingProducer,
+      mediaRuntime,
+      new VoxCpm2DubbingRuntimeResolver(context.externalLibraryService),
+      videoDubbingProgress,
     );
 
     return new VideoWorkbenchProvider(
@@ -21,9 +43,10 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       context.stateDatabase,
       {
         subtitles,
+        dubbing,
         events: context.workbenchEvents,
       },
     );
   },
-  [videoExplanationMainFeature],
+  [videoExplanationMainFeature, videoDubbingMainFeature],
 );

@@ -36,15 +36,13 @@ function createResolver(
 }
 
 describe('MediaSubtitleRuntimeResolver', () => {
-  it('resolves the NVIDIA transcription engine and shared capabilities', async () => {
+  it('resolves the NVIDIA decoder and transcription engine', async () => {
     const { resolver, requireRuntime } = createResolver('nvidia');
 
     const decoder = await resolver.requireMediaDecoder();
     const transcription = await resolver.requireTranscription();
-    const bergamot = await resolver.requireFastTranslation();
-    const hyMt = await resolver.requireQualityTranslation();
 
-    expect(requireRuntime).toHaveBeenCalledTimes(4);
+    expect(requireRuntime).toHaveBeenCalledTimes(2);
     expect(requireRuntime).toHaveBeenCalledWith(
       MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
     );
@@ -54,10 +52,6 @@ describe('MediaSubtitleRuntimeResolver', () => {
     expect(transcription.modelPath).toContain(
       join('whisper', 'models', 'ggml-large-v3-turbo-q5_0.bin'),
     );
-    expect(bergamot.enToZh.modelPath).toContain(
-      join('bergamot', 'en-zh', 'model.bin'),
-    );
-    expect(hyMt.executablePath).toContain('llama-server.exe');
   });
 
   it('resolves SenseVoice as the only CPU transcription engine', async () => {

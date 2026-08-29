@@ -1,12 +1,12 @@
-import type { AssetArtifactRegistryApi } from '../../../main/artifacts/asset-artifact-registry';
 import type {
   AssetArtifactRequest,
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
 } from '../../../main/artifacts/asset-artifact-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
-import { createFileContentRevision } from '../../../main/content/content-revision';
-import { AppError } from '../../../main/errors/app-error';
+import { AppError, describeAppError } from '../../../main/errors/app-error';
+import type { GenerationTaskSnapshot } from '../../../main/generation/generation-task';
+import type { GenerationTaskServiceApi } from '../../../main/generation/generation-task-service';
 import type { ProjectLookup } from '../../../main/projects/project-database';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
@@ -17,20 +17,22 @@ import {
 } from '../../media-subtitles/contracts';
 import type { MediaSubtitleRuntimeResolverApi } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
-  MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
-  MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
-  MediaSubtitleTranscriptionProducer,
-} from '../../media-subtitles/transcription-producer';
-import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
-  MediaSubtitleTranslationProducer,
   createSubtitleTranslationArtifactKey,
+  type SubtitleTranslationProgressHub,
   type SubtitleTranslationProgress,
 } from '../../media-subtitles/translation-producer';
+import {
+  SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+  SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+  SubtitleTranslationInstruction,
+  subtitleTranslationInstructionFactory,
+} from '../../media-subtitles/generation/subtitle-translation-instruction';
 import {
   readSubtitleSourceTrackFile,
   readSubtitleTranslationTrackFile,
 } from '../../media-subtitles/subtitle-artifact-files';
+import { createMediaSubtitleSourceArtifactRequest } from '../../media-subtitles/subtitle-source-artifact';
 import {
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
   type VideoSubtitleCueFinalPayload,
@@ -42,6 +44,11 @@ interface ResolvedSourceTrack {
   readonly track: SubtitleSourceTrackV1;
   readonly artifact: ResolvedAssetArtifact;
   readonly workspacePath: string;
+}
+
+interface ActiveTranslationTask {
+  readonly assetId: string;
+  readonly request: AssetArtifactRequest;
 }
 
 export type VideoSubtitleServiceEvent =
@@ -60,7 +67,10 @@ export type VideoSubtitleServiceListener = (
 
 export interface VideoSubtitleServiceApi {
   getSnapshot(assetId: string): VideoSubtitleSnapshot;
-  subscribe(assetId: string, listener: VideoSubtitleServiceListener): () => void;
+  subscribe(
+    assetId: string,
+    listener: VideoSubtitleServiceListener,
+  ): () => void;
   ensureSource(projectId: string, assetId: string): Promise<void>;
   ensureTranslation(projectId: string, assetId: string): Promise<void>;
   retry(projectId: string, assetId: string): Promise<void>;
@@ -78,6 +88,8 @@ function isAbortError(error: unknown): boolean {
 }
 
 function userFailureMessage(error: unknown): string {
+  const described = describeAppError(error);
+  if (described.userMessage) return described.userMessage;
   if (
     error instanceof AppError &&
     error.code === 'MEDIA_SUBTITLE_PROCESSING_FAILED'
@@ -96,23 +108,33 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
   private readonly sourceTasks = new Map<string, Promise<void>>();
   private readonly translationTasks = new Map<string, Promise<void>>();
   private readonly sourceArtifacts = new Map<string, ResolvedSourceTrack>();
+  private readonly activeTranslationTasks = new Map<
+    string,
+    ActiveTranslationTask
+  >();
   private sourceQueue: Promise<void> = Promise.resolve();
-  private translationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly assets: AssetServiceApi,
     private readonly projects: ProjectLookup,
     private readonly artifacts: AssetArtifactServiceApi,
-    artifactRegistry: AssetArtifactRegistryApi,
     private readonly runtimes: MediaSubtitleRuntimeResolverApi,
+    private readonly generationTasks: GenerationTaskServiceApi,
+    translationProgress: SubtitleTranslationProgressHub,
   ) {
-    artifactRegistry.register(new MediaSubtitleTranscriptionProducer(runtimes));
-    artifactRegistry.register(
-      new MediaSubtitleTranslationProducer(
-        runtimes,
-        (progress) => this.handleTranslationProgress(progress),
-      ),
+    translationProgress.subscribe((progress) =>
+      this.handleTranslationProgress(progress),
     );
+    generationTasks.subscribe((event) => {
+      if (event.type === 'task-completed') {
+        void this.completeTranslationTask(event.snapshot.id);
+      } else if (
+        event.type === 'task-changed' &&
+        (event.snapshot.failure || event.snapshot.cancelledTime !== undefined)
+      ) {
+        this.failTranslationTask(event.snapshot);
+      }
+    });
     assets.subscribe(({ asset }) => {
       if (
         asset.contentStatus.availability === 'available' &&
@@ -164,15 +186,28 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     const active = this.translationTasks.get(assetId);
     if (active) return active;
 
-    const task = this.translationQueue
-      .catch(() => undefined)
-      .then(async () => {
+    const task = (async () => {
+      try {
         await this.ensureSource(projectId, assetId);
         await this.prepareTranslation(projectId, assetId);
-      })
-      .finally(() => this.translationTasks.delete(assetId));
+      } catch (error) {
+        if (isAbortError(error)) return;
+        if (
+          error instanceof AppError &&
+          (error.code === 'ASSET_NOT_FOUND' ||
+            error.code === 'PROJECT_CONTEXT_CHANGED' ||
+            error.code === 'OPERATION_SUPERSEDED')
+        ) {
+          return;
+        }
+        this.updateSnapshot(assetId, {
+          ...this.getSnapshot(assetId),
+          phase: 'failed',
+          message: userFailureMessage(error),
+        });
+      }
+    })().finally(() => this.translationTasks.delete(assetId));
     this.translationTasks.set(assetId, task);
-    this.translationQueue = task;
     return task;
   }
 
@@ -184,7 +219,10 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     }
   }
 
-  private async prepareSource(projectId: string, assetId: string): Promise<void> {
+  private async prepareSource(
+    projectId: string,
+    assetId: string,
+  ): Promise<void> {
     try {
       const request = await this.createSourceRequest(projectId, assetId);
       this.updateSnapshot(assetId, {
@@ -200,7 +238,11 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
       if (track.sourceRevision !== artifact.artifact.sourceRevision) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
-      const resolved = { track, artifact, workspacePath: request.workspacePath };
+      const resolved = {
+        track,
+        artifact,
+        workspacePath: request.workspacePath,
+      };
       this.sourceArtifacts.set(assetId, resolved);
       this.updateSnapshot(assetId, {
         phase: 'source-ready',
@@ -270,6 +312,12 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
         revision: sourceTrackRevision,
       },
     };
+    const cached = await this.artifacts.getCached(request);
+    if (cached) {
+      await this.applyTranslationArtifact(assetId, source, cached);
+      return;
+    }
+
     this.updateSnapshot(assetId, {
       ...this.getSnapshot(assetId),
       phase: 'translating',
@@ -280,46 +328,33 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
       message: undefined,
     });
 
-    try {
-      const artifact = await this.artifacts.getOrCreate(request);
-      if (
-        artifact.artifact.mediaType !==
-        SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-      const translation = await readSubtitleTranslationTrackFile(
-        artifact.absolutePath,
-        source.track,
-        sourceTrackRevision,
-      );
-      this.updateSnapshot(assetId, {
-        ...this.getSnapshot(assetId),
-        phase: 'ready',
-        translation,
-        partialTranslations: translation.cues,
-        completedCues: translation.cues.length,
-        totalCues: translation.cues.length,
-        message: undefined,
-      });
-    } catch (error) {
-      if (isAbortError(error)) return;
-      if (
-        error instanceof AppError &&
-        error.code === 'EXTERNAL_LIBRARY_NOT_INSTALLED'
-      ) {
-        this.updateSnapshot(assetId, {
-          ...this.getSnapshot(assetId),
-          phase: 'runtime-required',
-          message: '请先在设置中安装视频/音频字幕组件。',
-        });
-        return;
-      }
-      this.updateSnapshot(assetId, {
-        ...this.getSnapshot(assetId),
-        phase: 'failed',
-        message: userFailureMessage(error),
-      });
+    const existing = this.findTranslationTask(
+      assetId,
+      sourceTrackRevision,
+      source.track.language,
+      targetLanguage,
+    );
+    const snapshot = existing?.failure
+      ? this.generationTasks.retry(existing.id)
+      : (existing ??
+        this.generationTasks.start({
+          projectId,
+          definitionId: SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+          definitionVersion: SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+          instruction: new SubtitleTranslationInstruction({
+            assetId,
+            sourceTrackRevision,
+            sourceLanguage: source.track.language,
+            targetLanguage,
+          }).toSnapshot(),
+          assetReferences: Object.freeze({}),
+        }));
+    this.activeTranslationTasks.set(snapshot.id, {
+      assetId,
+      request,
+    });
+    if (snapshot.completed) {
+      await this.completeTranslationTask(snapshot.id);
     }
   }
 
@@ -328,51 +363,116 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     assetId: string,
   ): Promise<AssetArtifactRequest> {
     const asset = this.assets.get(assetId);
-    const project = this.projects.get(projectId);
     if (!asset || asset.projectId !== projectId) {
       throw new AppError('ASSET_NOT_FOUND');
     }
-    if (!project) throw new AppError('PROJECT_NOT_FOUND');
     if (!videoWorkbenchManifest.supportedMediaTypes.includes(asset.mediaType)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
     await this.runtimes.requireTranscription();
+    return createMediaSubtitleSourceArtifactRequest(
+      this.assets,
+      this.projects,
+      projectId,
+      assetId,
+    );
+  }
 
-    const content = await this.assets.resolveContent(assetId);
-    try {
+  private findTranslationTask(
+    assetId: string,
+    sourceTrackRevision: string,
+    sourceLanguage: 'en' | 'zh-Hans',
+    targetLanguage: 'en' | 'zh-Hans',
+  ): GenerationTaskSnapshot | undefined {
+    return this.generationTasks.list().find((snapshot) => {
       if (
-        content.contentStatus.availability !== 'available' ||
-        content.location?.kind !== 'local-file'
+        snapshot.definitionId !== SUBTITLE_TRANSLATION_TASK_DEFINITION_ID ||
+        snapshot.definitionVersion !==
+          SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION ||
+        snapshot.cancelledTime !== undefined
       ) {
-        throw new AppError('ASSET_UNAVAILABLE');
+        return false;
       }
-      const revision = await createFileContentRevision(
-        content.location.absolutePath,
+      const parsed = subtitleTranslationInstructionFactory.parse(
+        snapshot.instruction,
       );
-      return {
-        assetId,
-        producerId: MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
-        artifactKey: MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
-        workspacePath: project.workspacePath,
-        source: {
-          assetId,
-          mediaType: asset.mediaType,
-          absolutePath: content.location.absolutePath,
-          revision,
-        },
-      };
-    } finally {
-      await content.handle?.close();
+      return (
+        parsed.ok &&
+        parsed.value.assetId === assetId &&
+        parsed.value.sourceTrackRevision === sourceTrackRevision &&
+        parsed.value.sourceLanguage === sourceLanguage &&
+        parsed.value.targetLanguage === targetLanguage
+      );
+    });
+  }
+
+  private async completeTranslationTask(taskId: string): Promise<void> {
+    const active = this.activeTranslationTasks.get(taskId);
+    if (!active) return;
+    const source = this.sourceArtifacts.get(active.assetId);
+    if (!source) return;
+    try {
+      const artifact = await this.artifacts.getCached(active.request);
+      if (!artifact) throw new AppError('DATA_INTEGRITY_ERROR');
+      await this.applyTranslationArtifact(active.assetId, source, artifact);
+      this.activeTranslationTasks.delete(taskId);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      this.activeTranslationTasks.delete(taskId);
+      this.updateSnapshot(active.assetId, {
+        ...this.getSnapshot(active.assetId),
+        phase: 'failed',
+        message: userFailureMessage(error),
+      });
     }
   }
 
-  private handleTranslationProgress(progress: SubtitleTranslationProgress): void {
+  private failTranslationTask(snapshot: GenerationTaskSnapshot): void {
+    const active = this.activeTranslationTasks.get(snapshot.id);
+    if (!active) return;
+    this.activeTranslationTasks.delete(snapshot.id);
+    if (snapshot.cancelledTime !== undefined) return;
+    this.updateSnapshot(active.assetId, {
+      ...this.getSnapshot(active.assetId),
+      phase: 'failed',
+      message: snapshot.failure?.message ?? '字幕翻译没有完成。',
+    });
+  }
+
+  private async applyTranslationArtifact(
+    assetId: string,
+    source: ResolvedSourceTrack,
+    artifact: ResolvedAssetArtifact,
+  ): Promise<void> {
+    if (
+      artifact.artifact.mediaType !== SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    const translation = await readSubtitleTranslationTrackFile(
+      artifact.absolutePath,
+      source.track,
+      source.artifact.artifact.artifactRevision,
+    );
+    this.updateSnapshot(assetId, {
+      ...this.getSnapshot(assetId),
+      phase: 'ready',
+      translation,
+      partialTranslations: translation.cues,
+      completedCues: translation.cues.length,
+      totalCues: translation.cues.length,
+      message: undefined,
+    });
+  }
+
+  private handleTranslationProgress(
+    progress: SubtitleTranslationProgress,
+  ): void {
     const source = this.sourceArtifacts.get(progress.assetId);
     if (
       !source ||
-      source.artifact.artifact.artifactRevision !==
-        progress.sourceTrackRevision
+      source.artifact.artifact.artifactRevision !== progress.sourceTrackRevision
     ) {
       return;
     }
@@ -385,13 +485,16 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
       const translated = translations.get(cue.id);
       return translated ? [translated] : [];
     });
-    this.snapshots.set(progress.assetId, cloneSnapshot({
-      ...current,
-      phase: 'translating',
-      partialTranslations: ordered,
-      completedCues: progress.completedCues,
-      totalCues: progress.totalCues,
-    }));
+    this.snapshots.set(
+      progress.assetId,
+      cloneSnapshot({
+        ...current,
+        phase: 'translating',
+        partialTranslations: ordered,
+        completedCues: progress.completedCues,
+        totalCues: progress.totalCues,
+      }),
+    );
     this.publish(progress.assetId, {
       type: 'cue-final',
       payload: {
@@ -403,7 +506,10 @@ export class VideoSubtitleService implements VideoSubtitleServiceApi {
     });
   }
 
-  private updateSnapshot(assetId: string, snapshot: VideoSubtitleSnapshot): void {
+  private updateSnapshot(
+    assetId: string,
+    snapshot: VideoSubtitleSnapshot,
+  ): void {
     const cloned = cloneSnapshot(snapshot);
     this.snapshots.set(assetId, cloned);
     this.publish(assetId, { type: 'snapshot', snapshot: cloned });

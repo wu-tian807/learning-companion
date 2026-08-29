@@ -39,6 +39,19 @@ describe('ExternalCommandRunner', () => {
     });
   });
 
+  it('passes an explicit isolated runtime environment to the child', async () => {
+    const runner = new ExternalCommandRunner();
+
+    const result = await runner.run({
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write(process.env.LC_RUNTIME_ROOT ?? "")'],
+      env: { ...process.env, LC_RUNTIME_ROOT: 'D:\\isolated-runtime' },
+      timeoutMs: 5_000,
+    });
+
+    expect(result.stdout).toBe('D:\\isolated-runtime');
+  });
+
   it('maps non-zero exits and timeouts to install failures', async () => {
     const runner = new ExternalCommandRunner();
 

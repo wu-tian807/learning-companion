@@ -32,47 +32,19 @@ export interface SenseVoiceSubtitleRuntime {
 }
 
 export type SubtitleTranscriptionRuntime =
-  | SenseVoiceSubtitleRuntime
-  | WhisperSubtitleRuntime;
-
-export interface BergamotSubtitleRuntime {
-  readonly modelsDirectory: string;
-  readonly enToZh: {
-    readonly modelPath: string;
-    readonly shortlistPath: string;
-    readonly sourceVocabularyPath: string;
-    readonly targetVocabularyPath: string;
-  };
-  readonly zhToEn: {
-    readonly modelPath: string;
-    readonly shortlistPath: string;
-    readonly vocabularyPath: string;
-  };
-}
-
-export interface HyMtSubtitleRuntime {
-  readonly executablePath: string;
-  readonly modelPath: string;
-  readonly backend: 'cpu' | 'vulkan';
-}
+  SenseVoiceSubtitleRuntime | WhisperSubtitleRuntime;
 
 export interface MediaSubtitleRuntimeResolverApi {
   requireMediaDecoder(): Promise<MediaDecoderRuntime>;
   requireTranscription(): Promise<SubtitleTranscriptionRuntime>;
-  requireFastTranslation(): Promise<BergamotSubtitleRuntime>;
-  requireQualityTranslation(): Promise<HyMtSubtitleRuntime>;
 }
 
 function runtimePath(root: string, relativePath: string): string {
   return join(root, ...relativePath.split('/'));
 }
 
-export class MediaSubtitleRuntimeResolver
-  implements MediaSubtitleRuntimeResolverApi
-{
-  constructor(
-    private readonly externalLibraries: ExternalLibraryServiceApi,
-  ) {}
+export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolverApi {
+  constructor(private readonly externalLibraries: ExternalLibraryServiceApi) {}
 
   private async requireSuite() {
     const runtime = await this.externalLibraries.requireRuntime(
@@ -140,62 +112,5 @@ export class MediaSubtitleRuntimeResolver
             'transcription/sensevoice/models/fsmn-vad.gguf',
           ),
         });
-  }
-
-  async requireFastTranslation(): Promise<BergamotSubtitleRuntime> {
-    const { runtimeDirectory } = await this.requireSuite();
-    const modelsDirectory = runtimePath(
-      runtimeDirectory,
-      'translation/bergamot',
-    );
-
-    return Object.freeze({
-      modelsDirectory,
-      enToZh: Object.freeze({
-        modelPath: runtimePath(modelsDirectory, 'en-zh/model.bin'),
-        shortlistPath: runtimePath(
-          modelsDirectory,
-          'en-zh/shortlist.bin',
-        ),
-        sourceVocabularyPath: runtimePath(
-          modelsDirectory,
-          'en-zh/srcVocab.bin',
-        ),
-        targetVocabularyPath: runtimePath(
-          modelsDirectory,
-          'en-zh/trgVocab.bin',
-        ),
-      }),
-      zhToEn: Object.freeze({
-        modelPath: runtimePath(modelsDirectory, 'zh-en/model.bin'),
-        shortlistPath: runtimePath(
-          modelsDirectory,
-          'zh-en/shortlist.bin',
-        ),
-        vocabularyPath: runtimePath(
-          modelsDirectory,
-          'zh-en/vocab.bin',
-        ),
-      }),
-    });
-  }
-
-  async requireQualityTranslation(): Promise<HyMtSubtitleRuntime> {
-    const runtime = await this.requireSuite();
-
-    return Object.freeze({
-      executablePath: runtimePath(
-        runtime.runtimeDirectory,
-        'translation/hymt/engine/llama-server.exe',
-      ),
-      modelPath: runtimePath(
-        runtime.runtimeDirectory,
-        'translation/hymt/models/Hy-MT2-1.8B-Q4_K_M.gguf',
-      ),
-      backend:
-        runtime.variantId === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
-          ? 'vulkan'
-          : 'cpu',
-    });
   }
 }

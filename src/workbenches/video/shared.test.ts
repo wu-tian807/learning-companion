@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cloneVideoSubtitleSnapshot,
+  cloneVideoDubbingSnapshot,
+  createVideoGetDubbingSnapshotCommand,
   createVideoGetSubtitleSnapshotCommand,
   createVideoSaveViewStateCommand,
   createVideoTimeRangeTarget,
   DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+  EMPTY_VIDEO_DUBBING_SNAPSHOT,
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
   DEFAULT_VIDEO_VIEW_STATE,
   isVideoSaveViewStatePayload,
+  isVideoDubbingSnapshot,
   isVideoTimeRangeAnchorV1,
   isVideoWorkbenchPayload,
   isVideoWorkbenchViewState,
@@ -37,6 +41,7 @@ describe('Video Workbench shared protocol', () => {
         viewState: DEFAULT_VIDEO_VIEW_STATE,
         subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
         subtitleSnapshot: EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+        dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
       }),
     ).toBe(true);
     expect(
@@ -50,6 +55,43 @@ describe('Video Workbench shared protocol', () => {
     expect(createVideoGetSubtitleSnapshotCommand()).toEqual({
       type: 'video:get-subtitle-snapshot',
     });
+  });
+
+  it('validates and clones transport-safe reverse dubbing progress', () => {
+    const snapshot = {
+      phase: 'cloning' as const,
+      completedPhrases: 2,
+      totalPhrases: 5,
+      completedDurationMs: 4_000,
+      durationMs: 12_000,
+      readySuffixStartMs: 8_000,
+      previewAudioUrl: 'learning-content://resource/preview',
+    };
+
+    expect(isVideoDubbingSnapshot(snapshot)).toBe(true);
+    expect(cloneVideoDubbingSnapshot(snapshot)).toEqual(snapshot);
+    expect(createVideoGetDubbingSnapshotCommand()).toEqual({
+      type: 'video:get-dubbing-snapshot',
+    });
+    expect(
+      isVideoDubbingSnapshot({
+        ...snapshot,
+        readySuffixStartMs: 13_000,
+      }),
+    ).toBe(false);
+    expect(
+      isVideoDubbingSnapshot({
+        ...snapshot,
+        phase: 'ready',
+        audioUrl: 'file:///private/dubbed.m4a',
+      }),
+    ).toBe(false);
+    expect(
+      isVideoDubbingSnapshot({
+        ...snapshot,
+        previewAudioUrl: 'file:///private/preview.wav',
+      }),
+    ).toBe(false);
   });
 
   it('rejects unsafe URLs and invalid playback state', () => {

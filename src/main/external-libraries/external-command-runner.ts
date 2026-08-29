@@ -23,6 +23,7 @@ export interface ExternalCommandRequest {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd?: string;
+  readonly env?: NodeJS.ProcessEnv;
   readonly windowsVerbatimArguments?: boolean;
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
@@ -97,6 +98,7 @@ export class ExternalCommandRunner
       try {
         child = spawn(request.command, [...request.args], {
           cwd: request.cwd,
+          env: request.env,
           shell: false,
           windowsHide: true,
           windowsVerbatimArguments:

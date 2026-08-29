@@ -37,6 +37,11 @@ import {
 } from '../pdf/shared';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
 import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../video/conversation/video-conversation-context';
+import { VIDEO_DUBBING_VOXCPM2_LIBRARY_ID } from '../video/dubbing/external-libraries/voxcpm2-definition';
+import {
+  SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+  SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+} from '../media-subtitles/generation/subtitle-translation-instruction';
 import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
@@ -84,6 +89,7 @@ describe('Workbench contribution catalogs', () => {
       artifactService: {} as never,
       contentResourceService: {} as never,
       externalLibraryService: {} as never,
+      generationTasks: { subscribe: vi.fn(() => () => undefined) } as never,
       projectLookup: {} as never,
       stateDatabase: {} as never,
       stateDataDatabase: {} as never,
@@ -116,6 +122,7 @@ describe('Workbench contribution catalogs', () => {
 
     expect(libraries.list().map(({ id }) => id)).toEqual([
       'libreoffice',
+      VIDEO_DUBBING_VOXCPM2_LIBRARY_ID,
       'media-subtitles',
     ]);
     expect(libraries.require('media-subtitles').defaultVariantId).toBe('cpu');
@@ -226,5 +233,11 @@ describe('Workbench contribution catalogs', () => {
         WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
       ).id,
     ).toBe(WORKBENCH_CONVERSATION_TASK_DEFINITION_ID);
+    expect(
+      definitions.require(
+        SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+        SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+      ).id,
+    ).toBe(SUBTITLE_TRANSLATION_TASK_DEFINITION_ID);
   });
 });
