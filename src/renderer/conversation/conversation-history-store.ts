@@ -43,6 +43,18 @@ function isBoundedContext(value: unknown): value is JsonValue | undefined {
   );
 }
 
+function isReanswerBackup(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.text === 'string' &&
+    value.text.length <= MAX_TEXT_LENGTH &&
+    (value.generationTaskId === undefined ||
+      isRequiredText(value.generationTaskId, 160)) &&
+    (value.modelInfo === undefined || isRequiredText(value.modelInfo, 256)) &&
+    (value.stopped === undefined || value.stopped === true)
+  );
+}
+
 export function isConversationMessageRecord(
   value: unknown,
 ): value is ConversationMessageRecord {
@@ -57,7 +69,9 @@ export function isConversationMessageRecord(
     (value.generationTaskId === undefined || isRequiredText(value.generationTaskId, 160)) &&
     isBoundedContext(value.context) &&
     (value.modelInfo === undefined || isRequiredText(value.modelInfo, 256)) &&
-    (value.stopped === undefined || value.stopped === true)
+    (value.stopped === undefined || value.stopped === true) &&
+    (value.reanswerBackup === undefined ||
+      (value.role === 'assistant' && isReanswerBackup(value.reanswerBackup)))
   );
 }
 

@@ -639,6 +639,12 @@ export function PdfDocumentWorkbenchView({
       historyStore: conversationHistoryStore,
       contextLabel: 'PDF 内容',
       allowAnswerAttachments: true,
+      answerActionPresentation: {
+        label: '显示在 PDF 原文旁',
+        selectionLabel: '在 PDF 原文旁显示选中片段',
+        successMessage: '已在 PDF 原文旁创建回复卡片',
+        failureMessage: '创建 PDF 原文回复卡片失败',
+      },
       onContextReleased() {
         setRegionActionMenu(undefined);
       },

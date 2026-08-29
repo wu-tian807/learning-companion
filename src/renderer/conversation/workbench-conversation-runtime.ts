@@ -54,27 +54,29 @@ export class WorkbenchConversationRuntime {
       ...this.snapshot,
       active: { ownerId: normalizedOwnerId, contribution },
       panelOpen: ownerChanged ? false : this.snapshot.panelOpen,
-      busy: false,
+      busy: ownerChanged ? false : this.snapshot.busy,
       ...(ownerChanged ? { launchRequest: undefined } : {}),
     });
 
     return () => {
-      const current = this.contributions.get(normalizedOwnerId);
-      if (current?.token !== token) return;
-      this.contributions.delete(normalizedOwnerId);
-      if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
-      const fallback = [...this.contributions.entries()].at(-1);
-      this.update({
-        panelOpen: false,
-        busy: false,
-        ...(fallback
-          ? {
-              active: {
-                ownerId: fallback[0],
-                contribution: fallback[1].contribution,
-              },
-            }
-          : {}),
+      queueMicrotask(() => {
+        const current = this.contributions.get(normalizedOwnerId);
+        if (current?.token !== token) return;
+        this.contributions.delete(normalizedOwnerId);
+        if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
+        const fallback = [...this.contributions.entries()].at(-1);
+        this.update({
+          panelOpen: false,
+          busy: false,
+          ...(fallback
+            ? {
+                active: {
+                  ownerId: fallback[0],
+                  contribution: fallback[1].contribution,
+                },
+              }
+            : {}),
+        });
       });
     };
   }
