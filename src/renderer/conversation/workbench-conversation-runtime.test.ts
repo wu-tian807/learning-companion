@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { WorkbenchConversationContribution } from './conversation-contracts';
+import type {
+  ConversationRecord,
+  WorkbenchConversationContribution,
+} from './conversation-contracts';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 
 function contribution(id: string): WorkbenchConversationContribution {
@@ -15,6 +18,16 @@ function contribution(id: string): WorkbenchConversationContribution {
       save: async (record) => [record],
       remove: async () => [],
     },
+  };
+}
+
+function conversation(id: string): ConversationRecord {
+  return {
+    id,
+    title: id,
+    messages: [],
+    createdTime: 1,
+    updatedTime: 1,
   };
 }
 
@@ -90,5 +103,58 @@ describe('WorkbenchConversationRuntime', () => {
     expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
       '当前 Workbench 没有注册 AI 问答能力',
     );
+  });
+
+  it('keeps the current UI conversation isolated by Project, Asset and contribution', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project-a',
+      assetId: 'asset-a',
+      contributionId: 'html.assistant',
+    };
+    const selected = conversation('conversation-a');
+
+    runtime.setCurrentConversation(scope, selected);
+
+    expect(runtime.getCurrentConversation(scope)).toBe(selected);
+    const replacement = conversation('conversation-b');
+    runtime.setCurrentConversation(scope, replacement);
+    expect(runtime.getCurrentConversation(scope)).toBe(replacement);
+    expect(runtime.getCurrentConversation({ ...scope, projectId: 'project-b' }))
+      .toBeUndefined();
+    expect(runtime.getCurrentConversation({ ...scope, assetId: 'asset-b' }))
+      .toBeUndefined();
+    expect(runtime.getCurrentConversation({
+      ...scope,
+      contributionId: 'pdf.document-question',
+    })).toBeUndefined();
+  });
+
+  it('drops only the in-memory current conversation state on disposal', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    runtime.setCurrentConversation(scope, conversation('conversation'));
+
+    runtime.dispose();
+
+    expect(runtime.getCurrentConversation(scope)).toBeUndefined();
+  });
+
+  it('rejects invalid current conversation scopes and identities', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+
+    expect(() => runtime.getCurrentConversation({ ...scope, assetId: ' ' }))
+      .toThrow('Workbench Conversation scope 无效');
+    expect(() => runtime.setCurrentConversation(scope, conversation(' ')))
+      .toThrow('Workbench Conversation identity 无效');
   });
 });

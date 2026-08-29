@@ -77,6 +77,17 @@ function ActiveConversationPanel({
     projectId,
     assetId,
     contribution,
+    initialConversation: runtime.getCurrentConversation({
+      projectId,
+      assetId,
+      contributionId: contribution.id,
+    }),
+    onConversationChange(conversation) {
+      runtime.setCurrentConversation(
+        { projectId, assetId, contributionId: contribution.id },
+        conversation,
+      );
+    },
     launchRequest,
     onLaunchConsumed,
     onPersistenceError(error) {
@@ -88,6 +99,19 @@ function ActiveConversationPanel({
     runtime.setBusy(ownerId, controller.state.busy);
     return () => runtime.setBusy(ownerId, false);
   }, [controller.state.busy, ownerId, runtime]);
+
+  useEffect(() => {
+    runtime.setCurrentConversation(
+      { projectId, assetId, contributionId: contribution.id },
+      controller.state.conversation,
+    );
+  }, [
+    assetId,
+    contribution.id,
+    controller.state.conversation,
+    projectId,
+    runtime,
+  ]);
 
   if (!open) return null;
 

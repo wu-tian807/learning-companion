@@ -117,6 +117,16 @@ registerGeneration({ conversationContexts }) {
 - Renderer 历史只是 UI 投影，不会重新拼回 Prompt；
 - 新 Conversation 使用新的 `conversationId`，因此形成新的 Session 边界。
 
+当前 Project 运行期间，公共 Conversation Runtime 按
+`projectId + assetId + contributionId` 仅在内存中保留当前选中的 UI Conversation。这样
+Workbench Session 因刷新、切换或重挂载而变化时，Controller 仍继续使用原
+`conversationId`；关闭 Project 或重启应用后这份运行期选择自然消失。
+
+普通打开、附加新 Context 和后续追问都不传 `conversationId`，也不会从持久化历史中猜测
+“最近一次”会话。只有用户主动选择某条历史记录时，Renderer 才显式传入该记录的
+`conversationId` 来恢复对应 Provider Session；记录中的旧消息仍然只用于 UI 展示，不会作为
+模型消息重新发送。
+
 Context 只在用户创建新 Anchor 时传入。后续追问可以不再附带 Context，Context Provider
 会提示 Agent 继续使用同一 Session 中已有的媒体语境。
 

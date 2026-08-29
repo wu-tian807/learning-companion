@@ -1,6 +1,7 @@
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type {
   ConversationLaunchRequest,
+  ConversationRecord,
   WorkbenchConversationContribution,
   WorkbenchConversationRuntimeSnapshot,
 } from './conversation-contracts';
@@ -10,8 +11,24 @@ interface RegisteredContribution {
   readonly contribution: WorkbenchConversationContribution;
 }
 
+export interface WorkbenchConversationScope {
+  readonly projectId: string;
+  readonly assetId: string;
+  readonly contributionId: string;
+}
+
+function conversationScopeKey(scope: WorkbenchConversationScope): string {
+  const parts = [scope.projectId, scope.assetId, scope.contributionId]
+    .map((part) => part.trim());
+  if (parts.some((part) => part.length === 0)) {
+    throw new Error('Workbench Conversation scope 无效');
+  }
+  return JSON.stringify(parts);
+}
+
 export interface OpenWorkbenchConversationInput {
   readonly ownerId?: string;
+  /** Only set when the user explicitly restores a persisted UI history entry. */
   readonly conversationId?: string;
   readonly context?: JsonValue;
   readonly question?: string;
@@ -21,6 +38,7 @@ export interface OpenWorkbenchConversationInput {
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly contributions = new Map<string, RegisteredContribution>();
+  private readonly currentConversations = new Map<string, ConversationRecord>();
   private launchId = 0;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
@@ -33,6 +51,22 @@ export class WorkbenchConversationRuntime {
   };
 
   getSnapshot = (): WorkbenchConversationRuntimeSnapshot => this.snapshot;
+
+  getCurrentConversation(
+    scope: WorkbenchConversationScope,
+  ): ConversationRecord | undefined {
+    return this.currentConversations.get(conversationScopeKey(scope));
+  }
+
+  setCurrentConversation(
+    scope: WorkbenchConversationScope,
+    conversation: ConversationRecord,
+  ): void {
+    if (!conversation.id.trim()) {
+      throw new Error('Workbench Conversation identity 无效');
+    }
+    this.currentConversations.set(conversationScopeKey(scope), conversation);
+  }
 
   register(
     ownerId: string,
@@ -127,6 +161,7 @@ export class WorkbenchConversationRuntime {
 
   dispose(): void {
     this.contributions.clear();
+    this.currentConversations.clear();
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }

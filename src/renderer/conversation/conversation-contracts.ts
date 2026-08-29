@@ -86,6 +86,7 @@ export interface WorkbenchConversationContribution {
 
 export interface ConversationLaunchRequest {
   readonly id: number;
+  /** Only set when the user explicitly restores a persisted UI history entry. */
   readonly conversationId?: string;
   readonly context?: JsonValue;
   readonly question?: string;

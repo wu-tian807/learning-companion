@@ -120,11 +120,15 @@ describe('shared Conversation controller', () => {
     container.remove();
   });
 
-  function render(input: Partial<ControllerInput> = {}) {
+  function render(
+    input: Partial<ControllerInput> = {},
+    controllerKey = 'controller',
+  ) {
     const contribution = input.contribution ?? createContribution();
     act(() => {
       root.render(
         <Harness
+          key={controllerKey}
           input={{
             open: true,
             projectId: 'project',
@@ -193,6 +197,134 @@ describe('shared Conversation controller', () => {
       (requests[1]?.instruction as { conversationId?: string })
         .conversationId,
     );
+  });
+
+  it('keeps the active conversation identity when its controller remounts', async () => {
+    const requests: Array<Parameters<ConversationTaskClient['start']>[0]> = [];
+    let taskIndex = 0;
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      taskIndex += 1;
+      return { taskId: `task-${taskIndex}`, snapshot: task(`task-${taskIndex}`) };
+    });
+    const contribution = createContribution();
+    render({ contribution });
+
+    act(() => latest.actions.submit('第一问'));
+    await flush();
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '第一答',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
+    const activeConversation = latest.state.conversation;
+
+    render(
+      {
+        contribution,
+        initialConversation: activeConversation,
+      },
+      'remounted-controller',
+    );
+    await flush();
+    act(() => latest.actions.submit('第二问'));
+    await flush();
+
+    expect(requests).toHaveLength(2);
+    expect(
+      (requests[1]?.instruction as { conversationId?: string })
+        .conversationId,
+    ).toBe(activeConversation.id);
+  });
+
+  it('publishes a late task binding after the controller unmounts', async () => {
+    let resolveStart!: (value: {
+      taskId: string;
+      snapshot: GenerationTaskView;
+    }) => void;
+    client.start = vi.fn(() =>
+      new Promise<{
+        taskId: string;
+        snapshot: GenerationTaskView;
+      }>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const onConversationChange = vi.fn();
+    render({ onConversationChange });
+
+    act(() => latest.actions.submit('question before remount'));
+    act(() => root.render(null));
+    await act(async () => {
+      resolveStart({ taskId: 'task-late', snapshot: task('task-late') });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const published = onConversationChange.mock.calls.at(-1)?.[0] as
+      | ConversationRecord
+      | undefined;
+    expect(
+      published?.messages.find((message) => message.role === 'assistant')
+        ?.generationTaskId,
+    ).toBe('task-late');
+  });
+
+  it('reattaches to an in-flight GenerationTask after a controller remount', async () => {
+    const activeConversation: ConversationRecord = {
+      id: 'active-conversation',
+      title: '生成中的对话',
+      messages: [
+        { id: 'q', role: 'user', text: '问题', createdTime: 1 },
+        {
+          id: 'a',
+          role: 'assistant',
+          text: '部分回答',
+          createdTime: 2,
+          replyToMessageId: 'q',
+          generationTaskId: 'task-active',
+        },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    client.get = vi.fn(async () => task('task-active'));
+
+    render({ initialConversation: activeConversation });
+    await flush();
+
+    expect(client.get).toHaveBeenCalledWith('project', 'task-active');
+    expect(latest.state.conversation.id).toBe(activeConversation.id);
+    expect(latest.state.activeTaskId).toBe('task-active');
+    expect(latest.state.busy).toBe(true);
+    expect(latest.state.activityLabel).toBe('正在恢复回答进度…');
+  });
+
+  it('does not treat a later initialConversation prop as a remount', async () => {
+    render();
+    await flush();
+    const selectedConversation = latest.state.conversation;
+    const laterProjection: ConversationRecord = {
+      ...selectedConversation,
+      messages: [
+        {
+          id: 'a',
+          role: 'assistant',
+          text: '已有投影',
+          createdTime: 1,
+          generationTaskId: 'task-later',
+        },
+      ],
+    };
+
+    render({ initialConversation: laterProjection });
+    await flush();
+
+    expect(client.get).not.toHaveBeenCalled();
+    expect(latest.state.conversation).toBe(selectedConversation);
   });
 
   it('rolls back an unstarted optimistic message and shows a configurable Provider error', async () => {
@@ -320,6 +452,75 @@ describe('shared Conversation controller', () => {
     });
     expect(latest.state.conversation).toEqual(saved);
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
+  });
+
+  it('does not infer an active conversation from persisted UI history', async () => {
+    const saved: ConversationRecord = {
+      id: 'saved-conversation',
+      title: '历史对话',
+      messages: [
+        { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },
+        { id: 'a', role: 'assistant', text: '旧回答', createdTime: 2 },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const historyStore = createMemoryHistory([saved]);
+    const requests: Array<Parameters<ConversationTaskClient['start']>[0]> = [];
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      return { taskId: 'task-1', snapshot: task('task-1') };
+    });
+
+    render({ contribution: createContribution({ historyStore }) });
+    await flush();
+    expect(latest.state.history).toEqual([saved]);
+    expect(latest.state.conversation.id).not.toBe(saved.id);
+
+    act(() => latest.actions.submit('新会话问题'));
+    await flush();
+    expect(
+      (requests[0]?.instruction as { conversationId?: string })
+        .conversationId,
+    ).toBe(latest.state.conversation.id);
+    expect(
+      (requests[0]?.instruction as { conversationId?: string })
+        .conversationId,
+    ).not.toBe(saved.id);
+  });
+
+  it('restores Provider identity explicitly without replaying UI history', async () => {
+    const saved: ConversationRecord = {
+      id: 'saved-conversation',
+      title: '历史对话',
+      messages: [
+        { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },
+        { id: 'a', role: 'assistant', text: '旧回答', createdTime: 2 },
+      ],
+      createdTime: 1,
+      updatedTime: 2,
+    };
+    const historyStore = createMemoryHistory([saved]);
+    let request: Parameters<ConversationTaskClient['start']>[0] | undefined;
+    client.start = vi.fn(async (input) => {
+      request = input;
+      return { taskId: 'task-1', snapshot: task('task-1') };
+    });
+
+    render({
+      contribution: createContribution({ historyStore }),
+      launchRequest: { id: 1, conversationId: saved.id },
+    });
+    await flush();
+    act(() => latest.actions.submit('继续追问'));
+    await flush();
+
+    expect(request?.instruction).toMatchObject({
+      conversationId: saved.id,
+      question: '继续追问',
+    });
+    expect(JSON.stringify(request?.instruction)).not.toContain('旧问题');
+    expect(JSON.stringify(request?.instruction)).not.toContain('旧回答');
   });
 
   it('keeps a context launch in the currently selected conversation', async () => {

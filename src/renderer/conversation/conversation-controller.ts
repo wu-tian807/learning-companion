@@ -62,6 +62,8 @@ interface UseConversationControllerInput {
   readonly projectId: string;
   readonly assetId: string;
   readonly contribution: WorkbenchConversationContribution;
+  readonly initialConversation?: ConversationRecord;
+  readonly onConversationChange?: (conversation: ConversationRecord) => void;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly onPersistenceError?: (error: unknown) => void;
@@ -76,6 +78,8 @@ export function useConversationController({
   projectId,
   assetId,
   contribution,
+  initialConversation,
+  onConversationChange,
   launchRequest,
   onLaunchConsumed,
   onPersistenceError,
@@ -88,8 +92,9 @@ export function useConversationController({
 } {
   const [tab, setTab] = useState<'chat' | 'history'>('chat');
   const [conversation, setConversationState] = useState<ConversationRecord>(() =>
-    createConversationRecord(createId(), now()),
+    initialConversation ?? createConversationRecord(createId(), now()),
   );
+  const mountedInitialConversationRef = useRef(initialConversation);
   const [history, setHistory] = useState<readonly ConversationRecord[]>([]);
   const [draft, setDraft] = useState('');
   const [pendingContext, setPendingContextState] = useState<JsonValue>();
@@ -105,14 +110,19 @@ export function useConversationController({
   const activeAssistantMessageIdRef = useRef<string | undefined>(undefined);
   const pendingCancelRef = useRef(false);
   const mountedRef = useRef(true);
+  const initialTaskRecoveryStartedRef = useRef(false);
   const lastLaunchIdRef = useRef<number | undefined>(undefined);
   const contributionRef = useRef(contribution);
+  const onConversationChangeRef = useRef(onConversationChange);
   const onPersistenceErrorRef = useRef(onPersistenceError);
   const deletedConversationIdsRef = useRef(new Set<string>());
   const historyMutationTailRef = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     contributionRef.current = contribution;
   }, [contribution]);
+  useEffect(() => {
+    onConversationChangeRef.current = onConversationChange;
+  }, [onConversationChange]);
   useEffect(() => {
     onPersistenceErrorRef.current = onPersistenceError;
   }, [onPersistenceError]);
@@ -130,6 +140,7 @@ export function useConversationController({
 
   const replaceConversation = useCallback((next: ConversationRecord) => {
     conversationRef.current = next;
+    onConversationChangeRef.current?.(next);
     if (mountedRef.current) setConversationState(next);
     return next;
   }, []);
@@ -359,15 +370,7 @@ export function useConversationController({
     resetConversation(context);
   }, [resetConversation]);
 
-  const restore = useCallback((record: ConversationRecord) => {
-    if (activeTaskIdRef.current) return;
-    void persistRef.current();
-    clearTransientContext();
-    replaceConversation(record);
-    setDraft('');
-    setError(undefined);
-    setTab('chat');
-
+  const recoverConversationTask = useCallback((record: ConversationRecord) => {
     const candidate = [...record.messages].reverse().find(
       (message) => message.role === 'assistant' && message.generationTaskId,
     );
@@ -385,7 +388,27 @@ export function useConversationController({
     }).catch((taskError: unknown) => {
       setError({ message: userMessageFromError(taskError, '无法恢复这次回答。') ?? '无法恢复这次回答。' });
     });
-  }, [applyTerminalTask, bindTask, clearTransientContext, projectId, replaceConversation, taskClient]);
+  }, [applyTerminalTask, bindTask, projectId, taskClient]);
+
+  const restore = useCallback((record: ConversationRecord) => {
+    if (activeTaskIdRef.current) return;
+    void persistRef.current();
+    clearTransientContext();
+    replaceConversation(record);
+    setDraft('');
+    setError(undefined);
+    setTab('chat');
+    recoverConversationTask(record);
+  }, [clearTransientContext, recoverConversationTask, replaceConversation]);
+
+  useEffect(() => {
+    if (initialTaskRecoveryStartedRef.current) return;
+    initialTaskRecoveryStartedRef.current = true;
+    const mountedInitialConversation = mountedInitialConversationRef.current;
+    if (mountedInitialConversation) {
+      recoverConversationTask(mountedInitialConversation);
+    }
+  }, [recoverConversationTask]);
 
   const submit = useCallback((question = draft, context = pendingContext) => {
     const normalized = question.trim();
