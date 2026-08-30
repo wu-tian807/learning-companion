@@ -9,10 +9,6 @@ import {
   type CreateAssetReferenceInput,
 } from '../../shared/asset-associations';
 import type { AssetLookup } from '../assets/asset-database';
-import type {
-  AssetAggregateMutationListener,
-  AssetAggregateMutationSource,
-} from '../assets/asset-aggregate-mutation';
 import type { AssetDeletionObserver } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { ProjectLookup } from '../projects/project-database';
@@ -39,6 +35,17 @@ export interface AssetAssociationServiceApi {
 export interface AssetAssociationServiceDependencies {
   readonly now: () => number;
 }
+
+export interface AssetAssociationChangedEvent {
+  readonly type: 'changed';
+  readonly projectId: string;
+  readonly assetId: string;
+  readonly updatedTime: number;
+}
+
+export type AssetAssociationServiceListener = (
+  event: AssetAssociationChangedEvent,
+) => void | Promise<void>;
 
 interface AssociationState {
   readonly referencesById: Map<string, AssetReference>;
@@ -107,15 +114,11 @@ function removeOwnedId(
 }
 
 export class AssetAssociationService
-  implements
-    AssetAssociationServiceApi,
-    AssetDeletionObserver,
-    AssetAggregateMutationSource
+  implements AssetAssociationServiceApi, AssetDeletionObserver
 {
   private activeProjectId: string | undefined;
   private state: AssociationState = createEmptyState();
-  private readonly mutationListeners =
-    new Set<AssetAggregateMutationListener>();
+  private readonly listeners = new Set<AssetAssociationServiceListener>();
   private readonly dependencies: AssetAssociationServiceDependencies;
 
   constructor(
@@ -223,7 +226,7 @@ export class AssetAssociationService
       { sourceAssetId },
     );
     this.addReference(reference);
-    this.publishAssetMutation(
+    this.publishChanged(
       reference.projectId,
       reference.assetId,
       reference.createdTime,
@@ -243,7 +246,7 @@ export class AssetAssociationService
     const updatedTime = this.requireMutationTime();
     this.referenceDatabase.delete(projectId, normalizedReferenceId);
     this.removeReference(reference);
-    this.publishAssetMutation(
+    this.publishChanged(
       reference.projectId,
       reference.assetId,
       updatedTime,
@@ -306,7 +309,7 @@ export class AssetAssociationService
       targetAssetId,
     });
     this.addLink(link);
-    this.publishAssetMutation(
+    this.publishChanged(
       link.projectId,
       link.assetId,
       link.createdTime,
@@ -326,7 +329,7 @@ export class AssetAssociationService
     const updatedTime = this.requireMutationTime();
     this.linkDatabase.delete(projectId, normalizedLinkId);
     this.removeLink(link);
-    this.publishAssetMutation(link.projectId, link.assetId, updatedTime);
+    this.publishChanged(link.projectId, link.assetId, updatedTime);
   }
 
   onAssetDeleted(projectId: string, assetId: string): void {
@@ -364,16 +367,14 @@ export class AssetAssociationService
     if (changedOwnerAssetIds.size > 0) {
       const updatedTime = this.requireMutationTime();
       for (const ownerAssetId of changedOwnerAssetIds) {
-        this.publishAssetMutation(projectId, ownerAssetId, updatedTime);
+        this.publishChanged(projectId, ownerAssetId, updatedTime);
       }
     }
   }
 
-  subscribeAssetMutations(
-    listener: AssetAggregateMutationListener,
-  ): () => void {
-    this.mutationListeners.add(listener);
-    return () => this.mutationListeners.delete(listener);
+  subscribe(listener: AssetAssociationServiceListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   private createState(
@@ -454,14 +455,21 @@ export class AssetAssociationService
     return value;
   }
 
-  private publishAssetMutation(
+  private publishChanged(
     projectId: string,
     assetId: string,
     updatedTime: number,
   ): void {
-    for (const listener of this.mutationListeners) {
+    const event: AssetAssociationChangedEvent = Object.freeze({
+      type: 'changed',
+      projectId,
+      assetId,
+      updatedTime,
+    });
+
+    for (const listener of this.listeners) {
       try {
-        Promise.resolve(listener({ projectId, assetId, updatedTime })).catch(
+        Promise.resolve(listener(event)).catch(
           (error: unknown) => {
             console.error('异步 Asset Association 事件订阅者执行失败', error);
           },

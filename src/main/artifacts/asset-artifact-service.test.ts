@@ -20,6 +20,9 @@ import {
 import {
   createAbsoluteLocalFileContentRef,
 } from '../../shared/assets';
+import { AssetDatabase } from '../assets/asset-database';
+import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
+import { createArtifactAggregateMutationSource } from '../bootstrap/asset-aggregate-mutation-sources';
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
 import { assets } from '../database/schema/assets';
@@ -45,6 +48,7 @@ interface Harness {
   readonly context: DatabaseContext;
   readonly workspacePath: string;
   readonly sourcePath: string;
+  readonly assets: AssetDatabase;
   readonly database: AssetArtifactDatabase;
   readonly registry: AssetArtifactRegistry;
   readonly service: AssetArtifactService;
@@ -52,6 +56,7 @@ interface Harness {
 
 async function createHarness(
   producer: AssetArtifactProducer,
+  now: () => number = () => 2,
 ): Promise<Harness> {
   const directory = await mkdtemp(
     join(tmpdir(), 'learning-companion-artifact-service-'),
@@ -80,7 +85,8 @@ async function createHarness(
       id: 'asset',
       projectId: 'project',
       name: '课程',
-      mediaType: producer.id,
+      mediaType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       creationKind: 'imported',
       contentRef: createAbsoluteLocalFileContentRef(sourcePath),
       createdTime: 1,
@@ -88,6 +94,7 @@ async function createHarness(
     })
     .run();
   const database = new AssetArtifactDatabase(context);
+  const assetDatabase = new AssetDatabase(context);
   const registry = new AssetArtifactRegistry();
   registry.register(producer);
   const service = new AssetArtifactService(
@@ -95,7 +102,7 @@ async function createHarness(
     new AssetArtifactFileManager(),
     registry,
     {
-      now: () => 2,
+      now,
       logger: { warn: vi.fn() },
     },
   );
@@ -104,6 +111,7 @@ async function createHarness(
     context,
     workspacePath,
     sourcePath,
+    assets: assetDatabase,
     database,
     registry,
     service,
@@ -152,6 +160,48 @@ afterEach(async () => {
 });
 
 describe('AssetArtifactService', () => {
+  it('projects only committed generations to the owner Asset', async () => {
+    const now = vi.fn().mockReturnValueOnce(2).mockReturnValue(3);
+    const harness = await createHarness(
+      createProducer(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, `%PDF-1.7\n${request.source.revision}`);
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+      now,
+    );
+    const assetUpdates = { touch: vi.fn() };
+    const dispose = trackAssetAggregateMutations(assetUpdates, [
+      createArtifactAggregateMutationSource(
+        harness.service,
+        harness.assets,
+      ),
+    ]);
+
+    await harness.service.getOrCreate(createRequest(harness));
+    await harness.service.getOrCreate(createRequest(harness));
+    await harness.service.getOrCreate(createRequest(harness, 'source-b'));
+
+    expect(assetUpdates.touch).toHaveBeenCalledTimes(2);
+    expect(assetUpdates.touch).toHaveBeenNthCalledWith(
+      1,
+      'project',
+      'asset',
+      2,
+    );
+    expect(assetUpdates.touch).toHaveBeenNthCalledWith(
+      2,
+      'project',
+      'asset',
+      3,
+    );
+    dispose();
+  });
+
   it('generates once, reuses valid cache and replaces stale revisions', async () => {
     const produce = vi.fn<AssetArtifactProducer['produce']>(
       async (request) => {
@@ -222,6 +272,8 @@ describe('AssetArtifactService', () => {
     );
     const harness = await createHarness(createProducer(produce));
     const request = createRequest(harness);
+    const committed = vi.fn();
+    harness.service.subscribe(committed);
 
     const first = harness.service.getOrCreate(request);
     const second = harness.service.getOrCreate(request);
@@ -234,6 +286,7 @@ describe('AssetArtifactService', () => {
 
     expect(firstResult).toEqual(secondResult);
     expect(produce).toHaveBeenCalledTimes(1);
+    expect(committed).toHaveBeenCalledOnce();
   });
 
   it('does not publish an index when Producer generation fails', async () => {
@@ -242,12 +295,15 @@ describe('AssetArtifactService', () => {
         throw new Error('conversion failed');
       }),
     );
+    const committed = vi.fn();
+    harness.service.subscribe(committed);
 
     await expect(
       harness.service.getOrCreate(createRequest(harness)),
     ).rejects.toThrow('conversion failed');
 
     expect(harness.database.listByAsset('asset')).toEqual([]);
+    expect(committed).not.toHaveBeenCalled();
     await expect(
       readdir(
         join(
@@ -288,6 +344,8 @@ describe('AssetArtifactService', () => {
     const generated = await harness.service.getOrCreate(
       createRequest(harness),
     );
+    const committed = vi.fn();
+    harness.service.subscribe(committed);
 
     await harness.service.removeByAsset('asset', harness.workspacePath);
 
@@ -295,6 +353,7 @@ describe('AssetArtifactService', () => {
       code: 'ENOENT',
     });
     expect(harness.database.listByAsset('asset')).toEqual([]);
+    expect(committed).not.toHaveBeenCalled();
   });
 
   it('keeps the Artifact index when its managed file cannot be removed', async () => {
@@ -348,6 +407,8 @@ describe('AssetArtifactService', () => {
         throw new Error('unreachable');
       }),
     );
+    const committed = vi.fn();
+    harness.service.subscribe(committed);
     const generation = harness.service.getOrCreate(createRequest(harness));
     await started;
 
@@ -358,6 +419,36 @@ describe('AssetArtifactService', () => {
 
     await expect(generation).rejects.toMatchObject({ name: 'AbortError' });
     expect(harness.database.listByProject('project')).toEqual([]);
+    expect(committed).not.toHaveBeenCalled();
+  });
+
+  it('contains rejected async commit subscribers', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await createHarness(
+      createProducer(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, '%PDF-1.7\nsubscriber');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+    );
+    harness.service.subscribe(async () => {
+      throw new Error('subscriber failed');
+    });
+
+    await expect(
+      harness.service.getOrCreate(createRequest(harness)),
+    ).resolves.toMatchObject({ cacheHit: false });
+    await Promise.resolve();
+
+    expect(error).toHaveBeenCalledWith(
+      '异步 Asset Artifact 事件订阅者执行失败',
+      expect.any(Error),
+    );
+    error.mockRestore();
   });
 
   it('stops Project generation without deleting persisted artifacts', async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../shared/attachments/contracts';
 import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
+import { createAttachmentAggregateMutationSource } from '../bootstrap/asset-aggregate-mutation-sources';
 import type { AssetLookup } from '../assets/asset-database';
 import { AnchorRegistry } from './anchor-registry';
 import type { AttachmentContentFile } from './attachment-content-file';
@@ -74,7 +75,9 @@ describe('AttachmentService', () => {
   it('projects every committed mutation to its owner Asset', async () => {
     const { service } = createHarness();
     const assets = { touch: vi.fn() };
-    const dispose = trackAssetAggregateMutations(assets, [service]);
+    const dispose = trackAssetAggregateMutations(assets, [
+      createAttachmentAggregateMutationSource(service),
+    ]);
 
     const created = await service.create({
       projectId: 'project-1',

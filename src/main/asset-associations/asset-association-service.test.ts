@@ -6,6 +6,7 @@ import type {
 } from '../../shared/asset-associations';
 import type { AssetLookup } from '../assets/asset-database';
 import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
+import { createAssociationAggregateMutationSource } from '../bootstrap/asset-aggregate-mutation-sources';
 import type { ProjectLookup } from '../projects/project-database';
 import {
   AssetAssociationService,
@@ -186,7 +187,9 @@ describe('AssetAssociationService', () => {
     const harness = createHarness();
     harness.service.loadFromProject('project-a');
     const assets = { touch: vi.fn() };
-    const dispose = trackAssetAggregateMutations(assets, [harness.service]);
+    const dispose = trackAssetAggregateMutations(assets, [
+      createAssociationAggregateMutationSource(harness.service),
+    ]);
 
     const reference = harness.service.ensureReference('map-a', {
       sourceAssetId: 'pdf-a',
@@ -249,7 +252,7 @@ describe('AssetAssociationService', () => {
     const harness = createHarness();
     harness.service.loadFromProject('project-a');
     const mutation = vi.fn();
-    harness.service.subscribeAssetMutations(mutation);
+    harness.service.subscribe(mutation);
 
     expect(() =>
       harness.service.ensureReference('map-a', {
@@ -273,8 +276,8 @@ describe('AssetAssociationService', () => {
     harness.service.ensureReference('map-a', { sourceAssetId: 'pdf-a' });
     harness.service.ensureLink('map-a', { targetAssetId: 'lecture-a' });
     const mutations: unknown[] = [];
-    harness.service.subscribeAssetMutations((mutation) => {
-      mutations.push(mutation);
+    harness.service.subscribe((event) => {
+      mutations.push(event);
     });
 
     harness.service.onAssetDeleted('project-a', 'pdf-a');
@@ -283,8 +286,18 @@ describe('AssetAssociationService', () => {
     expect(harness.service.getReference('reference-1')).toBeUndefined();
     expect(harness.service.getLink('link-1')).toBeUndefined();
     expect(mutations).toEqual([
-      { projectId: 'project-a', assetId: 'map-a', updatedTime: 100 },
-      { projectId: 'project-a', assetId: 'map-a', updatedTime: 100 },
+      {
+        type: 'changed',
+        projectId: 'project-a',
+        assetId: 'map-a',
+        updatedTime: 100,
+      },
+      {
+        type: 'changed',
+        projectId: 'project-a',
+        assetId: 'map-a',
+        updatedTime: 100,
+      },
     ]);
   });
 
@@ -294,7 +307,7 @@ describe('AssetAssociationService', () => {
     harness.service.ensureReference('map-a', { sourceAssetId: 'pdf-a' });
     harness.service.ensureLink('map-a', { targetAssetId: 'lecture-a' });
     const mutation = vi.fn();
-    harness.service.subscribeAssetMutations(mutation);
+    harness.service.subscribe(mutation);
 
     harness.service.onAssetDeleted('project-a', 'map-a');
 
@@ -305,7 +318,7 @@ describe('AssetAssociationService', () => {
     const harness = createHarness();
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     harness.service.loadFromProject('project-a');
-    harness.service.subscribeAssetMutations(async () => {
+    harness.service.subscribe(async () => {
       throw new Error('subscriber failed');
     });
 

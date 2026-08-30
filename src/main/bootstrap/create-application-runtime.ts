@@ -71,6 +71,7 @@ import {
   type MainWorkbenchRuntime,
 } from '../../workbenches/catalog/register-main-workbenches';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
+import { createAssetAggregateMutationSources } from './asset-aggregate-mutation-sources';
 import { ApplicationRuntime } from './application-runtime';
 import { createAgentProviderService } from './create-agent-provider-service';
 import { createCodexRuntime } from './create-codex-runtime';
@@ -219,7 +220,12 @@ export async function createApplicationRuntime({
     );
     disposeAssetAggregateTracking = trackAssetAggregateMutations(
       assetService,
-      [attachmentService, associationService],
+      createAssetAggregateMutationSources({
+        associations: associationService,
+        artifacts: artifactService,
+        assets: assetDatabase,
+        attachments: attachmentService,
+      }),
     );
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();

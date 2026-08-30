@@ -7,10 +7,6 @@ import type {
 import type { AssetTarget } from '../../shared/workbench/anchor';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AssetLookup } from '../assets/asset-database';
-import type {
-  AssetAggregateMutationListener,
-  AssetAggregateMutationSource,
-} from '../assets/asset-aggregate-mutation';
 import { AppError } from '../errors/app-error';
 import { createAssetAttachment } from './attachment';
 import type { AnchorRegistry } from './anchor-registry';
@@ -79,9 +75,7 @@ export interface AttachmentServiceDependencies {
   readonly now: () => number;
 }
 
-export class AttachmentService
-  implements AttachmentServiceApi, AssetAggregateMutationSource
-{
+export class AttachmentService implements AttachmentServiceApi {
   private readonly listeners = new Set<AttachmentServiceListener>();
   private readonly dependencies: AttachmentServiceDependencies;
 
@@ -230,18 +224,6 @@ export class AttachmentService
   subscribe(listener: AttachmentServiceListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-
-  subscribeAssetMutations(
-    listener: AssetAggregateMutationListener,
-  ): () => void {
-    return this.subscribe(({ attachment }) =>
-      listener({
-        projectId: attachment.projectId,
-        assetId: attachment.assetId,
-        updatedTime: attachment.updatedTime,
-      }),
-    );
   }
 
   private requireOwned(projectId: string, attachmentId: string): AssetAttachment {

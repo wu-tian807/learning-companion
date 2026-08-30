@@ -54,6 +54,7 @@ Asset 元数据维护责任。
 - 外部程序修改 Asset 文件，并在应用下次加载、刷新或解析内容时被观察到；
 - 未来 Attachment 的创建、更新和删除；
 - AssetReference 与 AssetLink 的创建和删除；
+- AssetArtifact 首次生成或失效后的成功替换；
 - 未来其他被定义为 Asset 聚合组成部分的数据变化。
 
 以下操作不更新时间：
@@ -62,7 +63,7 @@ Asset 元数据维护责任。
 - PDF 页码、滚动位置、缩放、音视频进度等 Workbench State；
 - Availability 检查本身；
 - Workbench 恢复快照写入，但尚未保存到真实 Asset 正文；
-- 仅生成可重建的 Artifact；
+- Artifact 缓存命中、生成失败、取消或随 owner 删除的清理；
 - 名称或 ContentRef 与现值相同的空操作。
 
 `createdTime` 保持不变。新建 Asset 时 `createdTime === updatedTime`。
@@ -299,20 +300,22 @@ Relink 不再调用 `AssetDatabase.updateContentRef()`。重命名继续调用
 `AssetService.update({ name })`，并由 Service 自动更新时间。调用方不显式传时间。
 这样 Relink 不会先发布“新 ContentRef + 旧 ContentStatus”的中间状态。
 
-## 12. Attachment 与 Asset Association 扩展边界
+## 12. 聚合成员扩展边界
 
 当前实现已按以下边界接入，完整关系语义见
-[Asset 聚合关系变化与更新时间设计](./2026-08-30-asset-aggregate-mutation-updated-time-design.md)：
+[Asset 聚合成员变化与更新时间设计](./2026-08-30-asset-aggregate-mutation-updated-time-design.md)：
 
-- 具体 AttachmentService 只负责 Attachment 数据和正文；
-- AttachmentService 与 AssetAssociationService 在真实 mutation 提交后发布统一
-  `AssetAggregateMutation`；
-- Bootstrap 组合层通过 `trackAssetAggregateMutations()` 连接同一
-  `AssetAggregateTouchPort`；
+- AttachmentService、AssetAssociationService 与 AssetArtifactService 只负责各自领域，
+  并发布自身的 changed/committed 事件；
+- 只有 Bootstrap 组合层把领域事件适配为 `AssetAggregateMutation`，再通过
+  `trackAssetAggregateMutations()` 连接同一 `AssetAggregateTouchPort`；
 - Attachment Create、Update、Delete 以及 Reference/Link Create、Delete 成功后推进
   owner Asset；
+- Artifact 首次提交或失效后成功替换时推进 owner；缓存命中、失败、取消和 owner 清理
+  不推进；
 - 查询操作不更新时间；
-- Workbench Provider 不需要知道 Attachment 变更会影响 Asset 时间。
+- Workbench Provider 和各领域 Service 不需要知道自身变化会如何投影到 Asset 时间；
+- Workbench State 本轮仍不接入。
 
 如果未来聚合子实体和 Asset 时间位于同一个 SQLite 事务边界，则由上层
 领域 Service 把两者放入同一事务；本轮不扩展跨实体事务。
