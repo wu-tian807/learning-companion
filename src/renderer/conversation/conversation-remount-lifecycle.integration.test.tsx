@@ -51,6 +51,19 @@ function task(id: string): GenerationTaskView {
   };
 }
 
+function completedTask(id: string): GenerationTaskView {
+  return {
+    ...task(id),
+    status: 'completed',
+    result: {
+      answer: 'background answer',
+      providerId: 'codex',
+      modelId: 'gpt',
+    },
+    updatedTime: 3,
+  };
+}
+
 function contribution(): WorkbenchConversationContribution {
   let history: readonly ConversationRecord[] = [];
   return {
@@ -290,6 +303,145 @@ describe('Workbench conversation remount lifecycle', () => {
     expect((panelMock.latest as PanelProjection).state.activeTaskId)
       .toBe('task-late');
     expect((panelMock.latest as PanelProjection).state.busy).toBe(true);
+  });
+
+  it('inherits a bound active task before delayed recovery and blocks every new operation', async () => {
+    const deferred = createDeferredStart();
+    let resolveRecovery!: (snapshot: GenerationTaskView | undefined) => void;
+    taskClientMock.get.mockImplementation(() =>
+      new Promise<GenerationTaskView | undefined>((resolve) => {
+        resolveRecovery = resolve;
+      }),
+    );
+    const { renderHost } = createRuntime();
+
+    await renderHost(true);
+    act(() => {
+      (panelMock.latest as PanelProjection).actions.submit('first question');
+    });
+    await act(async () => {
+      deferred.resolveStart('task-active');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const activeConversation =
+      (panelMock.latest as PanelProjection).state.conversation;
+    const activeAnswerId = activeConversation.messages.at(-1)!.id;
+
+    await renderHost(false);
+    await renderHost(true);
+
+    const remounted = panelMock.latest as PanelProjection;
+    expect(taskClientMock.get).toHaveBeenCalledWith('project', 'task-active');
+    expect(remounted.state.busy).toBe(true);
+    expect(remounted.state.activeTaskId).toBe('task-active');
+    act(() => {
+      remounted.actions.submit('must stay blocked');
+      remounted.actions.startNew();
+      remounted.actions.restore({
+        id: 'must-not-restore',
+        title: 'must not restore',
+        messages: [],
+        createdTime: 50,
+        updatedTime: 50,
+      });
+      remounted.actions.reanswer(activeAnswerId);
+    });
+
+    expect(taskClientMock.start).toHaveBeenCalledOnce();
+    expect((panelMock.latest as PanelProjection).state.conversation.id)
+      .toBe(activeConversation.id);
+
+    await act(async () => {
+      resolveRecovery(task('task-active'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it('settles a task completed in the background and releases the Conversation for its next turn', async () => {
+    const deferred = createDeferredStart();
+    let resolveRecovery!: (snapshot: GenerationTaskView | undefined) => void;
+    taskClientMock.get.mockImplementation(() =>
+      new Promise<GenerationTaskView | undefined>((resolve) => {
+        resolveRecovery = resolve;
+      }),
+    );
+    const { renderHost, runtime } = createRuntime();
+
+    await renderHost(true);
+    act(() => {
+      (panelMock.latest as PanelProjection).actions.submit('first question');
+    });
+    await act(async () => {
+      deferred.resolveStart('task-background');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const conversationId =
+      (panelMock.latest as PanelProjection).state.conversation.id;
+
+    await renderHost(false);
+    await renderHost(true);
+    expect((panelMock.latest as PanelProjection).state.busy).toBe(true);
+
+    await act(async () => {
+      resolveRecovery(completedTask('task-background'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const settled = panelMock.latest as PanelProjection;
+    expect(settled.state.busy).toBe(false);
+    expect(settled.state.activeTaskId).toBeUndefined();
+    expect(settled.state.conversation.id).toBe(conversationId);
+    expect(settled.state.conversation.messages.at(-1)?.text)
+      .toBe('background answer');
+    expect(runtime.getCurrentConversationState(scope)?.activeTask)
+      .toBeUndefined();
+
+    act(() => {
+      settled.actions.submit('next question');
+    });
+    expect(taskClientMock.start).toHaveBeenCalledTimes(2);
+    expect((panelMock.latest as PanelProjection).state.conversation.id)
+      .toBe(conversationId);
+  });
+
+  it('keeps the active task locked when recovery lookup fails', async () => {
+    const deferred = createDeferredStart();
+    const { renderHost } = createRuntime();
+
+    await renderHost(true);
+    act(() => {
+      (panelMock.latest as PanelProjection).actions.submit('first question');
+    });
+    await act(async () => {
+      deferred.resolveStart('task-recovery-error');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    taskClientMock.get.mockRejectedValue(new Error('lookup failed'));
+
+    await renderHost(false);
+    await renderHost(true);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const remounted = panelMock.latest as PanelProjection;
+    expect(remounted.state.busy).toBe(true);
+    expect(remounted.state.activeTaskId).toBe('task-recovery-error');
+    expect(remounted.state.error?.message).toBe('无法恢复这次回答。');
+    act(() => {
+      remounted.actions.submit('must stay blocked');
+    });
+    expect(taskClientMock.start).toHaveBeenCalledOnce();
   });
 
   it('hands a late start failure draft, context and error to the remounted controller', async () => {

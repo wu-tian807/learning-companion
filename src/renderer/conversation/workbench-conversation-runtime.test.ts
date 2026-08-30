@@ -248,6 +248,8 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.resolveCurrentConversationStart(scope, {
       operationId: 'stale-operation',
       taskId: 'task-stale',
+      assistantMessageId: 'answer',
+      mode: 'answer',
       updateConversation: () => {
         throw new Error('stale updater must not run');
       },
@@ -256,6 +258,8 @@ describe('WorkbenchConversationRuntime', () => {
     const resolved = runtime.resolveCurrentConversationStart(scope, {
       operationId: 'operation-1',
       taskId: 'task-1',
+      assistantMessageId: 'answer',
+      mode: 'answer',
       updateConversation: (current) => ({
         ...current,
         messages: current.messages.map((message) =>
@@ -269,6 +273,12 @@ describe('WorkbenchConversationRuntime', () => {
     expect(resolved.state.conversation.messages[1]?.generationTaskId)
       .toBe('task-1');
     expect(resolved.state.pendingStart).toBeUndefined();
+    expect(resolved.state.activeTask).toEqual({
+      taskId: 'task-1',
+      conversationId: initial.id,
+      assistantMessageId: 'answer',
+      mode: 'answer',
+    });
   });
 
   it('hands cancellation and start failure state across controller lifetimes', () => {
@@ -293,9 +303,24 @@ describe('WorkbenchConversationRuntime', () => {
     const resolved = runtime.resolveCurrentConversationStart(scope, {
       operationId: 'operation-cancel',
       taskId: 'task-cancel',
-      updateConversation: (current) => current,
+      assistantMessageId: 'answer-cancel',
+      mode: 'answer',
+      updateConversation: (current) => ({
+        ...current,
+        messages: [{
+          id: 'answer-cancel',
+          role: 'assistant',
+          text: '',
+          createdTime: 2,
+          generationTaskId: 'task-cancel',
+        }],
+      }),
     });
     expect(resolved?.cancelRequested).toBe(true);
+    expect(runtime.finishCurrentConversationTask(scope, 'task-stale'))
+      .toBeUndefined();
+    expect(runtime.finishCurrentConversationTask(scope, 'task-cancel')?.activeTask)
+      .toBeUndefined();
 
     runtime.beginCurrentConversationStart(scope, {
       operationId: 'operation-failure',
@@ -321,6 +346,91 @@ describe('WorkbenchConversationRuntime', () => {
     });
   });
 
+  it('recovers one active task per Conversation and clears only its matching terminal', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    const selected: ConversationRecord = {
+      ...conversation('conversation-active'),
+      messages: [{
+        id: 'answer-active',
+        role: 'assistant',
+        text: 'partial',
+        createdTime: 2,
+        generationTaskId: 'task-active',
+      }],
+    };
+    runtime.setCurrentConversation(scope, selected);
+
+    const recovered = runtime.recoverCurrentConversationTask(scope, {
+      expectedConversationId: selected.id,
+      taskId: 'task-active',
+      assistantMessageId: 'answer-active',
+      mode: 'answer',
+    });
+    expect(recovered?.activeTask).toEqual({
+      taskId: 'task-active',
+      conversationId: selected.id,
+      assistantMessageId: 'answer-active',
+      mode: 'answer',
+    });
+    expect(runtime.beginCurrentConversationStart(scope, {
+      operationId: 'must-stay-blocked',
+      expectedConversationId: selected.id,
+      conversation: selected,
+    })).toBeUndefined();
+
+    const streamed: ConversationRecord = {
+      ...selected,
+      messages: [{ ...selected.messages[0]!, text: 'partial answer' }],
+      updatedTime: 3,
+    };
+    expect(runtime.setCurrentConversation(scope, streamed).activeTask?.taskId)
+      .toBe('task-active');
+    expect(runtime.finishCurrentConversationTask(scope, 'task-other'))
+      .toBeUndefined();
+    expect(runtime.getCurrentConversationState(scope)?.activeTask?.taskId)
+      .toBe('task-active');
+    expect(runtime.finishCurrentConversationTask(scope, 'task-active')?.activeTask)
+      .toBeUndefined();
+  });
+
+  it('does not carry an active task across Conversation pointers', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    const selected: ConversationRecord = {
+      ...conversation('conversation-active'),
+      messages: [{
+        id: 'answer-active',
+        role: 'assistant',
+        text: '',
+        createdTime: 2,
+        generationTaskId: 'task-active',
+      }],
+    };
+    runtime.setCurrentConversation(scope, selected);
+    runtime.recoverCurrentConversationTask(scope, {
+      expectedConversationId: selected.id,
+      taskId: 'task-active',
+      assistantMessageId: 'answer-active',
+      mode: 'answer',
+    });
+
+    const switched = conversation('conversation-new');
+    expect(runtime.setCurrentConversation(scope, switched).activeTask)
+      .toBeUndefined();
+    expect(runtime.finishCurrentConversationTask(scope, 'task-active'))
+      .toBeUndefined();
+    expect(runtime.getCurrentConversation(scope)).toBe(switched);
+  });
+
   it('invalidates a pending start when the current conversation pointer changes', () => {
     const runtime = new WorkbenchConversationRuntime();
     const scope = {
@@ -342,6 +452,8 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.resolveCurrentConversationStart(scope, {
       operationId: 'operation-old',
       taskId: 'task-late',
+      assistantMessageId: 'answer-old',
+      mode: 'answer',
       updateConversation: () => initial,
     })).toBeUndefined();
     expect(runtime.getCurrentConversation(scope)).toBe(switched);
@@ -365,6 +477,8 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.resolveCurrentConversationStart(scope, {
       operationId: 'operation-without-target',
       taskId: 'task-late',
+      assistantMessageId: 'answer-missing',
+      mode: 'answer',
       updateConversation: () => undefined,
     })).toBeUndefined();
     expect(runtime.getCurrentConversationState(scope)?.pendingStart)

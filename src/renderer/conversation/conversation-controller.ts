@@ -19,6 +19,7 @@ import {
 } from './conversation-task-client';
 import { createWorkbenchConversationTaskRequest } from './conversation-task-request';
 import {
+  type WorkbenchConversationActiveTask,
   type WorkbenchConversationPendingStart,
   type WorkbenchConversationScope,
   type WorkbenchCurrentConversationState,
@@ -174,6 +175,21 @@ function bindTaskToConversation(
   });
 }
 
+function recoveryTaskFromConversation(
+  conversation: ConversationRecord,
+): WorkbenchConversationActiveTask | undefined {
+  const candidate = [...conversation.messages].reverse().find(
+    (message) => message.role === 'assistant' && message.generationTaskId,
+  );
+  if (!candidate?.generationTaskId) return undefined;
+  return Object.freeze({
+    taskId: candidate.generationTaskId,
+    conversationId: conversation.id,
+    assistantMessageId: candidate.id,
+    mode: candidate.reanswerBackup ? 'reanswer' : 'answer',
+  });
+}
+
 export function useConversationController({
   open,
   projectId,
@@ -198,6 +214,7 @@ export function useConversationController({
     currentConversationState?.conversation ?? initialConversation;
   const mountedFailure = currentConversationState?.startFailure;
   const mountedPendingStart = currentConversationState?.pendingStart;
+  const mountedActiveTask = currentConversationState?.activeTask;
   const [tab, setTab] = useState<'chat' | 'history'>('chat');
   const [conversation, setConversationState] = useState<ConversationRecord>(() =>
     mountedConversation ?? createConversationRecord(createId(), now()),
@@ -208,14 +225,20 @@ export function useConversationController({
   const [pendingContext, setPendingContextState] = useState<JsonValue | undefined>(
     mountedFailure?.pendingContext,
   );
-  const [busy, setBusy] = useState(mountedPendingStart !== undefined);
-  const [activeTaskId, setActiveTaskId] = useState<string>();
+  const [busy, setBusy] = useState(
+    mountedPendingStart !== undefined || mountedActiveTask !== undefined,
+  );
+  const [activeTaskId, setActiveTaskId] = useState<string | undefined>(
+    mountedActiveTask?.taskId,
+  );
   const [activityLabel, setActivityLabel] = useState<string | undefined>(
     mountedPendingStart
       ? mountedPendingStart.cancelRequested
         ? '正在停止…'
         : '正在创建回答任务…'
-      : undefined,
+      : mountedActiveTask
+        ? '正在恢复回答进度…'
+        : undefined,
   );
   const [error, setError] = useState<ConversationErrorState | undefined>(
     mountedFailure?.error,
@@ -231,8 +254,12 @@ export function useConversationController({
   const pendingStartRef = useRef<WorkbenchConversationPendingStart | undefined>(
     mountedPendingStart,
   );
-  const activeTaskIdRef = useRef<string | undefined>(undefined);
-  const activeAssistantMessageIdRef = useRef<string | undefined>(undefined);
+  const mountedActiveTaskRef = useRef(mountedActiveTask);
+  const mountedRuntimeStateRef = useRef(currentConversationState);
+  const activeTaskIdRef = useRef<string | undefined>(mountedActiveTask?.taskId);
+  const activeAssistantMessageIdRef = useRef<string | undefined>(
+    mountedActiveTask?.assistantMessageId,
+  );
   const pendingCancelRef = useRef(
     mountedPendingStart?.cancelRequested ?? false,
   );
@@ -337,7 +364,15 @@ export function useConversationController({
     persistRef.current = persist;
   }, [persist]);
 
-  const finishTask = useCallback(() => {
+  const finishTask = useCallback((expectedTaskId?: string) => {
+    const taskId = activeTaskIdRef.current;
+    if (expectedTaskId && taskId !== expectedTaskId) return;
+    if (taskId && conversationRuntime && conversationScope) {
+      conversationRuntime.finishCurrentConversationTask(
+        conversationScope,
+        taskId,
+      );
+    }
     activeTaskIdRef.current = undefined;
     activeAssistantMessageIdRef.current = undefined;
     pendingCancelRef.current = false;
@@ -346,7 +381,7 @@ export function useConversationController({
       setBusy(false);
       setActivityLabel(undefined);
     }
-  }, []);
+  }, [conversationRuntime, conversationScope]);
 
   const applyTerminalTask = useCallback((task: GenerationTaskView) => {
     const taskId = activeTaskIdRef.current;
@@ -362,7 +397,7 @@ export function useConversationController({
           }
         : undefined;
       if (!result?.answer.trim()) {
-        finishTask();
+        finishTask(task.id);
         setError({ message: 'AI 任务已完成，但最终回答无效，请重试。', retryTaskId: task.id });
         return true;
       }
@@ -380,7 +415,7 @@ export function useConversationController({
         )),
         updatedTime: Math.max(task.updatedTime, current.updatedTime),
       }));
-      finishTask();
+      finishTask(task.id);
       setError(undefined);
       void persist(next);
       return true;
@@ -407,7 +442,7 @@ export function useConversationController({
         )),
         updatedTime: Math.max(task.updatedTime, current.updatedTime),
       }));
-      finishTask();
+      finishTask(task.id);
       setError(failureFromTask(task));
       void persist(next);
       return true;
@@ -482,6 +517,8 @@ export function useConversationController({
         {
           operationId,
           taskId,
+          assistantMessageId,
+          mode,
           updateConversation: (current) =>
             current.messages.some(({ id }) => id === assistantMessageId)
               ? bindTaskToConversation(
@@ -645,36 +682,92 @@ export function useConversationController({
     resetConversation(context);
   }, [resetConversation]);
 
-  const recoverConversationTask = useCallback((record: ConversationRecord) => {
-    const candidate = [...record.messages].reverse().find(
-      (message) => message.role === 'assistant' && message.generationTaskId,
-    );
-    const taskId = candidate?.generationTaskId;
-    if (!taskId) return;
+  const recoverConversationTask = useCallback((
+    record: ConversationRecord,
+    providedTask?: WorkbenchConversationActiveTask,
+  ) => {
+    const candidate = providedTask ?? recoveryTaskFromConversation(record);
+    if (!candidate || pendingStartRef.current) return;
     if (
-      activeTaskIdRef.current ||
-      pendingStartRef.current ||
-      taskRecoveryStartedIdsRef.current.has(taskId)
+      candidate.conversationId !== record.id ||
+      !record.messages.some((message) =>
+        message.id === candidate.assistantMessageId &&
+        message.generationTaskId === candidate.taskId,
+      )
     ) {
       return;
     }
-    taskRecoveryStartedIdsRef.current.add(taskId);
-    void taskClient.get(projectId, taskId).then((snapshot) => {
-      if (!mountedRef.current || conversationRef.current.id !== record.id || !snapshot) return;
-      if (snapshot.status === 'created' || snapshot.status === 'prepared' || snapshot.status === 'processing') {
-        bindTask(snapshot.id, candidate.id);
-        setActivityLabel('正在恢复回答进度…');
-      } else {
-        activeTaskIdRef.current = snapshot.id;
-        activeAssistantMessageIdRef.current = candidate.id;
-        applyTerminalTask(snapshot);
+
+    let activeTask = candidate;
+    if (conversationRuntime && conversationScope) {
+      const projected = conversationRuntime.recoverCurrentConversationTask(
+        conversationScope,
+        {
+          expectedConversationId: record.id,
+          taskId: candidate.taskId,
+          assistantMessageId: candidate.assistantMessageId,
+          mode: candidate.mode,
+        },
+      );
+      if (!projected?.activeTask) return;
+      activeTask = projected.activeTask;
+    }
+
+    activeTaskIdRef.current = activeTask.taskId;
+    activeAssistantMessageIdRef.current = activeTask.assistantMessageId;
+    if (mountedRef.current) {
+      setActiveTaskId(activeTask.taskId);
+      setBusy(true);
+      setActivityLabel('正在恢复回答进度…');
+    }
+    if (taskRecoveryStartedIdsRef.current.has(activeTask.taskId)) return;
+    taskRecoveryStartedIdsRef.current.add(activeTask.taskId);
+
+    void taskClient.get(projectId, activeTask.taskId).then((snapshot) => {
+      if (
+        !mountedRef.current ||
+        conversationRef.current.id !== record.id ||
+        activeTaskIdRef.current !== activeTask.taskId
+      ) {
+        return;
       }
+      if (!snapshot) {
+        taskRecoveryStartedIdsRef.current.delete(activeTask.taskId);
+        finishTask(activeTask.taskId);
+        setError({ message: '无法找到这次回答任务。' });
+        return;
+      }
+      if (
+        snapshot.status === 'created' ||
+        snapshot.status === 'prepared' ||
+        snapshot.status === 'processing'
+      ) {
+        setActivityLabel('正在恢复回答进度…');
+        return;
+      }
+      applyTerminalTask(snapshot);
     }).catch((taskError: unknown) => {
-      taskRecoveryStartedIdsRef.current.delete(taskId);
-      if (!mountedRef.current) return;
-      setError({ message: userMessageFromError(taskError, '无法恢复这次回答。') ?? '无法恢复这次回答。' });
+      taskRecoveryStartedIdsRef.current.delete(activeTask.taskId);
+      if (
+        !mountedRef.current ||
+        activeTaskIdRef.current !== activeTask.taskId
+      ) {
+        return;
+      }
+      setError({
+        message:
+          userMessageFromError(taskError, '无法恢复这次回答。') ??
+          '无法恢复这次回答。',
+      });
     });
-  }, [applyTerminalTask, bindTask, projectId, taskClient]);
+  }, [
+    applyTerminalTask,
+    conversationRuntime,
+    conversationScope,
+    finishTask,
+    projectId,
+    taskClient,
+  ]);
 
   const restore = useCallback((record: ConversationRecord) => {
     if (activeTaskIdRef.current || pendingStartRef.current) return;
@@ -691,8 +784,14 @@ export function useConversationController({
     if (initialTaskRecoveryStartedRef.current) return;
     initialTaskRecoveryStartedRef.current = true;
     const mountedInitialConversation = mountedInitialConversationRef.current;
-    if (mountedInitialConversation) {
-      recoverConversationTask(mountedInitialConversation);
+    if (
+      mountedInitialConversation &&
+      (mountedActiveTaskRef.current || !mountedRuntimeStateRef.current)
+    ) {
+      recoverConversationTask(
+        mountedInitialConversation,
+        mountedActiveTaskRef.current,
+      );
     }
   }, [recoverConversationTask]);
 
@@ -726,6 +825,25 @@ export function useConversationController({
       return;
     }
 
+    const activeTask = projected.activeTask;
+    if (activeTask) {
+      const alreadyBound =
+        activeTaskIdRef.current === activeTask.taskId &&
+        activeAssistantMessageIdRef.current === activeTask.assistantMessageId;
+      activeTaskIdRef.current = activeTask.taskId;
+      activeAssistantMessageIdRef.current = activeTask.assistantMessageId;
+      if (mountedRef.current) {
+        setActiveTaskId(activeTask.taskId);
+        setBusy(true);
+        if (!alreadyBound) setActivityLabel('正在恢复回答进度…');
+        setError(undefined);
+      }
+      if (!alreadyBound) {
+        recoverConversationTask(projected.conversation, activeTask);
+      }
+      return;
+    }
+
     const failure = projected.startFailure;
     if (failure) {
       activeTaskIdRef.current = undefined;
@@ -742,17 +860,12 @@ export function useConversationController({
       return;
     }
 
-    if (!activeTaskIdRef.current) {
-      const candidate = [...projected.conversation.messages].reverse().find(
-        (message) => message.role === 'assistant' && message.generationTaskId,
-      );
-      if (candidate?.generationTaskId) {
-        if (mountedRef.current) setBusy(true);
-        recoverConversationTask(projected.conversation);
-      } else if (mountedRef.current) {
-        setBusy(false);
-        setActivityLabel(undefined);
-      }
+    activeTaskIdRef.current = undefined;
+    activeAssistantMessageIdRef.current = undefined;
+    if (mountedRef.current) {
+      setActiveTaskId(undefined);
+      setBusy(false);
+      setActivityLabel(undefined);
     }
   }, [currentConversationState, recoverConversationTask]);
 

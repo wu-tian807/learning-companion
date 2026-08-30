@@ -25,6 +25,14 @@ export interface WorkbenchConversationPendingStart {
   readonly cancelRequested: boolean;
 }
 
+/** Project-memory execution binding; never a Conversation or Session identity. */
+export interface WorkbenchConversationActiveTask {
+  readonly taskId: string;
+  readonly conversationId: string;
+  readonly assistantMessageId: string;
+  readonly mode: 'answer' | 'reanswer';
+}
+
 export interface WorkbenchConversationStartFailure {
   readonly operationId: string;
   readonly draft: string;
@@ -40,6 +48,7 @@ export interface WorkbenchCurrentConversationState {
   readonly revision: number;
   readonly conversation: ConversationRecord;
   readonly pendingStart?: WorkbenchConversationPendingStart;
+  readonly activeTask?: WorkbenchConversationActiveTask;
   readonly startFailure?: WorkbenchConversationStartFailure;
 }
 
@@ -52,9 +61,18 @@ export interface BeginWorkbenchConversationStartInput {
 export interface ResolveWorkbenchConversationStartInput {
   readonly operationId: string;
   readonly taskId: string;
+  readonly assistantMessageId: string;
+  readonly mode: WorkbenchConversationActiveTask['mode'];
   readonly updateConversation: (
     current: ConversationRecord,
   ) => ConversationRecord | undefined;
+}
+
+export interface RecoverWorkbenchConversationTaskInput {
+  readonly expectedConversationId: string;
+  readonly taskId: string;
+  readonly assistantMessageId: string;
+  readonly mode: WorkbenchConversationActiveTask['mode'];
 }
 
 export interface RejectWorkbenchConversationStartInput {
@@ -159,6 +177,11 @@ export class WorkbenchConversationRuntime {
     const current = this.currentConversations.get(key);
     if (current?.conversation === conversation) return current;
     const sameConversation = current?.conversation.id === conversation.id;
+    const activeTask =
+      sameConversation && current?.activeTask &&
+      this.conversationContainsActiveTask(conversation, current.activeTask)
+        ? current.activeTask
+        : undefined;
     const next: WorkbenchCurrentConversationState = Object.freeze({
       revision: (current?.revision ?? 0) + 1,
       conversation,
@@ -168,6 +191,7 @@ export class WorkbenchConversationRuntime {
       ...(sameConversation && current?.startFailure
         ? { startFailure: current.startFailure }
         : {}),
+      ...(activeTask ? { activeTask } : {}),
     });
     this.setCurrentConversationState(key, next);
     return next;
@@ -188,6 +212,7 @@ export class WorkbenchConversationRuntime {
     if (
       !current ||
       current.pendingStart ||
+      current.activeTask ||
       current.conversation.id !== expectedConversationId ||
       input.conversation.id !== expectedConversationId
     ) {
@@ -213,7 +238,9 @@ export class WorkbenchConversationRuntime {
     input: ResolveWorkbenchConversationStartInput,
   ): ResolvedWorkbenchConversationStart | undefined {
     const operationId = input.operationId.trim();
-    if (!operationId || !input.taskId.trim()) {
+    const taskId = input.taskId.trim();
+    const assistantMessageId = input.assistantMessageId.trim();
+    if (!operationId || !taskId || !assistantMessageId) {
       throw new Error('Workbench Conversation operation 无效');
     }
     const key = conversationScopeKey(scope);
@@ -237,15 +264,95 @@ export class WorkbenchConversationRuntime {
     if (conversation.id !== current.conversation.id) {
       throw new Error('Workbench Conversation operation 不能切换 identity');
     }
+    const activeTask: WorkbenchConversationActiveTask = Object.freeze({
+      taskId,
+      conversationId: current.conversation.id,
+      assistantMessageId,
+      mode: input.mode,
+    });
+    if (!this.conversationContainsActiveTask(conversation, activeTask)) {
+      throw new Error('Workbench Conversation task binding 无效');
+    }
     const next: WorkbenchCurrentConversationState = Object.freeze({
       revision: current.revision + 1,
       conversation,
+      activeTask,
     });
     this.setCurrentConversationState(key, next);
     return Object.freeze({
       state: next,
       cancelRequested: current.pendingStart.cancelRequested,
     });
+  }
+
+  recoverCurrentConversationTask(
+    scope: WorkbenchConversationScope,
+    input: RecoverWorkbenchConversationTaskInput,
+  ): WorkbenchCurrentConversationState | undefined {
+    const expectedConversationId = input.expectedConversationId.trim();
+    const taskId = input.taskId.trim();
+    const assistantMessageId = input.assistantMessageId.trim();
+    if (!expectedConversationId || !taskId || !assistantMessageId) {
+      throw new Error('Workbench Conversation task binding 无效');
+    }
+    const key = conversationScopeKey(scope);
+    const current = this.currentConversations.get(key);
+    if (
+      !current ||
+      current.pendingStart ||
+      current.conversation.id !== expectedConversationId
+    ) {
+      return undefined;
+    }
+    if (current.activeTask) {
+      return current.activeTask.taskId === taskId &&
+        current.activeTask.assistantMessageId === assistantMessageId &&
+        current.activeTask.mode === input.mode
+        ? current
+        : undefined;
+    }
+    const activeTask: WorkbenchConversationActiveTask = Object.freeze({
+      taskId,
+      conversationId: expectedConversationId,
+      assistantMessageId,
+      mode: input.mode,
+    });
+    if (!this.conversationContainsActiveTask(current.conversation, activeTask)) {
+      return undefined;
+    }
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      revision: current.revision + 1,
+      conversation: current.conversation,
+      activeTask,
+    });
+    this.setCurrentConversationState(key, next);
+    return next;
+  }
+
+  finishCurrentConversationTask(
+    scope: WorkbenchConversationScope,
+    taskId: string,
+  ): WorkbenchCurrentConversationState | undefined {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      throw new Error('Workbench Conversation task binding 无效');
+    }
+    const key = conversationScopeKey(scope);
+    const current = this.currentConversations.get(key);
+    if (
+      !current?.activeTask ||
+      current.activeTask.taskId !== normalizedTaskId ||
+      current.conversation.id !== current.activeTask.conversationId
+    ) {
+      return undefined;
+    }
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      revision: current.revision + 1,
+      conversation: current.conversation,
+      ...(current.startFailure ? { startFailure: current.startFailure } : {}),
+    });
+    this.setCurrentConversationState(key, next);
+    return next;
   }
 
   rejectCurrentConversationStart(
@@ -441,6 +548,18 @@ export class WorkbenchConversationRuntime {
     if (!conversation.id.trim()) {
       throw new Error('Workbench Conversation identity 无效');
     }
+  }
+
+  private conversationContainsActiveTask(
+    conversation: ConversationRecord,
+    activeTask: WorkbenchConversationActiveTask,
+  ): boolean {
+    return conversation.id === activeTask.conversationId &&
+      conversation.messages.some((message) =>
+        message.id === activeTask.assistantMessageId &&
+        message.role === 'assistant' &&
+        message.generationTaskId === activeTask.taskId,
+      );
   }
 
   private setCurrentConversationState(
