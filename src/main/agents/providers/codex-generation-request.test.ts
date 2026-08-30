@@ -47,6 +47,7 @@ function request(): GenerationAgentTurnRequest {
     ],
     skills: [],
     mcpServers: [],
+    assetReferences: {},
     workspaces: {
       primary: {
         key: 'generation-mindmap',

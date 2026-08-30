@@ -60,6 +60,8 @@ export interface MainWorkbenchAttachmentContext {
 
 export interface MainWorkbenchAgentToolContext {
   readonly functionTools: AgentFunctionToolRegistryApi;
+  readonly assets: AssetServiceApi;
+  readonly recoveryDirectory: string;
 }
 
 export interface MainWorkbenchGenerationContext {

@@ -6,6 +6,7 @@ export interface AppPaths {
   readonly settingsFile: string;
   readonly agentProviderSecretsFile: string;
   readonly dataDirectory: string;
+  readonly recoveryDirectory: string;
   readonly databaseFile: string;
   readonly externalLibraryProfilesDirectory: string;
   readonly agentWorkspacesDirectory: string;
@@ -25,6 +26,7 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
   const normalizedUserDataDirectory = normalize(userDataDirectory);
   const configDirectory = join(normalizedUserDataDirectory, 'config');
   const dataDirectory = join(normalizedUserDataDirectory, 'data');
+  const recoveryDirectory = join(normalizedUserDataDirectory, 'recovery');
   const agentRuntimesDirectory = join(
     normalizedUserDataDirectory,
     'agent-runtimes',
@@ -39,6 +41,7 @@ export function createAppPaths(userDataDirectory: string): AppPaths {
       'agent-provider-secrets.json',
     ),
     dataDirectory,
+    recoveryDirectory,
     databaseFile: join(dataDirectory, 'learning-companion.sqlite3'),
     externalLibraryProfilesDirectory: join(
       dataDirectory,

@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from 'node:fs/promises';
+import { chmod, copyFile, lstat, mkdir } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
@@ -42,15 +42,19 @@ export interface GenerationAssetReferencePreparerApi {
 }
 
 interface GenerationAssetReferencePreparerDependencies {
+  readonly chmod: typeof chmod;
   readonly copyFile: typeof copyFile;
   readonly createFileRevision: typeof createFileContentRevision;
+  readonly lstat: typeof lstat;
   readonly mkdir: typeof mkdir;
   readonly writeFileAtomic: typeof writeFileAtomic;
 }
 
 const defaultDependencies: GenerationAssetReferencePreparerDependencies = {
+  chmod,
   copyFile,
   createFileRevision: createFileContentRevision,
+  lstat,
   mkdir,
   writeFileAtomic,
 };
@@ -161,6 +165,7 @@ export class GenerationAssetReferencePreparer
           await this.dependencies.mkdir(dirname(destination), {
             recursive: true,
           });
+          await this.makeManagedDestinationWritable(destination);
           await this.copyContentToWorkspace(
             resolvedContent,
             destination,
@@ -270,6 +275,24 @@ export class GenerationAssetReferencePreparer
     }
 
     throw new AppError('ASSET_UNAVAILABLE');
+  }
+
+  private async makeManagedDestinationWritable(path: string): Promise<void> {
+    try {
+      const stats = await this.dependencies.lstat(path);
+      if (stats.isSymbolicLink() || !stats.isFile()) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      await this.dependencies.chmod(path, 0o600);
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        (error as NodeJS.ErrnoException).code !== 'ENOENT'
+      ) {
+        throw error;
+      }
+    }
   }
 
   private async writeMetadata(

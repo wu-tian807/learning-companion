@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -212,6 +212,105 @@ describe('LocalFileContentResolver', () => {
     expect(bytes.toString('utf8')).toBe('\ufeff第一行\r\n新增内容\r\n');
     expect(saved.revision).not.toBe(content.revision);
   });
+
+  it.runIf(process.platform === 'win32')(
+    'restores write access only for an application-managed Project Asset',
+    async () => {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'learning-companion-managed-content-'),
+      );
+      temporaryDirectories.push(directory);
+      const importedDirectory = join(
+        directory,
+        '.learning-companion',
+        'assets',
+        'imported',
+      );
+      const path = join(importedDirectory, 'lesson.html');
+      await mkdir(importedDirectory, { recursive: true });
+      await writeFile(path, '<p>before</p>');
+      await chmod(path, 0o400);
+
+      const resolver = new LocalFileContentResolver(workspaceManager);
+      const resolved = await resolver.resolve(
+        createProjectWorkspaceContentRef(
+          '.learning-companion/assets/imported/lesson.html',
+        ),
+        { ...resolveContext, projectWorkspace: directory },
+      );
+      const adapter = new DefaultTextContentAdapter();
+      const source = await adapter.read(resolved.handle!);
+
+      await expect(
+        adapter.write(resolved.handle!, {
+          ...source,
+          content: '<p>after</p>',
+          expectedRevision: source.revision,
+        }),
+      ).resolves.toEqual({ revision: expect.any(String) });
+      await expect(readFile(path, 'utf8')).resolves.toBe('<p>after</p>');
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'does not remove read-only protection from a linked absolute file',
+    async () => {
+      const path = await createTemporaryFile(
+        'linked.html',
+        Buffer.from('<p>before</p>'),
+      );
+      await chmod(path, 0o400);
+      const resolver = new LocalFileContentResolver(workspaceManager);
+      const resolved = await resolver.resolve(
+        createAbsoluteLocalFileContentRef(path),
+        resolveContext,
+      );
+      const adapter = new DefaultTextContentAdapter();
+      const source = await adapter.read(resolved.handle!);
+
+      await expect(
+        adapter.write(resolved.handle!, {
+          ...source,
+          content: '<p>after</p>',
+          expectedRevision: source.revision,
+        }),
+      ).rejects.toMatchObject({ code: 'CONTENT_WRITE_FAILED' });
+      await expect(readFile(path, 'utf8')).resolves.toBe('<p>before</p>');
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'does not trust a managed-looking reference whose resolved path escaped the managed directory',
+    async () => {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'learning-companion-escaped-content-'),
+      );
+      temporaryDirectories.push(directory);
+      const path = join(directory, 'user-file.html');
+      await writeFile(path, '<p>before</p>');
+      await chmod(path, 0o400);
+      const resolver = new LocalFileContentResolver({
+        resolveLocalFile: async () => path,
+      } as never);
+      const resolved = await resolver.resolve(
+        createProjectWorkspaceContentRef(
+          '.learning-companion/assets/imported/escaped-link.html',
+        ),
+        { ...resolveContext, projectWorkspace: join(directory, 'project') },
+      );
+      const adapter = new DefaultTextContentAdapter();
+      const source = await adapter.read(resolved.handle!);
+
+      await expect(
+        adapter.write(resolved.handle!, {
+          ...source,
+          content: '<p>after</p>',
+          expectedRevision: source.revision,
+        }),
+      ).rejects.toMatchObject({ code: 'CONTENT_WRITE_FAILED' });
+      await expect(readFile(path, 'utf8')).resolves.toBe('<p>before</p>');
+    },
+  );
 
   it('preserves GBK and prevents writing characters it cannot represent', async () => {
     const path = await createTemporaryFile(

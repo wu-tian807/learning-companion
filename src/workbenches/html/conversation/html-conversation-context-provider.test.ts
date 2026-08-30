@@ -65,4 +65,28 @@ describe('HTML conversation context provider', () => {
       new HtmlConversationContextProvider().prepare(invalid as never),
     ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
+
+  it('declares editing tools only when the current HTML Asset is writable', async () => {
+    const editing = { canEdit: vi.fn(async () => true) };
+    const prepared = await new HtmlConversationContextProvider(
+      editing as never,
+    ).prepare(context());
+
+    expect(editing.canEdit).toHaveBeenCalledWith('project-1', 'asset-1');
+    expect(prepared.toolRequirements).toEqual([
+      { id: 'html_begin_edit', availability: 'required' },
+      { id: 'html_replace_edit', availability: 'required' },
+    ]);
+    expect(prepared.systemInstruction).toContain('每次修改必须先 begin');
+  });
+
+  it('keeps read-only HTML available for questions without editing tools', async () => {
+    const editing = { canEdit: vi.fn(async () => false) };
+    const prepared = await new HtmlConversationContextProvider(
+      editing as never,
+    ).prepare(context());
+
+    expect(prepared.toolRequirements).toEqual([]);
+    expect(prepared.systemInstruction).not.toContain('html_begin_edit');
+  });
 });

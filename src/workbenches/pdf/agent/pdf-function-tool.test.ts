@@ -17,7 +17,10 @@ function executionContext(
 ): AgentFunctionToolExecutionContext {
   return {
     taskId: 'task-1',
+    callKey: 'answer',
     projectId: 'project-1',
+    executionId: 'turn-1',
+    assetReferences: {},
     workspaces: {
       primary: {
         key: 'generation-mindmap',

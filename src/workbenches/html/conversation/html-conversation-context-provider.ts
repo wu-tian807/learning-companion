@@ -8,6 +8,11 @@ import {
   HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
   isHtmlConversationContext,
 } from './html-conversation-context';
+import type { HtmlAgentEditingService } from '../editing/html-agent-editing-service';
+import {
+  HTML_BEGIN_EDIT_TOOL_ID,
+  HTML_REPLACE_EDIT_TOOL_ID,
+} from '../editing/html-edit-tool-contracts';
 
 export const HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2 = `你是一个嵌入在 HTML 资料阅读器中的学习助手，负责回答用户针对当前 HTML 资料提出的问题。
 
@@ -72,6 +77,8 @@ export class HtmlConversationContextProvider
 {
   readonly id = HTML_CONVERSATION_CONTEXT_PROVIDER_ID;
 
+  constructor(private readonly editing?: HtmlAgentEditingService) {}
+
   async prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
   ) {
@@ -83,10 +90,15 @@ export class HtmlConversationContextProvider
     if (anchor !== undefined && !isHtmlConversationContext(anchor)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
+    const editingEnabled = this.editing
+      ? await this.editing.canEdit(context.projectId, source.assetId)
+      : false;
     return Object.freeze({
       purpose: 'html-reading-conversation',
       statusMessage: '正在结合网页资料回答…',
-      systemInstruction: HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2,
+      systemInstruction: editingEnabled
+        ? `${HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2}\n\n仅当用户明确要求修改当前 HTML 时才使用 html_begin_edit 和 html_replace_edit。每次修改必须先 begin 冻结目标和 scope，再用返回的 editId replace；replace 后若要修改另一区域必须重新 begin。用户引用的 DOM Anchor 是推荐目标而不是权限边界，也可以使用唯一 CSS selector。必须以 begin 返回的 currentHtml 和 draftRevision 为准，并保证 replacement 中所有非 void 元素显式闭合。`
+        : HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2,
       userMessage: createTextAgentUserMessage(
         [
           '用户正在阅读一份 HTML 资料，请结合参考资料直接回答。',
@@ -97,7 +109,14 @@ export class HtmlConversationContextProvider
             : `用户选中或聚焦的内容：${describeAnchor(anchor)}`,
         ].join('\n\n'),
       ),
-      toolRequirements: Object.freeze([]),
+      toolRequirements: Object.freeze(
+        editingEnabled
+          ? [
+              { id: HTML_BEGIN_EDIT_TOOL_ID, availability: 'required' as const },
+              { id: HTML_REPLACE_EDIT_TOOL_ID, availability: 'required' as const },
+            ]
+          : [],
+      ),
     });
   }
 }

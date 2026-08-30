@@ -28,6 +28,10 @@ import {
 import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../document-ai/document-conversation-context';
 import { EPUB_CONVERSATION_CONTEXT_PROVIDER_ID } from '../epub/explanations/epub-conversation-context';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../html/conversation/html-conversation-context';
+import {
+  HTML_BEGIN_EDIT_TOOL_ID,
+  HTML_REPLACE_EDIT_TOOL_ID,
+} from '../html/editing/html-edit-tool-contracts';
 import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from '../image/explanations/image-conversation-context';
 import {
   OFFICE_ANCHOR_VERSION,
@@ -209,9 +213,15 @@ describe('Workbench contribution catalogs', () => {
   it('registers Workbench-owned Agent tools without enabling them globally', () => {
     const functionTools = new AgentFunctionToolRegistry();
 
-    registerMainWorkbenchAgentFunctionTools({ functionTools });
+    registerMainWorkbenchAgentFunctionTools({
+      functionTools,
+      assets: {} as never,
+      recoveryDirectory: 'C:\\recovery',
+    });
 
     expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
+    expect(functionTools.get(HTML_BEGIN_EDIT_TOOL_ID)).toBeDefined();
+    expect(functionTools.get(HTML_REPLACE_EDIT_TOOL_ID)).toBeDefined();
   });
 
   it('registers Workbench conversation context providers through the same Main catalog', () => {

@@ -97,7 +97,10 @@ describe('AgentFunctionToolRegistry', () => {
     registry.register(definition('read_asset_anchor', { execute }));
     const context = {
       taskId: 'task-1',
+      callKey: 'answer',
       projectId: 'project-1',
+      executionId: 'turn-1',
+      assetReferences: {},
       workspaces: {
         primary: {
           key: 'generation-mindmap',

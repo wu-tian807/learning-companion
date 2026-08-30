@@ -22,6 +22,7 @@ export interface AnchorHighlightProps {
   readonly durationMs: number;
   readonly executeCommand: ExecuteCommand;
   readonly onNotFound?: () => void;
+  readonly onFound?: () => void;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -59,6 +60,7 @@ export function AnchorHighlight({
   durationMs,
   executeCommand,
   onNotFound,
+  onFound,
   onError,
 }: AnchorHighlightProps) {
   useEffect(() => {
@@ -83,6 +85,8 @@ export function AnchorHighlight({
           onError?.(new Error('HTML anchor command returned invalid data'));
         } else if (!result.payload.found) {
           onNotFound?.();
+        } else {
+          onFound?.();
         }
       },
       (error: unknown) => {
@@ -103,6 +107,7 @@ export function AnchorHighlight({
     executeCommand,
     onError,
     onNotFound,
+    onFound,
     reveal,
     revision,
     target,

@@ -113,6 +113,7 @@ export class GenerationAgentExecutor {
       toolRequirements: request.toolRequirements,
       skills: request.skills,
       mcpServers: request.mcpServers,
+      assetReferences: prepared.assetReferences,
       workspaces: prepared.workspaces,
       signal,
     });

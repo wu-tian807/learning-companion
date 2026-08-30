@@ -97,6 +97,7 @@ assert.ok(
 assert.ok(appAsar, '打包产物中缺少 app.asar');
 
 const packagedRequire = createRequire(import.meta.url);
+const packagedJsdomPath = path.join(appAsar, 'node_modules', 'jsdom');
 const packagedPdfJsPath = path.join(
   appAsar,
   'node_modules',
@@ -109,12 +110,17 @@ assert.ok(
   fs.existsSync(packagedPdfJsPath),
   `打包产物中缺少 PDF.js：${packagedPdfJsPath}`,
 );
+assert.ok(
+  fs.existsSync(path.join(packagedJsdomPath, 'package.json')),
+  `打包产物中缺少 jsdom：${packagedJsdomPath}`,
+);
 const PackagedDatabase = packagedRequire(
   path.join(appAsar, 'node_modules/better-sqlite3'),
 );
 const { createCanvas } = packagedRequire(
   path.join(appAsar, 'node_modules/@napi-rs/canvas'),
 );
+const { JSDOM } = packagedRequire(packagedJsdomPath);
 const database = new PackagedDatabase(':memory:');
 
 try {
@@ -136,9 +142,20 @@ try {
   assert.ok(canvas.encodeSync('png').byteLength > 0);
   const pdfjs = await import(pathToFileURL(packagedPdfJsPath).href);
   assert.equal(typeof pdfjs.getDocument, 'function');
+  const dom = new JSDOM('<!doctype html><p id="packaged">ready</p>', {
+    includeNodeLocations: true,
+  });
+  try {
+    assert.equal(
+      dom.window.document.querySelector('#packaged')?.textContent,
+      'ready',
+    );
+  } finally {
+    dom.window.close();
+  }
 
   console.log(
-    `packaged runtime dependencies verified: ${betterSqlite3Binary}, ${canvasBinary}, ${packagedPdfJsPath}`,
+    `packaged runtime dependencies verified: ${betterSqlite3Binary}, ${canvasBinary}, ${packagedPdfJsPath}, ${packagedJsdomPath}`,
   );
 } finally {
   database.close();

@@ -68,7 +68,21 @@ function serverRequest(overrides: Record<string, unknown> = {}) {
 function executionContext() {
   return {
     taskId: 'task-1',
+    callKey: 'answer',
     projectId: 'project-1',
+    assetReferences: {
+      source: [
+        {
+          alias: 'source-0001',
+          assetId: 'asset-1',
+          name: 'lesson.html',
+          mediaType: 'text/html',
+          materializedMediaType: 'text/html',
+          contentRevision: 'source-revision',
+          relativePath: 'references/source-0001/source.html',
+        },
+      ],
+    },
     workspaces: {
       primary: {
         key: 'generation-mindmap',
@@ -229,7 +243,10 @@ describe('Codex function tools', () => {
     ).resolves.toBeUndefined();
     expect(execute).toHaveBeenCalledWith(
       { assetId: 'asset-1' },
-      context,
+      {
+        ...context,
+        executionId: 'turn-1',
+      },
     );
     expect(respond).toHaveBeenCalledWith('request-1', {
       result: {

@@ -10,6 +10,8 @@ import {
 import {
   createHtmlAnchorClearFrameScript,
   createHtmlAnchorHighlightFrameScript,
+  createHtmlEditIndicatorClearFrameScript,
+  createHtmlEditIndicatorFrameScript,
 } from './html-anchor-frame-script';
 
 function elementPathFromDocumentElement(element: Element): readonly number[] {
@@ -50,9 +52,15 @@ describe('HTML anchor frame scripts', () => {
       | undefined;
     state?.cleanup();
     delete root.__learningCompanionHtmlAnchorHighlightV1;
+    const editState = root.__learningCompanionHtmlEditIndicatorV1 as
+      | { cleanup(): void }
+      | undefined;
+    editState?.cleanup();
+    delete root.__learningCompanionHtmlEditIndicatorV1;
     document.body.replaceChildren();
     delete (Range.prototype as unknown as Record<string, unknown>)
       .getBoundingClientRect;
+    delete (globalThis as unknown as Record<string, unknown>).matchMedia;
   });
 
   it('embeds only the validated command data in a self-contained resolver', () => {
@@ -80,6 +88,223 @@ describe('HTML anchor frame scripts', () => {
 
     expect(script).toContain('"action":"clear"');
     expect(script).toContain('"revision":9');
+  });
+
+  it('keeps the edit indicator independent from the history anchor outline', async () => {
+    document.body.innerHTML =
+      '<p id="history">历史引用</p><p id="editing">正在编辑</p>';
+    const history = document.querySelector('#history');
+    const editing = document.querySelector('#editing');
+    if (!history || !editing) throw new Error('Expected paragraphs');
+    for (const [element, top] of [[history, 20], [editing, 80]] as const) {
+      Object.defineProperty(element, 'getBoundingClientRect', {
+        value: () => ({ left: 12, top, width: 80, height: 18 }),
+      });
+    }
+    const historyTarget = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: elementPathFromDocumentElement(history),
+        tagName: 'p',
+        id: 'history',
+      },
+    });
+    const editingTarget = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: elementPathFromDocumentElement(editing),
+        tagName: 'p',
+        id: 'editing',
+      },
+    });
+
+    await globalThis.eval(
+      createHtmlAnchorHighlightFrameScript({
+        target: historyTarget,
+        revision: 1,
+        reveal: false,
+        durationMs: 0,
+      }),
+    );
+    await expect(
+      globalThis.eval(
+        createHtmlEditIndicatorFrameScript({
+          target: editingTarget,
+          revision: 1,
+          phase: 'editing',
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
+
+    const root = globalThis as unknown as Record<string, unknown>;
+    expect(root.__learningCompanionHtmlAnchorHighlightV1).toBeDefined();
+    expect(root.__learningCompanionHtmlEditIndicatorV1).toBeDefined();
+    expect(
+      document.querySelectorAll('[aria-hidden="true"]'),
+    ).toHaveLength(2);
+    const editMask = document.querySelector(
+      '[data-learning-companion-edit-mask="editing"]',
+    );
+    expect(editMask).toBeInstanceOf(HTMLElement);
+    expect(
+      editMask?.querySelector(
+        '[data-learning-companion-edit-wave-viewport]',
+      ),
+    ).toBeInstanceOf(HTMLElement);
+    const waveSweep = editMask?.querySelector(
+      '[data-learning-companion-edit-wave-sweep]',
+    ) as HTMLElement | null;
+    expect(waveSweep).toBeInstanceOf(HTMLElement);
+    expect(waveSweep?.style.filter).toContain(
+      'learning-companion-edit-wave-filter-1',
+    );
+    expect(waveSweep?.style.getPropertyPriority('transform')).toBe('');
+    expect(waveSweep?.style.getPropertyPriority('opacity')).toBe('');
+    expect(
+      editMask?.querySelector(
+        '[data-learning-companion-edit-wave-filter]',
+      ),
+    ).toBeInstanceOf(SVGElement);
+    expect(
+      editMask?.querySelector('[data-learning-companion-edit-beam-glow]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      editMask?.querySelector('[data-learning-companion-edit-beam-core]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      editMask?.querySelector(
+        '[data-learning-companion-edit-beam-highlight]',
+      ),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      editMask?.querySelector('[data-learning-companion-edit-status]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      editMask?.querySelector('[data-learning-companion-edit-status-text]')
+        ?.textContent,
+    ).toBe('正在重写');
+    expect(
+      editMask?.querySelector('[data-learning-companion-edit-cursor]'),
+    ).toBeNull();
+    expect(
+      editMask?.querySelector(
+        '[data-learning-companion-edit-cursor-viewport]',
+      ),
+    ).toBeNull();
+    expect(
+      editMask?.querySelector('[data-learning-companion-edit-code-lines]'),
+    ).toBeNull();
+    expect(
+      editMask?.querySelectorAll('[data-learning-companion-edit-corner]'),
+    ).toHaveLength(0);
+
+    await globalThis.eval(
+      createHtmlEditIndicatorClearFrameScript({
+        target: editingTarget,
+        revision: 1,
+      }),
+    );
+    expect(root.__learningCompanionHtmlAnchorHighlightV1).toBeDefined();
+    expect(root.__learningCompanionHtmlEditIndicatorV1).toBeUndefined();
+    expect(
+      document.querySelector('[data-learning-companion-edit-mask]'),
+    ).toBeNull();
+  });
+
+  it('renders rejected edits as a warning mask without a sweep', async () => {
+    document.body.innerHTML = '<main><section id="target">Draft</section></main>';
+    const target = document.querySelector('#target');
+    if (!target) throw new Error('Expected target section');
+    Object.defineProperty(target, 'getBoundingClientRect', {
+      value: () => ({ left: 20, top: 30, width: 240, height: 80 }),
+    });
+
+    await expect(
+      globalThis.eval(
+        createHtmlEditIndicatorFrameScript({
+          target: createHtmlDomTarget({
+            frameUrl: 'learning-content://resource/token',
+            element: {
+              path: elementPathFromDocumentElement(target),
+              tagName: 'section',
+              id: 'target',
+            },
+          }),
+          revision: 2,
+          phase: 'rejected',
+        }),
+      ),
+    ).resolves.toEqual({ found: true });
+
+    const rejectedMask = document.querySelector(
+      '[data-learning-companion-edit-mask="rejected"]',
+    );
+    expect(rejectedMask).toBeInstanceOf(HTMLElement);
+    expect(
+      rejectedMask?.querySelector('[data-learning-companion-edit-texture]'),
+    ).toBeInstanceOf(HTMLElement);
+    expect(
+      rejectedMask?.querySelector('[data-learning-companion-edit-status-text]')
+        ?.textContent,
+    ).toBe('修改未应用');
+    expect(
+      rejectedMask?.querySelector('[data-learning-companion-edit-cursor]'),
+    ).toBeNull();
+    expect(
+      rejectedMask?.querySelector(
+        '[data-learning-companion-edit-wave-viewport]',
+      ),
+    ).toBeNull();
+    expect(
+      rejectedMask?.querySelectorAll(
+        '[data-learning-companion-edit-corner]',
+      ),
+    ).toHaveLength(0);
+    expect(
+      (
+        rejectedMask?.querySelector(
+          '[data-learning-companion-edit-status]',
+        ) as HTMLElement | null
+      )?.style.top,
+    ).toBe('38px');
+  });
+
+  it('keeps a static wave without SVG motion when reduced motion is requested', async () => {
+    Object.defineProperty(globalThis, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: true }),
+    });
+    document.body.innerHTML = '<section id="target">Draft</section>';
+    const target = document.querySelector('#target');
+    if (!target) throw new Error('Expected target section');
+    Object.defineProperty(target, 'getBoundingClientRect', {
+      value: () => ({ left: 20, top: 80, width: 240, height: 80 }),
+    });
+
+    await globalThis.eval(
+      createHtmlEditIndicatorFrameScript({
+        target: createHtmlDomTarget({
+          frameUrl: 'learning-content://resource/token',
+          element: {
+            path: elementPathFromDocumentElement(target),
+            tagName: 'section',
+            id: 'target',
+          },
+        }),
+        revision: 3,
+        phase: 'editing',
+      }),
+    );
+
+    const sweep = document.querySelector(
+      '[data-learning-companion-edit-wave-sweep]',
+    ) as HTMLElement | null;
+    expect(sweep?.style.opacity).toBe('0.6');
+    expect(
+      document.querySelector(
+        '[data-learning-companion-edit-wave-filter] animate',
+      ),
+    ).toBeNull();
   });
 
   it('resolves the inferred DOM element after responsive layout reflow', async () => {
@@ -210,6 +435,35 @@ describe('HTML anchor frame scripts', () => {
       ),
     ).resolves.toEqual({ found: true });
     expect(highlightedTop()).toBe('198px');
+  });
+
+  it('returns not found when the historical DOM element no longer contains its quote', async () => {
+    document.body.innerHTML = '<p id="lesson">修改后的正文</p>';
+    const paragraph = document.querySelector('#lesson');
+    if (!paragraph) throw new Error('Expected paragraph');
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/token',
+      element: {
+        path: elementPathFromDocumentElement(paragraph),
+        tagName: 'p',
+        id: 'lesson',
+        textQuote: '引用时的原文',
+      },
+    });
+
+    await expect(
+      globalThis.eval(
+        createHtmlAnchorHighlightFrameScript({
+          target,
+          revision: 8,
+          reveal: true,
+          durationMs: 2_800,
+        }),
+      ),
+    ).resolves.toEqual({ found: false });
+    expect(
+      document.querySelector('[aria-hidden="true"]'),
+    ).toBeNull();
   });
 
   it('resolves a whole-element DOM anchor without a second anchor type', async () => {

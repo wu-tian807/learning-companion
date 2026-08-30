@@ -1,6 +1,7 @@
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AgentSessionLocator } from '../agents/sessions/agent-session';
 import type { AgentUserMessage } from './contracts/agent-message';
+import type { PreparedGenerationAssetReferenceBindings } from './contracts/generation-asset-reference';
 import type { GenerationTokenUsage } from './contracts/generation-metrics';
 import type {
   AgentMcpServerRequirement,
@@ -51,6 +52,7 @@ export interface GenerationAgentTurnRequest {
   readonly toolRequirements: readonly AgentToolRequirement[];
   readonly skills: readonly AgentSkillRequirement[];
   readonly mcpServers: readonly AgentMcpServerRequirement[];
+  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
   readonly workspaces: PreparedAgentWorkspaces;
   readonly signal?: AbortSignal;
 }

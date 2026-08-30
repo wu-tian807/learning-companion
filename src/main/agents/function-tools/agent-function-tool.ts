@@ -1,9 +1,13 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import type { PreparedGenerationAssetReferenceBindings } from '../../generation/contracts/generation-asset-reference';
 import type { PreparedAgentWorkspaces } from '../../generation/contracts/generation-workspace';
 
 export interface AgentFunctionToolExecutionContext {
   readonly taskId: string;
+  readonly callKey: string;
   readonly projectId: string;
+  readonly executionId: string;
+  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
   readonly workspaces: PreparedAgentWorkspaces;
   readonly signal?: AbortSignal;
 }

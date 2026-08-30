@@ -56,7 +56,39 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
 
 export interface HtmlWorkbenchPayload {
   readonly contentUrl: string;
+  readonly editing?: HtmlEditingStatus;
 }
+
+export interface HtmlEditingStatus {
+  readonly editable: boolean;
+  readonly hasDraft: boolean;
+  readonly unsynced: boolean;
+  readonly syncRequested: boolean;
+  readonly pending: boolean;
+  readonly stepCount: number;
+  readonly changeCount: number;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  readonly conflict: string | null;
+  readonly draftRevision: string;
+}
+
+export const htmlEditCommands = {
+  status: 'html.edit.status',
+  review: 'html.edit.review',
+  undo: 'html.edit.undo',
+  redo: 'html.edit.redo',
+  sync: 'html.edit.sync',
+  discard: 'html.edit.discard',
+} as const;
+
+export const htmlEditEvents = {
+  started: 'html.agent-edit.started',
+  rejected: 'html.agent-edit.rejected',
+  ended: 'html.agent-edit.ended',
+  applied: 'html.agent-edit.applied',
+  sessionChanged: 'html.agent-edit.session-changed',
+} as const;
 
 export interface HtmlDomElementV1 {
   /** Element-only indexes from document.documentElement to this element. */
@@ -163,7 +195,28 @@ export function isHtmlWorkbenchPayload(
   return (
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
-    value.contentUrl.startsWith('learning-content://resource/')
+    value.contentUrl.startsWith('learning-content://resource/') &&
+    (value.editing === undefined || isHtmlEditingStatus(value.editing))
+  );
+}
+
+export function isHtmlEditingStatus(value: unknown): value is HtmlEditingStatus {
+  return (
+    isRecord(value) &&
+    typeof value.editable === 'boolean' &&
+    typeof value.hasDraft === 'boolean' &&
+    typeof value.unsynced === 'boolean' &&
+    typeof value.syncRequested === 'boolean' &&
+    typeof value.pending === 'boolean' &&
+    Number.isSafeInteger(value.stepCount) &&
+    Number(value.stepCount) >= 0 &&
+    Number.isSafeInteger(value.changeCount) &&
+    Number(value.changeCount) >= 0 &&
+    typeof value.canUndo === 'boolean' &&
+    typeof value.canRedo === 'boolean' &&
+    (value.conflict === null || typeof value.conflict === 'string') &&
+    typeof value.draftRevision === 'string' &&
+    value.draftRevision.length > 0
   );
 }
 

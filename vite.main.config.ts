@@ -5,6 +5,7 @@ export default defineConfig({
     rollupOptions: {
       external: [
         'better-sqlite3',
+        'jsdom',
         /^@napi-rs\/canvas(?:-|\/|$)/u,
         /^pdfjs-dist(?:\/|$)/u,
       ],

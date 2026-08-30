@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -358,6 +359,7 @@ describe('ProjectWorkspaceManager', () => {
     const sourcePath = join(root, '讲义.md');
     const manager = new ProjectWorkspaceManager();
     await writeFile(sourcePath, '# 讲义');
+    await chmod(sourcePath, 0o400);
     await manager.prepareWorkspace({
       projectId: 'project',
       workspacePath,
@@ -385,6 +387,9 @@ describe('ProjectWorkspaceManager', () => {
     await expect(
       readFile(first.copiedAbsolutePath!, 'utf8'),
     ).resolves.toBe('# 讲义');
+    await expect(
+      writeFile(first.copiedAbsolutePath!, '# 可编辑副本'),
+    ).resolves.toBeUndefined();
     await expect(readFile(sourcePath, 'utf8')).resolves.toBe('# 讲义');
   });
 

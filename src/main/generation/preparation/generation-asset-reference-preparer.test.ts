@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -108,5 +115,42 @@ describe('GenerationAssetReferencePreparer', () => {
       expect.objectContaining({ asset, content: resolvedContent }),
     );
     expect(close).toHaveBeenCalledOnce();
+
+    const preparedSourcePath = join(
+      primaryWorkspacePath,
+      'references',
+      'sources-0001',
+      'source.pdf',
+    );
+    await chmod(preparedSourcePath, 0o400);
+    await writeFile(materializedPath, '%PDF-1.7\nupdated draft\n%%EOF\n');
+
+    await expect(
+      preparer.prepare({
+        projectId: asset.projectId,
+        schema: {
+          sources: { required: true, cardinality: 'many' },
+        },
+        bindings: { sources: [{ assetId: asset.id }] },
+        primaryWorkspacePath,
+      }),
+    ).resolves.toBeDefined();
+    await expect(readFile(preparedSourcePath, 'utf8')).resolves.toBe(
+      '%PDF-1.7\nupdated draft\n%%EOF\n',
+    );
+    expect(close).toHaveBeenCalledTimes(2);
+
+    await rm(preparedSourcePath);
+    await mkdir(preparedSourcePath);
+    await expect(
+      preparer.prepare({
+        projectId: asset.projectId,
+        schema: {
+          sources: { required: true, cardinality: 'many' },
+        },
+        bindings: { sources: [{ assetId: asset.id }] },
+        primaryWorkspacePath,
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 });

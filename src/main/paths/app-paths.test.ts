@@ -17,6 +17,7 @@ describe('app paths', () => {
         'agent-provider-secrets.json',
       ),
       dataDirectory: join(userDataDirectory, 'data'),
+      recoveryDirectory: join(userDataDirectory, 'recovery'),
       databaseFile: join(userDataDirectory, 'data', 'learning-companion.sqlite3'),
       externalLibraryProfilesDirectory: join(
         userDataDirectory,

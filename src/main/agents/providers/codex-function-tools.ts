@@ -59,7 +59,12 @@ interface CodexFunctionToolDispatchInput {
   readonly selection: CodexGenerationToolSelection;
   readonly generationRequest: Pick<
     GenerationAgentTurnRequest,
-    'taskId' | 'projectId' | 'workspaces' | 'signal'
+    | 'taskId'
+    | 'callKey'
+    | 'projectId'
+    | 'assetReferences'
+    | 'workspaces'
+    | 'signal'
   >;
   readonly respond: CodexRuntimeServiceApi['respondToServerRequest'];
 }
@@ -335,7 +340,10 @@ export async function handleCodexGenerationServerRequest(
       cloneJsonValue(argumentsValue),
       {
         taskId: input.generationRequest.taskId,
+        callKey: input.generationRequest.callKey,
         projectId: input.generationRequest.projectId,
+        executionId: input.activeTurnId,
+        assetReferences: input.generationRequest.assetReferences,
         workspaces: input.generationRequest.workspaces,
         ...(input.generationRequest.signal
           ? { signal: input.generationRequest.signal }

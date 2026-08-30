@@ -1,5 +1,6 @@
-import { chmod, cp, mkdir } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { chmod, cp, mkdir, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { FuseVersion, FuseV1Options } from '@electron/fuses';
 import type { ForgeConfig } from '@electron-forge/shared-types';
@@ -15,6 +16,7 @@ import {
 const betterSqlite3Source = resolve('node_modules/better-sqlite3');
 const napiCanvasSource = resolve('node_modules/@napi-rs/canvas');
 const pdfJsSource = resolve('node_modules/pdfjs-dist');
+const nodeModulesSource = resolve('node_modules');
 const betterSqlite3RuntimeEntries = new Set([
   'LICENSE',
   'lib',
@@ -118,6 +120,112 @@ async function copyPdfJs(buildPath: string) {
   await cp(pdfJsSource, destination, { recursive: true });
 }
 
+interface RuntimePackageManifest {
+  readonly name?: string;
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+}
+
+async function resolvePackageDirectory(
+  packageName: string,
+  fromDirectory: string,
+): Promise<string> {
+  const requireFromPackage = createRequire(join(fromDirectory, 'package.json'));
+
+  try {
+    return dirname(requireFromPackage.resolve(`${packageName}/package.json`));
+  } catch {
+    let candidate = dirname(requireFromPackage.resolve(packageName));
+
+    while (candidate !== dirname(candidate)) {
+      try {
+        const manifest = JSON.parse(
+          await readFile(join(candidate, 'package.json'), 'utf8'),
+        ) as RuntimePackageManifest;
+        if (manifest.name === packageName) return candidate;
+      } catch {
+        // Keep walking: package entry points are often nested below the root.
+      }
+      candidate = dirname(candidate);
+    }
+  }
+
+  throw new Error(`Unable to resolve runtime package ${packageName}`);
+}
+
+async function copyNodeRuntimePackage(
+  buildPath: string,
+  rootPackageName: string,
+): Promise<void> {
+  const pending = [
+    { packageName: rootPackageName, fromDirectory: resolve('.') },
+  ];
+  const packages = new Map<
+    string,
+    { readonly source: string; readonly relativePath: string }
+  >();
+
+  while (pending.length > 0) {
+    const next = pending.shift();
+    if (!next) break;
+    const source = await resolvePackageDirectory(
+      next.packageName,
+      next.fromDirectory,
+    );
+    if (packages.has(source)) continue;
+
+    const relativePath = relative(nodeModulesSource, source);
+    if (
+      !relativePath ||
+      isAbsolute(relativePath) ||
+      relativePath === '..' ||
+      relativePath.startsWith(`..${sep}`)
+    ) {
+      throw new Error(
+        `Runtime package resolved outside node_modules: ${next.packageName}`,
+      );
+    }
+
+    const manifest = JSON.parse(
+      await readFile(join(source, 'package.json'), 'utf8'),
+    ) as RuntimePackageManifest;
+    packages.set(source, { source, relativePath });
+    const dependencyNames = Object.keys({
+      ...manifest.dependencies,
+      ...manifest.optionalDependencies,
+    });
+    pending.push(
+      ...dependencyNames.map((packageName) => ({
+        packageName,
+        fromDirectory: source,
+      })),
+    );
+  }
+
+  const orderedPackages = [...packages.values()].sort(
+    (left, right) =>
+      left.relativePath.split(sep).length -
+      right.relativePath.split(sep).length,
+  );
+  for (const runtimePackage of orderedPackages) {
+    const destination = join(
+      buildPath,
+      'node_modules',
+      runtimePackage.relativePath,
+    );
+    await mkdir(dirname(destination), { recursive: true });
+    await cp(runtimePackage.source, destination, {
+      recursive: true,
+      filter: (sourcePath) => {
+        const nestedPath = relative(runtimePackage.source, sourcePath);
+        return (
+          !nestedPath || nestedPath.split(sep)[0] !== 'node_modules'
+        );
+      },
+    });
+  }
+}
+
 async function copyCodexRuntime(
   buildPath: string,
   platform: string,
@@ -165,6 +273,7 @@ const config: ForgeConfig = {
         copyBetterSqlite3(buildPath, platform, arch),
         copyNapiCanvas(buildPath, platform, arch),
         copyPdfJs(buildPath),
+        copyNodeRuntimePackage(buildPath, 'jsdom'),
         copyCodexRuntime(buildPath, platform, arch),
       ]);
     },

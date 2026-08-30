@@ -142,6 +142,7 @@ function createGenerationRequest(
     toolRequirements: [],
     skills: [],
     mcpServers: [],
+    assetReferences: {},
     workspaces: {
       primary: {
         key: 'generation-mindmap',

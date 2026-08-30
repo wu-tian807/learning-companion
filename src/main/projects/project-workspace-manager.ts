@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
 import {
   access,
+  chmod,
   copyFile,
   link,
   lstat,
@@ -124,6 +125,7 @@ export interface ProjectWorkspaceManagerApi {
 
 export interface ProjectWorkspaceManagerDependencies {
   readonly access: typeof access;
+  readonly chmod: typeof chmod;
   readonly copyFile: typeof copyFile;
   readonly link: typeof link;
   readonly lstat: typeof lstat;
@@ -146,6 +148,7 @@ const defaultDependencies: Omit<
   'fileDialogLastDirectoryCache'
 > = {
   access,
+  chmod,
   copyFile,
   link,
   lstat,
@@ -657,6 +660,7 @@ export class ProjectWorkspaceManager
         temporaryPath,
         constants.COPYFILE_EXCL,
       );
+      await this.dependencies.chmod(temporaryPath, 0o600);
       await this.dependencies.link(temporaryPath, destinationPath);
       await this.dependencies.rm(temporaryPath, { force: true });
 

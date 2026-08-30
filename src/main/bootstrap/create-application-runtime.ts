@@ -149,29 +149,10 @@ export async function createApplicationRuntime({
     );
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
-    registerMainWorkbenchAgentFunctionTools({
-      functionTools: agentFunctionTools,
-    });
     const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
     const agentSkills = new AgentSkillService(agentCapabilityPaths.skillsPath);
     const agentMcpServers = new AgentMcpService(agentCapabilityPaths.mcpPath);
     await Promise.all([agentSkills.initialize(), agentMcpServers.initialize()]);
-    agentProviderService = createAgentProviderService(
-      settingsRepository,
-      agentProviderSecrets,
-      codexRuntimeService,
-      (environment) =>
-        createCodexRuntime({
-          codexHomePath,
-          isPackaged,
-          resourcesPath,
-          environment,
-        }),
-      agentSessionService,
-      agentFunctionTools,
-      agentSkills,
-      agentMcpServers,
-    );
     const artifactRegistry = new AssetArtifactRegistry();
     registerMainWorkbenchArtifacts({
       artifacts: artifactRegistry,
@@ -253,6 +234,27 @@ export async function createApplicationRuntime({
       databaseContext,
     );
     const workbenchEvents = new WorkbenchEventBus();
+    registerMainWorkbenchAgentFunctionTools({
+      functionTools: agentFunctionTools,
+      assets: assetService,
+      recoveryDirectory: appPaths.recoveryDirectory,
+    });
+    agentProviderService = createAgentProviderService(
+      settingsRepository,
+      agentProviderSecrets,
+      codexRuntimeService,
+      (environment) =>
+        createCodexRuntime({
+          codexHomePath,
+          isPackaged,
+          resourcesPath,
+          environment,
+        }),
+      agentSessionService,
+      agentFunctionTools,
+      agentSkills,
+      agentMcpServers,
+    );
     const generationTaskDatabase = new GenerationTaskDatabase(databaseContext);
     const generationTaskDefinitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
