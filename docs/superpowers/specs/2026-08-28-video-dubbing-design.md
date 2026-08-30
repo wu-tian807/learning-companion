@@ -110,6 +110,8 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 - 模型下载约 5.07 GB，其中说话人模型新增约 29.8 MB；所有资源都有固定大小和 SHA-256；
 - 只有安装状态检查确认组件可用后，兼容的 Audio/Video Workbench 才会在后台预热；未安装、平台不支持或已经恢复完整配音 Artifact 时不准备 Python、不启动 Worker；
 - 首次成功预热或生成时，在同一个 External Library 根目录准备隔离 Python 3.12、PyTorch CUDA、VoxCPM 与 sherpa-onnx 环境；缓存也全部留在该根目录；
+- Windows 首次安装从阿里云 PyTorch cu128 镜像获取固定的 `torch 2.8.0+cu128` 与 `torchaudio 2.8.0+cu128`，减少国内网络访问官方 PyTorch wheel 源的等待；其他依赖来源不在本次调整范围；
+- 固定资源下载与 Python/CUDA 环境准备共用一条单调进度：前者使用真实下载字节，后者按 `.staging` 环境、`.downloads/.setup` 缓存和受控临时目录的已写入文件大小估算；安装中的估算值封顶但不倒退，完成后再切换为可用状态；
 - Audio/Video 的所有打开会话共享一个 VoxCPM2 resolver 和一个模型进程，每个会话成对 retain/release，避免重复加载；
 - 空闲预热模型最多驻留 5 分钟；最后一个兼容 Workbench 关闭后保留 30 秒宽限，期间重新打开会取消旧卸载，避免切换页面反复冷启动；
 - 正在执行的配音任务不因普通 Workbench 关闭而中止，任务完成后释放一次性 Worker；应用退出则显式中止并等待模型进程和临时 Session 清理完成；

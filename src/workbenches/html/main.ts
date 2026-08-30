@@ -2,7 +2,6 @@ import type { ContentResourceServiceApi } from '../../main/content/content-resou
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { SandboxFrameScriptExecutor } from '../../main/workbench/interaction/sandbox-frame-script-executor';
-import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type {
   JsonValue,
   WorkbenchCommandResult,
@@ -14,17 +13,7 @@ import {
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
 } from '../../shared/workbench/facilities/core-facilities';
 import {
-  createHtmlConversationIndex,
-  HTML_CONVERSATION_DATA_KEY,
-  isHtmlConversationEntry,
-  isHtmlConversationIndex,
-  normalizeHtmlConversationIndex,
-  removeHtmlConversationEntry,
-  saveHtmlConversationEntry,
-} from './conversation/conversation-protocol';
-import {
   htmlFrameCommands,
-  htmlConversationCommands,
   htmlWorkbenchManifest,
 } from './shared';
 import { createHtmlMainFacilityAdapters } from './main-facility-adapters';
@@ -66,32 +55,6 @@ function anchorFrameTarget(target: {
     : undefined;
 }
 
-function encodeConversationIndex(index: unknown): Uint8Array {
-  if (!isHtmlConversationIndex(index)) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-  return new TextEncoder().encode(JSON.stringify(index));
-}
-
-function decodeConversationIndex(
-  data: Uint8Array,
-): ReturnType<typeof createHtmlConversationIndex> {
-  try {
-    const value: unknown = JSON.parse(
-      new TextDecoder('utf-8', { fatal: true }).decode(data),
-    );
-
-    const normalized = normalizeHtmlConversationIndex(value);
-    if (normalized) {
-      return normalized;
-    }
-  } catch {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-
-  throw new AppError('DATA_INTEGRITY_ERROR');
-}
-
 export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   readonly manifest = htmlWorkbenchManifest;
   readonly facilityAdapters = createHtmlMainFacilityAdapters();
@@ -99,7 +62,6 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
 
   constructor(
     private readonly resourceService: ContentResourceServiceApi,
-    private readonly stateDataDatabase: WorkbenchStateDataDatabaseApi,
     private readonly frameScriptExecutor: SandboxFrameScriptExecutor,
   ) {}
 
@@ -198,83 +160,6 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
       return createResult(result);
-    }
-
-    const assetId = context.asset.id;
-
-    if (command.type === htmlConversationCommands.list) {
-      const record = await this.stateDataDatabase.get(
-        assetId,
-        htmlWorkbenchManifest.id,
-        HTML_CONVERSATION_DATA_KEY,
-      );
-      const index = record
-        ? decodeConversationIndex(record.data)
-        : createHtmlConversationIndex();
-
-      return createResult({ entries: index.entries });
-    }
-
-    if (command.type === htmlConversationCommands.save) {
-      const entry = (command.payload as { readonly entry?: unknown } | undefined)
-        ?.entry;
-
-      if (!isHtmlConversationEntry(entry)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
-      const record = await this.stateDataDatabase.get(
-        assetId,
-        htmlWorkbenchManifest.id,
-        HTML_CONVERSATION_DATA_KEY,
-      );
-      const index = record
-        ? decodeConversationIndex(record.data)
-        : createHtmlConversationIndex();
-      const next = saveHtmlConversationEntry(index, entry);
-
-      await this.stateDataDatabase.save({
-        assetId,
-        workbenchId: htmlWorkbenchManifest.id,
-        dataKey: HTML_CONVERSATION_DATA_KEY,
-        data: encodeConversationIndex(next),
-        updatedTime: Math.max(
-          entry.updatedTime,
-          ...next.entries.map((candidate) => candidate.updatedTime),
-        ),
-      });
-
-      return createResult({ entries: next.entries });
-    }
-
-    if (command.type === htmlConversationCommands.remove) {
-      const entryId = (
-        command.payload as { readonly entryId?: unknown } | undefined
-      )?.entryId;
-
-      if (typeof entryId !== 'string' || entryId.trim().length === 0) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
-      const record = await this.stateDataDatabase.get(
-        assetId,
-        htmlWorkbenchManifest.id,
-        HTML_CONVERSATION_DATA_KEY,
-      );
-      const index = record
-        ? decodeConversationIndex(record.data)
-        : createHtmlConversationIndex();
-      const next = removeHtmlConversationEntry(index, entryId);
-
-      await this.stateDataDatabase.save({
-        assetId,
-        workbenchId: htmlWorkbenchManifest.id,
-        dataKey: HTML_CONVERSATION_DATA_KEY,
-        data: encodeConversationIndex(next),
-        updatedTime: Date.now(),
-      });
-
-      return createResult({ entries: next.entries });
     }
 
     throw new AppError('FEATURE_NOT_SUPPORTED');

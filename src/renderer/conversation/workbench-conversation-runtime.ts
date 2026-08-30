@@ -13,9 +13,6 @@ interface RegisteredContribution {
 
 export interface WorkbenchConversationScope {
   readonly projectId: string;
-  readonly assetId: string;
-  readonly contributionId: string;
-  readonly conversationPartitionKey?: string;
 }
 
 export interface WorkbenchConversationPendingStart {
@@ -91,19 +88,11 @@ export interface ResolvedWorkbenchConversationStart {
 }
 
 function conversationScopeKey(scope: WorkbenchConversationScope): string {
-  const identityParts = [scope.projectId, scope.assetId, scope.contributionId]
-    .map((part) => part.trim());
-  if (
-    identityParts.some((part) => part.length === 0) ||
-    (scope.conversationPartitionKey !== undefined &&
-      scope.conversationPartitionKey.trim().length === 0)
-  ) {
+  const projectId = scope.projectId.trim();
+  if (!projectId) {
     throw new Error('Workbench Conversation scope 无效');
   }
-  return JSON.stringify([
-    ...identityParts,
-    scope.conversationPartitionKey ?? null,
-  ]);
+  return projectId;
 }
 
 export interface OpenWorkbenchConversationInput {
@@ -436,16 +425,15 @@ export class WorkbenchConversationRuntime {
       throw new Error('Workbench Conversation contribution 无效');
     }
     const token = Symbol(normalizedOwnerId);
-    const ownerChanged = this.snapshot.active?.ownerId !== normalizedOwnerId;
+    const activeOwnerId = this.snapshot.active?.ownerId;
     this.contributions.delete(normalizedOwnerId);
     this.contributions.set(normalizedOwnerId, { token, contribution });
-    this.update({
-      ...this.snapshot,
-      active: { ownerId: normalizedOwnerId, contribution },
-      panelOpen: ownerChanged ? false : this.snapshot.panelOpen,
-      busy: ownerChanged ? false : this.snapshot.busy,
-      ...(ownerChanged ? { launchRequest: undefined } : {}),
-    });
+    if (!activeOwnerId || activeOwnerId === normalizedOwnerId) {
+      this.update({
+        ...this.snapshot,
+        active: { ownerId: normalizedOwnerId, contribution },
+      });
+    }
 
     return () => {
       queueMicrotask(() => {
@@ -453,7 +441,9 @@ export class WorkbenchConversationRuntime {
         if (current?.token !== token) return;
         this.contributions.delete(normalizedOwnerId);
         if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
-        const fallback = [...this.contributions.entries()].at(-1);
+        const fallback = this.contributions.entries().next().value as
+          | [string, RegisteredContribution]
+          | undefined;
         this.update({
           panelOpen: false,
           busy: false,

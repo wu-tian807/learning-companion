@@ -1,6 +1,8 @@
 import {
   access,
+  lstat,
   mkdir,
+  readdir,
   readFile,
   rm,
   writeFile,
@@ -13,10 +15,15 @@ import {
   type ExternalCommandRunnerApi,
 } from '../../../main/external-libraries/external-command-runner';
 import type { ExternalLibraryRuntimeSetup } from '../../../main/external-libraries/external-library-runtime-setup';
+import type { ExternalLibraryProgress } from '../../../shared/external-libraries';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
 
 export const VOXCPM2_RUNTIME_ENVIRONMENT_VERSION = 2;
+export const VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES = 13_000_000_000;
 const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+const SETUP_PROGRESS_POLL_INTERVAL_MS = 5_000;
+const PYTORCH_CUDA_INDEX_URL =
+  'https://mirrors.aliyun.com/pytorch-wheels/cu128';
 const MANAGED_PYTHON_DIRECTORY =
   /^cpython-3\.12\.\d+-windows-x86_64-none$/u;
 
@@ -27,11 +34,45 @@ interface VoxCpm2RuntimeSetupDependencies {
   readonly writeText: typeof writeFile;
   readonly makeDirectory: typeof mkdir;
   readonly fileAccess: typeof access;
+  readonly measureDirectories: (
+    paths: readonly string[],
+  ) => Promise<number>;
+  readonly progressPollIntervalMs: number;
 }
 
 export interface VoxCpm2ManagedEnvironment {
   readonly pythonPath: string;
   readonly environment: NodeJS.ProcessEnv;
+}
+
+async function pathByteLength(path: string): Promise<number> {
+  let stats;
+  try {
+    stats = await lstat(path);
+  } catch (error) {
+    if ((error as { readonly code?: unknown }).code === 'ENOENT') {
+      return 0;
+    }
+    throw error;
+  }
+
+  if (stats.isSymbolicLink()) return 0;
+  if (stats.isFile()) return stats.size;
+  if (!stats.isDirectory()) return 0;
+
+  const sizes = await Promise.all(
+    (await readdir(path)).map((entry) =>
+      pathByteLength(join(path, entry)),
+    ),
+  );
+  return sizes.reduce((total, size) => total + size, 0);
+}
+
+async function measureDirectories(
+  paths: readonly string[],
+): Promise<number> {
+  const sizes = await Promise.all(paths.map(pathByteLength));
+  return sizes.reduce((total, size) => total + size, 0);
 }
 
 function runtimePaths(root: string) {
@@ -164,8 +205,16 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
       writeText: dependencies.writeText ?? writeFile,
       makeDirectory: dependencies.makeDirectory ?? mkdir,
       fileAccess: dependencies.fileAccess ?? access,
+      measureDirectories:
+        dependencies.measureDirectories ?? measureDirectories,
+      progressPollIntervalMs:
+        dependencies.progressPollIntervalMs ??
+        SETUP_PROGRESS_POLL_INTERVAL_MS,
     };
   }
+
+  readonly expectedSetupBytes =
+    VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES;
 
   isReady(runtimeDirectory: string): Promise<boolean> {
     return isVoxCpm2RuntimeReady(
@@ -179,7 +228,10 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
     runtimeDirectory: string,
     setupCacheDirectory: string,
     signal: AbortSignal,
-    reportStatus: (statusDetail: string) => void,
+    reportStatus: (
+      statusDetail: string,
+      progress?: ExternalLibraryProgress,
+    ) => void,
   ): Promise<void> {
     if (this.dependencies.platform !== 'win32') {
       throw new AppError('FEATURE_NOT_SUPPORTED');
@@ -217,11 +269,57 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
       TEMP: setupTemporaryDirectory,
       TMP: setupTemporaryDirectory,
     };
+    const measuredPaths = [
+      environmentRoot,
+      join(runtimeDirectory, 'managed-python'),
+      setupCacheDirectory,
+      setupTemporaryDirectory,
+    ] as const;
+    let currentStatusDetail = '正在准备 Python 运行环境';
+    let maximumMeasuredBytes = 0;
+    let activeMeasurement: Promise<void> | undefined;
+    const currentProgress = (): ExternalLibraryProgress => ({
+      completedBytes: Math.min(
+        maximumMeasuredBytes,
+        this.expectedSetupBytes - 1,
+      ),
+      totalBytes: this.expectedSetupBytes,
+    });
+    const sampleProgress = (): Promise<void> => {
+      if (activeMeasurement) return activeMeasurement;
+      const measurement = this.dependencies
+        .measureDirectories(measuredPaths)
+        .then((measuredBytes) => {
+          if (Number.isSafeInteger(measuredBytes) && measuredBytes >= 0) {
+            maximumMeasuredBytes = Math.max(
+              maximumMeasuredBytes,
+              measuredBytes,
+            );
+          }
+          reportStatus(currentStatusDetail, currentProgress());
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (activeMeasurement === measurement) {
+            activeMeasurement = undefined;
+          }
+        });
+      activeMeasurement = measurement;
+      return measurement;
+    };
+    const updateStatus = async (statusDetail: string) => {
+      currentStatusDetail = statusDetail;
+      reportStatus(statusDetail, currentProgress());
+      await sampleProgress();
+    };
 
     await rm(markerPath, { force: true });
+    const progressTimer = setInterval(() => {
+      void sampleProgress();
+    }, this.dependencies.progressPollIntervalMs);
 
     try {
-      reportStatus('正在准备 Python 运行环境');
+      await updateStatus('正在准备 Python 运行环境');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'venv',
         environmentRoot,
@@ -231,8 +329,9 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'only-managed',
         '--clear',
       ]);
-      reportStatus(
-        '正在下载并安装 PyTorch/CUDA 运行环境，首次安装可能需要数分钟',
+      await sampleProgress();
+      await updateStatus(
+        '正在下载并安装 PyTorch/CUDA 运行环境（按已写入文件估算）',
       );
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
@@ -242,9 +341,10 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'torch==2.8.0+cu128',
         'torchaudio==2.8.0+cu128',
         '--index-url',
-        'https://download.pytorch.org/whl/cu128',
+        PYTORCH_CUDA_INDEX_URL,
       ]);
-      reportStatus('正在安装 VoxCPM2 配音运行依赖');
+      await sampleProgress();
+      await updateStatus('正在安装 VoxCPM2 配音运行依赖');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -259,7 +359,8 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'sherpa-onnx==1.13.6',
         'soundfile==0.13.1',
       ]);
-      reportStatus('正在安装 GPU 人声处理运行依赖');
+      await sampleProgress();
+      await updateStatus('正在安装 GPU 人声处理运行依赖');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -271,14 +372,18 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         '--find-links',
         'https://k2-fsa.github.io/sherpa/onnx/cuda.html',
       ]);
-      reportStatus('正在验证 NVIDIA GPU 配音环境');
+      await sampleProgress();
+      await updateStatus('正在验证 NVIDIA GPU 配音环境');
       await this.verifyRuntime(
         runtimeDirectory,
         pythonPath,
         environment,
         signal,
       );
+      await sampleProgress();
     } finally {
+      clearInterval(progressTimer);
+      await activeMeasurement;
       await rm(setupTemporaryDirectory, {
         recursive: true,
         force: true,
@@ -291,7 +396,10 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
   async finalizeInstallation(
     runtimeDirectory: string,
     signal: AbortSignal,
-    reportStatus: (statusDetail: string) => void,
+    reportStatus: (
+      statusDetail: string,
+      progress?: ExternalLibraryProgress,
+    ) => void,
   ): Promise<void> {
     if (this.dependencies.platform !== 'win32') {
       throw new AppError('FEATURE_NOT_SUPPORTED');

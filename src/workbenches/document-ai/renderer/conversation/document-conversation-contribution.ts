@@ -1,12 +1,7 @@
 import type {
   ConversationAnswerActionPresentation,
-  ConversationHistoryStore,
   WorkbenchConversationContribution,
 } from '../../../../renderer/conversation/conversation-contracts';
-import {
-  createConversationHistoryKey,
-  createLocalConversationHistoryStore,
-} from '../../../../renderer/conversation/conversation-history-store';
 import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
@@ -24,25 +19,11 @@ export {
   type DocumentConversationContext,
 } from '../../document-conversation-context';
 
-export function createDocumentConversationHistoryStore(
-  projectId: string,
-  assetId: string,
-  contributionId: string,
-): ConversationHistoryStore {
-  return createLocalConversationHistoryStore({
-    key: createConversationHistoryKey({ contributionId, projectId, assetId }),
-    legacyMessageArrayKeys: [
-      `learning-companion:document-ai-history:v1:${encodeURIComponent(projectId)}:${encodeURIComponent(assetId)}`,
-    ],
-  });
-}
-
 interface DocumentConversationContributionBaseInput {
   readonly projectId: string;
   readonly assetId: string;
   readonly workbenchId: string;
   readonly contributionId: string;
-  readonly historyStore: ConversationHistoryStore;
   readonly title?: string;
   readonly emptyLabel?: string;
   readonly contextLabel?: string;
@@ -132,13 +113,12 @@ export function createDocumentConversationContribution(
     id: input.contributionId,
     workbenchId: input.workbenchId,
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
-    includeSourceAssetReference: true,
+    sourceAssetMode: 'reference',
     title: input.title ?? '资料问答',
     emptyLabel:
       input.emptyLabel ??
       '选择资料中的内容后开始提问，也可以直接针对整份资料提问。',
     inputPlaceholder: '输入问题…（Enter 发送 / Shift+Enter 换行）',
-    historyStore: input.historyStore,
     isContext: isDocumentConversationContext,
     describeContext(context) {
       if (!isDocumentConversationContext(context)) {

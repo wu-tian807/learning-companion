@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ExternalLibraryProgress } from '../../shared/external-libraries';
 import type { ExternalLibraryDefinition } from './external-library-definition';
 import {
   ExternalLibraryDownloader,
@@ -128,7 +129,10 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
         runtimeDirectory: string,
         setupCacheDirectory: string,
         _signal: AbortSignal,
-        reportStatus: (statusDetail: string) => void,
+        reportStatus: (
+          statusDetail: string,
+          progress?: ExternalLibraryProgress,
+        ) => void,
       ) => {
         runtimeSetupCacheDirectory = setupCacheDirectory;
         expect(setupCacheDirectory).toContain(
@@ -136,7 +140,10 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
         );
         await mkdir(setupCacheDirectory, { recursive: true });
         await writeFile(join(setupCacheDirectory, 'cache.bin'), 'cache');
-        reportStatus('Installing test runtime');
+        reportStatus('Installing test runtime', {
+          completedBytes: 8,
+          totalBytes: 20,
+        });
         const readyPath = join(
           runtimeDirectory,
           'environment',
@@ -151,7 +158,10 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       async (
         runtimeDirectory: string,
         _signal: AbortSignal,
-        reportStatus: (statusDetail: string) => void,
+        reportStatus: (
+          statusDetail: string,
+          progress?: ExternalLibraryProgress,
+        ) => void,
       ) => {
         if (failFinalization) throw new Error('finalization failed');
         await access(
@@ -166,6 +176,7 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     );
     runtimeSetups.register({
       libraryId: definition.id,
+      expectedSetupBytes: 20,
       prepare: prepareRuntime,
       finalizeInstallation: finalizeRuntime,
       async isReady(runtimeDirectory) {
@@ -204,7 +215,7 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       onStage(stage) {
         stages.push({
           status: stage.status,
-          ...(stage.status === 'downloading'
+          ...(stage.progress
             ? {
                 completedBytes: stage.progress.completedBytes,
                 totalBytes: stage.progress.totalBytes,
@@ -225,17 +236,21 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     expect(stages).toContainEqual({
       status: 'downloading',
       completedBytes: 11,
-      totalBytes: 11,
+      totalBytes: 31,
     });
     expect(stages.slice(-4)).toEqual([
-      { status: 'verifying' },
-      { status: 'installing' },
+      { status: 'verifying', completedBytes: 11, totalBytes: 31 },
+      { status: 'installing', completedBytes: 11, totalBytes: 31 },
       {
         status: 'installing',
+        completedBytes: 19,
+        totalBytes: 31,
         statusDetail: 'Installing test runtime',
       },
       {
         status: 'installing',
+        completedBytes: 19,
+        totalBytes: 31,
         statusDetail: 'Finalizing test runtime',
       },
     ]);
@@ -258,16 +273,23 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     );
 
     failFinalization = true;
+    const disposeQuiescence = vi.fn();
+    const quiesce = vi.fn(async () => ({
+      dispose: disposeQuiescence,
+    }));
     await expect(
       workflow.run({
         rootPath,
         definition,
         packageDefinition,
         replaceExisting: true,
+        quiesce,
         signal: new AbortController().signal,
         onStage: () => undefined,
       }),
     ).rejects.toThrow('finalization failed');
+    expect(quiesce).toHaveBeenCalledOnce();
+    expect(disposeQuiescence).toHaveBeenCalledOnce();
     const installation = new ExternalLibraryPathManager()
       .resolveInstallationPaths(rootPath, definition, packageDefinition)
       .installationDirectory;

@@ -21,8 +21,14 @@ import type {
   SubtitleSourceTrackV1,
   SubtitleTranslationTrackV1,
 } from '../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
-import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
+import type {
+  MediaSubtitleRuntime,
+  MediaSubtitleRuntimeResolverApi,
+} from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import type {
+  VoxCpm2DubbingRuntime,
+  VoxCpm2DubbingRuntimeResolverApi,
+} from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
   VOXCPM2_DUBBING_PRODUCER_ID,
@@ -116,6 +122,61 @@ function request(directory: string): AssetArtifactRequest {
   };
 }
 
+function createSubtitleRuntime(
+  directory: string,
+): MediaSubtitleRuntimeResolverApi {
+  const runtime: MediaSubtitleRuntime = {
+    decoder: {
+      ffmpegPath: resolve(directory, 'ffmpeg.exe'),
+      ffprobePath: resolve(directory, 'ffprobe.exe'),
+    },
+    transcription: {
+      kind: 'sensevoice',
+      profile: 'cpu',
+      executablePath: resolve(directory, 'sensevoice.exe'),
+      vadExecutablePath: resolve(directory, 'vad.exe'),
+      modelPath: resolve(directory, 'sensevoice.gguf'),
+      vadModelPath: resolve(directory, 'vad.gguf'),
+    },
+  };
+  return {
+    requireMediaDecoder: vi.fn(async () => runtime.decoder),
+    requireTranscription: vi.fn(async () => runtime.transcription),
+    async withRuntime(signal, operation) {
+      return operation(
+        runtime,
+        signal ?? new AbortController().signal,
+      );
+    },
+  };
+}
+
+function createDubbingRuntime(
+  directory: string,
+  runVoiceJob: VoxCpm2DubbingRuntimeResolverApi['runVoiceJob'],
+): VoxCpm2DubbingRuntimeResolverApi {
+  const runtime: VoxCpm2DubbingRuntime = {
+    pythonPath: resolve(directory, 'python.exe'),
+    modelPath: resolve(directory, 'VoxCPM2'),
+    separationModelPath: resolve(directory, 'UVR.onnx'),
+    speakerSegmentationModelPath: resolve(directory, 'segmentation.onnx'),
+    speakerEmbeddingModelPath: resolve(directory, 'embedding.onnx'),
+    workerCachePath: resolve(directory, 'worker-cache'),
+    environment: {},
+  };
+  return {
+    requireInstalledBundle: vi.fn(async () => undefined),
+    requireRuntime: vi.fn(async () => runtime),
+    async withRuntime(signal, operation) {
+      return operation(runtime, signal);
+    },
+    warmup: vi.fn(async () => undefined),
+    releaseWarmup: vi.fn(async () => undefined),
+    shutdown: vi.fn(async () => undefined),
+    runVoiceJob,
+  };
+}
+
 describe('VoxCpm2DubbingProducer', () => {
   it('runs separation, reverse VoxCPM2 synthesis and final background mixing', async () => {
     const directory = await createDirectory();
@@ -191,27 +252,10 @@ describe('VoxCpm2DubbingProducer', () => {
         } satisfies ResolvedAssetArtifact;
       }),
     } as AssetArtifactServiceApi;
-    const subtitleRuntime = {
-      requireMediaDecoder: vi.fn(async () => ({
-        ffmpegPath: resolve(directory, 'ffmpeg.exe'),
-        ffprobePath: resolve(directory, 'ffprobe.exe'),
-      })),
-    } as unknown as MediaSubtitleRuntimeResolverApi;
-    const dubbingRuntime = {
-      requireInstalledBundle: vi.fn(async () => undefined),
-      requireRuntime: vi.fn(async () => ({
-        pythonPath: resolve(directory, 'python.exe'),
-        modelPath: resolve(directory, 'VoxCPM2'),
-        separationModelPath: resolve(directory, 'UVR.onnx'),
-        speakerSegmentationModelPath: resolve(directory, 'segmentation.onnx'),
-        speakerEmbeddingModelPath: resolve(directory, 'embedding.onnx'),
-        workerCachePath: resolve(directory, 'worker-cache'),
-        environment: {},
-      })),
-      warmup: vi.fn(async () => undefined),
-      releaseWarmup: vi.fn(async () => undefined),
-      shutdown: vi.fn(async () => undefined),
-      runVoiceJob: vi.fn(async (job) => {
+    const subtitleRuntime = createSubtitleRuntime(directory);
+    const dubbingRuntime = createDubbingRuntime(
+      directory,
+      vi.fn(async (job) => {
         await mkdir(job.outputDirectory, { recursive: true });
         await Promise.all([
           writeFile(join(job.outputDirectory, 'voice.wav'), 'voice'),
@@ -228,7 +272,7 @@ describe('VoxCpm2DubbingProducer', () => {
           ),
         ]);
       }),
-    } satisfies VoxCpm2DubbingRuntimeResolverApi;
+    );
 
     const artifact = await producer.materialize(
       artifacts,
@@ -498,29 +542,9 @@ describe('VoxCpm2DubbingProducer', () => {
         throw new Error('unreachable');
       }),
     } as unknown as AssetArtifactServiceApi;
-    const subtitleRuntime = {
-      requireMediaDecoder: vi.fn(async () => ({
-        ffmpegPath: resolve(directory, 'ffmpeg.exe'),
-        ffprobePath: resolve(directory, 'ffprobe.exe'),
-      })),
-    } as unknown as MediaSubtitleRuntimeResolverApi;
+    const subtitleRuntime = createSubtitleRuntime(directory);
     const runVoiceJob = vi.fn(async () => undefined);
-    const dubbingRuntime = {
-      requireInstalledBundle: vi.fn(async () => undefined),
-      requireRuntime: vi.fn(async () => ({
-        pythonPath: resolve(directory, 'python.exe'),
-        modelPath: resolve(directory, 'VoxCPM2'),
-        separationModelPath: resolve(directory, 'UVR.onnx'),
-        speakerSegmentationModelPath: resolve(directory, 'segmentation.onnx'),
-        speakerEmbeddingModelPath: resolve(directory, 'embedding.onnx'),
-        workerCachePath: resolve(directory, 'worker-cache'),
-        environment: {},
-      })),
-      warmup: vi.fn(async () => undefined),
-      releaseWarmup: vi.fn(async () => undefined),
-      shutdown: vi.fn(async () => undefined),
-      runVoiceJob,
-    } satisfies VoxCpm2DubbingRuntimeResolverApi;
+    const dubbingRuntime = createDubbingRuntime(directory, runVoiceJob);
 
     await expect(
       producer.materialize(

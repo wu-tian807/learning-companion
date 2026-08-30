@@ -54,6 +54,8 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
   async prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
   ) {
+    const assetId = context.instruction.assetId;
+    if (!assetId) throw new AppError('DATA_INTEGRITY_ERROR');
     const selection = context.instruction.context;
     if (selection === undefined) {
       return Object.freeze({
@@ -70,7 +72,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    const asset = this.assets.get(context.instruction.assetId);
+    const asset = this.assets.get(assetId);
     if (
       !asset ||
       asset.projectId !== context.projectId ||
@@ -95,6 +97,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
       }
       const project = this.projects.get(context.projectId);
       if (!project) throw new AppError('PROJECT_NOT_FOUND');
+      const sourcePath = resolved.location.absolutePath;
 
       const region = selection.target.anchorPayload;
       const subtitleContextPromise = this.subtitleTracks
@@ -132,32 +135,35 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
       );
       await mkdir(inputDirectory, { recursive: true });
       const framePath = join(inputDirectory, 'frame.png');
-      const decoder = await this.runtime.requireMediaDecoder();
-      await this.commands.run({
-        command: decoder.ffmpegPath,
-        args: [
-          '-nostdin',
-          '-hide_banner',
-          '-loglevel',
-          'error',
-          '-ss',
-          selection.target.anchorPayload.timeSeconds.toFixed(6),
-          '-i',
-          resolved.location.absolutePath,
-          '-map',
-          '0:v:0',
-          '-frames:v',
-          '1',
-          '-an',
-          '-sn',
-          '-dn',
-          '-y',
-          framePath,
-        ],
-        cwd: inputDirectory,
-        timeoutMs: FRAME_EXTRACTION_TIMEOUT_MS,
-        ...(context.signal ? { signal: context.signal } : {}),
-      });
+      await this.runtime.withRuntime(
+        context.signal,
+        ({ decoder }, usageSignal) =>
+          this.commands.run({
+            command: decoder.ffmpegPath,
+            args: [
+              '-nostdin',
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-ss',
+              selection.target.anchorPayload.timeSeconds.toFixed(6),
+              '-i',
+              sourcePath,
+              '-map',
+              '0:v:0',
+              '-frames:v',
+              '1',
+              '-an',
+              '-sn',
+              '-dn',
+              '-y',
+              framePath,
+            ],
+            cwd: inputDirectory,
+            timeoutMs: FRAME_EXTRACTION_TIMEOUT_MS,
+            signal: usageSignal,
+          }),
+      );
 
       context.signal?.throwIfAborted();
       context.reportStatus('正在准备完整画面、标框画面和局部放大图…');
@@ -232,11 +238,12 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
     answer: { readonly answer: string },
   ) {
+    const assetId = context.instruction.assetId;
     const selection = context.instruction.context;
-    if (!isVideoConversationContext(selection)) {
+    if (!assetId || !isVideoConversationContext(selection)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    const asset = this.assets.get(context.instruction.assetId);
+    const asset = this.assets.get(assetId);
     if (
       !asset ||
       asset.projectId !== context.projectId ||

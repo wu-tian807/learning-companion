@@ -16,10 +16,16 @@ export const mediaDubbingProducer = new VoxCpm2DubbingProducer(
 export const mediaDubbingSpeakerTrackProducer =
   new DubbingSpeakerTrackArtifactProducer();
 
-const runtimeResolvers = new WeakMap<
+const runtimeResolvers = new Map<
   ExternalLibraryServiceApi,
   VoxCpm2DubbingRuntimeResolver
 >();
+
+async function releaseMediaDubbingRuntimes(): Promise<void> {
+  await Promise.all(
+    [...runtimeResolvers.values()].map((runtime) => runtime.releaseRuntime()),
+  );
+}
 
 export function resolveMediaDubbingRuntime(
   externalLibraries: ExternalLibraryServiceApi,
@@ -33,8 +39,12 @@ export function resolveMediaDubbingRuntime(
 
 export const mediaDubbingMainFeature = Object.freeze({
   id: 'builtin.media-dubbing',
-  registerExternalLibraries({ libraries, runtimeSetups }): void {
+  registerExternalLibraries({ libraries, lifecycles, runtimeSetups }): void {
     libraries.register(mediaDubbingVoxCpm2Definition);
+    lifecycles.register({
+      libraryId: mediaDubbingVoxCpm2Definition.id,
+      release: releaseMediaDubbingRuntimes,
+    });
     runtimeSetups.register(new VoxCpm2RuntimeSetup());
   },
   registerArtifactProducers({ artifacts }): void {

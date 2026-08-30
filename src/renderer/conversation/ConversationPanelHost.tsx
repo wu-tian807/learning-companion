@@ -3,6 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { useConversationController } from './conversation-controller';
 import { ConversationPanel } from './ConversationPanel';
 import type {
+  ConversationHistoryStore,
   ConversationLaunchRequest,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
@@ -16,11 +17,15 @@ import type { WorkbenchConversationRuntime } from './workbench-conversation-runt
 export function ConversationPanelHost({
   projectId,
   assetId,
+  historyStore,
+  onClose,
   onOpenSettings,
   onError,
 }: {
   readonly projectId: string;
   readonly assetId: string | undefined;
+  readonly historyStore: ConversationHistoryStore;
+  readonly onClose?: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
@@ -28,25 +33,23 @@ export function ConversationPanelHost({
   const snapshot = useWorkbenchConversationSnapshot(runtime);
   const contribution = snapshot.active?.contribution;
 
-  if (!assetId || !contribution) return null;
+  if (!contribution) return null;
 
   return (
     <ActiveConversationPanel
-      key={JSON.stringify([
-        projectId,
-        assetId,
-        contribution.id,
-        contribution.conversationPartitionKey ?? null,
-      ])}
       projectId={projectId}
       assetId={assetId}
+      historyStore={historyStore}
       contribution={contribution}
       ownerId={snapshot.active.ownerId}
       runtime={runtime}
       open={snapshot.panelOpen}
       launchRequest={snapshot.launchRequest}
       onLaunchConsumed={(requestId) => runtime.consumeLaunchRequest(requestId)}
-      onClose={() => runtime.close()}
+      onClose={() => {
+        if (onClose) onClose();
+        else runtime.close();
+      }}
       onOpenSettings={onOpenSettings}
       onError={onError}
     />
@@ -56,6 +59,7 @@ export function ConversationPanelHost({
 function ActiveConversationPanel({
   projectId,
   assetId,
+  historyStore,
   contribution,
   ownerId,
   runtime,
@@ -67,7 +71,8 @@ function ActiveConversationPanel({
   onError,
 }: {
   readonly projectId: string;
-  readonly assetId: string;
+  readonly assetId: string | undefined;
+  readonly historyStore: ConversationHistoryStore;
   readonly contribution: WorkbenchConversationContribution;
   readonly ownerId: string;
   readonly runtime: WorkbenchConversationRuntime;
@@ -79,22 +84,8 @@ function ActiveConversationPanel({
   readonly onError?: (message: string) => void;
 }) {
   const conversationScope = useMemo(
-    () => ({
-      projectId,
-      assetId,
-      contributionId: contribution.id,
-      ...(contribution.conversationPartitionKey === undefined
-        ? {}
-        : {
-            conversationPartitionKey: contribution.conversationPartitionKey,
-          }),
-    }),
-    [
-      assetId,
-      contribution.conversationPartitionKey,
-      contribution.id,
-      projectId,
-    ],
+    () => ({ projectId }),
+    [projectId],
   );
   const currentConversationState = useWorkbenchCurrentConversationState(
     runtime,
@@ -105,6 +96,7 @@ function ActiveConversationPanel({
     projectId,
     assetId,
     contribution,
+    historyStore,
     initialConversation: currentConversationState?.conversation,
     currentConversationState,
     conversationRuntime: runtime,

@@ -17,6 +17,7 @@ import { AssetAssociationService } from '../asset-associations/asset-association
 import { AssetLinkDatabase } from '../asset-associations/asset-link-database';
 import { AssetReferenceDatabase } from '../asset-associations/asset-reference-database';
 import { AssetDatabase } from '../assets/asset-database';
+import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
 import { AssetFolderDatabase } from '../assets/asset-folder-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
@@ -27,6 +28,8 @@ import { AttachmentService } from '../attachments/attachment-service';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
 import { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
+import { ProjectConversationDatabase } from '../conversation/project-conversation-database';
+import { ProjectConversationService } from '../conversation/project-conversation-service';
 import {
   registerContentProtocol,
   removeContentProtocol,
@@ -70,6 +73,7 @@ import {
   type MainWorkbenchRuntime,
 } from '../../workbenches/catalog/register-main-workbenches';
 import { UnsupportedWorkbenchProvider } from '../../workbenches/unsupported/main';
+import { createAssetAggregateMutationSources } from './asset-aggregate-mutation-sources';
 import { ApplicationRuntime } from './application-runtime';
 import { createAgentProviderService } from './create-agent-provider-service';
 import { createCodexRuntime } from './create-codex-runtime';
@@ -99,6 +103,7 @@ export async function createApplicationRuntime({
   let workbenchSessionService: WorkbenchSessionService | undefined;
   let generationTaskService: GenerationTaskService | undefined;
   let mainWorkbenchFeatures: MainWorkbenchRuntime | undefined;
+  let disposeAssetAggregateTracking: () => void = () => undefined;
   let disposeIpc: () => void = () => undefined;
   let contentProtocolRegistered = false;
 
@@ -138,6 +143,10 @@ export async function createApplicationRuntime({
     );
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
+    const projectConversationService = new ProjectConversationService(
+      new ProjectConversationDatabase(databaseContext),
+      projectDatabase,
+    );
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
     registerMainWorkbenchAgentFunctionTools({
@@ -215,13 +224,15 @@ export async function createApplicationRuntime({
         deletionObserver: associationService,
       },
     );
-    attachmentService.subscribe(({ attachment }) => {
-      assetService.touch(
-        attachment.projectId,
-        attachment.assetId,
-        attachment.updatedTime,
-      );
-    });
+    disposeAssetAggregateTracking = trackAssetAggregateMutations(
+      assetService,
+      createAssetAggregateMutationSources({
+        associations: associationService,
+        artifacts: artifactService,
+        assets: assetDatabase,
+        attachments: attachmentService,
+      }),
+    );
     const workbenchFacilityRegistry =
       createCoreWorkbenchFacilityDefinitionRegistry();
     const transportBindingRegistry = new WorkbenchTransportBindingRegistry(
@@ -313,6 +324,7 @@ export async function createApplicationRuntime({
       externalLibraryService,
       generationTaskService,
       projectService,
+      projectConversationService,
       settingsRepository,
       workbenchSessionService,
       workbenchEvents,
@@ -338,8 +350,10 @@ export async function createApplicationRuntime({
       shutdownWorkbenchFeatures: () =>
         mainWorkbenchFeatures?.shutdown?.() ?? Promise.resolve(),
       disposeWorkbenchFeatures: () => mainWorkbenchFeatures?.dispose(),
+      disposeAssetAggregateTracking,
     });
   } catch (error) {
+    disposeAssetAggregateTracking();
     await Promise.allSettled([
       workbenchSessionService?.closeActive() ?? Promise.resolve(),
       Promise.resolve(generationTaskService?.unloadProject()),

@@ -13,11 +13,6 @@ function contribution(id: string): WorkbenchConversationContribution {
     contextProviderId: `${id}.context`,
     title: id,
     emptyLabel: 'empty',
-    historyStore: {
-      list: async () => [],
-      save: async (record) => [record],
-      remove: async () => [],
-    },
   };
 }
 
@@ -61,7 +56,7 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.getSnapshot().launchRequest).toBeUndefined();
   });
 
-  it('does not leak an open panel, launch request or busy state across Workbenches', async () => {
+  it('does not let a newly registered Workbench steal the active Project chat', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const releasePdf = runtime.register('pdf.owner', contribution('pdf'));
     runtime.open({ ownerId: 'pdf.owner', question: 'old' });
@@ -69,20 +64,27 @@ describe('WorkbenchConversationRuntime', () => {
 
     const releaseHtml = runtime.register('html.owner', contribution('html'));
     expect(runtime.getSnapshot()).toMatchObject({
+      panelOpen: true,
+      busy: true,
+      active: { ownerId: 'pdf.owner' },
+    });
+    expect(runtime.getSnapshot().launchRequest?.question).toBe('old');
+
+    releasePdf();
+    await Promise.resolve();
+    expect(runtime.getSnapshot()).toMatchObject({
       panelOpen: false,
       busy: false,
       active: { ownerId: 'html.owner' },
     });
     expect(runtime.getSnapshot().launchRequest).toBeUndefined();
-
-    releasePdf();
-    expect(runtime.getSnapshot().active?.ownerId).toBe('html.owner');
     releaseHtml();
+    await Promise.resolve();
     await Promise.resolve();
     expect(runtime.getSnapshot()).toEqual({ panelOpen: false, busy: false });
   });
 
-  it('treats two Assets using the same Workbench as separate owners', () => {
+  it('treats two Assets as separate owners without changing the open owner', () => {
     const runtime = new WorkbenchConversationRuntime();
     runtime.register('pdf:session-a', contribution('pdf-a'));
     runtime.open({ ownerId: 'pdf:session-a', question: 'asset A' });
@@ -91,11 +93,11 @@ describe('WorkbenchConversationRuntime', () => {
     runtime.register('pdf:session-b', contribution('pdf-b'));
 
     expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: false,
-      busy: false,
-      active: { ownerId: 'pdf:session-b' },
+      panelOpen: true,
+      busy: true,
+      active: { ownerId: 'pdf:session-a' },
     });
-    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
+    expect(runtime.getSnapshot().launchRequest?.question).toBe('asset A');
   });
 
   it('replaces one owner contribution without closing its open panel', async () => {

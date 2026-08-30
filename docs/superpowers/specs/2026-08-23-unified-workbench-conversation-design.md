@@ -3,6 +3,12 @@
 日期：2026-08-23
 状态：已实现
 
+> 2026-08-30：ConversationPanel 的 Project 布局归属由
+> [Project 右侧插槽与 Audio 布局收敛设计](./2026-08-30-project-right-panel-and-audio-layout-design.md)
+> 补充。Project 始终提供可用的全局问答；Workbench Contribution 只提供可选媒体上下文，
+> 不拥有聊天或历史。打开的问答与生成中心互斥复用同一个右侧插槽，UI 历史统一由后端
+> Project Conversation Store 持久化。
+
 ## 1. 最终结论
 
 所有 Workbench 即时问答只使用一个任务定义：
@@ -29,7 +35,8 @@ Workbench 采集 Anchor / Context
   -> Renderer Conversation Controller
 ```
 
-这条链路没有新增聊天数据库表、Provider 直连 IPC 或媒体专用任务通道。
+这条链路没有 Provider 直连 IPC 或媒体专用任务通道。应用级
+`project_conversations` 表只保存 UI 消息投影，不替代 Provider Session 中的真实模型历史。
 
 ## 2. 三层职责
 
@@ -41,9 +48,9 @@ Workbench 采集 Anchor / Context
 - 决定首次提问是否必须有 Context；
 - 校验 Context 是否属于当前 Asset 版本；
 - 描述、定位和清理 Anchor；
-- 决定是否需要把源 Asset 作为引用送入工作区；
+- 通过 `sourceAssetMode` 决定只传 Asset identity，还是把源 Asset 作为引用送入工作区；
 - 决定本轮回答是否需要提交为 Attachment；
-- 提供只用于 UI 展示的 Conversation History Store。
+- 可选提供 Context 对应的回答动作。
 
 它不再构造媒体专用 TaskDefinition request，也不解析媒体专用任务结果。
 
@@ -114,7 +121,10 @@ registerGeneration({ conversationContexts }) {
 - 同一 Conversation 的多个 GenerationTask 使用相同 `conversationId`；
 - `conversationId` 映射到相同 Workspace instance 与 Provider Session；
 - Provider Thread/Session 是模型上下文的事实来源；
-- Renderer 历史只是 UI 投影，不会重新拼回 Prompt；
+- `project_conversations` 以 `conversationId + projectId` 保存标题和 Renderer 消息投影；
+- Renderer 只通过统一 Project Conversation IPC 读写，不再由各 Workbench 使用 `localStorage`
+  或 Workbench State 保存第二份历史；
+- Renderer 历史不会重新拼回 Prompt；
 - 新 Conversation 使用新的 `conversationId`，因此形成新的 Session 边界。
 
 当前 Project 运行期间，公共 Conversation Runtime 按
@@ -153,10 +163,11 @@ Context 只在用户创建新 Anchor 时传入。后续追问可以不再附带 
 
 ## 5. AssetReference 策略
 
-是否把当前源 Asset 物化进 Agent Workspace 由 Renderer contribution 显式声明：
+是否以及如何使用当前源 Asset 由 Renderer contribution 的 `sourceAssetMode` 显式声明：
 
-- 文档和静态图片可以使用 `includeSourceAssetReference: true`；
-- 视频帧问答使用 `false`，避免把完整视频复制到 Agent Workspace；
+- 文档、HTML 和静态图片使用 `reference`，把验证后的源引用物化进 Workspace；
+- EPUB 和视频帧问答使用 `identity`，传递 Asset id 但不复制完整媒体；
+- Project 默认聊天不声明 source Asset，因此当前选中资料不会被隐式附加；
 - Context Provider 可以在 Main 中生成最小、可信的派生输入。
 
 这不是公共层对媒体的猜测，也不需要为不同媒体增加 TaskDefinition。
@@ -223,7 +234,7 @@ Attachment 是可选结果，不是聊天执行协议：
 4. 通过该 Workbench 的 `registerGeneration()` 注册 Provider；
 5. 如需持久结果，在 Provider 内实现 `commitAnswer()` 并复用 AttachmentService；
 6. 测试首轮 Context、无 Context 追问、版本变化、取消、Session 延续与可选 Attachment；
-7. 不创建新的聊天 TaskDefinition、聊天 IPC、聊天表或 Provider 直连路径。
+7. 不创建 Workbench 专用聊天 TaskDefinition、历史 Store、聊天 IPC、聊天表或 Provider 直连路径。
 
 ## 9. 已移除的重复实现
 
@@ -242,10 +253,10 @@ GenerationTask 的 `contextProviderId + context + commitAnswer`，不拥有第�
 - 所有 Workbench 聊天都创建 `workbench.conversation@1`；
 - Main Registry 中每个 `contextProviderId` 唯一且可发现；
 - 同一 Conversation 跨 Task 复用同一 Provider Session；
-- 新 Conversation、Asset 版本和 Project 之间不串上下文；
+- 新 Conversation 和 Project 之间不串上下文，Asset 版本只约束当轮 Workbench Context；
 - Renderer 历史不作为模型历史回灌；
 - 不带真实 delta 的 Provider 仍以最终任务结果正确结束；
 - Provider 未配置、取消、失败、迟到结果均进入统一 UI 状态；
 - Video 不复制完整媒体，精确截帧后才进入 Agent；
 - EPUB/Image/Video 的 Attachment 提交不影响无 Anchor 的普通追问；
-- 新 Workbench 不需要触碰 bootstrap、公共 TaskDefinition 或聊天 IPC。
+- 新 Workbench 不需要触碰 bootstrap、公共 TaskDefinition、Project Conversation Store 或聊天 IPC。

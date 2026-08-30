@@ -7,6 +7,8 @@ export const WORKBENCH_CONVERSATION_INSTRUCTION_FORMAT =
   'learning-companion/workbench-conversation-instruction';
 export const WORKBENCH_CONVERSATION_INSTRUCTION_VERSION = 1;
 export const WORKBENCH_CONVERSATION_SOURCE_SLOT = 'source';
+export const PROJECT_CONVERSATION_CONTEXT_PROVIDER_ID =
+  'builtin.project.conversation';
 
 export interface WorkbenchConversationTaskResultFields {
   readonly answer: string;

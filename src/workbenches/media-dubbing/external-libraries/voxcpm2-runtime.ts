@@ -52,6 +52,13 @@ export interface VoxCpm2VoiceJob {
 export interface VoxCpm2DubbingRuntimeResolverApi {
   requireInstalledBundle(): Promise<void>;
   requireRuntime(): Promise<VoxCpm2DubbingRuntime>;
+  withRuntime<T>(
+    signal: AbortSignal,
+    operation: (
+      runtime: VoxCpm2DubbingRuntime,
+      signal: AbortSignal,
+    ) => Promise<T>,
+  ): Promise<T>;
   warmup(): Promise<void>;
   releaseWarmup(): Promise<void>;
   runVoiceJob(job: VoxCpm2VoiceJob, signal: AbortSignal): Promise<void>;
@@ -138,6 +145,8 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   };
   private warmupRetainCount = 0;
   private voiceQueue: Promise<void> = Promise.resolve();
+  private releasingRuntime = false;
+  private runtimeReleaseTask?: Promise<void>;
   private shuttingDown = false;
   private shutdownTask?: Promise<void>;
 
@@ -157,7 +166,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   }
 
   async requireRuntime(): Promise<VoxCpm2DubbingRuntime> {
-    this.throwIfShuttingDown();
+    this.throwIfUnavailable();
     this.assertSupportedPlatform();
     if (!this.preparation) {
       const controller = new AbortController();
@@ -177,7 +186,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   }
 
   async requireInstalledBundle(): Promise<void> {
-    this.throwIfShuttingDown();
+    this.throwIfUnavailable();
     this.assertSupportedPlatform();
     await this.externalLibraries.requireRuntime(
       MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
@@ -185,12 +194,12 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   }
 
   async warmup(): Promise<void> {
-    this.throwIfShuttingDown();
+    this.throwIfUnavailable();
     this.cancelScheduledUnload();
     this.warmupRetainCount += 1;
     try {
       await this.warmModel();
-      if (!this.shuttingDown) {
+      if (!this.isUnavailable()) {
         if (this.warmupRetainCount > 0) {
           this.scheduleModelUnload(
             VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
@@ -222,7 +231,10 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
 
   async releaseWarmup(): Promise<void> {
     this.warmupRetainCount = Math.max(0, this.warmupRetainCount - 1);
-    if (!this.shuttingDown && this.warmupRetainCount === 0) {
+    if (
+      !this.isUnavailable() &&
+      this.warmupRetainCount === 0
+    ) {
       this.scheduleModelUnload(
         VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
         true,
@@ -231,38 +243,86 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
   }
 
   runVoiceJob(job: VoxCpm2VoiceJob, signal: AbortSignal): Promise<void> {
-    if (this.shuttingDown) return Promise.reject(shutdownAbortError());
+    if (this.isUnavailable()) {
+      return Promise.reject(shutdownAbortError());
+    }
     this.cancelScheduledUnload();
     const queued = this.voiceQueue.then(() => this.executeVoiceJob(job, signal));
     this.voiceQueue = queued.catch(() => undefined);
     return queued;
   }
 
+  withRuntime<T>(
+    signal: AbortSignal,
+    operation: (
+      runtime: VoxCpm2DubbingRuntime,
+      signal: AbortSignal,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.externalLibraries.withRuntime(
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
+      signal,
+      async (_bundle, usageSignal) => {
+        const runtime = await this.requireRuntime();
+        usageSignal.throwIfAborted();
+        return operation(runtime, usageSignal);
+      },
+    );
+  }
+
+  releaseRuntime(): Promise<void> {
+    if (this.shutdownTask) return this.shutdownTask;
+    if (this.runtimeReleaseTask) return this.runtimeReleaseTask;
+    this.releasingRuntime = true;
+    const task = this.stopRuntime();
+    const trackedTask = task.finally(() => {
+      if (this.runtimeReleaseTask === trackedTask) {
+        this.runtimeReleaseTask = undefined;
+        this.releasingRuntime = false;
+      }
+    });
+    this.runtimeReleaseTask = trackedTask;
+    return trackedTask;
+  }
+
   shutdown(): Promise<void> {
     if (this.shutdownTask) return this.shutdownTask;
     this.shuttingDown = true;
-    this.warmupRetainCount = 0;
-    this.cancelScheduledUnload();
-    const runtimePreparation = this.preparation;
-    this.preparationController?.abort();
     const task = (async () => {
-      let session = this.modelSession;
-      if (!session && this.modelSessionPreparation) {
-        session = await this.modelSessionPreparation.catch(() => undefined);
-      }
-      if (session) await this.discardModelSession(session, true);
-      await this.voiceQueue.catch(() => undefined);
-      const lateSession = this.modelSession;
-      if (lateSession) await this.discardModelSession(lateSession, true);
-      await runtimePreparation?.catch(() => undefined);
-      await this.modelSessionDisposal?.catch(() => undefined);
+      await this.runtimeReleaseTask?.catch(() => undefined);
+      await this.stopRuntime();
     })();
     this.shutdownTask = task;
     return task;
   }
 
-  private throwIfShuttingDown(): void {
-    if (this.shuttingDown) throw shutdownAbortError();
+  private throwIfUnavailable(): void {
+    if (this.isUnavailable()) {
+      throw shutdownAbortError();
+    }
+  }
+
+  private isUnavailable(): boolean {
+    return this.shuttingDown || this.releasingRuntime;
+  }
+
+  private async stopRuntime(): Promise<void> {
+    this.warmupRetainCount = 0;
+    this.cancelScheduledUnload();
+    const runtimePreparation = this.preparation;
+    this.preparation = undefined;
+    this.preparationController?.abort();
+    let session = this.modelSession;
+    if (!session && this.modelSessionPreparation) {
+      session = await this.modelSessionPreparation.catch(() => undefined);
+    }
+    if (session) await this.discardModelSession(session, true);
+    await this.voiceQueue.catch(() => undefined);
+    const lateSession = this.modelSession;
+    if (lateSession) await this.discardModelSession(lateSession, true);
+    await runtimePreparation?.catch(() => undefined);
+    await this.modelSessionDisposal?.catch(() => undefined);
+    this.voiceQueue = Promise.resolve();
   }
 
   private cancelScheduledUnload(): void {
@@ -280,7 +340,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     const handle = this.dependencies.scheduleUnload(async () => {
       if (this.scheduledUnload?.token !== token) return;
       if (
-        this.shuttingDown ||
+        this.isUnavailable() ||
         (requiresNoConsumers && this.warmupRetainCount > 0)
       ) {
         this.scheduledUnload = undefined;
@@ -290,7 +350,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
         await this.discardIdleModel(
           () =>
             this.scheduledUnload?.token === token &&
-            !this.shuttingDown &&
+            !this.isUnavailable() &&
             (!requiresNoConsumers || this.warmupRetainCount === 0),
         );
       } catch {
@@ -379,7 +439,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     job: VoxCpm2VoiceJob,
     signal: AbortSignal,
   ): Promise<void> {
-    this.throwIfShuttingDown();
+    this.throwIfUnavailable();
     signal.throwIfAborted();
     const runtime = await this.requireRuntime();
     const session = await this.requireModelSession(runtime);
@@ -403,10 +463,17 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     } finally {
       signal.removeEventListener('abort', abortSession);
       await this.discardModelSession(session, true);
-      if (failed && !this.shuttingDown && this.warmupRetainCount > 0) {
+      if (
+        failed &&
+        !this.isUnavailable() &&
+        this.warmupRetainCount > 0
+      ) {
         void this.warmModel()
           .then(() => {
-            if (!this.shuttingDown && this.warmupRetainCount > 0) {
+            if (
+              !this.isUnavailable() &&
+              this.warmupRetainCount > 0
+            ) {
               this.scheduleModelUnload(
                 VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
                 false,
@@ -422,7 +489,7 @@ export class VoxCpm2DubbingRuntimeResolver implements VoxCpm2DubbingRuntimeResol
     runtime: VoxCpm2DubbingRuntime,
   ): Promise<ModelSession> {
     await this.modelSessionDisposal?.catch(() => undefined);
-    this.throwIfShuttingDown();
+    this.throwIfUnavailable();
     if (this.modelSession) return this.modelSession;
     if (!this.modelSessionPreparation) {
       this.modelSessionPreparation = this.createModelSession(runtime).finally(

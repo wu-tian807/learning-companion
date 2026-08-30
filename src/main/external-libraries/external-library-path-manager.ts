@@ -1020,6 +1020,8 @@ export class ExternalLibraryPathManager
     await rm(paths.installationDirectory, {
       recursive: true,
       force: true,
+      maxRetries: 8,
+      retryDelay: 100,
     });
   }
 }

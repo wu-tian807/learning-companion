@@ -34,7 +34,6 @@ import { displayEpubExplanationLocation } from './explanations/epub-explanation-
 import {
   createEpubConversationContext,
   createEpubConversationContribution,
-  createEpubConversationHistoryStore,
   type EpubConversationContext,
 } from './explanations/epub-conversation-contribution';
 import {
@@ -260,18 +259,8 @@ export function EpubWorkbenchView({
     [onError],
   );
 
-  const conversationContributionId = `${epubWorkbenchManifest.id}.reading-conversation`;
   const conversationOwnerId =
     `${epubWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
-  const conversationHistoryStore = useMemo(
-    () =>
-      createEpubConversationHistoryStore(
-        asset.projectId,
-        asset.id,
-        conversationContributionId,
-      ),
-    [asset.id, asset.projectId, conversationContributionId],
-  );
   const revealConversationContext = useCallback(
     async (context: EpubConversationContext) => {
       const rendition = renditionRef.current;
@@ -293,10 +282,9 @@ export function EpubWorkbenchView({
   const conversationContribution = useMemo(
     () =>
       createEpubConversationContribution({
-        historyStore: conversationHistoryStore,
         revealContext: revealConversationContext,
       }),
-    [conversationHistoryStore, revealConversationContext],
+    [revealConversationContext],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,

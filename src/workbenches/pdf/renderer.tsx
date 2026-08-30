@@ -76,7 +76,6 @@ import {
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
-  createDocumentConversationHistoryStore,
   type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
 
@@ -130,7 +129,8 @@ interface PdfRegionPreviewInput {
 
 /**
  * Captures a compact, local-only visual reference for a formula/image region.
- * It is intentionally small because question history is stored in localStorage.
+ * It is intentionally small because Project conversation context crosses IPC
+ * and is persisted in the application database.
  */
 export function capturePdfRegionPreview(
   source: HTMLCanvasElement,
@@ -622,21 +622,12 @@ export function PdfDocumentWorkbenchView({
   const conversationContributionId = `${contributionOwnerId}.document-question`;
   const conversationOwnerId =
     `${contributionOwnerId}:${bootstrap.sessionId}.conversation`;
-  const conversationHistoryStore = useMemo(
-    () => createDocumentConversationHistoryStore(
-      asset.projectId,
-      asset.id,
-      conversationContributionId,
-    ),
-    [asset.id, asset.projectId, conversationContributionId],
-  );
   const conversationContribution = useMemo(
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
       workbenchId: contributionOwnerId,
       contributionId: conversationContributionId,
-      historyStore: conversationHistoryStore,
       contextLabel: 'PDF 内容',
       allowAnswerAttachments: true,
       answerActionPresentation: {
@@ -654,7 +645,6 @@ export function PdfDocumentWorkbenchView({
       asset.projectId,
       contributionOwnerId,
       conversationContributionId,
-      conversationHistoryStore,
     ],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
@@ -1876,7 +1866,6 @@ export function PdfDocumentWorkbenchView({
       <QuestionAnchorHost
         assetId={asset.id}
         ownerId={conversationOwnerId}
-        historyStore={conversationHistoryStore}
         runtime={conversationRuntime}
       />
     </div>

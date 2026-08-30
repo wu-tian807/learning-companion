@@ -45,49 +45,15 @@ export function useWorkbenchCurrentConversationState(
   runtime: WorkbenchConversationRuntime,
   scope: WorkbenchConversationScope,
 ): WorkbenchCurrentConversationState | undefined {
-  const {
-    assetId,
-    contributionId,
-    conversationPartitionKey,
-    projectId,
-  } = scope;
+  const { projectId } = scope;
   const subscribe = useCallback(
     (listener: () => void) =>
-      runtime.subscribeCurrentConversation(
-        {
-          assetId,
-          contributionId,
-          ...(conversationPartitionKey === undefined
-            ? {}
-            : { conversationPartitionKey }),
-          projectId,
-        },
-        listener,
-      ),
-    [
-      assetId,
-      contributionId,
-      conversationPartitionKey,
-      projectId,
-      runtime,
-    ],
+      runtime.subscribeCurrentConversation({ projectId }, listener),
+    [projectId, runtime],
   );
   const getSnapshot = useCallback(
-    () => runtime.getCurrentConversationState({
-      assetId,
-      contributionId,
-      ...(conversationPartitionKey === undefined
-        ? {}
-        : { conversationPartitionKey }),
-      projectId,
-    }),
-    [
-      assetId,
-      contributionId,
-      conversationPartitionKey,
-      projectId,
-      runtime,
-    ],
+    () => runtime.getCurrentConversationState({ projectId }),
+    [projectId, runtime],
   );
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

@@ -8,7 +8,6 @@ import {
 import { createVideoFrameRegionTarget } from '../shared';
 import {
   createVideoConversationContribution,
-  createVideoConversationHistoryStore,
   createVideoFrameConversationLaunch,
 } from './video-conversation-contribution';
 import {
@@ -30,11 +29,6 @@ const target = createVideoFrameRegionTarget({
 function contribution(sourceRevision = '100', revealContext = vi.fn()) {
   return createVideoConversationContribution({
     sourceRevision,
-    historyStore: {
-      list: async () => [],
-      save: async (record) => [record],
-      remove: async () => [],
-    },
     revealContext,
   });
 }
@@ -150,11 +144,6 @@ describe('video conversation contribution', () => {
     const context = createVideoConversationContext(target, '100');
     const value = createVideoConversationContribution({
       sourceRevision: '100',
-      historyStore: {
-        list: async () => [],
-        save: async (record) => [record],
-        remove: async () => [],
-      },
       revealContext: vi.fn(),
       onContextReleased,
     });
@@ -189,39 +178,7 @@ describe('video conversation contribution', () => {
     ).toBe(true);
   });
 
-  it('isolates persisted conversations by video source revision', async () => {
-    expect(contribution('100').conversationPartitionKey).toBe('100');
-    expect(contribution('101').conversationPartitionKey).toBe('101');
-
-    const values = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
-      removeItem: (key: string) => values.delete(key),
-    });
-    try {
-      const oldStore = createVideoConversationHistoryStore(
-        'project-1',
-        'asset-1',
-        'video.frame-conversation',
-        '100',
-      );
-      const newStore = createVideoConversationHistoryStore(
-        'project-1',
-        'asset-1',
-        'video.frame-conversation',
-        '101',
-      );
-      await oldStore.save({
-        id: 'conversation-1',
-        title: '旧视频画面',
-        messages: [],
-        createdTime: 1,
-        updatedTime: 1,
-      });
-      await expect(newStore.list()).resolves.toEqual([]);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it('does not own a separate per-video history store', () => {
+    expect(contribution()).not.toHaveProperty('historyStore');
   });
 });

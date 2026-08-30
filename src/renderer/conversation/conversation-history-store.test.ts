@@ -1,18 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { LearningCompanionApi } from '../../shared/ipc';
 import type { ConversationRecord } from './conversation-contracts';
+import { createProjectConversationHistoryStore } from './conversation-history-store';
 import {
-  createConversationHistoryKey,
-  createLocalConversationHistoryStore,
-  type ConversationStorage,
-} from './conversation-history-store';
+  collectLegacyProjectConversations,
+  type LegacyConversationStorage,
+} from './legacy-project-conversation-migration';
 
-function memoryStorage(initial: Record<string, string> = {}): ConversationStorage {
+function memoryStorage(
+  initial: Record<string, string> = {},
+): LegacyConversationStorage & { readonly values: Map<string, string> } {
   const values = new Map(Object.entries(initial));
   return {
+    values,
+    get length() {
+      return values.size;
+    },
+    key: (index) => [...values.keys()][index] ?? null,
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
-    removeItem: (key) => values.delete(key),
+    removeItem: (key) => {
+      values.delete(key);
+    },
   };
 }
 
@@ -29,152 +38,191 @@ function record(id: string, updatedTime = 2): ConversationRecord {
   };
 }
 
-describe('local Conversation history', () => {
-  it('stores complete conversations, updates by stable id and notifies marker views', async () => {
+function createApi(initial: readonly ConversationRecord[] = []) {
+  let records = [...initial];
+  return {
+    listProjectConversations: vi.fn(async () => records),
+    saveProjectConversation: vi.fn(async ({ conversation }) => {
+      records = [
+        ...records.filter((item) => item.id !== conversation.id),
+        conversation,
+      ];
+      return records;
+    }),
+    importProjectConversations: vi.fn(async ({ conversations }) => {
+      for (const conversation of conversations) {
+        const index = records.findIndex((item) => item.id === conversation.id);
+        if (index < 0) records.push(conversation);
+        else if (conversation.updatedTime >= records[index]!.updatedTime) {
+          records[index] = conversation;
+        }
+      }
+      return records;
+    }),
+    deleteProjectConversation: vi.fn(async ({ conversationId }) => {
+      records = records.filter((item) => item.id !== conversationId);
+      return records;
+    }),
+  } satisfies Pick<
+    LearningCompanionApi,
+    | 'listProjectConversations'
+    | 'saveProjectConversation'
+    | 'importProjectConversations'
+    | 'deleteProjectConversation'
+  >;
+}
+
+describe('Project Conversation history', () => {
+  it('uses the backend as the only runtime persistence source', async () => {
     const storage = memoryStorage();
-    const store = createLocalConversationHistoryStore({ key: 'history', storage });
+    const api = createApi([record('existing')]);
+    const store = createProjectConversationHistoryStore({
+      projectId: 'project-1',
+      api,
+      legacyStorage: storage,
+    });
     const listener = vi.fn();
     store.subscribe?.(listener);
 
-    await store.save(record('one'));
-    await store.save({ ...record('one', 3), title: '更新后的标题' });
+    await expect(store.list()).resolves.toEqual([record('existing')]);
+    await store.save(record('new'));
+    await store.remove('existing');
 
-    expect(await store.list()).toHaveLength(1);
-    expect((await store.list())[0]).toMatchObject({
-      id: 'one',
-      title: '更新后的标题',
-      updatedTime: 3,
+    expect(api.listProjectConversations).toHaveBeenCalledWith({
+      projectId: 'project-1',
     });
-    expect(store.getSnapshot?.()).toEqual(await store.list());
-    expect(listener).toHaveBeenCalledTimes(2);
-
-    await store.remove('one');
-    expect(await store.list()).toEqual([]);
+    expect(api.saveProjectConversation).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      conversation: record('new'),
+    });
+    expect(api.deleteProjectConversation).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      conversationId: 'existing',
+    });
+    expect(storage.values).toEqual(new Map());
+    expect(store.getSnapshot?.()).toEqual([record('new')]);
     expect(listener).toHaveBeenCalledTimes(3);
   });
 
-  it('persists the previous answer needed to recover an in-flight re-answer', async () => {
-    const storage = memoryStorage();
-    const store = createLocalConversationHistoryStore({ key: 'history', storage });
-    const inFlight = record('reanswer');
-    const assistant = inFlight.messages[1]!;
+  it('restores history through a new renderer store using the same backend', async () => {
+    const api = createApi();
+    const firstStore = createProjectConversationHistoryStore({
+      projectId: 'project-1',
+      api,
+      legacyStorage: memoryStorage(),
+    });
+    await firstStore.save(record('persisted'));
 
-    await store.save({
-      ...inFlight,
-      messages: [
-        inFlight.messages[0]!,
-        {
-          ...assistant,
-          text: '',
-          generationTaskId: 'task-new',
-          reanswerBackup: {
-            text: '回答',
-            generationTaskId: 'task-old',
-            modelInfo: 'codex/gpt',
-          },
-        },
-      ],
+    const reopenedStore = createProjectConversationHistoryStore({
+      projectId: 'project-1',
+      api,
+      legacyStorage: memoryStorage(),
     });
 
-    const reopened = createLocalConversationHistoryStore({
-      key: 'history',
-      storage,
-    });
-    expect((await reopened.list())[0]?.messages[1]).toMatchObject({
-      text: '',
-      generationTaskId: 'task-new',
-      reanswerBackup: {
-        text: '回答',
-        generationTaskId: 'task-old',
-        modelInfo: 'codex/gpt',
-      },
-    });
+    await expect(reopenedStore.list()).resolves.toEqual([
+      record('persisted'),
+    ]);
+    expect(api.listProjectConversations).toHaveBeenCalledTimes(2);
   });
 
-  it('migrates the former flat Document AI message history into conversations', async () => {
-    const legacyKey = 'legacy';
+  it('imports all valid Project legacy keys once and removes them after success', async () => {
+    const currentKey =
+      'learning-companion:conversation:v1:video.frame-conversation:project-1:asset-1';
+    const documentKey =
+      'learning-companion:document-ai-history:v1:project-1:asset-2';
+    const unrelatedKey =
+      'learning-companion:conversation:v1:image.conversation:project-2:asset-3';
     const storage = memoryStorage({
-      [legacyKey]: JSON.stringify([
+      [currentKey]: JSON.stringify([record('current', 4)]),
+      [documentKey]: JSON.stringify([
         {
-          id: 'q1',
+          id: 'legacy-q',
           role: 'user',
           content: '解释注意力机制',
           timestamp: 10,
-          conversationId: 'conversation-1',
+          conversationId: 'legacy-conversation',
           anchor: { target: { scope: 'asset' } },
         },
         {
-          id: 'a1',
+          id: 'legacy-a',
           role: 'assistant',
           content: '回答',
           timestamp: 11,
-          conversationId: 'conversation-1',
-          replyToMessageId: 'q1',
+          conversationId: 'legacy-conversation',
+          replyToMessageId: 'legacy-q',
         },
       ]),
+      [unrelatedKey]: JSON.stringify([record('unrelated')]),
     });
-    const removeItem = vi.spyOn(storage, 'removeItem');
-    const store = createLocalConversationHistoryStore({
-      key: 'current',
-      storage,
-      legacyMessageArrayKeys: [legacyKey],
+    const api = createApi();
+    const store = createProjectConversationHistoryStore({
+      projectId: 'project-1',
+      api,
+      legacyStorage: storage,
     });
 
-    expect(await store.list()).toEqual([
-      expect.objectContaining({
-        id: 'conversation-1',
-        title: '解释注意力机制',
-        messages: [
-          expect.objectContaining({ id: 'q1', role: 'user' }),
-          expect.objectContaining({ id: 'a1', replyToMessageId: 'q1' }),
-        ],
-      }),
+    const records = await store.list();
+
+    expect(records.map(({ id }) => id)).toEqual([
+      'current',
+      'legacy-conversation',
     ]);
-    expect(removeItem).toHaveBeenCalledWith(legacyKey);
+    expect(api.importProjectConversations).toHaveBeenCalledOnce();
+    expect(api.listProjectConversations).not.toHaveBeenCalled();
+    expect(storage.getItem(currentKey)).toBeNull();
+    expect(storage.getItem(documentKey)).toBeNull();
+    expect(storage.getItem(unrelatedKey)).not.toBeNull();
   });
 
-  it('persists an intentional empty history so migrated records cannot reappear', async () => {
-    const legacyKey = 'legacy';
-    const storage = memoryStorage({
-      [legacyKey]: JSON.stringify([
-        {
-          id: 'q1',
-          role: 'user',
-          content: '旧问题',
-          timestamp: 10,
-          conversationId: 'conversation-1',
-        },
-      ]),
-    });
-    const options = {
-      key: 'current',
-      storage,
-      legacyMessageArrayKeys: [legacyKey],
-    } as const;
-    const first = createLocalConversationHistoryStore(options);
-    expect(await first.list()).toHaveLength(1);
-    await first.remove('conversation-1');
-
-    const reopened = createLocalConversationHistoryStore(options);
-    expect(await reopened.list()).toEqual([]);
-  });
-
-  it('recovers from corrupt or duplicate persisted records without exposing partial data', async () => {
-    const duplicate = record('same');
-    const store = createLocalConversationHistoryStore({
-      key: 'history',
-      storage: memoryStorage({ history: JSON.stringify([duplicate, duplicate]) }),
-    });
-    expect(await store.list()).toEqual([]);
-  });
-
-  it('builds collision-free per-contribution, per-project and per-asset keys', () => {
-    expect(createConversationHistoryKey({
-      contributionId: 'markdown.question',
-      projectId: 'project:a',
-      assetId: 'asset/1',
-    })).toBe(
-      'learning-companion:conversation:v1:markdown.question:project%3Aa:asset%2F1',
+  it('keeps legacy data when backend import fails so migration is retryable', async () => {
+    const key =
+      'learning-companion:conversation:v1:video.frame-conversation:project-1:asset-1';
+    const storage = memoryStorage({ [key]: JSON.stringify([record('old')]) });
+    const api = createApi();
+    api.importProjectConversations.mockRejectedValueOnce(
+      new Error('database unavailable'),
     );
+    const store = createProjectConversationHistoryStore({
+      projectId: 'project-1',
+      api,
+      legacyStorage: storage,
+    });
+
+    await expect(store.list()).rejects.toThrow('database unavailable');
+    expect(storage.getItem(key)).not.toBeNull();
+  });
+
+  it('retires a valid empty legacy key after the backend list succeeds', async () => {
+    const key =
+      'learning-companion:conversation:v1:epub.reading-conversation:project-1:asset-1';
+    const storage = memoryStorage({ [key]: '[]' });
+    const api = createApi();
+
+    await createProjectConversationHistoryStore({
+      projectId: 'project-1',
+      api,
+      legacyStorage: storage,
+    }).list();
+
+    expect(api.listProjectConversations).toHaveBeenCalledOnce();
+    expect(storage.getItem(key)).toBeNull();
+  });
+
+  it('ignores corrupt keys and keeps the newest duplicate conversation', () => {
+    const storage = memoryStorage({
+      'learning-companion:conversation:v1:video.frame-conversation:project-1:asset-1':
+        JSON.stringify([record('same', 2)]),
+      'learning-companion:conversation:v1:image.conversation:project-1:asset-2':
+        JSON.stringify([record('same', 5)]),
+      'learning-companion:conversation:v1:broken:project-1:asset-3': '{',
+    });
+
+    const migration = collectLegacyProjectConversations(
+      'project-1',
+      storage,
+    );
+
+    expect(migration.records).toEqual([record('same', 5)]);
+    expect(migration.keys).toHaveLength(2);
   });
 });

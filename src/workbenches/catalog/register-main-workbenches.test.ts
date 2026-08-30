@@ -6,6 +6,7 @@ import { GenerationTaskDefinitionRegistry } from '../../main/generation/generati
 import { WorkbenchConversationContextProviderRegistry } from '../../main/conversation/workbench-conversation-context-provider-registry';
 import { AgentFunctionToolRegistry } from '../../main/agents/function-tools/agent-function-tool-registry';
 import { ExternalLibraryRegistry } from '../../main/external-libraries/external-library-registry';
+import { ExternalLibraryLifecycleRegistry } from '../../main/external-libraries/external-library-lifecycle';
 import { ExternalLibraryRuntimeSetupRegistry } from '../../main/external-libraries/external-library-runtime-setup';
 import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
@@ -115,11 +116,13 @@ describe('Workbench contribution catalogs', () => {
 
   it('registers Workbench-owned external components through the same catalog', () => {
     const libraries = new ExternalLibraryRegistry();
+    const lifecycles = new ExternalLibraryLifecycleRegistry();
     const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
 
     registerMainWorkbenchExternalLibraries({
       libraries,
       hardware: { nvidiaGpuAvailable: false },
+      lifecycles,
       runtimeSetups,
     });
 
@@ -130,6 +133,7 @@ describe('Workbench contribution catalogs', () => {
     ]);
     expect(libraries.require('media-subtitles').defaultVariantId).toBe('cpu');
     expect(runtimeSetups.find(MEDIA_DUBBING_VOXCPM2_LIBRARY_ID)).toBeDefined();
+    expect(lifecycles.find(MEDIA_DUBBING_VOXCPM2_LIBRARY_ID)).toBeDefined();
     expect(
       libraries.selectPackage('media-subtitles', 'win32', 'x64').variantId,
     ).toBe('cpu');
@@ -137,11 +141,13 @@ describe('Workbench contribution catalogs', () => {
 
   it('selects the NVIDIA subtitle profile when compatible hardware is present', () => {
     const libraries = new ExternalLibraryRegistry();
+    const lifecycles = new ExternalLibraryLifecycleRegistry();
     const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
 
     registerMainWorkbenchExternalLibraries({
       libraries,
       hardware: { nvidiaGpuAvailable: true },
+      lifecycles,
       runtimeSetups,
     });
 

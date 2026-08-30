@@ -243,7 +243,8 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
       snapshot.instruction,
     );
     return parsed.ok &&
-      parsed.value.contextProviderId === VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID
+      parsed.value.contextProviderId === VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID &&
+      parsed.value.assetId !== undefined
       ? parsed.value
       : undefined;
   }
@@ -253,6 +254,7 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
   ): WorkbenchConversationProjectionLocation | undefined {
     const instruction = this.taskInstruction(snapshot);
     return instruction?.commitAnswer &&
+      instruction.assetId !== undefined &&
       isVideoConversationContext(instruction.context)
       ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
@@ -265,6 +267,7 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
     const conversationContext = instruction?.context;
     if (
       !instruction?.commitAnswer ||
+      instruction.assetId === undefined ||
       !isVideoConversationContext(conversationContext)
     ) {
       return undefined;

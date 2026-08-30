@@ -51,6 +51,15 @@ export interface AssetArtifactServiceDependencies {
   readonly logger: Pick<Console, 'warn'>;
 }
 
+export interface AssetArtifactCommittedEvent {
+  readonly type: 'committed';
+  readonly artifact: AssetArtifact;
+}
+
+export type AssetArtifactServiceListener = (
+  event: AssetArtifactCommittedEvent,
+) => void | Promise<void>;
+
 interface ActiveGenerationTask {
   readonly assetId: string;
   readonly workspacePath: string;
@@ -144,6 +153,7 @@ export class AssetArtifactService
   implements AssetArtifactServiceApi, AssetArtifactCleanupApi
 {
   private readonly activeTasks = new Map<string, ActiveGenerationTask>();
+  private readonly listeners = new Set<AssetArtifactServiceListener>();
   private readonly now: () => number;
   private readonly logger: Pick<Console, 'warn'>;
 
@@ -261,6 +271,11 @@ export class AssetArtifactService
     );
   }
 
+  subscribe(listener: AssetArtifactServiceListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
   private async resolveCached(
     request: AssetArtifactRequest,
     producer: AssetArtifactProducer,
@@ -349,6 +364,7 @@ export class AssetArtifactService
         artifactRevision: committed.artifactRevision,
         updatedTime,
       });
+      this.publishCommitted(artifact);
 
       if (
         previous &&
@@ -487,5 +503,22 @@ export class AssetArtifactService
         ),
       ),
     );
+  }
+
+  private publishCommitted(artifact: AssetArtifact): void {
+    const event: AssetArtifactCommittedEvent = Object.freeze({
+      type: 'committed',
+      artifact: cloneAssetArtifact(artifact),
+    });
+
+    for (const listener of this.listeners) {
+      try {
+        Promise.resolve(listener(event)).catch((error: unknown) => {
+          console.error('异步 Asset Artifact 事件订阅者执行失败', error);
+        });
+      } catch (error) {
+        console.error('发布 Asset Artifact 事件失败', error);
+      }
+    }
   }
 }
