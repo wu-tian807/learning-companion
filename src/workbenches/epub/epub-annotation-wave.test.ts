@@ -13,7 +13,8 @@ describe('EPUB annotation waves', () => {
     const host = document.createElement('div');
     host.innerHTML = `
       <svg>
-        <g data-epub-annotation-wave="true" data-epub-wave-source="line" data-epub-wave-color="#ef4444">
+        <g stroke="black" data-epub-annotation-wave="true" data-epub-wave-source="line" data-epub-wave-color="#ef4444">
+          <rect x="10" y="8" width="24" height="12" fill="none" />
           <line x1="10" x2="34" y1="20" y2="20" />
         </g>
       </svg>
@@ -23,6 +24,7 @@ describe('EPUB annotation waves', () => {
 
     const path = host.querySelector('path');
     expect(host.querySelector('line')).toBeNull();
+    expect(host.querySelector('rect')).toBeNull();
     expect(path?.getAttribute('d')).toContain('Q');
     expect(path?.getAttribute('stroke')).toBe('#ef4444');
   });
@@ -52,6 +54,7 @@ describe('EPUB annotation waves', () => {
 
     expect(first.transform).toBe('translate(0 0)');
     expect(second.transform).toBe('translate(0 3)');
+    expect(first.stroke).toBe('none');
     expect(first['data-epub-wave-color']).not.toBe(
       second['data-epub-wave-color'],
     );

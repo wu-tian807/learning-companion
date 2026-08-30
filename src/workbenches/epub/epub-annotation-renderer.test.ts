@@ -51,6 +51,7 @@ describe('EPUB annotation renderer', () => {
     expect(annotations.highlight).toHaveBeenCalledOnce();
     expect(annotations.underline.mock.calls[0]?.[4]).toMatchObject({
       transform: 'translate(0 0)',
+      stroke: 'none',
       'data-epub-wave-color': '#ef4444',
       'data-epub-wave-source': 'line',
     });
