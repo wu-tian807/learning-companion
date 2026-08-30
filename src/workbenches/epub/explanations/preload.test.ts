@@ -23,10 +23,23 @@ describe('EPUB explanation Preload API', () => {
     const request = { projectId: 'project-1', assetId: 'asset-1' };
 
     await api.listEpubExplanations(request);
+    await api.updateEpubExplanationMarkerColor({
+      ...request,
+      explanationId: 'attachment-1',
+      markerColor: 'red',
+    });
 
     expect(invoke).toHaveBeenCalledWith(
       EPUB_EXPLANATION_IPC_CHANNELS.list,
       request,
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      EPUB_EXPLANATION_IPC_CHANNELS.updateMarkerColor,
+      {
+        ...request,
+        explanationId: 'attachment-1',
+        markerColor: 'red',
+      },
     );
 
     const listener = vi.fn();
