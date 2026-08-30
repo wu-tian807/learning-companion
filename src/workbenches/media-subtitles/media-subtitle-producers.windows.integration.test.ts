@@ -125,6 +125,15 @@ integrationDescribe('installed media subtitle component', () => {
                   'fsmn-vad.gguf',
                 ),
               },
+        async withRuntime(signal, operation) {
+          return operation(
+            {
+              decoder: await this.requireMediaDecoder(),
+              transcription: await this.requireTranscription(),
+            },
+            signal ?? new AbortController().signal,
+          );
+        },
       };
       const directory = await mkdtemp(
         join(tmpdir(), 'lc-media-subtitle-real-'),

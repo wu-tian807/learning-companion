@@ -21,7 +21,10 @@ import type {
   SubtitleSourceTrackV1,
   SubtitleTranslationTrackV1,
 } from '../media-subtitles/contracts';
-import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import type {
+  MediaDecoderRuntime,
+  MediaSubtitleRuntimeResolverApi,
+} from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
   DUBBING_PHRASE_PLANNER_VERSION,
 } from './dubbing-phrase-planner';
@@ -36,7 +39,10 @@ import {
   createDubbingSpeakerTrack,
   type DubbingSpeakerTrackV1,
 } from './dubbing-speaker-track';
-import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
+import type {
+  VoxCpm2DubbingRuntime,
+  VoxCpm2DubbingRuntimeResolverApi,
+} from './external-libraries/voxcpm2-runtime';
 import {
   markMediaDubbingCheckpointPrepared,
   loadMediaDubbingCheckpoint,
@@ -317,14 +323,34 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     }
     signal.throwIfAborted();
 
+    return input.dubbingRuntime.withRuntime(
+      signal,
+      (runtime, dubbingSignal) =>
+        input.subtitleRuntime.withRuntime(
+          dubbingSignal,
+          ({ decoder }, usageSignal) =>
+            this.produceWithRuntimes(
+              request,
+              input,
+              decoder,
+              runtime,
+              usageSignal,
+            ),
+        ),
+    );
+  }
+
+  private async produceWithRuntimes(
+    request: AssetArtifactProduceRequest,
+    input: DubbingInput,
+    decoder: MediaDecoderRuntime,
+    runtime: VoxCpm2DubbingRuntime,
+    signal: AbortSignal,
+  ): Promise<ProducedAssetArtifact> {
     try {
       const provisionalTotal = input.sourceTrack.cues.length;
       if (provisionalTotal === 0) throw new Error('没有可生成的配音段落');
       this.publish(request, 'preparing-runtime', 0, provisionalTotal, 0, 0, 0);
-      const [decoder, runtime] = await Promise.all([
-        input.subtitleRuntime.requireMediaDecoder(),
-        input.dubbingRuntime.requireRuntime(),
-      ]);
       signal.throwIfAborted();
       const identity = checkpointIdentity(
         request,

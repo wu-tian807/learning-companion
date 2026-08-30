@@ -295,6 +295,7 @@ async function createFixture(
   const dubbingRuntime = {
     requireInstalledBundle,
     requireRuntime: vi.fn(),
+    withRuntime: vi.fn(),
     warmup: vi.fn(async () => undefined),
     releaseWarmup: vi.fn(async () => undefined),
     runVoiceJob: vi.fn(async () => undefined),

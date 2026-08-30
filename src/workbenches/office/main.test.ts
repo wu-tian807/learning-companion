@@ -81,6 +81,11 @@ async function createHarness(input?: {
     handle: vi.fn(),
     dispose: vi.fn(),
   };
+  const libreOfficeRuntime = {
+    libraryId: 'libreoffice',
+    runtimeDirectory: '/runtime',
+    executablePath: '/runtime/soffice',
+  };
   const externalLibraries = {
     initialize: vi.fn(async () => undefined),
     shutdown: vi.fn(async () => undefined),
@@ -90,11 +95,13 @@ async function createHarness(input?: {
     cancel: vi.fn(),
     remove: vi.fn(),
     migrate: vi.fn(),
-    requireRuntime: vi.fn(async () => ({
-      libraryId: 'libreoffice',
-      runtimeDirectory: '/runtime',
-      executablePath: '/runtime/soffice',
-    })),
+    requireRuntime: vi.fn(async () => libreOfficeRuntime),
+    async withRuntime(_libraryId, signal, operation) {
+      return operation(
+        libreOfficeRuntime,
+        signal ?? new AbortController().signal,
+      );
+    },
     requireExecutable: vi.fn(async () => {
       if (input?.runtimeAvailable === false) {
         throw new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED');

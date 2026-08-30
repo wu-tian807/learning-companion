@@ -1,18 +1,27 @@
 import { AppError } from "../errors/app-error";
+import type { ExternalLibraryProgress } from "../../shared/external-libraries";
+import { isSafeExternalLibraryPathSegment } from "./external-library-definition";
 
 export interface ExternalLibraryRuntimeSetup {
   readonly libraryId: string;
+  readonly expectedSetupBytes?: number;
   isReady(runtimeDirectory: string): Promise<boolean>;
   prepare(
     runtimeDirectory: string,
     setupCacheDirectory: string,
     signal: AbortSignal,
-    reportStatus: (statusDetail: string) => void,
+    reportStatus: (
+      statusDetail: string,
+      progress?: ExternalLibraryProgress,
+    ) => void,
   ): Promise<void>;
   finalizeInstallation?(
     runtimeDirectory: string,
     signal: AbortSignal,
-    reportStatus: (statusDetail: string) => void,
+    reportStatus: (
+      statusDetail: string,
+      progress?: ExternalLibraryProgress,
+    ) => void,
   ): Promise<void>;
 }
 
@@ -21,22 +30,16 @@ export interface ExternalLibraryRuntimeSetupRegistryApi {
   find(libraryId: string): ExternalLibraryRuntimeSetup | undefined;
 }
 
-function isSafeLibraryId(value: string): boolean {
-  const normalized = value.trim();
-  return (
-    /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(normalized) &&
-    normalized !== "." &&
-    normalized !== ".."
-  );
-}
-
 export class ExternalLibraryRuntimeSetupRegistry implements ExternalLibraryRuntimeSetupRegistryApi {
   private readonly setups = new Map<string, ExternalLibraryRuntimeSetup>();
 
   register(setup: ExternalLibraryRuntimeSetup): void {
     const libraryId = setup.libraryId.trim();
     if (
-      !isSafeLibraryId(libraryId) ||
+      !isSafeExternalLibraryPathSegment(libraryId) ||
+      (setup.expectedSetupBytes !== undefined &&
+        (!Number.isSafeInteger(setup.expectedSetupBytes) ||
+          setup.expectedSetupBytes <= 0)) ||
       typeof setup.isReady !== "function" ||
       typeof setup.prepare !== "function" ||
       (setup.finalizeInstallation !== undefined &&

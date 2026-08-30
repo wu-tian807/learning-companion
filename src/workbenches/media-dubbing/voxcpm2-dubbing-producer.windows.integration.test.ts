@@ -10,8 +10,14 @@ import type {
   ResolvedAssetArtifact,
 } from '../../main/artifacts/asset-artifact-service';
 import { ExternalCommandRunner } from '../../main/external-libraries/external-command-runner';
-import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
-import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
+import type {
+  MediaSubtitleRuntime,
+  MediaSubtitleRuntimeResolverApi,
+} from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import type {
+  VoxCpm2DubbingRuntime,
+  VoxCpm2DubbingRuntimeResolverApi,
+} from './external-libraries/voxcpm2-runtime';
 import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
   MediaDubbingProgressHub,
@@ -112,34 +118,58 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
             } satisfies ResolvedAssetArtifact;
           },
         };
-        const subtitleRuntime = {
-          async requireMediaDecoder() {
-            return {
-              ffmpegPath: resolve(integrationEnvironment.ffmpeg!),
-              ffprobePath: resolve(integrationEnvironment.ffprobe!),
-            };
+        const subtitleRuntimeValue: MediaSubtitleRuntime = {
+          decoder: {
+            ffmpegPath: resolve(integrationEnvironment.ffmpeg!),
+            ffprobePath: resolve(integrationEnvironment.ffprobe!),
           },
-        } as unknown as MediaSubtitleRuntimeResolverApi;
+          transcription: {
+            kind: 'sensevoice',
+            profile: 'cpu',
+            executablePath: 'unused',
+            vadExecutablePath: 'unused',
+            modelPath: 'unused',
+            vadModelPath: 'unused',
+          },
+        };
+        const subtitleRuntime: MediaSubtitleRuntimeResolverApi = {
+          async requireMediaDecoder() {
+            return subtitleRuntimeValue.decoder;
+          },
+          async requireTranscription() {
+            return subtitleRuntimeValue.transcription;
+          },
+          async withRuntime(signal, operation) {
+            return operation(
+              subtitleRuntimeValue,
+              signal ?? new AbortController().signal,
+            );
+          },
+        };
         const pythonPath = resolve(integrationEnvironment.python!);
         const environment = runtimeEnvironment(pythonPath);
+        const voxRuntime: VoxCpm2DubbingRuntime = {
+          pythonPath,
+          modelPath: resolve(integrationEnvironment.model!),
+          separationModelPath: resolve(
+            integrationEnvironment.separationModel!,
+          ),
+          speakerSegmentationModelPath: resolve(
+            integrationEnvironment.speakerSegmentationModel!,
+          ),
+          speakerEmbeddingModelPath: resolve(
+            integrationEnvironment.speakerEmbeddingModel!,
+          ),
+          workerCachePath: join(directory, 'worker-cache'),
+          environment,
+        };
         const dubbingRuntime: VoxCpm2DubbingRuntimeResolverApi = {
           async requireInstalledBundle() {},
           async requireRuntime() {
-            return {
-              pythonPath,
-              modelPath: resolve(integrationEnvironment.model!),
-              separationModelPath: resolve(
-                integrationEnvironment.separationModel!,
-              ),
-              speakerSegmentationModelPath: resolve(
-                integrationEnvironment.speakerSegmentationModel!,
-              ),
-              speakerEmbeddingModelPath: resolve(
-                integrationEnvironment.speakerEmbeddingModel!,
-              ),
-              workerCachePath: join(directory, 'worker-cache'),
-              environment,
-            };
+            return voxRuntime;
+          },
+          async withRuntime(signal, operation) {
+            return operation(voxRuntime, signal);
           },
           async warmup() {},
           async releaseWarmup() {},
