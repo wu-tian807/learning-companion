@@ -14,19 +14,19 @@ function FolderIcon() {
   );
 }
 
-interface GeneralSettingsSectionProps {
+interface ExternalLibraryLocationSectionProps {
   readonly rootPath: string | undefined;
   readonly loading: boolean;
   readonly changeDisabled: boolean;
   readonly onSelectDirectory: () => void;
 }
 
-export function GeneralSettingsSection({
+export function ExternalLibraryLocationSection({
   rootPath,
   loading,
   changeDisabled,
   onSelectDirectory,
-}: GeneralSettingsSectionProps) {
+}: ExternalLibraryLocationSectionProps) {
   return (
     <section>
       <div className="flex items-center justify-between gap-4">

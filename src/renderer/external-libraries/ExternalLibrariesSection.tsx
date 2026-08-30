@@ -6,39 +6,38 @@ import {
   externalLibraryStatusLabels,
   formatExternalLibrarySize,
   isExternalLibraryActive,
-} from '../external-libraries/external-library-view';
-import type { SettingsTarget } from './settings-target';
-import type { PendingExternalLibraryInstall } from './use-external-library-settings';
+} from './external-library-view';
+import type { PendingExternalLibraryInstall } from './use-external-library-management';
 
-interface ExternalLibrariesSettingsSectionProps {
+interface ExternalLibrariesSectionProps {
   readonly libraries: readonly ExternalLibrarySnapshot[];
   readonly loading: boolean;
   readonly loadError: string | undefined;
   readonly migrationPending: boolean;
   readonly hasActiveTask: boolean;
   readonly requestPendingById: ReadonlySet<string>;
-  readonly target: SettingsTarget | undefined;
-  readonly targetedLibraryRef: RefObject<HTMLElement | null>;
+  readonly targetedLibraryId?: string;
+  readonly targetedLibraryRef?: RefObject<HTMLElement | null>;
   readonly onInstall: (request: PendingExternalLibraryInstall) => void;
   readonly onRemove: (library: ExternalLibrarySnapshot) => void;
   readonly onCancel: (library: ExternalLibrarySnapshot) => void;
   readonly onReload: () => void;
 }
 
-export function ExternalLibrariesSettingsSection({
+export function ExternalLibrariesSection({
   libraries,
   loading,
   loadError,
   migrationPending,
   hasActiveTask,
   requestPendingById,
-  target,
+  targetedLibraryId,
   targetedLibraryRef,
   onInstall,
   onRemove,
   onCancel,
   onReload,
-}: ExternalLibrariesSettingsSectionProps) {
+}: ExternalLibrariesSectionProps) {
   return (
     <section>
       <h3 className="text-sm font-semibold text-slate-200">
@@ -59,9 +58,7 @@ export function ExternalLibrariesSettingsSection({
       {!loading &&
         libraries.map((library) => {
           const active = isExternalLibraryActive(library.status);
-          const targeted =
-            target?.section === 'external-libraries' &&
-            target.libraryId === library.id;
+          const targeted = targetedLibraryId === library.id;
           const progress = externalLibraryProgressPercent(library);
           const requestInstallation = () => {
             if (library.expectedSize === undefined) return;
