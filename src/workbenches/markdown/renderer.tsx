@@ -31,6 +31,16 @@ import {
   createDocumentConversationHistoryStore,
   type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
+import {
+  revealSelectionInCodeMirror,
+  resolveTextSelectionFromTarget,
+  scrollRangeIntoView,
+  selectTextInElement,
+} from '../document-ai/renderer/conversation/document-anchor-reveal';
+import {
+  WORKBENCH_REVEAL_ANCHOR_EVENT,
+  type RevealWorkbenchAnchorDetail,
+} from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -50,6 +60,7 @@ import {
   isMarkdownWorkbenchPayload,
   markdownCommands,
   markdownWorkbenchManifest,
+  MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
   MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
   type MarkdownBufferSyncResult,
   type MarkdownEditMode,
@@ -1195,6 +1206,147 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     conversationOwnerId,
     conversationContribution,
   );
+
+  const scrollSelectionIntoView = useCallback(() => {
+    const selection = window.getSelection();
+    const range =
+      selection && selection.rangeCount > 0
+        ? selection.getRangeAt(0)
+        : undefined;
+    if (range) {
+      scrollRangeIntoView(range);
+    }
+  }, []);
+
+  const revealTextFragmentInElement = useCallback(
+    (element: HTMLElement, text: string) => {
+      const fragment = Array.from(text)
+        .slice(0, 12)
+        .join('')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (
+        fragment.length >= 2 &&
+        selectTextInElement(element, fragment)
+      ) {
+        scrollSelectionIntoView();
+      }
+    },
+    [scrollSelectionIntoView],
+  );
+
+  const revealMarkdownSelection = useCallback(
+    (start: number, end: number) => {
+      const source = workingBufferRef.current;
+      const sourceLength = source.length;
+      const clampedStart = Math.max(
+        0,
+        Math.min(start, sourceLength),
+      );
+      const clampedEnd = Math.max(
+        clampedStart,
+        Math.min(end, sourceLength),
+      );
+
+      if (viewStateRef.current.viewMode === 'source') {
+        revealSelectionInCodeMirror(
+          sourceEditorRef.current?.view,
+          clampedStart,
+          clampedEnd,
+        );
+        return;
+      }
+
+      const element = wysiwygAdapterRef.current?.getEditableElement();
+      if (!element || clampedEnd <= clampedStart) {
+        return;
+      }
+
+      const text = source.slice(clampedStart, clampedEnd).trim();
+      if (!text) {
+        return;
+      }
+      if (selectTextInElement(element, text)) {
+        scrollSelectionIntoView();
+        return;
+      }
+      revealTextFragmentInElement(element, text);
+    },
+    [revealTextFragmentInElement, scrollSelectionIntoView],
+  );
+
+  const revealMarkdownText = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      if (viewStateRef.current.viewMode === 'wysiwyg') {
+        const element = wysiwygAdapterRef.current?.getEditableElement();
+        if (!element) {
+          return;
+        }
+        if (selectTextInElement(element, trimmed)) {
+          scrollSelectionIntoView();
+          return;
+        }
+        revealTextFragmentInElement(element, trimmed);
+        return;
+      }
+
+      const source = workingBufferRef.current;
+      const index = source.indexOf(trimmed);
+      if (index >= 0) {
+        revealSelectionInCodeMirror(
+          sourceEditorRef.current?.view,
+          index,
+          index + trimmed.length,
+        );
+      }
+    },
+    [revealTextFragmentInElement, scrollSelectionIntoView],
+  );
+
+  useEffect(() => {
+    const reveal = (event: Event) => {
+      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>)
+        .detail;
+      if (
+        detail.assetId !== asset.id ||
+        detail.target.scope !== 'content'
+      ) {
+        return;
+      }
+
+      const target = detail.target;
+      if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
+        const selection = resolveTextSelectionFromTarget(target, [
+          MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+        ]);
+        if (selection) {
+          revealMarkdownSelection(selection.start, selection.end);
+        }
+        return;
+      }
+
+      if (target.anchorType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
+        const payload = target.anchorPayload as {
+          readonly exact?: unknown;
+        };
+        const text =
+          typeof payload.exact === 'string' ? payload.exact : '';
+        if (text.trim()) {
+          revealMarkdownText(text);
+        }
+      }
+    };
+
+    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    return () => {
+      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    };
+  }, [asset.id, revealMarkdownSelection, revealMarkdownText]);
 
   const rendererActions = useMemo(
     () =>
