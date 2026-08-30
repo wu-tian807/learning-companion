@@ -26,6 +26,42 @@ describe('HTML Workbench shared protocol', () => {
         contentUrl: 'https://example.com',
       }),
     ).toBe(false);
+    expect(
+      isHtmlWorkbenchPayload({
+        contentUrl: 'learning-content://resource/token',
+        editing: {
+          editable: true,
+          hasDraft: true,
+          unsynced: true,
+          syncRequested: false,
+          pending: false,
+          stepCount: 1,
+          changeCount: 2,
+          canUndo: true,
+          canRedo: false,
+          conflict: null,
+          draftRevision: 'revision-1',
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isHtmlWorkbenchPayload({
+        contentUrl: 'learning-content://resource/token',
+        editing: {
+          editable: true,
+          hasDraft: true,
+          unsynced: true,
+          syncRequested: false,
+          pending: false,
+          stepCount: -1,
+          changeCount: 2,
+          canUndo: true,
+          canRedo: false,
+          conflict: null,
+          draftRevision: '',
+        },
+      }),
+    ).toBe(false);
   });
 
   it('uses the same element-only DOM anchor for click and drag selection', () => {

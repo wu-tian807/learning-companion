@@ -240,6 +240,8 @@ describe('Workbench contribution catalogs', () => {
     registerMainWorkbenchAgentFunctionTools({ functionTools });
 
     expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
+    expect(functionTools.get('html_begin_edit')).toBeDefined();
+    expect(functionTools.get('html_replace_edit')).toBeDefined();
   });
 
   it('registers Workbench conversation context providers through the same Main catalog', () => {

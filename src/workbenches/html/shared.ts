@@ -56,7 +56,54 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
 
 export interface HtmlWorkbenchPayload {
   readonly contentUrl: string;
+  readonly editing?: HtmlEditingStatus;
 }
+
+export interface HtmlEditingStatus {
+  readonly editable: boolean;
+  readonly hasDraft: boolean;
+  readonly unsynced: boolean;
+  readonly syncRequested: boolean;
+  readonly pending: boolean;
+  readonly stepCount: number;
+  readonly changeCount: number;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  readonly conflict: string | null;
+  readonly draftRevision: string;
+}
+
+export interface HtmlDraftReviewChange {
+  readonly before: string;
+  readonly after: string;
+}
+
+export interface HtmlDraftReviewEntry {
+  readonly taskId: string;
+  readonly changes: readonly HtmlDraftReviewChange[];
+}
+
+export interface HtmlDraftReview {
+  readonly entries: readonly HtmlDraftReviewEntry[];
+  readonly pendingChanges: readonly HtmlDraftReviewChange[];
+}
+
+export const htmlEditCommands = {
+  status: 'html.edit.status',
+  review: 'html.edit.review',
+  undo: 'html.edit.undo',
+  redo: 'html.edit.redo',
+  sync: 'html.edit.sync',
+  discard: 'html.edit.discard',
+} as const;
+
+export const htmlEditEvents = {
+  started: 'html.agent-edit.started',
+  rejected: 'html.agent-edit.rejected',
+  ended: 'html.agent-edit.ended',
+  applied: 'html.agent-edit.applied',
+  sessionChanged: 'html.agent-edit.session-changed',
+} as const;
 
 export interface HtmlDomElementV1 {
   /** Element-only indexes from document.documentElement to this element. */
@@ -163,7 +210,69 @@ export function isHtmlWorkbenchPayload(
   return (
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
-    value.contentUrl.startsWith('learning-content://resource/')
+    value.contentUrl.startsWith('learning-content://resource/') &&
+    (value.editing === undefined || isHtmlEditingStatus(value.editing))
+  );
+}
+
+export function isHtmlEditingStatus(value: unknown): value is HtmlEditingStatus {
+  return (
+    isRecord(value) &&
+    typeof value.editable === 'boolean' &&
+    typeof value.hasDraft === 'boolean' &&
+    typeof value.unsynced === 'boolean' &&
+    typeof value.syncRequested === 'boolean' &&
+    typeof value.pending === 'boolean' &&
+    Number.isSafeInteger(value.stepCount) &&
+    Number(value.stepCount) >= 0 &&
+    Number.isSafeInteger(value.changeCount) &&
+    Number(value.changeCount) >= 0 &&
+    typeof value.canUndo === 'boolean' &&
+    typeof value.canRedo === 'boolean' &&
+    (value.conflict === null || typeof value.conflict === 'string') &&
+    typeof value.draftRevision === 'string' &&
+    value.draftRevision.length > 0
+  );
+}
+
+function isHtmlDraftReviewChange(
+  value: unknown,
+): value is HtmlDraftReviewChange {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) => key === 'before' || key === 'after') &&
+    typeof value.before === 'string' &&
+    value.before.length <= 1_048_576 &&
+    typeof value.after === 'string' &&
+    value.after.length <= 1_048_576
+  );
+}
+
+export function isHtmlDraftReview(value: unknown): value is HtmlDraftReview {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every(
+      (key) => key === 'entries' || key === 'pendingChanges',
+    ) &&
+    Array.isArray(value.entries) &&
+    value.entries.length <= 20 &&
+    value.entries.every(
+      (entry) =>
+        isRecord(entry) &&
+        Object.keys(entry).every(
+          (key) => key === 'taskId' || key === 'changes',
+        ) &&
+        typeof entry.taskId === 'string' &&
+        entry.taskId.length > 0 &&
+        entry.taskId.length <= 256 &&
+        Array.isArray(entry.changes) &&
+        entry.changes.length > 0 &&
+        entry.changes.length <= 1_000 &&
+        entry.changes.every(isHtmlDraftReviewChange),
+    ) &&
+    Array.isArray(value.pendingChanges) &&
+    value.pendingChanges.length <= 1_000 &&
+    value.pendingChanges.every(isHtmlDraftReviewChange)
   );
 }
 

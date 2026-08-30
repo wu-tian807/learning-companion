@@ -39,10 +39,20 @@ import { mapHtmlWorkbenchFacilityEvent } from './facility-events';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
   htmlFrameCommands,
+  htmlEditCommands,
+  isHtmlDraftReview,
+  isHtmlDomTarget,
+  isHtmlEditingStatus,
+  type HtmlDraftReview,
   htmlWorkbenchManifest,
   isHtmlWorkbenchPayload,
 } from './shared';
 import { isHtmlSourceCopyInstallResult } from './html-source-copy-frame-script';
+import { HtmlDraftToolbar } from './editing/HtmlDraftToolbar';
+import {
+  htmlEditVisualCommands,
+  isHtmlEditVisualResult,
+} from './editing/html-edit-visual-commands';
 
 export async function installHtmlSourceCopyInFrame(
   executeCommand: RendererWorkbenchViewProps['executeCommand'],
@@ -119,6 +129,7 @@ export function HtmlWorkbenchView({
   asset,
   bootstrap,
   executeCommand,
+  subscribeEvent,
   onRelink,
   onRefresh,
   onReveal,
@@ -146,6 +157,11 @@ export function HtmlWorkbenchView({
   const [highlightReveal, setHighlightReveal] = useState(false);
   const [highlightDurationMs, setHighlightDurationMs] = useState(0);
   const [highlightRevision, setHighlightRevision] = useState(0);
+  const [editingStatus, setEditingStatus] = useState(payload?.editing);
+  const [editCommandBusy, setEditCommandBusy] = useState(false);
+  const [draftReview, setDraftReview] = useState<HtmlDraftReview>();
+  const editVisualRevisionRef = useRef(0);
+  const appliedEditRevisionsRef = useRef(new Set<string>());
   const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
@@ -206,8 +222,10 @@ export function HtmlWorkbenchView({
   );
 
   const reportAnchorNotFound = useCallback(() => {
-    onError('原文内容可能已经变化，无法定位该锚点。');
-  }, [onError]);
+    if (highlightReveal) {
+      onError('引用原文已被修改，无法定位到原位置。');
+    }
+  }, [highlightReveal, onError]);
 
   const reportAnchorError = useCallback(
     (error: unknown) => {
@@ -268,6 +286,211 @@ export function HtmlWorkbenchView({
     setFrameFailed(false);
     setFrameRevision((current) => current + 1);
   }, [clearHighlight, onInteractionChange]);
+
+  const refreshEditingStatus = useCallback(async () => {
+    try {
+      const result = await executeCommand({ type: htmlEditCommands.status });
+      if (!isHtmlEditingStatus(result.payload)) {
+        throw new Error('HTML editing status returned invalid data');
+      }
+      setEditingStatus(result.payload);
+    } catch (error) {
+      reportError(error, '无法刷新 HTML 草稿状态。');
+    }
+  }, [executeCommand, reportError]);
+
+  const acceptEditingStatus = useCallback((value: JsonValue) => {
+    if (isHtmlEditingStatus(value)) {
+      setEditingStatus(value);
+      return;
+    }
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
+      const record = value as Readonly<Record<string, JsonValue>>;
+      if (isHtmlEditingStatus(record.status)) {
+        setEditingStatus(record.status);
+      }
+    }
+  }, []);
+
+  const runEditCommand = useCallback(async (type: string) => {
+    setEditCommandBusy(true);
+    try {
+      const result = await executeCommand({ type });
+      acceptEditingStatus(result.payload);
+      if (type === htmlEditCommands.discard) setDraftReview(undefined);
+    } catch (error) {
+      reportError(error, '无法执行 HTML 草稿操作。');
+    } finally {
+      setEditCommandBusy(false);
+    }
+  }, [acceptEditingStatus, executeCommand, reportError]);
+
+  const openDraftReview = useCallback(async () => {
+    setEditCommandBusy(true);
+    try {
+      const result = await executeCommand({ type: htmlEditCommands.review });
+      if (!isHtmlDraftReview(result.payload)) {
+        throw new Error('HTML draft review returned invalid data');
+      }
+      setDraftReview(result.payload);
+    } catch (error) {
+      reportError(error, '无法读取 HTML 草稿更改。');
+    } finally {
+      setEditCommandBusy(false);
+    }
+  }, [executeCommand, reportError]);
+
+  const showEditVisual = useCallback(
+    (
+      target: Parameters<typeof isHtmlDomTarget>[0],
+      phase: 'scanning' | 'rejected',
+    ) => {
+      if (!isHtmlDomTarget(target)) return;
+      const revision = ++editVisualRevisionRef.current;
+      void executeCommand({
+        type: htmlEditVisualCommands.show,
+        payload: { target, revision, phase },
+      }).then(
+        (result) => {
+          if (!isHtmlEditVisualResult(result.payload)) {
+            reportError(
+              new Error('HTML edit visual returned invalid data'),
+              '无法显示 HTML 修改状态。',
+            );
+            return;
+          }
+          if (!result.payload.found) {
+            onError('无法在页面中显示正在修改的区域。');
+          }
+        },
+        (error: unknown) => {
+          reportError(error, '无法显示 HTML 修改状态。');
+        },
+      );
+    },
+    [executeCommand, onError, reportError],
+  );
+
+  const clearEditVisual = useCallback((target: JsonValue) => {
+    if (!isHtmlDomTarget(target)) return;
+    const revision = ++editVisualRevisionRef.current;
+    void executeCommand({
+      type: htmlEditVisualCommands.clear,
+      payload: { target, revision },
+    }).then(
+      (result) => {
+        if (!isHtmlEditVisualResult(result.payload)) {
+          reportError(
+            new Error('HTML edit visual returned invalid data'),
+            '无法清除 HTML 修改状态。',
+          );
+        }
+      },
+      (error: unknown) => {
+        reportError(error, '无法清除 HTML 修改状态。');
+      },
+    );
+  }, [executeCommand, reportError]);
+
+  useEffect(() => {
+    if (!subscribeEvent || !payload?.editing) return;
+
+    return subscribeEvent((event) => {
+      const eventPayload = event.payload;
+      if (
+        typeof eventPayload !== 'object' ||
+        eventPayload === null ||
+        Array.isArray(eventPayload)
+      ) {
+        return;
+      }
+      const record = eventPayload as Record<string, JsonValue>;
+
+      if (
+        event.type === 'html.agent-edit.started' ||
+        event.type === 'html.agent-edit.rejected'
+      ) {
+        if (
+          typeof record.taskId !== 'string' ||
+          typeof record.editId !== 'string' ||
+          !isHtmlDomTarget(record.target) ||
+          (event.type === 'html.agent-edit.rejected' &&
+            typeof record.reason !== 'string')
+        ) {
+          return;
+        }
+        showEditVisual(
+          record.target,
+          event.type === 'html.agent-edit.started' ? 'scanning' : 'rejected',
+        );
+        return;
+      }
+
+      if (event.type === 'html.agent-edit.applied') {
+        if (
+          typeof record.taskId !== 'string' ||
+          typeof record.editId !== 'string' ||
+          typeof record.draftRevision !== 'string' ||
+          !isHtmlDomTarget(record.target)
+        ) {
+          return;
+        }
+        const appliedKey = `${record.editId}\0${record.draftRevision}`;
+        if (appliedEditRevisionsRef.current.has(appliedKey)) return;
+        appliedEditRevisionsRef.current.add(appliedKey);
+        reload();
+        void refreshEditingStatus();
+        return;
+      }
+
+      if (event.type === 'html.agent-edit.ended') {
+        if (
+          typeof record.taskId !== 'string' ||
+          typeof record.editId !== 'string' ||
+          !isHtmlDomTarget(record.target)
+        ) {
+          return;
+        }
+        clearEditVisual(record.target);
+        return;
+      }
+
+      if (event.type === 'html.agent-edit.session-changed') {
+        const reason = record.reason;
+        if (
+          reason !== 'settle' &&
+          reason !== 'rollback' &&
+          reason !== 'undo' &&
+          reason !== 'redo' &&
+          reason !== 'sync' &&
+          reason !== 'discard' &&
+          reason !== 'conflict'
+        ) {
+          return;
+        }
+        if (
+          reason === 'rollback' ||
+          reason === 'undo' ||
+          reason === 'redo' ||
+          reason === 'discard'
+        ) {
+          reload();
+        }
+        void refreshEditingStatus();
+      }
+    });
+  }, [
+    payload?.editing,
+    clearEditVisual,
+    refreshEditingStatus,
+    reload,
+    showEditVisual,
+    subscribeEvent,
+  ]);
 
   const reveal = useCallback(async () => {
     try {
@@ -402,6 +625,8 @@ export function HtmlWorkbenchView({
     clearHighlight();
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
+    setEditingStatus(payload?.editing);
+    setDraftReview(undefined);
   }, [clearHighlight, onInteractionChange, payload?.contentUrl]);
 
   if (!payload) {
@@ -445,6 +670,20 @@ export function HtmlWorkbenchView({
         onNotFound={reportAnchorNotFound}
         onError={reportAnchorError}
       />
+
+      {editingStatus && (
+        <HtmlDraftToolbar
+          status={editingStatus}
+          busy={editCommandBusy}
+          review={draftReview}
+          onUndo={() => runEditCommand(htmlEditCommands.undo)}
+          onRedo={() => runEditCommand(htmlEditCommands.redo)}
+          onReview={openDraftReview}
+          onSync={() => runEditCommand(htmlEditCommands.sync)}
+          onDiscard={() => runEditCommand(htmlEditCommands.discard)}
+          onCloseReview={() => setDraftReview(undefined)}
+        />
+      )}
 
       {/* 选中文本后的「引用选中内容」悬浮条（对话栏打开时也显示：
           点击后把新选中内容更新到对话栏锚点，而不是被对话栏状态挡住） */}

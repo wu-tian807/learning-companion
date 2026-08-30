@@ -51,6 +51,9 @@ importers:
       openseadragon:
         specifier: ^6.0.2
         version: 6.0.2
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
       pdfjs-dist:
         specifier: 6.1.200
         version: 6.1.200

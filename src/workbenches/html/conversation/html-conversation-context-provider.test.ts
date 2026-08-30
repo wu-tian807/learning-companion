@@ -65,4 +65,28 @@ describe('HTML conversation context provider', () => {
       new HtmlConversationContextProvider().prepare(invalid as never),
     ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
+
+  it('declares HTML editing tools and the trusted DOM target only when editable', async () => {
+    const editable = { canEdit: vi.fn(async () => true) };
+    const prepared = await new HtmlConversationContextProvider(
+      () => editable,
+    ).prepare(context());
+    const message = prepared.userMessage.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
+
+    expect(editable.canEdit).toHaveBeenCalledWith('project-1', 'asset-1');
+    expect(prepared.toolRequirements).toEqual([
+      { id: 'html_begin_edit', availability: 'required' },
+      { id: 'html_replace_edit', availability: 'required' },
+    ]);
+    expect(prepared.systemInstruction).toContain('html_begin_edit');
+    expect(message).toContain('"anchorType":"html.dom"');
+
+    const readOnly = await new HtmlConversationContextProvider(() => ({
+      canEdit: vi.fn(async () => false),
+    })).prepare(context());
+    expect(readOnly.toolRequirements).toEqual([]);
+  });
 });

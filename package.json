@@ -42,6 +42,7 @@
     "iconv-lite": "^0.7.3",
     "katex": "^0.18.2",
     "openseadragon": "^6.0.2",
+    "parse5": "8.0.1",
     "pdfjs-dist": "6.1.200",
     "react": "19.2.8",
     "react-dom": "19.2.8",
