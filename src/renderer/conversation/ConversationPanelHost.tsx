@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { useConversationController } from './conversation-controller';
 import { ConversationPanel } from './ConversationPanel';
@@ -7,6 +7,7 @@ import type {
   WorkbenchConversationContribution,
 } from './conversation-contracts';
 import {
+  useWorkbenchCurrentConversation,
   useWorkbenchConversationRuntime,
   useWorkbenchConversationSnapshot,
 } from './workbench-conversation-context';
@@ -31,7 +32,12 @@ export function ConversationPanelHost({
 
   return (
     <ActiveConversationPanel
-      key={`${projectId}:${assetId}:${contribution.id}`}
+      key={JSON.stringify([
+        projectId,
+        assetId,
+        contribution.id,
+        contribution.conversationPartitionKey ?? null,
+      ])}
       projectId={projectId}
       assetId={assetId}
       contribution={contribution}
@@ -72,21 +78,36 @@ function ActiveConversationPanel({
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
+  const conversationScope = useMemo(
+    () => ({
+      projectId,
+      assetId,
+      contributionId: contribution.id,
+      ...(contribution.conversationPartitionKey === undefined
+        ? {}
+        : {
+            conversationPartitionKey: contribution.conversationPartitionKey,
+          }),
+    }),
+    [
+      assetId,
+      contribution.conversationPartitionKey,
+      contribution.id,
+      projectId,
+    ],
+  );
+  const currentConversation = useWorkbenchCurrentConversation(
+    runtime,
+    conversationScope,
+  );
   const controller = useConversationController({
     open,
     projectId,
     assetId,
     contribution,
-    initialConversation: runtime.getCurrentConversation({
-      projectId,
-      assetId,
-      contributionId: contribution.id,
-    }),
+    initialConversation: currentConversation,
     onConversationChange(conversation) {
-      runtime.setCurrentConversation(
-        { projectId, assetId, contributionId: contribution.id },
-        conversation,
-      );
+      runtime.setCurrentConversation(conversationScope, conversation);
     },
     launchRequest,
     onLaunchConsumed,
@@ -102,16 +123,10 @@ function ActiveConversationPanel({
 
   useEffect(() => {
     runtime.setCurrentConversation(
-      { projectId, assetId, contributionId: contribution.id },
+      conversationScope,
       controller.state.conversation,
     );
-  }, [
-    assetId,
-    contribution.id,
-    controller.state.conversation,
-    projectId,
-    runtime,
-  ]);
+  }, [controller.state.conversation, conversationScope, runtime]);
 
   if (!open) return null;
 

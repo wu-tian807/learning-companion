@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type {
   ConversationRecord,
@@ -157,6 +157,49 @@ describe('WorkbenchConversationRuntime', () => {
     })).toBeUndefined();
   });
 
+  it('notifies only the matching current-conversation scope', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'video.frame-conversation',
+      conversationPartitionKey: 'revision-1',
+    };
+    const matchingListener = vi.fn();
+    const otherRevisionListener = vi.fn();
+    runtime.subscribeCurrentConversation(scope, matchingListener);
+    runtime.subscribeCurrentConversation(
+      { ...scope, conversationPartitionKey: 'revision-2' },
+      otherRevisionListener,
+    );
+
+    const selected = conversation('conversation-1');
+    runtime.setCurrentConversation(scope, selected);
+    runtime.setCurrentConversation(scope, selected);
+
+    expect(matchingListener).toHaveBeenCalledOnce();
+    expect(otherRevisionListener).not.toHaveBeenCalled();
+  });
+
+  it('isolates current conversations by the Workbench-owned partition key', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'image.reading-conversation',
+      conversationPartitionKey: 'revision-1',
+    };
+    const selected = conversation('conversation-old-revision');
+
+    runtime.setCurrentConversation(scope, selected);
+
+    expect(runtime.getCurrentConversation(scope)).toBe(selected);
+    expect(runtime.getCurrentConversation({
+      ...scope,
+      conversationPartitionKey: 'revision-2',
+    })).toBeUndefined();
+  });
+
   it('drops only the in-memory current conversation state on disposal', () => {
     const runtime = new WorkbenchConversationRuntime();
     const scope = {
@@ -181,6 +224,10 @@ describe('WorkbenchConversationRuntime', () => {
 
     expect(() => runtime.getCurrentConversation({ ...scope, assetId: ' ' }))
       .toThrow('Workbench Conversation scope 无效');
+    expect(() => runtime.getCurrentConversation({
+      ...scope,
+      conversationPartitionKey: ' ',
+    })).toThrow('Workbench Conversation scope 无效');
     expect(() => runtime.setCurrentConversation(scope, conversation(' ')))
       .toThrow('Workbench Conversation identity 无效');
   });

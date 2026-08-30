@@ -118,9 +118,16 @@ registerGeneration({ conversationContexts }) {
 - 新 Conversation 使用新的 `conversationId`，因此形成新的 Session 边界。
 
 当前 Project 运行期间，公共 Conversation Runtime 按
-`projectId + assetId + contributionId` 仅在内存中保留当前选中的 UI Conversation。这样
-Workbench Session 因刷新、切换或重挂载而变化时，Controller 仍继续使用原
-`conversationId`；关闭 Project 或重启应用后这份运行期选择自然消失。
+`projectId + assetId + contributionId + conversationPartitionKey` 仅在内存中保留当前选中的
+UI Conversation。`conversationPartitionKey` 是 Workbench 提供的可选不透明键；例如 Image
+和 Video 使用自己的内容版本，公共层不解释版本含义。这样 Workbench Session 因刷新、
+切换或重挂载而变化时，Controller 仍继续使用原 `conversationId`，而内容分区变化时不会
+恢复旧 Conversation；关闭 Project 或重启应用后这份运行期选择自然消失。
+
+Runtime 的当前 Conversation 投影是可订阅的。旧 Controller 在卸载后才收到
+GenerationTask ID 时，必须把绑定后的投影发布回相同 scope；新 Controller 只接纳相同
+`conversationId` 的晚到投影，并按 task ID 幂等恢复运行中任务。持久化 UI History 不参与
+这条运行期交接链路。
 
 普通打开、附加新 Context 和后续追问都不传 `conversationId`，也不会从持久化历史中猜测
 “最近一次”会话。只有用户主动选择某条历史记录时，Renderer 才显式传入该记录的

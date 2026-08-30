@@ -15,15 +15,23 @@ export interface WorkbenchConversationScope {
   readonly projectId: string;
   readonly assetId: string;
   readonly contributionId: string;
+  readonly conversationPartitionKey?: string;
 }
 
 function conversationScopeKey(scope: WorkbenchConversationScope): string {
-  const parts = [scope.projectId, scope.assetId, scope.contributionId]
+  const identityParts = [scope.projectId, scope.assetId, scope.contributionId]
     .map((part) => part.trim());
-  if (parts.some((part) => part.length === 0)) {
+  if (
+    identityParts.some((part) => part.length === 0) ||
+    (scope.conversationPartitionKey !== undefined &&
+      scope.conversationPartitionKey.trim().length === 0)
+  ) {
     throw new Error('Workbench Conversation scope 无效');
   }
-  return JSON.stringify(parts);
+  return JSON.stringify([
+    ...identityParts,
+    scope.conversationPartitionKey ?? null,
+  ]);
 }
 
 export interface OpenWorkbenchConversationInput {
@@ -40,6 +48,10 @@ export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly contributions = new Map<string, RegisteredContribution>();
   private readonly currentConversations = new Map<string, ConversationRecord>();
+  private readonly currentConversationListeners = new Map<
+    string,
+    Set<() => void>
+  >();
   private launchId = 0;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
@@ -59,6 +71,22 @@ export class WorkbenchConversationRuntime {
     return this.currentConversations.get(conversationScopeKey(scope));
   }
 
+  subscribeCurrentConversation(
+    scope: WorkbenchConversationScope,
+    listener: () => void,
+  ): () => void {
+    const key = conversationScopeKey(scope);
+    const listeners = this.currentConversationListeners.get(key) ?? new Set();
+    listeners.add(listener);
+    this.currentConversationListeners.set(key, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.currentConversationListeners.delete(key);
+      }
+    };
+  }
+
   setCurrentConversation(
     scope: WorkbenchConversationScope,
     conversation: ConversationRecord,
@@ -66,7 +94,14 @@ export class WorkbenchConversationRuntime {
     if (!conversation.id.trim()) {
       throw new Error('Workbench Conversation identity 无效');
     }
-    this.currentConversations.set(conversationScopeKey(scope), conversation);
+    const key = conversationScopeKey(scope);
+    if (this.currentConversations.get(key) === conversation) return;
+    this.currentConversations.set(key, conversation);
+    for (const listener of [
+      ...(this.currentConversationListeners.get(key) ?? []),
+    ]) {
+      listener();
+    }
   }
 
   register(
@@ -168,6 +203,10 @@ export class WorkbenchConversationRuntime {
   dispose(): void {
     this.contributions.clear();
     this.currentConversations.clear();
+    for (const listeners of this.currentConversationListeners.values()) {
+      for (const listener of [...listeners]) listener();
+    }
+    this.currentConversationListeners.clear();
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }

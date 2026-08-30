@@ -57,6 +57,7 @@ export function createImageConversationContribution(input: {
   const contribution: WorkbenchConversationContribution = {
     id: `${imageWorkbenchManifest.id}.reading-conversation`,
     workbenchId: imageWorkbenchManifest.id,
+    conversationPartitionKey: sourceRevision,
     contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
     includeSourceAssetReference: true,
     initialContextRequired: true,

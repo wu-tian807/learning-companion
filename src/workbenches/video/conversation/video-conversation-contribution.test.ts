@@ -190,6 +190,9 @@ describe('video conversation contribution', () => {
   });
 
   it('isolates persisted conversations by video source revision', async () => {
+    expect(contribution('100').conversationPartitionKey).toBe('100');
+    expect(contribution('101').conversationPartitionKey).toBe('101');
+
     const values = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => values.get(key) ?? null,

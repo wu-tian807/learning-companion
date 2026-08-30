@@ -131,6 +131,10 @@ describe('image conversation contribution', () => {
     const firstContext = createImageConversationContext(target, 'revision-1');
     const secondContext = createImageConversationContext(target, 'revision-2');
     expect(conversationContextsEqual(firstContext, secondContext)).toBe(false);
+    expect(createContribution(vi.fn(), 'revision-1').conversationPartitionKey)
+      .toBe('revision-1');
+    expect(createContribution(vi.fn(), 'revision-2').conversationPartitionKey)
+      .toBe('revision-2');
 
     const values = new Map<string, string>();
     vi.stubGlobal('localStorage', {

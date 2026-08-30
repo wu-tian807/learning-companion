@@ -86,6 +86,8 @@ export interface ConversationAnswerAction
 export interface WorkbenchConversationContribution {
   readonly id: string;
   readonly workbenchId: string;
+  /** Opaque Workbench-owned key that partitions in-memory conversation state. */
+  readonly conversationPartitionKey?: string;
   /** Main-side provider that turns the opaque Workbench context into Agent input. */
   readonly contextProviderId: string;
   /** Copies the current Asset into the conversation Workspace when true. */

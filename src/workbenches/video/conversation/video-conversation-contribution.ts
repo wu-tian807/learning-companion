@@ -58,6 +58,7 @@ export function createVideoConversationContribution(input: {
   const contribution: WorkbenchConversationContribution = {
     id: `${videoWorkbenchManifest.id}.frame-conversation`,
     workbenchId: videoWorkbenchManifest.id,
+    ...(sourceRevision ? { conversationPartitionKey: sourceRevision } : {}),
     contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
     initialContextRequired: true,
     initialContextRequiredMessage: '请先在视频画面上单击或拖动选择一个区域',

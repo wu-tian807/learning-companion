@@ -1,12 +1,19 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useSyncExternalStore,
 } from 'react';
 
-import type { WorkbenchConversationContribution } from './conversation-contracts';
-import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
+import type {
+  ConversationRecord,
+  WorkbenchConversationContribution,
+} from './conversation-contracts';
+import {
+  WorkbenchConversationRuntime,
+  type WorkbenchConversationScope,
+} from './workbench-conversation-runtime';
 
 export const WorkbenchConversationRuntimeContext =
   createContext<WorkbenchConversationRuntime | null>(null);
@@ -32,6 +39,57 @@ export function useWorkbenchConversationSnapshot(
     runtime.getSnapshot,
     runtime.getSnapshot,
   );
+}
+
+export function useWorkbenchCurrentConversation(
+  runtime: WorkbenchConversationRuntime,
+  scope: WorkbenchConversationScope,
+): ConversationRecord | undefined {
+  const {
+    assetId,
+    contributionId,
+    conversationPartitionKey,
+    projectId,
+  } = scope;
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      runtime.subscribeCurrentConversation(
+        {
+          assetId,
+          contributionId,
+          ...(conversationPartitionKey === undefined
+            ? {}
+            : { conversationPartitionKey }),
+          projectId,
+        },
+        listener,
+      ),
+    [
+      assetId,
+      contributionId,
+      conversationPartitionKey,
+      projectId,
+      runtime,
+    ],
+  );
+  const getSnapshot = useCallback(
+    () => runtime.getCurrentConversation({
+      assetId,
+      contributionId,
+      ...(conversationPartitionKey === undefined
+        ? {}
+        : { conversationPartitionKey }),
+      projectId,
+    }),
+    [
+      assetId,
+      contributionId,
+      conversationPartitionKey,
+      projectId,
+      runtime,
+    ],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function useWorkbenchConversationContribution(

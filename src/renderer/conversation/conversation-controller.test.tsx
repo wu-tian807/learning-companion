@@ -273,6 +273,32 @@ describe('shared Conversation controller', () => {
     ).toBe('task-late');
   });
 
+  it('publishes a late start rollback after the controller unmounts', async () => {
+    let rejectStart!: (reason: unknown) => void;
+    client.start = vi.fn(() => new Promise<never>((_resolve, reject) => {
+      rejectStart = reject;
+    }));
+    const onConversationChange = vi.fn();
+    render({ onConversationChange });
+
+    act(() => latest.actions.submit('question before remount'));
+    expect(
+      (onConversationChange.mock.calls.at(-1)?.[0] as ConversationRecord)
+        .messages,
+    ).toHaveLength(2);
+    act(() => root.render(null));
+    await act(async () => {
+      rejectStart(new Error('start failed'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      (onConversationChange.mock.calls.at(-1)?.[0] as ConversationRecord)
+        .messages,
+    ).toEqual([]);
+  });
+
   it('reattaches to an in-flight GenerationTask after a controller remount', async () => {
     const activeConversation: ConversationRecord = {
       id: 'active-conversation',
@@ -303,7 +329,7 @@ describe('shared Conversation controller', () => {
     expect(latest.state.activityLabel).toBe('正在恢复回答进度…');
   });
 
-  it('does not treat a later initialConversation prop as a remount', async () => {
+  it('adopts a late task binding for the same conversation and recovers it once', async () => {
     render();
     await flush();
     const selectedConversation = latest.state.conversation;
@@ -319,8 +345,44 @@ describe('shared Conversation controller', () => {
         },
       ],
     };
+    client.get = vi.fn(async () => task('task-later'));
 
     render({ initialConversation: laterProjection });
+    await flush();
+
+    expect(client.get).toHaveBeenCalledOnce();
+    expect(client.get).toHaveBeenCalledWith('project', 'task-later');
+    expect(latest.state.conversation.id).toBe(selectedConversation.id);
+    expect(latest.state.activeTaskId).toBe('task-later');
+    expect(latest.state.busy).toBe(true);
+
+    render({ initialConversation: { ...laterProjection } });
+    await flush();
+    expect(client.get).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a late projection switch the selected conversation', async () => {
+    render();
+    await flush();
+    const selectedConversation = latest.state.conversation;
+
+    render({
+      initialConversation: {
+        id: 'other-conversation',
+        title: '其他对话',
+        messages: [
+          {
+            id: 'a',
+            role: 'assistant',
+            text: '',
+            createdTime: 1,
+            generationTaskId: 'task-other',
+          },
+        ],
+        createdTime: 1,
+        updatedTime: 1,
+      },
+    });
     await flush();
 
     expect(client.get).not.toHaveBeenCalled();

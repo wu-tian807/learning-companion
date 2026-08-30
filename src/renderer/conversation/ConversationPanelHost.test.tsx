@@ -36,10 +36,15 @@ function conversation(id: string): ConversationRecord {
   };
 }
 
-function contribution(): WorkbenchConversationContribution {
+function contribution(
+  conversationPartitionKey?: string,
+): WorkbenchConversationContribution {
   return {
     id: 'html.assistant',
     workbenchId: 'html',
+    ...(conversationPartitionKey === undefined
+      ? {}
+      : { conversationPartitionKey }),
     contextProviderId: 'html.context',
     title: '网页问答',
     emptyLabel: 'empty',
@@ -108,9 +113,13 @@ describe('ConversationPanelHost', () => {
       await Promise.resolve();
     });
     expect(
-      controllerMocks.useConversationController.mock.calls.at(-1)?.[0]
+      controllerMocks.useConversationController.mock.calls[0]?.[0]
         .initialConversation,
     ).toBeUndefined();
+    expect(
+      controllerMocks.useConversationController.mock.calls.at(-1)?.[0]
+        .initialConversation,
+    ).toBe(activeConversation);
 
     await act(async () => {
       releaseFirst();
@@ -128,5 +137,99 @@ describe('ConversationPanelHost', () => {
       controllerMocks.useConversationController.mock.calls.at(-1)?.[0]
         .initialConversation,
     ).toBe(activeConversation);
+
+    const lateTaskBinding: ConversationRecord = {
+      ...activeConversation,
+      messages: [
+        {
+          id: 'answer',
+          role: 'assistant',
+          text: '',
+          createdTime: 2,
+          generationTaskId: 'task-late',
+        },
+      ],
+    };
+    await act(async () => {
+      runtime.setCurrentConversation(
+        {
+          projectId: 'project',
+          assetId: 'asset',
+          contributionId: registeredContribution.id,
+        },
+        lateTaskBinding,
+      );
+      await Promise.resolve();
+    });
+    expect(
+      controllerMocks.useConversationController.mock.calls.at(-1)?.[0]
+        .initialConversation,
+    ).toBe(lateTaskBinding);
+  });
+
+  it('starts a separate controller projection when the Workbench partition changes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const oldConversation = conversation('old-conversation');
+    const freshConversation = conversation('fresh-conversation');
+    const oldContribution = contribution('revision-1');
+    const newContribution = contribution('revision-2');
+    controllerMocks.useConversationController.mockImplementation(
+      (input: { readonly initialConversation?: ConversationRecord }) => ({
+        state: {
+          tab: 'chat',
+          conversation: input.initialConversation ?? freshConversation,
+          history: [],
+          draft: '',
+          busy: false,
+          historyLoading: false,
+        },
+        actions: {
+          setTab: vi.fn(),
+          setDraft: vi.fn(),
+          setPendingContext: vi.fn(),
+          submit: vi.fn(),
+          cancel: vi.fn(),
+          retry: vi.fn(),
+          reanswer: vi.fn(),
+          restore: vi.fn(),
+          remove: vi.fn(),
+          startNew: vi.fn(),
+        },
+      }),
+    );
+    runtime.setCurrentConversation(
+      {
+        projectId: 'project',
+        assetId: 'asset',
+        contributionId: oldContribution.id,
+        conversationPartitionKey: 'revision-1',
+      },
+      oldConversation,
+    );
+    runtime.register('image:workbench-session', oldContribution);
+
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelHost projectId="project" assetId="asset" />
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+    });
+    expect(
+      controllerMocks.useConversationController.mock.calls[0]?.[0]
+        .initialConversation,
+    ).toBe(oldConversation);
+
+    const previousCallCount =
+      controllerMocks.useConversationController.mock.calls.length;
+    await act(async () => {
+      runtime.register('image:workbench-session', newContribution);
+      await Promise.resolve();
+    });
+    expect(
+      controllerMocks.useConversationController.mock.calls[previousCallCount]
+        ?.[0].initialConversation,
+    ).toBeUndefined();
   });
 });

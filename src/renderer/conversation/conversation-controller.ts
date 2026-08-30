@@ -179,12 +179,14 @@ export function useConversationController({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const conversationRef = useRef(conversation);
+  const observedInitialConversationRef = useRef(initialConversation);
   const pendingContextRef = useRef<JsonValue | undefined>(pendingContext);
   const activeTaskIdRef = useRef<string | undefined>(undefined);
   const activeAssistantMessageIdRef = useRef<string | undefined>(undefined);
   const pendingCancelRef = useRef(false);
   const mountedRef = useRef(true);
   const initialTaskRecoveryStartedRef = useRef(false);
+  const taskRecoveryStartedIdsRef = useRef(new Set<string>());
   const lastLaunchIdRef = useRef<number | undefined>(undefined);
   const contributionRef = useRef(contribution);
   const onConversationChangeRef = useRef(onConversationChange);
@@ -465,8 +467,16 @@ export function useConversationController({
     const candidate = [...record.messages].reverse().find(
       (message) => message.role === 'assistant' && message.generationTaskId,
     );
-    if (!candidate?.generationTaskId) return;
-    void taskClient.get(projectId, candidate.generationTaskId).then((snapshot) => {
+    const taskId = candidate?.generationTaskId;
+    if (!taskId) return;
+    if (
+      activeTaskIdRef.current ||
+      taskRecoveryStartedIdsRef.current.has(taskId)
+    ) {
+      return;
+    }
+    taskRecoveryStartedIdsRef.current.add(taskId);
+    void taskClient.get(projectId, taskId).then((snapshot) => {
       if (!mountedRef.current || conversationRef.current.id !== record.id || !snapshot) return;
       if (snapshot.status === 'created' || snapshot.status === 'prepared' || snapshot.status === 'processing') {
         bindTask(snapshot.id, candidate.id);
@@ -477,6 +487,8 @@ export function useConversationController({
         applyTerminalTask(snapshot);
       }
     }).catch((taskError: unknown) => {
+      taskRecoveryStartedIdsRef.current.delete(taskId);
+      if (!mountedRef.current) return;
       setError({ message: userMessageFromError(taskError, '无法恢复这次回答。') ?? '无法恢复这次回答。' });
     });
   }, [applyTerminalTask, bindTask, projectId, taskClient]);
@@ -500,6 +512,25 @@ export function useConversationController({
       recoverConversationTask(mountedInitialConversation);
     }
   }, [recoverConversationTask]);
+
+  useEffect(() => {
+    const projected = initialConversation;
+    if (
+      !projected ||
+      projected === observedInitialConversationRef.current
+    ) {
+      return;
+    }
+    observedInitialConversationRef.current = projected;
+    if (
+      projected === conversationRef.current ||
+      projected.id !== conversationRef.current.id
+    ) {
+      return;
+    }
+    replaceConversation(projected);
+    recoverConversationTask(projected);
+  }, [initialConversation, recoverConversationTask, replaceConversation]);
 
   const submit = useCallback((question = draft, context = pendingContext) => {
     const normalized = question.trim();
@@ -538,8 +569,8 @@ export function useConversationController({
 
     const rollback = (nextError: ConversationErrorState) => {
       pendingCancelRef.current = false;
-      if (!mountedRef.current) return;
       replaceConversation(current);
+      if (!mountedRef.current) return;
       setDraft(normalized);
       writePendingContext(context);
       setBusy(false);
