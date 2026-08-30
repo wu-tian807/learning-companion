@@ -451,6 +451,10 @@ export function useConversationController({
     void taskClient.start(request).then(
       (started) => {
         bindTask(started.taskId, assistantMessageId);
+        // Persist the accepted question immediately. Anchored Workbench UI
+        // derives its question frames from history and must not wait for a
+        // slow Assistant response before restoring the selected region.
+        void persist(next);
         if (context !== undefined) {
           contributionRef.current.onContextReleased?.(context);
         }
@@ -473,6 +477,7 @@ export function useConversationController({
     draft,
     now,
     pendingContext,
+    persist,
     projectId,
     replaceConversation,
     taskClient,

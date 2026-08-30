@@ -221,6 +221,39 @@ describe('shared Conversation controller', () => {
     expect(onContextReleased).not.toHaveBeenCalled();
   });
 
+  it('persists an anchored question as soon as its Task is accepted', async () => {
+    const historyStore = createMemoryHistory();
+    const context = {
+      target: {
+        scope: 'content' as const,
+        anchorType: 'pdf.region',
+        anchorVersion: 1,
+        anchorPayload: {
+          pageNumber: 5,
+          x: 0.1,
+          y: 0.2,
+          width: 0.3,
+          height: 0.4,
+        },
+      },
+    };
+    render({ contribution: createContribution({ historyStore }) });
+
+    act(() => latest.actions.submit('解释这个区域', context));
+    await flush();
+
+    expect(historyStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          text: '解释这个区域',
+          context,
+        }),
+      ]),
+    }));
+    expect(latest.state.busy).toBe(true);
+  });
+
   it('cancels the real Task even when Stop is pressed before start returns', async () => {
     let resolveStart!: (value: { taskId: string; snapshot: GenerationTaskView }) => void;
     client.start = vi.fn(() => new Promise<{
