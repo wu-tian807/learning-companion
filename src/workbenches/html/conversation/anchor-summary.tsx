@@ -86,6 +86,14 @@ export function summarizeHtmlAnchor(anchor: JsonValue): HtmlAnchorSummary {
   return { kindLabel: '内容' };
 }
 
+export function describeHtmlConversationContext(context: JsonValue) {
+  const summary = summarizeHtmlAnchor(context);
+  return {
+    label: summary.kindLabel,
+    ...(summary.detail ? { detail: summary.detail } : {}),
+  };
+}
+
 export function AnchorChip({
   anchor,
   onRemove,

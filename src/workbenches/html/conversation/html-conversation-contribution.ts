@@ -4,7 +4,7 @@ import type {
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { isHtmlAnchorTarget, type HtmlAnchorTarget } from '../anchor-commands';
 import { htmlWorkbenchManifest } from '../shared';
-import { summarizeHtmlAnchor } from './anchor-summary';
+import { describeHtmlConversationContext } from './anchor-summary';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './html-conversation-context';
 
 export function shouldClearHtmlConversationHighlight(
@@ -31,12 +31,9 @@ export function createHtmlConversationContribution(input: {
     sourceAssetMode: 'reference',
     isContext: isHtmlAnchorTarget,
     describeContext(context) {
-      if (!isHtmlAnchorTarget(context)) return { label: 'HTML 内容' };
-      const summary = summarizeHtmlAnchor(context);
-      return {
-        label: summary.kindLabel,
-        ...(summary.detail ? { detail: summary.detail } : {}),
-      };
+      return isHtmlAnchorTarget(context)
+        ? describeHtmlConversationContext(context)
+        : { label: 'HTML 内容' };
     },
     revealContext: input.revealContext,
     onContextReleased: input.onContextReleased,

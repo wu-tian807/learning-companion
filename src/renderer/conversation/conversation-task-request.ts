@@ -40,7 +40,6 @@ export function createConversationContextSource(
   const commitAnswer =
     input.context !== undefined &&
     contribution.shouldCommitAnswer?.(input) === true;
-
   return Object.freeze({
     contributionId: contribution.id,
     contextProviderId: contribution.contextProviderId,

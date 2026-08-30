@@ -415,6 +415,7 @@ export function VideoWorkbenchView({
     conversationOwnerId,
     asset.id,
     conversationContribution,
+    loadState.kind === 'ready',
   );
   const conversationSnapshot =
     useWorkbenchConversationSnapshot(conversationRuntime);

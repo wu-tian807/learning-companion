@@ -55,6 +55,7 @@ import {
 } from './register-main-workbenches';
 import { preloadWorkbenchContributions } from './register-preload-workbench-features';
 import {
+  describeRendererConversationContext,
   registerRendererWorkbenches,
   rendererWorkbenchContributions,
 } from './register-renderer-workbenches';
@@ -176,6 +177,33 @@ describe('Workbench contribution catalogs', () => {
     expect(
       [...loaders.values()].every(({ loader }) => typeof loader === 'function'),
     ).toBe(true);
+  });
+
+  it('describes persisted HTML references without loading its Renderer', () => {
+    expect(describeRendererConversationContext(
+      {
+        contributionId: 'html.assistant',
+        contextProviderId: HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
+        assetId: 'asset-html',
+      },
+      {
+        scope: 'content',
+        anchorType: 'html.dom',
+        anchorVersion: 1,
+        anchorPayload: {
+          frameUrl: 'learning-content://resource/session',
+          element: {
+            path: [1, 2],
+            tagName: 'button',
+            id: 'run',
+            textQuote: '运行模型',
+          },
+        },
+      },
+    )).toEqual({
+      label: '元素',
+      detail: '#run <button> “运行模型”',
+    });
   });
 
   it('registers Attachment and Anchor extensions through the same Main catalog', () => {

@@ -25,3 +25,12 @@ export function createEpubConversationContext(
 ): EpubConversationContext {
   return Object.freeze({ target }) as EpubConversationContext;
 }
+
+export function describeEpubConversationContext(context: JsonValue) {
+  return {
+    label: 'EPUB 选区',
+    ...(isEpubConversationContext(context)
+      ? { detail: context.target.anchorPayload.quote.exact }
+      : {}),
+  };
+}

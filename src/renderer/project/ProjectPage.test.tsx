@@ -78,7 +78,6 @@ describe('ProjectPage Project conversation lifecycle', () => {
       value: {
         listProjectConversations: vi.fn(async () => []),
         saveProjectConversation: vi.fn(async () => []),
-        importProjectConversations: vi.fn(async () => []),
         deleteProjectConversation: vi.fn(async () => []),
       },
     });

@@ -67,8 +67,7 @@ Provider。下一条没有附件的消息仍走 Project Provider。新的 Workbe
 - 应用数据库的 `project_conversations` 保存标题和 UI 消息投影；
 - Agent Session 保存 Provider Session/thread 绑定与真实模型上下文；
 - Renderer 只通过 Project Conversation IPC 读取、保存和删除，不把 `localStorage` 当运行期存储；
-- 旧的 Workbench/Asset `localStorage` 记录在首次读取时单向导入后端，成功后删除旧键；
-- 旧 HTML Workbench 数据由数据库迁移一次性搬入同一张表，旧运行时读写通道删除。
+- 项目尚未发布，不保留旧 Workbench/Asset 历史导入 IPC、HTML 专属会话协议或运行期兼容旁路。
 
 ### Audio 滚动与收缩边界
 
@@ -97,5 +96,5 @@ Workbench 全宽滚动视口（scrollbar 位于面板边缘）
 - 侧栏开合后 Audio Workbench、字幕和播放器控制栏无横向溢出；
 - 运行聚焦测试、`pnpm check`、生产打包和真实 Electron 宽度验证。
 
-本设计不改变 GenerationTask、Provider Session 或文件清理协议；它新增统一的 Project
-Conversation 数据库/IPC，并只保留一次性旧历史迁移入口。
+本设计不改变 GenerationTask、Provider Session 或文件清理协议；它使用统一的 Project
+Conversation 数据库和读取、保存、删除 IPC，不保留第二套旧历史导入入口。

@@ -16,12 +16,14 @@ export function ConversationPanelHost({
   projectId,
   historyStore,
   onClose,
+  onSelectAsset,
   onOpenSettings,
   onError,
 }: {
   readonly projectId: string;
   readonly historyStore: ConversationHistoryStore;
   readonly onClose?: () => void;
+  readonly onSelectAsset: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
@@ -42,6 +44,7 @@ export function ConversationPanelHost({
         if (onClose) onClose();
         else runtime.close();
       }}
+      onSelectAsset={onSelectAsset}
       onOpenSettings={onOpenSettings}
       onError={onError}
     />
@@ -56,6 +59,7 @@ function ActiveConversationPanel({
   launchRequest,
   onLaunchConsumed,
   onClose,
+  onSelectAsset,
   onOpenSettings,
   onError,
 }: {
@@ -66,6 +70,7 @@ function ActiveConversationPanel({
   readonly launchRequest: ConversationLaunchRequest | undefined;
   readonly onLaunchConsumed: (requestId: number) => void;
   readonly onClose: () => void;
+  readonly onSelectAsset: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
@@ -94,6 +99,12 @@ function ActiveConversationPanel({
       projectId={projectId}
       resolveContextContribution={(source) =>
         runtime.resolveContribution(source)
+      }
+      describeContext={(source, context) =>
+        runtime.describeContext(source, context)
+      }
+      onRevealContext={(source, context) =>
+        runtime.revealContext(source, context, onSelectAsset)
       }
       onStartNew={() =>
         runtime.open({ fallbackToNewConversation: true })

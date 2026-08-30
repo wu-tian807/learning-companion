@@ -132,12 +132,18 @@ registerGeneration({ conversationContexts }) {
 - `project_conversations` 以 `conversationId + projectId` 保存标题和 Renderer 消息投影；
 - Renderer 只通过统一 Project Conversation IPC 读写，不再由各 Workbench 使用 `localStorage`
   或 Workbench State 保存第二份历史；
+- 带 Context 的用户消息保存来源 Asset 与 Provider 标识；各 Workbench 在 Renderer Catalog
+  注册纯展示解析器，因此历史 UI 不依赖当前挂载的 Workbench，也不重复保存展示数据；
 - Renderer 历史不会重新拼回 Prompt；
 - 新 Conversation 使用新的 `conversationId`，因此形成新的 Session 边界。
 
 Context 只在用户创建新 Anchor 时附加到当前用户消息。没有显式附件的后续追问始终使用
 Project Context Provider，不回退到当前 Workbench，也不隐式附带当前选中的 Asset；同一个
 `conversationId` 对应的 Provider Session 自己保留此前真实模型语境。
+
+历史引用的重新定位由 Project 协调：先选中消息记录的来源 Asset，等待该 Asset 的
+Workbench Contribution 完成注册，再由目标 Workbench 解释并定位 Anchor。当前正在显示的
+Workbench 既不解释其他 Asset 的引用，也不决定这张引用卡片能否显示或点击。
 
 ## 5. AssetReference 策略
 

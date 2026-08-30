@@ -92,7 +92,6 @@ function createContextAttachment(
   contribution = createContribution(),
 ): ConversationContextAttachment {
   return {
-    ownerId: 'test.owner',
     assetId: 'asset',
     contribution,
     ...(context === undefined ? {} : { context }),
@@ -111,7 +110,6 @@ function createContextLaunch(
   return {
     ...input,
     contextSource: {
-      ownerId: attachment.ownerId,
       assetId: attachment.assetId,
       contribution: attachment.contribution,
     },
@@ -237,12 +235,13 @@ describe('shared Conversation controller', () => {
       };
     });
     const context = { target: { scope: 'asset' } };
+    const contextualContribution = createContribution();
     render();
 
     act(() =>
       latest.actions.submit(
         '解释这段内容',
-        createContextAttachment(context),
+        createContextAttachment(context, contextualContribution),
       ),
     );
     await flush();
@@ -530,7 +529,7 @@ describe('shared Conversation controller', () => {
     ).toBeUndefined();
   });
 
-  it('does not guess a Workbench source for legacy context during re-answer', () => {
+  it('does not guess a Workbench source for unattributed context during re-answer', () => {
     const saved: ConversationRecord = {
       id: 'legacy-context',
       title: '旧上下文',

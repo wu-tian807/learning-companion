@@ -56,7 +56,6 @@ import type { JsonValue } from "./workbench/protocol";
 import type {
   ConversationRecord,
   DeleteProjectConversationRequest,
-  ImportProjectConversationsRequest,
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "./project-conversations";
@@ -101,7 +100,6 @@ export const IPC_CHANNELS = {
   closeProject: "project:close",
   listProjectConversations: "project-conversation:list",
   saveProjectConversation: "project-conversation:save",
-  importProjectConversations: "project-conversation:import",
   deleteProjectConversation: "project-conversation:delete",
   selectLocalAssetFiles: "asset:select-local-files",
   addLocalAssets: "asset:add-local-files",
@@ -218,9 +216,6 @@ export interface LearningCompanionApi {
   ) => Promise<ConversationRecord[]>;
   saveProjectConversation: (
     request: SaveProjectConversationRequest,
-  ) => Promise<ConversationRecord[]>;
-  importProjectConversations: (
-    request: ImportProjectConversationsRequest,
   ) => Promise<ConversationRecord[]>;
   deleteProjectConversation: (
     request: DeleteProjectConversationRequest,
