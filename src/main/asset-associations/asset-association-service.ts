@@ -9,6 +9,10 @@ import {
   type CreateAssetReferenceInput,
 } from '../../shared/asset-associations';
 import type { AssetLookup } from '../assets/asset-database';
+import type {
+  AssetAggregateMutationListener,
+  AssetAggregateMutationSource,
+} from '../assets/asset-aggregate-mutation';
 import type { AssetDeletionObserver } from '../assets/asset-service';
 import { AppError } from '../errors/app-error';
 import type { ProjectLookup } from '../projects/project-database';
@@ -30,6 +34,10 @@ export interface AssetAssociationServiceApi {
   listLinks(assetId: string): readonly AssetLink[];
   ensureLink(assetId: string, input: CreateAssetLinkInput): AssetLink;
   deleteLink(linkId: string): void;
+}
+
+export interface AssetAssociationServiceDependencies {
+  readonly now: () => number;
 }
 
 interface AssociationState {
@@ -99,17 +107,28 @@ function removeOwnedId(
 }
 
 export class AssetAssociationService
-  implements AssetAssociationServiceApi, AssetDeletionObserver
+  implements
+    AssetAssociationServiceApi,
+    AssetDeletionObserver,
+    AssetAggregateMutationSource
 {
   private activeProjectId: string | undefined;
   private state: AssociationState = createEmptyState();
+  private readonly mutationListeners =
+    new Set<AssetAggregateMutationListener>();
+  private readonly dependencies: AssetAssociationServiceDependencies;
 
   constructor(
     private readonly referenceDatabase: AssetReferenceDatabaseApi,
     private readonly linkDatabase: AssetLinkDatabaseApi,
     private readonly projectLookup: ProjectLookup,
     private readonly assetLookup: AssetLookup,
-  ) {}
+    dependencies: Partial<AssetAssociationServiceDependencies> = {},
+  ) {
+    this.dependencies = {
+      now: dependencies.now ?? Date.now,
+    };
+  }
 
   loadFromProject(projectId: string): void {
     const normalizedProjectId = requireId(projectId, 'projectId');
@@ -204,6 +223,11 @@ export class AssetAssociationService
       { sourceAssetId },
     );
     this.addReference(reference);
+    this.publishAssetMutation(
+      reference.projectId,
+      reference.assetId,
+      reference.createdTime,
+    );
     return cloneAssetReference(reference);
   }
 
@@ -216,8 +240,14 @@ export class AssetAssociationService
       return;
     }
 
+    const updatedTime = this.requireMutationTime();
     this.referenceDatabase.delete(projectId, normalizedReferenceId);
     this.removeReference(reference);
+    this.publishAssetMutation(
+      reference.projectId,
+      reference.assetId,
+      updatedTime,
+    );
   }
 
   getLink(linkId: string): AssetLink | undefined {
@@ -276,6 +306,11 @@ export class AssetAssociationService
       targetAssetId,
     });
     this.addLink(link);
+    this.publishAssetMutation(
+      link.projectId,
+      link.assetId,
+      link.createdTime,
+    );
     return cloneAssetLink(link);
   }
 
@@ -288,8 +323,10 @@ export class AssetAssociationService
       return;
     }
 
+    const updatedTime = this.requireMutationTime();
     this.linkDatabase.delete(projectId, normalizedLinkId);
     this.removeLink(link);
+    this.publishAssetMutation(link.projectId, link.assetId, updatedTime);
   }
 
   onAssetDeleted(projectId: string, assetId: string): void {
@@ -298,6 +335,7 @@ export class AssetAssociationService
     }
 
     const normalizedAssetId = requireId(assetId, 'assetId');
+    const changedOwnerAssetIds = new Set<string>();
 
     for (const reference of [...this.state.referencesById.values()]) {
       if (
@@ -305,6 +343,9 @@ export class AssetAssociationService
         reference.sourceAssetId === normalizedAssetId
       ) {
         this.removeReference(reference);
+        if (reference.assetId !== normalizedAssetId) {
+          changedOwnerAssetIds.add(reference.assetId);
+        }
       }
     }
 
@@ -314,8 +355,25 @@ export class AssetAssociationService
         link.targetAssetId === normalizedAssetId
       ) {
         this.removeLink(link);
+        if (link.assetId !== normalizedAssetId) {
+          changedOwnerAssetIds.add(link.assetId);
+        }
       }
     }
+
+    if (changedOwnerAssetIds.size > 0) {
+      const updatedTime = this.requireMutationTime();
+      for (const ownerAssetId of changedOwnerAssetIds) {
+        this.publishAssetMutation(projectId, ownerAssetId, updatedTime);
+      }
+    }
+  }
+
+  subscribeAssetMutations(
+    listener: AssetAggregateMutationListener,
+  ): () => void {
+    this.mutationListeners.add(listener);
+    return () => this.mutationListeners.delete(listener);
   }
 
   private createState(
@@ -386,6 +444,32 @@ export class AssetAssociationService
     }
 
     return normalizedAssetId;
+  }
+
+  private requireMutationTime(): number {
+    const value = this.dependencies.now();
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return value;
+  }
+
+  private publishAssetMutation(
+    projectId: string,
+    assetId: string,
+    updatedTime: number,
+  ): void {
+    for (const listener of this.mutationListeners) {
+      try {
+        Promise.resolve(listener({ projectId, assetId, updatedTime })).catch(
+          (error: unknown) => {
+            console.error('异步 Asset Association 事件订阅者执行失败', error);
+          },
+        );
+      } catch (error) {
+        console.error('发布 Asset Association 事件失败', error);
+      }
+    }
   }
 
   private addReference(

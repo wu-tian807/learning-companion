@@ -20,6 +20,7 @@ export interface ApplicationRuntimeResources {
   readonly disposeIpc: () => void;
   readonly shutdownWorkbenchFeatures: () => Promise<void>;
   readonly disposeWorkbenchFeatures: () => void;
+  readonly disposeAssetAggregateTracking: () => void;
 }
 
 export class ApplicationRuntime {
@@ -97,6 +98,7 @@ export class ApplicationRuntime {
     }
 
     this.disposed = true;
+    this.resources.disposeAssetAggregateTracking();
     this.resources.disposeContentProtocol();
     this.resources.contentResourceService.dispose();
     this.resources.disposeWorkbenchFeatures();

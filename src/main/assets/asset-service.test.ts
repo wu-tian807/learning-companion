@@ -16,6 +16,12 @@ import {
 import type { ProjectLookup } from '../projects/project-database';
 import type { ProjectWorkspaceManagerApi } from '../projects/project-workspace-manager';
 import { cloneAsset, createAssetSnapshot, type Asset } from './asset';
+import {
+  trackAssetAggregateMutations,
+  type AssetAggregateMutation,
+  type AssetAggregateMutationListener,
+  type AssetAggregateMutationSource,
+} from './asset-aggregate-mutation';
 import type { AssetDatabaseApi } from './asset-database';
 import type { AssetFolderDatabaseApi } from './asset-folder-database';
 import {
@@ -217,6 +223,51 @@ function createFolderDatabase(
 }
 
 describe('AssetService', () => {
+  it('applies aggregate mutations to persistence, runtime state, and AssetChanged subscribers', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const service = createService(database, registry);
+    const listeners = new Set<AssetAggregateMutationListener>();
+    const source: AssetAggregateMutationSource = {
+      subscribeAssetMutations: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    const changedListener = vi.fn();
+    const aggregateUpdatedTime = Date.parse('2026-07-27T03:45:00.000Z');
+    const mutation: AssetAggregateMutation = {
+      projectId: 'project',
+      assetId: 'asset',
+      updatedTime: aggregateUpdatedTime,
+    };
+
+    await service.loadFromProject('project');
+    service.subscribe(changedListener);
+    const disposeTracking = trackAssetAggregateMutations(service, [source]);
+
+    for (const listener of listeners) {
+      listener(mutation);
+    }
+
+    expect(database.update).toHaveBeenCalledWith('project', 'asset', {
+      updatedTime: aggregateUpdatedTime,
+    });
+    expect(service.get('asset')?.updatedTime).toBe(aggregateUpdatedTime);
+    expect(changedListener).toHaveBeenCalledWith({
+      projectId: 'project',
+      asset: expect.objectContaining({
+        id: 'asset',
+        updatedTime: aggregateUpdatedTime,
+      }),
+    });
+
+    disposeTracking();
+    expect(listeners).toHaveLength(0);
+  });
+
   it('touches active and inactive Assets without depending on loaded runtime state', async () => {
     const database = createDatabase([
       createAsset('active'),

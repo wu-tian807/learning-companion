@@ -29,6 +29,7 @@ function createResources(
     disposeIpc: vi.fn(),
     shutdownWorkbenchFeatures: vi.fn(async () => undefined),
     disposeWorkbenchFeatures: vi.fn(),
+    disposeAssetAggregateTracking: vi.fn(),
   };
 }
 
@@ -158,6 +159,9 @@ describe('ApplicationRuntime', () => {
     runtime.dispose();
 
     expect(resources.disposeContentProtocol).toHaveBeenCalledOnce();
+    expect(
+      resources.disposeAssetAggregateTracking,
+    ).toHaveBeenCalledOnce();
     expect(
       resources.contentResourceService.dispose,
     ).toHaveBeenCalledOnce();

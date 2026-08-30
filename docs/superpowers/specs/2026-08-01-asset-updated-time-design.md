@@ -53,6 +53,7 @@ Asset 元数据维护责任。
 - Workbench 成功保存真实正文；
 - 外部程序修改 Asset 文件，并在应用下次加载、刷新或解析内容时被观察到；
 - 未来 Attachment 的创建、更新和删除；
+- AssetReference 与 AssetLink 的创建和删除；
 - 未来其他被定义为 Asset 聚合组成部分的数据变化。
 
 以下操作不更新时间：
@@ -298,19 +299,23 @@ Relink 不再调用 `AssetDatabase.updateContentRef()`。重命名继续调用
 `AssetService.update({ name })`，并由 Service 自动更新时间。调用方不显式传时间。
 这样 Relink 不会先发布“新 ContentRef + 旧 ContentStatus”的中间状态。
 
-## 12. Attachment 扩展边界
+## 12. Attachment 与 Asset Association 扩展边界
 
-本轮不实现真实 Attachment，但预留的接法已经确定：
+当前实现已按以下边界接入，完整关系语义见
+[Asset 聚合关系变化与更新时间设计](./2026-08-30-asset-aggregate-mutation-updated-time-design.md)：
 
 - 具体 AttachmentService 只负责 Attachment 数据和正文；
-- Bootstrap 组合层用 `TrackedAttachmentService` 装饰真实实现；
-- Create、Update、Delete 成功后，装饰器通过同一 `AssetUpdatePort` 传
-  `{ updatedTime: { mode: 'now' } }`；
+- AttachmentService 与 AssetAssociationService 在真实 mutation 提交后发布统一
+  `AssetAggregateMutation`；
+- Bootstrap 组合层通过 `trackAssetAggregateMutations()` 连接同一
+  `AssetAggregateTouchPort`；
+- Attachment Create、Update、Delete 以及 Reference/Link Create、Delete 成功后推进
+  owner Asset；
 - 查询操作不更新时间；
 - Workbench Provider 不需要知道 Attachment 变更会影响 Asset 时间。
 
-如果未来 Attachment 元数据和 Asset 时间位于同一个 SQLite 事务边界，则由上层
-领域 Service 把两者放入同一事务；在真实 Attachment 设计前不提前实现该事务。
+如果未来聚合子实体和 Asset 时间位于同一个 SQLite 事务边界，则由上层
+领域 Service 把两者放入同一事务；本轮不扩展跨实体事务。
 
 ## 13. Main 到 Renderer 的主动投影
 
