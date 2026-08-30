@@ -13,11 +13,13 @@ import {
   AUDIO_WORKBENCH_ID,
   audioWorkbenchManifest,
   cloneAudioDubbingSnapshot,
+  cloneAudioSpeakerTrackSnapshot,
   cloneAudioSubtitleSnapshot,
   cloneAudioViewState,
   DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
   DEFAULT_AUDIO_VIEW_STATE,
   EMPTY_AUDIO_DUBBING_SNAPSHOT,
+  EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
   EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
 } from './shared';
 
@@ -89,6 +91,9 @@ describe('AudioWorkbenchView', () => {
       dubbingSnapshot: cloneAudioDubbingSnapshot(
         EMPTY_AUDIO_DUBBING_SNAPSHOT,
       ),
+      speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot(
+        EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+      ),
     });
 
     expect(markup).toContain('aria-label="音频播放器"');
@@ -143,10 +148,27 @@ describe('AudioWorkbenchView', () => {
         readySuffixStartMs: 1_000,
         previewAudioUrl: 'learning-content://resource/preview',
       }),
+      speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot({
+        track: {
+          version: 1,
+          kind: 'dubbing-speaker-track',
+          sourceTrackRevision: 'source-track-revision',
+          cues: [
+            {
+              sourceCueId: 'cue-1',
+              speakerId: 'speaker-0001',
+              status: 'stable',
+            },
+          ],
+          profiles: [{ speakerId: 'speaker-0001', mode: 'default' }],
+        },
+      }),
     });
 
     expect(markup).toContain('Hello.');
     expect(markup).toContain('你好。');
+    expect(markup).toContain('说话人 1');
+    expect(markup).toContain('默认声线');
     expect(markup).toContain('aria-label="音频声音"');
     expect(markup).toContain('aria-label="音频字幕与配音"');
   });
@@ -164,6 +186,9 @@ describe('AudioWorkbenchView', () => {
         ...EMPTY_AUDIO_DUBBING_SNAPSHOT,
         phase: 'runtime-required',
       }),
+      speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot(
+        EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+      ),
     });
 
     expect(markup).toContain('安装字幕');

@@ -21,7 +21,7 @@ function createInput(): AssetAttachment {
     metadata: { format: 'markdown' },
     content: {
       ref: createProjectWorkspaceContentRef(
-        'attachments/attachment.md',
+        '.learning-companion/attachments/attachment.md',
       ),
       mediaType: 'text/markdown',
     },

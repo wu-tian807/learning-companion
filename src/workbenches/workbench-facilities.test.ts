@@ -52,7 +52,6 @@ describe('built-in Workbench Facility matrix', () => {
       ],
       'builtin.mindmap': [
         'core.surface.context-menu',
-        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
@@ -76,7 +75,6 @@ describe('built-in Workbench Facility matrix', () => {
       ],
       'builtin.audio': [
         'core.surface.context-menu',
-        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
@@ -89,7 +87,6 @@ describe('built-in Workbench Facility matrix', () => {
       'builtin.html': [
         'core.input.text-selection',
         'core.surface.context-menu',
-        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.sandbox-frame',
       ],

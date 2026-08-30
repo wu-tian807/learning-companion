@@ -53,6 +53,44 @@ describe('local Conversation history', () => {
     expect(listener).toHaveBeenCalledTimes(3);
   });
 
+  it('persists the previous answer needed to recover an in-flight re-answer', async () => {
+    const storage = memoryStorage();
+    const store = createLocalConversationHistoryStore({ key: 'history', storage });
+    const inFlight = record('reanswer');
+    const assistant = inFlight.messages[1]!;
+
+    await store.save({
+      ...inFlight,
+      messages: [
+        inFlight.messages[0]!,
+        {
+          ...assistant,
+          text: '',
+          generationTaskId: 'task-new',
+          reanswerBackup: {
+            text: '回答',
+            generationTaskId: 'task-old',
+            modelInfo: 'codex/gpt',
+          },
+        },
+      ],
+    });
+
+    const reopened = createLocalConversationHistoryStore({
+      key: 'history',
+      storage,
+    });
+    expect((await reopened.list())[0]?.messages[1]).toMatchObject({
+      text: '',
+      generationTaskId: 'task-new',
+      reanswerBackup: {
+        text: '回答',
+        generationTaskId: 'task-old',
+        modelInfo: 'codex/gpt',
+      },
+    });
+  });
+
   it('migrates the former flat Document AI message history into conversations', async () => {
     const legacyKey = 'legacy';
     const storage = memoryStorage({

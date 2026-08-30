@@ -48,7 +48,8 @@ function createHarness() {
     write: vi.fn(async ({ attachmentId, fileName, mediaType }) => ({
       ref: {
         base: 'project-workspace' as const,
-        path: `attachments/${attachmentId}/${fileName}`,
+        path:
+          `.learning-companion/attachments/${attachmentId}/${fileName}`,
       },
       mediaType,
     })),
@@ -170,7 +171,8 @@ describe('AttachmentService', () => {
       ref: {
         base: 'project-workspace',
         kind: 'local-file',
-        path: 'attachments/attachment-1/answer.md',
+        path:
+          '.learning-companion/attachments/attachment-1/answer.md',
       },
       mediaType: 'text/markdown',
     });

@@ -2,6 +2,7 @@ import { composeMainWorkbenchContribution } from '../../main/workbench/main-work
 import {
   mediaDubbingProducer,
   mediaDubbingProgress,
+  mediaDubbingSpeakerTrackProducer,
   resolveMediaDubbingRuntime,
 } from '../media-dubbing/main-feature';
 import { MediaDubbingService } from '../media-dubbing/media-dubbing-service';
@@ -35,6 +36,7 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       context.artifactService,
       subtitles,
       mediaDubbingProducer,
+      mediaDubbingSpeakerTrackProducer,
       mediaRuntime,
       resolveMediaDubbingRuntime(context.externalLibraryService),
       mediaDubbingProgress,

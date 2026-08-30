@@ -26,7 +26,7 @@ describe('AssetSourceBadge', () => {
           contentRef={{
             kind: 'local-file',
             base: 'project-workspace',
-            path: 'assets/imported/internal.md',
+            path: '.learning-companion/assets/imported/internal.md',
           }}
         />,
       ),

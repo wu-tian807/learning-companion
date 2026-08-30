@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { WorkbenchActionBundle } from '../actions/workbench-action-bundle';
+import { workbenchSurfaces } from '../actions/workbench-contribution';
 import { WorkbenchActionRegistry } from './workbench-action-registry';
 
 function createBundle(
@@ -33,6 +34,14 @@ function createBundle(
 }
 
 describe('WorkbenchActionRegistry', () => {
+  it('exposes only Workbench-owned UI surfaces', () => {
+    expect(workbenchSurfaces).toEqual([
+      'header',
+      'overflow',
+      'context-menu',
+    ]);
+  });
+
   it('registers, filters and disposes owner contributions', () => {
     const registry = new WorkbenchActionRegistry();
     const dispose = registry.register(

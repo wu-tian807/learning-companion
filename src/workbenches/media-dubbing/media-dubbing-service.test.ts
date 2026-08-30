@@ -25,6 +25,12 @@ import { MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID } from '../media-subtitles/trans
 import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
+  DUBBING_SPEAKER_TRACK_ARTIFACT_KEY,
+  DUBBING_SPEAKER_TRACK_ARTIFACT_MEDIA_TYPE,
+  DUBBING_SPEAKER_TRACK_PRODUCER_ID,
+} from './dubbing-speaker-track-artifact';
+import type { DubbingSpeakerTrackV1 } from './dubbing-speaker-track';
+import {
   VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
   VOXCPM2_DUBBING_PRODUCER_ID,
   MediaDubbingProgressHub,
@@ -89,6 +95,29 @@ function translationTrack(): SubtitleTranslationTrackV1 {
   };
 }
 
+function speakerTrack(): DubbingSpeakerTrackV1 {
+  return {
+    version: 1,
+    kind: 'dubbing-speaker-track',
+    sourceTrackRevision: 'source-artifact-revision',
+    cues: [
+      {
+        sourceCueId: 'cue-1',
+        speakerId: 'speaker-0001',
+        status: 'stable',
+      },
+    ],
+    profiles: [
+      {
+        speakerId: 'speaker-0001',
+        mode: 'reference',
+        referenceStartMs: 0,
+        referenceEndMs: 4_000,
+      },
+    ],
+  };
+}
+
 function resolvedArtifact(
   request: AssetArtifactRequest,
   absolutePath: string,
@@ -115,6 +144,8 @@ function resolvedArtifact(
 async function createFixture(
   options: {
     readonly cachedDubbing?: boolean;
+    readonly cachedSpeakerTrack?: boolean;
+    readonly preparedSpeakerTrack?: boolean;
     readonly interruptedDubbing?: boolean;
     readonly materializeError?: unknown;
     readonly installationError?: unknown;
@@ -126,10 +157,12 @@ async function createFixture(
   const sourcePath = join(directory, 'source.json');
   const translationPath = join(directory, 'translation.json');
   const dubbingPath = join(directory, 'dubbed.m4a');
+  const speakerTrackPath = join(directory, 'speaker-track.json');
   await Promise.all([
     writeFile(videoPath, 'video'),
     writeFile(translationPath, JSON.stringify(translationTrack())),
     writeFile(dubbingPath, 'dubbing'),
+    writeFile(speakerTrackPath, JSON.stringify(speakerTrack())),
   ]);
 
   const assets = {
@@ -170,6 +203,17 @@ async function createFixture(
         translationPath,
         SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
         'translation-artifact-revision',
+      );
+    }
+    if (
+      request.producerId === DUBBING_SPEAKER_TRACK_PRODUCER_ID &&
+      (options.cachedSpeakerTrack ?? options.cachedDubbing)
+    ) {
+      return resolvedArtifact(
+        request,
+        speakerTrackPath,
+        DUBBING_SPEAKER_TRACK_ARTIFACT_MEDIA_TYPE,
+        'speaker-track-artifact-revision',
       );
     }
     if (
@@ -215,6 +259,9 @@ async function createFixture(
       );
   const producer = {
     materialize,
+    getPreparedSpeakerTrack: vi.fn(async () =>
+      options.preparedSpeakerTrack === false ? undefined : speakerTrack(),
+    ),
     getInterruptedProgress: vi.fn(async () =>
       options.interruptedDubbing
         ? {
@@ -226,11 +273,22 @@ async function createFixture(
             durationMs: 12_000,
             readySuffixStartMs: 8_000,
             previewAudioPath: join(directory, 'preview.wav'),
+            speakerTrack: speakerTrack(),
           }
         : undefined,
     ),
     removeCheckpoint: vi.fn(async () => undefined),
   } as unknown as VoxCpm2DubbingProducer;
+  const speakerTrackProducer = {
+    materialize: vi.fn(async (_artifacts, request: AssetArtifactRequest) =>
+      resolvedArtifact(
+        request,
+        join(directory, 'speaker-track.json'),
+        DUBBING_SPEAKER_TRACK_ARTIFACT_MEDIA_TYPE,
+        'speaker-track-artifact-revision',
+      ),
+    ),
+  };
   const requireInstalledBundle = options.installationError
     ? vi.fn(async () => Promise.reject(options.installationError))
     : vi.fn(async () => undefined);
@@ -249,6 +307,7 @@ async function createFixture(
     artifacts,
     subtitles,
     producer,
+    speakerTrackProducer,
     {} as MediaSubtitleRuntimeResolverApi,
     dubbingRuntime,
     progress,
@@ -257,6 +316,7 @@ async function createFixture(
     service,
     subtitles,
     producer,
+    speakerTrackProducer,
     progress,
     requireInstalledBundle,
     dubbingRuntime,
@@ -265,7 +325,8 @@ async function createFixture(
 
 describe('MediaDubbingService', () => {
   it('uses an already-ready translation without requesting translation again', async () => {
-    const { service, subtitles, producer } = await createFixture();
+    const { service, subtitles, producer, speakerTrackProducer } =
+      await createFixture();
     const phases: string[] = [];
     service.subscribe('video', (snapshot) => phases.push(snapshot.phase));
 
@@ -275,6 +336,27 @@ describe('MediaDubbingService', () => {
     expect(phases).not.toContain('awaiting-translation');
     expect(producer.materialize).toHaveBeenCalledOnce();
     expect(producer.removeCheckpoint).toHaveBeenCalledOnce();
+    expect(speakerTrackProducer.materialize).toHaveBeenCalledOnce();
+    expect(speakerTrackProducer.materialize).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        producerId: DUBBING_SPEAKER_TRACK_PRODUCER_ID,
+        artifactKey: DUBBING_SPEAKER_TRACK_ARTIFACT_KEY,
+        source: expect.objectContaining({
+          mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+          revision: 'source-artifact-revision',
+        }),
+      }),
+      expect.objectContaining({
+        cues: [expect.objectContaining({ id: 'cue-1' })],
+      }),
+      expect.objectContaining({
+        sourceTrackRevision: 'source-artifact-revision',
+      }),
+    );
+    expect(service.getSpeakerTrack('video')).toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
+    });
     expect(service.getSnapshot('video')).toMatchObject({
       phase: 'ready',
       artifactRevision: 'dubbing-artifact-revision',
@@ -335,12 +417,33 @@ describe('MediaDubbingService', () => {
   });
 
   it('uses an existing dubbing artifact without preparing the model runtime', async () => {
-    const { service, producer } = await createFixture({ cachedDubbing: true });
+    const { service, producer, speakerTrackProducer } = await createFixture({
+      cachedDubbing: true,
+    });
 
     await service.ensure('project', 'video');
 
     expect(producer.materialize).not.toHaveBeenCalled();
+    expect(speakerTrackProducer.materialize).not.toHaveBeenCalled();
     expect(service.getSnapshot('video').phase).toBe('ready');
+    expect(service.getSpeakerTrack('video')).toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
+    });
+  });
+
+  it('keeps an existing dubbing artifact usable when optional speaker metadata is missing', async () => {
+    const { service, producer, speakerTrackProducer } = await createFixture({
+      cachedDubbing: true,
+      cachedSpeakerTrack: false,
+      preparedSpeakerTrack: false,
+    });
+
+    await service.ensure('project', 'video');
+
+    expect(producer.materialize).not.toHaveBeenCalled();
+    expect(speakerTrackProducer.materialize).not.toHaveBeenCalled();
+    expect(service.getSnapshot('video').phase).toBe('ready');
+    expect(service.getSpeakerTrack('video')).toBeUndefined();
   });
 
   it('restores a completed artifact without starting generation', async () => {
@@ -354,6 +457,23 @@ describe('MediaDubbingService', () => {
       artifactRevision: 'dubbing-artifact-revision',
       readySuffixStartMs: 0,
     });
+  });
+
+  it('recovers a missing speaker artifact from the durable checkpoint after a crash', async () => {
+    const { service, producer, speakerTrackProducer } = await createFixture({
+      cachedDubbing: true,
+      cachedSpeakerTrack: false,
+    });
+
+    await service.restore('project', 'video');
+
+    expect(producer.getPreparedSpeakerTrack).toHaveBeenCalledOnce();
+    expect(speakerTrackProducer.materialize).toHaveBeenCalledOnce();
+    expect(producer.removeCheckpoint).toHaveBeenCalledOnce();
+    expect(service.getSpeakerTrack('video')).toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
+    });
+    expect(service.getSnapshot('video').phase).toBe('ready');
   });
 
   it('restores a durable interrupted suffix as a resumable state', async () => {
@@ -370,6 +490,9 @@ describe('MediaDubbingService', () => {
       totalPhrases: 3,
       readySuffixStartMs: 8_000,
       previewAudioPath: expect.stringContaining('preview.wav'),
+    });
+    expect(service.getSpeakerTrack('video')).toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
     });
   });
 
@@ -460,6 +583,10 @@ describe('MediaDubbingService', () => {
     const request = vi.mocked(fixture.producer.materialize).mock.calls[0]![1];
     const snapshotBeforeStaleProgress =
       fixture.service.getSnapshot('video');
+    const speakerEvents: Array<DubbingSpeakerTrackV1 | undefined> = [];
+    fixture.service.subscribeSpeakerTrack('video', (track) =>
+      speakerEvents.push(track),
+    );
 
     fixture.progress.publish({
       assetId: 'video',
@@ -470,10 +597,12 @@ describe('MediaDubbingService', () => {
       completedDurationMs: 9_000,
       durationMs: 10_000,
       readySuffixStartMs: 1_000,
+      speakerTrack: speakerTrack(),
     });
     expect(fixture.service.getSnapshot('video')).toEqual(
       snapshotBeforeStaleProgress,
     );
+    expect(speakerEvents).toEqual([]);
 
     fixture.progress.publish({
       assetId: 'video',
@@ -485,12 +614,17 @@ describe('MediaDubbingService', () => {
       durationMs: 10_000,
       readySuffixStartMs: 8_000,
       previewAudioPath: 'C:\\checkpoint\\preview.wav',
+      speakerTrack: speakerTrack(),
     });
     expect(fixture.service.getSnapshot('video')).toMatchObject({
       phase: 'cloning',
       completedPhrases: 2,
       readySuffixStartMs: 8_000,
       previewAudioPath: 'C:\\checkpoint\\preview.wav',
+    });
+    expect(speakerEvents).toHaveLength(1);
+    expect(speakerEvents[0]).toMatchObject({
+      sourceTrackRevision: 'source-artifact-revision',
     });
 
     finish?.();

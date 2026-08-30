@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentSessionProjectLifecycle } from '../agents/sessions/agent-session-service';
+import type { AgentWorkspaceProjectCleanup } from '../agents/workspaces/agent-workspace-manager';
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
 import type { GenerationTaskProjectLifecycle } from '../generation/generation-task-service';
@@ -51,8 +52,8 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     cleanupProjectArtifacts: vi.fn(async () => {
       calls.push('cleanup-artifacts');
     }),
-    removeManagedFilesByProject: vi.fn(async () => {
-      calls.push('remove-managed-asset-files');
+    cancelProjectArtifactGeneration: vi.fn(async () => {
+      calls.push('cancel-artifact-generation');
     }),
   } as unknown as AssetServiceApi;
   const associationService = {
@@ -62,14 +63,18 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
   } as unknown as AssetAssociationServiceApi;
   const agentSessions = {
     loadFromProject: vi.fn(() => calls.push('load-agent-sessions')),
-    unloadProject: vi.fn(() => calls.push('unload-agent-sessions')),
+    unloadProject: vi.fn(async () => {
+      calls.push('unload-agent-sessions');
+    }),
   } as AgentSessionProjectLifecycle;
   const generationTasks = {
     loadFromProject: vi.fn(() => {
       calls.push('load-generation-tasks');
       return [];
     }),
-    unloadProject: vi.fn(() => calls.push('unload-generation-tasks')),
+    unloadProject: vi.fn(async () => {
+      calls.push('unload-generation-tasks');
+    }),
   } as GenerationTaskProjectLifecycle;
   const workbenchSessions = {
     closeActive: vi.fn(async () => {
@@ -82,7 +87,6 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     ),
     prepareWorkspace: vi.fn(async ({ workspacePath }) => ({
       workspacePath,
-      createdWorkspaceDirectory: true,
       createdMarker: true,
     })),
     rollbackPreparation: vi.fn(async () => undefined),
@@ -92,6 +96,11 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     selectWorkspace: vi.fn(async () => '/tmp/projects/selected'),
     openWorkspace: vi.fn(async () => undefined),
   } as unknown as ProjectWorkspaceManagerApi;
+  const agentWorkspaces = {
+    removeProject: vi.fn(async () => {
+      calls.push('remove-agent-workspace');
+    }),
+  } as AgentWorkspaceProjectCleanup;
   const settingsRepository = {
     getDefaultProjectWorkspace: vi.fn(() => '/tmp/projects'),
   } as unknown as SettingsRepository;
@@ -104,6 +113,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
     generationTasks,
     workbenchSessions,
     workspaceManager,
+    agentWorkspaces,
     settingsRepository,
     {
       createId: () => 'new-project',
@@ -114,6 +124,7 @@ function createDependencies(activeProjectId: string | undefined = undefined) {
 
   return {
     assetService,
+    agentWorkspaces,
     agentSessions,
     associationService,
     calls,
@@ -235,17 +246,42 @@ describe('ProjectService', () => {
     expect(current.assetService.loadFromProject).toHaveBeenCalledWith(
       'project',
     );
-    expect(current.assetService.unloadProject).toHaveBeenCalledOnce();
+    expect(current.assetService.unloadProject).toHaveBeenCalledTimes(2);
     expect(
       current.associationService.loadFromProject,
     ).toHaveBeenCalledWith('project');
     expect(
       current.associationService.unloadProject,
-    ).toHaveBeenCalledOnce();
+    ).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for the previous Project runtime before loading another Project', async () => {
+    const current = createDependencies('project');
+    let finishGenerationUnload: (() => void) | undefined;
+    vi.mocked(current.generationTasks.unloadProject).mockImplementationOnce(
+      async () => {
+        current.calls.push('unload-generation-tasks');
+        await new Promise<void>((resolvePromise) => {
+          finishGenerationUnload = resolvePromise;
+        });
+      },
+    );
+
+    const opening = current.service.openProject('project');
+    await vi.waitFor(() =>
+      expect(finishGenerationUnload).toBeTypeOf('function'),
+    );
+    expect(current.assetService.loadFromProject).not.toHaveBeenCalled();
+
+    finishGenerationUnload!();
+    await opening;
+    expect(current.assetService.loadFromProject).toHaveBeenCalledWith(
+      'project',
+    );
   });
 
   it('closes the active Workbench and Asset Map before deleting a Project', async () => {
-    const { calls, service, workspaceManager } =
+    const { agentWorkspaces, calls, service, workspaceManager } =
       createDependencies('project');
 
     await service.deleteProject('project');
@@ -256,15 +292,65 @@ describe('ProjectService', () => {
       'unload-agent-sessions',
       'unload-associations',
       'unload-assets',
-      'cleanup-artifacts',
-      'remove-managed-asset-files',
-      'delete-project',
+      'cancel-artifact-generation',
+      'remove-agent-workspace',
       'remove-project-workspace',
+      'delete-project',
     ]);
+    expect(agentWorkspaces.removeProject).toHaveBeenCalledWith('project');
     expect(workspaceManager.removeProjectWorkspace).toHaveBeenCalledWith(
       'project',
       '/tmp/projects/project',
     );
+  });
+
+  it('keeps the Project record when owned workspace cleanup fails', async () => {
+    const { agentWorkspaces, projectDatabase, service } =
+      createDependencies();
+    vi.mocked(agentWorkspaces.removeProject).mockRejectedValueOnce(
+      new Error('agent workspace locked'),
+    );
+
+    await expect(service.deleteProject('project')).rejects.toThrow(
+      'agent workspace locked',
+    );
+
+    expect(projectDatabase.delete).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Project record when Workspace cleanup fails', async () => {
+    const { projectDatabase, service, workspaceManager } =
+      createDependencies();
+    vi.mocked(workspaceManager.removeProjectWorkspace).mockRejectedValueOnce(
+      new Error('metadata directory locked'),
+    );
+
+    await expect(service.deleteProject('project')).rejects.toThrow(
+      'metadata directory locked',
+    );
+
+    expect(projectDatabase.delete).not.toHaveBeenCalled();
+  });
+
+  it('keeps Project data intact when artifact generation cannot stop', async () => {
+    const {
+      agentWorkspaces,
+      assetService,
+      projectDatabase,
+      service,
+      workspaceManager,
+    } = createDependencies();
+    vi.mocked(
+      assetService.cancelProjectArtifactGeneration,
+    ).mockRejectedValueOnce(new Error('artifact task did not stop'));
+
+    await expect(service.deleteProject('project')).rejects.toThrow(
+      'artifact task did not stop',
+    );
+
+    expect(agentWorkspaces.removeProject).not.toHaveBeenCalled();
+    expect(workspaceManager.removeProjectWorkspace).not.toHaveBeenCalled();
+    expect(projectDatabase.delete).not.toHaveBeenCalled();
   });
 
   it('rolls back both Project-scoped services when association loading fails', async () => {
@@ -280,6 +366,10 @@ describe('ProjectService', () => {
     );
     expect(current.calls).toEqual([
       'close-workbench',
+      'unload-generation-tasks',
+      'unload-agent-sessions',
+      'unload-associations',
+      'unload-assets',
       'load-assets',
       'unload-generation-tasks',
       'unload-agent-sessions',

@@ -254,13 +254,6 @@ export function HtmlWorkbenchView({
     conversationSnapshot.active?.ownerId === conversationOwnerId &&
     conversationSnapshot.busy;
 
-  const openChat = useCallback((anchor?: JsonValue) => {
-    conversationRuntime.open({
-      ownerId: conversationOwnerId,
-      ...(anchor === undefined ? {} : { context: anchor }),
-    });
-  }, [conversationOwnerId, conversationRuntime]);
-
   const explainSelection = useCallback((target: ContentAnchorTarget) => {
     if (isHtmlAnchorTarget(target)) {
       showHighlight(target, { reveal: false, durationMs: 0 });
@@ -321,13 +314,8 @@ export function HtmlWorkbenchView({
         onSummarizePage: () => {
           summarizePage();
         },
-        onOpenChat: () => {
-          // 总入口：优先带当前选区锚点，无选区则打开空白对话
-          const anchor = contextRef.current?.target;
-          openChat(anchor as JsonValue | undefined);
-        },
       }),
-    [aiBusy, explainSelection, onOpenExternal, openChat, reload, reportError, reveal, summarizePage],
+    [aiBusy, explainSelection, onOpenExternal, reload, reportError, reveal, summarizePage],
   );
   useWorkbenchContributions(
     `${htmlWorkbenchManifest.id}.viewer`,

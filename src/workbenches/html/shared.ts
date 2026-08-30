@@ -7,7 +7,6 @@ import {
   CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
-  generationCenterSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   sandboxFrameTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -52,7 +51,6 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   facilities: [
     sandboxFrameTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
-    generationCenterSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
     ),

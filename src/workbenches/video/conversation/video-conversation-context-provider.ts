@@ -202,7 +202,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
             }),
             Object.freeze({
               type: 'text' as const,
-              text: '图 2：标框完整帧。红框是用户右键框选的兴趣区域。',
+              text: '图 2：标框完整帧。红框是用户选择的兴趣区域。',
             }),
             Object.freeze({
               type: 'local-image' as const,
@@ -264,7 +264,9 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
           sameVideoExplanationTarget(attachment.target, selection.target) &&
           isVideoExplanationMetadata(attachment.metadata) &&
           attachment.metadata.sourceRevision === selection.sourceRevision &&
-          attachment.metadata.question === context.instruction.question,
+          attachment.metadata.question === context.instruction.question &&
+          attachment.metadata.conversationId ===
+            context.instruction.conversationId,
       );
       if (existing) {
         if (existing.content?.mediaType !== 'text/markdown') {
@@ -285,6 +287,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
           version: 1,
           sourceRevision: selection.sourceRevision,
           question: context.instruction.question,
+          conversationId: context.instruction.conversationId,
         },
         content: {
           fileName: 'answer.md',

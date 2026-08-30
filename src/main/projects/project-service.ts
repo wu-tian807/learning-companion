@@ -9,6 +9,7 @@ import {
 import type { AssetServiceApi } from '../assets/asset-service';
 import type { AssetAssociationServiceApi } from '../asset-associations/asset-association-service';
 import type { AgentSessionProjectLifecycle } from '../agents/sessions/agent-session-service';
+import type { AgentWorkspaceProjectCleanup } from '../agents/workspaces/agent-workspace-manager';
 import { AppError } from '../errors/app-error';
 import type { GenerationTaskProjectLifecycle } from '../generation/generation-task-service';
 import type { WorkbenchSessionLifecycle } from '../workbench/workbench-session-service';
@@ -63,6 +64,7 @@ export class ProjectService implements ProjectServiceApi {
     private readonly generationTasks: GenerationTaskProjectLifecycle,
     private readonly workbenchSessions: WorkbenchSessionLifecycle,
     private readonly workspaceManager: ProjectWorkspaceManagerApi,
+    private readonly agentWorkspaces: AgentWorkspaceProjectCleanup,
     private readonly settingsRepository: SettingsRepository,
     dependencies: Partial<ProjectServiceDependencies> = {},
   ) {
@@ -172,7 +174,7 @@ export class ProjectService implements ProjectServiceApi {
 
       if (wasActive) {
         await this.workbenchSessions.closeActive();
-        this.unloadProjectRuntime();
+        await this.unloadProjectRuntime();
       }
 
       try {
@@ -210,6 +212,7 @@ export class ProjectService implements ProjectServiceApi {
   async openProject(projectId: string): Promise<readonly AssetSnapshot[]> {
     return this.enqueueLifecycle(async () => {
       await this.workbenchSessions.closeActive();
+      await this.unloadProjectRuntime();
       return this.loadProjectRuntime(projectId);
     });
   }
@@ -220,9 +223,7 @@ export class ProjectService implements ProjectServiceApi {
 
       if (activeProjectId === undefined) {
         await this.workbenchSessions.closeActive();
-        this.agentSessions.unloadProject();
-        this.generationTasks.unloadProject();
-        this.associationService.unloadProject();
+        await this.unloadProjectRuntime();
         return;
       }
 
@@ -231,7 +232,7 @@ export class ProjectService implements ProjectServiceApi {
       }
 
       await this.workbenchSessions.closeActive();
-      this.unloadProjectRuntime();
+      await this.unloadProjectRuntime();
     });
   }
 
@@ -245,30 +246,18 @@ export class ProjectService implements ProjectServiceApi {
 
       if (this.assetService.getActiveProjectId() === projectId) {
         await this.workbenchSessions.closeActive();
-        this.unloadProjectRuntime();
+        await this.unloadProjectRuntime();
       }
 
-      await this.assetService.cleanupProjectArtifacts(
-        projectId,
+      await this.assetService.cancelProjectArtifactGeneration(
         project.workspacePath,
       );
-      await this.assetService.removeManagedFilesByProject(
+      await this.agentWorkspaces.removeProject(projectId);
+      await this.workspaceManager.removeProjectWorkspace(
         projectId,
         project.workspacePath,
       );
       this.projectDatabase.delete(projectId);
-      await this.workspaceManager
-        .removeProjectWorkspace(projectId, project.workspacePath)
-        .catch((error: unknown) => {
-          // The Project is already removed from the source of truth. Surface
-          // cleanup failure in diagnostics without reporting a false delete
-          // failure to the renderer.
-          console.error('清理 Project Workspace 失败', {
-            projectId,
-            workspacePath: project.workspacePath,
-            error,
-          });
-        });
     });
   }
 
@@ -337,19 +326,17 @@ export class ProjectService implements ProjectServiceApi {
       this.generationTasks.loadFromProject(projectId);
       return assets;
     } catch (error) {
-      this.generationTasks.unloadProject();
-      this.agentSessions.unloadProject();
-      this.associationService.unloadProject();
-      this.assetService.unloadProject();
+      await this.unloadProjectRuntime();
       throw error;
     }
   }
 
-  private unloadProjectRuntime(): void {
-    this.generationTasks.unloadProject();
-    this.agentSessions.unloadProject();
+  private async unloadProjectRuntime(): Promise<void> {
+    const generationTaskUnload = this.generationTasks.unloadProject();
+    const agentSessionUnload = this.agentSessions.unloadProject();
     this.associationService.unloadProject();
     this.assetService.unloadProject();
+    await Promise.all([generationTaskUnload, agentSessionUnload]);
   }
 
   private enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {

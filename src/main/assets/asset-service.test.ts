@@ -164,9 +164,10 @@ function createService(
       fileName: string,
     ) => ({
       contentRef: createProjectWorkspaceContentRef(
-        `assets/generated/${fileName}`,
+        `.learning-companion/assets/generated/${fileName}`,
       ),
-      absolutePath: `${workspacePath}/assets/generated/${fileName}`,
+      absolutePath:
+        `${workspacePath}/.learning-companion/assets/generated/${fileName}`,
       created: true,
     }),
     selectAssetFiles: async () => [],
@@ -678,11 +679,12 @@ describe('AssetService', () => {
     const database = createDatabase([]);
     const { registry } = createResolver();
     const contentRef = createProjectWorkspaceContentRef(
-      'assets/generated/task-1.mindmap',
+      '.learning-companion/assets/generated/task-1.mindmap',
     );
     const createGeneratedFile = vi.fn(async () => ({
       contentRef,
-      absolutePath: '/tmp/project/assets/generated/task-1.mindmap',
+      absolutePath:
+        '/tmp/project/.learning-companion/assets/generated/task-1.mindmap',
       created: true,
     }));
     const removeManagedAssetFile = vi.fn(async () => true);
@@ -730,7 +732,7 @@ describe('AssetService', () => {
 
   it('removes the Workspace-owned copy when deleting an imported Asset', async () => {
     const copiedRef = createProjectWorkspaceContentRef(
-      'assets/imported/lecture.pdf',
+      '.learning-companion/assets/imported/lecture.pdf',
     );
     const copiedAsset = createAssetSnapshot({
       ...createAsset(),
@@ -741,7 +743,6 @@ describe('AssetService', () => {
     const removeManagedAssetFile = vi.fn(async () => true);
     const attachmentCleanup = {
       removeByAsset: vi.fn(async () => undefined),
-      removeByProject: vi.fn(async () => undefined),
     };
     const service = createService(database, registry, {
       attachmentCleanup,
@@ -760,7 +761,7 @@ describe('AssetService', () => {
 
   it('keeps the Asset record when its managed file cannot be removed', async () => {
     const copiedRef = createProjectWorkspaceContentRef(
-      'assets/imported/locked.pdf',
+      '.learning-companion/assets/imported/locked.pdf',
     );
     const copiedAsset = createAssetSnapshot({
       ...createAsset(),
@@ -779,42 +780,6 @@ describe('AssetService', () => {
 
     expect(database.delete).not.toHaveBeenCalled();
     expect(service.get('asset')).toBeDefined();
-  });
-
-  it('removes all persisted managed files before deleting a Project', async () => {
-    const copiedRef = createProjectWorkspaceContentRef(
-      'assets/imported/lecture.pdf',
-    );
-    const database = createDatabase([
-      createAssetSnapshot({ ...createAsset('copied'), contentRef: copiedRef }),
-      createAsset('linked', '/external/notes.md'),
-    ]);
-    const { registry } = createResolver();
-    const removeManagedAssetFile = vi.fn(async () => true);
-    const attachmentCleanup = {
-      removeByAsset: vi.fn(async () => undefined),
-      removeByProject: vi.fn(async () => undefined),
-    };
-    const service = createService(database, registry, {
-      attachmentCleanup,
-    }, {
-      removeManagedAssetFile,
-    });
-
-    await service.removeManagedFilesByProject('project', '/tmp/project');
-
-    expect(attachmentCleanup.removeByProject).toHaveBeenCalledWith('project');
-    expect(removeManagedAssetFile).toHaveBeenCalledTimes(2);
-    expect(removeManagedAssetFile).toHaveBeenNthCalledWith(
-      1,
-      '/tmp/project',
-      copiedRef,
-    );
-    expect(removeManagedAssetFile).toHaveBeenNthCalledWith(
-      2,
-      '/tmp/project',
-      createAbsoluteLocalFileContentRef('/external/notes.md'),
-    );
   });
 
   it('tracks successful Workbench content writes through AssetService update', async () => {
@@ -991,6 +956,7 @@ describe('AssetService', () => {
     const { registry } = createResolver();
     const artifactCleanup = {
       removeByAsset: vi.fn(async () => undefined),
+      cancelByWorkspace: vi.fn(async () => undefined),
       removeByProject: vi.fn(async () => undefined),
     };
     const deletionObserver = {
@@ -998,7 +964,6 @@ describe('AssetService', () => {
     };
     const attachmentCleanup = {
       removeByAsset: vi.fn(async () => undefined),
-      removeByProject: vi.fn(async () => undefined),
     };
     const service = createService(database, registry, {
       artifactCleanup,
@@ -1024,6 +989,24 @@ describe('AssetService', () => {
     );
   });
 
+  it('stops Artifact generation without deleting Project artifacts', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const artifactCleanup = {
+      removeByAsset: vi.fn(async () => undefined),
+      cancelByWorkspace: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+    const service = createService(database, registry, { artifactCleanup });
+
+    await service.cancelProjectArtifactGeneration('/tmp/project');
+
+    expect(artifactCleanup.cancelByWorkspace).toHaveBeenCalledWith(
+      '/tmp/project',
+    );
+    expect(artifactCleanup.removeByProject).not.toHaveBeenCalled();
+  });
+
   it('deletes every Asset through the normal cleanup path before removing a folder', async () => {
     const database = createDatabase([
       createAsset('first', '/tmp/first.md'),
@@ -1036,7 +1019,6 @@ describe('AssetService', () => {
     });
     const attachmentCleanup = {
       removeByAsset: vi.fn(async () => undefined),
-      removeByProject: vi.fn(async () => undefined),
     };
     const service = createService(database, registry, {
       attachmentCleanup,
@@ -1088,5 +1070,33 @@ describe('AssetService', () => {
     ]);
     expect(result.assets.map(({ id }) => id)).toEqual(['locked']);
     expect(folderDatabase.deleteTree).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Asset record when Artifact cleanup fails', async () => {
+    const database = createDatabase();
+    const { registry } = createResolver();
+    const artifactCleanup = {
+      removeByAsset: vi.fn(async () => {
+        throw new Error('artifact file locked');
+      }),
+      cancelByWorkspace: vi.fn(async () => undefined),
+      removeByProject: vi.fn(async () => undefined),
+    };
+    const removeManagedAssetFile = vi.fn(async () => true);
+    const service = createService(
+      database,
+      registry,
+      { artifactCleanup },
+      { removeManagedAssetFile },
+    );
+    await service.loadFromProject('project');
+
+    await expect(service.delete('asset')).rejects.toThrow(
+      'artifact file locked',
+    );
+
+    expect(removeManagedAssetFile).not.toHaveBeenCalled();
+    expect(database.delete).not.toHaveBeenCalled();
+    expect(service.get('asset')).toBeDefined();
   });
 });
