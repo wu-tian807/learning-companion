@@ -26,6 +26,7 @@ describe('EpubReadingNotePanel', () => {
             assetId: 'asset-1',
             target,
             text: '这是我自己的感想。',
+            markerColor: 'yellow',
             createdTime: 1,
             updatedTime: 2,
           },
@@ -72,6 +73,7 @@ describe('EpubReadingNotePanel', () => {
       assetId: 'asset-1',
       target,
       text: '原来的感想',
+      markerColor: 'blue' as const,
       createdTime: 1,
       updatedTime: 1,
     };
@@ -100,12 +102,17 @@ describe('EpubReadingNotePanel', () => {
     });
     await act(async () => {
       container
+        .querySelector<HTMLButtonElement>('button[aria-label="红色波浪线"]')
+        ?.click();
+    });
+    await act(async () => {
+      container
         .querySelector<HTMLButtonElement>('button[type="submit"]')
         ?.click();
       await Promise.resolve();
     });
 
-    expect(onSave).toHaveBeenCalledWith('修改后的感想', note);
+    expect(onSave).toHaveBeenCalledWith('修改后的感想', 'red', note);
     act(() => root.unmount());
     container.remove();
   });

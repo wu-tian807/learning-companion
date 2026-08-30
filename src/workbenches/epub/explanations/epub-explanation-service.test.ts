@@ -190,6 +190,7 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
       metadata: {
         format: 'learning-companion/epub-explanation',
         version: 1,
+        markerColor: 'red',
       },
       content: {
         ref: {
@@ -253,6 +254,7 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
         id: 'attachment-1',
         status: 'completed',
         answer: '# 解释\n正文',
+        markerColor: 'red',
       },
     });
     service.dispose();

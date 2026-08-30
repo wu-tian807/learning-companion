@@ -58,25 +58,3 @@ export function assignEpubExplanationLanes(
 
   return Object.freeze(lanes);
 }
-
-export function epubExplanationUnderlineStyles(
-  lane: number,
-  status: 'pending' | 'failed' | 'completed',
-): Readonly<Record<string, string>> {
-  const color =
-    status === 'failed'
-      ? '#fb7185'
-      : status === 'pending'
-        ? '#94a3b8'
-        : '#93c5fd';
-  const dashPatterns = ['', '5 2', '2 2', '7 2 2 2'];
-  return Object.freeze({
-    stroke: color,
-    'stroke-width': '2',
-    'stroke-opacity': '0.88',
-    transform: `translate(0 ${-Math.min(lane, 5) * 2})`,
-    ...(dashPatterns[lane % dashPatterns.length]
-      ? { 'stroke-dasharray': dashPatterns[lane % dashPatterns.length]! }
-      : {}),
-  });
-}

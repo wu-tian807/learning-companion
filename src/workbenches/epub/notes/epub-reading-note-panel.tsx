@@ -1,6 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import type { EpubCfiRangeTarget } from '../shared';
+import { EpubMarkerColorPicker } from '../epub-marker-color-picker';
+import {
+  EPUB_MARKER_COLOR_VALUES,
+  type EpubMarkerColor,
+} from '../epub-marker-style';
 import {
   EPUB_READING_NOTE_MAX_LENGTH,
   type EpubReadingNoteView,
@@ -21,21 +26,33 @@ export function EpubReadingNotePanel({
   readonly draftTarget?: EpubCfiRangeTarget;
   readonly onActivate: (note: EpubReadingNoteView) => void;
   readonly onStartNew: () => void;
-  readonly onSave: (text: string, note?: EpubReadingNoteView) => Promise<void>;
+  readonly onSave: (
+    text: string,
+    markerColor: EpubMarkerColor,
+    note?: EpubReadingNoteView,
+  ) => Promise<void>;
   readonly onDelete: (note: EpubReadingNoteView) => Promise<void>;
   readonly onClose: () => void;
 }) {
   const [draft, setDraft] = useState(activeNote?.text ?? '');
+  const [markerColor, setMarkerColor] = useState<EpubMarkerColor>(
+    activeNote?.markerColor ?? 'yellow',
+  );
   const [saving, setSaving] = useState(false);
   const target = activeNote?.target ?? draftTarget;
 
-  useEffect(() => setDraft(activeNote?.text ?? ''), [activeNote]);
+  useEffect(() => {
+    setDraft(activeNote?.text ?? '');
+    setMarkerColor(activeNote?.markerColor ?? 'yellow');
+  }, [activeNote]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!target || !draft.trim() || saving) return;
     setSaving(true);
-    void onSave(draft, activeNote).finally(() => setSaving(false));
+    void onSave(draft, markerColor, activeNote).finally(() =>
+      setSaving(false),
+    );
   };
 
   return (
@@ -87,6 +104,13 @@ export function EpubReadingNotePanel({
                   }`}
                 >
                   <span className="text-[10px] text-amber-200/60">笔记 {index + 1}</span>
+                  <span
+                    aria-label={`${note.markerColor} 波浪线`}
+                    className="ml-1 inline-block size-2 rounded-full border border-white/20"
+                    style={{
+                      backgroundColor: EPUB_MARKER_COLOR_VALUES[note.markerColor],
+                    }}
+                  />
                   <span className="mt-1 line-clamp-2 block text-[11px] leading-5 text-slate-300">
                     {note.text}
                   </span>
@@ -110,6 +134,14 @@ export function EpubReadingNotePanel({
             请先在正文中选中一段文字。
           </p>
         )}
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] text-slate-600">波浪线颜色</span>
+          <EpubMarkerColorPicker
+            value={markerColor}
+            onChange={setMarkerColor}
+            disabled={!target || saving}
+          />
+        </div>
         <textarea
           aria-label="阅读笔记内容"
           value={draft}

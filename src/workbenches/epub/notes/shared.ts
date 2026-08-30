@@ -4,6 +4,10 @@ import {
   isEpubCfiRangeTarget,
   type EpubCfiRangeTarget,
 } from '../shared';
+import {
+  isEpubMarkerColor,
+  type EpubMarkerColor,
+} from '../epub-marker-style';
 
 export const EPUB_READING_NOTE_ATTACHMENT_TYPE = 'epub.reading-note';
 export const EPUB_READING_NOTE_ATTACHMENT_VERSION = 1;
@@ -13,6 +17,7 @@ export type EpubReadingNoteMetadata = JsonValue & {
   readonly format: 'learning-companion/epub-reading-note';
   readonly version: 1;
   readonly text: string;
+  readonly markerColor?: EpubMarkerColor;
 };
 
 export interface EpubReadingNoteView {
@@ -21,6 +26,7 @@ export interface EpubReadingNoteView {
   readonly assetId: string;
   readonly target: EpubCfiRangeTarget;
   readonly text: string;
+  readonly markerColor: EpubMarkerColor;
   readonly createdTime: number;
   readonly updatedTime: number;
 }
@@ -48,17 +54,20 @@ export function isEpubReadingNoteMetadata(
     value.version === 1 &&
     typeof value.text === 'string' &&
     value.text.trim().length > 0 &&
-    [...value.text].length <= EPUB_READING_NOTE_MAX_LENGTH
+    [...value.text].length <= EPUB_READING_NOTE_MAX_LENGTH &&
+    (value.markerColor === undefined || isEpubMarkerColor(value.markerColor))
   );
 }
 
 export function createEpubReadingNoteMetadata(
   text: string,
+  markerColor: EpubMarkerColor = 'yellow',
 ): EpubReadingNoteMetadata {
   const metadata: EpubReadingNoteMetadata = {
     format: 'learning-companion/epub-reading-note',
     version: 1,
     text: text.trim(),
+    markerColor,
   };
   if (!isEpubReadingNoteMetadata(metadata)) {
     throw new Error('EPUB 阅读笔记内容无效');
@@ -83,6 +92,7 @@ export function toEpubReadingNoteView(
     assetId: attachment.assetId,
     target: attachment.target,
     text: attachment.metadata.text,
+    markerColor: attachment.metadata.markerColor ?? 'yellow',
     createdTime: attachment.createdTime,
     updatedTime: attachment.updatedTime,
   });

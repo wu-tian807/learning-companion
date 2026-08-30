@@ -5,6 +5,7 @@ import { createEpubCfiRangeTarget } from '../shared';
 import {
   EPUB_READING_NOTE_ATTACHMENT_TYPE,
   EPUB_READING_NOTE_ATTACHMENT_VERSION,
+  createEpubReadingNoteMetadata,
   findEpubReadingNoteAtTarget,
   isEpubReadingNoteMetadata,
   toEpubReadingNoteView,
@@ -36,6 +37,7 @@ describe('EPUB reading note contracts', () => {
     expect(toEpubReadingNoteView(attachment)).toMatchObject({
       id: 'note-1',
       text: '这里让我想到另一个概念。',
+      markerColor: 'yellow',
       target,
     });
     expect(
@@ -44,6 +46,21 @@ describe('EPUB reading note contracts', () => {
         typeId: 'epub.ai-explanation',
       }),
     ).toBeUndefined();
+  });
+
+  it('persists a supported wave color while accepting legacy notes', () => {
+    expect(createEpubReadingNoteMetadata('红色笔记', 'red')).toMatchObject({
+      text: '红色笔记',
+      markerColor: 'red',
+    });
+    expect(
+      isEpubReadingNoteMetadata({
+        format: 'learning-companion/epub-reading-note',
+        version: 1,
+        text: '无效颜色',
+        markerColor: 'green',
+      }),
+    ).toBe(false);
   });
 
   it('rejects blank and oversized authored note text', () => {
@@ -70,6 +87,7 @@ describe('EPUB reading note contracts', () => {
       assetId: 'asset-1',
       target,
       text: '已有笔记',
+      markerColor: 'yellow' as const,
       createdTime: 1,
       updatedTime: 1,
     };

@@ -27,10 +27,6 @@ import { userMessageFromError } from '../../shared/ipc-error';
 import type { EpubExplanationView } from './explanations/shared';
 import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
 import { EpubExplanationIndex } from './explanations/epub-explanation-index';
-import {
-  assignEpubExplanationLanes,
-  epubExplanationUnderlineStyles,
-} from './explanations/epub-explanation-lanes';
 import { displayEpubExplanationLocation } from './explanations/epub-explanation-navigation';
 import {
   createEpubConversationContext,
@@ -61,6 +57,12 @@ import {
 } from './epub-security';
 import { createEpubReadingLocationRestore } from './epub-reading-location';
 import { observeEpubRenditionSize } from './epub-rendition-resize';
+import {
+  observeEpubAnnotationWaves,
+} from './epub-annotation-wave';
+import type { EpubMarkerColor } from './epub-marker-style';
+import { renderEpubAnnotationWaves } from './epub-annotation-renderer';
+import { stabilizeEpubContinuousScroll } from './epub-continuous-scroll';
 import { EpubReadingNotePanel } from './notes/epub-reading-note-panel';
 import {
   createEpubReadingNoteMetadata,
@@ -648,6 +650,7 @@ export function EpubWorkbenchView({
     let book: Book | undefined;
     let rendition: Rendition | undefined;
     let removeRenditionResizeObserver: (() => void) | undefined;
+    let removeAnnotationWaveObserver: (() => void) | undefined;
     const contentCleanups: Array<() => void> = [];
     host.replaceChildren();
     setLoadState({ kind: 'loading' });
@@ -705,6 +708,8 @@ export function EpubWorkbenchView({
         allowScriptedContent: false,
       });
       renditionRef.current = rendition;
+      stabilizeEpubContinuousScroll(host, viewStateRef.current.flow);
+      removeAnnotationWaveObserver = observeEpubAnnotationWaves(host);
       for (const theme of ['dark', 'light', 'sepia'] as const) {
         rendition.themes.register(theme, themeRules(theme));
       }
@@ -831,6 +836,7 @@ export function EpubWorkbenchView({
         await rendition.display();
       }
       if (!disposed) {
+        stabilizeEpubContinuousScroll(host, viewStateRef.current.flow);
         removeRenditionResizeObserver = observeEpubRenditionSize(
           host,
           rendition,
@@ -864,6 +870,7 @@ export function EpubWorkbenchView({
         cleanup();
       }
       removeRenditionResizeObserver?.();
+      removeAnnotationWaveObserver?.();
       renditionRef.current = undefined;
       bookRef.current = undefined;
       book?.destroy();
@@ -898,66 +905,20 @@ export function EpubWorkbenchView({
       return;
     }
 
-    const lanes = assignEpubExplanationLanes(
-      explanations.map((explanation) => ({
-        id: explanation.id,
-        cfiRange: explanation.target.anchorPayload.cfiRange,
-      })),
-    );
-    for (const explanation of explanations) {
-      const cfiRange = explanation.target.anchorPayload.cfiRange;
-      rendition.annotations.underline(
-        cfiRange,
-        { explanationId: explanation.id },
-        () => setActiveExplanationId(explanation.id),
-        `epub-ai-explanation-${explanation.status}`,
-        epubExplanationUnderlineStyles(
-          lanes[explanation.id] ?? 0,
-          explanation.status,
-        ),
-      );
-    }
-
-    return () => {
-      for (const explanation of explanations) {
-        rendition.annotations.remove(
-          explanation.target.anchorPayload.cfiRange,
-          'underline',
-        );
-      }
-    };
-  }, [explanations, loadState.kind]);
-
-  useEffect(() => {
-    const rendition = renditionRef.current;
-    if (!rendition || loadState.kind !== 'ready') return;
-
-    for (const note of readingNotes) {
-      rendition.annotations.highlight(
-        note.target.anchorPayload.cfiRange,
-        { readingNoteId: note.id },
-        () => {
+    return renderEpubAnnotationWaves(
+      rendition.annotations,
+      explanations,
+      readingNotes,
+      {
+        onExplanationClick: (explanation) =>
+          setActiveExplanationId(explanation.id),
+        onNoteClick: (note) => {
           setActiveNoteId(note.id);
           setNotePanelOpen(true);
         },
-        'epub-authored-reading-note',
-        {
-          fill: '#fbbf24',
-          'fill-opacity': '0.18',
-          'mix-blend-mode': 'multiply',
-        },
-      );
-    }
-
-    return () => {
-      for (const note of readingNotes) {
-        rendition.annotations.remove(
-          note.target.anchorPayload.cfiRange,
-          'highlight',
-        );
-      }
-    };
-  }, [loadState.kind, readingNotes]);
+      },
+    );
+  }, [explanations, loadState.kind, readingNotes]);
 
   const retryExplanation = useCallback(
     async (explanation: EpubExplanationView) => {
@@ -1005,6 +966,36 @@ export function EpubWorkbenchView({
     [asset.id, asset.projectId, clearExplanationRuntime, reportError],
   );
 
+  const updateExplanationMarkerColor = useCallback(
+    async (
+      explanation: EpubExplanationView,
+      markerColor: EpubMarkerColor,
+    ) => {
+      if (explanation.kind !== 'attachment') return;
+      try {
+        const updated = await window.learningCompanion.updateAttachment({
+          projectId: asset.projectId,
+          attachmentId: explanation.id,
+          metadata: {
+            format: 'learning-companion/epub-explanation',
+            version: 1,
+            markerColor,
+          },
+        });
+        setExplanations((current) =>
+          current.map((item) =>
+            item.id === explanation.id
+              ? { ...item, markerColor, updatedTime: updated.updatedTime }
+              : item,
+          ),
+        );
+      } catch (error) {
+        reportError(error, '无法修改 AI 标注的波浪线颜色。');
+      }
+    },
+    [asset.projectId, reportError],
+  );
+
   const revealExplanation = useCallback(
     async (explanation: EpubExplanationView) => {
       const rendition = renditionRef.current;
@@ -1035,7 +1026,11 @@ export function EpubWorkbenchView({
   }, [openReadingNoteEditor]);
 
   const saveReadingNote = useCallback(
-    async (text: string, note?: EpubReadingNoteView) => {
+    async (
+      text: string,
+      markerColor: EpubMarkerColor,
+      note?: EpubReadingNoteView,
+    ) => {
       const target = note?.target ?? noteDraftTarget;
       if (!target) {
         reportError(
@@ -1045,7 +1040,7 @@ export function EpubWorkbenchView({
         return;
       }
       try {
-        const metadata = createEpubReadingNoteMetadata(text);
+        const metadata = createEpubReadingNoteMetadata(text, markerColor);
         const saved = note
           ? await window.learningCompanion.updateAttachment({
               projectId: asset.projectId,
@@ -1408,6 +1403,15 @@ export function EpubWorkbenchView({
               onClose={() => setActiveExplanationId(undefined)}
               onRetry={() => void retryExplanation(activeExplanation)}
               onDelete={() => void deleteExplanation(activeExplanation)}
+              onMarkerColorChange={
+                activeExplanation.kind === 'attachment'
+                  ? (color) =>
+                      void updateExplanationMarkerColor(
+                        activeExplanation,
+                        color,
+                      )
+                  : undefined
+              }
               onContinueQuestion={
                 activeExplanation.status === 'completed'
                   ? () => {

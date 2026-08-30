@@ -2,6 +2,10 @@ import {
   isEpubCfiRangeTarget,
   type EpubCfiRangeTarget,
 } from '../shared';
+import {
+  isEpubMarkerColor,
+  type EpubMarkerColor,
+} from '../epub-marker-style';
 export type { EpubCfiRangeTarget } from '../shared';
 export { isEpubCfiRangeTarget } from '../shared';
 
@@ -21,6 +25,7 @@ export const EPUB_EXPLANATION_IPC_CHANNELS = Object.freeze({
 export interface EpubExplanationMetadata {
   readonly format: 'learning-companion/epub-explanation';
   readonly version: 1;
+  readonly markerColor?: EpubMarkerColor;
 }
 
 interface EpubExplanationViewBase {
@@ -30,6 +35,7 @@ interface EpubExplanationViewBase {
   readonly target: EpubCfiRangeTarget;
   readonly createdTime: number;
   readonly updatedTime: number;
+  readonly markerColor?: EpubMarkerColor;
 }
 
 export interface EpubExplanationTaskView extends EpubExplanationViewBase {
@@ -125,8 +131,15 @@ export function isEpubExplanationMetadata(
   return (
     isRecord(value) &&
     value.format === 'learning-companion/epub-explanation' &&
-    value.version === 1
+    value.version === 1 &&
+    (value.markerColor === undefined || isEpubMarkerColor(value.markerColor))
   );
+}
+
+export function epubExplanationMarkerColor(
+  metadata: EpubExplanationMetadata,
+): EpubMarkerColor {
+  return metadata.markerColor ?? 'blue';
 }
 
 export function isListEpubExplanationsRequest(
@@ -169,6 +182,7 @@ export function isEpubExplanationView(
     isRequiredText(value.projectId, 256) &&
     isRequiredText(value.assetId, 256) &&
     isEpubCfiRangeTarget(value.target) &&
+    (value.markerColor === undefined || isEpubMarkerColor(value.markerColor)) &&
     ((value.kind === 'task' &&
       (value.status === 'pending' || value.status === 'failed') &&
       value.answer === undefined &&

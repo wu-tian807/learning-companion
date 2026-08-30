@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assignEpubExplanationLanes,
-  epubExplanationUnderlineStyles,
 } from './epub-explanation-lanes';
 
 const range = (start: number, end: number) =>
@@ -17,16 +16,6 @@ describe('EPUB overlapping explanation lanes', () => {
         { id: 'third', cfiRange: range(21, 30) },
       ]),
     ).toEqual({ first: 0, second: 1, third: 0 });
-  });
-
-  it('renders separate lanes with distinct offsets and line patterns', () => {
-    expect(epubExplanationUnderlineStyles(0, 'completed')).toMatchObject({
-      transform: 'translate(0 0)',
-    });
-    expect(epubExplanationUnderlineStyles(1, 'completed')).toMatchObject({
-      transform: 'translate(0 -2)',
-      'stroke-dasharray': '5 2',
-    });
   });
 
   it('uses a deterministic fallback lane for malformed legacy CFI data', () => {
