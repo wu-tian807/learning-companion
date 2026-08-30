@@ -50,6 +50,7 @@ export function renderEpubAnnotationWaves(
       epubAnnotationWaveStyles(
         lanes[`explanation:${explanation.id}`] ?? 0,
         explanation.markerColor ?? 'blue',
+        'rect',
       ),
     );
   }

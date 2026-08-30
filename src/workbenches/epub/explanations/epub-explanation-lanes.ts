@@ -23,11 +23,11 @@ function intervalFromRange(cfiRange: string): CfiInterval | undefined {
   }
 }
 
-function intervalsOverlap(left: CfiInterval, right: CfiInterval): boolean {
+function intervalsConflict(left: CfiInterval, right: CfiInterval): boolean {
   const comparator = new EpubCFI();
   return (
-    comparator.compare(left.start, right.end) < 0 &&
-    comparator.compare(right.start, left.end) < 0
+    comparator.compare(left.start, right.end) <= 0 &&
+    comparator.compare(right.start, left.end) <= 0
   );
 }
 
@@ -46,7 +46,7 @@ export function assignEpubExplanationLanes(
       continue;
     }
     let lane = laneIntervals.findIndex((intervals) =>
-      intervals.every((candidate) => !intervalsOverlap(candidate, interval)),
+      intervals.every((candidate) => !intervalsConflict(candidate, interval)),
     );
     if (lane < 0) {
       lane = laneIntervals.length;
