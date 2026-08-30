@@ -7,7 +7,7 @@ import type {
   WorkbenchConversationContribution,
 } from './conversation-contracts';
 import {
-  useWorkbenchCurrentConversation,
+  useWorkbenchCurrentConversationState,
   useWorkbenchConversationRuntime,
   useWorkbenchConversationSnapshot,
 } from './workbench-conversation-context';
@@ -96,7 +96,7 @@ function ActiveConversationPanel({
       projectId,
     ],
   );
-  const currentConversation = useWorkbenchCurrentConversation(
+  const currentConversationState = useWorkbenchCurrentConversationState(
     runtime,
     conversationScope,
   );
@@ -105,10 +105,10 @@ function ActiveConversationPanel({
     projectId,
     assetId,
     contribution,
-    initialConversation: currentConversation,
-    onConversationChange(conversation) {
-      runtime.setCurrentConversation(conversationScope, conversation);
-    },
+    initialConversation: currentConversationState?.conversation,
+    currentConversationState,
+    conversationRuntime: runtime,
+    conversationScope,
     launchRequest,
     onLaunchConsumed,
     onPersistenceError(error) {
@@ -122,11 +122,14 @@ function ActiveConversationPanel({
   }, [controller.state.busy, ownerId, runtime]);
 
   useEffect(() => {
-    runtime.setCurrentConversation(
-      conversationScope,
-      controller.state.conversation,
-    );
-  }, [controller.state.conversation, conversationScope, runtime]);
+    if (currentConversationState) return;
+    runtime.setCurrentConversation(conversationScope, controller.state.conversation);
+  }, [
+    controller.state.conversation,
+    conversationScope,
+    currentConversationState,
+    runtime,
+  ]);
 
   if (!open) return null;
 

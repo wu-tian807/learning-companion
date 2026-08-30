@@ -7,11 +7,11 @@ import {
 } from 'react';
 
 import type {
-  ConversationRecord,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
 import {
   WorkbenchConversationRuntime,
+  type WorkbenchCurrentConversationState,
   type WorkbenchConversationScope,
 } from './workbench-conversation-runtime';
 
@@ -41,10 +41,10 @@ export function useWorkbenchConversationSnapshot(
   );
 }
 
-export function useWorkbenchCurrentConversation(
+export function useWorkbenchCurrentConversationState(
   runtime: WorkbenchConversationRuntime,
   scope: WorkbenchConversationScope,
-): ConversationRecord | undefined {
+): WorkbenchCurrentConversationState | undefined {
   const {
     assetId,
     contributionId,
@@ -73,7 +73,7 @@ export function useWorkbenchCurrentConversation(
     ],
   );
   const getSnapshot = useCallback(
-    () => runtime.getCurrentConversation({
+    () => runtime.getCurrentConversationState({
       assetId,
       contributionId,
       ...(conversationPartitionKey === undefined

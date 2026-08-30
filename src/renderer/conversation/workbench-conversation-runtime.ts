@@ -18,6 +18,60 @@ export interface WorkbenchConversationScope {
   readonly conversationPartitionKey?: string;
 }
 
+export interface WorkbenchConversationPendingStart {
+  readonly operationId: string;
+  readonly conversationId: string;
+  readonly startedRevision: number;
+  readonly cancelRequested: boolean;
+}
+
+export interface WorkbenchConversationStartFailure {
+  readonly operationId: string;
+  readonly draft: string;
+  readonly pendingContext?: JsonValue;
+  readonly error: {
+    readonly message: string;
+    readonly code?: string;
+    readonly retryTaskId?: string;
+  };
+}
+
+export interface WorkbenchCurrentConversationState {
+  readonly revision: number;
+  readonly conversation: ConversationRecord;
+  readonly pendingStart?: WorkbenchConversationPendingStart;
+  readonly startFailure?: WorkbenchConversationStartFailure;
+}
+
+export interface BeginWorkbenchConversationStartInput {
+  readonly operationId: string;
+  readonly expectedConversationId: string;
+  readonly conversation: ConversationRecord;
+}
+
+export interface ResolveWorkbenchConversationStartInput {
+  readonly operationId: string;
+  readonly taskId: string;
+  readonly updateConversation: (
+    current: ConversationRecord,
+  ) => ConversationRecord | undefined;
+}
+
+export interface RejectWorkbenchConversationStartInput {
+  readonly operationId: string;
+  readonly draft: string;
+  readonly pendingContext?: JsonValue;
+  readonly error: WorkbenchConversationStartFailure['error'];
+  readonly rollbackConversation: (
+    current: ConversationRecord,
+  ) => ConversationRecord;
+}
+
+export interface ResolvedWorkbenchConversationStart {
+  readonly state: WorkbenchCurrentConversationState;
+  readonly cancelRequested: boolean;
+}
+
 function conversationScopeKey(scope: WorkbenchConversationScope): string {
   const identityParts = [scope.projectId, scope.assetId, scope.contributionId]
     .map((part) => part.trim());
@@ -47,7 +101,10 @@ export interface OpenWorkbenchConversationInput {
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly contributions = new Map<string, RegisteredContribution>();
-  private readonly currentConversations = new Map<string, ConversationRecord>();
+  private readonly currentConversations = new Map<
+    string,
+    WorkbenchCurrentConversationState
+  >();
   private readonly currentConversationListeners = new Map<
     string,
     Set<() => void>
@@ -68,6 +125,12 @@ export class WorkbenchConversationRuntime {
   getCurrentConversation(
     scope: WorkbenchConversationScope,
   ): ConversationRecord | undefined {
+    return this.getCurrentConversationState(scope)?.conversation;
+  }
+
+  getCurrentConversationState(
+    scope: WorkbenchConversationScope,
+  ): WorkbenchCurrentConversationState | undefined {
     return this.currentConversations.get(conversationScopeKey(scope));
   }
 
@@ -90,18 +153,167 @@ export class WorkbenchConversationRuntime {
   setCurrentConversation(
     scope: WorkbenchConversationScope,
     conversation: ConversationRecord,
-  ): void {
-    if (!conversation.id.trim()) {
-      throw new Error('Workbench Conversation identity 无效');
+  ): WorkbenchCurrentConversationState {
+    this.validateConversation(conversation);
+    const key = conversationScopeKey(scope);
+    const current = this.currentConversations.get(key);
+    if (current?.conversation === conversation) return current;
+    const sameConversation = current?.conversation.id === conversation.id;
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      revision: (current?.revision ?? 0) + 1,
+      conversation,
+      ...(sameConversation && current?.pendingStart
+        ? { pendingStart: current.pendingStart }
+        : {}),
+      ...(sameConversation && current?.startFailure
+        ? { startFailure: current.startFailure }
+        : {}),
+    });
+    this.setCurrentConversationState(key, next);
+    return next;
+  }
+
+  beginCurrentConversationStart(
+    scope: WorkbenchConversationScope,
+    input: BeginWorkbenchConversationStartInput,
+  ): WorkbenchCurrentConversationState | undefined {
+    const operationId = input.operationId.trim();
+    const expectedConversationId = input.expectedConversationId.trim();
+    this.validateConversation(input.conversation);
+    if (!operationId || !expectedConversationId) {
+      throw new Error('Workbench Conversation operation 无效');
     }
     const key = conversationScopeKey(scope);
-    if (this.currentConversations.get(key) === conversation) return;
-    this.currentConversations.set(key, conversation);
-    for (const listener of [
-      ...(this.currentConversationListeners.get(key) ?? []),
-    ]) {
-      listener();
+    const current = this.currentConversations.get(key);
+    if (
+      !current ||
+      current.pendingStart ||
+      current.conversation.id !== expectedConversationId ||
+      input.conversation.id !== expectedConversationId
+    ) {
+      return undefined;
     }
+    const revision = current.revision + 1;
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      revision,
+      conversation: input.conversation,
+      pendingStart: Object.freeze({
+        operationId,
+        conversationId: expectedConversationId,
+        startedRevision: revision,
+        cancelRequested: false,
+      }),
+    });
+    this.setCurrentConversationState(key, next);
+    return next;
+  }
+
+  resolveCurrentConversationStart(
+    scope: WorkbenchConversationScope,
+    input: ResolveWorkbenchConversationStartInput,
+  ): ResolvedWorkbenchConversationStart | undefined {
+    const operationId = input.operationId.trim();
+    if (!operationId || !input.taskId.trim()) {
+      throw new Error('Workbench Conversation operation 无效');
+    }
+    const key = conversationScopeKey(scope);
+    const current = this.currentConversations.get(key);
+    if (
+      !current?.pendingStart ||
+      current.pendingStart.operationId !== operationId ||
+      current.conversation.id !== current.pendingStart.conversationId
+    ) {
+      return undefined;
+    }
+    const conversation = input.updateConversation(current.conversation);
+    if (!conversation) {
+      this.setCurrentConversationState(key, Object.freeze({
+        revision: current.revision + 1,
+        conversation: current.conversation,
+      }));
+      return undefined;
+    }
+    this.validateConversation(conversation);
+    if (conversation.id !== current.conversation.id) {
+      throw new Error('Workbench Conversation operation 不能切换 identity');
+    }
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      revision: current.revision + 1,
+      conversation,
+    });
+    this.setCurrentConversationState(key, next);
+    return Object.freeze({
+      state: next,
+      cancelRequested: current.pendingStart.cancelRequested,
+    });
+  }
+
+  rejectCurrentConversationStart(
+    scope: WorkbenchConversationScope,
+    input: RejectWorkbenchConversationStartInput,
+  ): WorkbenchCurrentConversationState | undefined {
+    const operationId = input.operationId.trim();
+    if (!operationId || !input.error.message.trim()) {
+      throw new Error('Workbench Conversation operation 无效');
+    }
+    const key = conversationScopeKey(scope);
+    const current = this.currentConversations.get(key);
+    if (
+      !current?.pendingStart ||
+      current.pendingStart.operationId !== operationId ||
+      current.conversation.id !== current.pendingStart.conversationId
+    ) {
+      return undefined;
+    }
+    const conversation = input.rollbackConversation(current.conversation);
+    this.validateConversation(conversation);
+    if (conversation.id !== current.conversation.id) {
+      throw new Error('Workbench Conversation operation 不能切换 identity');
+    }
+    const failure: WorkbenchConversationStartFailure = Object.freeze({
+      operationId,
+      draft: input.draft,
+      ...(input.pendingContext === undefined
+        ? {}
+        : { pendingContext: input.pendingContext }),
+      error: Object.freeze({ ...input.error }),
+    });
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      revision: current.revision + 1,
+      conversation,
+      startFailure: failure,
+    });
+    this.setCurrentConversationState(key, next);
+    return next;
+  }
+
+  requestCurrentConversationStartCancel(
+    scope: WorkbenchConversationScope,
+    operationId: string,
+  ): WorkbenchCurrentConversationState | undefined {
+    const normalizedOperationId = operationId.trim();
+    if (!normalizedOperationId) {
+      throw new Error('Workbench Conversation operation 无效');
+    }
+    const key = conversationScopeKey(scope);
+    const current = this.currentConversations.get(key);
+    if (
+      !current?.pendingStart ||
+      current.pendingStart.operationId !== normalizedOperationId
+    ) {
+      return undefined;
+    }
+    if (current.pendingStart.cancelRequested) return current;
+    const next: WorkbenchCurrentConversationState = Object.freeze({
+      ...current,
+      revision: current.revision + 1,
+      pendingStart: Object.freeze({
+        ...current.pendingStart,
+        cancelRequested: true,
+      }),
+    });
+    this.setCurrentConversationState(key, next);
+    return next;
   }
 
   register(
@@ -223,5 +435,23 @@ export class WorkbenchConversationRuntime {
     }
     this.snapshot = Object.freeze(next);
     for (const listener of [...this.listeners]) listener();
+  }
+
+  private validateConversation(conversation: ConversationRecord): void {
+    if (!conversation.id.trim()) {
+      throw new Error('Workbench Conversation identity 无效');
+    }
+  }
+
+  private setCurrentConversationState(
+    key: string,
+    next: WorkbenchCurrentConversationState,
+  ): void {
+    this.currentConversations.set(key, next);
+    for (const listener of [
+      ...(this.currentConversationListeners.get(key) ?? []),
+    ]) {
+      listener();
+    }
   }
 }

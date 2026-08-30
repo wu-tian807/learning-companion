@@ -200,6 +200,177 @@ describe('WorkbenchConversationRuntime', () => {
     })).toBeUndefined();
   });
 
+  it('resolves only the matching start operation and merges against the latest revision', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    const initial = conversation('conversation');
+    runtime.setCurrentConversation(scope, initial);
+    const optimistic: ConversationRecord = {
+      ...initial,
+      messages: [
+        { id: 'question', role: 'user', text: 'question', createdTime: 2 },
+        {
+          id: 'answer',
+          role: 'assistant',
+          text: '',
+          createdTime: 2,
+          replyToMessageId: 'question',
+        },
+      ],
+      updatedTime: 2,
+    };
+    const started = runtime.beginCurrentConversationStart(scope, {
+      operationId: 'operation-1',
+      expectedConversationId: initial.id,
+      conversation: optimistic,
+    })!;
+    expect(started.pendingStart).toMatchObject({
+      operationId: 'operation-1',
+      startedRevision: started.revision,
+      cancelRequested: false,
+    });
+
+    const newer: ConversationRecord = {
+      ...optimistic,
+      messages: [
+        ...optimistic.messages,
+        { id: 'newer', role: 'user', text: 'newer', createdTime: 3 },
+      ],
+      updatedTime: 3,
+    };
+    const newerState = runtime.setCurrentConversation(scope, newer);
+    expect(newerState.revision).toBeGreaterThan(started.revision);
+    expect(newerState.pendingStart?.operationId).toBe('operation-1');
+    expect(runtime.resolveCurrentConversationStart(scope, {
+      operationId: 'stale-operation',
+      taskId: 'task-stale',
+      updateConversation: () => {
+        throw new Error('stale updater must not run');
+      },
+    })).toBeUndefined();
+
+    const resolved = runtime.resolveCurrentConversationStart(scope, {
+      operationId: 'operation-1',
+      taskId: 'task-1',
+      updateConversation: (current) => ({
+        ...current,
+        messages: current.messages.map((message) =>
+          message.id === 'answer'
+            ? { ...message, generationTaskId: 'task-1' }
+            : message,
+        ),
+      }),
+    })!;
+    expect(resolved.state.conversation.messages).toHaveLength(3);
+    expect(resolved.state.conversation.messages[1]?.generationTaskId)
+      .toBe('task-1');
+    expect(resolved.state.pendingStart).toBeUndefined();
+  });
+
+  it('hands cancellation and start failure state across controller lifetimes', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    const initial = conversation('conversation');
+    runtime.setCurrentConversation(scope, initial);
+    runtime.beginCurrentConversationStart(scope, {
+      operationId: 'operation-cancel',
+      expectedConversationId: initial.id,
+      conversation: initial,
+    });
+    const cancelled = runtime.requestCurrentConversationStartCancel(
+      scope,
+      'operation-cancel',
+    );
+    expect(cancelled?.pendingStart?.cancelRequested).toBe(true);
+    const resolved = runtime.resolveCurrentConversationStart(scope, {
+      operationId: 'operation-cancel',
+      taskId: 'task-cancel',
+      updateConversation: (current) => current,
+    });
+    expect(resolved?.cancelRequested).toBe(true);
+
+    runtime.beginCurrentConversationStart(scope, {
+      operationId: 'operation-failure',
+      expectedConversationId: initial.id,
+      conversation: initial,
+    });
+    const context = { target: { scope: 'selection' } };
+    const rejected = runtime.rejectCurrentConversationStart(scope, {
+      operationId: 'operation-failure',
+      draft: 'restore me',
+      pendingContext: context,
+      error: { message: 'failed', code: 'START_FAILED' },
+      rollbackConversation: (current) => current,
+    });
+    expect(rejected).toMatchObject({
+      conversation: initial,
+      startFailure: {
+        operationId: 'operation-failure',
+        draft: 'restore me',
+        pendingContext: context,
+        error: { message: 'failed', code: 'START_FAILED' },
+      },
+    });
+  });
+
+  it('invalidates a pending start when the current conversation pointer changes', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    const initial = conversation('conversation-1');
+    runtime.setCurrentConversation(scope, initial);
+    runtime.beginCurrentConversationStart(scope, {
+      operationId: 'operation-old',
+      expectedConversationId: initial.id,
+      conversation: initial,
+    });
+    const switched = conversation('conversation-2');
+    const switchedState = runtime.setCurrentConversation(scope, switched);
+
+    expect(switchedState.pendingStart).toBeUndefined();
+    expect(runtime.resolveCurrentConversationStart(scope, {
+      operationId: 'operation-old',
+      taskId: 'task-late',
+      updateConversation: () => initial,
+    })).toBeUndefined();
+    expect(runtime.getCurrentConversation(scope)).toBe(switched);
+  });
+
+  it('abandons a matching operation when its merge target no longer exists', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = {
+      projectId: 'project',
+      assetId: 'asset',
+      contributionId: 'html.assistant',
+    };
+    const initial = conversation('conversation');
+    runtime.setCurrentConversation(scope, initial);
+    runtime.beginCurrentConversationStart(scope, {
+      operationId: 'operation-without-target',
+      expectedConversationId: initial.id,
+      conversation: initial,
+    });
+
+    expect(runtime.resolveCurrentConversationStart(scope, {
+      operationId: 'operation-without-target',
+      taskId: 'task-late',
+      updateConversation: () => undefined,
+    })).toBeUndefined();
+    expect(runtime.getCurrentConversationState(scope)?.pendingStart)
+      .toBeUndefined();
+  });
+
   it('drops only the in-memory current conversation state on disposal', () => {
     const runtime = new WorkbenchConversationRuntime();
     const scope = {

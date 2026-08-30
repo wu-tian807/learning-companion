@@ -124,10 +124,17 @@ UI Conversation。`conversationPartitionKey` 是 Workbench 提供的可选不透
 切换或重挂载而变化时，Controller 仍继续使用原 `conversationId`，而内容分区变化时不会
 恢复旧 Conversation；关闭 Project 或重启应用后这份运行期选择自然消失。
 
-Runtime 的当前 Conversation 投影是可订阅的。旧 Controller 在卸载后才收到
-GenerationTask ID 时，必须把绑定后的投影发布回相同 scope；新 Controller 只接纳相同
-`conversationId` 的晚到投影，并按 task ID 幂等恢复运行中任务。持久化 UI History 不参与
-这条运行期交接链路。
+Runtime 的当前 Conversation 状态是可订阅的，包含单调 `revision`、当前 UI 投影、可选的
+pending start operation 和启动失败后的 UI 恢复数据。Controller 发出 GenerationTask 请求但
+尚未取得 task ID 时，新挂载的 Controller 会继承 busy/cancel 状态，不能并发发送、重试、
+重新回答或切换当前 Conversation。
+
+每次 pending start 都有唯一 operation ID。旧 Controller 晚到的成功或失败只能通过匹配
+operation 的 Runtime 原子更新生效：成功在 Runtime 当前 revision 上合并 task ID，不覆盖
+较新的消息；失败恢复该 operation 的 draft、Context 与错误；当前 Conversation 指针已切换
+或目标消息已不存在时，晚到任务会被拒绝并取消。取得 task ID 后，新 Controller 再按 task
+ID 幂等恢复 GenerationTask。持久化 UI History 不参与这条运行期交接链路，Provider 历史仍
+只以 Agent Session/Codex thread 为准。
 
 普通打开、附加新 Context 和后续追问都不传 `conversationId`，也不会从持久化历史中猜测
 “最近一次”会话。只有用户主动选择某条历史记录时，Renderer 才显式传入该记录的
