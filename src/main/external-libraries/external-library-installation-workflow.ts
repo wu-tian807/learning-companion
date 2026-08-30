@@ -25,6 +25,7 @@ import type {
   ExternalLibraryInstallerRegistryApi,
 } from './external-library-installer';
 import type { ExternalLibraryPathManagerApi } from './external-library-path-manager';
+import type { ExternalLibraryQuiescence } from './external-library-lifecycle';
 import type { ExternalLibraryRuntimeSetupRegistryApi } from './external-library-runtime-setup';
 
 export type ExternalLibraryInstallationStage =
@@ -34,10 +35,12 @@ export type ExternalLibraryInstallationStage =
     }
   | {
       readonly status: 'verifying';
+      readonly progress?: ExternalLibraryProgress;
     }
   | {
       readonly status: 'installing';
       readonly statusDetail?: string;
+      readonly progress?: ExternalLibraryProgress;
     };
 
 export interface ExternalLibraryInstallationWorkflowDependencies {
@@ -55,6 +58,7 @@ export interface ExternalLibraryInstallationWorkflowInput {
   readonly definition: ExternalLibraryDefinition;
   readonly packageDefinition: ExternalLibraryPackageDefinition;
   readonly replaceExisting?: boolean;
+  readonly quiesce?: () => Promise<ExternalLibraryQuiescence>;
   readonly signal: AbortSignal;
   readonly onStage: (stage: ExternalLibraryInstallationStage) => void;
 }
@@ -116,6 +120,10 @@ export class ExternalLibraryInstallationWorkflow {
       signal,
       onStage,
     } = input;
+    const runtimeSetup = this.dependencies.runtimeSetups?.find(
+      definition.id,
+    );
+    const expectedSetupBytes = runtimeSetup?.expectedSetupBytes ?? 0;
     const stagingDirectory =
       await this.dependencies.pathManager.createStagingDirectory(
         rootPath,
@@ -125,11 +133,43 @@ export class ExternalLibraryInstallationWorkflow {
 
     try {
       const resources = externalLibraryPackageResources(packageDefinition);
-      const totalBytes = externalLibraryPackageExpectedSize(
+      const packageBytes = externalLibraryPackageExpectedSize(
         packageDefinition,
       );
+      const totalBytes = packageBytes + expectedSetupBytes;
       const downloaded: DownloadedResource[] = [];
       let completedBeforeCurrent = 0;
+      let completedSetupBytes = 0;
+      const reportRuntimeSetupStage = (
+        statusDetail: string,
+        progress?: ExternalLibraryProgress,
+      ) => {
+        if (progress) {
+          if (
+            expectedSetupBytes <= 0 ||
+            progress.totalBytes !== expectedSetupBytes
+          ) {
+            throw new AppError('DATA_INTEGRITY_ERROR');
+          }
+          completedSetupBytes = Math.max(
+            completedSetupBytes,
+            Math.min(progress.completedBytes, expectedSetupBytes),
+          );
+        }
+        onStage({
+          status: 'installing',
+          statusDetail,
+          ...(expectedSetupBytes > 0
+            ? {
+                progress: {
+                  completedBytes:
+                    packageBytes + completedSetupBytes,
+                  totalBytes,
+                },
+              }
+            : {}),
+        });
+      };
 
       onStage({
         status: 'downloading',
@@ -173,12 +213,29 @@ export class ExternalLibraryInstallationWorkflow {
         completedBeforeCurrent += result.byteLength;
       }
 
-      onStage({ status: 'verifying' });
-      if (completedBeforeCurrent !== totalBytes) {
+      const setupAwareProgress =
+        expectedSetupBytes > 0
+          ? {
+              completedBytes: completedBeforeCurrent,
+              totalBytes,
+            }
+          : undefined;
+      onStage({
+        status: 'verifying',
+        ...(setupAwareProgress === undefined
+          ? {}
+          : { progress: setupAwareProgress }),
+      });
+      if (completedBeforeCurrent !== packageBytes) {
         throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
       }
 
-      onStage({ status: 'installing' });
+      onStage({
+        status: 'installing',
+        ...(setupAwareProgress === undefined
+          ? {}
+          : { progress: setupAwareProgress }),
+      });
       const stagingInstallationDirectory = join(
         stagingDirectory,
         'installation',
@@ -195,9 +252,6 @@ export class ExternalLibraryInstallationWorkflow {
         signal,
       );
 
-      const runtimeSetup = this.dependencies.runtimeSetups?.find(
-        definition.id,
-      );
       if (runtimeSetup) {
         const runtimeDirectory = join(
           stagingInstallationDirectory,
@@ -213,9 +267,7 @@ export class ExternalLibraryInstallationWorkflow {
           runtimeDirectory,
           setupCacheDirectory,
           signal,
-          (statusDetail) => {
-            onStage({ status: 'installing', statusDetail });
-          },
+          reportRuntimeSetupStage,
         );
         if (signal.aborted) throw externalLibraryAbortReason(signal);
         if (
@@ -236,6 +288,9 @@ export class ExternalLibraryInstallationWorkflow {
           installedTime: this.dependencies.now(),
         }),
       );
+      const quiescence = replaceExisting
+        ? await input.quiesce?.()
+        : undefined;
       let installationCommitted = false;
       try {
         const paths =
@@ -257,9 +312,7 @@ export class ExternalLibraryInstallationWorkflow {
           await runtimeSetup.finalizeInstallation(
             runtimeDirectory,
             signal,
-            (statusDetail) => {
-              onStage({ status: 'installing', statusDetail });
-            },
+            reportRuntimeSetupStage,
           );
           if (signal.aborted) throw externalLibraryAbortReason(signal);
         }
@@ -294,6 +347,8 @@ export class ExternalLibraryInstallationWorkflow {
             });
         }
         throw error;
+      } finally {
+        quiescence?.dispose();
       }
     } finally {
       if (

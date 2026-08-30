@@ -82,7 +82,7 @@ describe('ExternalLibrariesSettingsSection', () => {
     });
   });
 
-  it('shows the active installation step instead of a frozen percentage', () => {
+  it('shows measured runtime setup progress instead of an indeterminate bar', () => {
     act(() => {
       root.render(
         <ExternalLibrariesSettingsSection
@@ -91,6 +91,7 @@ describe('ExternalLibrariesSettingsSection', () => {
               ...mediaSubtitles,
               status: 'installing',
               statusDetail: '正在安装 PyTorch/CUDA 运行环境',
+              progress: { completedBytes: 37, totalBytes: 100 },
             },
           ]}
           loading={false}
@@ -113,7 +114,10 @@ describe('ExternalLibrariesSettingsSection', () => {
     );
     expect(
       container.querySelector('.external-library-indeterminate'),
+    ).toBeNull();
+    expect(container.textContent).toContain(' · 37%');
+    expect(
+      container.querySelector<HTMLElement>('[style="width: 37%;"]'),
     ).not.toBeNull();
-    expect(container.textContent).not.toContain(' · 33%');
   });
 });

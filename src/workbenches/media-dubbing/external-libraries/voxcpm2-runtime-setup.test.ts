@@ -13,7 +13,10 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExternalCommandRunnerApi } from '../../../main/external-libraries/external-command-runner';
-import { VoxCpm2RuntimeSetup } from './voxcpm2-runtime-setup';
+import {
+  VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES,
+  VoxCpm2RuntimeSetup,
+} from './voxcpm2-runtime-setup';
 
 const temporaryDirectories: string[] = [];
 
@@ -62,14 +65,27 @@ describe('VoxCpm2RuntimeSetup', () => {
       platform: 'win32',
     });
     const setupCache = join(root, 'download-cache');
-    const statusDetails: string[] = [];
+    const statusReports: Array<{
+      readonly statusDetail: string;
+      readonly completedBytes?: number;
+      readonly totalBytes?: number;
+    }> = [];
 
     expect(await setup.isReady(root)).toBe(false);
     await setup.prepare(
       root,
       setupCache,
       new AbortController().signal,
-      (statusDetail) => statusDetails.push(statusDetail),
+      (statusDetail, progress) =>
+        statusReports.push({
+          statusDetail,
+          ...(progress
+            ? {
+                completedBytes: progress.completedBytes,
+                totalBytes: progress.totalBytes,
+              }
+            : {}),
+        }),
     );
 
     expect(await setup.isReady(root)).toBe(false);
@@ -81,13 +97,37 @@ describe('VoxCpm2RuntimeSetup', () => {
       '-c',
     ]);
     expect(await setup.isReady(root)).toBe(false);
-    expect(statusDetails).toEqual([
+    expect([...new Set(statusReports.map(({ statusDetail }) => statusDetail))]).toEqual([
       '正在准备 Python 运行环境',
-      '正在下载并安装 PyTorch/CUDA 运行环境，首次安装可能需要数分钟',
+      '正在下载并安装 PyTorch/CUDA 运行环境（按已写入文件估算）',
       '正在安装 VoxCPM2 配音运行依赖',
       '正在安装 GPU 人声处理运行依赖',
       '正在验证 NVIDIA GPU 配音环境',
     ]);
+    expect(statusReports).not.toHaveLength(0);
+    expect(
+      statusReports.every(
+        ({ completedBytes, totalBytes }) =>
+          completedBytes !== undefined &&
+          totalBytes === VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES,
+      ),
+    ).toBe(true);
+    const completedBytes = statusReports.map(
+      ({ completedBytes: value }) => value ?? 0,
+    );
+    expect(completedBytes).toEqual(
+      [...completedBytes].sort((left, right) => left - right),
+    );
+    expect(completedBytes.some((value) => value > 0)).toBe(true);
+    expect(Math.max(...completedBytes)).toBeLessThan(
+      VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES,
+    );
+    expect(run.mock.calls[1]?.[0].args).toEqual(
+      expect.arrayContaining([
+        '--index-url',
+        'https://mirrors.aliyun.com/pytorch-wheels/cu128',
+      ]),
+    );
     await expect(
       access(join(root, 'environment', 'learning-companion-runtime.json')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
@@ -105,11 +145,11 @@ describe('VoxCpm2RuntimeSetup', () => {
     await setup.finalizeInstallation(
       finalRoot,
       new AbortController().signal,
-      (statusDetail) => statusDetails.push(statusDetail),
+      (statusDetail) => statusReports.push({ statusDetail }),
     );
 
     expect(await setup.isReady(finalRoot)).toBe(true);
-    expect(statusDetails.at(-1)).toBe(
+    expect(statusReports.at(-1)?.statusDetail).toBe(
       '正在完成配音运行环境配置',
     );
     expect(run.mock.calls.map(([request]) => request.args[0])).toEqual([
@@ -185,6 +225,45 @@ describe('VoxCpm2RuntimeSetup', () => {
     ]);
     expect(run.mock.calls[0]?.[0].args).toContain('--clear');
     expect(await setup.isReady(root)).toBe(false);
+  });
+
+  it('reports directory growth while the PyTorch install is still running', async () => {
+    const root = await createRuntimeRoot();
+    let finishPyTorch: (() => void) | undefined;
+    let measuredBytes = 0;
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      if (request.args.includes('torch==2.8.0+cu128')) {
+        await new Promise<void>((resolve) => {
+          finishPyTorch = resolve;
+        });
+      }
+      return { stdout: '', stderr: '' };
+    });
+    const reports: number[] = [];
+    const setup = new VoxCpm2RuntimeSetup({
+      commandRunner: { run },
+      platform: 'win32',
+      measureDirectories: vi.fn(async () => measuredBytes),
+      progressPollIntervalMs: 5,
+    });
+
+    const preparing = setup.prepare(
+      root,
+      join(root, 'download-cache'),
+      new AbortController().signal,
+      (_statusDetail, progress) => {
+        if (progress) reports.push(progress.completedBytes);
+      },
+    );
+    await vi.waitFor(() => expect(finishPyTorch).toBeDefined());
+    measuredBytes = 123_456;
+    await vi.waitFor(() => expect(reports).toContain(measuredBytes));
+    finishPyTorch!();
+
+    await expect(preparing).resolves.toBeUndefined();
+    expect(reports).toEqual(
+      [...reports].sort((left, right) => left - right),
+    );
   });
 
   it('leaves the component unavailable when setup fails', async () => {

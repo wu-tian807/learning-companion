@@ -125,7 +125,9 @@ function isHttpsUrl(value: unknown): value is string {
   }
 }
 
-function isSafeDirectorySegment(value: unknown): value is string {
+export function isSafeExternalLibraryPathSegment(
+  value: unknown,
+): value is string {
   return (
     isRequiredText(value) &&
     /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value.trim()) &&
@@ -159,7 +161,7 @@ function isExternalLibraryDownloadResource(
 ): value is ExternalLibraryDownloadResourceDefinition {
   return (
     isRecord(value) &&
-    isSafeDirectorySegment(value.id) &&
+    isSafeExternalLibraryPathSegment(value.id) &&
     isHttpsUrl(value.downloadUrl) &&
     isSha256(value.sha256) &&
     isPositiveSafeInteger(value.expectedSize)
@@ -198,7 +200,7 @@ export function isExternalLibraryPackageDefinition(
     !isExternalLibraryPlatform(value.platform) ||
     !isExternalLibraryArchitecture(value.architecture) ||
     (value.variantId !== undefined &&
-      !isSafeDirectorySegment(value.variantId))
+      !isSafeExternalLibraryPathSegment(value.variantId))
   ) {
     return false;
   }
@@ -270,11 +272,11 @@ export function isExternalLibraryDefinition(
 ): value is ExternalLibraryDefinition {
   if (
     !isRecord(value) ||
-    !isSafeDirectorySegment(value.id) ||
+    !isSafeExternalLibraryPathSegment(value.id) ||
     !isRequiredText(value.displayName) ||
     !isRequiredText(value.description) ||
     (value.category !== 'document' && value.category !== 'media') ||
-    !isSafeDirectorySegment(value.version) ||
+    !isSafeExternalLibraryPathSegment(value.version) ||
     !isPositiveSafeInteger(value.installationFormatVersion) ||
     !isHttpsUrl(value.sourceUrl) ||
     !isRequiredText(value.licenseName) ||
@@ -304,10 +306,10 @@ export function isExternalLibraryDefinition(
       !variants.every(
         (variant) =>
           isRecord(variant) &&
-          isSafeDirectorySegment(variant.id) &&
+          isSafeExternalLibraryPathSegment(variant.id) &&
           isRequiredText(variant.displayName),
       ) ||
-      !isSafeDirectorySegment(value.defaultVariantId)
+      !isSafeExternalLibraryPathSegment(value.defaultVariantId)
     ) {
       return false;
     }
