@@ -58,6 +58,7 @@ import {
   secureEpubDocument,
   toSafeExternalUrl,
 } from './epub-security';
+import { createEpubReadingLocationRestore } from './epub-reading-location';
 import { observeEpubRenditionSize } from './epub-rendition-resize';
 import { createEpubRendererActions } from './renderer-actions';
 import {
@@ -632,6 +633,11 @@ export function EpubWorkbenchView({
       rendition.themes.fontSize(
         `${Math.round(viewStateRef.current.fontScale * 100)}%`,
       );
+      const initialLocation = viewStateRef.current.location;
+      const locationRestore = createEpubReadingLocationRestore(
+        viewStateRef.current.flow,
+        initialLocation,
+      );
 
       rendition.hooks.content.register((contents: Contents) => {
         for (const anchor of contents.document.querySelectorAll('a')) {
@@ -706,13 +712,15 @@ export function EpubWorkbenchView({
             ? clamp(percentage, 0, 1)
             : undefined,
         );
-        updateViewState(
-          {
-            ...viewStateRef.current,
-            location: location.start.cfi,
-          },
-          false,
-        );
+        if (locationRestore.shouldPersistRelocation()) {
+          updateViewState(
+            {
+              ...viewStateRef.current,
+              location: location.start.cfi,
+            },
+            false,
+          );
+        }
       });
       rendition.on(
         'selected',
@@ -729,9 +737,9 @@ export function EpubWorkbenchView({
       );
 
       try {
-        await rendition.display(viewStateRef.current.location);
+        await locationRestore.display(rendition);
       } catch (error) {
-        if (!viewStateRef.current.location) {
+        if (!initialLocation) {
           throw error;
         }
         updateViewState(
