@@ -66,9 +66,6 @@ import { stabilizeEpubContinuousScroll } from './epub-continuous-scroll';
 import { EpubReadingNotePanel } from './notes/epub-reading-note-panel';
 import { EpubReadingTimerControl } from './timer/epub-reading-timer-control';
 import {
-  createEpubReadingNoteMetadata,
-  EPUB_READING_NOTE_ATTACHMENT_TYPE,
-  EPUB_READING_NOTE_ATTACHMENT_VERSION,
   findEpubReadingNoteAtTarget,
   toEpubReadingNoteView,
   type EpubReadingNoteView,
@@ -974,27 +971,23 @@ export function EpubWorkbenchView({
     ) => {
       if (explanation.kind !== 'attachment') return;
       try {
-        const updated = await window.learningCompanion.updateAttachment({
-          projectId: asset.projectId,
-          attachmentId: explanation.id,
-          metadata: {
-            format: 'learning-companion/epub-explanation',
-            version: 1,
+        const updated =
+          await window.learningCompanion.updateEpubExplanationMarkerColor({
+            projectId: asset.projectId,
+            assetId: asset.id,
+            explanationId: explanation.id,
             markerColor,
-          },
-        });
+          });
         setExplanations((current) =>
           current.map((item) =>
-            item.id === explanation.id
-              ? { ...item, markerColor, updatedTime: updated.updatedTime }
-              : item,
+            item.id === explanation.id ? updated : item,
           ),
         );
       } catch (error) {
         reportError(error, '无法修改 AI 标注的波浪线颜色。');
       }
     },
-    [asset.projectId, reportError],
+    [asset.id, asset.projectId, reportError],
   );
 
   const revealExplanation = useCallback(
@@ -1041,20 +1034,20 @@ export function EpubWorkbenchView({
         return;
       }
       try {
-        const metadata = createEpubReadingNoteMetadata(text, markerColor);
         const saved = note
-          ? await window.learningCompanion.updateAttachment({
-              projectId: asset.projectId,
-              attachmentId: note.id,
-              metadata,
-            })
-          : await window.learningCompanion.createAttachment({
+          ? await window.learningCompanion.updateEpubReadingNote({
               projectId: asset.projectId,
               assetId: asset.id,
-              typeId: EPUB_READING_NOTE_ATTACHMENT_TYPE,
-              typeVersion: EPUB_READING_NOTE_ATTACHMENT_VERSION,
+              noteId: note.id,
+              text,
+              markerColor,
+            })
+          : await window.learningCompanion.createEpubReadingNote({
+              projectId: asset.projectId,
+              assetId: asset.id,
               target,
-              metadata,
+              text,
+              markerColor,
             });
         await refreshAttachments?.();
         setActiveNoteId(saved.id);
@@ -1075,9 +1068,10 @@ export function EpubWorkbenchView({
   const deleteReadingNote = useCallback(
     async (note: EpubReadingNoteView) => {
       try {
-        await window.learningCompanion.deleteAttachment({
+        await window.learningCompanion.deleteEpubReadingNote({
           projectId: asset.projectId,
-          attachmentId: note.id,
+          assetId: asset.id,
+          noteId: note.id,
         });
         await refreshAttachments?.();
         setActiveNoteId(undefined);
@@ -1086,7 +1080,7 @@ export function EpubWorkbenchView({
         reportError(error, '无法删除阅读笔记。');
       }
     },
-    [asset.projectId, refreshAttachments, reportError],
+    [asset.id, asset.projectId, refreshAttachments, reportError],
   );
 
   const revealReadingNote = useCallback(

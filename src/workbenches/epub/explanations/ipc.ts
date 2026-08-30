@@ -8,6 +8,7 @@ import {
   isCreateEpubExplanationRequest,
   isEpubExplanationIdRequest,
   isListEpubExplanationsRequest,
+  isUpdateEpubExplanationMarkerColorRequest,
 } from './shared';
 
 let removeSubscription: (() => void) | undefined;
@@ -56,6 +57,15 @@ export function registerEpubExplanationHandlers(
       return service.delete(request);
     },
   );
+  registerIpcHandler(
+    EPUB_EXPLANATION_IPC_CHANNELS.updateMarkerColor,
+    (_event, request: unknown) => {
+      if (!isUpdateEpubExplanationMarkerColorRequest(request)) {
+        throw invalidRequest();
+      }
+      return service.updateMarkerColor(request);
+    },
+  );
 }
 
 export function removeEpubExplanationHandlers(): void {
@@ -65,4 +75,5 @@ export function removeEpubExplanationHandlers(): void {
   ipcMain.removeHandler(EPUB_EXPLANATION_IPC_CHANNELS.create);
   ipcMain.removeHandler(EPUB_EXPLANATION_IPC_CHANNELS.retry);
   ipcMain.removeHandler(EPUB_EXPLANATION_IPC_CHANNELS.delete);
+  ipcMain.removeHandler(EPUB_EXPLANATION_IPC_CHANNELS.updateMarkerColor);
 }

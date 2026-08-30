@@ -19,6 +19,7 @@ export const EPUB_EXPLANATION_IPC_CHANNELS = Object.freeze({
   create: 'epub-explanation:create',
   retry: 'epub-explanation:retry',
   delete: 'epub-explanation:delete',
+  updateMarkerColor: 'epub-explanation:update-marker-color',
   changed: 'epub-explanation:changed',
 });
 
@@ -72,6 +73,12 @@ export interface EpubExplanationIdRequest
   readonly explanationId: string;
 }
 
+export interface UpdateEpubExplanationMarkerColorRequest
+  extends ListEpubExplanationsRequest {
+  readonly explanationId: string;
+  readonly markerColor: EpubMarkerColor;
+}
+
 export type EpubExplanationEvent =
   | {
       readonly type: 'changed';
@@ -104,6 +111,9 @@ export interface EpubExplanationPreloadApi {
   deleteEpubExplanation(
     request: EpubExplanationIdRequest,
   ): Promise<void>;
+  updateEpubExplanationMarkerColor(
+    request: UpdateEpubExplanationMarkerColorRequest,
+  ): Promise<EpubExplanationAttachmentView>;
   onEpubExplanationChanged(
     listener: (event: EpubExplanationEvent) => void,
   ): () => void;
@@ -170,6 +180,17 @@ export function isEpubExplanationIdRequest(
     isListEpubExplanationsRequest(value) &&
     (value.kind === 'task' || value.kind === 'attachment') &&
     isRequiredText(value.explanationId, 256)
+  );
+}
+
+export function isUpdateEpubExplanationMarkerColorRequest(
+  value: unknown,
+): value is UpdateEpubExplanationMarkerColorRequest {
+  return (
+    isRecord(value) &&
+    isListEpubExplanationsRequest(value) &&
+    isRequiredText(value.explanationId, 256) &&
+    isEpubMarkerColor(value.markerColor)
   );
 }
 

@@ -7,7 +7,10 @@ import {
   EPUB_READING_NOTE_ATTACHMENT_VERSION,
   createEpubReadingNoteMetadata,
   findEpubReadingNoteAtTarget,
+  isCreateEpubReadingNoteRequest,
+  isDeleteEpubReadingNoteRequest,
   isEpubReadingNoteMetadata,
+  isUpdateEpubReadingNoteRequest,
   toEpubReadingNoteView,
 } from './shared';
 
@@ -102,5 +105,36 @@ describe('EPUB reading note contracts', () => {
         }),
       ),
     ).toBeUndefined();
+  });
+
+  it('validates scoped create, update and delete requests', () => {
+    const scope = { projectId: 'project-1', assetId: 'asset-1' };
+    expect(
+      isCreateEpubReadingNoteRequest({
+        ...scope,
+        target,
+        text: '新笔记',
+        markerColor: 'yellow',
+      }),
+    ).toBe(true);
+    expect(
+      isUpdateEpubReadingNoteRequest({
+        ...scope,
+        noteId: 'note-1',
+        text: '修改后',
+        markerColor: 'red',
+      }),
+    ).toBe(true);
+    expect(
+      isDeleteEpubReadingNoteRequest({ ...scope, noteId: 'note-1' }),
+    ).toBe(true);
+    expect(
+      isUpdateEpubReadingNoteRequest({
+        ...scope,
+        noteId: 'note-1',
+        text: '',
+        markerColor: 'green',
+      }),
+    ).toBe(false);
   });
 });

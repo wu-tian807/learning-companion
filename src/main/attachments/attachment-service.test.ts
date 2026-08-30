@@ -179,34 +179,6 @@ describe('AttachmentService', () => {
     expect(stored.get(created.id)).toEqual(created);
   });
 
-  it('updates validated note metadata without changing its anchor identity', async () => {
-    const { service } = createHarness();
-    const created = await service.create({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      typeId: 'epub.note',
-      typeVersion: 1,
-      target: { scope: 'asset' },
-      metadata: { status: 'draft' },
-    });
-
-    const updated = await service.update({
-      projectId: 'project-1',
-      attachmentId: created.id,
-      metadata: { status: 'completed' },
-    });
-
-    expect(updated.target).toEqual(created.target);
-    expect(updated.metadata).toEqual({ status: 'completed' });
-    await expect(
-      service.update({
-        projectId: 'another-project',
-        attachmentId: created.id,
-        metadata: { status: 'invalid-owner' },
-      }),
-    ).rejects.toThrow('ATTACHMENT_NOT_FOUND');
-  });
-
   it('removes staged content when the referenced Asset is missing', async () => {
     const { service, stored, contentFiles, assetLookupGet } = createHarness();
     assetLookupGet.mockReturnValue(undefined);

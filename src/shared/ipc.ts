@@ -120,7 +120,6 @@ export const IPC_CHANNELS = {
   workbenchFacilityEvent: "workbench:facility-event",
   listAttachments: "attachment:list",
   createAttachment: "attachment:create",
-  updateAttachment: "attachment:update",
   readAttachmentContent: "attachment:read-content",
   deleteAttachment: "attachment:delete",
 } as const;
@@ -281,11 +280,6 @@ export interface LearningCompanionApi {
     target: AssetTarget;
     metadata: JsonValue;
     body?: JsonValue;
-  }) => Promise<AssetAttachment>;
-  updateAttachment: (request: {
-    projectId: string;
-    attachmentId: string;
-    metadata: JsonValue;
   }) => Promise<AssetAttachment>;
   readAttachmentContent: (request: {
     projectId: string;

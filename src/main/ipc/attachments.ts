@@ -28,10 +28,6 @@ interface DeleteAttachmentRequest {
   readonly attachmentId: string;
 }
 
-interface UpdateAttachmentRequest extends DeleteAttachmentRequest {
-  readonly metadata: AssetAttachment['metadata'];
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -61,15 +57,6 @@ function isCreateAttachmentRequest(value: unknown): value is CreateAttachmentReq
 
 function isDeleteAttachmentRequest(value: unknown): value is DeleteAttachmentRequest {
   return isRecord(value) && typeof value.projectId === 'string' && typeof value.attachmentId === 'string';
-}
-
-function isUpdateAttachmentRequest(value: unknown): value is UpdateAttachmentRequest {
-  return (
-    isRecord(value) &&
-    typeof value.projectId === 'string' &&
-    typeof value.attachmentId === 'string' &&
-    isRecord(value.metadata)
-  );
 }
 
 export function registerAttachmentHandlers(
@@ -102,15 +89,6 @@ export function registerAttachmentHandlers(
       : service.create(input);
   });
 
-  registerIpcHandler(IPC_CHANNELS.updateAttachment, async (_event, request: unknown) => {
-    if (!isUpdateAttachmentRequest(request)) throw invalidRequest();
-    return service.update({
-      projectId: request.projectId,
-      attachmentId: request.attachmentId,
-      metadata: request.metadata as AssetAttachment['metadata'],
-    });
-  });
-
   registerIpcHandler(IPC_CHANNELS.readAttachmentContent, async (_event, request: unknown) => {
     if (!isDeleteAttachmentRequest(request)) throw invalidRequest();
     const content = await service.readTextContent(
@@ -137,7 +115,6 @@ export function registerAttachmentHandlers(
 export function removeAttachmentHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.listAttachments);
   ipcMain.removeHandler(IPC_CHANNELS.createAttachment);
-  ipcMain.removeHandler(IPC_CHANNELS.updateAttachment);
   ipcMain.removeHandler(IPC_CHANNELS.readAttachmentContent);
   ipcMain.removeHandler(IPC_CHANNELS.deleteAttachment);
 }

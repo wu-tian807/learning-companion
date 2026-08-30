@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   epubExplanationMarkerColor,
   isEpubExplanationMetadata,
+  isUpdateEpubExplanationMarkerColorRequest,
 } from './shared';
 
 describe('EPUB explanation metadata', () => {
@@ -19,6 +20,29 @@ describe('EPUB explanation metadata', () => {
     expect(epubExplanationMarkerColor(customized)).toBe('red');
     expect(
       isEpubExplanationMetadata({ ...legacy, markerColor: 'green' }),
+    ).toBe(false);
+  });
+
+  it('accepts only scoped marker-color update requests', () => {
+    const request = {
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      explanationId: 'attachment-1',
+      markerColor: 'red',
+    } as const;
+
+    expect(isUpdateEpubExplanationMarkerColorRequest(request)).toBe(true);
+    expect(
+      isUpdateEpubExplanationMarkerColorRequest({
+        ...request,
+        markerColor: 'green',
+      }),
+    ).toBe(false);
+    expect(
+      isUpdateEpubExplanationMarkerColorRequest({
+        ...request,
+        assetId: '',
+      }),
     ).toBe(false);
   });
 });

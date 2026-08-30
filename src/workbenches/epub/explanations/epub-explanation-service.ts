@@ -28,6 +28,7 @@ import {
   type EpubExplanationTaskView,
   type EpubExplanationView,
   type ListEpubExplanationsRequest,
+  type UpdateEpubExplanationMarkerColorRequest,
 } from './shared';
 import {
   WorkbenchConversationInstruction,
@@ -54,6 +55,9 @@ export interface EpubExplanationServiceApi {
   create(request: CreateEpubExplanationRequest): Promise<EpubExplanationView>;
   retry(request: EpubExplanationIdRequest): Promise<EpubExplanationView>;
   delete(request: EpubExplanationIdRequest): Promise<void>;
+  updateMarkerColor(
+    request: UpdateEpubExplanationMarkerColorRequest,
+  ): Promise<EpubExplanationAttachmentView>;
   subscribe(listener: EpubExplanationListener): () => void;
   dispose(): void;
 }
@@ -226,6 +230,28 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
 
     const current = await this.requireAttachment(request);
     await this.attachments.delete(current.projectId, current.id);
+  }
+
+  async updateMarkerColor(
+    request: UpdateEpubExplanationMarkerColorRequest,
+  ): Promise<EpubExplanationAttachmentView> {
+    const current = await this.requireAttachment({
+      ...request,
+      kind: 'attachment',
+    });
+    const updated = await this.attachments.update({
+      projectId: current.projectId,
+      attachmentId: current.id,
+      metadata: {
+        format: 'learning-companion/epub-explanation',
+        version: 1,
+        markerColor: request.markerColor,
+      },
+    });
+    if (!isExplanationAttachment(updated)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return this.toAttachmentView(updated);
   }
 
   subscribe(listener: EpubExplanationListener): () => void {
