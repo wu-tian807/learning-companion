@@ -231,12 +231,11 @@ export function HtmlWorkbenchView({
   const conversationOwnerId = `${htmlWorkbenchManifest.id}:${bootstrap.sessionId}`;
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
+    asset.id,
     conversationContribution,
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(conversationRuntime);
-  const aiBusy =
-    conversationSnapshot.active?.ownerId === conversationOwnerId &&
-    conversationSnapshot.busy;
+  const aiBusy = conversationSnapshot.busy;
 
   const explainSelection = useCallback((target: ContentAnchorTarget) => {
     if (isHtmlAnchorTarget(target)) {

@@ -22,7 +22,9 @@ export class ProjectConversationContextProvider
       context.instruction.assetId !== undefined ||
       context.instruction.context !== undefined ||
       context.instruction.commitAnswer ||
-      Object.keys(context.assetReferences).length > 0
+      Object.values(context.assetReferences).some(
+        (references) => references.length > 0,
+      )
     ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }

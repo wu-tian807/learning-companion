@@ -1193,6 +1193,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     `${markdownWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
+    asset.id,
     conversationContribution,
   );
 

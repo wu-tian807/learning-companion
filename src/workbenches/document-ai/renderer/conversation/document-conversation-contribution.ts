@@ -24,8 +24,6 @@ interface DocumentConversationContributionBaseInput {
   readonly assetId: string;
   readonly workbenchId: string;
   readonly contributionId: string;
-  readonly title?: string;
-  readonly emptyLabel?: string;
   readonly contextLabel?: string;
   readonly onContextReleased?: (
     context: DocumentConversationContext | undefined,
@@ -114,11 +112,6 @@ export function createDocumentConversationContribution(
     workbenchId: input.workbenchId,
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'reference',
-    title: input.title ?? '资料问答',
-    emptyLabel:
-      input.emptyLabel ??
-      '选择资料中的内容后开始提问，也可以直接针对整份资料提问。',
-    inputPlaceholder: '输入问题…（Enter 发送 / Shift+Enter 换行）',
     isContext: isDocumentConversationContext,
     describeContext(context) {
       if (!isDocumentConversationContext(context)) {

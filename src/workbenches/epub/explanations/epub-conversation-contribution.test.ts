@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -31,7 +31,7 @@ function createContribution() {
 describe('EPUB conversation contribution', () => {
   it('declares CFI context while the shared task owns execution and Note commit', () => {
     const context = createEpubConversationContext(target);
-    const request = createWorkbenchConversationTaskRequest(
+    const request = createContextualConversationTaskRequest(
       createContribution(),
       {
         projectId: 'project-1',
@@ -59,30 +59,21 @@ describe('EPUB conversation contribution', () => {
     });
   });
 
-  it('continues the stable conversation without duplicating the Note', () => {
-    const request = createWorkbenchConversationTaskRequest(
-      createContribution(),
-      {
+  it('does not expose a context-free follow-up path through EPUB', () => {
+    expect(() =>
+      createContextualConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
         question: '这里的“它”指什么？',
         generateTitle: false,
-      },
-    );
-
-    expect(request.instruction).toMatchObject({
-      contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
-      conversationId: 'conversation-1',
-      question: '这里的“它”指什么？',
-    });
-    expect(request.instruction).not.toHaveProperty('context');
-    expect(request.instruction).not.toHaveProperty('commitAnswer');
+      }),
+    ).toThrow('请先在 EPUB 中选中一段文字');
   });
 
   it('starts a selected-text custom question without creating an AI explanation Note', () => {
     const context = createEpubConversationContext(target);
-    const request = createWorkbenchConversationTaskRequest(
+    const request = createContextualConversationTaskRequest(
       createContribution(),
       {
         projectId: 'project-1',
@@ -103,7 +94,7 @@ describe('EPUB conversation contribution', () => {
 
   it('rejects starting a new conversation without an EPUB selection', () => {
     expect(() =>
-      createWorkbenchConversationTaskRequest(createContribution(), {
+      createContextualConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',

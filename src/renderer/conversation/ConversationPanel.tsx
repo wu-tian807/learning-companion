@@ -8,6 +8,7 @@ import {
 
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type {
+  ConversationMessageContextSource,
   ConversationMessageRecord,
   ConversationRecord,
   WorkbenchConversationContribution,
@@ -18,6 +19,11 @@ import type {
 } from './conversation-controller';
 import { ConversationMarkdown } from './conversation-markdown';
 import { normalizeConversationSelection } from './conversation-text';
+import {
+  PROJECT_CONVERSATION_EMPTY_LABEL,
+  PROJECT_CONVERSATION_INPUT_PLACEHOLDER,
+  PROJECT_CONVERSATION_TITLE,
+} from './project-conversation-presentation';
 
 function needsProviderSettings(code: string | undefined, message: string): boolean {
   return (
@@ -34,13 +40,13 @@ function ContextCard({
   onRemove,
   onRevealError,
 }: {
-  readonly context: JsonValue;
-  readonly contribution: WorkbenchConversationContribution;
+  readonly context: JsonValue | undefined;
+  readonly contribution?: WorkbenchConversationContribution;
   readonly removable?: boolean;
   readonly onRemove?: () => void;
   readonly onRevealError?: (error: unknown) => void;
 }) {
-  const presentation = contribution.describeContext?.(context) ?? {
+  const presentation = contribution?.describeContext?.(context) ?? {
     label: '引用内容',
   };
   const content = (
@@ -65,13 +71,15 @@ function ContextCard({
 
   return (
     <div className="relative rounded-xl border border-indigo-300/20 bg-indigo-400/[0.08] p-2.5">
-      {contribution.revealContext ? (
+      {context !== undefined && contribution?.revealContext ? (
         <button
           type="button"
           className="block w-full pr-7 text-left hover:text-indigo-100"
           title="在原文中查看"
           onClick={() => {
-            void Promise.resolve(contribution.revealContext?.(context)).catch(
+            void Promise.resolve(
+              contribution?.revealContext?.(context),
+            ).catch(
               onRevealError,
             );
           }}
@@ -105,7 +113,8 @@ function QuestionForAnswer(
 
 function MessageBubble({
   message,
-  contribution,
+  contextContribution,
+  answerContribution,
   busy,
   answerActionPending,
   onContinue,
@@ -114,7 +123,8 @@ function MessageBubble({
   onAnswerAction,
 }: {
   readonly message: ConversationMessageRecord;
-  readonly contribution: WorkbenchConversationContribution;
+  readonly contextContribution?: WorkbenchConversationContribution;
+  readonly answerContribution?: WorkbenchConversationContribution;
   readonly busy: boolean;
   readonly answerActionPending: boolean;
   readonly onContinue: () => void;
@@ -126,14 +136,24 @@ function MessageBubble({
   return (
     <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
       <div className="max-w-[88%]">
-        {message.role === 'user' && message.context !== undefined && (
+        {message.role === 'user' &&
+          (message.context !== undefined ||
+            message.contextSource !== undefined) && (
           <div className="mb-1.5">
-            <ContextCard context={message.context} contribution={contribution} />
+            <ContextCard
+              context={message.context}
+              contribution={contextContribution}
+            />
           </div>
         )}
         <div
           onMouseUp={() => {
-            if (message.role !== 'assistant' || !contribution.answerAction) return;
+            if (
+              message.role !== 'assistant' ||
+              !answerContribution?.answerAction
+            ) {
+              return;
+            }
             const selected = normalizeConversationSelection(window.getSelection()?.toString() ?? '');
             if (selected) onSelectedAnswer(message.id, selected);
           }}
@@ -182,14 +202,14 @@ function MessageBubble({
               >
                 重新回答
               </button>
-              {contribution.answerAction && (
+              {answerContribution?.answerAction && (
                 <button
                   type="button"
                   disabled={busy || answerActionPending}
                   onClick={() => onAnswerAction(message, message.text)}
                   className="rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-400/10 disabled:opacity-40"
                 >
-                  {contribution.answerAction.label}
+                  {answerContribution.answerAction.label}
                 </button>
               )}
               <button
@@ -216,7 +236,7 @@ function HistoryView({
   loading,
   busy,
   currentConversationId,
-  contribution,
+  resolveContextContribution,
   onRestore,
   onRemove,
   onRevealError,
@@ -225,7 +245,9 @@ function HistoryView({
   readonly loading: boolean;
   readonly busy: boolean;
   readonly currentConversationId: string;
-  readonly contribution: WorkbenchConversationContribution;
+  readonly resolveContextContribution: (
+    source: ConversationMessageContextSource | undefined,
+  ) => WorkbenchConversationContribution | undefined;
   readonly onRestore: (record: ConversationRecord) => void;
   readonly onRemove: (record: ConversationRecord) => void;
   readonly onRevealError: (error: unknown) => void;
@@ -245,9 +267,12 @@ function HistoryView({
       {[...history].sort((left, right) => right.updatedTime - left.updatedTime).map((record) => {
         const firstQuestion = record.messages.find((message) => message.role === 'user');
         const currentIsGenerating = busy && record.id === currentConversationId;
-        const latestContext = [...record.messages].reverse().find(
-          (message) => message.role === 'user' && message.context !== undefined,
-        )?.context;
+        const latestContextMessage = [...record.messages].reverse().find(
+          (message) =>
+            message.role === 'user' &&
+            (message.context !== undefined ||
+              message.contextSource !== undefined),
+        );
         return (
           <article
             key={record.id}
@@ -273,9 +298,18 @@ function HistoryView({
                 type="button"
                 onClick={() => {
                   if (!busy) onRestore(record);
-                  if (latestContext !== undefined) {
+                  const contextContribution =
+                    resolveContextContribution(
+                      latestContextMessage?.contextSource,
+                    );
+                  if (
+                    latestContextMessage?.context !== undefined &&
+                    contextContribution?.revealContext
+                  ) {
                     void Promise.resolve(
-                      contribution.revealContext?.(latestContext),
+                      contextContribution.revealContext(
+                        latestContextMessage.context,
+                      ),
                     ).catch(onRevealError);
                   }
                 }}
@@ -303,18 +337,20 @@ function HistoryView({
 export function ConversationPanel({
   state,
   actions,
-  contribution,
   projectId,
-  assetId,
+  resolveContextContribution,
+  onStartNew,
   onClose,
   onOpenSettings,
   onError,
 }: {
   readonly state: ConversationControllerState;
   readonly actions: ConversationControllerActions;
-  readonly contribution: WorkbenchConversationContribution;
   readonly projectId: string;
-  readonly assetId: string | undefined;
+  readonly resolveContextContribution: (
+    source: ConversationMessageContextSource | undefined,
+  ) => WorkbenchConversationContribution | undefined;
+  readonly onStartNew: () => void;
   readonly onClose: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
@@ -338,19 +374,28 @@ export function ConversationPanel({
     () => messages.find((message) => message.id === selectedAnswer?.messageId),
     [messages, selectedAnswer?.messageId],
   );
+  const selectedAnswerQuestion = selectedAnswerMessage
+    ? QuestionForAnswer(state.conversation, selectedAnswerMessage)
+    : undefined;
+  const selectedAnswerContribution = resolveContextContribution(
+    selectedAnswerQuestion?.contextSource,
+  );
 
   const executeAnswerAction = async (
     answer: ConversationMessageRecord,
     text: string,
   ) => {
-    const action = contribution.answerAction;
-    if (!action || answerActionPending) return;
     const question = QuestionForAnswer(state.conversation, answer);
+    const actionContribution = resolveContextContribution(
+      question?.contextSource,
+    );
+    const action = actionContribution?.answerAction;
+    if (!action || answerActionPending) return;
     setAnswerActionPending(true);
     try {
       await action.execute({
         projectId,
-        assetId,
+        assetId: question?.contextSource?.assetId,
         conversation: state.conversation,
         answer,
         question,
@@ -395,14 +440,16 @@ export function ConversationPanel({
         <div className="flex items-center gap-2">
           <span className="size-2.5 rounded-[4px] bg-gradient-to-br from-indigo-400 to-fuchsia-400 shadow-[0_0_10px_rgba(129,140,248,0.7)]" />
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-slate-100">{contribution.title}</h3>
+            <h3 className="truncate text-sm font-semibold text-slate-100">
+              {PROJECT_CONVERSATION_TITLE}
+            </h3>
             <p className="truncate text-[10px] text-slate-500">{state.conversation.title}</p>
           </div>
           {notice && <span className="ml-auto text-[10px] text-emerald-300">{notice}</span>}
           <button
             type="button"
             disabled={state.busy}
-            onClick={() => actions.startNew()}
+            onClick={onStartNew}
             className={`${notice ? '' : 'ml-auto '}rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:border-indigo-300/30 hover:text-indigo-200 disabled:opacity-40`}
           >
             ＋ 新对话
@@ -441,7 +488,7 @@ export function ConversationPanel({
           loading={state.historyLoading}
           busy={state.busy}
           currentConversationId={state.conversation.id}
-          contribution={contribution}
+          resolveContextContribution={resolveContextContribution}
           onRestore={actions.restore}
           onRemove={actions.remove}
           onRevealError={reportRevealError}
@@ -451,27 +498,42 @@ export function ConversationPanel({
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4" role="log" aria-label="对话消息">
             {messages.length === 0 && !state.busy && (
               <div className="grid h-full min-h-40 place-items-center px-5 text-center text-[13px] leading-6 text-slate-600">
-                {contribution.emptyLabel}
+                {PROJECT_CONVERSATION_EMPTY_LABEL}
               </div>
             )}
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                contribution={contribution}
-                busy={state.busy}
-                answerActionPending={answerActionPending}
-                onContinue={() => {
-                  actions.setDraft('请基于刚才的回答继续深入解释，并补充容易混淆的地方。');
-                  inputRef.current?.focus();
-                }}
-                onReanswer={(answerId) => actions.reanswer(answerId)}
-                onSelectedAnswer={(messageId, text) => setSelectedAnswer({ messageId, text })}
-                onAnswerAction={(answer, text) =>
-                  void executeAnswerAction(answer, text)
-                }
-              />
-            ))}
+            {messages.map((message) => {
+              const question =
+                message.role === 'assistant'
+                  ? QuestionForAnswer(state.conversation, message)
+                  : undefined;
+              return (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  contextContribution={resolveContextContribution(
+                    message.contextSource,
+                  )}
+                  answerContribution={resolveContextContribution(
+                    question?.contextSource,
+                  )}
+                  busy={state.busy}
+                  answerActionPending={answerActionPending}
+                  onContinue={() => {
+                    actions.setDraft(
+                      '请基于刚才的回答继续深入解释，并补充容易混淆的地方。',
+                    );
+                    inputRef.current?.focus();
+                  }}
+                  onReanswer={(answerId) => actions.reanswer(answerId)}
+                  onSelectedAnswer={(messageId, text) =>
+                    setSelectedAnswer({ messageId, text })
+                  }
+                  onAnswerAction={(answer, text) =>
+                    void executeAnswerAction(answer, text)
+                  }
+                />
+              );
+            })}
             {state.busy && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md border border-white/[0.06] bg-white/[0.045] px-4 py-3 text-[13px] text-slate-400">
@@ -515,7 +577,9 @@ export function ConversationPanel({
                 </div>
               </div>
             )}
-            {selectedAnswer && selectedAnswerMessage && contribution.answerAction && (
+            {selectedAnswer &&
+              selectedAnswerMessage &&
+              selectedAnswerContribution?.answerAction && (
               <div className="mb-2 flex items-center gap-2 rounded-xl border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-[10px] text-indigo-200">
                 <span className="min-w-0 flex-1 truncate">已选中回答片段</span>
                 <button
@@ -529,7 +593,7 @@ export function ConversationPanel({
                   }
                   className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30 disabled:opacity-40"
                 >
-                  {contribution.answerAction.selectionLabel}
+                  {selectedAnswerContribution.answerAction.selectionLabel}
                 </button>
                 <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
               </div>
@@ -537,8 +601,8 @@ export function ConversationPanel({
             {state.pendingContext !== undefined && (
               <div className="mb-2">
                 <ContextCard
-                  context={state.pendingContext}
-                  contribution={contribution}
+                  context={state.pendingContext.context}
+                  contribution={state.pendingContext.contribution}
                   removable
                   onRemove={() => actions.setPendingContext(undefined)}
                   onRevealError={reportRevealError}
@@ -551,7 +615,7 @@ export function ConversationPanel({
                 rows={1}
                 value={state.draft}
                 disabled={state.busy}
-                placeholder={contribution.inputPlaceholder ?? '输入问题…（Enter 发送 / Shift+Enter 换行）'}
+                placeholder={PROJECT_CONVERSATION_INPUT_PLACEHOLDER}
                 onChange={(event) => actions.setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {

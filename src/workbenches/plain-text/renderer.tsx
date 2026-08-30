@@ -687,6 +687,7 @@ export function PlainTextWorkbenchView({
     `${plainTextWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
+    asset.id,
     conversationContribution,
   );
 

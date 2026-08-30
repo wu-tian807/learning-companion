@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { conversationContextsEqual } from '../../../renderer/conversation/conversation-controller-model';
-import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -36,7 +36,7 @@ function createContribution(
 describe('image conversation contribution', () => {
   it('declares a validated region while the shared task owns execution', () => {
     const context = createImageConversationContext(target, 'revision-1');
-    const request = createWorkbenchConversationTaskRequest(
+    const request = createContextualConversationTaskRequest(
       createContribution(),
       {
         projectId: 'project-1',
@@ -63,32 +63,21 @@ describe('image conversation contribution', () => {
     });
   });
 
-  it('continues the stable conversation without another region or Note', () => {
-    const request = createWorkbenchConversationTaskRequest(
-      createContribution(),
-      {
+  it('does not expose a context-free follow-up path through Image', () => {
+    expect(() =>
+      createContextualConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
         question: '这个箭头为什么指向右边？',
         generateTitle: false,
-      },
-    );
-    expect(request.instruction).toMatchObject({
-      contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
-      conversationId: 'conversation-1',
-      question: '这个箭头为什么指向右边？',
-    });
-    expect(request.instruction).not.toHaveProperty('context');
-    expect(request.instruction).not.toHaveProperty('commitAnswer');
-    expect(request.assetReferences).toEqual({
-      source: [{ assetId: 'asset-1' }],
-    });
+      }),
+    ).toThrow('请先在图片中框选一个兴趣区域');
   });
 
   it('rejects a missing or stale initial image region', () => {
     expect(() =>
-      createWorkbenchConversationTaskRequest(createContribution(), {
+      createContextualConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -98,7 +87,7 @@ describe('image conversation contribution', () => {
     ).toThrow('请先在图片中框选一个兴趣区域');
 
     expect(() =>
-      createWorkbenchConversationTaskRequest(createContribution(), {
+      createContextualConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',

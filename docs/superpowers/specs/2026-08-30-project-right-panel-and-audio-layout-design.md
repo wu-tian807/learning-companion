@@ -40,19 +40,22 @@ rightPanel: ProjectRightPanelKind | null;
 
 - 点击当前已打开的面板按钮会关闭右侧插槽；
 - 点击另一个面板按钮会在同一个插槽中直接切换；
-- Workbench 内部发起 Conversation 时，Project 把右侧插槽切到 `conversation`；
-- Conversation 关闭、Contribution 卸载或 Asset 切换时，右侧 Conversation 插槽同步关闭；
+- Workbench 内部附加 Context 时，Project 把右侧插槽切到 `conversation`；
+- Conversation 关闭时右侧插槽同步关闭；Contribution 卸载或 Asset 切换只释放尚未发送的
+  Context，不关闭聊天；
 - 小屏打开右侧插槽时继续关闭左侧覆盖栏，遮罩、Escape 和焦点恢复规则不变。
 
 ### 顶栏聊天归 Project 所有
 
-AI 问答按钮始终渲染且始终可用。Project 注册一个不依赖 Asset 的默认 Conversation
-Contribution 与 Main Context Provider；因此没有媒体专用能力的 Audio、MP3 或空选中状态也能
-正常开始 Project 对话。
+AI 问答按钮始终渲染且始终可用。Project 直接拥有 Conversation Host、Controller、历史和
+发送，并使用不依赖 Asset 的 Main Project Context Provider；Renderer 不需要注册一个“默认
+Contribution”来维持聊天。因此没有媒体专用能力的 Audio、MP3 或空选中状态也能正常开始
+Project 对话。
 
-Workbench 不拥有聊天，只在用户从原文、画面或选区发起提问时临时切换为对应 Context
-Provider，并把经过验证的 Anchor/Context 附加到同一个 Project 对话。新的 Workbench
-Contribution 注册或卸载不能抢走、关闭正在打开的 Project 聊天。
+Workbench 不拥有聊天，只在用户从原文、画面或选区发起提问时，把经过验证的
+Anchor/Context 作为单轮附件交给同一个 Project 对话；公共任务仅为这一轮选择对应 Context
+Provider。下一条没有附件的消息仍走 Project Provider。新的 Workbench Contribution 注册或
+卸载不能抢走、关闭正在打开的 Project 聊天，也不能改变普通发送路径。
 
 默认 Project 对话和带 Workbench Context 的对话仍统一经过
 `workbench.conversation -> TaskAgentSession`，没有 Provider 直连或媒体专用聊天通道。
@@ -86,6 +89,7 @@ Workbench 全宽滚动视口（scrollbar 位于面板边缘）
 - generation、conversation、closed 三种右侧状态互斥；
 - 任意 Workbench、无选中 Asset 时按钮都存在且可用；
 - Workbench 注册不改变已打开 Project Chat 的 owner 或开合状态；
+- Workbench Context 只影响显式附加的当前一轮，下一轮普通发送回到 Project Provider；
 - 历史列表刷新后从后端恢复，不依赖当前 renderer profile 的 `localStorage`；
 - `ProjectRightPanelSlot` 每次只渲染一个内容；
 - ConversationPanel 填满右侧插槽，不携带第二套固定宽度；

@@ -25,8 +25,6 @@ const contribution: WorkbenchConversationContribution = {
   id: 'pdf.question',
   workbenchId: 'pdf',
   contextProviderId: 'pdf.context',
-  title: '资料问答',
-  emptyLabel: '选择内容后提问',
   describeContext: () => ({ label: '第 2 页', detail: '框选内容' }),
   revealContext: vi.fn(),
   answerAction: {
@@ -36,6 +34,13 @@ const contribution: WorkbenchConversationContribution = {
     failureMessage: '无法放回 PDF 原文旁',
     execute: vi.fn(),
   },
+};
+
+const contextSource = {
+  contributionId: contribution.id,
+  contextProviderId: contribution.contextProviderId,
+  assetId: 'asset',
+  sourceAssetMode: 'reference' as const,
 };
 
 function state(
@@ -63,9 +68,13 @@ function render(value: ConversationControllerState): string {
     <ConversationPanel
       state={value}
       actions={actions}
-      contribution={contribution}
       projectId="project"
-      assetId="asset"
+      resolveContextContribution={(source) =>
+        source?.contributionId === contribution.id
+          ? contribution
+          : undefined
+      }
+      onStartNew={vi.fn()}
       onClose={vi.fn()}
       onOpenSettings={vi.fn()}
       onError={vi.fn()}
@@ -76,7 +85,12 @@ function render(value: ConversationControllerState): string {
 describe('ConversationPanel', () => {
   it('keeps source viewing, visible errors, retry/settings and new conversation in one panel', () => {
     const html = render(state({
-      pendingContext: { page: 2 },
+      pendingContext: {
+        ownerId: 'pdf.owner',
+        assetId: 'asset',
+        contribution,
+        context: { page: 2 },
+      },
       error: {
         message: '请先配置模型',
         code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
@@ -165,7 +179,13 @@ describe('ConversationPanel', () => {
         id: 'conversation',
         title: '问题',
         messages: [
-          { id: 'q', role: 'user', text: '公式是什么？', createdTime: 1 },
+          {
+            id: 'q',
+            role: 'user',
+            text: '公式是什么？',
+            createdTime: 1,
+            contextSource,
+          },
           {
             id: 'a',
             role: 'assistant',
