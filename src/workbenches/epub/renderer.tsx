@@ -58,6 +58,7 @@ import {
   secureEpubDocument,
   toSafeExternalUrl,
 } from './epub-security';
+import { observeEpubRenditionSize } from './epub-rendition-resize';
 import { createEpubRendererActions } from './renderer-actions';
 import {
   cloneEpubViewState,
@@ -566,6 +567,7 @@ export function EpubWorkbenchView({
     let disposed = false;
     let book: Book | undefined;
     let rendition: Rendition | undefined;
+    let removeRenditionResizeObserver: (() => void) | undefined;
     const contentCleanups: Array<() => void> = [];
     host.replaceChildren();
     setLoadState({ kind: 'loading' });
@@ -742,6 +744,10 @@ export function EpubWorkbenchView({
         await rendition.display();
       }
       if (!disposed) {
+        removeRenditionResizeObserver = observeEpubRenditionSize(
+          host,
+          rendition,
+        );
         setLoadState({ kind: 'ready' });
       }
     })().catch((error: unknown) => {
@@ -770,6 +776,7 @@ export function EpubWorkbenchView({
       for (const cleanup of contentCleanups) {
         cleanup();
       }
+      removeRenditionResizeObserver?.();
       renditionRef.current = undefined;
       bookRef.current = undefined;
       book?.destroy();
