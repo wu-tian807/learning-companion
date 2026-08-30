@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ConversationHistoryStore } from '../../../../renderer/conversation/conversation-contracts';
 import { createWorkbenchConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
@@ -12,12 +11,6 @@ import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
 } from './document-conversation-contribution';
-
-const historyStore: ConversationHistoryStore = {
-  list: async () => [],
-  save: async (record) => [record],
-  remove: async () => [],
-};
 
 const answerActionPresentation = {
   label: '放回原文旁',
@@ -42,7 +35,6 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       workbenchId: 'markdown',
       contributionId: 'markdown.question',
-      historyStore,
     });
     const context = createDocumentConversationContext({
       target: {
@@ -82,7 +74,6 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       workbenchId: 'pdf',
       contributionId: 'pdf.question',
-      historyStore,
     } as const;
     expect(
       createDocumentConversationContribution(base).answerAction,
@@ -142,7 +133,6 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       workbenchId: 'pdf',
       contributionId: 'pdf.question',
-      historyStore,
       returnAnswerToSource,
       answerActionPresentation,
     });

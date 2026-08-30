@@ -247,7 +247,20 @@ export class LibreOfficePreviewProducer
     }
 
     try {
-      return await this.convert(request, signal);
+      return await this.externalLibraries.withRuntime(
+        LIBREOFFICE_LIBRARY_ID,
+        signal,
+        (runtime, usageSignal) => {
+          if (!runtime.executablePath) {
+            throw new AppError('FEATURE_NOT_SUPPORTED');
+          }
+          return this.convert(
+            request,
+            runtime.executablePath,
+            usageSignal,
+          );
+        },
+      );
     } finally {
       releaseTurn!();
     }
@@ -255,15 +268,12 @@ export class LibreOfficePreviewProducer
 
   private async convert(
     request: AssetArtifactProduceRequest,
+    executablePath: string,
     signal: AbortSignal,
   ): Promise<ProducedAssetArtifact> {
     signal.throwIfAborted();
 
     try {
-      const executablePath =
-        await this.externalLibraries.requireExecutable(
-          LIBREOFFICE_LIBRARY_ID,
-        );
       const sourceExtension = OFFICE_EXTENSIONS.get(
         request.source.mediaType,
       );

@@ -409,6 +409,48 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('releases a loaded model before removal and remains reusable after reinstall', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service, requireRuntime } = externalLibraries(root);
+    const workerSignals: AbortSignal[] = [];
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      workerSignals.push(request.signal!);
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+
+    await resolver.warmup();
+    await resolver.releaseRuntime();
+
+    expect(workerSignals[0]?.aborted).toBe(true);
+    await resolver.warmup();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(requireRuntime).toHaveBeenCalledTimes(2);
+    await resolver.releaseRuntime();
+  });
+
   it('rejects unsupported platforms before asking for an installation', async () => {
     const root = await createRuntimeRoot();
     const { service, requireRuntime } = externalLibraries(root);

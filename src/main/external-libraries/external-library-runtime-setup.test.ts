@@ -32,5 +32,8 @@ describe("ExternalLibraryRuntimeSetupRegistry", () => {
     expect(() => registry.register(setup("../runtime"))).toThrow(
       "INVALID_EXTENSION_DEFINITION",
     );
+    expect(() =>
+      registry.register({ ...setup("empty-runtime"), expectedSetupBytes: 0 }),
+    ).toThrow("INVALID_EXTENSION_DEFINITION");
   });
 });

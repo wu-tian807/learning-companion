@@ -10,6 +10,7 @@ import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import type { ContentResourceServiceApi } from '../content/content-resource-service';
 import { AppError } from '../errors/app-error';
 import type { ExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
+import type { ExternalLibraryLifecycleRegistryApi } from '../external-libraries/external-library-lifecycle';
 import type { ExternalLibraryRegistryApi } from '../external-libraries/external-library-registry';
 import type { ExternalLibraryRuntimeSetupRegistryApi } from '../external-libraries/external-library-runtime-setup';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
@@ -27,6 +28,7 @@ import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
   readonly hardware: ExternalLibraryHardwareCapabilities;
+  readonly lifecycles: ExternalLibraryLifecycleRegistryApi;
   readonly runtimeSetups: ExternalLibraryRuntimeSetupRegistryApi;
 }
 

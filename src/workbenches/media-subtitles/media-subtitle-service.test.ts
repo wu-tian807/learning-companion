@@ -111,18 +111,20 @@ function resolvedArtifact(
 }
 
 function runtimes(): MediaSubtitleRuntimeResolverApi {
+  const transcription = {
+    kind: 'sensevoice' as const,
+    profile: 'cpu' as const,
+    executablePath: 'sensevoice.exe',
+    vadExecutablePath: 'vad.exe',
+    modelPath: 'sensevoice.gguf',
+    vadModelPath: 'vad.gguf',
+  };
   return {
-    requireTranscription: vi.fn(async () => ({
-      kind: 'sensevoice' as const,
-      profile: 'cpu' as const,
-      executablePath: 'sensevoice.exe',
-      vadExecutablePath: 'vad.exe',
-      modelPath: 'sensevoice.gguf',
-      vadModelPath: 'vad.gguf',
-    })),
+    requireTranscription: vi.fn(async () => transcription),
     requireMediaDecoder: vi.fn(async () => {
       throw new Error('producer not executed in this service test');
     }),
+    withRuntime: vi.fn(),
   };
 }
 
@@ -161,6 +163,7 @@ describe('MediaSubtitleService', () => {
       {
         requireTranscription,
         requireMediaDecoder: vi.fn(),
+        withRuntime: vi.fn(),
       },
       new MediaSubtitleSourceTaskQueue(),
       generationTasks(),

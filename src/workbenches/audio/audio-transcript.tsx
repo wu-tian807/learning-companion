@@ -350,9 +350,10 @@ export function AudioTranscript({
   }
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full w-full min-w-0">
       <div
         aria-label="音频逐句字幕"
+        data-audio-transcript-scroll="true"
         tabIndex={0}
         onWheelCapture={stopFollowing}
         onTouchStartCapture={stopFollowing}
@@ -360,25 +361,30 @@ export function AudioTranscript({
         onPointerDownCapture={(event) => {
           if (event.target === event.currentTarget) stopFollowing();
         }}
-        className="mx-auto h-full w-full max-w-3xl overflow-y-auto px-5 py-5 outline-none"
+        className="h-full w-full overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable]"
       >
-        {snapshot.phase === 'unsupported-language' && (
-          <p className="mb-3 rounded-lg border border-amber-200/10 bg-amber-200/[0.04] px-3 py-2 text-[11px] leading-5 text-amber-100/60">
-            {snapshot.message ??
-              '未检测到明确的中文或英文，本次只显示原文。'}
-          </p>
-        )}
-        <div className="space-y-1.5">
-          {rows.map((row) => (
-            <AudioTranscriptRowView
-              key={row.id}
-              row={row}
-              mode={mode}
-              active={position.activeRowId === row.id}
-              registerRow={registerRow}
-              onSelect={handleSelect}
-            />
-          ))}
+        <div
+          data-audio-transcript-content="true"
+          className="mx-auto min-h-full w-full max-w-3xl px-5 py-5"
+        >
+          {snapshot.phase === 'unsupported-language' && (
+            <p className="mb-3 rounded-lg border border-amber-200/10 bg-amber-200/[0.04] px-3 py-2 text-[11px] leading-5 text-amber-100/60">
+              {snapshot.message ??
+                '未检测到明确的中文或英文，本次只显示原文。'}
+            </p>
+          )}
+          <div className="space-y-1.5">
+            {rows.map((row) => (
+              <AudioTranscriptRowView
+                key={row.id}
+                row={row}
+                mode={mode}
+                active={position.activeRowId === row.id}
+                registerRow={registerRow}
+                onSelect={handleSelect}
+              />
+            ))}
+          </div>
         </div>
       </div>
       {!followingCurrent && position.locateRowId && (

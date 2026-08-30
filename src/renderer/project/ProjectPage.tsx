@@ -4,9 +4,15 @@ import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
+import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
+import {
+  createProjectConversationContribution,
+  PROJECT_CONVERSATION_OWNER_ID,
+} from '../conversation/project-conversation-contribution';
 import { GenerationCenter } from '../generation/GenerationCenter';
 import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
+import { ProjectConversationHistoryProvider } from '../conversation/ProjectConversationHistoryProvider';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
@@ -15,18 +21,15 @@ import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeP
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
+import { ProjectRightPanelSlot } from './ProjectRightPanelSlot';
 import { AssetRenameDialog } from './AssetRenameDialog';
-import { ProjectAuxiliaryPanels } from './ProjectAuxiliaryPanels';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
 import {
   assetMediaLabel,
   filterAssetLoadStateByCreationKind,
 } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
-import {
-  resolveProjectContentLayout,
-  useProjectLayout,
-} from './use-project-layout';
+import { useProjectLayout } from './use-project-layout';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
 
@@ -56,26 +59,36 @@ export function ProjectPage({
   onBack,
   onOpenSettings,
 }: ProjectPageProps) {
-  const [conversationRuntime] = useState(
-    () => new WorkbenchConversationRuntime(),
+  const projectConversationOwnerId = `${PROJECT_CONVERSATION_OWNER_ID}:${project.id}`;
+  const conversationHistoryStore = useMemo(
+    () => createProjectConversationHistoryStore({ projectId: project.id }),
+    [project.id],
   );
+  const conversationRuntime = useMemo(() => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register(
+      projectConversationOwnerId,
+      createProjectConversationContribution(),
+    );
+    return runtime;
+  }, [projectConversationOwnerId]);
   const conversationSnapshot =
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const leftToggleRef = useRef<HTMLButtonElement>(null);
   const rightToggleRef = useRef<HTMLButtonElement>(null);
+  const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
-  const conversationPanelOpen = Boolean(
-    conversationSnapshot.active && conversationSnapshot.panelOpen,
-  );
-  const contentLayout = resolveProjectContentLayout(
-    layout,
-    conversationPanelOpen,
-  );
-  const { closeOverlays } = layout;
-  const openOverlay = conversationPanelOpen ? null : layout.openOverlay;
+  const {
+    closeOverlays,
+    closeRight,
+    openOverlay,
+    openRight,
+    toggleLeft,
+    toggleRight,
+  } = layout;
   const session = useProjectSession(project.id, setError);
   const assetOperations = useProjectAssets({
     projectId: project.id,
@@ -167,22 +180,91 @@ export function ProjectPage({
       }
     }
   }, [project.id]);
+  const dismissConversationPanel = useCallback(() => {
+    conversationRuntime.close();
+    closeRight();
+  }, [closeRight, conversationRuntime]);
+  const toggleLeftPanel = useCallback(() => {
+    if (
+      layout.mode === 'small' &&
+      !layout.leftOpen &&
+      layout.rightPanel === 'conversation'
+    ) {
+      dismissConversationPanel();
+    }
+    toggleLeft();
+  }, [
+    dismissConversationPanel,
+    layout.leftOpen,
+    layout.mode,
+    layout.rightPanel,
+    toggleLeft,
+  ]);
+  const toggleGenerationPanel = useCallback(() => {
+    if (conversationSnapshot.panelOpen) {
+      dismissConversationPanel();
+    }
+    toggleRight('generation');
+  }, [
+    conversationSnapshot.panelOpen,
+    dismissConversationPanel,
+    toggleRight,
+  ]);
+  const toggleConversationPanel = useCallback(() => {
+    if (
+      layout.rightPanel === 'conversation' &&
+      conversationSnapshot.panelOpen
+    ) {
+      dismissConversationPanel();
+      return;
+    }
+
+    conversationRuntime.open({ ownerId: projectConversationOwnerId });
+    openRight('conversation');
+  }, [
+    conversationRuntime,
+    conversationSnapshot.panelOpen,
+    dismissConversationPanel,
+    layout.rightPanel,
+    openRight,
+    projectConversationOwnerId,
+  ]);
+  const closeConversationPanel = useCallback(() => {
+    dismissConversationPanel();
+    window.requestAnimationFrame(() => {
+      aiQuestionToggleRef.current?.focus();
+    });
+  }, [dismissConversationPanel]);
   const closeOpenOverlay = useCallback(() => {
     const closingSide = openOverlay;
+    const closingRightPanel = layout.rightPanel;
 
     if (!closingSide) {
       return;
     }
 
+    if (
+      closingSide === 'right' &&
+      closingRightPanel === 'conversation'
+    ) {
+      dismissConversationPanel();
+    }
     closeOverlays();
     window.requestAnimationFrame(() => {
       if (closingSide === 'left') {
         leftToggleRef.current?.focus();
+      } else if (closingRightPanel === 'conversation') {
+        aiQuestionToggleRef.current?.focus();
       } else {
         rightToggleRef.current?.focus();
       }
     });
-  }, [closeOverlays, openOverlay]);
+  }, [
+    closeOverlays,
+    dismissConversationPanel,
+    layout.rightPanel,
+    openOverlay,
+  ]);
 
   useEffect(() => {
     if (!openOverlay) {
@@ -199,6 +281,19 @@ export function ProjectPage({
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [closeOpenOverlay, openOverlay]);
+
+  useEffect(() => {
+    if (conversationSnapshot.panelOpen) {
+      openRight('conversation');
+    } else if (layout.rightPanel === 'conversation') {
+      closeRight();
+    }
+  }, [
+    closeRight,
+    conversationSnapshot.panelOpen,
+    layout.rightPanel,
+    openRight,
+  ]);
 
   useEffect(() => () => conversationRuntime.dispose(), [conversationRuntime]);
 
@@ -255,45 +350,27 @@ export function ProjectPage({
         </div>
         <ProjectHeaderActions
           leftOpen={layout.leftOpen}
-          rightOpen={layout.rightOpen}
+          rightPanel={layout.rightPanel}
           leftButtonRef={leftToggleRef}
           rightButtonRef={rightToggleRef}
-          onToggleLeft={layout.toggleLeft}
-          onToggleRight={layout.toggleRight}
+          aiQuestionButtonRef={aiQuestionToggleRef}
+          onToggleLeft={toggleLeftPanel}
+          onToggleGeneration={toggleGenerationPanel}
           onOpenWorkspace={() => {
             void openProjectWorkspace();
           }}
-          aiQuestionAvailable={Boolean(conversationSnapshot.active)}
-          aiQuestionOpen={conversationPanelOpen}
-          onToggleAiQuestion={() => {
-            if (conversationPanelOpen) {
-              conversationRuntime.toggle();
-              return;
-            }
-            if (!assetOperations.selectedAsset) {
-              setError('请先选择一份资料，再开始 AI 问答。');
-              return;
-            }
-            try {
-              conversationRuntime.toggle();
-            } catch (openError) {
-              const message = userMessageFromError(
-                openError,
-                '当前资料工作台未提供 AI 问答。',
-              );
-              if (message) setError(message);
-            }
-          }}
+          onToggleAiQuestion={toggleConversationPanel}
           onOpenSettings={onOpenSettings}
         />
       </header>
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
-        <WorkbenchRuntimeProvider onError={setError}>
-          <AssetSelectionCoordinatorProvider
-            coordinator={assetOperations.selectionCoordinator}
-          >
-            <section className="relative flex min-h-0 flex-1 gap-3">
+        <ProjectConversationHistoryProvider store={conversationHistoryStore}>
+          <WorkbenchRuntimeProvider onError={setError}>
+            <AssetSelectionCoordinatorProvider
+              coordinator={assetOperations.selectionCoordinator}
+            >
+              <section className="relative flex min-h-0 flex-1 gap-3">
               {openOverlay && (
                 <button
                   type="button"
@@ -303,7 +380,7 @@ export function ProjectPage({
                   className="absolute inset-0 z-20 cursor-default rounded-[17px] bg-black/55 backdrop-blur-[2px]"
                 />
               )}
-              {contentLayout.showLeftPanel && (
+              {layout.leftOpen && (
                 <div
                   className={
                     layout.leftInline
@@ -380,58 +457,52 @@ export function ProjectPage({
                   onError={setError}
                 />
               </div>
-              <ProjectAuxiliaryPanels
-                contentLayout={contentLayout}
-                conversationActive={Boolean(conversationSnapshot.active)}
-                conversationOpen={conversationPanelOpen}
-                conversationPanel={
+              <ProjectRightPanelSlot
+                panel={layout.rightPanel}
+                inline={layout.rightInline}
+                conversation={
                   <ConversationPanelHost
                     projectId={project.id}
                     assetId={assetOperations.selectedAsset?.id}
+                    historyStore={conversationHistoryStore}
+                    onClose={closeConversationPanel}
                     onOpenSettings={onOpenSettings}
                     onError={setError}
                   />
                 }
-                generationPanel={
-                  <div
-                    className={
-                      layout.rightInline
-                        ? 'h-full w-[clamp(318px,20vw,390px)] shrink-0'
-                        : 'absolute inset-y-0 right-0 z-30 h-full w-[min(390px,calc(100%-20px))] shadow-2xl'
+                generation={
+                  <GenerationCenter
+                    projectId={project.id}
+                    state={generatedAssetState}
+                    selectedAssetId={session.selectedAssetId}
+                    busy={assetOperations.busy}
+                    now={relativeTimeNow}
+                    mediaLabel={assetMediaLabel}
+                    onRetry={session.retry}
+                    onSelect={session.selectAsset}
+                    onRemoveSelected={assetOperations.requestDelete}
+                    onRename={assetOperations.setRenameTarget}
+                    onReveal={(asset) =>
+                      void assetOperations.revealAssetInFolder(asset)
                     }
-                  >
-                    <GenerationCenter
-                      projectId={project.id}
-                      state={generatedAssetState}
-                      selectedAssetId={session.selectedAssetId}
-                      busy={assetOperations.busy}
-                      now={relativeTimeNow}
-                      mediaLabel={assetMediaLabel}
-                      onRetry={session.retry}
-                      onSelect={session.selectAsset}
-                      onRemoveSelected={assetOperations.requestDelete}
-                      onRename={assetOperations.setRenameTarget}
-                      onReveal={(asset) =>
-                        void assetOperations.revealAssetInFolder(asset)
-                      }
-                      onRelink={(asset) =>
-                        void assetOperations.relinkAsset(asset)
-                      }
-                      onDelete={(asset) =>
-                        assetOperations.requestDelete(null, [asset])
-                      }
-                      onRevealSources={layout.openLeft}
-                      onMindMapDraftReady={startMindMapGeneration}
-                      mindMapTasks={mindMapTasks}
-                      onRetryMindMapTask={retryMindMapTask}
-                      onCancelMindMapTask={cancelMindMapTask}
-                    />
-                  </div>
+                    onRelink={(asset) =>
+                      void assetOperations.relinkAsset(asset)
+                    }
+                    onDelete={(asset) =>
+                      assetOperations.requestDelete(null, [asset])
+                    }
+                    onRevealSources={layout.openLeft}
+                    onMindMapDraftReady={startMindMapGeneration}
+                    mindMapTasks={mindMapTasks}
+                    onRetryMindMapTask={retryMindMapTask}
+                    onCancelMindMapTask={cancelMindMapTask}
+                  />
                 }
               />
-            </section>
-          </AssetSelectionCoordinatorProvider>
-        </WorkbenchRuntimeProvider>
+              </section>
+            </AssetSelectionCoordinatorProvider>
+          </WorkbenchRuntimeProvider>
+        </ProjectConversationHistoryProvider>
       </WorkbenchConversationRuntimeProvider>
 
       {dragging && (

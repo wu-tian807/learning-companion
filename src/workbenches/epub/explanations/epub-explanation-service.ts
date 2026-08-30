@@ -318,7 +318,8 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       snapshot.instruction,
     );
     return parsed.ok &&
-      parsed.value.contextProviderId === EPUB_CONVERSATION_CONTEXT_PROVIDER_ID
+      parsed.value.contextProviderId === EPUB_CONVERSATION_CONTEXT_PROVIDER_ID &&
+      parsed.value.assetId !== undefined
       ? parsed.value
       : undefined;
   }
@@ -328,6 +329,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   ): WorkbenchConversationProjectionLocation | undefined {
     const instruction = this.taskInstruction(snapshot);
     return instruction?.commitAnswer &&
+      instruction.assetId !== undefined &&
       isEpubConversationContext(instruction.context)
       ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
@@ -340,6 +342,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     const conversationContext = instruction?.context;
     if (
       !instruction?.commitAnswer ||
+      instruction.assetId === undefined ||
       !isEpubConversationContext(conversationContext)
     ) {
       return undefined;

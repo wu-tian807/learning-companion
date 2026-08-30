@@ -16,6 +16,10 @@ vi.mock('../../../main/conversation/visual-region-input-preparer', () => ({
 
 import { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { prepareVisualRegionInputs } from '../../../main/conversation/visual-region-input-preparer';
+import type {
+  MediaSubtitleRuntime,
+  MediaSubtitleRuntimeResolverApi,
+} from '../../media-subtitles/external-libraries/media-subtitle-runtime';
 import { createVideoFrameRegionTarget } from '../shared';
 import {
   createVideoConversationContext,
@@ -119,11 +123,36 @@ function setup(
       handle: { close },
     })),
   };
-  const runtime = {
-    requireMediaDecoder: vi.fn(async () => ({
+  const runtimeValue: MediaSubtitleRuntime = {
+    decoder: {
       ffmpegPath: 'C:\\runtime\\ffmpeg.exe',
       ffprobePath: 'C:\\runtime\\ffprobe.exe',
-    })),
+    },
+    transcription: {
+      kind: 'sensevoice',
+      profile: 'cpu',
+      executablePath: 'unused',
+      vadExecutablePath: 'unused',
+      modelPath: 'unused',
+      vadModelPath: 'unused',
+    },
+  };
+  const requireMediaDecoder = vi.fn(async () => runtimeValue.decoder);
+  const withRuntime: MediaSubtitleRuntimeResolverApi['withRuntime'] = async (
+    signal,
+    operation,
+  ) =>
+    operation(
+      {
+        ...runtimeValue,
+        decoder: await requireMediaDecoder(),
+      },
+      signal ?? new AbortController().signal,
+    );
+  const runtime = {
+    requireMediaDecoder,
+    requireTranscription: vi.fn(async () => runtimeValue.transcription),
+    withRuntime,
   };
   const run = input.run ?? vi.fn(async () => ({ stdout: '', stderr: '' }));
   const projects = {

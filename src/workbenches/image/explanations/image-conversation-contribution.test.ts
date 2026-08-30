@@ -10,7 +10,6 @@ import { createImageRegionTarget } from '../shared';
 import {
   createImageConversationContext,
   createImageConversationContribution,
-  createImageConversationHistoryStore,
 } from './image-conversation-contribution';
 import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from './image-conversation-context';
 import { IMAGE_DEFAULT_EXPLANATION_QUESTION } from './shared';
@@ -30,11 +29,6 @@ function createContribution(
 ) {
   return createImageConversationContribution({
     sourceRevision,
-    historyStore: {
-      list: async () => [],
-      save: async (record) => [record],
-      remove: async () => [],
-    },
     revealContext,
   });
 }
@@ -127,48 +121,11 @@ describe('image conversation contribution', () => {
     expect(revealContext).toHaveBeenCalledWith(context);
   });
 
-  it('isolates context matching and persisted history by source revision', async () => {
+  it('isolates context matching by source revision without owning history', () => {
     const firstContext = createImageConversationContext(target, 'revision-1');
     const secondContext = createImageConversationContext(target, 'revision-2');
     expect(conversationContextsEqual(firstContext, secondContext)).toBe(false);
 
-    const values = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
-      removeItem: (key: string) => values.delete(key),
-    });
-    try {
-      const firstStore = createImageConversationHistoryStore(
-        'project-1',
-        'asset-1',
-        'image.conversation',
-        'revision-1',
-      );
-      const secondStore = createImageConversationHistoryStore(
-        'project-1',
-        'asset-1',
-        'image.conversation',
-        'revision-2',
-      );
-      await firstStore.save({
-        id: 'conv-1',
-        title: '第一张图',
-        messages: [
-          {
-            id: 'message-1',
-            role: 'user',
-            text: '请解释',
-            createdTime: 1,
-            context: firstContext,
-          },
-        ],
-        createdTime: 1,
-        updatedTime: 1,
-      });
-      await expect(secondStore.list()).resolves.toEqual([]);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    expect(createContribution()).not.toHaveProperty('historyStore');
   });
 });

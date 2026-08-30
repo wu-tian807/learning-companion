@@ -1,5 +1,6 @@
 import { AppError } from '../../main/errors/app-error';
 import { createWorkbenchConversationTaskDefinitionV1 } from '../../main/conversation/workbench-conversation-task-definition';
+import { ProjectConversationContextProvider } from '../../main/conversation/project-conversation-context-provider';
 import {
   createMainWorkbenchRuntime,
   type MainWorkbenchAgentToolContext,
@@ -130,6 +131,9 @@ export function registerMainWorkbenchAgentFunctionTools(
 export function registerMainWorkbenchGeneration(
   context: MainWorkbenchGenerationContext,
 ): void {
+  context.conversationContexts.register(
+    new ProjectConversationContextProvider(),
+  );
   forEachContribution((entry) => {
     entry.registerGeneration?.(context);
   });

@@ -1,25 +1,17 @@
-// @vitest-environment jsdom
-import { act } from 'react';
-import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectHeaderActions } from './ProjectHeaderActions';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-
 describe('ProjectHeaderActions', () => {
-  it('always exposes all four icon actions and panel state', () => {
+  it('always exposes all five Project actions and the shared right-slot state', () => {
     const markup = renderToStaticMarkup(
       <ProjectHeaderActions
         leftOpen
-        rightOpen={false}
+        rightPanel={null}
         onToggleLeft={vi.fn()}
-        onToggleRight={vi.fn()}
+        onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
-        aiQuestionAvailable
-        aiQuestionOpen={false}
         onToggleAiQuestion={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
@@ -34,63 +26,56 @@ describe('ProjectHeaderActions', () => {
     expect(markup).toContain(
       'aria-controls="project-assets-panel"',
     );
+    expect(markup).toContain(
+      'aria-controls="project-right-panel"',
+    );
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('role="tooltip"');
     expect(markup).toContain('aria-label="打开 AI 问答"');
-    expect(markup).toContain('data-project-ai-context-actions');
+    expect(markup).not.toContain('data-project-ai-context-actions');
   });
 
-  it('turns the AI question action into a collapse control while the panel is open', () => {
+  it('keeps the global Project chat button enabled without a Workbench conversation', () => {
     const markup = renderToStaticMarkup(
       <ProjectHeaderActions
         leftOpen
-        rightOpen={false}
+        rightPanel={null}
         onToggleLeft={vi.fn()}
-        onToggleRight={vi.fn()}
+        onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
-        aiQuestionAvailable
-        aiQuestionOpen
         onToggleAiQuestion={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
     );
+    const chatButton = markup.match(
+      /<button[^>]*aria-label="打开 AI 问答"[^>]*>/u,
+    )?.[0];
 
-    expect(markup).toContain('aria-label="收起 AI 问答"');
-    expect(markup).toContain('aria-expanded="true"');
-    expect(markup).toContain(
-      'aria-controls="project-ai-question-panel"',
-    );
-    expect(markup).not.toContain('aria-label="打开 AI 问答"');
+    expect(chatButton).toBeDefined();
+    expect(chatButton).not.toContain('disabled=""');
+    expect(chatButton).toContain('aria-expanded="false"');
   });
 
-  it('uses the same header action to collapse the open AI panel', () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    const root = createRoot(container);
-    const onToggleAiQuestion = vi.fn();
-
-    act(() => {
-      root.render(
-        <ProjectHeaderActions
-          leftOpen
-          rightOpen={false}
-          onToggleLeft={vi.fn()}
-          onToggleRight={vi.fn()}
-          onOpenWorkspace={vi.fn()}
-          aiQuestionAvailable
-          aiQuestionOpen
-          onToggleAiQuestion={onToggleAiQuestion}
-          onOpenSettings={vi.fn()}
-        />,
-      );
-    });
-    const collapseButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="收起 AI 问答"]',
+  it('marks chat and generation as mutually exclusive views of one right slot', () => {
+    const markup = renderToStaticMarkup(
+      <ProjectHeaderActions
+        leftOpen
+        rightPanel="conversation"
+        onToggleLeft={vi.fn()}
+        onToggleGeneration={vi.fn()}
+        onOpenWorkspace={vi.fn()}
+        onToggleAiQuestion={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
     );
-    act(() => collapseButton?.click());
+    const chatButton = markup.match(
+      /<button[^>]*aria-label="关闭 AI 问答"[^>]*>/u,
+    )?.[0];
+    const generationButton = markup.match(
+      /<button[^>]*aria-label="展开生成中心"[^>]*>/u,
+    )?.[0];
 
-    expect(onToggleAiQuestion).toHaveBeenCalledOnce();
-    act(() => root.unmount());
-    container.remove();
+    expect(chatButton).toContain('aria-expanded="true"');
+    expect(generationButton).toContain('aria-expanded="false"');
   });
 });

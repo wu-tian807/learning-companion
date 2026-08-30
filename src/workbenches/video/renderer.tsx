@@ -20,7 +20,6 @@ import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
 import {
   createVideoConversationContribution,
-  createVideoConversationHistoryStore,
   createVideoFrameConversationLaunch,
 } from './conversation/video-conversation-contribution';
 import {
@@ -330,19 +329,8 @@ export function VideoWorkbenchView({
     };
   }, []);
 
-  const conversationContributionId = `${videoWorkbenchManifest.id}.frame-conversation`;
   const sourceRevision = payload?.sourceRevision ?? '';
   const conversationOwnerId = `${videoWorkbenchManifest.id}:${bootstrap.sessionId}:${sourceRevision}.conversation`;
-  const conversationHistoryStore = useMemo(
-    () =>
-      createVideoConversationHistoryStore(
-        asset.projectId,
-        asset.id,
-        conversationContributionId,
-        sourceRevision,
-      ),
-    [asset.id, asset.projectId, conversationContributionId, sourceRevision],
-  );
   const commitConversationContext = useCallback(
     (context: VideoConversationContext) => {
       selectedConversationContextRef.current = context;
@@ -414,12 +402,10 @@ export function VideoWorkbenchView({
     () =>
       createVideoConversationContribution({
         sourceRevision,
-        historyStore: conversationHistoryStore,
         revealContext: revealConversationContext,
         onContextReleased: releaseConversationContext,
       }),
     [
-      conversationHistoryStore,
       releaseConversationContext,
       revealConversationContext,
       sourceRevision,

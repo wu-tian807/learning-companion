@@ -314,7 +314,7 @@ export function ConversationPanel({
   readonly actions: ConversationControllerActions;
   readonly contribution: WorkbenchConversationContribution;
   readonly projectId: string;
-  readonly assetId: string;
+  readonly assetId: string | undefined;
   readonly onClose: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
@@ -386,9 +386,10 @@ export function ConversationPanel({
 
   return (
     <section
+      id="project-conversation-panel"
       role="dialog"
       aria-label="AI 问答"
-      className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
     >
       <header className="shrink-0 border-b border-white/[0.075] px-4 pb-2 pt-3">
         <div className="flex items-center gap-2">

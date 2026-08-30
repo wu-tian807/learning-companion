@@ -24,11 +24,6 @@ const target = createEpubCfiRangeTarget({
 
 function createContribution() {
   return createEpubConversationContribution({
-    historyStore: {
-      list: async () => [],
-      save: async (record) => [record],
-      remove: async () => [],
-    },
     revealContext: vi.fn(),
   });
 }
@@ -121,11 +116,6 @@ describe('EPUB conversation contribution', () => {
   it('presents the selected quote and delegates reveal to EPUB', async () => {
     const revealContext = vi.fn();
     const contribution = createEpubConversationContribution({
-      historyStore: {
-        list: async () => [],
-        save: async (record) => [record],
-        remove: async () => [],
-      },
       revealContext,
     });
     const context = createEpubConversationContext(target);

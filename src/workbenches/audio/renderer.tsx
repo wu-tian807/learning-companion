@@ -438,7 +438,8 @@ export function AudioWorkbenchView({
 
   return (
     <div
-      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#11151a]"
+      data-audio-workbench-layout="true"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#11151a]"
       onContextMenuCapture={openContextMenu}
     >
       <audio
@@ -450,7 +451,10 @@ export function AudioWorkbenchView({
       />
       <MediaDubbingAudioTrack controller={dubbing} mediaLabel="音频" />
 
-      <div className="min-h-0 flex-1 bg-[radial-gradient(circle_at_50%_20%,rgba(129,140,248,0.07),transparent_45%),#11151a]">
+      <div
+        data-audio-transcript-region="true"
+        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_20%,rgba(129,140,248,0.07),transparent_45%),#11151a]"
+      >
         <AudioTranscript
           snapshot={subtitles.snapshot}
           mode={subtitles.mode}
