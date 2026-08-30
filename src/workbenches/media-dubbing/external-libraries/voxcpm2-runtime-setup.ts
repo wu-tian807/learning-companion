@@ -23,7 +23,7 @@ export const VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES = 13_000_000_000;
 const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const SETUP_PROGRESS_POLL_INTERVAL_MS = 5_000;
 const PYTORCH_CUDA_INDEX_URL =
-  'https://mirrors.aliyun.com/pytorch-wheels/cu128';
+  'https://download.pytorch.org/whl/cu128';
 const MANAGED_PYTHON_DIRECTORY =
   /^cpython-3\.12\.\d+-windows-x86_64-none$/u;
 
