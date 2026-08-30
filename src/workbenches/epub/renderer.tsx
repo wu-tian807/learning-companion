@@ -64,6 +64,7 @@ import type { EpubMarkerColor } from './epub-marker-style';
 import { renderEpubAnnotationWaves } from './epub-annotation-renderer';
 import { stabilizeEpubContinuousScroll } from './epub-continuous-scroll';
 import { EpubReadingNotePanel } from './notes/epub-reading-note-panel';
+import { EpubReadingTimerControl } from './timer/epub-reading-timer-control';
 import {
   createEpubReadingNoteMetadata,
   EPUB_READING_NOTE_ATTACHMENT_TYPE,
@@ -1240,6 +1241,7 @@ export function EpubWorkbenchView({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          <EpubReadingTimerControl />
           <button
             type="button"
             onClick={() =>
