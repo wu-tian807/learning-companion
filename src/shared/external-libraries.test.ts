@@ -16,6 +16,7 @@ describe('ExternalLibrarySnapshot', () => {
       expectedSize: 300_000_000,
       rootPath: '/Users/student/Documents/Learning Companion/externalLib',
       status: 'downloading',
+      statusDetail: '正在下载模型',
       progress: {
         completedBytes: 100,
         totalBytes: 300_000_000,
@@ -25,6 +26,7 @@ describe('ExternalLibrarySnapshot', () => {
     expect(isExternalLibrarySnapshot(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.progress)).toBe(true);
+    expect(snapshot.statusDetail).toBe('正在下载模型');
   });
 
   it('rejects malformed progress and relative paths', () => {
@@ -36,6 +38,19 @@ describe('ExternalLibrarySnapshot', () => {
         expectedSize: 10,
         rootPath: 'externalLib',
         status: 'available',
+      }),
+    ).toBe(false);
+    expect(
+      isExternalLibrarySnapshot({
+        id: 'libreoffice',
+        displayName: 'LibreOffice',
+        description: 'Office preview',
+        category: 'document',
+        version: '1',
+        expectedSize: 10,
+        rootPath: '/externalLib',
+        status: 'installing',
+        statusDetail: '   ',
       }),
     ).toBe(false);
     expect(

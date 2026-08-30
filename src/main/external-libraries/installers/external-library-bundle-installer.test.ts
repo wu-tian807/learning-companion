@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   access,
+  lstat,
   mkdtemp,
   readFile,
   rm,
@@ -125,11 +126,23 @@ describe('ExternalLibraryBundleInstaller', () => {
         'utf8',
       ),
     ).resolves.toBe('fake executable');
+    const sourceModelPath = paths.find(
+      ({ definition }) => definition.id === 'model',
+    )!.path;
+    const installedModelPath = join(
+      installationDirectory,
+      'runtime',
+      'models',
+      'model.bin',
+    );
+    const [sourceModel, installedModel] = await Promise.all([
+      lstat(sourceModelPath),
+      lstat(installedModelPath),
+    ]);
+    expect(installedModel.ino).toBe(sourceModel.ino);
+    await rm(sourceModelPath);
     await expect(
-      readFile(
-        join(installationDirectory, 'runtime', 'models', 'model.bin'),
-        'utf8',
-      ),
+      readFile(installedModelPath, 'utf8'),
     ).resolves.toBe('trusted model');
     await expect(
       readFile(

@@ -3,7 +3,17 @@ import { AppError } from "../errors/app-error";
 export interface ExternalLibraryRuntimeSetup {
   readonly libraryId: string;
   isReady(runtimeDirectory: string): Promise<boolean>;
-  prepare(runtimeDirectory: string, signal: AbortSignal): Promise<void>;
+  prepare(
+    runtimeDirectory: string,
+    setupCacheDirectory: string,
+    signal: AbortSignal,
+    reportStatus: (statusDetail: string) => void,
+  ): Promise<void>;
+  finalizeInstallation?(
+    runtimeDirectory: string,
+    signal: AbortSignal,
+    reportStatus: (statusDetail: string) => void,
+  ): Promise<void>;
 }
 
 export interface ExternalLibraryRuntimeSetupRegistryApi {
@@ -28,7 +38,9 @@ export class ExternalLibraryRuntimeSetupRegistry implements ExternalLibraryRunti
     if (
       !isSafeLibraryId(libraryId) ||
       typeof setup.isReady !== "function" ||
-      typeof setup.prepare !== "function"
+      typeof setup.prepare !== "function" ||
+      (setup.finalizeInstallation !== undefined &&
+        typeof setup.finalizeInstallation !== "function")
     ) {
       throw new AppError("INVALID_EXTENSION_DEFINITION");
     }

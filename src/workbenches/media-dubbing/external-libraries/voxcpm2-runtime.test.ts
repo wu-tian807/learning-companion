@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExternalCommandRunnerApi } from '../../../main/external-libraries/external-command-runner';
 import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
+import { VOXCPM2_RUNTIME_ENVIRONMENT_VERSION } from './voxcpm2-runtime-setup';
 import {
   VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
   VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
@@ -114,7 +115,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
     await writeFile(
       join(environment, 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
     const { service } = externalLibraries(root);
     const run = vi.fn<ExternalCommandRunnerApi['run']>();
@@ -134,7 +135,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
     await writeFile(
       join(environment, 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
     const { service } = externalLibraries(root);
     let finishWorker: (() => void) | undefined;
@@ -191,7 +192,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
     await writeFile(
       join(environment, 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
     const { service } = externalLibraries(root);
     const { scheduleUnload, tasks } = createUnloadScheduler();
@@ -247,7 +248,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
     await writeFile(
       join(environment, 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
     const { service } = externalLibraries(root);
     const { scheduleUnload, tasks } = createUnloadScheduler();
@@ -294,7 +295,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
     await writeFile(
       join(environment, 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
     const { service } = externalLibraries(root);
     const { scheduleUnload, tasks } = createUnloadScheduler();
@@ -353,7 +354,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
     await writeFile(
       join(environment, 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
     const { service } = externalLibraries(root);
     let requestPath = '';
@@ -436,7 +437,7 @@ describe('VoxCpm2DubbingRuntimeResolver', () => {
     await writeFile(join(scripts, 'python.exe'), 'mock');
     await writeFile(
       join(root, 'environment', 'learning-companion-runtime.json'),
-      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
     );
 
     await expect(resolver.requireRuntime()).resolves.toBeDefined();

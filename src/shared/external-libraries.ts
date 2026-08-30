@@ -38,6 +38,7 @@ export interface ExternalLibrarySnapshot {
   readonly status: ExternalLibraryStatus;
   readonly installationPath?: string;
   readonly progress?: ExternalLibraryProgress;
+  readonly statusDetail?: string;
   readonly errorCode?: string;
 }
 
@@ -169,6 +170,13 @@ export function isExternalLibrarySnapshot(
     return false;
   }
 
+  if (
+    value.statusDetail !== undefined &&
+    !isRequiredText(value.statusDetail)
+  ) {
+    return false;
+  }
+
   return (
     value.progress === undefined ||
     (isRecord(value.progress) &&
@@ -237,6 +245,9 @@ export function cloneExternalLibrarySnapshot(
             totalBytes: value.progress.totalBytes,
           }),
         }),
+    ...(value.statusDetail === undefined
+      ? {}
+      : { statusDetail: value.statusDetail.trim() }),
     ...(value.errorCode === undefined
       ? {}
       : { errorCode: value.errorCode.trim() }),
