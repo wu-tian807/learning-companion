@@ -8,6 +8,7 @@ import type { JsonValue } from '../../shared/workbench/protocol';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
   ConversationLaunchRequest,
+  ConversationHistoryStore,
   ConversationMessageRecord,
   ConversationReanswerBackup,
   ConversationRecord,
@@ -63,8 +64,9 @@ export interface ConversationControllerActions {
 interface UseConversationControllerInput {
   readonly open: boolean;
   readonly projectId: string;
-  readonly assetId: string;
+  readonly assetId?: string;
   readonly contribution: WorkbenchConversationContribution;
+  readonly historyStore: ConversationHistoryStore;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly onPersistenceError?: (error: unknown) => void;
@@ -150,6 +152,7 @@ export function useConversationController({
   projectId,
   assetId,
   contribution,
+  historyStore,
   launchRequest,
   onLaunchConsumed,
   onPersistenceError,
@@ -245,7 +248,7 @@ export function useConversationController({
             undefined,
           );
         }
-        return contribution.historyStore.save(record);
+        return historyStore.save(record);
       });
       if (mountedRef.current && records) {
         setHistory(records.filter(
@@ -258,7 +261,7 @@ export function useConversationController({
       }
       onPersistenceErrorRef.current?.(persistenceError);
     }
-  }, [contribution.historyStore, enqueueHistoryMutation]);
+  }, [enqueueHistoryMutation, historyStore]);
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
@@ -383,7 +386,7 @@ export function useConversationController({
     queueMicrotask(() => {
       if (!active) return;
       setHistoryLoading(true);
-      void contribution.historyStore.list().then(
+      void historyStore.list().then(
         (records) => {
           if (!active) return;
           setHistory(records);
@@ -400,7 +403,7 @@ export function useConversationController({
       );
     });
     return () => { active = false; };
-  }, [contribution.historyStore, open]);
+  }, [historyStore, open]);
 
   useEffect(() => taskClient.subscribe((event) => {
     const taskId = activeTaskIdRef.current;
@@ -543,7 +546,7 @@ export function useConversationController({
       (started) => {
         bindTask(started.taskId, assistantMessageId);
         if (context !== undefined) {
-          contributionRef.current.onContextReleased?.(context);
+          contribution.onContextReleased?.(context);
         }
         if (started.snapshot && applyTerminalTask(started.snapshot)) return;
         if (pendingCancelRef.current) {
@@ -766,7 +769,7 @@ export function useConversationController({
       resetConversation();
     }
     void enqueueHistoryMutation(async () => {
-      const records = await contribution.historyStore.remove(record.id);
+      const records = await historyStore.remove(record.id);
       if (records.some(({ id }) => id === record.id)) {
         throw new Error('Conversation 删除后仍存在');
       }
@@ -788,7 +791,7 @@ export function useConversationController({
         onPersistenceErrorRef.current?.(removeError);
       },
     );
-  }, [contribution.historyStore, enqueueHistoryMutation, resetConversation]);
+  }, [enqueueHistoryMutation, historyStore, resetConversation]);
 
   return {
     state: {

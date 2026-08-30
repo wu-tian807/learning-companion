@@ -27,11 +27,9 @@ import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import { AnchorHighlight } from './conversation/AnchorHighlight';
 import { SelectionFloatBar } from './conversation/SelectionFloatBar';
 import {
-  adaptHtmlConversationHistoryStore,
   createHtmlConversationContribution,
   shouldClearHtmlConversationHighlight,
 } from './conversation/html-conversation-contribution';
-import { createHtmlConversationStore } from './conversation/conversation-store';
 import {
   isHtmlAnchorTarget,
   isSameHtmlAnchorLocation,
@@ -184,18 +182,6 @@ export function HtmlWorkbenchView({
     }
   }, [clearHighlight]);
 
-  const conversationStore = useMemo(
-    () =>
-      createHtmlConversationStore({
-        executeCommand: (command) => executeCommand(command),
-      }),
-    [executeCommand],
-  );
-  const conversationHistoryStore = useMemo(
-    () => adaptHtmlConversationHistoryStore(conversationStore),
-    [conversationStore],
-  );
-
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
       const message = userMessageFromError(error, fallback);
@@ -233,14 +219,12 @@ export function HtmlWorkbenchView({
   const conversationContribution = useMemo(
     () => createHtmlConversationContribution({
       assetId: asset.id,
-      historyStore: conversationHistoryStore,
       revealContext: activateConversationAnchor,
       onContextReleased: releaseConversationContext,
     }),
     [
       activateConversationAnchor,
       asset.id,
-      conversationHistoryStore,
       releaseConversationContext,
     ],
   );

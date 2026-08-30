@@ -53,6 +53,13 @@ import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-eve
 import type { AssetAttachment } from "./attachments/contracts";
 import type { AssetTarget } from "./workbench/anchor";
 import type { JsonValue } from "./workbench/protocol";
+import type {
+  ConversationRecord,
+  DeleteProjectConversationRequest,
+  ImportProjectConversationsRequest,
+  ProjectConversationProjectRequest,
+  SaveProjectConversationRequest,
+} from "./project-conversations";
 
 export const IPC_CHANNELS = {
   healthCheck: "app:health-check",
@@ -92,6 +99,10 @@ export const IPC_CHANNELS = {
   deleteProject: "project:delete",
   openProject: "project:open",
   closeProject: "project:close",
+  listProjectConversations: "project-conversation:list",
+  saveProjectConversation: "project-conversation:save",
+  importProjectConversations: "project-conversation:import",
+  deleteProjectConversation: "project-conversation:delete",
   selectLocalAssetFiles: "asset:select-local-files",
   addLocalAssets: "asset:add-local-files",
   renameAsset: "asset:rename",
@@ -202,6 +213,18 @@ export interface LearningCompanionApi {
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
   openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
   closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
+  listProjectConversations: (
+    request: ProjectConversationProjectRequest,
+  ) => Promise<ConversationRecord[]>;
+  saveProjectConversation: (
+    request: SaveProjectConversationRequest,
+  ) => Promise<ConversationRecord[]>;
+  importProjectConversations: (
+    request: ImportProjectConversationsRequest,
+  ) => Promise<ConversationRecord[]>;
+  deleteProjectConversation: (
+    request: DeleteProjectConversationRequest,
+  ) => Promise<ConversationRecord[]>;
   selectLocalAssetFiles: (
     request: ProjectLifecycleRequest,
   ) => Promise<string[]>;

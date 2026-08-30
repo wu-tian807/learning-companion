@@ -4,11 +4,12 @@ export const PROJECT_WIDE_LAYOUT_QUERY = '(min-width: 1180px)';
 export const PROJECT_SMALL_LAYOUT_QUERY = '(max-width: 719px)';
 
 export type ProjectLayoutMode = 'wide' | 'medium' | 'small';
+export type ProjectRightPanelKind = 'generation' | 'conversation';
 
 export interface ProjectLayoutState {
   readonly mode: ProjectLayoutMode;
   readonly leftOpen: boolean;
-  readonly rightOpen: boolean;
+  readonly rightPanel: ProjectRightPanelKind | null;
 }
 
 type ProjectLayoutAction =
@@ -17,7 +18,15 @@ type ProjectLayoutAction =
       readonly mode: ProjectLayoutMode;
     }
   | { readonly type: 'toggle-left' }
-  | { readonly type: 'toggle-right' }
+  | {
+      readonly type: 'toggle-right';
+      readonly panel: ProjectRightPanelKind;
+    }
+  | {
+      readonly type: 'open-right';
+      readonly panel: ProjectRightPanelKind;
+    }
+  | { readonly type: 'close-right' }
   | { readonly type: 'open-left' }
   | { readonly type: 'close-overlays' };
 
@@ -26,7 +35,9 @@ export interface ProjectLayout extends ProjectLayoutState {
   readonly rightInline: boolean;
   readonly openOverlay: 'left' | 'right' | null;
   readonly toggleLeft: () => void;
-  readonly toggleRight: () => void;
+  readonly toggleRight: (panel: ProjectRightPanelKind) => void;
+  readonly openRight: (panel: ProjectRightPanelKind) => void;
+  readonly closeRight: () => void;
   readonly openLeft: () => void;
   readonly closeOverlays: () => void;
 }
@@ -36,11 +47,11 @@ export function createDefaultProjectLayoutState(
 ): ProjectLayoutState {
   switch (mode) {
     case 'wide':
-      return { mode, leftOpen: true, rightOpen: true };
+      return { mode, leftOpen: true, rightPanel: 'generation' };
     case 'medium':
-      return { mode, leftOpen: true, rightOpen: false };
+      return { mode, leftOpen: true, rightPanel: null };
     case 'small':
-      return { mode, leftOpen: false, rightOpen: false };
+      return { mode, leftOpen: false, rightPanel: null };
   }
 }
 
@@ -73,28 +84,46 @@ export function reduceProjectLayout(
       return {
         ...state,
         leftOpen,
-        rightOpen:
+        rightPanel:
           state.mode === 'small' && leftOpen
-            ? false
-            : state.rightOpen,
+            ? null
+            : state.rightPanel,
       };
     }
     case 'toggle-right': {
-      const rightOpen = !state.rightOpen;
+      const rightPanel =
+        state.rightPanel === action.panel ? null : action.panel;
 
       return {
         ...state,
         leftOpen:
-          state.mode === 'small' && rightOpen
+          state.mode === 'small' && rightPanel !== null
             ? false
             : state.leftOpen,
-        rightOpen,
+        rightPanel,
       };
     }
+    case 'open-right':
+      if (
+        state.rightPanel === action.panel &&
+        (state.mode !== 'small' || !state.leftOpen)
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        leftOpen: state.mode === 'small' ? false : state.leftOpen,
+        rightPanel: action.panel,
+      };
+    case 'close-right':
+      return state.rightPanel === null
+        ? state
+        : { ...state, rightPanel: null };
     case 'open-left':
       if (
         state.leftOpen &&
-        (state.mode !== 'small' || !state.rightOpen)
+        (state.mode !== 'small' || state.rightPanel === null)
       ) {
         return state;
       }
@@ -102,7 +131,7 @@ export function reduceProjectLayout(
       return {
         ...state,
         leftOpen: true,
-        rightOpen: state.mode === 'small' ? false : state.rightOpen,
+        rightPanel: state.mode === 'small' ? null : state.rightPanel,
       };
     case 'close-overlays':
       if (state.mode === 'wide') {
@@ -113,7 +142,7 @@ export function reduceProjectLayout(
         ...state,
         leftOpen:
           state.mode === 'small' ? false : state.leftOpen,
-        rightOpen: false,
+        rightPanel: null,
       };
   }
 }
@@ -157,8 +186,14 @@ export function useProjectLayout(): ProjectLayout {
   const toggleLeft = useCallback(() => {
     dispatch({ type: 'toggle-left' });
   }, []);
-  const toggleRight = useCallback(() => {
-    dispatch({ type: 'toggle-right' });
+  const toggleRight = useCallback((panel: ProjectRightPanelKind) => {
+    dispatch({ type: 'toggle-right', panel });
+  }, []);
+  const openRight = useCallback((panel: ProjectRightPanelKind) => {
+    dispatch({ type: 'open-right', panel });
+  }, []);
+  const closeRight = useCallback(() => {
+    dispatch({ type: 'close-right' });
   }, []);
   const openLeft = useCallback(() => {
     dispatch({ type: 'open-left' });
@@ -168,10 +203,11 @@ export function useProjectLayout(): ProjectLayout {
   }, []);
   const leftInline = state.mode !== 'small';
   const rightInline = state.mode === 'wide';
+  const rightOpen = state.rightPanel !== null;
   const openOverlay =
     state.mode === 'small' && state.leftOpen
       ? 'left'
-      : state.mode !== 'wide' && state.rightOpen
+      : state.mode !== 'wide' && rightOpen
         ? 'right'
         : null;
 
@@ -182,6 +218,8 @@ export function useProjectLayout(): ProjectLayout {
     openOverlay,
     toggleLeft,
     toggleRight,
+    openRight,
+    closeRight,
     openLeft,
     closeOverlays,
   };

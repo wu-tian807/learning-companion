@@ -1,11 +1,4 @@
-import type {
-  ConversationHistoryStore,
-  WorkbenchConversationContribution,
-} from '../../../renderer/conversation/conversation-contracts';
-import {
-  createConversationHistoryKey,
-  createLocalConversationHistoryStore,
-} from '../../../renderer/conversation/conversation-history-store';
+import type { WorkbenchConversationContribution } from '../../../renderer/conversation/conversation-contracts';
 import { epubWorkbenchManifest } from '../shared';
 import {
   EPUB_DEFAULT_EXPLANATION_QUESTION,
@@ -22,22 +15,7 @@ export {
   type EpubConversationContext,
 } from './epub-conversation-context';
 
-export function createEpubConversationHistoryStore(
-  projectId: string,
-  assetId: string,
-  contributionId: string,
-): ConversationHistoryStore {
-  return createLocalConversationHistoryStore({
-    key: createConversationHistoryKey({
-      contributionId,
-      projectId,
-      assetId,
-    }),
-  });
-}
-
 export function createEpubConversationContribution(input: {
-  readonly historyStore: ConversationHistoryStore;
   readonly revealContext: (
     context: EpubConversationContext,
   ) => Promise<void> | void;
@@ -46,6 +24,7 @@ export function createEpubConversationContribution(input: {
     id: `${epubWorkbenchManifest.id}.reading-conversation`,
     workbenchId: epubWorkbenchManifest.id,
     contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+    sourceAssetMode: 'identity',
     initialContextRequired: true,
     initialContextRequiredMessage:
       '请先在 EPUB 中选中一段文字再开始问答',
@@ -53,7 +32,6 @@ export function createEpubConversationContribution(input: {
     emptyLabel:
       '选中书中的文字并使用“解释这段话”，之后可以在同一对话中继续追问。',
     inputPlaceholder: '继续追问…（Enter 发送 / Shift+Enter 换行）',
-    historyStore: input.historyStore,
     isContext: isEpubConversationContext,
     shouldCommitAnswer(taskInput) {
       return (

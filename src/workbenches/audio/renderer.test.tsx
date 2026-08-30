@@ -103,6 +103,16 @@ describe('AudioWorkbenchView', () => {
     expect(markup).toContain('learning-content://resource/token');
     expect(markup).not.toContain('标记当前时间');
     expect(markup).not.toContain('/tmp/private/lesson.mp3');
+    const layout = markup.match(
+      /<div[^>]*data-audio-workbench-layout="true"[^>]*>/u,
+    )?.[0];
+    const transcriptRegion = markup.match(
+      /<div[^>]*data-audio-transcript-region="true"[^>]*>/u,
+    )?.[0];
+    expect(layout).toContain('w-full');
+    expect(layout).toContain('min-w-0');
+    expect(transcriptRegion).toContain('min-w-0');
+    expect(transcriptRegion).toContain('overflow-hidden');
   });
 
   it('renders progressive bilingual text and reverse dubbing progress', () => {

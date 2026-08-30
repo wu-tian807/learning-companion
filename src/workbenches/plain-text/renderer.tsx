@@ -25,7 +25,6 @@ import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
-  createDocumentConversationHistoryStore,
   type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
 import {
@@ -667,21 +666,12 @@ export function PlainTextWorkbenchView({
     },
     [lineEnding, persistBuffer, recovery, saving],
   );
-  const conversationHistoryStore = useMemo(
-    () => createDocumentConversationHistoryStore(
-      asset.projectId,
-      asset.id,
-      conversationContributionId,
-    ),
-    [asset.id, asset.projectId, conversationContributionId],
-  );
   const conversationContribution = useMemo(
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
       workbenchId: plainTextWorkbenchManifest.id,
       contributionId: conversationContributionId,
-      historyStore: conversationHistoryStore,
       contextLabel: '文本选区',
       returnAnswerToSource,
       answerActionPresentation: PLAIN_TEXT_ANSWER_ACTION_PRESENTATION,
@@ -690,7 +680,6 @@ export function PlainTextWorkbenchView({
       asset.id,
       asset.projectId,
       conversationContributionId,
-      conversationHistoryStore,
       returnAnswerToSource,
     ],
   );
@@ -1117,7 +1106,6 @@ export function PlainTextWorkbenchView({
       <QuestionAnchorHost
         assetId={asset.id}
         ownerId={conversationOwnerId}
-        historyStore={conversationHistoryStore}
         runtime={conversationRuntime}
       />
       </div>

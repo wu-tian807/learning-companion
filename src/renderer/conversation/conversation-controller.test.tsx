@@ -74,17 +74,15 @@ function createMemoryHistory(
 }
 
 function createContribution(input: {
-  readonly historyStore?: ConversationHistoryStore;
   readonly onContextReleased?: WorkbenchConversationContribution['onContextReleased'];
 } = {}): WorkbenchConversationContribution {
   return {
     id: 'test.question',
     workbenchId: 'test',
     contextProviderId: 'test.context',
-    includeSourceAssetReference: true,
+    sourceAssetMode: 'reference',
     title: '测试问答',
     emptyLabel: 'empty',
-    historyStore: input.historyStore ?? createMemoryHistory(),
     onContextReleased: input.onContextReleased,
   };
 }
@@ -130,6 +128,7 @@ describe('shared Conversation controller', () => {
             projectId: 'project',
             assetId: 'asset',
             contribution,
+            historyStore: createMemoryHistory(),
             taskClient: client,
             createId: () => `id-${++id}`,
             now: () => 100 + id,
@@ -240,6 +239,46 @@ describe('shared Conversation controller', () => {
     });
     expect(client.cancel).toHaveBeenCalledWith('project', 'task-1');
     expect(onContextReleased).toHaveBeenCalledOnce();
+  });
+
+  it('releases context through the contribution that created the pending Task', async () => {
+    let resolveStart!: (value: {
+      taskId: string;
+      snapshot: GenerationTaskView;
+    }) => void;
+    client.start = vi.fn(() =>
+      new Promise<{
+        taskId: string;
+        snapshot: GenerationTaskView;
+      }>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const originalRelease = vi.fn();
+    const replacementRelease = vi.fn();
+    const historyStore = createMemoryHistory();
+    const context = { target: { scope: 'asset' } };
+    render({
+      contribution: createContribution({
+        onContextReleased: originalRelease,
+      }),
+      historyStore,
+    });
+
+    act(() => latest.actions.submit('问题', context));
+    render({
+      contribution: createContribution({
+        onContextReleased: replacementRelease,
+      }),
+      historyStore,
+    });
+    await act(async () => {
+      resolveStart({ taskId: 'task-1', snapshot: task('task-1') });
+      await Promise.resolve();
+    });
+
+    expect(originalRelease).toHaveBeenCalledWith(context);
+    expect(replacementRelease).not.toHaveBeenCalled();
   });
 
   it('does not leak an early Stop request into the next submission when start fails', async () => {
@@ -585,7 +624,8 @@ describe('shared Conversation controller', () => {
     const onLaunchConsumed = vi.fn();
     const context = { target: { scope: 'saved-selection' } };
     render({
-      contribution: createContribution({ historyStore }),
+      contribution: createContribution(),
+      historyStore,
       launchRequest: { id: 1, conversationId: saved.id, context },
       onLaunchConsumed,
     });
@@ -604,12 +644,13 @@ describe('shared Conversation controller', () => {
 
   it('reuses an exact current identity and creates context-bound fallbacks only when unavailable', async () => {
     const historyStore = createMemoryHistory();
-    const contribution = createContribution({ historyStore });
-    render({ contribution });
+    const contribution = createContribution();
+    render({ contribution, historyStore });
     await flush();
     const previousConversationId = latest.state.conversation.id;
     render({
       contribution,
+      historyStore,
       launchRequest: {
         id: 1,
         conversationId: previousConversationId,
@@ -624,6 +665,7 @@ describe('shared Conversation controller', () => {
 
     render({
       contribution,
+      historyStore,
       launchRequest: {
         id: 2,
         conversationId: 'missing-conversation',
@@ -638,6 +680,7 @@ describe('shared Conversation controller', () => {
     const unavailableConversationFallbackId = latest.state.conversation.id;
     render({
       contribution,
+      historyStore,
       launchRequest: {
         id: 3,
         fallbackToNewConversation: true,
@@ -655,8 +698,8 @@ describe('shared Conversation controller', () => {
 
   it('keeps a context launch in the currently selected conversation', async () => {
     const historyStore = createMemoryHistory();
-    const contribution = createContribution({ historyStore });
-    render({ contribution });
+    const contribution = createContribution();
+    render({ contribution, historyStore });
     await flush();
 
     act(() => latest.actions.submit('当前会话中的问题'));
@@ -676,6 +719,7 @@ describe('shared Conversation controller', () => {
 
     render({
       contribution,
+      historyStore,
       launchRequest: { id: 1, context },
       onLaunchConsumed,
     });
@@ -689,8 +733,8 @@ describe('shared Conversation controller', () => {
   it('keeps a user-selected new conversation instead of restoring history by context', async () => {
     const context = { target: { scope: 'current-page' } };
     const historyStore = createMemoryHistory();
-    const contribution = createContribution({ historyStore });
-    render({ contribution });
+    const contribution = createContribution();
+    render({ contribution, historyStore });
     await flush();
 
     act(() => latest.actions.submit('旧会话中的问题', context));
@@ -712,6 +756,7 @@ describe('shared Conversation controller', () => {
 
     render({
       contribution,
+      historyStore,
       launchRequest: { id: 1, context },
     });
     await flush();
@@ -722,10 +767,11 @@ describe('shared Conversation controller', () => {
 
   it('does not reload history when the persistence reporter identity changes', async () => {
     const historyStore = createMemoryHistory();
-    const contribution = createContribution({ historyStore });
+    const contribution = createContribution();
 
     render({
       contribution,
+      historyStore,
       onPersistenceError: vi.fn(),
     });
     await flush();
@@ -734,6 +780,7 @@ describe('shared Conversation controller', () => {
 
     render({
       contribution,
+      historyStore,
       onPersistenceError: vi.fn(),
     });
     await flush();
@@ -753,7 +800,7 @@ describe('shared Conversation controller', () => {
       updatedTime: 2,
     };
     const historyStore = createMemoryHistory([saved]);
-    render({ contribution: createContribution({ historyStore }) });
+    render({ contribution: createContribution(), historyStore });
     await flush();
 
     act(() => latest.actions.restore(saved));
@@ -781,7 +828,7 @@ describe('shared Conversation controller', () => {
       }),
       remove: vi.fn(async () => []),
     };
-    render({ contribution: createContribution({ historyStore }) });
+    render({ contribution: createContribution(), historyStore });
 
     act(() => latest.actions.submit('问题'));
     await flush();
@@ -831,7 +878,7 @@ describe('shared Conversation controller', () => {
         .mockRejectedValueOnce(new Error('remove failed'))
         .mockResolvedValueOnce([]),
     };
-    render({ contribution: createContribution({ historyStore }) });
+    render({ contribution: createContribution(), historyStore });
     await flush();
     act(() => latest.actions.restore(saved));
 

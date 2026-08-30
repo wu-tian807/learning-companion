@@ -105,6 +105,15 @@ describe('AudioTranscript', () => {
     expect(markup).toContain('Welcome.');
     expect(markup).toContain('正在翻译…');
     expect(markup).toContain('aria-current="true"');
+    const scrollViewport = markup.match(
+      /<div[^>]*data-audio-transcript-scroll="true"[^>]*>/u,
+    )?.[0];
+    expect(scrollViewport).toContain('w-full');
+    expect(scrollViewport).toContain('overflow-y-auto');
+    expect(scrollViewport).toContain('[scrollbar-gutter:stable]');
+    expect(scrollViewport).not.toContain('max-w-3xl');
+    expect(markup).toContain('data-audio-transcript-content="true"');
+    expect(markup).toContain('max-w-3xl');
   });
 
   it('projects a stable per-speaker reference and marks uncertain cue ownership', () => {

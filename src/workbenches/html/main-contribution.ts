@@ -8,7 +8,6 @@ export const htmlMainWorkbenchContribution = composeMainWorkbenchContribution(
   (context) =>
     new HtmlWorkbenchProvider(
       context.contentResourceService,
-      context.stateDataDatabase,
       context.sandboxFrameScripts,
     ),
   [htmlAssistantMainFeature],
