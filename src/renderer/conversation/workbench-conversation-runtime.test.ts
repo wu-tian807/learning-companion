@@ -6,118 +6,155 @@ import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 function contribution(id: string): WorkbenchConversationContribution {
   return {
     id,
-    workbenchId: `${id}.workbench`,
+    workbenchId: 'test',
     contextProviderId: `${id}.context`,
-    title: id,
-    emptyLabel: 'empty',
+    sourceAssetMode: 'reference',
   };
 }
 
 describe('WorkbenchConversationRuntime', () => {
-  it('opens the active contribution and transports one typed launch request', () => {
+  it('opens Project chat without any Workbench contribution', () => {
     const runtime = new WorkbenchConversationRuntime();
-    runtime.register('pdf.owner', contribution('pdf'));
+
+    runtime.open();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      panelOpen: true,
+      busy: false,
+      registryRevision: 0,
+      launchRequest: {
+        id: 1,
+        clearContext: true,
+      },
+    });
+    expect(runtime.getSnapshot().contextSource).toBeUndefined();
+  });
+
+  it('attaches a registered Workbench only as this launch context source', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const pdf = contribution('pdf');
+    runtime.register('pdf.owner', 'asset-1', pdf);
+
+    expect(runtime.getSnapshot().panelOpen).toBe(false);
+    expect(runtime.getSnapshot().contextSource).toBeUndefined();
 
     runtime.open({
       ownerId: 'pdf.owner',
       conversationId: 'conversation-1',
-      fallbackToNewConversation: true,
       context: { pageNumber: 2 },
       question: '解释这一段',
       submit: true,
     });
 
     expect(runtime.getSnapshot()).toMatchObject({
+      contextSource: {
+        ownerId: 'pdf.owner',
+        assetId: 'asset-1',
+        contribution: pdf,
+      },
       panelOpen: true,
-      active: { ownerId: 'pdf.owner' },
       launchRequest: {
+        id: 1,
         conversationId: 'conversation-1',
-        fallbackToNewConversation: true,
         context: { pageNumber: 2 },
         question: '解释这一段',
         submit: true,
       },
     });
-    const requestId = runtime.getSnapshot().launchRequest!.id;
-    runtime.consumeLaunchRequest(requestId);
-    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
   });
 
-  it('does not let a newly registered Workbench steal the active Project chat', async () => {
+  it('preserves the open panel and busy state when the same context source updates', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const releasePdf = runtime.register('pdf.owner', contribution('pdf'));
-    runtime.open({ ownerId: 'pdf.owner', question: 'old' });
-    runtime.setBusy('pdf.owner', true);
-
-    const releaseHtml = runtime.register('html.owner', contribution('html'));
-    expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: true,
-      busy: true,
-      active: { ownerId: 'pdf.owner' },
+    const original = contribution('plain-text');
+    const replacement = { ...original, title: 'updated' };
+    const unregisterOriginal = runtime.register(
+      'plain-text.owner',
+      'asset-1',
+      original,
+    );
+    runtime.open({
+      ownerId: 'plain-text.owner',
+      question: 'keep open',
     });
-    expect(runtime.getSnapshot().launchRequest?.question).toBe('old');
+    runtime.setBusy(true);
 
-    releasePdf();
-    await Promise.resolve();
-    expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: false,
-      busy: false,
-      active: { ownerId: 'html.owner' },
+    runtime.register(
+      'plain-text.owner',
+      'asset-1',
+      replacement,
+    );
+    unregisterOriginal();
+
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        expect(runtime.getSnapshot()).toMatchObject({
+          contextSource: {
+            ownerId: 'plain-text.owner',
+            contribution: replacement,
+          },
+          panelOpen: true,
+          busy: true,
+        });
+        resolve();
+      });
     });
-    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
-    releaseHtml();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(runtime.getSnapshot()).toEqual({ panelOpen: false, busy: false });
   });
 
-  it('treats two Assets as separate owners without changing the open owner', () => {
+  it('clears an unavailable context source without closing Project chat', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    runtime.register('pdf:session-a', contribution('pdf-a'));
-    runtime.open({ ownerId: 'pdf:session-a', question: 'asset A' });
-    runtime.setBusy('pdf:session-a', true);
-
-    runtime.register('pdf:session-b', contribution('pdf-b'));
-
-    expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: true,
-      busy: true,
-      active: { ownerId: 'pdf:session-a' },
+    const release = runtime.register(
+      'pdf.owner',
+      'asset-1',
+      contribution('pdf'),
+    );
+    runtime.open({
+      ownerId: 'pdf.owner',
+      context: { page: 1 },
     });
-    expect(runtime.getSnapshot().launchRequest?.question).toBe('asset A');
-  });
 
-  it('replaces one owner contribution without closing its open panel', async () => {
-    const runtime = new WorkbenchConversationRuntime();
-    const initial = contribution('plain-text.initial');
-    const updated = contribution('plain-text.updated');
-    const releaseInitial = runtime.register('plain-text.owner', initial);
-    runtime.open({ ownerId: 'plain-text.owner', question: 'keep open' });
-    runtime.setBusy('plain-text.owner', true);
-    const launchRequest = runtime.getSnapshot().launchRequest;
+    release();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-    releaseInitial();
-    runtime.register('plain-text.owner', updated);
-    await Promise.resolve();
-
+    expect(runtime.getSnapshot().contextSource).toBeUndefined();
     expect(runtime.getSnapshot()).toMatchObject({
       panelOpen: true,
-      busy: true,
-      active: {
-        ownerId: 'plain-text.owner',
-        contribution: updated,
+      launchRequest: {
+        clearContext: true,
       },
     });
-    expect(runtime.getSnapshot().launchRequest).toBe(launchRequest);
   });
 
-  it('ignores stale busy reports and rejects opening an unregistered owner', () => {
+  it('resolves optional context UI only for the matching mounted Asset', () => {
     const runtime = new WorkbenchConversationRuntime();
-    runtime.register('active', contribution('active'));
-    runtime.setBusy('stale', true);
-    expect(runtime.getSnapshot().busy).toBe(false);
+    const pdf = contribution('pdf');
+    runtime.register('pdf.owner', 'asset-1', pdf);
+
+    expect(runtime.resolveContribution({
+      contributionId: 'pdf',
+      contextProviderId: 'pdf.context',
+      assetId: 'asset-1',
+      sourceAssetMode: 'reference',
+    })).toBe(pdf);
+    expect(runtime.resolveContribution({
+      contributionId: 'pdf',
+      contextProviderId: 'pdf.context',
+      assetId: 'asset-2',
+      sourceAssetMode: 'reference',
+    })).toBeUndefined();
+  });
+
+  it('rejects missing or unregistered Workbench context sources', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('pdf.owner', 'asset-1', contribution('pdf'));
+
     expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
-      '当前 Workbench 没有注册 AI 问答能力',
+      '当前 Workbench 没有注册 AI 问答上下文',
     );
+    expect(() => runtime.open({ context: { page: 1 } })).toThrow(
+      'AI 问答上下文没有已注册的来源',
+    );
+    expect(() =>
+      runtime.register('invalid', '', contribution('pdf')),
+    ).toThrow('Workbench Conversation context contribution 无效');
   });
 });

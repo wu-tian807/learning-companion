@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -37,7 +37,7 @@ describe('video conversation contribution', () => {
   it('uses the shared conversation task without copying the full video', () => {
     const context = createVideoConversationContext(target, '100');
     expect(
-      createWorkbenchConversationTaskRequest(contribution(), {
+      createContextualConversationTaskRequest(contribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -77,9 +77,9 @@ describe('video conversation contribution', () => {
     ).toEqual({ context, conversationId: 'conversation-1' });
   });
 
-  it('requires a current-revision frame only for the initial turn', () => {
+  it('requires a current-revision frame whenever the Video context provider is selected', () => {
     expect(() =>
-      createWorkbenchConversationTaskRequest(contribution(), {
+      createContextualConversationTaskRequest(contribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -89,7 +89,7 @@ describe('video conversation contribution', () => {
     ).toThrow('请先在视频画面上单击或拖动选择一个区域');
 
     expect(() =>
-      createWorkbenchConversationTaskRequest(contribution(), {
+      createContextualConversationTaskRequest(contribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -99,15 +99,15 @@ describe('video conversation contribution', () => {
       }),
     ).toThrow('当前聊天上下文无效');
 
-    expect(
-      createWorkbenchConversationTaskRequest(contribution(), {
+    expect(() =>
+      createContextualConversationTaskRequest(contribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
         question: '刚才框内的文字是什么意思？',
         generateTitle: false,
-      }).instruction,
-    ).not.toHaveProperty('context');
+      }),
+    ).toThrow('请先在视频画面上单击或拖动选择一个区域');
   });
 
   it('persists any initial frame answer as a marker but keeps follow-ups conversational', () => {

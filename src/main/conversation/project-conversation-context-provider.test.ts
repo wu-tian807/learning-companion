@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PreparedGenerationAssetReferenceBindings } from '../generation/contracts/generation-asset-reference';
 import { WorkbenchConversationInstruction } from './workbench-conversation-instruction';
 import { ProjectConversationContextProvider } from './project-conversation-context-provider';
 
@@ -7,8 +8,10 @@ function context(
   overrides: Partial<{
     readonly assetId: string;
     readonly context: { readonly selected: string };
+    readonly assetReferences: PreparedGenerationAssetReferenceBindings;
   }> = {},
 ) {
+  const { assetReferences = { source: [] }, ...instruction } = overrides;
   return {
     taskId: 'task-1',
     projectId: 'project-1',
@@ -16,16 +19,16 @@ function context(
       contextProviderId: 'builtin.project.conversation',
       conversationId: 'conversation-1',
       question: '请帮我复习',
-      ...overrides,
+      ...instruction,
     }),
-    assetReferences: {},
+    assetReferences,
     signal: undefined,
     reportStatus: vi.fn(),
   } as never;
 }
 
 describe('ProjectConversationContextProvider', () => {
-  it('prepares a context-free Project conversation turn', async () => {
+  it('accepts the normalized empty AssetReference slot for a context-free Project turn', async () => {
     const prepared = await new ProjectConversationContextProvider().prepare(
       context(),
     );
@@ -46,6 +49,24 @@ describe('ProjectConversationContextProvider', () => {
     });
     await expect(
       provider.prepare(context({ context: { selected: 'text' } })),
+    ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
+    await expect(
+      provider.prepare(
+        context({
+          assetReferences: {
+            source: [
+              {
+                alias: 'source-0001',
+                assetId: 'asset-1',
+                name: 'source.txt',
+                mediaType: 'text/plain',
+                contentRevision: 'revision-1',
+                relativePath: 'references/source-0001/source.txt',
+              },
+            ],
+          },
+        }),
+      ),
     ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 });

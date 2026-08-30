@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ConversationRecord } from '../../../renderer/conversation/conversation-contracts';
-import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -76,7 +76,7 @@ describe('HTML conversation contribution', () => {
     });
     const context = record().messages[0]!.context!;
 
-    expect(createWorkbenchConversationTaskRequest(contribution, {
+    expect(createContextualConversationTaskRequest(contribution, {
       projectId: 'project',
       assetId: 'asset',
       conversationId: 'conversation-1',

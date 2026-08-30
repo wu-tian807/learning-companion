@@ -649,6 +649,7 @@ export function PdfDocumentWorkbenchView({
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
+    asset.id,
     conversationContribution,
   );
 

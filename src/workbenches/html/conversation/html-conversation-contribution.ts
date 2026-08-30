@@ -29,8 +29,6 @@ export function createHtmlConversationContribution(input: {
     workbenchId: htmlWorkbenchManifest.id,
     contextProviderId: HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'reference',
-    title: '网页问答',
-    emptyLabel: '选中网页文字或元素后开始提问，也可以直接针对整份 HTML 资料提问。',
     isContext: isHtmlAnchorTarget,
     describeContext(context) {
       if (!isHtmlAnchorTarget(context)) return { label: 'HTML 内容' };

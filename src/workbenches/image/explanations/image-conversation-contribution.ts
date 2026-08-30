@@ -32,12 +32,9 @@ export function createImageConversationContribution(input: {
     workbenchId: imageWorkbenchManifest.id,
     contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'reference',
-    initialContextRequired: true,
-    initialContextRequiredMessage:
+    contextRequired: true,
+    contextRequiredMessage:
       '请先在图片中框选一个兴趣区域再开始问答',
-    title: '图片解读问答',
-    emptyLabel: '框选图片中的兴趣区域并生成解释，之后可以在同一对话中继续追问。',
-    inputPlaceholder: '继续追问…（Enter 发送 / Shift+Enter 换行）',
     isContext(context) {
       return (
         isImageConversationContext(context) &&

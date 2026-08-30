@@ -1,5 +1,7 @@
+import type { ConversationMessageContextSource } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type {
+  ActiveWorkbenchConversationContribution,
   ConversationLaunchRequest,
   WorkbenchConversationContribution,
   WorkbenchConversationRuntimeSnapshot,
@@ -7,16 +9,29 @@ import type {
 
 interface RegisteredContribution {
   readonly token: symbol;
+  readonly assetId: string;
   readonly contribution: WorkbenchConversationContribution;
 }
 
 export interface OpenWorkbenchConversationInput {
+  /** Optional Workbench context source for this launch; omitted means Project chat. */
   readonly ownerId?: string;
   readonly conversationId?: string;
   readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;
+}
+
+function activeContextSource(
+  ownerId: string,
+  registered: RegisteredContribution,
+): ActiveWorkbenchConversationContribution {
+  return Object.freeze({
+    ownerId,
+    assetId: registered.assetId,
+    contribution: registered.contribution,
+  });
 }
 
 export class WorkbenchConversationRuntime {
@@ -26,6 +41,7 @@ export class WorkbenchConversationRuntime {
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
     busy: false,
+    registryRevision: 0,
   });
 
   subscribe = (listener: () => void): (() => void) => {
@@ -37,45 +53,67 @@ export class WorkbenchConversationRuntime {
 
   register(
     ownerId: string,
+    assetId: string,
     contribution: WorkbenchConversationContribution,
   ): () => void {
     const normalizedOwnerId = ownerId.trim();
+    const normalizedAssetId = assetId.trim();
     if (
       !normalizedOwnerId ||
+      !normalizedAssetId ||
       !contribution.id.trim() ||
-      !contribution.workbenchId.trim()
+      !contribution.workbenchId.trim() ||
+      !contribution.contextProviderId.trim()
     ) {
-      throw new Error('Workbench Conversation contribution 无效');
+      throw new Error('Workbench Conversation context contribution 无效');
     }
     const token = Symbol(normalizedOwnerId);
-    const activeOwnerId = this.snapshot.active?.ownerId;
-    this.contributions.delete(normalizedOwnerId);
-    this.contributions.set(normalizedOwnerId, { token, contribution });
-    if (!activeOwnerId || activeOwnerId === normalizedOwnerId) {
-      this.update({
-        ...this.snapshot,
-        active: { ownerId: normalizedOwnerId, contribution },
-      });
-    }
+    const registered = Object.freeze({
+      token,
+      assetId: normalizedAssetId,
+      contribution,
+    });
+    this.contributions.set(normalizedOwnerId, registered);
+
+    const current = this.snapshot.contextSource;
+    this.update({
+      ...this.snapshot,
+      registryRevision: this.snapshot.registryRevision + 1,
+      ...(current?.ownerId === normalizedOwnerId
+        ? {
+            contextSource: activeContextSource(
+              normalizedOwnerId,
+              registered,
+            ),
+          }
+        : {}),
+    });
 
     return () => {
       queueMicrotask(() => {
-        const current = this.contributions.get(normalizedOwnerId);
-        if (current?.token !== token) return;
+        const currentRegistration = this.contributions.get(normalizedOwnerId);
+        if (currentRegistration?.token !== token) return;
         this.contributions.delete(normalizedOwnerId);
-        if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
-        const fallback = this.contributions.entries().next().value as
-          | [string, RegisteredContribution]
-          | undefined;
+
+        if (this.snapshot.contextSource?.ownerId !== normalizedOwnerId) {
+          this.update({
+            ...this.snapshot,
+            registryRevision: this.snapshot.registryRevision + 1,
+          });
+          return;
+        }
+
+        this.launchId += 1;
         this.update({
-          panelOpen: false,
-          busy: false,
-          ...(fallback
+          panelOpen: this.snapshot.panelOpen,
+          busy: this.snapshot.busy,
+          registryRevision: this.snapshot.registryRevision + 1,
+          ...(this.snapshot.panelOpen
             ? {
-                active: {
-                  ownerId: fallback[0],
-                  contribution: fallback[1].contribution,
-                },
+                launchRequest: Object.freeze({
+                  id: this.launchId,
+                  clearContext: true,
+                }),
               }
             : {}),
         });
@@ -84,13 +122,21 @@ export class WorkbenchConversationRuntime {
   }
 
   open(input: OpenWorkbenchConversationInput = {}): void {
-    const active = input.ownerId
-      ? this.contributions.get(input.ownerId)?.contribution
-      : this.snapshot.active?.contribution;
-    if (!active) {
-      throw new Error('当前 Workbench 没有注册 AI 问答能力');
+    const normalizedOwnerId = input.ownerId?.trim();
+    const registered = normalizedOwnerId
+      ? this.contributions.get(normalizedOwnerId)
+      : undefined;
+    if (normalizedOwnerId && !registered) {
+      throw new Error('当前 Workbench 没有注册 AI 问答上下文');
     }
-    const ownerId = input.ownerId ?? this.snapshot.active!.ownerId;
+    if (input.context !== undefined && !registered) {
+      throw new Error('AI 问答上下文没有已注册的来源');
+    }
+
+    const contextSource =
+      normalizedOwnerId && registered
+        ? activeContextSource(normalizedOwnerId, registered)
+        : undefined;
     this.launchId += 1;
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
@@ -100,21 +146,29 @@ export class WorkbenchConversationRuntime {
       ...(input.fallbackToNewConversation === true
         ? { fallbackToNewConversation: true }
         : {}),
+      ...(contextSource
+        ? { contextSource }
+        : { clearContext: true }),
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
     });
     this.update({
-      active: { ownerId, contribution: active },
       panelOpen: true,
       busy: this.snapshot.busy,
+      registryRevision: this.snapshot.registryRevision,
+      ...(contextSource ? { contextSource } : {}),
       launchRequest,
     });
   }
 
   close(): void {
     if (!this.snapshot.panelOpen) return;
-    this.update({ ...this.snapshot, panelOpen: false, launchRequest: undefined });
+    this.update({
+      panelOpen: false,
+      busy: this.snapshot.busy,
+      registryRevision: this.snapshot.registryRevision,
+    });
   }
 
   consumeLaunchRequest(requestId: number): void {
@@ -122,28 +176,49 @@ export class WorkbenchConversationRuntime {
     this.update({ ...this.snapshot, launchRequest: undefined });
   }
 
-  setBusy(ownerId: string, busy: boolean): void {
-    if (
-      this.snapshot.active?.ownerId !== ownerId ||
-      this.snapshot.busy === busy
-    ) {
-      return;
-    }
+  setBusy(busy: boolean): void {
+    if (this.snapshot.busy === busy) return;
     this.update({ ...this.snapshot, busy });
+  }
+
+  resolveContribution(
+    source: ConversationMessageContextSource | undefined,
+  ): WorkbenchConversationContribution | undefined {
+    if (!source?.assetId) return undefined;
+    for (const registered of this.contributions.values()) {
+      if (
+        registered.assetId === source.assetId &&
+        registered.contribution.id === source.contributionId &&
+        registered.contribution.contextProviderId ===
+          source.contextProviderId
+      ) {
+        return registered.contribution;
+      }
+    }
+    return undefined;
   }
 
   dispose(): void {
     this.contributions.clear();
-    this.update({ panelOpen: false, busy: false });
+    this.update({
+      panelOpen: false,
+      busy: false,
+      registryRevision: this.snapshot.registryRevision + 1,
+    });
     this.listeners.clear();
   }
 
   private update(next: WorkbenchConversationRuntimeSnapshot): void {
     if (
-      this.snapshot.active?.ownerId === next.active?.ownerId &&
-      this.snapshot.active?.contribution === next.active?.contribution &&
+      this.snapshot.contextSource?.ownerId ===
+        next.contextSource?.ownerId &&
+      this.snapshot.contextSource?.assetId ===
+        next.contextSource?.assetId &&
+      this.snapshot.contextSource?.contribution ===
+        next.contextSource?.contribution &&
       this.snapshot.panelOpen === next.panelOpen &&
       this.snapshot.busy === next.busy &&
+      this.snapshot.registryRevision === next.registryRevision &&
       this.snapshot.launchRequest === next.launchRequest
     ) {
       return;

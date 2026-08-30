@@ -25,13 +25,9 @@ export function createEpubConversationContribution(input: {
     workbenchId: epubWorkbenchManifest.id,
     contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'identity',
-    initialContextRequired: true,
-    initialContextRequiredMessage:
+    contextRequired: true,
+    contextRequiredMessage:
       '请先在 EPUB 中选中一段文字再开始问答',
-    title: 'EPUB 阅读问答',
-    emptyLabel:
-      '选中书中的文字并使用“解释这段话”，之后可以在同一对话中继续追问。',
-    inputPlaceholder: '继续追问…（Enter 发送 / Shift+Enter 换行）',
     isContext: isEpubConversationContext,
     shouldCommitAnswer(taskInput) {
       return (

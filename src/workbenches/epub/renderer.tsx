@@ -315,14 +315,13 @@ export function EpubWorkbenchView({
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
+    asset.id,
     conversationContribution,
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(
     conversationRuntime,
   );
-  const conversationBusy =
-    conversationSnapshot.active?.ownerId === conversationOwnerId &&
-    conversationSnapshot.busy;
+  const conversationBusy = conversationSnapshot.busy;
 
   const persistViewState = useCallback(
     async (state: EpubWorkbenchViewState) => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createWorkbenchConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
+import { createContextualConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -46,7 +46,7 @@ describe('Document conversation contribution', () => {
       selectedText: 'selected',
     });
 
-    expect(createWorkbenchConversationTaskRequest(contribution, {
+    expect(createContextualConversationTaskRequest(contribution, {
       projectId: 'project',
       assetId: 'asset',
       conversationId: 'conversation-1',
