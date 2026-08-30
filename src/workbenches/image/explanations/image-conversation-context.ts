@@ -41,3 +41,12 @@ export function createImageConversationContext(
     target,
   }) as ImageConversationContext;
 }
+
+export function describeImageConversationContext(context: JsonValue) {
+  if (!isImageConversationContext(context)) return { label: '图片兴趣区域' };
+  const region = context.target.anchorPayload;
+  return {
+    label: '图片兴趣区域',
+    detail: `左侧 ${Math.round(region.x * 100)}% · 顶部 ${Math.round(region.y * 100)}% · ${Math.round(region.width * 100)}% × ${Math.round(region.height * 100)}%`,
+  };
+}

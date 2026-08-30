@@ -1,6 +1,7 @@
 import type { WorkbenchConversationContribution } from '../../../renderer/conversation/conversation-contracts';
 import { videoWorkbenchManifest } from '../shared';
 import {
+  describeVideoConversationContext,
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
   isVideoConversationContext,
   type VideoConversationContext,
@@ -51,16 +52,7 @@ export function createVideoConversationContribution(input: {
         taskInput.context.sourceRevision === sourceRevision
       );
     },
-    describeContext(context) {
-      if (!isVideoConversationContext(context)) {
-        return { label: '视频画面' };
-      }
-      const { timeSeconds, x, y, width, height } = context.target.anchorPayload;
-      return {
-        label: `视频 ${timeSeconds.toFixed(1)} 秒`,
-        detail: `左侧 ${Math.round(x * 100)}% · 顶部 ${Math.round(y * 100)}% · ${Math.round(width * 100)}% × ${Math.round(height * 100)}%`,
-      };
-    },
+    describeContext: describeVideoConversationContext,
     revealContext(context) {
       if (isVideoConversationContext(context)) {
         return input.revealContext(context);

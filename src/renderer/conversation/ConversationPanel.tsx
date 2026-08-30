@@ -6,8 +6,8 @@ import {
   type FormEvent,
 } from 'react';
 
-import type { JsonValue } from '../../shared/workbench/protocol';
 import type {
+  ConversationContextPresentation,
   ConversationMessageContextSource,
   ConversationMessageRecord,
   ConversationRecord,
@@ -34,36 +34,36 @@ function needsProviderSettings(code: string | undefined, message: string): boole
 }
 
 function ContextCard({
-  context,
-  contribution,
+  presentation,
+  onReveal,
   removable,
   onRemove,
   onRevealError,
 }: {
-  readonly context: JsonValue | undefined;
-  readonly contribution?: WorkbenchConversationContribution;
+  readonly presentation?: ConversationContextPresentation;
+  readonly onReveal?: () => Promise<void> | void;
   readonly removable?: boolean;
   readonly onRemove?: () => void;
   readonly onRevealError?: (error: unknown) => void;
 }) {
-  const presentation = contribution?.describeContext?.(context) ?? {
+  const contentPresentation = presentation ?? {
     label: '引用内容',
   };
   const content = (
     <>
       <span className="block text-[11px] font-semibold text-indigo-200">
-        {presentation.label}
+        {contentPresentation.label}
       </span>
-      {presentation.previewDataUrl && (
+      {contentPresentation.previewDataUrl && (
         <img
-          src={presentation.previewDataUrl}
-          alt={presentation.label}
+          src={contentPresentation.previewDataUrl}
+          alt={contentPresentation.label}
           className="mt-2 max-h-32 w-full rounded-lg border border-white/10 bg-white object-contain"
         />
       )}
-      {presentation.detail && (
+      {contentPresentation.detail && (
         <span className="mt-1 block line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-slate-400">
-          {presentation.detail}
+          {contentPresentation.detail}
         </span>
       )}
     </>
@@ -71,17 +71,15 @@ function ContextCard({
 
   return (
     <div className="relative rounded-xl border border-indigo-300/20 bg-indigo-400/[0.08] p-2.5">
-      {context !== undefined && contribution?.revealContext ? (
+      {onReveal ? (
         <button
           type="button"
           className="block w-full pr-7 text-left hover:text-indigo-100"
           title="在原文中查看"
           onClick={() => {
-            void Promise.resolve(
-              contribution?.revealContext?.(context),
-            ).catch(
-              onRevealError,
-            );
+            void Promise.resolve()
+              .then(onReveal)
+              .catch((error: unknown) => onRevealError?.(error));
           }}
         >
           {content}
@@ -113,7 +111,7 @@ function QuestionForAnswer(
 
 function MessageBubble({
   message,
-  contextContribution,
+  contextPresentation,
   answerContribution,
   busy,
   answerActionPending,
@@ -121,9 +119,10 @@ function MessageBubble({
   onReanswer,
   onSelectedAnswer,
   onAnswerAction,
+  onRevealContext,
 }: {
   readonly message: ConversationMessageRecord;
-  readonly contextContribution?: WorkbenchConversationContribution;
+  readonly contextPresentation?: ConversationContextPresentation;
   readonly answerContribution?: WorkbenchConversationContribution;
   readonly busy: boolean;
   readonly answerActionPending: boolean;
@@ -131,6 +130,7 @@ function MessageBubble({
   readonly onReanswer: (answerId: string) => void;
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
   readonly onAnswerAction: (answer: ConversationMessageRecord, text: string) => void;
+  readonly onRevealContext?: () => Promise<void> | void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -141,8 +141,8 @@ function MessageBubble({
             message.contextSource !== undefined) && (
           <div className="mb-1.5">
             <ContextCard
-              context={message.context}
-              contribution={contextContribution}
+              presentation={contextPresentation}
+              onReveal={onRevealContext}
             />
           </div>
         )}
@@ -236,21 +236,15 @@ function HistoryView({
   loading,
   busy,
   currentConversationId,
-  resolveContextContribution,
   onRestore,
   onRemove,
-  onRevealError,
 }: {
   readonly history: readonly ConversationRecord[];
   readonly loading: boolean;
   readonly busy: boolean;
   readonly currentConversationId: string;
-  readonly resolveContextContribution: (
-    source: ConversationMessageContextSource | undefined,
-  ) => WorkbenchConversationContribution | undefined;
   readonly onRestore: (record: ConversationRecord) => void;
   readonly onRemove: (record: ConversationRecord) => void;
-  readonly onRevealError: (error: unknown) => void;
 }) {
   if (loading) {
     return <p className="grid h-full place-items-center text-xs text-slate-500">正在读取对话记录…</p>;
@@ -267,12 +261,6 @@ function HistoryView({
       {[...history].sort((left, right) => right.updatedTime - left.updatedTime).map((record) => {
         const firstQuestion = record.messages.find((message) => message.role === 'user');
         const currentIsGenerating = busy && record.id === currentConversationId;
-        const latestContextMessage = [...record.messages].reverse().find(
-          (message) =>
-            message.role === 'user' &&
-            (message.context !== undefined ||
-              message.contextSource !== undefined),
-        );
         return (
           <article
             key={record.id}
@@ -298,20 +286,6 @@ function HistoryView({
                 type="button"
                 onClick={() => {
                   if (!busy) onRestore(record);
-                  const contextContribution =
-                    resolveContextContribution(
-                      latestContextMessage?.contextSource,
-                    );
-                  if (
-                    latestContextMessage?.context !== undefined &&
-                    contextContribution?.revealContext
-                  ) {
-                    void Promise.resolve(
-                      contextContribution.revealContext(
-                        latestContextMessage.context,
-                      ),
-                    ).catch(onRevealError);
-                  }
                 }}
                 className="text-[11px] text-indigo-300 hover:text-indigo-200"
               >
@@ -339,6 +313,8 @@ export function ConversationPanel({
   actions,
   projectId,
   resolveContextContribution,
+  describeContext,
+  onRevealContext,
   onStartNew,
   onClose,
   onOpenSettings,
@@ -350,6 +326,14 @@ export function ConversationPanel({
   readonly resolveContextContribution: (
     source: ConversationMessageContextSource | undefined,
   ) => WorkbenchConversationContribution | undefined;
+  readonly describeContext: (
+    source: ConversationMessageContextSource,
+    context: Exclude<ConversationMessageRecord['context'], undefined>,
+  ) => ConversationContextPresentation | undefined;
+  readonly onRevealContext: (
+    source: ConversationMessageContextSource,
+    context: Exclude<ConversationMessageRecord['context'], undefined>,
+  ) => Promise<void> | void;
   readonly onStartNew: () => void;
   readonly onClose: () => void;
   readonly onOpenSettings?: () => void;
@@ -417,6 +401,9 @@ export function ConversationPanel({
   };
 
   const reportRevealError = (revealError: unknown) => {
+    if (revealError instanceof Error && revealError.name === 'AbortError') {
+      return;
+    }
     const message = revealError instanceof Error
       ? revealError.message
       : '无法在原文中定位该内容。';
@@ -428,6 +415,9 @@ export function ConversationPanel({
     event.preventDefault();
     actions.submit();
   };
+  const pendingContext = state.pendingContext;
+  const pendingContextValue = pendingContext?.context;
+  const pendingContextReveal = pendingContext?.contribution.revealContext;
 
   return (
     <section
@@ -488,10 +478,8 @@ export function ConversationPanel({
           loading={state.historyLoading}
           busy={state.busy}
           currentConversationId={state.conversation.id}
-          resolveContextContribution={resolveContextContribution}
           onRestore={actions.restore}
           onRemove={actions.remove}
-          onRevealError={reportRevealError}
         />
       ) : (
         <>
@@ -502,6 +490,8 @@ export function ConversationPanel({
               </div>
             )}
             {messages.map((message) => {
+              const context = message.context;
+              const contextSource = message.contextSource;
               const question =
                 message.role === 'assistant'
                   ? QuestionForAnswer(state.conversation, message)
@@ -510,9 +500,11 @@ export function ConversationPanel({
                 <MessageBubble
                   key={message.id}
                   message={message}
-                  contextContribution={resolveContextContribution(
-                    message.contextSource,
-                  )}
+                  contextPresentation={
+                    context !== undefined && contextSource
+                      ? describeContext(contextSource, context)
+                      : undefined
+                  }
                   answerContribution={resolveContextContribution(
                     question?.contextSource,
                   )}
@@ -530,6 +522,12 @@ export function ConversationPanel({
                   }
                   onAnswerAction={(answer, text) =>
                     void executeAnswerAction(answer, text)
+                  }
+                  onRevealContext={
+                    context !== undefined && contextSource?.assetId
+                      ? () =>
+                          onRevealContext(contextSource, context)
+                      : undefined
                   }
                 />
               );
@@ -598,11 +596,19 @@ export function ConversationPanel({
                 <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
               </div>
             )}
-            {state.pendingContext !== undefined && (
+            {pendingContext !== undefined && (
               <div className="mb-2">
                 <ContextCard
-                  context={state.pendingContext.context}
-                  contribution={state.pendingContext.contribution}
+                  presentation={
+                    pendingContext.contribution.describeContext?.(
+                      pendingContext.context,
+                    )
+                  }
+                  onReveal={
+                    pendingContextValue !== undefined && pendingContextReveal
+                      ? () => pendingContextReveal(pendingContextValue)
+                      : undefined
+                  }
                   removable
                   onRemove={() => actions.setPendingContext(undefined)}
                   onRevealError={reportRevealError}

@@ -651,6 +651,7 @@ export function PdfDocumentWorkbenchView({
     conversationOwnerId,
     asset.id,
     conversationContribution,
+    loadState.kind === 'ready',
   );
 
   useEffect(() => {

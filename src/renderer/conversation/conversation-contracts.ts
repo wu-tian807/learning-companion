@@ -13,18 +13,18 @@ export type {
   ConversationRole,
 } from '../../shared/project-conversations';
 
+export interface ConversationContextPresentation {
+  readonly label: string;
+  readonly detail?: string;
+  readonly previewDataUrl?: string;
+}
+
 export interface ConversationHistoryStore {
   list(): Promise<readonly ConversationRecord[]>;
   save(record: ConversationRecord): Promise<readonly ConversationRecord[]>;
   remove(conversationId: string): Promise<readonly ConversationRecord[]>;
   subscribe?(listener: () => void): () => void;
   getSnapshot?(): readonly ConversationRecord[];
-}
-
-export interface ConversationContextPresentation {
-  readonly label: string;
-  readonly detail?: string;
-  readonly previewDataUrl?: string;
 }
 
 export interface ConversationTaskInput {
@@ -77,9 +77,11 @@ export interface WorkbenchConversationContribution {
   readonly contextRequiredMessage?: string;
   isContext?(context: JsonValue): boolean;
   shouldCommitAnswer?(input: ConversationTaskInput): boolean;
+  /** Pure description captured with the message; it must not read mounted view state. */
   describeContext?(
     context: JsonValue | undefined,
   ): ConversationContextPresentation;
+  /** Called only after Project navigation has mounted this contribution's Asset. */
   revealContext?(context: JsonValue): Promise<void> | void;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */
   onContextReleased?(context: JsonValue | undefined): void;
@@ -99,7 +101,6 @@ export interface ConversationLaunchRequest {
 }
 
 export interface ActiveWorkbenchConversationContribution {
-  readonly ownerId: string;
   readonly assetId: string;
   readonly contribution: WorkbenchConversationContribution;
 }
@@ -110,9 +111,8 @@ export interface ConversationContextAttachment
 }
 
 export interface WorkbenchConversationRuntimeSnapshot {
-  readonly contextSource?: ActiveWorkbenchConversationContribution;
+  readonly active?: ActiveWorkbenchConversationContribution;
   readonly panelOpen: boolean;
   readonly busy: boolean;
-  readonly registryRevision: number;
   readonly launchRequest?: ConversationLaunchRequest;
 }

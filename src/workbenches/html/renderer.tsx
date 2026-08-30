@@ -233,6 +233,7 @@ export function HtmlWorkbenchView({
     conversationOwnerId,
     asset.id,
     conversationContribution,
+    loadedFrameKey === frameKey,
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(conversationRuntime);
   const aiBusy = conversationSnapshot.busy;

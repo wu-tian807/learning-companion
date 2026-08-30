@@ -4,6 +4,7 @@ import {
   EPUB_DEFAULT_EXPLANATION_QUESTION,
 } from './shared';
 import {
+  describeEpubConversationContext,
   EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
   isEpubConversationContext,
   type EpubConversationContext,
@@ -35,15 +36,7 @@ export function createEpubConversationContribution(input: {
         taskInput.question.trim() === EPUB_DEFAULT_EXPLANATION_QUESTION
       );
     },
-    describeContext(context) {
-      if (!isEpubConversationContext(context)) {
-        return { label: 'EPUB 选区' };
-      }
-      return {
-        label: 'EPUB 选区',
-        detail: context.target.anchorPayload.quote.exact,
-      };
-    },
+    describeContext: describeEpubConversationContext,
     revealContext(context) {
       if (isEpubConversationContext(context)) {
         return input.revealContext(context);

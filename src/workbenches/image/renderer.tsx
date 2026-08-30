@@ -480,6 +480,7 @@ export function ImageWorkbenchView({
     conversationOwnerId,
     asset.id,
     conversationContribution,
+    loadState.kind === 'ready',
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(
     conversationRuntime,
