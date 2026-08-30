@@ -402,7 +402,6 @@ export function ProjectPage({
                   >
                     <GenerationCenter
                       projectId={project.id}
-                      asset={assetOperations.selectedAsset}
                       state={generatedAssetState}
                       selectedAssetId={session.selectedAssetId}
                       busy={assetOperations.busy}

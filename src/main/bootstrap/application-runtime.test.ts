@@ -111,6 +111,34 @@ describe('ApplicationRuntime', () => {
     expect(resources.agentProviderService.dispose).toHaveBeenCalledOnce();
   });
 
+  it('waits for GenerationTask shutdown before completing', async () => {
+    const resources = createResources();
+    let finishGenerationShutdown: (() => void) | undefined;
+    resources.generationTaskService.unloadProject.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolvePromise) => {
+          finishGenerationShutdown = resolvePromise;
+        }),
+    );
+    const runtime = new ApplicationRuntime(
+      resources as unknown as ApplicationRuntimeResources,
+    );
+    let shutdownSettled = false;
+
+    const shutdown = runtime.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await vi.waitFor(() =>
+      expect(finishGenerationShutdown).toBeTypeOf('function'),
+    );
+    await Promise.resolve();
+    expect(shutdownSettled).toBe(false);
+
+    finishGenerationShutdown!();
+    await shutdown;
+    expect(shutdownSettled).toBe(true);
+  });
+
   it('disposes application resources idempotently', () => {
     const resources = createResources();
     const runtime = new ApplicationRuntime(

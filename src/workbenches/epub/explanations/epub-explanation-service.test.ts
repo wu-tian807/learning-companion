@@ -196,7 +196,7 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
         ref: {
           kind: 'local-file',
           base: 'project-workspace',
-          path: 'attachments/attachment-1/answer.md',
+          path: '.learning-companion/attachments/attachment-1/answer.md',
         },
         mediaType: 'text/markdown',
       },

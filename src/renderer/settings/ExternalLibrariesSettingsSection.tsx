@@ -112,7 +112,7 @@ export function ExternalLibrariesSettingsSection({
                   <p className="mt-1 text-[11px] text-slate-600">
                     {library.expectedSize === undefined
                       ? '当前平台没有可下载的安装包'
-                      : `下载内容约 ${formatExternalLibrarySize(
+                      : `固定组件资源约 ${formatExternalLibrarySize(
                           library.expectedSize,
                         )}`}
                   </p>
@@ -175,7 +175,7 @@ export function ExternalLibrariesSettingsSection({
                     <div
                       className={`h-full rounded-full bg-indigo-300/70 transition-[width] ${
                         progress === undefined
-                          ? 'w-1/3 animate-pulse'
+                          ? 'external-library-indeterminate w-1/3'
                           : ''
                       }`}
                       style={
@@ -186,7 +186,8 @@ export function ExternalLibrariesSettingsSection({
                     />
                   </div>
                   <p className="mt-2 text-[11px] text-slate-500">
-                    {externalLibraryStatusLabels[library.status]}
+                    {library.statusDetail ??
+                      externalLibraryStatusLabels[library.status]}
                     {progress === undefined
                       ? ''
                       : ` · ${progress}%`}

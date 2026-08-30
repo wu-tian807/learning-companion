@@ -7,6 +7,10 @@ import {
 } from "../../shared/external-libraries";
 import { AppError } from "../errors/app-error";
 import type { SettingsRepository } from "../settings/settings-repository";
+import {
+  ExternalLibraryInstallationAbortError,
+  isExternalLibraryAbortError,
+} from "./external-library-abort";
 import type {
   ExternalLibraryArchitecture,
   ExternalLibraryDefinition,
@@ -24,6 +28,7 @@ import type { ExternalLibraryInstallerRegistryApi } from "./external-library-ins
 import { ExternalLibraryMigrationWorkflow } from "./external-library-migration-workflow";
 import type { ExternalLibraryPathManagerApi } from "./external-library-path-manager";
 import type { ExternalLibraryRegistryApi } from "./external-library-registry";
+import type { ExternalLibraryRuntimeSetupRegistryApi } from "./external-library-runtime-setup";
 
 export type ExternalLibraryListener = (
   snapshot: ExternalLibrarySnapshot,
@@ -61,6 +66,7 @@ export interface ExternalLibraryServiceDependencies {
   readonly architecture: ExternalLibraryArchitecture;
   readonly now: () => number;
   readonly logger: Pick<Console, "warn">;
+  readonly runtimeSetups: ExternalLibraryRuntimeSetupRegistryApi;
 }
 
 interface ActiveInstallation {
@@ -83,10 +89,6 @@ function resolveCurrentArchitecture(): ExternalLibraryArchitecture {
   }
 
   throw new AppError("FEATURE_NOT_SUPPORTED");
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 
 function errorCode(error: unknown): string {
@@ -127,6 +129,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       installationManifestFile,
       downloader,
       installers,
+      runtimeSetups: dependencies.runtimeSetups,
       now: this.now,
       logger: this.logger,
     });
@@ -146,7 +149,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       return this.initializationTask;
     }
 
-    const task = this.initializeDefinitions();
+    const task = this.initializeService();
     this.initializationTask = task;
 
     try {
@@ -290,7 +293,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       controller.signal,
     )
       .catch(async (error: unknown) => {
-        if (isAbortError(error)) {
+        if (isExternalLibraryAbortError(error)) {
           try {
             return await this.refreshDefinition(definition);
           } catch (refreshError) {
@@ -342,7 +345,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   }
 
   cancel(libraryId: string): void {
-    this.activeInstallations.get(libraryId.trim())?.controller.abort();
+    this.activeInstallations
+      .get(libraryId.trim())
+      ?.controller.abort(new ExternalLibraryInstallationAbortError(true));
   }
 
   async remove(libraryId: string): Promise<ExternalLibrarySnapshot> {
@@ -354,13 +359,20 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     const active = this.activeInstallations.get(definition.id);
 
     if (active) {
-      active.controller.abort();
+      active.controller.abort(
+        new ExternalLibraryInstallationAbortError(true),
+      );
       await active.promise.catch((error: unknown) => {
-        if (!isAbortError(error)) {
+        if (!isExternalLibraryAbortError(error)) {
           throw error;
         }
       });
     }
+
+    await this.pathManager.cleanupLibraryDownloads(
+      this.settings.getExternalLibrariesPath(),
+      definition,
+    );
 
     if (!this.findPackage(definition)) {
       return this.refreshDefinition(definition);
@@ -473,6 +485,21 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
         });
       }
     }
+  }
+
+  private async initializeService(): Promise<void> {
+    await this.pathManager
+      .cleanupExpiredTemporaryData(
+        this.settings.getExternalLibrariesPath(),
+        this.now(),
+      )
+      .catch((error: unknown) => {
+        this.logger.warn(
+          "清理过期外部运行时临时数据失败",
+          error,
+        );
+      });
+    await this.initializeDefinitions();
   }
 
   private async refreshDefinition(
@@ -615,22 +642,28 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       replaceExisting,
       signal,
       onStage: (stage) => {
+        const operationVariant =
+          packageDefinition.variantId === undefined
+            ? {}
+            : {
+                operationVariantId: packageDefinition.variantId,
+              };
         this.updateSnapshot(
           definition,
           stage.status,
           stage.status === "downloading"
             ? {
                 progress: stage.progress,
-                ...(packageDefinition.variantId === undefined
-                  ? {}
-                  : {
-                      operationVariantId:
-                        packageDefinition.variantId,
-                    }),
+                ...operationVariant,
               }
-            : packageDefinition.variantId === undefined
-              ? {}
-              : { operationVariantId: packageDefinition.variantId },
+            : stage.status === "installing"
+              ? {
+                  ...operationVariant,
+                  ...(stage.statusDetail === undefined
+                    ? {}
+                    : { statusDetail: stage.statusDetail }),
+                }
+              : operationVariant,
           packageDefinition,
         );
       },
@@ -727,6 +760,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       ExternalLibrarySnapshot,
       | "installationPath"
       | "progress"
+      | "statusDetail"
       | "errorCode"
       | "installedVariantId"
       | "operationVariantId"
@@ -797,6 +831,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
         ? {}
         : { installationPath: changes.installationPath }),
       ...(changes.progress === undefined ? {} : { progress: changes.progress }),
+      ...(changes.statusDetail === undefined
+        ? {}
+        : { statusDetail: changes.statusDetail }),
       ...(changes.errorCode === undefined
         ? {}
         : { errorCode: changes.errorCode }),

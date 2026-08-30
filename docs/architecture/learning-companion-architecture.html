@@ -959,7 +959,7 @@
               tag: "MEDIA UI",
               caption: "Host · Renderer Registry · actions · facilities",
               summary: "打开当前 Asset 的 Workbench Session，按 Main 返回的 workbenchId 懒加载对应 Renderer View，并统一右键、选区和动作入口。",
-              responsibilities: ["管理 View 生命周期。", "把 interaction 暴露给菜单和 Generation Surface。"],
+              responsibilities: ["管理 View 生命周期。", "把 interaction 暴露给 Workbench 内部动作和对话。"],
               files: ["src/renderer/workbench/host/AssetWorkbenchHost.tsx", "src/renderer/workbench/runtime/workbench-runtime.ts"],
               child: "renderer-workbench",
               col: 5,
@@ -1685,7 +1685,7 @@
             }),
             N("file", "AttachmentContentFile", {
               tag: "PROJECT FILE ADAPTER",
-              caption: "attachments/<attachmentId>/<file>",
+              caption: ".learning-companion/attachments/<attachmentId>/<file>",
               summary: "保存较大的 Markdown 等正文，使用受控 Project Workspace 相对路径，并实现 Attachment/Project 级清理。",
               files: ["src/main/attachments/attachment-content-file.ts"],
               col: 5,
@@ -1856,8 +1856,8 @@
             }),
             N("actions", "Workbench Actions / Facilities", {
               tag: "RENDERER EXTENSION",
-              caption: "context menu · overflow · generation surface",
-              summary: "媒体 feature 通过统一 Contribution 接入菜单、选区和生成入口，不在 View 内重复造宿主交互。",
+              caption: "header · context menu · overflow",
+              summary: "媒体 feature 通过统一 Contribution 接入宿主菜单和标题栏；媒体专用生成入口留在 Workbench 内部。",
               files: ["src/renderer/workbench/actions/", "src/shared/workbench/facilities/"],
               col: 3,
               row: 5,
@@ -2164,8 +2164,8 @@
             }),
             N("actions", "renderer-actions.ts", {
               tag: "OPTIONAL UI",
-              caption: "header · context menu · overflow · generation",
-              summary: "通过受控 Workbench Action Contribution 接入标题栏、菜单和生成入口；View 不得向 Host 注入 React 节点或另造 Portal。",
+              caption: "header · context menu · overflow",
+              summary: "通过受控 Workbench Action Contribution 接入标题栏和菜单；媒体专用生成 UI 直接留在 Workbench View 内。",
               files: ["src/renderer/workbench/actions/", "src/workbenches/mindmap/renderer-actions.ts"],
               col: 1,
               row: 5,
@@ -2220,10 +2220,10 @@
           description: "所有入口最终只提交 definitionId/version、instruction 和 assetReferences。Main 负责持久化、prepare、process、Provider 选择、恢复和结果事件。",
           rows: 7,
           nodes: [
-            N("trigger", "Global / Workbench Trigger", {
+            N("trigger", "Global / Workbench-internal Trigger", {
               tag: "RENDERER INPUT",
               caption: "用户文字 · selected assets · anchor / selection",
-              summary: "全局入口与 Workbench 专属入口只在上下文收集方式上不同，二者必须进入同一种 GenerationTask。",
+              summary: "全局入口与 Workbench 内部入口只在上下文收集方式上不同，二者必须进入同一种 GenerationTask。",
               child: "generation-entry",
               col: 1,
               row: 1,
@@ -2323,9 +2323,9 @@
 
         "generation-entry": {
           parent: "generation",
-          title: "全局工具与 Workbench 工具在 Request 处汇合",
+          title: "全局工具与 Workbench 内部入口在 Request 处汇合",
           kicker: "LEVEL 4 · GENERATION ENTRY",
-          description: "当前 Mind Map 全局入口已经可用，但仍是硬编码特化。新增第二种全局工具前，应先落地统一 Global Tool Registry 与 Launcher；Workbench Action 也复用同一个 Launcher。",
+          description: "当前 Mind Map 全局入口已经可用，但仍是硬编码特化。新增第二种全局工具前，应先落地统一 Global Tool Registry 与 Launcher；Workbench 内部入口同样复用共享任务客户端。",
           rows: 6,
           nodes: [
             N("current-global", "当前：Mind Map Global Entry", {
@@ -2347,12 +2347,11 @@
               row: 3,
               span: 3
             }),
-            N("workbench-action", "Workbench generation-tool Action", {
-              tag: "IMPLEMENTED SURFACE",
+            N("workbench-action", "Workbench-owned generation entry", {
+              tag: "IMPLEMENTED INSIDE WORKBENCH",
               caption: "asset + focus anchor + selection inputs",
-              summary: "通用 Action surface 和 invocation context 已存在；具体 feature 决定如何把当前媒体上下文写进 instruction。",
-              status: "partial",
-              files: ["src/renderer/workbench/actions/workbench-contribution.ts", "src/renderer/workbench/runtime/workbench-invocation.ts", "src/workbenches/mindmap/renderer-actions.ts"],
+              summary: "媒体专用入口由 owning Workbench 渲染并收集上下文，不再向 Project GenerationCenter 注册重复 Action。",
+              files: ["src/renderer/conversation/conversation-task-client.ts", "src/workbenches/html/renderer.tsx", "src/workbenches/video/renderer.tsx"],
               col: 1,
               row: 5,
               span: 3

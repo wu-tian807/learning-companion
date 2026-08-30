@@ -75,6 +75,14 @@ describe('video conversation contribution', () => {
     expect(launch).not.toHaveProperty('submit');
   });
 
+  it('can target the conversation that originally created a saved marker', () => {
+    const context = createVideoConversationContext(target, '100');
+
+    expect(
+      createVideoFrameConversationLaunch(context, 'conversation-1'),
+    ).toEqual({ context, conversationId: 'conversation-1' });
+  });
+
   it('requires a current-revision frame only for the initial turn', () => {
     expect(() =>
       createWorkbenchConversationTaskRequest(contribution(), {
@@ -84,7 +92,7 @@ describe('video conversation contribution', () => {
         question: '解释这里',
         generateTitle: true,
       }),
-    ).toThrow('请先在视频画面上按住右键并框选一个区域');
+    ).toThrow('请先在视频画面上单击或拖动选择一个区域');
 
     expect(() =>
       createWorkbenchConversationTaskRequest(contribution(), {

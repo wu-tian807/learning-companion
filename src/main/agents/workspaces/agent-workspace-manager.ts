@@ -1,5 +1,5 @@
 import type { Stats } from 'node:fs';
-import { lstat, mkdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
 
 import { AppError } from '../../errors/app-error';
 import {
@@ -12,7 +12,11 @@ import {
   requireAgentWorkspaceRootPath,
 } from './agent-workspace-paths';
 
-export interface AgentWorkspaceManagerApi {
+export interface AgentWorkspaceProjectCleanup {
+  removeProject(projectId: string): Promise<void>;
+}
+
+export interface AgentWorkspacePreparationApi {
   resolve(segments: readonly string[]): string;
   prepare(segments: readonly string[]): Promise<string>;
 }
@@ -21,6 +25,7 @@ export interface AgentWorkspaceManagerDependencies {
   readonly lstat: typeof lstat;
   readonly mkdir: typeof mkdir;
   readonly realpath: typeof realpath;
+  readonly rm: typeof rm;
   readonly pathRules: FileSystemPathRules;
 }
 
@@ -28,6 +33,7 @@ const defaultDependencies: AgentWorkspaceManagerDependencies = {
   lstat,
   mkdir,
   realpath,
+  rm,
   pathRules: currentPlatformPathRules,
 };
 
@@ -43,7 +49,7 @@ function isFileSystemError(
 }
 
 export class AgentWorkspaceManager
-  implements AgentWorkspaceManagerApi
+  implements AgentWorkspacePreparationApi, AgentWorkspaceProjectCleanup
 {
   private readonly dependencies: AgentWorkspaceManagerDependencies;
   private readonly rootPath: string;
@@ -117,6 +123,45 @@ export class AgentWorkspaceManager
     }
 
     return workspacePath;
+  }
+
+  async removeProject(projectId: string): Promise<void> {
+    const projectPath = this.resolve([projectId]);
+
+    try {
+      const [rootStats, projectStats] = await Promise.all([
+        this.dependencies.lstat(this.rootPath),
+        this.dependencies.lstat(projectPath),
+      ]);
+      this.requireManagedDirectory(rootStats);
+      this.requireManagedDirectory(projectStats);
+
+      const [resolvedRootPath, resolvedProjectPath] = await Promise.all([
+        this.dependencies.realpath(this.rootPath),
+        this.dependencies.realpath(projectPath),
+      ]);
+
+      if (
+        !isPathInside(
+          resolvedRootPath,
+          resolvedProjectPath,
+          this.dependencies.pathRules,
+        )
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      await this.dependencies.rm(projectPath, {
+        recursive: true,
+        force: true,
+      });
+    } catch (error) {
+      if (isFileSystemError(error, 'ENOENT')) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private async ensureDirectory(path: string): Promise<Stats> {

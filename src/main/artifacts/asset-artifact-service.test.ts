@@ -297,6 +297,39 @@ describe('AssetArtifactService', () => {
     expect(harness.database.listByAsset('asset')).toEqual([]);
   });
 
+  it('keeps the Artifact index when its managed file cannot be removed', async () => {
+    const harness = await createHarness(
+      createProducer(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, '%PDF-1.7\nlocked');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+    );
+    const generated = await harness.service.getOrCreate(
+      createRequest(harness),
+    );
+    const removeArtifactFile = vi
+      .spyOn(AssetArtifactFileManager.prototype, 'removeArtifactFile')
+      .mockRejectedValueOnce(new Error('artifact file locked'));
+
+    try {
+      await expect(
+        harness.service.removeByAsset('asset', harness.workspacePath),
+      ).rejects.toThrow('artifact file locked');
+    } finally {
+      removeArtifactFile.mockRestore();
+    }
+
+    await expect(access(generated.absolutePath)).resolves.toBeUndefined();
+    expect(harness.database.listByAsset('asset')).toEqual([
+      generated.artifact,
+    ]);
+  });
+
   it('cancels active generation before removing Project artifacts', async () => {
     let generationStarted: (() => void) | undefined;
     const started = new Promise<void>((resolvePromise) => {
@@ -325,5 +358,43 @@ describe('AssetArtifactService', () => {
 
     await expect(generation).rejects.toMatchObject({ name: 'AbortError' });
     expect(harness.database.listByProject('project')).toEqual([]);
+  });
+
+  it('stops Project generation without deleting persisted artifacts', async () => {
+    let generationStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolvePromise) => {
+      generationStarted = resolvePromise;
+    });
+    const harness = await createHarness(
+      createProducer(async (_request, signal) => {
+        generationStarted!();
+        await new Promise<void>((_resolvePromise, rejectPromise) => {
+          signal.addEventListener(
+            'abort',
+            () => rejectPromise(new DOMException('cancelled', 'AbortError')),
+            { once: true },
+          );
+        });
+        throw new Error('unreachable');
+      }),
+    );
+    const persisted = harness.database.upsert({
+      assetId: 'asset',
+      producerId: 'builtin.office.preview',
+      artifactKey: 'persisted-preview',
+      relativePath: '.learning-companion/artifacts/persisted.pdf',
+      mediaType: 'application/pdf',
+      sourceRevision: 'persisted-source',
+      producerVersion: '1',
+      artifactRevision: 'persisted-artifact',
+      updatedTime: 1,
+    });
+    const generation = harness.service.getOrCreate(createRequest(harness));
+    await started;
+
+    await harness.service.cancelByWorkspace(harness.workspacePath);
+
+    await expect(generation).rejects.toMatchObject({ name: 'AbortError' });
+    expect(harness.database.listByProject('project')).toEqual([persisted]);
   });
 });

@@ -55,6 +55,11 @@ describe('EPUB renderer actions', () => {
     expect(isWorkbenchActionEnabled(ask)).toBe(true);
     expect(isWorkbenchActionEnabled(writeNote)).toBe(true);
     expect(
+      bundle.contributions.find(
+        (entry) => entry.id === 'epub.ai.ask-selection.context-menu',
+      )?.presentation.kind,
+    ).toBe('action');
+    expect(
       bundle.contributions
         .filter((entry) => entry.surface === 'context-menu')
         .map((entry) => entry.presentation.label),

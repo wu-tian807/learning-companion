@@ -14,6 +14,7 @@ import type { ExternalLibraryServiceApi } from '../../../main/external-libraries
 import { ExternalCommandRunner } from '../../../main/external-libraries/external-command-runner';
 import { WRITABLE_AUDIO_NORMALIZER_SOURCE } from '../voxcpm2-worker-sources';
 import { VoxCpm2DubbingRuntimeResolver } from './voxcpm2-runtime';
+import { VOXCPM2_RUNTIME_ENVIRONMENT_VERSION } from './voxcpm2-runtime-setup';
 
 const runtimeRoot = process.env.LC_VOXCPM2_RUNTIME_ROOT;
 const enabled =
@@ -75,13 +76,19 @@ describe.skipIf(!enabled)('VoxCPM2 runtime Windows integration', () => {
       await expect(access(runtime.pythonPath)).resolves.toBeUndefined();
       await expect(access(runtime.modelPath)).resolves.toBeUndefined();
       await expect(access(runtime.separationModelPath)).resolves.toBeUndefined();
+      await expect(
+        access(runtime.speakerSegmentationModelPath),
+      ).resolves.toBeUndefined();
+      await expect(
+        access(runtime.speakerEmbeddingModelPath),
+      ).resolves.toBeUndefined();
       const marker = JSON.parse(
         await readFile(
           join(root, 'environment', 'learning-companion-runtime.json'),
           'utf8',
         ),
       ) as { readonly version?: unknown };
-      expect(marker.version).toBe(1);
+      expect(marker.version).toBe(VOXCPM2_RUNTIME_ENVIRONMENT_VERSION);
 
       const validation = await new ExternalCommandRunner().run({
         command: runtime.pythonPath,

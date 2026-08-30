@@ -25,6 +25,7 @@ import {
   audioCommands,
   audioEventTypes,
   audioWorkbenchManifest,
+  cloneAudioSpeakerTrackSnapshot,
   cloneAudioSubtitleCueFinalPayload,
   cloneAudioSubtitleSnapshot,
   cloneAudioViewState,
@@ -44,6 +45,7 @@ interface AudioSession {
   subtitleState: AudioSubtitleViewState;
   readonly unsubscribeSubtitles: () => void;
   unsubscribeDubbing: () => void;
+  unsubscribeSpeakerTrack: () => void;
   dubbingWarmupActive: boolean;
   readonly dubbingResources: MediaDubbingSessionResources;
 }
@@ -105,6 +107,7 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
       subtitleState: state.subtitleState,
       unsubscribeSubtitles,
       unsubscribeDubbing: () => undefined,
+      unsubscribeSpeakerTrack: () => undefined,
       dubbingWarmupActive: false,
       dubbingResources: new MediaDubbingSessionResources(
         context.sessionId,
@@ -112,11 +115,16 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
         EMPTY_AUDIO_DUBBING_SNAPSHOT,
       ),
     };
+    this.sessions.set(context.sessionId, session);
     session.unsubscribeDubbing = this.dependencies.dubbing.subscribe(
       context.asset.id,
       (snapshot) => this.publishDubbingSnapshot(context.sessionId, snapshot),
     );
-    this.sessions.set(context.sessionId, session);
+    session.unsubscribeSpeakerTrack =
+      this.dependencies.dubbing.subscribeSpeakerTrack(
+        context.asset.id,
+        (track) => this.publishSpeakerTrack(context.sessionId, track),
+      );
 
     void this.dependencies.subtitles.ensureSource(
       context.asset.projectId,
@@ -148,6 +156,9 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
         dubbingSnapshot: session.dubbingResources.attach(
           this.dependencies.dubbing.getSnapshot(context.asset.id),
         ),
+        speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot({
+          track: this.dependencies.dubbing.getSpeakerTrack(context.asset.id),
+        }),
       },
     };
   }
@@ -225,6 +236,14 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
       );
     }
 
+    if (command.type === audioCommands.getSpeakerTrack) {
+      return createResult(
+        cloneAudioSpeakerTrackSnapshot({
+          track: this.dependencies.dubbing.getSpeakerTrack(context.asset.id),
+        }),
+      );
+    }
+
     throw new AppError('FEATURE_NOT_SUPPORTED');
   }
 
@@ -237,6 +256,7 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
     this.sessions.delete(context.sessionId);
     session.unsubscribeSubtitles();
     session.unsubscribeDubbing();
+    session.unsubscribeSpeakerTrack();
     if (session.dubbingWarmupActive) {
       this.dependencies.dubbing.releaseWarmup(context.asset.id);
     }
@@ -322,6 +342,18 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
       sessionId,
       type: audioEventTypes.dubbingSnapshot,
       payload: session.dubbingResources.attach(snapshot),
+    });
+  }
+
+  private publishSpeakerTrack(
+    sessionId: string,
+    track: ReturnType<MediaDubbingServiceApi['getSpeakerTrack']>,
+  ): void {
+    if (!this.sessions.has(sessionId)) return;
+    this.dependencies.events.publish({
+      sessionId,
+      type: audioEventTypes.speakerTrack,
+      payload: cloneAudioSpeakerTrackSnapshot({ track }),
     });
   }
 

@@ -6,7 +6,6 @@ import {
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
-  generationCenterSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -20,6 +19,11 @@ import {
   isMediaDubbingSnapshot,
   type MediaDubbingSnapshot,
 } from '../media-dubbing/contracts';
+import {
+  cloneDubbingSpeakerTrack,
+  isDubbingSpeakerTrack,
+  type DubbingSpeakerTrackV1,
+} from '../media-dubbing/dubbing-speaker-track';
 import {
   cloneMediaSubtitleCueFinalPayload,
   cloneMediaSubtitleSnapshot,
@@ -69,7 +73,6 @@ export const audioWorkbenchManifest: AssetWorkbenchManifest<
   facilities: [
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
-    generationCenterSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
@@ -92,6 +95,11 @@ export type AudioSubtitleViewState = MediaSubtitleViewState;
 export type AudioSubtitleSnapshot = MediaSubtitleSnapshot;
 export type AudioSubtitleCueFinalPayload = MediaSubtitleCueFinalPayload;
 export type AudioDubbingSnapshot = MediaDubbingSnapshot;
+export type AudioSpeakerTrack = DubbingSpeakerTrackV1;
+
+export interface AudioSpeakerTrackSnapshot {
+  readonly track?: AudioSpeakerTrack;
+}
 
 export interface AudioWorkbenchStateV2 {
   readonly viewState: AudioWorkbenchViewState;
@@ -104,6 +112,7 @@ export interface AudioWorkbenchPayload {
   readonly subtitleState: AudioSubtitleViewState;
   readonly subtitleSnapshot: AudioSubtitleSnapshot;
   readonly dubbingSnapshot: AudioDubbingSnapshot;
+  readonly speakerTrackSnapshot: AudioSpeakerTrackSnapshot;
 }
 
 export interface AudioSaveViewStatePayload {
@@ -141,6 +150,9 @@ export const EMPTY_AUDIO_SUBTITLE_SNAPSHOT: Readonly<AudioSubtitleSnapshot> =
 export const EMPTY_AUDIO_DUBBING_SNAPSHOT: Readonly<AudioDubbingSnapshot> =
   EMPTY_MEDIA_DUBBING_SNAPSHOT;
 
+export const EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT: Readonly<AudioSpeakerTrackSnapshot> =
+  Object.freeze({});
+
 export const audioCommands = {
   saveViewState: 'audio:save-view-state',
   setSubtitleMode: 'audio:set-subtitle-mode',
@@ -149,12 +161,14 @@ export const audioCommands = {
   startDubbing: 'audio:start-dubbing',
   getDubbingSnapshot: 'audio:get-dubbing-snapshot',
   retryDubbing: 'audio:retry-dubbing',
+  getSpeakerTrack: 'audio:get-speaker-track',
 } as const;
 
 export const audioEventTypes = {
   subtitleSnapshot: 'audio:subtitle-snapshot',
   subtitleCueFinal: 'audio:subtitle-cue-final',
   dubbingSnapshot: 'audio:dubbing-snapshot',
+  speakerTrack: 'audio:speaker-track',
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -249,6 +263,26 @@ export function cloneAudioDubbingSnapshot(
   return cloneMediaDubbingSnapshot(snapshot);
 }
 
+export function isAudioSpeakerTrackSnapshot(
+  value: unknown,
+): value is AudioSpeakerTrackSnapshot {
+  return (
+    isRecord(value) &&
+    (value.track === undefined || isDubbingSpeakerTrack(value.track))
+  );
+}
+
+export function cloneAudioSpeakerTrackSnapshot(
+  snapshot: AudioSpeakerTrackSnapshot,
+): JsonValue & AudioSpeakerTrackSnapshot {
+  if (!isAudioSpeakerTrackSnapshot(snapshot)) {
+    throw new Error('Audio Workbench 说话人轨道状态无效');
+  }
+  return (snapshot.track
+    ? { track: cloneDubbingSpeakerTrack(snapshot.track) }
+    : {}) as JsonValue & AudioSpeakerTrackSnapshot;
+}
+
 export function isAudioWorkbenchPayload(
   value: unknown,
 ): value is JsonValue & AudioWorkbenchPayload {
@@ -259,7 +293,8 @@ export function isAudioWorkbenchPayload(
     isAudioWorkbenchViewState(value.viewState) &&
     isMediaSubtitleViewState(value.subtitleState) &&
     isAudioSubtitleSnapshot(value.subtitleSnapshot) &&
-    isAudioDubbingSnapshot(value.dubbingSnapshot)
+    isAudioDubbingSnapshot(value.dubbingSnapshot) &&
+    isAudioSpeakerTrackSnapshot(value.speakerTrackSnapshot)
   );
 }
 
@@ -351,4 +386,8 @@ export function createAudioGetDubbingSnapshotCommand(): WorkbenchCommand {
 
 export function createAudioRetryDubbingCommand(): WorkbenchCommand {
   return { type: audioCommands.retryDubbing };
+}
+
+export function createAudioGetSpeakerTrackCommand(): WorkbenchCommand {
+  return { type: audioCommands.getSpeakerTrack };
 }

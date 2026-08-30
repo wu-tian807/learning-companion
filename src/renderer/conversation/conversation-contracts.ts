@@ -2,6 +2,13 @@ import type { JsonValue } from '../../shared/workbench/protocol';
 
 export type ConversationRole = 'user' | 'assistant';
 
+export interface ConversationReanswerBackup {
+  readonly text: string;
+  readonly generationTaskId?: string;
+  readonly modelInfo?: string;
+  readonly stopped?: true;
+}
+
 export interface ConversationMessageRecord {
   readonly id: string;
   readonly role: ConversationRole;
@@ -12,6 +19,8 @@ export interface ConversationMessageRecord {
   readonly context?: JsonValue;
   readonly modelInfo?: string;
   readonly stopped?: boolean;
+  /** Persisted until a replacement answer completes so failure/restart can restore it. */
+  readonly reanswerBackup?: ConversationReanswerBackup;
 }
 
 export interface ConversationRecord {
@@ -54,6 +63,18 @@ export interface ConversationAnswerActionInput {
   readonly text: string;
 }
 
+export interface ConversationAnswerActionPresentation {
+  readonly label: string;
+  readonly selectionLabel: string;
+  readonly successMessage: string;
+  readonly failureMessage: string;
+}
+
+export interface ConversationAnswerAction
+  extends ConversationAnswerActionPresentation {
+  execute(input: ConversationAnswerActionInput): Promise<void> | void;
+}
+
 /**
  * Renderer contribution supplied by one active Workbench.
  *
@@ -81,12 +102,14 @@ export interface WorkbenchConversationContribution {
   revealContext?(context: JsonValue): Promise<void> | void;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */
   onContextReleased?(context: JsonValue | undefined): void;
-  attachAnswer?(input: ConversationAnswerActionInput): Promise<void> | void;
+  /** Optional answer operation whose presentation and media behavior are Workbench-owned. */
+  readonly answerAction?: ConversationAnswerAction;
 }
 
 export interface ConversationLaunchRequest {
   readonly id: number;
   readonly conversationId?: string;
+  readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;

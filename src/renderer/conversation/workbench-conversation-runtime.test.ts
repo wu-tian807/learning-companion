@@ -26,6 +26,7 @@ describe('WorkbenchConversationRuntime', () => {
     runtime.open({
       ownerId: 'pdf.owner',
       conversationId: 'conversation-1',
+      fallbackToNewConversation: true,
       context: { pageNumber: 2 },
       question: '解释这一段',
       submit: true,
@@ -36,6 +37,7 @@ describe('WorkbenchConversationRuntime', () => {
       active: { ownerId: 'pdf.owner' },
       launchRequest: {
         conversationId: 'conversation-1',
+        fallbackToNewConversation: true,
         context: { pageNumber: 2 },
         question: '解释这一段',
         submit: true,
@@ -64,7 +66,7 @@ describe('WorkbenchConversationRuntime', () => {
     });
   });
 
-  it('does not leak an open panel, launch request or busy state across Workbenches', () => {
+  it('does not leak an open panel, launch request or busy state across Workbenches', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const releasePdf = runtime.register('pdf.owner', contribution('pdf'));
     runtime.open({ ownerId: 'pdf.owner', question: 'old' });
@@ -81,6 +83,7 @@ describe('WorkbenchConversationRuntime', () => {
     releasePdf();
     expect(runtime.getSnapshot().active?.ownerId).toBe('html.owner');
     releaseHtml();
+    await Promise.resolve();
     expect(runtime.getSnapshot()).toEqual({ panelOpen: false, busy: false });
   });
 
@@ -98,6 +101,30 @@ describe('WorkbenchConversationRuntime', () => {
       active: { ownerId: 'pdf:session-b' },
     });
     expect(runtime.getSnapshot().launchRequest).toBeUndefined();
+  });
+
+  it('replaces one owner contribution without closing its open panel', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const initial = contribution('plain-text.initial');
+    const updated = contribution('plain-text.updated');
+    const releaseInitial = runtime.register('plain-text.owner', initial);
+    runtime.open({ ownerId: 'plain-text.owner', question: 'keep open' });
+    runtime.setBusy('plain-text.owner', true);
+    const launchRequest = runtime.getSnapshot().launchRequest;
+
+    releaseInitial();
+    runtime.register('plain-text.owner', updated);
+    await Promise.resolve();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      panelOpen: true,
+      busy: true,
+      active: {
+        ownerId: 'plain-text.owner',
+        contribution: updated,
+      },
+    });
+    expect(runtime.getSnapshot().launchRequest).toBe(launchRequest);
   });
 
   it('ignores stale busy reports and rejects opening an unregistered owner', () => {

@@ -63,7 +63,8 @@ export class ApplicationRuntime {
       return this.shutdownTask;
     }
 
-    this.resources.generationTaskService.unloadProject();
+    const generationTaskShutdown =
+      this.resources.generationTaskService.unloadProject();
     const providerShutdown = this.resources.agentProviderService
       .dispose()
       .then(() => this.resources.codexRuntimeService.shutdown());
@@ -83,6 +84,7 @@ export class ApplicationRuntime {
     })();
     this.shutdownTask = Promise.all([
       workbenchShutdown,
+      generationTaskShutdown,
       providerShutdown,
       this.resources.externalLibraryService.shutdown(),
     ]).then(() => undefined);

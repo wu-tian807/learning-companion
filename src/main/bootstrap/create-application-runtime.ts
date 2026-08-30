@@ -256,8 +256,11 @@ export async function createApplicationRuntime({
       externalLibraries: externalLibraryService,
       projects: projectDatabase,
     });
+    const agentWorkspaceManager = new AgentWorkspaceManager(
+      appPaths.agentWorkspacesDirectory,
+    );
     const generationTaskPreparer = new GenerationTaskPreparer(
-      new AgentWorkspaceManager(appPaths.agentWorkspacesDirectory),
+      agentWorkspaceManager,
       new GenerationAssetReferencePreparer(assetService, workbenchRegistry),
     );
     generationTaskService = new GenerationTaskService(
@@ -300,6 +303,7 @@ export async function createApplicationRuntime({
       generationTaskService,
       workbenchSessionService,
       workspaceManager,
+      agentWorkspaceManager,
       settingsRepository,
     );
     disposeIpc = registerApplicationIpc({

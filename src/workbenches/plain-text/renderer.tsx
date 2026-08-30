@@ -26,7 +26,18 @@ import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
   createDocumentConversationHistoryStore,
+  type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
+import {
+  revealSelectionInCodeMirror,
+  resolveTextSelectionFromTarget,
+  scrollRangeIntoView,
+  selectOffsetsInElement,
+} from '../document-ai/renderer/conversation/document-anchor-reveal';
+import {
+  WORKBENCH_REVEAL_ANCHOR_EVENT,
+  type RevealWorkbenchAnchorDetail,
+} from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -50,8 +61,16 @@ import {
 } from './shared';
 import { createPlainTextRendererActions } from './renderer-actions';
 import { PlainTextReadActionAdapter } from './read-action-adapter';
+import { writePlainTextAnswerToSource } from './answer-insertion';
 
 type BackupStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
+
+const PLAIN_TEXT_ANSWER_ACTION_PRESENTATION = Object.freeze({
+  label: '回归文本原文',
+  selectionLabel: '回归选中回答片段',
+  successMessage: '已写回并保存文本原文',
+  failureMessage: '写回文本原文失败',
+});
 
 const plainTextEditorTheme = EditorView.theme(
   {
@@ -506,6 +525,20 @@ export function PlainTextWorkbenchView({
     [executeCommand, reportError],
   );
 
+  const persistBuffer = useCallback(async (buffer: {
+    readonly content: string;
+    readonly lineEnding: PlainTextLineEnding;
+    readonly viewState: PlainTextViewState;
+  }) => {
+    const result = await executeCommand(
+      createPlainTextBufferCommand(plainTextCommands.save, buffer),
+    );
+    validateCommandResult(result, isPlainTextSaveResult);
+    setSavedContent(buffer.content);
+    setSavedLineEnding(buffer.lineEnding);
+    setBackupStatus('idle');
+  }, [executeCommand]);
+
   const save = useCallback(async () => {
     if (!payload || saving || recovery) {
       return;
@@ -522,13 +555,7 @@ export function PlainTextWorkbenchView({
 
     setSaving(true);
     try {
-      const result = await executeCommand(
-        createPlainTextBufferCommand(plainTextCommands.save, buffer),
-      );
-      validateCommandResult(result, isPlainTextSaveResult);
-      setSavedContent(buffer.content);
-      setSavedLineEnding(buffer.lineEnding);
-      setBackupStatus('idle');
+      await persistBuffer(buffer);
     } catch (error) {
       reportError(error, '无法保存文本文件，请重试。');
     } finally {
@@ -536,8 +563,8 @@ export function PlainTextWorkbenchView({
     }
   }, [
     currentBufferPayload,
-    executeCommand,
     payload,
+    persistBuffer,
     recovery,
     reportError,
     savedContent,
@@ -606,6 +633,40 @@ export function PlainTextWorkbenchView({
 
   const conversationContributionId =
     `${plainTextWorkbenchManifest.id}.document-question`;
+  const returnAnswerToSource = useCallback(
+    async (input: {
+      readonly text: string;
+      readonly question?: string;
+      readonly context?: DocumentConversationContext;
+    }) => {
+      if (saving || recovery) {
+        throw new Error('文本正在保存或等待恢复处理，请稍后再写回原文。');
+      }
+      setSaving(true);
+      try {
+        await writePlainTextAnswerToSource({
+          content: latestContentRef.current,
+          context: input.context,
+          text: input.text,
+          lineEnding,
+          applyContent(nextContent) {
+            latestContentRef.current = nextContent;
+            setContent(nextContent);
+          },
+          persistContent: async (nextContent) => {
+            await persistBuffer({
+              content: nextContent,
+              lineEnding,
+              viewState: viewStateRef.current,
+            });
+          },
+        });
+      } finally {
+        setSaving(false);
+      }
+    },
+    [lineEnding, persistBuffer, recovery, saving],
+  );
   const conversationHistoryStore = useMemo(
     () => createDocumentConversationHistoryStore(
       asset.projectId,
@@ -622,12 +683,15 @@ export function PlainTextWorkbenchView({
       contributionId: conversationContributionId,
       historyStore: conversationHistoryStore,
       contextLabel: '文本选区',
+      returnAnswerToSource,
+      answerActionPresentation: PLAIN_TEXT_ANSWER_ACTION_PRESENTATION,
     }),
     [
       asset.id,
       asset.projectId,
       conversationContributionId,
       conversationHistoryStore,
+      returnAnswerToSource,
     ],
   );
   const conversationOwnerId =
@@ -636,6 +700,64 @@ export function PlainTextWorkbenchView({
     conversationOwnerId,
     conversationContribution,
   );
+
+  useEffect(() => {
+    const reveal = (event: Event) => {
+      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>)
+        .detail;
+      if (detail.assetId !== asset.id) {
+        return;
+      }
+      if (detail.target.scope !== 'content') {
+        return;
+      }
+
+      const selection = resolveTextSelectionFromTarget(
+        detail.target,
+        [PLAIN_TEXT_RANGE_ANCHOR_TYPE],
+      );
+      if (!selection) {
+        return;
+      }
+
+      const contentLength = latestContentRef.current.length;
+      const start = Math.min(selection.start, contentLength);
+      const end = Math.min(selection.end, contentLength);
+      if (end <= start) {
+        return;
+      }
+
+      if (viewOptions.readMode) {
+        const element = readContentRef.current;
+        if (
+          !element ||
+          !selectOffsetsInElement(element, start, end)
+        ) {
+          return;
+        }
+        const selection = window.getSelection();
+        const range =
+          selection && selection.rangeCount > 0
+            ? selection.getRangeAt(0)
+            : undefined;
+        if (range) {
+          scrollRangeIntoView(range, readHostRef.current);
+        }
+        return;
+      }
+
+      revealSelectionInCodeMirror(
+        editorRef.current?.view,
+        start,
+        end,
+      );
+    };
+
+    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    return () => {
+      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    };
+  }, [asset.id, viewOptions.readMode]);
 
   const rendererActions = useMemo(
     () =>

@@ -7,7 +7,6 @@ import type {
 import { isWorkbenchInteractionSnapshot } from '../../../shared/workbench/interaction';
 import {
   CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
-  CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
   CORE_HEADER_SURFACE_FACILITY_ID,
   CORE_OVERFLOW_SURFACE_FACILITY_ID,
   createCoreWorkbenchFacilityDefinitionRegistry,
@@ -330,8 +329,6 @@ export class WorkbenchRuntime {
       header: CORE_HEADER_SURFACE_FACILITY_ID,
       overflow: CORE_OVERFLOW_SURFACE_FACILITY_ID,
       'context-menu': CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
-      'generation-center':
-        CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
     };
 
     for (const contribution of bundle.contributions) {

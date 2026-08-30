@@ -69,6 +69,7 @@ describe('ExternalLibrariesSettingsSection', () => {
     expect(container.textContent).not.toContain('运行版本');
     expect(container.textContent).not.toContain('CPU 兼容版');
     expect(container.textContent).not.toContain('NVIDIA GPU 加速版');
+    expect(container.textContent).toContain('固定组件资源约');
 
     const installButton = [...container.querySelectorAll('button')].find(
       (button) => button.textContent === '安装',
@@ -79,5 +80,40 @@ describe('ExternalLibrariesSettingsSection', () => {
       library: mediaSubtitles,
       expectedSize: 100,
     });
+  });
+
+  it('shows the active installation step instead of a frozen percentage', () => {
+    act(() => {
+      root.render(
+        <ExternalLibrariesSettingsSection
+          libraries={[
+            {
+              ...mediaSubtitles,
+              status: 'installing',
+              statusDetail: '正在安装 PyTorch/CUDA 运行环境',
+            },
+          ]}
+          loading={false}
+          loadError={undefined}
+          migrationPending={false}
+          hasActiveTask
+          requestPendingById={new Set()}
+          target={undefined}
+          targetedLibraryRef={createRef<HTMLElement>()}
+          onInstall={vi.fn()}
+          onRemove={vi.fn()}
+          onCancel={vi.fn()}
+          onReload={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain(
+      '正在安装 PyTorch/CUDA 运行环境',
+    );
+    expect(
+      container.querySelector('.external-library-indeterminate'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain(' · 33%');
   });
 });

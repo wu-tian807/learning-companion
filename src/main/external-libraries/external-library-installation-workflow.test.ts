@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
+  access,
   mkdir,
   mkdtemp,
+  readFile,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -11,7 +13,10 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExternalLibraryDefinition } from './external-library-definition';
-import type { ExternalLibraryDownloaderApi } from './external-library-downloader';
+import {
+  ExternalLibraryDownloader,
+  type ExternalLibraryDownloaderApi,
+} from './external-library-downloader';
 import { ExternalLibraryInstallationManifestFile } from './external-library-installation-manifest-file';
 import { ExternalLibraryInstallationWorkflow } from './external-library-installation-workflow';
 import {
@@ -19,6 +24,7 @@ import {
   type ExternalLibraryInstaller,
 } from './external-library-installer';
 import { ExternalLibraryPathManager } from './external-library-path-manager';
+import { ExternalLibraryRuntimeSetupRegistry } from './external-library-runtime-setup';
 
 const temporaryDirectories: string[] = [];
 
@@ -115,19 +121,77 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     };
     const installers = new ExternalLibraryInstallerRegistry();
     installers.register(installer);
+    const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
+    let runtimeSetupCacheDirectory = '';
+    const prepareRuntime = vi.fn(
+      async (
+        runtimeDirectory: string,
+        setupCacheDirectory: string,
+        _signal: AbortSignal,
+        reportStatus: (statusDetail: string) => void,
+      ) => {
+        runtimeSetupCacheDirectory = setupCacheDirectory;
+        expect(setupCacheDirectory).toContain(
+          join('.downloads', '.setup', definition.id),
+        );
+        await mkdir(setupCacheDirectory, { recursive: true });
+        await writeFile(join(setupCacheDirectory, 'cache.bin'), 'cache');
+        reportStatus('Installing test runtime');
+        const readyPath = join(
+          runtimeDirectory,
+          'environment',
+          'ready.json',
+        );
+        await mkdir(dirname(readyPath), { recursive: true });
+        await writeFile(readyPath, '{}');
+      },
+    );
+    let failFinalization = false;
+    const finalizeRuntime = vi.fn(
+      async (
+        runtimeDirectory: string,
+        _signal: AbortSignal,
+        reportStatus: (statusDetail: string) => void,
+      ) => {
+        if (failFinalization) throw new Error('finalization failed');
+        await access(
+          join(runtimeDirectory, 'environment', 'ready.json'),
+        );
+        await writeFile(
+          join(runtimeDirectory, 'environment', 'ready.json'),
+          'finalized',
+        );
+        reportStatus('Finalizing test runtime');
+      },
+    );
+    runtimeSetups.register({
+      libraryId: definition.id,
+      prepare: prepareRuntime,
+      finalizeInstallation: finalizeRuntime,
+      async isReady(runtimeDirectory) {
+        try {
+          await access(join(runtimeDirectory, 'environment', 'ready.json'));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
     const stages: Array<{
       readonly status: string;
       readonly completedBytes?: number;
       readonly totalBytes?: number;
+      readonly statusDetail?: string;
     }> = [];
     const workflow = new ExternalLibraryInstallationWorkflow({
       pathManager: new ExternalLibraryPathManager({
         createId: () => 'job',
       }),
       installationManifestFile:
-        new ExternalLibraryInstallationManifestFile(),
+        new ExternalLibraryInstallationManifestFile(runtimeSetups),
       downloader: { download },
       installers,
+      runtimeSetups,
       now: () => 10,
       logger: { warn: vi.fn() },
     });
@@ -146,6 +210,9 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
                 totalBytes: stage.progress.totalBytes,
               }
             : {}),
+          ...(stage.status === 'installing' && stage.statusDetail
+            ? { statusDetail: stage.statusDetail }
+            : {}),
         });
       },
     });
@@ -160,11 +227,25 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       completedBytes: 11,
       totalBytes: 11,
     });
-    expect(stages.slice(-2).map(({ status }) => status)).toEqual([
-      'verifying',
-      'installing',
+    expect(stages.slice(-4)).toEqual([
+      { status: 'verifying' },
+      { status: 'installing' },
+      {
+        status: 'installing',
+        statusDetail: 'Installing test runtime',
+      },
+      {
+        status: 'installing',
+        statusDetail: 'Finalizing test runtime',
+      },
     ]);
     expect(installer.install).toHaveBeenCalledOnce();
+    expect(prepareRuntime).toHaveBeenCalledOnce();
+    expect(finalizeRuntime).toHaveBeenCalledOnce();
+    expect(runtimeSetupCacheDirectory).not.toBe('');
+    await expect(access(runtimeSetupCacheDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
     expect(installer.install).toHaveBeenCalledWith(
       expect.objectContaining({
         resources: expect.arrayContaining([
@@ -175,5 +256,177 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       }),
       expect.any(AbortSignal),
     );
+
+    failFinalization = true;
+    await expect(
+      workflow.run({
+        rootPath,
+        definition,
+        packageDefinition,
+        replaceExisting: true,
+        signal: new AbortController().signal,
+        onStage: () => undefined,
+      }),
+    ).rejects.toThrow('finalization failed');
+    const installation = new ExternalLibraryPathManager()
+      .resolveInstallationPaths(rootPath, definition, packageDefinition)
+      .installationDirectory;
+    await expect(
+      readFile(join(installation, 'runtime', 'environment', 'ready.json'), 'utf8'),
+    ).resolves.toBe('finalized');
+  });
+
+  it('resumes an interrupted bundle resource and reuses completed siblings', async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), 'learning-companion-bundle-resume-'),
+    );
+    temporaryDirectories.push(directory);
+    const rootPath = join(directory, 'externalLib');
+    const engine = Buffer.from('verified-engine');
+    const model = Buffer.from('large-model-payload');
+    const definition: ExternalLibraryDefinition = {
+      id: 'model-runtime',
+      displayName: 'Model runtime',
+      description: 'Test resumable model resources',
+      category: 'media',
+      version: '1.0.0',
+      installationFormatVersion: 1,
+      sourceUrl: 'https://example.com/source',
+      licenseName: 'MIT',
+      licenseUrl: 'https://example.com/license',
+      packages: [
+        {
+          platform: 'win32',
+          architecture: 'x64',
+          packageType: 'bundle',
+          resources: [
+            {
+              id: 'engine',
+              downloadUrl: 'https://example.com/engine',
+              sha256: sha256(engine),
+              expectedSize: engine.byteLength,
+              installation: {
+                type: 'file',
+                destinationRelativePath: 'engine.bin',
+              },
+            },
+            {
+              id: 'model',
+              downloadUrl: 'https://example.com/model',
+              sha256: sha256(model),
+              expectedSize: model.byteLength,
+              installation: {
+                type: 'file',
+                destinationRelativePath: 'model.bin',
+              },
+            },
+          ],
+          requiredRelativePaths: ['engine.bin', 'model.bin'],
+        },
+      ],
+    };
+    const packageDefinition = definition.packages[0]!;
+    const resumeOffset = 6;
+    let modelRequestCount = 0;
+    const fetch = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) => {
+        const value = String(url);
+
+        if (value.endsWith('/engine')) {
+          return new Response(engine, {
+            status: 200,
+            headers: { 'content-length': String(engine.byteLength) },
+          });
+        }
+
+        modelRequestCount += 1;
+        if (modelRequestCount === 1) {
+          return new Response(model.subarray(0, resumeOffset), {
+            status: 200,
+          });
+        }
+
+        expect(new Headers(init?.headers).get('range')).toBe(
+          `bytes=${resumeOffset}-`,
+        );
+        return new Response(model.subarray(resumeOffset), {
+          status: 206,
+          headers: {
+            'content-length': String(model.byteLength - resumeOffset),
+            'content-range':
+              `bytes ${resumeOffset}-${model.byteLength - 1}/${model.byteLength}`,
+          },
+        });
+      },
+    );
+    const installer: ExternalLibraryInstaller = {
+      packageType: 'bundle',
+      install: vi.fn(async (request) => {
+        if (request.packageDefinition.packageType !== 'bundle') {
+          throw new Error('expected bundle');
+        }
+        for (const resource of request.resources) {
+          const outputPath = join(
+            request.stagingInstallationDirectory,
+            'runtime',
+            resource.definition.installation.destinationRelativePath,
+          );
+          await mkdir(dirname(outputPath), { recursive: true });
+          await writeFile(outputPath, await readFile(resource.path));
+        }
+      }),
+    };
+    const installers = new ExternalLibraryInstallerRegistry();
+    installers.register(installer);
+    const pathManager = new ExternalLibraryPathManager({
+      createId: () => 'job',
+    });
+    const createWorkflow = () =>
+      new ExternalLibraryInstallationWorkflow({
+        pathManager: new ExternalLibraryPathManager({
+          createId: () => 'job',
+        }),
+        installationManifestFile:
+          new ExternalLibraryInstallationManifestFile(),
+        downloader: new ExternalLibraryDownloader({ fetch }),
+        installers,
+        now: () => 10,
+        logger: { warn: vi.fn() },
+      });
+    const run = (workflow: ExternalLibraryInstallationWorkflow) =>
+      workflow.run({
+        rootPath,
+        definition,
+        packageDefinition,
+        signal: new AbortController().signal,
+        onStage: () => undefined,
+      });
+
+    await expect(run(createWorkflow())).rejects.toThrow(
+      'EXTERNAL_LIBRARY_INSTALL_FAILED',
+    );
+    if (packageDefinition.packageType !== 'bundle') {
+      throw new Error('expected bundle');
+    }
+    const modelPaths = await pathManager.prepareDownloadPaths({
+      rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition: packageDefinition.resources[1]!,
+    });
+    await expect(readFile(modelPaths.partialPath)).resolves.toEqual(
+      model.subarray(0, resumeOffset),
+    );
+
+    await expect(run(createWorkflow())).resolves.toMatchObject({
+      status: 'available',
+    });
+    expect(
+      fetch.mock.calls.filter(([url]) => String(url).endsWith('/engine')),
+    ).toHaveLength(1);
+    expect(modelRequestCount).toBe(2);
+    await expect(access(modelPaths.downloadDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });

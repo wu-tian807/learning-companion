@@ -43,12 +43,22 @@ describe('AttachmentContentFile', () => {
       content: '# 解释\n',
     });
 
+    expect(content.ref.path).toBe(
+      '.learning-companion/attachments/attachment-1/answer.md',
+    );
     await expect(files.readText('project-1', content.ref)).resolves.toBe(
       '# 解释\n',
     );
     await files.removeAttachment('project-1', 'attachment-1');
     await expect(
-      access(join(workspacePath, 'attachments', 'attachment-1')),
+      access(
+        join(
+          workspacePath,
+          '.learning-companion',
+          'attachments',
+          'attachment-1',
+        ),
+      ),
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

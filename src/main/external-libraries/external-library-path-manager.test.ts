@@ -2,16 +2,20 @@ import {
   access,
   mkdir,
   mkdtemp,
+  readFile,
   rm,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, posix, win32 } from 'node:path';
+import { basename, join, posix, win32 } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   ExternalLibraryPathManager,
+  EXTERNAL_LIBRARY_DOWNLOAD_RETENTION_MS,
+  EXTERNAL_LIBRARY_STAGING_RETENTION_MS,
   createDefaultExternalLibrariesRoot,
 } from './external-library-path-manager';
 
@@ -99,6 +103,7 @@ describe('ExternalLibraryPathManager', () => {
       rootPath,
       definition.id,
     );
+    expect(basename(stagingDirectory).length).toBeLessThanOrEqual(24);
     const stagingInstallationDirectory = join(
       stagingDirectory,
       'installation',
@@ -185,5 +190,147 @@ describe('ExternalLibraryPathManager', () => {
       manager.cleanupStagingDirectory(rootPath, rootPath),
     ).rejects.toThrow('DATA_INTEGRITY_ERROR');
     await expect(access(stagingDirectory)).resolves.toBeUndefined();
+  });
+
+  it('keeps resumable downloads in stable package-scoped paths', async () => {
+    const rootPath = await createRoot();
+    const manager = new ExternalLibraryPathManager();
+    const { definition, packageDefinition } = createDefinition();
+    const resourceDefinition = {
+      id: 'package-dmg',
+      downloadUrl: packageDefinition.downloadUrl,
+      sha256: packageDefinition.sha256,
+      expectedSize: packageDefinition.expectedSize,
+    };
+    const first = await manager.prepareDownloadPaths({
+      rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition,
+    });
+    await writeFile(first.partialPath, 'partial');
+    await expect(manager.completeDownload(first)).resolves.toBe(
+      first.packagePath,
+    );
+    const legacySetupCache = join(first.downloadDirectory, 'runtime-setup');
+    await mkdir(legacySetupCache);
+    await writeFile(join(legacySetupCache, 'cached-wheel'), 'cache');
+    const setupCache = await manager.prepareRuntimeSetupCacheDirectory(
+      rootPath,
+      definition,
+      packageDefinition,
+    );
+
+    const afterRestart = await new ExternalLibraryPathManager()
+      .prepareDownloadPaths({
+        rootPath,
+        definition,
+        packageDefinition,
+        resourceDefinition,
+      });
+
+    expect(afterRestart.destinationPath).toBe(first.packagePath);
+    await expect(readFile(afterRestart.packagePath, 'utf8')).resolves.toBe(
+      'partial',
+    );
+    expect(afterRestart.packagePath).toContain(
+      join('.downloads', 'libreoffice'),
+    );
+    expect(setupCache).toContain(
+      join('.downloads', '.setup', definition.id),
+    );
+    expect(setupCache.length).toBeLessThan(legacySetupCache.length);
+    await expect(
+      readFile(join(setupCache, 'cached-wheel'), 'utf8'),
+    ).resolves.toBe('cache');
+    await expect(access(legacySetupCache)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    await manager.cleanupPackageDownloads(
+      rootPath,
+      definition,
+      packageDefinition,
+    );
+    await expect(access(first.downloadDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(access(setupCache)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('removes expired orphan staging and download directories only', async () => {
+    const rootPath = await createRoot();
+    const manager = new ExternalLibraryPathManager();
+    const { definition, packageDefinition } = createDefinition();
+    const currentTime = Date.now();
+    const oldStaging = await manager.createStagingDirectory(
+      rootPath,
+      definition.id,
+    );
+    const freshStaging = await manager.createStagingDirectory(
+      rootPath,
+      definition.id,
+    );
+    const oldStagingFile = join(oldStaging, 'orphan.partial');
+    await writeFile(oldStagingFile, 'old');
+    const oldStagingTime = new Date(
+      currentTime - EXTERNAL_LIBRARY_STAGING_RETENTION_MS - 1_000,
+    );
+    await utimes(oldStagingFile, oldStagingTime, oldStagingTime);
+    await utimes(oldStaging, oldStagingTime, oldStagingTime);
+
+    const oldPackage = {
+      ...packageDefinition,
+      sha256: 'b'.repeat(64),
+    };
+    const resourceDefinition = {
+      id: 'package-dmg',
+      downloadUrl: packageDefinition.downloadUrl,
+      sha256: packageDefinition.sha256,
+      expectedSize: packageDefinition.expectedSize,
+    };
+    const oldDownload = await manager.prepareDownloadPaths({
+      rootPath,
+      definition,
+      packageDefinition: oldPackage,
+      resourceDefinition: {
+        ...resourceDefinition,
+        sha256: oldPackage.sha256,
+      },
+    });
+    const freshDownload = await manager.prepareDownloadPaths({
+      rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition,
+    });
+    await writeFile(oldDownload.partialPath, 'old');
+    await writeFile(freshDownload.partialPath, 'fresh');
+    const oldDownloadTime = new Date(
+      currentTime - EXTERNAL_LIBRARY_DOWNLOAD_RETENTION_MS - 1_000,
+    );
+    await utimes(
+      oldDownload.partialPath,
+      oldDownloadTime,
+      oldDownloadTime,
+    );
+    await utimes(
+      oldDownload.downloadDirectory,
+      oldDownloadTime,
+      oldDownloadTime,
+    );
+
+    await expect(
+      manager.cleanupExpiredTemporaryData(rootPath, currentTime),
+    ).resolves.toEqual({
+      stagingDirectoriesRemoved: 1,
+      downloadDirectoriesRemoved: 1,
+    });
+    await expect(access(oldStaging)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(access(oldDownload.downloadDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(access(freshStaging)).resolves.toBeUndefined();
+    await expect(access(freshDownload.partialPath)).resolves.toBeUndefined();
   });
 });

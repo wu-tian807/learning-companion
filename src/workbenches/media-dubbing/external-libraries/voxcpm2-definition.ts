@@ -6,7 +6,7 @@ import type {
 // Persisted library identity: keep the historical value so existing
 // installations remain valid when Audio starts sharing this runtime.
 export const MEDIA_DUBBING_VOXCPM2_LIBRARY_ID = 'video-dubbing-voxcpm2';
-export const MEDIA_DUBBING_VOXCPM2_VERSION = '2026.08.28';
+export const MEDIA_DUBBING_VOXCPM2_VERSION = '2026.08.29';
 export const VOXCPM2_MODEL_REVISION =
   '32279effe8c19989596f05d353d1447f51d9e915';
 
@@ -78,7 +78,7 @@ export const mediaDubbingVoxCpm2Definition: ExternalLibraryDefinition =
     id: MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     displayName: 'VoxCPM2 视频/音频配音组件',
     description:
-      'NVIDIA GPU 专用。安装 VoxCPM2 one-shot 声音克隆、人声分离模型与隔离运行环境引导程序。',
+      'NVIDIA GPU 专用。固定模型下载约 4.8 GB；完整 Python/CUDA 配音环境最终约 12 GB，安装时建议至少预留 18 GB 可用空间。',
     category: 'media',
     version: MEDIA_DUBBING_VOXCPM2_VERSION,
     installationFormatVersion: 1,
@@ -117,6 +117,32 @@ export const mediaDubbingVoxCpm2Definition: ExternalLibraryDefinition =
                 'models/source-separation/UVR-MDX-NET-Inst_HQ_4.onnx',
             }),
           }),
+          Object.freeze({
+            id: 'speaker-segmentation-model',
+            downloadUrl:
+              'https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/340b52f1f5cd12d45a30fa284691417eaad2ff92/model.int8.onnx?download=true',
+            sha256:
+              '10a438c2e0d90ed5f5da545cec2244d887315f6dbbbf1d3d564d00745b01952e',
+            expectedSize: 1_540_514,
+            installation: Object.freeze({
+              type: 'file' as const,
+              destinationRelativePath:
+                'models/speaker-diarization/pyannote-segmentation-3.0.int8.onnx',
+            }),
+          }),
+          Object.freeze({
+            id: 'speaker-embedding-model',
+            downloadUrl:
+              'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx',
+            sha256:
+              'aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2',
+            expectedSize: 28_281_164,
+            installation: Object.freeze({
+              type: 'file' as const,
+              destinationRelativePath:
+                'models/speaker-diarization/3dspeaker-campplus-zh-en.onnx',
+            }),
+          }),
         ]),
         requiredRelativePaths: Object.freeze([
           'bootstrap/uv/uv.exe',
@@ -124,6 +150,8 @@ export const mediaDubbingVoxCpm2Definition: ExternalLibraryDefinition =
             ({ installation }) => installation.destinationRelativePath,
           ),
           'models/source-separation/UVR-MDX-NET-Inst_HQ_4.onnx',
+          'models/speaker-diarization/pyannote-segmentation-3.0.int8.onnx',
+          'models/speaker-diarization/3dspeaker-campplus-zh-en.onnx',
         ]),
       }),
     ]),

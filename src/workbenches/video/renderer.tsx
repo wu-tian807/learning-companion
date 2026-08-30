@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
@@ -17,10 +16,6 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
-import {
-  useWorkbenchRuntime,
-  useWorkbenchRuntimeSelector,
-} from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
 import {
@@ -46,6 +41,7 @@ import {
 import { useMediaSubtitles } from '../media-subtitles/use-media-subtitles';
 import { VideoPlaybackControls } from './video-playback-controls';
 import { VideoLanguageControls } from './video-language-controls';
+import { VideoFrameQuestionMenu } from './video-frame-question-menu';
 import {
   cloneVideoViewState,
   createVideoGetDubbingSnapshotCommand,
@@ -113,6 +109,11 @@ interface ScreenRectangle {
   readonly height: number;
 }
 
+interface FrameSelectionGesture {
+  readonly start: ScreenPoint;
+  readonly replacesSelection: boolean;
+}
+
 function screenRectangle(
   start: ScreenPoint,
   end: ScreenPoint,
@@ -156,23 +157,6 @@ export function createVideoFrameRegionFromClientPoints(
     sourceWidth: video.videoWidth,
     sourceHeight: video.videoHeight,
   });
-}
-
-export function isClientPointInsideVideoFrameRegion(
-  video: Pick<HTMLVideoElement, 'getBoundingClientRect'>,
-  target: VideoFrameRegionTarget,
-  point: ScreenPoint,
-): boolean {
-  const bounds = video.getBoundingClientRect();
-  if (bounds.width <= 0 || bounds.height <= 0) return false;
-  const region = target.anchorPayload;
-  const left = bounds.left + region.x * bounds.width;
-  const top = bounds.top + region.y * bounds.height;
-  const right = left + region.width * bounds.width;
-  const bottom = top + region.height * bounds.height;
-  return (
-    point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
-  );
 }
 
 function formatVttTime(milliseconds: number): string {
@@ -258,10 +242,6 @@ export function VideoWorkbenchView({
   onError,
   subscribeEvent,
 }: RendererWorkbenchViewProps) {
-  const runtime = useWorkbenchRuntime();
-  const contextMenuOpen = useWorkbenchRuntimeSelector(
-    (state) => state.contextMenu !== undefined,
-  );
   const payload = isVideoWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -272,8 +252,9 @@ export function VideoWorkbenchView({
     volume: payload?.viewState.volume ?? 1,
     muted: payload?.viewState.muted ?? false,
   });
-  const rightSelectionStartRef = useRef<ScreenPoint | undefined>(undefined);
-  const suppressNativeContextMenuRef = useRef(false);
+  const frameSelectionGestureRef = useRef<
+    FrameSelectionGesture | undefined
+  >(undefined);
   const selectedConversationContextRef = useRef<
     VideoConversationContext | undefined
   >(undefined);
@@ -286,6 +267,7 @@ export function VideoWorkbenchView({
   });
   const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string>();
   const [draftSelection, setDraftSelection] = useState<ScreenRectangle>();
+  const [frameQuestionMenuOpen, setFrameQuestionMenuOpen] = useState(false);
   const [selectedConversationContext, setSelectedConversationContext] =
     useState<VideoConversationContext>();
   const [currentTime, setCurrentTime] = useState(
@@ -375,7 +357,8 @@ export function VideoWorkbenchView({
         return;
       }
       selectedConversationContextRef.current = undefined;
-      rightSelectionStartRef.current = undefined;
+      frameSelectionGestureRef.current = undefined;
+      setFrameQuestionMenuOpen(false);
       setSelectedConversationContext(undefined);
       setDraftSelection(undefined);
     },
@@ -478,22 +461,13 @@ export function VideoWorkbenchView({
   });
 
   useEffect(() => {
-    if (!contextMenuOpen || !selectedConversationContext) return;
+    if (!frameQuestionMenuOpen || !selectedConversationContext) {
+      return;
+    }
     const dismiss = (event: PointerEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest('[role="menu"]')
-      ) {
-        return;
-      }
-      const video = videoRef.current;
-      if (
-        video &&
-        isClientPointInsideVideoFrameRegion(
-          video,
-          selectedConversationContext.target,
-          { x: event.clientX, y: event.clientY },
-        )
+        event.target.closest('[data-video-frame-surface="true"]')
       ) {
         return;
       }
@@ -511,7 +485,7 @@ export function VideoWorkbenchView({
       document.removeEventListener('keydown', dismissOnEscape);
     };
   }, [
-    contextMenuOpen,
+    frameQuestionMenuOpen,
     releaseConversationContext,
     selectedConversationContext,
   ]);
@@ -823,72 +797,82 @@ export function VideoWorkbenchView({
       reportError(error, '无法在文件夹中显示视频。');
     }
   }, [onReveal, reportError]);
-  const explainSelectedFrame = useCallback(() => {
+  const submitSelectedFrameQuestion = useCallback((question: string) => {
     const context = selectedConversationContextRef.current;
     if (!context || conversationBusy) return;
-    runtime.closeContextMenu();
+    setFrameQuestionMenuOpen(false);
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      context,
+      question,
+      submit: true,
+    });
+  }, [conversationBusy, conversationOwnerId, conversationRuntime]);
+  const openSelectedFrameQuestion = useCallback(() => {
+    const context = selectedConversationContextRef.current;
+    if (!context || conversationBusy) return;
+    setFrameQuestionMenuOpen(false);
     conversationRuntime.open({
       ownerId: conversationOwnerId,
       ...createVideoFrameConversationLaunch(context),
     });
-  }, [conversationBusy, conversationOwnerId, conversationRuntime, runtime]);
+  }, [conversationBusy, conversationOwnerId, conversationRuntime]);
   const rendererActions = useMemo(
     () =>
       createVideoRendererActions({
         ready,
-        canExplainFrame:
-          ready &&
-          !conversationBusy &&
-          selectedConversationContext !== undefined,
         explanationCount: explanations.length,
         indexOpen: explanationIndexOpen,
         markersVisible: explanationMarkersVisible,
-        onTogglePlayback: togglePlayback,
-        onExplainFrame: explainSelectedFrame,
         onToggleIndex: toggleExplanationIndex,
         onToggleMarkers: toggleExplanationMarkers,
         onReveal: reveal,
       }),
     [
-      conversationBusy,
-      explainSelectedFrame,
       explanationIndexOpen,
       explanationMarkersVisible,
       explanations.length,
       ready,
       reveal,
-      selectedConversationContext,
-      togglePlayback,
       toggleExplanationIndex,
       toggleExplanationMarkers,
     ],
   );
   useWorkbenchContributions(videoWorkbenchManifest.id, rendererActions);
 
-  const openFrameContextMenu = useCallback(
-    (point: ScreenPoint, target: VideoFrameRegionTarget) => {
+  const openFrameQuestionMenu = useCallback(
+    (target: VideoFrameRegionTarget) => {
       const context = createVideoConversationContext(target, sourceRevision);
       commitConversationContext(context);
-      runtime.openContextMenu(bootstrap.sessionId, point, {
-        focus: target,
-        inputs: [],
-      });
+      setFrameQuestionMenuOpen(true);
     },
-    [bootstrap.sessionId, commitConversationContext, runtime, sourceRevision],
+    [commitConversationContext, sourceRevision],
   );
   const beginFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 2 || !ready) return;
+      if (event.button !== 0 || !event.isPrimary || !ready) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'button, input, select, textarea, a, [role="button"], [data-video-frame-question-menu="true"]',
+        )
+      ) {
+        return;
+      }
       const video = videoRef.current;
       if (!video || !hasLoadedVideoMetadata(video)) return;
+      const replacesSelection =
+        selectedConversationContextRef.current !== undefined;
       event.preventDefault();
       event.stopPropagation();
-      runtime.closeContextMenu();
       releaseConversationContext(undefined);
       video.pause();
       event.currentTarget.setPointerCapture(event.pointerId);
       const point = { x: event.clientX, y: event.clientY };
-      rightSelectionStartRef.current = point;
+      frameSelectionGestureRef.current = {
+        start: point,
+        replacesSelection,
+      };
       const bounds = video.getBoundingClientRect();
       setDraftSelection({
         left: clamp(point.x, bounds.left, bounds.right) - bounds.left,
@@ -897,11 +881,11 @@ export function VideoWorkbenchView({
         height: 0,
       });
     },
-    [ready, releaseConversationContext, runtime],
+    [ready, releaseConversationContext],
   );
   const updateFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      const start = rightSelectionStartRef.current;
+      const start = frameSelectionGestureRef.current?.start;
       const video = videoRef.current;
       if (!start || !video) return;
       event.preventDefault();
@@ -926,49 +910,40 @@ export function VideoWorkbenchView({
   );
   const finishFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      const start = rightSelectionStartRef.current;
+      const gesture = frameSelectionGestureRef.current;
+      const start = gesture?.start;
       const video = videoRef.current;
-      if (!start || !video) return;
+      if (!gesture || !start || !video) return;
       event.preventDefault();
       event.stopPropagation();
-      rightSelectionStartRef.current = undefined;
+      frameSelectionGestureRef.current = undefined;
       setDraftSelection(undefined);
       const target = createVideoFrameRegionFromClientPoints(video, start, {
         x: event.clientX,
         y: event.clientY,
       });
       if (!target) return;
-      suppressNativeContextMenuRef.current = true;
-      openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
-      window.setTimeout(() => {
-        suppressNativeContextMenuRef.current = false;
-      }, 0);
-    },
-    [openFrameContextMenu],
-  );
-  const cancelFrameSelection = useCallback(() => {
-    rightSelectionStartRef.current = undefined;
-    setDraftSelection(undefined);
-  }, []);
-  const openContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (suppressNativeContextMenuRef.current) {
+      const rectangle = screenRectangle(start, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      if (
+        rectangle.width < MIN_FRAME_SELECTION_SIZE ||
+        rectangle.height < MIN_FRAME_SELECTION_SIZE
+      ) {
+        if (!gesture.replacesSelection) {
+          openFrameQuestionMenu(target);
+        }
         return;
       }
-      const video = videoRef.current;
-      if (!video || !ready) return;
-      const target = createVideoFrameRegionFromClientPoints(
-        video,
-        { x: event.clientX, y: event.clientY },
-        { x: event.clientX, y: event.clientY },
-      );
-      if (target) {
-        openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
-      }
+      openFrameQuestionMenu(target);
     },
-    [openFrameContextMenu, ready],
+    [openFrameQuestionMenu],
   );
+  const cancelFrameSelection = useCallback(() => {
+    frameSelectionGestureRef.current = undefined;
+    setDraftSelection(undefined);
+  }, []);
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -1000,7 +975,7 @@ export function VideoWorkbenchView({
         <div
           data-video-frame-surface="true"
           className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-md bg-black shadow-[0_20px_60px_rgba(0,0,0,0.42)]"
-          onContextMenuCapture={openContextMenu}
+          onContextMenuCapture={(event) => event.preventDefault()}
           onPointerDownCapture={beginFrameSelection}
           onPointerMoveCapture={updateFrameSelection}
           onPointerUpCapture={finishFrameSelection}
@@ -1060,6 +1035,27 @@ export function VideoWorkbenchView({
                 height: draftSelection.height,
               }}
             />
+          )}
+          {frameQuestionMenuOpen && selectedConversationContext && (
+            <div
+              className="pointer-events-none absolute right-2 left-2 z-50 flex justify-center"
+              style={{
+                top: `${selectedConversationContext.target.anchorPayload.y * 100}%`,
+                transform:
+                  selectedConversationContext.target.anchorPayload.y >= 0.12
+                    ? 'translateY(calc(-100% - 8px))'
+                    : 'translateY(8px)',
+              }}
+            >
+              <VideoFrameQuestionMenu
+                disabled={conversationBusy}
+                onQuestion={submitSelectedFrameQuestion}
+                onFreeQuestion={openSelectedFrameQuestion}
+                onClose={() =>
+                  releaseConversationContext(selectedConversationContext)
+                }
+              />
+            </div>
           )}
         </div>
 
@@ -1163,10 +1159,14 @@ export function VideoWorkbenchView({
                   closeActiveExplanation();
                   conversationRuntime.open({
                     ownerId: conversationOwnerId,
-                    context: createVideoConversationContext(
-                      activeExplanation.target,
-                      activeExplanation.sourceRevision,
+                    ...createVideoFrameConversationLaunch(
+                      createVideoConversationContext(
+                        activeExplanation.target,
+                        activeExplanation.sourceRevision,
+                      ),
+                      activeExplanation.conversationId,
                     ),
+                    fallbackToNewConversation: true,
                   });
                 }
               : undefined

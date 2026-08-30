@@ -24,7 +24,7 @@ const asset: AssetSnapshot = {
   contentRef: {
     kind: 'local-file',
     base: 'project-workspace',
-    path: 'assets/generated/course.mindmap',
+    path: '.learning-companion/assets/generated/course.mindmap',
   },
   contentStatus: {
     availability: 'available',
@@ -113,7 +113,7 @@ describe('MindMapWorkbenchView', () => {
     expect(markup).toContain('aria-label="收起子节点"');
     expect(markup).not.toContain('aria-label="展开子节点"');
     expect(markup).not.toContain('line-clamp');
-    expect(markup).not.toContain('assets/generated');
+    expect(markup).not.toContain('.learning-companion/assets/generated');
   });
 
   it('hides the inline control while a branch is collapsed', () => {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import {
-  copyFile,
+  link,
   lstat,
   mkdir,
   readdir,
@@ -144,7 +144,7 @@ async function installResource(
   await mkdir(dirname(destination), { recursive: true });
 
   if (installation.type === 'file') {
-    await copyFile(sourcePath, destination, constants.COPYFILE_EXCL);
+    await link(sourcePath, destination);
     return;
   }
 

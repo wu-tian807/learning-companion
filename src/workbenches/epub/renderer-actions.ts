@@ -133,7 +133,7 @@ export function createEpubRendererActions({
         groupLabel: 'EPUB AI',
         order: 10,
         presentation: {
-          kind: 'generation-tool',
+          kind: 'action',
           label: '解释这段话',
           description: '将选区和 EPUB CFI 锚点交给 AI',
           disabledReason:
@@ -151,7 +151,7 @@ export function createEpubRendererActions({
         groupLabel: 'EPUB AI',
         order: 20,
         presentation: {
-          kind: 'generation-tool',
+          kind: 'action',
           label: '自由提问',
           description: '围绕选中的 EPUB 原文输入自己的问题',
           disabledReason:

@@ -25,7 +25,7 @@ describe('VoxCPM2 dubbing external library', () => {
     });
   });
 
-  it('installs only the selected VoxCPM2, UVR and bootstrap resources', () => {
+  it('installs only VoxCPM2, separation, diarization and bootstrap resources', () => {
     const packageDefinition = mediaDubbingVoxCpm2Definition.packages[0]!;
     expect(packageDefinition.packageType).toBe('bundle');
     if (packageDefinition.packageType !== 'bundle') return;
@@ -33,10 +33,12 @@ describe('VoxCPM2 dubbing external library', () => {
     const resourceIds = packageDefinition.resources.map(({ id }) => id);
     expect(resourceIds).toContain('voxcpm2-weights');
     expect(resourceIds).toContain('uvr-source-separation-model');
+    expect(resourceIds).toContain('speaker-segmentation-model');
+    expect(resourceIds).toContain('speaker-embedding-model');
     expect(resourceIds).toContain('uv-runtime');
     expect(resourceIds.some((id) => /f5|voxcpm1[.-]?5/iu.test(id))).toBe(false);
     expect(externalLibraryPackageExpectedSize(packageDefinition)).toBe(
-      5_036_776_566,
+      5_066_598_244,
     );
   });
 
