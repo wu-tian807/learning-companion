@@ -27,6 +27,8 @@ import { AttachmentService } from '../attachments/attachment-service';
 import { ContentResolverRegistry } from '../content/content-resolver-registry';
 import { ContentResourceService } from '../content/content-resource-service';
 import { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
+import { ProjectConversationDatabase } from '../conversation/project-conversation-database';
+import { ProjectConversationService } from '../conversation/project-conversation-service';
 import {
   registerContentProtocol,
   removeContentProtocol,
@@ -138,6 +140,10 @@ export async function createApplicationRuntime({
     );
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
+    const projectConversationService = new ProjectConversationService(
+      new ProjectConversationDatabase(databaseContext),
+      projectDatabase,
+    );
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
     registerMainWorkbenchAgentFunctionTools({
@@ -313,6 +319,7 @@ export async function createApplicationRuntime({
       externalLibraryService,
       generationTaskService,
       projectService,
+      projectConversationService,
       settingsRepository,
       workbenchSessionService,
       workbenchEvents,

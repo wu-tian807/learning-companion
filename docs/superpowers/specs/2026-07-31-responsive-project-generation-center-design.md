@@ -7,6 +7,10 @@
 > 2026-08-30：本文中的“当前 Asset Workbench 专属工具”已由
 > [Workbench 生成中心 Surface 移除设计](./2026-08-30-workbench-generation-center-surface-removal-design.md)
 > 取代；生成中心只保留 Project 级工具、任务和生成内容。
+>
+> 2026-08-30：右侧布局已由
+> [Project 右侧插槽与 Audio 布局收敛设计](./2026-08-30-project-right-panel-and-audio-layout-design.md)
+> 补充；生成中心与 AI 问答互斥复用同一个第三栏，三屏宽度和响应式断点不变。
 
 ## 1. 背景
 

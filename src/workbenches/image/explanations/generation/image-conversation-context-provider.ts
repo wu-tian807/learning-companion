@@ -152,7 +152,7 @@ export class ImageConversationContextProvider
     const existing = (
       await this.attachments.listByAsset(
         context.projectId,
-        context.instruction.assetId,
+        source.assetId,
       )
     ).find(
       (attachment) =>
@@ -173,7 +173,7 @@ export class ImageConversationContextProvider
     context.signal?.throwIfAborted();
     const attachment = await this.attachments.createWithContent({
       projectId: context.projectId,
-      assetId: context.instruction.assetId,
+      assetId: source.assetId,
       typeId: IMAGE_EXPLANATION_ATTACHMENT_TYPE,
       typeVersion: IMAGE_EXPLANATION_ATTACHMENT_VERSION,
       target,

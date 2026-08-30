@@ -54,6 +54,8 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
   async prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
   ) {
+    const assetId = context.instruction.assetId;
+    if (!assetId) throw new AppError('DATA_INTEGRITY_ERROR');
     const selection = context.instruction.context;
     if (selection === undefined) {
       return Object.freeze({
@@ -70,7 +72,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    const asset = this.assets.get(context.instruction.assetId);
+    const asset = this.assets.get(assetId);
     if (
       !asset ||
       asset.projectId !== context.projectId ||
@@ -232,11 +234,12 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
     answer: { readonly answer: string },
   ) {
+    const assetId = context.instruction.assetId;
     const selection = context.instruction.context;
-    if (!isVideoConversationContext(selection)) {
+    if (!assetId || !isVideoConversationContext(selection)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    const asset = this.assets.get(context.instruction.assetId);
+    const asset = this.assets.get(assetId);
     if (
       !asset ||
       asset.projectId !== context.projectId ||

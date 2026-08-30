@@ -24,12 +24,6 @@ export const HTML_LINK_ANCHOR_VERSION = 1;
 export const HTML_ELEMENT_ANCHOR_TYPE = 'html.element';
 export const HTML_ELEMENT_ANCHOR_VERSION = 1;
 
-export const htmlConversationCommands = {
-  list: 'html.conversations.list',
-  save: 'html.conversations.save',
-  remove: 'html.conversations.remove',
-} as const;
-
 export const htmlFrameCommands = {
   installSourceCopy: 'html.frame.install-source-copy',
 } as const;
