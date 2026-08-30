@@ -21,7 +21,6 @@ function createDatabase(): ProjectConversationDatabaseApi {
     get: vi.fn(),
     list: vi.fn(() => [record()]),
     save: vi.fn((_projectId, conversation) => conversation),
-    import: vi.fn((_projectId, conversations) => conversations),
     remove: vi.fn(),
   };
 }
@@ -34,9 +33,8 @@ describe('ProjectConversationService', () => {
 
     expect(service.list('project-1')).toEqual([record()]);
     expect(service.save('project-1', record())).toEqual([record()]);
-    expect(service.import('project-1', [record()])).toEqual([record()]);
     expect(service.remove('project-1', 'conversation-1')).toEqual([record()]);
-    expect(projects.get).toHaveBeenCalledTimes(4);
+    expect(projects.get).toHaveBeenCalledTimes(3);
   });
 
   it('rejects unknown Projects before accessing conversation rows', () => {

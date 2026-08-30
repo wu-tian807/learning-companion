@@ -19,7 +19,7 @@ export interface ConversationReanswerBackup {
 }
 
 export interface ConversationMessageContextSource {
-  /** Stable Renderer contribution id used only to recover optional context UI. */
+  /** Stable Renderer contribution id used to route source navigation/actions. */
   readonly contributionId: string;
   /** Main provider that prepares this one message's optional Workbench context. */
   readonly contextProviderId: string;
@@ -63,11 +63,6 @@ export interface SaveProjectConversationRequest
 export interface DeleteProjectConversationRequest
   extends ProjectConversationProjectRequest {
   readonly conversationId: string;
-}
-
-export interface ImportProjectConversationsRequest
-  extends ProjectConversationProjectRequest {
-  readonly conversations: readonly ConversationRecord[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

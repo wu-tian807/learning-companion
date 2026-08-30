@@ -13,6 +13,7 @@ import { WorkbenchConversationRuntime } from '../conversation/workbench-conversa
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
+import { describeRendererConversationContext } from '../../workbenches/catalog/register-renderer-workbenches';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -60,7 +61,7 @@ export function ProjectPage({
     [project.id],
   );
   const conversationRuntime = useMemo(
-    () => new WorkbenchConversationRuntime(),
+    () => new WorkbenchConversationRuntime(describeRendererConversationContext),
     [],
   );
   useEffect(
@@ -175,6 +176,15 @@ export function ProjectPage({
       }
     }
   }, [project.id]);
+  const selectConversationAsset = useCallback((assetId: string) => {
+    if (
+      session.loadState.kind !== 'ready' ||
+      !session.loadState.assets.some((asset) => asset.id === assetId)
+    ) {
+      throw new Error('引用的资料已不存在，无法定位原文。');
+    }
+    session.selectAsset(assetId);
+  }, [session]);
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     closeRight();
@@ -457,6 +467,7 @@ export function ProjectPage({
                     projectId={project.id}
                     historyStore={conversationHistoryStore}
                     onClose={closeConversationPanel}
+                    onSelectAsset={selectConversationAsset}
                     onOpenSettings={onOpenSettings}
                     onError={setError}
                   />

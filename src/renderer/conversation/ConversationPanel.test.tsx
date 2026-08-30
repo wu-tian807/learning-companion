@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { WorkbenchConversationContribution } from './conversation-contracts';
+import type {
+  ConversationMessageContextSource,
+  WorkbenchConversationContribution,
+} from './conversation-contracts';
 import type {
   ConversationControllerActions,
   ConversationControllerState,
@@ -63,17 +66,25 @@ function state(
   };
 }
 
-function render(value: ConversationControllerState): string {
+function render(
+  value: ConversationControllerState,
+  resolveContextContribution: (
+    source: ConversationMessageContextSource | undefined,
+  ) => WorkbenchConversationContribution | undefined = (source) =>
+    source?.contributionId === contribution.id
+      ? contribution
+      : undefined,
+): string {
   return renderToStaticMarkup(
     <ConversationPanel
       state={value}
       actions={actions}
       projectId="project"
-      resolveContextContribution={(source) =>
-        source?.contributionId === contribution.id
-          ? contribution
-          : undefined
+      resolveContextContribution={resolveContextContribution}
+      describeContext={(_source, context) =>
+        contribution.describeContext?.(context)
       }
+      onRevealContext={vi.fn()}
       onStartNew={vi.fn()}
       onClose={vi.fn()}
       onOpenSettings={vi.fn()}
@@ -83,10 +94,32 @@ function render(value: ConversationControllerState): string {
 }
 
 describe('ConversationPanel', () => {
+  it('renders and links a persisted reference without a mounted Workbench', () => {
+    const html = render(state({
+      conversation: {
+        id: 'conversation',
+        title: '已有引用',
+        messages: [{
+          id: 'question',
+          role: 'user',
+          text: '解释这里',
+          createdTime: 1,
+          context: { page: 2 },
+          contextSource,
+        }],
+        createdTime: 1,
+        updatedTime: 1,
+      },
+    }), () => undefined);
+
+    expect(html).toContain('第 2 页');
+    expect(html).toContain('框选内容');
+    expect(html).toContain('查看原文位置');
+  });
+
   it('keeps source viewing, visible errors, retry/settings and new conversation in one panel', () => {
     const html = render(state({
       pendingContext: {
-        ownerId: 'pdf.owner',
         assetId: 'asset',
         contribution,
         context: { page: 2 },

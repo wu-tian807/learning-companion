@@ -317,6 +317,7 @@ export function EpubWorkbenchView({
     conversationOwnerId,
     asset.id,
     conversationContribution,
+    loadState.kind === 'ready',
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(
     conversationRuntime,

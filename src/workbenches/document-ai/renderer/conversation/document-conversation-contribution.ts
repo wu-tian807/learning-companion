@@ -8,6 +8,7 @@ import {
   AI_ANNOTATION_ATTACHMENT_VERSION,
 } from '../../ai-annotation-attachment';
 import {
+  describeDocumentConversationContext,
   DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
   isDocumentConversationContext,
   type DocumentConversationContext,
@@ -114,20 +115,10 @@ export function createDocumentConversationContribution(
     sourceAssetMode: 'reference',
     isContext: isDocumentConversationContext,
     describeContext(context) {
-      if (!isDocumentConversationContext(context)) {
-        return { label: input.contextLabel ?? '资料内容' };
-      }
-      return {
-        label: context.pageNumber
-          ? `第 ${context.pageNumber} 页`
-          : input.contextLabel ?? '资料内容',
-        ...(context.selectedText
-          ? { detail: context.selectedText }
-          : { detail: '已框选公式、图表或图片区域' }),
-        ...(context.previewDataUrl
-          ? { previewDataUrl: context.previewDataUrl }
-          : {}),
-      };
+      return describeDocumentConversationContext(
+        context,
+        input.contextLabel,
+      );
     },
     revealContext(context) {
       if (isDocumentConversationContext(context)) {

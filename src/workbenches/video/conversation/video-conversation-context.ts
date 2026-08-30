@@ -45,6 +45,15 @@ export function createVideoConversationContext(
   }) as VideoConversationContext;
 }
 
+export function describeVideoConversationContext(context: JsonValue) {
+  if (!isVideoConversationContext(context)) return { label: '视频画面' };
+  const { timeSeconds, x, y, width, height } = context.target.anchorPayload;
+  return {
+    label: `视频 ${timeSeconds.toFixed(1)} 秒`,
+    detail: `左侧 ${Math.round(x * 100)}% · 顶部 ${Math.round(y * 100)}% · ${Math.round(width * 100)}% × ${Math.round(height * 100)}%`,
+  };
+}
+
 export function areVideoConversationContextsEqual(
   left: VideoConversationContext,
   right: VideoConversationContext,

@@ -2,19 +2,20 @@ import type { ConversationMessageContextSource } from '../../shared/project-conv
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type {
   ActiveWorkbenchConversationContribution,
+  ConversationContextPresentation,
   ConversationLaunchRequest,
   WorkbenchConversationContribution,
   WorkbenchConversationRuntimeSnapshot,
 } from './conversation-contracts';
 
-interface RegisteredContribution {
+interface ActiveRegistration {
   readonly token: symbol;
-  readonly assetId: string;
-  readonly contribution: WorkbenchConversationContribution;
+  readonly ownerId: string;
+  readonly source: ActiveWorkbenchConversationContribution;
 }
 
 export interface OpenWorkbenchConversationInput {
-  /** Optional Workbench context source for this launch; omitted means Project chat. */
+  /** Present only when a Workbench explicitly attaches its provider/context. */
   readonly ownerId?: string;
   readonly conversationId?: string;
   readonly fallbackToNewConversation?: boolean;
@@ -23,26 +24,35 @@ export interface OpenWorkbenchConversationInput {
   readonly submit?: boolean;
 }
 
-function activeContextSource(
-  ownerId: string,
-  registered: RegisteredContribution,
-): ActiveWorkbenchConversationContribution {
-  return Object.freeze({
-    ownerId,
-    assetId: registered.assetId,
-    contribution: registered.contribution,
-  });
+function matchesSource(
+  active: ActiveWorkbenchConversationContribution | undefined,
+  source: ConversationMessageContextSource | undefined,
+): active is ActiveWorkbenchConversationContribution {
+  return Boolean(
+    active &&
+      source?.assetId === active.assetId &&
+      source.contributionId === active.contribution.id &&
+      source.contextProviderId === active.contribution.contextProviderId,
+  );
 }
 
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
-  private readonly contributions = new Map<string, RegisteredContribution>();
+  private activeRegistration: ActiveRegistration | undefined;
   private launchId = 0;
+  private revealId = 0;
+  private disposed = false;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
     busy: false,
-    registryRevision: 0,
   });
+
+  constructor(
+    private readonly describePersistedContext: (
+      source: ConversationMessageContextSource,
+      context: JsonValue,
+    ) => ConversationContextPresentation | undefined = () => undefined,
+  ) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -67,47 +77,27 @@ export class WorkbenchConversationRuntime {
     ) {
       throw new Error('Workbench Conversation context contribution 无效');
     }
+
     const token = Symbol(normalizedOwnerId);
-    const registered = Object.freeze({
-      token,
+    const source = Object.freeze({
       assetId: normalizedAssetId,
       contribution,
     });
-    this.contributions.set(normalizedOwnerId, registered);
-
-    const current = this.snapshot.contextSource;
-    this.update({
-      ...this.snapshot,
-      registryRevision: this.snapshot.registryRevision + 1,
-      ...(current?.ownerId === normalizedOwnerId
-        ? {
-            contextSource: activeContextSource(
-              normalizedOwnerId,
-              registered,
-            ),
-          }
-        : {}),
+    this.activeRegistration = Object.freeze({
+      token,
+      ownerId: normalizedOwnerId,
+      source,
     });
+    this.update({ ...this.snapshot, active: source });
 
     return () => {
       queueMicrotask(() => {
-        const currentRegistration = this.contributions.get(normalizedOwnerId);
-        if (currentRegistration?.token !== token) return;
-        this.contributions.delete(normalizedOwnerId);
-
-        if (this.snapshot.contextSource?.ownerId !== normalizedOwnerId) {
-          this.update({
-            ...this.snapshot,
-            registryRevision: this.snapshot.registryRevision + 1,
-          });
-          return;
-        }
-
+        if (this.activeRegistration?.token !== token) return;
+        this.activeRegistration = undefined;
         this.launchId += 1;
         this.update({
           panelOpen: this.snapshot.panelOpen,
           busy: this.snapshot.busy,
-          registryRevision: this.snapshot.registryRevision + 1,
           ...(this.snapshot.panelOpen
             ? {
                 launchRequest: Object.freeze({
@@ -122,21 +112,16 @@ export class WorkbenchConversationRuntime {
   }
 
   open(input: OpenWorkbenchConversationInput = {}): void {
-    const normalizedOwnerId = input.ownerId?.trim();
-    const registered = normalizedOwnerId
-      ? this.contributions.get(normalizedOwnerId)
-      : undefined;
-    if (normalizedOwnerId && !registered) {
+    const ownerId = input.ownerId?.trim();
+    const registration = this.activeRegistration;
+    if (ownerId && registration?.ownerId !== ownerId) {
       throw new Error('当前 Workbench 没有注册 AI 问答上下文');
     }
-    if (input.context !== undefined && !registered) {
+    if (input.context !== undefined && !ownerId) {
       throw new Error('AI 问答上下文没有已注册的来源');
     }
 
-    const contextSource =
-      normalizedOwnerId && registered
-        ? activeContextSource(normalizedOwnerId, registered)
-        : undefined;
+    const contextSource = ownerId ? registration?.source : undefined;
     this.launchId += 1;
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
@@ -153,22 +138,13 @@ export class WorkbenchConversationRuntime {
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
     });
-    this.update({
-      panelOpen: true,
-      busy: this.snapshot.busy,
-      registryRevision: this.snapshot.registryRevision,
-      ...(contextSource ? { contextSource } : {}),
-      launchRequest,
-    });
+    this.update({ ...this.snapshot, panelOpen: true, launchRequest });
   }
 
   close(): void {
     if (!this.snapshot.panelOpen) return;
-    this.update({
-      panelOpen: false,
-      busy: this.snapshot.busy,
-      registryRevision: this.snapshot.registryRevision,
-    });
+    this.revealId += 1;
+    this.update({ ...this.snapshot, panelOpen: false });
   }
 
   consumeLaunchRequest(requestId: number): void {
@@ -184,41 +160,98 @@ export class WorkbenchConversationRuntime {
   resolveContribution(
     source: ConversationMessageContextSource | undefined,
   ): WorkbenchConversationContribution | undefined {
-    if (!source?.assetId) return undefined;
-    for (const registered of this.contributions.values()) {
-      if (
-        registered.assetId === source.assetId &&
-        registered.contribution.id === source.contributionId &&
-        registered.contribution.contextProviderId ===
-          source.contextProviderId
-      ) {
-        return registered.contribution;
-      }
+    const active = this.activeRegistration?.source;
+    return matchesSource(active, source) ? active.contribution : undefined;
+  }
+
+  describeContext(
+    source: ConversationMessageContextSource,
+    context: JsonValue,
+  ): ConversationContextPresentation | undefined {
+    return (
+      this.describePersistedContext(source, context) ??
+      this.resolveContribution(source)?.describeContext?.(context)
+    );
+  }
+
+  async revealContext(
+    source: ConversationMessageContextSource,
+    context: JsonValue,
+    selectAsset: (assetId: string) => Promise<void> | void,
+    timeoutMs = 10_000,
+  ): Promise<void> {
+    if (!source.assetId) {
+      throw new Error('这条引用没有关联资料，无法定位原文。');
     }
-    return undefined;
+    const revealId = ++this.revealId;
+    await selectAsset(source.assetId);
+    const contribution = await this.waitForContribution(
+      source,
+      revealId,
+      timeoutMs,
+    );
+    if (revealId !== this.revealId) {
+      throw new DOMException('已切换到另一条引用。', 'AbortError');
+    }
+    if (!contribution.revealContext) {
+      throw new Error('目标资料不支持定位这条引用。');
+    }
+    if (contribution.isContext && !contribution.isContext(context)) {
+      throw new Error('引用的资料内容已更新，无法再定位原位置。');
+    }
+    await contribution.revealContext(context);
   }
 
   dispose(): void {
-    this.contributions.clear();
-    this.update({
-      panelOpen: false,
-      busy: false,
-      registryRevision: this.snapshot.registryRevision + 1,
-    });
+    this.disposed = true;
+    this.revealId += 1;
+    this.activeRegistration = undefined;
+    this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
+  }
+
+  private waitForContribution(
+    source: ConversationMessageContextSource,
+    revealId: number,
+    timeoutMs: number,
+  ): Promise<WorkbenchConversationContribution> {
+    const resolved = this.resolveContribution(source);
+    if (resolved) return Promise.resolve(resolved);
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (
+        outcome: WorkbenchConversationContribution | Error,
+      ) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        unsubscribe();
+        if (outcome instanceof Error) reject(outcome);
+        else resolve(outcome);
+      };
+      const check = () => {
+        if (this.disposed || revealId !== this.revealId) {
+          finish(new DOMException('引用定位已取消。', 'AbortError'));
+          return;
+        }
+        const contribution = this.resolveContribution(source);
+        if (contribution) finish(contribution);
+      };
+      const unsubscribe = this.subscribe(check);
+      const timer = setTimeout(
+        () => finish(new Error('目标资料加载超时，无法定位原文。')),
+        timeoutMs,
+      );
+      check();
+    });
   }
 
   private update(next: WorkbenchConversationRuntimeSnapshot): void {
     if (
-      this.snapshot.contextSource?.ownerId ===
-        next.contextSource?.ownerId &&
-      this.snapshot.contextSource?.assetId ===
-        next.contextSource?.assetId &&
-      this.snapshot.contextSource?.contribution ===
-        next.contextSource?.contribution &&
+      this.snapshot.active === next.active &&
       this.snapshot.panelOpen === next.panelOpen &&
       this.snapshot.busy === next.busy &&
-      this.snapshot.registryRevision === next.registryRevision &&
       this.snapshot.launchRequest === next.launchRequest
     ) {
       return;

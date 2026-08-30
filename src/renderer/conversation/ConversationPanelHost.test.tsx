@@ -55,6 +55,7 @@ describe('ConversationPanelHost Project ownership', () => {
           <ConversationPanelHost
             projectId="project-1"
             historyStore={historyStore}
+            onSelectAsset={vi.fn()}
           />
         </WorkbenchConversationRuntimeProvider>,
       );
@@ -133,7 +134,6 @@ describe('ConversationPanelHost Project ownership', () => {
       await Promise.resolve();
     });
 
-    expect(runtime.getSnapshot().contextSource).toBeUndefined();
     expect(onContextReleased).toHaveBeenCalledOnce();
     expect(onContextReleased).toHaveBeenCalledWith(context);
 

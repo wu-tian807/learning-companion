@@ -1,43 +1,72 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import type { WorkbenchConversationContribution } from './conversation-contracts';
+import type {
+  ConversationMessageContextSource,
+  WorkbenchConversationContribution,
+} from './conversation-contracts';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 
-function contribution(id: string): WorkbenchConversationContribution {
+function contribution(
+  id: string,
+  revealContext?: WorkbenchConversationContribution['revealContext'],
+): WorkbenchConversationContribution {
   return {
     id,
     workbenchId: 'test',
     contextProviderId: `${id}.context`,
     sourceAssetMode: 'reference',
+    revealContext,
+  };
+}
+
+function source(
+  id: string,
+  assetId: string,
+): ConversationMessageContextSource {
+  return {
+    contributionId: id,
+    contextProviderId: `${id}.context`,
+    assetId,
+    sourceAssetMode: 'reference',
   };
 }
 
 describe('WorkbenchConversationRuntime', () => {
-  it('opens Project chat without any Workbench contribution', () => {
+  it('keeps Project chat available without a Workbench', () => {
     const runtime = new WorkbenchConversationRuntime();
-
     runtime.open();
 
     expect(runtime.getSnapshot()).toMatchObject({
       panelOpen: true,
       busy: false,
-      registryRevision: 0,
-      launchRequest: {
-        id: 1,
-        clearContext: true,
-      },
+      launchRequest: { id: 1, clearContext: true },
     });
-    expect(runtime.getSnapshot().contextSource).toBeUndefined();
+    expect(runtime.getSnapshot().active).toBeUndefined();
   });
 
-  it('attaches a registered Workbench only as this launch context source', () => {
+  it('describes persisted context without mounting its Workbench', () => {
+    const describe = vi.fn(() => ({
+      label: '选中文本',
+      detail: '旧记录里的原文',
+    }));
+    const runtime = new WorkbenchConversationRuntime(describe);
+    const persistedSource = source('html', 'asset-html');
+
+    expect(runtime.describeContext(persistedSource, { anchor: 'target' })).toEqual({
+      label: '选中文本',
+      detail: '旧记录里的原文',
+    });
+    expect(describe).toHaveBeenCalledWith(
+      persistedSource,
+      { anchor: 'target' },
+    );
+    expect(runtime.getSnapshot().active).toBeUndefined();
+  });
+
+  it('attaches only an explicitly named active Workbench to a launch', () => {
     const runtime = new WorkbenchConversationRuntime();
     const pdf = contribution('pdf');
     runtime.register('pdf.owner', 'asset-1', pdf);
-
-    expect(runtime.getSnapshot().panelOpen).toBe(false);
-    expect(runtime.getSnapshot().contextSource).toBeUndefined();
-
     runtime.open({
       ownerId: 'pdf.owner',
       conversationId: 'conversation-1',
@@ -47,15 +76,11 @@ describe('WorkbenchConversationRuntime', () => {
     });
 
     expect(runtime.getSnapshot()).toMatchObject({
-      contextSource: {
-        ownerId: 'pdf.owner',
-        assetId: 'asset-1',
-        contribution: pdf,
-      },
+      active: { assetId: 'asset-1', contribution: pdf },
       panelOpen: true,
       launchRequest: {
-        id: 1,
         conversationId: 'conversation-1',
+        contextSource: { assetId: 'asset-1', contribution: pdf },
         context: { pageNumber: 2 },
         question: '解释这一段',
         submit: true,
@@ -63,90 +88,78 @@ describe('WorkbenchConversationRuntime', () => {
     });
   });
 
-  it('preserves the open panel and busy state when the same context source updates', () => {
+  it('replaces the active instance without letting stale cleanup close chat', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const original = contribution('plain-text');
-    const replacement = { ...original, title: 'updated' };
+    const replacement = contribution('plain-text');
     const unregisterOriginal = runtime.register(
       'plain-text.owner',
       'asset-1',
       original,
     );
-    runtime.open({
-      ownerId: 'plain-text.owner',
-      question: 'keep open',
-    });
+    runtime.open({ ownerId: 'plain-text.owner', question: 'keep open' });
     runtime.setBusy(true);
-
-    runtime.register(
-      'plain-text.owner',
-      'asset-1',
-      replacement,
-    );
+    runtime.register('plain-text.owner', 'asset-1', replacement);
     unregisterOriginal();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-    return new Promise<void>((resolve) => {
-      queueMicrotask(() => {
-        expect(runtime.getSnapshot()).toMatchObject({
-          contextSource: {
-            ownerId: 'plain-text.owner',
-            contribution: replacement,
-          },
-          panelOpen: true,
-          busy: true,
-        });
-        resolve();
-      });
+    expect(runtime.getSnapshot()).toMatchObject({
+      active: { contribution: replacement },
+      panelOpen: true,
+      busy: true,
     });
   });
 
-  it('clears an unavailable context source without closing Project chat', async () => {
+  it('clears only transient context when its Workbench unmounts', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    const release = runtime.register(
+    const unregister = runtime.register(
       'pdf.owner',
       'asset-1',
       contribution('pdf'),
     );
-    runtime.open({
-      ownerId: 'pdf.owner',
-      context: { page: 1 },
-    });
-
-    release();
+    runtime.open({ ownerId: 'pdf.owner', context: { page: 1 } });
+    unregister();
     await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-    expect(runtime.getSnapshot().contextSource).toBeUndefined();
     expect(runtime.getSnapshot()).toMatchObject({
       panelOpen: true,
-      launchRequest: {
-        clearContext: true,
-      },
+      launchRequest: { clearContext: true },
     });
+    expect(runtime.getSnapshot().active).toBeUndefined();
   });
 
-  it('resolves optional context UI only for the matching mounted Asset', () => {
+  it('selects a referenced Asset and waits for its Workbench before reveal', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    const pdf = contribution('pdf');
-    runtime.register('pdf.owner', 'asset-1', pdf);
+    const reveal = vi.fn();
+    const selectAsset = vi.fn();
+    const pending = runtime.revealContext(
+      source('html', 'asset-html'),
+      { anchor: 'target' },
+      selectAsset,
+    );
 
-    expect(runtime.resolveContribution({
-      contributionId: 'pdf',
-      contextProviderId: 'pdf.context',
-      assetId: 'asset-1',
-      sourceAssetMode: 'reference',
-    })).toBe(pdf);
-    expect(runtime.resolveContribution({
-      contributionId: 'pdf',
-      contextProviderId: 'pdf.context',
-      assetId: 'asset-2',
-      sourceAssetMode: 'reference',
-    })).toBeUndefined();
+    expect(selectAsset).toHaveBeenCalledWith('asset-html');
+    expect(reveal).not.toHaveBeenCalled();
+    runtime.register(
+      'html.owner',
+      'asset-html',
+      contribution('html', reveal),
+    );
+    await pending;
+    expect(reveal).toHaveBeenCalledWith({ anchor: 'target' });
   });
 
-  it('rejects missing or unregistered Workbench context sources', () => {
+  it('rejects deleted Assets and invalid registrations without guessing', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    runtime.register('pdf.owner', 'asset-1', contribution('pdf'));
-
+    await expect(
+      runtime.revealContext(
+        source('html', 'deleted'),
+        { anchor: 'target' },
+        () => {
+          throw new Error('引用的资料已不存在，无法定位原文。');
+        },
+      ),
+    ).rejects.toThrow('引用的资料已不存在');
     expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
       '当前 Workbench 没有注册 AI 问答上下文',
     );
@@ -156,5 +169,21 @@ describe('WorkbenchConversationRuntime', () => {
     expect(() =>
       runtime.register('invalid', '', contribution('pdf')),
     ).toThrow('Workbench Conversation context contribution 无效');
+  });
+
+  it('rejects stale context after the target Workbench is ready', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const staleContribution = {
+      ...contribution('image', vi.fn()),
+      isContext: vi.fn(() => false),
+    };
+    runtime.register('image.owner', 'asset-image', staleContribution);
+
+    await expect(runtime.revealContext(
+      source('image', 'asset-image'),
+      { sourceRevision: 'old' },
+      vi.fn(),
+    )).rejects.toThrow('资料内容已更新');
+    expect(staleContribution.revealContext).not.toHaveBeenCalled();
   });
 });

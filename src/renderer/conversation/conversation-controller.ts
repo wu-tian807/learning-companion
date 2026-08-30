@@ -87,7 +87,6 @@ function conversationContextAttachmentsEqual(
   if (left === right) return true;
   if (!left || !right) return false;
   return (
-    left.ownerId === right.ownerId &&
     left.assetId === right.assetId &&
     left.contribution === right.contribution &&
     conversationContextsEqual(left.context, right.context)
