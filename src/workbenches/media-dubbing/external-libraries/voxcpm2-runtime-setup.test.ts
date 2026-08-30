@@ -125,7 +125,7 @@ describe('VoxCpm2RuntimeSetup', () => {
     expect(run.mock.calls[1]?.[0].args).toEqual(
       expect.arrayContaining([
         '--index-url',
-        'https://mirrors.aliyun.com/pytorch-wheels/cu128',
+        'https://download.pytorch.org/whl/cu128',
       ]),
     );
     await expect(
