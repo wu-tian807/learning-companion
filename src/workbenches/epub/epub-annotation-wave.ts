@@ -13,7 +13,9 @@ export function epubAnnotationWaveStyles(
     'data-epub-wave-color': EPUB_MARKER_COLOR_VALUES[color],
     'data-epub-wave-source': source,
     transform: `translate(0 ${Math.max(0, lane) * 3})`,
+    stroke: 'none',
     'stroke-opacity': '0.95',
+    'mix-blend-mode': 'normal',
     'pointer-events': 'auto',
   });
 }
@@ -57,6 +59,9 @@ export function applyEpubAnnotationWaves(root: ParentNode): void {
     const group = line.closest<SVGGElement>(
       '[data-epub-annotation-wave="true"]',
     );
+    for (const rect of group?.querySelectorAll('rect') ?? []) {
+      rect.remove();
+    }
     const color = group?.getAttribute('data-epub-wave-color') ?? '#3b82f6';
     const path = line.ownerDocument.createElementNS(
       'http://www.w3.org/2000/svg',
