@@ -65,6 +65,10 @@ import { stabilizeEpubContinuousScroll } from './epub-continuous-scroll';
 import { EpubReadingNotePanel } from './notes/epub-reading-note-panel';
 import { EpubReadingTimerControl } from './timer/epub-reading-timer-control';
 import {
+  applyEpubRenditionAppearance,
+  applyEpubThemeToDocument,
+} from './epub-theme';
+import {
   findEpubReadingNoteAtTarget,
   toEpubReadingNoteView,
   type EpubReadingNoteView,
@@ -116,51 +120,6 @@ function flattenNavigation(
     },
     ...flattenNavigation(item.subitems ?? [], depth + 1),
   ]);
-}
-
-function themeRules(theme: EpubTheme): object {
-  const palette = {
-    dark: {
-      background: '#151a20',
-      foreground: '#cbd5e1',
-      muted: '#94a3b8',
-      link: '#a5b4fc',
-    },
-    light: {
-      background: '#f7f5ef',
-      foreground: '#292824',
-      muted: '#69665e',
-      link: '#4f46e5',
-    },
-    sepia: {
-      background: '#f2ead7',
-      foreground: '#40392e',
-      muted: '#756a58',
-      link: '#765caa',
-    },
-  }[theme];
-
-  return {
-    html: {
-      'background-color': `${palette.background} !important`,
-    },
-    body: {
-      'background-color': `${palette.background} !important`,
-      color: `${palette.foreground} !important`,
-      'line-height': '1.8 !important',
-      padding: '0 4% !important',
-    },
-    'a, a:visited': {
-      color: `${palette.link} !important`,
-    },
-    'blockquote, figcaption': {
-      color: `${palette.muted} !important`,
-    },
-    'img, svg': {
-      'max-width': '100% !important',
-      height: 'auto !important',
-    },
-  };
 }
 
 function EpubToc({
@@ -695,12 +654,10 @@ export function EpubWorkbenchView({
       renditionRef.current = rendition;
       stabilizeEpubContinuousScroll(host, viewStateRef.current.flow);
       removeAnnotationWaveObserver = observeEpubAnnotationWaves(host);
-      for (const theme of ['dark', 'light', 'sepia'] as const) {
-        rendition.themes.register(theme, themeRules(theme));
-      }
-      rendition.themes.select(viewStateRef.current.theme);
-      rendition.themes.fontSize(
-        `${Math.round(viewStateRef.current.fontScale * 100)}%`,
+      applyEpubRenditionAppearance(
+        rendition,
+        viewStateRef.current.theme,
+        viewStateRef.current.fontScale,
       );
       const initialLocation = viewStateRef.current.location;
       const locationRestore = createEpubReadingLocationRestore(
@@ -709,6 +666,10 @@ export function EpubWorkbenchView({
       );
 
       rendition.hooks.content.register((contents: Contents) => {
+        applyEpubThemeToDocument(
+          contents.document,
+          viewStateRef.current.theme,
+        );
         for (const anchor of contents.document.querySelectorAll('a')) {
           anchor.removeAttribute('target');
           anchor.removeAttribute('download');
@@ -878,9 +839,10 @@ export function EpubWorkbenchView({
     if (!rendition) {
       return;
     }
-    rendition.themes.select(viewState.theme);
-    rendition.themes.fontSize(
-      `${Math.round(viewState.fontScale * 100)}%`,
+    applyEpubRenditionAppearance(
+      rendition,
+      viewState.theme,
+      viewState.fontScale,
     );
   }, [viewState.fontScale, viewState.theme]);
 
