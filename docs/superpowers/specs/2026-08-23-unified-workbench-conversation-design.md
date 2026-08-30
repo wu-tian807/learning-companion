@@ -127,12 +127,11 @@ registerGeneration({ conversationContexts }) {
 - Renderer 历史不会重新拼回 Prompt；
 - 新 Conversation 使用新的 `conversationId`，因此形成新的 Session 边界。
 
-当前 Project 运行期间，公共 Conversation Runtime 按
-`projectId + assetId + contributionId + conversationPartitionKey` 仅在内存中保留当前选中的
-UI Conversation。`conversationPartitionKey` 是 Workbench 提供的可选不透明键；例如 Image
-和 Video 使用自己的内容版本，公共层不解释版本含义。这样 Workbench Session 因刷新、
-切换或重挂载而变化时，Controller 仍继续使用原 `conversationId`，而内容分区变化时不会
-恢复旧 Conversation；关闭 Project 或重启应用后这份运行期选择自然消失。
+当前 Project 运行期间，公共 Conversation Runtime 按 `projectId` 仅在内存中保留
+当前选中的 UI Conversation。Asset 切换、Workbench Contribution 切换、Workbench Session
+刷新或重挂载都不改变该 Conversation 的 `conversationId`；Workbench 只校验并附加
+本轮 Context，不拥有或分区整个对话。关闭 Project 或重启应用后这份运行期
+选择自然消失；用户仍可从 Project 历史中显式恢复它。
 
 Runtime 的当前 Conversation 状态是可订阅的，包含单调 `revision`、当前 UI 投影、可选的
 pending start operation、已绑定但尚未终止的 active task 和启动失败后的 UI 恢复数据。
@@ -152,6 +151,11 @@ task ID 异步查询 GenerationTask；任务终止后清除 active task，原 Co
 thread 的身份。一个 Conversation 可以依次包含多个 Task；它们始终使用同一个
 `conversationId` 作为 Session 分区。持久化 UI History 不参与运行期 active task 交接，
 Provider 历史仍只以 Agent Session/Codex thread 为准。
+
+同一 Project scope 内的 UI History 保存、回滚与删除按操作发起顺序串行，队列跨
+Controller 重挂载继续存在；不同 Project 的历史操作彼此独立。该队列只防止旧 Controller
+的晚到写入覆盖新 Controller 已完成的展示投影，不把 UI History 提升为模型上下文或
+Conversation/Task 身份来源。
 
 普通打开、附加新 Context 和后续追问都不传 `conversationId`，也不会从持久化历史中猜测
 “最近一次”会话。只有用户主动选择某条历史记录时，Renderer 才显式传入该记录的

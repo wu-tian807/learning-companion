@@ -134,13 +134,9 @@ describe('WorkbenchConversationRuntime', () => {
     );
   });
 
-  it('keeps the current UI conversation isolated by Project, Asset and contribution', () => {
+  it('keeps one current UI conversation per Project across Workbench changes', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project-a',
-      assetId: 'asset-a',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project-a' };
     const selected = conversation('conversation-a');
 
     runtime.setCurrentConversation(scope, selected);
@@ -151,28 +147,17 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.getCurrentConversation(scope)).toBe(replacement);
     expect(runtime.getCurrentConversation({ ...scope, projectId: 'project-b' }))
       .toBeUndefined();
-    expect(runtime.getCurrentConversation({ ...scope, assetId: 'asset-b' }))
-      .toBeUndefined();
-    expect(runtime.getCurrentConversation({
-      ...scope,
-      contributionId: 'pdf.document-question',
-    })).toBeUndefined();
   });
 
-  it('notifies only the matching current-conversation scope', () => {
+  it('notifies only the matching Project conversation scope', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'video.frame-conversation',
-      conversationPartitionKey: 'revision-1',
-    };
+    const scope = { projectId: 'project' };
     const matchingListener = vi.fn();
-    const otherRevisionListener = vi.fn();
+    const otherProjectListener = vi.fn();
     runtime.subscribeCurrentConversation(scope, matchingListener);
     runtime.subscribeCurrentConversation(
-      { ...scope, conversationPartitionKey: 'revision-2' },
-      otherRevisionListener,
+      { projectId: 'other-project' },
+      otherProjectListener,
     );
 
     const selected = conversation('conversation-1');
@@ -180,35 +165,125 @@ describe('WorkbenchConversationRuntime', () => {
     runtime.setCurrentConversation(scope, selected);
 
     expect(matchingListener).toHaveBeenCalledOnce();
-    expect(otherRevisionListener).not.toHaveBeenCalled();
+    expect(otherProjectListener).not.toHaveBeenCalled();
   });
 
-  it('isolates current conversations by the Workbench-owned partition key', () => {
+  it('serializes history mutations per scope without blocking another scope', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'image.reading-conversation',
-      conversationPartitionKey: 'revision-1',
-    };
-    const selected = conversation('conversation-old-revision');
+    const scope = { projectId: 'project' };
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const calls: string[] = [];
 
-    runtime.setCurrentConversation(scope, selected);
+    const first = runtime.enqueueCurrentConversationHistoryMutation(
+      scope,
+      async () => {
+        calls.push('first:start');
+        await firstGate;
+        calls.push('first:end');
+        return 'first';
+      },
+    );
+    const second = runtime.enqueueCurrentConversationHistoryMutation(
+      scope,
+      async () => {
+        calls.push('second');
+        return 'second';
+      },
+    );
+    const otherScope = runtime.enqueueCurrentConversationHistoryMutation(
+      { projectId: 'other-project' },
+      async () => {
+        calls.push('other');
+        return 'other';
+      },
+    );
 
-    expect(runtime.getCurrentConversation(scope)).toBe(selected);
-    expect(runtime.getCurrentConversation({
-      ...scope,
-      conversationPartitionKey: 'revision-2',
-    })).toBeUndefined();
+    await otherScope;
+    expect(calls).toEqual(['first:start', 'other']);
+    releaseFirst();
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      'first',
+      'second',
+    ]);
+    expect(calls).toEqual([
+      'first:start',
+      'other',
+      'first:end',
+      'second',
+    ]);
+  });
+
+  it('continues scoped history mutations after an earlier operation fails', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const scope = { projectId: 'project' };
+    const failure = new Error('save failed');
+    const failed = runtime.enqueueCurrentConversationHistoryMutation(
+      scope,
+      async () => {
+        throw failure;
+      },
+    );
+    const recovered = runtime.enqueueCurrentConversationHistoryMutation(
+      scope,
+      async () => 'saved-after-failure',
+    );
+
+    await expect(failed).rejects.toBe(failure);
+    await expect(recovered).resolves.toBe('saved-after-failure');
+  });
+
+  it('keeps Runtime busy while a background operation survives controller cleanup', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const ownerId = 'html.owner';
+    const scope = { projectId: 'project' };
+    const initial = conversation('conversation');
+    runtime.register(ownerId, contribution('html'));
+    runtime.setCurrentConversation(scope, initial);
+    runtime.beginCurrentConversationStart(scope, {
+      operationId: 'operation',
+      expectedConversationId: initial.id,
+      conversation: initial,
+    });
+    expect(runtime.getSnapshot().busy).toBe(true);
+
+    runtime.close();
+    runtime.setBusy(ownerId, false);
+    expect(runtime.getSnapshot().busy).toBe(true);
+
+    const releaseOwner = runtime.register(ownerId, contribution('html'));
+    releaseOwner();
+    await Promise.resolve();
+    expect(runtime.getSnapshot().busy).toBe(true);
+
+    const resolved = runtime.resolveCurrentConversationStart(scope, {
+      operationId: 'operation',
+      taskId: 'task',
+      assistantMessageId: 'answer',
+      mode: 'answer',
+      updateConversation: (current) => ({
+        ...current,
+        messages: [{
+          id: 'answer',
+          role: 'assistant',
+          text: '',
+          createdTime: 2,
+          generationTaskId: 'task',
+        }],
+      }),
+    });
+    expect(resolved?.state.activeTask?.taskId).toBe('task');
+    runtime.finishCurrentConversationTask(scope, 'task');
+    runtime.register(ownerId, contribution('html'));
+    runtime.setBusy(ownerId, false);
+    expect(runtime.getSnapshot().busy).toBe(false);
   });
 
   it('resolves only the matching start operation and merges against the latest revision', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     const initial = conversation('conversation');
     runtime.setCurrentConversation(scope, initial);
     const optimistic: ConversationRecord = {
@@ -285,11 +360,7 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('hands cancellation and start failure state across controller lifetimes', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     const initial = conversation('conversation');
     runtime.setCurrentConversation(scope, initial);
     runtime.beginCurrentConversationStart(scope, {
@@ -350,11 +421,7 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('recovers one active task per Conversation and clears only its matching terminal', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     const selected: ConversationRecord = {
       ...conversation('conversation-active'),
       messages: [{
@@ -402,11 +469,7 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('does not carry an active task across Conversation pointers', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     const selected: ConversationRecord = {
       ...conversation('conversation-active'),
       messages: [{
@@ -435,11 +498,7 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('invalidates a pending start when the current conversation pointer changes', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     const initial = conversation('conversation-1');
     runtime.setCurrentConversation(scope, initial);
     runtime.beginCurrentConversationStart(scope, {
@@ -463,11 +522,7 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('abandons a matching operation when its merge target no longer exists', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     const initial = conversation('conversation');
     runtime.setCurrentConversation(scope, initial);
     runtime.beginCurrentConversationStart(scope, {
@@ -489,11 +544,7 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('drops only the in-memory current conversation state on disposal', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
     runtime.setCurrentConversation(scope, conversation('conversation'));
 
     runtime.dispose();
@@ -503,18 +554,10 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('rejects invalid current conversation scopes and identities', () => {
     const runtime = new WorkbenchConversationRuntime();
-    const scope = {
-      projectId: 'project',
-      assetId: 'asset',
-      contributionId: 'html.assistant',
-    };
+    const scope = { projectId: 'project' };
 
-    expect(() => runtime.getCurrentConversation({ ...scope, assetId: ' ' }))
+    expect(() => runtime.getCurrentConversation({ projectId: ' ' }))
       .toThrow('Workbench Conversation scope 无效');
-    expect(() => runtime.getCurrentConversation({
-      ...scope,
-      conversationPartitionKey: ' ',
-    })).toThrow('Workbench Conversation scope 无效');
     expect(() => runtime.setCurrentConversation(scope, conversation(' ')))
       .toThrow('Workbench Conversation identity 无效');
   });

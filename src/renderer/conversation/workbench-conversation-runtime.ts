@@ -116,6 +116,7 @@ export class WorkbenchConversationRuntime {
     string,
     Set<() => void>
   >();
+  private readonly historyMutationTails = new Map<string, Promise<void>>();
   private launchId = 0;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
@@ -155,6 +156,26 @@ export class WorkbenchConversationRuntime {
         this.currentConversationListeners.delete(key);
       }
     };
+  }
+
+  enqueueCurrentConversationHistoryMutation<T>(
+    scope: WorkbenchConversationScope,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const key = conversationScopeKey(scope);
+    const previous = this.historyMutationTails.get(key) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.historyMutationTails.set(key, tail);
+    void tail.then(() => {
+      if (this.historyMutationTails.get(key) === tail) {
+        this.historyMutationTails.delete(key);
+      }
+    });
+    return result;
   }
 
   setCurrentConversation(
@@ -446,7 +467,7 @@ export class WorkbenchConversationRuntime {
           | undefined;
         this.update({
           panelOpen: false,
-          busy: false,
+          busy: this.hasConversationOperation(),
           ...(fallback
             ? {
                 active: {
@@ -500,13 +521,14 @@ export class WorkbenchConversationRuntime {
   }
 
   setBusy(ownerId: string, busy: boolean): void {
+    const effectiveBusy = busy || this.hasConversationOperation();
     if (
       this.snapshot.active?.ownerId !== ownerId ||
-      this.snapshot.busy === busy
+      this.snapshot.busy === effectiveBusy
     ) {
       return;
     }
-    this.update({ ...this.snapshot, busy });
+    this.update({ ...this.snapshot, busy: effectiveBusy });
   }
 
   dispose(): void {
@@ -516,6 +538,7 @@ export class WorkbenchConversationRuntime {
       for (const listener of [...listeners]) listener();
     }
     this.currentConversationListeners.clear();
+    this.historyMutationTails.clear();
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }
@@ -552,11 +575,21 @@ export class WorkbenchConversationRuntime {
       );
   }
 
+  private hasConversationOperation(): boolean {
+    return [...this.currentConversations.values()].some(
+      ({ activeTask, pendingStart }) => activeTask || pendingStart,
+    );
+  }
+
   private setCurrentConversationState(
     key: string,
     next: WorkbenchCurrentConversationState,
   ): void {
     this.currentConversations.set(key, next);
+    const busy = this.hasConversationOperation();
+    if (this.snapshot.busy !== busy) {
+      this.update({ ...this.snapshot, busy });
+    }
     for (const listener of [
       ...(this.currentConversationListeners.get(key) ?? []),
     ]) {

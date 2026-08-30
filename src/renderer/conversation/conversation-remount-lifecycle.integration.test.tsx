@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { GenerationTaskView } from '../../shared/generation-tasks';
 import type {
+  ConversationHistoryStore,
   ConversationRecord,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
@@ -65,23 +66,26 @@ function completedTask(id: string): GenerationTaskView {
 }
 
 function contribution(): WorkbenchConversationContribution {
-  let history: readonly ConversationRecord[] = [];
   return {
     id: 'html.assistant',
     workbenchId: 'html',
     contextProviderId: 'html.context',
     title: '网页问答',
     emptyLabel: 'empty',
-    historyStore: {
-      list: async () => history,
-      save: async (record) => {
-        history = [...history.filter(({ id }) => id !== record.id), record];
-        return history;
-      },
-      remove: async (conversationId) => {
-        history = history.filter(({ id }) => id !== conversationId);
-        return history;
-      },
+  };
+}
+
+function memoryHistoryStore(): ConversationHistoryStore {
+  let history: readonly ConversationRecord[] = [];
+  return {
+    list: async () => history,
+    save: async (record) => {
+      history = [...history.filter(({ id }) => id !== record.id), record];
+      return history;
+    },
+    remove: async (conversationId) => {
+      history = history.filter(({ id }) => id !== conversationId);
+      return history;
     },
   };
 }
@@ -104,11 +108,7 @@ type PanelProjection = {
   };
 };
 
-const scope = {
-  projectId: 'project',
-  assetId: 'asset',
-  contributionId: 'html.assistant',
-};
+const scope = { projectId: 'project' };
 
 describe('Workbench conversation remount lifecycle', () => {
   let container: HTMLDivElement;
@@ -125,6 +125,7 @@ describe('Workbench conversation remount lifecycle', () => {
     taskClientMock.cancel.mockReset();
     taskClientMock.subscribe.mockReset();
     taskClientMock.get.mockResolvedValue(undefined);
+    taskClientMock.cancel.mockResolvedValue(undefined);
     taskClientMock.subscribe.mockImplementation(() => () => undefined);
   });
 
@@ -152,21 +153,27 @@ describe('Workbench conversation remount lifecycle', () => {
     };
   }
 
-  function createRuntime(initialConversation?: ConversationRecord) {
+  function createRuntime(
+    initialConversation?: ConversationRecord,
+    historyStore = memoryHistoryStore(),
+  ) {
     const runtime = new WorkbenchConversationRuntime();
-    const registeredContribution = contribution();
     if (initialConversation) {
       runtime.setCurrentConversation(scope, initialConversation);
     }
-    runtime.register('html:workbench-session', registeredContribution);
+    runtime.register('html:workbench-session', contribution());
     runtime.open({ ownerId: 'html:workbench-session' });
 
-    const renderHost = async (mounted: boolean) => {
+    const renderHost = async (mounted: boolean, assetId = 'asset') => {
       await act(async () => {
         root.render(
           <WorkbenchConversationRuntimeProvider runtime={runtime}>
             {mounted ? (
-              <ConversationPanelHost projectId="project" assetId="asset" />
+              <ConversationPanelHost
+                projectId="project"
+                assetId={assetId}
+                historyStore={historyStore}
+              />
             ) : null}
           </WorkbenchConversationRuntimeProvider>,
         );
@@ -216,6 +223,7 @@ describe('Workbench conversation remount lifecycle', () => {
     const deferred = createDeferredStart();
     const runtime = new WorkbenchConversationRuntime();
     const registeredContribution = contribution();
+    const historyStore = memoryHistoryStore();
     runtime.register('html:workbench-session', registeredContribution);
     runtime.open({
       ownerId: 'html:workbench-session',
@@ -227,7 +235,11 @@ describe('Workbench conversation remount lifecycle', () => {
     await act(async () => {
       root.render(
         <WorkbenchConversationRuntimeProvider runtime={runtime}>
-          <ConversationPanelHost projectId="project" assetId="asset" />
+          <ConversationPanelHost
+            projectId="project"
+            assetId="asset"
+            historyStore={historyStore}
+          />
         </WorkbenchConversationRuntimeProvider>,
       );
       await Promise.resolve();
@@ -305,7 +317,7 @@ describe('Workbench conversation remount lifecycle', () => {
     expect((panelMock.latest as PanelProjection).state.busy).toBe(true);
   });
 
-  it('inherits a bound active task before delayed recovery and blocks every new operation', async () => {
+  it('inherits a bound active task across Workbench and Asset changes before delayed recovery', async () => {
     const deferred = createDeferredStart();
     let resolveRecovery!: (snapshot: GenerationTaskView | undefined) => void;
     taskClientMock.get.mockImplementation(() =>
@@ -313,7 +325,7 @@ describe('Workbench conversation remount lifecycle', () => {
         resolveRecovery = resolve;
       }),
     );
-    const { renderHost } = createRuntime();
+    const { renderHost, runtime } = createRuntime();
 
     await renderHost(true);
     act(() => {
@@ -330,7 +342,16 @@ describe('Workbench conversation remount lifecycle', () => {
     const activeAnswerId = activeConversation.messages.at(-1)!.id;
 
     await renderHost(false);
-    await renderHost(true);
+    expect(runtime.getSnapshot().busy).toBe(true);
+    const nextContribution = {
+      ...contribution(),
+      id: 'video.frame-conversation',
+      workbenchId: 'video',
+      contextProviderId: 'video.context',
+    };
+    runtime.register('video:workbench-session', nextContribution);
+    runtime.open({ ownerId: 'video:workbench-session' });
+    await renderHost(true, 'asset-b');
 
     const remounted = panelMock.latest as PanelProjection;
     expect(taskClientMock.get).toHaveBeenCalledWith('project', 'task-active');
@@ -351,6 +372,8 @@ describe('Workbench conversation remount lifecycle', () => {
 
     expect(taskClientMock.start).toHaveBeenCalledOnce();
     expect((panelMock.latest as PanelProjection).state.conversation.id)
+      .toBe(activeConversation.id);
+    expect(runtime.getCurrentConversation(scope)?.id)
       .toBe(activeConversation.id);
 
     await act(async () => {
@@ -411,6 +434,66 @@ describe('Workbench conversation remount lifecycle', () => {
       .toBe(conversationId);
   });
 
+  it('does not let a stale controller persistence write overwrite a remounted completion', async () => {
+    const deferred = createDeferredStart();
+    const pendingSaves: Array<{
+      readonly record: ConversationRecord;
+      readonly resolve: (records: readonly ConversationRecord[]) => void;
+    }> = [];
+    let persisted: ConversationRecord | undefined;
+    const historyStore: ConversationHistoryStore = {
+      ...memoryHistoryStore(),
+      save: vi.fn((record: ConversationRecord) =>
+        new Promise<readonly ConversationRecord[]>((resolve) => {
+          pendingSaves.push({ record, resolve });
+        }),
+      ),
+    };
+    taskClientMock.get.mockResolvedValue(completedTask('task-persist'));
+    const { renderHost } = createRuntime(undefined, historyStore);
+
+    await renderHost(true);
+    act(() => {
+      (panelMock.latest as PanelProjection).actions.submit('persist across remount');
+    });
+    await renderHost(false);
+    expect(pendingSaves).toHaveLength(1);
+
+    await renderHost(true);
+    await act(async () => {
+      deferred.resolveStart('task-persist');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pendingSaves).toHaveLength(1);
+
+    await act(async () => {
+      persisted = pendingSaves[0]!.record;
+      pendingSaves[0]!.resolve([pendingSaves[0]!.record]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pendingSaves).toHaveLength(2);
+    expect(pendingSaves[1]!.record.messages.at(-1)?.text).toBe('');
+
+    await act(async () => {
+      persisted = pendingSaves[1]!.record;
+      pendingSaves[1]!.resolve([pendingSaves[1]!.record]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(pendingSaves).toHaveLength(3);
+    expect(pendingSaves[2]!.record.messages.at(-1)?.text)
+      .toBe('background answer');
+
+    await act(async () => {
+      persisted = pendingSaves[2]!.record;
+      pendingSaves[2]!.resolve([pendingSaves[2]!.record]);
+      await Promise.resolve();
+    });
+    expect(persisted?.messages.at(-1)?.text).toBe('background answer');
+  });
+
   it('keeps the active task locked when recovery lookup fails', async () => {
     const deferred = createDeferredStart();
     const { renderHost } = createRuntime();
@@ -446,7 +529,24 @@ describe('Workbench conversation remount lifecycle', () => {
 
   it('hands a late start failure draft, context and error to the remounted controller', async () => {
     const deferred = createDeferredStart();
-    const { renderHost } = createRuntime();
+    let history: readonly ConversationRecord[] = [];
+    let resolveOptimisticSave!: () => void;
+    const historyStore: ConversationHistoryStore = {
+      list: async () => history,
+      save: vi.fn((record: ConversationRecord) =>
+        new Promise<readonly ConversationRecord[]>((resolve) => {
+          resolveOptimisticSave = () => {
+            history = [record];
+            resolve(history);
+          };
+        }),
+      ),
+      remove: vi.fn(async (conversationId) => {
+        history = history.filter(({ id }) => id !== conversationId);
+        return history;
+      }),
+    };
+    const { renderHost } = createRuntime(undefined, historyStore);
     const context = { target: { scope: 'selection' } };
 
     await renderHost(true);
@@ -480,6 +580,15 @@ describe('Workbench conversation remount lifecycle', () => {
       code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
       message: '请先配置模型',
     });
+    expect(historyStore.remove).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveOptimisticSave();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(historyStore.remove).toHaveBeenCalledOnce();
+    await expect(historyStore.list()).resolves.toEqual([]);
   });
 
   it('preserves a pending cancel request until the late taskId arrives', async () => {

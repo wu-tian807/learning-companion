@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  ConversationHistoryStore,
   ConversationRecord,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
@@ -36,23 +37,21 @@ function conversation(id: string): ConversationRecord {
   };
 }
 
-function contribution(
-  conversationPartitionKey?: string,
-): WorkbenchConversationContribution {
+function contribution(id = 'html.assistant'): WorkbenchConversationContribution {
   return {
-    id: 'html.assistant',
+    id,
     workbenchId: 'html',
-    ...(conversationPartitionKey === undefined
-      ? {}
-      : { conversationPartitionKey }),
     contextProviderId: 'html.context',
     title: '网页问答',
     emptyLabel: 'empty',
-    historyStore: {
-      list: async () => [],
-      save: async (record) => [record],
-      remove: async () => [],
-    },
+  };
+}
+
+function historyStore(): ConversationHistoryStore {
+  return {
+    list: async () => [],
+    save: async (record) => [record],
+    remove: async () => [],
   };
 }
 
@@ -74,6 +73,7 @@ describe('ConversationPanelHost', () => {
 
   it('restores the current in-memory conversation after a Workbench Session remount', async () => {
     const runtime = new WorkbenchConversationRuntime();
+    const store = historyStore();
     const activeConversation = conversation('conversation-1');
     const registeredContribution = contribution();
     controllerMocks.useConversationController.mockImplementation(
@@ -107,7 +107,11 @@ describe('ConversationPanelHost', () => {
     await act(async () => {
       root.render(
         <WorkbenchConversationRuntimeProvider runtime={runtime}>
-          <ConversationPanelHost projectId="project" assetId="asset" />
+          <ConversationPanelHost
+            projectId="project"
+            assetId="asset"
+            historyStore={store}
+          />
         </WorkbenchConversationRuntimeProvider>,
       );
       await Promise.resolve();
@@ -151,14 +155,7 @@ describe('ConversationPanelHost', () => {
       ],
     };
     await act(async () => {
-      runtime.setCurrentConversation(
-        {
-          projectId: 'project',
-          assetId: 'asset',
-          contributionId: registeredContribution.id,
-        },
-        lateTaskBinding,
-      );
+      runtime.setCurrentConversation({ projectId: 'project' }, lateTaskBinding);
       await Promise.resolve();
     });
     expect(
@@ -167,12 +164,13 @@ describe('ConversationPanelHost', () => {
     ).toBe(lateTaskBinding);
   });
 
-  it('starts a separate controller projection when the Workbench partition changes', async () => {
+  it('keeps the Project conversation when the active Workbench and Asset change', async () => {
     const runtime = new WorkbenchConversationRuntime();
+    const store = historyStore();
     const oldConversation = conversation('old-conversation');
     const freshConversation = conversation('fresh-conversation');
-    const oldContribution = contribution('revision-1');
-    const newContribution = contribution('revision-2');
+    const oldContribution = contribution('image.conversation');
+    const newContribution = contribution('video.conversation');
     controllerMocks.useConversationController.mockImplementation(
       (input: { readonly initialConversation?: ConversationRecord }) => ({
         state: {
@@ -197,21 +195,17 @@ describe('ConversationPanelHost', () => {
         },
       }),
     );
-    runtime.setCurrentConversation(
-      {
-        projectId: 'project',
-        assetId: 'asset',
-        contributionId: oldContribution.id,
-        conversationPartitionKey: 'revision-1',
-      },
-      oldConversation,
-    );
+    runtime.setCurrentConversation({ projectId: 'project' }, oldConversation);
     runtime.register('image:workbench-session', oldContribution);
 
     await act(async () => {
       root.render(
         <WorkbenchConversationRuntimeProvider runtime={runtime}>
-          <ConversationPanelHost projectId="project" assetId="asset" />
+          <ConversationPanelHost
+            projectId="project"
+            assetId="asset-a"
+            historyStore={store}
+          />
         </WorkbenchConversationRuntimeProvider>,
       );
       await Promise.resolve();
@@ -221,15 +215,27 @@ describe('ConversationPanelHost', () => {
         .initialConversation,
     ).toBe(oldConversation);
 
-    const previousCallCount =
-      controllerMocks.useConversationController.mock.calls.length;
     await act(async () => {
-      runtime.register('image:workbench-session', newContribution);
+      runtime.register('video:workbench-session', newContribution);
+      runtime.open({ ownerId: 'video:workbench-session' });
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelHost
+            projectId="project"
+            assetId="asset-b"
+            historyStore={store}
+          />
+        </WorkbenchConversationRuntimeProvider>,
+      );
       await Promise.resolve();
     });
     expect(
-      controllerMocks.useConversationController.mock.calls[previousCallCount]
-        ?.[0].initialConversation,
-    ).toBeUndefined();
+      controllerMocks.useConversationController.mock.calls.at(-1)?.[0]
+        .initialConversation,
+    ).toBe(oldConversation);
+    expect(
+      controllerMocks.useConversationController.mock.calls.at(-1)?.[0]
+        .historyStore,
+    ).toBe(store);
   });
 });

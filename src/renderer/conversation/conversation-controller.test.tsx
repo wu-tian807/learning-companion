@@ -854,7 +854,7 @@ describe('shared Conversation controller', () => {
       return { taskId: 'task-1', snapshot: task('task-1') };
     });
 
-    render({ contribution: createContribution({ historyStore }) });
+    render({ contribution: createContribution(), historyStore });
     await flush();
     expect(latest.state.history).toEqual([saved]);
     expect(latest.state.conversation.id).not.toBe(saved.id);
@@ -890,7 +890,8 @@ describe('shared Conversation controller', () => {
     });
 
     render({
-      contribution: createContribution({ historyStore }),
+      contribution: createContribution(),
+      historyStore,
       launchRequest: { id: 1, conversationId: saved.id },
     });
     await flush();

@@ -192,6 +192,21 @@ function recoveryTaskFromConversation(
   });
 }
 
+function projectConversationIntoHistory(
+  history: readonly ConversationRecord[],
+  conversation: ConversationRecord,
+): readonly ConversationRecord[] {
+  if (conversation.messages.length === 0) {
+    return Object.freeze(history.filter(({ id }) => id !== conversation.id));
+  }
+  const next = [...history];
+  const index = next.findIndex(({ id }) => id === conversation.id);
+  if (index >= 0) next[index] = conversation;
+  else next.push(conversation);
+  next.sort((left, right) => left.createdTime - right.createdTime);
+  return Object.freeze(next);
+}
+
 export function useConversationController({
   open,
   projectId,
@@ -288,13 +303,19 @@ export function useConversationController({
   const enqueueHistoryMutation = useCallback(<T,>(
     operation: () => Promise<T>,
   ): Promise<T> => {
+    if (conversationRuntime && conversationScope) {
+      return conversationRuntime.enqueueCurrentConversationHistoryMutation(
+        conversationScope,
+        operation,
+      );
+    }
     const result = historyMutationTailRef.current.then(operation, operation);
     historyMutationTailRef.current = result.then(
       () => undefined,
       () => undefined,
     );
     return result;
-  }, []);
+  }, [conversationRuntime, conversationScope]);
 
   const replaceConversation = useCallback((
     next: ConversationRecord,
@@ -366,6 +387,33 @@ export function useConversationController({
   useEffect(() => {
     persistRef.current = persist;
   }, [persist]);
+
+  const reconcileRolledBackConversation = useCallback(async (
+    record: ConversationRecord,
+  ) => {
+    try {
+      const records = await enqueueHistoryMutation(() =>
+        record.messages.length === 0
+          ? historyStore.remove(record.id)
+          : historyStore.save(record),
+      );
+      if (mountedRef.current) {
+        setHistory(records.filter(
+          ({ id }) => !deletedConversationIdsRef.current.has(id),
+        ));
+      }
+    } catch (persistenceError) {
+      if (mountedRef.current) {
+        setError({ message: '无法保存对话记录，请稍后重试。' });
+      }
+      onPersistenceErrorRef.current?.(persistenceError);
+    }
+  }, [enqueueHistoryMutation, historyStore]);
+
+  const cancelStartedTask = useCallback((taskId: string) => {
+    void Promise.resolve(taskClient.cancel(projectId, taskId))
+      .catch(() => undefined);
+  }, [projectId, taskClient]);
 
   const finishTask = useCallback((expectedTaskId?: string) => {
     const taskId = activeTaskIdRef.current;
@@ -596,10 +644,12 @@ export function useConversationController({
       setActivityLabel(undefined);
       setError(input.error);
     }
+    void reconcileRolledBackConversation(nextConversation);
     return true;
   }, [
     conversationRuntime,
     conversationScope,
+    reconcileRolledBackConversation,
     replaceConversation,
     writePendingContext,
   ]);
@@ -856,6 +906,9 @@ export function useConversationController({
         setActiveTaskId(undefined);
         setBusy(false);
         setActivityLabel(undefined);
+        setHistory((current) =>
+          projectConversationIntoHistory(current, projected.conversation),
+        );
         setDraft(failure.draft);
         setPendingContextState(failure.pendingContext);
         setError(failure.error);
@@ -986,7 +1039,7 @@ export function useConversationController({
           assistantMessageId,
         );
         if (!resolved) {
-          void taskClient.cancel(projectId, started.taskId);
+          cancelStartedTask(started.taskId);
           return;
         }
         if (context !== undefined) {
@@ -1000,7 +1053,7 @@ export function useConversationController({
           return;
         }
         if (resolved.cancelRequested) {
-          void taskClient.cancel(projectId, started.taskId);
+          cancelStartedTask(started.taskId);
         }
       },
       (startError: unknown) => {
@@ -1018,6 +1071,7 @@ export function useConversationController({
     assetId,
     beginPendingStart,
     bindResolvedStart,
+    cancelStartedTask,
     contribution,
     createId,
     draft,
@@ -1168,7 +1222,7 @@ export function useConversationController({
           assistant.reanswerBackup ? 'reanswer' : 'answer',
         );
         if (!resolved) {
-          void taskClient.cancel(projectId, started.taskId);
+          cancelStartedTask(started.taskId);
           return;
         }
         if (
@@ -1179,7 +1233,7 @@ export function useConversationController({
           return;
         }
         if (resolved.cancelRequested) {
-          void taskClient.cancel(projectId, started.taskId);
+          cancelStartedTask(started.taskId);
         }
       },
       (retryError: unknown) => {
@@ -1200,6 +1254,7 @@ export function useConversationController({
     applyTerminalTask,
     beginPendingStart,
     bindResolvedStart,
+    cancelStartedTask,
     error?.retryTaskId,
     projectId,
     rejectPendingStart,
@@ -1261,7 +1316,7 @@ export function useConversationController({
           'reanswer',
         );
         if (!resolved) {
-          void taskClient.cancel(projectId, started.taskId);
+          cancelStartedTask(started.taskId);
           return;
         }
         if (
@@ -1272,7 +1327,7 @@ export function useConversationController({
           return;
         }
         if (resolved.cancelRequested) {
-          void taskClient.cancel(projectId, started.taskId);
+          cancelStartedTask(started.taskId);
         }
       },
       (reanswerError: unknown) => {
@@ -1293,6 +1348,7 @@ export function useConversationController({
     assetId,
     beginPendingStart,
     bindResolvedStart,
+    cancelStartedTask,
     contribution,
     projectId,
     rejectPendingStart,

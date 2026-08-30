@@ -125,11 +125,10 @@ describe('image conversation contribution', () => {
     const firstContext = createImageConversationContext(target, 'revision-1');
     const secondContext = createImageConversationContext(target, 'revision-2');
     expect(conversationContextsEqual(firstContext, secondContext)).toBe(false);
-    expect(createContribution(vi.fn(), 'revision-1').conversationPartitionKey)
-      .toBe('revision-1');
-    expect(createContribution(vi.fn(), 'revision-2').conversationPartitionKey)
-      .toBe('revision-2');
-
+    expect(createContribution(vi.fn(), 'revision-1').isContext?.(firstContext))
+      .toBe(true);
+    expect(createContribution(vi.fn(), 'revision-1').isContext?.(secondContext))
+      .toBe(false);
     expect(createContribution()).not.toHaveProperty('historyStore');
   });
 });
