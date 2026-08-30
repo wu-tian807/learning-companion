@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExternalLibrarySnapshot } from '../../shared/external-libraries';
-import { ExternalLibrariesSettingsSection } from './ExternalLibrariesSettingsSection';
+import { ExternalLibrariesSection } from './ExternalLibrariesSection';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -29,7 +29,7 @@ const mediaSubtitles: ExternalLibrarySnapshot = {
   status: 'not-installed',
 };
 
-describe('ExternalLibrariesSettingsSection', () => {
+describe('ExternalLibrariesSection', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -48,14 +48,13 @@ describe('ExternalLibrariesSettingsSection', () => {
     const onInstall = vi.fn();
     act(() => {
       root.render(
-        <ExternalLibrariesSettingsSection
+        <ExternalLibrariesSection
           libraries={[mediaSubtitles]}
           loading={false}
           loadError={undefined}
           migrationPending={false}
           hasActiveTask={false}
           requestPendingById={new Set()}
-          target={undefined}
           targetedLibraryRef={createRef<HTMLElement>()}
           onInstall={onInstall}
           onRemove={vi.fn()}
@@ -85,7 +84,7 @@ describe('ExternalLibrariesSettingsSection', () => {
   it('shows measured runtime setup progress instead of an indeterminate bar', () => {
     act(() => {
       root.render(
-        <ExternalLibrariesSettingsSection
+        <ExternalLibrariesSection
           libraries={[
             {
               ...mediaSubtitles,
@@ -99,7 +98,6 @@ describe('ExternalLibrariesSettingsSection', () => {
           migrationPending={false}
           hasActiveTask
           requestPendingById={new Set()}
-          target={undefined}
           targetedLibraryRef={createRef<HTMLElement>()}
           onInstall={vi.fn()}
           onRemove={vi.fn()}

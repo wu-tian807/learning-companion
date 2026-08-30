@@ -7,18 +7,17 @@ import {
   type ExternalLibrarySnapshot,
 } from '../../shared/external-libraries';
 import { userMessageFromError } from '../../shared/ipc-error';
-import type { ExternalLibraryStore } from '../external-libraries/external-library-store';
-import { isExternalLibraryActive } from '../external-libraries/external-library-view';
-import type { SettingsTarget } from './settings-target';
+import type { ExternalLibraryStore } from './external-library-store';
+import { isExternalLibraryActive } from './external-library-view';
 
 export interface PendingExternalLibraryInstall {
   readonly library: ExternalLibrarySnapshot;
   readonly expectedSize: number;
 }
 
-export function useExternalLibrarySettings(
+export function useExternalLibraryManagement(
   store: ExternalLibraryStore,
-  target: SettingsTarget | undefined,
+  targetedLibraryId?: string,
 ) {
   const librariesById = useStore(
     store,
@@ -66,15 +65,14 @@ export function useExternalLibrarySettings(
 
   useEffect(() => {
     if (
-      target?.section === 'external-libraries' &&
-      target.libraryId &&
-      librariesById.has(target.libraryId)
+      targetedLibraryId &&
+      librariesById.has(targetedLibraryId)
     ) {
       targetedLibraryRef.current?.scrollIntoView({
         block: 'center',
       });
     }
-  }, [librariesById, target]);
+  }, [librariesById, targetedLibraryId]);
 
   const installLibrary = async (
     request: PendingExternalLibraryInstall,
