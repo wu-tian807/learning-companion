@@ -109,8 +109,6 @@ describe('ConversationPanelHost Project ownership', () => {
     const context = { frame: 1 };
     const onContextReleased = vi.fn();
     const videoContribution: WorkbenchConversationContribution = {
-      id: 'video.frame-conversation',
-      workbenchId: 'video',
       contextProviderId: 'builtin.video.conversation',
       sourceAssetMode: 'identity',
       contextRequired: true,

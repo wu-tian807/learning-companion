@@ -24,7 +24,6 @@ import type {
 import { useWorkbenchConversationContribution } from '../../renderer/conversation/workbench-conversation-context';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWorkbenchShell';
-import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
@@ -37,8 +36,7 @@ import {
   selectTextInElement,
 } from '../document-ai/renderer/conversation/document-anchor-reveal';
 import {
-  WORKBENCH_REVEAL_ANCHOR_EVENT,
-  type RevealWorkbenchAnchorDetail,
+  registerWorkbenchAnchorController,
 } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
@@ -1051,8 +1049,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [executeCommand, reportError],
   );
 
-  const conversationContributionId =
-    `${markdownWorkbenchManifest.id}.document-question`;
   const applySourceContent = useCallback((content: string) => {
       const view = sourceEditorRef.current?.view;
       if (view) {
@@ -1176,16 +1172,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
-      workbenchId: markdownWorkbenchManifest.id,
-      contributionId: conversationContributionId,
-      contextLabel: 'Markdown 选区',
       returnAnswerToSource,
       answerActionPresentation: MARKDOWN_ANSWER_ACTION_PRESENTATION,
     }),
     [
       asset.id,
       asset.projectId,
-      conversationContributionId,
       returnAnswerToSource,
     ],
   );
@@ -1220,7 +1212,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         selectTextInElement(element, fragment)
       ) {
         scrollSelectionIntoView();
+        return true;
       }
+      return false;
     },
     [scrollSelectionIntoView],
   );
@@ -1239,28 +1233,26 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       );
 
       if (viewStateRef.current.viewMode === 'source') {
-        revealSelectionInCodeMirror(
-          sourceEditorRef.current?.view,
-          clampedStart,
-          clampedEnd,
-        );
-        return;
+        const view = sourceEditorRef.current?.view;
+        if (!view || clampedEnd <= clampedStart) return false;
+        revealSelectionInCodeMirror(view, clampedStart, clampedEnd);
+        return true;
       }
 
       const element = wysiwygAdapterRef.current?.getEditableElement();
       if (!element || clampedEnd <= clampedStart) {
-        return;
+        return false;
       }
 
       const text = source.slice(clampedStart, clampedEnd).trim();
       if (!text) {
-        return;
+        return false;
       }
       if (selectTextInElement(element, text)) {
         scrollSelectionIntoView();
-        return;
+        return true;
       }
-      revealTextFragmentInElement(element, text);
+      return revealTextFragmentInElement(element, text);
     },
     [revealTextFragmentInElement, scrollSelectionIntoView],
   );
@@ -1269,74 +1261,69 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) {
-        return;
+        return false;
       }
 
       if (viewStateRef.current.viewMode === 'wysiwyg') {
         const element = wysiwygAdapterRef.current?.getEditableElement();
         if (!element) {
-          return;
+          return false;
         }
         if (selectTextInElement(element, trimmed)) {
           scrollSelectionIntoView();
-          return;
+          return true;
         }
-        revealTextFragmentInElement(element, trimmed);
-        return;
+        return revealTextFragmentInElement(element, trimmed);
       }
 
       const source = workingBufferRef.current;
       const index = source.indexOf(trimmed);
-      if (index >= 0) {
-        revealSelectionInCodeMirror(
-          sourceEditorRef.current?.view,
-          index,
-          index + trimmed.length,
-        );
-      }
+      const view = sourceEditorRef.current?.view;
+      if (index < 0 || !view) return false;
+      revealSelectionInCodeMirror(
+        view,
+        index,
+        index + trimmed.length,
+      );
+      return true;
     },
     [revealTextFragmentInElement, scrollSelectionIntoView],
   );
 
   useEffect(() => {
-    const reveal = (event: Event) => {
-      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>)
-        .detail;
-      if (
-        detail.assetId !== asset.id ||
-        detail.target.scope !== 'content'
-      ) {
-        return;
-      }
+    return registerWorkbenchAnchorController(
+      `${conversationOwnerId}.anchors`,
+      asset.id,
+      {
+        reveal(target) {
+          if (target.scope !== 'content') return false;
+          if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
+            const selection = resolveTextSelectionFromTarget(target, [
+              MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+            ]);
+            return selection
+              ? revealMarkdownSelection(selection.start, selection.end)
+              : false;
+          }
 
-      const target = detail.target;
-      if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
-        const selection = resolveTextSelectionFromTarget(target, [
-          MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
-        ]);
-        if (selection) {
-          revealMarkdownSelection(selection.start, selection.end);
-        }
-        return;
-      }
-
-      if (target.anchorType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
-        const payload = target.anchorPayload as {
-          readonly exact?: unknown;
-        };
-        const text =
-          typeof payload.exact === 'string' ? payload.exact : '';
-        if (text.trim()) {
-          revealMarkdownText(text);
-        }
-      }
-    };
-
-    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
-    return () => {
-      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
-    };
-  }, [asset.id, revealMarkdownSelection, revealMarkdownText]);
+          if (target.anchorType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
+            const payload = target.anchorPayload as {
+              readonly exact?: unknown;
+            };
+            const text =
+              typeof payload.exact === 'string' ? payload.exact : '';
+            return revealMarkdownText(text);
+          }
+          return false;
+        },
+      },
+    );
+  }, [
+    asset.id,
+    conversationOwnerId,
+    revealMarkdownSelection,
+    revealMarkdownText,
+  ]);
 
   const rendererActions = useMemo(
     () =>
@@ -1553,11 +1540,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           />,
           document.body,
         )}
-      <QuestionAnchorHost
-        assetId={asset.id}
-        ownerId={conversationOwnerId}
-        runtime={conversationRuntime}
-      />
       </div>
     </DocumentAiWorkbenchShell>
   );

@@ -59,6 +59,15 @@ describe('HTML Workbench shared protocol', () => {
     ).toBe(false);
   });
 
+  it('omits the session-local URL for a root document anchor', () => {
+    const target = createHtmlDomTarget({
+      element: { path: [1], tagName: 'main', textQuote: '正文' },
+    });
+
+    expect(isHtmlDomTarget(target)).toBe(true);
+    expect(target.anchorPayload).not.toHaveProperty('frameUrl');
+  });
+
   it('keeps validating legacy quote anchors for persisted conversations', () => {
     const target = createHtmlQuoteTarget(
       '正文内容',

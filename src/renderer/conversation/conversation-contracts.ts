@@ -61,14 +61,12 @@ export interface ConversationAnswerAction
 /**
  * Optional Renderer-side context supplied by a Workbench for one message.
  *
- * Project Conversation owns chat availability, presentation, history, sending,
- * the Agent Session and task lifecycle. A Workbench can only describe and
- * operate on its media-specific context. Main-side media semantics live in the
- * matching context provider.
+ * Project Conversation owns chat availability, reference presentation and
+ * navigation, history, sending, the Agent Session and task lifecycle. A
+ * Workbench can attach media-specific context and expose an optional answer
+ * operation. Main-side media semantics live in the matching context provider.
  */
 export interface WorkbenchConversationContribution {
-  readonly id: string;
-  readonly workbenchId: string;
   /** Main-side provider that turns the opaque Workbench context into Agent input. */
   readonly contextProviderId: string;
   /** Declares whether this Workbench context needs only the Asset id or a materialized source copy. */
@@ -77,12 +75,6 @@ export interface WorkbenchConversationContribution {
   readonly contextRequiredMessage?: string;
   isContext?(context: JsonValue): boolean;
   shouldCommitAnswer?(input: ConversationTaskInput): boolean;
-  /** Pure description captured with the message; it must not read mounted view state. */
-  describeContext?(
-    context: JsonValue | undefined,
-  ): ConversationContextPresentation;
-  /** Called only after Project navigation has mounted this contribution's Asset. */
-  revealContext?(context: JsonValue): Promise<void> | void;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */
   onContextReleased?(context: JsonValue | undefined): void;
   /** Optional answer operation whose presentation and media behavior are Workbench-owned. */

@@ -25,11 +25,7 @@ const actions: ConversationControllerActions = {
 };
 
 const contribution: WorkbenchConversationContribution = {
-  id: 'pdf.question',
-  workbenchId: 'pdf',
   contextProviderId: 'pdf.context',
-  describeContext: () => ({ label: '第 2 页', detail: '框选内容' }),
-  revealContext: vi.fn(),
   answerAction: {
     label: '放回 PDF 原文旁',
     selectionLabel: '放回选中回答片段',
@@ -40,10 +36,18 @@ const contribution: WorkbenchConversationContribution = {
 };
 
 const contextSource = {
-  contributionId: contribution.id,
   contextProviderId: contribution.contextProviderId,
   assetId: 'asset',
   sourceAssetMode: 'reference' as const,
+};
+
+const context = {
+  target: {
+    scope: 'content' as const,
+    anchorType: 'pdf.region',
+    anchorVersion: 1,
+    anchorPayload: { pageNumber: 2, quote: { exact: '框选内容' } },
+  },
 };
 
 function state(
@@ -71,7 +75,7 @@ function render(
   resolveContextContribution: (
     source: ConversationMessageContextSource | undefined,
   ) => WorkbenchConversationContribution | undefined = (source) =>
-    source?.contributionId === contribution.id
+    source?.contextProviderId === contribution.contextProviderId
       ? contribution
       : undefined,
 ): string {
@@ -81,9 +85,6 @@ function render(
       actions={actions}
       projectId="project"
       resolveContextContribution={resolveContextContribution}
-      describeContext={(_source, context) =>
-        contribution.describeContext?.(context)
-      }
       onRevealContext={vi.fn()}
       onStartNew={vi.fn()}
       onClose={vi.fn()}
@@ -104,7 +105,7 @@ describe('ConversationPanel', () => {
           role: 'user',
           text: '解释这里',
           createdTime: 1,
-          context: { page: 2 },
+          context,
           contextSource,
         }],
         createdTime: 1,
@@ -122,7 +123,7 @@ describe('ConversationPanel', () => {
       pendingContext: {
         assetId: 'asset',
         contribution,
-        context: { page: 2 },
+        context,
       },
       error: {
         message: '请先配置模型',

@@ -1,7 +1,5 @@
 import type { WorkbenchConversationContribution } from '../../../renderer/conversation/conversation-contracts';
-import { videoWorkbenchManifest } from '../shared';
 import {
-  describeVideoConversationContext,
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
   isVideoConversationContext,
   type VideoConversationContext,
@@ -25,17 +23,12 @@ export function createVideoFrameConversationLaunch(
 
 export function createVideoConversationContribution(input: {
   readonly sourceRevision: string;
-  readonly revealContext: (
-    context: VideoConversationContext,
-  ) => Promise<void> | void;
   readonly onContextReleased?: (
     context: VideoConversationContext | undefined,
   ) => void;
 }): WorkbenchConversationContribution {
   const sourceRevision = input.sourceRevision.trim();
   const contribution: WorkbenchConversationContribution = {
-    id: `${videoWorkbenchManifest.id}.frame-conversation`,
-    workbenchId: videoWorkbenchManifest.id,
     contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'identity',
     contextRequired: true,
@@ -51,12 +44,6 @@ export function createVideoConversationContribution(input: {
         isVideoConversationContext(taskInput.context) &&
         taskInput.context.sourceRevision === sourceRevision
       );
-    },
-    describeContext: describeVideoConversationContext,
-    revealContext(context) {
-      if (isVideoConversationContext(context)) {
-        return input.revealContext(context);
-      }
     },
     onContextReleased(context) {
       input.onContextReleased?.(

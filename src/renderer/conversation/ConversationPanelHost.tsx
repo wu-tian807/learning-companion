@@ -100,9 +100,6 @@ function ActiveConversationPanel({
       resolveContextContribution={(source) =>
         runtime.resolveContribution(source)
       }
-      describeContext={(source, context) =>
-        runtime.describeContext(source, context)
-      }
       onRevealContext={(source, context) =>
         runtime.revealContext(source, context, onSelectAsset)
       }

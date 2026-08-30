@@ -1,12 +1,19 @@
 import type { ConversationMessageContextSource } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
+import {
+  revealWorkbenchAnchor,
+  waitForWorkbenchAnchorController,
+} from '../workbench/host/workbench-anchor-bridge';
 import type {
   ActiveWorkbenchConversationContribution,
-  ConversationContextPresentation,
   ConversationLaunchRequest,
   WorkbenchConversationContribution,
   WorkbenchConversationRuntimeSnapshot,
 } from './conversation-contracts';
+import {
+  conversationContextSourceRevision,
+  conversationContextTarget,
+} from './conversation-reference';
 
 interface ActiveRegistration {
   readonly token: symbol;
@@ -31,7 +38,6 @@ function matchesSource(
   return Boolean(
     active &&
       source?.assetId === active.assetId &&
-      source.contributionId === active.contribution.id &&
       source.contextProviderId === active.contribution.contextProviderId,
   );
 }
@@ -40,19 +46,11 @@ export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private activeRegistration: ActiveRegistration | undefined;
   private launchId = 0;
-  private revealId = 0;
-  private disposed = false;
+  private revealAbortController: AbortController | undefined;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
     busy: false,
   });
-
-  constructor(
-    private readonly describePersistedContext: (
-      source: ConversationMessageContextSource,
-      context: JsonValue,
-    ) => ConversationContextPresentation | undefined = () => undefined,
-  ) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -71,8 +69,6 @@ export class WorkbenchConversationRuntime {
     if (
       !normalizedOwnerId ||
       !normalizedAssetId ||
-      !contribution.id.trim() ||
-      !contribution.workbenchId.trim() ||
       !contribution.contextProviderId.trim()
     ) {
       throw new Error('Workbench Conversation context contribution 无效');
@@ -143,7 +139,7 @@ export class WorkbenchConversationRuntime {
 
   close(): void {
     if (!this.snapshot.panelOpen) return;
-    this.revealId += 1;
+    this.cancelReveal();
     this.update({ ...this.snapshot, panelOpen: false });
   }
 
@@ -164,16 +160,6 @@ export class WorkbenchConversationRuntime {
     return matchesSource(active, source) ? active.contribution : undefined;
   }
 
-  describeContext(
-    source: ConversationMessageContextSource,
-    context: JsonValue,
-  ): ConversationContextPresentation | undefined {
-    return (
-      this.describePersistedContext(source, context) ??
-      this.resolveContribution(source)?.describeContext?.(context)
-    );
-  }
-
   async revealContext(
     source: ConversationMessageContextSource,
     context: JsonValue,
@@ -183,68 +169,46 @@ export class WorkbenchConversationRuntime {
     if (!source.assetId) {
       throw new Error('这条引用没有关联资料，无法定位原文。');
     }
-    const revealId = ++this.revealId;
-    await selectAsset(source.assetId);
-    const contribution = await this.waitForContribution(
-      source,
-      revealId,
-      timeoutMs,
-    );
-    if (revealId !== this.revealId) {
-      throw new DOMException('已切换到另一条引用。', 'AbortError');
+    const target = conversationContextTarget(context);
+    if (!target) {
+      throw new Error('这条引用没有有效 Anchor，无法定位原文。');
     }
-    if (!contribution.revealContext) {
-      throw new Error('目标资料不支持定位这条引用。');
+    this.cancelReveal();
+    const controller = new AbortController();
+    this.revealAbortController = controller;
+    try {
+      await selectAsset(source.assetId);
+      if (controller.signal.aborted) throw controller.signal.reason;
+      await waitForWorkbenchAnchorController(
+        source.assetId,
+        controller.signal,
+        timeoutMs,
+      );
+      if (controller.signal.aborted) throw controller.signal.reason;
+      await revealWorkbenchAnchor(
+        source.assetId,
+        target,
+        conversationContextSourceRevision(context),
+      );
+    } finally {
+      if (this.revealAbortController === controller) {
+        this.revealAbortController = undefined;
+      }
     }
-    if (contribution.isContext && !contribution.isContext(context)) {
-      throw new Error('引用的资料内容已更新，无法再定位原位置。');
-    }
-    await contribution.revealContext(context);
   }
 
   dispose(): void {
-    this.disposed = true;
-    this.revealId += 1;
+    this.cancelReveal();
     this.activeRegistration = undefined;
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }
 
-  private waitForContribution(
-    source: ConversationMessageContextSource,
-    revealId: number,
-    timeoutMs: number,
-  ): Promise<WorkbenchConversationContribution> {
-    const resolved = this.resolveContribution(source);
-    if (resolved) return Promise.resolve(resolved);
-
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (
-        outcome: WorkbenchConversationContribution | Error,
-      ) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        unsubscribe();
-        if (outcome instanceof Error) reject(outcome);
-        else resolve(outcome);
-      };
-      const check = () => {
-        if (this.disposed || revealId !== this.revealId) {
-          finish(new DOMException('引用定位已取消。', 'AbortError'));
-          return;
-        }
-        const contribution = this.resolveContribution(source);
-        if (contribution) finish(contribution);
-      };
-      const unsubscribe = this.subscribe(check);
-      const timer = setTimeout(
-        () => finish(new Error('目标资料加载超时，无法定位原文。')),
-        timeoutMs,
-      );
-      check();
-    });
+  private cancelReveal(): void {
+    this.revealAbortController?.abort(
+      new DOMException('已切换到另一条引用。', 'AbortError'),
+    );
+    this.revealAbortController = undefined;
   }
 
   private update(next: WorkbenchConversationRuntimeSnapshot): void {

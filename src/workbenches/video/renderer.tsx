@@ -15,6 +15,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
@@ -58,6 +59,7 @@ import {
   isVideoSubtitleCueFinalPayload,
   isVideoSubtitleSnapshot,
   isVideoSaveViewStateResult,
+  isVideoFrameRegionTarget,
   isVideoWorkbenchPayload,
   type VideoSubtitleDisplayMode,
   type VideoSubtitleSnapshot,
@@ -373,41 +375,50 @@ export function VideoWorkbenchView({
     },
     [releaseConversationContext, reportError],
   );
-  const revealConversationContext = useCallback(
-    (context: VideoConversationContext) => {
-      if (context.sourceRevision !== sourceRevision) {
-        reportError(
-          new Error('视频内容已更新'),
-          '这段问答属于旧版视频，无法在当前视频中定位。',
-        );
-        return;
-      }
-      const video = videoRef.current;
-      if (!video || !hasLoadedVideoMetadata(video)) {
-        reportError(new Error('视频尚未就绪'), '暂时无法定位这个视频画面。');
-        return;
-      }
-      video.pause();
-      video.currentTime = Math.min(
-        context.target.anchorPayload.timeSeconds,
-        Number.isFinite(video.duration)
-          ? Math.max(0, video.duration)
-          : context.target.anchorPayload.timeSeconds,
-      );
-      commitConversationContext(context);
-    },
-    [commitConversationContext, reportError, sourceRevision],
-  );
+  useEffect(() => {
+    if (loadState.kind !== 'ready') return;
+    return registerWorkbenchAnchorController(
+      `${conversationOwnerId}.anchors`,
+      asset.id,
+      {
+        sourceRevision,
+        reveal(target) {
+          if (!isVideoFrameRegionTarget(target)) return false;
+          const video = videoRef.current;
+          if (!video || !hasLoadedVideoMetadata(video)) {
+            throw new Error('视频尚未就绪');
+          }
+          video.pause();
+          const targetTime = Math.min(
+            target.anchorPayload.timeSeconds,
+            Number.isFinite(video.duration)
+              ? Math.max(0, video.duration)
+              : target.anchorPayload.timeSeconds,
+          );
+          video.currentTime = targetTime;
+          setCurrentTime(targetTime);
+          commitConversationContext(
+            createVideoConversationContext(target, sourceRevision),
+          );
+          return true;
+        },
+      },
+    );
+  }, [
+    asset.id,
+    commitConversationContext,
+    conversationOwnerId,
+    loadState.kind,
+    sourceRevision,
+  ]);
   const conversationContribution = useMemo(
     () =>
       createVideoConversationContribution({
         sourceRevision,
-        revealContext: revealConversationContext,
         onContextReleased: releaseConversationContext,
       }),
     [
       releaseConversationContext,
-      revealConversationContext,
       sourceRevision,
     ],
   );

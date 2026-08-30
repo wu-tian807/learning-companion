@@ -18,7 +18,6 @@ describe('Project Conversation context source records', () => {
           createdTime: 1,
           context: { page: 2 },
           contextSource: {
-            contributionId: 'pdf.question',
             contextProviderId: 'document.context',
             assetId: 'asset-1',
             sourceAssetMode: 'reference',
@@ -31,7 +30,6 @@ describe('Project Conversation context source records', () => {
     });
 
     expect(record.messages[0]?.contextSource).toEqual({
-      contributionId: 'pdf.question',
       contextProviderId: 'document.context',
       assetId: 'asset-1',
       sourceAssetMode: 'reference',
@@ -50,7 +48,6 @@ describe('Project Conversation context source records', () => {
     expect(isConversationMessageRecord({
       ...base,
       contextSource: {
-        contributionId: 'pdf.question',
         contextProviderId: 'document.context',
         sourceAssetMode: 'reference',
       },
@@ -59,7 +56,6 @@ describe('Project Conversation context source records', () => {
       ...base,
       role: 'assistant',
       contextSource: {
-        contributionId: 'pdf.question',
         contextProviderId: 'document.context',
       },
     })).toBe(false);

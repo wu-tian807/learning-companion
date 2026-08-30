@@ -41,7 +41,6 @@ export function createConversationContextSource(
     input.context !== undefined &&
     contribution.shouldCommitAnswer?.(input) === true;
   return Object.freeze({
-    contributionId: contribution.id,
     contextProviderId: contribution.contextProviderId,
     ...(input.assetId ? { assetId: input.assetId } : {}),
     ...(contribution.sourceAssetMode

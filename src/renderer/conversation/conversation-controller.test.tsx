@@ -79,8 +79,6 @@ function createContribution(input: {
   readonly onContextReleased?: WorkbenchConversationContribution['onContextReleased'];
 } = {}): WorkbenchConversationContribution {
   return {
-    id: 'test.question',
-    workbenchId: 'test',
     contextProviderId: 'test.context',
     sourceAssetMode: 'reference',
     onContextReleased: input.onContextReleased,

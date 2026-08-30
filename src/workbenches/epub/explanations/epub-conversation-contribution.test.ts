@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
@@ -23,9 +23,7 @@ const target = createEpubCfiRangeTarget({
 });
 
 function createContribution() {
-  return createEpubConversationContribution({
-    revealContext: vi.fn(),
-  });
+  return createEpubConversationContribution();
 }
 
 describe('EPUB conversation contribution', () => {
@@ -102,20 +100,5 @@ describe('EPUB conversation contribution', () => {
         generateTitle: true,
       }),
     ).toThrow('请先在 EPUB 中选中一段文字');
-  });
-
-  it('presents the selected quote and delegates reveal to EPUB', async () => {
-    const revealContext = vi.fn();
-    const contribution = createEpubConversationContribution({
-      revealContext,
-    });
-    const context = createEpubConversationContext(target);
-
-    expect(contribution.describeContext?.(context)).toEqual({
-      label: 'EPUB 选区',
-      detail: '需要持续追问的文字',
-    });
-    await contribution.revealContext?.(context);
-    expect(revealContext).toHaveBeenCalledWith(context);
   });
 });
