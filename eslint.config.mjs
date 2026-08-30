@@ -18,6 +18,7 @@ export default tseslint.config(
       'demos/**/.runtime/**',
       'demos/**/results/**',
       'dist/**',
+      'externalLib/**',
       'node_modules/**',
       'out/**',
     ],
