@@ -39,6 +39,7 @@ export {
 
 export const EXTERNAL_LIBRARY_STAGING_DIRECTORY = '.staging';
 export const EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY = '.downloads';
+const EXTERNAL_LIBRARY_RUNTIME_SETUP_CACHE_DIRECTORY = '.setup';
 export const EXTERNAL_LIBRARY_STAGING_RETENTION_MS = 24 * 60 * 60 * 1_000;
 export const EXTERNAL_LIBRARY_DOWNLOAD_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -73,6 +74,11 @@ export interface ExternalLibraryPathManagerApi {
     readonly resourceDefinition: ExternalLibraryDownloadResourceDefinition;
   }): Promise<ExternalLibraryDownloadPaths>;
   completeDownload(paths: ExternalLibraryDownloadPaths): Promise<string>;
+  prepareRuntimeSetupCacheDirectory(
+    rootPath: string,
+    definition: ExternalLibraryDefinition,
+    packageDefinition: ExternalLibraryPackageDefinition,
+  ): Promise<string>;
   cleanupPackageDownloads(
     rootPath: string,
     definition: ExternalLibraryDefinition,
@@ -419,13 +425,19 @@ export class ExternalLibraryPathManager
   ): Promise<string> {
     const root = requireExternalLibraryRootPath(rootPath);
     const normalizedLibraryId = requireSafeDirectorySegment(libraryId);
+    const shortJobId = requireManagedDirectorySegment(
+      this.createId(),
+    ).slice(0, 8);
     await ensureDirectory(root);
     const stagingRoot = await ensureManagedDirectory(root, [
       EXTERNAL_LIBRARY_STAGING_DIRECTORY,
     ]);
 
     return mkdtemp(
-      join(stagingRoot, `${normalizedLibraryId}-${this.createId()}-`),
+      join(
+        stagingRoot,
+        `${normalizedLibraryId.slice(0, 8)}-${shortJobId}-`,
+      ),
     );
   }
 
@@ -521,6 +533,61 @@ export class ExternalLibraryPathManager
     return packagePath;
   }
 
+  async prepareRuntimeSetupCacheDirectory(
+    rootPath: string,
+    definition: ExternalLibraryDefinition,
+    packageDefinition: ExternalLibraryPackageDefinition,
+  ): Promise<string> {
+    const root = requireExternalLibraryRootPath(rootPath);
+    const libraryId = requireSafeDirectorySegment(definition.id);
+    await ensureDirectory(root);
+    const setupRoot = await ensureManagedDirectory(root, [
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      EXTERNAL_LIBRARY_RUNTIME_SETUP_CACHE_DIRECTORY,
+    ]);
+    const cacheDirectory = join(setupRoot, libraryId);
+
+    try {
+      await lstat(cacheDirectory);
+    } catch (error) {
+      if (!isFileSystemError(error, 'ENOENT')) throw error;
+
+      const legacyDirectory = join(
+        resolveDownloadDirectory(root, definition, packageDefinition),
+        'runtime-setup',
+      );
+      try {
+        const [legacyStats, downloadRoot] = await Promise.all([
+          lstat(legacyDirectory),
+          inspectManagedRoot(root, EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY),
+        ]);
+        if (
+          !downloadRoot ||
+          !legacyStats.isDirectory() ||
+          legacyStats.isSymbolicLink() ||
+          !isPathInside(
+            downloadRoot.realPath,
+            await realpath(legacyDirectory),
+          )
+        ) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+        await rename(legacyDirectory, cacheDirectory);
+      } catch (legacyError) {
+        if (!isFileSystemError(legacyError, 'ENOENT')) throw legacyError;
+      }
+    }
+
+    const managedCacheDirectory = await ensureManagedDirectory(root, [
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      EXTERNAL_LIBRARY_RUNTIME_SETUP_CACHE_DIRECTORY,
+      libraryId,
+    ]);
+    const accessTime = new Date();
+    await utimes(managedCacheDirectory, accessTime, accessTime);
+    return managedCacheDirectory;
+  }
+
   async cleanupPackageDownloads(
     rootPath: string,
     definition: ExternalLibraryDefinition,
@@ -530,6 +597,16 @@ export class ExternalLibraryPathManager
       rootPath,
       EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
       resolveDownloadDirectory(rootPath, definition, packageDefinition),
+    );
+    await cleanupManagedSubdirectory(
+      rootPath,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      join(
+        requireExternalLibraryRootPath(rootPath),
+        EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+        EXTERNAL_LIBRARY_RUNTIME_SETUP_CACHE_DIRECTORY,
+        requireSafeDirectorySegment(definition.id),
+      ),
     );
   }
 
@@ -544,6 +621,16 @@ export class ExternalLibraryPathManager
       join(
         root,
         EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+        requireSafeDirectorySegment(definition.id),
+      ),
+    );
+    await cleanupManagedSubdirectory(
+      root,
+      EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+      join(
+        root,
+        EXTERNAL_LIBRARY_DOWNLOAD_DIRECTORY,
+        EXTERNAL_LIBRARY_RUNTIME_SETUP_CACHE_DIRECTORY,
         requireSafeDirectorySegment(definition.id),
       ),
     );

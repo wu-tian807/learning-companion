@@ -28,6 +28,16 @@ import {
   createDocumentConversationHistoryStore,
   type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
+import {
+  revealSelectionInCodeMirror,
+  resolveTextSelectionFromTarget,
+  scrollRangeIntoView,
+  selectOffsetsInElement,
+} from '../document-ai/renderer/conversation/document-anchor-reveal';
+import {
+  WORKBENCH_REVEAL_ANCHOR_EVENT,
+  type RevealWorkbenchAnchorDetail,
+} from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
@@ -690,6 +700,64 @@ export function PlainTextWorkbenchView({
     conversationOwnerId,
     conversationContribution,
   );
+
+  useEffect(() => {
+    const reveal = (event: Event) => {
+      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>)
+        .detail;
+      if (detail.assetId !== asset.id) {
+        return;
+      }
+      if (detail.target.scope !== 'content') {
+        return;
+      }
+
+      const selection = resolveTextSelectionFromTarget(
+        detail.target,
+        [PLAIN_TEXT_RANGE_ANCHOR_TYPE],
+      );
+      if (!selection) {
+        return;
+      }
+
+      const contentLength = latestContentRef.current.length;
+      const start = Math.min(selection.start, contentLength);
+      const end = Math.min(selection.end, contentLength);
+      if (end <= start) {
+        return;
+      }
+
+      if (viewOptions.readMode) {
+        const element = readContentRef.current;
+        if (
+          !element ||
+          !selectOffsetsInElement(element, start, end)
+        ) {
+          return;
+        }
+        const selection = window.getSelection();
+        const range =
+          selection && selection.rangeCount > 0
+            ? selection.getRangeAt(0)
+            : undefined;
+        if (range) {
+          scrollRangeIntoView(range, readHostRef.current);
+        }
+        return;
+      }
+
+      revealSelectionInCodeMirror(
+        editorRef.current?.view,
+        start,
+        end,
+      );
+    };
+
+    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    return () => {
+      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+    };
+  }, [asset.id, viewOptions.readMode]);
 
   const rendererActions = useMemo(
     () =>

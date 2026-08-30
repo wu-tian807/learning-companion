@@ -81,4 +81,39 @@ describe('ExternalLibrariesSettingsSection', () => {
       expectedSize: 100,
     });
   });
+
+  it('shows the active installation step instead of a frozen percentage', () => {
+    act(() => {
+      root.render(
+        <ExternalLibrariesSettingsSection
+          libraries={[
+            {
+              ...mediaSubtitles,
+              status: 'installing',
+              statusDetail: '正在安装 PyTorch/CUDA 运行环境',
+            },
+          ]}
+          loading={false}
+          loadError={undefined}
+          migrationPending={false}
+          hasActiveTask
+          requestPendingById={new Set()}
+          target={undefined}
+          targetedLibraryRef={createRef<HTMLElement>()}
+          onInstall={vi.fn()}
+          onRemove={vi.fn()}
+          onCancel={vi.fn()}
+          onReload={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain(
+      '正在安装 PyTorch/CUDA 运行环境',
+    );
+    expect(
+      container.querySelector('.external-library-indeterminate'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain(' · 33%');
+  });
 });

@@ -122,14 +122,52 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
     const installers = new ExternalLibraryInstallerRegistry();
     installers.register(installer);
     const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
-    const prepareRuntime = vi.fn(async (runtimeDirectory: string) => {
-      const readyPath = join(runtimeDirectory, 'environment', 'ready.json');
-      await mkdir(dirname(readyPath), { recursive: true });
-      await writeFile(readyPath, '{}');
-    });
+    let runtimeSetupCacheDirectory = '';
+    const prepareRuntime = vi.fn(
+      async (
+        runtimeDirectory: string,
+        setupCacheDirectory: string,
+        _signal: AbortSignal,
+        reportStatus: (statusDetail: string) => void,
+      ) => {
+        runtimeSetupCacheDirectory = setupCacheDirectory;
+        expect(setupCacheDirectory).toContain(
+          join('.downloads', '.setup', definition.id),
+        );
+        await mkdir(setupCacheDirectory, { recursive: true });
+        await writeFile(join(setupCacheDirectory, 'cache.bin'), 'cache');
+        reportStatus('Installing test runtime');
+        const readyPath = join(
+          runtimeDirectory,
+          'environment',
+          'ready.json',
+        );
+        await mkdir(dirname(readyPath), { recursive: true });
+        await writeFile(readyPath, '{}');
+      },
+    );
+    let failFinalization = false;
+    const finalizeRuntime = vi.fn(
+      async (
+        runtimeDirectory: string,
+        _signal: AbortSignal,
+        reportStatus: (statusDetail: string) => void,
+      ) => {
+        if (failFinalization) throw new Error('finalization failed');
+        await access(
+          join(runtimeDirectory, 'environment', 'ready.json'),
+        );
+        await writeFile(
+          join(runtimeDirectory, 'environment', 'ready.json'),
+          'finalized',
+        );
+        reportStatus('Finalizing test runtime');
+      },
+    );
     runtimeSetups.register({
       libraryId: definition.id,
       prepare: prepareRuntime,
+      finalizeInstallation: finalizeRuntime,
       async isReady(runtimeDirectory) {
         try {
           await access(join(runtimeDirectory, 'environment', 'ready.json'));
@@ -143,6 +181,7 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       readonly status: string;
       readonly completedBytes?: number;
       readonly totalBytes?: number;
+      readonly statusDetail?: string;
     }> = [];
     const workflow = new ExternalLibraryInstallationWorkflow({
       pathManager: new ExternalLibraryPathManager({
@@ -171,6 +210,9 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
                 totalBytes: stage.progress.totalBytes,
               }
             : {}),
+          ...(stage.status === 'installing' && stage.statusDetail
+            ? { statusDetail: stage.statusDetail }
+            : {}),
         });
       },
     });
@@ -185,12 +227,25 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       completedBytes: 11,
       totalBytes: 11,
     });
-    expect(stages.slice(-2).map(({ status }) => status)).toEqual([
-      'verifying',
-      'installing',
+    expect(stages.slice(-4)).toEqual([
+      { status: 'verifying' },
+      { status: 'installing' },
+      {
+        status: 'installing',
+        statusDetail: 'Installing test runtime',
+      },
+      {
+        status: 'installing',
+        statusDetail: 'Finalizing test runtime',
+      },
     ]);
     expect(installer.install).toHaveBeenCalledOnce();
     expect(prepareRuntime).toHaveBeenCalledOnce();
+    expect(finalizeRuntime).toHaveBeenCalledOnce();
+    expect(runtimeSetupCacheDirectory).not.toBe('');
+    await expect(access(runtimeSetupCacheDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
     expect(installer.install).toHaveBeenCalledWith(
       expect.objectContaining({
         resources: expect.arrayContaining([
@@ -201,6 +256,24 @@ describe('ExternalLibraryInstallationWorkflow bundles', () => {
       }),
       expect.any(AbortSignal),
     );
+
+    failFinalization = true;
+    await expect(
+      workflow.run({
+        rootPath,
+        definition,
+        packageDefinition,
+        replaceExisting: true,
+        signal: new AbortController().signal,
+        onStage: () => undefined,
+      }),
+    ).rejects.toThrow('finalization failed');
+    const installation = new ExternalLibraryPathManager()
+      .resolveInstallationPaths(rootPath, definition, packageDefinition)
+      .installationDirectory;
+    await expect(
+      readFile(join(installation, 'runtime', 'environment', 'ready.json'), 'utf8'),
+    ).resolves.toBe('finalized');
   });
 
   it('resumes an interrupted bundle resource and reuses completed siblings', async () => {

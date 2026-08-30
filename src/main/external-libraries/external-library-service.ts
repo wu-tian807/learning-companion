@@ -642,22 +642,28 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       replaceExisting,
       signal,
       onStage: (stage) => {
+        const operationVariant =
+          packageDefinition.variantId === undefined
+            ? {}
+            : {
+                operationVariantId: packageDefinition.variantId,
+              };
         this.updateSnapshot(
           definition,
           stage.status,
           stage.status === "downloading"
             ? {
                 progress: stage.progress,
-                ...(packageDefinition.variantId === undefined
-                  ? {}
-                  : {
-                      operationVariantId:
-                        packageDefinition.variantId,
-                    }),
+                ...operationVariant,
               }
-            : packageDefinition.variantId === undefined
-              ? {}
-              : { operationVariantId: packageDefinition.variantId },
+            : stage.status === "installing"
+              ? {
+                  ...operationVariant,
+                  ...(stage.statusDetail === undefined
+                    ? {}
+                    : { statusDetail: stage.statusDetail }),
+                }
+              : operationVariant,
           packageDefinition,
         );
       },
@@ -754,6 +760,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       ExternalLibrarySnapshot,
       | "installationPath"
       | "progress"
+      | "statusDetail"
       | "errorCode"
       | "installedVariantId"
       | "operationVariantId"
@@ -824,6 +831,9 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
         ? {}
         : { installationPath: changes.installationPath }),
       ...(changes.progress === undefined ? {} : { progress: changes.progress }),
+      ...(changes.statusDetail === undefined
+        ? {}
+        : { statusDetail: changes.statusDetail }),
       ...(changes.errorCode === undefined
         ? {}
         : { errorCode: changes.errorCode }),

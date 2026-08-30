@@ -1,13 +1,11 @@
 import {
   access,
   mkdir,
-  mkdtemp,
   readFile,
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 import { AppError } from '../../../main/errors/app-error';
 import {
@@ -17,8 +15,10 @@ import {
 import type { ExternalLibraryRuntimeSetup } from '../../../main/external-libraries/external-library-runtime-setup';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
 
-const RUNTIME_ENVIRONMENT_VERSION = 1;
+export const VOXCPM2_RUNTIME_ENVIRONMENT_VERSION = 2;
 const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+const MANAGED_PYTHON_DIRECTORY =
+  /^cpython-3\.12\.\d+-windows-x86_64-none$/u;
 
 interface VoxCpm2RuntimeSetupDependencies {
   readonly commandRunner: ExternalCommandRunnerApi;
@@ -39,6 +39,7 @@ function runtimePaths(root: string) {
   return Object.freeze({
     environmentRoot,
     pythonPath: join(environmentRoot, 'Scripts', 'python.exe'),
+    configurationPath: join(environmentRoot, 'pyvenv.cfg'),
     markerPath: join(
       environmentRoot,
       'learning-companion-runtime.json',
@@ -93,6 +94,33 @@ async function exists(
   }
 }
 
+async function resolveManagedPythonPath(
+  root: string,
+  fileAccess: typeof access,
+  readText: typeof readFile,
+): Promise<string> {
+  const { configurationPath } = runtimePaths(root);
+  const home = (await readText(configurationPath, 'utf8'))
+    .split(/\r?\n/u)
+    .find((line) => line.startsWith('home = '))
+    ?.slice('home = '.length)
+    .trim();
+  const directoryName = home ? basename(home) : '';
+  if (!MANAGED_PYTHON_DIRECTORY.test(directoryName)) {
+    throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+  }
+  const managedPythonPath = join(
+    root,
+    'managed-python',
+    directoryName,
+    'python.exe',
+  );
+  if (!(await exists(fileAccess, managedPythonPath))) {
+    throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+  }
+  return managedPythonPath;
+}
+
 export function resolveVoxCpm2ManagedEnvironment(
   root: string,
 ): VoxCpm2ManagedEnvironment {
@@ -116,7 +144,7 @@ export async function isVoxCpm2RuntimeReady(
     const marker = JSON.parse(await readText(markerPath, 'utf8')) as {
       readonly version?: unknown;
     };
-    return marker.version === RUNTIME_ENVIRONMENT_VERSION;
+    return marker.version === VOXCPM2_RUNTIME_ENVIRONMENT_VERSION;
   } catch {
     return false;
   }
@@ -149,7 +177,9 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
 
   async prepare(
     runtimeDirectory: string,
+    setupCacheDirectory: string,
     signal: AbortSignal,
+    reportStatus: (statusDetail: string) => void,
   ): Promise<void> {
     if (this.dependencies.platform !== 'win32') {
       throw new AppError('FEATURE_NOT_SUPPORTED');
@@ -169,16 +199,29 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
       join(runtimeDirectory, 'cache'),
       { recursive: true },
     );
-    const setupCache = await mkdtemp(join(tmpdir(), 'lc-voxcpm2-setup-'));
+    await this.dependencies.makeDirectory(setupCacheDirectory, {
+      recursive: true,
+    });
+    const setupTemporaryDirectory = join(
+      runtimeDirectory,
+      'cache',
+      'setup-temp',
+    );
+    await this.dependencies.makeDirectory(setupTemporaryDirectory, {
+      recursive: true,
+    });
     const environment = {
       ...runtimeEnvironment(runtimeDirectory, pythonPath),
-      UV_CACHE_DIR: setupCache,
-      PIP_CACHE_DIR: setupCache,
-      TEMP: setupCache,
-      TMP: setupCache,
+      UV_CACHE_DIR: join(setupCacheDirectory, 'uv'),
+      PIP_CACHE_DIR: join(setupCacheDirectory, 'pip'),
+      TEMP: setupTemporaryDirectory,
+      TMP: setupTemporaryDirectory,
     };
 
+    await rm(markerPath, { force: true });
+
     try {
+      reportStatus('正在准备 Python 运行环境');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'venv',
         environmentRoot,
@@ -188,6 +231,9 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'only-managed',
         '--clear',
       ]);
+      reportStatus(
+        '正在下载并安装 PyTorch/CUDA 运行环境，首次安装可能需要数分钟',
+      );
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -198,6 +244,7 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         '--index-url',
         'https://download.pytorch.org/whl/cu128',
       ]);
+      reportStatus('正在安装 VoxCPM2 配音运行依赖');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -212,6 +259,7 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         'sherpa-onnx==1.13.6',
         'soundfile==0.13.1',
       ]);
+      reportStatus('正在安装 GPU 人声处理运行依赖');
       await this.run(uvPath, runtimeDirectory, environment, signal, [
         'pip',
         'install',
@@ -223,31 +271,94 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
         '--find-links',
         'https://k2-fsa.github.io/sherpa/onnx/cuda.html',
       ]);
-      await this.dependencies.commandRunner.run({
-        command: pythonPath,
-        args: [
-          '-c',
-          [
-            'import torch, torchaudio, sherpa_onnx, soundfile',
-            'from voxcpm import VoxCPM',
-            "assert torch.cuda.is_available(), 'NVIDIA CUDA is unavailable'",
-          ].join('; '),
-        ],
-        cwd: runtimeDirectory,
-        env: environment,
-        timeoutMs: 5 * 60 * 1_000,
+      reportStatus('正在验证 NVIDIA GPU 配音环境');
+      await this.verifyRuntime(
+        runtimeDirectory,
+        pythonPath,
+        environment,
         signal,
-      });
+      );
     } finally {
-      await rm(setupCache, { recursive: true, force: true });
+      await rm(setupTemporaryDirectory, {
+        recursive: true,
+        force: true,
+      });
     }
 
     signal.throwIfAborted();
+  }
+
+  async finalizeInstallation(
+    runtimeDirectory: string,
+    signal: AbortSignal,
+    reportStatus: (statusDetail: string) => void,
+  ): Promise<void> {
+    if (this.dependencies.platform !== 'win32') {
+      throw new AppError('FEATURE_NOT_SUPPORTED');
+    }
+    signal.throwIfAborted();
+
+    const { environmentRoot, markerPath, pythonPath } =
+      runtimePaths(runtimeDirectory);
+    await rm(markerPath, { force: true });
+    const managedPythonPath = await resolveManagedPythonPath(
+      runtimeDirectory,
+      this.dependencies.fileAccess,
+      this.dependencies.readText,
+    );
+    const uvPath = join(
+      runtimeDirectory,
+      'bootstrap',
+      'uv',
+      'uv.exe',
+    );
+    const environment = runtimeEnvironment(runtimeDirectory, pythonPath);
+
+    reportStatus('正在完成配音运行环境配置');
+    await this.run(uvPath, runtimeDirectory, environment, signal, [
+      'venv',
+      environmentRoot,
+      '--python',
+      managedPythonPath,
+      '--python-preference',
+      'only-managed',
+      '--allow-existing',
+    ]);
+    await this.verifyRuntime(
+      runtimeDirectory,
+      pythonPath,
+      environment,
+      signal,
+    );
+    signal.throwIfAborted();
     await this.dependencies.writeText(
       markerPath,
-      `${JSON.stringify({ version: RUNTIME_ENVIRONMENT_VERSION })}\n`,
+      `${JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION })}\n`,
       'utf8',
     );
+  }
+
+  private verifyRuntime(
+    runtimeDirectory: string,
+    pythonPath: string,
+    environment: NodeJS.ProcessEnv,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    return this.dependencies.commandRunner.run({
+      command: pythonPath,
+      args: [
+        '-c',
+        [
+          'import torch, torchaudio, sherpa_onnx, soundfile',
+          'from voxcpm import VoxCPM',
+          "assert torch.cuda.is_available(), 'NVIDIA CUDA is unavailable'",
+        ].join('; '),
+      ],
+      cwd: runtimeDirectory,
+      env: environment,
+      timeoutMs: 5 * 60 * 1_000,
+      signal,
+    });
   }
 
   private run(
