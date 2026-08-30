@@ -1,10 +1,9 @@
 import {
-  EPUB_CFI_RANGE_ANCHOR_TYPE,
-  EPUB_CFI_RANGE_ANCHOR_VERSION,
-  isEpubCfiRangeAnchorV1,
+  isEpubCfiRangeTarget,
   type EpubCfiRangeTarget,
 } from '../shared';
 export type { EpubCfiRangeTarget } from '../shared';
+export { isEpubCfiRangeTarget } from '../shared';
 
 export const EPUB_EXPLANATION_ATTACHMENT_TYPE = 'epub.ai-explanation';
 export const EPUB_EXPLANATION_ATTACHMENT_VERSION = 1;
@@ -118,18 +117,6 @@ function isRequiredText(value: unknown, maximum = 16_384): value is string {
 
 function isTime(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
-}
-
-export function isEpubCfiRangeTarget(
-  value: unknown,
-): value is EpubCfiRangeTarget {
-  return (
-    isRecord(value) &&
-    value.scope === 'content' &&
-    value.anchorType === EPUB_CFI_RANGE_ANCHOR_TYPE &&
-    value.anchorVersion === EPUB_CFI_RANGE_ANCHOR_VERSION &&
-    isEpubCfiRangeAnchorV1(value.anchorPayload)
-  );
 }
 
 export function isEpubExplanationMetadata(

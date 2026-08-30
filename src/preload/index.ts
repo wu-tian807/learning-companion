@@ -286,6 +286,11 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     metadata: JsonValue;
     body?: JsonValue;
   }) => invoke<AssetAttachment>(IPC_CHANNELS.createAttachment, request),
+  updateAttachment: (request: {
+    projectId: string;
+    attachmentId: string;
+    metadata: JsonValue;
+  }) => invoke<AssetAttachment>(IPC_CHANNELS.updateAttachment, request),
   readAttachmentContent: (request: {
     projectId: string;
     attachmentId: string;

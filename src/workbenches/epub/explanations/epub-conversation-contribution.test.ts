@@ -85,6 +85,27 @@ describe('EPUB conversation contribution', () => {
     expect(request.instruction).not.toHaveProperty('commitAnswer');
   });
 
+  it('starts a selected-text custom question without creating an AI explanation Note', () => {
+    const context = createEpubConversationContext(target);
+    const request = createWorkbenchConversationTaskRequest(
+      createContribution(),
+      {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        conversationId: 'conversation-custom',
+        question: '这句话为什么使用反问？',
+        context,
+        generateTitle: true,
+      },
+    );
+
+    expect(request.instruction).toMatchObject({
+      question: '这句话为什么使用反问？',
+      context,
+    });
+    expect(request.instruction).not.toHaveProperty('commitAnswer');
+  });
+
   it('rejects starting a new conversation without an EPUB selection', () => {
     expect(() =>
       createWorkbenchConversationTaskRequest(createContribution(), {
