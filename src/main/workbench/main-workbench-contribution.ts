@@ -34,6 +34,8 @@ export interface MainWorkbenchExternalLibraryContext {
 
 export interface MainWorkbenchProviderContext {
   readonly associationService: AssetAssociationServiceApi;
+  readonly functionTools: AgentFunctionToolRegistryApi;
+  readonly conversationContexts: WorkbenchConversationContextProviderRegistry;
   readonly assetService: AssetServiceApi;
   readonly artifactRegistry: AssetArtifactRegistryApi;
   readonly artifactService: AssetArtifactServiceApi;

@@ -18,7 +18,6 @@ import type {
 import { AppError } from '../../../main/errors/app-error';
 import type { GenerationTaskSnapshot } from '../../../main/generation/contracts/generation-task-state';
 import type { WorkbenchStateDataDatabaseApi } from '../../../main/workbench/workbench-state-data-database';
-import type { WorkbenchStateDatabaseApi } from '../../../main/workbench/workbench-state-database';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { createHtmlDomTarget, type HtmlDomAnchorV1 } from '../shared';
 import {
@@ -92,6 +91,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   private readonly activeEdits = new Map<string, ActiveHtmlEdit>();
   private readonly sessions = new Map<string, Promise<HtmlDraftSession>>();
   private readonly sessionMutations = new Map<string, Promise<void>>();
+  private readonly writableSources = new Map<string, boolean>();
   private readonly store?: HtmlDraftStore;
   private readonly lifecycleTasks = new Set<Promise<void>>();
   private readonly listeners = new Set<(event: HtmlAgentEditEvent) => void>();
@@ -101,11 +101,10 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     private readonly assets: AssetServiceApi,
     private readonly generationTasks: Pick<GenerationTaskServiceApi, 'get'> &
       Partial<Pick<GenerationTaskServiceApi, 'subscribe'>>,
-    stateDatabase?: WorkbenchStateDatabaseApi,
     stateDataDatabase?: WorkbenchStateDataDatabaseApi,
   ) {
-    if (stateDatabase && stateDataDatabase) {
-      this.store = new HtmlDraftStore(stateDatabase, stateDataDatabase);
+    if (stateDataDatabase) {
+      this.store = new HtmlDraftStore(stateDataDatabase);
     }
     this.unsubscribe = this.generationTasks.subscribe?.((event) => {
       this.acceptLifecycleEvent(event);
@@ -136,6 +135,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   ): Promise<JsonValue> {
     context.signal?.throwIfAborted();
     const session = await this.getSession(context.projectId, assetId);
+    if (!this.isSourceWritable(context.projectId, assetId)) {
+      throw new Error('当前 HTML Asset 不可写入');
+    }
     if (session.pending && session.pending.taskId !== context.taskId) {
       throw new Error('上一轮 HTML 修改尚未收口');
     }
@@ -190,7 +192,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
         return false;
       }
       const session = await this.getSession(projectId, assetId);
-      return !session.conflict;
+      return !session.conflict && this.isSourceWritable(projectId, assetId);
     } catch {
       return false;
     }
@@ -309,13 +311,15 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   async review(projectId: string, assetId: string): Promise<JsonValue> {
     const session = await this.getSession(projectId, assetId);
     return {
-      entries: session.history.entries.map((entry) => ({
+      entries: session.history.entries
+        .slice(0, session.history.cursor)
+        .map((entry) => ({
         taskId: entry.taskId,
         changes: entry.operations.map((operation) => ({
           before: operation.beforeHtml,
           after: operation.afterHtml,
         })),
-      })),
+        })),
       pendingChanges:
         session.pending?.operations.map((operation) => ({
           before: operation.beforeHtml,
@@ -352,27 +356,28 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     for (const loaded of loadedSessions) {
       if (loaded.projectId !== snapshot.projectId) continue;
       await this.runSessionMutation(loaded.projectId, loaded.assetId, async () => {
-        const session = await this.getSession(loaded.projectId, loaded.assetId);
-        if (session.pending?.taskId !== snapshot.id) return;
-        if (snapshot.completed) {
-          const settled = await this.commitPending(session);
+        let session = await this.getSession(loaded.projectId, loaded.assetId);
+        if (session.pending?.taskId === snapshot.id && snapshot.completed) {
+          session = await this.commitPending(session);
           this.publish({
             type: 'session-changed',
-            projectId: settled.projectId,
-            assetId: settled.assetId,
+            projectId: session.projectId,
+            assetId: session.assetId,
             reason: 'settle',
           });
-          await this.finishQueuedSync(settled);
-        } else if (snapshot.failure || snapshot.cancelledTime !== undefined) {
-          const rolledBack = await this.rollbackPending(session);
+        } else if (
+          session.pending?.taskId === snapshot.id &&
+          (snapshot.failure || snapshot.cancelledTime !== undefined)
+        ) {
+          session = await this.rollbackPending(session);
           this.publish({
             type: 'session-changed',
-            projectId: rolledBack.projectId,
-            assetId: rolledBack.assetId,
+            projectId: session.projectId,
+            assetId: session.assetId,
             reason: 'rollback',
           });
-          await this.finishQueuedSync(rolledBack);
         }
+        await this.finishQueuedSync(session);
       });
     }
   }
@@ -395,27 +400,24 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     for (const loaded of loadedSessions) {
       if (loaded.projectId !== projectId) continue;
       await this.runSessionMutation(projectId, loaded.assetId, async () => {
-        const session = await this.getSession(projectId, loaded.assetId);
-        if (session.pending?.taskId !== taskId) return;
-        const rolledBack = await this.rollbackPending(session);
-        this.publish({
-          type: 'session-changed',
-          projectId: rolledBack.projectId,
-          assetId: rolledBack.assetId,
-          reason: 'rollback',
-        });
-        await this.finishQueuedSync(rolledBack);
+        let session = await this.getSession(projectId, loaded.assetId);
+        if (session.pending?.taskId === taskId) {
+          session = await this.rollbackPending(session);
+          this.publish({
+            type: 'session-changed',
+            projectId: session.projectId,
+            assetId: session.assetId,
+            reason: 'rollback',
+          });
+        }
+        await this.finishQueuedSync(session);
       });
     }
   }
 
   async getDraft(projectId: string, assetId: string): Promise<string | undefined> {
-    try {
-      const session = await this.getSession(projectId, assetId);
-      return this.hasDraft(session) ? session.draft : undefined;
-    } catch {
-      return undefined;
-    }
+    const session = await this.getSession(projectId, assetId);
+    return this.hasDraft(session) ? session.draft : undefined;
   }
 
   async getDraftSnapshot(projectId: string, assetId: string) {
@@ -426,15 +428,29 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     };
   }
 
-  async materializeDraft(
+  async materializeReference(
     projectId: string,
     assetId: string,
-  ): Promise<string | undefined> {
-    const draft = await this.getDraft(projectId, assetId);
-    if (draft === undefined) return undefined;
+  ): Promise<string> {
+    return this.runSessionMutation(projectId, assetId, () =>
+      this.materializeReferenceLocked(projectId, assetId),
+    );
+  }
+
+  private async materializeReferenceLocked(
+    projectId: string,
+    assetId: string,
+  ): Promise<string> {
+    let session = await this.getSession(projectId, assetId);
+    if (!session.conflict && !this.hasDraft(session)) {
+      session = await this.refreshSourceSession(session);
+    }
     const path = this.materializationPath(projectId, assetId);
     await mkdir(dirname(path), { recursive: true });
-    await writeFileAtomic(path, draft, { encoding: 'utf8', mode: 0o600 });
+    await writeFileAtomic(path, session.draft, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
     return path;
   }
 
@@ -449,7 +465,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     assetId: string,
   ): Promise<JsonValue> {
     const session = await this.getSession(projectId, assetId);
-    if (session.pending) throw new Error('Agent 修改尚未收口');
+    if (session.pending || this.hasActiveEdit(projectId, assetId)) {
+      throw new Error('Agent 修改尚未收口');
+    }
     if (session.history.cursor === 0) throw new Error('没有可撤销的 HTML 修改');
     const entry = session.history.entries[session.history.cursor - 1]!;
     let draft = session.draft;
@@ -492,7 +510,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     assetId: string,
   ): Promise<JsonValue> {
     const session = await this.getSession(projectId, assetId);
-    if (session.pending) throw new Error('Agent 修改尚未收口');
+    if (session.pending || this.hasActiveEdit(projectId, assetId)) {
+      throw new Error('Agent 修改尚未收口');
+    }
     if (session.history.cursor >= session.history.entries.length) {
       throw new Error('没有可重做的 HTML 修改');
     }
@@ -543,6 +563,14 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     if (session.conflict) {
       throw new Error('HTML 草稿存在恢复冲突，无法同步');
     }
+    if (
+      !session.pending &&
+      !this.hasActiveEdit(projectId, assetId) &&
+      session.draftRevision === session.syncedDraftRevision &&
+      !session.syncRequested
+    ) {
+      return { disposition: 'synced', status: this.statusOf(session) };
+    }
     const requested: HtmlDraftSession = {
       ...session,
       syncRequested: true,
@@ -569,9 +597,10 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     if (session.pending || this.hasActiveEdit(projectId, assetId)) {
       throw new Error('Agent 修改尚未收口，无法放弃草稿');
     }
-    await this.store?.delete(assetId);
     await rm(this.materializationPath(projectId, assetId), { force: true });
+    await this.store?.delete(assetId);
     this.sessions.delete(`${projectId}\0${assetId}`);
+    this.writableSources.delete(`${projectId}\0${assetId}`);
     this.publish({ type: 'session-changed', projectId, assetId, reason: 'discard' });
     return { discarded: true };
   }
@@ -608,7 +637,10 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     const loading = this.loadSession(projectId, assetId);
     this.sessions.set(key, loading);
     void loading.catch(() => {
-      if (this.sessions.get(key) === loading) this.sessions.delete(key);
+      if (this.sessions.get(key) === loading) {
+        this.sessions.delete(key);
+        this.writableSources.delete(key);
+      }
     });
     return loading;
   }
@@ -636,40 +668,64 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     try {
       if (
         resolved.contentStatus.availability !== 'available' ||
-        !resolved.handle?.readBytes ||
-        !resolved.handle.writeBytes
+        !resolved.handle?.readBytes
       ) {
-        throw new Error('当前 HTML Asset 不可读写');
+        throw new Error('当前 HTML Asset 不可读取');
       }
+      this.writableSources.set(
+        `${projectId}\0${assetId}`,
+        Boolean(resolved.handle.writeBytes),
+      );
       const source = await this.textContent.read(resolved.handle);
-      const restored = await this.store?.load(assetId);
+      const initial: HtmlDraftSession = {
+        version: 1,
+        projectId,
+        assetId,
+        sourceRevision: source.revision,
+        syncedDraftRevision: this.revisionOf(source.content),
+        draftRevision: this.revisionOf(source.content),
+        encoding: source.encoding,
+        lineEnding: source.lineEnding,
+        hasByteOrderMark: source.hasByteOrderMark,
+        draft: source.content,
+        history: { entries: [], cursor: 0 },
+        syncRequested: false,
+      };
+      let restored: HtmlDraftSession | undefined;
+      try {
+        restored = await this.store?.load(assetId);
+      } catch {
+        return { ...initial, conflict: 'RECOVERY_INCONSISTENT' };
+      }
       if (!restored) {
-        return {
-          version: 1,
-          projectId,
-          assetId,
-          sourceRevision: source.revision,
-          syncedDraftRevision: this.revisionOf(source.content),
-          draftRevision: this.revisionOf(source.content),
-          encoding: source.encoding,
-          lineEnding: source.lineEnding,
-          hasByteOrderMark: source.hasByteOrderMark,
-          draft: source.content,
-          history: { entries: [], cursor: 0 },
-          syncRequested: false,
-        };
+        return initial;
       }
       if (restored.projectId !== projectId) {
         throw new Error('HTML Workbench 草稿项目不匹配');
       }
       let session = restored;
-      if (session.sourceRevision !== source.revision) {
-        session = { ...session, conflict: 'SOURCE_REVISION_MISMATCH' };
+      if (!this.isSessionIntegrityValid(session)) {
+        session = { ...session, conflict: 'RECOVERY_INCONSISTENT' };
         await this.persist(session);
         return session;
       }
-      if (!this.isSessionIntegrityValid(session)) {
-        session = { ...session, conflict: 'RECOVERY_INCONSISTENT' };
+      if (session.sourceRevision !== source.revision) {
+        if (
+          session.syncRequested &&
+          !session.pending &&
+          source.content === session.draft
+        ) {
+          session = {
+            ...session,
+            sourceRevision: source.revision,
+            syncedDraftRevision: session.draftRevision,
+            syncRequested: false,
+            conflict: undefined,
+          };
+          await this.persist(session);
+          return session;
+        }
+        session = { ...session, conflict: 'SOURCE_REVISION_MISMATCH' };
         await this.persist(session);
         return session;
       }
@@ -679,7 +735,14 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
           session = await this.commitPending(session);
         } else if (pendingTask?.failure || pendingTask?.cancelledTime !== undefined) {
           session = await this.rollbackPending(session);
+        } else if (!pendingTask) {
+          session = { ...session, conflict: 'RECOVERY_INCONSISTENT' };
+          await this.persist(session);
+          return session;
         }
+      }
+      if (session.syncRequested && !session.pending && !session.conflict) {
+        session = await this.syncSession(session);
       }
       return session;
     } finally {
@@ -696,6 +759,43 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     await this.store.save(session);
     const key = `${session.projectId}\0${session.assetId}`;
     this.sessions.set(key, Promise.resolve(session));
+  }
+
+  private async refreshSourceSession(
+    session: HtmlDraftSession,
+  ): Promise<HtmlDraftSession> {
+    const resolved = await this.assets.resolveContent(session.assetId);
+    try {
+      if (
+        resolved.contentStatus.availability !== 'available' ||
+        !resolved.handle?.readBytes
+      ) {
+        throw new Error('当前 HTML Asset 不可读取');
+      }
+      this.writableSources.set(
+        `${session.projectId}\0${session.assetId}`,
+        Boolean(resolved.handle.writeBytes),
+      );
+      const source = await this.textContent.read(resolved.handle);
+      const revision = this.revisionOf(source.content);
+      const refreshed: HtmlDraftSession = {
+        ...session,
+        sourceRevision: source.revision,
+        syncedDraftRevision: revision,
+        draftRevision: revision,
+        encoding: source.encoding,
+        lineEnding: source.lineEnding,
+        hasByteOrderMark: source.hasByteOrderMark,
+        draft: source.content,
+      };
+      this.sessions.set(
+        `${session.projectId}\0${session.assetId}`,
+        Promise.resolve(refreshed),
+      );
+      return refreshed;
+    } finally {
+      await resolved.handle?.close();
+    }
   }
 
   private async commitPending(
@@ -758,6 +858,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
         encoding: session.encoding,
       });
       if (current.revision !== session.sourceRevision) {
+        if (session.syncRequested && current.content === session.draft) {
+          return this.completeSync(session, current.revision);
+        }
         const conflict: HtmlDraftSession = {
           ...session,
           conflict: 'SOURCE_REVISION_MISMATCH',
@@ -778,24 +881,31 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
         hasByteOrderMark: session.hasByteOrderMark,
         expectedRevision: session.sourceRevision,
       });
-      const synced: HtmlDraftSession = {
+      return this.completeSync(session, result.revision);
+    } finally {
+      await resolved.handle?.close();
+    }
+  }
+
+  private async completeSync(
+    session: HtmlDraftSession,
+    sourceRevision: string,
+  ): Promise<HtmlDraftSession> {
+    const synced: HtmlDraftSession = {
         ...session,
-        sourceRevision: result.revision,
+        sourceRevision,
         syncedDraftRevision: session.draftRevision,
         syncRequested: false,
         conflict: undefined,
       };
-      await this.persist(synced);
-      this.publish({
-        type: 'session-changed',
-        projectId: synced.projectId,
-        assetId: synced.assetId,
-        reason: 'sync',
-      });
-      return synced;
-    } finally {
-      await resolved.handle?.close();
-    }
+    await this.persist(synced);
+    this.publish({
+      type: 'session-changed',
+      projectId: synced.projectId,
+      assetId: synced.assetId,
+      reason: 'sync',
+    });
+    return synced;
   }
 
   private hasActiveEdit(projectId: string, assetId: string): boolean {
@@ -805,10 +915,16 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     );
   }
 
+  private isSourceWritable(projectId: string, assetId: string): boolean {
+    return this.writableSources.get(`${projectId}\0${assetId}`) === true;
+  }
+
   private statusOf(session: HtmlDraftSession): JsonValue {
     const applied = session.history.entries.slice(0, session.history.cursor);
     return {
-      editable: !session.conflict,
+      editable:
+        !session.conflict &&
+        this.isSourceWritable(session.projectId, session.assetId),
       hasDraft: this.hasDraft(session),
       unsynced: session.draftRevision !== session.syncedDraftRevision,
       syncRequested: session.syncRequested,
@@ -828,6 +944,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
 
   private hasDraft(session: HtmlDraftSession): boolean {
     return (
+      Boolean(session.conflict) ||
       Boolean(session.pending) ||
       session.history.entries.length > 0 ||
       session.draftRevision !== session.syncedDraftRevision
@@ -847,52 +964,117 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       return false;
     }
 
-    let previousRevision: string | undefined;
-    for (const entry of session.history.entries) {
-      for (const operation of entry.operations) {
+    const reverse = (
+      inputDraft: string,
+      inputRevision: string,
+      operations: readonly HtmlDraftOperation[],
+    ): { readonly draft: string; readonly revision: string } | undefined => {
+      let draft = inputDraft;
+      let revision = inputRevision;
+      for (const operation of [...operations].reverse()) {
         if (
-          previousRevision !== undefined &&
-          operation.beforeRevision !== previousRevision
+          operation.afterRevision !== revision ||
+          draft.slice(
+            operation.rangeStart,
+            operation.rangeStart + operation.afterHtml.length,
+          ) !== operation.afterHtml
         ) {
-          return false;
+          return undefined;
         }
-        previousRevision = operation.afterRevision;
+        draft =
+          draft.slice(0, operation.rangeStart) +
+          operation.beforeHtml +
+          draft.slice(operation.rangeStart + operation.afterHtml.length);
+        revision = operation.beforeRevision;
       }
-    }
-
-    const firstEntry = session.history.entries[0];
-    const cursorEntry = session.history.entries[session.history.cursor - 1];
-    const cursorRevision =
-      cursorEntry?.operations.at(-1)?.afterRevision ??
-      firstEntry?.operations[0]?.beforeRevision;
-    const nextEntry = session.history.entries[session.history.cursor];
-    if (
-      cursorRevision !== undefined &&
-      nextEntry?.operations[0]?.beforeRevision !== undefined &&
-      nextEntry.operations[0].beforeRevision !== cursorRevision
-    ) {
-      return false;
-    }
+      return { draft, revision };
+    };
+    const forward = (
+      inputDraft: string,
+      inputRevision: string,
+      operations: readonly HtmlDraftOperation[],
+    ): { readonly draft: string; readonly revision: string } | undefined => {
+      let draft = inputDraft;
+      let revision = inputRevision;
+      for (const operation of operations) {
+        if (
+          operation.beforeRevision !== revision ||
+          draft.slice(
+            operation.rangeStart,
+            operation.rangeStart + operation.beforeHtml.length,
+          ) !== operation.beforeHtml
+        ) {
+          return undefined;
+        }
+        draft =
+          draft.slice(0, operation.rangeStart) +
+          operation.afterHtml +
+          draft.slice(operation.rangeStart + operation.beforeHtml.length);
+        revision = operation.afterRevision;
+      }
+      return { draft, revision };
+    };
 
     const pending = session.pending;
-    if (!pending) {
-      return (
-        cursorRevision === undefined || cursorRevision === session.draftRevision
+    let cursorDraft = session.draft;
+    let cursorRevision = session.draftRevision;
+    if (pending) {
+      const beforePending = reverse(
+        cursorDraft,
+        cursorRevision,
+        pending.operations,
       );
+      if (
+        !beforePending ||
+        beforePending.draft !== pending.beforeDraft ||
+        beforePending.revision !== pending.beforeRevision ||
+        this.revisionOf(beforePending.draft) !== beforePending.revision
+      ) {
+        return false;
+      }
+      cursorDraft = beforePending.draft;
+      cursorRevision = beforePending.revision;
     }
+
+    let baseline = { draft: cursorDraft, revision: cursorRevision };
+    for (let index = session.history.cursor - 1; index >= 0; index -= 1) {
+      const previous = reverse(
+        baseline.draft,
+        baseline.revision,
+        session.history.entries[index]!.operations,
+      );
+      if (
+        !previous ||
+        this.revisionOf(previous.draft) !== previous.revision
+      ) {
+        return false;
+      }
+      baseline = previous;
+    }
+
+    let replayed = baseline;
     if (
-      this.revisionOf(pending.beforeDraft) !== pending.beforeRevision ||
-      (cursorRevision !== undefined &&
-        pending.beforeRevision !== cursorRevision)
+      session.history.cursor === 0 &&
+      (replayed.draft !== cursorDraft || replayed.revision !== cursorRevision)
     ) {
       return false;
     }
-    let pendingRevision = pending.beforeRevision;
-    for (const operation of pending.operations) {
-      if (operation.beforeRevision !== pendingRevision) return false;
-      pendingRevision = operation.afterRevision;
+    for (let index = 0; index < session.history.entries.length; index += 1) {
+      const next = forward(
+        replayed.draft,
+        replayed.revision,
+        session.history.entries[index]!.operations,
+      );
+      if (!next || this.revisionOf(next.draft) !== next.revision) return false;
+      replayed = next;
+      if (
+        index + 1 === session.history.cursor &&
+        (replayed.draft !== cursorDraft || replayed.revision !== cursorRevision)
+      ) {
+        return false;
+      }
     }
-    return pendingRevision === session.draftRevision;
+    return true;
   }
 
   private materializationPath(projectId: string, assetId: string): string {

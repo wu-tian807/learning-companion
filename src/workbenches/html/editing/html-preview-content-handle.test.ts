@@ -50,4 +50,56 @@ describe('HtmlPreviewContentHandle', () => {
     });
     expect(source.readBytes).toHaveBeenCalledOnce();
   });
+
+  it('serves validated byte ranges from the current draft', async () => {
+    const handle = new HtmlPreviewContentHandle(
+      { getDraft: vi.fn(async () => 'abcdef') } as never,
+      'project-1',
+      'asset-1',
+      fallback(),
+    );
+
+    const result = await handle.openByteStream({ start: 4, endExclusive: 7 });
+    const chunk = await result.stream.getReader().read();
+
+    expect(new TextDecoder().decode(chunk.value)).toBe('bcd');
+    expect(result.byteLength).toBe(3);
+    await expect(
+      handle.openByteStream({ start: -1, endExclusive: 2 }),
+    ).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it('delegates source streams and keeps the Workbench-owned source open', async () => {
+    const bytes = new TextEncoder().encode('source stream');
+    const openByteStream = vi.fn(async () => ({
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+      byteLength: bytes.length,
+      revision: 'source-revision',
+    }));
+    const close = vi.fn(async () => undefined);
+    const source: ContentHandle = {
+      capabilities: new Set(['read-stream']),
+      openByteStream,
+      close,
+    };
+    const handle = new HtmlPreviewContentHandle(
+      { getDraft: vi.fn(async () => undefined) } as never,
+      'project-1',
+      'asset-1',
+      source,
+    );
+
+    await expect(handle.openByteStream()).resolves.toMatchObject({
+      revision: 'source-revision',
+    });
+    await handle.close();
+
+    expect(openByteStream).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+  });
 });

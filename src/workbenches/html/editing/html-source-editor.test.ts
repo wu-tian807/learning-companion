@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   beginHtmlSourceEdit,
+  HTML_EDIT_LIMITS,
   HtmlSourceEditError,
   replaceHtmlSourceEdit,
 } from './html-source-editor';
@@ -45,6 +46,118 @@ describe('HTML parse5 source editor', () => {
       ariaLabel: 'intro',
       textQuote: 'Hello',
     });
+  });
+
+  it('supports standard CSS selectors beyond the common subset', () => {
+    const edit = beginHtmlSourceEdit({
+      source:
+        '<html><body><main id="lesson">' +
+        '<p data-kind="intro-primary">First</p><p hidden>Second</p>' +
+        '</main></body></html>',
+      locator: {
+        kind: 'selector',
+        selector:
+          '#lesson > p:first-child:not([hidden])[data-kind^="intro"]',
+      },
+      scope: 'element',
+    });
+
+    expect(edit.currentHtml).toBe(
+      '<p data-kind="intro-primary">First</p>',
+    );
+  });
+
+  it('locates SVG and MathML elements without losing source ranges', () => {
+    const source =
+      '<html><body><svg><linearGradient id="gradient">' +
+      '<stop offset="0"></stop></linearGradient></svg>' +
+      '<math><mrow><mi>x</mi></mrow></math></body></html>';
+    const svg = beginHtmlSourceEdit({
+      source,
+      locator: {
+        kind: 'selector',
+        selector: 'svg linearGradient#gradient',
+      },
+      scope: 'element',
+    });
+    const math = beginHtmlSourceEdit({
+      source,
+      locator: { kind: 'selector', selector: 'math mi' },
+      scope: 'contents',
+    });
+
+    expect(svg.currentHtml).toBe(
+      '<linearGradient id="gradient"><stop offset="0"></stop></linearGradient>',
+    );
+    expect(math.currentHtml).toBe('x');
+  });
+
+  it('rejects empty and oversized selectors', () => {
+    expect(
+      code(() =>
+        beginHtmlSourceEdit({
+          source: SOURCE,
+          locator: { kind: 'selector', selector: '   ' },
+          scope: 'element',
+        }),
+      ),
+    ).toBe('SELECTOR_EMPTY');
+    expect(
+      code(() =>
+        beginHtmlSourceEdit({
+          source: SOURCE,
+          locator: {
+            kind: 'selector',
+            selector: 'a'.repeat(HTML_EDIT_LIMITS.selectorLength + 1),
+          },
+          scope: 'element',
+        }),
+      ),
+    ).toBe('SELECTOR_TOO_LARGE');
+  });
+
+  it('rejects documents larger than the parser limit', () => {
+    expect(
+      code(() =>
+        beginHtmlSourceEdit({
+          source: ' '.repeat(HTML_EDIT_LIMITS.documentLength + 1),
+          locator: { kind: 'selector', selector: 'html' },
+          scope: 'element',
+        }),
+      ),
+    ).toBe('DOCUMENT_TOO_LARGE');
+  });
+
+  it('rejects target regions larger than the edit limit', () => {
+    expect(
+      code(() =>
+        beginHtmlSourceEdit({
+          source:
+            '<html><body><main id="target">' +
+            'x'.repeat(HTML_EDIT_LIMITS.regionLength + 1) +
+            '</main></body></html>',
+          locator: { kind: 'selector', selector: '#target' },
+          scope: 'contents',
+        }),
+      ),
+    ).toBe('REGION_TOO_LARGE');
+  });
+
+  it('rejects replacements larger than the edit limit', () => {
+    const edit = beginHtmlSourceEdit({
+      source: SOURCE,
+      locator: { kind: 'selector', selector: '#lesson' },
+      scope: 'contents',
+    });
+
+    expect(
+      code(() =>
+        replaceHtmlSourceEdit(
+          edit,
+          'x'.repeat(HTML_EDIT_LIMITS.replacementLength + 1),
+        ),
+      ),
+    ).toBe('REGION_TOO_LARGE');
   });
 
   it('rejects invalid, missing, non-unique, and implicit-source targets', () => {
@@ -152,5 +265,38 @@ describe('HTML parse5 source editor', () => {
       id: 'result',
       textQuote: 'Done',
     });
+  });
+
+  it('replaces an explicitly sourced document element', () => {
+    const edit = beginHtmlSourceEdit({
+      source: '<!doctype html><html><head></head><body>A</body></html>',
+      locator: { kind: 'selector', selector: 'html' },
+      scope: 'element',
+    });
+    const replaced = replaceHtmlSourceEdit(
+      edit,
+      '<html lang="zh"><head></head><body><main>B</main></body></html>',
+    );
+
+    expect(replaced.source).toBe(
+      '<!doctype html><html lang="zh"><head></head><body><main>B</main></body></html>',
+    );
+    expect(replaced.resolvedTarget.element).toMatchObject({ tagName: 'html' });
+  });
+
+  it('does not execute scripts or fetch resources while locating source', () => {
+    delete (globalThis as { __htmlEditExecuted?: boolean }).__htmlEditExecuted;
+    const edit = beginHtmlSourceEdit({
+      source:
+        '<html><body><script>globalThis.__htmlEditExecuted=true</script>' +
+        '<img src="https://invalid.example/image.png"></body></html>',
+      locator: { kind: 'selector', selector: 'script' },
+      scope: 'contents',
+    });
+
+    expect(edit.currentHtml).toContain('__htmlEditExecuted');
+    expect(
+      (globalThis as { __htmlEditExecuted?: boolean }).__htmlEditExecuted,
+    ).toBeUndefined();
   });
 });

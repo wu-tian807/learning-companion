@@ -88,6 +88,9 @@ export interface HtmlDraftReview {
   readonly pendingChanges: readonly HtmlDraftReviewChange[];
 }
 
+const HTML_DRAFT_REVIEW_BEFORE_LIMIT = 2_097_152;
+const HTML_DRAFT_REVIEW_AFTER_LIMIT = 1_048_576;
+
 export const htmlEditCommands = {
   status: 'html.edit.status',
   review: 'html.edit.review',
@@ -242,9 +245,9 @@ function isHtmlDraftReviewChange(
     isRecord(value) &&
     Object.keys(value).every((key) => key === 'before' || key === 'after') &&
     typeof value.before === 'string' &&
-    value.before.length <= 1_048_576 &&
+    value.before.length <= HTML_DRAFT_REVIEW_BEFORE_LIMIT &&
     typeof value.after === 'string' &&
-    value.after.length <= 1_048_576
+    value.after.length <= HTML_DRAFT_REVIEW_AFTER_LIMIT
   );
 }
 

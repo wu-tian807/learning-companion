@@ -139,11 +139,15 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   async materializeContent(
     context: WorkbenchMaterializationContext,
   ): Promise<MaterializedWorkbenchContent> {
-    const draftPath = await this.editing?.materializeDraft(
-      context.asset.projectId,
-      context.asset.id,
-    );
-    if (draftPath) return { absolutePath: draftPath, mediaType: 'text/html' };
+    if (this.editing) {
+      return {
+        absolutePath: await this.editing.materializeReference(
+          context.asset.projectId,
+          context.asset.id,
+        ),
+        mediaType: 'text/html',
+      };
+    }
     if (context.content.location?.absolutePath) {
       return {
         absolutePath: context.content.location.absolutePath,

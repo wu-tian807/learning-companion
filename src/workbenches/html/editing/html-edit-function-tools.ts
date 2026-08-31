@@ -11,13 +11,13 @@ import {
   type HtmlDomAnchorV1,
 } from '../shared';
 import { HtmlEditValidationError } from './html-fragment-validator';
-import { HtmlSourceEditError } from './html-source-editor';
+import {
+  HTML_EDIT_LIMITS,
+  HtmlSourceEditError,
+} from './html-source-editor';
 
 export const HTML_BEGIN_EDIT_TOOL_ID = 'html_begin_edit';
 export const HTML_REPLACE_EDIT_TOOL_ID = 'html_replace_edit';
-
-const SELECTOR_LENGTH_LIMIT = 2_048;
-const REPLACEMENT_LENGTH_LIMIT = 1_048_576;
 
 export interface HtmlEditToolRuntime {
   canEdit?(projectId: string, assetId: string): Promise<boolean>;
@@ -41,16 +41,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function requireRuntime(
-  resolveRuntime: () => HtmlEditToolRuntime | undefined,
-): HtmlEditToolRuntime {
-  const runtime = resolveRuntime();
-  if (!runtime) {
-    throw new AgentFunctionToolExecutionError('HTML 编辑功能尚未就绪');
-  }
-  return runtime;
-}
-
 function asModelError(error: unknown): never {
   if (
     error instanceof HtmlEditValidationError ||
@@ -58,7 +48,9 @@ function asModelError(error: unknown): never {
   ) {
     throw new AgentFunctionToolExecutionError(error.message);
   }
-  throw error;
+  throw new AgentFunctionToolExecutionError(
+    'HTML 编辑失败，请重新 begin 后再试',
+  );
 }
 
 const beginInputSchema = {
@@ -77,7 +69,7 @@ const beginInputSchema = {
             selector: {
               type: 'string',
               minLength: 1,
-              maxLength: SELECTOR_LENGTH_LIMIT,
+              maxLength: HTML_EDIT_LIMITS.selectorLength,
             },
           },
         },
@@ -117,12 +109,15 @@ const replaceInputSchema = {
   required: ['editId', 'html'],
   properties: {
     editId: { type: 'string', minLength: 1, maxLength: 256 },
-    html: { type: 'string', maxLength: REPLACEMENT_LENGTH_LIMIT },
+    html: {
+      type: 'string',
+      maxLength: HTML_EDIT_LIMITS.replacementLength,
+    },
   },
 } as const satisfies JsonValue;
 
 export function createHtmlEditFunctionTools(
-  resolveRuntime: () => HtmlEditToolRuntime | undefined,
+  runtime: HtmlEditToolRuntime,
 ): readonly AgentFunctionToolDefinition[] {
   return [
     {
@@ -138,7 +133,7 @@ export function createHtmlEditFunctionTools(
           locator.kind === 'selector' &&
           typeof locator.selector === 'string' &&
           locator.selector.trim().length > 0 &&
-          locator.selector.length <= SELECTOR_LENGTH_LIMIT &&
+          locator.selector.length <= HTML_EDIT_LIMITS.selectorLength &&
           Object.keys(locator).every(
             (key) => key === 'kind' || key === 'selector',
           )
@@ -165,7 +160,7 @@ export function createHtmlEditFunctionTools(
           throw new AgentFunctionToolExecutionError('html_begin_edit 输入无效');
         }
         try {
-          return await requireRuntime(resolveRuntime).begin(
+          return await runtime.begin(
             { locator: parsedLocator, scope: input.scope },
             context,
           );
@@ -190,14 +185,14 @@ export function createHtmlEditFunctionTools(
           input.editId.trim().length === 0 ||
           input.editId.length > 256 ||
           typeof input.html !== 'string' ||
-          input.html.length > REPLACEMENT_LENGTH_LIMIT
+          input.html.length > HTML_EDIT_LIMITS.replacementLength
         ) {
           throw new AgentFunctionToolExecutionError(
             'html_replace_edit 输入无效',
           );
         }
         try {
-          return await requireRuntime(resolveRuntime).replace(
+          return await runtime.replace(
             input.editId,
             input.html,
             context,

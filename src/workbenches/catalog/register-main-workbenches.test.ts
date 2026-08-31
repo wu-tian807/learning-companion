@@ -83,7 +83,12 @@ describe('Workbench contribution catalogs', () => {
       new UnsupportedWorkbenchProvider(),
       facilityDefinitions,
     );
+    const functionTools = new AgentFunctionToolRegistry();
+    const conversationContexts =
+      new WorkbenchConversationContextProviderRegistry();
     registerMainWorkbenchProviders(providers, {
+      functionTools,
+      conversationContexts,
       associationService: {} as never,
       assetService: {
         subscribe: vi.fn(() => () => undefined),
@@ -113,6 +118,11 @@ describe('Workbench contribution catalogs', () => {
             adapter.triggers.includes(SANDBOX_CONTEXT_MENU_TRIGGER),
         )?.workbenchId,
     ).toBe('builtin.html');
+    expect(functionTools.get('html_begin_edit')).toBeDefined();
+    expect(functionTools.get('html_replace_edit')).toBeDefined();
+    expect(
+      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID).id,
+    ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
   });
 
   it('registers Workbench-owned external components through the same catalog', () => {
@@ -240,8 +250,8 @@ describe('Workbench contribution catalogs', () => {
     registerMainWorkbenchAgentFunctionTools({ functionTools });
 
     expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
-    expect(functionTools.get('html_begin_edit')).toBeDefined();
-    expect(functionTools.get('html_replace_edit')).toBeDefined();
+    expect(functionTools.get('html_begin_edit')).toBeUndefined();
+    expect(functionTools.get('html_replace_edit')).toBeUndefined();
   });
 
   it('registers Workbench conversation context providers through the same Main catalog', () => {
@@ -263,12 +273,14 @@ describe('Workbench contribution catalogs', () => {
     for (const id of [
       DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
       EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
-      HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
       IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
       VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
     ]) {
       expect(conversationContexts.require(id).id).toBe(id);
     }
+    expect(() =>
+      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID),
+    ).toThrow();
     expect(
       definitions.require(
         WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,

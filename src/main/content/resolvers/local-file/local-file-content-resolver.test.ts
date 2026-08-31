@@ -1,4 +1,12 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -212,6 +220,121 @@ describe('LocalFileContentResolver', () => {
     expect(bytes.toString('utf8')).toBe('\ufeff第一行\r\n新增内容\r\n');
     expect(saved.revision).not.toBe(content.revision);
   });
+
+  it.runIf(process.platform === 'win32')(
+    'does not remove read-only protection from a linked absolute file',
+    async () => {
+      const path = await createTemporaryFile(
+        'linked.html',
+        Buffer.from('<p>before</p>'),
+      );
+      await chmod(path, 0o400);
+      try {
+        const resolver = new LocalFileContentResolver(workspaceManager);
+        const resolved = await resolver.resolve(
+          createAbsoluteLocalFileContentRef(path),
+          resolveContext,
+        );
+        const adapter = new DefaultTextContentAdapter();
+        const source = await adapter.read(resolved.handle!);
+
+        await expect(
+          adapter.write(resolved.handle!, {
+            ...source,
+            content: '<p>after</p>',
+            expectedRevision: source.revision,
+          }),
+        ).rejects.toMatchObject({ code: 'CONTENT_WRITE_FAILED' });
+        await expect(readFile(path, 'utf8')).resolves.toBe('<p>before</p>');
+      } finally {
+        await chmod(path, 0o600);
+      }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'does not trust a managed-looking reference resolved outside its managed directory',
+    async () => {
+      const path = await createTemporaryFile(
+        'escaped.html',
+        Buffer.from('<p>before</p>'),
+      );
+      await chmod(path, 0o400);
+      try {
+        const resolver = new LocalFileContentResolver({
+          resolveLocalFile: async () => path,
+        } as never);
+        const resolved = await resolver.resolve(
+          createProjectWorkspaceContentRef(
+            '.learning-companion/assets/imported/escaped.html',
+          ),
+          resolveContext,
+        );
+        const adapter = new DefaultTextContentAdapter();
+        const source = await adapter.read(resolved.handle!);
+
+        await expect(
+          adapter.write(resolved.handle!, {
+            ...source,
+            content: '<p>after</p>',
+            expectedRevision: source.revision,
+          }),
+        ).rejects.toMatchObject({ code: 'CONTENT_WRITE_FAILED' });
+        await expect(readFile(path, 'utf8')).resolves.toBe('<p>before</p>');
+      } finally {
+        await chmod(path, 0o600);
+      }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'does not remove read-only protection through a managed-directory junction',
+    async () => {
+      const root = await mkdtemp(
+        join(tmpdir(), 'learning-companion-managed-junction-'),
+      );
+      temporaryDirectories.push(root);
+      const workspace = join(root, 'workspace');
+      const externalDirectory = join(root, 'external');
+      const managedParent = join(
+        workspace,
+        '.learning-companion',
+        'assets',
+      );
+      const managedJunction = join(managedParent, 'imported');
+      const externalPath = join(externalDirectory, 'lesson.html');
+      await mkdir(managedParent, { recursive: true });
+      await mkdir(externalDirectory, { recursive: true });
+      await writeFile(externalPath, '<p>before</p>');
+      await symlink(externalDirectory, managedJunction, 'junction');
+      await chmod(externalPath, 0o400);
+
+      try {
+        const resolver = new LocalFileContentResolver(workspaceManager);
+        const resolved = await resolver.resolve(
+          createProjectWorkspaceContentRef(
+            '.learning-companion/assets/imported/lesson.html',
+          ),
+          { projectId: 'project', projectWorkspace: workspace },
+        );
+        const adapter = new DefaultTextContentAdapter();
+        const source = await adapter.read(resolved.handle!);
+
+        await expect(
+          adapter.write(resolved.handle!, {
+            ...source,
+            content: '<p>after</p>',
+            expectedRevision: source.revision,
+          }),
+        ).rejects.toMatchObject({ code: 'CONTENT_WRITE_FAILED' });
+        await expect(readFile(externalPath, 'utf8')).resolves.toBe(
+          '<p>before</p>',
+        );
+      } finally {
+        await chmod(externalPath, 0o600).catch(() => undefined);
+      }
+    },
+  );
 
   it('preserves GBK and prevents writing characters it cannot represent', async () => {
     const path = await createTemporaryFile(

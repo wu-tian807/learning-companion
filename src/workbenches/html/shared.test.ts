@@ -5,6 +5,7 @@ import {
   createHtmlLinkTarget,
   createHtmlElementTarget,
   createHtmlQuoteTarget,
+  isHtmlDraftReview,
   isHtmlDomAnchorV1,
   isHtmlDomTarget,
   isHtmlLinkAnchorV1,
@@ -15,6 +16,32 @@ import {
 } from './shared';
 
 describe('HTML Workbench shared protocol', () => {
+  it('accepts a review of every source region allowed by the editor', () => {
+    const maximumRegion = 'a'.repeat(2_097_152);
+    const review = {
+      entries: [
+        {
+          taskId: 'task-1',
+          changes: [{ before: maximumRegion, after: '<p>shorter</p>' }],
+        },
+      ],
+      pendingChanges: [],
+    };
+
+    expect(isHtmlDraftReview(review)).toBe(true);
+    expect(
+      isHtmlDraftReview({
+        ...review,
+        entries: [
+          {
+            taskId: 'task-1',
+            changes: [{ before: `${maximumRegion}a`, after: '' }],
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it('accepts only scoped original-document URLs', () => {
     expect(
       isHtmlWorkbenchPayload({

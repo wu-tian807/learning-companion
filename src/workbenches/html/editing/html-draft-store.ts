@@ -1,6 +1,5 @@
 import type { TextEncoding, TextLineEnding } from '../../../main/content/text-content';
 import type { WorkbenchStateDataDatabaseApi } from '../../../main/workbench/workbench-state-data-database';
-import type { WorkbenchStateDatabaseApi } from '../../../main/workbench/workbench-state-database';
 import type { HtmlDomAnchorV1 } from '../shared';
 
 export const HTML_DRAFT_HISTORY_LIMIT = 20;
@@ -73,11 +72,14 @@ function isSession(value: unknown): value is HtmlDraftSession {
     typeof value.sourceRevision !== 'string' ||
     typeof value.syncedDraftRevision !== 'string' ||
     typeof value.draftRevision !== 'string' ||
-    typeof value.encoding !== 'string' ||
+    (value.encoding !== 'utf-8' && value.encoding !== 'gbk') ||
     (value.lineEnding !== 'lf' && value.lineEnding !== 'crlf') ||
     typeof value.hasByteOrderMark !== 'boolean' ||
     typeof value.draft !== 'string' ||
     typeof value.syncRequested !== 'boolean' ||
+    (value.conflict !== undefined &&
+      value.conflict !== 'SOURCE_REVISION_MISMATCH' &&
+      value.conflict !== 'RECOVERY_INCONSISTENT') ||
     !isRecord(value.history) ||
     !Array.isArray(value.history.entries) ||
     value.history.entries.length > HTML_DRAFT_HISTORY_LIMIT ||
@@ -113,13 +115,11 @@ function isSession(value: unknown): value is HtmlDraftSession {
 
 export class HtmlDraftStore {
   constructor(
-    private readonly states: WorkbenchStateDatabaseApi,
     private readonly data: WorkbenchStateDataDatabaseApi,
     private readonly now: () => number = Date.now,
   ) {}
 
   async load(assetId: string): Promise<HtmlDraftSession | undefined> {
-    await this.states.get(assetId, HTML_WORKBENCH_ID);
     const record = await this.data.get(
       assetId,
       HTML_WORKBENCH_ID,
@@ -150,24 +150,9 @@ export class HtmlDraftStore {
       data: new TextEncoder().encode(JSON.stringify(session)),
       updatedTime,
     });
-    await this.states.save({
-      assetId: session.assetId,
-      workbenchId: HTML_WORKBENCH_ID,
-      schemaVersion: HTML_DRAFT_SCHEMA_VERSION,
-      payload: {
-        agentDraft: {
-          dataKey: HTML_DRAFT_DATA_KEY,
-          sourceRevision: session.sourceRevision,
-          draftRevision: session.draftRevision,
-          syncedDraftRevision: session.syncedDraftRevision,
-        },
-      },
-      updatedTime,
-    });
   }
 
   async delete(assetId: string): Promise<void> {
     await this.data.delete(assetId, HTML_WORKBENCH_ID, HTML_DRAFT_DATA_KEY);
-    await this.states.delete(assetId, HTML_WORKBENCH_ID);
   }
 }

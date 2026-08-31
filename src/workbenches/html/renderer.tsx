@@ -53,6 +53,7 @@ import {
   htmlEditVisualCommands,
   isHtmlEditVisualResult,
 } from './editing/html-edit-visual-commands';
+import { HtmlEditReloadQueue } from './editing/html-edit-reload-queue';
 
 export async function installHtmlSourceCopyInFrame(
   executeCommand: RendererWorkbenchViewProps['executeCommand'],
@@ -141,6 +142,10 @@ export function HtmlWorkbenchView({
   const payload = isHtmlWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
+  const editReloadQueue = useMemo(
+    () => new HtmlEditReloadQueue(),
+    [payload?.contentUrl],
+  );
   const contextRef = useRef<
     CoreContextMenuFacilityEvent | undefined
   >(
@@ -160,6 +165,7 @@ export function HtmlWorkbenchView({
   const [editingStatus, setEditingStatus] = useState(payload?.editing);
   const [editCommandBusy, setEditCommandBusy] = useState(false);
   const [draftReview, setDraftReview] = useState<HtmlDraftReview>();
+  const editingStatusRequestRef = useRef(0);
   const editVisualRevisionRef = useRef(0);
   const appliedEditRevisionsRef = useRef(new Set<string>());
   const frameKey = payload
@@ -288,19 +294,25 @@ export function HtmlWorkbenchView({
   }, [clearHighlight, onInteractionChange]);
 
   const refreshEditingStatus = useCallback(async () => {
+    const request = ++editingStatusRequestRef.current;
     try {
       const result = await executeCommand({ type: htmlEditCommands.status });
       if (!isHtmlEditingStatus(result.payload)) {
         throw new Error('HTML editing status returned invalid data');
       }
-      setEditingStatus(result.payload);
+      if (request === editingStatusRequestRef.current) {
+        setEditingStatus(result.payload);
+      }
     } catch (error) {
-      reportError(error, '无法刷新 HTML 草稿状态。');
+      if (request === editingStatusRequestRef.current) {
+        reportError(error, '无法刷新 HTML 草稿状态。');
+      }
     }
   }, [executeCommand, reportError]);
 
   const acceptEditingStatus = useCallback((value: JsonValue) => {
     if (isHtmlEditingStatus(value)) {
+      editingStatusRequestRef.current += 1;
       setEditingStatus(value);
       return;
     }
@@ -311,6 +323,7 @@ export function HtmlWorkbenchView({
     ) {
       const record = value as Readonly<Record<string, JsonValue>>;
       if (isHtmlEditingStatus(record.status)) {
+        editingStatusRequestRef.current += 1;
         setEditingStatus(record.status);
       }
     }
@@ -399,7 +412,7 @@ export function HtmlWorkbenchView({
   useEffect(() => {
     if (!subscribeEvent || !payload?.editing) return;
 
-    return subscribeEvent((event) => {
+    const unsubscribe = subscribeEvent((event) => {
       const eventPayload = event.payload;
       if (
         typeof eventPayload !== 'object' ||
@@ -442,7 +455,7 @@ export function HtmlWorkbenchView({
         const appliedKey = `${record.editId}\0${record.draftRevision}`;
         if (appliedEditRevisionsRef.current.has(appliedKey)) return;
         appliedEditRevisionsRef.current.add(appliedKey);
-        reload();
+        editReloadQueue.enqueue(reload);
         void refreshEditingStatus();
         return;
       }
@@ -478,14 +491,17 @@ export function HtmlWorkbenchView({
           reason === 'redo' ||
           reason === 'discard'
         ) {
-          reload();
+          editReloadQueue.enqueue(reload);
         }
         void refreshEditingStatus();
       }
     });
+    void refreshEditingStatus();
+    return unsubscribe;
   }, [
     payload?.editing,
     clearEditVisual,
+    editReloadQueue,
     refreshEditingStatus,
     reload,
     showEditVisual,
@@ -528,6 +544,10 @@ export function HtmlWorkbenchView({
     `${htmlWorkbenchManifest.id}.viewer`,
     rendererActions,
   );
+
+  useEffect(() => {
+    return () => editReloadQueue.dispose();
+  }, [editReloadQueue]);
 
   useEffect(() => {
     if (!payload) {
@@ -653,11 +673,13 @@ export function HtmlWorkbenchView({
             })
             .finally(() => {
               setLoadedFrameKey(frameKey);
+              editReloadQueue.complete();
             });
         }}
         onError={() => {
           setFrameFailed(true);
           setLoadedFrameKey(undefined);
+          editReloadQueue.complete();
         }}
       />
 
@@ -675,6 +697,7 @@ export function HtmlWorkbenchView({
         <HtmlDraftToolbar
           status={editingStatus}
           busy={editCommandBusy}
+          agentBusy={aiBusy}
           review={draftReview}
           onUndo={() => runEditCommand(htmlEditCommands.undo)}
           onRedo={() => runEditCommand(htmlEditCommands.redo)}

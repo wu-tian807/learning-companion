@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTextRevision } from '../../main/content/text-content';
 import type { WorkbenchCommand } from '../../shared/workbench/protocol';
 import { createHtmlDomTarget, createHtmlQuoteTarget, htmlFrameCommands } from './shared';
+import { HtmlAgentEditingService } from './editing/html-agent-editing-service';
 import { HtmlWorkbenchProvider } from './main';
 import { htmlAnchorCommands } from './anchor-commands';
 import { createHtmlSourceCopyInstallFrameScript } from './html-source-copy-frame-script';
@@ -62,6 +68,7 @@ describe('HtmlWorkbenchProvider commands', () => {
     visual?.cleanup();
     delete root.__learningCompanionHtmlEditVisualV1;
     document.body.replaceChildren();
+    vi.unstubAllGlobals();
   });
 
   it('registers the draft preview and routes applied events to the owning session', async () => {
@@ -154,6 +161,64 @@ describe('HtmlWorkbenchProvider commands', () => {
         }),
       }),
     );
+  });
+
+  it('materializes a writable Workbench reference before the first draft exists', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'html-reference-'));
+    const sourcePath = join(root, 'lesson.html');
+    const source = '<html><body><p>Original</p></body></html>';
+    const bytes = new TextEncoder().encode(source);
+    await writeFile(sourcePath, bytes);
+    await chmod(sourcePath, 0o400);
+    const editing = new HtmlAgentEditingService(
+      {
+        getActiveProjectId: () => 'project-1',
+        get: () => ({
+          id: 'asset-1',
+          projectId: 'project-1',
+          mediaType: 'text/html',
+        }),
+        resolveContent: vi.fn(async () => ({
+          contentStatus: { availability: 'available', checkedTime: 1 },
+          handle: {
+            capabilities: new Set(['read-bytes', 'write-bytes']),
+            readBytes: vi.fn(async () => ({
+              content: bytes,
+              revision: createTextRevision(bytes),
+            })),
+            writeBytes: vi.fn(),
+            close: vi.fn(async () => undefined),
+          },
+        })),
+      } as never,
+      { get: vi.fn() } as never,
+    );
+    const provider = new HtmlWorkbenchProvider(
+      {} as never,
+      {} as never,
+      editing,
+    );
+
+    try {
+      const materialized = await provider.materializeContent({
+        asset: {
+          id: 'asset-1',
+          projectId: 'project-1',
+          mediaType: 'text/html',
+        },
+        content: { location: { absolutePath: sourcePath } },
+      } as never);
+
+      expect(materialized.absolutePath).not.toBe(sourcePath);
+      await expect(readFile(materialized.absolutePath, 'utf8')).resolves.toBe(
+        source,
+      );
+      expect((await stat(materialized.absolutePath)).mode & 0o200).not.toBe(0);
+    } finally {
+      await editing.discard('project-1', 'asset-1').catch(() => undefined);
+      await chmod(sourcePath, 0o600).catch(() => undefined);
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('rejects commands outside the current HTML Workbench surface', async () => {
@@ -265,6 +330,47 @@ describe('HtmlWorkbenchProvider commands', () => {
     expect(document.querySelector(
       '[data-learning-companion-html-agent-edit]',
     )).toBeNull();
+  });
+
+  it('disables continuous edit animation when reduced motion is requested', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    );
+    const { provider, context, frameScriptExecutor } = await createProvider();
+    document.body.innerHTML = '<main id="lesson">Before</main>';
+    document.getElementById('lesson')!.getBoundingClientRect = () => ({
+      left: 24,
+      top: 40,
+      right: 344,
+      bottom: 160,
+      width: 320,
+      height: 120,
+      x: 24,
+      y: 40,
+      toJSON: () => ({}),
+    });
+    frameScriptExecutor.executeJavaScript.mockImplementation(
+      async (_sessionId, script) => (0, eval)(script),
+    );
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/html',
+      element: { path: [1, 0], tagName: 'main', id: 'lesson' },
+    });
+
+    await provider.command(context, {
+      type: 'html.edit-visual.show',
+      payload: { target, revision: 1, phase: 'scanning' },
+    });
+
+    const visual = document.querySelector(
+      '[data-learning-companion-html-agent-edit="scanning"]',
+    );
+    expect(
+      visual?.querySelector<HTMLElement>('[data-html-edit-wave-sweep]')?.style
+        .animation,
+    ).toBe('none');
+    expect(visual?.querySelector('feTurbulence animate')).toBeNull();
   });
 
   it('installs source-aware copy behavior in the session root frame', async () => {

@@ -10,6 +10,8 @@ describe('audioMainWorkbenchContribution', () => {
     const subscribeTasks = vi.fn(() => () => undefined);
     const context: MainWorkbenchProviderContext = {
       associationService: {} as never,
+      functionTools: {} as never,
+      conversationContexts: {} as never,
       assetService: { subscribe: subscribeAssets } as never,
       artifactRegistry: {} as never,
       artifactService: {} as never,

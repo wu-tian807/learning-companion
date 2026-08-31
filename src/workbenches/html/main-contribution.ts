@@ -1,7 +1,6 @@
 import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
 import { HtmlAgentEditingService } from './editing/html-agent-editing-service';
-import { htmlAssistantMainFeature } from './generation/main';
-import { setHtmlEditToolRuntime } from './generation/main';
+import { registerHtmlAssistantMain } from './generation/main';
 import { HtmlWorkbenchProvider } from './main';
 import { htmlWorkbenchManifest } from './shared';
 
@@ -11,10 +10,13 @@ export const htmlMainWorkbenchContribution = composeMainWorkbenchContribution(
     const editing = new HtmlAgentEditingService(
       context.assetService,
       context.generationTasks,
-      context.stateDatabase,
       context.stateDataDatabase,
     );
-    setHtmlEditToolRuntime(editing);
+    registerHtmlAssistantMain({
+      functionTools: context.functionTools,
+      conversationContexts: context.conversationContexts,
+      editing,
+    });
     return new HtmlWorkbenchProvider(
       context.contentResourceService,
       context.sandboxFrameScripts,
@@ -22,5 +24,4 @@ export const htmlMainWorkbenchContribution = composeMainWorkbenchContribution(
       context.workbenchEvents,
     );
   },
-  [htmlAssistantMainFeature],
 );

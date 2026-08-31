@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AgentFunctionToolRegistry } from '../../../main/agents/function-tools/agent-function-tool-registry';
 import { createTextRevision } from '../../../main/content/text-content';
+import { WorkbenchConversationContextProviderRegistry } from '../../../main/conversation/workbench-conversation-context-provider-registry';
 import { htmlMainWorkbenchContribution } from '../main-contribution';
-import { htmlAssistantMainFeature, setHtmlEditToolRuntime } from './main';
+import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../conversation/html-conversation-context';
 
 describe('HTML assistant Main integration', () => {
   it('resolves the editable Asset from the GenerationTask using the existing tool context', async () => {
@@ -60,9 +61,12 @@ describe('HTML assistant Main integration', () => {
       })),
     };
     const functionTools = new AgentFunctionToolRegistry();
-    htmlAssistantMainFeature.registerAgentFunctionTools({ functionTools });
+    const conversationContexts =
+      new WorkbenchConversationContextProviderRegistry();
 
     htmlMainWorkbenchContribution.createProvider?.({
+      functionTools,
+      conversationContexts,
       assetService: assets,
       generationTasks,
       stateDatabase: {
@@ -80,32 +84,31 @@ describe('HTML assistant Main integration', () => {
       workbenchEvents: {},
     } as never);
 
-    try {
-      await expect(
-        functionTools.require('html_begin_edit').execute(
-          {
-            locator: { kind: 'selector', selector: '#title' },
-            scope: 'contents',
-          },
-          {
-            taskId: 'task-1',
-            projectId: 'project-1',
-            workspaces: {
-              primary: {
-                key: 'workbench-conversation',
-                instanceKey: 'conversation-1',
-                path: 'C:\\workspace',
-                permissions: { read: true, write: false },
-              },
-              secondary: [],
+    await expect(
+      functionTools.require('html_begin_edit').execute(
+        {
+          locator: { kind: 'selector', selector: '#title' },
+          scope: 'contents',
+        },
+        {
+          taskId: 'task-1',
+          projectId: 'project-1',
+          workspaces: {
+            primary: {
+              key: 'workbench-conversation',
+              instanceKey: 'conversation-1',
+              path: 'C:\\workspace',
+              permissions: { read: true, write: false },
             },
+            secondary: [],
           },
-        ),
-      ).resolves.toMatchObject({ currentHtml: 'Before' });
-      expect(generationTasks.get).toHaveBeenCalledWith('task-1');
-      expect(assets.resolveContent).toHaveBeenCalledWith('asset-1');
-    } finally {
-      setHtmlEditToolRuntime(undefined);
-    }
+        },
+      ),
+    ).resolves.toMatchObject({ currentHtml: 'Before' });
+    expect(
+      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID).id,
+    ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
+    expect(generationTasks.get).toHaveBeenCalledWith('task-1');
+    expect(assets.resolveContent).toHaveBeenCalledWith('asset-1');
   });
 });

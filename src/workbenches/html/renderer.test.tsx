@@ -9,6 +9,7 @@ import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversatio
 import { WorkbenchConversationRuntime } from '../../renderer/conversation/workbench-conversation-runtime';
 import type { AssetSnapshot } from '../../shared/assets';
 import type {
+  JsonValue,
   WorkbenchBootstrap,
   WorkbenchEvent,
 } from '../../shared/workbench/protocol';
@@ -25,6 +26,7 @@ import {
   createHtmlDomTarget,
   htmlWorkbenchManifest,
   htmlFrameCommands,
+  type HtmlEditingStatus,
 } from './shared';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './conversation/html-conversation-context';
 
@@ -100,6 +102,11 @@ const editingStatus = {
 async function mountHtmlWorkbench(options: {
   readonly conversationRuntime?: WorkbenchConversationRuntime;
   readonly anchorFound?: boolean;
+  readonly initialEditingStatus?: HtmlEditingStatus;
+  readonly refreshedEditingStatus?: HtmlEditingStatus;
+  readonly executeCommand?: (
+    command: { readonly type: string },
+  ) => Promise<{ readonly payload: JsonValue }>;
 } = {}) {
   const container = document.createElement('div');
   document.body.append(container);
@@ -107,24 +114,27 @@ async function mountHtmlWorkbench(options: {
   const previousBridge = window.learningCompanion;
   const listeners = new Set<(event: WorkbenchEvent) => void>();
   const onError = vi.fn();
-  const executeCommand = vi.fn(async (command: { readonly type: string }) => ({
-    payload:
-      command.type === htmlFrameCommands.installSourceCopy
-        ? { installed: true }
-        : command.type === 'html.edit.review'
-          ? {
-              entries: [{
-                taskId: 'task-1',
-                changes: [{ before: '<h1>旧标题</h1>', after: '<h1>新标题</h1>' }],
-              }],
-              pendingChanges: [],
-            }
-        : command.type === 'html.edit.status'
-          ? editingStatus
-          : command.type === 'html.anchor.highlight'
-            ? { found: options.anchorFound ?? true }
-          : { found: true },
-  }));
+  const executeCommand = vi.fn(
+    options.executeCommand ??
+      (async (command: { readonly type: string }) => ({
+        payload:
+          command.type === htmlFrameCommands.installSourceCopy
+            ? { installed: true }
+            : command.type === 'html.edit.review'
+              ? {
+                  entries: [{
+                    taskId: 'task-1',
+                    changes: [{ before: '<h1>旧标题</h1>', after: '<h1>新标题</h1>' }],
+                  }],
+                  pendingChanges: [],
+                }
+            : command.type === 'html.edit.status'
+              ? (options.refreshedEditingStatus ?? editingStatus)
+              : command.type === 'html.anchor.highlight'
+                ? { found: options.anchorFound ?? true }
+                : { found: true },
+      })),
+  );
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: HTML_WORKBENCH_ID,
@@ -135,8 +145,8 @@ async function mountHtmlWorkbench(options: {
     availability: 'available',
     payload: {
       contentUrl: 'learning-content://resource/html',
-      editing: editingStatus,
-    },
+      editing: options.initialEditingStatus ?? editingStatus,
+    } as unknown as JsonValue,
   };
   Object.defineProperty(window, 'learningCompanion', {
     configurable: true,
@@ -175,12 +185,21 @@ async function mountHtmlWorkbench(options: {
       await Promise.resolve();
     });
   };
+  const publishTogether = async (events: readonly WorkbenchEvent[]) => {
+    await act(async () => {
+      for (const event of events) {
+        for (const listener of listeners) listener(event);
+      }
+      await Promise.resolve();
+    });
+  };
 
   return {
     container,
     executeCommand,
     onError,
     publish,
+    publishTogether,
     cleanup() {
       act(() => root.unmount());
       container.remove();
@@ -193,6 +212,88 @@ async function mountHtmlWorkbench(options: {
 }
 
 describe('HtmlWorkbenchView', () => {
+  it('refreshes draft status after subscribing so an opening-race event is not lost', async () => {
+    const emptyStatus = {
+      ...editingStatus,
+      hasDraft: false,
+      unsynced: false,
+      pending: false,
+      changeCount: 0,
+    } as const;
+    const view = await mountHtmlWorkbench({
+      initialEditingStatus: emptyStatus,
+      refreshedEditingStatus: {
+        ...editingStatus,
+        pending: false,
+        stepCount: 1,
+        canUndo: true,
+      },
+    });
+
+    try {
+      expect(view.executeCommand).toHaveBeenCalledWith({
+        type: 'html.edit.status',
+      });
+      expect(
+        view.container.querySelector('[aria-label="HTML 草稿操作"]'),
+      ).not.toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it('does not let an older status response overwrite a completed draft command', async () => {
+    let resolveOldStatus: ((value: { readonly payload: JsonValue }) => void) | undefined;
+    const oldStatus = new Promise<{ readonly payload: JsonValue }>((resolve) => {
+      resolveOldStatus = resolve;
+    });
+    const syncedStatus = {
+      ...editingStatus,
+      unsynced: false,
+      syncRequested: false,
+      pending: false,
+    } as const;
+    const executeCommand = vi.fn(
+      async (
+        command: { readonly type: string },
+      ): Promise<{ readonly payload: JsonValue }> => {
+        if (command.type === 'html.edit.status') return oldStatus;
+        if (command.type === 'html.edit.sync') {
+          return { payload: { disposition: 'synced', status: syncedStatus } };
+        }
+        return { payload: { installed: true } };
+      },
+    );
+    const view = await mountHtmlWorkbench({ executeCommand });
+
+    try {
+      await act(async () => {
+        view.container
+          .querySelector<HTMLButtonElement>('[aria-label="同步 HTML 草稿"]')!
+          .click();
+        await Promise.resolve();
+      });
+      expect(
+        view.container.querySelector<HTMLButtonElement>(
+          '[aria-label="同步 HTML 草稿"]',
+        )?.disabled,
+      ).toBe(true);
+
+      await act(async () => {
+        resolveOldStatus?.({ payload: editingStatus });
+        await oldStatus;
+      });
+
+      expect(
+        view.container.querySelector<HTMLButtonElement>(
+          '[aria-label="同步 HTML 草稿"]',
+        )?.disabled,
+      ).toBe(true);
+    } finally {
+      view.cleanup();
+    }
+  });
+
   it('installs source-aware copy behavior through the Workbench command path', async () => {
     const executeCommand = vi.fn(async () => ({
       payload: { installed: true },
@@ -263,6 +364,62 @@ describe('HtmlWorkbenchView', () => {
     expect(markup).toContain('查看更改');
     expect(markup).toContain('同步');
     expect(markup).toContain('放弃');
+  });
+
+  it('keeps source synchronization disabled for a read-only draft', () => {
+    const container = document.createElement('div');
+    container.innerHTML = render({
+      contentUrl: 'learning-content://resource/html',
+      editing: {
+        ...editingStatus,
+        editable: false,
+        pending: false,
+        conflict: null,
+      },
+    });
+
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[aria-label="同步 HTML 草稿"]',
+      )?.disabled,
+    ).toBe(true);
+  });
+
+  it('blocks conflicting draft actions during an Agent turn but keeps sync available', async () => {
+    const conversationRuntime = new WorkbenchConversationRuntime();
+    conversationRuntime.setBusy(true);
+    const view = await mountHtmlWorkbench({
+      conversationRuntime,
+      initialEditingStatus: {
+        ...editingStatus,
+        pending: false,
+        canUndo: true,
+        canRedo: true,
+      },
+    });
+
+    try {
+      for (const label of [
+        '撤销上一步',
+        '重做下一步',
+        '查看 HTML 更改',
+        '放弃 HTML 草稿',
+      ]) {
+        expect(
+          view.container.querySelector<HTMLButtonElement>(
+            `[aria-label="${label}"]`,
+          )?.disabled,
+        ).toBe(true);
+      }
+      expect(
+        view.container.querySelector<HTMLButtonElement>(
+          '[aria-label="同步 HTML 草稿"]',
+        )?.disabled,
+      ).toBe(false);
+    } finally {
+      view.cleanup();
+      conversationRuntime.dispose();
+    }
   });
 
   it('rejects non-scoped content URLs', () => {
@@ -357,6 +514,37 @@ describe('HtmlWorkbenchView', () => {
     }
   });
 
+  it('completes one iframe refresh for each rapidly applied replacement', async () => {
+    const view = await mountHtmlWorkbench();
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/html',
+      element: { path: [1, 0], tagName: 'main', id: 'lesson' },
+    });
+    const applied = (editId: string, draftRevision: string): WorkbenchEvent => ({
+      sessionId: 'session',
+      type: 'html.agent-edit.applied',
+      payload: { taskId: 'task-1', editId, target, draftRevision },
+    });
+
+    try {
+      const initialFrame = view.container.querySelector('iframe');
+      await view.publishTogether([
+        applied('edit-1', 'draft-2'),
+        applied('edit-2', 'draft-3'),
+      ]);
+      const firstRefresh = view.container.querySelector('iframe');
+      expect(firstRefresh).not.toBe(initialFrame);
+
+      await act(async () => {
+        firstRefresh?.dispatchEvent(new Event('load'));
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+      expect(view.container.querySelector('iframe')).not.toBe(firstRefresh);
+    } finally {
+      view.cleanup();
+    }
+  });
+
   it('reloads draft-changing session events but treats sync as status-only', async () => {
     const view = await mountHtmlWorkbench();
     const event = (reason: string): WorkbenchEvent => ({
@@ -375,6 +563,10 @@ describe('HtmlWorkbenchView', () => {
         const refreshed = view.container.querySelector('iframe');
         expect(refreshed).not.toBe(frame);
         frame = refreshed;
+        await act(async () => {
+          refreshed?.dispatchEvent(new Event('load'));
+          await Promise.resolve();
+        });
       }
     } finally {
       view.cleanup();

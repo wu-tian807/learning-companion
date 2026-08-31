@@ -1,28 +1,20 @@
-import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
+import type { AgentFunctionToolRegistryApi } from '../../../main/agents/function-tools/agent-function-tool-registry';
+import type { WorkbenchConversationContextProviderRegistry } from '../../../main/conversation/workbench-conversation-context-provider-registry';
 import { HtmlConversationContextProvider } from '../conversation/html-conversation-context-provider';
 import {
   createHtmlEditFunctionTools,
   type HtmlEditToolRuntime,
 } from '../editing/html-edit-function-tools';
 
-let editingRuntime: HtmlEditToolRuntime | undefined;
-
-export function setHtmlEditToolRuntime(
-  runtime: HtmlEditToolRuntime | undefined,
-): void {
-  editingRuntime = runtime;
+export function registerHtmlAssistantMain(input: {
+  readonly functionTools: AgentFunctionToolRegistryApi;
+  readonly conversationContexts: WorkbenchConversationContextProviderRegistry;
+  readonly editing: HtmlEditToolRuntime;
+}): void {
+  for (const tool of createHtmlEditFunctionTools(input.editing)) {
+    input.functionTools.register(tool);
+  }
+  input.conversationContexts.register(
+    new HtmlConversationContextProvider(() => input.editing),
+  );
 }
-
-export const htmlAssistantMainFeature = Object.freeze({
-  id: 'builtin.html.assistant',
-  registerAgentFunctionTools({ functionTools }): void {
-    for (const tool of createHtmlEditFunctionTools(() => editingRuntime)) {
-      functionTools.register(tool);
-    }
-  },
-  registerGeneration({ conversationContexts }): void {
-    conversationContexts.register(
-      new HtmlConversationContextProvider(() => editingRuntime),
-    );
-  },
-} satisfies MainWorkbenchFeatureContribution);

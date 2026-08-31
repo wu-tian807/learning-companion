@@ -76,6 +76,9 @@ function runHtmlEditVisualFrameCommand(input: HtmlEditVisualFrameInput) {
   const element = resolveElement();
   if (!element) return { found: false };
   const resolvedElement = element;
+  const reduceMotion =
+    typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   let disposed = false;
   let animationFrame: number | undefined;
@@ -122,8 +125,9 @@ function runHtmlEditVisualFrameCommand(input: HtmlEditVisualFrameInput) {
     'backdrop-filter': 'blur(2px)',
     'box-shadow':
       '0 0 0 1px rgba(96, 165, 250, 0.16), inset 0 0 28px rgba(59, 130, 246, 0.12)',
-    transition:
-      'left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear, border-color 140ms ease, background 140ms ease',
+    transition: reduceMotion
+      ? 'none'
+      : 'left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear, border-color 140ms ease, background 140ms ease',
   };
   for (const [property, value] of Object.entries(overlayStyles)) {
     overlay.style.setProperty(property, value, 'important');
@@ -176,7 +180,7 @@ function runHtmlEditVisualFrameCommand(input: HtmlEditVisualFrameInput) {
     '0.015 0.06;0.025 0.09;0.015 0.06',
   );
   frequencyAnimation.setAttribute('repeatCount', 'indefinite');
-  turbulence.appendChild(frequencyAnimation);
+  if (!reduceMotion) turbulence.appendChild(frequencyAnimation);
   const displacement = document.createElementNS(
     svgNamespace,
     'feDisplacementMap',
@@ -194,7 +198,7 @@ function runHtmlEditVisualFrameCommand(input: HtmlEditVisualFrameInput) {
   const sweep = document.createElement('div');
   sweep.setAttribute('data-html-edit-wave-sweep', 'true');
   sweep.style.cssText =
-    `position:absolute;inset:0;filter:url(#${waveFilterId});animation:lc-html-edit-sweep 2.15s cubic-bezier(.4,0,.2,1) infinite;`;
+    `position:absolute;inset:0;filter:url(#${waveFilterId});animation:${reduceMotion ? 'none' : 'lc-html-edit-sweep 2.15s cubic-bezier(.4,0,.2,1) infinite'};`;
   const wrapper = document.createElement('div');
   wrapper.style.cssText =
     'position:absolute;top:-60%;left:-60%;width:220%;height:220%;display:flex;align-items:center;justify-content:center;transform:rotate(25deg);';
@@ -230,11 +234,13 @@ function runHtmlEditVisualFrameCommand(input: HtmlEditVisualFrameInput) {
         'rgba(48, 16, 24, 0.78)',
         'important',
       );
-      overlay.style.setProperty(
-        'animation',
-        'lc-html-edit-rejected 420ms ease 1',
-        'important',
-      );
+      if (!reduceMotion) {
+        overlay.style.setProperty(
+          'animation',
+          'lc-html-edit-rejected 420ms ease 1',
+          'important',
+        );
+      }
       label.textContent = '修改未应用';
       rejectedTimer = globalThis.setTimeout(() => {
         if (!disposed && root[stateKey] === state) applyPhase('scanning');

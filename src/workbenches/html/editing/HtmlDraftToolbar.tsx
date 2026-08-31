@@ -5,6 +5,7 @@ import type { HtmlDraftReview, HtmlEditingStatus } from '../shared';
 interface HtmlDraftToolbarProps {
   readonly status: HtmlEditingStatus;
   readonly busy: boolean;
+  readonly agentBusy: boolean;
   readonly review: HtmlDraftReview | undefined;
   readonly onUndo: () => Promise<void>;
   readonly onRedo: () => Promise<void>;
@@ -24,6 +25,7 @@ function statusLabel(status: HtmlEditingStatus): string {
 export function HtmlDraftToolbar({
   status,
   busy,
+  agentBusy,
   review,
   onUndo,
   onRedo,
@@ -62,7 +64,7 @@ export function HtmlDraftToolbar({
           type="button"
           aria-label="撤销上一步"
           title="撤销"
-          disabled={busy || !status.canUndo}
+          disabled={busy || agentBusy || !status.canUndo}
           onClick={() => void onUndo()}
           className="ui-control grid size-7 shrink-0 place-items-center rounded text-base leading-none text-slate-300 disabled:cursor-not-allowed disabled:opacity-30"
         >
@@ -72,7 +74,7 @@ export function HtmlDraftToolbar({
           type="button"
           aria-label="重做下一步"
           title="重做"
-          disabled={busy || !status.canRedo}
+          disabled={busy || agentBusy || !status.canRedo}
           onClick={() => void onRedo()}
           className="ui-control grid size-7 shrink-0 place-items-center rounded text-base leading-none text-slate-300 disabled:cursor-not-allowed disabled:opacity-30"
         >
@@ -81,7 +83,7 @@ export function HtmlDraftToolbar({
         <button
           type="button"
           aria-label="查看 HTML 更改"
-          disabled={busy || status.changeCount === 0}
+          disabled={busy || agentBusy || status.changeCount === 0}
           onClick={() => void onReview()}
           className="ui-control h-7 shrink-0 rounded px-2 text-[11px] text-slate-300 disabled:opacity-30"
         >
@@ -90,7 +92,12 @@ export function HtmlDraftToolbar({
         <button
           type="button"
           aria-label="同步 HTML 草稿"
-          disabled={busy || !status.unsynced || Boolean(status.conflict)}
+          disabled={
+            busy ||
+            !status.editable ||
+            !status.unsynced ||
+            Boolean(status.conflict)
+          }
           onClick={() => void onSync()}
           className="ui-control h-7 shrink-0 rounded bg-sky-400/12 px-2 text-[11px] font-medium text-sky-200 disabled:opacity-30"
         >
@@ -109,7 +116,7 @@ export function HtmlDraftToolbar({
             <button
               type="button"
               aria-label="确认放弃 HTML 草稿"
-              disabled={busy}
+              disabled={busy || agentBusy}
               onClick={() => {
                 void onDiscard().then(() => setConfirmDiscard(false));
               }}
@@ -122,7 +129,7 @@ export function HtmlDraftToolbar({
           <button
             type="button"
             aria-label="放弃 HTML 草稿"
-            disabled={busy || status.pending}
+            disabled={busy || agentBusy || status.pending}
             onClick={() => setConfirmDiscard(true)}
             className="ui-control h-7 shrink-0 rounded px-2 text-[11px] text-slate-500 hover:text-rose-200 disabled:opacity-30"
           >

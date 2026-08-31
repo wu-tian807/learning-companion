@@ -287,6 +287,8 @@ export async function createApplicationRuntime({
     );
     registerMainWorkbenchProviders(workbenchRegistry, {
       associationService,
+      functionTools: agentFunctionTools,
+      conversationContexts,
       assetService,
       artifactRegistry,
       artifactService,
