@@ -18,6 +18,16 @@ describe('EPUB overlapping explanation lanes', () => {
     ).toEqual({ first: 0, second: 1, third: 0 });
   });
 
+  it('separates ranges that meet at the same CFI boundary', () => {
+    expect(
+      assignEpubExplanationLanes([
+        { id: 'first', cfiRange: range(0, 12) },
+        { id: 'second', cfiRange: range(12, 20) },
+        { id: 'third', cfiRange: range(21, 30) },
+      ]),
+    ).toEqual({ first: 0, second: 1, third: 0 });
+  });
+
   it('uses a deterministic fallback lane for malformed legacy CFI data', () => {
     expect(
       assignEpubExplanationLanes([

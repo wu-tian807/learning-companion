@@ -3,6 +3,15 @@ import {
   type EpubMarkerColor,
 } from './epub-marker-style';
 
+const WAVE_AMPLITUDE_PX = 1.5;
+const WAVE_STROKE_WIDTH_PX = 1.6;
+const WAVE_MIN_VERTICAL_GAP_PX = 1;
+const WAVE_LANE_STEP_PX = Math.ceil(
+  WAVE_AMPLITUDE_PX * 2 +
+    WAVE_STROKE_WIDTH_PX +
+    WAVE_MIN_VERTICAL_GAP_PX,
+);
+
 export function epubAnnotationWaveStyles(
   lane: number,
   color: EpubMarkerColor,
@@ -12,7 +21,7 @@ export function epubAnnotationWaveStyles(
     'data-epub-annotation-wave': 'true',
     'data-epub-wave-color': EPUB_MARKER_COLOR_VALUES[color],
     'data-epub-wave-source': source,
-    transform: `translate(0 ${Math.max(0, lane) * 3})`,
+    'data-epub-wave-lane': String(Math.max(0, lane)),
     stroke: 'none',
     'stroke-opacity': '0.95',
     'mix-blend-mode': 'normal',
@@ -30,7 +39,6 @@ function wavePathData(x1: number, x2: number, y: number): string {
   const start = Math.min(x1, x2);
   const end = Math.max(x1, x2);
   const halfWave = 3;
-  const amplitude = 1.5;
   let current = start;
   let direction = -1;
   const commands = [`M ${start} ${y}`];
@@ -39,12 +47,20 @@ function wavePathData(x1: number, x2: number, y: number): string {
     const next = Math.min(current + halfWave, end);
     const controlX = current + (next - current) / 2;
     commands.push(
-      `Q ${controlX} ${y + amplitude * direction} ${next} ${y}`,
+      `Q ${controlX} ${y + WAVE_AMPLITUDE_PX * direction} ${next} ${y}`,
     );
     current = next;
     direction *= -1;
   }
   return commands.join(' ');
+}
+
+function waveLaneOffset(group: Element | null): number {
+  // marks-pane recomputes child geometry after font/layout changes. Applying
+  // the lane to the final path keeps that reflow from cancelling a group
+  // transform and merging separate annotations back onto one baseline.
+  const lane = finiteNumber(group?.getAttribute('data-epub-wave-lane') ?? null);
+  return Math.max(0, lane ?? 0) * WAVE_LANE_STEP_PX;
 }
 
 export function applyEpubAnnotationWaves(root: ParentNode): void {
@@ -67,10 +83,10 @@ export function applyEpubAnnotationWaves(root: ParentNode): void {
       'http://www.w3.org/2000/svg',
       'path',
     );
-    path.setAttribute('d', wavePathData(x1, x2, y));
+    path.setAttribute('d', wavePathData(x1, x2, y + waveLaneOffset(group)));
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', color);
-    path.setAttribute('stroke-width', '1.6');
+    path.setAttribute('stroke-width', String(WAVE_STROKE_WIDTH_PX));
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -96,15 +112,25 @@ export function applyEpubAnnotationWaves(root: ParentNode): void {
     const group = rect.closest<SVGGElement>(
       '[data-epub-annotation-wave="true"]',
     );
+    for (const line of group?.querySelectorAll('line') ?? []) {
+      line.remove();
+    }
     const color = group?.getAttribute('data-epub-wave-color') ?? '#eab308';
     const path = rect.ownerDocument.createElementNS(
       'http://www.w3.org/2000/svg',
       'path',
     );
-    path.setAttribute('d', wavePathData(x, x + width, y + height - 1));
+    path.setAttribute(
+      'd',
+      wavePathData(
+        x,
+        x + width,
+        y + height - 1 + waveLaneOffset(group),
+      ),
+    );
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', color);
-    path.setAttribute('stroke-width', '1.6');
+    path.setAttribute('stroke-width', String(WAVE_STROKE_WIDTH_PX));
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
