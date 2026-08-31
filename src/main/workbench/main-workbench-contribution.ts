@@ -60,6 +60,7 @@ export interface MainWorkbenchAttachmentContext {
 
 export interface MainWorkbenchAgentToolContext {
   readonly functionTools: AgentFunctionToolRegistryApi;
+  readonly provider?: MainWorkbenchProvider;
 }
 
 export interface MainWorkbenchGenerationContext {
@@ -71,6 +72,7 @@ export interface MainWorkbenchGenerationContext {
   readonly attachments: AttachmentServiceApi;
   readonly externalLibraries: ExternalLibraryServiceApi;
   readonly projects: ProjectLookup;
+  readonly provider?: MainWorkbenchProvider;
 }
 
 export interface MainWorkbenchStartContext {
@@ -78,6 +80,7 @@ export interface MainWorkbenchStartContext {
   readonly generationTasks: GenerationTaskServiceApi;
   readonly assets: AssetLookup;
   readonly externalLibraries: ExternalLibraryServiceApi;
+  readonly provider?: MainWorkbenchProvider;
 }
 
 export interface MainWorkbenchRuntime {

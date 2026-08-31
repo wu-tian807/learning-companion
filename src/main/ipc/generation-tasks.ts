@@ -93,7 +93,11 @@ function toEvent(event: GenerationTaskServiceEvent): GenerationTaskEvent {
   }
 
   if (event.type === 'task-discarded') {
-    return Object.freeze({ ...event });
+    return Object.freeze({
+      type: event.type,
+      projectId: event.projectId,
+      taskId: event.taskId,
+    });
   }
 
   return Object.freeze({

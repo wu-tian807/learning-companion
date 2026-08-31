@@ -51,6 +51,7 @@ export type GenerationTaskServiceEvent =
       readonly type: 'task-discarded';
       readonly projectId: string;
       readonly taskId: string;
+      readonly snapshot: GenerationTaskSnapshot;
     };
 
 export type GenerationTaskServiceListener = (
@@ -370,6 +371,7 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
       type: 'task-discarded',
       projectId: snapshot.projectId,
       taskId: id,
+      snapshot,
     });
   }
 

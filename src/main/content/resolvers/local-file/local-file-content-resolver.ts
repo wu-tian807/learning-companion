@@ -1,5 +1,6 @@
 import { createReadStream, type ReadStream } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { chmod, readFile, realpath, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
 import writeFileAtomic from 'write-file-atomic';
@@ -23,8 +24,11 @@ import {
   cloneAssetContentRef,
   LOCAL_FILE_CONTENT_KIND,
 } from '../../content-ref';
+import { getManagedProjectAssetDirectory } from '../../../../shared/assets';
 import type { ContentResolver } from '../../content-resolver-registry';
+import { isPathInside } from '../../../filesystem/file-system-path-rules';
 import type { ProjectWorkspaceManagerApi } from '../../../projects/project-workspace-manager';
+import { PROJECT_WORKSPACE_METADATA_DIRECTORY } from '../../../projects/project-workspace-paths';
 
 const localFileContentCapabilities = new Set<ContentCapability>([
   'read-bytes',
@@ -37,7 +41,10 @@ export class LocalFileContentHandle implements ContentHandle {
     localFileContentCapabilities;
   private readonly activeStreams = new Set<ReadStream>();
 
-  constructor(readonly path: string) {}
+  constructor(
+    readonly path: string,
+    private readonly managedByApplication = false,
+  ) {}
 
   async getByteLength(): Promise<number> {
     try {
@@ -120,7 +127,16 @@ export class LocalFileContentHandle implements ContentHandle {
     try {
       await writeFileAtomic(this.path, content);
     } catch (error) {
-      throw new AppError('CONTENT_WRITE_FAILED', { cause: error });
+      if (!this.managedByApplication || !isPermissionError(error)) {
+        throw new AppError('CONTENT_WRITE_FAILED', { cause: error });
+      }
+
+      try {
+        await chmod(this.path, 0o600);
+        await writeFileAtomic(this.path, content);
+      } catch (retryError) {
+        throw new AppError('CONTENT_WRITE_FAILED', { cause: retryError });
+      }
     }
 
     return { revision: createContentRevision(content) };
@@ -156,6 +172,11 @@ export class LocalFileContentResolver implements ContentResolver {
       ref,
     );
     const inspection = await this.inspector.inspect(absolutePath);
+    const managedByApplication = await isApplicationManagedPath(
+      ref,
+      context.projectWorkspace,
+      inspection.absolutePath,
+    );
 
     return {
       contentRef: cloneAssetContentRef(ref),
@@ -167,8 +188,47 @@ export class LocalFileContentResolver implements ContentResolver {
       },
       handle:
         inspection.contentStatus.availability === 'available'
-          ? new LocalFileContentHandle(inspection.absolutePath)
+          ? new LocalFileContentHandle(
+              inspection.absolutePath,
+              managedByApplication,
+            )
           : undefined,
     };
   }
+}
+
+async function isApplicationManagedPath(
+  ref: Parameters<typeof getManagedProjectAssetDirectory>[0],
+  projectWorkspace: string,
+  target: string,
+): Promise<boolean> {
+  const managedDirectory = getManagedProjectAssetDirectory(ref);
+  if (!managedDirectory) return false;
+
+  try {
+    const [resolvedWorkspace, resolvedTarget] = await Promise.all([
+      realpath(projectWorkspace),
+      realpath(target),
+    ]);
+    return isPathInside(
+      join(
+        resolvedWorkspace,
+        PROJECT_WORKSPACE_METADATA_DIRECTORY,
+        'assets',
+        managedDirectory,
+      ),
+      resolvedTarget,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isPermissionError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    ((error as NodeJS.ErrnoException).code === 'EACCES' ||
+      (error as NodeJS.ErrnoException).code === 'EPERM')
+  );
 }

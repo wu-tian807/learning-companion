@@ -115,6 +115,48 @@ describe('GenerationTaskService', () => {
     expect(unloadSettled).toBe(true);
   });
 
+  it('publishes the last durable snapshot when a task is discarded', () => {
+    const database = new MemoryGenerationTaskDatabase();
+    const task = GenerationTask.create({
+      id: 'task-1',
+      projectId: 'project-1',
+      definitionId: 'test.definition',
+      definitionVersion: 1,
+      instruction: { assetId: 'asset-1' },
+      assetReferences: { source: [{ assetId: 'asset-1' }] },
+      createdTime: 1,
+    });
+    const snapshot = task.getSnapshot();
+    database.create(snapshot);
+    const service = new GenerationTaskService(
+      database,
+      new GenerationTaskDefinitionRegistry(),
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internals = service as unknown as {
+      activeProjectId: string;
+      tasks: Map<string, GenerationTask>;
+    };
+    internals.activeProjectId = snapshot.projectId;
+    internals.tasks.set(snapshot.id, task);
+    const events: unknown[] = [];
+    service.subscribe((event) => events.push(event));
+
+    service.discard(snapshot.id);
+
+    expect(database.get(snapshot.id)).toBeUndefined();
+    expect(events).toEqual([
+      {
+        type: 'task-discarded',
+        projectId: snapshot.projectId,
+        taskId: snapshot.id,
+        snapshot,
+      },
+    ]);
+  });
+
   it('marks a recovered task as failed when its retired definition no longer exists', async () => {
     const database = new MemoryGenerationTaskDatabase();
     database.create(
