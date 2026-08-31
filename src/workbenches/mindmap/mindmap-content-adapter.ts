@@ -4,18 +4,18 @@ import type {
 } from '../../main/content/content-handle';
 import { AppError } from '../../main/errors/app-error';
 import {
-  cloneMindMapDocumentV1,
-  isMindMapDocumentV1,
-  type MindMapDocumentV1,
+  cloneMindMapDocument,
+  isMindMapDocument,
+  type MindMapDocument,
 } from './document';
 
 export interface ResolvedMindMapContent {
-  readonly document: MindMapDocumentV1;
+  readonly document: MindMapDocument;
   readonly revision: string;
 }
 
 export interface WriteMindMapContentRequest {
-  readonly document: MindMapDocumentV1;
+  readonly document: MindMapDocument;
   readonly expectedRevision: string;
 }
 
@@ -31,7 +31,7 @@ export interface MindMapContentAdapter {
 
 export function decodeMindMapDocument(
   content: Uint8Array,
-): MindMapDocumentV1 {
+): MindMapDocument {
   let source: string;
 
   try {
@@ -48,20 +48,20 @@ export function decodeMindMapDocument(
     throw new AppError('DATA_INTEGRITY_ERROR', { cause: error });
   }
 
-  if (!isMindMapDocumentV1(value)) {
+  if (!isMindMapDocument(value)) {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
 
-  return cloneMindMapDocumentV1(value);
+  return cloneMindMapDocument(value);
 }
 
 export function encodeMindMapDocument(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
 ): Uint8Array {
-  let normalized: MindMapDocumentV1;
+  let normalized: MindMapDocument;
 
   try {
-    normalized = cloneMindMapDocumentV1(document);
+    normalized = cloneMindMapDocument(document);
   } catch (error) {
     throw new AppError('DATA_INTEGRITY_ERROR', { cause: error });
   }

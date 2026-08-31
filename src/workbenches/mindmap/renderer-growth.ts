@@ -1,4 +1,4 @@
-import type { MindMapDocumentV1 } from './document';
+import type { MindMapDocument } from './document';
 
 const BRANCH_DEPTH_DELAY_MS = 150;
 const BRANCH_SIBLING_DELAY_MS = 42;
@@ -19,7 +19,7 @@ interface MindMapTreePlacement {
 }
 
 function createGrowthWave(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   revealedNodeIds: ReadonlySet<string>,
 ): MindMapGrowthWave | undefined {
   if (revealedNodeIds.size === 0) {
@@ -98,7 +98,7 @@ function createGrowthWave(
 }
 
 function collectVisibleNodeIds(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   collapsedNodeIds: ReadonlySet<string>,
 ): ReadonlySet<string> {
   const visibleNodeIds = new Set<string>();
@@ -122,7 +122,7 @@ function collectVisibleNodeIds(
 }
 
 export function createMindMapNodeGrowthWave(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   nodeId: string,
 ): MindMapGrowthWave | undefined {
   const node = document.nodes[nodeId];
@@ -133,7 +133,7 @@ export function createMindMapNodeGrowthWave(
 }
 
 export function createMindMapExpandAllGrowthWave(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   collapsedNodeIds: ReadonlySet<string>,
 ): MindMapGrowthWave | undefined {
   const visibleNodeIds = collectVisibleNodeIds(

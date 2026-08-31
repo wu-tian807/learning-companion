@@ -1,4 +1,4 @@
-import type { MindMapDocumentV1 } from './document';
+import type { MindMapDocument } from './document';
 import type { MindMapWorkbenchViewStateV1 } from './shared';
 
 function withCollapsedNodeIds(
@@ -12,7 +12,7 @@ function withCollapsedNodeIds(
 }
 
 export function expandMindMapNodeOneLevel(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   state: MindMapWorkbenchViewStateV1,
   nodeId: string,
 ): MindMapWorkbenchViewStateV1 {
@@ -37,7 +37,7 @@ export function expandMindMapNodeOneLevel(
 }
 
 export function collapseMindMapNode(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   state: MindMapWorkbenchViewStateV1,
   nodeId: string,
 ): MindMapWorkbenchViewStateV1 {
@@ -57,7 +57,7 @@ export function collapseMindMapNode(
 }
 
 export function toggleMindMapNode(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   state: MindMapWorkbenchViewStateV1,
   nodeId: string,
 ): MindMapWorkbenchViewStateV1 {

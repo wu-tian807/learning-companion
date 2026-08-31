@@ -5,7 +5,9 @@ import { createContentRevision } from '../../main/content/content-revision';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
+  MIND_MAP_DOCUMENT_VERSION_V2,
   type MindMapDocumentV1,
+  type MindMapDocumentV2,
 } from './document';
 import {
   decodeMindMapDocument,
@@ -49,7 +51,56 @@ function createDocument(
   };
 }
 
+function createDocumentV2(): MindMapDocumentV2 {
+  const legacy = createDocument('Locator Map');
+
+  return {
+    ...legacy,
+    version: MIND_MAP_DOCUMENT_VERSION_V2,
+    associations: {
+      nodes: {
+        root: {
+          references: [
+            {
+              referenceId: 'reference-source',
+              sourceRevision: 'source-revision-1',
+              agentLocator: {
+                page: 8,
+                headingPath: ['Chapter 1', 'Overview'],
+              },
+            },
+          ],
+          linkIds: [],
+        },
+      },
+      frames: {},
+    },
+  };
+}
+
 describe('MindMapContentAdapter', () => {
+  it('round-trips v2 Agent locators while retaining v1 read support', () => {
+    const current = decodeMindMapDocument(
+      encodeMindMapDocument(createDocumentV2()),
+    );
+    const legacy = decodeMindMapDocument(
+      encodeMindMapDocument(createDocument()),
+    );
+
+    expect(current.version).toBe(MIND_MAP_DOCUMENT_VERSION_V2);
+    expect(
+      current.associations.nodes.root.references[0],
+    ).toMatchObject({
+      referenceId: 'reference-source',
+      sourceRevision: 'source-revision-1',
+      agentLocator: {
+        page: 8,
+        headingPath: ['Chapter 1', 'Overview'],
+      },
+    });
+    expect(legacy.version).toBe(MIND_MAP_DOCUMENT_VERSION);
+  });
+
   it('decodes UTF-8 JSON with BOM and encodes normalized JSON', () => {
     const source = Buffer.concat([
       Buffer.from([0xef, 0xbb, 0xbf]),

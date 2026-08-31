@@ -11,7 +11,9 @@ import {
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
+  MIND_MAP_DOCUMENT_VERSION_V2,
   type MindMapDocumentV1,
+  type MindMapDocumentV2,
 } from './document';
 
 function createDocument(): MindMapDocumentV1 {
@@ -67,7 +69,72 @@ function createDocument(): MindMapDocumentV1 {
   };
 }
 
+function createDocumentV2(): MindMapDocumentV2 {
+  const legacy = createDocument();
+
+  return {
+    ...legacy,
+    version: MIND_MAP_DOCUMENT_VERSION_V2,
+    associations: {
+      nodes: {
+        root: {
+          references: [
+            {
+              referenceId: 'reference',
+              sourceRevision: 'revision-1',
+              agentLocator: { page: 2, quote: 'first location' },
+            },
+            {
+              referenceId: 'reference',
+              sourceRevision: 'revision-1',
+              agentLocator: { page: 5, quote: 'second location' },
+            },
+          ],
+          linkIds: [],
+        },
+      },
+      frames: {},
+    },
+  };
+}
+
 describe('resolveMindMapAssociations', () => {
+  it('resolves repeated Agent locators without collapsing them', () => {
+    const reference: AssetReference = {
+      id: 'reference',
+      projectId: 'project',
+      assetId: 'mindmap',
+      sourceAssetId: 'pdf',
+      createdTime: 1,
+    };
+    const resolved = resolveMindMapAssociations(
+      'mindmap',
+      createDocumentV2(),
+      {
+        getReference: (id) =>
+          id === reference.id ? reference : undefined,
+        getLink: () => undefined,
+      },
+    );
+
+    expect(resolved.byNode.root.references).toHaveLength(2);
+    expect(resolved.byNode.root.references).toEqual([
+      {
+        reference,
+        sourceRevision: 'revision-1',
+        agentLocator: { page: 2, quote: 'first location' },
+      },
+      {
+        reference,
+        sourceRevision: 'revision-1',
+        agentLocator: { page: 5, quote: 'second location' },
+      },
+    ]);
+    expect(
+      Object.isFrozen(resolved.byNode.root.references[0]),
+    ).toBe(true);
+  });
+
   it('joins sparse Node and Frame rows and reports stale bindings', () => {
     const references = new Map<string, AssetReference>([
       [

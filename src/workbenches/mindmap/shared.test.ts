@@ -4,7 +4,9 @@ import { isAssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
+  MIND_MAP_DOCUMENT_VERSION_V2,
   type MindMapDocumentV1,
+  type MindMapDocumentV2,
 } from './document';
 import {
   cloneMindMapWorkbenchViewState,
@@ -33,6 +35,26 @@ const document: MindMapDocumentV1 = {
   },
   frames: {},
   associations: { nodes: {}, frames: {} },
+};
+
+const documentV2: MindMapDocumentV2 = {
+  ...document,
+  version: MIND_MAP_DOCUMENT_VERSION_V2,
+  associations: {
+    nodes: {
+      root: {
+        references: [
+          {
+            referenceId: 'reference-source',
+            sourceRevision: 'source-revision-1',
+            agentLocator: { heading: 'Introduction' },
+          },
+        ],
+        linkIds: [],
+      },
+    },
+    frames: {},
+  },
 };
 
 describe('Mind Map interaction targets', () => {
@@ -110,6 +132,59 @@ describe('Mind Map interaction targets', () => {
         associations: {
           ...payload.associations,
           byNode: { missing: { references: [], links: [] } },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('accepts resolved Agent locators and rejects empty locator data', () => {
+    const reference = {
+      id: 'reference-source',
+      projectId: 'project',
+      assetId: 'mindmap',
+      sourceAssetId: 'source',
+      createdTime: 1,
+    };
+    const payload = {
+      document: documentV2,
+      revision: 'revision-1',
+      associations: {
+        byNode: {
+          root: {
+            references: [
+              {
+                reference,
+                sourceRevision: 'source-revision-1',
+                agentLocator: { heading: 'Introduction' },
+              },
+            ],
+            links: [],
+          },
+        },
+        byFrame: {},
+        staleBindings: [],
+      },
+      viewState: { collapsedNodeIds: [] },
+    };
+
+    expect(isMindMapWorkbenchPayload(payload)).toBe(true);
+    expect(
+      isMindMapWorkbenchPayload({
+        ...payload,
+        associations: {
+          ...payload.associations,
+          byNode: {
+            root: {
+              references: [
+                {
+                  reference,
+                  sourceRevision: 'source-revision-1',
+                  agentLocator: {},
+                },
+              ],
+              links: [],
+            },
+          },
         },
       }),
     ).toBe(false);

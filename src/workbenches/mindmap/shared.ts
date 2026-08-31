@@ -28,8 +28,9 @@ import type {
   StaleMindMapAssociationBinding,
 } from './association-mapper';
 import {
-  isMindMapDocumentV1,
-  type MindMapDocumentV1,
+  isMindMapAgentLocatorV1,
+  isMindMapDocument,
+  type MindMapDocument,
 } from './document';
 
 export const MIND_MAP_MEDIA_TYPE = MIND_MAP_ASSET_MEDIA_TYPE;
@@ -85,7 +86,7 @@ export interface MindMapWorkbenchStateV1 {
 }
 
 export interface MindMapWorkbenchPayload {
-  readonly document: MindMapDocumentV1;
+  readonly document: MindMapDocument;
   readonly revision: string;
   readonly associations: ResolvedMindMapAssociations;
   readonly viewState: MindMapWorkbenchViewStateV1;
@@ -145,10 +146,18 @@ function isResolvedMindMapSubjectAssociations(
     isRecord(value) &&
     Array.isArray(value.references) &&
     value.references.every(
-      (binding) =>
-        isRecord(binding) &&
-        isAssetReference(binding.reference) &&
-        isAssetTarget(binding.sourceTarget),
+      (binding) => {
+        if (
+          !isRecord(binding) ||
+          !isAssetReference(binding.reference)
+        ) {
+          return false;
+        }
+
+        return isAssetTarget(binding.sourceTarget) ||
+          (isNormalizedId(binding.sourceRevision) &&
+            isMindMapAgentLocatorV1(binding.agentLocator));
+      },
     ) &&
     Array.isArray(value.links) &&
     value.links.every(isAssetLink)
@@ -183,7 +192,7 @@ function isStaleMindMapAssociationBinding(
 
 function isResolvedMindMapAssociations(
   value: unknown,
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
 ): value is ResolvedMindMapAssociations {
   return (
     isRecord(value) &&
@@ -259,7 +268,7 @@ export function isMindMapWorkbenchPayload(
 ): value is JsonValue & MindMapWorkbenchPayload {
   if (
     !isRecord(value) ||
-    !isMindMapDocumentV1(value.document) ||
+    !isMindMapDocument(value.document) ||
     !isNormalizedId(value.revision) ||
     !isMindMapWorkbenchViewState(value.viewState) ||
     !isResolvedMindMapAssociations(

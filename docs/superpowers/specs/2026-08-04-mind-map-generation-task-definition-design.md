@@ -8,6 +8,10 @@
 > `2026-08-08-generation-task-process-execution-design.md` 取代。Instruction、Workspace、
 > AssetReference、Session 定位和 Provider 能力声明仍按本文执行；运行时以新文档和当前代码为准。
 
+> 2026-08-31 更新：新任务已升级为 `mindmap.generate@2`，通过自由结构的
+> `agentLocator` 保存每个 Node / Frame 的来源内定位；`@1` 继续注册用于恢复旧任务。
+> 兼容边界见 [Mind Map Agent Locator 数据结构设计](./2026-08-31-mind-map-agent-locator-design.md)。
+
 ## 1. 最终结论
 
 首条生成链采用四个边界：

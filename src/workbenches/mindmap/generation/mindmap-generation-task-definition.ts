@@ -1,6 +1,7 @@
 import {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
+  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
 } from '../../../shared/generation-definitions';
 import type {
   GenerationTaskProcessContext,
@@ -17,9 +18,11 @@ import { HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/ag
 export {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
+  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
 } from '../../../shared/generation-definitions';
 
-export function createMindMapGenerationTaskDefinitionV1(
+function createMindMapGenerationTaskDefinition(
+  version: number,
   processor: GenerationTaskProcessor<
     MindMapGenerationInstruction,
     MindMapGenerationTaskResult
@@ -30,7 +33,7 @@ export function createMindMapGenerationTaskDefinitionV1(
 > {
   return Object.freeze({
     id: MIND_MAP_GENERATION_TASK_DEFINITION_ID,
-    version: MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
+    version,
     providerSelectorId: HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
     primaryWorkspaceConfig: Object.freeze({
       key: 'generation-mindmap',
@@ -49,4 +52,34 @@ export function createMindMapGenerationTaskDefinitionV1(
       context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
     ) => processor.process(context),
   });
+}
+
+export function createMindMapGenerationTaskDefinitionV1(
+  processor: GenerationTaskProcessor<
+    MindMapGenerationInstruction,
+    MindMapGenerationTaskResult
+  >,
+): TaskDefinition<
+  MindMapGenerationInstruction,
+  MindMapGenerationTaskResult
+> {
+  return createMindMapGenerationTaskDefinition(
+    MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
+    processor,
+  );
+}
+
+export function createMindMapGenerationTaskDefinitionV2(
+  processor: GenerationTaskProcessor<
+    MindMapGenerationInstruction,
+    MindMapGenerationTaskResult
+  >,
+): TaskDefinition<
+  MindMapGenerationInstruction,
+  MindMapGenerationTaskResult
+> {
+  return createMindMapGenerationTaskDefinition(
+    MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
+    processor,
+  );
 }

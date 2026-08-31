@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cloneMindMapDocument,
   cloneMindMapDocumentV1,
+  cloneMindMapDocumentV2,
+  isMindMapDocument,
   isMindMapDocumentV1,
+  isMindMapDocumentV2,
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
+  MIND_MAP_DOCUMENT_VERSION_V2,
+  type MindMapDocumentV2,
 } from './document';
 
 function createDocument() {
@@ -67,7 +73,149 @@ function createDocument() {
   } as const;
 }
 
+function createDocumentV2(): MindMapDocumentV2 {
+  return {
+    format: MIND_MAP_DOCUMENT_FORMAT,
+    version: MIND_MAP_DOCUMENT_VERSION_V2,
+    title: ' Agent 定位 ',
+    rootNodeId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        title: '课程',
+        focus: '课程总览',
+        childIds: ['chapter'],
+      },
+      chapter: {
+        id: 'chapter',
+        title: '第一章',
+        focus: '核心概念',
+        childIds: [],
+      },
+    },
+    frames: {
+      overview: {
+        id: 'overview',
+        title: '总览',
+        nodeIds: ['root', 'chapter'],
+      },
+    },
+    associations: {
+      nodes: {
+        root: {
+          references: [
+            {
+              referenceId: 'reference-source',
+              sourceRevision: 'source-revision-1',
+              agentLocator: {
+                headingPath: ['课程', '引言'],
+                quote: '先建立课程的整体认识',
+                customHint: {
+                  page: 3,
+                  nearby: true,
+                },
+              },
+            },
+            {
+              referenceId: 'reference-source',
+              sourceRevision: 'source-revision-1',
+              agentLocator: {
+                headingPath: ['课程', '学习路线'],
+                description: '说明章节之间依赖关系的段落',
+              },
+            },
+          ],
+          linkIds: [],
+        },
+      },
+      frames: {},
+    },
+  };
+}
+
 describe('Mind Map document contract', () => {
+  it('accepts flexible Agent locators and preserves repeated locations in one source', () => {
+    const document = cloneMindMapDocumentV2(createDocumentV2());
+
+    expect(document.title).toBe('Agent 定位');
+    expect(document.associations.nodes.root.references).toHaveLength(2);
+    expect(
+      document.associations.nodes.root.references.map(
+        ({ referenceId }) => referenceId,
+      ),
+    ).toEqual(['reference-source', 'reference-source']);
+    expect(
+      document.associations.nodes.root.references[0].agentLocator,
+    ).toEqual({
+      headingPath: ['课程', '引言'],
+      quote: '先建立课程的整体认识',
+      customHint: { page: 3, nearby: true },
+    });
+    expect(
+      Object.isFrozen(
+        document.associations.nodes.root.references[0].agentLocator
+          .customHint,
+      ),
+    ).toBe(true);
+    expect(isMindMapDocument(document)).toBe(true);
+    expect(cloneMindMapDocument(document)).toEqual(document);
+  });
+
+  it.each([
+    {},
+    [],
+    'page 3',
+    null,
+    { page: Number.POSITIVE_INFINITY },
+  ])(
+    'rejects an unusable Agent locator: %j',
+    (agentLocator) => {
+      const document = createDocumentV2();
+
+      expect(
+        isMindMapDocumentV2({
+          ...document,
+          associations: {
+            ...document.associations,
+            nodes: {
+              root: {
+                references: [
+                  {
+                    referenceId: 'reference-source',
+                    sourceRevision: 'source-revision-1',
+                    agentLocator,
+                  },
+                ],
+                linkIds: [],
+              },
+            },
+          },
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it('rejects a missing source revision and keeps legacy v1 readable', () => {
+    const document = createDocumentV2();
+    const binding = document.associations.nodes.root.references[0];
+
+    expect(
+      isMindMapDocumentV2({
+        ...document,
+        associations: {
+          ...document.associations,
+          nodes: {
+            root: {
+              references: [{ ...binding, sourceRevision: '  ' }],
+              linkIds: [],
+            },
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(isMindMapDocument(createDocument())).toBe(true);
+  });
+
   it('accepts and clones a normalized tree with sparse associations and Frames', () => {
     const document = cloneMindMapDocumentV1(createDocument());
 
