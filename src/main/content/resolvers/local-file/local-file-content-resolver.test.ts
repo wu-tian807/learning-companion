@@ -8,7 +8,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import iconv from 'iconv-lite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -220,6 +220,44 @@ describe('LocalFileContentResolver', () => {
     expect(bytes.toString('utf8')).toBe('\ufeff第一行\r\n新增内容\r\n');
     expect(saved.revision).not.toBe(content.revision);
   });
+
+  it.runIf(process.platform === 'win32')(
+    'restores writability only for an application-managed Asset copy',
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'learning-companion-managed-write-'));
+      temporaryDirectories.push(root);
+      const workspace = join(root, 'workspace');
+      const path = join(
+        workspace,
+        '.learning-companion',
+        'assets',
+        'imported',
+        'lesson.html',
+      );
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, '<p>before</p>');
+      await chmod(path, 0o400);
+
+      const resolver = new LocalFileContentResolver(workspaceManager);
+      const resolved = await resolver.resolve(
+        createProjectWorkspaceContentRef(
+          '.learning-companion/assets/imported/lesson.html',
+        ),
+        { projectId: 'project', projectWorkspace: workspace },
+      );
+      const adapter = new DefaultTextContentAdapter();
+      const source = await adapter.read(resolved.handle!);
+
+      await expect(
+        adapter.write(resolved.handle!, {
+          ...source,
+          content: '<p>after</p>',
+          expectedRevision: source.revision,
+        }),
+      ).resolves.toBeDefined();
+      await expect(readFile(path, 'utf8')).resolves.toBe('<p>after</p>');
+    },
+  );
 
   it.runIf(process.platform === 'win32')(
     'does not remove read-only protection from a linked absolute file',
