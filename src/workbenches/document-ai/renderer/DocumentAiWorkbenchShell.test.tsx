@@ -5,6 +5,10 @@ vi.mock('./AttachmentHost', () => ({
   AttachmentHost: () => null,
 }));
 
+vi.mock('./QuestionAnchorHost', () => ({
+  QuestionAnchorHost: () => null,
+}));
+
 import { DocumentAiWorkbenchShell } from './DocumentAiWorkbenchShell';
 
 function renderShell(): string {

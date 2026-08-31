@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import { AttachmentHost } from './AttachmentHost';
+import { QuestionAnchorHost } from './QuestionAnchorHost';
 
 export interface DocumentAiWorkbenchShellProps {
   readonly projectId: string;
@@ -26,6 +27,7 @@ export function DocumentAiWorkbenchShell({
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
         {children}
       </div>
+      <QuestionAnchorHost assetId={assetId} />
       <AttachmentHost
         projectId={projectId}
         assetId={assetId}

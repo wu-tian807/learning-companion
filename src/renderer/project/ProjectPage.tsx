@@ -8,6 +8,7 @@ import { createProjectConversationHistoryStore } from '../conversation/conversat
 import { GenerationCenter } from '../generation/GenerationCenter';
 import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
+import { ConversationHistoryStoreProvider } from '../conversation/conversation-history-context';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
@@ -364,6 +365,7 @@ export function ProjectPage({
         />
       </header>
 
+      <ConversationHistoryStoreProvider store={conversationHistoryStore}>
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
         <WorkbenchRuntimeProvider onError={setError}>
             <AssetSelectionCoordinatorProvider
@@ -502,6 +504,7 @@ export function ProjectPage({
             </AssetSelectionCoordinatorProvider>
         </WorkbenchRuntimeProvider>
       </WorkbenchConversationRuntimeProvider>
+      </ConversationHistoryStoreProvider>
 
       {dragging && (
         <div className="pointer-events-none fixed inset-4 z-40 grid place-items-center rounded-[22px] border-2 border-dashed border-indigo-300/50 bg-[#171b22]/80 backdrop-blur-sm">
