@@ -7,7 +7,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { delimiter, dirname, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 import { AppError } from '../../../main/errors/app-error';
 import {
@@ -23,7 +23,9 @@ export const VOXCPM2_RUNTIME_SETUP_EXPECTED_BYTES = 13_000_000_000;
 const SETUP_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const SETUP_PROGRESS_POLL_INTERVAL_MS = 5_000;
 const PYTORCH_CUDA_INDEX_URL =
-  'https://download.pytorch.org/whl/cu128';
+  'https://mirrors.aliyun.com/pytorch-wheels/cu128';
+const MANAGED_PYTHON_DIRECTORY =
+  /^cpython-3\.12\.\d+-windows-x86_64-none$/u;
 
 interface VoxCpm2RuntimeSetupDependencies {
   readonly commandRunner: ExternalCommandRunnerApi;
@@ -78,6 +80,7 @@ function runtimePaths(root: string) {
   return Object.freeze({
     environmentRoot,
     pythonPath: join(environmentRoot, 'Scripts', 'python.exe'),
+    configurationPath: join(environmentRoot, 'pyvenv.cfg'),
     markerPath: join(
       environmentRoot,
       'learning-companion-runtime.json',
@@ -130,6 +133,33 @@ async function exists(
   } catch {
     return false;
   }
+}
+
+async function resolveManagedPythonPath(
+  root: string,
+  fileAccess: typeof access,
+  readText: typeof readFile,
+): Promise<string> {
+  const { configurationPath } = runtimePaths(root);
+  const home = (await readText(configurationPath, 'utf8'))
+    .split(/\r?\n/u)
+    .find((line) => line.startsWith('home = '))
+    ?.slice('home = '.length)
+    .trim();
+  const directoryName = home ? basename(home) : '';
+  if (!MANAGED_PYTHON_DIRECTORY.test(directoryName)) {
+    throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+  }
+  const managedPythonPath = join(
+    root,
+    'managed-python',
+    directoryName,
+    'python.exe',
+  );
+  if (!(await exists(fileAccess, managedPythonPath))) {
+    throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+  }
+  return managedPythonPath;
 }
 
 export function resolveVoxCpm2ManagedEnvironment(
@@ -379,6 +409,11 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
     const { environmentRoot, markerPath, pythonPath } =
       runtimePaths(runtimeDirectory);
     await rm(markerPath, { force: true });
+    const managedPythonPath = await resolveManagedPythonPath(
+      runtimeDirectory,
+      this.dependencies.fileAccess,
+      this.dependencies.readText,
+    );
     const uvPath = join(
       runtimeDirectory,
       'bootstrap',
@@ -392,7 +427,7 @@ export class VoxCpm2RuntimeSetup implements ExternalLibraryRuntimeSetup {
       'venv',
       environmentRoot,
       '--python',
-      '3.12',
+      managedPythonPath,
       '--python-preference',
       'only-managed',
       '--allow-existing',

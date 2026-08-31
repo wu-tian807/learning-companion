@@ -17,7 +17,6 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import {
   useWorkbenchConversationContribution,
   useWorkbenchConversationSnapshot,
@@ -25,13 +24,17 @@ import {
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
-import type { EpubExplanationView } from './explanations/shared';
+import {
+  isEpubCfiRangeTarget,
+  type EpubExplanationView,
+} from './explanations/shared';
 import { EpubExplanationPanel } from './explanations/epub-explanation-panel';
 import { EpubExplanationIndex } from './explanations/epub-explanation-index';
 import { displayEpubExplanationLocation } from './explanations/epub-explanation-navigation';
 import {
   createEpubConversationContext,
   createEpubConversationContribution,
+  type EpubConversationContext,
 } from './explanations/epub-conversation-contribution';
 import {
   projectEpubExplanationGenerationEvent,
@@ -54,32 +57,12 @@ import {
   secureEpubDocument,
   toSafeExternalUrl,
 } from './epub-security';
-import { createEpubReadingLocationRestore } from './epub-reading-location';
-import { observeEpubRenditionSize } from './epub-rendition-resize';
-import {
-  observeEpubAnnotationWaves,
-} from './epub-annotation-wave';
-import type { EpubMarkerColor } from './epub-marker-style';
-import { renderEpubAnnotationWaves } from './epub-annotation-renderer';
-import { stabilizeEpubContinuousScroll } from './epub-continuous-scroll';
-import { EpubReadingNotePanel } from './notes/epub-reading-note-panel';
-import { EpubReadingTimerControl } from './timer/epub-reading-timer-control';
-import {
-  applyEpubRenditionAppearance,
-  applyEpubThemeToDocument,
-} from './epub-theme';
-import {
-  findEpubReadingNoteAtTarget,
-  toEpubReadingNoteView,
-  type EpubReadingNoteView,
-} from './notes/shared';
 import { createEpubRendererActions } from './renderer-actions';
 import {
   cloneEpubViewState,
   createEpubSaveViewStateCommand,
   DEFAULT_EPUB_VIEW_STATE,
   epubWorkbenchManifest,
-  isEpubCfiRangeTarget,
   isEpubSaveViewStateResult,
   isEpubWorkbenchPayload,
   type EpubTheme,
@@ -122,6 +105,51 @@ function flattenNavigation(
   ]);
 }
 
+function themeRules(theme: EpubTheme): object {
+  const palette = {
+    dark: {
+      background: '#151a20',
+      foreground: '#cbd5e1',
+      muted: '#94a3b8',
+      link: '#a5b4fc',
+    },
+    light: {
+      background: '#f7f5ef',
+      foreground: '#292824',
+      muted: '#69665e',
+      link: '#4f46e5',
+    },
+    sepia: {
+      background: '#f2ead7',
+      foreground: '#40392e',
+      muted: '#756a58',
+      link: '#765caa',
+    },
+  }[theme];
+
+  return {
+    html: {
+      'background-color': `${palette.background} !important`,
+    },
+    body: {
+      'background-color': `${palette.background} !important`,
+      color: `${palette.foreground} !important`,
+      'line-height': '1.8 !important',
+      padding: '0 4% !important',
+    },
+    'a, a:visited': {
+      color: `${palette.link} !important`,
+    },
+    'blockquote, figcaption': {
+      color: `${palette.muted} !important`,
+    },
+    'img, svg': {
+      'max-width': '100% !important',
+      height: 'auto !important',
+    },
+  };
+}
+
 function EpubToc({
   items,
   onSelect,
@@ -162,8 +190,6 @@ function EpubToc({
 export function EpubWorkbenchView({
   asset,
   bootstrap,
-  attachments = [],
-  refreshAttachments,
   executeCommand,
   onRelink,
   onRefresh,
@@ -203,21 +229,9 @@ export function EpubWorkbenchView({
   >([]);
   const [activeExplanationId, setActiveExplanationId] = useState<string>();
   const [explanationIndexOpen, setExplanationIndexOpen] = useState(false);
-  const [notePanelOpen, setNotePanelOpen] = useState(false);
-  const [activeNoteId, setActiveNoteId] = useState<string>();
-  const [noteDraftTarget, setNoteDraftTarget] =
-    useState<EpubReadingNoteView['target']>();
   const explanationTaskIdsRef = useRef(new Set<string>());
   const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
     useState<EpubExplanationRuntimeMap>({});
-  const readingNotes = useMemo(
-    () =>
-      attachments
-        .map(toEpubReadingNoteView)
-        .filter((note): note is EpubReadingNoteView => note !== undefined)
-        .sort((left, right) => left.createdTime - right.createdTime),
-    [attachments],
-  );
 
   const registerExplanationTask = useCallback(
     (explanation: EpubExplanationView) => {
@@ -247,36 +261,41 @@ export function EpubWorkbenchView({
 
   const conversationOwnerId =
     `${epubWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
-  useEffect(() => {
-    if (loadState.kind !== 'ready') return;
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
-      asset.id,
-      {
-        async reveal(target) {
-          if (!isEpubCfiRangeTarget(target)) return false;
-          const rendition = renditionRef.current;
-          if (!rendition) throw new Error('EPUB 阅读器尚未就绪');
-          await rendition.display(target.anchorPayload.cfiRange);
-          return true;
-        },
-      },
-    );
-  }, [asset.id, conversationOwnerId, loadState.kind]);
+  const revealConversationContext = useCallback(
+    async (context: EpubConversationContext) => {
+      const rendition = renditionRef.current;
+      if (!rendition || loadState.kind !== 'ready') {
+        reportError(
+          new Error('EPUB 阅读器尚未就绪'),
+          '暂时无法定位这段 EPUB 原文。',
+        );
+        return;
+      }
+      try {
+        await rendition.display(context.target.anchorPayload.cfiRange);
+      } catch (error) {
+        reportError(error, '无法定位到这段 EPUB 原文。');
+      }
+    },
+    [loadState.kind, reportError],
+  );
   const conversationContribution = useMemo(
-    () => createEpubConversationContribution(),
-    [],
+    () =>
+      createEpubConversationContribution({
+        revealContext: revealConversationContext,
+      }),
+    [revealConversationContext],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
-    asset.id,
     conversationContribution,
-    loadState.kind === 'ready',
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(
     conversationRuntime,
   );
-  const conversationBusy = conversationSnapshot.busy;
+  const conversationBusy =
+    conversationSnapshot.active?.ownerId === conversationOwnerId &&
+    conversationSnapshot.busy;
 
   const persistViewState = useCallback(
     async (state: EpubWorkbenchViewState) => {
@@ -377,56 +396,6 @@ export function EpubWorkbenchView({
     ],
   );
 
-  const askSelection = useCallback(
-    (selection: WorkbenchSelectionSnapshot) => {
-      if (!isEpubCfiRangeTarget(selection.target)) {
-        reportError(
-          new Error('EPUB 选区锚点无效'),
-          '无法围绕这个 EPUB 选区提问。',
-        );
-        return;
-      }
-      conversationRuntime.open({
-        ownerId: conversationOwnerId,
-        context: createEpubConversationContext(selection.target),
-      });
-    },
-    [conversationOwnerId, conversationRuntime, reportError],
-  );
-
-  const openReadingNoteEditor = useCallback(
-    (target?: EpubReadingNoteView['target']) => {
-      const existingNote = target
-        ? findEpubReadingNoteAtTarget(readingNotes, target)
-        : undefined;
-      setActiveNoteId(existingNote?.id);
-      setNoteDraftTarget(target);
-      setExplanationIndexOpen(false);
-      setNotePanelOpen(true);
-      if (viewStateRef.current.tocOpen) {
-        updateViewState(
-          { ...viewStateRef.current, tocOpen: false },
-          true,
-        );
-      }
-    },
-    [readingNotes, updateViewState],
-  );
-
-  const writeNoteSelection = useCallback(
-    (selection: WorkbenchSelectionSnapshot) => {
-      if (!isEpubCfiRangeTarget(selection.target)) {
-        reportError(
-          new Error('EPUB 选区锚点无效'),
-          '无法为这个 EPUB 选区创建阅读笔记。',
-        );
-        return;
-      }
-      openReadingNoteEditor(selection.target);
-    },
-    [openReadingNoteEditor, reportError],
-  );
-
   const rendererActions = useMemo(
     () =>
       createEpubRendererActions({
@@ -435,20 +404,16 @@ export function EpubWorkbenchView({
         hasSelection: () => selectionRef.current !== undefined,
         onCopySelection: copySelection,
         onExplainSelection: explainSelection,
-        onAskSelection: askSelection,
-        onWriteNoteSelection: writeNoteSelection,
         onReload: reload,
         onReveal: reveal,
       }),
     [
       conversationBusy,
-      askSelection,
       copySelection,
       explainSelection,
       loadState.kind,
       reload,
       reveal,
-      writeNoteSelection,
     ],
   );
   useWorkbenchContributions(
@@ -589,8 +554,6 @@ export function EpubWorkbenchView({
     let disposed = false;
     let book: Book | undefined;
     let rendition: Rendition | undefined;
-    let removeRenditionResizeObserver: (() => void) | undefined;
-    let removeAnnotationWaveObserver: (() => void) | undefined;
     const contentCleanups: Array<() => void> = [];
     host.replaceChildren();
     setLoadState({ kind: 'loading' });
@@ -648,24 +611,15 @@ export function EpubWorkbenchView({
         allowScriptedContent: false,
       });
       renditionRef.current = rendition;
-      stabilizeEpubContinuousScroll(host, viewStateRef.current.flow);
-      removeAnnotationWaveObserver = observeEpubAnnotationWaves(host);
-      applyEpubRenditionAppearance(
-        rendition,
-        viewStateRef.current.theme,
-        viewStateRef.current.fontScale,
-      );
-      const initialLocation = viewStateRef.current.location;
-      const locationRestore = createEpubReadingLocationRestore(
-        viewStateRef.current.flow,
-        initialLocation,
+      for (const theme of ['dark', 'light', 'sepia'] as const) {
+        rendition.themes.register(theme, themeRules(theme));
+      }
+      rendition.themes.select(viewStateRef.current.theme);
+      rendition.themes.fontSize(
+        `${Math.round(viewStateRef.current.fontScale * 100)}%`,
       );
 
       rendition.hooks.content.register((contents: Contents) => {
-        applyEpubThemeToDocument(
-          contents.document,
-          viewStateRef.current.theme,
-        );
         for (const anchor of contents.document.querySelectorAll('a')) {
           anchor.removeAttribute('target');
           anchor.removeAttribute('download');
@@ -738,15 +692,13 @@ export function EpubWorkbenchView({
             ? clamp(percentage, 0, 1)
             : undefined,
         );
-        if (locationRestore.shouldPersistRelocation()) {
-          updateViewState(
-            {
-              ...viewStateRef.current,
-              location: location.start.cfi,
-            },
-            false,
-          );
-        }
+        updateViewState(
+          {
+            ...viewStateRef.current,
+            location: location.start.cfi,
+          },
+          false,
+        );
       });
       rendition.on(
         'selected',
@@ -763,9 +715,9 @@ export function EpubWorkbenchView({
       );
 
       try {
-        await locationRestore.display(rendition);
+        await rendition.display(viewStateRef.current.location);
       } catch (error) {
-        if (!initialLocation) {
+        if (!viewStateRef.current.location) {
           throw error;
         }
         updateViewState(
@@ -778,11 +730,6 @@ export function EpubWorkbenchView({
         await rendition.display();
       }
       if (!disposed) {
-        stabilizeEpubContinuousScroll(host, viewStateRef.current.flow);
-        removeRenditionResizeObserver = observeEpubRenditionSize(
-          host,
-          rendition,
-        );
         setLoadState({ kind: 'ready' });
       }
     })().catch((error: unknown) => {
@@ -811,8 +758,6 @@ export function EpubWorkbenchView({
       for (const cleanup of contentCleanups) {
         cleanup();
       }
-      removeRenditionResizeObserver?.();
-      removeAnnotationWaveObserver?.();
       renditionRef.current = undefined;
       bookRef.current = undefined;
       book?.destroy();
@@ -835,10 +780,9 @@ export function EpubWorkbenchView({
     if (!rendition) {
       return;
     }
-    applyEpubRenditionAppearance(
-      rendition,
-      viewState.theme,
-      viewState.fontScale,
+    rendition.themes.select(viewState.theme);
+    rendition.themes.fontSize(
+      `${Math.round(viewState.fontScale * 100)}%`,
     );
   }, [viewState.fontScale, viewState.theme]);
 
@@ -848,20 +792,39 @@ export function EpubWorkbenchView({
       return;
     }
 
-    return renderEpubAnnotationWaves(
-      rendition.annotations,
-      explanations,
-      readingNotes,
-      {
-        onExplanationClick: (explanation) =>
-          setActiveExplanationId(explanation.id),
-        onNoteClick: (note) => {
-          setActiveNoteId(note.id);
-          setNotePanelOpen(true);
+    for (const explanation of explanations) {
+      const cfiRange = explanation.target.anchorPayload.cfiRange;
+      const color =
+        explanation.status === 'failed'
+          ? '#fb7185'
+          : explanation.status === 'pending'
+            ? '#94a3b8'
+            : '#93c5fd';
+      rendition.annotations.underline(
+        cfiRange,
+        { explanationId: explanation.id },
+        () => setActiveExplanationId(explanation.id),
+        `epub-ai-explanation-${explanation.status}`,
+        {
+          stroke: color,
+          'stroke-width': '2',
+          'stroke-opacity': '0.7',
+          ...(explanation.status !== 'completed'
+            ? { 'stroke-dasharray': '3 3' }
+            : {}),
         },
-      },
-    );
-  }, [explanations, loadState.kind, readingNotes]);
+      );
+    }
+
+    return () => {
+      for (const explanation of explanations) {
+        rendition.annotations.remove(
+          explanation.target.anchorPayload.cfiRange,
+          'underline',
+        );
+      }
+    };
+  }, [explanations, loadState.kind]);
 
   const retryExplanation = useCallback(
     async (explanation: EpubExplanationView) => {
@@ -909,32 +872,6 @@ export function EpubWorkbenchView({
     [asset.id, asset.projectId, clearExplanationRuntime, reportError],
   );
 
-  const updateExplanationMarkerColor = useCallback(
-    async (
-      explanation: EpubExplanationView,
-      markerColor: EpubMarkerColor,
-    ) => {
-      if (explanation.kind !== 'attachment') return;
-      try {
-        const updated =
-          await window.learningCompanion.updateEpubExplanationMarkerColor({
-            projectId: asset.projectId,
-            assetId: asset.id,
-            explanationId: explanation.id,
-            markerColor,
-          });
-        setExplanations((current) =>
-          current.map((item) =>
-            item.id === explanation.id ? updated : item,
-          ),
-        );
-      } catch (error) {
-        reportError(error, '无法修改 AI 标注的波浪线颜色。');
-      }
-    },
-    [asset.id, asset.projectId, reportError],
-  );
-
   const revealExplanation = useCallback(
     async (explanation: EpubExplanationView) => {
       const rendition = renditionRef.current;
@@ -952,98 +889,6 @@ export function EpubWorkbenchView({
         setExplanationIndexOpen(false);
       } catch (error) {
         reportError(error, '无法定位到这条 EPUB 标注。');
-      }
-    },
-    [loadState.kind, reportError],
-  );
-
-  const beginReadingNote = useCallback(() => {
-    const target = selectionRef.current?.target;
-    openReadingNoteEditor(
-      isEpubCfiRangeTarget(target) ? target : undefined,
-    );
-  }, [openReadingNoteEditor]);
-
-  const saveReadingNote = useCallback(
-    async (
-      text: string,
-      markerColor: EpubMarkerColor,
-      note?: EpubReadingNoteView,
-    ) => {
-      const target = note?.target ?? noteDraftTarget;
-      if (!target) {
-        reportError(
-          new Error('EPUB 阅读笔记缺少原文锚点'),
-          '请先选择一段原文再添加阅读笔记。',
-        );
-        return;
-      }
-      try {
-        const saved = note
-          ? await window.learningCompanion.updateEpubReadingNote({
-              projectId: asset.projectId,
-              assetId: asset.id,
-              noteId: note.id,
-              text,
-              markerColor,
-            })
-          : await window.learningCompanion.createEpubReadingNote({
-              projectId: asset.projectId,
-              assetId: asset.id,
-              target,
-              text,
-              markerColor,
-            });
-        await refreshAttachments?.();
-        setActiveNoteId(saved.id);
-        setNoteDraftTarget(target);
-      } catch (error) {
-        reportError(error, note ? '无法修改阅读笔记。' : '无法添加阅读笔记。');
-      }
-    },
-    [
-      asset.id,
-      asset.projectId,
-      noteDraftTarget,
-      refreshAttachments,
-      reportError,
-    ],
-  );
-
-  const deleteReadingNote = useCallback(
-    async (note: EpubReadingNoteView) => {
-      try {
-        await window.learningCompanion.deleteEpubReadingNote({
-          projectId: asset.projectId,
-          assetId: asset.id,
-          noteId: note.id,
-        });
-        await refreshAttachments?.();
-        setActiveNoteId(undefined);
-        setNoteDraftTarget(undefined);
-      } catch (error) {
-        reportError(error, '无法删除阅读笔记。');
-      }
-    },
-    [asset.id, asset.projectId, refreshAttachments, reportError],
-  );
-
-  const revealReadingNote = useCallback(
-    async (note: EpubReadingNoteView) => {
-      const rendition = renditionRef.current;
-      if (!rendition || loadState.kind !== 'ready') {
-        reportError(
-          new Error('EPUB 阅读器尚未就绪'),
-          '暂时无法定位这条阅读笔记。',
-        );
-        return;
-      }
-      try {
-        await rendition.display(note.target.anchorPayload.cfiRange);
-        setActiveNoteId(note.id);
-        setNoteDraftTarget(note.target);
-      } catch (error) {
-        reportError(error, '无法定位到这条阅读笔记。');
       }
     },
     [loadState.kind, reportError],
@@ -1076,9 +921,6 @@ export function EpubWorkbenchView({
   const activeExplanation = explanations.find(
     (explanation) => explanation.id === activeExplanationId,
   );
-  const activeReadingNote = readingNotes.find(
-    (note) => note.id === activeNoteId,
-  );
 
   if (!payload) {
     return (
@@ -1100,7 +942,6 @@ export function EpubWorkbenchView({
             aria-expanded={viewState.tocOpen}
             onClick={() => {
               setExplanationIndexOpen(false);
-              setNotePanelOpen(false);
               updateViewState(
                 {
                   ...viewStateRef.current,
@@ -1120,7 +961,6 @@ export function EpubWorkbenchView({
             onClick={() => {
               const nextOpen = !explanationIndexOpen;
               setExplanationIndexOpen(nextOpen);
-              if (nextOpen) setNotePanelOpen(false);
               if (nextOpen && viewStateRef.current.tocOpen) {
                 updateViewState(
                   {
@@ -1138,41 +978,6 @@ export function EpubWorkbenchView({
               {explanations.length}
             </span>
           </button>
-          <button
-            type="button"
-            aria-label={`切换 EPUB 阅读笔记（${readingNotes.length}）`}
-            aria-expanded={notePanelOpen}
-            onClick={() => {
-              const nextOpen = !notePanelOpen;
-              setNotePanelOpen(nextOpen);
-              if (nextOpen) {
-                setExplanationIndexOpen(false);
-                const target = selectionRef.current?.target;
-                if (!activeNoteId) {
-                  const validTarget = isEpubCfiRangeTarget(target)
-                    ? target
-                    : undefined;
-                  const existingNote = validTarget
-                    ? findEpubReadingNoteAtTarget(readingNotes, validTarget)
-                    : undefined;
-                  setActiveNoteId(existingNote?.id);
-                  setNoteDraftTarget(validTarget);
-                }
-                if (viewStateRef.current.tocOpen) {
-                  updateViewState(
-                    { ...viewStateRef.current, tocOpen: false },
-                    true,
-                  );
-                }
-              }
-            }}
-            className="ui-control rounded-md border border-amber-200/[0.12] px-2 py-1 text-[11px] text-amber-100/75"
-          >
-            笔记
-            <span className="ml-1 tabular-nums text-amber-200/40">
-              {readingNotes.length}
-            </span>
-          </button>
           <span className="truncate text-[11px] text-slate-400">
             {metadata.title}
             {metadata.creator ? ` · ${metadata.creator}` : ''}
@@ -1180,7 +985,6 @@ export function EpubWorkbenchView({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <EpubReadingTimerControl />
           <button
             type="button"
             onClick={() =>
@@ -1286,18 +1090,6 @@ export function EpubWorkbenchView({
             onClose={() => setExplanationIndexOpen(false)}
           />
         )}
-        {notePanelOpen && (
-          <EpubReadingNotePanel
-            notes={readingNotes}
-            activeNote={activeReadingNote}
-            draftTarget={noteDraftTarget}
-            onActivate={(note) => void revealReadingNote(note)}
-            onStartNew={beginReadingNote}
-            onSave={saveReadingNote}
-            onDelete={deleteReadingNote}
-            onClose={() => setNotePanelOpen(false)}
-          />
-        )}
         <div className="relative min-w-0 flex-1">
           <div
             ref={viewerHostRef}
@@ -1344,15 +1136,6 @@ export function EpubWorkbenchView({
               onClose={() => setActiveExplanationId(undefined)}
               onRetry={() => void retryExplanation(activeExplanation)}
               onDelete={() => void deleteExplanation(activeExplanation)}
-              onMarkerColorChange={
-                activeExplanation.kind === 'attachment'
-                  ? (color) =>
-                      void updateExplanationMarkerColor(
-                        activeExplanation,
-                        color,
-                      )
-                  : undefined
-              }
               onContinueQuestion={
                 activeExplanation.status === 'completed'
                   ? () => {

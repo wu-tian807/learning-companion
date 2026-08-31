@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -23,13 +23,15 @@ const target = createEpubCfiRangeTarget({
 });
 
 function createContribution() {
-  return createEpubConversationContribution();
+  return createEpubConversationContribution({
+    revealContext: vi.fn(),
+  });
 }
 
 describe('EPUB conversation contribution', () => {
   it('declares CFI context while the shared task owns execution and Note commit', () => {
     const context = createEpubConversationContext(target);
-    const request = createContextualConversationTaskRequest(
+    const request = createWorkbenchConversationTaskRequest(
       createContribution(),
       {
         projectId: 'project-1',
@@ -57,42 +59,30 @@ describe('EPUB conversation contribution', () => {
     });
   });
 
-  it('does not expose a context-free follow-up path through EPUB', () => {
-    expect(() =>
-      createContextualConversationTaskRequest(createContribution(), {
+  it('continues the stable conversation without duplicating the Note', () => {
+    const request = createWorkbenchConversationTaskRequest(
+      createContribution(),
+      {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
         question: '这里的“它”指什么？',
         generateTitle: false,
-      }),
-    ).toThrow('请先在 EPUB 中选中一段文字');
-  });
-
-  it('starts a selected-text custom question without creating an AI explanation Note', () => {
-    const context = createEpubConversationContext(target);
-    const request = createContextualConversationTaskRequest(
-      createContribution(),
-      {
-        projectId: 'project-1',
-        assetId: 'asset-1',
-        conversationId: 'conversation-custom',
-        question: '这句话为什么使用反问？',
-        context,
-        generateTitle: true,
       },
     );
 
     expect(request.instruction).toMatchObject({
-      question: '这句话为什么使用反问？',
-      context,
+      contextProviderId: EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+      conversationId: 'conversation-1',
+      question: '这里的“它”指什么？',
     });
+    expect(request.instruction).not.toHaveProperty('context');
     expect(request.instruction).not.toHaveProperty('commitAnswer');
   });
 
   it('rejects starting a new conversation without an EPUB selection', () => {
     expect(() =>
-      createContextualConversationTaskRequest(createContribution(), {
+      createWorkbenchConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -100,5 +90,20 @@ describe('EPUB conversation contribution', () => {
         generateTitle: true,
       }),
     ).toThrow('请先在 EPUB 中选中一段文字');
+  });
+
+  it('presents the selected quote and delegates reveal to EPUB', async () => {
+    const revealContext = vi.fn();
+    const contribution = createEpubConversationContribution({
+      revealContext,
+    });
+    const context = createEpubConversationContext(target);
+
+    expect(contribution.describeContext?.(context)).toEqual({
+      label: 'EPUB 选区',
+      detail: '需要持续追问的文字',
+    });
+    await contribution.revealContext?.(context);
+    expect(revealContext).toHaveBeenCalledWith(context);
   });
 });

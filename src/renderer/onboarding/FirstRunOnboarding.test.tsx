@@ -43,7 +43,7 @@ function createSnapshot(
   };
 }
 
-function createStore(...snapshots: ExternalLibrarySnapshot[]) {
+function createStore(snapshot: ExternalLibrarySnapshot) {
   const api = {
     listExternalLibraries: vi.fn(async () => []),
     refreshExternalLibrary: vi.fn(),
@@ -56,55 +56,13 @@ function createStore(...snapshots: ExternalLibrarySnapshot[]) {
   } satisfies ExternalLibraryRendererApi;
 
   return createExternalLibraryStore(api, {
-    librariesById: new Map(
-      snapshots.map((snapshot) => [snapshot.id, snapshot]),
-    ),
+    librariesById: new Map([[snapshot.id, snapshot]]),
     initialized: true,
   });
 }
 
 describe('FirstRunOnboarding', () => {
-  it('shows every registered external library instead of a separate hard-coded list', () => {
-    const markup = renderToStaticMarkup(
-      <FirstRunOnboarding
-        store={createStore(
-          createSnapshot('not-installed'),
-          {
-            id: 'media-subtitles',
-            displayName: '视频/音频字幕组件',
-            description: '生成视频与音频字幕',
-            category: 'media',
-            version: '2026.08.28',
-            expectedSize: 1_292_000_000,
-            rootPath:
-              '/Users/student/Documents/Learning Companion/externalLib',
-            status: 'not-installed',
-          },
-          {
-            id: 'video-dubbing-voxcpm2',
-            displayName: 'VoxCPM2 视频/音频配音组件',
-            description: '生成 one-shot 人声克隆配音',
-            category: 'media',
-            version: '2026.08.29',
-            expectedSize: 4_832_000_000,
-            rootPath:
-              '/Users/student/Documents/Learning Companion/externalLib',
-            status: 'not-installed',
-          },
-        )}
-        api={{ completeExternalLibraryOnboarding: vi.fn() }}
-        onCompleted={vi.fn()}
-      />,
-    );
-
-    expect(markup).toContain('LibreOffice');
-    expect(markup).toContain('视频/音频字幕组件');
-    expect(markup).toContain('VoxCPM2 视频/音频配音组件');
-    expect(markup).toContain('生成视频与音频字幕');
-    expect(markup).toContain('生成 one-shot 人声克隆配音');
-  });
-
-  it('offers the shared per-library installation controls without blocking entry', () => {
+  it('offers a clear background installation or explicit skip', () => {
     const markup = renderToStaticMarkup(
       <FirstRunOnboarding
         store={createStore(createSnapshot('not-installed'))}
@@ -113,11 +71,11 @@ describe('FirstRunOnboarding', () => {
       />,
     );
 
-    expect(markup).toContain('准备本地功能组件');
+    expect(markup).toContain('准备本地文档处理组件');
     expect(markup).toContain('官方来源');
-    expect(markup).toContain('固定组件资源约 286 MB');
-    expect(markup).toContain('安装');
-    expect(markup).toContain('开始使用');
+    expect(markup).toContain('预计下载 286 MB');
+    expect(markup).toContain('安装推荐组件');
+    expect(markup).toContain('暂不安装');
     expect(markup).not.toContain('aria-label="关闭');
   });
 
@@ -146,5 +104,6 @@ describe('FirstRunOnboarding', () => {
 
     expect(markup).toContain('当前平台没有可下载的安装包');
     expect(markup).toContain('开始使用');
+    expect(markup).toContain('暂不安装');
   });
 });

@@ -138,7 +138,7 @@ export const READ_HTML_CONTEXT_SELECTION_SCRIPT =
 
 function parseHtmlDomProbe(
   value: unknown,
-  frameUrl?: string,
+  frameUrl: string,
 ): {
   readonly target: ReturnType<typeof createHtmlDomTarget>;
   readonly text?: string;
@@ -149,7 +149,7 @@ function parseHtmlDomProbe(
   }
   const probe = value as Record<string, unknown>;
   const anchor = {
-    ...(frameUrl ? { frameUrl } : {}),
+    frameUrl,
     element: probe.element,
   };
   if (!isHtmlDomAnchorV1(anchor)) {
@@ -214,10 +214,7 @@ export class HtmlContextMenuFacilityAdapter
           ? READ_HTML_CONTEXT_SELECTION_SCRIPT
           : READ_HTML_CONTEXT_ELEMENT_SCRIPT,
       );
-      probe = parseHtmlDomProbe(
-        result,
-        frameUrl === context.rootUrl ? undefined : frameUrl,
-      );
+      probe = parseHtmlDomProbe(result, frameUrl);
     } catch {
       // DOM 定位失败不应阻断基础右键菜单。
     }
@@ -263,10 +260,7 @@ export class HtmlTextSelectionFacilityAdapter
       READ_HTML_FRAME_SELECTION_SCRIPT,
     );
     const frameUrl = context.frame.url || 'about:blank';
-    const probe = parseHtmlDomProbe(
-      result,
-      frameUrl === context.rootUrl ? undefined : frameUrl,
-    );
+    const probe = parseHtmlDomProbe(result, frameUrl);
     const text = probe?.text?.slice(0, CORE_TEXT_SELECTION_MAX_LENGTH) ?? '';
 
     return {

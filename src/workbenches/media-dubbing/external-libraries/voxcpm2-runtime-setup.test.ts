@@ -35,7 +35,7 @@ afterEach(async () => {
 });
 
 describe('VoxCpm2RuntimeSetup', () => {
-  it('finalizes a moved uv environment whose Python home uses a minor-version alias', async () => {
+  it('installs and verifies the complete environment before marking it ready', async () => {
     const parent = await createRuntimeRoot();
     const root = join(parent, 'stage', 'runtime');
     await mkdir(root, { recursive: true });
@@ -46,16 +46,16 @@ describe('VoxCpm2RuntimeSetup', () => {
         const scripts = join(environmentRoot, 'Scripts');
         await mkdir(scripts, { recursive: true });
         await writeFile(join(scripts, 'python.exe'), 'mock');
-        const managedPythonRoot = join(runtimeRoot, 'managed-python');
         const managedPython = join(
-          managedPythonRoot,
+          runtimeRoot,
+          'managed-python',
           'cpython-3.12.14-windows-x86_64-none',
         );
         await mkdir(managedPython, { recursive: true });
         await writeFile(join(managedPython, 'python.exe'), 'mock');
         await writeFile(
           join(environmentRoot, 'pyvenv.cfg'),
-          `home = ${join(managedPythonRoot, 'cpython-3.12-windows-x86_64-none')}\n`,
+          `home = ${managedPython}\n`,
         );
       }
       return { stdout: '', stderr: '' };
@@ -125,7 +125,7 @@ describe('VoxCpm2RuntimeSetup', () => {
     expect(run.mock.calls[1]?.[0].args).toEqual(
       expect.arrayContaining([
         '--index-url',
-        'https://download.pytorch.org/whl/cu128',
+        'https://mirrors.aliyun.com/pytorch-wheels/cu128',
       ]),
     );
     await expect(
@@ -165,7 +165,12 @@ describe('VoxCpm2RuntimeSetup', () => {
       command: join(finalRoot, 'bootstrap', 'uv', 'uv.exe'),
       args: expect.arrayContaining([
         '--python',
-        '3.12',
+        join(
+          finalRoot,
+          'managed-python',
+          'cpython-3.12.14-windows-x86_64-none',
+          'python.exe',
+        ),
         '--allow-existing',
       ]),
     });

@@ -13,11 +13,10 @@ import type { AssetTarget } from '../../../shared/workbench/anchor';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { ConversationMarkdown } from '../../../renderer/conversation/conversation-markdown';
 import {
-  resolveWorkbenchAnchor,
   revealWorkbenchAnchor,
-  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
   type WorkbenchAnchorRect,
 } from '../../../renderer/workbench/host/workbench-anchor-bridge';
+import { useWorkbenchAnchorRects } from './use-workbench-anchor-rects';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];
@@ -312,64 +311,16 @@ export function AttachmentHost({
   sidebarOpen,
   onSidebarOpenChange,
 }: AttachmentHostProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const [activeBody, setActiveBody] = useState<JsonValue>();
   const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
   const focusTimerRef = useRef<number | undefined>(undefined);
-  const [anchorRects, setAnchorRects] = useState<
-    ReadonlyMap<string, WorkbenchAnchorRect>
-  >(
-    new Map(),
-  );
   const [bodies, setBodies] = useState<ReadonlyMap<string, JsonValue>>(
     new Map(),
   );
   const [collapsedAttachmentIds, setCollapsedAttachmentIds] = useState<
     ReadonlySet<string>
   >(new Set());
-  const [hostSize, setHostSize] = useState<{
-    readonly width: number;
-    readonly height: number;
-  }>({ width: 0, height: 0 });
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-
-    const update = () => {
-      const next = new Map<string, WorkbenchAnchorRect>();
-      const hostRect = host.getBoundingClientRect();
-      setHostSize({ width: hostRect.width, height: hostRect.height });
-      for (const attachment of attachments) {
-        const rect = resolveWorkbenchAnchor(assetId, attachment.target);
-        if (rect) {
-          next.set(attachment.id, {
-            ...rect,
-            left: rect.left - hostRect.left,
-            top: rect.top - hostRect.top,
-          });
-        }
-      }
-      setAnchorRects(next);
-    };
-
-    update();
-    window.addEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
-    window.addEventListener('resize', update);
-    const observedContainer = host.parentElement ?? host;
-    const mutationObserver = new MutationObserver(update);
-    mutationObserver.observe(observedContainer, { childList: true, subtree: true });
-    const resizeObserver = new ResizeObserver(update);
-    resizeObserver.observe(observedContainer);
-    return () => {
-      window.removeEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
-      window.removeEventListener('resize', update);
-      mutationObserver.disconnect();
-      resizeObserver.disconnect();
-    };
-  }, [assetId, attachments]);
-
   useEffect(() => {
     let cancelled = false;
     const next = new Map<string, JsonValue>();
@@ -448,9 +399,20 @@ export function AttachmentHost({
     }
     return [...groups.values()];
   }, [attachments]);
+  const anchorEntries = useMemo(
+    () => markerGroups.map((group) => {
+      const attachment = group.at(-1)!;
+      return { key: attachment.id, target: attachment.target };
+    }),
+    [markerGroups],
+  );
+  const { hostRef, anchorRects, hostSize } = useWorkbenchAnchorRects(
+    assetId,
+    anchorEntries,
+  );
 
   const revealAttachment = useCallback((attachment: AssetAttachment) => {
-    void revealWorkbenchAnchor(assetId, attachment.target).catch(() => undefined);
+    revealWorkbenchAnchor(assetId, attachment.target);
     setFocusedAttachmentId(attachment.id);
     onSidebarOpenChange(false);
     if (focusTimerRef.current !== undefined) {

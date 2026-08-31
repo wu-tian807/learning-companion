@@ -29,7 +29,6 @@ import { storeGenerationPreparedDataMigration } from './migrations/0021-store-ge
 import { retireLegacyGenerationPreparedDataMigration } from './migrations/0022-retire-legacy-generation-prepared-data';
 import { createAssetFoldersMigration } from './migrations/0023-create-asset-folders';
 import { createProjectConversationsMigration } from './migrations/0024-create-project-conversations';
-import { backfillConversationContextSourcesMigration } from './migrations/0025-backfill-conversation-context-sources';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetFolderSchema from './schema/asset-folders';
@@ -73,7 +72,6 @@ const migrations: readonly DatabaseMigration[] = [
   retireLegacyGenerationPreparedDataMigration,
   createAssetFoldersMigration,
   createProjectConversationsMigration,
-  backfillConversationContextSourcesMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,

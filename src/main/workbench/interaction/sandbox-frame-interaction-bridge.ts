@@ -183,8 +183,6 @@ export class SandboxFrameInteractionBridge
     if (!activeBinding) {
       return;
     }
-    const transport = activeBinding.binding.payload;
-    if (!isSandboxFrameTransportBindingPayload(transport)) return;
 
     for (const adapter of activeBinding.adapters) {
       if (!adapter.triggers.includes(trigger)) {
@@ -205,7 +203,6 @@ export class SandboxFrameInteractionBridge
           sessionId: activeBinding.sessionId,
           workbenchId: activeBinding.workbenchId,
           trigger,
-          rootUrl: transport.rootUrl,
           frame,
           source,
         });

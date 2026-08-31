@@ -17,18 +17,15 @@ import {
   EPUB_DEFAULT_EXPLANATION_QUESTION,
   EPUB_EXPLANATION_ATTACHMENT_TYPE,
   EPUB_EXPLANATION_ATTACHMENT_VERSION,
-  epubExplanationMarkerColor,
   isEpubCfiRangeTarget,
   isEpubExplanationMetadata,
   type CreateEpubExplanationRequest,
   type EpubExplanationAttachmentView,
   type EpubExplanationEvent,
   type EpubExplanationIdRequest,
-  type EpubExplanationMetadata,
   type EpubExplanationTaskView,
   type EpubExplanationView,
   type ListEpubExplanationsRequest,
-  type UpdateEpubExplanationMarkerColorRequest,
 } from './shared';
 import {
   WorkbenchConversationInstruction,
@@ -55,21 +52,15 @@ export interface EpubExplanationServiceApi {
   create(request: CreateEpubExplanationRequest): Promise<EpubExplanationView>;
   retry(request: EpubExplanationIdRequest): Promise<EpubExplanationView>;
   delete(request: EpubExplanationIdRequest): Promise<void>;
-  updateMarkerColor(
-    request: UpdateEpubExplanationMarkerColorRequest,
-  ): Promise<EpubExplanationAttachmentView>;
   subscribe(listener: EpubExplanationListener): () => void;
   dispose(): void;
 }
 
-type EpubExplanationAttachmentRecord = AssetAttachment & {
-  readonly target: EpubExplanationAttachmentView['target'];
-  readonly metadata: EpubExplanationMetadata;
-};
-
 function isExplanationAttachment(
   attachment: AssetAttachment,
-): attachment is EpubExplanationAttachmentRecord {
+): attachment is AssetAttachment & {
+  readonly target: EpubExplanationAttachmentView['target'];
+} {
   return (
     attachment.typeId === EPUB_EXPLANATION_ATTACHMENT_TYPE &&
     attachment.typeVersion === EPUB_EXPLANATION_ATTACHMENT_VERSION &&
@@ -88,7 +79,9 @@ function sameTarget(
 
 export class EpubExplanationService implements EpubExplanationServiceApi {
   private readonly projection: WorkbenchConversationAttachmentProjection<
-    EpubExplanationAttachmentRecord,
+    AssetAttachment & {
+      readonly target: EpubExplanationAttachmentView['target'];
+    },
     EpubExplanationTaskView,
     EpubExplanationAttachmentView,
     EpubExplanationEvent
@@ -100,7 +93,9 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     private readonly assets: AssetLookup,
   ) {
     this.projection = new WorkbenchConversationAttachmentProjection<
-      EpubExplanationAttachmentRecord,
+      AssetAttachment & {
+        readonly target: EpubExplanationAttachmentView['target'];
+      },
       EpubExplanationTaskView,
       EpubExplanationAttachmentView,
       EpubExplanationEvent
@@ -232,28 +227,6 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     await this.attachments.delete(current.projectId, current.id);
   }
 
-  async updateMarkerColor(
-    request: UpdateEpubExplanationMarkerColorRequest,
-  ): Promise<EpubExplanationAttachmentView> {
-    const current = await this.requireAttachment({
-      ...request,
-      kind: 'attachment',
-    });
-    const updated = await this.attachments.update({
-      projectId: current.projectId,
-      attachmentId: current.id,
-      metadata: {
-        format: 'learning-companion/epub-explanation',
-        version: 1,
-        markerColor: request.markerColor,
-      },
-    });
-    if (!isExplanationAttachment(updated)) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-    return this.toAttachmentView(updated);
-  }
-
   subscribe(listener: EpubExplanationListener): () => void {
     return this.projection.subscribe(listener);
   }
@@ -289,7 +262,9 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   }
 
   private async requireAttachment(request: EpubExplanationIdRequest): Promise<
-    EpubExplanationAttachmentRecord
+    AssetAttachment & {
+      readonly target: EpubExplanationAttachmentView['target'];
+    }
   > {
     this.requireAsset(request.projectId, request.assetId);
     const attachment = await this.attachments.get(request.explanationId);
@@ -356,7 +331,6 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       assetId: instruction.assetId,
       target: conversationContext.target,
       status: status === 'failed' ? 'failed' : 'pending',
-      markerColor: 'blue',
       ...(snapshot.failure ? { failureMessage: snapshot.failure.message } : {}),
       createdTime: snapshot.createdTime,
       updatedTime: snapshot.updatedTime,
@@ -364,7 +338,9 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
   }
 
   private async toAttachmentView(
-    attachment: EpubExplanationAttachmentRecord,
+    attachment: AssetAttachment & {
+      readonly target: EpubExplanationAttachmentView['target'];
+    },
   ): Promise<EpubExplanationAttachmentView> {
     if (!attachment.content) throw new AppError('DATA_INTEGRITY_ERROR');
     const answer = await this.attachments.readTextContent(
@@ -380,7 +356,6 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
       target: attachment.target,
       status: 'completed',
       answer,
-      markerColor: epubExplanationMarkerColor(attachment.metadata),
       createdTime: attachment.createdTime,
       updatedTime: attachment.updatedTime,
     });

@@ -5,9 +5,14 @@ import { userMessageFromError } from '../../shared/ipc-error';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
+import {
+  createProjectConversationContribution,
+  PROJECT_CONVERSATION_OWNER_ID,
+} from '../conversation/project-conversation-contribution';
 import { GenerationCenter } from '../generation/GenerationCenter';
 import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
+import { ProjectConversationHistoryProvider } from '../conversation/ProjectConversationHistoryProvider';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
@@ -54,18 +59,19 @@ export function ProjectPage({
   onBack,
   onOpenSettings,
 }: ProjectPageProps) {
+  const projectConversationOwnerId = `${PROJECT_CONVERSATION_OWNER_ID}:${project.id}`;
   const conversationHistoryStore = useMemo(
     () => createProjectConversationHistoryStore({ projectId: project.id }),
     [project.id],
   );
-  const conversationRuntime = useMemo(
-    () => new WorkbenchConversationRuntime(),
-    [],
-  );
-  useEffect(
-    () => () => conversationRuntime.dispose(),
-    [conversationRuntime],
-  );
+  const conversationRuntime = useMemo(() => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register(
+      projectConversationOwnerId,
+      createProjectConversationContribution(),
+    );
+    return runtime;
+  }, [projectConversationOwnerId]);
   const conversationSnapshot =
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
@@ -174,15 +180,6 @@ export function ProjectPage({
       }
     }
   }, [project.id]);
-  const selectConversationAsset = useCallback((assetId: string) => {
-    if (
-      session.loadState.kind !== 'ready' ||
-      !session.loadState.assets.some((asset) => asset.id === assetId)
-    ) {
-      throw new Error('引用的资料已不存在，无法定位原文。');
-    }
-    session.selectAsset(assetId);
-  }, [session]);
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     closeRight();
@@ -222,7 +219,7 @@ export function ProjectPage({
       return;
     }
 
-    conversationRuntime.open();
+    conversationRuntime.open({ ownerId: projectConversationOwnerId });
     openRight('conversation');
   }, [
     conversationRuntime,
@@ -230,6 +227,7 @@ export function ProjectPage({
     dismissConversationPanel,
     layout.rightPanel,
     openRight,
+    projectConversationOwnerId,
   ]);
   const closeConversationPanel = useCallback(() => {
     dismissConversationPanel();
@@ -296,6 +294,8 @@ export function ProjectPage({
     layout.rightPanel,
     openRight,
   ]);
+
+  useEffect(() => () => conversationRuntime.dispose(), [conversationRuntime]);
 
   return (
     <main
@@ -365,7 +365,8 @@ export function ProjectPage({
       </header>
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
-        <WorkbenchRuntimeProvider onError={setError}>
+        <ProjectConversationHistoryProvider store={conversationHistoryStore}>
+          <WorkbenchRuntimeProvider onError={setError}>
             <AssetSelectionCoordinatorProvider
               coordinator={assetOperations.selectionCoordinator}
             >
@@ -462,9 +463,9 @@ export function ProjectPage({
                 conversation={
                   <ConversationPanelHost
                     projectId={project.id}
+                    assetId={assetOperations.selectedAsset?.id}
                     historyStore={conversationHistoryStore}
                     onClose={closeConversationPanel}
-                    onSelectAsset={selectConversationAsset}
                     onOpenSettings={onOpenSettings}
                     onError={setError}
                   />
@@ -500,7 +501,8 @@ export function ProjectPage({
               />
               </section>
             </AssetSelectionCoordinatorProvider>
-        </WorkbenchRuntimeProvider>
+          </WorkbenchRuntimeProvider>
+        </ProjectConversationHistoryProvider>
       </WorkbenchConversationRuntimeProvider>
 
       {dragging && (

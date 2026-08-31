@@ -31,8 +31,6 @@ describe('ProjectHeaderActions', () => {
     );
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('role="tooltip"');
-    expect(markup).toContain('peer-focus-visible:opacity-100');
-    expect(markup).not.toContain('group-focus-within:opacity-100');
     expect(markup).toContain('aria-label="打开 AI 问答"');
     expect(markup).not.toContain('data-project-ai-context-actions');
   });

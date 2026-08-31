@@ -35,6 +35,7 @@ import type { JsonValue } from "../shared/workbench/protocol";
 import type {
   ConversationRecord,
   DeleteProjectConversationRequest,
+  ImportProjectConversationsRequest,
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "../shared/project-conversations";
@@ -234,6 +235,11 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   saveProjectConversation: (request: SaveProjectConversationRequest) =>
     invoke<ConversationRecord[]>(
       IPC_CHANNELS.saveProjectConversation,
+      request,
+    ),
+  importProjectConversations: (request: ImportProjectConversationsRequest) =>
+    invoke<ConversationRecord[]>(
+      IPC_CHANNELS.importProjectConversations,
       request,
     ),
   deleteProjectConversation: (request: DeleteProjectConversationRequest) =>

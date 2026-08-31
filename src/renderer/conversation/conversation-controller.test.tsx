@@ -8,9 +8,7 @@ import type {
   GenerationTaskView,
 } from '../../shared/generation-tasks';
 import type {
-  ConversationContextAttachment,
   ConversationHistoryStore,
-  ConversationLaunchRequest,
   ConversationRecord,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
@@ -79,39 +77,13 @@ function createContribution(input: {
   readonly onContextReleased?: WorkbenchConversationContribution['onContextReleased'];
 } = {}): WorkbenchConversationContribution {
   return {
+    id: 'test.question',
+    workbenchId: 'test',
     contextProviderId: 'test.context',
     sourceAssetMode: 'reference',
+    title: '测试问答',
+    emptyLabel: 'empty',
     onContextReleased: input.onContextReleased,
-  };
-}
-
-function createContextAttachment(
-  context: ConversationContextAttachment['context'],
-  contribution = createContribution(),
-): ConversationContextAttachment {
-  return {
-    assetId: 'asset',
-    contribution,
-    ...(context === undefined ? {} : { context }),
-  };
-}
-
-function createContextLaunch(
-  context: ConversationContextAttachment['context'],
-  input: Omit<
-    ConversationLaunchRequest,
-    'context' | 'contextSource'
-  >,
-  contribution = createContribution(),
-): ConversationLaunchRequest {
-  const attachment = createContextAttachment(context, contribution);
-  return {
-    ...input,
-    contextSource: {
-      assetId: attachment.assetId,
-      contribution: attachment.contribution,
-    },
-    ...(context === undefined ? {} : { context }),
   };
 }
 
@@ -147,12 +119,15 @@ describe('shared Conversation controller', () => {
   });
 
   function render(input: Partial<ControllerInput> = {}) {
+    const contribution = input.contribution ?? createContribution();
     act(() => {
       root.render(
         <Harness
           input={{
             open: true,
             projectId: 'project',
+            assetId: 'asset',
+            contribution,
             historyStore: createMemoryHistory(),
             taskClient: client,
             createId: () => `id-${++id}`,
@@ -219,65 +194,6 @@ describe('shared Conversation controller', () => {
     );
   });
 
-  it('uses Workbench context for only the attached turn and sends the next message through Project Conversation', async () => {
-    const requests: Array<
-      Parameters<ConversationTaskClient['start']>[0]
-    > = [];
-    let taskIndex = 0;
-    client.start = vi.fn(async (request) => {
-      requests.push(request);
-      taskIndex += 1;
-      return {
-        taskId: `task-${taskIndex}`,
-        snapshot: task(`task-${taskIndex}`),
-      };
-    });
-    const context = { target: { scope: 'asset' } };
-    const contextualContribution = createContribution();
-    render();
-
-    act(() =>
-      latest.actions.submit(
-        '解释这段内容',
-        createContextAttachment(context, contextualContribution),
-      ),
-    );
-    await flush();
-    emit({
-      type: 'task-completed',
-      snapshot: task('task-1', 'completed', {
-        answer: '上下文回答',
-        providerId: 'codex',
-        modelId: 'gpt',
-      }),
-    });
-    act(() => latest.actions.submit('继续说明一个普通问题'));
-    await flush();
-
-    expect(requests[0]).toMatchObject({
-      instruction: {
-        contextProviderId: 'test.context',
-        assetId: 'asset',
-        context,
-      },
-      assetReferences: {
-        source: [{ assetId: 'asset' }],
-      },
-    });
-    expect(requests[1]).toMatchObject({
-      instruction: {
-        contextProviderId: 'builtin.project.conversation',
-        question: '继续说明一个普通问题',
-      },
-      assetReferences: {},
-    });
-    expect(
-      latest.state.conversation.messages.filter(
-        (message) => message.role === 'user',
-      )[1]?.contextSource,
-    ).toBeUndefined();
-  });
-
   it('rolls back an unstarted optimistic message and shows a configurable Provider error', async () => {
     const context = { target: { scope: 'asset' } };
     const onContextReleased = vi.fn();
@@ -289,18 +205,14 @@ describe('shared Conversation controller', () => {
         retryable: true,
       };
     });
-    const attachment = createContextAttachment(
-      context,
-      createContribution({ onContextReleased }),
-    );
-    render();
+    render({ contribution: createContribution({ onContextReleased }) });
 
-    act(() => latest.actions.submit('问题', attachment));
+    act(() => latest.actions.submit('问题', context));
     await flush();
 
     expect(latest.state.conversation.messages).toEqual([]);
     expect(latest.state.draft).toBe('问题');
-    expect(latest.state.pendingContext).toEqual(attachment);
+    expect(latest.state.pendingContext).toEqual(context);
     expect(latest.state.error).toEqual({
       code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
       message: '请先配置模型',
@@ -324,12 +236,9 @@ describe('shared Conversation controller', () => {
         },
       },
     };
-    render({ historyStore });
+    render({ historyStore, contribution: createContribution() });
 
-    act(() => latest.actions.submit(
-      '解释这个区域',
-      createContextAttachment(context),
-    ));
+    act(() => latest.actions.submit('解释这个区域', context));
     await flush();
 
     expect(historyStore.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -351,14 +260,9 @@ describe('shared Conversation controller', () => {
       snapshot: GenerationTaskView;
     }>((resolve) => { resolveStart = resolve; }));
     const onContextReleased = vi.fn();
-    const context = { target: { scope: 'asset' } };
-    const attachment = createContextAttachment(
-      context,
-      createContribution({ onContextReleased }),
-    );
-    render();
+    render({ contribution: createContribution({ onContextReleased }) });
 
-    act(() => latest.actions.submit('问题', attachment));
+    act(() => latest.actions.submit('问题', { target: { scope: 'asset' } }));
     act(() => latest.actions.cancel());
     expect(client.cancel).not.toHaveBeenCalled();
 
@@ -384,24 +288,30 @@ describe('shared Conversation controller', () => {
       }),
     );
     const originalRelease = vi.fn();
+    const replacementRelease = vi.fn();
     const historyStore = createMemoryHistory();
     const context = { target: { scope: 'asset' } };
-    const attachment = createContextAttachment(
-      context,
-      createContribution({
+    render({
+      contribution: createContribution({
         onContextReleased: originalRelease,
       }),
-    );
-    render({ historyStore });
+      historyStore,
+    });
 
-    act(() => latest.actions.submit('问题', attachment));
-    render({ historyStore });
+    act(() => latest.actions.submit('问题', context));
+    render({
+      contribution: createContribution({
+        onContextReleased: replacementRelease,
+      }),
+      historyStore,
+    });
     await act(async () => {
       resolveStart({ taskId: 'task-1', snapshot: task('task-1') });
       await Promise.resolve();
     });
 
     expect(originalRelease).toHaveBeenCalledWith(context);
+    expect(replacementRelease).not.toHaveBeenCalled();
   });
 
   it('does not leak an early Stop request into the next submission when start fails', async () => {
@@ -489,12 +399,7 @@ describe('shared Conversation controller', () => {
     render();
 
     const context = { target: { scope: 'asset' as const } };
-    act(() =>
-      latest.actions.submit(
-        '请解释这段内容',
-        createContextAttachment(context),
-      ),
-    );
+    act(() => latest.actions.submit('请解释这段内容', context));
     await flush();
     emit({
       type: 'task-completed',
@@ -561,40 +466,6 @@ describe('shared Conversation controller', () => {
     expect(
       latest.state.conversation.messages.at(-1)?.reanswerBackup,
     ).toBeUndefined();
-  });
-
-  it('does not guess a Workbench source for unattributed context during re-answer', () => {
-    const saved: ConversationRecord = {
-      id: 'legacy-context',
-      title: '旧上下文',
-      messages: [
-        {
-          id: 'question',
-          role: 'user',
-          text: '解释旧选区',
-          createdTime: 1,
-          context: { legacy: true },
-        },
-        {
-          id: 'answer',
-          role: 'assistant',
-          text: '旧回答',
-          createdTime: 2,
-          replyToMessageId: 'question',
-        },
-      ],
-      createdTime: 1,
-      updatedTime: 2,
-    };
-    render();
-    act(() => latest.actions.restore(saved));
-
-    act(() => latest.actions.reanswer('answer'));
-
-    expect(client.start).not.toHaveBeenCalled();
-    expect(latest.state.error?.message).toBe(
-      '这条旧问答缺少上下文来源，请从原文重新发起。',
-    );
   });
 
   it('cancels the replacement Task when Stop is pressed before re-answer start returns', async () => {
@@ -786,11 +657,9 @@ describe('shared Conversation controller', () => {
     const onLaunchConsumed = vi.fn();
     const context = { target: { scope: 'saved-selection' } };
     render({
+      contribution: createContribution(),
       historyStore,
-      launchRequest: createContextLaunch(context, {
-        id: 1,
-        conversationId: saved.id,
-      }),
+      launchRequest: { id: 1, conversationId: saved.id, context },
       onLaunchConsumed,
     });
     expect(latest.state.conversation.id).not.toBe(saved.id);
@@ -809,19 +678,17 @@ describe('shared Conversation controller', () => {
   it('reuses an exact current identity and creates context-bound fallbacks only when unavailable', async () => {
     const historyStore = createMemoryHistory();
     const contribution = createContribution();
-    render({ historyStore });
+    render({ contribution, historyStore });
     await flush();
     const previousConversationId = latest.state.conversation.id;
     render({
+      contribution,
       historyStore,
-      launchRequest: createContextLaunch(
-        { target: { scope: 'must-not-rebind' } },
-        {
+      launchRequest: {
         id: 1,
         conversationId: previousConversationId,
-        },
-        contribution,
-      ),
+        context: { target: { scope: 'must-not-rebind' } },
+      },
     });
     await flush();
     expect(latest.state.conversation.id).toBe(previousConversationId);
@@ -830,47 +697,42 @@ describe('shared Conversation controller', () => {
     const context = { target: { scope: 'missing-history-fallback' } };
 
     render({
+      contribution,
       historyStore,
-      launchRequest: createContextLaunch(context, {
+      launchRequest: {
         id: 2,
         conversationId: 'missing-conversation',
-      }, contribution),
+        context,
+      },
     });
     await flush();
 
     expect(latest.state.conversation.id).not.toBe(previousConversationId);
-    expect(latest.state.pendingContext).toEqual(
-      createContextAttachment(context, contribution),
-    );
+    expect(latest.state.pendingContext).toEqual(context);
 
     const unavailableConversationFallbackId = latest.state.conversation.id;
     render({
+      contribution,
       historyStore,
-      launchRequest: createContextLaunch(
-        { target: { scope: 'unlinked-marker' } },
-        {
+      launchRequest: {
         id: 3,
         fallbackToNewConversation: true,
-        },
-        contribution,
-      ),
+        context: { target: { scope: 'unlinked-marker' } },
+      },
     });
     await flush();
     expect(latest.state.conversation.id).not.toBe(
       unavailableConversationFallbackId,
     );
-    expect(latest.state.pendingContext).toEqual(
-      createContextAttachment(
-        { target: { scope: 'unlinked-marker' } },
-        contribution,
-      ),
-    );
+    expect(latest.state.pendingContext).toEqual({
+      target: { scope: 'unlinked-marker' },
+    });
   });
 
   it('keeps a context launch in the currently selected conversation', async () => {
     const historyStore = createMemoryHistory();
     const contribution = createContribution();
-    render({ historyStore });
+    render({ contribution, historyStore });
     await flush();
 
     act(() => latest.actions.submit('当前会话中的问题'));
@@ -889,20 +751,15 @@ describe('shared Conversation controller', () => {
     const onLaunchConsumed = vi.fn();
 
     render({
+      contribution,
       historyStore,
-      launchRequest: createContextLaunch(
-        context,
-        { id: 1 },
-        contribution,
-      ),
+      launchRequest: { id: 1, context },
       onLaunchConsumed,
     });
     await flush();
 
     expect(latest.state.conversation.id).toBe(selectedConversationId);
-    expect(latest.state.pendingContext).toEqual(
-      createContextAttachment(context, contribution),
-    );
+    expect(latest.state.pendingContext).toEqual(context);
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
   });
 
@@ -910,15 +767,10 @@ describe('shared Conversation controller', () => {
     const context = { target: { scope: 'current-page' } };
     const historyStore = createMemoryHistory();
     const contribution = createContribution();
-    render({ historyStore });
+    render({ contribution, historyStore });
     await flush();
 
-    act(() =>
-      latest.actions.submit(
-        '旧会话中的问题',
-        createContextAttachment(context, contribution),
-      ),
-    );
+    act(() => latest.actions.submit('旧会话中的问题', context));
     await flush();
     emit({
       type: 'task-completed',
@@ -936,25 +788,22 @@ describe('shared Conversation controller', () => {
     expect(selectedConversationId).not.toBe(previousConversationId);
 
     render({
+      contribution,
       historyStore,
-      launchRequest: createContextLaunch(
-        context,
-        { id: 1 },
-        contribution,
-      ),
+      launchRequest: { id: 1, context },
     });
     await flush();
 
     expect(latest.state.conversation.id).toBe(selectedConversationId);
-    expect(latest.state.pendingContext).toEqual(
-      createContextAttachment(context, contribution),
-    );
+    expect(latest.state.pendingContext).toEqual(context);
   });
 
   it('does not reload history when the persistence reporter identity changes', async () => {
     const historyStore = createMemoryHistory();
+    const contribution = createContribution();
 
     render({
+      contribution,
       historyStore,
       onPersistenceError: vi.fn(),
     });
@@ -963,6 +812,7 @@ describe('shared Conversation controller', () => {
     expect(latest.state.historyLoading).toBe(false);
 
     render({
+      contribution,
       historyStore,
       onPersistenceError: vi.fn(),
     });
@@ -983,7 +833,7 @@ describe('shared Conversation controller', () => {
       updatedTime: 2,
     };
     const historyStore = createMemoryHistory([saved]);
-    render({ historyStore });
+    render({ contribution: createContribution(), historyStore });
     await flush();
 
     act(() => latest.actions.restore(saved));
@@ -1011,7 +861,7 @@ describe('shared Conversation controller', () => {
       }),
       remove: vi.fn(async () => []),
     };
-    render({ historyStore });
+    render({ contribution: createContribution(), historyStore });
 
     act(() => latest.actions.submit('问题'));
     await flush();
@@ -1061,7 +911,7 @@ describe('shared Conversation controller', () => {
         .mockRejectedValueOnce(new Error('remove failed'))
         .mockResolvedValueOnce([]),
     };
-    render({ historyStore });
+    render({ contribution: createContribution(), historyStore });
     await flush();
     act(() => latest.actions.restore(saved));
 

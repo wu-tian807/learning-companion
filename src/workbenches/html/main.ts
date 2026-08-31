@@ -38,7 +38,7 @@ function createResult(payload: JsonValue): WorkbenchCommandResult {
 
 function anchorFrameTarget(target: {
   readonly anchorPayload: JsonValue;
-}, rootUrl: string): { readonly frameUrl: string } | undefined {
+}): { readonly frameUrl: string } | undefined {
   const payload = target.anchorPayload;
 
   if (
@@ -50,27 +50,15 @@ function anchorFrameTarget(target: {
   }
   const record = payload as { readonly frameUrl?: JsonValue };
 
-  if (typeof record.frameUrl !== 'string' || record.frameUrl === rootUrl) {
-    return undefined;
-  }
-  try {
-    const persisted = new URL(record.frameUrl);
-    const current = new URL(rootUrl);
-    const isManagedRoot = (url: URL) =>
-      url.protocol === 'learning-content:' &&
-      url.hostname === 'resource' &&
-      /^\/[^/]+\/?$/u.test(url.pathname);
-    if (isManagedRoot(persisted) && isManagedRoot(current)) return undefined;
-  } catch {
-    // Non-URL frame locators are passed through and rejected by the bridge.
-  }
-  return { frameUrl: record.frameUrl };
+  return typeof record.frameUrl === 'string'
+    ? { frameUrl: record.frameUrl }
+    : undefined;
 }
 
 export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   readonly manifest = htmlWorkbenchManifest;
   readonly facilityAdapters = createHtmlMainFacilityAdapters();
-  private readonly sessionRootUrls = new Map<string, string>();
+  private readonly sessions = new Set<string>();
 
   constructor(
     private readonly resourceService: ContentResourceServiceApi,
@@ -88,7 +76,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
     ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    if (this.sessionRootUrls.has(context.sessionId)) {
+    if (this.sessions.has(context.sessionId)) {
       throw new AppError('REGISTRATION_CONFLICT');
     }
 
@@ -97,7 +85,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
       handle,
       'text/html',
     );
-    this.sessionRootUrls.set(context.sessionId, contentUrl);
+    this.sessions.add(context.sessionId);
 
     return {
       payload: { contentUrl },
@@ -126,8 +114,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
     context: Parameters<MainWorkbenchProvider['command']>[0],
     command: Parameters<MainWorkbenchProvider['command']>[1],
   ): Promise<WorkbenchCommandResult> {
-    const rootUrl = this.sessionRootUrls.get(context.sessionId);
-    if (!rootUrl) {
+    if (!this.sessions.has(context.sessionId)) {
       throw new AppError('WORKBENCH_SESSION_NOT_FOUND');
     }
 
@@ -152,7 +139,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
       const result = await this.frameScriptExecutor.executeJavaScript(
         context.sessionId,
         createHtmlAnchorHighlightFrameScript(command.payload),
-        anchorFrameTarget(command.payload.target, rootUrl),
+        anchorFrameTarget(command.payload.target),
       );
       if (!isHtmlAnchorCommandResult(result)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
@@ -167,7 +154,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
       const result = await this.frameScriptExecutor.executeJavaScript(
         context.sessionId,
         createHtmlAnchorClearFrameScript(command.payload),
-        anchorFrameTarget(command.payload.target, rootUrl),
+        anchorFrameTarget(command.payload.target),
       );
       if (!isHtmlAnchorCommandResult(result)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
@@ -181,7 +168,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
   async close(
     context: Parameters<MainWorkbenchProvider['close']>[0],
   ): Promise<void> {
-    if (this.sessionRootUrls.delete(context.sessionId)) {
+    if (this.sessions.delete(context.sessionId)) {
       this.resourceService.revokeSession(context.sessionId);
     }
   }

@@ -1,28 +1,16 @@
-import type { ConversationMessageContextSource } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
-import {
-  revealWorkbenchAnchor,
-  waitForWorkbenchAnchorController,
-} from '../workbench/host/workbench-anchor-bridge';
 import type {
-  ActiveWorkbenchConversationContribution,
   ConversationLaunchRequest,
   WorkbenchConversationContribution,
   WorkbenchConversationRuntimeSnapshot,
 } from './conversation-contracts';
-import {
-  conversationContextSourceRevision,
-  conversationContextTarget,
-} from './conversation-reference';
 
-interface ActiveRegistration {
+interface RegisteredContribution {
   readonly token: symbol;
-  readonly ownerId: string;
-  readonly source: ActiveWorkbenchConversationContribution;
+  readonly contribution: WorkbenchConversationContribution;
 }
 
 export interface OpenWorkbenchConversationInput {
-  /** Present only when a Workbench explicitly attaches its provider/context. */
   readonly ownerId?: string;
   readonly conversationId?: string;
   readonly fallbackToNewConversation?: boolean;
@@ -31,22 +19,10 @@ export interface OpenWorkbenchConversationInput {
   readonly submit?: boolean;
 }
 
-function matchesSource(
-  active: ActiveWorkbenchConversationContribution | undefined,
-  source: ConversationMessageContextSource | undefined,
-): active is ActiveWorkbenchConversationContribution {
-  return Boolean(
-    active &&
-      source?.assetId === active.assetId &&
-      source.contextProviderId === active.contribution.contextProviderId,
-  );
-}
-
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
-  private activeRegistration: ActiveRegistration | undefined;
+  private readonly contributions = new Map<string, RegisteredContribution>();
   private launchId = 0;
-  private revealAbortController: AbortController | undefined;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
     busy: false,
@@ -61,45 +37,45 @@ export class WorkbenchConversationRuntime {
 
   register(
     ownerId: string,
-    assetId: string,
     contribution: WorkbenchConversationContribution,
   ): () => void {
     const normalizedOwnerId = ownerId.trim();
-    const normalizedAssetId = assetId.trim();
     if (
       !normalizedOwnerId ||
-      !normalizedAssetId ||
-      !contribution.contextProviderId.trim()
+      !contribution.id.trim() ||
+      !contribution.workbenchId.trim()
     ) {
-      throw new Error('Workbench Conversation context contribution 无效');
+      throw new Error('Workbench Conversation contribution 无效');
     }
-
     const token = Symbol(normalizedOwnerId);
-    const source = Object.freeze({
-      assetId: normalizedAssetId,
-      contribution,
-    });
-    this.activeRegistration = Object.freeze({
-      token,
-      ownerId: normalizedOwnerId,
-      source,
-    });
-    this.update({ ...this.snapshot, active: source });
+    const activeOwnerId = this.snapshot.active?.ownerId;
+    this.contributions.delete(normalizedOwnerId);
+    this.contributions.set(normalizedOwnerId, { token, contribution });
+    if (!activeOwnerId || activeOwnerId === normalizedOwnerId) {
+      this.update({
+        ...this.snapshot,
+        active: { ownerId: normalizedOwnerId, contribution },
+      });
+    }
 
     return () => {
       queueMicrotask(() => {
-        if (this.activeRegistration?.token !== token) return;
-        this.activeRegistration = undefined;
-        this.launchId += 1;
+        const current = this.contributions.get(normalizedOwnerId);
+        if (current?.token !== token) return;
+        this.contributions.delete(normalizedOwnerId);
+        if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
+        const fallback = this.contributions.entries().next().value as
+          | [string, RegisteredContribution]
+          | undefined;
         this.update({
-          panelOpen: this.snapshot.panelOpen,
-          busy: this.snapshot.busy,
-          ...(this.snapshot.panelOpen
+          panelOpen: false,
+          busy: false,
+          ...(fallback
             ? {
-                launchRequest: Object.freeze({
-                  id: this.launchId,
-                  clearContext: true,
-                }),
+                active: {
+                  ownerId: fallback[0],
+                  contribution: fallback[1].contribution,
+                },
               }
             : {}),
         });
@@ -108,16 +84,13 @@ export class WorkbenchConversationRuntime {
   }
 
   open(input: OpenWorkbenchConversationInput = {}): void {
-    const ownerId = input.ownerId?.trim();
-    const registration = this.activeRegistration;
-    if (ownerId && registration?.ownerId !== ownerId) {
-      throw new Error('当前 Workbench 没有注册 AI 问答上下文');
+    const active = input.ownerId
+      ? this.contributions.get(input.ownerId)?.contribution
+      : this.snapshot.active?.contribution;
+    if (!active) {
+      throw new Error('当前 Workbench 没有注册 AI 问答能力');
     }
-    if (input.context !== undefined && !ownerId) {
-      throw new Error('AI 问答上下文没有已注册的来源');
-    }
-
-    const contextSource = ownerId ? registration?.source : undefined;
+    const ownerId = input.ownerId ?? this.snapshot.active!.ownerId;
     this.launchId += 1;
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
@@ -127,20 +100,21 @@ export class WorkbenchConversationRuntime {
       ...(input.fallbackToNewConversation === true
         ? { fallbackToNewConversation: true }
         : {}),
-      ...(contextSource
-        ? { contextSource }
-        : { clearContext: true }),
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
     });
-    this.update({ ...this.snapshot, panelOpen: true, launchRequest });
+    this.update({
+      active: { ownerId, contribution: active },
+      panelOpen: true,
+      busy: this.snapshot.busy,
+      launchRequest,
+    });
   }
 
   close(): void {
     if (!this.snapshot.panelOpen) return;
-    this.cancelReveal();
-    this.update({ ...this.snapshot, panelOpen: false });
+    this.update({ ...this.snapshot, panelOpen: false, launchRequest: undefined });
   }
 
   consumeLaunchRequest(requestId: number): void {
@@ -148,72 +122,26 @@ export class WorkbenchConversationRuntime {
     this.update({ ...this.snapshot, launchRequest: undefined });
   }
 
-  setBusy(busy: boolean): void {
-    if (this.snapshot.busy === busy) return;
+  setBusy(ownerId: string, busy: boolean): void {
+    if (
+      this.snapshot.active?.ownerId !== ownerId ||
+      this.snapshot.busy === busy
+    ) {
+      return;
+    }
     this.update({ ...this.snapshot, busy });
   }
 
-  resolveContribution(
-    source: ConversationMessageContextSource | undefined,
-  ): WorkbenchConversationContribution | undefined {
-    const active = this.activeRegistration?.source;
-    return matchesSource(active, source) ? active.contribution : undefined;
-  }
-
-  async revealContext(
-    source: ConversationMessageContextSource,
-    context: JsonValue,
-    selectAsset: (assetId: string) => Promise<void> | void,
-    timeoutMs = 10_000,
-  ): Promise<void> {
-    if (!source.assetId) {
-      throw new Error('这条引用没有关联资料，无法定位原文。');
-    }
-    const target = conversationContextTarget(context);
-    if (!target) {
-      throw new Error('这条引用没有有效 Anchor，无法定位原文。');
-    }
-    this.cancelReveal();
-    const controller = new AbortController();
-    this.revealAbortController = controller;
-    try {
-      await selectAsset(source.assetId);
-      if (controller.signal.aborted) throw controller.signal.reason;
-      await waitForWorkbenchAnchorController(
-        source.assetId,
-        controller.signal,
-        timeoutMs,
-      );
-      if (controller.signal.aborted) throw controller.signal.reason;
-      await revealWorkbenchAnchor(
-        source.assetId,
-        target,
-        conversationContextSourceRevision(context),
-      );
-    } finally {
-      if (this.revealAbortController === controller) {
-        this.revealAbortController = undefined;
-      }
-    }
-  }
-
   dispose(): void {
-    this.cancelReveal();
-    this.activeRegistration = undefined;
+    this.contributions.clear();
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }
 
-  private cancelReveal(): void {
-    this.revealAbortController?.abort(
-      new DOMException('已切换到另一条引用。', 'AbortError'),
-    );
-    this.revealAbortController = undefined;
-  }
-
   private update(next: WorkbenchConversationRuntimeSnapshot): void {
     if (
-      this.snapshot.active === next.active &&
+      this.snapshot.active?.ownerId === next.active?.ownerId &&
+      this.snapshot.active?.contribution === next.active?.contribution &&
       this.snapshot.panelOpen === next.panelOpen &&
       this.snapshot.busy === next.busy &&
       this.snapshot.launchRequest === next.launchRequest

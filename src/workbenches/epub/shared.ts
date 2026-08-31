@@ -196,18 +196,6 @@ export function isEpubCfiRangeAnchorV1(
   );
 }
 
-export function isEpubCfiRangeTarget(
-  value: unknown,
-): value is EpubCfiRangeTarget {
-  return (
-    isRecord(value) &&
-    value.scope === 'content' &&
-    value.anchorType === EPUB_CFI_RANGE_ANCHOR_TYPE &&
-    value.anchorVersion === EPUB_CFI_RANGE_ANCHOR_VERSION &&
-    isEpubCfiRangeAnchorV1(value.anchorPayload)
-  );
-}
-
 export function createEpubCfiRangeTarget(
   anchor: EpubCfiRangeAnchorV1,
 ): EpubCfiRangeTarget {

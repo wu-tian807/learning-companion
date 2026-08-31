@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import {
   isConversationRecord,
   type DeleteProjectConversationRequest,
+  type ImportProjectConversationsRequest,
   type ProjectConversationProjectRequest,
   type SaveProjectConversationRequest,
 } from '../../shared/project-conversations';
@@ -41,6 +42,17 @@ function isDeleteRequest(
   );
 }
 
+function isImportRequest(
+  value: unknown,
+): value is ImportProjectConversationsRequest {
+  return (
+    isRecord(value) &&
+    isProjectRequest(value) &&
+    Array.isArray(value.conversations) &&
+    value.conversations.every(isConversationRecord)
+  );
+}
+
 function invalidRequest(): AppError {
   return new AppError('INVALID_IPC_REQUEST');
 }
@@ -63,6 +75,13 @@ export function registerProjectConversationHandlers(
     },
   );
   registerIpcHandler(
+    IPC_CHANNELS.importProjectConversations,
+    async (_event, request: unknown) => {
+      if (!isImportRequest(request)) throw invalidRequest();
+      return service.import(request.projectId, request.conversations);
+    },
+  );
+  registerIpcHandler(
     IPC_CHANNELS.deleteProjectConversation,
     async (_event, request: unknown) => {
       if (!isDeleteRequest(request)) throw invalidRequest();
@@ -74,5 +93,6 @@ export function registerProjectConversationHandlers(
 export function removeProjectConversationHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.listProjectConversations);
   ipcMain.removeHandler(IPC_CHANNELS.saveProjectConversation);
+  ipcMain.removeHandler(IPC_CHANNELS.importProjectConversations);
   ipcMain.removeHandler(IPC_CHANNELS.deleteProjectConversation);
 }

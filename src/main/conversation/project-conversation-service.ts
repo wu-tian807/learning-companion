@@ -1,5 +1,6 @@
 import {
   cloneConversationRecord,
+  cloneConversationRecords,
   type ConversationRecord,
 } from '../../shared/project-conversations';
 import { AppError } from '../errors/app-error';
@@ -11,6 +12,10 @@ export interface ProjectConversationServiceApi {
   save(
     projectId: string,
     conversation: ConversationRecord,
+  ): readonly ConversationRecord[];
+  import(
+    projectId: string,
+    conversations: readonly ConversationRecord[],
   ): readonly ConversationRecord[];
   remove(
     projectId: string,
@@ -49,6 +54,17 @@ export class ProjectConversationService
       cloneConversationRecord(conversation),
     );
     return this.database.list(normalizedProjectId);
+  }
+
+  import(
+    projectId: string,
+    conversations: readonly ConversationRecord[],
+  ): readonly ConversationRecord[] {
+    const normalizedProjectId = this.requireProject(projectId);
+    return this.database.import(
+      normalizedProjectId,
+      cloneConversationRecords(conversations),
+    );
   }
 
   remove(

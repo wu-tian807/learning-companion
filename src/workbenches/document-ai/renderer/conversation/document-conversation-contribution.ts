@@ -2,6 +2,7 @@ import type {
   ConversationAnswerActionPresentation,
   WorkbenchConversationContribution,
 } from '../../../../renderer/conversation/conversation-contracts';
+import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
@@ -21,6 +22,11 @@ export {
 interface DocumentConversationContributionBaseInput {
   readonly projectId: string;
   readonly assetId: string;
+  readonly workbenchId: string;
+  readonly contributionId: string;
+  readonly title?: string;
+  readonly emptyLabel?: string;
+  readonly contextLabel?: string;
   readonly onContextReleased?: (
     context: DocumentConversationContext | undefined,
   ) => void;
@@ -104,9 +110,37 @@ export function createDocumentConversationContribution(
       : undefined;
 
   const contribution: WorkbenchConversationContribution = {
+    id: input.contributionId,
+    workbenchId: input.workbenchId,
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'reference',
+    title: input.title ?? '资料问答',
+    emptyLabel:
+      input.emptyLabel ??
+      '选择资料中的内容后开始提问，也可以直接针对整份资料提问。',
+    inputPlaceholder: '输入问题…（Enter 发送 / Shift+Enter 换行）',
     isContext: isDocumentConversationContext,
+    describeContext(context) {
+      if (!isDocumentConversationContext(context)) {
+        return { label: input.contextLabel ?? '资料内容' };
+      }
+      return {
+        label: context.pageNumber
+          ? `第 ${context.pageNumber} 页`
+          : input.contextLabel ?? '资料内容',
+        ...(context.selectedText
+          ? { detail: context.selectedText }
+          : { detail: '已框选公式、图表或图片区域' }),
+        ...(context.previewDataUrl
+          ? { previewDataUrl: context.previewDataUrl }
+          : {}),
+      };
+    },
+    revealContext(context) {
+      if (isDocumentConversationContext(context)) {
+        revealWorkbenchAnchor(input.assetId, context.target);
+      }
+    },
     onContextReleased(context) {
       input.onContextReleased?.(
         isDocumentConversationContext(context) ? context : undefined,

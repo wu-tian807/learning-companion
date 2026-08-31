@@ -65,18 +65,6 @@ afterEach(async () => {
 });
 
 describe('ProjectConversationDatabase', () => {
-  it('creates the Project conversation table when upgrading schema 23', () => {
-    context.sqlite.exec(`
-      DROP TABLE project_conversations;
-      PRAGMA user_version = 23;
-    `);
-    context.close();
-
-    context = initializeDatabase(databaseFile);
-    conversations = new ProjectConversationDatabase(context);
-    expect(conversations.list('project-1')).toEqual([]);
-  });
-
   it('persists complete records, updates by stable id and ignores stale saves', () => {
     conversations.save('project-1', record('conversation', 5, '当前标题'));
 
@@ -112,19 +100,21 @@ describe('ProjectConversationDatabase', () => {
     ]);
   });
 
-  it('never moves a stable conversation id across Projects', () => {
+  it('imports a batch transactionally and never moves an id across Projects', () => {
     conversations.save('project-1', record('shared', 2));
 
     expect(() =>
-      conversations.save('project-2', record('shared', 4)),
+      conversations.import('project-2', [
+        record('new-record', 3),
+        record('shared', 4),
+      ]),
     ).toThrow();
     expect(conversations.list('project-2')).toEqual([]);
     expect(conversations.list('project-1')).toEqual([record('shared', 2)]);
   });
 
   it('removes one Project conversation and cascades all rows with Project deletion', () => {
-    conversations.save('project-1', record('one'));
-    conversations.save('project-1', record('two', 3));
+    conversations.import('project-1', [record('one'), record('two', 3)]);
     conversations.remove('project-1', 'one');
     expect(conversations.list('project-1').map(({ id }) => id)).toEqual([
       'two',

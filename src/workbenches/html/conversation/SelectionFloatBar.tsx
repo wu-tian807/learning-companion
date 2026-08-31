@@ -5,7 +5,7 @@
  * The selection rect is captured by the main-side probe inside the sandbox
  * frame (frame coordinates); the renderer cannot reach into the frame, so
  * this component positions itself at `iframe viewport offset + frame rect`
- * Position updates on scroll by
+ * — the same approach as AnchorHighlight. Position updates on scroll by
  * re-reading the iframe element's rect.
  */
 import { useEffect, useRef, useState } from 'react';

@@ -75,8 +75,7 @@ export interface HtmlDomElementV1 {
  * anchor, so click and drag selection share the same locator.
  */
 export interface HtmlDomAnchorV1 {
-  /** Omitted for the document root because its resource URL is session-local. */
-  readonly frameUrl?: string;
+  readonly frameUrl: string;
   readonly element: HtmlDomElementV1;
 }
 
@@ -200,7 +199,7 @@ export function isHtmlDomAnchorV1(
     Object.keys(value).every(
       (key) => key === 'frameUrl' || key === 'element',
     ) &&
-    (value.frameUrl === undefined || isBoundedText(value.frameUrl, 8_192)) &&
+    isBoundedText(value.frameUrl, 8_192) &&
     isHtmlDomElementV1(value.element)
   );
 }
@@ -381,7 +380,7 @@ export function createHtmlDomTarget(
     anchorType: HTML_DOM_ANCHOR_TYPE,
     anchorVersion: HTML_DOM_ANCHOR_VERSION,
     anchorPayload: {
-      ...(anchor.frameUrl ? { frameUrl: anchor.frameUrl } : {}),
+      frameUrl: anchor.frameUrl,
       element: {
         path: [...anchor.element.path],
         tagName: anchor.element.tagName,

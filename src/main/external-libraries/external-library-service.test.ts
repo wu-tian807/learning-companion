@@ -648,25 +648,15 @@ describe("ExternalLibraryService", () => {
     const downloadDirectory = dirname(
       download.mock.calls[0]![0].destinationPath,
     );
-    const cancelled = new Promise<void>((resolvePromise) => {
-      const unsubscribe = harness.service.subscribe((snapshot) => {
-        if (
-          snapshot.id === "libreoffice" &&
-          snapshot.status === "not-installed"
-        ) {
-          unsubscribe();
-          resolvePromise();
-        }
-      });
-    });
     harness.service.cancel("libreoffice");
 
     expect(first.status).toBe("downloading");
     expect(second.status).toBe("downloading");
-    await cancelled;
-    expect(harness.service.list()).toMatchObject([
-      { status: "not-installed" },
-    ]);
+    await vi.waitFor(() =>
+      expect(harness.service.list()).toMatchObject([
+        { status: "not-installed" },
+      ]),
+    );
     await expect(access(downloadDirectory)).rejects.toMatchObject({
       code: "ENOENT",
     });

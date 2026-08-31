@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { conversationContextsEqual } from '../../../renderer/conversation/conversation-controller-model';
-import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -24,17 +24,19 @@ const target = createImageRegionTarget({
 });
 
 function createContribution(
+  revealContext = vi.fn(),
   sourceRevision = 'revision-1',
 ) {
   return createImageConversationContribution({
     sourceRevision,
+    revealContext,
   });
 }
 
 describe('image conversation contribution', () => {
   it('declares a validated region while the shared task owns execution', () => {
     const context = createImageConversationContext(target, 'revision-1');
-    const request = createContextualConversationTaskRequest(
+    const request = createWorkbenchConversationTaskRequest(
       createContribution(),
       {
         projectId: 'project-1',
@@ -61,21 +63,32 @@ describe('image conversation contribution', () => {
     });
   });
 
-  it('does not expose a context-free follow-up path through Image', () => {
-    expect(() =>
-      createContextualConversationTaskRequest(createContribution(), {
+  it('continues the stable conversation without another region or Note', () => {
+    const request = createWorkbenchConversationTaskRequest(
+      createContribution(),
+      {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
         question: '这个箭头为什么指向右边？',
         generateTitle: false,
-      }),
-    ).toThrow('请先在图片中框选一个兴趣区域');
+      },
+    );
+    expect(request.instruction).toMatchObject({
+      contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+      conversationId: 'conversation-1',
+      question: '这个箭头为什么指向右边？',
+    });
+    expect(request.instruction).not.toHaveProperty('context');
+    expect(request.instruction).not.toHaveProperty('commitAnswer');
+    expect(request.assetReferences).toEqual({
+      source: [{ assetId: 'asset-1' }],
+    });
   });
 
   it('rejects a missing or stale initial image region', () => {
     expect(() =>
-      createContextualConversationTaskRequest(createContribution(), {
+      createWorkbenchConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -85,7 +98,7 @@ describe('image conversation contribution', () => {
     ).toThrow('请先在图片中框选一个兴趣区域');
 
     expect(() =>
-      createContextualConversationTaskRequest(createContribution(), {
+      createWorkbenchConversationTaskRequest(createContribution(), {
         projectId: 'project-1',
         assetId: 'asset-1',
         conversationId: 'conversation-1',
@@ -95,6 +108,19 @@ describe('image conversation contribution', () => {
       }),
     ).toThrow('当前聊天上下文无效');
   });
+
+  it('describes and reveals the exact image region through Image', async () => {
+    const revealContext = vi.fn();
+    const contribution = createContribution(revealContext);
+    const context = createImageConversationContext(target, 'revision-1');
+    expect(contribution.describeContext?.(context)).toEqual({
+      label: '图片兴趣区域',
+      detail: '左侧 10% · 顶部 20% · 30% × 40%',
+    });
+    await contribution.revealContext?.(context);
+    expect(revealContext).toHaveBeenCalledWith(context);
+  });
+
   it('isolates context matching by source revision without owning history', () => {
     const firstContext = createImageConversationContext(target, 'revision-1');
     const secondContext = createImageConversationContext(target, 'revision-2');

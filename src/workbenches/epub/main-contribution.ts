@@ -1,7 +1,5 @@
 import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
-import { epubAnchorMainFeature } from './anchor-main-feature';
 import { epubExplanationMainFeature } from './explanations/main';
-import { epubReadingNoteMainFeature } from './notes/main';
 import { EpubWorkbenchProvider } from './main';
 import { epubWorkbenchManifest } from './shared';
 
@@ -12,9 +10,5 @@ export const epubMainWorkbenchContribution = composeMainWorkbenchContribution(
       context.contentResourceService,
       context.stateDatabase,
     ),
-  [
-    epubAnchorMainFeature,
-    epubExplanationMainFeature,
-    epubReadingNoteMainFeature,
-  ],
+  [epubExplanationMainFeature],
 );

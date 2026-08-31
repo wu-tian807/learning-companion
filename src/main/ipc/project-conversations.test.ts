@@ -52,14 +52,17 @@ function record(): ConversationRecord {
 function createService() {
   const list = vi.fn(() => [record()]);
   const save = vi.fn(() => [record()]);
+  const importRecords = vi.fn(() => [record()]);
   const remove = vi.fn(() => []);
   return {
     list,
     save,
+    importRecords,
     remove,
     service: {
       list,
       save,
+      import: importRecords,
       remove,
     } satisfies ProjectConversationServiceApi,
   };
@@ -71,7 +74,7 @@ beforeEach(() => {
 
 describe('Project Conversation IPC handlers', () => {
   it('forwards validated Project conversation operations to the backend service', async () => {
-    const { list, remove, save, service } = createService();
+    const { importRecords, list, remove, save, service } = createService();
     registerProjectConversationHandlers(service);
 
     await findHandler(IPC_CHANNELS.listProjectConversations)({
@@ -81,6 +84,10 @@ describe('Project Conversation IPC handlers', () => {
       projectId: 'project-1',
       conversation: record(),
     });
+    await findHandler(IPC_CHANNELS.importProjectConversations)({
+      projectId: 'project-1',
+      conversations: [record()],
+    });
     await findHandler(IPC_CHANNELS.deleteProjectConversation)({
       projectId: 'project-1',
       conversationId: 'conversation-1',
@@ -88,6 +95,7 @@ describe('Project Conversation IPC handlers', () => {
 
     expect(list).toHaveBeenCalledWith('project-1');
     expect(save).toHaveBeenCalledWith('project-1', record());
+    expect(importRecords).toHaveBeenCalledWith('project-1', [record()]);
     expect(remove).toHaveBeenCalledWith('project-1', 'conversation-1');
   });
 
@@ -110,6 +118,7 @@ describe('Project Conversation IPC handlers', () => {
     expect(electronMocks.removeHandler.mock.calls.map(([channel]) => channel)).toEqual([
       IPC_CHANNELS.listProjectConversations,
       IPC_CHANNELS.saveProjectConversation,
+      IPC_CHANNELS.importProjectConversations,
       IPC_CHANNELS.deleteProjectConversation,
     ]);
   });

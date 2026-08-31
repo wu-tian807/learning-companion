@@ -1,7 +1,4 @@
-import type {
-  JsonValue,
-  WorkbenchCommand,
-} from '../../shared/workbench/protocol';
+import type { JsonValue } from '../../shared/workbench/protocol';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import {
   isHtmlDomTarget,
@@ -120,26 +117,4 @@ export function isHtmlAnchorCommandResult(
   value: unknown,
 ): value is JsonValue & HtmlAnchorCommandResult {
   return isRecord(value) && typeof value.found === 'boolean';
-}
-
-export function createAnchorHighlightCommand(
-  target: HtmlAnchorTarget,
-  revision: number,
-  reveal: boolean,
-  durationMs: number,
-): WorkbenchCommand {
-  return {
-    type: htmlAnchorCommands.highlight,
-    payload: { target, revision, reveal, durationMs },
-  };
-}
-
-export function createAnchorClearCommand(
-  target: HtmlAnchorTarget,
-  revision: number,
-): WorkbenchCommand {
-  return {
-    type: htmlAnchorCommands.clear,
-    payload: { target, revision },
-  };
 }

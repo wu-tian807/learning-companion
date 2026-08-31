@@ -30,7 +30,6 @@ function context(sourceFrame: WebFrameMain, source?: unknown) {
     sessionId: 'session-1',
     workbenchId: HTML_WORKBENCH_ID,
     trigger: 'test',
-    rootUrl: 'learning-content://resource/html',
     frame: sourceFrame,
     source,
   };
@@ -141,27 +140,7 @@ describe('HTML Main Facility adapters', () => {
     expect(
       (payload as { target?: { anchorPayload?: Record<string, unknown> } })
         .target?.anchorPayload,
-    ).not.toHaveProperty('frameUrl');
-  });
-
-  it('keeps frame identity only for anchors inside a child frame', async () => {
-    const childFrame = {
-      url: 'https://widgets.example.com/chapter',
-      executeJavaScript: vi.fn(async () => ({
-        text: '子页面正文',
-        element: { path: [1], tagName: 'p', textQuote: '子页面正文' },
-      })),
-    } as unknown as WebFrameMain;
-
-    const payload = await new HtmlTextSelectionFacilityAdapter().capture(
-      context(childFrame),
-    );
-
-    expect(payload).toMatchObject({
-      target: {
-        anchorPayload: { frameUrl: 'https://widgets.example.com/chapter' },
-      },
-    });
+    ).not.toHaveProperty('rect');
   });
 
   it('does not publish a target when the inferred DOM element is malformed', async () => {

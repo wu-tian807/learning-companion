@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createContextualConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
+import { createWorkbenchConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -33,6 +33,8 @@ describe('Document conversation contribution', () => {
     const contribution = createDocumentConversationContribution({
       projectId: 'project',
       assetId: 'asset',
+      workbenchId: 'markdown',
+      contributionId: 'markdown.question',
     });
     const context = createDocumentConversationContext({
       target: {
@@ -44,7 +46,7 @@ describe('Document conversation contribution', () => {
       selectedText: 'selected',
     });
 
-    expect(createContextualConversationTaskRequest(contribution, {
+    expect(createWorkbenchConversationTaskRequest(contribution, {
       projectId: 'project',
       assetId: 'asset',
       conversationId: 'conversation-1',
@@ -70,6 +72,8 @@ describe('Document conversation contribution', () => {
     const base = {
       projectId: 'project',
       assetId: 'asset',
+      workbenchId: 'pdf',
+      contributionId: 'pdf.question',
     } as const;
     expect(
       createDocumentConversationContribution(base).answerAction,
@@ -127,6 +131,8 @@ describe('Document conversation contribution', () => {
     const contribution = createDocumentConversationContribution({
       projectId: 'project',
       assetId: 'asset',
+      workbenchId: 'pdf',
+      contributionId: 'pdf.question',
       returnAnswerToSource,
       answerActionPresentation,
     });

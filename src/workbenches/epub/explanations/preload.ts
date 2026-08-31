@@ -5,7 +5,6 @@ import type { WorkbenchFeatureIpcInvoke } from '../../../preload/workbench-prelo
 import {
   EPUB_EXPLANATION_IPC_CHANNELS,
   isEpubExplanationEvent,
-  type EpubExplanationAttachmentView,
   type EpubExplanationEvent,
   type EpubExplanationPreloadApi,
   type EpubExplanationView,
@@ -45,11 +44,6 @@ export function createEpubExplanationPreloadApi(
       invoke<EpubExplanationView>(EPUB_EXPLANATION_IPC_CHANNELS.retry, request),
     deleteEpubExplanation: (request) =>
       invoke<void>(EPUB_EXPLANATION_IPC_CHANNELS.delete, request),
-    updateEpubExplanationMarkerColor: (request) =>
-      invoke<EpubExplanationAttachmentView>(
-        EPUB_EXPLANATION_IPC_CHANNELS.updateMarkerColor,
-        request,
-      ),
     onEpubExplanationChanged: (listener) =>
       subscribeEpubExplanationEvents(ipcRenderer, listener),
   } satisfies EpubExplanationPreloadApi);

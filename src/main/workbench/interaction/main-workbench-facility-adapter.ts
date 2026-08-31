@@ -6,7 +6,6 @@ export interface MainFacilityCaptureContext {
   readonly sessionId: string;
   readonly workbenchId: string;
   readonly trigger: string;
-  readonly rootUrl: string;
   readonly frame: WebFrameMain;
   readonly source?: unknown;
 }

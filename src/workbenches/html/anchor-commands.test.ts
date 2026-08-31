@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { createHtmlDomTarget, createHtmlQuoteTarget } from './shared';
 import {
-  createAnchorClearCommand,
-  createAnchorHighlightCommand,
-  htmlAnchorCommands,
   isHtmlAnchorClearCommandPayload,
   isHtmlAnchorCommandResult,
   isHtmlAnchorHighlightCommandPayload,
@@ -32,12 +29,6 @@ describe('HTML anchor commands', () => {
       isHtmlAnchorClearCommandPayload({ target, revision: 1 }),
     ).toBe(true);
     expect(isHtmlAnchorCommandResult({ found: true })).toBe(true);
-    expect(createAnchorHighlightCommand(target, 1, true, 2_800)).toMatchObject({
-      type: htmlAnchorCommands.highlight,
-    });
-    expect(createAnchorClearCommand(target, 2)).toMatchObject({
-      type: htmlAnchorCommands.clear,
-    });
   });
 
   it('rejects malformed anchors and unbounded lifecycle values', () => {

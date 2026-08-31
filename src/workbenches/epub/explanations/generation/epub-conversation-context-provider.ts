@@ -103,7 +103,6 @@ export class EpubConversationContextProvider
       metadata: {
         format: 'learning-companion/epub-explanation',
         version: 1,
-        markerColor: 'blue',
       },
       content: {
         fileName: 'answer.md',

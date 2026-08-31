@@ -17,7 +17,6 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -39,6 +38,7 @@ import { ImageExplanationPanel } from './explanations/image-explanation-panel';
 import {
   createImageConversationContext,
   createImageConversationContribution,
+  type ImageConversationContext,
 } from './explanations/image-conversation-contribution';
 import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
 import {
@@ -60,7 +60,6 @@ import {
 } from './explanations/image-explanation-revision';
 import {
   IMAGE_DEFAULT_EXPLANATION_QUESTION,
-  isImageRegionTarget,
   type ImageExplanationView,
   type ImageRegionTarget,
 } from './explanations/shared';
@@ -443,44 +442,50 @@ export function ImageWorkbenchView({
   const currentSourceRevision = payload?.sourceRevision ?? 'unavailable';
   const conversationOwnerId =
     `${imageWorkbenchManifest.id}:${bootstrap.sessionId}:${currentSourceRevision}.conversation`;
-  useEffect(() => {
-    if (loadState.kind !== 'ready') return;
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
-      asset.id,
-      {
-        sourceRevision: currentSourceRevision,
-        reveal(target) {
-          if (!isImageRegionTarget(target)) return false;
-          const viewer = viewerRef.current;
-          const item = viewer ? getImageItem(viewer) : undefined;
-          if (!viewer || !item || loadStateRef.current.kind !== 'ready') {
-            throw new Error('图片阅读器尚未就绪');
-          }
-          displayImageExplanationLocation(item, viewer.viewport, target);
-          modeRef.current = 'manual';
-          setExplanationIndexOpen(false);
-          return true;
-        },
-      },
-    );
-  }, [asset.id, conversationOwnerId, loadState.kind]);
+  const revealConversationContext = useCallback(
+    (context: ImageConversationContext) => {
+      if (context.sourceRevision !== currentSourceRevision) {
+        reportError(
+          new Error('图片内容已更新'),
+          '这段问答属于旧版图片，无法在当前图片中定位。',
+        );
+        return;
+      }
+      const viewer = viewerRef.current;
+      const item = viewer ? getImageItem(viewer) : undefined;
+      if (!viewer || !item || loadStateRef.current.kind !== 'ready') {
+        reportError(
+          new Error('图片阅读器尚未就绪'),
+          '暂时无法定位这段图片兴趣区域。',
+        );
+        return;
+      }
+      displayImageExplanationLocation(item, viewer.viewport, context.target);
+      modeRef.current = 'manual';
+      setExplanationIndexOpen(false);
+    },
+    [currentSourceRevision, reportError],
+  );
   const conversationContribution = useMemo(
     () => createImageConversationContribution({
       sourceRevision: currentSourceRevision,
+      revealContext: revealConversationContext,
     }),
-    [currentSourceRevision],
+    [
+      currentSourceRevision,
+      revealConversationContext,
+    ],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
-    asset.id,
     conversationContribution,
-    loadState.kind === 'ready',
   );
   const conversationSnapshot = useWorkbenchConversationSnapshot(
     conversationRuntime,
   );
-  const conversationBusy = conversationSnapshot.busy;
+  const conversationBusy =
+    conversationSnapshot.active?.ownerId === conversationOwnerId &&
+    conversationSnapshot.busy;
 
   const startRegionSelection = useCallback(() => {
     runtime.closeContextMenu();

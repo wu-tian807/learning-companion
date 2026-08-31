@@ -1,13 +1,10 @@
 import {
-  isEpubCfiRangeTarget,
+  EPUB_CFI_RANGE_ANCHOR_TYPE,
+  EPUB_CFI_RANGE_ANCHOR_VERSION,
+  isEpubCfiRangeAnchorV1,
   type EpubCfiRangeTarget,
 } from '../shared';
-import {
-  isEpubMarkerColor,
-  type EpubMarkerColor,
-} from '../epub-marker-style';
 export type { EpubCfiRangeTarget } from '../shared';
-export { isEpubCfiRangeTarget } from '../shared';
 
 export const EPUB_EXPLANATION_ATTACHMENT_TYPE = 'epub.ai-explanation';
 export const EPUB_EXPLANATION_ATTACHMENT_VERSION = 1;
@@ -19,14 +16,12 @@ export const EPUB_EXPLANATION_IPC_CHANNELS = Object.freeze({
   create: 'epub-explanation:create',
   retry: 'epub-explanation:retry',
   delete: 'epub-explanation:delete',
-  updateMarkerColor: 'epub-explanation:update-marker-color',
   changed: 'epub-explanation:changed',
 });
 
 export interface EpubExplanationMetadata {
   readonly format: 'learning-companion/epub-explanation';
   readonly version: 1;
-  readonly markerColor?: EpubMarkerColor;
 }
 
 interface EpubExplanationViewBase {
@@ -36,7 +31,6 @@ interface EpubExplanationViewBase {
   readonly target: EpubCfiRangeTarget;
   readonly createdTime: number;
   readonly updatedTime: number;
-  readonly markerColor?: EpubMarkerColor;
 }
 
 export interface EpubExplanationTaskView extends EpubExplanationViewBase {
@@ -73,12 +67,6 @@ export interface EpubExplanationIdRequest
   readonly explanationId: string;
 }
 
-export interface UpdateEpubExplanationMarkerColorRequest
-  extends ListEpubExplanationsRequest {
-  readonly explanationId: string;
-  readonly markerColor: EpubMarkerColor;
-}
-
 export type EpubExplanationEvent =
   | {
       readonly type: 'changed';
@@ -111,9 +99,6 @@ export interface EpubExplanationPreloadApi {
   deleteEpubExplanation(
     request: EpubExplanationIdRequest,
   ): Promise<void>;
-  updateEpubExplanationMarkerColor(
-    request: UpdateEpubExplanationMarkerColorRequest,
-  ): Promise<EpubExplanationAttachmentView>;
   onEpubExplanationChanged(
     listener: (event: EpubExplanationEvent) => void,
   ): () => void;
@@ -135,21 +120,26 @@ function isTime(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
+export function isEpubCfiRangeTarget(
+  value: unknown,
+): value is EpubCfiRangeTarget {
+  return (
+    isRecord(value) &&
+    value.scope === 'content' &&
+    value.anchorType === EPUB_CFI_RANGE_ANCHOR_TYPE &&
+    value.anchorVersion === EPUB_CFI_RANGE_ANCHOR_VERSION &&
+    isEpubCfiRangeAnchorV1(value.anchorPayload)
+  );
+}
+
 export function isEpubExplanationMetadata(
   value: unknown,
 ): value is EpubExplanationMetadata {
   return (
     isRecord(value) &&
     value.format === 'learning-companion/epub-explanation' &&
-    value.version === 1 &&
-    (value.markerColor === undefined || isEpubMarkerColor(value.markerColor))
+    value.version === 1
   );
-}
-
-export function epubExplanationMarkerColor(
-  metadata: EpubExplanationMetadata,
-): EpubMarkerColor {
-  return metadata.markerColor ?? 'blue';
 }
 
 export function isListEpubExplanationsRequest(
@@ -183,17 +173,6 @@ export function isEpubExplanationIdRequest(
   );
 }
 
-export function isUpdateEpubExplanationMarkerColorRequest(
-  value: unknown,
-): value is UpdateEpubExplanationMarkerColorRequest {
-  return (
-    isRecord(value) &&
-    isListEpubExplanationsRequest(value) &&
-    isRequiredText(value.explanationId, 256) &&
-    isEpubMarkerColor(value.markerColor)
-  );
-}
-
 export function isEpubExplanationView(
   value: unknown,
 ): value is EpubExplanationView {
@@ -203,7 +182,6 @@ export function isEpubExplanationView(
     isRequiredText(value.projectId, 256) &&
     isRequiredText(value.assetId, 256) &&
     isEpubCfiRangeTarget(value.target) &&
-    (value.markerColor === undefined || isEpubMarkerColor(value.markerColor)) &&
     ((value.kind === 'task' &&
       (value.status === 'pending' || value.status === 'failed') &&
       value.answer === undefined &&

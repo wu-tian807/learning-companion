@@ -1,10 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-  ConversationMessageContextSource,
-  WorkbenchConversationContribution,
-} from './conversation-contracts';
+import type { WorkbenchConversationContribution } from './conversation-contracts';
 import type {
   ConversationControllerActions,
   ConversationControllerState,
@@ -25,28 +22,19 @@ const actions: ConversationControllerActions = {
 };
 
 const contribution: WorkbenchConversationContribution = {
+  id: 'pdf.question',
+  workbenchId: 'pdf',
   contextProviderId: 'pdf.context',
+  title: '资料问答',
+  emptyLabel: '选择内容后提问',
+  describeContext: () => ({ label: '第 2 页', detail: '框选内容' }),
+  revealContext: vi.fn(),
   answerAction: {
     label: '放回 PDF 原文旁',
     selectionLabel: '放回选中回答片段',
     successMessage: '已放回 PDF 原文旁',
     failureMessage: '无法放回 PDF 原文旁',
     execute: vi.fn(),
-  },
-};
-
-const contextSource = {
-  contextProviderId: contribution.contextProviderId,
-  assetId: 'asset',
-  sourceAssetMode: 'reference' as const,
-};
-
-const context = {
-  target: {
-    scope: 'content' as const,
-    anchorType: 'pdf.region',
-    anchorVersion: 1,
-    anchorPayload: { pageNumber: 2, quote: { exact: '框选内容' } },
   },
 };
 
@@ -70,23 +58,14 @@ function state(
   };
 }
 
-function render(
-  value: ConversationControllerState,
-  resolveContextContribution: (
-    source: ConversationMessageContextSource | undefined,
-  ) => WorkbenchConversationContribution | undefined = (source) =>
-    source?.contextProviderId === contribution.contextProviderId
-      ? contribution
-      : undefined,
-): string {
+function render(value: ConversationControllerState): string {
   return renderToStaticMarkup(
     <ConversationPanel
       state={value}
       actions={actions}
+      contribution={contribution}
       projectId="project"
-      resolveContextContribution={resolveContextContribution}
-      onRevealContext={vi.fn()}
-      onStartNew={vi.fn()}
+      assetId="asset"
       onClose={vi.fn()}
       onOpenSettings={vi.fn()}
       onError={vi.fn()}
@@ -95,36 +74,9 @@ function render(
 }
 
 describe('ConversationPanel', () => {
-  it('renders and links a persisted reference without a mounted Workbench', () => {
-    const html = render(state({
-      conversation: {
-        id: 'conversation',
-        title: '已有引用',
-        messages: [{
-          id: 'question',
-          role: 'user',
-          text: '解释这里',
-          createdTime: 1,
-          context,
-          contextSource,
-        }],
-        createdTime: 1,
-        updatedTime: 1,
-      },
-    }), () => undefined);
-
-    expect(html).toContain('第 2 页');
-    expect(html).toContain('框选内容');
-    expect(html).toContain('查看原文位置');
-  });
-
   it('keeps source viewing, visible errors, retry/settings and new conversation in one panel', () => {
     const html = render(state({
-      pendingContext: {
-        assetId: 'asset',
-        contribution,
-        context,
-      },
+      pendingContext: { page: 2 },
       error: {
         message: '请先配置模型',
         code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
@@ -213,13 +165,7 @@ describe('ConversationPanel', () => {
         id: 'conversation',
         title: '问题',
         messages: [
-          {
-            id: 'q',
-            role: 'user',
-            text: '公式是什么？',
-            createdTime: 1,
-            contextSource,
-          },
+          { id: 'q', role: 'user', text: '公式是什么？', createdTime: 1 },
           {
             id: 'a',
             role: 'assistant',

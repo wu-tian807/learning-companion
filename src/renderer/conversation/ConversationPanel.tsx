@@ -6,9 +6,8 @@ import {
   type FormEvent,
 } from 'react';
 
+import type { JsonValue } from '../../shared/workbench/protocol';
 import type {
-  ConversationContextPresentation,
-  ConversationMessageContextSource,
   ConversationMessageRecord,
   ConversationRecord,
   WorkbenchConversationContribution,
@@ -18,13 +17,7 @@ import type {
   ConversationControllerState,
 } from './conversation-controller';
 import { ConversationMarkdown } from './conversation-markdown';
-import { describeConversationContext } from './conversation-reference';
 import { normalizeConversationSelection } from './conversation-text';
-import {
-  PROJECT_CONVERSATION_EMPTY_LABEL,
-  PROJECT_CONVERSATION_INPUT_PLACEHOLDER,
-  PROJECT_CONVERSATION_TITLE,
-} from './project-conversation-presentation';
 
 function needsProviderSettings(code: string | undefined, message: string): boolean {
   return (
@@ -35,36 +28,36 @@ function needsProviderSettings(code: string | undefined, message: string): boole
 }
 
 function ContextCard({
-  presentation,
-  onReveal,
+  context,
+  contribution,
   removable,
   onRemove,
   onRevealError,
 }: {
-  readonly presentation?: ConversationContextPresentation;
-  readonly onReveal?: () => Promise<void> | void;
+  readonly context: JsonValue;
+  readonly contribution: WorkbenchConversationContribution;
   readonly removable?: boolean;
   readonly onRemove?: () => void;
   readonly onRevealError?: (error: unknown) => void;
 }) {
-  const contentPresentation = presentation ?? {
+  const presentation = contribution.describeContext?.(context) ?? {
     label: '引用内容',
   };
   const content = (
     <>
       <span className="block text-[11px] font-semibold text-indigo-200">
-        {contentPresentation.label}
+        {presentation.label}
       </span>
-      {contentPresentation.previewDataUrl && (
+      {presentation.previewDataUrl && (
         <img
-          src={contentPresentation.previewDataUrl}
-          alt={contentPresentation.label}
+          src={presentation.previewDataUrl}
+          alt={presentation.label}
           className="mt-2 max-h-32 w-full rounded-lg border border-white/10 bg-white object-contain"
         />
       )}
-      {contentPresentation.detail && (
+      {presentation.detail && (
         <span className="mt-1 block line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-slate-400">
-          {contentPresentation.detail}
+          {presentation.detail}
         </span>
       )}
     </>
@@ -72,15 +65,15 @@ function ContextCard({
 
   return (
     <div className="relative rounded-xl border border-indigo-300/20 bg-indigo-400/[0.08] p-2.5">
-      {onReveal ? (
+      {contribution.revealContext ? (
         <button
           type="button"
           className="block w-full pr-7 text-left hover:text-indigo-100"
           title="在原文中查看"
           onClick={() => {
-            void Promise.resolve()
-              .then(onReveal)
-              .catch((error: unknown) => onRevealError?.(error));
+            void Promise.resolve(contribution.revealContext?.(context)).catch(
+              onRevealError,
+            );
           }}
         >
           {content}
@@ -112,52 +105,35 @@ function QuestionForAnswer(
 
 function MessageBubble({
   message,
-  contextPresentation,
-  answerContribution,
+  contribution,
   busy,
   answerActionPending,
   onContinue,
   onReanswer,
   onSelectedAnswer,
   onAnswerAction,
-  onRevealContext,
-  onRevealError,
 }: {
   readonly message: ConversationMessageRecord;
-  readonly contextPresentation?: ConversationContextPresentation;
-  readonly answerContribution?: WorkbenchConversationContribution;
+  readonly contribution: WorkbenchConversationContribution;
   readonly busy: boolean;
   readonly answerActionPending: boolean;
   readonly onContinue: () => void;
   readonly onReanswer: (answerId: string) => void;
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
   readonly onAnswerAction: (answer: ConversationMessageRecord, text: string) => void;
-  readonly onRevealContext?: () => Promise<void> | void;
-  readonly onRevealError?: (error: unknown) => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
       <div className="max-w-[88%]">
-        {message.role === 'user' &&
-          (message.context !== undefined ||
-            message.contextSource !== undefined) && (
+        {message.role === 'user' && message.context !== undefined && (
           <div className="mb-1.5">
-            <ContextCard
-              presentation={contextPresentation}
-              onReveal={onRevealContext}
-              onRevealError={onRevealError}
-            />
+            <ContextCard context={message.context} contribution={contribution} />
           </div>
         )}
         <div
           onMouseUp={() => {
-            if (
-              message.role !== 'assistant' ||
-              !answerContribution?.answerAction
-            ) {
-              return;
-            }
+            if (message.role !== 'assistant' || !contribution.answerAction) return;
             const selected = normalizeConversationSelection(window.getSelection()?.toString() ?? '');
             if (selected) onSelectedAnswer(message.id, selected);
           }}
@@ -206,14 +182,14 @@ function MessageBubble({
               >
                 重新回答
               </button>
-              {answerContribution?.answerAction && (
+              {contribution.answerAction && (
                 <button
                   type="button"
                   disabled={busy || answerActionPending}
                   onClick={() => onAnswerAction(message, message.text)}
                   className="rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-400/10 disabled:opacity-40"
                 >
-                  {answerContribution.answerAction.label}
+                  {contribution.answerAction.label}
                 </button>
               )}
               <button
@@ -240,15 +216,19 @@ function HistoryView({
   loading,
   busy,
   currentConversationId,
+  contribution,
   onRestore,
   onRemove,
+  onRevealError,
 }: {
   readonly history: readonly ConversationRecord[];
   readonly loading: boolean;
   readonly busy: boolean;
   readonly currentConversationId: string;
+  readonly contribution: WorkbenchConversationContribution;
   readonly onRestore: (record: ConversationRecord) => void;
   readonly onRemove: (record: ConversationRecord) => void;
+  readonly onRevealError: (error: unknown) => void;
 }) {
   if (loading) {
     return <p className="grid h-full place-items-center text-xs text-slate-500">正在读取对话记录…</p>;
@@ -265,6 +245,9 @@ function HistoryView({
       {[...history].sort((left, right) => right.updatedTime - left.updatedTime).map((record) => {
         const firstQuestion = record.messages.find((message) => message.role === 'user');
         const currentIsGenerating = busy && record.id === currentConversationId;
+        const latestContext = [...record.messages].reverse().find(
+          (message) => message.role === 'user' && message.context !== undefined,
+        )?.context;
         return (
           <article
             key={record.id}
@@ -290,6 +273,11 @@ function HistoryView({
                 type="button"
                 onClick={() => {
                   if (!busy) onRestore(record);
+                  if (latestContext !== undefined) {
+                    void Promise.resolve(
+                      contribution.revealContext?.(latestContext),
+                    ).catch(onRevealError);
+                  }
                 }}
                 className="text-[11px] text-indigo-300 hover:text-indigo-200"
               >
@@ -315,25 +303,18 @@ function HistoryView({
 export function ConversationPanel({
   state,
   actions,
+  contribution,
   projectId,
-  resolveContextContribution,
-  onRevealContext,
-  onStartNew,
+  assetId,
   onClose,
   onOpenSettings,
   onError,
 }: {
   readonly state: ConversationControllerState;
   readonly actions: ConversationControllerActions;
+  readonly contribution: WorkbenchConversationContribution;
   readonly projectId: string;
-  readonly resolveContextContribution: (
-    source: ConversationMessageContextSource | undefined,
-  ) => WorkbenchConversationContribution | undefined;
-  readonly onRevealContext: (
-    source: ConversationMessageContextSource,
-    context: Exclude<ConversationMessageRecord['context'], undefined>,
-  ) => Promise<void> | void;
-  readonly onStartNew: () => void;
+  readonly assetId: string | undefined;
   readonly onClose: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
@@ -357,28 +338,19 @@ export function ConversationPanel({
     () => messages.find((message) => message.id === selectedAnswer?.messageId),
     [messages, selectedAnswer?.messageId],
   );
-  const selectedAnswerQuestion = selectedAnswerMessage
-    ? QuestionForAnswer(state.conversation, selectedAnswerMessage)
-    : undefined;
-  const selectedAnswerContribution = resolveContextContribution(
-    selectedAnswerQuestion?.contextSource,
-  );
 
   const executeAnswerAction = async (
     answer: ConversationMessageRecord,
     text: string,
   ) => {
-    const question = QuestionForAnswer(state.conversation, answer);
-    const actionContribution = resolveContextContribution(
-      question?.contextSource,
-    );
-    const action = actionContribution?.answerAction;
+    const action = contribution.answerAction;
     if (!action || answerActionPending) return;
+    const question = QuestionForAnswer(state.conversation, answer);
     setAnswerActionPending(true);
     try {
       await action.execute({
         projectId,
-        assetId: question?.contextSource?.assetId,
+        assetId,
         conversation: state.conversation,
         answer,
         question,
@@ -400,9 +372,6 @@ export function ConversationPanel({
   };
 
   const reportRevealError = (revealError: unknown) => {
-    if (revealError instanceof Error && revealError.name === 'AbortError') {
-      return;
-    }
     const message = revealError instanceof Error
       ? revealError.message
       : '无法在原文中定位该内容。';
@@ -414,14 +383,6 @@ export function ConversationPanel({
     event.preventDefault();
     actions.submit();
   };
-  const pendingContext = state.pendingContext;
-  const pendingContextValue = pendingContext?.context;
-  const pendingContextSource = pendingContext
-    ? {
-        assetId: pendingContext.assetId,
-        contextProviderId: pendingContext.contribution.contextProviderId,
-      }
-    : undefined;
 
   return (
     <section
@@ -434,16 +395,14 @@ export function ConversationPanel({
         <div className="flex items-center gap-2">
           <span className="size-2.5 rounded-[4px] bg-gradient-to-br from-indigo-400 to-fuchsia-400 shadow-[0_0_10px_rgba(129,140,248,0.7)]" />
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-slate-100">
-              {PROJECT_CONVERSATION_TITLE}
-            </h3>
+            <h3 className="truncate text-sm font-semibold text-slate-100">{contribution.title}</h3>
             <p className="truncate text-[10px] text-slate-500">{state.conversation.title}</p>
           </div>
           {notice && <span className="ml-auto text-[10px] text-emerald-300">{notice}</span>}
           <button
             type="button"
             disabled={state.busy}
-            onClick={onStartNew}
+            onClick={() => actions.startNew()}
             className={`${notice ? '' : 'ml-auto '}rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:border-indigo-300/30 hover:text-indigo-200 disabled:opacity-40`}
           >
             ＋ 新对话
@@ -482,61 +441,37 @@ export function ConversationPanel({
           loading={state.historyLoading}
           busy={state.busy}
           currentConversationId={state.conversation.id}
+          contribution={contribution}
           onRestore={actions.restore}
           onRemove={actions.remove}
+          onRevealError={reportRevealError}
         />
       ) : (
         <>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4" role="log" aria-label="对话消息">
             {messages.length === 0 && !state.busy && (
               <div className="grid h-full min-h-40 place-items-center px-5 text-center text-[13px] leading-6 text-slate-600">
-                {PROJECT_CONVERSATION_EMPTY_LABEL}
+                {contribution.emptyLabel}
               </div>
             )}
-            {messages.map((message) => {
-              const context = message.context;
-              const contextSource = message.contextSource;
-              const question =
-                message.role === 'assistant'
-                  ? QuestionForAnswer(state.conversation, message)
-                  : undefined;
-              return (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  contextPresentation={
-                    context !== undefined
-                      ? describeConversationContext(context)
-                      : undefined
-                  }
-                  answerContribution={resolveContextContribution(
-                    question?.contextSource,
-                  )}
-                  busy={state.busy}
-                  answerActionPending={answerActionPending}
-                  onContinue={() => {
-                    actions.setDraft(
-                      '请基于刚才的回答继续深入解释，并补充容易混淆的地方。',
-                    );
-                    inputRef.current?.focus();
-                  }}
-                  onReanswer={(answerId) => actions.reanswer(answerId)}
-                  onSelectedAnswer={(messageId, text) =>
-                    setSelectedAnswer({ messageId, text })
-                  }
-                  onAnswerAction={(answer, text) =>
-                    void executeAnswerAction(answer, text)
-                  }
-                  onRevealContext={
-                    context !== undefined && contextSource?.assetId
-                      ? () =>
-                          onRevealContext(contextSource, context)
-                      : undefined
-                  }
-                  onRevealError={reportRevealError}
-                />
-              );
-            })}
+            {messages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                contribution={contribution}
+                busy={state.busy}
+                answerActionPending={answerActionPending}
+                onContinue={() => {
+                  actions.setDraft('请基于刚才的回答继续深入解释，并补充容易混淆的地方。');
+                  inputRef.current?.focus();
+                }}
+                onReanswer={(answerId) => actions.reanswer(answerId)}
+                onSelectedAnswer={(messageId, text) => setSelectedAnswer({ messageId, text })}
+                onAnswerAction={(answer, text) =>
+                  void executeAnswerAction(answer, text)
+                }
+              />
+            ))}
             {state.busy && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md border border-white/[0.06] bg-white/[0.045] px-4 py-3 text-[13px] text-slate-400">
@@ -580,9 +515,7 @@ export function ConversationPanel({
                 </div>
               </div>
             )}
-            {selectedAnswer &&
-              selectedAnswerMessage &&
-              selectedAnswerContribution?.answerAction && (
+            {selectedAnswer && selectedAnswerMessage && contribution.answerAction && (
               <div className="mb-2 flex items-center gap-2 rounded-xl border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-[10px] text-indigo-200">
                 <span className="min-w-0 flex-1 truncate">已选中回答片段</span>
                 <button
@@ -596,25 +529,16 @@ export function ConversationPanel({
                   }
                   className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30 disabled:opacity-40"
                 >
-                  {selectedAnswerContribution.answerAction.selectionLabel}
+                  {contribution.answerAction.selectionLabel}
                 </button>
                 <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
               </div>
             )}
-            {pendingContextValue !== undefined && (
+            {state.pendingContext !== undefined && (
               <div className="mb-2">
                 <ContextCard
-                  presentation={
-                    describeConversationContext(pendingContextValue)
-                  }
-                  onReveal={
-                    pendingContextValue !== undefined && pendingContextSource
-                      ? () => onRevealContext(
-                          pendingContextSource,
-                          pendingContextValue,
-                        )
-                      : undefined
-                  }
+                  context={state.pendingContext}
+                  contribution={contribution}
                   removable
                   onRemove={() => actions.setPendingContext(undefined)}
                   onRevealError={reportRevealError}
@@ -627,7 +551,7 @@ export function ConversationPanel({
                 rows={1}
                 value={state.draft}
                 disabled={state.busy}
-                placeholder={PROJECT_CONVERSATION_INPUT_PLACEHOLDER}
+                placeholder={contribution.inputPlaceholder ?? '输入问题…（Enter 发送 / Shift+Enter 换行）'}
                 onChange={(event) => actions.setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {

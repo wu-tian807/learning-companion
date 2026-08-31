@@ -1,4 +1,9 @@
 import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
+import {
+  EPUB_CFI_RANGE_ANCHOR_TYPE,
+  EPUB_CFI_RANGE_ANCHOR_VERSION,
+  isEpubCfiRangeAnchorV1,
+} from '../shared';
 import { EpubExplanationService } from './epub-explanation-service';
 import { EpubConversationContextProvider } from './generation/epub-conversation-context-provider';
 import {
@@ -13,7 +18,12 @@ import {
 
 export const epubExplanationMainFeature = Object.freeze({
   id: 'builtin.epub.explanations',
-  registerAttachmentTypes({ attachments }): void {
+  registerAttachmentTypes({ attachments, anchors }): void {
+    anchors.register({
+      anchorType: EPUB_CFI_RANGE_ANCHOR_TYPE,
+      version: EPUB_CFI_RANGE_ANCHOR_VERSION,
+      isPayload: isEpubCfiRangeAnchorV1,
+    });
     attachments.register({
       typeId: EPUB_EXPLANATION_ATTACHMENT_TYPE,
       version: EPUB_EXPLANATION_ATTACHMENT_VERSION,

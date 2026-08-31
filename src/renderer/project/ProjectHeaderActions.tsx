@@ -31,7 +31,7 @@ const HeaderActionButton = forwardRef<
         type="button"
         aria-label={label}
         className={[
-          'peer ui-icon-button grid size-[32px] place-items-center rounded-[10px] border border-white/10 text-slate-400 outline-none focus-visible:border-indigo-300/55 focus-visible:ring-2 focus-visible:ring-indigo-300/25',
+          'ui-icon-button grid size-[32px] place-items-center rounded-[10px] border border-white/10 text-slate-400 outline-none focus-visible:border-indigo-300/55 focus-visible:ring-2 focus-visible:ring-indigo-300/25',
           className,
         ].join(' ')}
       >
@@ -39,7 +39,7 @@ const HeaderActionButton = forwardRef<
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute top-[calc(100%+7px)] right-0 z-50 w-max max-w-48 rounded-md border border-white/10 bg-[#282d35] px-2 py-1 text-[9px] font-medium text-slate-200 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 peer-focus-visible:opacity-100"
+        className="pointer-events-none absolute top-[calc(100%+7px)] right-0 z-50 w-max max-w-48 rounded-md border border-white/10 bg-[#282d35] px-2 py-1 text-[9px] font-medium text-slate-200 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
       >
         {label}
       </span>

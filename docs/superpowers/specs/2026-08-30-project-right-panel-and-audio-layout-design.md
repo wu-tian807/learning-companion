@@ -40,22 +40,19 @@ rightPanel: ProjectRightPanelKind | null;
 
 - 点击当前已打开的面板按钮会关闭右侧插槽；
 - 点击另一个面板按钮会在同一个插槽中直接切换；
-- Workbench 内部附加 Context 时，Project 把右侧插槽切到 `conversation`；
-- Conversation 关闭时右侧插槽同步关闭；Contribution 卸载或 Asset 切换只释放尚未发送的
-  Context，不关闭聊天；
+- Workbench 内部发起 Conversation 时，Project 把右侧插槽切到 `conversation`；
+- Conversation 关闭、Contribution 卸载或 Asset 切换时，右侧 Conversation 插槽同步关闭；
 - 小屏打开右侧插槽时继续关闭左侧覆盖栏，遮罩、Escape 和焦点恢复规则不变。
 
 ### 顶栏聊天归 Project 所有
 
-AI 问答按钮始终渲染且始终可用。Project 直接拥有 Conversation Host、Controller、历史和
-发送，并使用不依赖 Asset 的 Main Project Context Provider；Renderer 不需要注册一个“默认
-Contribution”来维持聊天。因此没有媒体专用能力的 Audio、MP3 或空选中状态也能正常开始
-Project 对话。
+AI 问答按钮始终渲染且始终可用。Project 注册一个不依赖 Asset 的默认 Conversation
+Contribution 与 Main Context Provider；因此没有媒体专用能力的 Audio、MP3 或空选中状态也能
+正常开始 Project 对话。
 
-Workbench 不拥有聊天，只在用户从原文、画面或选区发起提问时，把经过验证的
-Anchor/Context 作为单轮附件交给同一个 Project 对话；公共任务仅为这一轮选择对应 Context
-Provider。下一条没有附件的消息仍走 Project Provider。新的 Workbench Contribution 注册或
-卸载不能抢走、关闭正在打开的 Project 聊天，也不能改变普通发送路径。
+Workbench 不拥有聊天，只在用户从原文、画面或选区发起提问时临时切换为对应 Context
+Provider，并把经过验证的 Anchor/Context 附加到同一个 Project 对话。新的 Workbench
+Contribution 注册或卸载不能抢走、关闭正在打开的 Project 聊天。
 
 默认 Project 对话和带 Workbench Context 的对话仍统一经过
 `workbench.conversation -> TaskAgentSession`，没有 Provider 直连或媒体专用聊天通道。
@@ -67,7 +64,8 @@ Provider。下一条没有附件的消息仍走 Project Provider。新的 Workbe
 - 应用数据库的 `project_conversations` 保存标题和 UI 消息投影；
 - Agent Session 保存 Provider Session/thread 绑定与真实模型上下文；
 - Renderer 只通过 Project Conversation IPC 读取、保存和删除，不把 `localStorage` 当运行期存储；
-- 项目尚未发布，不保留旧 Workbench/Asset 历史导入 IPC、HTML 专属会话协议或运行期兼容旁路。
+- 旧的 Workbench/Asset `localStorage` 记录在首次读取时单向导入后端，成功后删除旧键；
+- 旧 HTML Workbench 数据由数据库迁移一次性搬入同一张表，旧运行时读写通道删除。
 
 ### Audio 滚动与收缩边界
 
@@ -88,7 +86,6 @@ Workbench 全宽滚动视口（scrollbar 位于面板边缘）
 - generation、conversation、closed 三种右侧状态互斥；
 - 任意 Workbench、无选中 Asset 时按钮都存在且可用；
 - Workbench 注册不改变已打开 Project Chat 的 owner 或开合状态；
-- Workbench Context 只影响显式附加的当前一轮，下一轮普通发送回到 Project Provider；
 - 历史列表刷新后从后端恢复，不依赖当前 renderer profile 的 `localStorage`；
 - `ProjectRightPanelSlot` 每次只渲染一个内容；
 - ConversationPanel 填满右侧插槽，不携带第二套固定宽度；
@@ -96,5 +93,5 @@ Workbench 全宽滚动视口（scrollbar 位于面板边缘）
 - 侧栏开合后 Audio Workbench、字幕和播放器控制栏无横向溢出；
 - 运行聚焦测试、`pnpm check`、生产打包和真实 Electron 宽度验证。
 
-本设计不改变 GenerationTask、Provider Session 或文件清理协议；它使用统一的 Project
-Conversation 数据库和读取、保存、删除 IPC，不保留第二套旧历史导入入口。
+本设计不改变 GenerationTask、Provider Session 或文件清理协议；它新增统一的 Project
+Conversation 数据库/IPC，并只保留一次性旧历史迁移入口。
