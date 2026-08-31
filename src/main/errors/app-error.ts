@@ -35,6 +35,7 @@ export type AppErrorCode =
   | 'EXTERNAL_LIBRARY_MIGRATION_FAILED'
   | 'OFFICE_PREVIEW_FAILED'
   | 'MEDIA_SUBTITLE_PROCESSING_FAILED'
+  | 'MEDIA_DUBBING_PREREQUISITE_REQUIRED'
   | 'MEDIA_DUBBING_FAILED'
   | 'CODEX_RUNTIME_UNAVAILABLE'
   | 'CODEX_PROTOCOL_ERROR'
@@ -277,6 +278,12 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     retryable: true,
     logLevel: 'warn',
   },
+  MEDIA_DUBBING_PREREQUISITE_REQUIRED: {
+    kind: 'user',
+    userMessage: '请先完成字幕生成与翻译，并确认配音组件已经安装。',
+    retryable: true,
+    logLevel: 'silent',
+  },
   MEDIA_DUBBING_FAILED: {
     kind: 'user',
     userMessage: '媒体配音没有完成，请稍后重试。',
@@ -327,7 +334,7 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   },
   AGENT_PROVIDER_AUTH_REQUIRED: {
     kind: 'user',
-    userMessage: '请先完成该 AI Provider 的登录验证。',
+    userMessage: '请先完成该 AI Provider 的登录验证，或配置有效的 API Key。',
     retryable: true,
     logLevel: 'silent',
   },

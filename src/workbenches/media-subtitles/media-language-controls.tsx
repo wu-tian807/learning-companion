@@ -5,6 +5,7 @@ import type {
 } from './presentation';
 import type { MediaDubbingSnapshot } from '../media-dubbing/contracts';
 import { isMediaDubbingPlaybackAvailable } from '../media-dubbing/media-dubbing-playback';
+import { resolveMediaDubbingReadiness } from '../media-dubbing/media-dubbing-readiness';
 
 const ALL_SUBTITLE_OPTIONS = [
   { value: 'off', label: '关闭' },
@@ -58,8 +59,11 @@ export function MediaLanguageControls({
       : ALL_SUBTITLE_OPTIONS;
   const dubbingPlaybackAvailable =
     isMediaDubbingPlaybackAvailable(dubbingSnapshot);
+  const dubbingReadiness = resolveMediaDubbingReadiness(
+    subtitleSnapshot,
+    dubbingSnapshot,
+  );
   const dubbingRunning =
-    dubbingSnapshot.phase === 'awaiting-translation' ||
     dubbingSnapshot.phase === 'preparing-runtime' ||
     dubbingSnapshot.phase === 'separating' ||
     dubbingSnapshot.phase === 'cloning' ||
@@ -82,6 +86,18 @@ export function MediaLanguageControls({
         className={compactButtonClass}
       >
         安装字幕
+      </button>
+    );
+  } else if (subtitleSnapshot.phase === 'provider-required') {
+    subtitleControl = (
+      <button
+        type="button"
+        title={subtitleSnapshot.message ?? '需要配置“低智能”翻译连接'}
+        disabled={!onOpenSettings}
+        onClick={onOpenSettings}
+        className={compactButtonClass}
+      >
+        配置翻译 AI
       </button>
     );
   } else if (subtitleSnapshot.phase === 'failed') {
@@ -180,49 +196,44 @@ export function MediaLanguageControls({
             配音
           </button>
         </div>
-      ) : dubbingSnapshot.phase === 'runtime-required' ? (
-        <button
-          type="button"
-          title={
-            dubbingSnapshot.message ??
-            `需要安装 VoxCPM2 ${mediaLabel}配音组件`
-          }
-          disabled={!onOpenSettings}
-          onClick={onOpenSettings}
-          className={compactButtonClass}
-        >
-          安装配音
-        </button>
-      ) : dubbingSnapshot.phase === 'unsupported' ? (
-        <button
-          type="button"
-          title={dubbingSnapshot.message ?? `当前设备不支持${mediaLabel}配音`}
-          disabled
-          className={compactButtonClass}
-        >
-          配音不可用
-        </button>
       ) : dubbingSnapshot.phase !== 'failed' &&
         dubbingSnapshot.phase !== 'interrupted' ? (
-        <button
-          type="button"
-          title="生成翻译配音"
-          onClick={onStartDubbing}
-          className={compactButtonClass}
+        <span
+          className="shrink-0"
+          title={
+            dubbingReadiness.message ??
+            '字幕、译文与 VoxCPM2 配音组件均已就绪。'
+          }
         >
-          配音
-        </button>
+          <button
+            type="button"
+            disabled={!dubbingReadiness.ready}
+            onClick={onStartDubbing}
+            className={compactButtonClass}
+          >
+            配音
+          </button>
+        </span>
       ) : null}
       {(dubbingSnapshot.phase === 'interrupted' ||
         dubbingSnapshot.phase === 'failed') && (
-        <button
-          type="button"
-          title={dubbingSnapshot.message ?? '从持久断点继续生成剩余配音'}
-          onClick={onRetryDubbing}
-          className={compactButtonClass}
+        <span
+          className="shrink-0"
+          title={
+            dubbingReadiness.message ??
+            dubbingSnapshot.message ??
+            '从持久断点继续生成剩余配音'
+          }
         >
-          继续配音
-        </button>
+          <button
+            type="button"
+            disabled={!dubbingReadiness.ready}
+            onClick={onRetryDubbing}
+            className={compactButtonClass}
+          >
+            继续配音
+          </button>
+        </span>
       )}
     </div>
   );

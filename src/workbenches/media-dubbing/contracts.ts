@@ -3,7 +3,6 @@ import { cloneJsonValue } from '../../shared/workbench/protocol';
 
 export type MediaDubbingPhase =
   | 'idle'
-  | 'awaiting-translation'
   | 'runtime-required'
   | 'preparing-runtime'
   | 'separating'
@@ -46,7 +45,6 @@ export function isMediaDubbingSnapshot(
   return (
     isRecord(value) &&
     (value.phase === 'idle' ||
-      value.phase === 'awaiting-translation' ||
       value.phase === 'runtime-required' ||
       value.phase === 'preparing-runtime' ||
       value.phase === 'separating' ||

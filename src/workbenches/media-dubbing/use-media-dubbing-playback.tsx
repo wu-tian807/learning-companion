@@ -84,7 +84,6 @@ function synchronizeMediaTime(
 
 function showsGeneratedSuffix(snapshot: MediaDubbingSnapshot): boolean {
   return (
-    snapshot.phase === 'awaiting-translation' ||
     snapshot.phase === 'preparing-runtime' ||
     snapshot.phase === 'separating' ||
     snapshot.phase === 'cloning' ||

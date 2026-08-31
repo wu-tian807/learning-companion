@@ -22,7 +22,6 @@ import {
 import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../media-subtitles/transcription-producer';
 import { MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID } from '../media-subtitles/translation-producer';
-import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
 import type { VoxCpm2DubbingRuntimeResolverApi } from './external-libraries/voxcpm2-runtime';
 import {
   DUBBING_SPEAKER_TRACK_ARTIFACT_KEY,
@@ -147,6 +146,7 @@ async function createFixture(
     readonly cachedSpeakerTrack?: boolean;
     readonly preparedSpeakerTrack?: boolean;
     readonly interruptedDubbing?: boolean;
+    readonly cachedTranslation?: boolean;
     readonly materializeError?: unknown;
     readonly installationError?: unknown;
   } = {},
@@ -198,6 +198,7 @@ async function createFixture(
       );
     }
     if (request.producerId === MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID) {
+      if (options.cachedTranslation === false) return undefined;
       return resolvedArtifact(
         request,
         translationPath,
@@ -233,20 +234,6 @@ async function createFixture(
     getCached,
     getOrCreate: vi.fn(),
   } as unknown as AssetArtifactServiceApi;
-  const subtitles: MediaSubtitleServiceApi = {
-    getSnapshot: vi.fn(() => ({
-      phase: 'ready' as const,
-      source: sourceTrack('video-revision'),
-      translation: translationTrack(),
-      partialTranslations: [],
-      completedCues: 1,
-      totalCues: 1,
-    })),
-    subscribe: vi.fn(() => () => undefined),
-    ensureSource: vi.fn(async () => undefined),
-    ensureTranslation: vi.fn(async () => undefined),
-    retry: vi.fn(async () => undefined),
-  };
   const materialize = options.materializeError
     ? vi.fn(async () => Promise.reject(options.materializeError))
     : vi.fn(async (_artifacts, request: AssetArtifactRequest) =>
@@ -306,7 +293,6 @@ async function createFixture(
     assets,
     projects,
     artifacts,
-    subtitles,
     producer,
     speakerTrackProducer,
     {} as MediaSubtitleRuntimeResolverApi,
@@ -315,7 +301,6 @@ async function createFixture(
   );
   return {
     service,
-    subtitles,
     producer,
     speakerTrackProducer,
     progress,
@@ -325,16 +310,13 @@ async function createFixture(
 }
 
 describe('MediaDubbingService', () => {
-  it('uses an already-ready translation without requesting translation again', async () => {
-    const { service, subtitles, producer, speakerTrackProducer } =
-      await createFixture();
+  it('consumes an already-completed translation artifact', async () => {
+    const { service, producer, speakerTrackProducer } = await createFixture();
     const phases: string[] = [];
     service.subscribe('video', (snapshot) => phases.push(snapshot.phase));
 
     await service.ensure('project', 'video');
 
-    expect(subtitles.ensureTranslation).not.toHaveBeenCalled();
-    expect(phases).not.toContain('awaiting-translation');
     expect(producer.materialize).toHaveBeenCalledOnce();
     expect(producer.removeCheckpoint).toHaveBeenCalledOnce();
     expect(speakerTrackProducer.materialize).toHaveBeenCalledOnce();
@@ -384,37 +366,17 @@ describe('MediaDubbingService', () => {
     );
   });
 
-  it('requests translation when no translated track is ready', async () => {
-    const { service, subtitles, producer } = await createFixture();
-    vi.mocked(subtitles.getSnapshot)
-      .mockReturnValueOnce({
-        phase: 'source-ready',
-        source: sourceTrack('video-revision'),
-        partialTranslations: [],
-        completedCues: 0,
-        totalCues: 1,
-      })
-      .mockReturnValue({
-        phase: 'ready',
-        source: sourceTrack('video-revision'),
-        translation: translationTrack(),
-        partialTranslations: [],
-        completedCues: 1,
-        totalCues: 1,
-      });
-    const phases: string[] = [];
-    service.subscribe('video', (snapshot) => phases.push(snapshot.phase));
-
+  it('refuses to start when no completed translation artifact exists', async () => {
+    const { service, producer } = await createFixture({
+      cachedTranslation: false,
+    });
     await service.ensure('project', 'video');
 
-    expect(subtitles.ensureTranslation).toHaveBeenCalledOnce();
-    expect(subtitles.ensureTranslation).toHaveBeenCalledWith(
-      'project',
-      'video',
-    );
-    expect(phases).toContain('awaiting-translation');
-    expect(producer.materialize).toHaveBeenCalledOnce();
-    expect(service.getSnapshot('video').phase).toBe('ready');
+    expect(producer.materialize).not.toHaveBeenCalled();
+    expect(service.getSnapshot('video')).toMatchObject({
+      phase: 'failed',
+      message: '请先完成字幕生成与翻译，并确认配音组件已经安装。',
+    });
   });
 
   it('uses an existing dubbing artifact without preparing the model runtime', async () => {
@@ -498,15 +460,13 @@ describe('MediaDubbingService', () => {
   });
 
   it('reports the missing dubbing component before starting subtitle translation', async () => {
-    const { service, subtitles, producer, requireInstalledBundle } =
-      await createFixture({
-        installationError: new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED'),
-      });
+    const { service, producer, requireInstalledBundle } = await createFixture({
+      installationError: new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED'),
+    });
 
     await service.ensure('project', 'video');
 
     expect(requireInstalledBundle).toHaveBeenCalledOnce();
-    expect(subtitles.ensureTranslation).not.toHaveBeenCalled();
     expect(producer.materialize).not.toHaveBeenCalled();
     expect(service.getSnapshot('video')).toMatchObject({
       phase: 'runtime-required',
@@ -515,15 +475,13 @@ describe('MediaDubbingService', () => {
   });
 
   it('reports the missing dubbing component before generation is requested', async () => {
-    const { service, subtitles, producer, requireInstalledBundle } =
-      await createFixture({
-        installationError: new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED'),
-      });
+    const { service, producer, requireInstalledBundle } = await createFixture({
+      installationError: new AppError('EXTERNAL_LIBRARY_NOT_INSTALLED'),
+    });
 
     await service.refreshRuntimeAvailability('video');
 
     expect(requireInstalledBundle).toHaveBeenCalledOnce();
-    expect(subtitles.ensureTranslation).not.toHaveBeenCalled();
     expect(producer.materialize).not.toHaveBeenCalled();
     expect(service.getSnapshot('video')).toMatchObject({
       phase: 'runtime-required',

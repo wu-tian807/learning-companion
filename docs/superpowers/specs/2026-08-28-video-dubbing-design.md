@@ -1,8 +1,8 @@
 # 视频/音频本地配音：最终选型与首版接入
 
-> 更新日期：2026-08-30
+> 更新日期：2026-08-31
 > 当前范围：Windows x64 + NVIDIA GPU；Video/Audio 的可靠整轨生成、持久断点和
-> 已完成后缀的即时预览；非重叠语音下的多说话人声色路由；Audio 中逐句显示
+> 已完成后缀的即时预览；单个时刻以主说话人为准、小范围重叠容忍下的多说话人声色路由；Audio 中逐句显示
 > 说话人参考并跟随当前播放位置。
 
 ## 1. 最终选择
@@ -35,7 +35,7 @@ Audio：逐句显示 speaker / 参考窗口，并跟随当前播放位置
 - **正式模型：VoxCPM2 官方 Python/CUDA 实现。** 当前盲听中，它的中英文 one-shot 清晰度、音色保持和跨语种表现最好。
 - **备选模型：F5-TTS、VoxCPM1.5。** Demo 保留适配器和测试资料，但主程序不下载、不注册、不出现模型选择，避免第一版同时维护三套运行时。
 - **人声分离：sherpa-onnx CUDA + UVR HQ4。** 该组合已在真实视频上验证，输出顺序明确为 background、vocals。
-- **说话人区分：sherpa-onnx CPU + pyannote segmentation int8 + CAMPPlus 中英 embedding。** 只分析分离后的 16 kHz 单声道人声；假设同一时刻最多一人说话，不做重叠语音分离。
+- **说话人区分：sherpa-onnx CPU + pyannote segmentation int8 + CAMPPlus 中英 embedding。** 只分析分离后的 16 kHz 单声道人声；以单主说话人为主，保留小范围重叠用于归属判断，但不做真正的重叠语音分离。
 - **翻译：Agent TaskDefinition。** 不再安装本地翻译模型；翻译复用工作台 AI Selector，并由 GenerationTask 保留任务状态和 Provider Session。
 - **存储：现有 GenerationTask + AssetArtifact。** 不增加字幕表、配音表或 Job 表。
 
@@ -59,7 +59,7 @@ MediaSubtitleService
   → GenerationTask
   → SubtitleTranslationTaskDefinition
   → TaskAgentSession
-  → 当前 Workbench Provider Selector
+  → 低智能 Provider Selector
   → MediaSubtitleTranslationProducer
   → AssetArtifactService
 ```
@@ -72,6 +72,9 @@ MediaSubtitleService
 4. 模型只返回目标 Cue 的 `id + text`；时间戳不能被模型修改。
 5. 每个完整分段通过校验后，逐 Cue 发布翻译进度；最终一次性提交 Translation Artifact。
 6. 格式错误只允许同一 Session 修复一次，仍不合法则由 GenerationTask 正常失败和重试。
+
+字幕翻译固定选择“低智能”档；Provider 登录失效、API Key 不可用或该档未配置时，
+字幕状态明确进入可配置错误，配音入口保持禁用。
 
 TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有字幕都已经放进用户消息；这样可避免 Agent 在工作区做无关探索。该限制只属于这个翻译 TaskDefinition，不是全局 Provider 策略。
 
@@ -89,6 +92,8 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 - Audio 每条字幕显示稳定的 speaker 徽标，以及“参考 0:00–0:06”或“默认声线”。Cue 内可能发生说话人切换时显示不确定标记，但不会把该 Cue 当作参考；
 - Audio 默认跟随播放头：Cue 内高亮当前句，间隙定位下一句，媒体结束后定位末句但不误高亮。用户滚轮、触摸、拖动滚动条或键盘浏览后暂停自动跟随，通过“定位当前句”或点击字幕恢复；
 - 说话人轨道只在已经启动或恢复配音分析后出现。单纯打开 Audio 不会为了标签触发模型安装、下载或重型分析；未安装配音组件时整条流程不运行；
+- 配音按钮只在原字幕 Artifact、完整译文 Artifact 与 VoxCPM2 外部组件都可用时启用；
+  人声分离和说话人分析仍属于点击后的配音内部步骤，不作为按钮前置门禁；
 - 中文朗读文本会把阿拉伯数字转成自然中文读法，字幕画面仍保留原文字；
 - VoxCPM2 按 Phrase 倒序生成，因此进度条从最右侧向左扩展；
 - 每段生成后用 FFmpeg `atempo + apad + atrim` 精确适配对应 Cue 窗口；不按字数猜时间，也不改写时间戳；

@@ -183,7 +183,7 @@ describe('AudioWorkbenchView', () => {
     expect(markup).toContain('aria-label="音频字幕与配音"');
   });
 
-  it('offers component installation when subtitle and dubbing runtimes are absent', () => {
+  it('offers subtitle installation and blocks dubbing when runtimes are absent', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
       viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
@@ -202,7 +202,8 @@ describe('AudioWorkbenchView', () => {
     });
 
     expect(markup).toContain('安装字幕');
-    expect(markup).toContain('安装配音');
+    expect(markup).toContain('>配音<');
+    expect(markup).toContain('VoxCPM2 视频/音频配音组件尚未安装');
   });
 
   it('rejects an invalid bootstrap URL', () => {

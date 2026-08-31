@@ -3,7 +3,7 @@
 > 日期：2026-08-16
 >
 > 状态：已实现；2026-08-28 将本地翻译模型替换为 GenerationTask + Agent；
-> 2026-08-29 接入 Audio Workbench
+> 2026-08-29 接入 Audio Workbench；2026-08-31 翻译改用低智能 Provider Selector
 >
 > 范围：Video/Audio Workbench 的本地字幕识别、显示、按需翻译与缓存
 
@@ -30,7 +30,7 @@ Audio / Video Workbench State
   └─ displayMode: off | source | translated | bilingual
 
 MediaSubtitleService（仅内存）
-  └─ queued / transcribing / translating / ready / failed
+  └─ queued / transcribing / translating / provider-required / ready / failed
 ```
 
 核心约束：
@@ -238,7 +238,8 @@ flowchart LR
     AGENT --> ARTIFACT["完整校验后原子提交译文 Artifact"]
 ```
 
-当前正式链路使用工作台 Provider Selector：
+当前正式链路固定使用“低智能”Provider Selector；Selector 只表达任务所需智能强度，
+具体 Connection、模型与思考力度仍由用户配置：
 
 - 每段最多 16 个目标 Cue、约 1400 个字符，只沿真实 Cue 边界切分；
 - 前 3 个和后 3 个 Cue 只作为上下文，禁止翻译或输出；
@@ -247,6 +248,10 @@ flowchart LR
 - 格式无效时在同一 Session 内修复一次，仍失败则由 GenerationTask 记录失败；
 - 所有 Cue 完成并通过校验后才提交 Artifact；
 - 失败或取消不提交残缺 Artifact，重试复用 GenerationTask 的已完成调用。
+- 打开媒体时会恢复与当前原字幕版本匹配的完整译文 Artifact；没有缓存时仍只在用户选择
+  “译文”或“双语”后启动翻译，不会因为检查配音条件而暗中发起 LLM 任务。
+- 登录失效、API Key 缺失或低智能档未配置时进入 `provider-required`，明确引导用户
+  到设置中修复，不把 Provider 问题伪装成普通字幕失败。
 
 Bergamot、Hy-MT2 和 llama.cpp 不再属于字幕组件资源。以后若需要完全离线翻译，只增加
 同一 TaskDefinition/Artifact 契约下的 Provider，不在媒体 Renderer 中建立第二条链。

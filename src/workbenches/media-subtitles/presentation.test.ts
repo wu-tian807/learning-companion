@@ -76,4 +76,14 @@ describe('media subtitle presentation protocol', () => {
       }),
     ).toBe(false);
   });
+
+  it('accepts the actionable Provider configuration state', () => {
+    expect(
+      isMediaSubtitleSnapshot({
+        ...sourceSnapshot(),
+        phase: 'provider-required',
+        message: '请配置低智能翻译连接。',
+      }),
+    ).toBe(true);
+  });
 });
