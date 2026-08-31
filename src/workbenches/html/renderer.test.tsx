@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -102,6 +102,7 @@ const editingStatus = {
 async function mountHtmlWorkbench(options: {
   readonly conversationRuntime?: WorkbenchConversationRuntime;
   readonly anchorFound?: boolean;
+  readonly strictMode?: boolean;
   readonly initialEditingStatus?: HtmlEditingStatus;
   readonly refreshedEditingStatus?: HtmlEditingStatus;
   readonly executeCommand?: (
@@ -156,7 +157,7 @@ async function mountHtmlWorkbench(options: {
   });
 
   await act(async () => {
-    root.render(
+    const view = (
       <WorkbenchConversationRuntimeProvider runtime={options.conversationRuntime}>
         <WorkbenchRuntimeProvider onError={vi.fn()}>
           <HtmlWorkbenchView
@@ -175,7 +176,10 @@ async function mountHtmlWorkbench(options: {
             onError={onError}
           />
         </WorkbenchRuntimeProvider>
-      </WorkbenchConversationRuntimeProvider>,
+      </WorkbenchConversationRuntimeProvider>
+    );
+    root.render(
+      options.strictMode ? <StrictMode>{view}</StrictMode> : view,
     );
   });
 
@@ -509,6 +513,32 @@ describe('HtmlWorkbenchView', () => {
 
       await view.publish(applied);
       expect(view.container.querySelector('iframe')).toBe(refreshedFrame);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it('reloads an applied replacement after the StrictMode effect replay', async () => {
+    const view = await mountHtmlWorkbench({ strictMode: true });
+    const target = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/html',
+      element: { path: [1, 0], tagName: 'main', id: 'lesson' },
+    });
+
+    try {
+      const initialFrame = view.container.querySelector('iframe');
+      await view.publish({
+        sessionId: 'session',
+        type: 'html.agent-edit.applied',
+        payload: {
+          taskId: 'task-1',
+          editId: 'edit-1',
+          target,
+          draftRevision: 'draft-2',
+        },
+      });
+
+      expect(view.container.querySelector('iframe')).not.toBe(initialFrame);
     } finally {
       view.cleanup();
     }

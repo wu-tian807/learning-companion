@@ -145,9 +145,8 @@ export function HtmlWorkbenchView({
   const payload = isHtmlWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
-  const editReloadQueue = useMemo(
-    () => new HtmlEditReloadQueue(),
-    [payload?.contentUrl],
+  const editReloadQueueRef = useRef<HtmlEditReloadQueue | undefined>(
+    undefined,
   );
   const contextRef = useRef<
     CoreContextMenuFacilityEvent | undefined
@@ -419,6 +418,17 @@ export function HtmlWorkbenchView({
   }, [executeCommand, reportError]);
 
   useEffect(() => {
+    const queue = new HtmlEditReloadQueue();
+    editReloadQueueRef.current = queue;
+    return () => {
+      queue.dispose();
+      if (editReloadQueueRef.current === queue) {
+        editReloadQueueRef.current = undefined;
+      }
+    };
+  }, [payload?.contentUrl]);
+
+  useEffect(() => {
     if (!subscribeEvent || !payload?.editing) return;
 
     const unsubscribe = subscribeEvent((event) => {
@@ -464,7 +474,7 @@ export function HtmlWorkbenchView({
         const appliedKey = `${record.editId}\0${record.draftRevision}`;
         if (appliedEditRevisionsRef.current.has(appliedKey)) return;
         appliedEditRevisionsRef.current.add(appliedKey);
-        editReloadQueue.enqueue(reload);
+        editReloadQueueRef.current?.enqueue(reload);
         void refreshEditingStatus();
         return;
       }
@@ -500,7 +510,7 @@ export function HtmlWorkbenchView({
           reason === 'redo' ||
           reason === 'discard'
         ) {
-          editReloadQueue.enqueue(reload);
+          editReloadQueueRef.current?.enqueue(reload);
         }
         void refreshEditingStatus();
       }
@@ -510,7 +520,6 @@ export function HtmlWorkbenchView({
   }, [
     payload?.editing,
     clearEditVisual,
-    editReloadQueue,
     refreshEditingStatus,
     reload,
     showEditVisual,
@@ -553,10 +562,6 @@ export function HtmlWorkbenchView({
     `${htmlWorkbenchManifest.id}.viewer`,
     rendererActions,
   );
-
-  useEffect(() => {
-    return () => editReloadQueue.dispose();
-  }, [editReloadQueue]);
 
   useEffect(() => {
     if (!payload) {
@@ -685,13 +690,13 @@ export function HtmlWorkbenchView({
               reportError(error, '无法启用 HTML 公式源码复制。');
             })
             .finally(() => {
-              editReloadQueue.complete();
+              editReloadQueueRef.current?.complete();
             });
         }}
         onError={() => {
           setFrameFailed(true);
           setLoadedFrameKey(undefined);
-          editReloadQueue.complete();
+          editReloadQueueRef.current?.complete();
         }}
       />
 
