@@ -36,7 +36,7 @@ describe('JsonSettingsRepository', () => {
     expect(() => repository.listAgentProviderConnections()).toThrow('尚未初始化');
     await expect(
       repository.updateAgentProviderSelectorSelection({
-        selectorId: 'generation-center',
+        selectorId: 'intelligence-high',
         providerId: 'codex',
         connectionId: 'codex-account',
         modelId: 'gpt-test',
@@ -54,7 +54,7 @@ describe('JsonSettingsRepository', () => {
     expect(repository.get()).toEqual(DEFAULT_APP_PREFERENCES);
     expect(repository.listAgentProviderConnections()).toEqual([]);
     expect(
-      repository.getAgentProviderSelectorSelection('generation-center'),
+      repository.getAgentProviderSelectorSelection('intelligence-high'),
     ).toBeUndefined();
     await expect(readFile(settingsFile, 'utf8')).rejects.toMatchObject({
       code: 'ENOENT',
@@ -94,7 +94,7 @@ describe('JsonSettingsRepository', () => {
       baseUrl: 'https://api.deepseek.com/v1',
     });
     await repository.updateAgentProviderSelectorSelection({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-api-deepseek',
       modelId: 'deepseek-chat',
@@ -116,10 +116,10 @@ describe('JsonSettingsRepository', () => {
     await restored.initialize();
     expect(
       restored.getAgentProviderSelectorSelection(
-        'generation-center',
+        'intelligence-high',
       ),
     ).toEqual({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-api-deepseek',
       modelId: 'deepseek-chat',
@@ -170,18 +170,69 @@ describe('JsonSettingsRepository', () => {
     await repository.initialize();
 
     expect(
-      repository.getAgentProviderSelectorSelection('generation-center'),
+      repository.getAgentProviderSelectorSelection('intelligence-high'),
     ).toMatchObject({
       connectionId: 'codex-api-1',
       modelId: 'active-model',
       reasoningEffort: 'high',
     });
     const stored = JSON.parse(await readFile(settingsFile, 'utf8'));
-    expect(stored.agentProviderSelectorSelections['generation-center']).toMatchObject({
+    expect(
+      stored.agentProviderSelectorSelections['intelligence-high'],
+    ).toMatchObject({
       connectionId: 'codex-api-1',
       modelId: 'active-model',
     });
+    expect(
+      stored.agentProviderSelectorSelections['generation-center'],
+    ).toBeUndefined();
     expect(stored.agentProviderSelectorConnections).toBeUndefined();
+  });
+
+  it('migrates the former Workbench choice to medium and low intelligence', async () => {
+    const directory = await temporaryDirectory();
+    const settingsFile = join(directory, 'settings.json');
+    await writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...DEFAULT_APP_PREFERENCES,
+        defaultProjectWorkspace: directory,
+        externalLibrariesPath: directory,
+        completedOnboardingVersion: CURRENT_ONBOARDING_VERSION,
+        agentProviderConnections: {},
+        agentProviderSelectorSelections: {
+          workbench: {
+            selectorId: 'workbench',
+            providerId: 'codex',
+            connectionId: 'codex-account',
+            modelId: 'configured-model',
+            reasoningEffort: 'medium',
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+
+    for (const selectorId of ['intelligence-medium', 'intelligence-low']) {
+      expect(repository.getAgentProviderSelectorSelection(selectorId)).toEqual({
+        selectorId,
+        providerId: 'codex',
+        connectionId: 'codex-account',
+        modelId: 'configured-model',
+        reasoningEffort: 'medium',
+      });
+    }
+    const stored = JSON.parse(await readFile(settingsFile, 'utf8'));
+    expect(stored.agentProviderSelectorSelections.workbench).toBeUndefined();
+
+    const restored = new JsonSettingsRepository(settingsFile);
+    await restored.initialize();
+    expect(
+      restored.getAgentProviderSelectorSelection('intelligence-low'),
+    ).toMatchObject({ modelId: 'configured-model' });
   });
 
   it('deleting a Connection also clears selectors that reference it', async () => {
@@ -197,7 +248,7 @@ describe('JsonSettingsRepository', () => {
       baseUrl: 'https://example.com/v1',
     });
     await repository.updateAgentProviderSelectorSelection({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-api-1',
       modelId: 'model',
@@ -208,7 +259,7 @@ describe('JsonSettingsRepository', () => {
 
     expect(repository.listAgentProviderConnections()).toEqual([]);
     expect(
-      repository.getAgentProviderSelectorSelection('generation-center'),
+      repository.getAgentProviderSelectorSelection('intelligence-high'),
     ).toBeUndefined();
 
     const warn = vi.fn();
@@ -219,7 +270,7 @@ describe('JsonSettingsRepository', () => {
 
     expect(warn).not.toHaveBeenCalled();
     expect(
-      restored.getAgentProviderSelectorSelection('generation-center'),
+      restored.getAgentProviderSelectorSelection('intelligence-high'),
     ).toBeUndefined();
   });
 
@@ -286,10 +337,10 @@ describe('JsonSettingsRepository', () => {
     });
     expect(
       repository.getAgentProviderSelectorSelection(
-        'generation-center',
+        'intelligence-high',
       ),
     ).toMatchObject({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       connectionId: 'codex-api-legacy',
       modelId: 'custom-model',
     });

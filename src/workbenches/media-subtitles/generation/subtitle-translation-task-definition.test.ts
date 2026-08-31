@@ -15,6 +15,7 @@ import type {
 } from '../../../main/generation/contracts/task-definition';
 import type { ProjectLookup } from '../../../main/projects/project-database';
 import type { AssetSnapshot } from '../../../shared/assets';
+import { LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   type SubtitleCueV1,
@@ -259,6 +260,9 @@ describe('subtitle translation TaskDefinition', () => {
         progress,
         now: () => 300,
       });
+      expect(definition.providerSelectorId).toBe(
+        LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+      );
 
       const result = await definition.process(context);
       expect(call.mock.calls.map(([request]) => request.callKey)).toEqual([
