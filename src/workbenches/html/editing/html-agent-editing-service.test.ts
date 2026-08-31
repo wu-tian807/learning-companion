@@ -956,6 +956,98 @@ describe('HtmlAgentEditingService Workbench persistence', () => {
     });
   });
 
+  it('drains lifecycle persistence and removes materialized drafts on shutdown', async () => {
+    const original = '<html><body><p id="target">Before</p></body></html>';
+    const bytes = new TextEncoder().encode(original);
+    const data = new Map<string, WorkbenchStateDataRecord>();
+    let blockSave = false;
+    let releaseSave: (() => void) | undefined;
+    const saveGate = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const stateDataDatabase = {
+      get: vi.fn(async (assetId: string) => data.get(assetId)),
+      save: vi.fn(async (record: WorkbenchStateDataRecord) => {
+        if (blockSave) await saveGate;
+        data.set(record.assetId, structuredClone(record));
+      }),
+      delete: vi.fn(async (assetId: string) => {
+        data.delete(assetId);
+      }),
+    };
+    let snapshot = task('task-1');
+    let lifecycleListener: ((event: never) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const service = new HtmlAgentEditingService(
+      {
+        getActiveProjectId: () => 'project-1',
+        get: () => ({
+          id: 'asset-1',
+          projectId: 'project-1',
+          mediaType: 'text/html',
+        }),
+        resolveContent: vi.fn(async () => ({
+          contentStatus: { availability: 'available', checkedTime: 1 },
+          handle: {
+            capabilities: new Set(['read-bytes', 'write-bytes']),
+            readBytes: vi.fn(async () => ({
+              content: bytes,
+              revision: createTextRevision(bytes),
+            })),
+            writeBytes: vi.fn(),
+            close: vi.fn(async () => undefined),
+          },
+        })),
+      } as never,
+      {
+        get: () => snapshot,
+        subscribe: vi.fn((listener: (event: never) => void) => {
+          lifecycleListener = listener;
+          return unsubscribe;
+        }),
+      } as never,
+      stateDataDatabase,
+    );
+    const begun = (await service.begin(
+      { locator: { kind: 'selector', selector: '#target' }, scope: 'contents' },
+      toolContext('task-1'),
+    )) as { editId: string };
+    await service.replace(begun.editId, 'Draft', toolContext('task-1'));
+    const materializedPath = await service.materializeReference(
+      'project-1',
+      'asset-1',
+    );
+    await expect(readFile(materializedPath, 'utf8')).resolves.toContain('Draft');
+
+    snapshot = task('task-1', true);
+    blockSave = true;
+    lifecycleListener?.({
+      type: 'task-completed',
+      snapshot,
+      result: {},
+    } as never);
+    await vi.waitFor(() =>
+      expect(stateDataDatabase.save).toHaveBeenCalledTimes(2),
+    );
+    let shutdownSettled = false;
+    const shutdown = service.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await Promise.resolve();
+    expect(shutdownSettled).toBe(false);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+
+    releaseSave!();
+    await shutdown;
+    await service.shutdown();
+    await expect(readFile(materializedPath, 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    service.dispose();
+    service.dispose();
+  });
+
   it('rejects a tool context whose task belongs to another Project', async () => {
     const resolveContent = vi.fn();
     const service = new HtmlAgentEditingService(

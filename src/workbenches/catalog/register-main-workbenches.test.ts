@@ -63,6 +63,30 @@ const mainManifests = mainWorkbenchContributions.flatMap(({ manifest }) =>
   manifest ? [manifest] : [],
 );
 
+function createRegisteredMainWorkbenchRegistry(): WorkbenchRegistry {
+  const providers = new WorkbenchRegistry(
+    new UnsupportedWorkbenchProvider(),
+    createCoreWorkbenchFacilityDefinitionRegistry(),
+  );
+  registerMainWorkbenchProviders(providers, {
+    associationService: {} as never,
+    assetService: {
+      subscribe: vi.fn(() => () => undefined),
+    } as never,
+    artifactRegistry: { register: vi.fn() } as never,
+    artifactService: {} as never,
+    contentResourceService: {} as never,
+    externalLibraryService: {} as never,
+    generationTasks: { subscribe: vi.fn(() => () => undefined) } as never,
+    projectLookup: {} as never,
+    stateDatabase: {} as never,
+    stateDataDatabase: {} as never,
+    sandboxFrameScripts: {} as never,
+    workbenchEvents: {} as never,
+  });
+  return providers;
+}
+
 describe('Workbench contribution catalogs', () => {
   it('keeps Main, Preload, and Renderer Workbench roots aligned', () => {
     expect(mainManifests.map(({ id }) => id)).toEqual(
@@ -77,32 +101,7 @@ describe('Workbench contribution catalogs', () => {
   });
 
   it('registers every Main provider and its owned adapters', () => {
-    const facilityDefinitions = createCoreWorkbenchFacilityDefinitionRegistry();
-    const providers = new WorkbenchRegistry(
-      new UnsupportedWorkbenchProvider(),
-      facilityDefinitions,
-    );
-    const functionTools = new AgentFunctionToolRegistry();
-    const conversationContexts =
-      new WorkbenchConversationContextProviderRegistry();
-    registerMainWorkbenchProviders(providers, {
-      functionTools,
-      conversationContexts,
-      associationService: {} as never,
-      assetService: {
-        subscribe: vi.fn(() => () => undefined),
-      } as never,
-      artifactRegistry: { register: vi.fn() } as never,
-      artifactService: {} as never,
-      contentResourceService: {} as never,
-      externalLibraryService: {} as never,
-      generationTasks: { subscribe: vi.fn(() => () => undefined) } as never,
-      projectLookup: {} as never,
-      stateDatabase: {} as never,
-      stateDataDatabase: {} as never,
-      sandboxFrameScripts: {} as never,
-      workbenchEvents: {} as never,
-    });
+    const providers = createRegisteredMainWorkbenchRegistry();
 
     for (const manifest of mainManifests) {
       expect(providers.get(manifest.id)?.manifest).toBe(manifest);
@@ -117,11 +116,6 @@ describe('Workbench contribution catalogs', () => {
             adapter.triggers.includes(SANDBOX_CONTEXT_MENU_TRIGGER),
         )?.workbenchId,
     ).toBe('builtin.html');
-    expect(functionTools.get('html_begin_edit')).toBeDefined();
-    expect(functionTools.get('html_replace_edit')).toBeDefined();
-    expect(
-      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID).id,
-    ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
   });
 
   it('registers Workbench-owned external components through the same catalog', () => {
@@ -216,20 +210,22 @@ describe('Workbench contribution catalogs', () => {
     ).toBe(true);
   });
 
-  it('registers Workbench-owned Agent tools without enabling them globally', () => {
+  it('registers Workbench-owned Agent tool definitions through standard hooks', () => {
     const functionTools = new AgentFunctionToolRegistry();
+    const workbenches = createRegisteredMainWorkbenchRegistry();
 
-    registerMainWorkbenchAgentFunctionTools({ functionTools });
+    registerMainWorkbenchAgentFunctionTools({ functionTools, workbenches });
 
     expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
-    expect(functionTools.get('html_begin_edit')).toBeUndefined();
-    expect(functionTools.get('html_replace_edit')).toBeUndefined();
+    expect(functionTools.get('html_begin_edit')).toBeDefined();
+    expect(functionTools.get('html_replace_edit')).toBeDefined();
   });
 
   it('registers Workbench conversation context providers through the same Main catalog', () => {
     const definitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
       new WorkbenchConversationContextProviderRegistry();
+    const workbenches = createRegisteredMainWorkbenchRegistry();
 
     registerMainWorkbenchGeneration({
       definitions,
@@ -240,6 +236,7 @@ describe('Workbench contribution catalogs', () => {
       attachments: {} as never,
       externalLibraries: {} as never,
       projects: {} as never,
+      workbenches,
     });
 
     for (const id of [
@@ -250,9 +247,9 @@ describe('Workbench contribution catalogs', () => {
     ]) {
       expect(conversationContexts.require(id).id).toBe(id);
     }
-    expect(() =>
-      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID),
-    ).toThrow();
+    expect(
+      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID).id,
+    ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
     expect(
       definitions.require(
         WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,

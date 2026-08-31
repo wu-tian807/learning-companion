@@ -207,6 +207,7 @@ describe('WorkbenchConversationAttachmentProjection', () => {
       type: 'task-discarded',
       projectId: 'project-1',
       taskId: 'task-1',
+      snapshot: taskSnapshot('task-1'),
     });
     await vi.waitFor(() => {
       expect(events).toEqual([{ type: 'deleted', id: 'task-1' }]);

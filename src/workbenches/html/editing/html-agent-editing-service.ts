@@ -95,7 +95,10 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   private readonly store?: HtmlDraftStore;
   private readonly lifecycleTasks = new Set<Promise<void>>();
   private readonly listeners = new Set<(event: HtmlAgentEditEvent) => void>();
-  private readonly unsubscribe?: () => void;
+  private readonly materializedPaths = new Set<string>();
+  private unsubscribe?: () => void;
+  private shutdownTask?: Promise<void>;
+  private disposed = false;
 
   constructor(
     private readonly assets: AssetServiceApi,
@@ -329,9 +332,34 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   }
 
   dispose(): void {
-    this.unsubscribe?.();
+    if (this.disposed) return;
+    this.disposed = true;
+    this.stopLifecycleSubscription();
     this.activeEdits.clear();
     this.listeners.clear();
+    for (const path of this.materializedPaths) {
+      void rm(path, { force: true }).catch(() => undefined);
+    }
+    this.materializedPaths.clear();
+  }
+
+  shutdown(): Promise<void> {
+    if (this.shutdownTask) return this.shutdownTask;
+    this.stopLifecycleSubscription();
+    this.shutdownTask = (async () => {
+      while (true) {
+        const pending = new Set([
+          ...this.lifecycleTasks,
+          ...this.sessionMutations.values(),
+        ]);
+        if (pending.size === 0) break;
+        await Promise.all(pending);
+      }
+      const paths = [...this.materializedPaths];
+      await Promise.all(paths.map((path) => rm(path, { force: true })));
+      for (const path of paths) this.materializedPaths.delete(path);
+    })();
+    return this.shutdownTask;
   }
 
   async handleTaskSnapshot(snapshot: GenerationTaskSnapshot): Promise<void> {
@@ -382,7 +410,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     }
   }
 
-  async handleTaskDiscarded(projectId: string, taskId: string): Promise<void> {
+  async handleTaskDiscarded(snapshot: GenerationTaskSnapshot): Promise<void> {
+    const projectId = snapshot.projectId;
+    const taskId = snapshot.id;
     for (const [editId, active] of this.activeEdits) {
       if (active.projectId === projectId && active.taskId === taskId) {
         this.publish({
@@ -396,23 +426,27 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
         this.activeEdits.delete(editId);
       }
     }
-    const loadedSessions = await Promise.all([...this.sessions.values()]);
-    for (const loaded of loadedSessions) {
-      if (loaded.projectId !== projectId) continue;
-      await this.runSessionMutation(projectId, loaded.assetId, async () => {
-        let session = await this.getSession(projectId, loaded.assetId);
-        if (session.pending?.taskId === taskId) {
-          session = await this.rollbackPending(session);
-          this.publish({
-            type: 'session-changed',
-            projectId: session.projectId,
-            assetId: session.assetId,
-            reason: 'rollback',
-          });
-        }
-        await this.finishQueuedSync(session);
-      });
-    }
+    const assetId = this.resolveSnapshotAsset(snapshot);
+    if (!assetId) return;
+    await this.runSessionMutation(projectId, assetId, async () => {
+      let session = await this.getSession(projectId, assetId);
+      if (session.pending?.taskId === taskId) {
+        const clearMissingTaskConflict =
+          session.conflict === 'RECOVERY_INCONSISTENT' &&
+          this.isSessionIntegrityValid(session);
+        session = await this.rollbackPending(
+          session,
+          clearMissingTaskConflict,
+        );
+        this.publish({
+          type: 'session-changed',
+          projectId: session.projectId,
+          assetId: session.assetId,
+          reason: 'rollback',
+        });
+      }
+      await this.finishQueuedSync(session);
+    });
   }
 
   async getDraft(projectId: string, assetId: string): Promise<string | undefined> {
@@ -451,6 +485,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       encoding: 'utf8',
       mode: 0o600,
     });
+    this.materializedPaths.add(path);
     return path;
   }
 
@@ -597,7 +632,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     if (session.pending || this.hasActiveEdit(projectId, assetId)) {
       throw new Error('Agent 修改尚未收口，无法放弃草稿');
     }
-    await rm(this.materializationPath(projectId, assetId), { force: true });
+    const materializedPath = this.materializationPath(projectId, assetId);
+    await rm(materializedPath, { force: true });
+    this.materializedPaths.delete(materializedPath);
     await this.store?.delete(assetId);
     this.sessions.delete(`${projectId}\0${assetId}`);
     this.writableSources.delete(`${projectId}\0${assetId}`);
@@ -650,7 +687,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     if (event.type === 'task-changed' || event.type === 'task-completed') {
       operation = this.handleTaskSnapshot(event.snapshot);
     } else if (event.type === 'task-discarded') {
-      operation = this.handleTaskDiscarded(event.projectId, event.taskId);
+      operation = this.handleTaskDiscarded(event.snapshot);
     }
     if (!operation) return;
     const tracked = operation.catch((error: unknown) => {
@@ -658,6 +695,12 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     });
     this.lifecycleTasks.add(tracked);
     void tracked.finally(() => this.lifecycleTasks.delete(tracked));
+  }
+
+  private stopLifecycleSubscription(): void {
+    const unsubscribe = this.unsubscribe;
+    this.unsubscribe = undefined;
+    unsubscribe?.();
   }
 
   private async loadSession(
@@ -818,6 +861,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
 
   private async rollbackPending(
     session: HtmlDraftSession,
+    clearRecoveryConflict = false,
   ): Promise<HtmlDraftSession> {
     const pending = session.pending;
     if (!pending) return session;
@@ -826,6 +870,10 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       draft: pending.beforeDraft,
       draftRevision: pending.beforeRevision,
       pending: undefined,
+      conflict:
+        clearRecoveryConflict && session.conflict === 'RECOVERY_INCONSISTENT'
+          ? undefined
+          : session.conflict,
     };
     await this.persist(next);
     return next;
@@ -1088,16 +1136,31 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     context: AgentFunctionToolExecutionContext,
   ): string {
     const snapshot = this.generationTasks.get(context.taskId);
-    const instruction = snapshot?.instruction;
-    const assetId = isRecord(instruction) ? instruction.assetId : undefined;
-    const references = snapshot?.prepared?.assetReferences.source ?? [];
-    const reference = references[0];
-    const asset = typeof assetId === 'string' ? this.assets.get(assetId) : undefined;
+    const assetId = snapshot
+      ? this.resolveSnapshotAsset(snapshot)
+      : undefined;
 
     if (
       !snapshot ||
       snapshot.projectId !== context.projectId ||
       this.assets.getActiveProjectId() !== context.projectId ||
+      !assetId
+    ) {
+      throw new Error('当前任务没有唯一有效的 HTML Asset');
+    }
+    return assetId;
+  }
+
+  private resolveSnapshotAsset(
+    snapshot: GenerationTaskSnapshot,
+  ): string | undefined {
+    const instruction = snapshot.instruction;
+    const assetId = isRecord(instruction) ? instruction.assetId : undefined;
+    const references = snapshot.prepared?.assetReferences.source ?? [];
+    const reference = references[0];
+    const asset = typeof assetId === 'string' ? this.assets.get(assetId) : undefined;
+
+    if (
       typeof assetId !== 'string' ||
       references.length !== 1 ||
       reference?.assetId !== assetId ||
@@ -1105,10 +1168,10 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       (reference.materializedMediaType !== undefined &&
         reference.materializedMediaType !== 'text/html') ||
       !asset ||
-      asset.projectId !== context.projectId ||
+      asset.projectId !== snapshot.projectId ||
       asset.mediaType !== 'text/html'
     ) {
-      throw new Error('当前任务没有唯一有效的 HTML Asset');
+      return undefined;
     }
     return assetId;
   }

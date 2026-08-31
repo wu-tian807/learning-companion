@@ -352,6 +352,12 @@ describe('GenerationTask IPC handlers', () => {
         event: { type: 'assistant-delta', delta: '正在生成' },
       },
     });
+    emit({
+      type: 'task-discarded',
+      projectId: 'project-1',
+      taskId: 'task-1',
+      snapshot,
+    });
 
     expect(broadcast).toHaveBeenNthCalledWith(
       1,
@@ -369,6 +375,15 @@ describe('GenerationTask IPC handlers', () => {
         projectId: 'project-1',
         taskId: 'task-1',
         event: { type: 'assistant-delta', delta: '正在生成' },
+      },
+    );
+    expect(broadcast).toHaveBeenNthCalledWith(
+      3,
+      IPC_CHANNELS.generationTaskChanged,
+      {
+        type: 'task-discarded',
+        projectId: 'project-1',
+        taskId: 'task-1',
       },
     );
   });

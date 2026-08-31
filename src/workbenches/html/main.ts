@@ -148,6 +148,10 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
     });
   }
 
+  getAgentEditingService(): HtmlAgentEditingService | undefined {
+    return this.editing;
+  }
+
   async materializeContent(
     context: WorkbenchMaterializationContext,
   ): Promise<MaterializedWorkbenchContent> {

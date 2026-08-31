@@ -149,9 +149,6 @@ export async function createApplicationRuntime({
     );
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
-    registerMainWorkbenchAgentFunctionTools({
-      functionTools: agentFunctionTools,
-    });
     const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
     const agentSkills = new AgentSkillService(agentCapabilityPaths.skillsPath);
     const agentMcpServers = new AgentMcpService(agentCapabilityPaths.mcpPath);
@@ -257,16 +254,6 @@ export async function createApplicationRuntime({
     const generationTaskDefinitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
       new WorkbenchConversationContextProviderRegistry();
-    registerMainWorkbenchGeneration({
-      definitions: generationTaskDefinitions,
-      conversationContexts,
-      assets: assetService,
-      artifacts: artifactService,
-      associations: associationService,
-      attachments: attachmentService,
-      externalLibraries: externalLibraryService,
-      projects: projectDatabase,
-    });
     const agentWorkspaceManager = new AgentWorkspaceManager(
       appPaths.agentWorkspacesDirectory,
     );
@@ -287,8 +274,6 @@ export async function createApplicationRuntime({
     );
     registerMainWorkbenchProviders(workbenchRegistry, {
       associationService,
-      functionTools: agentFunctionTools,
-      conversationContexts,
       assetService,
       artifactRegistry,
       artifactService,
@@ -300,6 +285,28 @@ export async function createApplicationRuntime({
       stateDataDatabase: workbenchStateDataRepository,
       sandboxFrameScripts: sandboxFrameInteractionBridge,
       workbenchEvents,
+    });
+    mainWorkbenchFeatures = startMainWorkbenchContributions({
+      attachments: attachmentService,
+      generationTasks: generationTaskService,
+      assets: assetDatabase,
+      externalLibraries: externalLibraryService,
+      workbenches: workbenchRegistry,
+    });
+    registerMainWorkbenchAgentFunctionTools({
+      functionTools: agentFunctionTools,
+      workbenches: workbenchRegistry,
+    });
+    registerMainWorkbenchGeneration({
+      definitions: generationTaskDefinitions,
+      conversationContexts,
+      assets: assetService,
+      artifacts: artifactService,
+      associations: associationService,
+      attachments: attachmentService,
+      externalLibraries: externalLibraryService,
+      projects: projectDatabase,
+      workbenches: workbenchRegistry,
     });
     workbenchSessionService = new WorkbenchSessionService(
       assetService,
@@ -330,12 +337,6 @@ export async function createApplicationRuntime({
       settingsRepository,
       workbenchSessionService,
       workbenchEvents,
-    });
-    mainWorkbenchFeatures = startMainWorkbenchContributions({
-      attachments: attachmentService,
-      generationTasks: generationTaskService,
-      assets: assetDatabase,
-      externalLibraries: externalLibraryService,
     });
 
     return new ApplicationRuntime({

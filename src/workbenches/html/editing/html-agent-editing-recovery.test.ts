@@ -254,7 +254,7 @@ describe('HtmlAgentEditingService recovery', () => {
       disposition: 'queued',
     });
 
-    await service.handleTaskDiscarded('project-1', 'task-2');
+    await service.handleTaskDiscarded(task('task-2') as never);
 
     expect(test.writeBytes).toHaveBeenCalledOnce();
     expect(test.source()).toContain('>B<');
@@ -513,6 +513,32 @@ describe('HtmlAgentEditingService recovery', () => {
         editable: false,
         pending: true,
         conflict: 'RECOVERY_INCONSISTENT',
+      },
+    });
+    expect(test.writeBytes).not.toHaveBeenCalled();
+  });
+
+  it('rolls back a discarded pending edit after restart before the Asset is opened', async () => {
+    const test = harness();
+    const discarded = task('task-1');
+    test.snapshots.set('task-1', discarded);
+    const first = test.createService();
+    const edit = await test.begin(first, 'task-1');
+    await first.replace(edit.editId, 'B', context('task-1'));
+    first.dispose();
+    test.snapshots.delete('task-1');
+
+    const restored = test.createService();
+    await restored.handleTaskDiscarded(discarded as never);
+
+    await expect(
+      restored.getDraftSnapshot('project-1', 'asset-1'),
+    ).resolves.toMatchObject({
+      status: {
+        editable: true,
+        hasDraft: false,
+        pending: false,
+        conflict: null,
       },
     });
     expect(test.writeBytes).not.toHaveBeenCalled();

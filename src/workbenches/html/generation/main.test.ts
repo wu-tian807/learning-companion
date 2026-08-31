@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentFunctionToolRegistry } from '../../../main/agents/function-tools/agent-function-tool-registry';
 import { createTextRevision } from '../../../main/content/text-content';
 import { WorkbenchConversationContextProviderRegistry } from '../../../main/conversation/workbench-conversation-context-provider-registry';
+import { WorkbenchRegistry } from '../../../main/workbench/workbench-registry';
+import { UnsupportedWorkbenchProvider } from '../../unsupported/main';
 import { htmlMainWorkbenchContribution } from '../main-contribution';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../conversation/html-conversation-context';
 
@@ -63,10 +65,11 @@ describe('HTML assistant Main integration', () => {
     const functionTools = new AgentFunctionToolRegistry();
     const conversationContexts =
       new WorkbenchConversationContextProviderRegistry();
+    const workbenches = new WorkbenchRegistry(
+      new UnsupportedWorkbenchProvider(),
+    );
 
-    htmlMainWorkbenchContribution.createProvider?.({
-      functionTools,
-      conversationContexts,
+    const provider = htmlMainWorkbenchContribution.createProvider?.({
       assetService: assets,
       generationTasks,
       stateDatabase: {
@@ -82,6 +85,21 @@ describe('HTML assistant Main integration', () => {
       contentResourceService: {},
       sandboxFrameScripts: {},
       workbenchEvents: {},
+    } as never);
+    expect(provider).toBeDefined();
+    workbenches.register(provider!);
+    expect(functionTools.get('html_begin_edit')).toBeUndefined();
+    expect(() =>
+      conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID),
+    ).toThrow();
+
+    htmlMainWorkbenchContribution.registerAgentFunctionTools?.({
+      functionTools,
+      workbenches,
+    });
+    htmlMainWorkbenchContribution.registerGeneration?.({
+      conversationContexts,
+      workbenches,
     } as never);
 
     await expect(
@@ -110,5 +128,11 @@ describe('HTML assistant Main integration', () => {
     ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
     expect(generationTasks.get).toHaveBeenCalledWith('task-1');
     expect(assets.resolveContent).toHaveBeenCalledWith('asset-1');
+
+    const runtime = htmlMainWorkbenchContribution.start?.({
+      workbenches,
+    } as never);
+    await runtime?.shutdown?.();
+    runtime?.dispose();
   });
 });

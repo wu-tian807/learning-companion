@@ -398,6 +398,51 @@ describe('HtmlWorkbenchProvider commands', () => {
     );
   });
 
+  it('routes edit visuals through the same stable root and nested-frame policy', async () => {
+    const { provider, context, frameScriptExecutor } = await createProvider();
+    const stableRoot = createHtmlDomTarget({
+      element: { path: [1], tagName: 'p', textQuote: '当前根文档' },
+    });
+    const legacyRoot = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/expired-token',
+      element: { path: [2], tagName: 'p', textQuote: '旧会话根文档' },
+    });
+    const nestedFrame = createHtmlDomTarget({
+      frameUrl: 'https://widgets.example.com/chapter',
+      element: { path: [3], tagName: 'p', textQuote: '嵌套文档' },
+    });
+
+    for (const [target, revision] of [
+      [stableRoot, 1],
+      [legacyRoot, 2],
+      [nestedFrame, 3],
+    ] as const) {
+      await provider.command(context, {
+        type: 'html.edit-visual.show',
+        payload: { target, revision, phase: 'scanning' },
+      });
+    }
+
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      1,
+      'session-1',
+      expect.any(String),
+      undefined,
+    );
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      2,
+      'session-1',
+      expect.any(String),
+      undefined,
+    );
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      3,
+      'session-1',
+      expect.any(String),
+      { frameUrl: 'https://widgets.example.com/chapter' },
+    );
+  });
+
   it('installs source-aware copy behavior in the session root frame', async () => {
     const { provider, context, frameScriptExecutor } = await createProvider();
     frameScriptExecutor.executeJavaScript.mockResolvedValueOnce({
