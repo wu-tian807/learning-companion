@@ -1,6 +1,5 @@
 import type { TextEncoding, TextLineEnding } from '../../../main/content/text-content';
 import type { WorkbenchStateDataDatabaseApi } from '../../../main/workbench/workbench-state-data-database';
-import type { HtmlDomAnchorV1 } from '../shared';
 
 export const HTML_DRAFT_HISTORY_LIMIT = 20;
 const HTML_DRAFT_DATA_KEY = 'agent-draft';
@@ -13,8 +12,6 @@ export interface HtmlDraftOperation {
   readonly afterHtml: string;
   readonly beforeRevision: string;
   readonly afterRevision: string;
-  readonly beforeTarget?: HtmlDomAnchorV1;
-  readonly afterTarget?: HtmlDomAnchorV1;
 }
 
 export interface HtmlDraftHistoryEntry {

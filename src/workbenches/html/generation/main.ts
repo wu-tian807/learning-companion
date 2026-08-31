@@ -1,16 +1,14 @@
 import { AppError } from '../../../main/errors/app-error';
 import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
-import type { WorkbenchRegistry } from '../../../main/workbench/workbench-registry';
+import type { MainWorkbenchProvider } from '../../../main/workbench/workbench-session';
 import { HtmlConversationContextProvider } from '../conversation/html-conversation-context-provider';
 import { createHtmlEditFunctionTools } from '../editing/html-edit-function-tools';
 import type { HtmlAgentEditingService } from '../editing/html-agent-editing-service';
 import { HtmlWorkbenchProvider } from '../main';
-import { htmlWorkbenchManifest } from '../shared';
 
 function requireHtmlEditingService(
-  workbenches: WorkbenchRegistry,
+  provider: MainWorkbenchProvider | undefined,
 ): HtmlAgentEditingService {
-  const provider = workbenches.get(htmlWorkbenchManifest.id);
   const editing =
     provider instanceof HtmlWorkbenchProvider
       ? provider.getAgentEditingService()
@@ -23,20 +21,20 @@ function requireHtmlEditingService(
 
 export const htmlAssistantMainFeature = Object.freeze({
   id: 'builtin.html.agent-editing',
-  registerAgentFunctionTools({ functionTools, workbenches }): void {
-    const editing = requireHtmlEditingService(workbenches);
+  registerAgentFunctionTools({ functionTools, provider }): void {
+    const editing = requireHtmlEditingService(provider);
     for (const tool of createHtmlEditFunctionTools(editing)) {
       functionTools.register(tool);
     }
   },
-  registerGeneration({ conversationContexts, workbenches }): void {
-    const editing = requireHtmlEditingService(workbenches);
+  registerGeneration({ conversationContexts, provider }): void {
+    const editing = requireHtmlEditingService(provider);
     conversationContexts.register(
       new HtmlConversationContextProvider(() => editing),
     );
   },
-  start({ workbenches }) {
-    const editing = requireHtmlEditingService(workbenches);
+  start({ provider }) {
+    const editing = requireHtmlEditingService(provider);
     let disposed = false;
     return Object.freeze({
       shutdown(): Promise<void> {

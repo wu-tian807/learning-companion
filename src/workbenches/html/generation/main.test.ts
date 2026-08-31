@@ -95,11 +95,11 @@ describe('HTML assistant Main integration', () => {
 
     htmlMainWorkbenchContribution.registerAgentFunctionTools?.({
       functionTools,
-      workbenches,
+      provider,
     });
     htmlMainWorkbenchContribution.registerGeneration?.({
       conversationContexts,
-      workbenches,
+      provider,
     } as never);
 
     await expect(
@@ -130,7 +130,7 @@ describe('HTML assistant Main integration', () => {
     expect(assets.resolveContent).toHaveBeenCalledWith('asset-1');
 
     const runtime = htmlMainWorkbenchContribution.start?.({
-      workbenches,
+      provider,
     } as never);
     await runtime?.shutdown?.();
     runtime?.dispose();

@@ -256,8 +256,6 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       afterHtml: html,
       beforeRevision: session.draftRevision,
       afterRevision: nextRevision,
-      beforeTarget: active.edit.resolvedTarget,
-      afterTarget: replaced.resolvedTarget,
     };
     if (session.pending && session.pending.taskId !== context.taskId) {
       throw new Error('上一轮 HTML 修改尚未收口');

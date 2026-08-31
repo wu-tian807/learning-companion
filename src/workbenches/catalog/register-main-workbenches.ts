@@ -14,6 +14,7 @@ import {
   type MainWorkbenchStartContext,
 } from '../../main/workbench/main-workbench-contribution';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
+import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import { areAssetWorkbenchManifestsEqual } from '../../shared/workbench/manifest';
 import { audioMainWorkbenchContribution } from '../audio/main-contribution';
 import { documentAiMainWorkbenchContribution } from '../document-ai/main-contribution';
@@ -77,6 +78,24 @@ function forEachContribution(
   }
 }
 
+type RegisteredProviderContext<T extends { readonly provider?: unknown }> =
+  Omit<T, 'provider'> & { readonly workbenches: WorkbenchRegistry };
+
+function resolveContributionProvider(
+  contribution: MainWorkbenchContribution,
+  workbenches: WorkbenchRegistry,
+): MainWorkbenchProvider | undefined {
+  if (!contribution.manifest) return undefined;
+  const provider = workbenches.get(contribution.manifest.id);
+  if (
+    !provider ||
+    !areAssetWorkbenchManifestsEqual(provider.manifest, contribution.manifest)
+  ) {
+    throw new AppError('INVALID_EXTENSION_DEFINITION');
+  }
+  return provider;
+}
+
 export function registerMainWorkbenchProviders(
   registry: WorkbenchRegistry,
   context: MainWorkbenchProviderContext,
@@ -121,21 +140,29 @@ export function registerMainWorkbenchAttachments(
 }
 
 export function registerMainWorkbenchAgentFunctionTools(
-  context: MainWorkbenchAgentToolContext,
+  context: RegisteredProviderContext<MainWorkbenchAgentToolContext>,
 ): void {
+  const { workbenches, ...featureContext } = context;
   forEachContribution((entry) => {
-    entry.registerAgentFunctionTools?.(context);
+    entry.registerAgentFunctionTools?.({
+      ...featureContext,
+      provider: resolveContributionProvider(entry, workbenches),
+    });
   });
 }
 
 export function registerMainWorkbenchGeneration(
-  context: MainWorkbenchGenerationContext,
+  context: RegisteredProviderContext<MainWorkbenchGenerationContext>,
 ): void {
   context.conversationContexts.register(
     new ProjectConversationContextProvider(),
   );
+  const { workbenches, ...featureContext } = context;
   forEachContribution((entry) => {
-    entry.registerGeneration?.(context);
+    entry.registerGeneration?.({
+      ...featureContext,
+      provider: resolveContributionProvider(entry, workbenches),
+    });
   });
   context.definitions.register(
     createWorkbenchConversationTaskDefinitionV1(
@@ -145,12 +172,16 @@ export function registerMainWorkbenchGeneration(
 }
 
 export function startMainWorkbenchContributions(
-  context: MainWorkbenchStartContext,
+  context: RegisteredProviderContext<MainWorkbenchStartContext>,
 ): MainWorkbenchRuntime {
   const runtimes: MainWorkbenchRuntime[] = [];
+  const { workbenches, ...featureContext } = context;
   try {
     forEachContribution((entry) => {
-      const runtime = entry.start?.(context);
+      const runtime = entry.start?.({
+        ...featureContext,
+        provider: resolveContributionProvider(entry, workbenches),
+      });
       if (runtime) runtimes.push(runtime);
     });
   } catch (error) {

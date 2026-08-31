@@ -24,7 +24,6 @@ import type { WorkbenchEventBusApi } from './workbench-event-bus';
 import type { MainWorkbenchProvider } from './workbench-session';
 import type { WorkbenchStateDataDatabaseApi } from './workbench-state-data-database';
 import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
-import type { WorkbenchRegistry } from './workbench-registry';
 
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
@@ -61,7 +60,7 @@ export interface MainWorkbenchAttachmentContext {
 
 export interface MainWorkbenchAgentToolContext {
   readonly functionTools: AgentFunctionToolRegistryApi;
-  readonly workbenches: WorkbenchRegistry;
+  readonly provider?: MainWorkbenchProvider;
 }
 
 export interface MainWorkbenchGenerationContext {
@@ -73,7 +72,7 @@ export interface MainWorkbenchGenerationContext {
   readonly attachments: AttachmentServiceApi;
   readonly externalLibraries: ExternalLibraryServiceApi;
   readonly projects: ProjectLookup;
-  readonly workbenches: WorkbenchRegistry;
+  readonly provider?: MainWorkbenchProvider;
 }
 
 export interface MainWorkbenchStartContext {
@@ -81,7 +80,7 @@ export interface MainWorkbenchStartContext {
   readonly generationTasks: GenerationTaskServiceApi;
   readonly assets: AssetLookup;
   readonly externalLibraries: ExternalLibraryServiceApi;
-  readonly workbenches: WorkbenchRegistry;
+  readonly provider?: MainWorkbenchProvider;
 }
 
 export interface MainWorkbenchRuntime {
