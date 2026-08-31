@@ -207,7 +207,7 @@ function elementPath(
 function createAnchor(
   element: HtmlElement,
   document: HtmlDocument,
-  frameUrl: string,
+  frameUrl?: string,
 ): HtmlDomAnchorV1 {
   const fingerprint: HtmlDomElementV1 = {
     path: elementPath(element, document),
@@ -230,7 +230,10 @@ function createAnchor(
       ? { textQuote: boundedFingerprint(textContent(element), 1_024) }
       : {}),
   };
-  return { frameUrl, element: fingerprint };
+  return {
+    ...(frameUrl === undefined ? {} : { frameUrl }),
+    element: fingerprint,
+  };
 }
 
 function resolveBySelector(
@@ -411,7 +414,7 @@ export function resolveHtmlEditTarget(
     );
   }
   const frameUrl =
-    locator.kind === 'dom-anchor' ? locator.anchor.frameUrl : 'about:blank';
+    locator.kind === 'dom-anchor' ? locator.anchor.frameUrl : undefined;
   return {
     anchor: createAnchor(element, parsed.document, frameUrl),
     range,
@@ -448,7 +451,7 @@ export function findElementAtSourceOffset(
 export function createHtmlDomAnchor(
   parsed: ParsedHtmlDocument,
   element: HtmlElement,
-  frameUrl: string,
+  frameUrl?: string,
 ): HtmlDomAnchorV1 {
   sourceLocation(element);
   return createAnchor(element, parsed.document, frameUrl);

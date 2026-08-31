@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { conversationContextsEqual } from '../../../renderer/conversation/conversation-controller-model';
 import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
@@ -24,12 +24,10 @@ const target = createImageRegionTarget({
 });
 
 function createContribution(
-  revealContext = vi.fn(),
   sourceRevision = 'revision-1',
 ) {
   return createImageConversationContribution({
     sourceRevision,
-    revealContext,
   });
 }
 
@@ -97,19 +95,6 @@ describe('image conversation contribution', () => {
       }),
     ).toThrow('当前聊天上下文无效');
   });
-
-  it('describes and reveals the exact image region through Image', async () => {
-    const revealContext = vi.fn();
-    const contribution = createContribution(revealContext);
-    const context = createImageConversationContext(target, 'revision-1');
-    expect(contribution.describeContext?.(context)).toEqual({
-      label: '图片兴趣区域',
-      detail: '左侧 10% · 顶部 20% · 30% × 40%',
-    });
-    await contribution.revealContext?.(context);
-    expect(revealContext).toHaveBeenCalledWith(context);
-  });
-
   it('isolates context matching by source revision without owning history', () => {
     const firstContext = createImageConversationContext(target, 'revision-1');
     const secondContext = createImageConversationContext(target, 'revision-2');

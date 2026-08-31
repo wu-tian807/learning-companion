@@ -448,7 +448,7 @@ export function AttachmentHost({
   }, [attachments]);
 
   const revealAttachment = useCallback((attachment: AssetAttachment) => {
-    revealWorkbenchAnchor(assetId, attachment.target);
+    void revealWorkbenchAnchor(assetId, attachment.target).catch(() => undefined);
     setFocusedAttachmentId(attachment.id);
     onSidebarOpenChange(false);
     if (focusTimerRef.current !== undefined) {

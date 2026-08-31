@@ -5,6 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
+import {
+  registerWorkbenchAnchorController,
+  resetWorkbenchAnchorControllerForTests,
+} from '../../../renderer/workbench/host/workbench-anchor-bridge';
 import { AttachmentHost } from './AttachmentHost';
 
 const attachment: AssetAttachment = {
@@ -35,18 +39,14 @@ describe('AttachmentHost', () => {
         answer: 'AI 回复内容',
       })),
     };
-    window.addEventListener(
-      'learning-companion:resolve-workbench-anchor',
-      (event) => {
-        const detail = (event as CustomEvent<{
-          respond: (rect: unknown) => void;
-        }>).detail;
-        detail.respond({ left: 100, top: 120, width: 60, height: 30 });
-      },
-    );
+    registerWorkbenchAnchorController('test', 'asset', {
+      resolve: () => ({ left: 100, top: 120, width: 60, height: 30 }),
+      reveal: () => true,
+    });
   });
 
   afterEach(() => {
+    resetWorkbenchAnchorControllerForTests();
     for (const container of containers) {
       container.remove();
     }

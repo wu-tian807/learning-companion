@@ -24,14 +24,17 @@ import type {
 } from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
-import { AnchorHighlight } from './conversation/AnchorHighlight';
+import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { SelectionFloatBar } from './conversation/SelectionFloatBar';
 import {
   createHtmlConversationContribution,
   shouldClearHtmlConversationHighlight,
 } from './conversation/html-conversation-contribution';
 import {
+  createAnchorClearCommand,
+  createAnchorHighlightCommand,
   isHtmlAnchorTarget,
+  isHtmlAnchorCommandResult,
   isSameHtmlAnchorLocation,
   type HtmlAnchorTarget,
 } from './anchor-commands';
@@ -156,12 +159,8 @@ export function HtmlWorkbenchView({
   const [frameFailed, setFrameFailed] = useState(false);
   const [pendingSelection, setPendingSelection] =
     useState<PendingHtmlTextSelection>();
-  const [highlightTarget, setHighlightTarget] =
-    useState<HtmlAnchorTarget>();
   const highlightTargetRef = useRef<HtmlAnchorTarget | undefined>(undefined);
-  const [highlightReveal, setHighlightReveal] = useState(false);
-  const [highlightDurationMs, setHighlightDurationMs] = useState(0);
-  const [highlightRevision, setHighlightRevision] = useState(0);
+  const highlightRevisionRef = useRef(0);
   const [editingStatus, setEditingStatus] = useState(payload?.editing);
   const [editCommandBusy, setEditCommandBusy] = useState(false);
   const [draftReview, setDraftReview] = useState<HtmlDraftReview>();
@@ -173,24 +172,40 @@ export function HtmlWorkbenchView({
     : 'invalid';
 
   const clearHighlight = useCallback(() => {
+    const target = highlightTargetRef.current;
+    if (!target) return;
     highlightTargetRef.current = undefined;
-    setHighlightTarget(undefined);
-    setHighlightReveal(false);
-    setHighlightDurationMs(0);
-  }, []);
+    const revision = ++highlightRevisionRef.current;
+    void executeCommand(createAnchorClearCommand(target, revision)).catch(
+      () => undefined,
+    );
+  }, [executeCommand]);
 
   const showHighlight = useCallback(
     (
       target: HtmlAnchorTarget,
       options: { readonly reveal: boolean; readonly durationMs: number },
-    ) => {
+    ): Promise<void> => {
       highlightTargetRef.current = target;
-      setHighlightTarget(target);
-      setHighlightReveal(options.reveal);
-      setHighlightDurationMs(options.durationMs);
-      setHighlightRevision((current) => current + 1);
+      const revision = ++highlightRevisionRef.current;
+      return executeCommand(
+        createAnchorHighlightCommand(
+          target,
+          revision,
+          options.reveal,
+          options.durationMs,
+        ),
+      ).then((result) => {
+        if (!isHtmlAnchorCommandResult(result.payload)) {
+          throw new Error('HTML anchor command returned invalid data');
+        }
+        if (revision !== highlightRevisionRef.current) return;
+        if (!result.payload.found) {
+          throw new Error('原文内容可能已经变化，无法定位该锚点。');
+        }
+      });
     },
-    [],
+    [executeCommand],
   );
 
   const releaseConversationContext = useCallback((context: JsonValue | undefined) => {
@@ -216,23 +231,6 @@ export function HtmlWorkbenchView({
     [onError],
   );
 
-  const activateConversationAnchor = useCallback(
-    (anchor: JsonValue) => {
-      if (!isHtmlAnchorTarget(anchor)) {
-        onError('无法在 HTML 原文中定位该锚点。');
-        return;
-      }
-      showHighlight(anchor, { reveal: true, durationMs: 2_800 });
-    },
-    [onError, showHighlight],
-  );
-
-  const reportAnchorNotFound = useCallback(() => {
-    if (highlightReveal) {
-      onError('引用原文已被修改，无法定位到原位置。');
-    }
-  }, [highlightReveal, onError]);
-
   const reportAnchorError = useCallback(
     (error: unknown) => {
       reportError(error, '无法在 HTML 原文中定位该锚点。');
@@ -240,19 +238,13 @@ export function HtmlWorkbenchView({
     [reportError],
   );
 
+  const conversationOwnerId = `${htmlWorkbenchManifest.id}:${bootstrap.sessionId}`;
   const conversationContribution = useMemo(
     () => createHtmlConversationContribution({
-      assetId: asset.id,
-      revealContext: activateConversationAnchor,
       onContextReleased: releaseConversationContext,
     }),
-    [
-      activateConversationAnchor,
-      asset.id,
-      releaseConversationContext,
-    ],
+    [releaseConversationContext],
   );
-  const conversationOwnerId = `${htmlWorkbenchManifest.id}:${bootstrap.sessionId}`;
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
     asset.id,
@@ -262,16 +254,33 @@ export function HtmlWorkbenchView({
   const conversationSnapshot = useWorkbenchConversationSnapshot(conversationRuntime);
   const aiBusy = conversationSnapshot.busy;
 
+  useEffect(() => {
+    if (loadedFrameKey !== frameKey) return;
+    return registerWorkbenchAnchorController(
+      `${conversationOwnerId}.anchors`,
+      asset.id,
+      {
+        async reveal(target) {
+          if (!isHtmlAnchorTarget(target)) return false;
+          await showHighlight(target, { reveal: true, durationMs: 2_800 });
+          return true;
+        },
+      },
+    );
+  }, [asset.id, conversationOwnerId, frameKey, loadedFrameKey, showHighlight]);
+
   const explainSelection = useCallback((target: ContentAnchorTarget) => {
     if (isHtmlAnchorTarget(target)) {
-      showHighlight(target, { reveal: false, durationMs: 0 });
+      void showHighlight(target, { reveal: false, durationMs: 0 }).catch(
+        reportAnchorError,
+      );
     }
     setPendingSelection(undefined);
     conversationRuntime.open({
       ownerId: conversationOwnerId,
       context: target as unknown as JsonValue,
     });
-  }, [conversationOwnerId, conversationRuntime, showHighlight]);
+  }, [conversationOwnerId, conversationRuntime, reportAnchorError, showHighlight]);
 
   const summarizePage = useCallback(() => {
     setPendingSelection(undefined);
@@ -597,10 +606,10 @@ export function HtmlWorkbenchView({
         // 直到发送（onAnchorConsumed）或删除（chip ✕）或离开对话。
         const focusTarget = mapped.interaction.focus;
         if (isHtmlAnchorTarget(focusTarget)) {
-          showHighlight(focusTarget, {
+          void showHighlight(focusTarget, {
             reveal: false,
             durationMs: 0,
-          });
+          }).catch(reportAnchorError);
         } else {
           clearHighlight();
         }
@@ -617,6 +626,7 @@ export function HtmlWorkbenchView({
     clearHighlight,
     onInteractionChange,
     payload,
+    reportAnchorError,
     runtime,
     showHighlight,
   ]);
@@ -668,11 +678,13 @@ export function HtmlWorkbenchView({
         onLoad={() => {
           setFrameFailed(false);
           void installHtmlSourceCopyInFrame(executeCommand)
+            .then(() => {
+              setLoadedFrameKey(frameKey);
+            })
             .catch((error) => {
               reportError(error, '无法启用 HTML 公式源码复制。');
             })
             .finally(() => {
-              setLoadedFrameKey(frameKey);
               editReloadQueue.complete();
             });
         }}
@@ -681,16 +693,6 @@ export function HtmlWorkbenchView({
           setLoadedFrameKey(undefined);
           editReloadQueue.complete();
         }}
-      />
-
-      <AnchorHighlight
-        target={highlightTarget}
-        revision={highlightRevision}
-        reveal={highlightReveal}
-        durationMs={highlightDurationMs}
-        executeCommand={executeCommand}
-        onNotFound={reportAnchorNotFound}
-        onError={reportAnchorError}
       />
 
       {editingStatus && (

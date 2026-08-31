@@ -28,8 +28,6 @@ describe('Conversation task request ownership', () => {
   it('uses Workbench semantics only when that turn has an explicit context source', () => {
     const request = createContextualConversationTaskRequest(
       {
-        id: 'pdf.question',
-        workbenchId: 'pdf',
         contextProviderId: 'document.context',
         sourceAssetMode: 'reference',
         isContext: (context) =>

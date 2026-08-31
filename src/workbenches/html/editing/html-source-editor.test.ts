@@ -46,6 +46,7 @@ describe('HTML parse5 source editor', () => {
       ariaLabel: 'intro',
       textQuote: 'Hello',
     });
+    expect(contents.resolvedTarget.frameUrl).toBeUndefined();
   });
 
   it('supports standard CSS selectors beyond the common subset', () => {

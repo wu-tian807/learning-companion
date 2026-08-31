@@ -18,6 +18,7 @@ import type {
   ConversationControllerState,
 } from './conversation-controller';
 import { ConversationMarkdown } from './conversation-markdown';
+import { describeConversationContext } from './conversation-reference';
 import { normalizeConversationSelection } from './conversation-text';
 import {
   PROJECT_CONVERSATION_EMPTY_LABEL,
@@ -120,6 +121,7 @@ function MessageBubble({
   onSelectedAnswer,
   onAnswerAction,
   onRevealContext,
+  onRevealError,
 }: {
   readonly message: ConversationMessageRecord;
   readonly contextPresentation?: ConversationContextPresentation;
@@ -131,6 +133,7 @@ function MessageBubble({
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
   readonly onAnswerAction: (answer: ConversationMessageRecord, text: string) => void;
   readonly onRevealContext?: () => Promise<void> | void;
+  readonly onRevealError?: (error: unknown) => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -143,6 +146,7 @@ function MessageBubble({
             <ContextCard
               presentation={contextPresentation}
               onReveal={onRevealContext}
+              onRevealError={onRevealError}
             />
           </div>
         )}
@@ -313,7 +317,6 @@ export function ConversationPanel({
   actions,
   projectId,
   resolveContextContribution,
-  describeContext,
   onRevealContext,
   onStartNew,
   onClose,
@@ -326,10 +329,6 @@ export function ConversationPanel({
   readonly resolveContextContribution: (
     source: ConversationMessageContextSource | undefined,
   ) => WorkbenchConversationContribution | undefined;
-  readonly describeContext: (
-    source: ConversationMessageContextSource,
-    context: Exclude<ConversationMessageRecord['context'], undefined>,
-  ) => ConversationContextPresentation | undefined;
   readonly onRevealContext: (
     source: ConversationMessageContextSource,
     context: Exclude<ConversationMessageRecord['context'], undefined>,
@@ -417,7 +416,12 @@ export function ConversationPanel({
   };
   const pendingContext = state.pendingContext;
   const pendingContextValue = pendingContext?.context;
-  const pendingContextReveal = pendingContext?.contribution.revealContext;
+  const pendingContextSource = pendingContext
+    ? {
+        assetId: pendingContext.assetId,
+        contextProviderId: pendingContext.contribution.contextProviderId,
+      }
+    : undefined;
 
   return (
     <section
@@ -501,8 +505,8 @@ export function ConversationPanel({
                   key={message.id}
                   message={message}
                   contextPresentation={
-                    context !== undefined && contextSource
-                      ? describeContext(contextSource, context)
+                    context !== undefined
+                      ? describeConversationContext(context)
                       : undefined
                   }
                   answerContribution={resolveContextContribution(
@@ -529,6 +533,7 @@ export function ConversationPanel({
                           onRevealContext(contextSource, context)
                       : undefined
                   }
+                  onRevealError={reportRevealError}
                 />
               );
             })}
@@ -596,17 +601,18 @@ export function ConversationPanel({
                 <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
               </div>
             )}
-            {pendingContext !== undefined && (
+            {pendingContextValue !== undefined && (
               <div className="mb-2">
                 <ContextCard
                   presentation={
-                    pendingContext.contribution.describeContext?.(
-                      pendingContext.context,
-                    )
+                    describeConversationContext(pendingContextValue)
                   }
                   onReveal={
-                    pendingContextValue !== undefined && pendingContextReveal
-                      ? () => pendingContextReveal(pendingContextValue)
+                    pendingContextValue !== undefined && pendingContextSource
+                      ? () => onRevealContext(
+                          pendingContextSource,
+                          pendingContextValue,
+                        )
                       : undefined
                   }
                   removable

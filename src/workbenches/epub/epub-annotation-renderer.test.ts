@@ -50,13 +50,13 @@ describe('EPUB annotation renderer', () => {
     expect(annotations.underline).toHaveBeenCalledOnce();
     expect(annotations.highlight).toHaveBeenCalledOnce();
     expect(annotations.underline.mock.calls[0]?.[4]).toMatchObject({
-      transform: 'translate(0 0)',
+      'data-epub-wave-lane': '0',
       stroke: 'none',
       'data-epub-wave-color': '#ef4444',
-      'data-epub-wave-source': 'line',
+      'data-epub-wave-source': 'rect',
     });
     expect(annotations.highlight.mock.calls[0]?.[4]).toMatchObject({
-      transform: 'translate(0 3)',
+      'data-epub-wave-lane': '1',
       'data-epub-wave-color': '#eab308',
       'data-epub-wave-source': 'rect',
     });

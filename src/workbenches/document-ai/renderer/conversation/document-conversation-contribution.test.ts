@@ -33,8 +33,6 @@ describe('Document conversation contribution', () => {
     const contribution = createDocumentConversationContribution({
       projectId: 'project',
       assetId: 'asset',
-      workbenchId: 'markdown',
-      contributionId: 'markdown.question',
     });
     const context = createDocumentConversationContext({
       target: {
@@ -72,8 +70,6 @@ describe('Document conversation contribution', () => {
     const base = {
       projectId: 'project',
       assetId: 'asset',
-      workbenchId: 'pdf',
-      contributionId: 'pdf.question',
     } as const;
     expect(
       createDocumentConversationContribution(base).answerAction,
@@ -131,8 +127,6 @@ describe('Document conversation contribution', () => {
     const contribution = createDocumentConversationContribution({
       projectId: 'project',
       assetId: 'asset',
-      workbenchId: 'pdf',
-      contributionId: 'pdf.question',
       returnAnswerToSource,
       answerActionPresentation,
     });

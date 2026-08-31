@@ -623,7 +623,7 @@ describe('HtmlWorkbenchView', () => {
     }
   });
 
-  it('reports a changed original quote only when a history reveal cannot locate it', async () => {
+  it('rejects a history reveal when the original quote can no longer be located', async () => {
     const conversationRuntime = new WorkbenchConversationRuntime();
     const view = await mountHtmlWorkbench({
       conversationRuntime,
@@ -643,22 +643,16 @@ describe('HtmlWorkbenchView', () => {
         view.container.querySelector('iframe')?.dispatchEvent(new Event('load'));
         await Promise.resolve();
       });
-      await act(async () => {
-        await conversationRuntime.revealContext(
+      await expect(
+        conversationRuntime.revealContext(
           {
             assetId: asset.id,
-            contributionId: 'html.assistant',
             contextProviderId: HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
           },
           target,
           () => undefined,
-        );
-        await Promise.resolve();
-      });
-
-      expect(view.onError).toHaveBeenCalledWith(
-        '引用原文已被修改，无法定位到原位置。',
-      );
+        ),
+      ).rejects.toThrow('原文内容可能已经变化，无法定位该锚点。');
     } finally {
       view.cleanup();
       conversationRuntime.dispose();
