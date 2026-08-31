@@ -28,7 +28,11 @@ import {
   type AgentProviderConnectionConfiguration,
   type AgentProviderSelectorSelectionSnapshot,
 } from '../../shared/agent-providers';
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
+import {
+  HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+  LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+  MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+} from '../../shared/agent-provider-selectors';
 import type { SettingsRepository } from './settings-repository';
 
 export interface SettingsLogger {
@@ -59,6 +63,9 @@ interface DeserializedSettings {
   readonly state: StoredSettingsState;
   readonly needsMigration: boolean;
 }
+
+const LEGACY_GENERATION_CENTER_SELECTOR_ID = 'generation-center';
+const LEGACY_WORKBENCH_SELECTOR_ID = 'workbench';
 
 function clonePreferences(preferences: AppPreferences): AppPreferences {
   return Object.freeze({
@@ -592,13 +599,14 @@ export class JsonSettingsRepository implements SettingsRepository {
       const providerId = value.selectedAgentProviderId;
       if (
         providerId &&
-        !selections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID]
+        !selections[HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID] &&
+        !selections[LEGACY_GENERATION_CENTER_SELECTOR_ID]
       ) {
         const connectionId =
           legacyApiConnections.get(providerId) ??
           builtInAccountConnectionId(providerId);
-        selections[GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID] = {
-          selectorId: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
+        selections[HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID] = {
+          selectorId: HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
           providerId,
           connectionId,
           modelId: null,
@@ -644,6 +652,37 @@ export class JsonSettingsRepository implements SettingsRepository {
       if (selection?.providerId === active?.providerId) {
         selections[selectorId] = selection;
       }
+    }
+
+    const migrateSelector = (
+      targetId: string,
+      source: AgentProviderSelectorSelectionSnapshot | undefined,
+    ) => {
+      if (!source || selections[targetId]) return;
+      selections[targetId] = {
+        ...source,
+        selectorId: targetId,
+      };
+      needsMigration = true;
+    };
+    const legacyGeneration = selections[LEGACY_GENERATION_CENTER_SELECTOR_ID];
+    const legacyWorkbench = selections[LEGACY_WORKBENCH_SELECTOR_ID];
+    migrateSelector(
+      HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+      legacyGeneration,
+    );
+    migrateSelector(
+      MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+      legacyWorkbench,
+    );
+    migrateSelector(
+      LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+      legacyWorkbench,
+    );
+    if (legacyGeneration || legacyWorkbench) {
+      delete selections[LEGACY_GENERATION_CENTER_SELECTOR_ID];
+      delete selections[LEGACY_WORKBENCH_SELECTOR_ID];
+      needsMigration = true;
     }
 
     return {

@@ -33,7 +33,6 @@ export const audioMainWorkbenchContribution = composeMainWorkbenchContribution(
       context.assetService,
       context.projectLookup,
       context.artifactService,
-      subtitles,
       mediaDubbingProducer,
       mediaDubbingSpeakerTrackProducer,
       mediaRuntime,

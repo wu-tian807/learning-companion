@@ -65,9 +65,9 @@ function LoadedAgentProviderSettings({
 
       {setup.selectors.length > 0 && (
         <div className="mt-6 border-t border-white/[0.08] pt-5">
-          <h4 className="text-sm font-semibold text-slate-200">功能模型</h4>
+          <h4 className="text-sm font-semibold text-slate-200">智能强度</h4>
           <p className="mt-1 text-xs text-slate-500">
-            每个功能独立选择 Connection、模型与思考力度。
+            按任务所需强度选择 Connection、模型与思考力度。
           </p>
           <div className="mt-3 space-y-2.5">
             {setup.selectors.map((selector) => (

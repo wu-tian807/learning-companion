@@ -26,6 +26,7 @@ export type MediaSubtitlePhase =
   | 'transcribing'
   | 'source-ready'
   | 'translating'
+  | 'provider-required'
   | 'ready'
   | 'unsupported-language'
   | 'failed';
@@ -87,6 +88,7 @@ export function isMediaSubtitleSnapshot(
       value.phase === 'transcribing' ||
       value.phase === 'source-ready' ||
       value.phase === 'translating' ||
+      value.phase === 'provider-required' ||
       value.phase === 'ready' ||
       value.phase === 'unsupported-language' ||
       value.phase === 'failed') &&

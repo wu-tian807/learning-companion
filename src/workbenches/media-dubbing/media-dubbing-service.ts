@@ -23,7 +23,6 @@ import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
   createSubtitleTranslationArtifactKey,
 } from '../media-subtitles/translation-producer';
-import type { MediaSubtitleServiceApi } from '../media-subtitles/media-subtitle-service';
 import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
   DUBBING_SPEAKER_TRACK_ARTIFACT_KEY,
@@ -47,7 +46,6 @@ import {
 
 export type MediaDubbingServicePhase =
   | 'idle'
-  | 'awaiting-translation'
   | 'runtime-required'
   | 'preparing-runtime'
   | 'separating'
@@ -145,7 +143,6 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     private readonly assets: AssetServiceApi,
     private readonly projects: ProjectLookup,
     private readonly artifacts: AssetArtifactServiceApi,
-    private readonly subtitles: MediaSubtitleServiceApi,
     private readonly producer: VoxCpm2DubbingProducer,
     private readonly speakerTrackProducer: DubbingSpeakerTrackArtifactProducerApi,
     private readonly subtitleRuntime: MediaSubtitleRuntimeResolverApi,
@@ -269,9 +266,10 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
   private async generate(projectId: string, assetId: string): Promise<void> {
     try {
       await this.dubbingRuntime.requireInstalledBundle();
-      await this.requireTranslation(projectId, assetId);
       const input = await this.resolveCachedInput(projectId, assetId);
-      if (!input) throw new AppError('DATA_INTEGRITY_ERROR');
+      if (!input) {
+        throw new AppError('MEDIA_DUBBING_PREREQUISITE_REQUIRED');
+      }
       const { source, translation, request, speakerTrackRequest } = input;
       const revision = request.source.revision;
       this.activeRevisions.set(assetId, revision);
@@ -535,21 +533,6 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
     });
   }
 
-  private async requireTranslation(
-    projectId: string,
-    assetId: string,
-  ): Promise<ReturnType<MediaSubtitleServiceApi['getSnapshot']>> {
-    const current = this.subtitles.getSnapshot(assetId);
-    if (current.phase === 'ready' && current.translation) return current;
-
-    this.update(assetId, {
-      ...EMPTY_SNAPSHOT,
-      phase: 'awaiting-translation',
-    });
-    await this.subtitles.ensureTranslation(projectId, assetId);
-    return this.waitForTranslation(assetId);
-  }
-
   private applyRuntimeFailure(assetId: string, error: unknown): boolean {
     if (
       error instanceof AppError &&
@@ -571,36 +554,6 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
       return true;
     }
     return false;
-  }
-
-  private async waitForTranslation(
-    assetId: string,
-  ): Promise<ReturnType<MediaSubtitleServiceApi['getSnapshot']>> {
-    const current = this.subtitles.getSnapshot(assetId);
-    if (current.phase === 'ready' && current.translation) return current;
-    if (
-      current.phase === 'failed' ||
-      current.phase === 'runtime-required' ||
-      current.phase === 'unsupported-language'
-    ) {
-      throw new Error(current.message ?? '字幕翻译不可用');
-    }
-    return new Promise((resolvePromise, rejectPromise) => {
-      const unsubscribe = this.subtitles.subscribe(assetId, (event) => {
-        if (event.type !== 'snapshot') return;
-        if (event.snapshot.phase === 'ready' && event.snapshot.translation) {
-          unsubscribe();
-          resolvePromise(event.snapshot);
-        } else if (
-          event.snapshot.phase === 'failed' ||
-          event.snapshot.phase === 'runtime-required' ||
-          event.snapshot.phase === 'unsupported-language'
-        ) {
-          unsubscribe();
-          rejectPromise(new Error(event.snapshot.message ?? '字幕翻译不可用'));
-        }
-      });
-    });
   }
 
   private handleProgress(progress: MediaDubbingProgress): void {

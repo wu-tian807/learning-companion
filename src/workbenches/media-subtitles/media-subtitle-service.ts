@@ -99,6 +99,43 @@ function userFailureMessage(error: unknown): string {
   return '字幕处理没有完成。';
 }
 
+const PROVIDER_AUTH_FAILURE_DETAIL_PATTERN =
+  /(?:\b(?:401|403)\b|unauthori[sz]ed|forbidden|invalid[_ -]?api[_ -]?key|incorrect api key|authentication (?:failed|required)|api key.*(?:invalid|expired|missing))/iu;
+
+function translationProviderFailureMessage(
+  code: string | undefined,
+  detail?: string,
+): string | undefined {
+  if (
+    code === 'AGENT_PROVIDER_AUTH_REQUIRED' ||
+    (code === 'CODEX_REQUEST_FAILED' &&
+      detail !== undefined &&
+      PROVIDER_AUTH_FAILURE_DETAIL_PATTERN.test(detail))
+  ) {
+    return '“低智能”翻译连接未通过验证。请在设置中完成登录，或配置有效的 API Key。';
+  }
+  if (code === 'AGENT_PROVIDER_SELECTION_REQUIRED') {
+    return '尚未为“低智能”选择可用的 AI Provider。请先在设置中完成配置。';
+  }
+  return '“低智能”当前选择的 AI Provider 不可用。请在设置中重新选择。';
+}
+
+function translationFailureSnapshot(
+  snapshot: MediaSubtitleSnapshot,
+  error: unknown,
+): MediaSubtitleSnapshot {
+  const described = describeAppError(error);
+  const providerMessage = translationProviderFailureMessage(
+    described.code,
+    described.detail,
+  );
+  return {
+    ...snapshot,
+    phase: providerMessage ? 'provider-required' : 'failed',
+    message: providerMessage ?? userFailureMessage(error),
+  };
+}
+
 export class MediaSubtitleService implements MediaSubtitleServiceApi {
   private readonly snapshots = new Map<string, MediaSubtitleSnapshot>();
   private readonly listeners = new Map<
@@ -201,11 +238,10 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         ) {
           return;
         }
-        this.updateSnapshot(assetId, {
-          ...this.getSnapshot(assetId),
-          phase: 'failed',
-          message: userFailureMessage(error),
-        });
+        this.updateSnapshot(
+          assetId,
+          translationFailureSnapshot(this.getSnapshot(assetId), error),
+        );
       }
     })().finally(() => this.translationTasks.delete(assetId));
     this.translationTasks.set(assetId, task);
@@ -252,6 +288,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         completedCues: 0,
         totalCues: track.cues.length,
       });
+      await this.restoreCachedTranslation(assetId, resolved);
     } catch (error) {
       if (isAbortError(error)) return;
       if (
@@ -298,26 +335,8 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
 
     const targetLanguage = oppositeSubtitleLanguage(source.track.language);
     const sourceTrackRevision = source.artifact.artifact.artifactRevision;
-    const request: AssetArtifactRequest = {
-      assetId,
-      producerId: MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
-      artifactKey: createSubtitleTranslationArtifactKey(
-        source.track.language,
-        targetLanguage,
-      ),
-      workspacePath: source.workspacePath,
-      source: {
-        assetId,
-        mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
-        absolutePath: source.artifact.absolutePath,
-        revision: sourceTrackRevision,
-      },
-    };
-    const cached = await this.artifacts.getCached(request);
-    if (cached) {
-      await this.applyTranslationArtifact(assetId, source, cached);
-      return;
-    }
+    const request = this.createTranslationRequest(assetId, source);
+    if (await this.restoreCachedTranslation(assetId, source, request)) return;
 
     this.updateSnapshot(assetId, {
       ...this.getSnapshot(assetId),
@@ -434,11 +453,54 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     if (!active) return;
     this.activeTranslationTasks.delete(snapshot.id);
     if (snapshot.cancelledTime !== undefined) return;
+    const providerMessage = translationProviderFailureMessage(
+      snapshot.failure?.code,
+      snapshot.failure?.detail,
+    );
     this.updateSnapshot(active.assetId, {
       ...this.getSnapshot(active.assetId),
-      phase: 'failed',
-      message: snapshot.failure?.message ?? '字幕翻译没有完成。',
+      phase: providerMessage ? 'provider-required' : 'failed',
+      message:
+        providerMessage ?? snapshot.failure?.message ?? '字幕翻译没有完成。',
     });
+  }
+
+  private createTranslationRequest(
+    assetId: string,
+    source: ResolvedSourceTrack,
+  ): AssetArtifactRequest {
+    if (!isTranslatableSubtitleLanguage(source.track.language)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return {
+      assetId,
+      producerId: MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
+      artifactKey: createSubtitleTranslationArtifactKey(
+        source.track.language,
+        oppositeSubtitleLanguage(source.track.language),
+      ),
+      workspacePath: source.workspacePath,
+      source: {
+        assetId,
+        mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+        absolutePath: source.artifact.absolutePath,
+        revision: source.artifact.artifact.artifactRevision,
+      },
+    };
+  }
+
+  private async restoreCachedTranslation(
+    assetId: string,
+    source: ResolvedSourceTrack,
+    request?: AssetArtifactRequest,
+  ): Promise<boolean> {
+    if (!isTranslatableSubtitleLanguage(source.track.language)) return false;
+    const cached = await this.artifacts.getCached(
+      request ?? this.createTranslationRequest(assetId, source),
+    );
+    if (!cached) return false;
+    await this.applyTranslationArtifact(assetId, source, cached);
+    return true;
   }
 
   private async applyTranslationArtifact(

@@ -1,7 +1,7 @@
 # 媒体字幕外部依赖与模型总表
 
 > 日期：2026-08-16
-> 状态：已实现；2026-08-28 将字幕翻译迁移到 GenerationTask
+> 状态：已实现；2026-08-28 将字幕翻译迁移到 GenerationTask；2026-08-31 改用低智能档
 > 范围：Video 与 Audio 共用的媒体解码和原文字幕识别依赖。字幕翻译不再下载本地模型。
 
 ## 1. 所有组件放在哪里
@@ -48,7 +48,7 @@ SenseVoice；NVIDIA 只安装并运行 Whisper。SenseVoice 的时间轴来自 V
 
 ## 3. 中英字幕翻译
 
-翻译不属于外部组件。正式链路通过工作台 Selector 使用现有 Agent：
+翻译不属于外部组件。正式链路通过“低智能”Selector 使用现有 Agent：
 
 ```text
 VideoSubtitleService
@@ -82,7 +82,7 @@ CPU 兼容配置。两种配置使用同一个组件 ID 和安装目录，因此
 
 当前已经完成下载校验、硬件档位选择、字幕识别、Artifact 缓存、逐 Cue 翻译事件、
 GenerationTask 恢复以及 Video Workbench UI。字幕组件仍只负责 FFmpeg 与 ASR；
-翻译所用 Connection、模型和思考力度由工作台 Provider Selector 独立决定。
+翻译所用 Connection、模型和思考力度由低智能 Provider Selector 独立决定。
 
-Audio Workbench 尚未接入这套能力；macOS 字幕运行时也仍需独立验证和注册，不能由
-Windows 路径推断为已支持。
+Video 与 Audio Workbench 均已接入这套能力；macOS 字幕运行时仍需独立验证和注册，
+不能由 Windows 路径推断为已支持。

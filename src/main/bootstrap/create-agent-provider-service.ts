@@ -13,21 +13,48 @@ import type { AgentFunctionToolRegistryApi } from '../agents/function-tools/agen
 import type { AgentMcpServiceApi } from '../agents/mcp/agent-mcp-service';
 import type { AgentSkillServiceApi } from '../agents/skills/agent-skill-service';
 import type { SettingsRepository } from '../settings/settings-repository';
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
-import { registerWorkbenchAgentProviderSelectors } from '../../workbenches/catalog/register-agent-provider-selectors';
+import {
+  HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+  LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+  MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+} from '../../shared/agent-provider-selectors';
+import type { AgentProviderSelectorDefinition } from '../agents/agent-provider-selector-registry';
 
-export const GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_DEFINITION =
+export const DEFAULT_AGENT_PROVIDER_SELECTOR_DEFINITIONS = Object.freeze([
   Object.freeze({
-    id: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
-    displayName: '生成中心',
-    description: '生成思维导图、学习提纲等 Project 内容。',
+    id: HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    displayName: '高智能',
+    description: '复杂内容生成、全局规划与高难度推理。',
     defaultSelection: Object.freeze({
       providerId: CODEX_AGENT_PROVIDER_ID,
       connectionId: CODEX_ACCOUNT_CONNECTION_ID,
       modelId: 'gpt-5.6-sol',
       reasoningEffort: 'high',
     }),
-  });
+  }),
+  Object.freeze({
+    id: MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    displayName: '中智能',
+    description: '工作台解释、问答与常规内容处理。',
+    defaultSelection: Object.freeze({
+      providerId: CODEX_AGENT_PROVIDER_ID,
+      connectionId: CODEX_ACCOUNT_CONNECTION_ID,
+      modelId: 'gpt-5.6-terra',
+      reasoningEffort: 'medium',
+    }),
+  }),
+  Object.freeze({
+    id: LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    displayName: '低智能',
+    description: '字幕翻译等高频、结构明确的任务。',
+    defaultSelection: Object.freeze({
+      providerId: CODEX_AGENT_PROVIDER_ID,
+      connectionId: CODEX_ACCOUNT_CONNECTION_ID,
+      modelId: 'gpt-5.6-luna',
+      reasoningEffort: 'low',
+    }),
+  }),
+]) satisfies readonly AgentProviderSelectorDefinition[];
 
 export function createAgentProviderService(
   settings: SettingsRepository,
@@ -43,8 +70,9 @@ export function createAgentProviderService(
 ): AgentProviderService {
   const registry = new AgentProviderRegistry();
   const selectors = new AgentProviderSelectorRegistry();
-  selectors.register(GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_DEFINITION);
-  registerWorkbenchAgentProviderSelectors(selectors);
+  for (const definition of DEFAULT_AGENT_PROVIDER_SELECTOR_DEFINITIONS) {
+    selectors.register(definition);
+  }
   registry.register(
     new CodexAgentProvider(codexRuntime, agentSessions, {
       functionTools,

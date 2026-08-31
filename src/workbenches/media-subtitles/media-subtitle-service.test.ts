@@ -137,6 +137,64 @@ function generationTasks(): GenerationTaskServiceApi {
   } as unknown as GenerationTaskServiceApi;
 }
 
+async function serviceWithSource(
+  directory: string,
+  language: 'en' | 'unknown',
+  tasks: GenerationTaskServiceApi = generationTasks(),
+) {
+  const videoPath = join(directory, 'video.mp4');
+  const sourcePath = join(directory, 'source.json');
+  await writeFile(videoPath, 'video bytes');
+  const assets = {
+    get: vi.fn(() => videoAsset),
+    resolveContent: vi.fn(async () => ({
+      contentRef: videoAsset.contentRef,
+      contentStatus: videoAsset.contentStatus,
+      location: { kind: 'local-file' as const, absolutePath: videoPath },
+      handle: { close: vi.fn(async () => undefined) },
+    })),
+    subscribe: vi.fn(() => () => undefined),
+  } as unknown as AssetServiceApi;
+  const projects: ProjectLookup = {
+    get: vi.fn(() => ({
+      id: 'project',
+      name: 'Project',
+      icon: 'P',
+      createdTime: 100,
+      pinned: false,
+      workspacePath: directory,
+    })),
+  };
+  const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
+    await writeFile(
+      sourcePath,
+      JSON.stringify({
+        ...sourceTrack(language),
+        sourceRevision: request.source.revision,
+      }),
+    );
+    return resolvedArtifact(
+      request,
+      sourcePath,
+      SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+      'source-artifact-revision',
+    );
+  });
+  return {
+    getOrCreate,
+    service: new MediaSubtitleService(
+      assets,
+      projects,
+      { getCached: vi.fn(), getOrCreate } as AssetArtifactServiceApi,
+      runtimes(),
+      new MediaSubtitleSourceTaskQueue(),
+      tasks,
+      new SubtitleTranslationProgressHub(),
+      ['video/mp4'],
+    ),
+  };
+}
+
 describe('MediaSubtitleService', () => {
   it('accepts audio media types supplied by the owning Workbench', async () => {
     const audioAsset: AssetSnapshot = {
@@ -180,7 +238,7 @@ describe('MediaSubtitleService', () => {
     });
   });
 
-  it('starts source transcription on an imported video but translates only on demand', async () => {
+  it('restores an already-completed translation without starting another AI task', async () => {
     await withDirectory(async (directory) => {
       const videoPath = join(directory, 'video.mp4');
       const sourcePath = join(directory, 'source.json');
@@ -248,13 +306,14 @@ describe('MediaSubtitleService', () => {
         ),
         getOrCreate,
       } as AssetArtifactServiceApi;
+      const tasks = generationTasks();
       const service = new MediaSubtitleService(
         assets,
         projects,
         artifacts,
         runtimes(),
         new MediaSubtitleSourceTaskQueue(),
-        generationTasks(),
+        tasks,
         new SubtitleTranslationProgressHub(),
         ['video/mp4'],
       );
@@ -264,7 +323,8 @@ describe('MediaSubtitleService', () => {
       expect(getOrCreate.mock.calls[0][0].producerId).toBe(
         MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
       );
-      expect(service.getSnapshot('video').phase).toBe('source-ready');
+      expect(service.getSnapshot('video').phase).toBe('ready');
+      expect(tasks.start).not.toHaveBeenCalled();
       await service.ensureTranslation('project', 'video');
 
       const translationRequest = vi
@@ -286,59 +346,15 @@ describe('MediaSubtitleService', () => {
         completedCues: 1,
         translation: { targetLanguage: 'zh-Hans' },
       });
+      expect(tasks.start).not.toHaveBeenCalled();
     });
   });
 
   it('reports an unsupported detected language without starting translation', async () => {
     await withDirectory(async (directory) => {
-      const videoPath = join(directory, 'video.mp4');
-      const sourcePath = join(directory, 'source.json');
-      await writeFile(videoPath, 'video bytes');
-      await writeFile(sourcePath, JSON.stringify(sourceTrack('unknown')));
-      const assets = {
-        get: vi.fn(() => videoAsset),
-        resolveContent: vi.fn(async () => ({
-          contentRef: videoAsset.contentRef,
-          contentStatus: videoAsset.contentStatus,
-          location: { kind: 'local-file' as const, absolutePath: videoPath },
-          handle: { close: vi.fn(async () => undefined) },
-        })),
-        subscribe: vi.fn(() => () => undefined),
-      } as unknown as AssetServiceApi;
-      const projects: ProjectLookup = {
-        get: vi.fn(() => ({
-          id: 'project',
-          name: 'Project',
-          icon: 'P',
-          createdTime: 100,
-          pinned: false,
-          workspacePath: directory,
-        })),
-      };
-      const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
-        await writeFile(
-          sourcePath,
-          JSON.stringify({
-            ...sourceTrack('unknown'),
-            sourceRevision: request.source.revision,
-          }),
-        );
-        return resolvedArtifact(
-          request,
-          sourcePath,
-          SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
-          'source-artifact-revision',
-        );
-      });
-      const service = new MediaSubtitleService(
-        assets,
-        projects,
-        { getCached: vi.fn(), getOrCreate } as AssetArtifactServiceApi,
-        runtimes(),
-        new MediaSubtitleSourceTaskQueue(),
-        generationTasks(),
-        new SubtitleTranslationProgressHub(),
-        ['video/mp4'],
+      const { service, getOrCreate } = await serviceWithSource(
+        directory,
+        'unknown',
       );
 
       await service.ensureTranslation('project', 'video');
@@ -347,6 +363,68 @@ describe('MediaSubtitleService', () => {
       expect(service.getSnapshot('video')).toMatchObject({
         phase: 'unsupported-language',
         message: expect.stringContaining('中文或英文'),
+      });
+    });
+  });
+
+  it.each([
+    {
+      code: 'AGENT_PROVIDER_AUTH_REQUIRED',
+      detail: undefined,
+    },
+    {
+      code: 'CODEX_REQUEST_FAILED',
+      detail: '401 Unauthorized: invalid_api_key',
+    },
+  ])('explains how to recover when the low-tier translation credential is rejected', async ({
+    code,
+    detail,
+  }) => {
+    await withDirectory(async (directory) => {
+      let taskListener:
+        Parameters<GenerationTaskServiceApi['subscribe']>[0] | undefined;
+      const taskSnapshot = {
+        id: 'translation-task',
+        projectId: 'project',
+        definitionId: 'media-subtitle-translation',
+        definitionVersion: 1,
+        instruction: {},
+        assetReferences: {},
+        agentCalls: [],
+        metrics: {},
+        createdTime: 100,
+        updatedTime: 100,
+      };
+      const tasks = {
+        subscribe: vi.fn((listener) => {
+          taskListener = listener;
+          return () => undefined;
+        }),
+        list: vi.fn(() => []),
+        start: vi.fn(() => taskSnapshot),
+        retry: vi.fn(),
+      } as unknown as GenerationTaskServiceApi;
+      const { service } = await serviceWithSource(directory, 'en', tasks);
+
+      await service.ensureTranslation('project', 'video');
+      taskListener?.({
+        type: 'task-changed',
+        snapshot: {
+          ...taskSnapshot,
+          failure: {
+            phase: 'process',
+            failedTime: 200,
+            code,
+            message: 'AI 请求没有完成。',
+            ...(detail ? { detail } : {}),
+          },
+        },
+      } as never);
+
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'provider-required',
+        source: { language: 'en' },
+        message: expect.stringMatching(/低智能.*登录.*API Key/u),
       });
     });
   });

@@ -14,7 +14,7 @@ import {
 } from '../../../main/generation/contracts/generation-validation';
 import { AppError } from '../../../main/errors/app-error';
 import type { ProjectLookup } from '../../../main/projects/project-database';
-import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
+import { LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
@@ -278,7 +278,7 @@ export function createSubtitleTranslationTaskDefinition(
   return Object.freeze({
     id: SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
     version: SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
-    providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
+    providerSelectorId: LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
     primaryWorkspaceConfig: Object.freeze({
       key: 'media-subtitle-translation',
       permissions: Object.freeze({ read: false, write: false }),

@@ -4,7 +4,7 @@ import type {
   AgentProviderConnectionConfiguration,
   AgentProviderSelectorSelectionSnapshot,
 } from '../../shared/agent-providers';
-import { GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
+import { HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 import { DEFAULT_APP_PREFERENCES } from '../../shared/app-preferences';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { AgentProvider } from './agent-provider';
@@ -157,9 +157,9 @@ function createService(input: {
   providers.register(provider);
   const selectors = new AgentProviderSelectorRegistry();
   selectors.register({
-    id: GENERATION_CENTER_AGENT_PROVIDER_SELECTOR_ID,
-    displayName: '生成中心',
-    description: '生成 Project 内容。',
+    id: HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    displayName: '高智能',
+    description: '复杂 Project 内容。',
     ...(input.defaultSelection
       ? { defaultSelection: input.defaultSelection }
       : {}),
@@ -198,7 +198,7 @@ describe('AgentProviderService', () => {
       },
     });
 
-    expect(selectors.require('generation-center').defaultSelection).toEqual({
+    expect(selectors.require('intelligence-high').defaultSelection).toEqual({
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'gpt-test',
@@ -210,14 +210,14 @@ describe('AgentProviderService', () => {
     expect(setup.selectors[0]).not.toHaveProperty('defaultSelection');
     expect(setup.selections).toEqual([
       {
-        selectorId: 'generation-center',
+        selectorId: 'intelligence-high',
         providerId: 'codex',
         connectionId: 'codex-account',
         modelId: 'gpt-test',
         reasoningEffort: 'medium',
       },
     ]);
-    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+    expect(service.resolveSelectorConfiguration('intelligence-high')).toEqual({
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'gpt-test',
@@ -237,7 +237,7 @@ describe('AgentProviderService', () => {
       },
     });
     await settings.updateAgentProviderSelectorSelection({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'user-model',
@@ -246,7 +246,7 @@ describe('AgentProviderService', () => {
     vi.mocked(settings.updateAgentProviderSelectorSelection).mockClear();
 
     expect(settings.updateAgentProviderSelectorSelection).not.toHaveBeenCalled();
-    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+    expect(service.resolveSelectorConfiguration('intelligence-high')).toEqual({
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'user-model',
@@ -267,9 +267,9 @@ describe('AgentProviderService', () => {
 
     expect(setup.selectors).toEqual([
       {
-        id: 'generation-center',
-        displayName: '生成中心',
-        description: '生成 Project 内容。',
+        id: 'intelligence-high',
+        displayName: '高智能',
+        description: '复杂 Project 内容。',
       },
     ]);
     expect(setup.providers[0]?.connections[0]).toMatchObject({
@@ -387,7 +387,7 @@ describe('AgentProviderService', () => {
     const { service, settings } = createService({ provider });
 
     await service.selectForSelector({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'gpt-test',
@@ -397,13 +397,13 @@ describe('AgentProviderService', () => {
     expect(inspectAccountConnection).not.toHaveBeenCalled();
 
     expect(settings.updateAgentProviderSelectorSelection).toHaveBeenCalledWith({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'gpt-test',
       reasoningEffort: 'medium',
     });
-    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+    expect(service.resolveSelectorConfiguration('intelligence-high')).toEqual({
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'gpt-test',
@@ -432,7 +432,7 @@ describe('AgentProviderService', () => {
     });
 
     const setup = await service.selectForSelector({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-api-connection-1',
       modelId: 'deepseek-chat',
@@ -455,7 +455,7 @@ describe('AgentProviderService', () => {
       apiKey: 'secret',
     });
     await service.selectForSelector({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-account',
       modelId: 'gpt-test',
@@ -463,7 +463,7 @@ describe('AgentProviderService', () => {
     });
 
     const setup = await service.selectForSelector({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-api-connection-1',
       modelId: 'deepseek-chat',
@@ -476,7 +476,7 @@ describe('AgentProviderService', () => {
         modelId: 'deepseek-chat',
       }),
     ]);
-    expect(service.resolveSelectorConfiguration('generation-center')).toEqual({
+    expect(service.resolveSelectorConfiguration('intelligence-high')).toEqual({
       providerId: 'codex',
       connectionId: 'codex-api-connection-1',
       modelId: 'deepseek-chat',
@@ -532,7 +532,7 @@ describe('AgentProviderService', () => {
       apiKey: 'secret',
     });
     await service.selectForSelector({
-      selectorId: 'generation-center',
+      selectorId: 'intelligence-high',
       providerId: 'codex',
       connectionId: 'codex-api-connection-1',
       modelId: 'custom-model',

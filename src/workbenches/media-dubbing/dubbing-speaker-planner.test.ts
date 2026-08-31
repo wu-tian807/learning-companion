@@ -260,4 +260,30 @@ describe('dubbing speaker planner', () => {
       },
     });
   });
+
+  it.each([
+    [200, 'reference'],
+    [201, 'default'],
+  ] as const)(
+    'routes a reference with %d ms of foreign overlap as %s',
+    (foreignSpeechMs, expectedMode) => {
+      const source = [
+        cue('speaker-a', 0, 3_500, 'A sufficiently long reference sentence.'),
+      ];
+      const plan = createDubbingSpeakerRoutingPlan(
+        source,
+        translation(source),
+        [
+          { speakerId: 'speaker-0001', startMs: 0, endMs: 3_500 },
+          {
+            speakerId: 'speaker-0002',
+            startMs: 1_000,
+            endMs: 1_000 + foreignSpeechMs,
+          },
+        ],
+      );
+
+      expect(plan.voiceProfiles[0]?.mode).toBe(expectedMode);
+    },
+  );
 });

@@ -7,7 +7,7 @@ import type {
   GenerationTaskProcessContext,
   TaskDefinition,
 } from '../generation/contracts/task-definition';
-import { WORKBENCH_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
+import { MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
 import {
   WORKBENCH_CONVERSATION_SOURCE_SLOT,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
@@ -69,7 +69,7 @@ export function createWorkbenchConversationTaskDefinitionV1(
   return Object.freeze({
     id: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
     version: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
-    providerSelectorId: WORKBENCH_AGENT_PROVIDER_SELECTOR_ID,
+    providerSelectorId: MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
     primaryWorkspaceConfig: Object.freeze({
       key: 'workbench-conversation',
       permissions: Object.freeze({ read: true, write: false }),
