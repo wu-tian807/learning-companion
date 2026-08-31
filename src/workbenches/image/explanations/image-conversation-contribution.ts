@@ -1,11 +1,4 @@
-import type {
-  ConversationHistoryStore,
-  WorkbenchConversationContribution,
-} from '../../../renderer/conversation/conversation-contracts';
-import {
-  createConversationHistoryKey,
-  createLocalConversationHistoryStore,
-} from '../../../renderer/conversation/conversation-history-store';
+import type { WorkbenchConversationContribution } from '../../../renderer/conversation/conversation-contracts';
 import { imageWorkbenchManifest } from '../shared';
 import {
   IMAGE_DEFAULT_EXPLANATION_QUESTION,
@@ -24,28 +17,8 @@ export {
 
 const SOURCE_REVISION_PATTERN = /^[A-Za-z0-9._-]{1,256}$/u;
 
-export function createImageConversationHistoryStore(
-  projectId: string,
-  assetId: string,
-  contributionId: string,
-  sourceRevision: string,
-): ConversationHistoryStore {
-  const normalizedRevision = sourceRevision.trim();
-  if (!SOURCE_REVISION_PATTERN.test(normalizedRevision)) {
-    throw new Error('图片内容版本无效');
-  }
-  return createLocalConversationHistoryStore({
-    key: createConversationHistoryKey({
-      contributionId: `${contributionId}.revision.${normalizedRevision}`,
-      projectId,
-      assetId,
-    }),
-  });
-}
-
 export function createImageConversationContribution(input: {
   readonly sourceRevision: string;
-  readonly historyStore: ConversationHistoryStore;
   readonly revealContext: (
     context: ImageConversationContext,
   ) => Promise<void> | void;
@@ -58,14 +31,13 @@ export function createImageConversationContribution(input: {
     id: `${imageWorkbenchManifest.id}.reading-conversation`,
     workbenchId: imageWorkbenchManifest.id,
     contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
-    includeSourceAssetReference: true,
+    sourceAssetMode: 'reference',
     initialContextRequired: true,
     initialContextRequiredMessage:
       '请先在图片中框选一个兴趣区域再开始问答',
     title: '图片解读问答',
     emptyLabel: '框选图片中的兴趣区域并生成解释，之后可以在同一对话中继续追问。',
     inputPlaceholder: '继续追问…（Enter 发送 / Shift+Enter 换行）',
-    historyStore: input.historyStore,
     isContext(context) {
       return (
         isImageConversationContext(context) &&

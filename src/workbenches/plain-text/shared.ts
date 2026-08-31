@@ -6,7 +6,6 @@ import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
-  headerSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -57,7 +56,6 @@ export const plainTextWorkbenchManifest: AssetWorkbenchManifest<
   supportedAnchorTypes: [PLAIN_TEXT_RANGE_ANCHOR_TYPE],
   facilities: [
     rendererTransportFacilityDeclaration,
-    headerSurfaceFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,

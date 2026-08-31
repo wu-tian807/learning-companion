@@ -1,0 +1,488 @@
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { ExternalCommandRunnerApi } from '../../../main/external-libraries/external-command-runner';
+import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
+import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from './voxcpm2-definition';
+import { VOXCPM2_RUNTIME_ENVIRONMENT_VERSION } from './voxcpm2-runtime-setup';
+import {
+  VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+  VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS,
+  VoxCpm2DubbingRuntimeResolver,
+} from './voxcpm2-runtime';
+
+const temporaryDirectories: string[] = [];
+
+interface ScheduledUnload {
+  readonly callback: () => void | Promise<void>;
+  readonly delayMs: number;
+  cancelled: boolean;
+}
+
+function createUnloadScheduler() {
+  const tasks: ScheduledUnload[] = [];
+  const scheduleUnload = vi.fn((
+    callback: () => void | Promise<void>,
+    delayMs: number,
+  ) => {
+    const task: ScheduledUnload = { callback, delayMs, cancelled: false };
+    tasks.push(task);
+    return Object.freeze({
+      cancel(): void {
+        task.cancelled = true;
+      },
+    });
+  });
+  return { scheduleUnload, tasks };
+}
+
+async function createRuntimeRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'lc-voxcpm2-runtime-'));
+  temporaryDirectories.push(root);
+  return root;
+}
+
+function externalLibraries(runtimeDirectory: string) {
+  const requireRuntime = vi.fn(async (libraryId: string) => ({
+    libraryId,
+    runtimeDirectory,
+  }));
+  return {
+    requireRuntime,
+    service: { requireRuntime } as unknown as ExternalLibraryServiceApi,
+  };
+}
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+describe('VoxCpm2DubbingRuntimeResolver', () => {
+  it('checks the installed bundle without preparing the Python environment', async () => {
+    const root = await createRuntimeRoot();
+    const { service, requireRuntime } = externalLibraries(root);
+    const run = vi.fn<ExternalCommandRunnerApi['run']>();
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+
+    await resolver.requireInstalledBundle();
+
+    expect(requireRuntime).toHaveBeenCalledWith(
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses an incomplete bundle without installing during first use', async () => {
+    const root = await createRuntimeRoot();
+    const { service, requireRuntime } = externalLibraries(root);
+    const run = vi.fn<ExternalCommandRunnerApi['run']>();
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+
+    await expect(resolver.requireRuntime()).rejects.toMatchObject({
+      code: 'EXTERNAL_LIBRARY_NOT_INSTALLED',
+    });
+
+    expect(requireRuntime).toHaveBeenCalledWith(
+      MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('reuses a matching managed environment without running installation', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service } = externalLibraries(root);
+    const run = vi.fn<ExternalCommandRunnerApi['run']>();
+
+    await new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    }).requireRuntime();
+
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('shares one warm model across Workbench consumers until the last release', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service } = externalLibraries(root);
+    let finishWorker: (() => void) | undefined;
+    let requestPath = '';
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      requestPath = request.args[request.args.indexOf('--request') + 1]!;
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((resolvePromise) => {
+        finishWorker = resolvePromise;
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+
+    await Promise.all([resolver.warmup(), resolver.warmup()]);
+    expect(run).toHaveBeenCalledOnce();
+    await resolver.releaseWarmup();
+
+    const job = {
+      referencePaths: {
+        'speaker-0001': join(root, 'reference.wav'),
+      },
+      phrasesPath: join(root, 'phrases.json'),
+      outputDirectory: join(root, 'voice'),
+      progressPath: join(root, 'progress.json'),
+      backgroundPath: join(root, 'background.wav'),
+      previewPath: join(root, 'preview.wav'),
+      ffmpegPath: join(root, 'ffmpeg.exe'),
+      durationMs: 12_000,
+    };
+    const running = resolver.runVoiceJob(
+      job,
+      new AbortController().signal,
+    );
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await readFile(requestPath, 'utf8'))).toEqual(job);
+    });
+    finishWorker?.();
+    await running;
+
+    expect(run).toHaveBeenCalledOnce();
+    await expect(access(requestPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await resolver.releaseWarmup();
+  });
+
+  it('keeps the last warm model through a grace period and cancels stale unloads', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
+    let sessionDirectory = '';
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      sessionDirectory = dirname(request.args[0]!);
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+
+    await resolver.warmup();
+    expect(tasks.at(-1)?.delayMs).toBe(VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS);
+    await resolver.releaseWarmup();
+    const firstGrace = tasks.at(-1)!;
+    expect(firstGrace.delayMs).toBe(
+      VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+    );
+
+    await resolver.warmup();
+    expect(firstGrace.cancelled).toBe(true);
+    expect(run).toHaveBeenCalledOnce();
+    await firstGrace.callback();
+    await expect(access(sessionDirectory)).resolves.toBeUndefined();
+
+    await resolver.releaseWarmup();
+    const finalGrace = tasks.at(-1)!;
+    await finalGrace.callback();
+    await expect(access(sessionDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('unloads an unused warm model after the idle lease while a Workbench remains open', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
+    const sessionDirectories: string[] = [];
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      sessionDirectories.push(dirname(request.args[0]!));
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+
+    await resolver.warmup();
+    const idleUnload = tasks.at(-1)!;
+    expect(idleUnload.delayMs).toBe(VOXCPM2_WARM_MODEL_IDLE_TIMEOUT_MS);
+    await idleUnload.callback();
+    await expect(access(sessionDirectories[0]!)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    await resolver.warmup();
+    expect(run).toHaveBeenCalledTimes(2);
+    await resolver.shutdown();
+  });
+
+  it('lets a claimed voice job finish after its last Workbench closes', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service } = externalLibraries(root);
+    const { scheduleUnload, tasks } = createUnloadScheduler();
+    let finishWorker: (() => void) | undefined;
+    let requestPath = '';
+    let workerSignal: AbortSignal | undefined;
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      requestPath = request.args[request.args.indexOf('--request') + 1]!;
+      workerSignal = request.signal;
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((resolvePromise) => {
+        finishWorker = resolvePromise;
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+      scheduleUnload,
+    });
+    await resolver.warmup();
+    const job = {
+      referencePaths: {
+        'speaker-0001': join(root, 'reference.wav'),
+      },
+      phrasesPath: join(root, 'phrases.json'),
+      outputDirectory: join(root, 'voice'),
+      progressPath: join(root, 'progress.json'),
+      backgroundPath: join(root, 'background.wav'),
+      previewPath: join(root, 'preview.wav'),
+      ffmpegPath: join(root, 'ffmpeg.exe'),
+      durationMs: 12_000,
+    };
+    const running = resolver.runVoiceJob(job, new AbortController().signal);
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await readFile(requestPath, 'utf8'))).toEqual(job);
+    });
+
+    await resolver.releaseWarmup();
+    const closeGrace = tasks.at(-1)!;
+    expect(closeGrace.delayMs).toBe(
+      VOXCPM2_LAST_CONSUMER_UNLOAD_GRACE_MS,
+    );
+    await closeGrace.callback();
+    await vi.waitFor(() => expect(workerSignal?.aborted).toBe(false));
+
+    finishWorker?.();
+    await running;
+  });
+
+  it('aborts an active voice job and rejects new work during idempotent shutdown', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service } = externalLibraries(root);
+    let requestPath = '';
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      requestPath = request.args[request.args.indexOf('--request') + 1]!;
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+    await resolver.warmup();
+    const job = {
+      referencePaths: {
+        'speaker-0001': join(root, 'reference.wav'),
+      },
+      phrasesPath: join(root, 'phrases.json'),
+      outputDirectory: join(root, 'voice'),
+      progressPath: join(root, 'progress.json'),
+      backgroundPath: join(root, 'background.wav'),
+      previewPath: join(root, 'preview.wav'),
+      ffmpegPath: join(root, 'ffmpeg.exe'),
+      durationMs: 12_000,
+    };
+    const running = resolver.runVoiceJob(job, new AbortController().signal);
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await readFile(requestPath, 'utf8'))).toEqual(job);
+    });
+
+    const firstShutdown = resolver.shutdown();
+    const secondShutdown = resolver.shutdown();
+    expect(secondShutdown).toBe(firstShutdown);
+    await expect(running).rejects.toThrow('cancelled');
+    await firstShutdown;
+    await expect(resolver.warmup()).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    await expect(
+      resolver.runVoiceJob(job, new AbortController().signal),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('releases a loaded model before removal and remains reusable after reinstall', async () => {
+    const root = await createRuntimeRoot();
+    const environment = join(root, 'environment');
+    await mkdir(join(environment, 'Scripts'), { recursive: true });
+    await writeFile(join(environment, 'Scripts', 'python.exe'), 'mock');
+    await writeFile(
+      join(environment, 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+    const { service, requireRuntime } = externalLibraries(root);
+    const workerSignals: AbortSignal[] = [];
+    const run = vi.fn<ExternalCommandRunnerApi['run']>(async (request) => {
+      workerSignals.push(request.signal!);
+      const readyPath = request.args[request.args.indexOf('--ready') + 1]!;
+      await writeFile(readyPath, '{"ready":true}\n');
+      await new Promise<void>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(new Error('cancelled'));
+        if (request.signal?.aborted) {
+          rejectAborted();
+        } else {
+          request.signal?.addEventListener('abort', rejectAborted, {
+            once: true,
+          });
+        }
+      });
+      return { stdout: '', stderr: '' };
+    });
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      commandRunner: { run },
+      platform: 'win32',
+    });
+
+    await resolver.warmup();
+    await resolver.releaseRuntime();
+
+    expect(workerSignals[0]?.aborted).toBe(true);
+    await resolver.warmup();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(requireRuntime).toHaveBeenCalledTimes(2);
+    await resolver.releaseRuntime();
+  });
+
+  it('rejects unsupported platforms before asking for an installation', async () => {
+    const root = await createRuntimeRoot();
+    const { service, requireRuntime } = externalLibraries(root);
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      platform: 'darwin',
+    });
+
+    await expect(resolver.requireRuntime()).rejects.toMatchObject({
+      code: 'FEATURE_NOT_SUPPORTED',
+    });
+    expect(requireRuntime).not.toHaveBeenCalled();
+  });
+
+  it('clears a failed readiness check so a completed installation can retry', async () => {
+    const root = await createRuntimeRoot();
+    const { service, requireRuntime } = externalLibraries(root);
+    const resolver = new VoxCpm2DubbingRuntimeResolver(service, {
+      platform: 'win32',
+    });
+
+    await expect(resolver.requireRuntime()).rejects.toMatchObject({
+      code: 'EXTERNAL_LIBRARY_NOT_INSTALLED',
+    });
+    const scripts = join(root, 'environment', 'Scripts');
+    await mkdir(scripts, { recursive: true });
+    await writeFile(join(scripts, 'python.exe'), 'mock');
+    await writeFile(
+      join(root, 'environment', 'learning-companion-runtime.json'),
+      JSON.stringify({ version: VOXCPM2_RUNTIME_ENVIRONMENT_VERSION }),
+    );
+
+    await expect(resolver.requireRuntime()).resolves.toBeDefined();
+    expect(requireRuntime).toHaveBeenCalledTimes(2);
+  });
+});

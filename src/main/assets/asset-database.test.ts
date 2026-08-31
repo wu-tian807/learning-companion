@@ -167,6 +167,22 @@ describe('AssetDatabase', () => {
     ).toEqual(['asset-a']);
   });
 
+  it('resolves the owning Project from a globally unique Asset id', async () => {
+    const context = await createContext();
+    addProject(context, 'project-a');
+    addProject(context, 'project-b');
+    insertAsset(context, {
+      id: 'asset-b',
+      projectId: 'project-b',
+      path: '/tmp/b.md',
+    });
+    const database = createDatabase(context);
+
+    expect(database.getProjectId('asset-b')).toBe('project-b');
+    expect(database.getProjectId('missing')).toBeUndefined();
+    expect(database.get('project-a', 'asset-b')).toBeUndefined();
+  });
+
   it('adds, updates and deletes Asset data through SQLite', async () => {
     const context = await createContext();
     addProject(context, 'project');
@@ -221,14 +237,14 @@ describe('AssetDatabase', () => {
       mediaType: 'text/markdown',
       creationKind: 'generated',
       contentRef: createProjectWorkspaceContentRef(
-        'assets/generated/讲义.md',
+        '.learning-companion/assets/generated/讲义.md',
       ),
     });
 
     expect(created.contentRef).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: 'assets/generated/讲义.md',
+      path: '.learning-companion/assets/generated/讲义.md',
     });
     expect(created.creationKind).toBe('generated');
     expect(context.db.select().from(assets).get()?.contentRef).toEqual(

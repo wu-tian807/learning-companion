@@ -1,4 +1,4 @@
-import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
+import type { AgentWorkspacePreparationApi } from '../../agents/workspaces/agent-workspace-manager';
 import { AppError } from '../../errors/app-error';
 import type { GenerationInstruction } from '../contracts/generation-instruction';
 import type { AnyTaskDefinition } from '../contracts/task-definition';
@@ -55,7 +55,7 @@ function validateDefinitionIdentity(
 
 export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
   constructor(
-    private readonly workspaceManager: AgentWorkspaceManagerApi,
+    private readonly workspaceManager: AgentWorkspacePreparationApi,
     private readonly assetReferencePreparer: GenerationAssetReferencePreparerApi,
   ) {}
 

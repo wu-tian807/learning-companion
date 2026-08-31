@@ -64,7 +64,6 @@ function rendererActions() {
   };
   const onExplainSelection = vi.fn();
   const onSummarizePage = vi.fn();
-  const onOpenChat = vi.fn();
   const bundle = createHtmlRendererActions({
     getContext: () => context.value,
     onCopySelection: vi.fn(),
@@ -73,7 +72,6 @@ function rendererActions() {
     onReveal: vi.fn(),
     onExplainSelection,
     onSummarizePage,
-    onOpenChat,
   });
   const explainAction = bundle.actions.find(
     (action) => action.id === 'html.ai.explain-selection',
@@ -87,7 +85,6 @@ function rendererActions() {
     summarizeAction,
     onExplainSelection,
     onSummarizePage,
-    onOpenChat,
   };
 }
 
@@ -239,7 +236,6 @@ describe('html AI renderer actions', () => {
       onReveal: vi.fn(),
       onExplainSelection: vi.fn(),
       onSummarizePage: vi.fn(),
-      onOpenChat: vi.fn(),
     });
     const explainAction = bundle.actions.find(
       (action) => action.id === 'html.ai.explain-selection',

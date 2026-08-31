@@ -2,13 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { createHtmlQuoteTarget } from '../shared';
 import {
-  createHtmlConversationIndex,
-  HTML_CONVERSATION_MAX_ENTRIES,
   isHtmlConversationEntry,
   isHtmlConversationIndex,
   normalizeHtmlConversationIndex,
-  removeHtmlConversationEntry,
-  saveHtmlConversationEntry,
   type HtmlConversationEntry,
   type HtmlConversationIndex,
 } from './conversation-protocol';
@@ -271,7 +267,7 @@ describe('normalizeHtmlConversationIndex', () => {
 
 describe('isHtmlConversationIndex', () => {
   it('accepts empty/current indexes and rejects duplicate ids or bad ordering', () => {
-    expect(isHtmlConversationIndex(createHtmlConversationIndex())).toBe(true);
+    expect(isHtmlConversationIndex(makeIndex([]))).toBe(true);
     expect(isHtmlConversationIndex(makeIndex())).toBe(true);
     expect(isHtmlConversationIndex(makeIndex([validEntry, validEntry]))).toBe(
       false,
@@ -284,79 +280,5 @@ describe('isHtmlConversationIndex', () => {
         ]),
       ),
     ).toBe(false);
-  });
-});
-
-describe('saveHtmlConversationEntry', () => {
-  it('inserts a new entry and keeps the index ordered', () => {
-    const later = {
-      ...validEntry,
-      id: 'later',
-      createdTime: validEntry.createdTime + 10,
-    };
-    const index = saveHtmlConversationEntry(createHtmlConversationIndex(), later);
-    const next = saveHtmlConversationEntry(index, validEntry);
-
-    expect(next.entries.map((entry) => entry.id)).toEqual(['c-1', 'later']);
-    expect(isHtmlConversationIndex(next)).toBe(true);
-  });
-
-  it('updates by stable id without duplicating or changing createdTime', () => {
-    const updated = saveHtmlConversationEntry(makeIndex(), {
-      ...validEntry,
-      messages: [...validEntry.messages, { role: 'user', text: '继续问' }],
-      createdTime: validEntry.createdTime + 999,
-      updatedTime: validEntry.updatedTime + 1_000,
-    });
-
-    expect(updated.entries).toHaveLength(1);
-    expect(updated.entries[0]?.createdTime).toBe(validEntry.createdTime);
-    expect(updated.entries[0]?.messages).toHaveLength(3);
-  });
-
-  it('ignores a stale update and enforces the entry cap only for inserts', () => {
-    const index = makeIndex();
-    expect(
-      saveHtmlConversationEntry(index, {
-        ...validEntry,
-        messages: [{ role: 'user', text: 'stale' }],
-        updatedTime: validEntry.updatedTime - 1,
-      }),
-    ).toBe(index);
-
-    const entries = Array.from(
-      { length: HTML_CONVERSATION_MAX_ENTRIES },
-      (_, index) => ({
-        ...validEntry,
-        id: `c-${index}`,
-        createdTime: validEntry.createdTime + index,
-        updatedTime: validEntry.updatedTime + index,
-      }),
-    );
-    expect(() =>
-      saveHtmlConversationEntry(makeIndex(entries), {
-        ...validEntry,
-        id: 'overflow',
-        createdTime: validEntry.createdTime + entries.length,
-        updatedTime: validEntry.updatedTime + entries.length,
-      }),
-    ).toThrow();
-  });
-});
-
-describe('removeHtmlConversationEntry', () => {
-  it('removes only the requested stable id', () => {
-    const other = {
-      ...validEntry,
-      id: 'c-2',
-      createdTime: validEntry.createdTime + 1,
-      updatedTime: validEntry.updatedTime + 1,
-    };
-    expect(
-      removeHtmlConversationEntry(
-        makeIndex([validEntry, other]),
-        'c-1',
-      ).entries,
-    ).toEqual([other]);
   });
 });

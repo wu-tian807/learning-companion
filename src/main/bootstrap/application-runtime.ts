@@ -18,7 +18,9 @@ export interface ApplicationRuntimeResources {
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly disposeContentProtocol: () => void;
   readonly disposeIpc: () => void;
+  readonly shutdownWorkbenchFeatures: () => Promise<void>;
   readonly disposeWorkbenchFeatures: () => void;
+  readonly disposeAssetAggregateTracking: () => void;
 }
 
 export class ApplicationRuntime {
@@ -62,12 +64,28 @@ export class ApplicationRuntime {
       return this.shutdownTask;
     }
 
-    this.resources.generationTaskService.unloadProject();
+    const generationTaskShutdown =
+      this.resources.generationTaskService.unloadProject();
     const providerShutdown = this.resources.agentProviderService
       .dispose()
       .then(() => this.resources.codexRuntimeService.shutdown());
+    const workbenchShutdown = (async () => {
+      let shutdownError: unknown;
+      try {
+        await this.closeActiveWorkbench();
+      } catch (error) {
+        shutdownError = error;
+      }
+      try {
+        await this.resources.shutdownWorkbenchFeatures();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      if (shutdownError !== undefined) throw shutdownError;
+    })();
     this.shutdownTask = Promise.all([
-      this.closeActiveWorkbench(),
+      workbenchShutdown,
+      generationTaskShutdown,
       providerShutdown,
       this.resources.externalLibraryService.shutdown(),
     ]).then(() => undefined);
@@ -80,6 +98,7 @@ export class ApplicationRuntime {
     }
 
     this.disposed = true;
+    this.resources.disposeAssetAggregateTracking();
     this.resources.disposeContentProtocol();
     this.resources.contentResourceService.dispose();
     this.resources.disposeWorkbenchFeatures();

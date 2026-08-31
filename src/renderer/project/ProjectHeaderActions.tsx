@@ -5,6 +5,8 @@ import {
   type Ref,
 } from 'react';
 
+import type { ProjectRightPanelKind } from './use-project-layout';
+
 interface HeaderActionButtonProps
   extends Omit<
     ButtonHTMLAttributes<HTMLButtonElement>,
@@ -138,48 +140,50 @@ function AiQuestionIcon() {
 
 export interface ProjectHeaderActionsProps {
   readonly leftOpen: boolean;
-  readonly rightOpen: boolean;
+  readonly rightPanel: ProjectRightPanelKind | null;
   readonly leftButtonRef?: Ref<HTMLButtonElement>;
   readonly rightButtonRef?: Ref<HTMLButtonElement>;
+  readonly aiQuestionButtonRef?: Ref<HTMLButtonElement>;
   readonly onToggleLeft: () => void;
-  readonly onToggleRight: () => void;
+  readonly onToggleGeneration: () => void;
   readonly onOpenWorkspace: () => void;
-  readonly aiQuestionAvailable: boolean;
-  readonly onOpenAiQuestion: () => void;
+  readonly onToggleAiQuestion: () => void;
   readonly onOpenSettings: () => void;
 }
 
 export function ProjectHeaderActions({
   leftOpen,
-  rightOpen,
+  rightPanel,
   leftButtonRef,
   rightButtonRef,
+  aiQuestionButtonRef,
   onToggleLeft,
-  onToggleRight,
+  onToggleGeneration,
   onOpenWorkspace,
-  aiQuestionAvailable,
-  onOpenAiQuestion,
+  onToggleAiQuestion,
   onOpenSettings,
 }: ProjectHeaderActionsProps) {
   const leftLabel = leftOpen ? '收起学习资料' : '展开学习资料';
-  const rightLabel = rightOpen
+  const generationOpen = rightPanel === 'generation';
+  const conversationOpen = rightPanel === 'conversation';
+  const rightLabel = generationOpen
     ? '收起生成中心'
     : '展开生成中心';
+  const aiQuestionLabel = conversationOpen
+    ? '关闭 AI 问答'
+    : '打开 AI 问答';
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-      <div
-        data-project-ai-context-actions
-        className="flex items-center gap-2"
-      />
-      {aiQuestionAvailable && (
-        <HeaderActionButton
-          label="打开 AI 问答"
-          onClick={onOpenAiQuestion}
-        >
-          <AiQuestionIcon />
-        </HeaderActionButton>
-      )}
+      <HeaderActionButton
+        ref={aiQuestionButtonRef}
+        label={aiQuestionLabel}
+        aria-controls="project-right-panel"
+        aria-expanded={conversationOpen}
+        onClick={onToggleAiQuestion}
+      >
+        <AiQuestionIcon />
+      </HeaderActionButton>
       <HeaderActionButton
         ref={leftButtonRef}
         label={leftLabel}
@@ -192,9 +196,9 @@ export function ProjectHeaderActions({
       <HeaderActionButton
         ref={rightButtonRef}
         label={rightLabel}
-        aria-controls="project-generation-center"
-        aria-expanded={rightOpen}
-        onClick={onToggleRight}
+        aria-controls="project-right-panel"
+        aria-expanded={generationOpen}
+        onClick={onToggleGeneration}
       >
         <GenerationIcon />
       </HeaderActionButton>

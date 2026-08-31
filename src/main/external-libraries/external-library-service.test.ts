@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -17,11 +25,20 @@ import {
 } from "./external-library-installer";
 import { ExternalLibraryPathManager } from "./external-library-path-manager";
 import { ExternalLibraryRegistry } from "./external-library-registry";
+import {
+  ExternalLibraryLifecycleRegistry,
+  type ExternalLibraryLifecycleRegistryApi,
+} from "./external-library-lifecycle";
+import {
+  ExternalLibraryRuntimeSetupRegistry,
+  type ExternalLibraryRuntimeSetupRegistryApi,
+} from "./external-library-runtime-setup";
 import { ExternalLibraryService } from "./external-library-service";
 import type {
   ExternalLibraryArchitecture,
   ExternalLibraryPlatform,
 } from "./external-library-definition";
+import { externalLibraryPackageResources } from "./external-library-definition";
 
 const temporaryDirectories: string[] = [];
 
@@ -134,6 +151,8 @@ async function createHarness(input?: {
   readonly downloader?: ConstructorParameters<typeof ExternalLibraryService>[4];
   readonly platform?: ExternalLibraryPlatform;
   readonly architecture?: ExternalLibraryArchitecture;
+  readonly lifecycles?: ExternalLibraryLifecycleRegistryApi;
+  readonly runtimeSetups?: ExternalLibraryRuntimeSetupRegistryApi;
 }): Promise<Harness> {
   const directory = await mkdtemp(
     join(tmpdir(), "learning-companion-runtime-service-"),
@@ -146,7 +165,12 @@ async function createHarness(input?: {
   const pathManager = new ExternalLibraryPathManager({
     createId: () => "job",
   });
-  const installationManifestFile = new ExternalLibraryInstallationManifestFile();
+  const lifecycles =
+    input?.lifecycles ?? new ExternalLibraryLifecycleRegistry();
+  const runtimeSetups =
+    input?.runtimeSetups ?? new ExternalLibraryRuntimeSetupRegistry();
+  const installationManifestFile =
+    new ExternalLibraryInstallationManifestFile(runtimeSetups);
   const install = vi.fn<ExternalLibraryInstaller["install"]>(
     async (request) => {
       if (request.packageDefinition.packageType !== "dmg") {
@@ -194,6 +218,8 @@ async function createHarness(input?: {
       architecture: input?.architecture ?? "arm64",
       now: () => 10,
       logger: { warn: vi.fn() },
+      lifecycles,
+      runtimeSetups,
     },
   );
 
@@ -237,6 +263,19 @@ async function installAndWait(
 }
 
 describe("ExternalLibraryService", () => {
+  it("cleans expired temporary data before discovering libraries", async () => {
+    const harness = await createHarness();
+    const cleanup = vi.spyOn(
+      harness.pathManager,
+      "cleanupExpiredTemporaryData",
+    );
+
+    await harness.service.initialize();
+
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledWith(harness.rootPath, 10);
+  });
+
   it("installs, switches and migrates one multi-variant component", async () => {
     const harness = await createHarness();
     const content = new TextEncoder().encode("trusted package");
@@ -390,6 +429,45 @@ describe("ExternalLibraryService", () => {
     );
   });
 
+  it("publishes measured runtime setup progress without resetting it", async () => {
+    const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
+    runtimeSetups.register({
+      libraryId: "libreoffice",
+      expectedSetupBytes: 100,
+      isReady: vi.fn(async () => true),
+      prepare: vi.fn(
+        async (_runtimeDirectory, _cacheDirectory, _signal, reportStatus) => {
+          reportStatus("Installing runtime", {
+            completedBytes: 40,
+            totalBytes: 100,
+          });
+          reportStatus("Verifying runtime");
+        },
+      ),
+    });
+    const harness = await createHarness({ runtimeSetups });
+    const installing: ExternalLibrarySnapshot[] = [];
+    harness.service.subscribe((snapshot) => {
+      if (snapshot.status === "installing") installing.push(snapshot);
+    });
+    await harness.service.initialize();
+
+    await installAndWait(harness);
+
+    expect(installing).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          statusDetail: "Installing runtime",
+          progress: { completedBytes: 55, totalBytes: 115 },
+        }),
+        expect.objectContaining({
+          statusDetail: "Verifying runtime",
+          progress: { completedBytes: 55, totalBytes: 115 },
+        }),
+      ]),
+    );
+  });
+
   it("exposes the executable to an available-status listener", async () => {
     const harness = await createHarness();
     await harness.service.initialize();
@@ -444,6 +522,8 @@ describe("ExternalLibraryService", () => {
       {
         platform: "darwin",
         architecture: "arm64",
+        lifecycles: new ExternalLibraryLifecycleRegistry(),
+        runtimeSetups: new ExternalLibraryRuntimeSetupRegistry(),
       },
     );
 
@@ -545,14 +625,17 @@ describe("ExternalLibraryService", () => {
         input: Parameters<
           ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
         >[0],
-      ) =>
-        new Promise<never>((_resolvePromise, rejectPromise) => {
+      ) => {
+        await mkdir(dirname(input.destinationPath), { recursive: true });
+        await writeFile(input.destinationPath, "partial");
+        return new Promise<never>((_resolvePromise, rejectPromise) => {
           input.signal.addEventListener(
             "abort",
             () => rejectPromise(new DOMException("cancelled", "AbortError")),
             { once: true },
           );
-        }),
+        });
+      },
     );
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
@@ -562,6 +645,9 @@ describe("ExternalLibraryService", () => {
     const second =
       await harness.service.startInstallation("libreoffice");
     await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
+    const downloadDirectory = dirname(
+      download.mock.calls[0]![0].destinationPath,
+    );
     harness.service.cancel("libreoffice");
 
     expect(first.status).toBe("downloading");
@@ -571,6 +657,9 @@ describe("ExternalLibraryService", () => {
         { status: "not-installed" },
       ]),
     );
+    await expect(access(downloadDirectory)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("reports failures through snapshots after accepting the background task", async () => {
@@ -603,14 +692,17 @@ describe("ExternalLibraryService", () => {
         input: Parameters<
           ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
         >[0],
-      ) =>
-        new Promise<never>((_resolvePromise, rejectPromise) => {
+      ) => {
+        await mkdir(dirname(input.destinationPath), { recursive: true });
+        await writeFile(input.destinationPath, "partial");
+        return new Promise<never>((_resolvePromise, rejectPromise) => {
           input.signal.addEventListener(
             "abort",
             () => rejectPromise(new DOMException("cancelled", "AbortError")),
             { once: true },
           );
-        }),
+        });
+      },
     );
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
@@ -621,6 +713,8 @@ describe("ExternalLibraryService", () => {
     await harness.service.shutdown();
 
     expect(installation.status).toBe("downloading");
+    const partialPath = download.mock.calls[0]![0].destinationPath;
+    await expect(readFile(partialPath, "utf8")).resolves.toBe("partial");
     await vi.waitFor(() =>
       expect(harness.service.list()).toMatchObject([
         { status: "not-installed" },
@@ -632,6 +726,20 @@ describe("ExternalLibraryService", () => {
     const harness = await createHarness();
     await harness.service.initialize();
     const installed = await installAndWait(harness);
+    const definition = harness.registry.require("libreoffice");
+    const packageDefinition = harness.registry.selectPackage(
+      definition.id,
+      "darwin",
+      "arm64",
+    );
+    const downloadPaths = await harness.pathManager.prepareDownloadPaths({
+      rootPath: harness.rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition:
+        externalLibraryPackageResources(packageDefinition)[0]!,
+    });
+    await writeFile(downloadPaths.partialPath, "partial");
 
     const removed = await harness.service.remove("libreoffice");
 
@@ -639,13 +747,108 @@ describe("ExternalLibraryService", () => {
     await expect(access(installed.installationPath!)).rejects.toMatchObject({
       code: "ENOENT",
     });
+    await expect(access(downloadPaths.downloadDirectory)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("releases a loaded runtime before removing its installation", async () => {
+    let installationPath = "";
+    const order: string[] = [];
+    const release = vi.fn(async () => {
+      order.push("release");
+      await expect(access(installationPath)).resolves.toBeUndefined();
+    });
+    const lifecycles = new ExternalLibraryLifecycleRegistry();
+    lifecycles.register({
+      libraryId: "libreoffice",
+      release,
+    });
+    const harness = await createHarness({ lifecycles });
+    await harness.service.initialize();
+    const installed = await installAndWait(harness);
+    installationPath = installed.installationPath!;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const activeUse = harness.service.withRuntime(
+      "libreoffice",
+      undefined,
+      async (_runtime, signal) => {
+        markStarted();
+        try {
+          await new Promise<never>((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => reject(signal.reason),
+              { once: true },
+            );
+          });
+        } finally {
+          order.push("use-stopped");
+        }
+      },
+    );
+    await started;
+
+    const removal = harness.service.remove("libreoffice");
+
+    await expect(activeUse).rejects.toMatchObject({ name: "AbortError" });
+    await removal;
+    expect(release).toHaveBeenCalledOnce();
+    expect(order).toEqual(["use-stopped", "release"]);
+    await expect(access(installed.installationPath!)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps installation data when releasing its runtime fails", async () => {
+    let shouldFail = true;
+    const lifecycles = new ExternalLibraryLifecycleRegistry();
+    lifecycles.register({
+      libraryId: "libreoffice",
+      release: vi.fn(async () => {
+        if (shouldFail) throw new Error("runtime is still busy");
+      }),
+    });
+    const harness = await createHarness({ lifecycles });
+    await harness.service.initialize();
+    const installed = await installAndWait(harness);
+
+    await expect(harness.service.remove("libreoffice")).rejects.toThrow(
+      "runtime is still busy",
+    );
+
+    await expect(access(installed.installationPath!)).resolves.toBeUndefined();
+    shouldFail = false;
+    await expect(harness.service.remove("libreoffice")).resolves.toMatchObject({
+      status: "not-installed",
+    });
   });
 
   it("migrates a verified installation and switches settings last", async () => {
-    const harness = await createHarness();
+    const release = vi.fn(async () => undefined);
+    const lifecycles = new ExternalLibraryLifecycleRegistry();
+    lifecycles.register({ libraryId: "libreoffice", release });
+    const harness = await createHarness({ lifecycles });
     await harness.service.initialize();
     const installed = await installAndWait(harness);
     const targetRootPath = join(dirname(harness.rootPath), "moved");
+    const definition = harness.registry.require("libreoffice");
+    const packageDefinition = harness.registry.selectPackage(
+      definition.id,
+      "darwin",
+      "arm64",
+    );
+    const downloadPaths = await harness.pathManager.prepareDownloadPaths({
+      rootPath: harness.rootPath,
+      definition,
+      packageDefinition,
+      resourceDefinition:
+        externalLibraryPackageResources(packageDefinition)[0]!,
+    });
+    await writeFile(downloadPaths.partialPath, "partial");
 
     const result = await harness.service.migrate(targetRootPath);
 
@@ -657,7 +860,11 @@ describe("ExternalLibraryService", () => {
     expect(harness.settings.getExternalLibrariesPath()).toBe(
       targetRootPath,
     );
+    expect(release).toHaveBeenCalledOnce();
     await expect(access(installed.installationPath!)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(downloadPaths.partialPath)).rejects.toMatchObject({
       code: "ENOENT",
     });
     await expect(
@@ -666,7 +873,10 @@ describe("ExternalLibraryService", () => {
   });
 
   it("reports a target conflict before changing either root", async () => {
-    const harness = await createHarness();
+    const release = vi.fn(async () => undefined);
+    const lifecycles = new ExternalLibraryLifecycleRegistry();
+    lifecycles.register({ libraryId: "libreoffice", release });
+    const harness = await createHarness({ lifecycles });
     await harness.service.initialize();
     const installed = await installAndWait(harness);
     const targetRootPath = join(dirname(harness.rootPath), "occupied");
@@ -698,6 +908,7 @@ describe("ExternalLibraryService", () => {
         },
       ],
     });
+    expect(release).not.toHaveBeenCalled();
     expect(harness.settings.getExternalLibrariesPath()).toBe(
       harness.rootPath,
     );

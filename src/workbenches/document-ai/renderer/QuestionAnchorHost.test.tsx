@@ -4,10 +4,10 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it } from 'vitest';
 
 import type { ConversationRecord } from '../../../renderer/conversation/conversation-contracts';
+import { ProjectConversationHistoryProvider } from '../../../renderer/conversation/ProjectConversationHistoryProvider';
 import { createDocumentConversationContext } from './conversation/document-conversation-contribution';
 import { groupConversationQuestionAnchors } from './conversation/conversation-question-anchors';
 import { QuestionAnchorHost } from './QuestionAnchorHost';
-import { DocumentQuestionAnchorsVisibleContext } from './document-question-anchor-visibility';
 import {
   WORKBENCH_RESOLVE_ANCHOR_EVENT,
   type ResolveWorkbenchAnchorDetail,
@@ -50,7 +50,7 @@ describe('groupConversationQuestionAnchors', () => {
     expect(groups[0]?.entries.map(({ message }) => message.id)).toEqual(['q1', 'q2']);
   });
 
-  it('rehydrates persisted questions and restores their frames after visibility is toggled', async () => {
+  it('rehydrates persisted questions and restores their frames', async () => {
     const records: readonly ConversationRecord[] = [{
       id: 'conversation',
       title: '问题',
@@ -81,27 +81,25 @@ describe('groupConversationQuestionAnchors', () => {
     };
     window.addEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
 
-    const render = (visible: boolean) => (
-      <DocumentQuestionAnchorsVisibleContext.Provider value={visible}>
-        <QuestionAnchorHost
-          assetId="asset"
-          ownerId="document.conversation"
-          historyStore={store}
-          runtime={runtime}
-        />
-      </DocumentQuestionAnchorsVisibleContext.Provider>
-    );
     try {
-      await act(async () => root.render(render(true)));
-      expect(container.querySelector('[data-question-anchor-marker]')).not.toBeNull();
-      await act(async () => root.render(render(false)));
-      expect(container.querySelector('[data-question-anchor-marker]')).toBeNull();
-      await act(async () => root.render(render(true)));
+      await act(async () => root.render(
+        <ProjectConversationHistoryProvider store={store}>
+          <QuestionAnchorHost
+            assetId="asset"
+            ownerId="document.conversation"
+            runtime={runtime}
+          />
+        </ProjectConversationHistoryProvider>,
+      ));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
       expect(container.querySelector('[data-question-anchor-marker]')).not.toBeNull();
     } finally {
       await act(async () => root.unmount());
       window.removeEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
       container.remove();
-    }
+}
   });
 });

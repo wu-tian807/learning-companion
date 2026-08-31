@@ -20,6 +20,8 @@ function createRegistrations(): ApplicationIpcRegistrations {
     removeSettings: vi.fn(),
     registerProjects: vi.fn(),
     removeProjects: vi.fn(),
+    registerProjectConversations: vi.fn(),
+    removeProjectConversations: vi.fn(),
     registerAssets: vi.fn(),
     removeAssets: vi.fn(),
     registerGenerationTasks: vi.fn(),
@@ -38,6 +40,7 @@ const services: ApplicationIpcServices = {
   externalLibraryService: {} as never,
   generationTaskService: {} as never,
   projectService: {} as never,
+  projectConversationService: {} as never,
   settingsRepository: {} as never,
   workbenchSessionService: {} as never,
   workbenchEvents: {} as never,
@@ -59,6 +62,9 @@ describe('registerApplicationIpc', () => {
     );
     expect(registrations.registerProjects).toHaveBeenCalledWith(
       services.projectService,
+    );
+    expect(registrations.registerProjectConversations).toHaveBeenCalledWith(
+      services.projectConversationService,
     );
     expect(registrations.registerAssets).toHaveBeenCalledWith(
       services.assetService,
@@ -82,6 +88,7 @@ describe('registerApplicationIpc', () => {
       registrations.removeAttachments,
       registrations.removeGenerationTasks,
       registrations.removeAssets,
+      registrations.removeProjectConversations,
       registrations.removeProjects,
       registrations.removeSettings,
       registrations.removeExternalLibraries,

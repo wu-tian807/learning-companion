@@ -93,6 +93,76 @@ describe('Main Workbench contribution composition', () => {
     expect(calls).toEqual(['second', 'first']);
   });
 
+  it('shuts down composed feature runtimes once in reverse order', async () => {
+    const calls: string[] = [];
+    const contribution = composeMainWorkbenchContribution(
+      manifest,
+      vi.fn() as never,
+      [
+        {
+          id: 'test.first',
+          start: () => ({
+            shutdown: async () => {
+              calls.push('first');
+            },
+            dispose: () => undefined,
+          }),
+        },
+        {
+          id: 'test.second',
+          start: () => ({
+            shutdown: async () => {
+              calls.push('second');
+            },
+            dispose: () => undefined,
+          }),
+        },
+      ],
+    );
+    const runtime = contribution.start?.({} as never);
+
+    const first = runtime?.shutdown?.();
+    const second = runtime?.shutdown?.();
+    expect(second).toBe(first);
+    await first;
+
+    expect(calls).toEqual(['second', 'first']);
+  });
+
+  it('continues shutting down earlier runtimes after a later runtime fails', async () => {
+    const calls: string[] = [];
+    const failure = new Error('shutdown failed');
+    const contribution = composeMainWorkbenchContribution(
+      manifest,
+      vi.fn() as never,
+      [
+        {
+          id: 'test.first',
+          start: () => ({
+            shutdown: async () => {
+              calls.push('first');
+            },
+            dispose: () => undefined,
+          }),
+        },
+        {
+          id: 'test.second',
+          start: () => ({
+            shutdown: async () => {
+              calls.push('second');
+              throw failure;
+            },
+            dispose: () => undefined,
+          }),
+        },
+      ],
+    );
+
+    const runtime = contribution.start?.({} as never);
+    await expect(runtime?.shutdown?.()).rejects.toBe(failure);
+    expect(calls).toEqual(['second', 'first']);
+  });
+
   it.each([
     [[{ id: '' }, { id: 'test.valid' }]],
     [[{ id: 'test.duplicate' }, { id: 'test.duplicate' }]],

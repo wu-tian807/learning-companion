@@ -27,7 +27,9 @@ function createResources(
     },
     disposeContentProtocol: vi.fn(),
     disposeIpc: vi.fn(),
+    shutdownWorkbenchFeatures: vi.fn(async () => undefined),
     disposeWorkbenchFeatures: vi.fn(),
+    disposeAssetAggregateTracking: vi.fn(),
   };
 }
 
@@ -72,6 +74,7 @@ describe('ApplicationRuntime', () => {
     expect(
       resources.externalLibraryService.shutdown,
     ).toHaveBeenCalledOnce();
+    expect(resources.shutdownWorkbenchFeatures).toHaveBeenCalledOnce();
     expect(
       resources.generationTaskService.unloadProject,
     ).toHaveBeenCalledOnce();
@@ -86,6 +89,55 @@ describe('ApplicationRuntime', () => {
     ).toBeLessThan(
       resources.codexRuntimeService.shutdown.mock.invocationCallOrder[0]!,
     );
+    expect(
+      resources.workbenchSessionService.closeActive.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      resources.shutdownWorkbenchFeatures.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('still shuts down Workbench features when closing the active session fails', async () => {
+    const closeFailure = new Error('close failed');
+    const resources = createResources(async () => {
+      throw closeFailure;
+    });
+    const runtime = new ApplicationRuntime(
+      resources as unknown as ApplicationRuntimeResources,
+    );
+
+    await expect(runtime.shutdown()).rejects.toBe(closeFailure);
+
+    expect(resources.shutdownWorkbenchFeatures).toHaveBeenCalledOnce();
+    expect(resources.externalLibraryService.shutdown).toHaveBeenCalledOnce();
+    expect(resources.agentProviderService.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('waits for GenerationTask shutdown before completing', async () => {
+    const resources = createResources();
+    let finishGenerationShutdown: (() => void) | undefined;
+    resources.generationTaskService.unloadProject.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolvePromise) => {
+          finishGenerationShutdown = resolvePromise;
+        }),
+    );
+    const runtime = new ApplicationRuntime(
+      resources as unknown as ApplicationRuntimeResources,
+    );
+    let shutdownSettled = false;
+
+    const shutdown = runtime.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await vi.waitFor(() =>
+      expect(finishGenerationShutdown).toBeTypeOf('function'),
+    );
+    await Promise.resolve();
+    expect(shutdownSettled).toBe(false);
+
+    finishGenerationShutdown!();
+    await shutdown;
+    expect(shutdownSettled).toBe(true);
   });
 
   it('disposes application resources idempotently', () => {
@@ -107,6 +159,9 @@ describe('ApplicationRuntime', () => {
     runtime.dispose();
 
     expect(resources.disposeContentProtocol).toHaveBeenCalledOnce();
+    expect(
+      resources.disposeAssetAggregateTracking,
+    ).toHaveBeenCalledOnce();
     expect(
       resources.contentResourceService.dispose,
     ).toHaveBeenCalledOnce();

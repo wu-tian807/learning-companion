@@ -16,6 +16,12 @@ export function createWorkbenchConversationTaskRequest(
   input: ConversationTaskInput,
 ): StartGenerationTaskRequest {
   if (
+    contribution.sourceAssetMode &&
+    !input.assetId
+  ) {
+    throw new Error('当前问答上下文缺少资料。');
+  }
+  if (
     input.generateTitle &&
     contribution.initialContextRequired &&
     input.context === undefined
@@ -45,14 +51,16 @@ export function createWorkbenchConversationTaskRequest(
       format: WORKBENCH_CONVERSATION_INSTRUCTION_FORMAT,
       version: WORKBENCH_CONVERSATION_INSTRUCTION_VERSION,
       contextProviderId: contribution.contextProviderId,
-      assetId: input.assetId,
+      ...(contribution.sourceAssetMode && input.assetId
+        ? { assetId: input.assetId }
+        : {}),
       conversationId: input.conversationId,
       question: input.question,
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(commitAnswer ? { commitAnswer: true } : {}),
       ...(input.generateTitle ? { generateTitle: true } : {}),
     }),
-    assetReferences: contribution.includeSourceAssetReference
+    assetReferences: contribution.sourceAssetMode === 'reference' && input.assetId
       ? Object.freeze({
           [WORKBENCH_CONVERSATION_SOURCE_SLOT]: Object.freeze([
             Object.freeze({ assetId: input.assetId }),

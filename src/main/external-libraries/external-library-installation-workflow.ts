@@ -1,8 +1,11 @@
-import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExternalLibraryProgress } from '../../shared/external-libraries';
 import { AppError } from '../errors/app-error';
+import {
+  externalLibraryAbortReason,
+  shouldDiscardExternalLibraryDownloads,
+} from './external-library-abort';
 import {
   externalLibraryPackageExpectedSize,
   externalLibraryPackageResources,
@@ -12,6 +15,7 @@ import {
 import type { ExternalLibraryDownloaderApi } from './external-library-downloader';
 import {
   createExternalLibraryInstallationMarker,
+  EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
   type ExternalLibraryInstallationInspection,
   type ExternalLibraryInstallationManifestFile,
 } from './external-library-installation-manifest-file';
@@ -21,6 +25,8 @@ import type {
   ExternalLibraryInstallerRegistryApi,
 } from './external-library-installer';
 import type { ExternalLibraryPathManagerApi } from './external-library-path-manager';
+import type { ExternalLibraryQuiescence } from './external-library-lifecycle';
+import type { ExternalLibraryRuntimeSetupRegistryApi } from './external-library-runtime-setup';
 
 export type ExternalLibraryInstallationStage =
   | {
@@ -28,7 +34,13 @@ export type ExternalLibraryInstallationStage =
       readonly progress: ExternalLibraryProgress;
     }
   | {
-      readonly status: 'verifying' | 'installing';
+      readonly status: 'verifying';
+      readonly progress?: ExternalLibraryProgress;
+    }
+  | {
+      readonly status: 'installing';
+      readonly statusDetail?: string;
+      readonly progress?: ExternalLibraryProgress;
     };
 
 export interface ExternalLibraryInstallationWorkflowDependencies {
@@ -36,6 +48,7 @@ export interface ExternalLibraryInstallationWorkflowDependencies {
   readonly installationManifestFile: ExternalLibraryInstallationManifestFile;
   readonly downloader: ExternalLibraryDownloaderApi;
   readonly installers: ExternalLibraryInstallerRegistryApi;
+  readonly runtimeSetups?: ExternalLibraryRuntimeSetupRegistryApi;
   readonly now: () => number;
   readonly logger: Pick<Console, 'warn'>;
 }
@@ -45,6 +58,7 @@ export interface ExternalLibraryInstallationWorkflowInput {
   readonly definition: ExternalLibraryDefinition;
   readonly packageDefinition: ExternalLibraryPackageDefinition;
   readonly replaceExisting?: boolean;
+  readonly quiesce?: () => Promise<ExternalLibraryQuiescence>;
   readonly signal: AbortSignal;
   readonly onStage: (stage: ExternalLibraryInstallationStage) => void;
 }
@@ -52,22 +66,6 @@ export interface ExternalLibraryInstallationWorkflowInput {
 interface DownloadedResource {
   readonly id: string;
   readonly path: string;
-}
-
-function createAbortError(): DOMException {
-  return new DOMException(
-    'External library installation cancelled',
-    'AbortError',
-  );
-}
-
-function resourceFileName(
-  packageDefinition: ExternalLibraryPackageDefinition,
-  resourceId: string,
-): string {
-  return packageDefinition.packageType === 'bundle'
-    ? `resource.${resourceId}`
-    : `package.${packageDefinition.packageType}`;
 }
 
 function createInstallRequest(
@@ -122,19 +120,56 @@ export class ExternalLibraryInstallationWorkflow {
       signal,
       onStage,
     } = input;
+    const runtimeSetup = this.dependencies.runtimeSetups?.find(
+      definition.id,
+    );
+    const expectedSetupBytes = runtimeSetup?.expectedSetupBytes ?? 0;
     const stagingDirectory =
       await this.dependencies.pathManager.createStagingDirectory(
         rootPath,
         definition.id,
       );
+    let installationAvailable = false;
 
     try {
       const resources = externalLibraryPackageResources(packageDefinition);
-      const totalBytes = externalLibraryPackageExpectedSize(
+      const packageBytes = externalLibraryPackageExpectedSize(
         packageDefinition,
       );
+      const totalBytes = packageBytes + expectedSetupBytes;
       const downloaded: DownloadedResource[] = [];
       let completedBeforeCurrent = 0;
+      let completedSetupBytes = 0;
+      const reportRuntimeSetupStage = (
+        statusDetail: string,
+        progress?: ExternalLibraryProgress,
+      ) => {
+        if (progress) {
+          if (
+            expectedSetupBytes <= 0 ||
+            progress.totalBytes !== expectedSetupBytes
+          ) {
+            throw new AppError('DATA_INTEGRITY_ERROR');
+          }
+          completedSetupBytes = Math.max(
+            completedSetupBytes,
+            Math.min(progress.completedBytes, expectedSetupBytes),
+          );
+        }
+        onStage({
+          status: 'installing',
+          statusDetail,
+          ...(expectedSetupBytes > 0
+            ? {
+                progress: {
+                  completedBytes:
+                    packageBytes + completedSetupBytes,
+                  totalBytes,
+                },
+              }
+            : {}),
+        });
+      };
 
       onStage({
         status: 'downloading',
@@ -142,16 +177,18 @@ export class ExternalLibraryInstallationWorkflow {
       });
 
       for (const resourceDefinition of resources) {
-        if (signal.aborted) throw createAbortError();
+        if (signal.aborted) throw externalLibraryAbortReason(signal);
 
-        const fileName = resourceFileName(
-          packageDefinition,
-          resourceDefinition.id,
-        );
-        const partialPath = join(stagingDirectory, `${fileName}.partial`);
+        const downloadPaths =
+          await this.dependencies.pathManager.prepareDownloadPaths({
+            rootPath,
+            definition,
+            packageDefinition,
+            resourceDefinition,
+          });
         const result = await this.dependencies.downloader.download({
           resourceDefinition,
-          destinationPath: partialPath,
+          destinationPath: downloadPaths.destinationPath,
           signal,
           onProgress: (progress) => {
             onStage({
@@ -165,22 +202,40 @@ export class ExternalLibraryInstallationWorkflow {
           },
         });
 
-        if (result.packagePath !== partialPath) {
+        if (result.packagePath !== downloadPaths.destinationPath) {
           throw new AppError('DATA_INTEGRITY_ERROR');
         }
 
-        const path = join(stagingDirectory, fileName);
-        await rename(partialPath, path);
+        const path = await this.dependencies.pathManager.completeDownload(
+          downloadPaths,
+        );
         downloaded.push({ id: resourceDefinition.id, path });
         completedBeforeCurrent += result.byteLength;
       }
 
-      onStage({ status: 'verifying' });
-      if (completedBeforeCurrent !== totalBytes) {
+      const setupAwareProgress =
+        expectedSetupBytes > 0
+          ? {
+              completedBytes: completedBeforeCurrent,
+              totalBytes,
+            }
+          : undefined;
+      onStage({
+        status: 'verifying',
+        ...(setupAwareProgress === undefined
+          ? {}
+          : { progress: setupAwareProgress }),
+      });
+      if (completedBeforeCurrent !== packageBytes) {
         throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
       }
 
-      onStage({ status: 'installing' });
+      onStage({
+        status: 'installing',
+        ...(setupAwareProgress === undefined
+          ? {}
+          : { progress: setupAwareProgress }),
+      });
       const stagingInstallationDirectory = join(
         stagingDirectory,
         'installation',
@@ -197,7 +252,33 @@ export class ExternalLibraryInstallationWorkflow {
         signal,
       );
 
-      if (signal.aborted) throw createAbortError();
+      if (runtimeSetup) {
+        const runtimeDirectory = join(
+          stagingInstallationDirectory,
+          EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+        );
+        const setupCacheDirectory =
+          await this.dependencies.pathManager.prepareRuntimeSetupCacheDirectory(
+            rootPath,
+            definition,
+            packageDefinition,
+          );
+        await runtimeSetup.prepare(
+          runtimeDirectory,
+          setupCacheDirectory,
+          signal,
+          reportRuntimeSetupStage,
+        );
+        if (signal.aborted) throw externalLibraryAbortReason(signal);
+        if (
+          !runtimeSetup.finalizeInstallation &&
+          !(await runtimeSetup.isReady(runtimeDirectory))
+        ) {
+          throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+        }
+      }
+
+      if (signal.aborted) throw externalLibraryAbortReason(signal);
 
       await this.dependencies.installationManifestFile.write(
         stagingInstallationDirectory,
@@ -207,28 +288,86 @@ export class ExternalLibraryInstallationWorkflow {
           installedTime: this.dependencies.now(),
         }),
       );
-      const paths =
-        await this.dependencies.pathManager.commitInstallation({
-          rootPath,
-          definition,
-          packageDefinition,
-          stagingDirectory,
-          stagingInstallationDirectory,
-          replaceExisting,
-        });
-      const inspection =
-        await this.dependencies.installationManifestFile.inspect(
-          paths.installationDirectory,
-          definition,
-          packageDefinition,
-        );
+      const quiescence = replaceExisting
+        ? await input.quiesce?.()
+        : undefined;
+      let installationCommitted = false;
+      try {
+        const paths =
+          await this.dependencies.pathManager.commitInstallation({
+            rootPath,
+            definition,
+            packageDefinition,
+            stagingDirectory,
+            stagingInstallationDirectory,
+            replaceExisting,
+          });
+        installationCommitted = true;
 
-      if (inspection.status !== 'available') {
-        throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+        if (runtimeSetup?.finalizeInstallation) {
+          const runtimeDirectory = join(
+            paths.installationDirectory,
+            EXTERNAL_LIBRARY_RUNTIME_DIRECTORY,
+          );
+          await runtimeSetup.finalizeInstallation(
+            runtimeDirectory,
+            signal,
+            reportRuntimeSetupStage,
+          );
+          if (signal.aborted) throw externalLibraryAbortReason(signal);
+        }
+
+        const inspection =
+          await this.dependencies.installationManifestFile.inspect(
+            paths.installationDirectory,
+            definition,
+            packageDefinition,
+          );
+
+        if (inspection.status !== 'available') {
+          throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
+        }
+
+        installationAvailable = true;
+        return inspection;
+      } catch (error) {
+        if (installationCommitted) {
+          await this.dependencies.pathManager
+            .rollbackInstallationCommit({
+              rootPath,
+              definition,
+              packageDefinition,
+              stagingDirectory,
+            })
+            .catch((rollbackError: unknown) => {
+              this.dependencies.logger.warn(
+                '回滚未完成的外部运行时安装失败',
+                rollbackError,
+              );
+            });
+        }
+        throw error;
+      } finally {
+        quiescence?.dispose();
       }
-
-      return inspection;
     } finally {
+      if (
+        installationAvailable ||
+        shouldDiscardExternalLibraryDownloads(signal)
+      ) {
+        await this.dependencies.pathManager
+          .cleanupPackageDownloads(
+            rootPath,
+            definition,
+            packageDefinition,
+          )
+          .catch((error: unknown) => {
+            this.dependencies.logger.warn(
+              '清理外部运行时下载缓存失败',
+              error,
+            );
+          });
+      }
       await this.dependencies.pathManager
         .cleanupStagingDirectory(rootPath, stagingDirectory)
         .catch((error: unknown) => {

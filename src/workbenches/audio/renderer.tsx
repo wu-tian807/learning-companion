@@ -4,10 +4,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 
+import { MediaPlaybackControls } from '../../renderer/components/MediaPlaybackControls';
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
@@ -15,16 +15,37 @@ import type {
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
+import {
+  MediaDubbingAudioTrack,
+  useMediaDubbingPlayback,
+} from '../media-dubbing/use-media-dubbing-playback';
+import { MediaLanguageControls } from '../media-subtitles/media-language-controls';
+import { useMediaSubtitles } from '../media-subtitles/use-media-subtitles';
+import { AudioTranscript } from './audio-transcript';
 import { createAudioRendererActions } from './renderer-actions';
+import { useAudioSpeakerTrack } from './use-audio-speaker-track';
 import {
   AUDIO_PLAYBACK_RATES,
   AUDIO_WORKBENCH_ID,
+  audioEventTypes,
   audioWorkbenchManifest,
   cloneAudioViewState,
+  createAudioGetDubbingSnapshotCommand,
+  createAudioGetSubtitleSnapshotCommand,
+  createAudioRetryDubbingCommand,
+  createAudioRetrySubtitlesCommand,
   createAudioSaveViewStateCommand,
+  createAudioSetSubtitleModeCommand,
+  createAudioStartDubbingCommand,
   createAudioTimeRangeTarget,
   DEFAULT_AUDIO_VIEW_STATE,
+  EMPTY_AUDIO_DUBBING_SNAPSHOT,
+  EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+  EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
+  isAudioDubbingSnapshot,
   isAudioSaveViewStateResult,
+  isAudioSubtitleCueFinalPayload,
+  isAudioSubtitleSnapshot,
   isAudioWorkbenchPayload,
   type AudioWorkbenchViewState,
 } from './shared';
@@ -37,6 +58,25 @@ type AudioLoadState =
 const SAVE_DELAY_MS = 750;
 const AUDIO_HAVE_METADATA = 1;
 const AUDIO_METADATA_TIMEOUT_MS = 15_000;
+
+const AUDIO_SUBTITLE_PROTOCOL = Object.freeze({
+  snapshotEventType: audioEventTypes.subtitleSnapshot,
+  cueFinalEventType: audioEventTypes.subtitleCueFinal,
+  createGetSnapshotCommand: createAudioGetSubtitleSnapshotCommand,
+  createSetModeCommand: createAudioSetSubtitleModeCommand,
+  createRetryCommand: createAudioRetrySubtitlesCommand,
+  isSetModeResult: isAudioSaveViewStateResult,
+  isSnapshot: isAudioSubtitleSnapshot,
+  isCueFinalPayload: isAudioSubtitleCueFinalPayload,
+});
+
+const AUDIO_DUBBING_PLAYBACK_PROTOCOL = Object.freeze({
+  snapshotEventType: audioEventTypes.dubbingSnapshot,
+  createGetSnapshotCommand: createAudioGetDubbingSnapshotCommand,
+  createStartCommand: createAudioStartDubbingCommand,
+  createRetryCommand: createAudioRetryDubbingCommand,
+  isSnapshot: isAudioDubbingSnapshot,
+});
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
@@ -65,9 +105,7 @@ export function hasLoadedAudioMetadata(
   return media.readyState >= AUDIO_HAVE_METADATA;
 }
 
-function captureAudioState(
-  audio: HTMLAudioElement,
-): AudioWorkbenchViewState {
+function captureAudioState(audio: HTMLAudioElement): AudioWorkbenchViewState {
   return {
     currentTime: Number.isFinite(audio.currentTime)
       ? clamp(audio.currentTime, 0, 1_000_000_000)
@@ -78,45 +116,29 @@ function captureAudioState(
   };
 }
 
-function AudioDocumentIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 48 48"
-      className="size-12 text-indigo-200/70"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M17 14v20" />
-      <path d="M23 10v28" />
-      <path d="M29 17v14" />
-      <path d="M35 20v8" />
-      <path d="M11 20v8" />
-    </svg>
-  );
-}
-
 export function AudioWorkbenchView({
-  asset,
   bootstrap,
   executeCommand,
   onRelink,
   onRefresh,
   onReveal,
+  onOpenSettings,
   onError,
+  subscribeEvent,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isAudioWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
   const audioRef = useRef<HTMLAudioElement>(null);
+  const suppressAudioVolumeEventRef = useRef(false);
+  const desiredAudioStateRef = useRef({
+    volume: payload?.viewState.volume ?? 1,
+    muted: payload?.viewState.muted ?? false,
+  });
   const saveTimerRef = useRef<number | undefined>(undefined);
   const latestViewStateRef = useRef<AudioWorkbenchViewState>(
-    payload?.viewState ??
-      cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
+    payload?.viewState ?? cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
   );
   const [loadState, setLoadState] = useState<AudioLoadState>({
     kind: 'loading',
@@ -124,6 +146,10 @@ export function AudioWorkbenchView({
   const [currentTime, setCurrentTime] = useState(
     payload?.viewState.currentTime ?? 0,
   );
+  const [duration, setDuration] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [volume, setVolume] = useState(payload?.viewState.volume ?? 1);
+  const [muted, setMuted] = useState(payload?.viewState.muted ?? false);
   const [playbackRate, setPlaybackRateState] = useState(
     payload?.viewState.playbackRate ?? 1,
   );
@@ -131,7 +157,6 @@ export function AudioWorkbenchView({
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
       const message = userMessageFromError(error, fallback);
-
       if (message) {
         console.error(message, error);
         onError(message);
@@ -139,13 +164,43 @@ export function AudioWorkbenchView({
     },
     [onError],
   );
+  const subtitles = useMediaSubtitles({
+    resetKey: bootstrap.sessionId,
+    initialMode: payload?.subtitleState.displayMode ?? 'source',
+    initialSnapshot: payload?.subtitleSnapshot ?? EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
+    executeCommand,
+    subscribeEvent,
+    reportError,
+    protocol: AUDIO_SUBTITLE_PROTOCOL,
+    mediaLabel: '音频',
+  });
+  const speakerTrack = useAudioSpeakerTrack({
+    resetKey: bootstrap.sessionId,
+    initialSnapshot:
+      payload?.speakerTrackSnapshot ?? EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+    executeCommand,
+    subscribeEvent,
+    reportError,
+  });
+  const dubbing = useMediaDubbingPlayback({
+    resetKey: bootstrap.sessionId,
+    initialSnapshot: payload?.dubbingSnapshot ?? EMPTY_AUDIO_DUBBING_SNAPSHOT,
+    currentTime,
+    duration,
+    desiredAudioState: { volume, muted, playbackRate },
+    mediaRef: audioRef,
+    suppressMediaVolumeEventRef: suppressAudioVolumeEventRef,
+    executeCommand,
+    subscribeEvent,
+    reportError,
+    protocol: AUDIO_DUBBING_PLAYBACK_PROTOCOL,
+    mediaLabel: '音频',
+  });
 
   const persistViewState = useCallback(
     async (state: AudioWorkbenchViewState) => {
       try {
-        const result = await executeCommand(
-          createAudioSaveViewStateCommand(state),
-        );
+        const result = await executeCommand(createAudioSaveViewStateCommand(state));
         if (!isAudioSaveViewStateResult(result.payload)) {
           throw new Error('Audio Workbench 视图状态响应无效');
         }
@@ -159,20 +214,20 @@ export function AudioWorkbenchView({
   const captureAndScheduleSave = useCallback(
     (immediate = false) => {
       const audio = audioRef.current;
-
-      if (!audio) {
-        return;
-      }
-      const state = captureAudioState(audio);
+      if (!audio) return;
+      const state = {
+        ...captureAudioState(audio),
+        ...desiredAudioStateRef.current,
+      };
       latestViewStateRef.current = state;
       setCurrentTime(state.currentTime);
       setPlaybackRateState(state.playbackRate);
 
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = undefined;
       }
       if (immediate) {
+        saveTimerRef.current = undefined;
         void persistViewState(state);
       } else {
         saveTimerRef.current = window.setTimeout(() => {
@@ -186,15 +241,14 @@ export function AudioWorkbenchView({
 
   useEffect(() => {
     const audio = audioRef.current;
-
-    if (!payload || !audio) {
-      return;
-    }
+    if (!payload || !audio) return;
 
     setLoadState({ kind: 'loading' });
     latestViewStateRef.current = cloneAudioViewState(payload.viewState);
-    setPlaybackRateState(payload.viewState.playbackRate);
-
+    desiredAudioStateRef.current = {
+      volume: payload.viewState.volume,
+      muted: payload.viewState.muted,
+    };
     let metadataTimeoutId: number | undefined;
     const clearMetadataTimeout = () => {
       if (metadataTimeoutId !== undefined) {
@@ -208,67 +262,84 @@ export function AudioWorkbenchView({
       audio.volume = viewState.volume;
       audio.muted = viewState.muted;
       audio.playbackRate = viewState.playbackRate;
-
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
-        const nearEnd = viewState.currentTime >= audio.duration - 0.25;
-        audio.currentTime = nearEnd
-          ? 0
-          : Math.min(viewState.currentTime, audio.duration);
+        audio.currentTime =
+          viewState.currentTime >= audio.duration - 0.25
+            ? 0
+            : Math.min(viewState.currentTime, audio.duration);
       }
       setCurrentTime(audio.currentTime);
-      setPlaybackRateState(audio.playbackRate);
+      setDuration(Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0);
+      setPlaying(!audio.paused && !audio.ended);
+      setVolume(viewState.volume);
+      setMuted(viewState.muted);
+      setPlaybackRateState(viewState.playbackRate);
       setLoadState({ kind: 'ready' });
     };
     const onErrorEvent = () => {
       clearMetadataTimeout();
-      setLoadState({
-        kind: 'failed',
-        message: audioErrorMessage(audio.error),
-      });
+      setLoadState({ kind: 'failed', message: audioErrorMessage(audio.error) });
     };
     const onTimeUpdate = () => captureAndScheduleSave(false);
-    const onSettingChange = () => captureAndScheduleSave(true);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onSeeked = () => captureAndScheduleSave(true);
+    const onRateChange = () => {
+      setPlaybackRateState(audio.playbackRate);
+      captureAndScheduleSave(true);
+    };
+    const onVolumeChange = () => {
+      if (suppressAudioVolumeEventRef.current) return;
+      desiredAudioStateRef.current = {
+        volume: audio.volume,
+        muted: audio.muted,
+      };
+      setVolume(audio.volume);
+      setMuted(audio.muted);
+      captureAndScheduleSave(true);
+    };
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('error', onErrorEvent);
     audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('seeked', onSettingChange);
-    audio.addEventListener('ratechange', onSettingChange);
-    audio.addEventListener('volumechange', onSettingChange);
-
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('ended', onPause);
+    audio.addEventListener('seeked', onSeeked);
+    audio.addEventListener('ratechange', onRateChange);
+    audio.addEventListener('volumechange', onVolumeChange);
     metadataTimeoutId = window.setTimeout(() => {
-      if (audio.error) {
-        onErrorEvent();
-      } else if (hasLoadedAudioMetadata(audio)) {
-        onLoadedMetadata();
-      } else {
+      if (audio.error) onErrorEvent();
+      else if (hasLoadedAudioMetadata(audio)) onLoadedMetadata();
+      else {
         setLoadState({
           kind: 'failed',
           message: '读取音频元数据超时，请刷新后重试。',
         });
       }
     }, AUDIO_METADATA_TIMEOUT_MS);
-
-    if (audio.error) {
-      onErrorEvent();
-    } else if (hasLoadedAudioMetadata(audio)) {
-      onLoadedMetadata();
-    }
+    if (audio.error) onErrorEvent();
+    else if (hasLoadedAudioMetadata(audio)) onLoadedMetadata();
 
     return () => {
       clearMetadataTimeout();
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('error', onErrorEvent);
       audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('seeked', onSettingChange);
-      audio.removeEventListener('ratechange', onSettingChange);
-      audio.removeEventListener('volumechange', onSettingChange);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('ended', onPause);
+      audio.removeEventListener('seeked', onSeeked);
+      audio.removeEventListener('ratechange', onRateChange);
+      audio.removeEventListener('volumechange', onVolumeChange);
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = undefined;
       }
-      const finalState = captureAudioState(audio);
-      latestViewStateRef.current = finalState;
+      const finalState = {
+        ...captureAudioState(audio),
+        ...desiredAudioStateRef.current,
+      };
       void persistViewState(finalState);
       audio.pause();
     };
@@ -277,31 +348,51 @@ export function AudioWorkbenchView({
   const ready = loadState.kind === 'ready';
   const togglePlayback = useCallback(async () => {
     const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
+    if (!audio) return;
     try {
-      if (audio.paused) {
-        await audio.play();
-      } else {
-        audio.pause();
-      }
+      if (audio.paused) await audio.play();
+      else audio.pause();
     } catch (error) {
       reportError(error, '无法切换音频播放状态。');
     }
   }, [reportError]);
+  const seek = useCallback((seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(seconds)) return;
+    audio.currentTime = clamp(seconds, 0, Number.isFinite(audio.duration) ? audio.duration : seconds);
+    setCurrentTime(audio.currentTime);
+  }, []);
+  const toggleMuted = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const next = !desiredAudioStateRef.current.muted;
+    desiredAudioStateRef.current = {
+      ...desiredAudioStateRef.current,
+      muted: next,
+    };
+    setMuted(next);
+    if (!dubbing.isPlaybackActive()) audio.muted = next;
+    captureAndScheduleSave(true);
+  }, [captureAndScheduleSave, dubbing]);
+  const changeVolume = useCallback((nextVolume: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const normalized = clamp(nextVolume, 0, 1);
+    desiredAudioStateRef.current = { volume: normalized, muted: false };
+    setVolume(normalized);
+    setMuted(false);
+    audio.volume = normalized;
+    if (!dubbing.isPlaybackActive()) audio.muted = false;
+    captureAndScheduleSave(true);
+  }, [captureAndScheduleSave, dubbing]);
   const setPlaybackRate = useCallback((rate: number) => {
     const audio = audioRef.current;
-
-    if (!audio || !AUDIO_PLAYBACK_RATES.includes(
-      rate as (typeof AUDIO_PLAYBACK_RATES)[number],
-    )) {
-      return;
-    }
-
+    if (
+      !audio ||
+      !AUDIO_PLAYBACK_RATES.includes(rate as (typeof AUDIO_PLAYBACK_RATES)[number])
+    ) return;
     audio.playbackRate = rate;
+    setPlaybackRateState(rate);
     captureAndScheduleSave(true);
   }, [captureAndScheduleSave]);
   const reveal = useCallback(async () => {
@@ -320,101 +411,96 @@ export function AudioWorkbenchView({
         onPlaybackRate: setPlaybackRate,
         onReveal: reveal,
       }),
-    [
-      playbackRate,
-      ready,
-      reveal,
-      setPlaybackRate,
-      togglePlayback,
-    ],
+    [playbackRate, ready, reveal, setPlaybackRate, togglePlayback],
   );
   useWorkbenchContributions(AUDIO_WORKBENCH_ID, rendererActions);
 
   const openContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const audio = audioRef.current;
-      const seconds = audio
-        ? captureAudioState(audio).currentTime
-        : currentTime;
-
+      const seconds = audioRef.current?.currentTime ?? currentTime;
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        {
-          focus: createAudioTimeRangeTarget(seconds),
-          inputs: [],
-        },
+        { focus: createAudioTimeRangeTarget(seconds), inputs: [] },
       );
     },
     [bootstrap.sessionId, currentTime, runtime],
   );
-  const handlePlaybackRateChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      setPlaybackRate(Number(event.target.value));
-    },
-    [setPlaybackRate],
-  );
+
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
-        <p className="text-sm text-rose-300">
-          Audio Workbench 数据无效
-        </p>
+        <p className="text-sm text-rose-300">Audio Workbench 数据无效</p>
       </div>
     );
   }
 
   return (
     <div
-      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#11151a]"
+      data-audio-workbench-layout="true"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#11151a]"
       onContextMenuCapture={openContextMenu}
     >
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-[radial-gradient(circle_at_50%_42%,rgba(129,140,248,0.09),transparent_50%),#11151a] p-8">
-        <div className="max-w-md text-center">
-          <div className="mx-auto grid size-20 place-items-center rounded-[24px] border border-indigo-200/[0.08] bg-indigo-200/[0.045] shadow-[0_18px_55px_rgba(0,0,0,0.2)]">
-            <AudioDocumentIcon />
-          </div>
-          <h3 className="mt-5 truncate text-sm font-medium text-slate-300">
-            {asset.name}
-          </h3>
-          <p className="mt-2 text-xs leading-5 text-slate-600">
-            音频转写、章节和逐句学习内容将在这里显示
-          </p>
-        </div>
+      <audio
+        ref={audioRef}
+        aria-label="音频播放器"
+        src={payload.contentUrl}
+        preload="metadata"
+        className="hidden"
+      />
+      <MediaDubbingAudioTrack controller={dubbing} mediaLabel="音频" />
+
+      <div
+        data-audio-transcript-region="true"
+        className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_20%,rgba(129,140,248,0.07),transparent_45%),#11151a]"
+      >
+        <AudioTranscript
+          snapshot={subtitles.snapshot}
+          mode={subtitles.mode}
+          currentTime={currentTime}
+          speakerTrack={speakerTrack}
+          onSeek={seek}
+        />
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.07] bg-[#191e24] px-4 py-3">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
-          <audio
-            ref={audioRef}
-            aria-label="音频播放器"
-            className="h-10 min-w-0 flex-1"
-            src={payload.contentUrl}
-            controls
-            preload="metadata"
-          />
-          <label className="flex shrink-0 items-center gap-1.5 text-[10px] text-slate-500">
-            倍速
-            <select
-              aria-label="音频播放速度"
-              value={playbackRate}
-              disabled={!ready}
-              onChange={handlePlaybackRateChange}
-              className="ui-control h-8 rounded-lg border border-white/[0.08] bg-[#242a32] px-2 text-[11px] text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {AUDIO_PLAYBACK_RATES.map((rate) => (
-                <option key={rate} value={rate}>
-                  {rate}×
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+      <div className="shrink-0 border-t border-white/[0.08] bg-[#151a21] shadow-[0_-10px_30px_rgba(0,0,0,0.18)]">
+        <MediaPlaybackControls
+          mediaLabel="音频"
+          ready={ready}
+          playing={playing}
+          currentTime={currentTime}
+          duration={duration}
+          volume={volume}
+          muted={muted}
+          playbackRate={playbackRate}
+          generatedSuffixStartSeconds={dubbing.generatedSuffixStartSeconds}
+          trailingControls={
+            <MediaLanguageControls
+              mediaLabel="音频"
+              subtitleMode={subtitles.mode}
+              subtitleSnapshot={subtitles.snapshot}
+              dubbingSnapshot={dubbing.snapshot}
+              dubbingEnabled={dubbing.enabled}
+              dubbingPlaybackActive={dubbing.playbackActive}
+              onSelectSubtitleMode={(mode) => void subtitles.selectMode(mode)}
+              onRetrySubtitles={() => void subtitles.retry()}
+              onStartDubbing={() => void dubbing.start()}
+              onSelectDubbingEnabled={dubbing.selectEnabled}
+              onRetryDubbing={() => void dubbing.retry()}
+              onOpenSettings={onOpenSettings}
+            />
+          }
+          onTogglePlayback={() => void togglePlayback()}
+          onSeek={seek}
+          onToggleMuted={toggleMuted}
+          onVolumeChange={changeVolume}
+          onPlaybackRateChange={setPlaybackRate}
+        />
       </div>
 
       {loadState.kind === 'loading' && (
-        <div className="pointer-events-none absolute inset-0 bottom-16 grid place-items-center bg-[#11151a]/68">
+        <div className="pointer-events-none absolute inset-0 bottom-20 grid place-items-center bg-[#11151a]/68">
           <div className="flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-[#20262e]/80 px-4 py-2 text-xs text-slate-400 shadow-xl backdrop-blur-sm">
             <span className="size-3 animate-spin rounded-full border border-slate-500 border-t-indigo-200" />
             正在读取音频信息…
@@ -423,27 +509,17 @@ export function AudioWorkbenchView({
       )}
 
       {loadState.kind === 'failed' && (
-        <div className="absolute inset-0 bottom-16 grid place-items-center bg-[#11151a]/94 p-8 text-center">
+        <div className="absolute inset-0 bottom-20 grid place-items-center bg-[#11151a]/94 p-8 text-center">
           <div>
-            <p className="text-sm font-medium text-slate-200">
-              无法播放这个音频
-            </p>
+            <p className="text-sm font-medium text-slate-200">无法播放这个音频</p>
             <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">
               {loadState.message}
             </p>
             <div className="mt-5 flex justify-center gap-2">
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
-              >
+              <button type="button" onClick={onRefresh} className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300">
                 刷新
               </button>
-              <button
-                type="button"
-                onClick={onRelink}
-                className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300"
-              >
+              <button type="button" onClick={onRelink} className="ui-control rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300">
                 重新定位
               </button>
             </div>

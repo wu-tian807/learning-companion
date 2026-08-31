@@ -6,7 +6,6 @@ import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
-  headerSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -154,7 +153,6 @@ export const markdownWorkbenchManifest: AssetWorkbenchManifest<
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
-    headerSurfaceFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,

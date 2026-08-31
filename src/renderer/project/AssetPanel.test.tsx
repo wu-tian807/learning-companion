@@ -20,7 +20,7 @@ function createAsset(
     mediaType: 'text/plain',
     creationKind: 'generated',
     contentRef: createProjectWorkspaceContentRef(
-      `assets/generated/${id}.txt`,
+      `.learning-companion/assets/generated/${id}.txt`,
     ),
     contentStatus: {
       availability: 'available',

@@ -8,6 +8,7 @@ import type {
   AgentProviderSetupSnapshot,
 } from "../shared/agent-providers";
 import type { AssetSnapshot } from "../shared/assets";
+import type { AssetFolderState } from "../shared/asset-folders";
 import type {
   ExternalLibraryMigrationResult,
   ExternalLibrarySnapshot,
@@ -32,16 +33,27 @@ import type { AssetAttachment } from "../shared/attachments/contracts";
 import type { AssetTarget } from "../shared/workbench/anchor";
 import type { JsonValue } from "../shared/workbench/protocol";
 import type {
+  ConversationRecord,
+  DeleteProjectConversationRequest,
+  ImportProjectConversationsRequest,
+  ProjectConversationProjectRequest,
+  SaveProjectConversationRequest,
+} from "../shared/project-conversations";
+import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
   AgentProviderConnectionRequest,
   AgentProviderIdRequest,
   CancelAgentProviderLoginRequest,
   ConfigureAgentProviderApiConnectionRequest,
+  CreateAssetFolderRequest,
+  DeleteAssetFolderRequest,
+  DeleteAssetFolderResult,
   DeleteProjectRequest,
   ExternalLibraryIdRequest,
   InstallExternalLibraryRequest,
   MigrateExternalLibrariesRequest,
+  MoveAssetsToFolderRequest,
   AddLocalAssetsRequest,
   AddLocalAssetsResult,
   AssetIdRequest,
@@ -58,6 +70,7 @@ import type {
   SetProjectPinnedRequest,
   SelectAgentProviderForSelectorRequest,
   UpdateHomePreferencesRequest,
+  UpdateAssetFolderRequest,
 } from "../shared/ipc";
 import { IPC_CHANNELS } from "../shared/ipc";
 import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
@@ -214,6 +227,26 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<AssetSnapshot[]>(IPC_CHANNELS.openProject, request),
   closeProject: (request: ProjectLifecycleRequest) =>
     invoke<void>(IPC_CHANNELS.closeProject, request),
+  listProjectConversations: (request: ProjectConversationProjectRequest) =>
+    invoke<ConversationRecord[]>(
+      IPC_CHANNELS.listProjectConversations,
+      request,
+    ),
+  saveProjectConversation: (request: SaveProjectConversationRequest) =>
+    invoke<ConversationRecord[]>(
+      IPC_CHANNELS.saveProjectConversation,
+      request,
+    ),
+  importProjectConversations: (request: ImportProjectConversationsRequest) =>
+    invoke<ConversationRecord[]>(
+      IPC_CHANNELS.importProjectConversations,
+      request,
+    ),
+  deleteProjectConversation: (request: DeleteProjectConversationRequest) =>
+    invoke<ConversationRecord[]>(
+      IPC_CHANNELS.deleteProjectConversation,
+      request,
+    ),
   selectLocalAssetFiles: (request: ProjectLifecycleRequest) =>
     invoke<string[]>(IPC_CHANNELS.selectLocalAssetFiles, request),
   addLocalAssets: (request: AddLocalAssetsRequest) =>
@@ -232,6 +265,16 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<void>(IPC_CHANNELS.revealAssetInFolder, request),
   onAssetChanged: (listener) =>
     subscribeAssetEvents(ipcRenderer, listener),
+  listAssetFolders: (request: ProjectLifecycleRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.listAssetFolders, request),
+  createAssetFolder: (request: CreateAssetFolderRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.createAssetFolder, request),
+  updateAssetFolder: (request: UpdateAssetFolderRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.updateAssetFolder, request),
+  deleteAssetFolder: (request: DeleteAssetFolderRequest) =>
+    invoke<DeleteAssetFolderResult>(IPC_CHANNELS.deleteAssetFolder, request),
+  moveAssetsToFolder: (request: MoveAssetsToFolderRequest) =>
+    invoke<AssetFolderState>(IPC_CHANNELS.moveAssetsToFolder, request),
   listGenerationTasks: (request: GenerationTaskProjectRequest) =>
     invoke<GenerationTaskView[]>(IPC_CHANNELS.listGenerationTasks, request),
   getGenerationTask: (request: GenerationTaskIdRequest) =>

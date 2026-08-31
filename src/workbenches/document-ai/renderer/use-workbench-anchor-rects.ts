@@ -21,11 +21,13 @@ export function useWorkbenchAnchorRects(
   const [anchorRects, setAnchorRects] = useState<
     ReadonlyMap<string, WorkbenchAnchorRect>
   >(new Map());
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
 
   const updateRects = useCallback(() => {
     const host = hostRef.current;
     if (!host) return;
     const hostRect = host.getBoundingClientRect();
+    setHostSize({ width: hostRect.width, height: hostRect.height });
     const next = new Map<string, WorkbenchAnchorRect>();
     for (const entry of entries) {
       const rect = resolveWorkbenchAnchor(assetId, entry.target);
@@ -60,5 +62,5 @@ export function useWorkbenchAnchorRects(
     };
   }, [enabled, updateRects]);
 
-  return { hostRef, anchorRects };
+  return { hostRef, anchorRects, hostSize };
 }

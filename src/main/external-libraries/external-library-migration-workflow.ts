@@ -14,6 +14,7 @@ import type {
   ExternalLibraryInstallationManifestFile,
 } from './external-library-installation-manifest-file';
 import type { ExternalLibraryPathManagerApi } from './external-library-path-manager';
+import type { ExternalLibraryQuiescence } from './external-library-lifecycle';
 
 export interface ExternalLibraryMigrationDefinition {
   readonly definition: ExternalLibraryDefinition;
@@ -38,6 +39,9 @@ export interface ExternalLibraryMigrationWorkflowInput {
   readonly conflictResolution?:
     ExternalLibraryMigrationConflictResolution;
   readonly definitions: readonly ExternalLibraryMigrationDefinition[];
+  readonly quiesce: (
+    definition: ExternalLibraryDefinition,
+  ) => Promise<ExternalLibraryQuiescence>;
   readonly onMigrating: (
     definition: ExternalLibraryDefinition,
   ) => void;
@@ -170,9 +174,22 @@ export class ExternalLibraryMigrationWorkflow {
 
     const stagedEntries: StagedMigrationEntry[] = [];
     const committedEntries: StagedMigrationEntry[] = [];
+    const quiescences: ExternalLibraryQuiescence[] = [];
     let settingsUpdated = false;
 
     try {
+      for (const entry of entries) {
+        if (
+          entry.sourceInspection.status === 'available' &&
+          !(
+            entry.targetInspection.status !== 'not-installed' &&
+            input.conflictResolution === 'keep-target'
+          )
+        ) {
+          quiescences.push(await input.quiesce(entry.definition));
+        }
+      }
+
       for (const entry of entries) {
         if (
           entry.sourceInspection.status !== 'available' ||
@@ -248,6 +265,14 @@ export class ExternalLibraryMigrationWorkflow {
             });
         }),
       );
+      await this.dependencies.pathManager
+        .cleanupTemporaryData(sourceRootPath)
+        .catch((error: unknown) => {
+          this.dependencies.logger.warn(
+            '清理旧外部运行时临时数据失败',
+            error,
+          );
+        });
 
       return Object.freeze({
         status: 'completed',
@@ -283,6 +308,9 @@ export class ExternalLibraryMigrationWorkflow {
         cause: error,
       });
     } finally {
+      for (const quiescence of quiescences.reverse()) {
+        quiescence.dispose();
+      }
       await Promise.all(
         stagedEntries.map((entry) =>
           this.dependencies.pathManager

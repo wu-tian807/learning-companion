@@ -17,6 +17,9 @@ export type AppErrorCode =
   | 'ASSET_MEDIA_TYPE_MISMATCH'
   | 'ASSET_UNAVAILABLE'
   | 'ASSET_NOT_FOUND'
+  | 'ASSET_FOLDER_NOT_FOUND'
+  | 'ASSET_FOLDER_CONFLICT'
+  | 'ASSET_FOLDER_INVALID_MOVE'
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_TYPE_NOT_REGISTERED'
   | 'ATTACHMENT_METADATA_INVALID'
@@ -165,6 +168,24 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     retryable: true,
     logLevel: 'warn',
   },
+  ASSET_FOLDER_NOT_FOUND: {
+    kind: 'user',
+    userMessage: '该资料文件夹已经不存在，请刷新后重试。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  ASSET_FOLDER_CONFLICT: {
+    kind: 'user',
+    userMessage: '目标位置已经存在同名文件夹，请使用其他名称。',
+    retryable: true,
+    logLevel: 'silent',
+  },
+  ASSET_FOLDER_INVALID_MOVE: {
+    kind: 'user',
+    userMessage: '文件夹不能移动到自身或其子文件夹中。',
+    retryable: false,
+    logLevel: 'silent',
+  },
   ATTACHMENT_NOT_FOUND: {
     kind: 'user',
     userMessage: '该标注已经不存在，请刷新后重试。',
@@ -258,7 +279,7 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
   },
   MEDIA_DUBBING_FAILED: {
     kind: 'user',
-    userMessage: '视频配音没有完成，请稍后重试。',
+    userMessage: '媒体配音没有完成，请稍后重试。',
     retryable: true,
     logLevel: 'warn',
   },

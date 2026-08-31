@@ -14,6 +14,7 @@ import type { JsonValue } from '../../../shared/workbench/protocol';
 import { ConversationMarkdown } from '../../../renderer/conversation/conversation-markdown';
 import {
   revealWorkbenchAnchor,
+  type WorkbenchAnchorRect,
 } from '../../../renderer/workbench/host/workbench-anchor-bridge';
 import { useWorkbenchAnchorRects } from './use-workbench-anchor-rects';
 
@@ -164,6 +165,49 @@ function formatTypeLabel(typeId: string): string {
   return typeId;
 }
 
+function extractAnswerBody(body: JsonValue | undefined): {
+  readonly answer?: string;
+  readonly selectedAnswer?: string;
+} {
+  if (
+    body === undefined ||
+    typeof body !== 'object' ||
+    Array.isArray(body)
+  ) {
+    return {};
+  }
+  const record = body as Record<string, unknown>;
+  return {
+    ...(typeof record.answer === 'string'
+      ? { answer: record.answer }
+      : {}),
+    ...(typeof record.selectedAnswer === 'string'
+      ? { selectedAnswer: record.selectedAnswer }
+      : {}),
+  };
+}
+
+function placeAnswerCard(
+  rect: WorkbenchAnchorRect,
+  hostSize: { readonly width: number; readonly height: number },
+): { readonly left: number; readonly top: number } {
+  const cardWidth = 300;
+  const cardHeight = 220;
+  const margin = 8;
+  const left = Math.max(
+    margin,
+    Math.min(
+      rect.left,
+      Math.max(margin, hostSize.width - cardWidth - margin),
+    ),
+  );
+  let top = rect.top + rect.height + margin;
+  if (top + cardHeight > hostSize.height - margin) {
+    top = Math.max(margin, rect.top - cardHeight - margin);
+  }
+  return { left, top };
+}
+
 interface AnnotationPopupProps {
   readonly attachment: AssetAttachment;
   readonly body?: JsonValue;
@@ -271,10 +315,44 @@ export function AttachmentHost({
   const [activeBody, setActiveBody] = useState<JsonValue>();
   const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
   const focusTimerRef = useRef<number | undefined>(undefined);
+  const [bodies, setBodies] = useState<ReadonlyMap<string, JsonValue>>(
+    new Map(),
+  );
+  const [collapsedAttachmentIds, setCollapsedAttachmentIds] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    const next = new Map<string, JsonValue>();
+    void Promise.all(
+      attachments.map(async (attachment) => {
+        try {
+          const body = await window.learningCompanion.readAttachmentContent({
+            projectId,
+            attachmentId: attachment.id,
+          });
+          if (!cancelled) next.set(attachment.id, body);
+        } catch {
+          // 读取失败时仅省略卡片，不影响标注定位。
+        }
+      }),
+    ).then(() => {
+      if (!cancelled) setBodies(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachments, projectId]);
 
   const handleMarkerClick = useCallback(
     (attachmentId: string, event: ReactMouseEvent) => {
       event.stopPropagation();
+      setCollapsedAttachmentIds((current) => {
+        if (!current.has(attachmentId)) return current;
+        const next = new Set(current);
+        next.delete(attachmentId);
+        return next;
+      });
       setActivePopupId((prev) =>
         prev === attachmentId ? null : attachmentId,
       );
@@ -328,7 +406,10 @@ export function AttachmentHost({
     }),
     [markerGroups],
   );
-  const { hostRef, anchorRects } = useWorkbenchAnchorRects(assetId, anchorEntries);
+  const { hostRef, anchorRects, hostSize } = useWorkbenchAnchorRects(
+    assetId,
+    anchorEntries,
+  );
 
   const revealAttachment = useCallback((attachment: AssetAttachment) => {
     revealWorkbenchAnchor(assetId, attachment.target);
@@ -355,6 +436,7 @@ export function AttachmentHost({
       {markerGroups.map((group) => {
         const att = group.at(-1)!;
         const anchorRect = anchorRects.get(att.id);
+        const position = extractPosition(att.target);
         const quote = extractQuote(att.target);
         const preview = extractMetadataPreview(att.metadata);
         const isActive =
@@ -367,34 +449,89 @@ export function AttachmentHost({
         const top = anchorRect?.top ?? 16;
         const width = anchorRect?.width ?? 0;
         const height = anchorRect?.height ?? 0;
+        const body = bodies.get(att.id);
+        const { answer, selectedAnswer } = extractAnswerBody(body);
+        const attachedText = selectedAnswer ?? answer;
+        const collapsed = collapsedAttachmentIds.has(att.id);
+        const cardPosition = anchorRect
+          ? placeAnswerCard(anchorRect, hostSize)
+          : undefined;
 
         return (
-          <button
-            key={att.id}
-            type="button"
-            className={`pointer-events-auto absolute cursor-pointer border ${ATTACHMENT_MARKER_MOTION_CLASS} ${
-              isActive
-                ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
-                : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'
-            }`}
-            style={{
-              left,
-              top,
-              width: Math.max(width, 18),
-              height: Math.max(height, 18),
-            }}
-            onClick={(e) => handleMarkerClick(att.id, e)}
-            title={preview || quote || '标注'}
-          >
-            <span className="absolute -right-3 -top-3 grid size-6 place-items-center rounded-full border border-indigo-300/50 bg-[#242b3b] text-[11px] text-indigo-200 shadow-[0_4px_12px_rgba(0,0,0,.45)]">
-              {group.length > 1 ? group.length : '✦'}
-            </span>
-          </button>
+          <div key={att.id} className="contents">
+            <button
+              type="button"
+              className={`pointer-events-auto absolute cursor-pointer border ${ATTACHMENT_MARKER_MOTION_CLASS} ${
+                isActive
+                  ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
+                  : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'
+              }`}
+              style={{
+                left,
+                top,
+                width: Math.max(width, 18),
+                height: Math.max(height, 18),
+              }}
+              onClick={(e) => handleMarkerClick(att.id, e)}
+              title={preview || quote || '标注'}
+            >
+              <span className="absolute -right-3 -top-3 grid size-6 place-items-center rounded-full border border-indigo-300/50 bg-[#242b3b] text-[11px] text-indigo-200 shadow-[0_4px_12px_rgba(0,0,0,.45)]">
+                {group.length > 1 ? group.length : '✦'}
+              </span>
+            </button>
+            {cardPosition && attachedText && !collapsed && (
+              <aside
+                className="pointer-events-auto absolute z-50 w-[300px] overflow-hidden rounded-xl border border-indigo-400/45 bg-[#1b212b]/[0.97] shadow-[0_16px_48px_rgba(0,0,0,0.55)] backdrop-blur"
+                style={{
+                  left: cardPosition.left,
+                  top: cardPosition.top,
+                }}
+              >
+                <div className="flex items-center gap-2 border-b border-white/[0.08] px-3 py-2">
+                  <span className="text-[10px] font-semibold text-indigo-300">
+                    AI 回复
+                  </span>
+                  {position?.pageNumber !== undefined && (
+                    <span className="text-[9px] text-slate-500">
+                      第 {position.pageNumber} 页
+                    </span>
+                  )}
+                  <span className="ml-auto flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivePopupId(att.id);
+                        onAttachmentClick?.(att.id);
+                      }}
+                      className="rounded-md px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                    >
+                      查看
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="收起 AI 回复"
+                      onClick={() =>
+                        setCollapsedAttachmentIds((current) =>
+                          new Set(current).add(att.id),
+                        )
+                      }
+                      className="grid size-5 place-items-center rounded-md text-[11px] text-slate-500 hover:bg-white/[0.06] hover:text-slate-200"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+                <div className="max-h-[200px] overflow-y-auto px-3 py-2.5 text-xs leading-6 text-slate-200">
+                  <ConversationMarkdown text={attachedText} />
+                </div>
+              </aside>
+            )}
+          </div>
         );
       })}
 
       {sidebarOpen && (
-            <aside className="pointer-events-auto absolute inset-y-3 right-3 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
+            <aside className="pointer-events-auto absolute bottom-4 right-3 top-24 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">文档标注</h3>

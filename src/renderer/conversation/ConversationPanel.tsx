@@ -107,16 +107,20 @@ function MessageBubble({
   message,
   contribution,
   busy,
+  answerActionPending,
   onContinue,
+  onReanswer,
   onSelectedAnswer,
-  onAttach,
+  onAnswerAction,
 }: {
   readonly message: ConversationMessageRecord;
   readonly contribution: WorkbenchConversationContribution;
   readonly busy: boolean;
+  readonly answerActionPending: boolean;
   readonly onContinue: () => void;
+  readonly onReanswer: (answerId: string) => void;
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
-  readonly onAttach: (answer: ConversationMessageRecord, text: string) => void;
+  readonly onAnswerAction: (answer: ConversationMessageRecord, text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -129,7 +133,7 @@ function MessageBubble({
         )}
         <div
           onMouseUp={() => {
-            if (message.role !== 'assistant' || !contribution.attachAnswer) return;
+            if (message.role !== 'assistant' || !contribution.answerAction) return;
             const selected = normalizeConversationSelection(window.getSelection()?.toString() ?? '');
             if (selected) onSelectedAnswer(message.id, selected);
           }}
@@ -158,15 +162,6 @@ function MessageBubble({
               className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-white/[0.07] pt-2"
               onMouseUp={(event) => event.stopPropagation()}
             >
-              {contribution.attachAnswer && (
-                <button
-                  type="button"
-                  onClick={() => onAttach(message, message.text)}
-                  className="rounded-md px-1.5 py-1 text-[11px] text-indigo-300 hover:bg-indigo-400/10"
-                >
-                  附着整段
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => {
@@ -178,6 +173,25 @@ function MessageBubble({
               >
                 {copied ? '已复制' : '复制'}
               </button>
+              <button
+                type="button"
+                disabled={busy}
+                title={busy ? '当前回答生成中，完成或停止后可重新回答' : '不满意时让 AI 重新回答'}
+                onClick={() => onReanswer(message.id)}
+                className="rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200 disabled:opacity-40"
+              >
+                重新回答
+              </button>
+              {contribution.answerAction && (
+                <button
+                  type="button"
+                  disabled={busy || answerActionPending}
+                  onClick={() => onAnswerAction(message, message.text)}
+                  className="rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 hover:bg-indigo-400/10 disabled:opacity-40"
+                >
+                  {contribution.answerAction.label}
+                </button>
+              )}
               <button
                 type="button"
                 disabled={busy}
@@ -300,7 +314,7 @@ export function ConversationPanel({
   readonly actions: ConversationControllerActions;
   readonly contribution: WorkbenchConversationContribution;
   readonly projectId: string;
-  readonly assetId: string;
+  readonly assetId: string | undefined;
   readonly onClose: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
@@ -309,6 +323,7 @@ export function ConversationPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<{ messageId: string; text: string }>();
   const [notice, setNotice] = useState<string>();
+  const [answerActionPending, setAnswerActionPending] = useState(false);
   const messages = state.conversation.messages;
 
   useEffect(() => {
@@ -324,11 +339,16 @@ export function ConversationPanel({
     [messages, selectedAnswer?.messageId],
   );
 
-  const attach = async (answer: ConversationMessageRecord, text: string) => {
-    if (!contribution.attachAnswer) return;
+  const executeAnswerAction = async (
+    answer: ConversationMessageRecord,
+    text: string,
+  ) => {
+    const action = contribution.answerAction;
+    if (!action || answerActionPending) return;
     const question = QuestionForAnswer(state.conversation, answer);
+    setAnswerActionPending(true);
     try {
-      await contribution.attachAnswer({
+      await action.execute({
         projectId,
         assetId,
         conversation: state.conversation,
@@ -337,11 +357,17 @@ export function ConversationPanel({
         text,
       });
       setSelectedAnswer(undefined);
-      setNotice('已附着到当前资料');
+      setNotice(action.successMessage);
       window.setTimeout(() => setNotice(undefined), 2_000);
-    } catch (attachError) {
-      setNotice('附着失败');
-      onError?.(attachError instanceof Error ? attachError.message : '无法附着回答。');
+    } catch (actionError) {
+      setNotice(action.failureMessage);
+      onError?.(
+        actionError instanceof Error
+          ? actionError.message
+          : action.failureMessage,
+      );
+    } finally {
+      setAnswerActionPending(false);
     }
   };
 
@@ -360,6 +386,7 @@ export function ConversationPanel({
 
   return (
     <section
+      id="project-conversation-panel"
       role="dialog"
       aria-label="AI 问答"
       className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
@@ -433,12 +460,16 @@ export function ConversationPanel({
                 message={message}
                 contribution={contribution}
                 busy={state.busy}
+                answerActionPending={answerActionPending}
                 onContinue={() => {
                   actions.setDraft('请基于刚才的回答继续深入解释，并补充容易混淆的地方。');
                   inputRef.current?.focus();
                 }}
+                onReanswer={(answerId) => actions.reanswer(answerId)}
                 onSelectedAnswer={(messageId, text) => setSelectedAnswer({ messageId, text })}
-                onAttach={(answer, text) => void attach(answer, text)}
+                onAnswerAction={(answer, text) =>
+                  void executeAnswerAction(answer, text)
+                }
               />
             ))}
             {state.busy && (
@@ -484,11 +515,21 @@ export function ConversationPanel({
                 </div>
               </div>
             )}
-            {selectedAnswer && selectedAnswerMessage && contribution.attachAnswer && (
+            {selectedAnswer && selectedAnswerMessage && contribution.answerAction && (
               <div className="mb-2 flex items-center gap-2 rounded-xl border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-[10px] text-indigo-200">
                 <span className="min-w-0 flex-1 truncate">已选中回答片段</span>
-                <button type="button" onClick={() => void attach(selectedAnswerMessage, selectedAnswer.text)} className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30">
-                  附着选中内容
+                <button
+                  type="button"
+                  disabled={answerActionPending}
+                  onClick={() =>
+                    void executeAnswerAction(
+                      selectedAnswerMessage,
+                      selectedAnswer.text,
+                    )
+                  }
+                  className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30 disabled:opacity-40"
+                >
+                  {contribution.answerAction.selectionLabel}
                 </button>
                 <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
               </div>

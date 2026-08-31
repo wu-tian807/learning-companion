@@ -81,6 +81,11 @@ function createAsset(
 function createDependencies() {
   const asset = createAsset();
   const currentAssets = [asset];
+  const folderState = {
+    projectId: 'project',
+    folders: [{ projectId: 'project', path: '课程' }],
+    folderPathByAssetId: {},
+  } as const;
   const assetService = {
     subscribe: vi.fn(() => () => undefined),
     selectLocalFiles: vi.fn(async () => ['/tmp/a.md', '/tmp/b.pdf']),
@@ -103,6 +108,16 @@ function createDependencies() {
     revealInFolder: vi.fn(async () => undefined),
     getActiveProjectId: vi.fn(() => 'project'),
     list: vi.fn(() => [...currentAssets]),
+    listAssetFolders: vi.fn(() => folderState),
+    createAssetFolder: vi.fn(() => folderState),
+    updateAssetFolder: vi.fn(() => folderState),
+    moveAssetsToFolder: vi.fn(() => folderState),
+    deleteAssetFolder: vi.fn(async () => ({
+      deletedAssetIds: ['asset'],
+      failed: [],
+      assets: [],
+      folderState,
+    })),
   } as unknown as AssetServiceApi;
 
   return { assetService };
@@ -182,6 +197,7 @@ describe('Asset IPC handlers', () => {
       'project',
       '/tmp/a.md',
       'copy',
+      undefined,
     );
   });
 
@@ -203,12 +219,36 @@ describe('Asset IPC handlers', () => {
       'project',
       '/tmp/a.md',
       'link',
+      undefined,
     );
     expect(assetService.addLocalFile).toHaveBeenNthCalledWith(
       2,
       'project',
       '/tmp/b.md',
       'link',
+      undefined,
+    );
+  });
+
+  it('stores imports in the requested logical folder', async () => {
+    const { assetService } = createDependencies();
+    registerAssetHandlers(assetService);
+
+    await findHandler(IPC_CHANNELS.addLocalAssets)(
+      {},
+      {
+        projectId: 'project',
+        paths: ['/tmp/a.md'],
+        mode: 'copy',
+        folderPath: '课程',
+      },
+    );
+
+    expect(assetService.addLocalFile).toHaveBeenCalledWith(
+      'project',
+      '/tmp/a.md',
+      'copy',
+      '课程',
     );
   });
 
@@ -324,6 +364,77 @@ describe('Asset IPC handlers', () => {
     expect(assetService.list).toHaveBeenCalledOnce();
   });
 
+  it('forwards folder navigation and mutation requests', async () => {
+    const { assetService } = createDependencies();
+    registerAssetHandlers(assetService);
+
+    await findHandler(IPC_CHANNELS.listAssetFolders)(
+      {},
+      { projectId: 'project' },
+    );
+    await findHandler(IPC_CHANNELS.createAssetFolder)(
+      {},
+      { projectId: 'project', path: '课程' },
+    );
+    await findHandler(IPC_CHANNELS.updateAssetFolder)(
+      {},
+      { projectId: 'project', path: '课程', nextPath: '归档/课程' },
+    );
+    await findHandler(IPC_CHANNELS.moveAssetsToFolder)(
+      {},
+      { projectId: 'project', assetIds: ['asset'], folderPath: '课程' },
+    );
+
+    expect(assetService.listAssetFolders).toHaveBeenCalledWith('project');
+    expect(assetService.createAssetFolder).toHaveBeenCalledWith(
+      'project',
+      '课程',
+    );
+    expect(assetService.updateAssetFolder).toHaveBeenCalledWith(
+      'project',
+      '课程',
+      '归档/课程',
+    );
+    expect(assetService.moveAssetsToFolder).toHaveBeenCalledWith(
+      'project',
+      ['asset'],
+      '课程',
+    );
+  });
+
+  it('serializes partial folder deletion failures without removing the folder', async () => {
+    const { assetService } = createDependencies();
+    vi.mocked(assetService.deleteAssetFolder).mockResolvedValueOnce({
+      deletedAssetIds: [],
+      failed: [
+        { assetId: 'asset', error: new AppError('ASSET_UNAVAILABLE') },
+      ],
+      assets: [createAsset()],
+      folderState: {
+        projectId: 'project',
+        folders: [{ projectId: 'project', path: '课程' }],
+        folderPathByAssetId: { asset: '课程' },
+      },
+    });
+    registerAssetHandlers(assetService);
+
+    await expect(
+      findHandler(IPC_CHANNELS.deleteAssetFolder)(
+        {},
+        { projectId: 'project', path: '课程' },
+      ),
+    ).resolves.toMatchObject({
+      deletedAssetIds: [],
+      failed: [
+        {
+          assetId: 'asset',
+          message: '所选文件当前不可用，请检查文件是否存在以及访问权限。',
+        },
+      ],
+      folderState: { folders: [{ path: '课程' }] },
+    });
+  });
+
   it('stops a batch deletion when its Project changes', async () => {
     const { assetService } = createDependencies();
     vi.mocked(assetService.delete).mockRejectedValueOnce(
@@ -354,6 +465,18 @@ describe('Asset IPC handlers', () => {
       findHandler(IPC_CHANNELS.selectLocalAssetFiles)({}, {}),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await expect(
+      findHandler(IPC_CHANNELS.createAssetFolder)(
+        {},
+        { projectId: 'project', path: 'bad\\name' },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
+      findHandler(IPC_CHANNELS.moveAssetsToFolder)(
+        {},
+        { projectId: 'project', assetIds: [], folderPath: null },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
       findHandler(IPC_CHANNELS.addLocalAssets)(
         {},
         { projectId: 'project', paths: [] },
@@ -379,6 +502,11 @@ describe('Asset IPC handlers', () => {
       IPC_CHANNELS.refreshAsset,
       IPC_CHANNELS.refreshAllAssets,
       IPC_CHANNELS.revealAssetInFolder,
+      IPC_CHANNELS.listAssetFolders,
+      IPC_CHANNELS.createAssetFolder,
+      IPC_CHANNELS.updateAssetFolder,
+      IPC_CHANNELS.deleteAssetFolder,
+      IPC_CHANNELS.moveAssetsToFolder,
     ]) {
       expect(electronMocks.removeHandler).toHaveBeenCalledWith(channel);
     }

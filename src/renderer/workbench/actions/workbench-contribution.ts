@@ -2,7 +2,6 @@ export const workbenchSurfaces = [
   'header',
   'overflow',
   'context-menu',
-  'generation-center',
 ] as const;
 
 export type WorkbenchSurface = (typeof workbenchSurfaces)[number];
@@ -42,17 +41,10 @@ export interface WorkbenchRadioPresentation
   readonly radioGroup: string;
 }
 
-export interface WorkbenchGenerationToolPresentation
-  extends WorkbenchPresentationBase {
-  readonly kind: 'generation-tool';
-  readonly description: string;
-}
-
 export type WorkbenchContributionPresentation =
   | WorkbenchActionPresentation
   | WorkbenchCheckboxPresentation
-  | WorkbenchRadioPresentation
-  | WorkbenchGenerationToolPresentation;
+  | WorkbenchRadioPresentation;
 
 export interface WorkbenchContribution {
   readonly id: string;

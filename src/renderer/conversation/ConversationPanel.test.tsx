@@ -15,6 +15,7 @@ const actions: ConversationControllerActions = {
   submit: vi.fn(),
   cancel: vi.fn(),
   retry: vi.fn(),
+  reanswer: vi.fn(),
   restore: vi.fn(),
   remove: vi.fn(),
   startNew: vi.fn(),
@@ -26,14 +27,15 @@ const contribution: WorkbenchConversationContribution = {
   contextProviderId: 'pdf.context',
   title: '资料问答',
   emptyLabel: '选择内容后提问',
-  historyStore: {
-    list: async () => [],
-    save: async (record) => [record],
-    remove: async () => [],
-  },
   describeContext: () => ({ label: '第 2 页', detail: '框选内容' }),
   revealContext: vi.fn(),
-  attachAnswer: vi.fn(),
+  answerAction: {
+    label: '放回 PDF 原文旁',
+    selectionLabel: '放回选中回答片段',
+    successMessage: '已放回 PDF 原文旁',
+    failureMessage: '无法放回 PDF 原文旁',
+    execute: vi.fn(),
+  },
 };
 
 function state(
@@ -90,6 +92,13 @@ describe('ConversationPanel', () => {
     expect(html).toContain('AGENT_PROVIDER_SELECTION_REQUIRED');
     expect(html).toContain('重试原任务');
     expect(html).toContain('打开模型设置');
+    const panel = html.match(
+      /<section[^>]*id="project-conversation-panel"[^>]*>/u,
+    )?.[0];
+    expect(panel).toContain('w-full');
+    expect(panel).toContain('min-w-0');
+    expect(panel).not.toContain('min-w-[360px]');
+    expect(panel).not.toContain('40vw');
   });
 
   it('renders persisted conversations as a dedicated history tab with view and delete actions', () => {
@@ -150,7 +159,7 @@ describe('ConversationPanel', () => {
     expect(historyHtml).toContain('当前回答生成中，停止后可删除');
   });
 
-  it('renders Markdown answers and optional Attachment actions supplied by the Workbench', () => {
+  it('renders Markdown answers and Workbench-owned answer-action presentation', () => {
     const html = render(state({
       conversation: {
         id: 'conversation',
@@ -171,7 +180,7 @@ describe('ConversationPanel', () => {
     }));
 
     expect(html).toContain('<strong>答案</strong>');
-    expect(html).toContain('附着整段');
+    expect(html).toContain('放回 PDF 原文旁');
     expect(html).toContain('复制');
     expect(html).toContain('继续追问');
   });

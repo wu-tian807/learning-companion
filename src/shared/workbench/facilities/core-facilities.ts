@@ -17,8 +17,6 @@ export const CORE_OVERFLOW_SURFACE_FACILITY_ID =
   'core.surface.overflow';
 export const CORE_CONTEXT_MENU_SURFACE_FACILITY_ID =
   'core.surface.context-menu';
-export const CORE_GENERATION_CENTER_SURFACE_FACILITY_ID =
-  'core.surface.generation-center';
 export const CORE_TEXT_SELECTION_INPUT_FACILITY_ID =
   'core.input.text-selection';
 export const CORE_FACILITY_VERSION = 1;
@@ -350,13 +348,6 @@ const contextMenuSurfaceDefinition = defineWorkbenchFacility({
   validateDependencies: capturesDeclaredTransport,
 });
 
-const generationCenterSurfaceDefinition = defineWorkbenchFacility({
-  id: CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
-  version: CORE_FACILITY_VERSION,
-  role: 'surface',
-  validateOptions: noOptions,
-});
-
 const textSelectionInputDefinition = defineWorkbenchFacility({
   id: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
   version: CORE_FACILITY_VERSION,
@@ -376,7 +367,6 @@ export function createCoreWorkbenchFacilityDefinitionRegistry(): WorkbenchFacili
   registry.register(headerSurfaceDefinition);
   registry.register(overflowSurfaceDefinition);
   registry.register(contextMenuSurfaceDefinition);
-  registry.register(generationCenterSurfaceDefinition);
   registry.register(textSelectionInputDefinition);
 
   return registry;
@@ -403,12 +393,6 @@ export const overflowSurfaceFacilityDeclaration:
 export const headerSurfaceFacilityDeclaration:
   WorkbenchFacilityDeclaration = Object.freeze({
     id: CORE_HEADER_SURFACE_FACILITY_ID,
-    version: CORE_FACILITY_VERSION,
-  });
-
-export const generationCenterSurfaceFacilityDeclaration:
-  WorkbenchFacilityDeclaration = Object.freeze({
-    id: CORE_GENERATION_CENTER_SURFACE_FACILITY_ID,
     version: CORE_FACILITY_VERSION,
   });
 

@@ -12,8 +12,15 @@ import {
 import {
   AUDIO_WORKBENCH_ID,
   audioWorkbenchManifest,
+  cloneAudioDubbingSnapshot,
+  cloneAudioSpeakerTrackSnapshot,
+  cloneAudioSubtitleSnapshot,
   cloneAudioViewState,
+  DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
   DEFAULT_AUDIO_VIEW_STATE,
+  EMPTY_AUDIO_DUBBING_SNAPSHOT,
+  EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+  EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
 } from './shared';
 
 const asset: AssetSnapshot = {
@@ -73,18 +80,129 @@ describe('AudioWorkbenchView', () => {
     expect(audioErrorMessage({ code: 4 })).toContain('不支持');
   });
 
-  it('renders native audio controls and reserves the transcript area', () => {
+  it('renders compact media controls and the transcript area', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
       viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
+      subtitleState: { ...DEFAULT_AUDIO_SUBTITLE_VIEW_STATE },
+      subtitleSnapshot: cloneAudioSubtitleSnapshot(
+        EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
+      ),
+      dubbingSnapshot: cloneAudioDubbingSnapshot(
+        EMPTY_AUDIO_DUBBING_SNAPSHOT,
+      ),
+      speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot(
+        EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+      ),
     });
 
     expect(markup).toContain('aria-label="音频播放器"');
-    expect(markup).toContain('controls=""');
-    expect(markup).toContain('音频转写、章节和逐句学习内容');
+    expect(markup).not.toContain('controls=""');
+    expect(markup).toContain('aria-label="音频播放控件"');
+    expect(markup).toContain('正在后台识别音频');
     expect(markup).toContain('learning-content://resource/token');
     expect(markup).not.toContain('标记当前时间');
     expect(markup).not.toContain('/tmp/private/lesson.mp3');
+    const layout = markup.match(
+      /<div[^>]*data-audio-workbench-layout="true"[^>]*>/u,
+    )?.[0];
+    const transcriptRegion = markup.match(
+      /<div[^>]*data-audio-transcript-region="true"[^>]*>/u,
+    )?.[0];
+    expect(layout).toContain('w-full');
+    expect(layout).toContain('min-w-0');
+    expect(transcriptRegion).toContain('min-w-0');
+    expect(transcriptRegion).toContain('overflow-hidden');
+  });
+
+  it('renders progressive bilingual text and reverse dubbing progress', () => {
+    const markup = render({
+      contentUrl: 'learning-content://resource/token',
+      viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
+      subtitleState: { displayMode: 'bilingual' },
+      subtitleSnapshot: cloneAudioSubtitleSnapshot({
+        phase: 'translating',
+        source: {
+          version: 1,
+          kind: 'subtitle-source',
+          sourceRevision: 'source-revision',
+          language: 'en',
+          origin: 'asr',
+          engine: {
+            id: 'asr',
+            version: '1',
+            model: 'model',
+            backend: 'cpu',
+          },
+          generatedTime: 100,
+          cues: [
+            {
+              id: 'cue-1',
+              startMs: 0,
+              endMs: 1_000,
+              text: 'Hello.',
+              sourceCueIds: ['raw-1'],
+            },
+          ],
+        },
+        partialTranslations: [{ sourceCueId: 'cue-1', text: '你好。' }],
+        completedCues: 1,
+        totalCues: 1,
+      }),
+      dubbingSnapshot: cloneAudioDubbingSnapshot({
+        phase: 'cloning',
+        completedPhrases: 1,
+        totalPhrases: 2,
+        completedDurationMs: 1_000,
+        durationMs: 2_000,
+        readySuffixStartMs: 1_000,
+        previewAudioUrl: 'learning-content://resource/preview',
+      }),
+      speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot({
+        track: {
+          version: 1,
+          kind: 'dubbing-speaker-track',
+          sourceTrackRevision: 'source-track-revision',
+          cues: [
+            {
+              sourceCueId: 'cue-1',
+              speakerId: 'speaker-0001',
+              status: 'stable',
+            },
+          ],
+          profiles: [{ speakerId: 'speaker-0001', mode: 'default' }],
+        },
+      }),
+    });
+
+    expect(markup).toContain('Hello.');
+    expect(markup).toContain('你好。');
+    expect(markup).toContain('说话人 1');
+    expect(markup).toContain('默认声线');
+    expect(markup).toContain('aria-label="音频声音"');
+    expect(markup).toContain('aria-label="音频字幕与配音"');
+  });
+
+  it('offers component installation when subtitle and dubbing runtimes are absent', () => {
+    const markup = render({
+      contentUrl: 'learning-content://resource/token',
+      viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
+      subtitleState: { displayMode: 'source' },
+      subtitleSnapshot: cloneAudioSubtitleSnapshot({
+        ...EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
+        phase: 'runtime-required',
+      }),
+      dubbingSnapshot: cloneAudioDubbingSnapshot({
+        ...EMPTY_AUDIO_DUBBING_SNAPSHOT,
+        phase: 'runtime-required',
+      }),
+      speakerTrackSnapshot: cloneAudioSpeakerTrackSnapshot(
+        EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT,
+      ),
+    });
+
+    expect(markup).toContain('安装字幕');
+    expect(markup).toContain('安装配音');
   });
 
   it('rejects an invalid bootstrap URL', () => {
