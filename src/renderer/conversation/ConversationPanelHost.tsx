@@ -5,7 +5,6 @@ import { ConversationPanel } from './ConversationPanel';
 import type {
   ConversationHistoryStore,
   ConversationLaunchRequest,
-  WorkbenchConversationContribution,
 } from './conversation-contracts';
 import {
   useWorkbenchConversationRuntime,
@@ -15,40 +14,37 @@ import type { WorkbenchConversationRuntime } from './workbench-conversation-runt
 
 export function ConversationPanelHost({
   projectId,
-  assetId,
   historyStore,
   onClose,
+  onSelectAsset,
   onOpenSettings,
   onError,
 }: {
   readonly projectId: string;
-  readonly assetId: string | undefined;
   readonly historyStore: ConversationHistoryStore;
   readonly onClose?: () => void;
+  readonly onSelectAsset: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
   const runtime = useWorkbenchConversationRuntime();
   const snapshot = useWorkbenchConversationSnapshot(runtime);
-  const contribution = snapshot.active?.contribution;
-
-  if (!contribution) return null;
 
   return (
     <ActiveConversationPanel
       projectId={projectId}
-      assetId={assetId}
       historyStore={historyStore}
-      contribution={contribution}
-      ownerId={snapshot.active.ownerId}
       runtime={runtime}
       open={snapshot.panelOpen}
       launchRequest={snapshot.launchRequest}
-      onLaunchConsumed={(requestId) => runtime.consumeLaunchRequest(requestId)}
+      onLaunchConsumed={(requestId) =>
+        runtime.consumeLaunchRequest(requestId)
+      }
       onClose={() => {
         if (onClose) onClose();
         else runtime.close();
       }}
+      onSelectAsset={onSelectAsset}
       onOpenSettings={onOpenSettings}
       onError={onError}
     />
@@ -57,36 +53,30 @@ export function ConversationPanelHost({
 
 function ActiveConversationPanel({
   projectId,
-  assetId,
   historyStore,
-  contribution,
-  ownerId,
   runtime,
   open,
   launchRequest,
   onLaunchConsumed,
   onClose,
+  onSelectAsset,
   onOpenSettings,
   onError,
 }: {
   readonly projectId: string;
-  readonly assetId: string | undefined;
   readonly historyStore: ConversationHistoryStore;
-  readonly contribution: WorkbenchConversationContribution;
-  readonly ownerId: string;
   readonly runtime: WorkbenchConversationRuntime;
   readonly open: boolean;
   readonly launchRequest: ConversationLaunchRequest | undefined;
   readonly onLaunchConsumed: (requestId: number) => void;
   readonly onClose: () => void;
+  readonly onSelectAsset: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
   const controller = useConversationController({
     open,
     projectId,
-    assetId,
-    contribution,
     historyStore,
     launchRequest,
     onLaunchConsumed,
@@ -96,9 +86,9 @@ function ActiveConversationPanel({
   });
 
   useEffect(() => {
-    runtime.setBusy(ownerId, controller.state.busy);
-    return () => runtime.setBusy(ownerId, false);
-  }, [controller.state.busy, ownerId, runtime]);
+    runtime.setBusy(controller.state.busy);
+    return () => runtime.setBusy(false);
+  }, [controller.state.busy, runtime]);
 
   if (!open) return null;
 
@@ -106,15 +96,18 @@ function ActiveConversationPanel({
     <ConversationPanel
       state={controller.state}
       actions={controller.actions}
-      contribution={contribution}
       projectId={projectId}
-      assetId={assetId}
+      resolveContextContribution={(source) =>
+        runtime.resolveContribution(source)
+      }
+      onRevealContext={(source, context) =>
+        runtime.revealContext(source, context, onSelectAsset)
+      }
+      onStartNew={() =>
+        runtime.open({ fallbackToNewConversation: true })
+      }
       onClose={() => {
-        if (controller.state.pendingContext !== undefined) {
-          controller.actions.setPendingContext(undefined);
-        } else {
-          contribution.onContextReleased?.(undefined);
-        }
+        controller.actions.setPendingContext(undefined);
         onClose();
       }}
       onOpenSettings={onOpenSettings}

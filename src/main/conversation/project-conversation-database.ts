@@ -16,10 +16,6 @@ export interface ProjectConversationDatabaseApi {
     | undefined;
   list(projectId: string): readonly ConversationRecord[];
   save(projectId: string, conversation: ConversationRecord): ConversationRecord;
-  import(
-    projectId: string,
-    conversations: readonly ConversationRecord[],
-  ): readonly ConversationRecord[];
   remove(projectId: string, conversationId: string): void;
 }
 
@@ -143,20 +139,6 @@ export class ProjectConversationDatabase
       ...row,
       createdTime: existing?.createdTime ?? row.createdTime,
     });
-  }
-
-  import(
-    projectId: string,
-    conversations: readonly ConversationRecord[],
-  ): readonly ConversationRecord[] {
-    const normalizedProjectId = requireId(projectId, 'projectId');
-    const records = cloneConversationRecords(conversations);
-    this.context.db.transaction(() => {
-      for (const record of records) {
-        this.save(normalizedProjectId, record);
-      }
-    });
-    return this.list(normalizedProjectId);
   }
 
   remove(projectId: string, conversationId: string): void {

@@ -18,6 +18,14 @@ export interface ConversationReanswerBackup {
   readonly stopped?: true;
 }
 
+export interface ConversationMessageContextSource {
+  /** Main provider that prepares this one message's optional Workbench context. */
+  readonly contextProviderId: string;
+  readonly assetId?: string;
+  readonly sourceAssetMode?: 'identity' | 'reference';
+  readonly commitAnswer?: true;
+}
+
 export interface ConversationMessageRecord {
   readonly id: string;
   readonly role: ConversationRole;
@@ -26,6 +34,7 @@ export interface ConversationMessageRecord {
   readonly replyToMessageId?: string;
   readonly generationTaskId?: string;
   readonly context?: JsonValue;
+  readonly contextSource?: ConversationMessageContextSource;
   readonly modelInfo?: string;
   readonly stopped?: true;
   /** Persisted until a replacement answer completes so failure/restart can restore it. */
@@ -52,11 +61,6 @@ export interface SaveProjectConversationRequest
 export interface DeleteProjectConversationRequest
   extends ProjectConversationProjectRequest {
   readonly conversationId: string;
-}
-
-export interface ImportProjectConversationsRequest
-  extends ProjectConversationProjectRequest {
-  readonly conversations: readonly ConversationRecord[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -101,6 +105,21 @@ function isReanswerBackup(
   );
 }
 
+function isConversationMessageContextSource(
+  value: unknown,
+): value is ConversationMessageContextSource {
+  if (!isRecord(value)) return false;
+  return (
+    isRequiredText(value.contextProviderId, 160) &&
+    (value.assetId === undefined || isRequiredText(value.assetId, 160)) &&
+    (value.sourceAssetMode === undefined ||
+      value.sourceAssetMode === 'identity' ||
+      value.sourceAssetMode === 'reference') &&
+    (value.sourceAssetMode === undefined || value.assetId !== undefined) &&
+    (value.commitAnswer === undefined || value.commitAnswer === true)
+  );
+}
+
 export function isConversationMessageRecord(
   value: unknown,
 ): value is ConversationMessageRecord {
@@ -116,6 +135,9 @@ export function isConversationMessageRecord(
     (value.generationTaskId === undefined ||
       isRequiredText(value.generationTaskId, 160)) &&
     isBoundedContext(value.context) &&
+    (value.contextSource === undefined ||
+      (value.role === 'user' &&
+        isConversationMessageContextSource(value.contextSource))) &&
     (value.modelInfo === undefined || isRequiredText(value.modelInfo, 256)) &&
     (value.stopped === undefined || value.stopped === true) &&
     (value.reanswerBackup === undefined ||
@@ -178,6 +200,25 @@ export function cloneConversationRecord(
           ...(message.context === undefined
             ? {}
             : { context: cloneJsonValue(message.context) }),
+          ...(message.contextSource
+            ? {
+                contextSource: Object.freeze({
+                  contextProviderId: message.contextSource.contextProviderId,
+                  ...(message.contextSource.assetId
+                    ? { assetId: message.contextSource.assetId }
+                    : {}),
+                  ...(message.contextSource.sourceAssetMode
+                    ? {
+                        sourceAssetMode:
+                          message.contextSource.sourceAssetMode,
+                      }
+                    : {}),
+                  ...(message.contextSource.commitAnswer
+                    ? { commitAnswer: true as const }
+                    : {}),
+                }),
+              }
+            : {}),
           ...(message.modelInfo ? { modelInfo: message.modelInfo } : {}),
           ...(message.stopped ? { stopped: true } : {}),
           ...(message.reanswerBackup

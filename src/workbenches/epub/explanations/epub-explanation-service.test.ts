@@ -190,6 +190,7 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
       metadata: {
         format: 'learning-companion/epub-explanation',
         version: 1,
+        markerColor: 'red',
       },
       content: {
         ref: {
@@ -253,6 +254,7 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
         id: 'attachment-1',
         status: 'completed',
         answer: '# 解释\n正文',
+        markerColor: 'red',
       },
     });
     service.dispose();
@@ -292,6 +294,88 @@ describe('EpubExplanationService GenerationTask lifecycle', () => {
     await expect(
       service.list({ projectId: 'project-1', assetId: 'asset-1' }),
     ).resolves.toEqual([]);
+    service.dispose();
+  });
+
+  it('updates marker color only for an owned EPUB explanation Attachment', async () => {
+    const attachment = {
+      id: 'attachment-1',
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'epub.ai-explanation',
+      typeVersion: 1,
+      target: createTarget(),
+      metadata: {
+        format: 'learning-companion/epub-explanation',
+        version: 1,
+        markerColor: 'blue',
+      },
+      content: {
+        ref: {
+          kind: 'local-file',
+          base: 'project-workspace',
+          path: '.learning-companion/attachments/attachment-1/answer.md',
+        },
+        mediaType: 'text/markdown',
+      },
+      createdTime: 1,
+      updatedTime: 1,
+    } as const;
+    const update = vi.fn(async (
+      input: Parameters<AttachmentServiceApi['update']>[0],
+    ) => ({
+      ...attachment,
+      metadata: input.metadata,
+      updatedTime: 2,
+    }));
+    const service = new EpubExplanationService(
+      {
+        get: async () => attachment,
+        update,
+        readTextContent: async () => '# 解释',
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      {
+        getActiveProjectId: () => 'project-1',
+        subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      {
+        get: () => ({ mediaType: 'application/epub+zip' }),
+      } as never,
+    );
+
+    await expect(
+      service.updateMarkerColor({
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        explanationId: 'attachment-1',
+        markerColor: 'red',
+      }),
+    ).resolves.toMatchObject({
+      id: 'attachment-1',
+      markerColor: 'red',
+      answer: '# 解释',
+      updatedTime: 2,
+    });
+    expect(update).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      attachmentId: 'attachment-1',
+      metadata: {
+        format: 'learning-companion/epub-explanation',
+        version: 1,
+        markerColor: 'red',
+      },
+    });
+
+    await expect(
+      service.updateMarkerColor({
+        projectId: 'project-1',
+        assetId: 'asset-2',
+        explanationId: 'attachment-1',
+        markerColor: 'yellow',
+      }),
+    ).rejects.toThrow('ATTACHMENT_NOT_FOUND');
+    expect(update).toHaveBeenCalledOnce();
     service.dispose();
   });
 });

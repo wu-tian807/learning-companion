@@ -19,7 +19,6 @@ import { useWorkbenchConversationContribution } from '../../renderer/conversatio
 import {
   DocumentAiWorkbenchShell,
 } from '../document-ai/renderer/DocumentAiWorkbenchShell';
-import { QuestionAnchorHost } from '../document-ai/renderer/QuestionAnchorHost';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
   findTextSelectionInput,
@@ -30,13 +29,8 @@ import type {
 } from '../../shared/workbench/interaction';
 import type { AssetTarget } from '../../shared/workbench/anchor';
 import {
+  registerWorkbenchAnchorController,
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
-  WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
-  WORKBENCH_RESOLVE_ANCHOR_EVENT,
-  WORKBENCH_REVEAL_ANCHOR_EVENT,
-  type ResolveWorkbenchAnchorDetail,
-  type ResolveWorkbenchAnchorPreviewDetail,
-  type RevealWorkbenchAnchorDetail,
 } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import type {
   PdfDocumentSummary,
@@ -502,8 +496,12 @@ export function PdfDocumentWorkbenchView({
   const activeRegionRef = useRef<PdfRegionSelection | undefined>(undefined);
   const dismissedRegionPointerRef = useRef<number | undefined>(undefined);
   const regionMenuRef = useRef<HTMLDivElement>(null);
+  const [loadState, setLoadState] = useState<PdfLoadState>({
+    kind: 'loading',
+  });
 
   useEffect(() => {
+    if (loadState.kind !== 'ready') return;
     const findPage = (target: AssetTarget): HTMLElement | undefined => {
       const mapped = mapAnchorTarget(target);
       if (mapped.scope !== 'content') return undefined;
@@ -517,10 +515,8 @@ export function PdfDocumentWorkbenchView({
         `.page[data-page-number="${pageNumber}"]`,
       ) ?? undefined;
     };
-    const resolve = (event: Event) => {
-      const detail = (event as CustomEvent<ResolveWorkbenchAnchorDetail>).detail;
-      if (detail.assetId !== asset.id) return;
-      const mapped = mapAnchorTarget(detail.target);
+    const resolve = (target: AssetTarget) => {
+      const mapped = mapAnchorTarget(target);
       const page = findPage(mapped);
       if (!page || mapped.scope !== 'content') return;
       const payload = mapped.anchorPayload as Record<string, unknown>;
@@ -529,68 +525,34 @@ export function PdfDocumentWorkbenchView({
       const y = typeof payload.y === 'number' ? payload.y : 0;
       const width = typeof payload.width === 'number' ? payload.width : 0;
       const height = typeof payload.height === 'number' ? payload.height : 0;
-      detail.respond({
+      return {
         left: pageRect.left + x * pageRect.width,
         top: pageRect.top + y * pageRect.height,
         width: width * pageRect.width,
         height: height * pageRect.height,
-      });
+      };
     };
-    const reveal = (event: Event) => {
-      const detail = (event as CustomEvent<RevealWorkbenchAnchorDetail>).detail;
-      if (detail.assetId !== asset.id) return;
-      findPage(detail.target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    };
-    const resolvePreview = (event: Event) => {
-      const detail = (
-        event as CustomEvent<ResolveWorkbenchAnchorPreviewDetail>
-      ).detail;
-      if (detail.assetId !== asset.id) return;
-      const mapped = mapAnchorTarget(detail.target);
-      const page = findPage(mapped);
-      if (!page || mapped.scope !== 'content') return;
-      const payload = mapped.anchorPayload as Record<string, unknown>;
-      if (
-        typeof payload.x !== 'number' ||
-        typeof payload.y !== 'number' ||
-        typeof payload.width !== 'number' ||
-        typeof payload.height !== 'number'
-      ) {
-        return;
-      }
-      const canvas = findRenderedPdfCanvas(page);
-      if (!canvas) return;
-      detail.respond(capturePdfRegionPreview(canvas, {
-        x: payload.x,
-        y: payload.y,
-        width: payload.width,
-        height: payload.height,
-      }));
+    const reveal = (target: AssetTarget) => {
+      const page = findPage(target);
+      if (!page) return false;
+      page.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return true;
     };
     const notifyLayout = () => window.dispatchEvent(
       new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
     );
     const container = containerRef.current;
-    window.addEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
-    window.addEventListener(
-      WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
-      resolvePreview,
+    const dispose = registerWorkbenchAnchorController(
+      `${pdfWorkbenchManifest.id}:${bootstrap.sessionId}.anchors`,
+      asset.id,
+      { resolve, reveal },
     );
-    window.addEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
     container?.addEventListener('scroll', notifyLayout, { passive: true });
     return () => {
-      window.removeEventListener(WORKBENCH_RESOLVE_ANCHOR_EVENT, resolve);
-      window.removeEventListener(
-        WORKBENCH_RESOLVE_ANCHOR_PREVIEW_EVENT,
-        resolvePreview,
-      );
-      window.removeEventListener(WORKBENCH_REVEAL_ANCHOR_EVENT, reveal);
+      dispose();
       container?.removeEventListener('scroll', notifyLayout);
     };
-  }, [asset.id, mapAnchorTarget]);
-  const [loadState, setLoadState] = useState<PdfLoadState>({
-    kind: 'loading',
-  });
+  }, [asset.id, bootstrap.sessionId, loadState.kind, mapAnchorTarget]);
   const [summary, setSummary] = useState<PdfDocumentSummary>();
   const [outline, setOutline] = useState<readonly PdfOutlineItem[]>([]);
   const [viewState, setViewState] = useState<PdfWorkbenchViewState>(
@@ -619,16 +581,12 @@ export function PdfDocumentWorkbenchView({
     useState<DocumentConversationContext>();
   const [regionActionMenu, setRegionActionMenu] =
     useState<PdfRegionActionMenu>();
-  const conversationContributionId = `${contributionOwnerId}.document-question`;
   const conversationOwnerId =
     `${contributionOwnerId}:${bootstrap.sessionId}.conversation`;
   const conversationContribution = useMemo(
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
-      workbenchId: contributionOwnerId,
-      contributionId: conversationContributionId,
-      contextLabel: 'PDF 内容',
       allowAnswerAttachments: true,
       answerActionPresentation: {
         label: '显示在 PDF 原文旁',
@@ -644,12 +602,13 @@ export function PdfDocumentWorkbenchView({
       asset.id,
       asset.projectId,
       contributionOwnerId,
-      conversationContributionId,
     ],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,
+    asset.id,
     conversationContribution,
+    loadState.kind === 'ready',
   );
 
   useEffect(() => {
@@ -1863,11 +1822,6 @@ export function PdfDocumentWorkbenchView({
           )}
         </div>
       </div>
-      <QuestionAnchorHost
-        assetId={asset.id}
-        ownerId={conversationOwnerId}
-        runtime={conversationRuntime}
-      />
     </div>
   );
 }

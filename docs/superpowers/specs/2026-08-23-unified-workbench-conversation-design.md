@@ -17,17 +17,20 @@
 workbench.conversation@1
 ```
 
-具体 Workbench 不再创建自己的聊天 Instruction、Processor 或 TaskDefinition。它只在
-Renderer 声明如何呈现媒体上下文，并在 Main 注册同 ID 的 Context Provider 来解释这份
-上下文。公共 TaskDefinition 负责 Agent Session、Provider 调用、运行事件、最终结果和可选
-回答提交。
+Project 始终拥有聊天入口、界面、历史与发送。具体 Workbench 不再创建自己的聊天
+Instruction、Processor 或 TaskDefinition，也不能成为聊天 owner；它只在用户明确从原文、
+画面或选区发起时，为当前一条消息附加媒体上下文，并在 Main 注册同 ID 的 Context Provider
+来解释这份上下文。公共 TaskDefinition 负责 Agent Session、Provider 调用、运行事件、最终
+结果和可选回答提交。
 
 ```text
-Workbench 采集 Anchor / Context
-  -> Renderer ConversationContribution
+Project Conversation Host / Controller
+  -> 普通消息：Project Context Provider
+  -> 可选：Workbench 采集 Anchor / Context
+       -> Renderer Context Contribution（只附加当前一轮）
   -> 公共 GenerationTask request
   -> workbench.conversation TaskDefinition
-  -> Main ContextProvider.prepare()
+  -> Main 中匹配的 ContextProvider.prepare()
   -> TaskAgentSession.call()
   -> AgentProvider
   -> 公共 Conversation result
@@ -40,9 +43,12 @@ Workbench 采集 Anchor / Context
 
 ## 2. 三层职责
 
-### 2.1 Renderer Workbench ConversationContribution
+### 2.1 Project Conversation 与 Renderer Context Contribution
 
-只负责浏览器侧和媒体 UI 语义：
+Project Conversation 负责聊天是否可用、面板文案、当前 Conversation、历史、发送、重试和
+运行状态。它在没有注册任何 Workbench Contribution、没有选中 Asset 时也必须能够发送。
+
+Workbench Conversation Contribution 只负责浏览器侧和媒体上下文语义：
 
 - 声明 `contextProviderId`；
 - 决定首次提问是否必须有 Context；
@@ -52,7 +58,9 @@ Workbench 采集 Anchor / Context
 - 决定本轮回答是否需要提交为 Attachment；
 - 可选提供 Context 对应的回答动作。
 
-它不再构造媒体专用 TaskDefinition request，也不解析媒体专用任务结果。
+它不提供聊天标题、空状态或输入框文案，不维护 Conversation，也不决定普通消息走哪条发送
+链。它不再构造媒体专用 TaskDefinition request，也不解析媒体专用任务结果。注册或卸载
+Contribution 只能影响尚未发送的可选上下文，不能打开、关闭或接管聊天。
 
 ### 2.2 Main Workbench ConversationContextProvider
 
@@ -124,11 +132,18 @@ registerGeneration({ conversationContexts }) {
 - `project_conversations` 以 `conversationId + projectId` 保存标题和 Renderer 消息投影；
 - Renderer 只通过统一 Project Conversation IPC 读写，不再由各 Workbench 使用 `localStorage`
   或 Workbench State 保存第二份历史；
+- 带 Context 的用户消息保存来源 Asset 与 Provider 标识；各 Workbench 在 Renderer Catalog
+  注册纯展示解析器，因此历史 UI 不依赖当前挂载的 Workbench，也不重复保存展示数据；
 - Renderer 历史不会重新拼回 Prompt；
 - 新 Conversation 使用新的 `conversationId`，因此形成新的 Session 边界。
 
-Context 只在用户创建新 Anchor 时传入。后续追问可以不再附带 Context，Context Provider
-会提示 Agent 继续使用同一 Session 中已有的媒体语境。
+Context 只在用户创建新 Anchor 时附加到当前用户消息。没有显式附件的后续追问始终使用
+Project Context Provider，不回退到当前 Workbench，也不隐式附带当前选中的 Asset；同一个
+`conversationId` 对应的 Provider Session 自己保留此前真实模型语境。
+
+历史引用的重新定位由 Project 协调：先选中消息记录的来源 Asset，等待该 Asset 的
+Workbench Contribution 完成注册，再由目标 Workbench 解释并定位 Anchor。当前正在显示的
+Workbench 既不解释其他 Asset 的引用，也不决定这张引用卡片能否显示或点击。
 
 ## 5. AssetReference 策略
 
@@ -198,11 +213,11 @@ Attachment 是可选结果，不是聊天执行协议：
 ## 8. 新 Workbench 接入步骤
 
 1. 在 Workbench 的 shared/renderer 侧定义可验证的 Context 数据；
-2. 创建一个 `WorkbenchConversationContribution`，声明 Context 展示、定位与源 Asset 策略；
+2. 创建一个 `WorkbenchConversationContribution`，只声明 Context 展示、定位与源 Asset 策略；
 3. 在该 Workbench 的 Main 目录实现 `WorkbenchConversationContextProvider`；
 4. 通过该 Workbench 的 `registerGeneration()` 注册 Provider；
 5. 如需持久结果，在 Provider 内实现 `commitAnswer()` 并复用 AttachmentService；
-6. 测试首轮 Context、无 Context 追问、版本变化、取消、Session 延续与可选 Attachment；
+6. 测试首轮 Context、下一轮回到 Project Provider、版本变化、取消、Session 延续与可选 Attachment；
 7. 不创建 Workbench 专用聊天 TaskDefinition、历史 Store、聊天 IPC、聊天表或 Provider 直连路径。
 
 ## 9. 已移除的重复实现
@@ -220,6 +235,8 @@ GenerationTask 的 `contextProviderId + context + commitAnswer`，不拥有第�
 ## 10. 核心验收条件
 
 - 所有 Workbench 聊天都创建 `workbench.conversation@1`；
+- 没有任何 Workbench Contribution 或选中 Asset 时，Project 仍能创建并发送 Conversation；
+- Workbench Context 只影响显式附加它的单条用户消息，不能改变后续普通消息的发送路径；
 - Main Registry 中每个 `contextProviderId` 唯一且可发现；
 - 同一 Conversation 跨 Task 复用同一 Provider Session；
 - 新 Conversation 和 Project 之间不串上下文，Asset 版本只约束当轮 Workbench Context；

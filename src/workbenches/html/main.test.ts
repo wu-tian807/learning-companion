@@ -98,6 +98,31 @@ describe('HtmlWorkbenchProvider commands', () => {
     );
   });
 
+  it('routes stable and legacy root anchors to the current session root', async () => {
+    const { provider, context, frameScriptExecutor } = await createProvider();
+    const stable = createHtmlDomTarget({
+      element: { path: [1], tagName: 'p', textQuote: '当前根文档' },
+    });
+    const legacy = createHtmlDomTarget({
+      frameUrl: 'learning-content://resource/expired-token',
+      element: { path: [2], tagName: 'p', textQuote: '旧会话根文档' },
+    });
+
+    for (const [target, revision] of [[stable, 1], [legacy, 2]] as const) {
+      await provider.command(context, {
+        type: htmlAnchorCommands.highlight,
+        payload: { target, revision, reveal: true, durationMs: 2_800 },
+      });
+    }
+
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      1, 'session-1', expect.any(String), undefined,
+    );
+    expect(frameScriptExecutor.executeJavaScript).toHaveBeenNthCalledWith(
+      2, 'session-1', expect.any(String), undefined,
+    );
+  });
+
   it('installs source-aware copy behavior in the session root frame', async () => {
     const { provider, context, frameScriptExecutor } = await createProvider();
     frameScriptExecutor.executeJavaScript.mockResolvedValueOnce({

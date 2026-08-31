@@ -1,123 +1,153 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { WorkbenchConversationContribution } from './conversation-contracts';
+import {
+  registerWorkbenchAnchorController,
+  resetWorkbenchAnchorControllerForTests,
+} from '../workbench/host/workbench-anchor-bridge';
+import type {
+  ConversationMessageContextSource,
+  WorkbenchConversationContribution,
+} from './conversation-contracts';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
+
+const target = {
+  scope: 'content' as const,
+  anchorType: 'test.anchor',
+  anchorVersion: 1,
+  anchorPayload: { exact: '旧记录里的原文' },
+};
 
 function contribution(id: string): WorkbenchConversationContribution {
   return {
-    id,
-    workbenchId: `${id}.workbench`,
     contextProviderId: `${id}.context`,
-    title: id,
-    emptyLabel: 'empty',
+    sourceAssetMode: 'reference',
   };
 }
 
-describe('WorkbenchConversationRuntime', () => {
-  it('opens the active contribution and transports one typed launch request', () => {
-    const runtime = new WorkbenchConversationRuntime();
-    runtime.register('pdf.owner', contribution('pdf'));
+function source(id: string, assetId: string): ConversationMessageContextSource {
+  return {
+    contextProviderId: `${id}.context`,
+    assetId,
+    sourceAssetMode: 'reference',
+  };
+}
 
+afterEach(resetWorkbenchAnchorControllerForTests);
+
+describe('WorkbenchConversationRuntime', () => {
+  it('keeps Project chat available without a Workbench', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.open();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      panelOpen: true,
+      busy: false,
+      launchRequest: { id: 1, clearContext: true },
+    });
+    expect(runtime.getSnapshot().active).toBeUndefined();
+  });
+
+  it('attaches only an explicitly named active Workbench to a launch', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const pdf = contribution('pdf');
+    runtime.register('pdf.owner', 'asset-1', pdf);
     runtime.open({
       ownerId: 'pdf.owner',
       conversationId: 'conversation-1',
-      fallbackToNewConversation: true,
-      context: { pageNumber: 2 },
+      context: { target },
       question: '解释这一段',
       submit: true,
     });
 
     expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: true,
-      active: { ownerId: 'pdf.owner' },
+      active: { assetId: 'asset-1', contribution: pdf },
       launchRequest: {
         conversationId: 'conversation-1',
-        fallbackToNewConversation: true,
-        context: { pageNumber: 2 },
+        contextSource: { assetId: 'asset-1', contribution: pdf },
+        context: { target },
         question: '解释这一段',
         submit: true,
       },
     });
-    const requestId = runtime.getSnapshot().launchRequest!.id;
-    runtime.consumeLaunchRequest(requestId);
-    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
   });
 
-  it('does not let a newly registered Workbench steal the active Project chat', async () => {
+  it('does not let stale cleanup replace an active registration', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    const releasePdf = runtime.register('pdf.owner', contribution('pdf'));
-    runtime.open({ ownerId: 'pdf.owner', question: 'old' });
-    runtime.setBusy('pdf.owner', true);
+    const original = contribution('plain-text');
+    const replacement = contribution('plain-text');
+    const unregister = runtime.register('owner', 'asset-1', original);
+    runtime.open({ ownerId: 'owner' });
+    runtime.register('owner', 'asset-1', replacement);
+    unregister();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-    const releaseHtml = runtime.register('html.owner', contribution('html'));
     expect(runtime.getSnapshot()).toMatchObject({
+      active: { contribution: replacement },
       panelOpen: true,
-      busy: true,
-      active: { ownerId: 'pdf.owner' },
     });
-    expect(runtime.getSnapshot().launchRequest?.question).toBe('old');
-
-    releasePdf();
-    await Promise.resolve();
-    expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: false,
-      busy: false,
-      active: { ownerId: 'html.owner' },
-    });
-    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
-    releaseHtml();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(runtime.getSnapshot()).toEqual({ panelOpen: false, busy: false });
   });
 
-  it('treats two Assets as separate owners without changing the open owner', () => {
+  it('clears only transient context when its Workbench unmounts', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    runtime.register('pdf:session-a', contribution('pdf-a'));
-    runtime.open({ ownerId: 'pdf:session-a', question: 'asset A' });
-    runtime.setBusy('pdf:session-a', true);
-
-    runtime.register('pdf:session-b', contribution('pdf-b'));
+    const unregister = runtime.register('owner', 'asset-1', contribution('pdf'));
+    runtime.open({ ownerId: 'owner', context: { target } });
+    unregister();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
 
     expect(runtime.getSnapshot()).toMatchObject({
       panelOpen: true,
-      busy: true,
-      active: { ownerId: 'pdf:session-a' },
+      launchRequest: { clearContext: true },
     });
-    expect(runtime.getSnapshot().launchRequest?.question).toBe('asset A');
+    expect(runtime.getSnapshot().active).toBeUndefined();
   });
 
-  it('replaces one owner contribution without closing its open panel', async () => {
+  it('selects the referenced Asset and waits for its anchor controller', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    const initial = contribution('plain-text.initial');
-    const updated = contribution('plain-text.updated');
-    const releaseInitial = runtime.register('plain-text.owner', initial);
-    runtime.open({ ownerId: 'plain-text.owner', question: 'keep open' });
-    runtime.setBusy('plain-text.owner', true);
-    const launchRequest = runtime.getSnapshot().launchRequest;
-
-    releaseInitial();
-    runtime.register('plain-text.owner', updated);
-    await Promise.resolve();
-
-    expect(runtime.getSnapshot()).toMatchObject({
-      panelOpen: true,
-      busy: true,
-      active: {
-        ownerId: 'plain-text.owner',
-        contribution: updated,
-      },
-    });
-    expect(runtime.getSnapshot().launchRequest).toBe(launchRequest);
-  });
-
-  it('ignores stale busy reports and rejects opening an unregistered owner', () => {
-    const runtime = new WorkbenchConversationRuntime();
-    runtime.register('active', contribution('active'));
-    runtime.setBusy('stale', true);
-    expect(runtime.getSnapshot().busy).toBe(false);
-    expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
-      '当前 Workbench 没有注册 AI 问答能力',
+    const reveal = vi.fn(() => true);
+    const selectAsset = vi.fn();
+    const pending = runtime.revealContext(
+      source('html', 'asset-html'),
+      { target },
+      selectAsset,
     );
+
+    expect(selectAsset).toHaveBeenCalledWith('asset-html');
+    expect(reveal).not.toHaveBeenCalled();
+    registerWorkbenchAnchorController('html.owner', 'asset-html', { reveal });
+    await pending;
+    expect(reveal).toHaveBeenCalledWith(target);
+  });
+
+  it('rejects deleted Assets and invalid anchors without guessing', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    await expect(runtime.revealContext(
+      source('html', 'deleted'),
+      { target },
+      () => { throw new Error('引用的资料已不存在，无法定位原文。'); },
+    )).rejects.toThrow('引用的资料已不存在');
+    await expect(runtime.revealContext(
+      source('html', 'asset-html'),
+      { opaque: true },
+      vi.fn(),
+    )).rejects.toThrow('没有有效 Anchor');
+    expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
+      '当前 Workbench 没有注册 AI 问答上下文',
+    );
+  });
+
+  it('rejects a stale content revision through the shared anchor controller', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const reveal = vi.fn(() => true);
+    registerWorkbenchAnchorController('image.owner', 'asset-image', {
+      sourceRevision: 'new',
+      reveal,
+    });
+
+    await expect(runtime.revealContext(
+      source('image', 'asset-image'),
+      { sourceRevision: 'old', target },
+      vi.fn(),
+    )).rejects.toThrow('资料内容已更新');
+    expect(reveal).not.toHaveBeenCalled();
   });
 });

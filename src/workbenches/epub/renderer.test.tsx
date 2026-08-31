@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { EpubWorkbenchView } from './renderer';
 import {
@@ -29,7 +30,10 @@ const asset: AssetSnapshot = {
   updatedTime: 100,
 };
 
-function render(payload: WorkbenchBootstrap['payload']) {
+function render(
+  payload: WorkbenchBootstrap['payload'],
+  attachments: readonly AssetAttachment[] = [],
+) {
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: EPUB_WORKBENCH_ID,
@@ -47,6 +51,8 @@ function render(payload: WorkbenchBootstrap['payload']) {
         <EpubWorkbenchView
           asset={asset}
           bootstrap={bootstrap}
+          attachments={attachments}
+          refreshAttachments={vi.fn(async () => undefined)}
           executeCommand={vi.fn(async () => ({
             payload: { saved: true, savedTime: 100 },
           }))}
@@ -71,8 +77,47 @@ describe('EpubWorkbenchView', () => {
 
     expect(markup).toContain('aria-label="EPUB 阅读区域"');
     expect(markup).toContain('aria-label="切换 EPUB 标注索引（0）"');
+    expect(markup).toContain('aria-label="切换 EPUB 阅读笔记（0）"');
+    expect(markup).toContain('aria-label="打开 EPUB 阅读定时器"');
     expect(markup).toContain('正在解析 EPUB');
     expect(markup).not.toContain('/private/book.epub');
+  });
+
+  it('keeps authored reading notes separate from AI explanation markers', () => {
+    const markup = render(
+      {
+        contentUrl: 'learning-content://resource/epub',
+        viewState: cloneEpubViewState(DEFAULT_EPUB_VIEW_STATE),
+      },
+      [
+        {
+          id: 'note-1',
+          projectId: asset.projectId,
+          assetId: asset.id,
+          typeId: 'epub.reading-note',
+          typeVersion: 1,
+          target: {
+            scope: 'content',
+            anchorType: 'epub.cfi-range',
+            anchorVersion: 1,
+            anchorPayload: {
+              cfiRange: 'epubcfi(/6/2!/4/2,/1:0,/1:4)',
+              quote: { exact: '原文', prefix: '', suffix: '' },
+            },
+          },
+          metadata: {
+            format: 'learning-companion/epub-reading-note',
+            version: 1,
+            text: '我的感想',
+          },
+          createdTime: 1,
+          updatedTime: 2,
+        },
+      ],
+    );
+
+    expect(markup).toContain('aria-label="切换 EPUB 阅读笔记（1）"');
+    expect(markup).toContain('>笔记<');
   });
 
   it('rejects an unsafe bootstrap URL', () => {

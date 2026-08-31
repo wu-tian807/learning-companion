@@ -5,6 +5,7 @@ import {
   DEFAULT_EPUB_VIEW_STATE,
   epubWorkbenchManifest,
   isEpubCfiRangeAnchorV1,
+  isEpubCfiRangeTarget,
   isEpubWorkbenchPayload,
   isEpubWorkbenchViewState,
 } from './shared';
@@ -50,5 +51,6 @@ describe('EPUB Workbench shared protocol', () => {
     const target = createEpubCfiRangeTarget(anchor);
 
     expect(isEpubCfiRangeAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isEpubCfiRangeTarget(target)).toBe(true);
   });
 });

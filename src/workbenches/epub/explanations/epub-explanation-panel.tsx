@@ -10,6 +10,8 @@ import {
 } from '../../markdown/markdown-editor-adapter';
 import type { EpubExplanationView } from './shared';
 import type { EpubExplanationRuntimeView } from './epub-explanation-runtime';
+import { EpubMarkerColorPicker } from '../epub-marker-color-picker';
+import type { EpubMarkerColor } from '../epub-marker-style';
 
 function MarkdownAnswer({ markdown }: { readonly markdown: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -45,6 +47,7 @@ export function EpubExplanationPanel({
   onRetry,
   onDelete,
   onContinueQuestion,
+  onMarkerColorChange,
   continueQuestionDisabled = false,
 }: {
   readonly explanation: EpubExplanationView;
@@ -53,6 +56,7 @@ export function EpubExplanationPanel({
   readonly onRetry: () => void;
   readonly onDelete: () => void;
   readonly onContinueQuestion?: () => void;
+  readonly onMarkerColorChange?: (color: EpubMarkerColor) => void;
   readonly continueQuestionDisabled?: boolean;
 }) {
   return (
@@ -128,8 +132,18 @@ export function EpubExplanationPanel({
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-2">
-        {explanation.status === 'completed' && onContinueQuestion ? (
+      <div className="border-t border-white/[0.07] px-3 py-2">
+        {explanation.status === 'completed' && onMarkerColorChange && (
+          <div className="mb-2 flex items-center justify-between gap-2 border-b border-white/[0.05] pb-2">
+            <span className="text-[10px] text-slate-500">波浪线颜色</span>
+            <EpubMarkerColorPicker
+              value={explanation.markerColor ?? 'blue'}
+              onChange={onMarkerColorChange}
+            />
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          {explanation.status === 'completed' && onContinueQuestion ? (
           <button
             type="button"
             disabled={continueQuestionDisabled}
@@ -138,20 +152,21 @@ export function EpubExplanationPanel({
           >
             继续追问
           </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="button"
-          onClick={onDelete}
-          className="ui-control rounded-full px-3 py-1.5 text-[11px] text-slate-500 hover:text-rose-300"
-        >
-          {explanation.kind === 'attachment'
-            ? '删除解释'
-            : explanation.status === 'pending'
-              ? '取消生成'
-              : '移除任务'}
-        </button>
+          ) : (
+            <span />
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            className="ui-control rounded-full px-3 py-1.5 text-[11px] text-slate-500 hover:text-rose-300"
+          >
+            {explanation.kind === 'attachment'
+              ? '删除解释'
+              : explanation.status === 'pending'
+                ? '取消生成'
+                : '移除任务'}
+          </button>
+        </div>
       </div>
     </aside>
   );

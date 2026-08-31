@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { ConversationRecord } from '../../../renderer/conversation/conversation-contracts';
-import { createWorkbenchConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
+import { createContextualConversationTaskRequest } from '../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
@@ -69,14 +69,10 @@ describe('HTML conversation contribution', () => {
   });
 
   it('declares HTML context while the shared conversation layer owns the task', () => {
-    const revealContext = vi.fn();
-    const contribution = createHtmlConversationContribution({
-      assetId: 'asset',
-      revealContext,
-    });
+    const contribution = createHtmlConversationContribution({});
     const context = record().messages[0]!.context!;
 
-    expect(createWorkbenchConversationTaskRequest(contribution, {
+    expect(createContextualConversationTaskRequest(contribution, {
       projectId: 'project',
       assetId: 'asset',
       conversationId: 'conversation-1',
@@ -94,8 +90,5 @@ describe('HTML conversation contribution', () => {
       },
       assetReferences: { source: [{ assetId: 'asset' }] },
     });
-
-    contribution.revealContext?.(context);
-    expect(revealContext).toHaveBeenCalledWith(context);
   });
 });

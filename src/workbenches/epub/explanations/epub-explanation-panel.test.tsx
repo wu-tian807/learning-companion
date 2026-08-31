@@ -167,4 +167,41 @@ describe('EpubExplanationPanel', () => {
     act(() => root.unmount());
     container.remove();
   });
+
+  it('allows a completed explanation wave color to be changed', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const onMarkerColorChange = vi.fn();
+
+    act(() => {
+      root.render(
+        <EpubExplanationPanel
+          explanation={{
+            kind: 'attachment',
+            id: 'attachment-1',
+            projectId: 'project-1',
+            assetId: 'asset-1',
+            target,
+            status: 'completed',
+            answer: '已保存的解释',
+            markerColor: 'blue',
+            createdTime: 1,
+            updatedTime: 2,
+          }}
+          onClose={vi.fn()}
+          onRetry={vi.fn()}
+          onDelete={vi.fn()}
+          onMarkerColorChange={onMarkerColorChange}
+        />,
+      );
+    });
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="红色波浪线"]')
+        ?.click(),
+    );
+
+    expect(onMarkerColorChange).toHaveBeenCalledWith('red');
+    act(() => root.unmount());
+  });
 });

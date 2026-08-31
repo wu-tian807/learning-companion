@@ -36,12 +36,16 @@ export function useWorkbenchConversationSnapshot(
 
 export function useWorkbenchConversationContribution(
   ownerId: string,
+  assetId: string,
   contribution: WorkbenchConversationContribution,
+  enabled = true,
 ): WorkbenchConversationRuntime {
   const runtime = useWorkbenchConversationRuntime();
   useEffect(
-    () => runtime.register(ownerId, contribution),
-    [contribution, ownerId, runtime],
+    () => enabled
+      ? runtime.register(ownerId, assetId, contribution)
+      : undefined,
+    [assetId, contribution, enabled, ownerId, runtime],
   );
   return runtime;
 }

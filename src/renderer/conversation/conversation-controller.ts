@@ -4,21 +4,23 @@ import type {
   GenerationTaskView,
 } from '../../shared/generation-tasks';
 import { isWorkbenchConversationTaskResult } from '../../shared/workbench-conversation';
-import type { JsonValue } from '../../shared/workbench/protocol';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
+  ConversationContextAttachment,
   ConversationLaunchRequest,
   ConversationHistoryStore,
   ConversationMessageRecord,
   ConversationReanswerBackup,
   ConversationRecord,
-  WorkbenchConversationContribution,
 } from './conversation-contracts';
 import {
   conversationTaskClient,
   type ConversationTaskClient,
 } from './conversation-task-client';
-import { createWorkbenchConversationTaskRequest } from './conversation-task-request';
+import {
+  createConversationContextSource,
+  createConversationTaskRequest,
+} from './conversation-task-request';
 import {
   activityFromExecutionEvent,
   conversationContextsEqual,
@@ -39,7 +41,7 @@ export interface ConversationControllerState {
   readonly conversation: ConversationRecord;
   readonly history: readonly ConversationRecord[];
   readonly draft: string;
-  readonly pendingContext?: JsonValue;
+  readonly pendingContext?: ConversationContextAttachment;
   readonly busy: boolean;
   readonly activeTaskId?: string;
   readonly activityLabel?: string;
@@ -50,22 +52,25 @@ export interface ConversationControllerState {
 export interface ConversationControllerActions {
   readonly setTab: (tab: 'chat' | 'history') => void;
   readonly setDraft: (draft: string) => void;
-  readonly setPendingContext: (context: JsonValue | undefined) => void;
-  readonly submit: (question?: string, context?: JsonValue) => void;
+  readonly setPendingContext: (
+    context: ConversationContextAttachment | undefined,
+  ) => void;
+  readonly submit: (
+    question?: string,
+    context?: ConversationContextAttachment,
+  ) => void;
   readonly cancel: () => void;
   readonly retry: () => void;
   /** 对已完成的某条回答发起全新任务，重新生成该回答。 */
   readonly reanswer: (answerId: string) => void;
   readonly restore: (record: ConversationRecord) => void;
   readonly remove: (record: ConversationRecord) => void;
-  readonly startNew: (context?: JsonValue) => void;
+  readonly startNew: (context?: ConversationContextAttachment) => void;
 }
 
 interface UseConversationControllerInput {
   readonly open: boolean;
   readonly projectId: string;
-  readonly assetId?: string;
-  readonly contribution: WorkbenchConversationContribution;
   readonly historyStore: ConversationHistoryStore;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
@@ -73,6 +78,19 @@ interface UseConversationControllerInput {
   readonly taskClient?: ConversationTaskClient;
   readonly createId?: () => string;
   readonly now?: () => number;
+}
+
+function conversationContextAttachmentsEqual(
+  left: ConversationContextAttachment | undefined,
+  right: ConversationContextAttachment | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.assetId === right.assetId &&
+    left.contribution === right.contribution &&
+    conversationContextsEqual(left.context, right.context)
+  );
 }
 
 function reanswerBackupFromMessage(
@@ -98,6 +116,9 @@ function conversationMessageBase(message: ConversationMessageRecord) {
       ? { replyToMessageId: message.replyToMessageId }
       : {}),
     ...(message.context === undefined ? {} : { context: message.context }),
+    ...(message.contextSource === undefined
+      ? {}
+      : { contextSource: message.contextSource }),
   };
 }
 
@@ -150,8 +171,6 @@ function restoreReanswerMessage(
 export function useConversationController({
   open,
   projectId,
-  assetId,
-  contribution,
   historyStore,
   launchRequest,
   onLaunchConsumed,
@@ -169,7 +188,8 @@ export function useConversationController({
   );
   const [history, setHistory] = useState<readonly ConversationRecord[]>([]);
   const [draft, setDraft] = useState('');
-  const [pendingContext, setPendingContextState] = useState<JsonValue>();
+  const [pendingContext, setPendingContextState] =
+    useState<ConversationContextAttachment>();
   const [busy, setBusy] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string>();
   const [activityLabel, setActivityLabel] = useState<string>();
@@ -177,19 +197,17 @@ export function useConversationController({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const conversationRef = useRef(conversation);
-  const pendingContextRef = useRef<JsonValue | undefined>(pendingContext);
+  const pendingContextRef = useRef<
+    ConversationContextAttachment | undefined
+  >(pendingContext);
   const activeTaskIdRef = useRef<string | undefined>(undefined);
   const activeAssistantMessageIdRef = useRef<string | undefined>(undefined);
   const pendingCancelRef = useRef(false);
   const mountedRef = useRef(true);
   const lastLaunchIdRef = useRef<number | undefined>(undefined);
-  const contributionRef = useRef(contribution);
   const onPersistenceErrorRef = useRef(onPersistenceError);
   const deletedConversationIdsRef = useRef(new Set<string>());
   const historyMutationTailRef = useRef<Promise<void>>(Promise.resolve());
-  useEffect(() => {
-    contributionRef.current = contribution;
-  }, [contribution]);
   useEffect(() => {
     onPersistenceErrorRef.current = onPersistenceError;
   }, [onPersistenceError]);
@@ -215,22 +233,28 @@ export function useConversationController({
     updater: (current: ConversationRecord) => ConversationRecord,
   ) => replaceConversation(updater(conversationRef.current)), [replaceConversation]);
 
-  const writePendingContext = useCallback((next: JsonValue | undefined) => {
-    pendingContextRef.current = next;
-    if (mountedRef.current) setPendingContextState(next);
-  }, []);
+  const writePendingContext = useCallback(
+    (next: ConversationContextAttachment | undefined) => {
+      pendingContextRef.current = next;
+      if (mountedRef.current) setPendingContextState(next);
+    },
+    [],
+  );
 
-  const setPendingContext = useCallback((next: JsonValue | undefined) => {
+  const setPendingContext = useCallback((
+    next: ConversationContextAttachment | undefined,
+  ) => {
     const current = pendingContextRef.current;
-    const unchanged = current === next || conversationContextsEqual(current, next);
+    const unchanged = conversationContextAttachmentsEqual(current, next);
     if (!unchanged && current !== undefined) {
-      contributionRef.current.onContextReleased?.(current);
+      current.contribution.onContextReleased?.(current.context);
     }
     writePendingContext(next);
   }, [writePendingContext]);
 
   const clearTransientContext = useCallback(() => {
-    contributionRef.current.onContextReleased?.(pendingContextRef.current);
+    const current = pendingContextRef.current;
+    current?.contribution.onContextReleased?.(current.context);
     writePendingContext(undefined);
   }, [writePendingContext]);
 
@@ -434,7 +458,9 @@ export function useConversationController({
     }
   }), [applyTerminalTask, projectId, taskClient, updateConversation]);
 
-  const resetConversation = useCallback((context?: JsonValue) => {
+  const resetConversation = useCallback((
+    context?: ConversationContextAttachment,
+  ) => {
     if (context === undefined) {
       clearTransientContext();
     } else {
@@ -447,7 +473,9 @@ export function useConversationController({
     setTab('chat');
   }, [clearTransientContext, createId, now, replaceConversation, setPendingContext]);
 
-  const startNew = useCallback((context?: JsonValue) => {
+  const startNew = useCallback((
+    context?: ConversationContextAttachment,
+  ) => {
     if (activeTaskIdRef.current) return;
     void persistRef.current();
     resetConversation(context);
@@ -487,16 +515,54 @@ export function useConversationController({
     setError(undefined);
     setActivityLabel('正在创建回答任务…');
     const current = conversationRef.current;
+    const firstQuestion = current.messages.every(
+      (message) => message.role !== 'user',
+    );
+    const taskInput = {
+      projectId,
+      ...(context ? { assetId: context.assetId } : {}),
+      conversationId: current.id,
+      question: normalized,
+      ...(context?.context === undefined
+        ? {}
+        : { context: context.context }),
+      generateTitle: firstQuestion,
+    };
+    let contextSource:
+      | ReturnType<typeof createConversationContextSource>
+      | undefined;
+    let request: ReturnType<typeof createConversationTaskRequest>;
+    try {
+      contextSource = context
+        ? createConversationContextSource(
+            context.contribution,
+            taskInput,
+          )
+        : undefined;
+      request = createConversationTaskRequest({
+        ...taskInput,
+        ...(contextSource ? { contextSource } : {}),
+      });
+    } catch (requestError) {
+      setActivityLabel(undefined);
+      setError(
+        failureFromError(requestError, '无法准备 AI 问答任务。'),
+      );
+      return;
+    }
+
     const userMessageId = createConversationMessageId(createId());
     const assistantMessageId = createConversationMessageId(createId());
-    const firstQuestion = current.messages.every((message) => message.role !== 'user');
     const timestamp = now();
     const userMessage: ConversationMessageRecord = Object.freeze({
       id: userMessageId,
       role: 'user',
       text: normalized,
       createdTime: timestamp,
-      ...(context === undefined ? {} : { context }),
+      ...(context?.context === undefined
+        ? {}
+        : { context: context.context }),
+      ...(contextSource ? { contextSource } : {}),
     });
     const assistantMessage: ConversationMessageRecord = Object.freeze({
       id: assistantMessageId,
@@ -527,21 +593,6 @@ export function useConversationController({
       setError(nextError);
     };
 
-    let request;
-    try {
-      request = createWorkbenchConversationTaskRequest(contribution, {
-        projectId,
-        assetId,
-        conversationId: current.id,
-        question: normalized,
-        ...(context === undefined ? {} : { context }),
-        generateTitle: firstQuestion,
-      });
-    } catch (requestError) {
-      rollback(failureFromError(requestError, '无法准备 AI 问答任务。'));
-      return;
-    }
-
     void taskClient.start(request).then(
       (started) => {
         bindTask(started.taskId, assistantMessageId);
@@ -550,7 +601,7 @@ export function useConversationController({
         // slow Assistant response before restoring the selected region.
         void persist(next);
         if (context !== undefined) {
-          contribution.onContextReleased?.(context);
+          context.contribution.onContextReleased?.(context.context);
         }
         if (started.snapshot && applyTerminalTask(started.snapshot)) return;
         if (pendingCancelRef.current) {
@@ -564,9 +615,7 @@ export function useConversationController({
     );
   }, [
     applyTerminalTask,
-    assetId,
     bindTask,
-    contribution,
     createId,
     draft,
     now,
@@ -604,7 +653,15 @@ export function useConversationController({
         ? currentConversation
         : history.find((record) => record.id === request.conversationId)
       : undefined;
-    const launchContext = matching ? undefined : request.context;
+    const launchContext =
+      matching || !request.contextSource
+        ? undefined
+        : Object.freeze({
+            ...request.contextSource,
+            ...(request.context === undefined
+              ? {}
+              : { context: request.context }),
+          });
     if (request.conversationId !== undefined) {
       if (matching) {
         restore(matching);
@@ -620,6 +677,12 @@ export function useConversationController({
       launchContext !== undefined
     ) {
       setPendingContext(launchContext);
+    } else if (
+      request.conversationId === undefined &&
+      request.fallbackToNewConversation !== true &&
+      request.clearContext
+    ) {
+      setPendingContext(undefined);
     }
 
     if (request.question?.trim()) {
@@ -707,21 +770,32 @@ export function useConversationController({
       : undefined;
     const normalized = (question?.text ?? '').trim();
     if (!normalized) return;
+    if (
+      question?.context !== undefined &&
+      question.contextSource === undefined
+    ) {
+      setError({
+        message: '这条旧问答缺少上下文来源，请从原文重新发起。',
+      });
+      return;
+    }
 
     setError(undefined);
     setActivityLabel('正在重新回答…');
     setBusy(true);
 
-    let request;
+    let request: ReturnType<typeof createConversationTaskRequest>;
     try {
-      request = createWorkbenchConversationTaskRequest(contribution, {
+      request = createConversationTaskRequest({
         projectId,
-        assetId,
         conversationId: current.id,
         question: normalized,
         ...(question?.context === undefined
           ? {}
           : { context: question.context }),
+        ...(question?.contextSource === undefined
+          ? {}
+          : { contextSource: question.contextSource }),
         generateTitle: false,
       });
     } catch (requestError) {
@@ -754,9 +828,7 @@ export function useConversationController({
     );
   }, [
     applyTerminalTask,
-    assetId,
     bindTask,
-    contribution,
     projectId,
     taskClient,
   ]);

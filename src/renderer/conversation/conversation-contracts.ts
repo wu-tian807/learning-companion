@@ -1,4 +1,5 @@
 import type {
+  ConversationMessageContextSource,
   ConversationMessageRecord,
   ConversationRecord,
 } from '../../shared/project-conversations';
@@ -6,10 +7,17 @@ import type { JsonValue } from '../../shared/workbench/protocol';
 
 export type {
   ConversationMessageRecord,
+  ConversationMessageContextSource,
   ConversationReanswerBackup,
   ConversationRecord,
   ConversationRole,
 } from '../../shared/project-conversations';
+
+export interface ConversationContextPresentation {
+  readonly label: string;
+  readonly detail?: string;
+  readonly previewDataUrl?: string;
+}
 
 export interface ConversationHistoryStore {
   list(): Promise<readonly ConversationRecord[]>;
@@ -19,18 +27,13 @@ export interface ConversationHistoryStore {
   getSnapshot?(): readonly ConversationRecord[];
 }
 
-export interface ConversationContextPresentation {
-  readonly label: string;
-  readonly detail?: string;
-  readonly previewDataUrl?: string;
-}
-
 export interface ConversationTaskInput {
   readonly projectId: string;
   readonly assetId?: string;
   readonly conversationId: string;
   readonly question: string;
   readonly context?: JsonValue;
+  readonly contextSource?: ConversationMessageContextSource;
   readonly generateTitle: boolean;
 }
 
@@ -56,29 +59,22 @@ export interface ConversationAnswerAction
 }
 
 /**
- * Renderer contribution supplied by Project or an active Workbench context.
+ * Optional Renderer-side context supplied by a Workbench for one message.
  *
- * The shared conversation layer owns the TaskDefinition, Agent Session,
- * Provider call, task lifecycle and result projection. The contribution only
- * declares Renderer-side media context and optional UI actions. Main-side
- * media semantics live in the matching context provider.
+ * Project Conversation owns chat availability, reference presentation and
+ * navigation, history, sending, the Agent Session and task lifecycle. A
+ * Workbench can attach media-specific context and expose an optional answer
+ * operation. Main-side media semantics live in the matching context provider.
  */
 export interface WorkbenchConversationContribution {
-  readonly id: string;
-  readonly workbenchId: string;
   /** Main-side provider that turns the opaque Workbench context into Agent input. */
   readonly contextProviderId: string;
   /** Declares whether this Workbench context needs only the Asset id or a materialized source copy. */
   readonly sourceAssetMode?: 'identity' | 'reference';
-  readonly initialContextRequired?: boolean;
-  readonly initialContextRequiredMessage?: string;
-  readonly title: string;
-  readonly emptyLabel: string;
-  readonly inputPlaceholder?: string;
+  readonly contextRequired?: boolean;
+  readonly contextRequiredMessage?: string;
   isContext?(context: JsonValue): boolean;
   shouldCommitAnswer?(input: ConversationTaskInput): boolean;
-  describeContext?(context: JsonValue): ConversationContextPresentation;
-  revealContext?(context: JsonValue): Promise<void> | void;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */
   onContextReleased?(context: JsonValue | undefined): void;
   /** Optional answer operation whose presentation and media behavior are Workbench-owned. */
@@ -89,14 +85,21 @@ export interface ConversationLaunchRequest {
   readonly id: number;
   readonly conversationId?: string;
   readonly fallbackToNewConversation?: boolean;
+  readonly clearContext?: boolean;
+  readonly contextSource?: ActiveWorkbenchConversationContribution;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;
 }
 
 export interface ActiveWorkbenchConversationContribution {
-  readonly ownerId: string;
+  readonly assetId: string;
   readonly contribution: WorkbenchConversationContribution;
+}
+
+export interface ConversationContextAttachment
+  extends ActiveWorkbenchConversationContribution {
+  readonly context?: JsonValue;
 }
 
 export interface WorkbenchConversationRuntimeSnapshot {
