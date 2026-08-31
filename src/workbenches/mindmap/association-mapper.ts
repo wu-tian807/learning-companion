@@ -9,9 +9,12 @@ import {
   type AssetTarget,
 } from '../../shared/workbench/anchor';
 import {
-  cloneMindMapDocumentV1,
-  type MindMapDocumentV1,
+  cloneMindMapAgentLocatorV1,
+  cloneMindMapDocument,
+  type MindMapAgentLocatorV1,
+  type MindMapDocument,
   type MindMapSubjectAssociationsV1,
+  type MindMapSubjectAssociationsV2,
 } from './document';
 
 export interface MindMapAssociationLookup {
@@ -19,10 +22,20 @@ export interface MindMapAssociationLookup {
   getLink(linkId: string): AssetLink | undefined;
 }
 
-export interface ResolvedMindMapReferenceBinding {
+export interface ResolvedMindMapLegacyReferenceBinding {
   readonly reference: AssetReference;
   readonly sourceTarget: AssetTarget;
 }
+
+export interface ResolvedMindMapAgentReferenceBinding {
+  readonly reference: AssetReference;
+  readonly sourceRevision: string;
+  readonly agentLocator: MindMapAgentLocatorV1;
+}
+
+export type ResolvedMindMapReferenceBinding =
+  | ResolvedMindMapLegacyReferenceBinding
+  | ResolvedMindMapAgentReferenceBinding;
 
 export interface ResolvedMindMapSubjectAssociations {
   readonly references: readonly ResolvedMindMapReferenceBinding[];
@@ -52,7 +65,10 @@ function resolveSubjectAssociationMap(
   assetId: string,
   subjectKind: MindMapAssociationSubjectKind,
   subjectAssociations: Readonly<
-    Record<string, MindMapSubjectAssociationsV1>
+    Record<
+      string,
+      MindMapSubjectAssociationsV1 | MindMapSubjectAssociationsV2
+    >
   >,
   lookup: MindMapAssociationLookup,
   staleBindings: StaleMindMapAssociationBinding[],
@@ -78,10 +94,20 @@ function resolveSubjectAssociationMap(
             }
 
             references.push(
-              Object.freeze({
-                reference: cloneAssetReference(reference),
-                sourceTarget: cloneAssetTarget(binding.sourceTarget),
-              }),
+              'sourceTarget' in binding
+                ? Object.freeze({
+                    reference: cloneAssetReference(reference),
+                    sourceTarget: cloneAssetTarget(
+                      binding.sourceTarget,
+                    ),
+                  })
+                : Object.freeze({
+                    reference: cloneAssetReference(reference),
+                    sourceRevision: binding.sourceRevision,
+                    agentLocator: cloneMindMapAgentLocatorV1(
+                      binding.agentLocator,
+                    ),
+                  }),
             );
           }
 
@@ -116,7 +142,7 @@ function resolveSubjectAssociationMap(
 
 export function resolveMindMapAssociations(
   assetId: string,
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   lookup: MindMapAssociationLookup,
 ): ResolvedMindMapAssociations {
   const normalizedAssetId = assetId.trim();
@@ -125,7 +151,7 @@ export function resolveMindMapAssociations(
     throw new Error('Mind Map assetId 无效');
   }
 
-  const normalizedDocument = cloneMindMapDocumentV1(document);
+  const normalizedDocument = cloneMindMapDocument(document);
   const staleBindings: StaleMindMapAssociationBinding[] = [];
   const byNode = resolveSubjectAssociationMap(
     normalizedAssetId,

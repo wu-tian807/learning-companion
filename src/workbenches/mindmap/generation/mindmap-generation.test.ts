@@ -7,6 +7,10 @@ import type {
   GenerationTaskProcessContext,
   TaskAgentSession,
 } from '../../../main/generation/contracts/task-definition';
+import {
+  MIND_MAP_DOCUMENT_VERSION,
+  MIND_MAP_DOCUMENT_VERSION_V2,
+} from '../document';
 import { decodeMindMapDocument } from '../mindmap-content-adapter';
 import { MindMapGenerationInstruction } from './mindmap-generation-instruction';
 import {
@@ -15,11 +19,17 @@ import {
   validateMindMapGenerationCandidateV1,
 } from './mindmap-generation-output';
 import {
+  MIND_MAP_GENERATION_CANDIDATE_VERSION_V2,
+  validateMindMapGenerationCandidateV2,
+} from './mindmap-generation-output-v2';
+import {
+  LegacyMindMapGenerationProcessor,
   MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
   MindMapGenerationProcessor,
 } from './mindmap-generation-processor';
 
-const context = {
+const validationContext = {
   assetReferences: {
     sources: [
       {
@@ -34,11 +44,11 @@ const context = {
   },
 };
 
-function createCandidate() {
+function createLegacyCandidate() {
   return {
     format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
     version: MIND_MAP_GENERATION_CANDIDATE_VERSION,
-    title: '课程结构',
+    title: '旧版课程结构',
     rootNodeId: 'root',
     nodes: {
       root: {
@@ -62,6 +72,72 @@ function createCandidate() {
         title: '讲义范围',
         nodeIds: ['root', 'chapter-1'],
         sourceAliases: ['sources-0001'],
+      },
+    },
+  } as const;
+}
+
+function createCandidate() {
+  return {
+    format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+    version: MIND_MAP_GENERATION_CANDIDATE_VERSION_V2,
+    title: '课程结构',
+    rootNodeId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        title: '课程',
+        focus: '课程总览',
+        childIds: ['chapter-1'],
+        sourceReferences: [
+          {
+            sourceAlias: 'sources-0001',
+            agentLocator: {
+              headingPath: ['课程', '导言'],
+              quote: '课程总览',
+            },
+          },
+          {
+            sourceAlias: 'sources-0001',
+            agentLocator: {
+              custom: {
+                sectionNumber: '0.2',
+                semanticHint: '章节之间的关系',
+              },
+            },
+          },
+        ],
+      },
+      'chapter-1': {
+        id: 'chapter-1',
+        title: '第一章',
+        focus: '核心概念',
+        childIds: [],
+        sourceReferences: [
+          {
+            sourceAlias: 'sources-0001',
+            agentLocator: {
+              page: 4,
+              description: '核心概念的定义与示例',
+            },
+          },
+        ],
+      },
+    },
+    frames: {
+      overview: {
+        id: 'overview',
+        title: '讲义范围',
+        nodeIds: ['root', 'chapter-1'],
+        sourceReferences: [
+          {
+            sourceAlias: 'sources-0001',
+            agentLocator: {
+              wholeAsset: true,
+              reason: '该 Frame 是整份课程的总览',
+            },
+          },
+        ],
       },
     },
   } as const;
@@ -107,7 +183,7 @@ function createProcessContext(
       },
       secondary: [],
     },
-    assetReferences: context.assetReferences,
+    assetReferences: validationContext.assetReferences,
     preparedUserMessage: createTextAgentUserMessage('生成思维导图'),
     agent,
     reportStatus: vi.fn(),
@@ -134,18 +210,44 @@ describe('Mind Map generation contracts', () => {
     });
   });
 
-  it('accepts a strict tree with source aliases and multi-node frames', () => {
+  it('keeps the v1 candidate contract readable for task recovery', () => {
     const result = validateMindMapGenerationCandidateV1(
-      createCandidate(),
-      context,
+      createLegacyCandidate(),
+      validationContext,
     );
 
     expect(result.ok).toBe(true);
   });
 
-  it('rejects non-tree output and unknown source aliases', () => {
+  it('accepts free-form locators and repeated locations for one source', () => {
+    const result = validateMindMapGenerationCandidateV2(
+      createCandidate(),
+      validationContext,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.nodes.root.sourceReferences).toHaveLength(2);
+      expect(
+        result.value.nodes.root.sourceReferences[1].agentLocator,
+      ).toEqual({
+        custom: {
+          sectionNumber: '0.2',
+          semanticHint: '章节之间的关系',
+        },
+      });
+      expect(
+        Object.isFrozen(
+          result.value.nodes.root.sourceReferences[1].agentLocator
+            .custom,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('rejects non-tree output, unknown aliases and empty locators', () => {
     const candidate = createCandidate();
-    const result = validateMindMapGenerationCandidateV1(
+    const invalidTreeAndAlias = validateMindMapGenerationCandidateV2(
       {
         ...candidate,
         nodes: {
@@ -153,22 +255,51 @@ describe('Mind Map generation contracts', () => {
           'chapter-1': {
             ...candidate.nodes['chapter-1'],
             childIds: ['root'],
-            sourceAliases: ['not-provided'],
+            sourceReferences: [
+              {
+                sourceAlias: 'not-provided',
+                agentLocator: { page: 1 },
+              },
+            ],
           },
         },
       },
-      context,
+      validationContext,
+    );
+    const emptyLocator = validateMindMapGenerationCandidateV2(
+      {
+        ...candidate,
+        nodes: {
+          ...candidate.nodes,
+          root: {
+            ...candidate.nodes.root,
+            sourceReferences: [
+              {
+                sourceAlias: 'sources-0001',
+                agentLocator: {},
+              },
+            ],
+          },
+        },
+      },
+      validationContext,
     );
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.issues.map(({ message }) => message).join('\n')).toMatch(
-        /严格树|未知来源/,
-      );
+    expect(invalidTreeAndAlias.ok).toBe(false);
+    if (!invalidTreeAndAlias.ok) {
+      expect(
+        invalidTreeAndAlias.issues
+          .map(({ message }) => message)
+          .join('\n'),
+      ).toMatch(/严格树|未知来源/u);
+    }
+    expect(emptyLocator.ok).toBe(false);
+    if (!emptyLocator.ok) {
+      expect(emptyLocator.issues[0].message).toMatch(/来源定位/u);
     }
   });
 
-  it('creates a generated Asset and maps source aliases to AssetReferences', async () => {
+  it('creates a v2 Asset and maps aliases to revisioned Agent locators', async () => {
     let writtenContent: Uint8Array | undefined;
     const close = vi.fn(async () => undefined);
     const assets = {
@@ -196,7 +327,14 @@ describe('Mind Map generation contracts', () => {
     } as unknown as AssetServiceApi;
     const associations = {
       getActiveProjectId: vi.fn(() => 'project-1'),
-      ensureReference: vi.fn(() => ({ id: 'reference-1' })),
+      ensureReference: vi.fn(
+        (
+          _assetId: string,
+          { sourceAssetId }: { readonly sourceAssetId: string },
+        ) => ({
+          id: `reference-${sourceAssetId}`,
+        }),
+      ),
     } as unknown as AssetAssociationServiceApi;
     const processor = new MindMapGenerationProcessor(
       assets,
@@ -205,7 +343,6 @@ describe('Mind Map generation contracts', () => {
         readFile: vi.fn(async () => JSON.stringify(createCandidate())),
       },
     );
-
     const processContext = createProcessContext({
       assetReferences: {
         sources: [
@@ -213,7 +350,8 @@ describe('Mind Map generation contracts', () => {
             alias: 'sources-0001',
             assetId: 'asset-1',
             name: 'slides.pptx',
-            mediaType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            mediaType:
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation',
             materializedMediaType: 'application/pdf',
             contentRevision: 'revision-1',
             relativePath: 'references/sources-0001/slides.pdf',
@@ -235,12 +373,12 @@ describe('Mind Map generation contracts', () => {
     });
     expect(processContext.agent.call).toHaveBeenCalledWith(
       expect.objectContaining({
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
         toolRequirements: [
           { id: 'workspace_read_pdf', availability: 'required' },
         ],
       }),
     );
-
     expect(assets.stageGeneratedFile).toHaveBeenCalledWith(
       'project-1',
       expect.objectContaining({
@@ -255,26 +393,103 @@ describe('Mind Map generation contracts', () => {
     expect(writtenContent).toBeDefined();
 
     const document = decodeMindMapDocument(writtenContent!);
+    expect(document.version).toBe(MIND_MAP_DOCUMENT_VERSION_V2);
     expect(document.associations.nodes.root).toEqual({
       references: [
         {
-          referenceId: 'reference-1',
-          sourceTarget: { scope: 'asset' },
+          referenceId: 'reference-asset-1',
+          sourceRevision: 'revision-1',
+          agentLocator: {
+            headingPath: ['课程', '导言'],
+            quote: '课程总览',
+          },
+        },
+        {
+          referenceId: 'reference-asset-1',
+          sourceRevision: 'revision-1',
+          agentLocator: {
+            custom: {
+              sectionNumber: '0.2',
+              semanticHint: '章节之间的关系',
+            },
+          },
         },
       ],
       linkIds: [],
     });
     expect(document.associations.frames.overview?.references).toEqual([
       {
-        referenceId: 'reference-1',
-        sourceTarget: { scope: 'asset' },
+        referenceId: 'reference-asset-1',
+        sourceRevision: 'revision-1',
+        agentLocator: {
+          wholeAsset: true,
+          reason: '该 Frame 是整份课程的总览',
+        },
       },
     ]);
     expect(close).toHaveBeenCalledOnce();
     expect(assets.refresh).toHaveBeenCalledWith('generated-asset');
   });
 
-  it('uses bounded repair turns before rejecting an invalid workspace artifact', async () => {
+  it('keeps the legacy processor on the v1 prompt and document contract', async () => {
+    let writtenContent: Uint8Array | undefined;
+    const assets = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      stageGeneratedFile: vi.fn(async () => ({
+        asset: { id: 'generated-asset' },
+        created: true,
+      })),
+      resolveContent: vi.fn(async () => ({
+        handle: {
+          readBytes: vi.fn(async () => ({
+            content: new Uint8Array(),
+            revision: 'initial-revision',
+          })),
+          writeBytes: vi.fn(async ({ content }) => {
+            writtenContent = content;
+            return { revision: 'final-revision' };
+          }),
+          close: vi.fn(async () => undefined),
+        },
+      })),
+      refresh: vi.fn(async () => ({ id: 'generated-asset' })),
+      delete: vi.fn(async () => undefined),
+    } as unknown as AssetServiceApi;
+    const associations = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      ensureReference: vi.fn(() => ({ id: 'reference-1' })),
+    } as unknown as AssetAssociationServiceApi;
+    const processor = new LegacyMindMapGenerationProcessor(
+      assets,
+      associations,
+      {
+        readFile: vi.fn(async () =>
+          JSON.stringify(createLegacyCandidate()),
+        ),
+      },
+    );
+    const processContext = createProcessContext();
+
+    await processor.process(processContext);
+
+    expect(processContext.agent.call).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
+      }),
+    );
+    expect(writtenContent).toBeDefined();
+    const document = decodeMindMapDocument(writtenContent!);
+    expect(document.version).toBe(MIND_MAP_DOCUMENT_VERSION);
+    expect(document.associations.nodes.root.references).toEqual([
+      {
+        referenceId: 'reference-1',
+        sourceTarget: { scope: 'asset' },
+      },
+    ]);
+  });
+
+  it('uses bounded v2 repair turns before rejecting invalid output', async () => {
     const assets = {
       getActiveProjectId: vi.fn(() => 'project-1'),
       stageGeneratedFile: vi.fn(),
@@ -308,27 +523,21 @@ describe('Mind Map generation contracts', () => {
       ]),
     });
     expect(processContext.agent.call).toHaveBeenCalledTimes(4);
-    expect(processContext.agent.call).toHaveBeenNthCalledWith(
-      1,
-      {
-        callKey: 'generate',
-        purpose: 'generation',
-        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
-        userMessage: processContext.preparedUserMessage,
-        toolRequirements: [],
-        skills: [],
-        mcpServers: [],
-      },
-    );
+    expect(processContext.agent.call).toHaveBeenNthCalledWith(1, {
+      callKey: 'generate',
+      purpose: 'generation',
+      systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
+      userMessage: processContext.preparedUserMessage,
+      toolRequirements: [],
+      skills: [],
+      mcpServers: [],
+    });
     expect(processContext.agent.call).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         callKey: 'repair-1',
         purpose: 'repair',
-        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
-        toolRequirements: [],
-        skills: [],
-        mcpServers: [],
+        systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
       }),
     );
     expect(processContext.reportOutputRejected).toHaveBeenCalledTimes(3);

@@ -1,4 +1,4 @@
-import type { MindMapDocumentV1, MindMapNodeV1 } from './document';
+import type { MindMapDocument, MindMapNodeV1 } from './document';
 
 export const MIND_MAP_LAYOUT_NODE_WIDTH = 280;
 export const MIND_MAP_LAYOUT_NODE_MIN_HEIGHT = 104;
@@ -79,7 +79,7 @@ export function calculateMindMapNodeHeight(node: MindMapNodeV1): number {
 }
 
 function calculateSubtreeSizes(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
 ): ReadonlyMap<string, number> {
   const order: string[] = [];
   const pending = [document.rootNodeId];
@@ -112,7 +112,7 @@ function calculateSubtreeSizes(
 }
 
 function collectVisibleTree(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   collapsedNodeIds: ReadonlySet<string>,
 ): {
   readonly nodes: readonly VisibleNode[];
@@ -158,7 +158,7 @@ function collectVisibleTree(
 }
 
 export function createMindMapLayout(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
   collapsedNodeIds: ReadonlySet<string>,
 ): MindMapLayout {
   const visible = collectVisibleTree(document, collapsedNodeIds);

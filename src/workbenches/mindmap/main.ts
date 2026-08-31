@@ -12,7 +12,7 @@ import {
   resolveMindMapAssociations,
   type MindMapAssociationLookup,
 } from './association-mapper';
-import type { MindMapDocumentV1 } from './document';
+import type { MindMapDocument } from './document';
 import {
   DefaultMindMapContentAdapter,
   type MindMapContentAdapter,
@@ -51,7 +51,7 @@ function toJsonState(
 }
 
 function collapsibleNodeIds(
-  document: MindMapDocumentV1,
+  document: MindMapDocument,
 ): ReadonlySet<string> {
   return new Set(
     Object.values(document.nodes)

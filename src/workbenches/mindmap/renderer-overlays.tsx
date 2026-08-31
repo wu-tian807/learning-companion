@@ -1,6 +1,6 @@
 import { Panel } from '@xyflow/react';
 
-import type { MindMapDocumentV1 } from './document';
+import type { MindMapDocument } from './document';
 
 export const MIND_MAP_RENDERER_STYLES = `
   .learning-mindmap-workbench .react-flow__node-mindmap {
@@ -81,7 +81,7 @@ export const MIND_MAP_RENDERER_STYLES = `
 `;
 
 export interface MindMapRendererOverlaysProps {
-  readonly document: MindMapDocumentV1;
+  readonly document: MindMapDocument;
   readonly collapsedCount: number;
   readonly staleAssociationCount: number;
   readonly onExpandAll: () => void;
