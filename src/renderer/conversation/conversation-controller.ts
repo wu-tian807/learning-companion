@@ -582,15 +582,28 @@ export function useConversationController({
     writePendingContext(undefined);
     setBusy(true);
 
-    const rollback = (nextError: ConversationErrorState) => {
+    // A sent question belongs to local history immediately. Persistence must
+    // not depend on Provider startup, Assistant completion, or the optional
+    // action that attaches an answer back to a document.
+    void persist(next);
+
+    const retainFailedQuestion = (nextError: ConversationErrorState) => {
       pendingCancelRef.current = false;
       if (!mountedRef.current) return;
-      replaceConversation(current);
-      setDraft(normalized);
-      writePendingContext(context);
+      const failedRecord = Object.freeze({
+        ...next,
+        messages: Object.freeze([...current.messages, userMessage]),
+      });
+      replaceConversation(failedRecord);
+      void persist(failedRecord);
+      setDraft('');
+      writePendingContext(undefined);
       setBusy(false);
       setActivityLabel(undefined);
       setError(nextError);
+      if (context !== undefined) {
+        context.contribution.onContextReleased?.(context.context);
+      }
     };
 
     void taskClient.start(request).then(
@@ -606,7 +619,9 @@ export function useConversationController({
         }
       },
       (startError: unknown) => {
-        rollback(failureFromError(startError, '无法发起 AI 对话。'));
+        retainFailedQuestion(
+          failureFromError(startError, '无法发起 AI 对话。'),
+        );
       },
     );
   }, [
@@ -616,6 +631,7 @@ export function useConversationController({
     draft,
     now,
     pendingContext,
+    persist,
     projectId,
     replaceConversation,
     taskClient,

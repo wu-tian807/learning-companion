@@ -278,9 +278,10 @@ describe('shared Conversation controller', () => {
     ).toBeUndefined();
   });
 
-  it('rolls back an unstarted optimistic message and shows a configurable Provider error', async () => {
+  it('keeps and persists a sent question when Provider startup fails', async () => {
     const context = { target: { scope: 'asset' } };
     const onContextReleased = vi.fn();
+    const historyStore = createMemoryHistory();
     client.start = vi.fn(async () => {
       throw {
         code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
@@ -293,19 +294,56 @@ describe('shared Conversation controller', () => {
       context,
       createContribution({ onContextReleased }),
     );
-    render();
+    render({ historyStore });
 
     act(() => latest.actions.submit('问题', attachment));
     await flush();
 
-    expect(latest.state.conversation.messages).toEqual([]);
-    expect(latest.state.draft).toBe('问题');
-    expect(latest.state.pendingContext).toEqual(attachment);
+    expect(latest.state.conversation.messages).toEqual([
+      expect.objectContaining({ role: 'user', text: '问题', context }),
+    ]);
+    expect(latest.state.draft).toBe('');
+    expect(latest.state.pendingContext).toBeUndefined();
+    expect(historyStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [expect.objectContaining({ role: 'user', text: '问题', context })],
+    }));
     expect(latest.state.error).toEqual({
       code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
       message: '请先配置模型',
     });
-    expect(onContextReleased).not.toHaveBeenCalled();
+    expect(onContextReleased).toHaveBeenCalledWith(context);
+  });
+
+  it('persists a sent question before the Generation Task is accepted', async () => {
+    let resolveStart!: (value: {
+      taskId: string;
+      snapshot: GenerationTaskView;
+    }) => void;
+    client.start = vi.fn(() =>
+      new Promise<{
+        taskId: string;
+        snapshot: GenerationTaskView;
+      }>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const historyStore = createMemoryHistory();
+    render({ historyStore });
+
+    act(() => latest.actions.submit('立即保存的问题'));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(historyStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: 'user', text: '立即保存的问题' }),
+      ]),
+    }));
+    expect(latest.state.busy).toBe(true);
+
+    await act(async () => {
+      resolveStart({ taskId: 'task-1', snapshot: task('task-1') });
+      await Promise.resolve();
+    });
   });
 
   it('cancels the real Task even when Stop is pressed before start returns', async () => {
