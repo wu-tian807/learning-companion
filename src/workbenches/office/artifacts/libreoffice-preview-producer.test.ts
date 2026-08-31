@@ -41,11 +41,6 @@ async function createRequest(name = 'course.docx') {
 }
 
 function createExternalLibraries(): ExternalLibraryServiceApi {
-  const runtime = {
-    libraryId: 'libreoffice',
-    runtimeDirectory: '/runtime',
-    executablePath: '/runtime/soffice',
-  };
   return {
     initialize: vi.fn(async () => undefined),
     shutdown: vi.fn(async () => undefined),
@@ -55,10 +50,11 @@ function createExternalLibraries(): ExternalLibraryServiceApi {
     cancel: vi.fn(),
     remove: vi.fn(),
     migrate: vi.fn(),
-    requireRuntime: vi.fn(async () => runtime),
-    async withRuntime(_libraryId, signal, operation) {
-      return operation(runtime, signal ?? new AbortController().signal);
-    },
+    requireRuntime: vi.fn(async () => ({
+      libraryId: 'libreoffice',
+      runtimeDirectory: '/runtime',
+      executablePath: '/runtime/soffice',
+    })),
     requireExecutable: vi.fn(async () => '/runtime/soffice'),
     subscribe: vi.fn(() => () => undefined),
   };

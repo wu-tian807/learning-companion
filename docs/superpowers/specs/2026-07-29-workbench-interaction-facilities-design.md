@@ -3,10 +3,6 @@
 > 日期：2026-07-29
 >
 > 状态：待实现
->
-> 2026-08-30：本文中的 `core.surface.generation-center` 已由
-> [Workbench 生成中心 Surface 移除设计](./2026-08-30-workbench-generation-center-surface-removal-design.md)
-> 取代，其他可选交互设施设计不变。
 
 ## 1. 背景
 

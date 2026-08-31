@@ -1,18 +1,17 @@
 import { composeMainWorkbenchContribution } from '../../main/workbench/main-workbench-contribution';
-import {
-  mediaDubbingProducer,
-  mediaDubbingProgress,
-  mediaDubbingSpeakerTrackProducer,
-  resolveMediaDubbingRuntime,
-} from '../media-dubbing/main-feature';
-import { MediaDubbingService } from '../media-dubbing/media-dubbing-service';
 import { MediaSubtitleRuntimeResolver } from '../media-subtitles/external-libraries/media-subtitle-runtime';
-import { MediaSubtitleService } from '../media-subtitles/media-subtitle-service';
-import { mediaSubtitleSourceTaskQueue } from '../media-subtitles/source-task-queue';
 import { mediaSubtitleTranslationRuntime } from '../media-subtitles/translation-runtime';
 import { videoExplanationMainFeature } from './explanations/main';
+import {
+  videoDubbingMainFeature,
+  videoDubbingProducer,
+  videoDubbingProgress,
+} from './dubbing/main-feature';
+import { VoxCpm2DubbingRuntimeResolver } from './dubbing/external-libraries/voxcpm2-runtime';
+import { VideoDubbingService } from './dubbing/video-dubbing-service';
 import { VideoWorkbenchProvider } from './main';
 import { videoWorkbenchManifest } from './shared';
+import { VideoSubtitleService } from './subtitles/video-subtitle-service';
 
 export const videoMainContribution = composeMainWorkbenchContribution(
   videoWorkbenchManifest,
@@ -20,26 +19,23 @@ export const videoMainContribution = composeMainWorkbenchContribution(
     const mediaRuntime = new MediaSubtitleRuntimeResolver(
       context.externalLibraryService,
     );
-    const subtitles = new MediaSubtitleService(
+    const subtitles = new VideoSubtitleService(
       context.assetService,
       context.projectLookup,
       context.artifactService,
       mediaRuntime,
-      mediaSubtitleSourceTaskQueue,
       context.generationTasks,
       mediaSubtitleTranslationRuntime.progress,
-      videoWorkbenchManifest.supportedMediaTypes,
     );
-    const dubbing = new MediaDubbingService(
+    const dubbing = new VideoDubbingService(
       context.assetService,
       context.projectLookup,
       context.artifactService,
       subtitles,
-      mediaDubbingProducer,
-      mediaDubbingSpeakerTrackProducer,
+      videoDubbingProducer,
       mediaRuntime,
-      resolveMediaDubbingRuntime(context.externalLibraryService),
-      mediaDubbingProgress,
+      new VoxCpm2DubbingRuntimeResolver(context.externalLibraryService),
+      videoDubbingProgress,
     );
 
     return new VideoWorkbenchProvider(
@@ -52,5 +48,5 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       },
     );
   },
-  [videoExplanationMainFeature],
+  [videoExplanationMainFeature, videoDubbingMainFeature],
 );

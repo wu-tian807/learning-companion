@@ -1,5 +1,4 @@
 import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
-import type { JsonValue } from '../../shared/workbench/protocol';
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import {
   interactionFromTextSelection,
@@ -11,7 +10,6 @@ import type {
   EditorActionState,
   EditorContextMenuCapture,
 } from '../../renderer/workbench/editor/editor-action-adapter';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
 import { MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE } from './shared';
 import type { MarkdownEditorAdapter } from './markdown-editor-adapter';
 
@@ -88,112 +86,13 @@ function rangeContainsPoint(
   }
 }
 
-function allStarts(content: string, exact: string): readonly number[] {
-  if (!exact) return [];
-  const starts: number[] = [];
-  let from = 0;
-  while (from <= content.length - exact.length) {
-    const found = content.indexOf(exact, from);
-    if (found < 0) break;
-    starts.push(found);
-    from = found + 1;
-  }
-  return starts;
-}
-
-export function resolveMarkdownVisualSelectionSourceRange(input: {
-  readonly source: string;
-  readonly selectedMarkdown: string;
-  readonly selectedText: string;
-  readonly renderedPrefix: string;
-  readonly renderedDocument: string;
-}): { readonly start: number; readonly end: number } | undefined {
-  const exact = input.selectedMarkdown.trim();
-  if (!exact) return undefined;
-  const renderedSuffix = input.renderedDocument.slice(
-    input.renderedPrefix.length + input.selectedText.length,
-  );
-  const visualExact = input.selectedText.trim();
-  const sourceStarts = allStarts(input.source, exact).filter((start) => {
-    if (exact !== visualExact) return true;
-    const end = start + exact.length;
-    return (
-      input.source.slice(0, start) === input.renderedPrefix ||
-      input.source.slice(end) === renderedSuffix
-    );
-  });
-  if (sourceStarts.length === 1) {
-    return {
-      start: sourceStarts[0]!,
-      end: sourceStarts[0]! + exact.length,
-    };
-  }
-  const renderedStarts = allStarts(
-    input.renderedDocument,
-    input.selectedText,
-  );
-  const occurrence = allStarts(
-    input.renderedPrefix,
-    input.selectedText,
-  ).length;
-  if (
-    sourceStarts.length > 1 &&
-    sourceStarts.length === renderedStarts.length &&
-    occurrence < sourceStarts.length
-  ) {
-    const start = sourceStarts[occurrence]!;
-    return { start, end: start + exact.length };
-  }
-  return undefined;
-}
-
-function renderedPrefixForRange(
-  element: HTMLElement,
-  range: Range,
-): string {
-  const prefix = element.ownerDocument.createRange();
-  prefix.selectNodeContents(element);
-  prefix.setEnd(range.startContainer, range.startOffset);
-  return prefix.toString();
-}
-
-function createVisualSelectionTarget(
-  text: string,
-  editor?: MarkdownEditorAdapter,
-  range?: Range,
-  element?: HTMLElement,
-): ContentAnchorTarget {
-  const base = {
+function createVisualSelectionTarget(text: string): ContentAnchorTarget {
+  return {
     scope: 'content',
     anchorType: MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
     anchorVersion: 1,
-  } as const;
-  if (!text || !editor || !range || !element) {
-    return { ...base, anchorPayload: { exact: text } };
-  }
-  const source = editor.getValue();
-  const sourceRange = resolveMarkdownVisualSelectionSourceRange({
-    source,
-    selectedMarkdown: editor.getMarkdownForRange(range),
-    selectedText: text,
-    renderedPrefix: renderedPrefixForRange(element, range),
-    renderedDocument: element.textContent ?? '',
-  });
-  if (!sourceRange) {
-    return { ...base, anchorPayload: { exact: text } };
-  }
-  const ranged = createTextRangeTarget(
-    MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
-    source,
-    [sourceRange],
-  );
-  return {
-    ...ranged,
     anchorPayload: {
       exact: text,
-      ...(ranged.anchorPayload as {
-        readonly ranges: readonly JsonValue[];
-      }),
     },
   };
 }
@@ -252,12 +151,7 @@ export class MarkdownEditorActionAdapter
       return { inputs: [] };
     }
 
-    const text = range.toString();
-    return createVisualInteraction(
-      text,
-      false,
-      createVisualSelectionTarget(text, editor, range, element),
-    );
+    return createVisualInteraction(range.toString());
   }
 
   captureContextMenu(
@@ -312,12 +206,6 @@ export class MarkdownEditorActionAdapter
       interaction: createVisualInteraction(
         this.frozenText,
         true,
-        createVisualSelectionTarget(
-          this.frozenText,
-          editor,
-          capturedRange,
-          element,
-        ),
       ),
       onWheel: (event) => this.scrollByWheel(event),
     };
@@ -429,12 +317,12 @@ export class MarkdownEditorActionAdapter
 function createVisualInteraction(
   text: string,
   includeEmptyTarget = false,
-  target: ContentAnchorTarget = createVisualSelectionTarget(text),
 ): WorkbenchInteractionSnapshot {
   if (!text && !includeEmptyTarget) {
     return { inputs: [] };
   }
 
+  const target = createVisualSelectionTarget(text);
   const selection: WorkbenchSelectionSnapshot | undefined = text
     ? {
         text,

@@ -63,16 +63,15 @@ export class EpubConversationContextProvider
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
     answer: { readonly answer: string },
   ) {
-    const assetId = context.instruction.assetId;
     const selection = context.instruction.context;
-    if (!assetId || !isEpubConversationContext(selection)) {
+    if (!isEpubConversationContext(selection)) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     const target = selection.target;
     const existing = (
       await this.attachments.listByAsset(
         context.projectId,
-        assetId,
+        context.instruction.assetId,
       )
     ).find(
       (attachment) =>
@@ -96,7 +95,7 @@ export class EpubConversationContextProvider
     context.signal?.throwIfAborted();
     const attachment = await this.attachments.createWithContent({
       projectId: context.projectId,
-      assetId,
+      assetId: context.instruction.assetId,
       typeId: EPUB_EXPLANATION_ATTACHMENT_TYPE,
       typeVersion: EPUB_EXPLANATION_ATTACHMENT_VERSION,
       target,

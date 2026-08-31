@@ -27,9 +27,11 @@ import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import { AnchorHighlight } from './conversation/AnchorHighlight';
 import { SelectionFloatBar } from './conversation/SelectionFloatBar';
 import {
+  adaptHtmlConversationHistoryStore,
   createHtmlConversationContribution,
   shouldClearHtmlConversationHighlight,
 } from './conversation/html-conversation-contribution';
+import { createHtmlConversationStore } from './conversation/conversation-store';
 import {
   isHtmlAnchorTarget,
   isSameHtmlAnchorLocation,
@@ -182,6 +184,18 @@ export function HtmlWorkbenchView({
     }
   }, [clearHighlight]);
 
+  const conversationStore = useMemo(
+    () =>
+      createHtmlConversationStore({
+        executeCommand: (command) => executeCommand(command),
+      }),
+    [executeCommand],
+  );
+  const conversationHistoryStore = useMemo(
+    () => adaptHtmlConversationHistoryStore(conversationStore),
+    [conversationStore],
+  );
+
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
       const message = userMessageFromError(error, fallback);
@@ -219,12 +233,14 @@ export function HtmlWorkbenchView({
   const conversationContribution = useMemo(
     () => createHtmlConversationContribution({
       assetId: asset.id,
+      historyStore: conversationHistoryStore,
       revealContext: activateConversationAnchor,
       onContextReleased: releaseConversationContext,
     }),
     [
       activateConversationAnchor,
       asset.id,
+      conversationHistoryStore,
       releaseConversationContext,
     ],
   );
@@ -237,6 +253,13 @@ export function HtmlWorkbenchView({
   const aiBusy =
     conversationSnapshot.active?.ownerId === conversationOwnerId &&
     conversationSnapshot.busy;
+
+  const openChat = useCallback((anchor?: JsonValue) => {
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      ...(anchor === undefined ? {} : { context: anchor }),
+    });
+  }, [conversationOwnerId, conversationRuntime]);
 
   const explainSelection = useCallback((target: ContentAnchorTarget) => {
     if (isHtmlAnchorTarget(target)) {
@@ -298,8 +321,13 @@ export function HtmlWorkbenchView({
         onSummarizePage: () => {
           summarizePage();
         },
+        onOpenChat: () => {
+          // 总入口：优先带当前选区锚点，无选区则打开空白对话
+          const anchor = contextRef.current?.target;
+          openChat(anchor as JsonValue | undefined);
+        },
       }),
-    [aiBusy, explainSelection, onOpenExternal, reload, reportError, reveal, summarizePage],
+    [aiBusy, explainSelection, onOpenExternal, openChat, reload, reportError, reveal, summarizePage],
   );
   useWorkbenchContributions(
     `${htmlWorkbenchManifest.id}.viewer`,

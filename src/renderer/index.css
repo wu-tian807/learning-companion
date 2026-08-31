@@ -31,20 +31,6 @@ select {
   font: inherit;
 }
 
-@keyframes external-library-indeterminate {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(300%);
-  }
-}
-
-.external-library-indeterminate {
-  animation: external-library-indeterminate 1.4s ease-in-out infinite;
-}
-
 .ui-control,
 .ui-icon-button,
 .ui-primary-button,
@@ -122,11 +108,6 @@ select {
   .ui-menu-item,
   .ui-icon-button svg {
     transition: none;
-  }
-
-  .external-library-indeterminate {
-    animation: none;
-    transform: translateX(100%);
   }
 
   .ui-control:not(:disabled):hover,

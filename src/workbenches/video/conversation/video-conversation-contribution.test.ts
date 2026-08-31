@@ -8,6 +8,7 @@ import {
 import { createVideoFrameRegionTarget } from '../shared';
 import {
   createVideoConversationContribution,
+  createVideoConversationHistoryStore,
   createVideoFrameConversationLaunch,
 } from './video-conversation-contribution';
 import {
@@ -29,6 +30,11 @@ const target = createVideoFrameRegionTarget({
 function contribution(sourceRevision = '100', revealContext = vi.fn()) {
   return createVideoConversationContribution({
     sourceRevision,
+    historyStore: {
+      list: async () => [],
+      save: async (record) => [record],
+      remove: async () => [],
+    },
     revealContext,
   });
 }
@@ -69,14 +75,6 @@ describe('video conversation contribution', () => {
     expect(launch).not.toHaveProperty('submit');
   });
 
-  it('can target the conversation that originally created a saved marker', () => {
-    const context = createVideoConversationContext(target, '100');
-
-    expect(
-      createVideoFrameConversationLaunch(context, 'conversation-1'),
-    ).toEqual({ context, conversationId: 'conversation-1' });
-  });
-
   it('requires a current-revision frame only for the initial turn', () => {
     expect(() =>
       createWorkbenchConversationTaskRequest(contribution(), {
@@ -86,7 +84,7 @@ describe('video conversation contribution', () => {
         question: '解释这里',
         generateTitle: true,
       }),
-    ).toThrow('请先在视频画面上单击或拖动选择一个区域');
+    ).toThrow('请先在视频画面上按住右键并框选一个区域');
 
     expect(() =>
       createWorkbenchConversationTaskRequest(contribution(), {
@@ -144,6 +142,11 @@ describe('video conversation contribution', () => {
     const context = createVideoConversationContext(target, '100');
     const value = createVideoConversationContribution({
       sourceRevision: '100',
+      historyStore: {
+        list: async () => [],
+        save: async (record) => [record],
+        remove: async () => [],
+      },
       revealContext: vi.fn(),
       onContextReleased,
     });
@@ -178,7 +181,36 @@ describe('video conversation contribution', () => {
     ).toBe(true);
   });
 
-  it('does not own a separate per-video history store', () => {
-    expect(contribution()).not.toHaveProperty('historyStore');
+  it('isolates persisted conversations by video source revision', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    try {
+      const oldStore = createVideoConversationHistoryStore(
+        'project-1',
+        'asset-1',
+        'video.frame-conversation',
+        '100',
+      );
+      const newStore = createVideoConversationHistoryStore(
+        'project-1',
+        'asset-1',
+        'video.frame-conversation',
+        '101',
+      );
+      await oldStore.save({
+        id: 'conversation-1',
+        title: '旧视频画面',
+        messages: [],
+        createdTime: 1,
+        updatedTime: 1,
+      });
+      await expect(newStore.list()).resolves.toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

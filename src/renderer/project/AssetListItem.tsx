@@ -48,7 +48,6 @@ export interface AssetListItemProps {
   readonly onRename: () => void;
   readonly onReveal: () => void;
   readonly onRelink: () => void;
-  readonly onMove?: () => void;
   readonly onDelete: () => void;
 }
 
@@ -63,7 +62,6 @@ export function AssetListItem({
   onRename,
   onReveal,
   onRelink,
-  onMove,
   onDelete,
 }: AssetListItemProps) {
   return (
@@ -139,7 +137,6 @@ export function AssetListItem({
             onRename={onRename}
             onReveal={onReveal}
             onRelink={onRelink}
-            onMove={onMove}
             onDelete={onDelete}
           />
         )}

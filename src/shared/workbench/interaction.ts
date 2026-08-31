@@ -9,6 +9,7 @@ export const workbenchInvocationOrigins = [
   'header',
   'overflow',
   'context-menu',
+  'generation-center',
 ] as const;
 
 export type WorkbenchInvocationOrigin =

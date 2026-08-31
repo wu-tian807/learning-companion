@@ -10,9 +10,7 @@ import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import type { ContentResourceServiceApi } from '../content/content-resource-service';
 import { AppError } from '../errors/app-error';
 import type { ExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
-import type { ExternalLibraryLifecycleRegistryApi } from '../external-libraries/external-library-lifecycle';
 import type { ExternalLibraryRegistryApi } from '../external-libraries/external-library-registry';
-import type { ExternalLibraryRuntimeSetupRegistryApi } from '../external-libraries/external-library-runtime-setup';
 import type { ExternalLibraryServiceApi } from '../external-libraries/external-library-service';
 import type { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
 import type { GenerationTaskDefinitionRegistry } from '../generation/generation-task-definition-registry';
@@ -28,8 +26,6 @@ import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
   readonly hardware: ExternalLibraryHardwareCapabilities;
-  readonly lifecycles: ExternalLibraryLifecycleRegistryApi;
-  readonly runtimeSetups: ExternalLibraryRuntimeSetupRegistryApi;
 }
 
 export interface MainWorkbenchProviderContext {
@@ -77,11 +73,9 @@ export interface MainWorkbenchStartContext {
   readonly attachments: AttachmentServiceApi;
   readonly generationTasks: GenerationTaskServiceApi;
   readonly assets: AssetLookup;
-  readonly externalLibraries: ExternalLibraryServiceApi;
 }
 
 export interface MainWorkbenchRuntime {
-  shutdown?(): Promise<void>;
   dispose(): void;
 }
 
@@ -125,36 +119,6 @@ function disposeRuntimes(runtimes: MainWorkbenchRuntime[]): void {
     }
   }
   if (disposalError !== undefined) throw disposalError;
-}
-
-async function shutdownRuntimes(
-  runtimes: readonly MainWorkbenchRuntime[],
-): Promise<void> {
-  let shutdownError: unknown;
-  for (const runtime of [...runtimes].reverse()) {
-    try {
-      await runtime.shutdown?.();
-    } catch (error) {
-      shutdownError ??= error;
-    }
-  }
-  if (shutdownError !== undefined) throw shutdownError;
-}
-
-export function createMainWorkbenchRuntime(
-  runtimes: readonly MainWorkbenchRuntime[],
-): MainWorkbenchRuntime {
-  const ownedRuntimes = [...runtimes];
-  let shutdownTask: Promise<void> | undefined;
-  return Object.freeze({
-    shutdown(): Promise<void> {
-      shutdownTask ??= shutdownRuntimes(ownedRuntimes);
-      return shutdownTask;
-    },
-    dispose(): void {
-      disposeRuntimes(ownedRuntimes);
-    },
-  });
 }
 
 export function composeMainWorkbenchContribution(
@@ -210,7 +174,11 @@ export function composeMainWorkbenchContribution(
         }
         throw error;
       }
-      return createMainWorkbenchRuntime(runtimes);
+      return Object.freeze({
+        dispose(): void {
+          disposeRuntimes(runtimes);
+        },
+      });
     },
   } satisfies MainWorkbenchContribution);
 }

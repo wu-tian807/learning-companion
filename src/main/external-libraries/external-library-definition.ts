@@ -125,9 +125,7 @@ function isHttpsUrl(value: unknown): value is string {
   }
 }
 
-export function isSafeExternalLibraryPathSegment(
-  value: unknown,
-): value is string {
+function isSafeDirectorySegment(value: unknown): value is string {
   return (
     isRequiredText(value) &&
     /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value.trim()) &&
@@ -161,7 +159,7 @@ function isExternalLibraryDownloadResource(
 ): value is ExternalLibraryDownloadResourceDefinition {
   return (
     isRecord(value) &&
-    isSafeExternalLibraryPathSegment(value.id) &&
+    isSafeDirectorySegment(value.id) &&
     isHttpsUrl(value.downloadUrl) &&
     isSha256(value.sha256) &&
     isPositiveSafeInteger(value.expectedSize)
@@ -200,7 +198,7 @@ export function isExternalLibraryPackageDefinition(
     !isExternalLibraryPlatform(value.platform) ||
     !isExternalLibraryArchitecture(value.architecture) ||
     (value.variantId !== undefined &&
-      !isSafeExternalLibraryPathSegment(value.variantId))
+      !isSafeDirectorySegment(value.variantId))
   ) {
     return false;
   }
@@ -272,11 +270,11 @@ export function isExternalLibraryDefinition(
 ): value is ExternalLibraryDefinition {
   if (
     !isRecord(value) ||
-    !isSafeExternalLibraryPathSegment(value.id) ||
+    !isSafeDirectorySegment(value.id) ||
     !isRequiredText(value.displayName) ||
     !isRequiredText(value.description) ||
     (value.category !== 'document' && value.category !== 'media') ||
-    !isSafeExternalLibraryPathSegment(value.version) ||
+    !isSafeDirectorySegment(value.version) ||
     !isPositiveSafeInteger(value.installationFormatVersion) ||
     !isHttpsUrl(value.sourceUrl) ||
     !isRequiredText(value.licenseName) ||
@@ -306,10 +304,10 @@ export function isExternalLibraryDefinition(
       !variants.every(
         (variant) =>
           isRecord(variant) &&
-          isSafeExternalLibraryPathSegment(variant.id) &&
+          isSafeDirectorySegment(variant.id) &&
           isRequiredText(variant.displayName),
       ) ||
-      !isSafeExternalLibraryPathSegment(value.defaultVariantId)
+      !isSafeDirectorySegment(value.defaultVariantId)
     ) {
       return false;
     }

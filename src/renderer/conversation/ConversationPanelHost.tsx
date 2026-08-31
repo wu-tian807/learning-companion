@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import { useConversationController } from './conversation-controller';
 import { ConversationPanel } from './ConversationPanel';
 import type {
-  ConversationHistoryStore,
   ConversationLaunchRequest,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
@@ -16,15 +15,11 @@ import type { WorkbenchConversationRuntime } from './workbench-conversation-runt
 export function ConversationPanelHost({
   projectId,
   assetId,
-  historyStore,
-  onClose,
   onOpenSettings,
   onError,
 }: {
   readonly projectId: string;
   readonly assetId: string | undefined;
-  readonly historyStore: ConversationHistoryStore;
-  readonly onClose?: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
 }) {
@@ -32,23 +27,20 @@ export function ConversationPanelHost({
   const snapshot = useWorkbenchConversationSnapshot(runtime);
   const contribution = snapshot.active?.contribution;
 
-  if (!contribution) return null;
+  if (!assetId || !contribution) return null;
 
   return (
     <ActiveConversationPanel
+      key={`${projectId}:${assetId}:${contribution.id}`}
       projectId={projectId}
       assetId={assetId}
-      historyStore={historyStore}
       contribution={contribution}
       ownerId={snapshot.active.ownerId}
       runtime={runtime}
       open={snapshot.panelOpen}
       launchRequest={snapshot.launchRequest}
       onLaunchConsumed={(requestId) => runtime.consumeLaunchRequest(requestId)}
-      onClose={() => {
-        if (onClose) onClose();
-        else runtime.close();
-      }}
+      onClose={() => runtime.close()}
       onOpenSettings={onOpenSettings}
       onError={onError}
     />
@@ -58,7 +50,6 @@ export function ConversationPanelHost({
 function ActiveConversationPanel({
   projectId,
   assetId,
-  historyStore,
   contribution,
   ownerId,
   runtime,
@@ -70,8 +61,7 @@ function ActiveConversationPanel({
   onError,
 }: {
   readonly projectId: string;
-  readonly assetId: string | undefined;
-  readonly historyStore: ConversationHistoryStore;
+  readonly assetId: string;
   readonly contribution: WorkbenchConversationContribution;
   readonly ownerId: string;
   readonly runtime: WorkbenchConversationRuntime;
@@ -87,7 +77,6 @@ function ActiveConversationPanel({
     projectId,
     assetId,
     contribution,
-    historyStore,
     launchRequest,
     onLaunchConsumed,
     onPersistenceError(error) {

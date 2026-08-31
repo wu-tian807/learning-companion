@@ -22,7 +22,6 @@ import {
   type ExternalLibraryPackageDefinition,
   type ExternalLibraryPlatform,
 } from './external-library-definition';
-import type { ExternalLibraryRuntimeSetupRegistryApi } from './external-library-runtime-setup';
 
 export const EXTERNAL_LIBRARY_INSTALLATION_MARKER =
   'installation.json';
@@ -161,10 +160,6 @@ function markerMatches(
 }
 
 export class ExternalLibraryInstallationManifestFile {
-  constructor(
-    private readonly runtimeSetups?: ExternalLibraryRuntimeSetupRegistryApi,
-  ) {}
-
   async write(
     installationDirectory: string,
     marker: ExternalLibraryInstallationMarker,
@@ -196,31 +191,6 @@ export class ExternalLibraryInstallationManifestFile {
   }
 
   async inspect(
-    installationDirectory: string,
-    definition: ExternalLibraryDefinition,
-    packageDefinition: ExternalLibraryPackageDefinition,
-  ): Promise<ExternalLibraryInstallationInspection> {
-    const inspection = await this.inspectPackageFiles(
-      installationDirectory,
-      definition,
-      packageDefinition,
-    );
-    if (inspection.status !== 'available') return inspection;
-
-    const runtimeSetup = this.runtimeSetups?.find(definition.id);
-    if (
-      runtimeSetup &&
-      !(await runtimeSetup.isReady(inspection.runtimeDirectory))
-    ) {
-      return Object.freeze({
-        status: 'invalid',
-        reason: 'runtime-missing',
-      });
-    }
-    return inspection;
-  }
-
-  private async inspectPackageFiles(
     installationDirectory: string,
     definition: ExternalLibraryDefinition,
     packageDefinition: ExternalLibraryPackageDefinition,

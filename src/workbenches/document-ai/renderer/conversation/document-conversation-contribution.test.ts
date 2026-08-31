@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ConversationHistoryStore } from '../../../../renderer/conversation/conversation-contracts';
 import { createWorkbenchConversationTaskRequest } from '../../../../renderer/conversation/conversation-task-request';
 import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
@@ -12,12 +13,11 @@ import {
   createDocumentConversationContribution,
 } from './document-conversation-contribution';
 
-const answerActionPresentation = {
-  label: '放回原文旁',
-  selectionLabel: '放回选中片段',
-  successMessage: '已放回原文旁',
-  failureMessage: '无法放回原文旁',
-} as const;
+const historyStore: ConversationHistoryStore = {
+  list: async () => [],
+  save: async (record) => [record],
+  remove: async () => [],
+};
 
 describe('Document conversation contribution', () => {
   beforeEach(() => {
@@ -35,6 +35,7 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       workbenchId: 'markdown',
       contributionId: 'markdown.question',
+      historyStore,
     });
     const context = createDocumentConversationContext({
       target: {
@@ -74,15 +75,15 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       workbenchId: 'pdf',
       contributionId: 'pdf.question',
+      historyStore,
     } as const;
     expect(
-      createDocumentConversationContribution(base).answerAction,
+      createDocumentConversationContribution(base).attachAnswer,
     ).toBeUndefined();
 
     const contribution = createDocumentConversationContribution({
       ...base,
       allowAnswerAttachments: true,
-      answerActionPresentation,
     });
     const question = {
       id: 'q',
@@ -99,7 +100,7 @@ describe('Document conversation contribution', () => {
       replyToMessageId: 'q',
       modelInfo: 'codex/gpt',
     };
-    await contribution.answerAction?.execute({
+    await contribution.attachAnswer?.({
       projectId: 'project',
       assetId: 'asset',
       conversation: {
@@ -123,62 +124,5 @@ describe('Document conversation contribution', () => {
         body: expect.objectContaining({ selectedAnswer: '选中回答' }),
       }),
     );
-    expect(contribution.answerAction).toMatchObject(answerActionPresentation);
-  });
-
-  it('routes 回归原文 to the returnAnswerToSource callback instead of creating an attachment', async () => {
-    const returnAnswerToSource = vi.fn(async () => undefined);
-    const contribution = createDocumentConversationContribution({
-      projectId: 'project',
-      assetId: 'asset',
-      workbenchId: 'pdf',
-      contributionId: 'pdf.question',
-      returnAnswerToSource,
-      answerActionPresentation,
-    });
-    const context = createDocumentConversationContext({
-      target: {
-        scope: 'content',
-        anchorType: 'pdf.range',
-        anchorVersion: 1,
-        anchorPayload: { pageNumber: 1, start: 1, end: 2 },
-      },
-      selectedText: '选中文字',
-    });
-    const question = {
-      id: 'q',
-      role: 'user' as const,
-      text: '问题',
-      createdTime: 1,
-      context,
-    };
-    const answer = {
-      id: 'a',
-      role: 'assistant' as const,
-      text: '完整回答',
-      createdTime: 2,
-      replyToMessageId: 'q',
-    };
-    await contribution.answerAction?.execute({
-      projectId: 'project',
-      assetId: 'asset',
-      conversation: {
-        id: 'conversation',
-        title: '问题',
-        messages: [question, answer],
-        createdTime: 1,
-        updatedTime: 2,
-      },
-      question,
-      answer,
-      text: '选中回答',
-    });
-
-    expect(returnAnswerToSource).toHaveBeenCalledWith({
-      text: '选中回答',
-      question: '问题',
-      context,
-    });
-    expect(window.learningCompanion.createAttachment).not.toHaveBeenCalled();
   });
 });

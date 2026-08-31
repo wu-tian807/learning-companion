@@ -3,7 +3,6 @@ import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
 import type * as assetArtifactSchema from './schema/asset-artifacts';
 import type * as assetAttachmentSchema from './schema/asset-attachments';
-import type * as assetFolderSchema from './schema/asset-folders';
 import type * as assetLinkSchema from './schema/asset-links';
 import type * as assetReferenceSchema from './schema/asset-references';
 import type * as generationTaskSchema from './schema/generation-tasks';
@@ -13,7 +12,6 @@ import type * as workbenchStateSchema from './schema/workbench-state';
 
 type LearningCompanionSchema = typeof assetAttachmentSchema &
   typeof assetArtifactSchema &
-  typeof assetFolderSchema &
   typeof assetLinkSchema &
   typeof assetReferenceSchema &
   typeof generationTaskSchema &

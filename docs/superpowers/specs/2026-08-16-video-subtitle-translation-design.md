@@ -1,11 +1,10 @@
-# 视频/音频字幕识别与翻译设计
+# 视频字幕识别与翻译设计
 
 > 日期：2026-08-16
 >
-> 状态：已实现；2026-08-28 将本地翻译模型替换为 GenerationTask + Agent；
-> 2026-08-29 接入 Audio Workbench
+> 状态：已实现；2026-08-28 将本地翻译模型替换为 GenerationTask + Agent
 >
-> 范围：Video/Audio Workbench 的本地字幕识别、显示、按需翻译与缓存
+> 范围：Video Workbench 的本地字幕识别、显示、按需翻译与缓存
 
 ## 1. 最终决策
 
@@ -22,21 +21,21 @@ GenerationTask 的持久化、调用 checkpoint、重试和 Provider Session。
 对应关系如下：
 
 ```text
-Media Asset
+Video Asset
   └─ Source Subtitle Artifact
        └─ Translation Subtitle Artifact
 
-Audio / Video Workbench State
+Video Workbench State
   └─ displayMode: off | source | translated | bilingual
 
-MediaSubtitleService（仅内存）
+VideoSubtitleService（仅内存）
   └─ queued / transcribing / translating / ready / failed
 ```
 
 核心约束：
 
-- 导入视频或音频后自动开始识别原字幕；旧 Asset 首次打开时也会补做；
-- 媒体播放不等待识别、翻译或组件安装；
+- 导入视频后自动开始识别原字幕；旧视频首次打开时也会补做；
+- 视频播放不等待识别、翻译或组件安装；
 - 用户选择“译文”或“双语”后才启动翻译；
 - 原字幕和译文分别是一个现有 Asset Artifact；
 - 翻译以完整 Cue 为单位增量显示，不传模型 token delta；
@@ -53,19 +52,19 @@ MediaSubtitleService（仅内存）
 
 ### 2.1 导入与播放
 
-1. 用户导入视频或音频；
+1. 用户导入视频；
 2. Asset 正常加入列表并可立即播放；
 3. Main 后台生成原字幕 Artifact；
 4. 完成后字幕按钮可选择“原文”；
-5. 用户没有安装字幕组件时，只显示明确安装入口，不阻塞媒体播放。
+5. 用户没有安装字幕组件时，只显示明确安装入口，不阻塞视频。
 
-字幕识别失败不影响媒体播放，也不会创建一个伪成功结果。用户点击重试时重新走同一条
+字幕识别失败不影响视频，也不会创建一个伪成功结果。用户点击重试时重新走同一条
 Artifact 生成路径。
 
 ### 2.2 四种显示模式
 
 ```ts
-type MediaSubtitleDisplayMode =
+type VideoSubtitleDisplayMode =
   | 'off'
   | 'source'
   | 'translated'
@@ -94,15 +93,13 @@ type MediaSubtitleDisplayMode =
 Workbench State V2 只保存：
 
 ```ts
-interface MediaWorkbenchSubtitleStateFragment {
+interface VideoWorkbenchStateV2 {
+  readonly viewState: VideoWorkbenchViewState;
   readonly subtitleState: {
-    readonly displayMode: MediaSubtitleDisplayMode;
+    readonly displayMode: VideoSubtitleDisplayMode;
   };
 }
 ```
-
-`AudioWorkbenchStateV2` 与 `VideoWorkbenchStateV2` 分别组合这段状态，并各自保留
-音频/视频播放状态。
 
 V1 状态读取时保留播放位置、音量、静音和倍速，并将字幕模式补为 `off`。
 
@@ -121,7 +118,7 @@ V1 状态读取时保留播放位置、音量、静音和倍速，并将字幕�
 producerId: builtin.media-subtitles.transcription
 artifactKey: source.auto
 mediaType: application/vnd.learning-companion.subtitle-track+json
-source: Media Asset 文件与内容修订
+source: Video Asset 文件与内容修订
 ```
 
 ```ts
@@ -174,15 +171,15 @@ interface SubtitleTranslationTrackV1 {
 译文不复制时间轴。Renderer 使用 `sourceCueId` 将译文与原 Cue 组合成译文或双语
 WebVTT。Service 在读取完成 Artifact 时校验 Cue 数量、顺序和 ID 一一对应。
 
-这种链式 Artifact 已经自然表达：媒体变化会重做原字幕，原字幕变化会重做译文；
+这种链式 Artifact 已经自然表达：视频变化会重做原字幕，原字幕变化会重做译文；
 无需新增 Artifact DAG、字幕表或依赖索引。
 
 ## 4. 识别流程
 
 ```mermaid
 flowchart LR
-    IMPORT["Asset 导入或旧媒体打开"] --> EVENT["Asset changed"]
-    EVENT --> SERVICE["MediaSubtitleService.ensureSource"]
+    IMPORT["Asset 导入或旧视频打开"] --> EVENT["Asset changed"]
+    EVENT --> SERVICE["VideoSubtitleService.ensureSource"]
     SERVICE --> CACHE["AssetArtifactService.getOrCreate"]
     CACHE --> NORMALIZE["FFmpeg: 16 kHz mono WAV"]
     NORMALIZE --> ASR["当前安装档位的 ASR"]
@@ -249,7 +246,7 @@ flowchart LR
 - 失败或取消不提交残缺 Artifact，重试复用 GenerationTask 的已完成调用。
 
 Bergamot、Hy-MT2 和 llama.cpp 不再属于字幕组件资源。以后若需要完全离线翻译，只增加
-同一 TaskDefinition/Artifact 契约下的 Provider，不在媒体 Renderer 中建立第二条链。
+同一 TaskDefinition/Artifact 契约下的 Provider，不在 Video Renderer 中建立第二条链。
 
 ## 6. 事件与所有权边界
 
@@ -268,23 +265,22 @@ interface WorkbenchEvent {
 - Main Event Bus：校验并发布事件；
 - IPC / Preload：只运输事件；
 - Host：只按当前 `sessionId` 过滤；
-- Audio/Video Main：分别将字幕领域事件映射为各自的 Workbench Event；
-- Audio/Video Renderer：分别验证并解释 `audio:subtitle-*` / `video:subtitle-*`；
+- Video Main：将字幕领域事件映射为 Workbench Event；
+- Video Renderer：验证并解释 `video:subtitle-*`；
 - 其他 Workbench 不依赖字幕类型。
 
 只使用两个字幕事件：
 
 ```text
-audio:subtitle-snapshot | video:subtitle-snapshot
-audio:subtitle-cue-final | video:subtitle-cue-final
+video:subtitle-snapshot
+video:subtitle-cue-final
 ```
 
 新打开的 Session 从 Bootstrap Payload 得到完整 Snapshot；不依赖重放旧事件。
 
 ## 7. 生命周期与并发
 
-每个 Audio/Video Provider 持有自己的 `MediaSubtitleService` 状态；两个服务共享一个
-应用生命周期的 ASR 任务队列。服务只在内存中维护：
+`VideoSubtitleService` 只在内存中维护：
 
 - 每个 Asset 的最新 Snapshot；
 - 正在执行的原字幕 Promise；
@@ -294,8 +290,7 @@ audio:subtitle-cue-final | video:subtitle-cue-final
 规则：
 
 - 同一 Asset 的相同阶段只启动一次；
-- 全应用 ASR 队列串行，避免 Audio 与 Video 同时让多个重模型抢 GPU/CPU；单个
-  Workbench 不拥有或重载这条队列；
+- ASR 队列串行，避免多个重模型同时抢 GPU/CPU；
 - 每个翻译 Task 内按段顺序调用同一 Agent Session；不同 Task 的调度由 GenerationTask 负责；
 - Workbench 关闭只取消 UI 订阅，不取消 Asset 级后台工作；
 - Asset 删除时现有 `AssetArtifactService.removeByAsset()` 负责取消 Artifact Producer；
@@ -307,10 +302,6 @@ audio:subtitle-cue-final | video:subtitle-cue-final
 ```text
 src/workbenches/media-subtitles/
 ├── contracts.ts
-├── media-subtitle-service.ts
-├── source-task-queue.ts
-├── presentation.ts
-├── use-media-subtitles.ts
 ├── transcription-producer.ts
 ├── translation-producer.ts
 ├── subtitle-source-artifact.ts
@@ -323,18 +314,14 @@ src/workbenches/media-subtitles/
 src/workbenches/video/
 ├── shared.ts
 ├── main.ts
-└── renderer.tsx
-
-src/workbenches/audio/
-├── shared.ts
-├── main.ts
-├── audio-transcript.tsx
-└── renderer.tsx
+├── renderer.tsx
+└── subtitles/
+    └── video-subtitle-service.ts
 ```
 
-`media-subtitles` 保存 Video/Audio 可复用的字幕处理、展示投影与 ASR 调度能力；两个
-Workbench 各自保存何时启动、如何布局和如何与 Session 交互的媒体语义。Audio 与
-Video 不互相依赖，也不建立包含大量可选分支的通用 Media Workbench 基类。
+`media-subtitles` 保存 Video/Audio 可复用的纯字幕处理能力；Video Workbench 保存何时
+启动、如何显示和如何与 Session 交互的媒体语义。Audio 后续可以复用 Producer，
+但不让 Video 依赖 Audio，也不提前创建媒体 Workbench 基类。
 
 ## 9. 首版非目标
 
@@ -347,7 +334,7 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 - 自动翻译；
 - Bergamot / Hy-MT 本地翻译档切换；
 - OCR、说话人分离或摘要；
-- 字幕全文编辑器或 Audio 波形对齐编辑。
+- Audio Workbench UI 接入。
 
 这些功能只有在真实需求出现后沿现有 Artifact/Workbench 扩展点增加，不能以“以后也许
 需要”为理由提前建立新的表、任务系统或全局服务。
@@ -356,8 +343,8 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 
 ### 数据与缓存
 
-- 导入可用视频或音频会触发原字幕 Artifact；
-- 相同媒体修订和 Producer 版本命中现有缓存；
+- 导入可用视频会触发原字幕 Artifact；
+- 相同视频修订和 Producer 版本命中现有缓存；
 - Whisper 长 Segment 按原音频轴上的 DTW Token 对齐点生成 Cue，可靠时间存在时
   单 Cue 不超过 `6 s`；
 - Cue 文本完整守恒、时间单调且不重叠，不按字符比例推算时间；
@@ -370,7 +357,7 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 
 ### UI
 
-- 视频或音频始终可以先播放；
+- 视频始终可以先播放；
 - 四种模式可切换并写入 Workbench State V2；
 - 逐 Cue 译文到达后立即显示；
 - 缺失译文有明确占位；
@@ -379,8 +366,8 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 
 ### 工程验证
 
-- Shared Contract、两个 Producer、MediaSubtitleService、全应用 ASR 队列、
-  Audio/Video Main/Renderer 和通用 Event IPC 均有边界测试；
+- Shared Contract、两个 Producer、VideoSubtitleService、Video Main/Renderer 和通用
+  Event IPC 均有边界测试；
 - `pnpm check` 通过；
 - Electron package 通过；
 - Windows 外部命令取消/超时集成测试通过；

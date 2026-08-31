@@ -7,10 +7,6 @@ import {
 } from "../../shared/external-libraries";
 import { AppError } from "../errors/app-error";
 import type { SettingsRepository } from "../settings/settings-repository";
-import {
-  ExternalLibraryInstallationAbortError,
-  isExternalLibraryAbortError,
-} from "./external-library-abort";
 import type {
   ExternalLibraryArchitecture,
   ExternalLibraryDefinition,
@@ -25,15 +21,9 @@ import {
 } from "./external-library-installation-manifest-file";
 import { ExternalLibraryInstallationWorkflow } from "./external-library-installation-workflow";
 import type { ExternalLibraryInstallerRegistryApi } from "./external-library-installer";
-import {
-  ExternalLibraryUsageManager,
-  type ExternalLibraryLifecycleRegistryApi,
-  type ExternalLibraryQuiescence,
-} from "./external-library-lifecycle";
 import { ExternalLibraryMigrationWorkflow } from "./external-library-migration-workflow";
 import type { ExternalLibraryPathManagerApi } from "./external-library-path-manager";
 import type { ExternalLibraryRegistryApi } from "./external-library-registry";
-import type { ExternalLibraryRuntimeSetupRegistryApi } from "./external-library-runtime-setup";
 
 export type ExternalLibraryListener = (
   snapshot: ExternalLibrarySnapshot,
@@ -55,14 +45,6 @@ export interface ExternalLibraryServiceApi {
     conflictResolution?: ExternalLibraryMigrationConflictResolution,
   ): Promise<ExternalLibraryMigrationResult>;
   requireRuntime(libraryId: string): Promise<ExternalLibraryRuntime>;
-  withRuntime<T>(
-    libraryId: string,
-    signal: AbortSignal | undefined,
-    operation: (
-      runtime: ExternalLibraryRuntime,
-      signal: AbortSignal,
-    ) => Promise<T>,
-  ): Promise<T>;
   requireExecutable(libraryId: string): Promise<string>;
   subscribe(listener: ExternalLibraryListener): () => void;
 }
@@ -75,12 +57,10 @@ export interface ExternalLibraryRuntime {
 }
 
 export interface ExternalLibraryServiceDependencies {
-  readonly platform?: ExternalLibraryPlatform;
-  readonly architecture?: ExternalLibraryArchitecture;
-  readonly now?: () => number;
-  readonly logger?: Pick<Console, "warn">;
-  readonly runtimeSetups: ExternalLibraryRuntimeSetupRegistryApi;
-  readonly lifecycles: ExternalLibraryLifecycleRegistryApi;
+  readonly platform: ExternalLibraryPlatform;
+  readonly architecture: ExternalLibraryArchitecture;
+  readonly now: () => number;
+  readonly logger: Pick<Console, "warn">;
 }
 
 interface ActiveInstallation {
@@ -105,6 +85,10 @@ function resolveCurrentArchitecture(): ExternalLibraryArchitecture {
   throw new AppError("FEATURE_NOT_SUPPORTED");
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 function errorCode(error: unknown): string {
   return error instanceof AppError ? error.code : "INTERNAL_ERROR";
 }
@@ -117,8 +101,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   private readonly architecture: ExternalLibraryArchitecture;
   private readonly now: () => number;
   private readonly logger: Pick<Console, "warn">;
-  private readonly lifecycles: ExternalLibraryLifecycleRegistryApi;
-  private readonly usage = new ExternalLibraryUsageManager();
   private readonly installationWorkflow:
     ExternalLibraryInstallationWorkflow;
   private readonly migrationWorkflow: ExternalLibraryMigrationWorkflow;
@@ -133,20 +115,18 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     private readonly installationManifestFile: ExternalLibraryInstallationManifestFile,
     downloader: ExternalLibraryDownloaderApi,
     installers: ExternalLibraryInstallerRegistryApi,
-    dependencies: ExternalLibraryServiceDependencies,
+    dependencies: Partial<ExternalLibraryServiceDependencies> = {},
   ) {
     this.platform = dependencies.platform ?? resolveCurrentPlatform();
     this.architecture =
       dependencies.architecture ?? resolveCurrentArchitecture();
     this.now = dependencies.now ?? Date.now;
     this.logger = dependencies.logger ?? console;
-    this.lifecycles = dependencies.lifecycles;
     this.installationWorkflow = new ExternalLibraryInstallationWorkflow({
       pathManager,
       installationManifestFile,
       downloader,
       installers,
-      runtimeSetups: dependencies.runtimeSetups,
       now: this.now,
       logger: this.logger,
     });
@@ -166,7 +146,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       return this.initializationTask;
     }
 
-    const task = this.initializeService();
+    const task = this.initializeDefinitions();
     this.initializationTask = task;
 
     try {
@@ -310,7 +290,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       controller.signal,
     )
       .catch(async (error: unknown) => {
-        if (isExternalLibraryAbortError(error)) {
+        if (isAbortError(error)) {
           try {
             return await this.refreshDefinition(definition);
           } catch (refreshError) {
@@ -362,9 +342,7 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
   }
 
   cancel(libraryId: string): void {
-    this.activeInstallations
-      .get(libraryId.trim())
-      ?.controller.abort(new ExternalLibraryInstallationAbortError(true));
+    this.activeInstallations.get(libraryId.trim())?.controller.abort();
   }
 
   async remove(libraryId: string): Promise<ExternalLibrarySnapshot> {
@@ -376,38 +354,26 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     const active = this.activeInstallations.get(definition.id);
 
     if (active) {
-      active.controller.abort(
-        new ExternalLibraryInstallationAbortError(true),
-      );
+      active.controller.abort();
       await active.promise.catch((error: unknown) => {
-        if (!isExternalLibraryAbortError(error)) {
+        if (!isAbortError(error)) {
           throw error;
         }
       });
     }
 
-    const rootPath = this.settings.getExternalLibrariesPath();
-    const packageDefinition = this.findPackage(definition);
-    const quiescence = packageDefinition
-      ? await this.quiesceLibrary(definition.id)
-      : undefined;
-    try {
-      await this.pathManager.cleanupLibraryDownloads(rootPath, definition);
-
-      if (!packageDefinition) {
-        return this.refreshDefinition(definition);
-      }
-
-      await this.pathManager.removeInstallation(
-        rootPath,
-        definition,
-        packageDefinition,
-      );
-
+    if (!this.findPackage(definition)) {
       return this.refreshDefinition(definition);
-    } finally {
-      quiescence?.dispose();
     }
+
+    const packageDefinition = this.selectPackage(definition);
+    await this.pathManager.removeInstallation(
+      this.settings.getExternalLibrariesPath(),
+      definition,
+      packageDefinition,
+    );
+
+    return this.refreshDefinition(definition);
   }
 
   async migrate(
@@ -473,26 +439,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     });
   }
 
-  withRuntime<T>(
-    libraryId: string,
-    signal: AbortSignal | undefined,
-    operation: (
-      runtime: ExternalLibraryRuntime,
-      signal: AbortSignal,
-    ) => Promise<T>,
-  ): Promise<T> {
-    const definition = this.registry.require(libraryId);
-    return this.usage.run(
-      definition.id,
-      signal,
-      async (usageSignal) => {
-        const runtime = await this.requireRuntime(definition.id);
-        usageSignal.throwIfAborted();
-        return operation(runtime, usageSignal);
-      },
-    );
-  }
-
   async requireExecutable(libraryId: string): Promise<string> {
     const runtime = await this.requireRuntime(libraryId);
 
@@ -527,21 +473,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
         });
       }
     }
-  }
-
-  private async initializeService(): Promise<void> {
-    await this.pathManager
-      .cleanupExpiredTemporaryData(
-        this.settings.getExternalLibrariesPath(),
-        this.now(),
-      )
-      .catch((error: unknown) => {
-        this.logger.warn(
-          "清理过期外部运行时临时数据失败",
-          error,
-        );
-      });
-    await this.initializeDefinitions();
   }
 
   private async refreshDefinition(
@@ -683,27 +614,23 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       packageDefinition,
       replaceExisting,
       signal,
-      quiesce: () => this.quiesceLibrary(definition.id),
       onStage: (stage) => {
-        const operationVariant =
-          packageDefinition.variantId === undefined
-            ? {}
-            : {
-                operationVariantId: packageDefinition.variantId,
-              };
         this.updateSnapshot(
           definition,
           stage.status,
-          {
-            ...operationVariant,
-            ...(stage.progress === undefined
+          stage.status === "downloading"
+            ? {
+                progress: stage.progress,
+                ...(packageDefinition.variantId === undefined
+                  ? {}
+                  : {
+                      operationVariantId:
+                        packageDefinition.variantId,
+                    }),
+              }
+            : packageDefinition.variantId === undefined
               ? {}
-              : { progress: stage.progress }),
-            ...(stage.status !== "installing" ||
-            stage.statusDetail === undefined
-              ? {}
-              : { statusDetail: stage.statusDetail }),
-          },
+              : { operationVariantId: packageDefinition.variantId },
           packageDefinition,
         );
       },
@@ -733,7 +660,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       targetRootPath,
       conflictResolution,
       definitions,
-      quiesce: (definition) => this.quiesceLibrary(definition.id),
       onMigrating: (definition) => {
         this.updateSnapshot(definition, "migrating");
       },
@@ -772,16 +698,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
     );
   }
 
-  private quiesceLibrary(
-    libraryId: string,
-  ): Promise<ExternalLibraryQuiescence> {
-    const lifecycle = this.lifecycles.find(libraryId);
-    return this.usage.quiesce(
-      libraryId,
-      lifecycle ? () => lifecycle.release() : undefined,
-    );
-  }
-
   private findPackage(
     definition: ExternalLibraryDefinition,
     variantId?: string,
@@ -811,7 +727,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
       ExternalLibrarySnapshot,
       | "installationPath"
       | "progress"
-      | "statusDetail"
       | "errorCode"
       | "installedVariantId"
       | "operationVariantId"
@@ -882,9 +797,6 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
         ? {}
         : { installationPath: changes.installationPath }),
       ...(changes.progress === undefined ? {} : { progress: changes.progress }),
-      ...(changes.statusDetail === undefined
-        ? {}
-        : { statusDetail: changes.statusDetail }),
       ...(changes.errorCode === undefined
         ? {}
         : { errorCode: changes.errorCode }),

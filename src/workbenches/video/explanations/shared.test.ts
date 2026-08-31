@@ -25,15 +25,6 @@ describe('video explanation contracts', () => {
         version: 1,
         sourceRevision: 'revision-1',
         question: '这里在讲什么？',
-        conversationId: 'conversation-1',
-      }),
-    ).toBe(true);
-    expect(
-      isVideoExplanationMetadata({
-        format: 'learning-companion/video-explanation',
-        version: 1,
-        sourceRevision: 'revision-1',
-        question: '旧标注仍然可读',
       }),
     ).toBe(true);
     expect(
@@ -54,7 +45,6 @@ describe('video explanation contracts', () => {
       target,
       sourceRevision: 'revision-1',
       question: '这里在讲什么？',
-      conversationId: 'conversation-1',
       status: 'completed',
       answer: '回答',
       createdTime: 1,
@@ -63,9 +53,6 @@ describe('video explanation contracts', () => {
     expect(isVideoExplanationView(explanation)).toBe(true);
     expect(
       isVideoExplanationView({ ...explanation, question: '' }),
-    ).toBe(false);
-    expect(
-      isVideoExplanationView({ ...explanation, conversationId: '' }),
     ).toBe(false);
     expect(
       isVideoExplanationEvent({

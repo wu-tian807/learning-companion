@@ -120,16 +120,13 @@ describe('LocalFileContentResolver', () => {
     });
 
     const resolved = await resolver.resolve(
-      createProjectWorkspaceContentRef(
-        '.learning-companion/assets/imported/content.txt',
-      ),
+      createProjectWorkspaceContentRef('assets/imported/content.txt'),
       resolveContext,
     );
 
     expect(inspect).toHaveBeenCalledWith(
       join(
         resolveContext.projectWorkspace,
-        '.learning-companion',
         'assets',
         'imported',
         'content.txt',
@@ -138,7 +135,7 @@ describe('LocalFileContentResolver', () => {
     expect(resolved.contentRef).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: '.learning-companion/assets/imported/content.txt',
+      path: 'assets/imported/content.txt',
     });
   });
 

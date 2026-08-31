@@ -1,8 +1,4 @@
 import {
-  normalizeAssetFolderPath,
-  type AssetFolderState,
-} from '../../shared/asset-folders';
-import {
   cloneAssetSnapshot,
   cloneAssetContentStatus,
   type AssetChangedEvent,
@@ -31,7 +27,6 @@ import {
   type UpdateAssetInput,
 } from './asset';
 import type { AssetDatabaseApi } from './asset-database';
-import type { AssetFolderDatabaseApi } from './asset-folder-database';
 import {
   createDefaultAssetName,
   detectAssetMediaType,
@@ -50,24 +45,7 @@ export interface AssetServiceApi {
     projectId: string,
     path: string,
     mode?: LocalAssetImportMode,
-    folderPath?: string,
   ): Promise<AssetSnapshot>;
-  listAssetFolders(projectId: string): AssetFolderState;
-  createAssetFolder(projectId: string, path: string): AssetFolderState;
-  updateAssetFolder(
-    projectId: string,
-    path: string,
-    nextPath: string,
-  ): AssetFolderState;
-  moveAssetsToFolder(
-    projectId: string,
-    assetIds: readonly string[],
-    folderPath: string | null,
-  ): AssetFolderState;
-  deleteAssetFolder(
-    projectId: string,
-    path: string,
-  ): Promise<AssetFolderDeletion>;
   stageGeneratedFile(
     projectId: string,
     input: StageGeneratedAssetFileInput,
@@ -82,7 +60,10 @@ export interface AssetServiceApi {
     projectId: string,
     workspacePath: string,
   ): Promise<void>;
-  cancelProjectArtifactGeneration(workspacePath: string): Promise<void>;
+  removeManagedFilesByProject(
+    projectId: string,
+    workspacePath: string,
+  ): Promise<void>;
   refresh(assetId: string): Promise<AssetSnapshot>;
   refreshAll(): Promise<readonly AssetSnapshot[]>;
   relinkLocalFile(assetId: string, newPath: string): Promise<AssetSnapshot>;
@@ -103,24 +84,13 @@ export interface AssetServiceDependencies {
   readonly now: () => number;
 }
 
-export interface AssetFolderDeletionFailure {
-  readonly assetId: string;
-  readonly error: unknown;
-}
-
-export interface AssetFolderDeletion {
-  readonly deletedAssetIds: readonly string[];
-  readonly failed: readonly AssetFolderDeletionFailure[];
-  readonly assets: readonly AssetSnapshot[];
-  readonly folderState: AssetFolderState;
-}
-
 export interface AssetDeletionObserver {
   onAssetDeleted(projectId: string, assetId: string): void;
 }
 
 export interface AssetAttachmentCleanupApi {
   removeByAsset(projectId: string, assetId: string): Promise<void>;
+  removeByProject(projectId: string): Promise<void>;
 }
 
 export interface AssetServiceUpdateOptions {
@@ -219,7 +189,6 @@ export class AssetService implements AssetServiceApi {
 
   constructor(
     private readonly assetDatabase: AssetDatabaseApi,
-    private readonly folderDatabase: AssetFolderDatabaseApi,
     private readonly resolverRegistry: ContentResolverRegistry,
     private readonly projectLookup: ProjectLookup,
     private readonly workspaceManager: ProjectWorkspaceManagerApi,
@@ -364,16 +333,8 @@ export class AssetService implements AssetServiceApi {
     projectId: string,
     path: string,
     mode: LocalAssetImportMode = 'copy',
-    folderPath?: string,
   ): Promise<AssetSnapshot> {
     this.requireExpectedProject(projectId);
-    const normalizedFolderPath =
-      folderPath === undefined
-        ? undefined
-        : normalizeAssetFolderPath(folderPath);
-    if (normalizedFolderPath !== undefined) {
-      this.folderDatabase.requireFolder(projectId, normalizedFolderPath);
-    }
     const lifecycleVersion = this.lifecycleVersion;
     const context = this.createResolveContext(projectId);
     await this.workspaceManager.validateWorkspace({
@@ -418,9 +379,6 @@ export class AssetService implements AssetServiceApi {
         resolved.location.absolutePath,
       );
       this.requireUnchangedProject(lifecycleVersion, projectId);
-      if (normalizedFolderPath !== undefined) {
-        this.folderDatabase.requireFolder(projectId, normalizedFolderPath);
-      }
       const asset = this.assetDatabase.add(projectId, {
         name: this.dependencies.createDefaultName(
           resolved.location.absolutePath,
@@ -429,18 +387,6 @@ export class AssetService implements AssetServiceApi {
         creationKind: 'imported',
         contentRef: normalizedRef,
       });
-      if (normalizedFolderPath !== undefined) {
-        try {
-          this.folderDatabase.moveAssets(
-            projectId,
-            [asset.id],
-            normalizedFolderPath,
-          );
-        } catch (error) {
-          this.assetDatabase.delete(projectId, asset.id);
-          throw error;
-        }
-      }
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
       this.publishChanged(snapshot);
@@ -461,73 +407,6 @@ export class AssetService implements AssetServiceApi {
     } finally {
       await resolved?.handle?.close();
     }
-  }
-
-  listAssetFolders(projectId: string): AssetFolderState {
-    this.requireExpectedProject(projectId);
-    return this.folderDatabase.list(projectId);
-  }
-
-  createAssetFolder(projectId: string, path: string): AssetFolderState {
-    this.requireExpectedProject(projectId);
-    return this.folderDatabase.create(projectId, path);
-  }
-
-  updateAssetFolder(
-    projectId: string,
-    path: string,
-    nextPath: string,
-  ): AssetFolderState {
-    this.requireExpectedProject(projectId);
-    return this.folderDatabase.update(projectId, path, nextPath);
-  }
-
-  moveAssetsToFolder(
-    projectId: string,
-    assetIds: readonly string[],
-    folderPath: string | null,
-  ): AssetFolderState {
-    this.requireExpectedProject(projectId);
-    return this.folderDatabase.moveAssets(projectId, assetIds, folderPath);
-  }
-
-  async deleteAssetFolder(
-    projectId: string,
-    path: string,
-  ): Promise<AssetFolderDeletion> {
-    this.requireExpectedProject(projectId);
-    const assetIds = this.folderDatabase.listAssetIdsInTree(projectId, path);
-    const deletedAssetIds: string[] = [];
-    const failed: AssetFolderDeletionFailure[] = [];
-
-    for (const assetId of assetIds) {
-      try {
-        await this.delete(assetId);
-        deletedAssetIds.push(assetId);
-      } catch (error) {
-        if (
-          error instanceof AppError &&
-          (error.code === 'PROJECT_CONTEXT_CHANGED' ||
-            error.code === 'OPERATION_SUPERSEDED')
-        ) {
-          throw error;
-        }
-        failed.push({ assetId, error });
-      }
-    }
-
-    this.requireExpectedProject(projectId);
-    const folderState =
-      failed.length === 0
-        ? this.folderDatabase.deleteTree(projectId, path)
-        : this.folderDatabase.list(projectId);
-
-    return Object.freeze({
-      deletedAssetIds: Object.freeze(deletedAssetIds),
-      failed: Object.freeze(failed),
-      assets: Object.freeze(this.list()),
-      folderState,
-    });
   }
 
   async stageGeneratedFile(
@@ -736,10 +615,27 @@ export class AssetService implements AssetServiceApi {
     );
   }
 
-  async cancelProjectArtifactGeneration(
+  async removeManagedFilesByProject(
+    projectId: string,
     workspacePath: string,
   ): Promise<void> {
-    await this.dependencies.artifactCleanup?.cancelByWorkspace(workspacePath);
+    const project = this.projectLookup.get(projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
+    }
+    if (project.workspacePath !== workspacePath) {
+      throw new AppError('PROJECT_CONTEXT_CHANGED');
+    }
+
+    await this.dependencies.attachmentCleanup?.removeByProject(projectId);
+
+    for (const asset of this.assetDatabase.listByProject(projectId)) {
+      await this.workspaceManager.removeManagedAssetFile(
+        workspacePath,
+        asset.contentRef,
+      );
+    }
   }
 
   async refresh(assetId: string): Promise<AssetSnapshot> {

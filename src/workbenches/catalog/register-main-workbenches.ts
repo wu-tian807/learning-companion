@@ -1,17 +1,15 @@
 import { AppError } from '../../main/errors/app-error';
 import { createWorkbenchConversationTaskDefinitionV1 } from '../../main/conversation/workbench-conversation-task-definition';
-import { ProjectConversationContextProvider } from '../../main/conversation/project-conversation-context-provider';
-import {
-  createMainWorkbenchRuntime,
-  type MainWorkbenchAgentToolContext,
-  type MainWorkbenchArtifactContext,
-  type MainWorkbenchAttachmentContext,
-  type MainWorkbenchContribution,
-  type MainWorkbenchExternalLibraryContext,
-  type MainWorkbenchGenerationContext,
-  type MainWorkbenchProviderContext,
-  type MainWorkbenchRuntime,
-  type MainWorkbenchStartContext,
+import type {
+  MainWorkbenchAgentToolContext,
+  MainWorkbenchArtifactContext,
+  MainWorkbenchAttachmentContext,
+  MainWorkbenchContribution,
+  MainWorkbenchExternalLibraryContext,
+  MainWorkbenchGenerationContext,
+  MainWorkbenchProviderContext,
+  MainWorkbenchRuntime,
+  MainWorkbenchStartContext,
 } from '../../main/workbench/main-workbench-contribution';
 import type { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
 import { areAssetWorkbenchManifestsEqual } from '../../shared/workbench/manifest';
@@ -21,7 +19,6 @@ import { epubMainWorkbenchContribution } from '../epub/main-contribution';
 import { htmlMainWorkbenchContribution } from '../html/main-contribution';
 import { imageMainWorkbenchContribution } from '../image/main-contribution';
 import { markdownMainWorkbenchContribution } from '../markdown/main-contribution';
-import { mediaDubbingMainWorkbenchContribution } from '../media-dubbing/main-contribution';
 import { mediaSubtitlesMainWorkbenchContribution } from '../media-subtitles/main-contribution';
 import { mindMapMainWorkbenchContribution } from '../mindmap/main-contribution';
 import { officeMainWorkbenchContribution } from '../office/main-contribution';
@@ -54,7 +51,6 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] =
     audioMainWorkbenchContribution,
     videoMainWorkbenchContribution,
     documentAiMainWorkbenchContribution,
-    mediaDubbingMainWorkbenchContribution,
     mediaSubtitlesMainWorkbenchContribution,
   ]);
 
@@ -75,6 +71,20 @@ function forEachContribution(
     }
     action(contribution);
   }
+}
+
+function disposeRuntimes(
+  runtimes: MainWorkbenchRuntime[],
+): void {
+  let disposalError: unknown;
+  for (const runtime of runtimes.splice(0).reverse()) {
+    try {
+      runtime.dispose();
+    } catch (error) {
+      disposalError ??= error;
+    }
+  }
+  if (disposalError !== undefined) throw disposalError;
 }
 
 export function registerMainWorkbenchProviders(
@@ -131,9 +141,6 @@ export function registerMainWorkbenchAgentFunctionTools(
 export function registerMainWorkbenchGeneration(
   context: MainWorkbenchGenerationContext,
 ): void {
-  context.conversationContexts.register(
-    new ProjectConversationContextProvider(),
-  );
   forEachContribution((entry) => {
     entry.registerGeneration?.(context);
   });
@@ -155,12 +162,16 @@ export function startMainWorkbenchContributions(
     });
   } catch (error) {
     try {
-      createMainWorkbenchRuntime(runtimes).dispose();
+      disposeRuntimes(runtimes);
     } catch {
       // Preserve the contribution start failure after best-effort rollback.
     }
     throw error;
   }
 
-  return createMainWorkbenchRuntime(runtimes);
+  return Object.freeze({
+    dispose(): void {
+      disposeRuntimes(runtimes);
+    },
+  });
 }

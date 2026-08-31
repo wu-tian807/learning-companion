@@ -14,6 +14,7 @@ import type {
   WorkbenchStateRecord,
   WorkbenchStateDatabaseApi,
 } from '../main/workbench/workbench-state-database';
+import type { WorkbenchStateDataDatabaseApi } from '../main/workbench/workbench-state-data-database';
 import { EpubWorkbenchProvider } from './epub/main';
 import {
   createEpubSaveViewStateCommand,
@@ -41,6 +42,20 @@ class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   async delete(assetId: string, workbenchId: string) {
     this.records.delete(`${assetId}:${workbenchId}`);
   }
+}
+
+function createEmptyStateDataDatabase(): WorkbenchStateDataDatabaseApi {
+  return {
+    async get() {
+      return undefined;
+    },
+    async save() {
+      // HTML provider 测试不涉及对话持久化。
+    },
+    async delete() {
+      // no-op
+    },
+  };
 }
 
 function createResources(): ContentResourceServiceApi {
@@ -125,6 +140,7 @@ describe('stream reader main providers', () => {
     const resources = createResources();
     const provider = new HtmlWorkbenchProvider(
       resources,
+      createEmptyStateDataDatabase(),
       { executeJavaScript: vi.fn() },
     );
     const context = createContext('text/html', 'html');
@@ -196,6 +212,7 @@ describe('stream reader main providers', () => {
     const resources = createResources();
     const provider = new HtmlWorkbenchProvider(
       resources,
+      createEmptyStateDataDatabase(),
       { executeJavaScript: vi.fn() },
     );
 

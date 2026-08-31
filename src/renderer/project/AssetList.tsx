@@ -17,7 +17,6 @@ export interface AssetListProps {
   readonly onRename: (asset: AssetSnapshot) => void;
   readonly onReveal: (asset: AssetSnapshot) => void;
   readonly onRelink: (asset: AssetSnapshot) => void;
-  readonly onMove?: (asset: AssetSnapshot) => void;
   readonly onDelete: (asset: AssetSnapshot) => void;
 }
 
@@ -34,7 +33,6 @@ export function AssetList({
   onRename,
   onReveal,
   onRelink,
-  onMove,
   onDelete,
 }: AssetListProps) {
   const rowsRef = useAssetOrderAnimation(assets);
@@ -78,7 +76,6 @@ export function AssetList({
               onRename={() => onRename(asset)}
               onReveal={() => onReveal(asset)}
               onRelink={() => onRelink(asset)}
-              onMove={onMove ? () => onMove(asset) : undefined}
               onDelete={() => onDelete(asset)}
             />
           </div>

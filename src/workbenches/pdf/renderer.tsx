@@ -76,6 +76,7 @@ import {
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
+  createDocumentConversationHistoryStore,
   type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
 
@@ -129,8 +130,7 @@ interface PdfRegionPreviewInput {
 
 /**
  * Captures a compact, local-only visual reference for a formula/image region.
- * It is intentionally small because Project conversation context crosses IPC
- * and is persisted in the application database.
+ * It is intentionally small because question history is stored in localStorage.
  */
 export function capturePdfRegionPreview(
   source: HTMLCanvasElement,
@@ -622,20 +622,23 @@ export function PdfDocumentWorkbenchView({
   const conversationContributionId = `${contributionOwnerId}.document-question`;
   const conversationOwnerId =
     `${contributionOwnerId}:${bootstrap.sessionId}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () => createDocumentConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+    ),
+    [asset.id, asset.projectId, conversationContributionId],
+  );
   const conversationContribution = useMemo(
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
       workbenchId: contributionOwnerId,
       contributionId: conversationContributionId,
+      historyStore: conversationHistoryStore,
       contextLabel: 'PDF 内容',
       allowAnswerAttachments: true,
-      answerActionPresentation: {
-        label: '显示在 PDF 原文旁',
-        selectionLabel: '在 PDF 原文旁显示选中片段',
-        successMessage: '已在 PDF 原文旁创建回复卡片',
-        failureMessage: '创建 PDF 原文回复卡片失败',
-      },
       onContextReleased() {
         setRegionActionMenu(undefined);
       },
@@ -645,6 +648,7 @@ export function PdfDocumentWorkbenchView({
       asset.projectId,
       contributionOwnerId,
       conversationContributionId,
+      conversationHistoryStore,
     ],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
@@ -1866,6 +1870,7 @@ export function PdfDocumentWorkbenchView({
       <QuestionAnchorHost
         assetId={asset.id}
         ownerId={conversationOwnerId}
+        historyStore={conversationHistoryStore}
         runtime={conversationRuntime}
       />
     </div>

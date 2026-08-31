@@ -305,9 +305,7 @@ export function FirstRunOnboarding({
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
                   <div
                     className={`h-full rounded-full bg-indigo-300/70 transition-[width] ${
-                      progress === undefined
-                        ? 'external-library-indeterminate w-1/3'
-                        : ''
+                      progress === undefined ? 'w-1/3 animate-pulse' : ''
                     }`}
                     style={
                       progress === undefined
@@ -318,8 +316,7 @@ export function FirstRunOnboarding({
                 </div>
                 <p className="mt-2 text-[11px] text-slate-500">
                   {library
-                    ? library.statusDetail ??
-                      externalLibraryStatusLabels[library.status]
+                    ? externalLibraryStatusLabels[library.status]
                     : '正在读取组件状态'}
                   {progress === undefined ? '' : ` · ${progress}%`}
                 </p>

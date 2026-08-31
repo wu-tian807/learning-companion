@@ -42,7 +42,6 @@ export interface AssetArtifactServiceApi {
 
 export interface AssetArtifactCleanupApi {
   removeByAsset(assetId: string, workspacePath: string): Promise<void>;
-  cancelByWorkspace(workspacePath: string): Promise<void>;
   removeByProject(projectId: string, workspacePath: string): Promise<void>;
 }
 
@@ -50,15 +49,6 @@ export interface AssetArtifactServiceDependencies {
   readonly now: () => number;
   readonly logger: Pick<Console, 'warn'>;
 }
-
-export interface AssetArtifactCommittedEvent {
-  readonly type: 'committed';
-  readonly artifact: AssetArtifact;
-}
-
-export type AssetArtifactServiceListener = (
-  event: AssetArtifactCommittedEvent,
-) => void | Promise<void>;
 
 interface ActiveGenerationTask {
   readonly assetId: string;
@@ -153,7 +143,6 @@ export class AssetArtifactService
   implements AssetArtifactServiceApi, AssetArtifactCleanupApi
 {
   private readonly activeTasks = new Map<string, ActiveGenerationTask>();
-  private readonly listeners = new Set<AssetArtifactServiceListener>();
   private readonly now: () => number;
   private readonly logger: Pick<Console, 'warn'>;
 
@@ -254,7 +243,9 @@ export class AssetArtifactService
   ): Promise<void> {
     const normalizedProjectId = requireText(projectId);
     const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
-    await this.cancelByWorkspace(normalizedWorkspacePath);
+    await this.cancelTasks(
+      (task) => task.workspacePath === normalizedWorkspacePath,
+    );
     const artifacts = this.database.listByProject(normalizedProjectId);
 
     await this.removeArtifactFiles(
@@ -262,18 +253,6 @@ export class AssetArtifactService
       normalizedWorkspacePath,
     );
     this.database.deleteByProject(normalizedProjectId);
-  }
-
-  async cancelByWorkspace(workspacePath: string): Promise<void> {
-    const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
-    await this.cancelTasks(
-      (task) => task.workspacePath === normalizedWorkspacePath,
-    );
-  }
-
-  subscribe(listener: AssetArtifactServiceListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
   }
 
   private async resolveCached(
@@ -364,7 +343,6 @@ export class AssetArtifactService
         artifactRevision: committed.artifactRevision,
         updatedTime,
       });
-      this.publishCommitted(artifact);
 
       if (
         previous &&
@@ -496,29 +474,13 @@ export class AssetArtifactService
     workspacePath: string,
   ): Promise<void> {
     await Promise.all(
-      artifacts.map((artifact) =>
-        this.fileManager.removeArtifactFile(
-          workspacePath,
-          artifact.relativePath,
-        ),
-      ),
+      artifacts.map(async (artifact) => {
+        await this.fileManager
+          .removeArtifactFile(workspacePath, artifact.relativePath)
+          .catch((error: unknown) => {
+            this.logger.warn('清理 Asset Artifact 文件失败', error);
+          });
+      }),
     );
-  }
-
-  private publishCommitted(artifact: AssetArtifact): void {
-    const event: AssetArtifactCommittedEvent = Object.freeze({
-      type: 'committed',
-      artifact: cloneAssetArtifact(artifact),
-    });
-
-    for (const listener of this.listeners) {
-      try {
-        Promise.resolve(listener(event)).catch((error: unknown) => {
-          console.error('异步 Asset Artifact 事件订阅者执行失败', error);
-        });
-      } catch (error) {
-        console.error('发布 Asset Artifact 事件失败', error);
-      }
-    }
   }
 }

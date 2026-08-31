@@ -94,7 +94,7 @@ export function createEpubRendererActions({
         groupLabel: 'EPUB AI',
         order: 10,
         presentation: {
-          kind: 'action',
+          kind: 'generation-tool',
           label: '解释这段话',
           description: '将选区和 EPUB CFI 锚点交给 AI',
           disabledReason:

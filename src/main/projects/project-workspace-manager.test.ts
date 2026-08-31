@@ -2,14 +2,13 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rm,
   stat,
   symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, parse, posix, win32 } from 'node:path';
+import { join, parse, posix, win32 } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -82,12 +81,10 @@ describe('ProjectWorkspaceManager path rules', () => {
     expect(
       resolvePortableWorkspacePath(
         'C:\\Learning\\Project',
-        '.learning-companion/assets/imported/线性代数.pdf',
+        'assets/imported/线性代数.pdf',
         win32,
       ),
-    ).toBe(
-      'C:\\Learning\\Project\\.learning-companion\\assets\\imported\\线性代数.pdf',
-    );
+    ).toBe('C:\\Learning\\Project\\assets\\imported\\线性代数.pdf');
     expect(() =>
       resolvePortableWorkspacePath(
         'C:\\Learning\\Project',
@@ -95,11 +92,9 @@ describe('ProjectWorkspaceManager path rules', () => {
         win32,
       ),
     ).toThrow('DATA_INTEGRITY_ERROR');
-    expect(
-      toPortableRelativePath(
-        '.learning-companion\\assets\\imported\\a.md',
-      ),
-    ).toBe('.learning-companion/assets/imported/a.md');
+    expect(toPortableRelativePath('assets\\imported\\a.md')).toBe(
+      'assets/imported/a.md',
+    );
   });
 });
 
@@ -128,7 +123,7 @@ describe('ProjectWorkspaceManager', () => {
       created: true,
       contentRef: {
         base: 'project-workspace',
-        path: '.learning-companion/assets/generated/task-1.mindmap',
+        path: 'assets/generated/task-1.mindmap',
       },
     });
     expect(existing).toMatchObject({
@@ -146,7 +141,6 @@ describe('ProjectWorkspaceManager', () => {
     });
     const importedPath = join(
       workspacePath,
-      '.learning-companion',
       'assets',
       'imported',
       'copied.pdf',
@@ -156,7 +150,7 @@ describe('ProjectWorkspaceManager', () => {
       manager.removeManagedAssetFile(workspacePath, {
         kind: 'local-file',
         base: 'project-workspace',
-        path: '.learning-companion/assets/imported/copied.pdf',
+        path: 'assets/imported/copied.pdf',
       }),
     ).resolves.toBe(true);
     await expect(stat(importedPath)).rejects.toMatchObject({
@@ -194,22 +188,13 @@ describe('ProjectWorkspaceManager', () => {
 
     expect(preparation).toMatchObject({
       workspacePath,
+      createdWorkspaceDirectory: true,
       createdMarker: true,
     });
     for (const directory of [
-      join(
-        workspacePath,
-        '.learning-companion',
-        'assets',
-        'imported',
-      ),
-      join(
-        workspacePath,
-        '.learning-companion',
-        'assets',
-        'generated',
-      ),
-      join(workspacePath, '.learning-companion', 'attachments'),
+      join(workspacePath, 'assets', 'imported'),
+      join(workspacePath, 'assets', 'generated'),
+      join(workspacePath, 'attachments'),
     ]) {
       expect((await stat(directory)).isDirectory()).toBe(true);
     }
@@ -227,6 +212,7 @@ describe('ProjectWorkspaceManager', () => {
     ).toEqual({
       schemaVersion: 1,
       projectId: 'project-a',
+      ownsWorkspaceRoot: true,
     });
 
     await expect(
@@ -265,10 +251,9 @@ describe('ProjectWorkspaceManager', () => {
     });
 
     await manager.rollbackPreparation(created);
-    await expect(stat(newWorkspace)).resolves.toBeDefined();
-    await expect(
-      stat(join(newWorkspace, '.learning-companion')),
-    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(newWorkspace)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
 
     const existingWorkspace = join(root, 'existing');
     await mkdir(existingWorkspace);
@@ -304,7 +289,6 @@ describe('ProjectWorkspaceManager', () => {
     });
     const insidePath = join(
       workspacePath,
-      '.learning-companion',
       'assets',
       'imported',
       'inside.txt',
@@ -317,7 +301,7 @@ describe('ProjectWorkspaceManager', () => {
     ).resolves.toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: '.learning-companion/assets/imported/inside.txt',
+      path: 'assets/imported/inside.txt',
     });
     await expect(
       manager.classifyLocalFile(workspacePath, outsidePath),
@@ -330,7 +314,6 @@ describe('ProjectWorkspaceManager', () => {
     if (process.platform !== 'win32') {
       const escapingLink = join(
         workspacePath,
-        '.learning-companion',
         'assets',
         'outside-link.txt',
       );
@@ -346,7 +329,7 @@ describe('ProjectWorkspaceManager', () => {
         manager.resolveLocalFile(workspacePath, {
           kind: 'local-file',
           base: 'project-workspace',
-          path: '.learning-companion/assets/outside-link.txt',
+          path: 'assets/outside-link.txt',
         }),
       ).rejects.toThrow('DATA_INTEGRITY_ERROR');
     }
@@ -375,12 +358,12 @@ describe('ProjectWorkspaceManager', () => {
     expect(first.contentRef).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: '.learning-companion/assets/imported/讲义.md',
+      path: 'assets/imported/讲义.md',
     });
     expect(second.contentRef).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: '.learning-companion/assets/imported/讲义 (2).md',
+      path: 'assets/imported/讲义 (2).md',
     });
     await expect(
       readFile(first.copiedAbsolutePath!, 'utf8'),
@@ -388,189 +371,115 @@ describe('ProjectWorkspaceManager', () => {
     await expect(readFile(sourcePath, 'utf8')).resolves.toBe('# 讲义');
   });
 
-  it.each([
-    ['application-created', false],
-    ['pre-existing', true],
-  ])(
-    'always preserves the %s Workspace root and deletes only app data',
-    async (_label, preExisting) => {
-      const root = await createTemporaryDirectory();
-      const workspacePath = join(root, 'project');
-      if (preExisting) {
-        await mkdir(workspacePath);
-      }
-      const manager = new ProjectWorkspaceManager();
-      await manager.prepareWorkspace({
-        projectId: 'project',
-        workspacePath,
-      });
-      const userFile = join(workspacePath, 'keep-me.md');
-      const externalAsset = join(
-        workspacePath,
-        'assets',
-        'course-notes',
-        'keep.md',
-      );
-      const externalAttachment = join(
-        workspacePath,
-        'attachments',
-        'user-notes',
-        'keep.md',
-      );
-      const appFile = join(
-        workspacePath,
-        '.learning-companion',
-        'checkpoints',
-        'video-dubbing',
-        'partial.wav',
-      );
-      await mkdir(join(workspacePath, 'assets', 'course-notes'), {
-        recursive: true,
-      });
-      await mkdir(dirname(externalAttachment), { recursive: true });
-      await mkdir(dirname(appFile), { recursive: true });
-      await Promise.all([
-        writeFile(userFile, 'user content'),
-        writeFile(externalAsset, 'external asset'),
-        writeFile(externalAttachment, 'external attachment'),
-        writeFile(appFile, 'partial'),
-      ]);
-
-      await manager.removeProjectWorkspace('project', workspacePath);
-
-      await expect(stat(workspacePath)).resolves.toBeDefined();
-      await expect(readFile(userFile, 'utf8')).resolves.toBe('user content');
-      await expect(readFile(externalAsset, 'utf8')).resolves.toBe(
-        'external asset',
-      );
-      await expect(readFile(externalAttachment, 'utf8')).resolves.toBe(
-        'external attachment',
-      );
-      await expect(
-        stat(join(workspacePath, '.learning-companion')),
-      ).rejects.toMatchObject({ code: 'ENOENT' });
-    },
-  );
-
-  it('keeps the marker until every app-owned child is removed', async () => {
+  it('removes an application-created Project Workspace as one owned unit', async () => {
     const root = await createTemporaryDirectory();
-    const workspacePath = join(root, 'project');
-    const metadataPath = join(workspacePath, '.learning-companion');
-    const assetsPath = join(metadataPath, 'assets');
-    let failAssets = true;
-    const remove: typeof rm = async (path, options) => {
-      if (failAssets && String(path) === assetsPath) {
-        failAssets = false;
-        throw Object.assign(new Error('asset directory locked'), {
-          code: 'EPERM',
-        });
-      }
-      return options === undefined ? rm(path) : rm(path, options);
-    };
-    const manager = new ProjectWorkspaceManager({ rm: remove });
-    await manager.prepareWorkspace({ projectId: 'project', workspacePath });
-
-    await expect(
-      manager.removeProjectWorkspace('project', workspacePath),
-    ).rejects.toThrow('asset directory locked');
-    await expect(
-      stat(join(metadataPath, 'workspace.json')),
-    ).resolves.toBeDefined();
-
-    const restartedManager = new ProjectWorkspaceManager();
-    await restartedManager.removeProjectWorkspace('project', workspacePath);
-    await expect(stat(workspacePath)).resolves.toBeDefined();
-    await expect(stat(metadataPath)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('retries an empty metadata directory after final removal fails', async () => {
-    const root = await createTemporaryDirectory();
-    const workspacePath = join(root, 'project');
-    const metadataPath = join(workspacePath, '.learning-companion');
-    let failMetadata = true;
-    const remove: typeof rm = async (path, options) => {
-      if (failMetadata && String(path) === metadataPath) {
-        failMetadata = false;
-        throw Object.assign(new Error('metadata directory locked'), {
-          code: 'EPERM',
-        });
-      }
-      return options === undefined ? rm(path) : rm(path, options);
-    };
-    const manager = new ProjectWorkspaceManager({ rm: remove });
-    await manager.prepareWorkspace({ projectId: 'project', workspacePath });
-
-    await expect(
-      manager.removeProjectWorkspace('project', workspacePath),
-    ).rejects.toThrow('metadata directory locked');
-    await expect(readdir(metadataPath)).resolves.toEqual([]);
-
-    const restartedManager = new ProjectWorkspaceManager();
-    await restartedManager.removeProjectWorkspace('project', workspacePath);
-    await expect(stat(workspacePath)).resolves.toBeDefined();
-    await expect(stat(metadataPath)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('removes linked children without following them outside app data', async () => {
-    const root = await createTemporaryDirectory();
-    const workspacePath = join(root, 'project');
-    const outsidePath = join(root, 'outside');
-    const outsideFile = join(outsidePath, 'keep.txt');
-    await mkdir(outsidePath);
-    await writeFile(outsideFile, 'keep');
+    const workspacePath = join(root, 'managed-project');
     const manager = new ProjectWorkspaceManager();
-    await manager.prepareWorkspace({ projectId: 'project', workspacePath });
-    await symlink(
-      outsidePath,
-      join(workspacePath, '.learning-companion', 'linked-child'),
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-
-    await manager.removeProjectWorkspace('project', workspacePath);
-
-    await expect(readFile(outsideFile, 'utf8')).resolves.toBe('keep');
-    await expect(stat(workspacePath)).resolves.toBeDefined();
-  });
-
-  it('rejects a linked metadata root without touching its target', async () => {
-    const root = await createTemporaryDirectory();
-    const workspacePath = join(root, 'project');
-    const metadataPath = join(workspacePath, '.learning-companion');
-    const outsidePath = join(root, 'outside');
-    const outsideFile = join(outsidePath, 'keep.txt');
-    const manager = new ProjectWorkspaceManager();
-    await manager.prepareWorkspace({ projectId: 'project', workspacePath });
-    await mkdir(outsidePath);
-    await writeFile(outsideFile, 'keep');
-    await rm(metadataPath, { recursive: true, force: true });
-    await symlink(
-      outsidePath,
-      metadataPath,
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-
-    await expect(
-      manager.removeProjectWorkspace('project', workspacePath),
-    ).rejects.toThrow('PROJECT_WORKSPACE_CONFLICT');
-    await expect(readFile(outsideFile, 'utf8')).resolves.toBe('keep');
-  });
-
-  it('does not claim a pre-existing metadata directory without a marker', async () => {
-    const root = await createTemporaryDirectory();
-    const workspacePath = join(root, 'project');
-    const existingFile = join(
+    await manager.prepareWorkspace({
+      projectId: 'managed-project',
       workspacePath,
-      '.learning-companion',
-      'keep.txt',
+    });
+    await writeFile(
+      join(workspacePath, 'assets', 'imported', 'copy.md'),
+      'copy',
     );
-    await mkdir(dirname(existingFile), { recursive: true });
-    await writeFile(existingFile, 'keep');
-    const manager = new ProjectWorkspaceManager();
 
+    await manager.removeProjectWorkspace('managed-project', workspacePath);
+
+    await expect(stat(workspacePath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('preserves unrelated files in a user-selected Workspace', async () => {
+    const root = await createTemporaryDirectory();
+    const workspacePath = join(root, 'existing-project');
+    const manager = new ProjectWorkspaceManager();
+    await mkdir(workspacePath);
+    const userFile = join(workspacePath, 'keep-me.md');
+    await writeFile(userFile, 'user content');
+    const preexistingImportedDirectory = join(
+      workspacePath,
+      'assets',
+      'imported',
+    );
+    await mkdir(preexistingImportedDirectory, { recursive: true });
+    const preexistingImportedFile = join(
+      preexistingImportedDirectory,
+      'also-keep-me.md',
+    );
+    await writeFile(preexistingImportedFile, 'preexisting content');
+    await manager.prepareWorkspace({
+      projectId: 'existing-project',
+      workspacePath,
+    });
+    await writeFile(
+      join(workspacePath, 'assets', 'imported', 'copy.md'),
+      'copy',
+    );
+
+    await manager.removeProjectWorkspace('existing-project', workspacePath);
+
+    await expect(readFile(userFile, 'utf8')).resolves.toBe('user content');
+    await expect(readFile(preexistingImportedFile, 'utf8')).resolves.toBe(
+      'preexisting content',
+    );
     await expect(
-      manager.prepareWorkspace({ projectId: 'project', workspacePath }),
-    ).rejects.toThrow('PROJECT_WORKSPACE_CONFLICT');
-    await expect(readFile(existingFile, 'utf8')).resolves.toBe('keep');
+      stat(
+        join(
+          workspacePath,
+          '.learning-companion',
+          'workspace.json',
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('removes a legacy app-layout Workspace but preserves a legacy directory with user files', async () => {
+    const root = await createTemporaryDirectory();
+    const manager = new ProjectWorkspaceManager();
+    const managedWorkspace = join(root, 'legacy-managed');
+    await manager.prepareWorkspace({
+      projectId: 'legacy-managed',
+      workspacePath: managedWorkspace,
+    });
+    await writeFile(
+      join(
+        managedWorkspace,
+        '.learning-companion',
+        'workspace.json',
+      ),
+      JSON.stringify({ schemaVersion: 1, projectId: 'legacy-managed' }),
+    );
+
+    await manager.removeProjectWorkspace(
+      'legacy-managed',
+      managedWorkspace,
+    );
+    await expect(stat(managedWorkspace)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    const userWorkspace = join(root, 'legacy-user');
+    await mkdir(userWorkspace);
+    await writeFile(join(userWorkspace, 'keep.md'), 'keep');
+    await manager.prepareWorkspace({
+      projectId: 'legacy-user',
+      workspacePath: userWorkspace,
+    });
+    await writeFile(
+      join(
+        userWorkspace,
+        '.learning-companion',
+        'workspace.json',
+      ),
+      JSON.stringify({ schemaVersion: 1, projectId: 'legacy-user' }),
+    );
+
+    await manager.removeProjectWorkspace('legacy-user', userWorkspace);
+    await expect(readFile(join(userWorkspace, 'keep.md'), 'utf8')).resolves.toBe(
+      'keep',
+    );
   });
 
   it('keeps the Mind Map extension after resolving an import conflict', async () => {
@@ -593,7 +502,7 @@ describe('ProjectWorkspaceManager', () => {
     expect(second.contentRef).toEqual({
       kind: 'local-file',
       base: 'project-workspace',
-      path: '.learning-companion/assets/imported/课程 (2).mindmap',
+      path: 'assets/imported/课程 (2).mindmap',
     });
   });
 

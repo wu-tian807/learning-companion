@@ -309,8 +309,7 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
       snapshot.instruction,
     );
     return parsed.ok &&
-      parsed.value.contextProviderId === IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID &&
-      parsed.value.assetId !== undefined
+      parsed.value.contextProviderId === IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID
       ? parsed.value
       : undefined;
   }
@@ -320,7 +319,6 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
   ): WorkbenchConversationProjectionLocation | undefined {
     const instruction = this.taskInstruction(snapshot);
     return instruction?.commitAnswer &&
-      instruction.assetId !== undefined &&
       isImageConversationContext(instruction.context)
       ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
@@ -333,7 +331,6 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     const conversationContext = instruction?.context;
     if (
       !instruction?.commitAnswer ||
-      instruction.assetId === undefined ||
       !isImageConversationContext(conversationContext)
     )
       return undefined;

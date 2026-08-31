@@ -19,7 +19,6 @@ import {
 import { mediaSubtitleDependencyVersions } from './external-libraries/definitions';
 import type {
   MediaSubtitleRuntimeResolverApi,
-  MediaSubtitleRuntime,
   SenseVoiceSubtitleRuntime,
   WhisperSubtitleRuntime,
 } from './external-libraries/media-subtitle-runtime';
@@ -73,20 +72,11 @@ export class MediaSubtitleTranscriptionProducer
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    return this.runtimes.withRuntime(
-      signal,
-      (runtime, usageSignal) =>
-        this.produceWithRuntime(request, runtime, usageSignal),
-    );
-  }
-
-  private async produceWithRuntime(
-    request: AssetArtifactProduceRequest,
-    runtime: MediaSubtitleRuntime,
-    signal: AbortSignal,
-  ): Promise<ProducedAssetArtifact> {
     try {
-      const { decoder, transcription } = runtime;
+      const [decoder, transcription] = await Promise.all([
+        this.runtimes.requireMediaDecoder(),
+        this.runtimes.requireTranscription(),
+      ]);
       const normalizedPath = join(request.stagingDirectory, 'audio.wav');
       await this.dependencies.commandRunner.run({
         command: decoder.ffmpegPath,

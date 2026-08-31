@@ -26,10 +26,10 @@ import {
   VIDEO_WORKBENCH_ID,
 } from './shared';
 import type {
-  MediaSubtitleServiceApi,
-  MediaSubtitleServiceListener,
-} from '../media-subtitles/media-subtitle-service';
-import type { MediaDubbingServiceApi } from '../media-dubbing/media-dubbing-service';
+  VideoSubtitleServiceApi,
+  VideoSubtitleServiceListener,
+} from './subtitles/video-subtitle-service';
+import type { VideoDubbingServiceApi } from './dubbing/video-dubbing-service';
 
 class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   readonly records = new Map<string, WorkbenchStateRecord>();
@@ -56,7 +56,7 @@ function createResources(): ContentResourceServiceApi {
   };
 }
 
-function createSubtitles(): MediaSubtitleServiceApi {
+function createSubtitles(): VideoSubtitleServiceApi {
   return {
     getSnapshot: vi.fn(() => ({
       phase: 'idle' as const,
@@ -71,7 +71,7 @@ function createSubtitles(): MediaSubtitleServiceApi {
   };
 }
 
-function createDubbing(): MediaDubbingServiceApi {
+function createDubbing(): VideoDubbingServiceApi {
   return {
     getSnapshot: vi.fn(() => ({
       phase: 'idle' as const,
@@ -81,9 +81,7 @@ function createDubbing(): MediaDubbingServiceApi {
       durationMs: 0,
       readySuffixStartMs: 0,
     })),
-    getSpeakerTrack: vi.fn(() => undefined),
     subscribe: vi.fn(() => () => undefined),
-    subscribeSpeakerTrack: vi.fn(() => () => undefined),
     refreshRuntimeAvailability: vi.fn(async () => undefined),
     restore: vi.fn(async () => undefined),
     warmup: vi.fn(),
@@ -105,8 +103,8 @@ function createProvider(
   states: WorkbenchStateDatabaseApi,
   options: {
     readonly now?: () => number;
-    readonly subtitles?: MediaSubtitleServiceApi;
-    readonly dubbing?: MediaDubbingServiceApi;
+    readonly subtitles?: VideoSubtitleServiceApi;
+    readonly dubbing?: VideoDubbingServiceApi;
     readonly events?: WorkbenchEventBusApi;
   } = {},
 ): VideoWorkbenchProvider {
@@ -269,9 +267,9 @@ describe('VideoWorkbenchProvider', () => {
   it('starts source subtitles on open and translates only for a requested mode', async () => {
     const resources = createResources();
     const states = new MemoryStateDatabase();
-    let listener: MediaSubtitleServiceListener | undefined;
+    let listener: VideoSubtitleServiceListener | undefined;
     const unsubscribe = vi.fn();
-    const subtitles: MediaSubtitleServiceApi = {
+    const subtitles: VideoSubtitleServiceApi = {
       getSnapshot: vi.fn(() => ({
         phase: 'idle' as const,
         partialTranslations: [],
@@ -469,7 +467,7 @@ describe('VideoWorkbenchProvider', () => {
 
   it('publishes a scoped audio URL for a completed dubbing artifact', async () => {
     let listener:
-      | ((snapshot: ReturnType<MediaDubbingServiceApi['getSnapshot']>) => void)
+      | ((snapshot: ReturnType<VideoDubbingServiceApi['getSnapshot']>) => void)
       | undefined;
     const unsubscribe = vi.fn();
     const dubbing = createDubbing();
@@ -553,7 +551,7 @@ describe('VideoWorkbenchProvider', () => {
 
   it('publishes one playable mixed resource for each continuous suffix', async () => {
     let listener:
-      | ((snapshot: ReturnType<MediaDubbingServiceApi['getSnapshot']>) => void)
+      | ((snapshot: ReturnType<VideoDubbingServiceApi['getSnapshot']>) => void)
       | undefined;
     const dubbing = createDubbing();
     vi.mocked(dubbing.subscribe).mockImplementation(

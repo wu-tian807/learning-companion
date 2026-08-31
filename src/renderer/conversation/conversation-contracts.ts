@@ -1,15 +1,26 @@
-import type {
-  ConversationMessageRecord,
-  ConversationRecord,
-} from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
-export type {
-  ConversationMessageRecord,
-  ConversationReanswerBackup,
-  ConversationRecord,
-  ConversationRole,
-} from '../../shared/project-conversations';
+export type ConversationRole = 'user' | 'assistant';
+
+export interface ConversationMessageRecord {
+  readonly id: string;
+  readonly role: ConversationRole;
+  readonly text: string;
+  readonly createdTime: number;
+  readonly replyToMessageId?: string;
+  readonly generationTaskId?: string;
+  readonly context?: JsonValue;
+  readonly modelInfo?: string;
+  readonly stopped?: boolean;
+}
+
+export interface ConversationRecord {
+  readonly id: string;
+  readonly title: string;
+  readonly messages: readonly ConversationMessageRecord[];
+  readonly createdTime: number;
+  readonly updatedTime: number;
+}
 
 export interface ConversationHistoryStore {
   list(): Promise<readonly ConversationRecord[]>;
@@ -27,7 +38,7 @@ export interface ConversationContextPresentation {
 
 export interface ConversationTaskInput {
   readonly projectId: string;
-  readonly assetId?: string;
+  readonly assetId: string;
   readonly conversationId: string;
   readonly question: string;
   readonly context?: JsonValue;
@@ -36,27 +47,15 @@ export interface ConversationTaskInput {
 
 export interface ConversationAnswerActionInput {
   readonly projectId: string;
-  readonly assetId?: string;
+  readonly assetId: string;
   readonly conversation: ConversationRecord;
   readonly answer: ConversationMessageRecord;
   readonly question: ConversationMessageRecord | undefined;
   readonly text: string;
 }
 
-export interface ConversationAnswerActionPresentation {
-  readonly label: string;
-  readonly selectionLabel: string;
-  readonly successMessage: string;
-  readonly failureMessage: string;
-}
-
-export interface ConversationAnswerAction
-  extends ConversationAnswerActionPresentation {
-  execute(input: ConversationAnswerActionInput): Promise<void> | void;
-}
-
 /**
- * Renderer contribution supplied by Project or an active Workbench context.
+ * Renderer contribution supplied by one active Workbench.
  *
  * The shared conversation layer owns the TaskDefinition, Agent Session,
  * Provider call, task lifecycle and result projection. The contribution only
@@ -68,27 +67,26 @@ export interface WorkbenchConversationContribution {
   readonly workbenchId: string;
   /** Main-side provider that turns the opaque Workbench context into Agent input. */
   readonly contextProviderId: string;
-  /** Declares whether this Workbench context needs only the Asset id or a materialized source copy. */
-  readonly sourceAssetMode?: 'identity' | 'reference';
+  /** Copies the current Asset into the conversation Workspace when true. */
+  readonly includeSourceAssetReference?: boolean;
   readonly initialContextRequired?: boolean;
   readonly initialContextRequiredMessage?: string;
   readonly title: string;
   readonly emptyLabel: string;
   readonly inputPlaceholder?: string;
+  readonly historyStore: ConversationHistoryStore;
   isContext?(context: JsonValue): boolean;
   shouldCommitAnswer?(input: ConversationTaskInput): boolean;
   describeContext?(context: JsonValue): ConversationContextPresentation;
   revealContext?(context: JsonValue): Promise<void> | void;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */
   onContextReleased?(context: JsonValue | undefined): void;
-  /** Optional answer operation whose presentation and media behavior are Workbench-owned. */
-  readonly answerAction?: ConversationAnswerAction;
+  attachAnswer?(input: ConversationAnswerActionInput): Promise<void> | void;
 }
 
 export interface ConversationLaunchRequest {
   readonly id: number;
   readonly conversationId?: string;
-  readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;

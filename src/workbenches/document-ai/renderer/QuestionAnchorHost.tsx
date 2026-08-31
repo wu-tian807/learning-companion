@@ -4,7 +4,6 @@ import type {
   ConversationHistoryStore,
   ConversationRecord,
 } from '../../../renderer/conversation/conversation-contracts';
-import { useOptionalProjectConversationHistoryStore } from '../../../renderer/conversation/project-conversation-history-context';
 import type { WorkbenchConversationRuntime } from '../../../renderer/conversation/workbench-conversation-runtime';
 import {
   revealWorkbenchAnchor,
@@ -19,14 +18,9 @@ function useHistory(store: ConversationHistoryStore): readonly ConversationRecor
   );
   useEffect(() => {
     let active = true;
-    void store.list().then(
-      (records) => {
-        if (active) setHistory(records);
-      },
-      () => {
-        // The Conversation panel owns persistence error presentation.
-      },
-    );
+    void store.list().then((records) => {
+      if (active) setHistory(records);
+    });
     const unsubscribe = store.subscribe?.(() => {
       const records = store.getSnapshot?.();
       if (records) setHistory(records);
@@ -42,34 +36,13 @@ function useHistory(store: ConversationHistoryStore): readonly ConversationRecor
 export function QuestionAnchorHost({
   assetId,
   ownerId,
-  runtime,
-}: {
-  readonly assetId: string;
-  readonly ownerId: string;
-  readonly runtime: WorkbenchConversationRuntime;
-}) {
-  const historyStore = useOptionalProjectConversationHistoryStore();
-  if (!historyStore) return null;
-  return (
-    <QuestionAnchorHostWithStore
-      assetId={assetId}
-      ownerId={ownerId}
-      runtime={runtime}
-      historyStore={historyStore}
-    />
-  );
-}
-
-function QuestionAnchorHostWithStore({
-  assetId,
-  ownerId,
-  runtime,
   historyStore,
+  runtime,
 }: {
   readonly assetId: string;
   readonly ownerId: string;
-  readonly runtime: WorkbenchConversationRuntime;
   readonly historyStore: ConversationHistoryStore;
+  readonly runtime: WorkbenchConversationRuntime;
 }) {
   const visible = useDocumentQuestionAnchorsVisible();
   const history = useHistory(historyStore);

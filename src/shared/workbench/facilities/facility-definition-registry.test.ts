@@ -58,11 +58,6 @@ describe('WorkbenchFacilityDefinitionRegistry', () => {
     ).toBe(false);
     expect(
       registry.validateDeclarations([
-        { id: 'core.surface.generation-center', version: 1 },
-      ]),
-    ).toBe(false);
-    expect(
-      registry.validateDeclarations([
         rendererTransportFacilityDeclaration,
         {
           id: 'core.surface.context-menu',

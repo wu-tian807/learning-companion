@@ -19,8 +19,6 @@ export interface VideoExplanationMetadata {
   readonly version: 1;
   readonly sourceRevision: string;
   readonly question: string;
-  /** Stable Conversation/Provider Session that produced this explanation. */
-  readonly conversationId?: string;
 }
 
 interface VideoExplanationViewBase {
@@ -30,7 +28,6 @@ interface VideoExplanationViewBase {
   readonly target: VideoFrameRegionTarget;
   readonly sourceRevision: string;
   readonly question: string;
-  readonly conversationId?: string;
   readonly createdTime: number;
   readonly updatedTime: number;
 }
@@ -121,9 +118,7 @@ export function isVideoExplanationMetadata(
     value.format === 'learning-companion/video-explanation' &&
     value.version === 1 &&
     isRequiredText(value.sourceRevision, 256) &&
-    isRequiredText(value.question) &&
-    (value.conversationId === undefined ||
-      isRequiredText(value.conversationId, 160))
+    isRequiredText(value.question)
   );
 }
 
@@ -161,8 +156,6 @@ export function isVideoExplanationView(
     isVideoFrameRegionTarget(value.target) &&
     isRequiredText(value.sourceRevision, 256) &&
     isRequiredText(value.question) &&
-    (value.conversationId === undefined ||
-      isRequiredText(value.conversationId, 160)) &&
     ((value.kind === 'task' &&
       (value.status === 'pending' || value.status === 'failed') &&
       value.answer === undefined &&

@@ -57,6 +57,7 @@ export const PROJECT_WORKSPACE_MARKER_FILE = 'workspace.json';
 
 export interface WorkspacePreparation {
   readonly workspacePath: string;
+  readonly createdWorkspaceDirectory: boolean;
   readonly createdMarker: boolean;
 }
 
@@ -74,6 +75,7 @@ export interface GeneratedLocalFile {
 interface WorkspaceMarker {
   readonly schemaVersion: number;
   readonly projectId: string;
+  readonly ownsWorkspaceRoot?: boolean;
 }
 
 export interface ProjectWorkspaceManagerApi {
@@ -171,11 +173,15 @@ function isFileNotFoundError(error: unknown): boolean {
   );
 }
 
-function createMarkerContent(projectId: string): string {
+function createMarkerContent(
+  projectId: string,
+  ownsWorkspaceRoot: boolean,
+): string {
   return `${JSON.stringify(
     {
       schemaVersion: PROJECT_WORKSPACE_SCHEMA_VERSION,
       projectId,
+      ownsWorkspaceRoot,
     } satisfies WorkspaceMarker,
     null,
     2,
@@ -212,7 +218,9 @@ function parseMarker(content: string): WorkspaceMarker {
     value.schemaVersion !== PROJECT_WORKSPACE_SCHEMA_VERSION ||
     !('projectId' in value) ||
     typeof value.projectId !== 'string' ||
-    value.projectId.trim().length === 0
+    value.projectId.trim().length === 0 ||
+    ('ownsWorkspaceRoot' in value &&
+      typeof value.ownsWorkspaceRoot !== 'boolean')
   ) {
     throw new AppError('PROJECT_WORKSPACE_CONFLICT');
   }
@@ -220,6 +228,9 @@ function parseMarker(content: string): WorkspaceMarker {
   return {
     schemaVersion: PROJECT_WORKSPACE_SCHEMA_VERSION,
     projectId: value.projectId.trim(),
+    ...('ownsWorkspaceRoot' in value
+      ? { ownsWorkspaceRoot: value.ownsWorkspaceRoot as boolean }
+      : {}),
   };
 }
 
@@ -296,7 +307,7 @@ export class ProjectWorkspaceManager
       throw new AppError('INVALID_IPC_REQUEST');
     }
 
-    let createdMetadataDirectory = false;
+    let createdWorkspaceDirectory = false;
     let createdMarker = false;
 
     try {
@@ -310,6 +321,7 @@ export class ProjectWorkspaceManager
         }
 
         await this.dependencies.mkdir(workspacePath, { recursive: true });
+        createdWorkspaceDirectory = true;
         workspaceStats = await this.dependencies.stat(workspacePath);
       }
 
@@ -322,51 +334,28 @@ export class ProjectWorkspaceManager
         constants.R_OK | constants.W_OK,
       );
 
-      let currentMarker = await this.readMarker(workspacePath);
+      const currentMarker = await this.readMarker(workspacePath);
 
       if (currentMarker && currentMarker.projectId !== projectId) {
         throw new AppError('PROJECT_WORKSPACE_CONFLICT');
       }
 
-      const metadataDirectory = join(
-        workspacePath,
-        PROJECT_WORKSPACE_METADATA_DIRECTORY,
-      );
-
-      if (!currentMarker) {
-        try {
-          await this.dependencies.mkdir(metadataDirectory);
-          createdMetadataDirectory = true;
-        } catch (error) {
-          if (
-            !(error instanceof Error) ||
-            !('code' in error) ||
-            (error as NodeJS.ErrnoException).code !== 'EEXIST'
-          ) {
-            throw error;
-          }
-
-          currentMarker = await this.readMarker(workspacePath);
-          if (currentMarker?.projectId !== projectId) {
-            throw new AppError('PROJECT_WORKSPACE_CONFLICT', {
-              cause: error,
-            });
-          }
-        }
-      }
-
       await Promise.all([
         this.dependencies.mkdir(
-          join(metadataDirectory, 'assets', 'imported'),
+          join(workspacePath, 'assets', 'imported'),
           { recursive: true },
         ),
         this.dependencies.mkdir(
-          join(metadataDirectory, 'assets', 'generated'),
+          join(workspacePath, 'assets', 'generated'),
           { recursive: true },
         ),
-        this.dependencies.mkdir(join(metadataDirectory, 'attachments'), {
+        this.dependencies.mkdir(join(workspacePath, 'attachments'), {
           recursive: true,
         }),
+        this.dependencies.mkdir(
+          join(workspacePath, PROJECT_WORKSPACE_METADATA_DIRECTORY),
+          { recursive: true },
+        ),
       ]);
 
       if (!currentMarker) {
@@ -376,7 +365,7 @@ export class ProjectWorkspaceManager
         try {
           await this.dependencies.writeFile(
             temporaryMarkerPath,
-            createMarkerContent(projectId),
+            createMarkerContent(projectId, createdWorkspaceDirectory),
             { encoding: 'utf8', flag: 'wx' },
           );
           await this.dependencies.link(temporaryMarkerPath, markerPath);
@@ -406,18 +395,13 @@ export class ProjectWorkspaceManager
 
       return Object.freeze({
         workspacePath,
+        createdWorkspaceDirectory,
         createdMarker,
       });
     } catch (error) {
-      if (createdMetadataDirectory) {
+      if (createdWorkspaceDirectory) {
         await this.dependencies
-          .rm(
-            join(
-              workspacePath,
-              PROJECT_WORKSPACE_METADATA_DIRECTORY,
-            ),
-            { recursive: true, force: true },
-          )
+          .rm(workspacePath, { recursive: true, force: true })
           .catch(() => undefined);
       }
 
@@ -470,20 +454,19 @@ export class ProjectWorkspaceManager
   async rollbackPreparation(
     preparation: WorkspacePreparation,
   ): Promise<void> {
-    if (!preparation.createdMarker) {
+    if (preparation.createdWorkspaceDirectory) {
+      await this.dependencies.rm(preparation.workspacePath, {
+        recursive: true,
+        force: true,
+      });
       return;
     }
 
-    await this.dependencies.rm(
-      join(
-        preparation.workspacePath,
-        PROJECT_WORKSPACE_METADATA_DIRECTORY,
-      ),
-      {
-        recursive: true,
+    if (preparation.createdMarker) {
+      await this.dependencies.rm(this.markerPath(preparation.workspacePath), {
         force: true,
-      },
-    );
+      });
+    }
   }
 
   async selectWorkspace(defaultPath: string): Promise<string | undefined> {
@@ -616,7 +599,6 @@ export class ProjectWorkspaceManager
 
     const importedDirectory = join(
       normalizedWorkspace,
-      PROJECT_WORKSPACE_METADATA_DIRECTORY,
       'assets',
       'imported',
     );
@@ -685,7 +667,6 @@ export class ProjectWorkspaceManager
       requireAbsoluteWorkspaceDirectoryPath(workspacePath);
     const generatedDirectory = join(
       normalizedWorkspace,
-      PROJECT_WORKSPACE_METADATA_DIRECTORY,
       'assets',
       'generated',
     );
@@ -773,7 +754,6 @@ export class ProjectWorkspaceManager
     );
     const managedDirectory = join(
       normalizedWorkspace,
-      PROJECT_WORKSPACE_METADATA_DIRECTORY,
       'assets',
       managedDirectoryName,
     );
@@ -798,71 +778,56 @@ export class ProjectWorkspaceManager
       throw new AppError('INVALID_IPC_REQUEST');
     }
 
-    const workspaceStats = await this.lstatIfPresent(normalizedWorkspace);
-    if (!workspaceStats) {
-      return;
-    }
-    if (workspaceStats.isSymbolicLink() || !workspaceStats.isDirectory()) {
-      throw new AppError('PROJECT_WORKSPACE_CONFLICT');
-    }
-
-    const metadataDirectory = join(
-      normalizedWorkspace,
-      PROJECT_WORKSPACE_METADATA_DIRECTORY,
-    );
-    const metadataStats = await this.lstatIfPresent(metadataDirectory);
-    if (!metadataStats) {
-      return;
-    }
-    if (metadataStats.isSymbolicLink() || !metadataStats.isDirectory()) {
-      throw new AppError('PROJECT_WORKSPACE_CONFLICT');
-    }
-
     const marker = await this.readMarker(normalizedWorkspace);
-    const entries = await this.dependencies.readdir(metadataDirectory);
 
     if (!marker) {
-      if (entries.length > 0) {
-        throw new AppError('PROJECT_WORKSPACE_CONFLICT');
-      }
-
-      await this.dependencies.rm(metadataDirectory, {
-        recursive: true,
-        force: true,
-      });
       return;
     }
     if (marker.projectId !== normalizedProjectId) {
       throw new AppError('PROJECT_WORKSPACE_CONFLICT');
     }
 
-    for (const entry of entries) {
-      if (entry === PROJECT_WORKSPACE_MARKER_FILE) {
-        continue;
-      }
+    const workspaceStats = await this.dependencies.lstat(
+      normalizedWorkspace,
+    );
+    if (workspaceStats.isSymbolicLink() || !workspaceStats.isDirectory()) {
+      throw new AppError('PROJECT_WORKSPACE_CONFLICT');
+    }
 
-      await this.dependencies.rm(join(metadataDirectory, entry), {
+    const ownsWorkspaceRoot =
+      marker.ownsWorkspaceRoot ??
+      (await this.isLegacyApplicationWorkspace(normalizedWorkspace));
+
+    if (ownsWorkspaceRoot) {
+      await this.dependencies.rm(normalizedWorkspace, {
         recursive: true,
         force: true,
       });
+      return;
     }
 
+    // The root and its reserved-looking directories predated the Project, so
+    // only detach the exact marker. AssetService removes files it can prove
+    // are managed from persisted ContentRefs before this method is called.
     await this.dependencies.rm(this.markerPath(normalizedWorkspace), {
-      force: true,
-    });
-    await this.dependencies.rm(metadataDirectory, {
-      recursive: true,
       force: true,
     });
   }
 
-  private async lstatIfPresent(path: string): Promise<Stats | undefined> {
-    try {
-      return await this.dependencies.lstat(path);
-    } catch (error) {
-      if (isFileNotFoundError(error)) return undefined;
-      throw error;
-    }
+  private async isLegacyApplicationWorkspace(
+    workspacePath: string,
+  ): Promise<boolean> {
+    const entries = await this.dependencies.readdir(workspacePath);
+    const applicationEntries = new Set([
+      'assets',
+      'attachments',
+      PROJECT_WORKSPACE_METADATA_DIRECTORY,
+    ]);
+
+    // Old markers did not persist root ownership. A legacy root is removable
+    // only when every top-level entry belongs to the standard app layout.
+    // Any user file or unknown directory makes the decision conservative.
+    return entries.every((entry) => applicationEntries.has(entry));
   }
 
   private async generatedFileIfPresent(
@@ -922,20 +887,12 @@ export class ProjectWorkspaceManager
   private async readMarker(
     workspacePath: string,
   ): Promise<WorkspaceMarker | undefined> {
-    return this.readMarkerFile(this.markerPath(workspacePath));
-  }
-
-  private async readMarkerFile(
-    path: string,
-  ): Promise<WorkspaceMarker | undefined> {
     try {
-      const stats = await this.dependencies.lstat(path);
-      if (stats.isSymbolicLink() || !stats.isFile()) {
-        throw new AppError('PROJECT_WORKSPACE_CONFLICT');
-      }
-
       return parseMarker(
-        await this.dependencies.readFile(path, 'utf8'),
+        await this.dependencies.readFile(
+          this.markerPath(workspacePath),
+          'utf8',
+        ),
       );
     } catch (error) {
       if (isFileNotFoundError(error)) {

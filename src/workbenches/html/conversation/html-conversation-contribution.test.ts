@@ -8,9 +8,11 @@ import {
 } from '../../../shared/workbench-conversation';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './html-conversation-context';
 import {
+  adaptHtmlConversationHistoryStore,
   createHtmlConversationContribution,
   shouldClearHtmlConversationHighlight,
 } from './html-conversation-contribution';
+import type { HtmlConversationStore } from './conversation-store';
 
 function record(): ConversationRecord {
   return {
@@ -68,10 +70,52 @@ describe('HTML conversation contribution', () => {
     expect(shouldClearHtmlConversationHighlight(undefined, newAnchor)).toBe(true);
   });
 
+  it('keeps the existing file-backed HTML history behind the shared store contract', async () => {
+    const entries: Parameters<HtmlConversationStore['save']>[0][] = [];
+    const store: HtmlConversationStore = {
+      list: vi.fn(async () => entries),
+      save: vi.fn(async (entry) => {
+        entries.splice(0, entries.length, entry);
+        return entries;
+      }),
+      remove: vi.fn(async () => []),
+    };
+    const adapted = adaptHtmlConversationHistoryStore(store);
+    const sourceRecord = record();
+
+    await adapted.save(sourceRecord);
+    const saved = vi.mocked(store.save).mock.calls[0]?.[0];
+    expect(saved?.id).toBe('conversation-1');
+    expect(saved?.messages[0]).toMatchObject({
+      role: 'user',
+      anchor: sourceRecord.messages[0]?.context,
+    });
+    expect(saved?.messages[1]).toMatchObject({
+      role: 'assistant',
+      generationTaskId: 'task-1',
+    });
+    const restored = (await adapted.list())[0];
+    expect(restored?.id).toBe('conversation-1');
+    expect(restored?.messages[0]).toMatchObject({
+      role: 'user',
+      context: sourceRecord.messages[0]?.context,
+    });
+    expect(restored?.messages[1]).toMatchObject({
+      role: 'assistant',
+      generationTaskId: 'task-1',
+    });
+  });
+
   it('declares HTML context while the shared conversation layer owns the task', () => {
     const revealContext = vi.fn();
+    const historyStore = {
+      list: async () => [],
+      save: async (saved: ConversationRecord) => [saved],
+      remove: async () => [],
+    };
     const contribution = createHtmlConversationContribution({
       assetId: 'asset',
+      historyStore,
       revealContext,
     });
     const context = record().messages[0]!.context!;

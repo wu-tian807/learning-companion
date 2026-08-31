@@ -94,7 +94,6 @@ function createService() {
       runtimeDirectory: "/tmp/libreoffice",
       executablePath: "/tmp/soffice",
     })),
-    withRuntime: vi.fn(),
     subscribe: vi.fn((nextListener: ExternalLibraryListener) => {
       listener = nextListener;
       return unsubscribe;

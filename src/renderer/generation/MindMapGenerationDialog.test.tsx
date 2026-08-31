@@ -16,7 +16,7 @@ const sourceAssets: readonly AssetSnapshot[] = [
     mediaType: 'application/pdf',
     creationKind: 'imported',
     contentRef: createProjectWorkspaceContentRef(
-      '.learning-companion/assets/imported/machine-learning.pdf',
+      'assets/imported/machine-learning.pdf',
     ),
     contentStatus: {
       availability: 'available',
@@ -32,7 +32,7 @@ const sourceAssets: readonly AssetSnapshot[] = [
     mediaType: 'text/plain',
     creationKind: 'imported',
     contentRef: createProjectWorkspaceContentRef(
-      '.learning-companion/assets/imported/review.txt',
+      'assets/imported/review.txt',
     ),
     contentStatus: {
       availability: 'available',

@@ -83,29 +83,25 @@ describe('VideoPlaybackControls', () => {
       '[aria-label="视频音量"]',
     );
     const progressRow = container.querySelector(
-      '[data-media-progress-row="true"]',
+      '[data-video-progress-row="true"]',
     );
     const actionRow = container.querySelector(
-      '[data-media-action-row="true"]',
+      '[data-video-action-row="true"]',
     );
     const secondaryControls = container.querySelector(
-      '[data-media-secondary-controls="true"]',
+      '[data-video-secondary-controls="true"]',
     );
     const volumeSlider = container.querySelector(
-      '[data-media-volume-slider="true"]',
-    );
-    const volumeControls = container.querySelector(
-      '[data-media-volume-controls="true"]',
+      '[data-video-volume-slider="true"]',
     );
 
     expect(progressRow?.contains(progress)).toBe(true);
     expect(progressRow?.contains(secondaryControls)).toBe(false);
     expect(actionRow?.contains(secondaryControls)).toBe(true);
     expect(secondaryControls?.textContent).toBe('字幕');
-    expect(volumeControls?.className).toContain('relative');
-    expect(volumeSlider?.className).toContain('absolute');
-    expect(volumeSlider?.className).toContain('w-20');
-    expect(volumeSlider?.className).not.toContain('group-hover/volume:w-16');
+    expect(volumeSlider?.className).toContain('w-0');
+    expect(volumeSlider?.className).toContain('group-hover/volume:w-16');
+    expect(volumeSlider?.className).toContain('group-focus-within/volume:w-16');
     act(() => {
       const setInputValue = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,

@@ -230,7 +230,12 @@ describe('WorkbenchRuntime', () => {
 
   it('rejects header contributions unless the active Workbench declares the surface', () => {
     const runtime = new WorkbenchRuntime(vi.fn());
-    runtime.activate(identity, plainTextWorkbenchManifest);
+    runtime.activate(identity, {
+      ...plainTextWorkbenchManifest,
+      facilities: plainTextWorkbenchManifest.facilities.filter(
+        (facility) => facility.id !== headerSurfaceFacilityDeclaration.id,
+      ),
+    });
 
     expect(() =>
       runtime.registerContributions('test.header', headerBundle),
@@ -239,13 +244,7 @@ describe('WorkbenchRuntime', () => {
 
   it('accepts header contributions through the declared surface facility', () => {
     const runtime = new WorkbenchRuntime(vi.fn());
-    runtime.activate(identity, {
-      ...plainTextWorkbenchManifest,
-      facilities: [
-        ...plainTextWorkbenchManifest.facilities,
-        headerSurfaceFacilityDeclaration,
-      ],
-    });
+    runtime.activate(identity, plainTextWorkbenchManifest);
 
     expect(() =>
       runtime.registerContributions('test.header', headerBundle),

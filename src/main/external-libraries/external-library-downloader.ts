@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  lstat,
   mkdir,
   open,
   rm,
@@ -9,10 +8,6 @@ import {
 import { dirname, isAbsolute, normalize } from 'node:path';
 
 import { AppError } from '../errors/app-error';
-import {
-  externalLibraryAbortReason,
-  isExternalLibraryAbortError,
-} from './external-library-abort';
 import type {
   ExternalLibraryDownloadResourceDefinition,
 } from './external-library-definition';
@@ -42,6 +37,13 @@ export interface ExternalLibraryDownloaderApi {
 
 export interface ExternalLibraryDownloaderDependencies {
   readonly fetch: typeof globalThis.fetch;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'AbortError'
+  );
 }
 
 function requireDestinationPath(value: string): string {
@@ -77,7 +79,6 @@ function validateFinalUrl(value: string): void {
 async function writeAll(
   file: FileHandle,
   content: Uint8Array,
-  position: number,
 ): Promise<void> {
   let offset = 0;
 
@@ -86,7 +87,6 @@ async function writeAll(
       content,
       offset,
       content.byteLength - offset,
-      position + offset,
     );
 
     if (bytesWritten <= 0) {
@@ -94,100 +94,6 @@ async function writeAll(
     }
 
     offset += bytesWritten;
-  }
-}
-
-function isFileSystemError(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    'code' in error &&
-    (error as NodeJS.ErrnoException).code === code
-  );
-}
-
-async function existingFileSize(path: string): Promise<number | undefined> {
-  try {
-    const stats = await lstat(path);
-
-    if (!stats.isFile() || stats.isSymbolicLink()) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-
-    return stats.size;
-  } catch (error) {
-    if (isFileSystemError(error, 'ENOENT')) {
-      return undefined;
-    }
-
-    throw error;
-  }
-}
-
-async function hashFilePrefix(
-  file: FileHandle,
-  byteLength: number,
-  signal: AbortSignal,
-): Promise<ReturnType<typeof createHash>> {
-  const hash = createHash('sha256');
-  const buffer = Buffer.allocUnsafe(8 * 1024 * 1024);
-  let position = 0;
-
-  while (position < byteLength) {
-    if (signal.aborted) {
-      throw externalLibraryAbortReason(signal);
-    }
-
-    const length = Math.min(buffer.byteLength, byteLength - position);
-    const { bytesRead } = await file.read(
-      buffer,
-      0,
-      length,
-      position,
-    );
-
-    if (bytesRead <= 0) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-
-    hash.update(buffer.subarray(0, bytesRead));
-    position += bytesRead;
-  }
-
-  return hash;
-}
-
-interface ParsedContentRange {
-  readonly start: number;
-  readonly end: number;
-  readonly total: number;
-}
-
-function parseContentRange(value: string | null): ParsedContentRange | undefined {
-  const match = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(value ?? '');
-
-  if (!match) {
-    return undefined;
-  }
-
-  const start = Number(match[1]);
-  const end = Number(match[2]);
-  const total = Number(match[3]);
-
-  return Number.isSafeInteger(start) &&
-    Number.isSafeInteger(end) &&
-    Number.isSafeInteger(total)
-    ? { start, end, total }
-    : undefined;
-}
-
-function validateResponseLength(
-  response: Response,
-  expectedSize: number,
-): void {
-  const contentLength = response.headers.get('content-length');
-
-  if (contentLength !== null && Number(contentLength) !== expectedSize) {
-    throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
   }
 }
 
@@ -218,81 +124,21 @@ export class ExternalLibraryDownloader
     let reader:
       | ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>
       | undefined;
-    let response: Response | undefined;
-    let deleteDestinationOnError = false;
+    let createdDestination = false;
 
     try {
       if (input.signal.aborted) {
-        throw externalLibraryAbortReason(input.signal);
+        throw new DOMException('Download cancelled', 'AbortError');
       }
 
-      await mkdir(dirname(destinationPath), { recursive: true });
-      const expectedSize = input.resourceDefinition.expectedSize;
-      let completedBytes = (await existingFileSize(destinationPath)) ?? 0;
-
-      if (completedBytes > expectedSize) {
-        await rm(destinationPath, { force: true });
-        completedBytes = 0;
-      }
-
-      input.onProgress?.({
-        completedBytes,
-        totalBytes: expectedSize,
-      });
-
-      if (completedBytes === expectedSize) {
-        file = await open(destinationPath, 'r');
-        const hash = await hashFilePrefix(
-          file,
-          completedBytes,
-          input.signal,
-        );
-        input.onVerifying?.();
-        const sha256 = hash.digest('hex');
-        await file.close();
-        file = undefined;
-
-        if (sha256 === input.resourceDefinition.sha256) {
-          return Object.freeze({
-            packagePath: destinationPath,
-            byteLength: completedBytes,
-            sha256,
-          });
-        }
-
-        await rm(destinationPath, { force: true });
-        completedBytes = 0;
-        input.onProgress?.({
-          completedBytes,
-          totalBytes: expectedSize,
-        });
-      }
-
-      const request = async (resumeOffset: number): Promise<Response> =>
-        this.fetch(input.resourceDefinition.downloadUrl, {
+      const response = await this.fetch(
+        input.resourceDefinition.downloadUrl,
+        {
           method: 'GET',
           redirect: 'follow',
           signal: input.signal,
-          headers:
-            resumeOffset > 0
-              ? {
-                  'accept-encoding': 'identity',
-                  range: `bytes=${resumeOffset}-`,
-                }
-              : { 'accept-encoding': 'identity' },
-        });
-
-      response = await request(completedBytes);
-
-      if (completedBytes > 0 && response.status === 416) {
-        await response.body?.cancel().catch(() => undefined);
-        response = await request(0);
-        completedBytes = 0;
-        input.onProgress?.({
-          completedBytes,
-          totalBytes: expectedSize,
-        });
-      }
+        },
+      );
 
       if (!response.ok || !response.body) {
         throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
@@ -301,62 +147,30 @@ export class ExternalLibraryDownloader
       }
 
       validateFinalUrl(response.url);
-      const resumeOffset = completedBytes;
-      const isResume = resumeOffset > 0 && response.status === 206;
+      const contentLength = response.headers.get('content-length');
 
-      if (resumeOffset > 0 && response.status === 200) {
-        completedBytes = 0;
-        input.onProgress?.({
-          completedBytes,
-          totalBytes: expectedSize,
-        });
-      } else if (resumeOffset > 0 && !isResume) {
+      if (
+        contentLength !== null &&
+        Number(contentLength) !== input.resourceDefinition.expectedSize
+      ) {
         throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
       }
 
-      if (isResume) {
-        const range = parseContentRange(
-          response.headers.get('content-range'),
-        );
-
-        if (
-          !range ||
-          range.start !== resumeOffset ||
-          range.end !== expectedSize - 1 ||
-          range.total !== expectedSize
-        ) {
-          throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
-        }
-
-        validateResponseLength(response, expectedSize - resumeOffset);
-      } else {
-        if (response.status !== 200) {
-          throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
-        }
-        validateResponseLength(response, expectedSize);
-      }
-
-      file = await open(destinationPath, isResume ? 'r+' : 'w+');
-      const openedStats = await file.stat();
-
-      if (
-        !openedStats.isFile() ||
-        (isResume && openedStats.size !== resumeOffset) ||
-        (!isResume && openedStats.size !== 0)
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
+      await mkdir(dirname(destinationPath), { recursive: true });
+      file = await open(destinationPath, 'wx');
+      createdDestination = true;
       reader = response.body.getReader();
-      const hash = await hashFilePrefix(
-        file,
+      const hash = createHash('sha256');
+      let completedBytes = 0;
+
+      input.onProgress?.({
         completedBytes,
-        input.signal,
-      );
+        totalBytes: input.resourceDefinition.expectedSize,
+      });
 
       while (true) {
         if (input.signal.aborted) {
-          throw externalLibraryAbortReason(input.signal);
+          throw new DOMException('Download cancelled', 'AbortError');
         }
 
         const result = await reader.read();
@@ -366,35 +180,31 @@ export class ExternalLibraryDownloader
         }
 
         const chunk = result.value;
-        const nextCompletedBytes = completedBytes + chunk.byteLength;
+        completedBytes += chunk.byteLength;
 
-        if (nextCompletedBytes > expectedSize) {
-          deleteDestinationOnError = true;
+        if (completedBytes > input.resourceDefinition.expectedSize) {
           throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
         }
 
-        await writeAll(file, chunk, completedBytes);
+        await writeAll(file, chunk);
         hash.update(chunk);
-        completedBytes = nextCompletedBytes;
         input.onProgress?.({
           completedBytes,
-          totalBytes: expectedSize,
+          totalBytes: input.resourceDefinition.expectedSize,
         });
-      }
-
-      await file.sync();
-
-      if (completedBytes !== expectedSize) {
-        throw new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED');
       }
 
       input.onVerifying?.();
       const sha256 = hash.digest('hex');
 
-      if (sha256 !== input.resourceDefinition.sha256) {
-        deleteDestinationOnError = true;
+      if (
+        completedBytes !== input.resourceDefinition.expectedSize ||
+        sha256 !== input.resourceDefinition.sha256
+      ) {
         throw new AppError('EXTERNAL_LIBRARY_INTEGRITY_FAILED');
       }
+
+      await file.sync();
 
       return Object.freeze({
         packagePath: destinationPath,
@@ -402,19 +212,14 @@ export class ExternalLibraryDownloader
         sha256,
       });
     } catch (error) {
-      if (reader) {
-        await reader.cancel().catch(() => undefined);
-      } else {
-        await response?.body?.cancel().catch(() => undefined);
-      }
-      await file?.sync().catch(() => undefined);
+      await reader?.cancel().catch(() => undefined);
       await file?.close().catch(() => undefined);
       file = undefined;
-      if (deleteDestinationOnError) {
+      if (createdDestination) {
         await rm(destinationPath, { force: true }).catch(() => undefined);
       }
 
-      if (isExternalLibraryAbortError(error) || error instanceof AppError) {
+      if (isAbortError(error) || error instanceof AppError) {
         throw error;
       }
 

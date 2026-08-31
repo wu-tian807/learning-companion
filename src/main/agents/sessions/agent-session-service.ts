@@ -26,7 +26,7 @@ export interface ReplaceAgentSessionProviderRequest
 
 export interface AgentSessionProjectLifecycle {
   loadFromProject(projectId: string): void;
-  unloadProject(): Promise<void>;
+  unloadProject(): void;
 }
 
 export interface AgentSessionServiceApi
@@ -111,10 +111,9 @@ export class AgentSessionService implements AgentSessionServiceApi {
     });
   }
 
-  async unloadProject(): Promise<void> {
+  unloadProject(): void {
     this.sessions.clear();
     this.activeProject = undefined;
-    await Promise.allSettled(this.operationTails.values());
   }
 
   getActiveProjectId(): string | undefined {

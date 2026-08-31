@@ -1,9 +1,6 @@
 import { join } from 'node:path';
 
-import type {
-  ExternalLibraryRuntime,
-  ExternalLibraryServiceApi,
-} from '../../../main/external-libraries/external-library-service';
+import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
 import {
   MEDIA_SUBTITLE_CPU_VARIANT_ID,
   MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
@@ -37,21 +34,9 @@ export interface SenseVoiceSubtitleRuntime {
 export type SubtitleTranscriptionRuntime =
   SenseVoiceSubtitleRuntime | WhisperSubtitleRuntime;
 
-export interface MediaSubtitleRuntime {
-  readonly decoder: MediaDecoderRuntime;
-  readonly transcription: SubtitleTranscriptionRuntime;
-}
-
 export interface MediaSubtitleRuntimeResolverApi {
   requireMediaDecoder(): Promise<MediaDecoderRuntime>;
   requireTranscription(): Promise<SubtitleTranscriptionRuntime>;
-  withRuntime<T>(
-    signal: AbortSignal | undefined,
-    operation: (
-      runtime: MediaSubtitleRuntime,
-      signal: AbortSignal,
-    ) => Promise<T>,
-  ): Promise<T>;
 }
 
 function runtimePath(root: string, relativePath: string): string {
@@ -61,7 +46,10 @@ function runtimePath(root: string, relativePath: string): string {
 export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolverApi {
   constructor(private readonly externalLibraries: ExternalLibraryServiceApi) {}
 
-  private requireSuite(runtime: ExternalLibraryRuntime) {
+  private async requireSuite() {
+    const runtime = await this.externalLibraries.requireRuntime(
+      MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
+    );
     if (
       runtime.variantId !== MEDIA_SUBTITLE_CPU_VARIANT_ID &&
       runtime.variantId !== MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
@@ -73,17 +61,7 @@ export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolve
   }
 
   async requireMediaDecoder(): Promise<MediaDecoderRuntime> {
-    const runtime = this.requireSuite(
-      await this.externalLibraries.requireRuntime(
-        MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
-      ),
-    );
-    return this.resolveMediaDecoder(runtime);
-  }
-
-  private resolveMediaDecoder(
-    runtime: ExternalLibraryRuntime,
-  ): MediaDecoderRuntime {
+    const runtime = await this.requireSuite();
     const binaryDirectory = runtimePath(
       runtime.runtimeDirectory,
       'decoder/engine/ffmpeg-8.1.2-essentials_build/bin',
@@ -96,17 +74,7 @@ export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolve
   }
 
   async requireTranscription(): Promise<SubtitleTranscriptionRuntime> {
-    const runtime = this.requireSuite(
-      await this.externalLibraries.requireRuntime(
-        MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
-      ),
-    );
-    return this.resolveTranscription(runtime);
-  }
-
-  private resolveTranscription(
-    runtime: ExternalLibraryRuntime,
-  ): SubtitleTranscriptionRuntime {
+    const runtime = await this.requireSuite();
     return runtime.variantId === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
       ? Object.freeze({
           kind: 'whisper' as const,
@@ -144,28 +112,5 @@ export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolve
             'transcription/sensevoice/models/fsmn-vad.gguf',
           ),
         });
-  }
-
-  withRuntime<T>(
-    signal: AbortSignal | undefined,
-    operation: (
-      runtime: MediaSubtitleRuntime,
-      signal: AbortSignal,
-    ) => Promise<T>,
-  ): Promise<T> {
-    return this.externalLibraries.withRuntime(
-      MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
-      signal,
-      (runtime, usageSignal) => {
-        const suite = this.requireSuite(runtime);
-        return operation(
-          Object.freeze({
-            decoder: this.resolveMediaDecoder(suite),
-            transcription: this.resolveTranscription(suite),
-          }),
-          usageSignal,
-        );
-      },
-    );
   }
 }

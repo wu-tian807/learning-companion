@@ -8,9 +8,7 @@ import type { JsonValue } from '../../shared/workbench/protocol';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
   ConversationLaunchRequest,
-  ConversationHistoryStore,
   ConversationMessageRecord,
-  ConversationReanswerBackup,
   ConversationRecord,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
@@ -54,8 +52,6 @@ export interface ConversationControllerActions {
   readonly submit: (question?: string, context?: JsonValue) => void;
   readonly cancel: () => void;
   readonly retry: () => void;
-  /** 对已完成的某条回答发起全新任务，重新生成该回答。 */
-  readonly reanswer: (answerId: string) => void;
   readonly restore: (record: ConversationRecord) => void;
   readonly remove: (record: ConversationRecord) => void;
   readonly startNew: (context?: JsonValue) => void;
@@ -64,9 +60,8 @@ export interface ConversationControllerActions {
 interface UseConversationControllerInput {
   readonly open: boolean;
   readonly projectId: string;
-  readonly assetId?: string;
+  readonly assetId: string;
   readonly contribution: WorkbenchConversationContribution;
-  readonly historyStore: ConversationHistoryStore;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly onPersistenceError?: (error: unknown) => void;
@@ -75,84 +70,12 @@ interface UseConversationControllerInput {
   readonly now?: () => number;
 }
 
-function reanswerBackupFromMessage(
-  message: ConversationMessageRecord,
-): ConversationReanswerBackup {
-  return Object.freeze({
-    text: message.text,
-    ...(message.generationTaskId
-      ? { generationTaskId: message.generationTaskId }
-      : {}),
-    ...(message.modelInfo ? { modelInfo: message.modelInfo } : {}),
-    ...(message.stopped ? { stopped: true as const } : {}),
-  });
-}
-
-function conversationMessageBase(message: ConversationMessageRecord) {
-  return {
-    id: message.id,
-    role: message.role,
-    text: message.text,
-    createdTime: message.createdTime,
-    ...(message.replyToMessageId
-      ? { replyToMessageId: message.replyToMessageId }
-      : {}),
-    ...(message.context === undefined ? {} : { context: message.context }),
-  };
-}
-
-function startReanswerMessage(
-  message: ConversationMessageRecord,
-  taskId: string,
-): ConversationMessageRecord {
-  const backup =
-    message.reanswerBackup ?? reanswerBackupFromMessage(message);
-  return Object.freeze({
-    ...conversationMessageBase(message),
-    text: '',
-    generationTaskId: taskId,
-    reanswerBackup: backup,
-  });
-}
-
-function completeAnswerMessage(
-  message: ConversationMessageRecord,
-  text: string,
-  modelInfo: string | undefined,
-): ConversationMessageRecord {
-  return Object.freeze({
-    ...conversationMessageBase(message),
-    text,
-    ...(message.generationTaskId
-      ? { generationTaskId: message.generationTaskId }
-      : {}),
-    ...(modelInfo ? { modelInfo } : {}),
-  });
-}
-
-function restoreReanswerMessage(
-  message: ConversationMessageRecord,
-  taskId: string,
-  keepBackup: boolean,
-): ConversationMessageRecord {
-  const backup = message.reanswerBackup;
-  if (!backup) return message;
-  return Object.freeze({
-    ...conversationMessageBase(message),
-    text: backup.text,
-    generationTaskId: taskId,
-    ...(backup.modelInfo ? { modelInfo: backup.modelInfo } : {}),
-    ...(backup.stopped ? { stopped: true as const } : {}),
-    ...(keepBackup ? { reanswerBackup: backup } : {}),
-  });
-}
 
 export function useConversationController({
   open,
   projectId,
   assetId,
   contribution,
-  historyStore,
   launchRequest,
   onLaunchConsumed,
   onPersistenceError,
@@ -248,7 +171,7 @@ export function useConversationController({
             undefined,
           );
         }
-        return historyStore.save(record);
+        return contribution.historyStore.save(record);
       });
       if (mountedRef.current && records) {
         setHistory(records.filter(
@@ -261,7 +184,7 @@ export function useConversationController({
       }
       onPersistenceErrorRef.current?.(persistenceError);
     }
-  }, [enqueueHistoryMutation, historyStore]);
+  }, [contribution.historyStore, enqueueHistoryMutation]);
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
@@ -301,11 +224,11 @@ export function useConversationController({
         title: result.title?.trim().slice(0, 128) || current.title,
         messages: Object.freeze(current.messages.map((message) =>
           message.id === messageId
-            ? completeAnswerMessage(
-                message,
-                result.answer,
-                result.modelInfo,
-              )
+            ? Object.freeze({
+                ...message,
+                text: result.answer,
+                ...(result.modelInfo ? { modelInfo: result.modelInfo } : {}),
+              })
             : message,
         )),
         updatedTime: Math.max(task.updatedTime, current.updatedTime),
@@ -321,18 +244,10 @@ export function useConversationController({
         ...current,
         messages: Object.freeze(current.messages.map((message) =>
           message.id === messageId
-            ? message.reanswerBackup
-              ? restoreReanswerMessage(
-                  message,
-                  task.id,
-                  task.status === 'failed',
-                )
-              : Object.freeze({
-                  ...message,
-                  ...(task.status === 'cancelled'
-                    ? { stopped: true as const }
-                    : {}),
-                })
+            ? Object.freeze({
+                ...message,
+                ...(task.status === 'cancelled' ? { stopped: true } : {}),
+              })
             : message,
         )),
         updatedTime: Math.max(task.updatedTime, current.updatedTime),
@@ -345,32 +260,23 @@ export function useConversationController({
     return false;
   }, [finishTask, persist, updateConversation]);
 
-  const bindTask = useCallback(
-    (
-      taskId: string,
-      assistantMessageId: string,
-      mode: 'answer' | 'reanswer' = 'answer',
-    ) => {
-      activeTaskIdRef.current = taskId;
-      activeAssistantMessageIdRef.current = assistantMessageId;
-      if (mountedRef.current) {
-        setActiveTaskId(taskId);
-        setBusy(true);
-      }
-      const next = updateConversation((current) => Object.freeze({
-        ...current,
-        messages: Object.freeze(current.messages.map((message) =>
-          message.id === assistantMessageId
-            ? mode === 'reanswer'
-              ? startReanswerMessage(message, taskId)
-              : Object.freeze({ ...message, generationTaskId: taskId })
-            : message,
-        )),
-      }));
-      void persist(next);
-    },
-    [persist, updateConversation],
-  );
+  const bindTask = useCallback((taskId: string, assistantMessageId: string) => {
+    activeTaskIdRef.current = taskId;
+    activeAssistantMessageIdRef.current = assistantMessageId;
+    if (mountedRef.current) {
+      setActiveTaskId(taskId);
+      setBusy(true);
+    }
+    const next = updateConversation((current) => Object.freeze({
+      ...current,
+      messages: Object.freeze(current.messages.map((message) =>
+        message.id === assistantMessageId
+          ? Object.freeze({ ...message, generationTaskId: taskId })
+          : message,
+      )),
+    }));
+    void persist(next);
+  }, [persist, updateConversation]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -386,7 +292,7 @@ export function useConversationController({
     queueMicrotask(() => {
       if (!active) return;
       setHistoryLoading(true);
-      void historyStore.list().then(
+      void contribution.historyStore.list().then(
         (records) => {
           if (!active) return;
           setHistory(records);
@@ -403,7 +309,7 @@ export function useConversationController({
       );
     });
     return () => { active = false; };
-  }, [historyStore, open]);
+  }, [contribution.historyStore, open]);
 
   useEffect(() => taskClient.subscribe((event) => {
     const taskId = activeTaskIdRef.current;
@@ -550,7 +456,7 @@ export function useConversationController({
         // slow Assistant response before restoring the selected region.
         void persist(next);
         if (context !== undefined) {
-          contribution.onContextReleased?.(context);
+          contributionRef.current.onContextReleased?.(context);
         }
         if (started.snapshot && applyTerminalTask(started.snapshot)) return;
         if (pendingCancelRef.current) {
@@ -589,42 +495,21 @@ export function useConversationController({
     if (!historyReady && request.conversationId !== undefined) {
       return;
     }
-    if (
-      (request.conversationId !== undefined ||
-        request.fallbackToNewConversation === true) &&
-      busy
-    ) {
-      return;
-    }
     lastLaunchIdRef.current = request.id;
 
-    const currentConversation = conversationRef.current;
     const matching = request.conversationId
-      ? currentConversation.id === request.conversationId
-        ? currentConversation
-        : history.find((record) => record.id === request.conversationId)
+      ? history.find((record) => record.id === request.conversationId)
       : undefined;
-    const launchContext = matching ? undefined : request.context;
-    if (request.conversationId !== undefined) {
-      if (matching) {
-        restore(matching);
-      } else {
-        startNew(launchContext);
-      }
-    } else if (request.fallbackToNewConversation === true) {
-      startNew(launchContext);
+    if (matching && !activeTaskIdRef.current) {
+      restore(matching);
     }
-    if (
-      request.conversationId === undefined &&
-      request.fallbackToNewConversation !== true &&
-      launchContext !== undefined
-    ) {
-      setPendingContext(launchContext);
+    if (request.context !== undefined) {
+      setPendingContext(request.context);
     }
 
     if (request.question?.trim()) {
       if (request.submit) {
-        queueMicrotask(() => submitRef.current(request.question, launchContext));
+        queueMicrotask(() => submitRef.current(request.question, request.context));
       } else {
         setDraft(request.question);
       }
@@ -632,7 +517,6 @@ export function useConversationController({
     setTab('chat');
     onLaunchConsumed?.(request.id);
   }, [
-    busy,
     history,
     historyReady,
     launchRequest,
@@ -640,7 +524,6 @@ export function useConversationController({
     open,
     restore,
     setPendingContext,
-    startNew,
   ]);
 
   const cancel = useCallback(() => {
@@ -670,19 +553,10 @@ export function useConversationController({
     setBusy(true);
     void taskClient.retry(projectId, retryTaskId).then(
       (started) => {
-        bindTask(
-          started.taskId,
-          assistant.id,
-          assistant.reanswerBackup ? 'reanswer' : 'answer',
-        );
-        if (started.snapshot && applyTerminalTask(started.snapshot)) return;
-        if (pendingCancelRef.current) {
-          pendingCancelRef.current = false;
-          void taskClient.cancel(projectId, started.taskId);
-        }
+        bindTask(started.taskId, assistant.id);
+        if (started.snapshot) applyTerminalTask(started.snapshot);
       },
       (retryError: unknown) => {
-        pendingCancelRef.current = false;
         setBusy(false);
         setActivityLabel(undefined);
         setError({
@@ -692,74 +566,6 @@ export function useConversationController({
       },
     );
   }, [applyTerminalTask, bindTask, error?.retryTaskId, projectId, taskClient]);
-
-  const reanswer = useCallback((answerId: string) => {
-    if (activeTaskIdRef.current) return;
-    const current = conversationRef.current;
-    const assistant = current.messages.find(
-      (message) => message.id === answerId && message.role === 'assistant',
-    );
-    if (!assistant) return;
-    const question = assistant.replyToMessageId
-      ? current.messages.find(
-          (message) => message.id === assistant.replyToMessageId,
-        )
-      : undefined;
-    const normalized = (question?.text ?? '').trim();
-    if (!normalized) return;
-
-    setError(undefined);
-    setActivityLabel('正在重新回答…');
-    setBusy(true);
-
-    let request;
-    try {
-      request = createWorkbenchConversationTaskRequest(contribution, {
-        projectId,
-        assetId,
-        conversationId: current.id,
-        question: normalized,
-        ...(question?.context === undefined
-          ? {}
-          : { context: question.context }),
-        generateTitle: false,
-      });
-    } catch (requestError) {
-      pendingCancelRef.current = false;
-      setBusy(false);
-      setActivityLabel(undefined);
-      setError(failureFromError(requestError, '无法准备重新回答。'));
-      return;
-    }
-
-    void taskClient.start(request).then(
-      (started) => {
-        bindTask(started.taskId, assistant.id, 'reanswer');
-        if (started.snapshot && applyTerminalTask(started.snapshot)) return;
-        if (pendingCancelRef.current) {
-          pendingCancelRef.current = false;
-          void taskClient.cancel(projectId, started.taskId);
-        }
-      },
-      (reanswerError: unknown) => {
-        pendingCancelRef.current = false;
-        setBusy(false);
-        setActivityLabel(undefined);
-        setError({
-          message:
-            userMessageFromError(reanswerError, '无法重新回答。') ??
-            '无法重新回答。',
-        });
-      },
-    );
-  }, [
-    applyTerminalTask,
-    assetId,
-    bindTask,
-    contribution,
-    projectId,
-    taskClient,
-  ]);
 
   const remove = useCallback((record: ConversationRecord) => {
     if (
@@ -774,7 +580,7 @@ export function useConversationController({
       resetConversation();
     }
     void enqueueHistoryMutation(async () => {
-      const records = await historyStore.remove(record.id);
+      const records = await contribution.historyStore.remove(record.id);
       if (records.some(({ id }) => id === record.id)) {
         throw new Error('Conversation 删除后仍存在');
       }
@@ -796,7 +602,7 @@ export function useConversationController({
         onPersistenceErrorRef.current?.(removeError);
       },
     );
-  }, [enqueueHistoryMutation, historyStore, resetConversation]);
+  }, [contribution.historyStore, enqueueHistoryMutation, resetConversation]);
 
   return {
     state: {
@@ -818,7 +624,6 @@ export function useConversationController({
       submit,
       cancel,
       retry,
-      reanswer,
       restore,
       remove,
       startNew,

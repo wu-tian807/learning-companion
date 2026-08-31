@@ -38,6 +38,7 @@ import { ImageExplanationPanel } from './explanations/image-explanation-panel';
 import {
   createImageConversationContext,
   createImageConversationContribution,
+  createImageConversationHistoryStore,
   type ImageConversationContext,
 } from './explanations/image-conversation-contribution';
 import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
@@ -439,9 +440,24 @@ export function ImageWorkbenchView({
     [onError],
   );
 
+  const conversationContributionId = `${imageWorkbenchManifest.id}.reading-conversation`;
   const currentSourceRevision = payload?.sourceRevision ?? 'unavailable';
   const conversationOwnerId =
     `${imageWorkbenchManifest.id}:${bootstrap.sessionId}:${currentSourceRevision}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () => createImageConversationHistoryStore(
+      asset.projectId,
+      asset.id,
+      conversationContributionId,
+      currentSourceRevision,
+    ),
+    [
+      asset.id,
+      asset.projectId,
+      conversationContributionId,
+      currentSourceRevision,
+    ],
+  );
   const revealConversationContext = useCallback(
     (context: ImageConversationContext) => {
       if (context.sourceRevision !== currentSourceRevision) {
@@ -469,9 +485,11 @@ export function ImageWorkbenchView({
   const conversationContribution = useMemo(
     () => createImageConversationContribution({
       sourceRevision: currentSourceRevision,
+      historyStore: conversationHistoryStore,
       revealContext: revealConversationContext,
     }),
     [
+      conversationHistoryStore,
       currentSourceRevision,
       revealConversationContext,
     ],

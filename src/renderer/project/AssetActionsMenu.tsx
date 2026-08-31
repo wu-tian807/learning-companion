@@ -8,7 +8,6 @@ interface AssetActionsMenuProps {
   readonly onRename: () => void;
   readonly onReveal: () => void;
   readonly onRelink: () => void;
-  readonly onMove?: () => void;
   readonly onDelete: () => void;
 }
 
@@ -18,7 +17,6 @@ export function AssetActionsMenu({
   onRename,
   onReveal,
   onRelink,
-  onMove,
   onDelete,
 }: AssetActionsMenuProps) {
   const [open, setOpen] = useState(false);
@@ -96,16 +94,6 @@ export function AssetActionsMenu({
                 重新定位
               </button>
             )}
-          {onMove && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => run(onMove)}
-              className="ui-menu-item block w-full rounded-lg px-3 py-2 text-left"
-            >
-              移动到…
-            </button>
-          )}
           <div className="my-1 h-px bg-white/[0.08]" />
           <button
             type="button"

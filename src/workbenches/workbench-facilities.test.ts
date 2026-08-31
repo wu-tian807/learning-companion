@@ -41,29 +41,34 @@ describe('built-in Workbench Facility matrix', () => {
       'builtin.plain-text': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
       'builtin.markdown': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
       'builtin.mindmap': [
         'core.surface.context-menu',
+        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
       'builtin.pdf': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
       'builtin.office': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
@@ -75,6 +80,7 @@ describe('built-in Workbench Facility matrix', () => {
       ],
       'builtin.audio': [
         'core.surface.context-menu',
+        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
@@ -87,6 +93,7 @@ describe('built-in Workbench Facility matrix', () => {
       'builtin.html': [
         'core.input.text-selection',
         'core.surface.context-menu',
+        'core.surface.generation-center',
         'core.surface.overflow',
         'core.transport.sandbox-frame',
       ],

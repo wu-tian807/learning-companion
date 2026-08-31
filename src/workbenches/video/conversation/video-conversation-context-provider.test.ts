@@ -16,10 +16,6 @@ vi.mock('../../../main/conversation/visual-region-input-preparer', () => ({
 
 import { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { prepareVisualRegionInputs } from '../../../main/conversation/visual-region-input-preparer';
-import type {
-  MediaSubtitleRuntime,
-  MediaSubtitleRuntimeResolverApi,
-} from '../../media-subtitles/external-libraries/media-subtitle-runtime';
 import { createVideoFrameRegionTarget } from '../shared';
 import {
   createVideoConversationContext,
@@ -56,7 +52,6 @@ function processContext(
     readonly signal?: AbortSignal;
     readonly question?: string;
     readonly commitAnswer?: boolean;
-    readonly conversationId?: string;
   } = {},
 ) {
   const selection =
@@ -69,7 +64,7 @@ function processContext(
     instruction: new WorkbenchConversationInstruction({
       contextProviderId: VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
       assetId: 'asset-1',
-      conversationId: input.conversationId ?? 'conversation-1',
+      conversationId: 'conversation-1',
       question: input.question ?? '解释这里',
       ...(selection ? { context: selection } : {}),
       commitAnswer: input.commitAnswer ?? false,
@@ -123,36 +118,11 @@ function setup(
       handle: { close },
     })),
   };
-  const runtimeValue: MediaSubtitleRuntime = {
-    decoder: {
+  const runtime = {
+    requireMediaDecoder: vi.fn(async () => ({
       ffmpegPath: 'C:\\runtime\\ffmpeg.exe',
       ffprobePath: 'C:\\runtime\\ffprobe.exe',
-    },
-    transcription: {
-      kind: 'sensevoice',
-      profile: 'cpu',
-      executablePath: 'unused',
-      vadExecutablePath: 'unused',
-      modelPath: 'unused',
-      vadModelPath: 'unused',
-    },
-  };
-  const requireMediaDecoder = vi.fn(async () => runtimeValue.decoder);
-  const withRuntime: MediaSubtitleRuntimeResolverApi['withRuntime'] = async (
-    signal,
-    operation,
-  ) =>
-    operation(
-      {
-        ...runtimeValue,
-        decoder: await requireMediaDecoder(),
-      },
-      signal ?? new AbortController().signal,
-    );
-  const runtime = {
-    requireMediaDecoder,
-    requireTranscription: vi.fn(async () => runtimeValue.transcription),
-    withRuntime,
+    })),
   };
   const run = input.run ?? vi.fn(async () => ({ stdout: '', stderr: '' }));
   const projects = {
@@ -179,8 +149,7 @@ function setup(
             ref: {
               kind: 'local-file' as const,
               base: 'project-workspace' as const,
-              path:
-                '.learning-companion/attachments/attachment-1/answer.md',
+              path: 'attachments/attachment-1/answer.md',
             },
             mediaType: request.content.mediaType,
           },
@@ -425,7 +394,6 @@ describe('Video conversation context provider', () => {
           version: 1,
           sourceRevision: '100',
           question: '这段代码在做什么？',
-          conversationId: 'conversation-1',
         },
         content: expect.objectContaining({
           mediaType: 'text/markdown',
@@ -445,7 +413,6 @@ describe('Video conversation context provider', () => {
           version: 1,
           sourceRevision: '100',
           question: '这段代码在做什么？',
-          conversationId: 'conversation-1',
         },
         content: { mediaType: 'text/markdown' },
       },
@@ -469,7 +436,6 @@ describe('Video conversation context provider', () => {
           version: 1,
           sourceRevision: '100',
           question: '原来的问题',
-          conversationId: 'conversation-1',
         },
         content: { mediaType: 'text/markdown' },
       },
@@ -481,36 +447,6 @@ describe('Video conversation context provider', () => {
         commitAnswer: true,
       }),
       { answer: '新的回答' },
-    );
-
-    expect(attachments.createWithContent).toHaveBeenCalledOnce();
-  });
-
-  it('does not reuse a marker created by another conversation', async () => {
-    const { provider, attachments } = setup();
-    attachments.listByAsset.mockResolvedValueOnce([
-      {
-        id: 'attachment-existing',
-        typeId: 'video.ai-explanation',
-        typeVersion: 1,
-        target,
-        metadata: {
-          format: 'learning-companion/video-explanation',
-          version: 1,
-          sourceRevision: '100',
-          question: '解释这里',
-          conversationId: 'conversation-1',
-        },
-        content: { mediaType: 'text/markdown' },
-      },
-    ] as never);
-
-    await provider.commitAnswer(
-      processContext('C:\\workspace', {
-        commitAnswer: true,
-        conversationId: 'conversation-2',
-      }),
-      { answer: '另一个对话的回答' },
     );
 
     expect(attachments.createWithContent).toHaveBeenCalledOnce();

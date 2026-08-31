@@ -1,7 +1,11 @@
 import type {
-  ConversationAnswerActionPresentation,
+  ConversationHistoryStore,
   WorkbenchConversationContribution,
 } from '../../../../renderer/conversation/conversation-contracts';
+import {
+  createConversationHistoryKey,
+  createLocalConversationHistoryStore,
+} from '../../../../renderer/conversation/conversation-history-store';
 import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
@@ -19,93 +23,63 @@ export {
   type DocumentConversationContext,
 } from '../../document-conversation-context';
 
-interface DocumentConversationContributionBaseInput {
+export function createDocumentConversationHistoryStore(
+  projectId: string,
+  assetId: string,
+  contributionId: string,
+): ConversationHistoryStore {
+  return createLocalConversationHistoryStore({
+    key: createConversationHistoryKey({ contributionId, projectId, assetId }),
+    legacyMessageArrayKeys: [
+      `learning-companion:document-ai-history:v1:${encodeURIComponent(projectId)}:${encodeURIComponent(assetId)}`,
+    ],
+  });
+}
+
+export function createDocumentConversationContribution(input: {
   readonly projectId: string;
   readonly assetId: string;
   readonly workbenchId: string;
   readonly contributionId: string;
+  readonly historyStore: ConversationHistoryStore;
   readonly title?: string;
   readonly emptyLabel?: string;
   readonly contextLabel?: string;
+  readonly allowAnswerAttachments?: boolean;
   readonly onContextReleased?: (
     context: DocumentConversationContext | undefined,
   ) => void;
-}
-
-interface ReturnAnswerToSourceInput {
-  readonly text: string;
-  readonly question?: string;
-  readonly context?: DocumentConversationContext;
-}
-
-type DocumentConversationContributionInput =
-  DocumentConversationContributionBaseInput & (
-    | {
-        readonly allowAnswerAttachments?: false;
-        readonly returnAnswerToSource?: undefined;
-        readonly answerActionPresentation?: undefined;
-      }
-    | {
-        readonly allowAnswerAttachments: true;
-        readonly returnAnswerToSource?: undefined;
-        readonly answerActionPresentation: ConversationAnswerActionPresentation;
-      }
-    | {
-        readonly allowAnswerAttachments?: false;
-        /** Workbench-owned source mutation; takes the actual selected/full answer text. */
-        readonly returnAnswerToSource: (
-          input: ReturnAnswerToSourceInput,
-        ) => Promise<void> | void;
-        readonly answerActionPresentation: ConversationAnswerActionPresentation;
-      }
-  );
-
-export function createDocumentConversationContribution(
-  input: DocumentConversationContributionInput,
-): WorkbenchConversationContribution {
-  const answerAction: WorkbenchConversationContribution['answerAction'] =
-    input.allowAnswerAttachments || input.returnAnswerToSource
-      ? {
-          ...input.answerActionPresentation,
-          async execute({ answer, question, text }) {
-            const context = isDocumentConversationContext(question?.context)
-              ? question.context
-              : undefined;
-            if (input.returnAnswerToSource) {
-              await input.returnAnswerToSource({
-                text,
-                ...(question?.text ? { question: question.text } : {}),
-                ...(context ? { context } : {}),
-              });
-              return;
-            }
-            const target = context
-              ? context.target
-              : { scope: 'asset' as const };
-            await window.learningCompanion.createAttachment({
-              projectId: input.projectId,
-              assetId: input.assetId,
-              typeId: AI_ANNOTATION_ATTACHMENT_TYPE,
-              typeVersion: AI_ANNOTATION_ATTACHMENT_VERSION,
-              target,
-              metadata: {
-                contentFormat: 'ai-annotation-v1',
-                questionPreview: Array.from(question?.text ?? '').slice(0, 200).join(''),
-                ...(answer.modelInfo ? { modelInfo: answer.modelInfo } : {}),
-                timestamp: Date.now(),
-              },
-              body: {
-                question: question?.text ?? '',
-                answer: answer.text,
-                selectedAnswer: text,
-              },
-            });
-            window.dispatchEvent(
-              new CustomEvent('learning-companion:attachments-changed', {
-                detail: { projectId: input.projectId, assetId: input.assetId },
-              }),
-            );
-          },
+}): WorkbenchConversationContribution {
+  const attachAnswer: WorkbenchConversationContribution['attachAnswer'] =
+    input.allowAnswerAttachments
+      ? async ({ answer, question, text }) => {
+          const context = question?.context;
+          const target = isDocumentConversationContext(context)
+            ? context.target
+            : { scope: 'asset' as const };
+          await window.learningCompanion.createAttachment({
+            projectId: input.projectId,
+            assetId: input.assetId,
+            typeId: AI_ANNOTATION_ATTACHMENT_TYPE,
+            typeVersion: AI_ANNOTATION_ATTACHMENT_VERSION,
+            target,
+            metadata: {
+              contentFormat: 'ai-annotation-v1',
+              questionPreview: Array.from(question?.text ?? '').slice(0, 200).join(''),
+              ...(answer.modelInfo ? { modelInfo: answer.modelInfo } : {}),
+              timestamp: Date.now(),
+            },
+            body: {
+              question: question?.text ?? '',
+              answer: answer.text,
+              selectedAnswer: text,
+            },
+          });
+          window.dispatchEvent(
+            new CustomEvent('learning-companion:attachments-changed', {
+              detail: { projectId: input.projectId, assetId: input.assetId },
+            }),
+          );
         }
       : undefined;
 
@@ -113,12 +87,13 @@ export function createDocumentConversationContribution(
     id: input.contributionId,
     workbenchId: input.workbenchId,
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
-    sourceAssetMode: 'reference',
+    includeSourceAssetReference: true,
     title: input.title ?? '资料问答',
     emptyLabel:
       input.emptyLabel ??
       '选择资料中的内容后开始提问，也可以直接针对整份资料提问。',
     inputPlaceholder: '输入问题…（Enter 发送 / Shift+Enter 换行）',
+    historyStore: input.historyStore,
     isContext: isDocumentConversationContext,
     describeContext(context) {
       if (!isDocumentConversationContext(context)) {
@@ -146,7 +121,7 @@ export function createDocumentConversationContribution(
         isDocumentConversationContext(context) ? context : undefined,
       );
     },
-    ...(answerAction ? { answerAction } : {}),
+    ...(attachAnswer ? { attachAnswer } : {}),
   };
 
   return Object.freeze(contribution);

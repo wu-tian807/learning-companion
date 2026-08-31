@@ -82,39 +82,6 @@ afterEach(async () => {
 });
 
 describe('GenerationTaskService', () => {
-  it('waits for aborted background runs before finishing Project unload', async () => {
-    const service = new GenerationTaskService(
-      {} as GenerationTaskDatabaseApi,
-      new GenerationTaskDefinitionRegistry(),
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-    const controller = new AbortController();
-    let releaseRun: (() => void) | undefined;
-    const backgroundRun = new Promise<void>((resolvePromise) => {
-      releaseRun = resolvePromise;
-    });
-    const internals = service as unknown as {
-      activeRuns: Map<string, AbortController>;
-      backgroundRuns: Map<string, Promise<void>>;
-    };
-    internals.activeRuns.set('task-1', controller);
-    internals.backgroundRuns.set('task-1', backgroundRun);
-    let unloadSettled = false;
-
-    const unload = Promise.resolve(service.unloadProject()).then(() => {
-      unloadSettled = true;
-    });
-
-    expect(controller.signal.aborted).toBe(true);
-    await Promise.resolve();
-    expect(unloadSettled).toBe(false);
-    releaseRun!();
-    await unload;
-    expect(unloadSettled).toBe(true);
-  });
-
   it('marks a recovered task as failed when its retired definition no longer exists', async () => {
     const database = new MemoryGenerationTaskDatabase();
     database.create(

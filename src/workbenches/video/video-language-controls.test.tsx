@@ -129,55 +129,6 @@ describe('VideoLanguageControls', () => {
     expect(onSelectSubtitleMode).toHaveBeenCalledWith('source');
   });
 
-  it('only offers source subtitles when the detected language is unknown', async () => {
-    await act(async () =>
-      root.render(
-        <VideoLanguageControls
-          subtitleMode="source"
-          subtitleSnapshot={{
-            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
-            phase: 'unsupported-language',
-            message: '未检测到明确的中文或英文。',
-            source: {
-              version: 1,
-              kind: 'subtitle-source',
-              sourceRevision: 'revision',
-              language: 'unknown',
-              origin: 'asr',
-              engine: {
-                id: 'whisper',
-                version: '1',
-                model: 'turbo',
-                backend: 'cuda',
-              },
-              generatedTime: 100,
-              cues: [],
-            },
-          }}
-          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
-          dubbingEnabled={false}
-          dubbingPlaybackActive={false}
-          onSelectSubtitleMode={vi.fn()}
-          onRetrySubtitles={vi.fn()}
-          onStartDubbing={vi.fn()}
-          onSelectDubbingEnabled={vi.fn()}
-          onRetryDubbing={vi.fn()}
-        />,
-      ),
-    );
-
-    expect(container.textContent).toContain('仅原文');
-    const selector = container.querySelector<HTMLButtonElement>(
-      '[aria-label="字幕显示模式"]',
-    );
-    await act(async () => selector?.click());
-    expect(
-      [...document.querySelectorAll('[role="option"]')].map(
-        (option) => option.textContent,
-      ),
-    ).toEqual(['关闭', '原文']);
-  });
-
   it('shows the audio switch while dubbing is running', () => {
     const onSelectDubbingEnabled = vi.fn();
     act(() =>

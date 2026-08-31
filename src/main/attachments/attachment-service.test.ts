@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../shared/attachments/contracts';
-import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
-import { createAttachmentAggregateMutationSource } from '../bootstrap/asset-aggregate-mutation-sources';
 import type { AssetLookup } from '../assets/asset-database';
 import { AnchorRegistry } from './anchor-registry';
 import type { AttachmentContentFile } from './attachment-content-file';
@@ -50,8 +48,7 @@ function createHarness() {
     write: vi.fn(async ({ attachmentId, fileName, mediaType }) => ({
       ref: {
         base: 'project-workspace' as const,
-        path:
-          `.learning-companion/attachments/${attachmentId}/${fileName}`,
+        path: `attachments/${attachmentId}/${fileName}`,
       },
       mediaType,
     })),
@@ -72,50 +69,6 @@ function createHarness() {
 }
 
 describe('AttachmentService', () => {
-  it('projects every committed mutation to its owner Asset', async () => {
-    const { service } = createHarness();
-    const assets = { touch: vi.fn() };
-    const dispose = trackAssetAggregateMutations(assets, [
-      createAttachmentAggregateMutationSource(service),
-    ]);
-
-    const created = await service.create({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      typeId: 'epub.note',
-      typeVersion: 1,
-      target: { scope: 'asset' },
-      metadata: { status: 'pending' },
-    });
-    await service.update({
-      projectId: 'project-1',
-      attachmentId: created.id,
-      metadata: { status: 'completed' },
-    });
-    await service.delete('project-1', created.id);
-
-    expect(assets.touch).toHaveBeenCalledTimes(3);
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      1,
-      'project-1',
-      'asset-1',
-      10,
-    );
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      2,
-      'project-1',
-      'asset-1',
-      10,
-    );
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      3,
-      'project-1',
-      'asset-1',
-      10,
-    );
-    dispose();
-  });
-
   it('owns identity, timestamps and validation against an existing Asset', async () => {
     const { service, assetLookupGet } = createHarness();
     const created = await service.create({
@@ -217,8 +170,7 @@ describe('AttachmentService', () => {
       ref: {
         base: 'project-workspace',
         kind: 'local-file',
-        path:
-          '.learning-companion/attachments/attachment-1/answer.md',
+        path: 'attachments/attachment-1/answer.md',
       },
       mediaType: 'text/markdown',
     });

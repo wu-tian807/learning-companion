@@ -10,13 +10,7 @@ import {
 import type { AssetAttachmentContent } from '../../shared/attachments/contracts';
 import { AppError } from '../errors/app-error';
 import type { ProjectLookup } from '../projects/project-database';
-import {
-  PROJECT_WORKSPACE_METADATA_DIRECTORY,
-  resolvePortableWorkspacePath,
-} from '../projects/project-workspace-paths';
-
-const ATTACHMENT_DIRECTORY =
-  `${PROJECT_WORKSPACE_METADATA_DIRECTORY}/attachments`;
+import { resolvePortableWorkspacePath } from '../projects/project-workspace-manager';
 
 function requireSegment(value: string, field: string): string {
   const normalized = value.trim();
@@ -69,8 +63,7 @@ export class AttachmentContentFile {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    const relativePath =
-      `${ATTACHMENT_DIRECTORY}/${attachmentId}/${fileName}`;
+    const relativePath = `attachments/${attachmentId}/${fileName}`;
     const absolutePath = resolvePortableWorkspacePath(
       project.workspacePath,
       relativePath,
@@ -115,12 +108,20 @@ export class AttachmentContentFile {
     attachmentId: string,
   ): Promise<void> {
     const project = this.requireProject(projectId);
-    const relativePath = `${ATTACHMENT_DIRECTORY}/${requireSegment(
+    const relativePath = `attachments/${requireSegment(
       attachmentId,
       'id',
     )}`;
     await rm(
       resolvePortableWorkspacePath(project.workspacePath, relativePath),
+      { recursive: true, force: true },
+    );
+  }
+
+  async removeProject(projectId: string): Promise<void> {
+    const project = this.requireProject(projectId);
+    await rm(
+      resolvePortableWorkspacePath(project.workspacePath, 'attachments'),
       { recursive: true, force: true },
     );
   }

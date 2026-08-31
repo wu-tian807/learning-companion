@@ -27,17 +27,13 @@ import { createAssetAttachmentsMigration } from './migrations/0019-create-asset-
 import { reconcileLegacyBranchSchemaMigration } from './migrations/0020-reconcile-legacy-branch-schema';
 import { storeGenerationPreparedDataMigration } from './migrations/0021-store-generation-prepared-data';
 import { retireLegacyGenerationPreparedDataMigration } from './migrations/0022-retire-legacy-generation-prepared-data';
-import { createAssetFoldersMigration } from './migrations/0023-create-asset-folders';
-import { createProjectConversationsMigration } from './migrations/0024-create-project-conversations';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
-import * as assetFolderSchema from './schema/asset-folders';
 import * as assetLinkSchema from './schema/asset-links';
 import * as assetReferenceSchema from './schema/asset-references';
 import * as assetSchema from './schema/assets';
 import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
-import * as projectConversationSchema from './schema/project-conversations';
 import * as workbenchStateSchema from './schema/workbench-state';
 
 interface DatabaseMigration {
@@ -70,14 +66,10 @@ const migrations: readonly DatabaseMigration[] = [
   reconcileLegacyBranchSchemaMigration,
   storeGenerationPreparedDataMigration,
   retireLegacyGenerationPreparedDataMigration,
-  createAssetFoldersMigration,
-  createProjectConversationsMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,
-  ...assetFolderSchema,
   ...projectSchema,
-  ...projectConversationSchema,
   ...assetSchema,
   ...assetArtifactSchema,
   ...assetLinkSchema,

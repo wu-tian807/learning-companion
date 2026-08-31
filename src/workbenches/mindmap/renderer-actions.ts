@@ -54,6 +54,11 @@ export function createMindMapRendererActions({
         enabled: false,
         execute: () => undefined,
       },
+      {
+        id: 'mindmap.ai.generate-lecture',
+        enabled: false,
+        execute: () => undefined,
+      },
     ],
     contributions: [
       {
@@ -125,7 +130,7 @@ export function createMindMapRendererActions({
         groupLabel: 'Mind Map AI',
         order: 10,
         presentation: {
-          kind: 'action',
+          kind: 'generation-tool',
           label: '围绕此节点提问',
           description: '将当前节点作为资料上下文',
           disabledReason: '等待 Agent Lane 接入',
@@ -138,7 +143,7 @@ export function createMindMapRendererActions({
         group: '80-ai',
         order: 20,
         presentation: {
-          kind: 'action',
+          kind: 'generation-tool',
           label: '从此节点派生资料',
           description: '生成与节点关联的新 Asset',
           disabledReason: '等待 Generated Asset 工作流接入',
@@ -153,6 +158,20 @@ export function createMindMapRendererActions({
         presentation: {
           kind: 'action',
           label: '在文件夹中显示',
+        },
+      },
+      {
+        id: 'mindmap.ai.generate-lecture.generation-center',
+        actionId: 'mindmap.ai.generate-lecture',
+        surface: 'generation-center',
+        group: '10-generate',
+        groupLabel: 'Mind Map',
+        order: 10,
+        presentation: {
+          kind: 'generation-tool',
+          label: '生成讲义',
+          description: '从选中的节点或 Frame 派生讲义 Asset',
+          disabledReason: '等待 Mind Map 生成工作流接入',
         },
       },
     ],

@@ -59,7 +59,7 @@ export type GenerationTaskServiceListener = (
 
 export interface GenerationTaskProjectLifecycle {
   loadFromProject(projectId: string): readonly GenerationTaskSnapshot[];
-  unloadProject(): Promise<void>;
+  unloadProject(): void;
 }
 
 export interface GenerationTaskServiceApi
@@ -167,14 +167,12 @@ export class GenerationTaskService implements GenerationTaskServiceApi {
     return snapshots;
   }
 
-  async unloadProject(): Promise<void> {
+  unloadProject(): void {
     this.lifecycleVersion += 1;
     this.abortActiveRuns();
-    const backgroundRuns = [...this.backgroundRuns.values()];
     this.backgroundRuns.clear();
     this.tasks.clear();
     this.activeProjectId = undefined;
-    await Promise.allSettled(backgroundRuns);
   }
 
   getActiveProjectId(): string | undefined {

@@ -1,6 +1,5 @@
 import type { DatabaseContext } from '../database/database-context';
 import { AppError } from '../errors/app-error';
-import { migrateProjectWorkspaceDataLayout } from './migrate-project-workspace-data-layout';
 import type { ProjectWorkspaceManagerApi } from './project-workspace-manager';
 
 interface LegacyProjectWorkspaceRow {
@@ -56,6 +55,4 @@ export async function migrateProjectWorkspaces(
       throw error;
     }
   }
-
-  await migrateProjectWorkspaceDataLayout(context);
 }

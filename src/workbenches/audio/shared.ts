@@ -6,6 +6,7 @@ import {
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  generationCenterSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -13,33 +14,9 @@ import type {
   JsonValue,
   WorkbenchCommand,
 } from '../../shared/workbench/protocol';
-import {
-  cloneMediaDubbingSnapshot,
-  EMPTY_MEDIA_DUBBING_SNAPSHOT,
-  isMediaDubbingSnapshot,
-  type MediaDubbingSnapshot,
-} from '../media-dubbing/contracts';
-import {
-  cloneDubbingSpeakerTrack,
-  isDubbingSpeakerTrack,
-  type DubbingSpeakerTrackV1,
-} from '../media-dubbing/dubbing-speaker-track';
-import {
-  cloneMediaSubtitleCueFinalPayload,
-  cloneMediaSubtitleSnapshot,
-  EMPTY_MEDIA_SUBTITLE_SNAPSHOT,
-  isMediaSubtitleCueFinalPayload,
-  isMediaSubtitleDisplayMode,
-  isMediaSubtitleSnapshot,
-  isMediaSubtitleViewState,
-  type MediaSubtitleCueFinalPayload,
-  type MediaSubtitleDisplayMode,
-  type MediaSubtitleSnapshot,
-  type MediaSubtitleViewState,
-} from '../media-subtitles/presentation';
 
 export const AUDIO_WORKBENCH_ID = 'builtin.audio';
-export const AUDIO_STATE_SCHEMA_VERSION = 2;
+export const AUDIO_STATE_SCHEMA_VERSION = 1;
 export const AUDIO_TIME_RANGE_ANCHOR_TYPE = 'audio.time-range';
 export const AUDIO_TIME_RANGE_ANCHOR_VERSION = 1;
 export const AUDIO_PLAYBACK_RATES = [
@@ -49,8 +26,6 @@ export const AUDIO_PLAYBACK_RATES = [
   1.25,
   1.5,
   2,
-  3,
-  4,
 ] as const;
 
 export const audioWorkbenchManifest: AssetWorkbenchManifest<
@@ -73,6 +48,7 @@ export const audioWorkbenchManifest: AssetWorkbenchManifest<
   facilities: [
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
+    generationCenterSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
@@ -90,29 +66,9 @@ export interface AudioWorkbenchStateV1 {
   readonly viewState: AudioWorkbenchViewState;
 }
 
-export type AudioSubtitleDisplayMode = MediaSubtitleDisplayMode;
-export type AudioSubtitleViewState = MediaSubtitleViewState;
-export type AudioSubtitleSnapshot = MediaSubtitleSnapshot;
-export type AudioSubtitleCueFinalPayload = MediaSubtitleCueFinalPayload;
-export type AudioDubbingSnapshot = MediaDubbingSnapshot;
-export type AudioSpeakerTrack = DubbingSpeakerTrackV1;
-
-export interface AudioSpeakerTrackSnapshot {
-  readonly track?: AudioSpeakerTrack;
-}
-
-export interface AudioWorkbenchStateV2 {
-  readonly viewState: AudioWorkbenchViewState;
-  readonly subtitleState: AudioSubtitleViewState;
-}
-
 export interface AudioWorkbenchPayload {
   readonly contentUrl: string;
   readonly viewState: AudioWorkbenchViewState;
-  readonly subtitleState: AudioSubtitleViewState;
-  readonly subtitleSnapshot: AudioSubtitleSnapshot;
-  readonly dubbingSnapshot: AudioDubbingSnapshot;
-  readonly speakerTrackSnapshot: AudioSpeakerTrackSnapshot;
 }
 
 export interface AudioSaveViewStatePayload {
@@ -122,10 +78,6 @@ export interface AudioSaveViewStatePayload {
 export interface AudioSaveViewStateResult {
   readonly saved: true;
   readonly savedTime: number;
-}
-
-export interface AudioSetSubtitleModePayload {
-  readonly displayMode: AudioSubtitleDisplayMode;
 }
 
 export interface AudioTimeRangeAnchorV1 {
@@ -141,34 +93,8 @@ export const DEFAULT_AUDIO_VIEW_STATE: Readonly<AudioWorkbenchViewState> =
     playbackRate: 1,
   });
 
-export const DEFAULT_AUDIO_SUBTITLE_VIEW_STATE: Readonly<AudioSubtitleViewState> =
-  Object.freeze({ displayMode: 'source' });
-
-export const EMPTY_AUDIO_SUBTITLE_SNAPSHOT: Readonly<AudioSubtitleSnapshot> =
-  EMPTY_MEDIA_SUBTITLE_SNAPSHOT;
-
-export const EMPTY_AUDIO_DUBBING_SNAPSHOT: Readonly<AudioDubbingSnapshot> =
-  EMPTY_MEDIA_DUBBING_SNAPSHOT;
-
-export const EMPTY_AUDIO_SPEAKER_TRACK_SNAPSHOT: Readonly<AudioSpeakerTrackSnapshot> =
-  Object.freeze({});
-
 export const audioCommands = {
   saveViewState: 'audio:save-view-state',
-  setSubtitleMode: 'audio:set-subtitle-mode',
-  getSubtitleSnapshot: 'audio:get-subtitle-snapshot',
-  retrySubtitles: 'audio:retry-subtitles',
-  startDubbing: 'audio:start-dubbing',
-  getDubbingSnapshot: 'audio:get-dubbing-snapshot',
-  retryDubbing: 'audio:retry-dubbing',
-  getSpeakerTrack: 'audio:get-speaker-track',
-} as const;
-
-export const audioEventTypes = {
-  subtitleSnapshot: 'audio:subtitle-snapshot',
-  subtitleCueFinal: 'audio:subtitle-cue-final',
-  dubbingSnapshot: 'audio:dubbing-snapshot',
-  speakerTrack: 'audio:speaker-track',
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -217,72 +143,6 @@ export function isAudioWorkbenchStateV1(
   return isRecord(value) && isAudioWorkbenchViewState(value.viewState);
 }
 
-export function isAudioWorkbenchStateV2(
-  value: unknown,
-): value is AudioWorkbenchStateV2 {
-  return (
-    isRecord(value) &&
-    isAudioWorkbenchViewState(value.viewState) &&
-    isMediaSubtitleViewState(value.subtitleState)
-  );
-}
-
-export function isAudioSubtitleSnapshot(
-  value: unknown,
-): value is AudioSubtitleSnapshot {
-  return isMediaSubtitleSnapshot(value);
-}
-
-export function cloneAudioSubtitleSnapshot(
-  snapshot: AudioSubtitleSnapshot,
-): JsonValue & AudioSubtitleSnapshot {
-  return cloneMediaSubtitleSnapshot(snapshot);
-}
-
-export function isAudioSubtitleCueFinalPayload(
-  value: unknown,
-): value is AudioSubtitleCueFinalPayload {
-  return isMediaSubtitleCueFinalPayload(value);
-}
-
-export function cloneAudioSubtitleCueFinalPayload(
-  payload: AudioSubtitleCueFinalPayload,
-): JsonValue & AudioSubtitleCueFinalPayload {
-  return cloneMediaSubtitleCueFinalPayload(payload);
-}
-
-export function isAudioDubbingSnapshot(
-  value: unknown,
-): value is AudioDubbingSnapshot {
-  return isMediaDubbingSnapshot(value);
-}
-
-export function cloneAudioDubbingSnapshot(
-  snapshot: AudioDubbingSnapshot,
-): JsonValue & AudioDubbingSnapshot {
-  return cloneMediaDubbingSnapshot(snapshot);
-}
-
-export function isAudioSpeakerTrackSnapshot(
-  value: unknown,
-): value is AudioSpeakerTrackSnapshot {
-  return (
-    isRecord(value) &&
-    (value.track === undefined || isDubbingSpeakerTrack(value.track))
-  );
-}
-
-export function cloneAudioSpeakerTrackSnapshot(
-  snapshot: AudioSpeakerTrackSnapshot,
-): JsonValue & AudioSpeakerTrackSnapshot {
-  if (!isAudioSpeakerTrackSnapshot(snapshot)) {
-    throw new Error('Audio Workbench 说话人轨道状态无效');
-  }
-  return (snapshot.track
-    ? { track: cloneDubbingSpeakerTrack(snapshot.track) }
-    : {}) as JsonValue & AudioSpeakerTrackSnapshot;
-}
-
 export function isAudioWorkbenchPayload(
   value: unknown,
 ): value is JsonValue & AudioWorkbenchPayload {
@@ -290,18 +150,8 @@ export function isAudioWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     value.contentUrl.startsWith('learning-content://resource/') &&
-    isAudioWorkbenchViewState(value.viewState) &&
-    isMediaSubtitleViewState(value.subtitleState) &&
-    isAudioSubtitleSnapshot(value.subtitleSnapshot) &&
-    isAudioDubbingSnapshot(value.dubbingSnapshot) &&
-    isAudioSpeakerTrackSnapshot(value.speakerTrackSnapshot)
+    isAudioWorkbenchViewState(value.viewState)
   );
-}
-
-export function isAudioSetSubtitleModePayload(
-  value: unknown,
-): value is AudioSetSubtitleModePayload {
-  return isRecord(value) && isMediaSubtitleDisplayMode(value.displayMode);
 }
 
 export function isAudioSaveViewStatePayload(
@@ -357,37 +207,4 @@ export function createAudioSaveViewStateCommand(
       viewState: cloneAudioViewState(viewState),
     },
   };
-}
-
-export function createAudioSetSubtitleModeCommand(
-  displayMode: AudioSubtitleDisplayMode,
-): WorkbenchCommand {
-  return {
-    type: audioCommands.setSubtitleMode,
-    payload: { displayMode },
-  };
-}
-
-export function createAudioGetSubtitleSnapshotCommand(): WorkbenchCommand {
-  return { type: audioCommands.getSubtitleSnapshot };
-}
-
-export function createAudioRetrySubtitlesCommand(): WorkbenchCommand {
-  return { type: audioCommands.retrySubtitles };
-}
-
-export function createAudioStartDubbingCommand(): WorkbenchCommand {
-  return { type: audioCommands.startDubbing };
-}
-
-export function createAudioGetDubbingSnapshotCommand(): WorkbenchCommand {
-  return { type: audioCommands.getDubbingSnapshot };
-}
-
-export function createAudioRetryDubbingCommand(): WorkbenchCommand {
-  return { type: audioCommands.retryDubbing };
-}
-
-export function createAudioGetSpeakerTrackCommand(): WorkbenchCommand {
-  return { type: audioCommands.getSpeakerTrack };
 }

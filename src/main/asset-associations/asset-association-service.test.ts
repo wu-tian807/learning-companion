@@ -5,8 +5,6 @@ import type {
   AssetReference,
 } from '../../shared/asset-associations';
 import type { AssetLookup } from '../assets/asset-database';
-import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
-import { createAssociationAggregateMutationSource } from '../bootstrap/asset-aggregate-mutation-sources';
 import type { ProjectLookup } from '../projects/project-database';
 import {
   AssetAssociationService,
@@ -118,7 +116,6 @@ function createHarness(): Harness {
       linkDatabase,
       projectLookup,
       assetLookup,
-      { now: () => 100 },
     ),
     referenceRows,
     linkRows,
@@ -186,10 +183,6 @@ describe('AssetAssociationService', () => {
   it('ensures unique relations and keeps memory synchronized with writes', () => {
     const harness = createHarness();
     harness.service.loadFromProject('project-a');
-    const assets = { touch: vi.fn() };
-    const dispose = trackAssetAggregateMutations(assets, [
-      createAssociationAggregateMutationSource(harness.service),
-    ]);
 
     const reference = harness.service.ensureReference('map-a', {
       sourceAssetId: 'pdf-a',
@@ -213,46 +206,16 @@ describe('AssetAssociationService', () => {
 
     harness.service.deleteReference(reference.id);
     harness.service.deleteLink(link.id);
-    harness.service.deleteReference(reference.id);
-    harness.service.deleteLink(link.id);
 
     expect(harness.service.listReferences('map-a')).toEqual([]);
     expect(harness.service.listLinks('map-a')).toEqual([]);
     expect(harness.referenceRows).toEqual([]);
     expect(harness.linkRows).toEqual([]);
-    expect(assets.touch).toHaveBeenCalledTimes(4);
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      1,
-      'project-a',
-      'map-a',
-      1,
-    );
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      2,
-      'project-a',
-      'map-a',
-      1,
-    );
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      3,
-      'project-a',
-      'map-a',
-      100,
-    );
-    expect(assets.touch).toHaveBeenNthCalledWith(
-      4,
-      'project-a',
-      'map-a',
-      100,
-    );
-    dispose();
   });
 
   it('rejects missing, cross-Project, and self-related Assets', () => {
     const harness = createHarness();
     harness.service.loadFromProject('project-a');
-    const mutation = vi.fn();
-    harness.service.subscribe(mutation);
 
     expect(() =>
       harness.service.ensureReference('map-a', {
@@ -267,68 +230,17 @@ describe('AssetAssociationService', () => {
     expect(() =>
       harness.service.ensureLink('map-a', { targetAssetId: 'map-a' }),
     ).toThrow('DATA_INTEGRITY_ERROR');
-    expect(mutation).not.toHaveBeenCalled();
   });
 
-  it('touches surviving owners when related Assets are deleted', () => {
+  it('prunes cascaded associations after an Asset is deleted', () => {
     const harness = createHarness();
     harness.service.loadFromProject('project-a');
     harness.service.ensureReference('map-a', { sourceAssetId: 'pdf-a' });
     harness.service.ensureLink('map-a', { targetAssetId: 'lecture-a' });
-    const mutations: unknown[] = [];
-    harness.service.subscribe((event) => {
-      mutations.push(event);
-    });
-
-    harness.service.onAssetDeleted('project-a', 'pdf-a');
-    harness.service.onAssetDeleted('project-a', 'lecture-a');
-
-    expect(harness.service.getReference('reference-1')).toBeUndefined();
-    expect(harness.service.getLink('link-1')).toBeUndefined();
-    expect(mutations).toEqual([
-      {
-        type: 'changed',
-        projectId: 'project-a',
-        assetId: 'map-a',
-        updatedTime: 100,
-      },
-      {
-        type: 'changed',
-        projectId: 'project-a',
-        assetId: 'map-a',
-        updatedTime: 100,
-      },
-    ]);
-  });
-
-  it('does not touch either endpoint when the owner itself is deleted', () => {
-    const harness = createHarness();
-    harness.service.loadFromProject('project-a');
-    harness.service.ensureReference('map-a', { sourceAssetId: 'pdf-a' });
-    harness.service.ensureLink('map-a', { targetAssetId: 'lecture-a' });
-    const mutation = vi.fn();
-    harness.service.subscribe(mutation);
 
     harness.service.onAssetDeleted('project-a', 'map-a');
 
-    expect(mutation).not.toHaveBeenCalled();
-  });
-
-  it('contains rejected async mutation subscribers', async () => {
-    const harness = createHarness();
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    harness.service.loadFromProject('project-a');
-    harness.service.subscribe(async () => {
-      throw new Error('subscriber failed');
-    });
-
-    harness.service.ensureReference('map-a', { sourceAssetId: 'pdf-a' });
-    await Promise.resolve();
-
-    expect(error).toHaveBeenCalledWith(
-      '异步 Asset Association 事件订阅者执行失败',
-      expect.any(Error),
-    );
-    error.mockRestore();
+    expect(harness.service.getReference('reference-1')).toBeUndefined();
+    expect(harness.service.getLink('link-1')).toBeUndefined();
   });
 });

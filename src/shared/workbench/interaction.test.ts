@@ -62,16 +62,6 @@ describe('Workbench interaction contract', () => {
         inputs: [],
       }),
     ).toBe(false);
-    expect(
-      isWorkbenchInvocationContext({
-        projectId: 'project-1',
-        assetId: 'asset-1',
-        workbenchId: 'builtin.pdf',
-        sessionId: 'session-1',
-        origin: 'generation-center',
-        inputs: [],
-      }),
-    ).toBe(false);
   });
 
   it('requires complete active session identity', () => {

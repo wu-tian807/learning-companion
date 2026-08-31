@@ -1,5 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import type { AgentWorkspacePreparationApi } from '../../agents/workspaces/agent-workspace-manager';
+import type { AgentWorkspaceManagerApi } from '../../agents/workspaces/agent-workspace-manager';
 import {
   requireAgentWorkspaceKey,
   requireAgentWorkspacePathSegment,
@@ -86,7 +86,7 @@ function resolveInstanceKey(
 }
 
 export async function prepareAgentWorkspace(
-  manager: AgentWorkspacePreparationApi,
+  manager: AgentWorkspaceManagerApi,
   config: AgentWorkspaceConfig,
   context: AgentWorkspaceInstanceContext,
   namespaceSegments: readonly string[] = [],

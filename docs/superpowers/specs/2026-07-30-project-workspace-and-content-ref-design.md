@@ -43,7 +43,7 @@ Learning Companion 已经建立以下基础：
 7. 应用生成的 Asset 也使用 `local-file`。
 8. 退役 `managed-json`，但保留 Content Resolver 扩展架构。
 9. 切换 Workspace 不移动文件，允许相对 Asset 因而变成 Missing。
-10. 删除 Project 时保留 Workspace 根目录和外部资料，只删除应用私有数据。
+10. Project 和 Asset 删除默认不删除真实文件。
 11. Windows 与 macOS 使用同一领域契约。
 
 ## 3. 非目标
@@ -107,23 +107,20 @@ interface AppSettings {
 ```text
 <defaultProjectWorkspace>/
 └── <project-directory>/
-    ├── <用户资料与其他外部文件>
+    ├── assets/
+    │   ├── imported/
+    │   └── generated/
+    ├── attachments/
     └── .learning-companion/
-        ├── assets/
-        │   ├── imported/
-        │   └── generated/
-        ├── attachments/
         └── workspace.json
 ```
 
 含义：
 
-- `.learning-companion/assets/imported` 保存复制进入 Project 的资料；
-- `.learning-companion/assets/generated` 保存应用或 Agent 生成的 Asset；
-- `.learning-companion/attachments` 保存笔记、AI 解释等正文文件；
-- `.learning-companion/workspace.json` 只记录 Workspace 标识和格式版本；
-- `.learning-companion` 是应用拥有的唯一 Project Workspace 命名空间，根目录及
-  其余同级文件始终视为外部资料。
+- `assets/imported` 保存复制进入 Project 的资料；
+- `assets/generated` 保存应用或 Agent 生成的 Asset；
+- `attachments` 预留给笔记、AI 解释等正文文件；
+- `.learning-companion/workspace.json` 记录 Workspace 标识、格式版本，以及根目录是否由应用创建。
 
 `workspace.json` 不是 Project、Asset 或 Attachment 的业务事实来源，不复制
 SQLite 的完整内容。它用于识别 Workspace 是否已经绑定其他 Project，以及未来
@@ -196,7 +193,7 @@ Workspace 内示例：
 {
   "kind": "local-file",
   "base": "project-workspace",
-  "path": ".learning-companion/assets/imported/线性代数.pdf"
+  "path": "assets/imported/线性代数.pdf"
 }
 ```
 
@@ -418,7 +415,7 @@ dialog.showOpenDialog({
 
 ### 10.2 Workspace 外文件
 
-默认操作是复制到 `.learning-companion/assets/imported`：
+默认操作是复制到 `assets/imported`：
 
 1. 使用临时文件完成原子复制；
 2. 文件名冲突时追加 ` (2)`、` (3)`；
@@ -500,18 +497,15 @@ Home 的编辑界面包含：
 
 ## 13. 删除策略
 
-删除必须先清理可证明由应用拥有的数据，再删除数据库记录：
+第一阶段以安全为先：
 
-- 删除 Asset 时删除复制、生成、Attachment 和 Artifact 文件，不删除链接的原文件；
-- 删除 Project 时先停止 Project 运行时，删除全局 Project Agent Workspace，再清理
-  Workspace 内完整的 `.learning-companion` 命名空间；
-- Workspace 根目录无论由应用创建还是由用户选择都始终保留，根目录同级的资料、
-  `assets`、`attachments` 或其他目录都不参与删除；
-- `.learning-companion/workspace.json` 最后删除。子目录清理失败时 marker 仍在，
-  可以在重启后重试；marker 删除后若只剩空目录，也可以幂等重试；
-- Workbench 私有状态、Artifact、Attachment 和托管 Asset 都必须位于
-  `.learning-companion`，ProjectService 不维护各功能的私有目录清单；
-- 任一步失败时保留 Project 数据库记录，不丢失下一次清理所需的 Project 身份。
+- 删除 Asset 只删除数据库记录，不删除真实文件；
+- 删除 Project 只删除数据库记录，不删除 Workspace；
+- UI 文案使用“从 Learning Companion 中移除”；
+- 未来“同时移到废纸篓”必须是独立、显式且二次确认的操作。
+
+该策略避免用户选择已有资料目录作为 Workspace 后，删除 Project 意外清空
+目录。文件所有权和孤儿文件清理后续单独设计。
 
 ## 14. Attachment 边界
 
@@ -534,11 +528,7 @@ Attachment 不在本阶段实现，但后续必须遵守：
 4. 开发阶段已有 `managed-json` Asset 可以删除，并依靠外键清理对应
    Workbench State；
 5. `assets.content_ref` 继续保存 JSON 引用，但数据库不保存正文；
-6. Settings 初始化必须能取得 Electron Documents 路径并生成默认值；
-7. 启动时在 ProjectDatabase 初始化前执行一次性文件布局迁移：把旧
-   `assets/imported`、`assets/generated` 和 `attachments` 中被数据库引用的文件
-   搬入 `.learning-companion`，随后更新 ContentRef。该迁移可重入；核心读写链只
-   认识新布局，不保留旧路径 fallback。
+6. Settings 初始化必须能取得 Electron Documents 路径并生成默认值。
 
 迁移不得复制现有绝对路径 Asset；它们继续作为外部链接存在，用户可以随后
 选择导入 Workspace。
@@ -589,9 +579,6 @@ Attachment 不在本阶段实现，但后续必须遵守：
 - 打开 Workspace；
 - 显示具体文件；
 - 失败补偿不删除用户文件。
-- 无论 Workspace 是否由应用创建，删除 Project 都保留根目录和外部文件；
-- 子目录清理失败、marker 删除后的空目录均可重试；
-- `.learning-companion` 符号链接不会被跟随到 Workspace 外。
 
 ### 17.3 Service 与数据库测试
 
@@ -646,9 +633,7 @@ Project/Asset 数据层的局部命名约定。文件选择器目录属于短期
 - 切换 Workspace 后相对 Asset 正确 Available 或 Missing；
 - Project 与 Asset 的文件管理器行为符合各自语义；
 - 删除复制或生成的 Asset 时删除其应用托管副本，不删除链接的原文件；
-- 删除 Project 时始终保留 Workspace 根目录和外部资料，只删除
-  `.learning-companion` 与全局 Project Agent Workspace；
-- 核心代码不存在 Workspace 根目录归属字段或两套删除分支；
-- 旧 `assets`、`attachments` 布局通过一次性启动迁移收束到新路径；
+- 删除 Project 时，应用创建的 Workspace 整体删除；用户选择的已有目录只删除可由 ContentRef 证明归属的 Asset 副本及 Project marker；
+- 旧版 marker 没有目录归属字段时，仅当根目录完全符合标准应用布局才整体删除；出现任意用户文件或未知目录即保留根目录；
 - macOS 与 Windows 路径测试通过；
 - `pnpm check` 通过。

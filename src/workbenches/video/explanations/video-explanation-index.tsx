@@ -103,7 +103,7 @@ export function VideoExplanationIndex({
           <div className="rounded-lg border border-dashed border-white/[0.08] px-3 py-6 text-center">
             <p className="text-xs text-slate-500">还没有可定位的视频标注</p>
             <p className="mt-1.5 text-[10px] leading-4 text-slate-600">
-              在视频画面上单击选择整帧，或拖动框选局部并完成提问后，标注会出现在这里。
+              在视频画面上按住右键框选并完成提问后，标注会出现在这里。
             </p>
           </div>
         ) : (

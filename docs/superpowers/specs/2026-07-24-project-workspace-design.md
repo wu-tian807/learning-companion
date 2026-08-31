@@ -1,9 +1,5 @@
 # Project 工作区前端骨架设计
 
-> 2026-08-30 更新：本文中的“当前 Asset 工具”已由
-> [Workbench 生成中心 Surface 移除设计](./2026-08-30-workbench-generation-center-surface-removal-design.md)
-> 取代；媒体专用操作留在 Workbench 内。
-
 ## 目标
 
 为单个 Project 建立独立于 `Home.tsx` 的工作区页面，并把已经确认的可视化方案迁入真实 React 应用。

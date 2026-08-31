@@ -1,4 +1,10 @@
-/** Legacy HTML-only history decoder used solely by database migration 0024. */
+/**
+ * Persisted conversation protocol for the HTML assistant.
+ *
+ * Version 1 stored one question/answer pair per entry. Version 2 stores a
+ * complete multi-turn conversation. The database key intentionally stays the
+ * same so existing v1 data can be migrated instead of silently disappearing.
+ */
 import {
   type JsonValue,
 } from '../../../shared/workbench/protocol';
@@ -293,7 +299,15 @@ export function normalizeHtmlConversationIndex(
   }
 }
 
-function createHtmlConversationIndexWith(
+export function createHtmlConversationIndex(): HtmlConversationIndex {
+  return Object.freeze({
+    format: HTML_CONVERSATION_INDEX_FORMAT,
+    version: HTML_CONVERSATION_INDEX_VERSION,
+    entries: Object.freeze([]),
+  });
+}
+
+export function createHtmlConversationIndexWith(
   entries: readonly HtmlConversationEntry[],
 ): HtmlConversationIndex {
   if (entries.length > HTML_CONVERSATION_MAX_ENTRIES) {
@@ -310,4 +324,61 @@ function createHtmlConversationIndexWith(
     throw new Error('HtmlConversationIndex 数据无效');
   }
   return index;
+}
+
+/** Insert a new conversation or replace the existing entry with the same id. */
+export function saveHtmlConversationEntry(
+  index: HtmlConversationIndex,
+  entry: HtmlConversationEntry,
+): HtmlConversationIndex {
+  if (!isHtmlConversationIndex(index) || !isHtmlConversationEntry(entry)) {
+    throw new Error('HtmlConversationEntry 数据无效');
+  }
+
+  const existingIndex = index.entries.findIndex(
+    (candidate) => candidate.id === entry.id,
+  );
+  if (
+    existingIndex < 0 &&
+    index.entries.length >= HTML_CONVERSATION_MAX_ENTRIES
+  ) {
+    throw new Error('HtmlConversationIndex 已达到条数上限');
+  }
+
+  if (existingIndex >= 0) {
+    const existing = index.entries[existingIndex]!;
+    if (entry.updatedTime < existing.updatedTime) {
+      return index;
+    }
+    const replacement = freezeEntry({
+      id: entry.id,
+      messages: entry.messages,
+      createdTime: existing.createdTime,
+      updatedTime: entry.updatedTime,
+    });
+    const entries = [...index.entries];
+    entries[existingIndex] = replacement;
+    return createHtmlConversationIndexWith(entries);
+  }
+
+  const entries = [...index.entries, freezeEntry(entry)].sort(
+    (left, right) =>
+      left.createdTime - right.createdTime || left.id.localeCompare(right.id),
+  );
+  return createHtmlConversationIndexWith(entries);
+}
+
+export function removeHtmlConversationEntry(
+  index: HtmlConversationIndex,
+  entryId: string,
+): HtmlConversationIndex {
+  if (
+    !isHtmlConversationIndex(index) ||
+    !isHtmlConversationId(entryId)
+  ) {
+    throw new Error('HtmlConversationEntry id 无效');
+  }
+  return createHtmlConversationIndexWith(
+    index.entries.filter((entry) => entry.id !== entryId),
+  );
 }

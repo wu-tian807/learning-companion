@@ -5,10 +5,8 @@ import { ExternalLibraryDownloader } from '../external-libraries/external-librar
 import { detectExternalLibraryHardwareCapabilities } from '../external-libraries/external-library-hardware-capabilities';
 import { ExternalLibraryInstallationManifestFile } from '../external-libraries/external-library-installation-manifest-file';
 import { ExternalLibraryInstallerRegistry } from '../external-libraries/external-library-installer';
-import { ExternalLibraryLifecycleRegistry } from '../external-libraries/external-library-lifecycle';
 import { ExternalLibraryPathManager } from '../external-libraries/external-library-path-manager';
 import { ExternalLibraryRegistry } from '../external-libraries/external-library-registry';
-import { ExternalLibraryRuntimeSetupRegistry } from '../external-libraries/external-library-runtime-setup';
 import { ExternalLibraryService } from '../external-libraries/external-library-service';
 import { MacosDmgInstaller } from '../external-libraries/installers/macos-dmg-installer';
 import { ExternalLibraryBundleInstaller } from '../external-libraries/installers/external-library-bundle-installer';
@@ -19,16 +17,12 @@ export async function createExternalLibraryRuntime(
   settingsRepository: SettingsRepository,
 ): Promise<ExternalLibraryService> {
   const registry = new ExternalLibraryRegistry();
-  const lifecycles = new ExternalLibraryLifecycleRegistry();
-  const runtimeSetups = new ExternalLibraryRuntimeSetupRegistry();
   const hardware = await detectExternalLibraryHardwareCapabilities(
     () => app.getGPUInfo('basic'),
   );
   registerMainWorkbenchExternalLibraries({
     libraries: registry,
     hardware,
-    lifecycles,
-    runtimeSetups,
   });
   const installerRegistry = new ExternalLibraryInstallerRegistry();
   installerRegistry.register(new ExternalLibraryBundleInstaller());
@@ -38,10 +32,9 @@ export async function createExternalLibraryRuntime(
     settingsRepository,
     registry,
     new ExternalLibraryPathManager(),
-    new ExternalLibraryInstallationManifestFile(runtimeSetups),
+    new ExternalLibraryInstallationManifestFile(),
     new ExternalLibraryDownloader(),
     installerRegistry,
-    { lifecycles, runtimeSetups },
   );
 
   try {

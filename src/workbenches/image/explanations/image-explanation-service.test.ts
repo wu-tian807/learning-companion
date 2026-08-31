@@ -153,8 +153,7 @@ describe('ImageExplanationService', () => {
           ref: {
             kind: 'local-file',
             base: 'project-workspace',
-            path:
-              `.learning-companion/attachments/${id}/answer.md`,
+            path: `attachments/${id}/answer.md`,
           },
           mediaType: 'text/markdown',
         },
@@ -285,7 +284,7 @@ describe('ImageExplanationService', () => {
         ref: {
           kind: 'local-file',
           base: 'project-workspace',
-          path: '.learning-companion/attachments/attachment-1/answer.md',
+          path: 'attachments/attachment-1/answer.md',
         },
         mediaType: 'text/markdown',
       },

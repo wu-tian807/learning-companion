@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
@@ -16,10 +17,15 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
+import {
+  useWorkbenchRuntime,
+  useWorkbenchRuntimeSelector,
+} from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
 import {
   createVideoConversationContribution,
+  createVideoConversationHistoryStore,
   createVideoFrameConversationLaunch,
 } from './conversation/video-conversation-contribution';
 import {
@@ -34,27 +40,20 @@ import type { VideoExplanationView } from './explanations/shared';
 import { videoExplanationVisibleAtTime } from './explanations/video-explanation-revision';
 import { useVideoExplanations } from './explanations/use-video-explanations';
 import {
-  MediaDubbingAudioTrack,
-  useMediaDubbingPlayback,
-} from '../media-dubbing/use-media-dubbing-playback';
-import { useMediaSubtitles } from '../media-subtitles/use-media-subtitles';
+  useVideoDubbingPlayback,
+  VideoDubbingAudioTrack,
+} from './dubbing/use-video-dubbing-playback';
 import { VideoPlaybackControls } from './video-playback-controls';
 import { VideoLanguageControls } from './video-language-controls';
-import { VideoFrameQuestionMenu } from './video-frame-question-menu';
 import {
   cloneVideoViewState,
-  createVideoGetDubbingSnapshotCommand,
   createVideoGetSubtitleSnapshotCommand,
-  createVideoRetryDubbingCommand,
   createVideoRetrySubtitlesCommand,
   createVideoSaveViewStateCommand,
   createVideoSetSubtitleModeCommand,
-  createVideoStartDubbingCommand,
   createVideoFrameRegionTarget,
   DEFAULT_VIDEO_VIEW_STATE,
   EMPTY_VIDEO_DUBBING_SNAPSHOT,
-  EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
-  isVideoDubbingSnapshot,
   isVideoSubtitleCueFinalPayload,
   isVideoSubtitleSnapshot,
   isVideoSaveViewStateResult,
@@ -77,25 +76,6 @@ const VIDEO_HAVE_METADATA = 1;
 const VIDEO_METADATA_TIMEOUT_MS = 15_000;
 const MIN_FRAME_SELECTION_SIZE = 8;
 
-const VIDEO_DUBBING_PLAYBACK_PROTOCOL = Object.freeze({
-  snapshotEventType: videoEventTypes.dubbingSnapshot,
-  createGetSnapshotCommand: createVideoGetDubbingSnapshotCommand,
-  createStartCommand: createVideoStartDubbingCommand,
-  createRetryCommand: createVideoRetryDubbingCommand,
-  isSnapshot: isVideoDubbingSnapshot,
-});
-
-const VIDEO_SUBTITLE_PROTOCOL = Object.freeze({
-  snapshotEventType: videoEventTypes.subtitleSnapshot,
-  cueFinalEventType: videoEventTypes.subtitleCueFinal,
-  createGetSnapshotCommand: createVideoGetSubtitleSnapshotCommand,
-  createSetModeCommand: createVideoSetSubtitleModeCommand,
-  createRetryCommand: createVideoRetrySubtitlesCommand,
-  isSetModeResult: isVideoSaveViewStateResult,
-  isSnapshot: isVideoSubtitleSnapshot,
-  isCueFinalPayload: isVideoSubtitleCueFinalPayload,
-});
-
 interface ScreenPoint {
   readonly x: number;
   readonly y: number;
@@ -106,11 +86,6 @@ interface ScreenRectangle {
   readonly top: number;
   readonly width: number;
   readonly height: number;
-}
-
-interface FrameSelectionGesture {
-  readonly start: ScreenPoint;
-  readonly replacesSelection: boolean;
 }
 
 function screenRectangle(
@@ -156,6 +131,23 @@ export function createVideoFrameRegionFromClientPoints(
     sourceWidth: video.videoWidth,
     sourceHeight: video.videoHeight,
   });
+}
+
+export function isClientPointInsideVideoFrameRegion(
+  video: Pick<HTMLVideoElement, 'getBoundingClientRect'>,
+  target: VideoFrameRegionTarget,
+  point: ScreenPoint,
+): boolean {
+  const bounds = video.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return false;
+  const region = target.anchorPayload;
+  const left = bounds.left + region.x * bounds.width;
+  const top = bounds.top + region.y * bounds.height;
+  const right = left + region.width * bounds.width;
+  const bottom = top + region.height * bounds.height;
+  return (
+    point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
+  );
 }
 
 function formatVttTime(milliseconds: number): string {
@@ -241,6 +233,10 @@ export function VideoWorkbenchView({
   onError,
   subscribeEvent,
 }: RendererWorkbenchViewProps) {
+  const runtime = useWorkbenchRuntime();
+  const contextMenuOpen = useWorkbenchRuntimeSelector(
+    (state) => state.contextMenu !== undefined,
+  );
   const payload = isVideoWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
@@ -251,9 +247,8 @@ export function VideoWorkbenchView({
     volume: payload?.viewState.volume ?? 1,
     muted: payload?.viewState.muted ?? false,
   });
-  const frameSelectionGestureRef = useRef<
-    FrameSelectionGesture | undefined
-  >(undefined);
+  const rightSelectionStartRef = useRef<ScreenPoint | undefined>(undefined);
+  const suppressNativeContextMenuRef = useRef(false);
   const selectedConversationContextRef = useRef<
     VideoConversationContext | undefined
   >(undefined);
@@ -264,9 +259,20 @@ export function VideoWorkbenchView({
   const [loadState, setLoadState] = useState<VideoLoadState>({
     kind: 'loading',
   });
+  const [subtitleMode, setSubtitleMode] = useState<VideoSubtitleDisplayMode>(
+    payload?.subtitleState.displayMode ?? 'off',
+  );
+  const [subtitleSnapshot, setSubtitleSnapshot] =
+    useState<VideoSubtitleSnapshot>(
+      payload?.subtitleSnapshot ?? {
+        phase: 'idle',
+        partialTranslations: [],
+        completedCues: 0,
+        totalCues: 0,
+      },
+    );
   const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string>();
   const [draftSelection, setDraftSelection] = useState<ScreenRectangle>();
-  const [frameQuestionMenuOpen, setFrameQuestionMenuOpen] = useState(false);
   const [selectedConversationContext, setSelectedConversationContext] =
     useState<VideoConversationContext>();
   const [currentTime, setCurrentTime] = useState(
@@ -291,29 +297,17 @@ export function VideoWorkbenchView({
     },
     [onError],
   );
-  const subtitles = useMediaSubtitles({
-    resetKey: bootstrap.sessionId,
-    initialMode: payload?.subtitleState.displayMode ?? 'off',
-    initialSnapshot: payload?.subtitleSnapshot ?? EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
-    executeCommand,
-    subscribeEvent,
-    reportError,
-    protocol: VIDEO_SUBTITLE_PROTOCOL,
-    mediaLabel: '视频',
-  });
-  const dubbing = useMediaDubbingPlayback({
+  const dubbing = useVideoDubbingPlayback({
     resetKey: `${bootstrap.sessionId}:${payload?.sourceRevision ?? 'invalid'}`,
     initialSnapshot: payload?.dubbingSnapshot ?? EMPTY_VIDEO_DUBBING_SNAPSHOT,
     currentTime,
     duration,
     desiredAudioState: { volume, muted, playbackRate },
-    mediaRef: videoRef,
-    suppressMediaVolumeEventRef: suppressVideoVolumeEventRef,
+    videoRef,
+    suppressVideoVolumeEventRef,
     executeCommand,
     subscribeEvent,
     reportError,
-    protocol: VIDEO_DUBBING_PLAYBACK_PROTOCOL,
-    mediaLabel: '视频',
   });
   const isDubbingPlaybackActive = dubbing.isPlaybackActive;
 
@@ -329,8 +323,19 @@ export function VideoWorkbenchView({
     };
   }, []);
 
+  const conversationContributionId = `${videoWorkbenchManifest.id}.frame-conversation`;
   const sourceRevision = payload?.sourceRevision ?? '';
   const conversationOwnerId = `${videoWorkbenchManifest.id}:${bootstrap.sessionId}:${sourceRevision}.conversation`;
+  const conversationHistoryStore = useMemo(
+    () =>
+      createVideoConversationHistoryStore(
+        asset.projectId,
+        asset.id,
+        conversationContributionId,
+        sourceRevision,
+      ),
+    [asset.id, asset.projectId, conversationContributionId, sourceRevision],
+  );
   const commitConversationContext = useCallback(
     (context: VideoConversationContext) => {
       selectedConversationContextRef.current = context;
@@ -345,8 +350,7 @@ export function VideoWorkbenchView({
         return;
       }
       selectedConversationContextRef.current = undefined;
-      frameSelectionGestureRef.current = undefined;
-      setFrameQuestionMenuOpen(false);
+      rightSelectionStartRef.current = undefined;
       setSelectedConversationContext(undefined);
       setDraftSelection(undefined);
     },
@@ -402,10 +406,12 @@ export function VideoWorkbenchView({
     () =>
       createVideoConversationContribution({
         sourceRevision,
+        historyStore: conversationHistoryStore,
         revealContext: revealConversationContext,
         onContextReleased: releaseConversationContext,
       }),
     [
+      conversationHistoryStore,
       releaseConversationContext,
       revealConversationContext,
       sourceRevision,
@@ -447,13 +453,22 @@ export function VideoWorkbenchView({
   });
 
   useEffect(() => {
-    if (!frameQuestionMenuOpen || !selectedConversationContext) {
-      return;
-    }
+    if (!contextMenuOpen || !selectedConversationContext) return;
     const dismiss = (event: PointerEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest('[data-video-frame-surface="true"]')
+        event.target.closest('[role="menu"]')
+      ) {
+        return;
+      }
+      const video = videoRef.current;
+      if (
+        video &&
+        isClientPointInsideVideoFrameRegion(
+          video,
+          selectedConversationContext.target,
+          { x: event.clientX, y: event.clientY },
+        )
       ) {
         return;
       }
@@ -471,7 +486,7 @@ export function VideoWorkbenchView({
       document.removeEventListener('keydown', dismissOnEscape);
     };
   }, [
-    frameQuestionMenuOpen,
+    contextMenuOpen,
     releaseConversationContext,
     selectedConversationContext,
   ]);
@@ -494,15 +509,78 @@ export function VideoWorkbenchView({
 
   useEffect(() => {
     if (!payload) return;
+    setSubtitleMode(payload.subtitleState.displayMode);
+    setSubtitleSnapshot(payload.subtitleSnapshot);
     desiredAudioStateRef.current = {
       volume: payload.viewState.volume,
       muted: payload.viewState.muted,
     };
   }, [payload]);
 
+  useEffect(() => {
+    if (!subscribeEvent) {
+      throw new Error('Video Workbench 缺少异步事件通道');
+    }
+    let disposed = false;
+    let receivedSubtitleEvent = false;
+    const unsubscribe = subscribeEvent((event) => {
+      if (
+        event.type === videoEventTypes.subtitleSnapshot &&
+        isVideoSubtitleSnapshot(event.payload)
+      ) {
+        receivedSubtitleEvent = true;
+        setSubtitleSnapshot(event.payload);
+        return;
+      }
+      if (
+        event.type === videoEventTypes.subtitleCueFinal &&
+        isVideoSubtitleCueFinalPayload(event.payload)
+      ) {
+        receivedSubtitleEvent = true;
+        const payload = event.payload;
+        setSubtitleSnapshot((current) => {
+          const translations = new Map(
+            current.partialTranslations.map((cue) => [cue.sourceCueId, cue]),
+          );
+          translations.set(payload.cue.sourceCueId, payload.cue);
+          const ordered = current.source?.cues.flatMap((cue) => {
+            const translation = translations.get(cue.id);
+            return translation ? [translation] : [];
+          }) ?? [...translations.values()];
+          return {
+            ...current,
+            phase: 'translating',
+            partialTranslations: ordered,
+            completedCues: payload.completedCues,
+            totalCues: payload.totalCues,
+          };
+        });
+      }
+    });
+
+    void executeCommand(createVideoGetSubtitleSnapshotCommand())
+      .then((result) => {
+        if (disposed || receivedSubtitleEvent) return;
+        if (!isVideoSubtitleSnapshot(result.payload)) {
+          throw new Error('Video Workbench 字幕状态响应无效');
+        }
+        setSubtitleSnapshot(result.payload);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          reportError(error, '无法同步字幕状态。');
+        }
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [executeCommand, reportError, subscribeEvent]);
+
   const subtitleVtt = useMemo(
-    () => createVideoSubtitleVtt(subtitles.snapshot, subtitles.mode),
-    [subtitles.mode, subtitles.snapshot],
+    () => createVideoSubtitleVtt(subtitleSnapshot, subtitleMode),
+    [subtitleMode, subtitleSnapshot],
   );
   useEffect(() => {
     if (!subtitleVtt) {
@@ -783,82 +861,95 @@ export function VideoWorkbenchView({
       reportError(error, '无法在文件夹中显示视频。');
     }
   }, [onReveal, reportError]);
-  const submitSelectedFrameQuestion = useCallback((question: string) => {
+  const explainSelectedFrame = useCallback(() => {
     const context = selectedConversationContextRef.current;
     if (!context || conversationBusy) return;
-    setFrameQuestionMenuOpen(false);
-    conversationRuntime.open({
-      ownerId: conversationOwnerId,
-      context,
-      question,
-      submit: true,
-    });
-  }, [conversationBusy, conversationOwnerId, conversationRuntime]);
-  const openSelectedFrameQuestion = useCallback(() => {
-    const context = selectedConversationContextRef.current;
-    if (!context || conversationBusy) return;
-    setFrameQuestionMenuOpen(false);
+    runtime.closeContextMenu();
     conversationRuntime.open({
       ownerId: conversationOwnerId,
       ...createVideoFrameConversationLaunch(context),
     });
-  }, [conversationBusy, conversationOwnerId, conversationRuntime]);
+  }, [conversationBusy, conversationOwnerId, conversationRuntime, runtime]);
   const rendererActions = useMemo(
     () =>
       createVideoRendererActions({
         ready,
+        canExplainFrame:
+          ready &&
+          !conversationBusy &&
+          selectedConversationContext !== undefined,
         explanationCount: explanations.length,
         indexOpen: explanationIndexOpen,
         markersVisible: explanationMarkersVisible,
+        onTogglePlayback: togglePlayback,
+        onExplainFrame: explainSelectedFrame,
         onToggleIndex: toggleExplanationIndex,
         onToggleMarkers: toggleExplanationMarkers,
         onReveal: reveal,
       }),
     [
+      conversationBusy,
+      explainSelectedFrame,
       explanationIndexOpen,
       explanationMarkersVisible,
       explanations.length,
       ready,
       reveal,
+      selectedConversationContext,
+      togglePlayback,
       toggleExplanationIndex,
       toggleExplanationMarkers,
     ],
   );
   useWorkbenchContributions(videoWorkbenchManifest.id, rendererActions);
 
-  const openFrameQuestionMenu = useCallback(
-    (target: VideoFrameRegionTarget) => {
+  const selectSubtitleMode = useCallback(
+    async (mode: VideoSubtitleDisplayMode) => {
+      setSubtitleMode(mode);
+      try {
+        const result = await executeCommand(
+          createVideoSetSubtitleModeCommand(mode),
+        );
+        if (!isVideoSaveViewStateResult(result.payload)) {
+          throw new Error('Video Workbench 字幕状态响应无效');
+        }
+      } catch (error) {
+        reportError(error, '无法切换字幕模式。');
+      }
+    },
+    [executeCommand, reportError],
+  );
+  const retrySubtitles = useCallback(async () => {
+    try {
+      await executeCommand(createVideoRetrySubtitlesCommand());
+    } catch (error) {
+      reportError(error, '无法重新处理字幕。');
+    }
+  }, [executeCommand, reportError]);
+  const openFrameContextMenu = useCallback(
+    (point: ScreenPoint, target: VideoFrameRegionTarget) => {
       const context = createVideoConversationContext(target, sourceRevision);
       commitConversationContext(context);
-      setFrameQuestionMenuOpen(true);
+      runtime.openContextMenu(bootstrap.sessionId, point, {
+        focus: target,
+        inputs: [],
+      });
     },
-    [commitConversationContext, sourceRevision],
+    [bootstrap.sessionId, commitConversationContext, runtime, sourceRevision],
   );
   const beginFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || !event.isPrimary || !ready) return;
-      if (
-        event.target instanceof Element &&
-        event.target.closest(
-          'button, input, select, textarea, a, [role="button"], [data-video-frame-question-menu="true"]',
-        )
-      ) {
-        return;
-      }
+      if (event.button !== 2 || !ready) return;
       const video = videoRef.current;
       if (!video || !hasLoadedVideoMetadata(video)) return;
-      const replacesSelection =
-        selectedConversationContextRef.current !== undefined;
       event.preventDefault();
       event.stopPropagation();
+      runtime.closeContextMenu();
       releaseConversationContext(undefined);
       video.pause();
       event.currentTarget.setPointerCapture(event.pointerId);
       const point = { x: event.clientX, y: event.clientY };
-      frameSelectionGestureRef.current = {
-        start: point,
-        replacesSelection,
-      };
+      rightSelectionStartRef.current = point;
       const bounds = video.getBoundingClientRect();
       setDraftSelection({
         left: clamp(point.x, bounds.left, bounds.right) - bounds.left,
@@ -867,11 +958,11 @@ export function VideoWorkbenchView({
         height: 0,
       });
     },
-    [ready, releaseConversationContext],
+    [ready, releaseConversationContext, runtime],
   );
   const updateFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      const start = frameSelectionGestureRef.current?.start;
+      const start = rightSelectionStartRef.current;
       const video = videoRef.current;
       if (!start || !video) return;
       event.preventDefault();
@@ -896,40 +987,49 @@ export function VideoWorkbenchView({
   );
   const finishFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      const gesture = frameSelectionGestureRef.current;
-      const start = gesture?.start;
+      const start = rightSelectionStartRef.current;
       const video = videoRef.current;
-      if (!gesture || !start || !video) return;
+      if (!start || !video) return;
       event.preventDefault();
       event.stopPropagation();
-      frameSelectionGestureRef.current = undefined;
+      rightSelectionStartRef.current = undefined;
       setDraftSelection(undefined);
       const target = createVideoFrameRegionFromClientPoints(video, start, {
         x: event.clientX,
         y: event.clientY,
       });
       if (!target) return;
-      const rectangle = screenRectangle(start, {
-        x: event.clientX,
-        y: event.clientY,
-      });
-      if (
-        rectangle.width < MIN_FRAME_SELECTION_SIZE ||
-        rectangle.height < MIN_FRAME_SELECTION_SIZE
-      ) {
-        if (!gesture.replacesSelection) {
-          openFrameQuestionMenu(target);
-        }
-        return;
-      }
-      openFrameQuestionMenu(target);
+      suppressNativeContextMenuRef.current = true;
+      openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
+      window.setTimeout(() => {
+        suppressNativeContextMenuRef.current = false;
+      }, 0);
     },
-    [openFrameQuestionMenu],
+    [openFrameContextMenu],
   );
   const cancelFrameSelection = useCallback(() => {
-    frameSelectionGestureRef.current = undefined;
+    rightSelectionStartRef.current = undefined;
     setDraftSelection(undefined);
   }, []);
+  const openContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (suppressNativeContextMenuRef.current) {
+        return;
+      }
+      const video = videoRef.current;
+      if (!video || !ready) return;
+      const target = createVideoFrameRegionFromClientPoints(
+        video,
+        { x: event.clientX, y: event.clientY },
+        { x: event.clientX, y: event.clientY },
+      );
+      if (target) {
+        openFrameContextMenu({ x: event.clientX, y: event.clientY }, target);
+      }
+    },
+    [openFrameContextMenu, ready],
+  );
   if (!payload) {
     return (
       <div className="grid h-full place-items-center p-8 text-center">
@@ -961,7 +1061,7 @@ export function VideoWorkbenchView({
         <div
           data-video-frame-surface="true"
           className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-md bg-black shadow-[0_20px_60px_rgba(0,0,0,0.42)]"
-          onContextMenuCapture={(event) => event.preventDefault()}
+          onContextMenuCapture={openContextMenu}
           onPointerDownCapture={beginFrameSelection}
           onPointerMoveCapture={updateFrameSelection}
           onPointerUpCapture={finishFrameSelection}
@@ -980,13 +1080,13 @@ export function VideoWorkbenchView({
                 key={subtitleTrackUrl}
                 kind="subtitles"
                 src={subtitleTrackUrl}
-                srcLang={subtitles.snapshot.source?.language ?? 'und'}
+                srcLang={subtitleSnapshot.source?.language ?? 'und'}
                 label="Learning Companion 字幕"
                 default
               />
             )}
           </video>
-          <MediaDubbingAudioTrack controller={dubbing} mediaLabel="视频" />
+          <VideoDubbingAudioTrack controller={dubbing} />
           <VideoExplanationMarkerOverlay
             visible={explanationMarkersVisible}
             markers={visibleExplanationMarkers}
@@ -1021,27 +1121,6 @@ export function VideoWorkbenchView({
                 height: draftSelection.height,
               }}
             />
-          )}
-          {frameQuestionMenuOpen && selectedConversationContext && (
-            <div
-              className="pointer-events-none absolute right-2 left-2 z-50 flex justify-center"
-              style={{
-                top: `${selectedConversationContext.target.anchorPayload.y * 100}%`,
-                transform:
-                  selectedConversationContext.target.anchorPayload.y >= 0.12
-                    ? 'translateY(calc(-100% - 8px))'
-                    : 'translateY(8px)',
-              }}
-            >
-              <VideoFrameQuestionMenu
-                disabled={conversationBusy}
-                onQuestion={submitSelectedFrameQuestion}
-                onFreeQuestion={openSelectedFrameQuestion}
-                onClose={() =>
-                  releaseConversationContext(selectedConversationContext)
-                }
-              />
-            </div>
           )}
         </div>
 
@@ -1106,13 +1185,13 @@ export function VideoWorkbenchView({
           generatedSuffixStartSeconds={dubbing.generatedSuffixStartSeconds}
           trailingControls={
             <VideoLanguageControls
-              subtitleMode={subtitles.mode}
-              subtitleSnapshot={subtitles.snapshot}
+              subtitleMode={subtitleMode}
+              subtitleSnapshot={subtitleSnapshot}
               dubbingSnapshot={dubbing.snapshot}
               dubbingEnabled={dubbing.enabled}
               dubbingPlaybackActive={dubbing.playbackActive}
-              onSelectSubtitleMode={(mode) => void subtitles.selectMode(mode)}
-              onRetrySubtitles={() => void subtitles.retry()}
+              onSelectSubtitleMode={(mode) => void selectSubtitleMode(mode)}
+              onRetrySubtitles={() => void retrySubtitles()}
               onStartDubbing={() => void dubbing.start()}
               onSelectDubbingEnabled={dubbing.selectEnabled}
               onRetryDubbing={() => void dubbing.retry()}
@@ -1145,14 +1224,10 @@ export function VideoWorkbenchView({
                   closeActiveExplanation();
                   conversationRuntime.open({
                     ownerId: conversationOwnerId,
-                    ...createVideoFrameConversationLaunch(
-                      createVideoConversationContext(
-                        activeExplanation.target,
-                        activeExplanation.sourceRevision,
-                      ),
-                      activeExplanation.conversationId,
+                    context: createVideoConversationContext(
+                      activeExplanation.target,
+                      activeExplanation.sourceRevision,
                     ),
-                    fallbackToNewConversation: true,
                   });
                 }
               : undefined

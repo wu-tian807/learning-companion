@@ -41,90 +41,51 @@ describe('Project responsive layout', () => {
     expect(createDefaultProjectLayoutState('wide')).toEqual({
       mode: 'wide',
       leftOpen: true,
-      rightPanel: 'generation',
+      rightOpen: true,
     });
     expect(createDefaultProjectLayoutState('medium')).toEqual({
       mode: 'medium',
       leftOpen: true,
-      rightPanel: null,
+      rightOpen: false,
     });
     expect(createDefaultProjectLayoutState('small')).toEqual({
       mode: 'small',
       leftOpen: false,
-      rightPanel: null,
+      rightOpen: false,
     });
   });
 
-  it('keeps small-screen side panels mutually exclusive', () => {
+  it('keeps small-screen overlays mutually exclusive', () => {
     const small = createDefaultProjectLayoutState('small');
     const leftOpen = reduceProjectLayout(small, {
       type: 'toggle-left',
     });
-    const conversationOpen = reduceProjectLayout(leftOpen, {
+    const rightOpen = reduceProjectLayout(leftOpen, {
       type: 'toggle-right',
-      panel: 'conversation',
-    });
-    const generationOpen = reduceProjectLayout(conversationOpen, {
-      type: 'toggle-right',
-      panel: 'generation',
     });
 
     expect(leftOpen).toEqual({
       mode: 'small',
       leftOpen: true,
-      rightPanel: null,
+      rightOpen: false,
     });
-    expect(conversationOpen).toEqual({
+    expect(rightOpen).toEqual({
       mode: 'small',
       leftOpen: false,
-      rightPanel: 'conversation',
-    });
-    expect(generationOpen).toEqual({
-      mode: 'small',
-      leftOpen: false,
-      rightPanel: 'generation',
+      rightOpen: true,
     });
     expect(
-      reduceProjectLayout(generationOpen, {
+      reduceProjectLayout(rightOpen, {
         type: 'close-overlays',
       }),
     ).toEqual(small);
-  });
-
-  it('switches the shared right slot instead of opening a fourth column', () => {
-    const wide = createDefaultProjectLayoutState('wide');
-    const conversation = reduceProjectLayout(wide, {
-      type: 'toggle-right',
-      panel: 'conversation',
-    });
-    const generation = reduceProjectLayout(conversation, {
-      type: 'open-right',
-      panel: 'generation',
-    });
-
-    expect(conversation).toEqual({
-      mode: 'wide',
-      leftOpen: true,
-      rightPanel: 'conversation',
-    });
-    expect(generation).toEqual(wide);
-    expect(
-      reduceProjectLayout(generation, {
-        type: 'toggle-right',
-        panel: 'generation',
-      }),
-    ).toEqual({
-      mode: 'wide',
-      leftOpen: true,
-      rightPanel: null,
-    });
   });
 
   it('opens the source panel idempotently and closes a small-screen generation overlay', () => {
     const wide = createDefaultProjectLayoutState('wide');
     const smallWithGenerationOpen = reduceProjectLayout(
       createDefaultProjectLayoutState('small'),
-      { type: 'toggle-right', panel: 'generation' },
+      { type: 'toggle-right' },
     );
 
     expect(
@@ -137,14 +98,14 @@ describe('Project responsive layout', () => {
     ).toEqual({
       mode: 'small',
       leftOpen: true,
-      rightPanel: null,
+      rightOpen: false,
     });
   });
 
   it('resets manual state when the window crosses a mode boundary', () => {
     const collapsedWide = reduceProjectLayout(
       createDefaultProjectLayoutState('wide'),
-      { type: 'toggle-right', panel: 'generation' },
+      { type: 'toggle-right' },
     );
 
     expect(

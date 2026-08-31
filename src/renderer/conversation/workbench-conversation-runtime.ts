@@ -13,7 +13,6 @@ interface RegisteredContribution {
 export interface OpenWorkbenchConversationInput {
   readonly ownerId?: string;
   readonly conversationId?: string;
-  readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
   readonly submit?: boolean;
@@ -48,37 +47,34 @@ export class WorkbenchConversationRuntime {
       throw new Error('Workbench Conversation contribution 无效');
     }
     const token = Symbol(normalizedOwnerId);
-    const activeOwnerId = this.snapshot.active?.ownerId;
+    const ownerChanged = this.snapshot.active?.ownerId !== normalizedOwnerId;
     this.contributions.delete(normalizedOwnerId);
     this.contributions.set(normalizedOwnerId, { token, contribution });
-    if (!activeOwnerId || activeOwnerId === normalizedOwnerId) {
-      this.update({
-        ...this.snapshot,
-        active: { ownerId: normalizedOwnerId, contribution },
-      });
-    }
+    this.update({
+      ...this.snapshot,
+      active: { ownerId: normalizedOwnerId, contribution },
+      panelOpen: ownerChanged ? false : this.snapshot.panelOpen,
+      busy: false,
+      ...(ownerChanged ? { launchRequest: undefined } : {}),
+    });
 
     return () => {
-      queueMicrotask(() => {
-        const current = this.contributions.get(normalizedOwnerId);
-        if (current?.token !== token) return;
-        this.contributions.delete(normalizedOwnerId);
-        if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
-        const fallback = this.contributions.entries().next().value as
-          | [string, RegisteredContribution]
-          | undefined;
-        this.update({
-          panelOpen: false,
-          busy: false,
-          ...(fallback
-            ? {
-                active: {
-                  ownerId: fallback[0],
-                  contribution: fallback[1].contribution,
-                },
-              }
-            : {}),
-        });
+      const current = this.contributions.get(normalizedOwnerId);
+      if (current?.token !== token) return;
+      this.contributions.delete(normalizedOwnerId);
+      if (this.snapshot.active?.ownerId !== normalizedOwnerId) return;
+      const fallback = [...this.contributions.entries()].at(-1);
+      this.update({
+        panelOpen: false,
+        busy: false,
+        ...(fallback
+          ? {
+              active: {
+                ownerId: fallback[0],
+                contribution: fallback[1].contribution,
+              },
+            }
+          : {}),
       });
     };
   }
@@ -96,9 +92,6 @@ export class WorkbenchConversationRuntime {
       id: this.launchId,
       ...(input.conversationId?.trim()
         ? { conversationId: input.conversationId.trim() }
-        : {}),
-      ...(input.fallbackToNewConversation === true
-        ? { fallbackToNewConversation: true }
         : {}),
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),

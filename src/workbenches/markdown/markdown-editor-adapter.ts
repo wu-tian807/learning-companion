@@ -614,33 +614,6 @@ export class MarkdownEditorAdapter {
     return this.editor.vditor.wysiwyg?.element;
   }
 
-  getMarkdownForRange(range: Range): string {
-    const element = this.getEditableElement();
-    if (
-      !element ||
-      !element.contains(range.startContainer) ||
-      !element.contains(range.endContainer)
-    ) {
-      throw new Error('Markdown 编辑器选区已经失效');
-    }
-    const container = element.ownerDocument.createElement('div');
-    let contents: Node = range.cloneContents();
-    const common = range.commonAncestorContainer;
-    let ancestor = common.nodeType === 1
-      ? common as Element
-      : common.parentElement;
-    while (ancestor && ancestor !== element) {
-      const wrapper = ancestor.cloneNode(false);
-      wrapper.appendChild(contents);
-      contents = wrapper;
-      ancestor = ancestor.parentElement;
-    }
-    container.appendChild(contents);
-    return this.editor.vditor.lute
-      .VditorDOM2Md(container.innerHTML)
-      .trim();
-  }
-
   canUndo(): boolean {
     return this.isToolbarActionEnabled('undo');
   }

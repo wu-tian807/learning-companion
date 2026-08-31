@@ -2,7 +2,6 @@ import {
   lstat,
   mkdir,
   mkdtemp,
-  readFile,
   rm,
   stat,
   symlink,
@@ -198,82 +197,5 @@ describe('AgentWorkspaceManager prepare', () => {
     expect(
       () => new AgentWorkspaceManager(parse(tmpdir()).root),
     ).toThrow('DATA_INTEGRITY_ERROR');
-  });
-});
-
-describe('AgentWorkspaceManager removeProject', () => {
-  it('removes one Project tree without touching sibling Projects', async () => {
-    const root = join(await createTemporaryDirectory(), 'agent-root');
-    const manager = new AgentWorkspaceManager(root);
-    const removedFile = join(
-      await manager.prepare(['project-a', 'generation-mindmap', 'task-1']),
-      'candidate.json',
-    );
-    const siblingFile = join(
-      await manager.prepare(['project-b', 'document-question', 'task-2']),
-      'answer.json',
-    );
-    await writeFile(removedFile, '{}');
-    await writeFile(siblingFile, '{}');
-
-    await manager.removeProject('project-a');
-
-    await expect(lstat(join(root, 'project-a'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    });
-    await expect(lstat(siblingFile)).resolves.toBeDefined();
-  });
-
-  it('is idempotent when the Project workspace does not exist', async () => {
-    const root = join(await createTemporaryDirectory(), 'agent-root');
-    const manager = new AgentWorkspaceManager(root);
-
-    await expect(manager.removeProject('missing-project')).resolves.toBeUndefined();
-    await mkdir(root, { recursive: true });
-    await expect(manager.removeProject('missing-project')).resolves.toBeUndefined();
-  });
-
-  it('rejects a symbolic-link Project workspace without touching its target', async () => {
-    const temporaryRoot = await createTemporaryDirectory();
-    const root = join(temporaryRoot, 'agent-root');
-    const outside = join(temporaryRoot, 'outside');
-    const outsideFile = join(outside, 'keep.txt');
-    await mkdir(root, { recursive: true });
-    await mkdir(outside, { recursive: true });
-    await writeFile(outsideFile, 'keep');
-    await symlink(
-      outside,
-      join(root, 'linked-project'),
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-    const manager = new AgentWorkspaceManager(root);
-
-    await expect(manager.removeProject('linked-project')).rejects.toThrow(
-      'DATA_INTEGRITY_ERROR',
-    );
-    await expect(lstat(outsideFile)).resolves.toBeDefined();
-  });
-
-  it('does not follow symbolic links nested inside a removed Project', async () => {
-    const temporaryRoot = await createTemporaryDirectory();
-    const root = join(temporaryRoot, 'agent-root');
-    const outside = join(temporaryRoot, 'outside');
-    const outsideFile = join(outside, 'keep.txt');
-    const projectPath = await new AgentWorkspaceManager(root).prepare([
-      'project-a',
-    ]);
-    await mkdir(outside, { recursive: true });
-    await writeFile(outsideFile, 'keep');
-    await symlink(
-      outside,
-      join(projectPath, 'linked-outside'),
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-    const manager = new AgentWorkspaceManager(root);
-
-    await manager.removeProject('project-a');
-
-    await expect(lstat(projectPath)).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(readFile(outsideFile, 'utf8')).resolves.toBe('keep');
   });
 });

@@ -7,6 +7,7 @@ import {
   CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
+  generationCenterSurfaceFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   sandboxFrameTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -23,6 +24,12 @@ export const HTML_LINK_ANCHOR_VERSION = 1;
 /** @deprecated Kept only for persisted anchors created before html.dom. */
 export const HTML_ELEMENT_ANCHOR_TYPE = 'html.element';
 export const HTML_ELEMENT_ANCHOR_VERSION = 1;
+
+export const htmlConversationCommands = {
+  list: 'html.conversations.list',
+  save: 'html.conversations.save',
+  remove: 'html.conversations.remove',
+} as const;
 
 export const htmlFrameCommands = {
   installSourceCopy: 'html.frame.install-source-copy',
@@ -45,6 +52,7 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   facilities: [
     sandboxFrameTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
+    generationCenterSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
       CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
     ),

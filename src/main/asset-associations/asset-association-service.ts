@@ -32,21 +32,6 @@ export interface AssetAssociationServiceApi {
   deleteLink(linkId: string): void;
 }
 
-export interface AssetAssociationServiceDependencies {
-  readonly now: () => number;
-}
-
-export interface AssetAssociationChangedEvent {
-  readonly type: 'changed';
-  readonly projectId: string;
-  readonly assetId: string;
-  readonly updatedTime: number;
-}
-
-export type AssetAssociationServiceListener = (
-  event: AssetAssociationChangedEvent,
-) => void | Promise<void>;
-
 interface AssociationState {
   readonly referencesById: Map<string, AssetReference>;
   readonly referenceIdsByAsset: Map<string, Set<string>>;
@@ -118,20 +103,13 @@ export class AssetAssociationService
 {
   private activeProjectId: string | undefined;
   private state: AssociationState = createEmptyState();
-  private readonly listeners = new Set<AssetAssociationServiceListener>();
-  private readonly dependencies: AssetAssociationServiceDependencies;
 
   constructor(
     private readonly referenceDatabase: AssetReferenceDatabaseApi,
     private readonly linkDatabase: AssetLinkDatabaseApi,
     private readonly projectLookup: ProjectLookup,
     private readonly assetLookup: AssetLookup,
-    dependencies: Partial<AssetAssociationServiceDependencies> = {},
-  ) {
-    this.dependencies = {
-      now: dependencies.now ?? Date.now,
-    };
-  }
+  ) {}
 
   loadFromProject(projectId: string): void {
     const normalizedProjectId = requireId(projectId, 'projectId');
@@ -226,11 +204,6 @@ export class AssetAssociationService
       { sourceAssetId },
     );
     this.addReference(reference);
-    this.publishChanged(
-      reference.projectId,
-      reference.assetId,
-      reference.createdTime,
-    );
     return cloneAssetReference(reference);
   }
 
@@ -243,14 +216,8 @@ export class AssetAssociationService
       return;
     }
 
-    const updatedTime = this.requireMutationTime();
     this.referenceDatabase.delete(projectId, normalizedReferenceId);
     this.removeReference(reference);
-    this.publishChanged(
-      reference.projectId,
-      reference.assetId,
-      updatedTime,
-    );
   }
 
   getLink(linkId: string): AssetLink | undefined {
@@ -309,11 +276,6 @@ export class AssetAssociationService
       targetAssetId,
     });
     this.addLink(link);
-    this.publishChanged(
-      link.projectId,
-      link.assetId,
-      link.createdTime,
-    );
     return cloneAssetLink(link);
   }
 
@@ -326,10 +288,8 @@ export class AssetAssociationService
       return;
     }
 
-    const updatedTime = this.requireMutationTime();
     this.linkDatabase.delete(projectId, normalizedLinkId);
     this.removeLink(link);
-    this.publishChanged(link.projectId, link.assetId, updatedTime);
   }
 
   onAssetDeleted(projectId: string, assetId: string): void {
@@ -338,7 +298,6 @@ export class AssetAssociationService
     }
 
     const normalizedAssetId = requireId(assetId, 'assetId');
-    const changedOwnerAssetIds = new Set<string>();
 
     for (const reference of [...this.state.referencesById.values()]) {
       if (
@@ -346,9 +305,6 @@ export class AssetAssociationService
         reference.sourceAssetId === normalizedAssetId
       ) {
         this.removeReference(reference);
-        if (reference.assetId !== normalizedAssetId) {
-          changedOwnerAssetIds.add(reference.assetId);
-        }
       }
     }
 
@@ -358,23 +314,8 @@ export class AssetAssociationService
         link.targetAssetId === normalizedAssetId
       ) {
         this.removeLink(link);
-        if (link.assetId !== normalizedAssetId) {
-          changedOwnerAssetIds.add(link.assetId);
-        }
       }
     }
-
-    if (changedOwnerAssetIds.size > 0) {
-      const updatedTime = this.requireMutationTime();
-      for (const ownerAssetId of changedOwnerAssetIds) {
-        this.publishChanged(projectId, ownerAssetId, updatedTime);
-      }
-    }
-  }
-
-  subscribe(listener: AssetAssociationServiceListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
   }
 
   private createState(
@@ -445,39 +386,6 @@ export class AssetAssociationService
     }
 
     return normalizedAssetId;
-  }
-
-  private requireMutationTime(): number {
-    const value = this.dependencies.now();
-    if (!Number.isSafeInteger(value) || value < 0) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-    return value;
-  }
-
-  private publishChanged(
-    projectId: string,
-    assetId: string,
-    updatedTime: number,
-  ): void {
-    const event: AssetAssociationChangedEvent = Object.freeze({
-      type: 'changed',
-      projectId,
-      assetId,
-      updatedTime,
-    });
-
-    for (const listener of this.listeners) {
-      try {
-        Promise.resolve(listener(event)).catch(
-          (error: unknown) => {
-            console.error('异步 Asset Association 事件订阅者执行失败', error);
-          },
-        );
-      } catch (error) {
-        console.error('发布 Asset Association 事件失败', error);
-      }
-    }
   }
 
   private addReference(

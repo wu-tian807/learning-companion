@@ -59,10 +59,7 @@ function pendingTask(
   }).getSnapshot();
 }
 
-function attachment(
-  sourceRevision = '100',
-  conversationId: string | undefined = 'conversation-1',
-) {
+function attachment(sourceRevision = '100') {
   return {
     id: 'attachment-1',
     projectId: 'project-1',
@@ -75,13 +72,12 @@ function attachment(
       version: 1,
       sourceRevision,
       question: '解释这个公式',
-      ...(conversationId ? { conversationId } : {}),
     },
     content: {
       ref: {
         kind: 'local-file',
         base: 'project-workspace',
-        path: '.learning-companion/attachments/attachment-1/answer.md',
+        path: 'attachments/attachment-1/answer.md',
       },
       mediaType: 'text/markdown',
     },
@@ -142,14 +138,12 @@ describe('VideoExplanationService', () => {
         id: 'attachment-1',
         question: '解释这个公式',
         answer: '模型回答',
-        conversationId: 'conversation-1',
       }),
       expect.objectContaining({
         kind: 'task',
         id: 'task-1',
         question: '解释这个公式',
         status: 'pending',
-        conversationId: 'conversation-1',
       }),
     ]);
     service.dispose();

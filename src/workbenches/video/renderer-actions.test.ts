@@ -7,9 +7,12 @@ import { VIDEO_WORKBENCH_ID, videoWorkbenchManifest } from './shared';
 function createActions(input: { readonly ready?: boolean; readonly count?: number } = {}) {
   return createVideoRendererActions({
     ready: input.ready ?? true,
+    canExplainFrame: true,
     explanationCount: input.count ?? 0,
     indexOpen: false,
     markersVisible: true,
+    onTogglePlayback: vi.fn(),
+    onExplainFrame: vi.fn(),
     onToggleIndex: vi.fn(),
     onToggleMarkers: vi.fn(),
     onReveal: vi.fn(),
@@ -35,11 +38,21 @@ describe('video renderer annotation actions', () => {
     expect(runtime.contributions('header')).toHaveLength(2);
   });
 
-  it('does not register a right-click menu for video interactions', () => {
+  it('keeps region selection on the existing right-drag context action', () => {
     const bundle = createActions();
     expect(
-      bundle.contributions.filter((item) => item.surface === 'context-menu'),
-    ).toEqual([]);
+      bundle.contributions.find(
+        (item) => item.id === 'video.ai.explain-frame.context-menu',
+      )?.presentation,
+    ).toMatchObject({
+      label: '解释当前画面',
+      description: expect.stringContaining('保存'),
+    });
+    expect(
+      bundle.contributions.some(
+        (item) => item.id === 'video.ai.explain-region.header',
+      ),
+    ).toBe(false);
   });
 
   it('owns marker count and visibility as header actions', () => {

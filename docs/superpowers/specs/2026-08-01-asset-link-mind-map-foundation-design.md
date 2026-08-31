@@ -101,12 +101,6 @@ Project 关闭
 状态，校验成功后一次性替换；失败不会留下半加载状态。`ensureReference()` 和
 `ensureLink()` 对相同 Asset 对幂等。
 
-Reference/Link 的首次创建和真实删除会发布统一 `AssetAggregateMutation`，由
-Bootstrap 组合层推进 owner Asset 的 `updatedTime`。重复 ensure、未知 ID 删除和查询
-不发布；source/target 只是关系另一端，不因 owner 新增出边而更新时间。删除关系另一端
-导致 SQLite 级联删除时，仍存活的 owner 会更新时间。具体规则见
-[Asset 聚合成员变化与更新时间设计](./2026-08-30-asset-aggregate-mutation-updated-time-design.md)。
-
 Asset 删除后 SQLite 级联删除关系，`AssetService` 再通知 Association Service
 清理内存投影。通知失败不能把已经完成的 Asset 删除误报为失败。
 

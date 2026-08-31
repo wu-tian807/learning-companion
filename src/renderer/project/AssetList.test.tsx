@@ -15,7 +15,7 @@ const asset: AssetSnapshot = {
   mediaType: 'text/html',
   creationKind: 'generated',
   contentRef: createProjectWorkspaceContentRef(
-    '.learning-companion/assets/generated/map.html',
+    'assets/generated/map.html',
   ),
   contentStatus: {
     availability: 'available',

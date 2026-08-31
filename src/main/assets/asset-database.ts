@@ -21,10 +21,6 @@ export interface AssetLookup {
   get(projectId: string, assetId: string): Asset | undefined;
 }
 
-export interface AssetOwnerLookup {
-  getProjectId(assetId: string): string | undefined;
-}
-
 export interface AssetDatabaseApi extends AssetLookup {
   listByProject(projectId: string): readonly Asset[];
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number>;
@@ -78,9 +74,7 @@ function createAssetFromRow(row: typeof assets.$inferSelect): Asset {
   });
 }
 
-export class AssetDatabase
-  implements AssetDatabaseApi, AssetOwnerLookup
-{
+export class AssetDatabase implements AssetDatabaseApi {
   private readonly dependencies: AssetDatabaseDependencies;
 
   constructor(
@@ -132,15 +126,6 @@ export class AssetDatabase
       .get();
 
     return row ? cloneAsset(createAssetFromRow(row)) : undefined;
-  }
-
-  getProjectId(assetId: string): string | undefined {
-    const normalizedAssetId = requireId(assetId, 'assetId');
-    return this.context.db
-      .select({ projectId: assets.projectId })
-      .from(assets)
-      .where(eq(assets.id, normalizedAssetId))
-      .get()?.projectId;
   }
 
   countByProjectIds(projectIds: readonly string[]): ReadonlyMap<string, number> {

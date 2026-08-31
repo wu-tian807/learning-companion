@@ -29,19 +29,12 @@ function runtimeResolver(
   >,
   directory: string,
 ): MediaSubtitleRuntimeResolverApi {
-  const decoder = {
-    ffmpegPath: join(directory, 'ffmpeg.exe'),
-    ffprobePath: join(directory, 'ffprobe.exe'),
-  };
   return {
-    requireMediaDecoder: vi.fn(async () => decoder),
+    requireMediaDecoder: vi.fn(async () => ({
+      ffmpegPath: join(directory, 'ffmpeg.exe'),
+      ffprobePath: join(directory, 'ffprobe.exe'),
+    })),
     requireTranscription: vi.fn(async () => transcription),
-    async withRuntime(signal, operation) {
-      return operation(
-        { decoder, transcription },
-        signal ?? new AbortController().signal,
-      );
-    },
   };
 }
 
