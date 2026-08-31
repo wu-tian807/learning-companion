@@ -2,13 +2,11 @@ import type {
   ConversationAnswerActionPresentation,
   WorkbenchConversationContribution,
 } from '../../../../renderer/conversation/conversation-contracts';
-import { revealWorkbenchAnchor } from '../../../../renderer/workbench/host/workbench-anchor-bridge';
 import {
   AI_ANNOTATION_ATTACHMENT_TYPE,
   AI_ANNOTATION_ATTACHMENT_VERSION,
 } from '../../ai-annotation-attachment';
 import {
-  describeDocumentConversationContext,
   DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
   isDocumentConversationContext,
   type DocumentConversationContext,
@@ -23,9 +21,6 @@ export {
 interface DocumentConversationContributionBaseInput {
   readonly projectId: string;
   readonly assetId: string;
-  readonly workbenchId: string;
-  readonly contributionId: string;
-  readonly contextLabel?: string;
   readonly onContextReleased?: (
     context: DocumentConversationContext | undefined,
   ) => void;
@@ -109,22 +104,9 @@ export function createDocumentConversationContribution(
       : undefined;
 
   const contribution: WorkbenchConversationContribution = {
-    id: input.contributionId,
-    workbenchId: input.workbenchId,
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'reference',
     isContext: isDocumentConversationContext,
-    describeContext(context) {
-      return describeDocumentConversationContext(
-        context,
-        input.contextLabel,
-      );
-    },
-    revealContext(context) {
-      if (isDocumentConversationContext(context)) {
-        revealWorkbenchAnchor(input.assetId, context.target);
-      }
-    },
     onContextReleased(context) {
       input.onContextReleased?.(
         isDocumentConversationContext(context) ? context : undefined,

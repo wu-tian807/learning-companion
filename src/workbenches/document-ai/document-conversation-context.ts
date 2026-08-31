@@ -42,23 +42,3 @@ export function createDocumentConversationContext(input: {
     ...(input.previewDataUrl ? { previewDataUrl: input.previewDataUrl } : {}),
   }) as DocumentConversationContext;
 }
-
-export function describeDocumentConversationContext(
-  context: unknown,
-  contextLabel = '资料内容',
-) {
-  if (!isDocumentConversationContext(context)) {
-    return { label: contextLabel };
-  }
-  return {
-    label: context.pageNumber
-      ? `第 ${context.pageNumber} 页`
-      : contextLabel,
-    ...(context.selectedText
-      ? { detail: context.selectedText }
-      : { detail: '已框选公式、图表或图片区域' }),
-    ...(context.previewDataUrl
-      ? { previewDataUrl: context.previewDataUrl }
-      : {}),
-  };
-}

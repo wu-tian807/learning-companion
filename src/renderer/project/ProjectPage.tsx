@@ -8,12 +8,10 @@ import { createProjectConversationHistoryStore } from '../conversation/conversat
 import { GenerationCenter } from '../generation/GenerationCenter';
 import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
-import { ProjectConversationHistoryProvider } from '../conversation/ProjectConversationHistoryProvider';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
-import { describeRendererConversationContext } from '../../workbenches/catalog/register-renderer-workbenches';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -61,7 +59,7 @@ export function ProjectPage({
     [project.id],
   );
   const conversationRuntime = useMemo(
-    () => new WorkbenchConversationRuntime(describeRendererConversationContext),
+    () => new WorkbenchConversationRuntime(),
     [],
   );
   useEffect(
@@ -367,8 +365,7 @@ export function ProjectPage({
       </header>
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
-        <ProjectConversationHistoryProvider store={conversationHistoryStore}>
-          <WorkbenchRuntimeProvider onError={setError}>
+        <WorkbenchRuntimeProvider onError={setError}>
             <AssetSelectionCoordinatorProvider
               coordinator={assetOperations.selectionCoordinator}
             >
@@ -503,8 +500,7 @@ export function ProjectPage({
               />
               </section>
             </AssetSelectionCoordinatorProvider>
-          </WorkbenchRuntimeProvider>
-        </ProjectConversationHistoryProvider>
+        </WorkbenchRuntimeProvider>
       </WorkbenchConversationRuntimeProvider>
 
       {dragging && (

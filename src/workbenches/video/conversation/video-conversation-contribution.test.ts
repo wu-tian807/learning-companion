@@ -26,10 +26,9 @@ const target = createVideoFrameRegionTarget({
   sourceHeight: 1080,
 });
 
-function contribution(sourceRevision = '100', revealContext = vi.fn()) {
+function contribution(sourceRevision = '100') {
   return createVideoConversationContribution({
     sourceRevision,
-    revealContext,
   });
 }
 
@@ -126,25 +125,11 @@ describe('video conversation contribution', () => {
       } as never),
     ).toBe(false);
   });
-
-  it('describes and reveals the exact time-bound frame region', async () => {
-    const revealContext = vi.fn();
-    const context = createVideoConversationContext(target, '100');
-    const value = contribution('100', revealContext);
-    expect(value.describeContext?.(context)).toEqual({
-      label: '视频 12.3 秒',
-      detail: '左侧 10% · 顶部 20% · 30% × 40%',
-    });
-    await value.revealContext?.(context);
-    expect(revealContext).toHaveBeenCalledWith(context);
-  });
-
   it('releases only the Video-owned context through the shared lifecycle hook', () => {
     const onContextReleased = vi.fn();
     const context = createVideoConversationContext(target, '100');
     const value = createVideoConversationContribution({
       sourceRevision: '100',
-      revealContext: vi.fn(),
       onContextReleased,
     });
     value.onContextReleased?.(context);

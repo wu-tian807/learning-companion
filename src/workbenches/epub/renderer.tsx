@@ -17,6 +17,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import {
   useWorkbenchConversationContribution,
   useWorkbenchConversationSnapshot,
@@ -31,7 +32,6 @@ import { displayEpubExplanationLocation } from './explanations/epub-explanation-
 import {
   createEpubConversationContext,
   createEpubConversationContribution,
-  type EpubConversationContext,
 } from './explanations/epub-conversation-contribution';
 import {
   projectEpubExplanationGenerationEvent,
@@ -247,30 +247,25 @@ export function EpubWorkbenchView({
 
   const conversationOwnerId =
     `${epubWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
-  const revealConversationContext = useCallback(
-    async (context: EpubConversationContext) => {
-      const rendition = renditionRef.current;
-      if (!rendition || loadState.kind !== 'ready') {
-        reportError(
-          new Error('EPUB 阅读器尚未就绪'),
-          '暂时无法定位这段 EPUB 原文。',
-        );
-        return;
-      }
-      try {
-        await rendition.display(context.target.anchorPayload.cfiRange);
-      } catch (error) {
-        reportError(error, '无法定位到这段 EPUB 原文。');
-      }
-    },
-    [loadState.kind, reportError],
-  );
+  useEffect(() => {
+    if (loadState.kind !== 'ready') return;
+    return registerWorkbenchAnchorController(
+      `${conversationOwnerId}.anchors`,
+      asset.id,
+      {
+        async reveal(target) {
+          if (!isEpubCfiRangeTarget(target)) return false;
+          const rendition = renditionRef.current;
+          if (!rendition) throw new Error('EPUB 阅读器尚未就绪');
+          await rendition.display(target.anchorPayload.cfiRange);
+          return true;
+        },
+      },
+    );
+  }, [asset.id, conversationOwnerId, loadState.kind]);
   const conversationContribution = useMemo(
-    () =>
-      createEpubConversationContribution({
-        revealContext: revealConversationContext,
-      }),
-    [revealConversationContext],
+    () => createEpubConversationContribution(),
+    [],
   );
   const conversationRuntime = useWorkbenchConversationContribution(
     conversationOwnerId,

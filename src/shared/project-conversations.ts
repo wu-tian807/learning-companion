@@ -19,8 +19,6 @@ export interface ConversationReanswerBackup {
 }
 
 export interface ConversationMessageContextSource {
-  /** Stable Renderer contribution id used to route source navigation/actions. */
-  readonly contributionId: string;
   /** Main provider that prepares this one message's optional Workbench context. */
   readonly contextProviderId: string;
   readonly assetId?: string;
@@ -112,7 +110,6 @@ function isConversationMessageContextSource(
 ): value is ConversationMessageContextSource {
   if (!isRecord(value)) return false;
   return (
-    isRequiredText(value.contributionId, 160) &&
     isRequiredText(value.contextProviderId, 160) &&
     (value.assetId === undefined || isRequiredText(value.assetId, 160)) &&
     (value.sourceAssetMode === undefined ||
@@ -206,7 +203,6 @@ export function cloneConversationRecord(
           ...(message.contextSource
             ? {
                 contextSource: Object.freeze({
-                  contributionId: message.contextSource.contributionId,
                   contextProviderId: message.contextSource.contextProviderId,
                   ...(message.contextSource.assetId
                     ? { assetId: message.contextSource.assetId }
