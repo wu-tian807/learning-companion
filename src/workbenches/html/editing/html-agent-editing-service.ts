@@ -95,7 +95,11 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   private readonly store?: HtmlDraftStore;
   private readonly lifecycleTasks = new Set<Promise<void>>();
   private readonly listeners = new Set<(event: HtmlAgentEditEvent) => void>();
-  private readonly materializedPaths = new Set<string>();
+  private readonly materializationRoot = join(
+    tmpdir(),
+    'learning-companion-html-drafts',
+    randomUUID(),
+  );
   private unsubscribe?: () => void;
   private shutdownTask?: Promise<void>;
   private disposed = false;
@@ -335,10 +339,9 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     this.stopLifecycleSubscription();
     this.activeEdits.clear();
     this.listeners.clear();
-    for (const path of this.materializedPaths) {
-      void rm(path, { force: true }).catch(() => undefined);
-    }
-    this.materializedPaths.clear();
+    void rm(this.materializationRoot, { recursive: true, force: true }).catch(
+      () => undefined,
+    );
   }
 
   shutdown(): Promise<void> {
@@ -353,9 +356,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
         if (pending.size === 0) break;
         await Promise.all(pending);
       }
-      const paths = [...this.materializedPaths];
-      await Promise.all(paths.map((path) => rm(path, { force: true })));
-      for (const path of paths) this.materializedPaths.delete(path);
+      await rm(this.materializationRoot, { recursive: true, force: true });
     })();
     return this.shutdownTask;
   }
@@ -483,7 +484,6 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       encoding: 'utf8',
       mode: 0o600,
     });
-    this.materializedPaths.add(path);
     return path;
   }
 
@@ -632,7 +632,6 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     }
     const materializedPath = this.materializationPath(projectId, assetId);
     await rm(materializedPath, { force: true });
-    this.materializedPaths.delete(materializedPath);
     await this.store?.delete(assetId);
     this.sessions.delete(`${projectId}\0${assetId}`);
     this.writableSources.delete(`${projectId}\0${assetId}`);
@@ -1127,7 +1126,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     const digest = createHash('sha256')
       .update(JSON.stringify([projectId, assetId]))
       .digest('hex');
-    return join(tmpdir(), 'learning-companion-html-drafts', `${digest}.html`);
+    return join(this.materializationRoot, `${digest}.html`);
   }
 
   private resolveTaskAsset(
