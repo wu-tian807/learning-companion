@@ -5,19 +5,19 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-} from "react";
-import { createPortal } from "react-dom";
+} from 'react';
+import { createPortal } from 'react-dom';
 
-import type { AssetAttachment } from "../../../shared/attachments/contracts";
-import type { AssetTarget } from "../../../shared/workbench/anchor";
-import type { JsonValue } from "../../../shared/workbench/protocol";
-import { ConversationMarkdown } from "../../../renderer/conversation/conversation-markdown";
+import type { AssetAttachment } from '../../../shared/attachments/contracts';
+import type { AssetTarget } from '../../../shared/workbench/anchor';
+import type { JsonValue } from '../../../shared/workbench/protocol';
+import { ConversationMarkdown } from '../../../renderer/conversation/conversation-markdown';
 import {
   resolveWorkbenchAnchor,
   revealWorkbenchAnchor,
   WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
   type WorkbenchAnchorRect,
-} from "../../../renderer/workbench/host/workbench-anchor-bridge";
+} from '../../../renderer/workbench/host/workbench-anchor-bridge';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];
@@ -62,7 +62,7 @@ function sameAnchorRects(
 }
 
 function extractPosition(target: AssetTarget): AnchorPosition | undefined {
-  if (target.scope !== "content") {
+  if (target.scope !== 'content') {
     return undefined;
   }
 
@@ -72,39 +72,39 @@ function extractPosition(target: AssetTarget): AnchorPosition | undefined {
   }
 
   const pageNumber =
-    typeof payload.pageNumber === "number"
+    typeof payload.pageNumber === 'number'
       ? payload.pageNumber
-      : typeof payload.start === "object" && payload.start !== null
+      : typeof payload.start === 'object' && payload.start !== null
         ? ((payload.start as Record<string, unknown>).pageNumber as number)
         : undefined;
 
-  if (typeof pageNumber !== "number") {
+  if (typeof pageNumber !== 'number') {
     return undefined;
   }
 
   return {
     pageNumber,
     offset:
-      typeof payload.start === "object" && payload.start !== null
+      typeof payload.start === 'object' && payload.start !== null
         ? ((payload.start as Record<string, unknown>).offset as
             number | undefined)
         : undefined,
     xRatio:
-      typeof payload.x === "number" && payload.x >= 0 && payload.x <= 1
+      typeof payload.x === 'number' && payload.x >= 0 && payload.x <= 1
         ? payload.x
         : undefined,
     yRatio:
-      typeof payload.y === "number" && payload.y >= 0 && payload.y <= 1
+      typeof payload.y === 'number' && payload.y >= 0 && payload.y <= 1
         ? payload.y
         : undefined,
     widthRatio:
-      typeof payload.width === "number" &&
+      typeof payload.width === 'number' &&
       payload.width >= 0 &&
       payload.width <= 1
         ? payload.width
         : undefined,
     heightRatio:
-      typeof payload.height === "number" &&
+      typeof payload.height === 'number' &&
       payload.height >= 0 &&
       payload.height <= 1
         ? payload.height
@@ -113,7 +113,7 @@ function extractPosition(target: AssetTarget): AnchorPosition | undefined {
 }
 
 function extractQuote(target: AssetTarget): string | undefined {
-  if (target.scope !== "content") {
+  if (target.scope !== 'content') {
     return undefined;
   }
 
@@ -124,15 +124,15 @@ function extractQuote(target: AssetTarget): string | undefined {
 
   if (
     payload.quote &&
-    typeof payload.quote === "object" &&
-    typeof (payload.quote as Record<string, unknown>).exact === "string"
+    typeof payload.quote === 'object' &&
+    typeof (payload.quote as Record<string, unknown>).exact === 'string'
   ) {
     return (payload.quote as Record<string, unknown>).exact as string;
   }
 
   if (Array.isArray(payload.ranges) && payload.ranges.length > 0) {
     const range = payload.ranges[0] as Record<string, unknown>;
-    if (range && typeof range.exact === "string") {
+    if (range && typeof range.exact === 'string') {
       return range.exact as string;
     }
   }
@@ -141,44 +141,44 @@ function extractQuote(target: AssetTarget): string | undefined {
 }
 
 function extractMetadataPreview(metadata: JsonValue): string {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     const m = metadata as Record<string, unknown>;
-    if (typeof m.questionPreview === "string") {
+    if (typeof m.questionPreview === 'string') {
       return m.questionPreview.slice(0, 60);
     }
-    if (typeof m.selectedAnswer === "string") {
+    if (typeof m.selectedAnswer === 'string') {
       return m.selectedAnswer.slice(0, 60);
     }
-    if (typeof m.question === "string") {
+    if (typeof m.question === 'string') {
       return m.question.slice(0, 60);
     }
-    if (typeof m.text === "string") {
+    if (typeof m.text === 'string') {
       return m.text.slice(0, 60);
     }
-    if (typeof m.label === "string") {
+    if (typeof m.label === 'string') {
       return m.label.slice(0, 60);
     }
   }
-  return "";
+  return '';
 }
 
 function attachmentAnchorKey(attachment: AssetAttachment): string {
   const position = extractPosition(attachment.target);
   if (!position) return attachment.id;
   const round = (value: number | undefined) =>
-    value === undefined ? "-" : value.toFixed(3);
+    value === undefined ? '-' : value.toFixed(3);
   return [
     position.pageNumber,
     round(position.xRatio),
     round(position.yRatio),
     round(position.widthRatio),
     round(position.heightRatio),
-  ].join(":");
+  ].join(':');
 }
 
 function formatTypeLabel(typeId: string): string {
-  if (typeId === "ai.annotation") {
-    return "AI 标注";
+  if (typeId === 'ai.annotation') {
+    return 'AI 标注';
   }
   return typeId;
 }
@@ -187,13 +187,13 @@ function extractAnswerBody(body: JsonValue | undefined): {
   readonly answer?: string;
   readonly selectedAnswer?: string;
 } {
-  if (body === undefined || typeof body !== "object" || Array.isArray(body)) {
+  if (body === undefined || typeof body !== 'object' || Array.isArray(body)) {
     return {};
   }
   const record = body as Record<string, unknown>;
   return {
-    ...(typeof record.answer === "string" ? { answer: record.answer } : {}),
-    ...(typeof record.selectedAnswer === "string"
+    ...(typeof record.answer === 'string' ? { answer: record.answer } : {}),
+    ...(typeof record.selectedAnswer === 'string'
       ? { selectedAnswer: record.selectedAnswer }
       : {}),
   };
@@ -234,15 +234,15 @@ function AnnotationPopup({
   const metadata = (body ?? attachment.metadata) as
     Record<string, unknown> | undefined;
   const question =
-    metadata && typeof metadata.question === "string"
+    metadata && typeof metadata.question === 'string'
       ? metadata.question
       : undefined;
   const answer =
-    metadata && typeof metadata.answer === "string"
+    metadata && typeof metadata.answer === 'string'
       ? metadata.answer
       : undefined;
   const selectedAnswer =
-    metadata && typeof metadata.selectedAnswer === "string"
+    metadata && typeof metadata.selectedAnswer === 'string'
       ? metadata.selectedAnswer
       : undefined;
 
@@ -285,21 +285,21 @@ function AnnotationPopup({
             </span>
             <div className="mt-1.5 break-words rounded-xl bg-black/15 p-3 text-sm leading-6 text-slate-200">
               <ConversationMarkdown
-                text={selectedAnswer ?? answer ?? "无内容"}
+                text={selectedAnswer ?? answer ?? '无内容'}
               />
             </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center justify-between border-t border-white/[0.075] px-5 py-3">
           <span className="text-[11px] text-slate-500">
-            {selectedAnswer ? `${Array.from(selectedAnswer).length} 字` : ""}
+            {selectedAnswer ? `${Array.from(selectedAnswer).length} 字` : ''}
           </span>
           {onDelete && (
             <button
               type="button"
               disabled={deleting}
               onClick={() => {
-                if (!window.confirm("确定删除这条附着内容吗？")) {
+                if (!window.confirm('确定删除这条附着内容吗？')) {
                   return;
                 }
                 setDeleting(true);
@@ -309,7 +309,7 @@ function AnnotationPopup({
               }}
               className="rounded-lg border border-rose-400/20 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-400/10 disabled:opacity-50"
             >
-              {deleting ? "正在删除…" : "删除附着"}
+              {deleting ? '正在删除…' : '删除附着'}
             </button>
           )}
         </div>
@@ -375,13 +375,13 @@ export function AttachmentHost({
 
     update();
     window.addEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
-    window.addEventListener("resize", update);
+    window.addEventListener('resize', update);
     const observedContainer = host.parentElement ?? host;
     const resizeObserver = new ResizeObserver(update);
     resizeObserver.observe(observedContainer);
     return () => {
       window.removeEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
-      window.removeEventListener("resize", update);
+      window.removeEventListener('resize', update);
       resizeObserver.disconnect();
     };
   }, [assetId, attachments]);
@@ -528,8 +528,8 @@ export function AttachmentHost({
               type="button"
               className={`pointer-events-auto absolute cursor-pointer border transition-all ${
                 isActive
-                  ? "z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50"
-                  : "z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15"
+                  ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
+                  : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'
               }`}
               style={{
                 left,
@@ -538,10 +538,10 @@ export function AttachmentHost({
                 height: Math.max(height, 18),
               }}
               onClick={(e) => handleMarkerClick(att.id, e)}
-              title={preview || quote || "标注"}
+              title={preview || quote || '标注'}
             >
               <span className="absolute -right-3 -top-3 grid size-6 place-items-center rounded-full border border-indigo-300/50 bg-[#242b3b] text-[11px] text-indigo-200 shadow-[0_4px_12px_rgba(0,0,0,.45)]">
-                {group.length > 1 ? group.length : "✦"}
+                {group.length > 1 ? group.length : '✦'}
               </span>
             </button>
             {cardPosition && attachedText && !collapsed && (
@@ -616,7 +616,7 @@ export function AttachmentHost({
             {attachments.map((attachment) => {
               const position = extractPosition(attachment.target);
               const preview =
-                extractMetadataPreview(attachment.metadata) || "无内容摘要";
+                extractMetadataPreview(attachment.metadata) || '无内容摘要';
               return (
                 <div
                   key={attachment.id}

@@ -1,10 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from 'react';
 
-import { useWorkbenchContributions } from "../../../renderer/workbench/runtime/use-workbench-contributions";
-import type { AssetAttachment } from "../../../shared/attachments/contracts";
-import { userMessageFromError } from "../../../shared/ipc-error";
-import { AttachmentHost } from "./AttachmentHost";
-import { createAttachmentVisibilityActions } from "./attachment-visibility-actions";
+import { useWorkbenchContributions } from '../../../renderer/workbench/runtime/use-workbench-contributions';
+import type { AssetAttachment } from '../../../shared/attachments/contracts';
+import { userMessageFromError } from '../../../shared/ipc-error';
+import { AttachmentHost } from './AttachmentHost';
+import { createAttachmentVisibilityActions } from './attachment-visibility-actions';
 
 export interface DocumentAiWorkbenchShellProps {
   readonly projectId: string;
@@ -59,7 +59,7 @@ export function DocumentAiWorkbenchShell({
           } catch (error) {
             const message = userMessageFromError(
               error,
-              "无法删除附着内容，请重试。",
+              '无法删除附着内容，请重试。',
             );
             if (message) onError(message);
             throw error;
