@@ -1,11 +1,17 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock('./AttachmentHost', () => ({
+vi.mock("./AttachmentHost", () => ({
   AttachmentHost: () => null,
 }));
+vi.mock(
+  "../../../renderer/workbench/runtime/use-workbench-contributions",
+  () => ({
+    useWorkbenchContributions: vi.fn(),
+  }),
+);
 
-import { DocumentAiWorkbenchShell } from './DocumentAiWorkbenchShell';
+import { DocumentAiWorkbenchShell } from "./DocumentAiWorkbenchShell";
 
 function renderShell(): string {
   return renderToStaticMarkup(
@@ -21,10 +27,10 @@ function renderShell(): string {
   );
 }
 
-describe('DocumentAiWorkbenchShell', () => {
-  it('owns marker and attachment chrome without mounting a Workbench-local chat panel', () => {
+describe("DocumentAiWorkbenchShell", () => {
+  it("owns marker and attachment chrome without mounting a Workbench-local chat panel", () => {
     const html = renderShell();
-    expect(html).toContain('document');
-    expect(html).not.toContain('AI 问答');
+    expect(html).toContain("document");
+    expect(html).not.toContain("AI 问答");
   });
 });
