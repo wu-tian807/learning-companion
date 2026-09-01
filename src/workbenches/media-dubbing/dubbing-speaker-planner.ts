@@ -130,65 +130,6 @@ function coveredDurationMs(
     : covered + currentEnd - currentStart;
 }
 
-export function parseDubbingSpeakerSegments(
-  value: unknown,
-  durationMs: number,
-): readonly DubbingSpeakerSegment[] {
-  if (!isSafeInteger(durationMs, 1) || !isRecord(value)) {
-    throw new Error('说话人分析结果无效');
-  }
-  const rawSegments = value.segments;
-  if (!Array.isArray(rawSegments)) {
-    throw new Error('说话人分析结果缺少 segments');
-  }
-
-  const normalized = rawSegments.map((raw, index) => {
-    if (
-      !isRecord(raw) ||
-      !isSafeInteger(raw.speaker) ||
-      typeof raw.start !== 'number' ||
-      !Number.isFinite(raw.start) ||
-      typeof raw.end !== 'number' ||
-      !Number.isFinite(raw.end) ||
-      raw.start < 0 ||
-      raw.end <= raw.start ||
-      raw.end * 1_000 > durationMs + 5_000
-    ) {
-      throw new Error(`说话人分析片段 ${index + 1} 无效`);
-    }
-    return {
-      rawSpeaker: raw.speaker,
-      startMs: Math.max(0, Math.round(raw.start * 1_000)),
-      endMs: Math.min(durationMs, Math.round(raw.end * 1_000)),
-    };
-  });
-  normalized.sort(
-    (left, right) =>
-      left.startMs - right.startMs ||
-      left.endMs - right.endMs ||
-      left.rawSpeaker - right.rawSpeaker,
-  );
-
-  const speakerIds = new Map<number, string>();
-  const segments: DubbingSpeakerSegment[] = [];
-  for (const segment of normalized) {
-    if (segment.endMs <= segment.startMs) continue;
-    let speakerId = speakerIds.get(segment.rawSpeaker);
-    if (!speakerId) {
-      speakerId = `speaker-${String(speakerIds.size + 1).padStart(4, '0')}`;
-      speakerIds.set(segment.rawSpeaker, speakerId);
-    }
-    segments.push(
-      Object.freeze({
-        speakerId,
-        startMs: segment.startMs,
-        endMs: segment.endMs,
-      }),
-    );
-  }
-  return Object.freeze(segments);
-}
-
 export function attributeDubbingCuesToSpeakers(
   cues: readonly SubtitleCueV1[],
   segments: readonly DubbingSpeakerSegment[],
@@ -215,16 +156,17 @@ export function attributeDubbingCuesToSpeakers(
         ([leftSpeaker, leftOverlap], [rightSpeaker, rightOverlap]) =>
           rightOverlap - leftOverlap || leftSpeaker.localeCompare(rightSpeaker),
       );
-      const [dominantSpeaker, rawDominantOverlap] = ranked[0] ?? [
-        UNKNOWN_DUBBING_SPEAKER_ID,
-        0,
-      ];
+      const dominantSpeaker =
+        cue.speakerId ?? ranked[0]?.[0] ?? UNKNOWN_DUBBING_SPEAKER_ID;
+      const rawDominantOverlap = overlaps.get(dominantSpeaker) ?? 0;
       const dominantOverlapMs = Math.min(durationMs, rawDominantOverlap);
       const otherSpeakerOverlapMs = Math.min(
         durationMs,
-        ranked
-          .slice(1)
-          .reduce((total, [, overlap]) => total + overlap, 0),
+        ranked.reduce(
+          (total, [speakerId, overlap]) =>
+            speakerId === dominantSpeaker ? total : total + overlap,
+          0,
+        ),
       );
       const switchIsUncertain =
         otherSpeakerOverlapMs >= MINIMUM_UNCERTAIN_SWITCH_MS &&

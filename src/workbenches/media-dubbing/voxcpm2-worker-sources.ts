@@ -57,90 +57,6 @@ print(json.dumps({
 }), flush=True)
 `;
 
-export const SPEAKER_DIARIZATION_WORKER_SOURCE = String.raw`from __future__ import annotations
-
-import argparse
-import json
-import time
-from pathlib import Path
-
-import numpy as np
-import sherpa_onnx
-import soundfile as sf
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--input", type=Path, required=True)
-parser.add_argument("--segmentation-model", type=Path, required=True)
-parser.add_argument("--embedding-model", type=Path, required=True)
-parser.add_argument("--output", type=Path, required=True)
-parser.add_argument("--cluster-threshold", type=float, default=0.7)
-args = parser.parse_args()
-
-config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
-    segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
-        pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
-            model=str(args.segmentation_model),
-            window_shift_ratio=0.1,
-        ),
-        num_threads=4,
-        provider="cpu",
-    ),
-    embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-        model=str(args.embedding_model),
-        num_threads=4,
-        provider="cpu",
-    ),
-    clustering=sherpa_onnx.FastClusteringConfig(
-        num_clusters=-1,
-        threshold=args.cluster_threshold,
-    ),
-    min_duration_on=0.3,
-    min_duration_off=0.5,
-)
-if not config.validate():
-    raise ValueError("invalid speaker-diarization configuration")
-
-diarizer = sherpa_onnx.OfflineSpeakerDiarization(config)
-samples, sample_rate = sf.read(args.input, dtype="float32", always_2d=True)
-if sample_rate != diarizer.sample_rate:
-    raise ValueError(
-        f"expected {diarizer.sample_rate} Hz speaker audio, received {sample_rate} Hz"
-    )
-if samples.shape[1] != 1:
-    raise ValueError(f"expected mono speaker audio, received {samples.shape[1]} channels")
-
-started = time.perf_counter()
-result = diarizer.process(
-    np.ascontiguousarray(samples[:, 0])
-).sort_by_start_time()
-segments = [
-    {
-        "speaker": int(segment.speaker),
-        "start": float(segment.start),
-        "end": float(segment.end),
-    }
-    for segment in result
-]
-payload = {
-    "elapsedSeconds": time.perf_counter() - started,
-    "sampleRate": sample_rate,
-    "speakerCount": len({segment["speaker"] for segment in segments}),
-    "segments": segments,
-}
-args.output.parent.mkdir(parents=True, exist_ok=True)
-temporary = args.output.with_suffix(".tmp")
-temporary.write_text(
-    json.dumps(payload, ensure_ascii=False) + "\n",
-    encoding="utf-8",
-)
-temporary.replace(args.output)
-print(json.dumps({
-    "elapsedSeconds": payload["elapsedSeconds"],
-    "speakerCount": payload["speakerCount"],
-}), flush=True)
-`;
-
 export const WRITABLE_AUDIO_NORMALIZER_SOURCE = String.raw`def ensure_writable_audio(path: Path) -> None:
     try:
         with sf.SoundFile(path, mode="r+"):
@@ -488,14 +404,29 @@ def run_job(model: VoxCPM, request: dict[str, object]) -> None:
                     voice = voice[:target_frames]
 
                 timeline.seek(start_frame)
-                timeline.write(voice)
+                existing_voice = mono_float32(
+                    timeline.read(
+                        target_frames,
+                        dtype="float32",
+                        always_2d=False,
+                    )
+                )
+                overlap_mask = np.abs(existing_voice) > 1e-6
+                combined_voice = voice.copy()
+                combined_voice[overlap_mask] = np.clip(
+                    (existing_voice[overlap_mask] + voice[overlap_mask]) * 0.65,
+                    -0.95,
+                    0.95,
+                )
+                timeline.seek(start_frame)
+                timeline.write(combined_voice)
                 background.seek(start_frame)
                 background_segment = background.read(
                     target_frames,
                     dtype="float32",
                     always_2d=True,
                 )
-                voice_segment = voice[:, np.newaxis]
+                voice_segment = combined_voice[:, np.newaxis]
                 if background_channels > 1:
                     voice_segment = np.repeat(
                         voice_segment,

@@ -61,7 +61,15 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
     sourceRevision,
     language: 'en',
     origin: 'asr',
-    engine: { id: 'whisper', version: '1', model: 'turbo', backend: 'cuda' },
+    engine: { id: 'moss', version: '1', model: 'q5', backend: 'cuda' },
+    speakerAnalysis: {
+      method: 'joint-transcription-diarization',
+      supportsOverlappingTranscription: true,
+      segments: [
+        { speakerId: 'speaker-0001', startMs: 0, endMs: 6_500 },
+        { speakerId: 'speaker-0002', startMs: 8_000, endMs: 8_700 },
+      ],
+    },
     generatedTime: 100,
     cues: [
       {
@@ -70,6 +78,7 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
         endMs: 3_500,
         text: 'This is a sufficiently long reference sentence.',
         sourceCueIds: ['raw-1'],
+        speakerId: 'speaker-0001',
       },
       {
         id: 'cue-2',
@@ -77,6 +86,7 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
         endMs: 6_500,
         text: 'This sentence completes the reference window.',
         sourceCueIds: ['raw-2'],
+        speakerId: 'speaker-0001',
       },
       {
         id: 'cue-3',
@@ -84,6 +94,7 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
         endMs: 11_000,
         text: 'This phrase should be generated first.',
         sourceCueIds: ['raw-3'],
+        speakerId: 'speaker-0002',
       },
     ],
   };
@@ -137,6 +148,9 @@ function createSubtitleRuntime(
       vadExecutablePath: resolve(directory, 'vad.exe'),
       modelPath: resolve(directory, 'sensevoice.gguf'),
       vadModelPath: resolve(directory, 'vad.gguf'),
+      speakerDiarizationExecutablePath: resolve(directory, 'diarization.exe'),
+      speakerSegmentationModelPath: resolve(directory, 'segmentation.onnx'),
+      speakerEmbeddingModelPath: resolve(directory, 'embedding.onnx'),
     },
   };
   return {
@@ -159,8 +173,6 @@ function createDubbingRuntime(
     pythonPath: resolve(directory, 'python.exe'),
     modelPath: resolve(directory, 'VoxCPM2'),
     separationModelPath: resolve(directory, 'UVR.onnx'),
-    speakerSegmentationModelPath: resolve(directory, 'segmentation.onnx'),
-    speakerEmbeddingModelPath: resolve(directory, 'embedding.onnx'),
     workerCachePath: resolve(directory, 'worker-cache'),
     environment: {},
   };
@@ -178,7 +190,7 @@ function createDubbingRuntime(
 }
 
 describe('VoxCpm2DubbingProducer', () => {
-  it('runs separation, reverse VoxCPM2 synthesis and final background mixing', async () => {
+  it('consumes subtitle speakers, runs separation, reverse synthesis and mixing', async () => {
     const directory = await createDirectory();
     const stagingDirectory = join(directory, 'staging');
     await mkdir(stagingDirectory, { recursive: true });
@@ -200,22 +212,6 @@ describe('VoxCpm2DubbingProducer', () => {
           writeFile(join(outputPath, 'background.wav'), 'background'),
           writeFile(join(outputPath, 'vocals.wav'), 'vocals'),
         ]);
-      }
-      if (
-        command.args.some((argument) =>
-          argument.endsWith('diarize-speakers.py'),
-        )
-      ) {
-        const outputPath = command.args[command.args.indexOf('--output') + 1]!;
-        await writeFile(
-          outputPath,
-          JSON.stringify({
-            segments: [
-              { speaker: 7, start: 0, end: 6.5 },
-              { speaker: 2, start: 8, end: 8.7 },
-            ],
-          }),
-        );
       }
       return { stdout: '', stderr: '' };
     });
@@ -489,7 +485,7 @@ describe('VoxCpm2DubbingProducer', () => {
     ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 
-  it('propagates cancellation during diarization without starting voice synthesis', async () => {
+  it('propagates cancellation during separation without starting voice synthesis', async () => {
     const directory = await createDirectory();
     const stagingDirectory = join(directory, 'staging');
     await mkdir(stagingDirectory, { recursive: true });
@@ -502,17 +498,9 @@ describe('VoxCpm2DubbingProducer', () => {
       if (command.command.endsWith('ffmpeg.exe')) {
         await writeFile(command.args.at(-1)!, 'audio');
       }
-      if (command.args.some((argument) => argument.endsWith('separate.py'))) {
-        const outputPath = command.args[command.args.indexOf('--output') + 1]!;
-        await mkdir(outputPath, { recursive: true });
-        await Promise.all([
-          writeFile(join(outputPath, 'background.wav'), 'background'),
-          writeFile(join(outputPath, 'vocals.wav'), 'vocals'),
-        ]);
-      }
       if (
         command.args.some((argument) =>
-          argument.endsWith('diarize-speakers.py'),
+          argument.endsWith('separate.py'),
         )
       ) {
         expect(command.signal).toBe(controller.signal);

@@ -124,4 +124,30 @@ describe('dubbing phrase planner', () => {
     ]);
   });
 
+  it('keeps overlapping speakers as separate phrases on the same timeline', () => {
+    const source = [
+      cue('cue-1', 1_000, 4_000, 'First speaker.'),
+      cue('cue-2', 2_500, 3_500, 'Second speaker.'),
+    ];
+
+    expect(
+      createDubbingPhrases(
+        source,
+        translation(source, ['第一位说话人。', '第二位说话人。']),
+        speakers(source, ['speaker-0001', 'speaker-0002']),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        speakerId: 'speaker-0001',
+        startMs: 1_000,
+        endMs: 4_000,
+      }),
+      expect.objectContaining({
+        speakerId: 'speaker-0002',
+        startMs: 2_500,
+        endMs: 3_500,
+      }),
+    ]);
+  });
+
 });

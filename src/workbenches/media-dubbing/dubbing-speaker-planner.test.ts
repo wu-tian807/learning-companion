@@ -9,7 +9,6 @@ import {
   attributeDubbingCuesToSpeakers,
   createDubbingSpeakerRoutingPlan,
   parseDubbingSpeakerRoutingPlan,
-  parseDubbingSpeakerSegments,
   type DubbingSpeakerSegment,
 } from './dubbing-speaker-planner';
 
@@ -47,25 +46,6 @@ function translation(
 }
 
 describe('dubbing speaker planner', () => {
-  it('normalizes worker speaker labels by first appearance', () => {
-    expect(
-      parseDubbingSpeakerSegments(
-        {
-          segments: [
-            { speaker: 8, start: 2, end: 3 },
-            { speaker: 3, start: 0, end: 1.5 },
-            { speaker: 3, start: 3.5, end: 4 },
-          ],
-        },
-        5_000,
-      ),
-    ).toEqual([
-      { speakerId: 'speaker-0001', startMs: 0, endMs: 1_500 },
-      { speakerId: 'speaker-0002', startMs: 2_000, endMs: 3_000 },
-      { speakerId: 'speaker-0001', startMs: 3_500, endMs: 4_000 },
-    ]);
-  });
-
   it('routes by maximum overlap but excludes an in-cue switch from references', () => {
     const source = [
       cue('dominant', 3_000, 5_000, 'A boundary crosses this cue.'),
@@ -207,14 +187,7 @@ describe('dubbing speaker planner', () => {
     );
   });
 
-  it('rejects malformed worker output and unknown persisted plan versions', () => {
-    expect(() =>
-      parseDubbingSpeakerSegments(
-        { segments: [{ speaker: 0, start: 2, end: 1 }] },
-        5_000,
-      ),
-    ).toThrow('说话人分析片段 1 无效');
-
+  it('rejects unknown persisted plan versions', () => {
     const source = [
       cue('speaker-a', 0, 3_500, 'A sufficiently long clean sentence.'),
     ];
