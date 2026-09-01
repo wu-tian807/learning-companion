@@ -15,6 +15,10 @@ import {
   MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION,
   MediaSubtitleTranscriptionProducer,
 } from './transcription-producer';
+import {
+  SubtitleTranscriptionProgressHub,
+  type SubtitleTranscriptionProgress,
+} from './transcription-progress';
 
 async function inTemp(run: (directory: string) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), 'lc-subtitle-'));
@@ -94,10 +98,11 @@ function producer(
   directory: string,
   transcription: SubtitleTranscriptionRuntime,
   run: ExternalCommandRunnerApi['run'],
+  progress?: SubtitleTranscriptionProgressHub,
 ) {
   return new MediaSubtitleTranscriptionProducer(
     resolver(directory, transcription),
-    { now: () => 123, commandRunner: { run }, logicalCpuCount: 8 },
+    { now: () => 123, commandRunner: { run }, logicalCpuCount: 8, progress },
   );
 }
 
@@ -116,9 +121,18 @@ async function produceTrack(
 describe('MediaSubtitleTranscriptionProducer', () => {
   it('restores Whisper video subtitles without speaker analysis', async () => {
     await inTemp(async (directory) => {
+      const progress = new SubtitleTranscriptionProgressHub();
+      const updates: SubtitleTranscriptionProgress[] = [];
+      progress.subscribe((update) => updates.push(update));
       const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
         const output = command.args.indexOf('-of');
         if (output >= 0) {
+          command.onStdout?.(
+            '[00:00:00.000 --> 00:00:00.800] GPT\n',
+          );
+          command.onStdout?.(
+            '[00:00:00.800 --> 00:00:02.000] 大语言模型。\n',
+          );
           await writeFile(
             `${command.args[output + 1]}.json`,
             JSON.stringify({
@@ -133,15 +147,34 @@ describe('MediaSubtitleTranscriptionProducer', () => {
         return { stdout: '', stderr: '' };
       });
       const track = await produceTrack(
-        producer(directory, whisper(directory), run),
+        producer(directory, whisper(directory), run, progress),
         directory,
         'video/mp4',
       );
 
-      expect(MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION).toBe('5');
+      expect(MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION).toBe('6');
       expect(track.engine.id).toBe('whisper.cpp');
       expect(track.cues.map(({ text }) => text)).toEqual(['GPT 大语言模型。']);
       expect(track.speakerAnalysis).toBeUndefined();
+      expect(
+        updates.some(
+          ({ track: partial }) =>
+            partial.cues.length === 1 && partial.cues[0]?.text === 'GPT',
+        ),
+      ).toBe(true);
+      expect(
+        updates.some(
+          ({ track: partial }) => partial.cues.length === 2,
+        ),
+      ).toBe(true);
+      const whisperCommand = run.mock.calls
+        .map(([command]) => command)
+        .find(({ command }) => command.endsWith('whisper.exe'));
+      expect(whisperCommand?.args).toEqual(
+        expect.arrayContaining(['-fa', '--vad', '-vm', 'vad.bin', '-pp']),
+      );
+      expect(whisperCommand?.args).not.toContain('-nfa');
+      expect(whisperCommand?.args).not.toContain('-dtw');
       expect(run).toHaveBeenCalledTimes(2);
     });
   });

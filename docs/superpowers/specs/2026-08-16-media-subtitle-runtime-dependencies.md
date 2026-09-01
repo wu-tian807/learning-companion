@@ -29,7 +29,7 @@
 | ------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------- |
 | 媒体解码            | FFmpeg 8.1.2                                                  | 把音视频规范化为 16 kHz 单声道 PCM，并读取媒体信息                    |
 | Windows CPU 字幕    | funasr-llama.cpp 0.1.9 + SenseVoiceSmall Q8 + FSMN-VAD        | 使用真实 VAD 句段生成中英文字幕                                       |
-| Windows NVIDIA 字幕 | whisper.cpp 1.9.2 + Whisper large-v3-turbo Q5 + DTW           | 使用 CUDA 识别并按词时间戳恢复播放器可读的短 Cue                      |
+| Windows NVIDIA 字幕 | whisper.cpp 1.9.2 + Whisper large-v3-turbo Q5 + Silero VAD    | 使用 CUDA 快速识别，并按 Token/Offset 时间戳恢复播放器可读的短 Cue    |
 | 共享说话人分析      | sherpa-onnx FastClustering + pyannote segmentation + CAMPPlus | 两个 Windows 档都安装同一份小型 speaker runtime；VoxCPM2 不再重复携带 |
 
 Video 与 Audio 使用同一字幕协议，但调用时机不同：Video 生成原字幕时不运行 Sherpa、
@@ -79,9 +79,13 @@ Windows 检测到 NVIDIA GPU 时选择 CUDA 配置，否则使用 CPU 兼容配�
 同一个组件 ID 和安装目录，因此同一时刻只保留一套。
 底层仍按资源逐一下载和校验，但这些细节不暴露为多个按钮。
 
-本次回退把字幕 Producer 提升到版本 5、安装格式提升到 4。外部组件保留
+本次回退把字幕 Producer 提升到版本 6、安装格式提升到 4。外部组件保留
 `2026.08.28` 路径身份，使旧 MOSS 档位在原目录中被识别为待清理的无效格式，而不是
 因新建日期目录变成磁盘孤儿；清理后重新安装时只下载恢复后的 ASR 与共享 Sherpa 资源。
+
+Producer 运行 Whisper 时使用 fast attention 与 Silero VAD；外部命令已完成的时间段会
+通过应用生命周期进度通道投影到当前 Workbench，因此用户可以在整段识别结束前看到并
+播放已经完成的原文 Cue。最终 Artifact 仍只在完整识别和校验成功后原子提交。
 
 ## 5. 当前完成边界
 

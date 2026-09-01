@@ -29,6 +29,7 @@ import {
 import { MediaSubtitleService } from './media-subtitle-service';
 import { MediaSubtitleSourceTaskQueue } from './source-task-queue';
 import type { MediaSubtitleSrtProducerApi } from './subtitle-srt-artifact';
+import { SubtitleTranscriptionProgressHub } from './transcription-progress';
 
 async function withDirectory(
   run: (directory: string) => Promise<void>,
@@ -147,6 +148,8 @@ async function serviceWithSource(
   directory: string,
   language: 'en' | 'unknown',
   tasks: GenerationTaskServiceApi = generationTasks(),
+  transcriptionProgress?: SubtitleTranscriptionProgressHub,
+  onSourceRequest?: (request: AssetArtifactRequest) => void,
 ) {
   const videoPath = join(directory, 'video.mp4');
   const sourcePath = join(directory, 'source.json');
@@ -172,6 +175,7 @@ async function serviceWithSource(
     })),
   };
   const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
+    onSourceRequest?.(request);
     await writeFile(
       sourcePath,
       JSON.stringify({
@@ -204,11 +208,101 @@ async function serviceWithSource(
       tasks,
       new SubtitleTranslationProgressHub(),
       ['video/mp4'],
+      transcriptionProgress,
     ),
   };
 }
 
 describe('MediaSubtitleService', () => {
+  it('publishes completed source chunks before the final artifact is committed', async () => {
+    await withDirectory(async (directory) => {
+      const progress = new SubtitleTranscriptionProgressHub();
+      let sourceRevision = '';
+      const { service } = await serviceWithSource(
+        directory,
+        'en',
+        generationTasks(),
+        progress,
+        (request) => {
+          sourceRevision = request.source.revision;
+          progress.publish({
+            assetId: request.assetId,
+            sourceRevision: request.source.revision,
+            stage: 'transcribing',
+            track: {
+              version: 1,
+              kind: 'subtitle-source',
+              sourceRevision: request.source.revision,
+              language: 'unknown',
+              origin: 'asr',
+              engine: {
+                id: 'whisper.cpp',
+                version: '1',
+                model: 'turbo',
+                backend: 'cuda',
+              },
+              generatedTime: 100,
+              cues: [
+                {
+                  id: 'partial-000001',
+                  startMs: 0,
+                  endMs: 1_000,
+                  text: '第一段已经完成。',
+                  sourceCueIds: ['partial-000001'],
+                },
+              ],
+            },
+          });
+        },
+      );
+      const snapshots: Array<ReturnType<typeof service.getSnapshot>> = [];
+      service.subscribe('video', (event) => {
+        if (event.type === 'snapshot') snapshots.push(event.snapshot);
+      });
+
+      await service.ensureSource('project', 'video');
+
+      expect(
+        snapshots.some(
+          (snapshot) =>
+            snapshot.phase === 'transcribing' &&
+            snapshot.source?.cues[0]?.text === '第一段已经完成。' &&
+            snapshot.completedCues === 1,
+        ),
+      ).toBe(true);
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'source-ready',
+        source: { language: 'en' },
+      });
+
+      progress.publish({
+        assetId: 'video',
+        sourceRevision,
+        stage: 'transcribing',
+        track: {
+          ...sourceTrack('unknown'),
+          sourceRevision,
+          cues: [
+            {
+              id: 'partial-stale',
+              startMs: 0,
+              endMs: 1_000,
+              text: '迟到的旧进度',
+              sourceCueIds: ['partial-stale'],
+            },
+          ],
+        },
+      });
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'source-ready',
+        source: { language: 'en' },
+      });
+      expect(service.getSnapshot('video').source?.cues[0]?.text).not.toBe(
+        '迟到的旧进度',
+      );
+    });
+  });
+
   it('accepts audio media types supplied by the owning Workbench', async () => {
     const audioAsset: AssetSnapshot = {
       ...videoAsset,

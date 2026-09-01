@@ -8,6 +8,7 @@ import {
 import { MediaSubtitleRuntimeResolver } from './external-libraries/media-subtitle-runtime';
 import { mediaSubtitleSrtRuntime } from './srt-runtime';
 import { MediaSubtitleTranscriptionProducer } from './transcription-producer';
+import { mediaSubtitleTranscriptionRuntime } from './transcription-runtime';
 import { mediaSubtitleTranslationRuntime } from './translation-runtime';
 
 export const mediaSubtitlesMainFeature = Object.freeze({
@@ -25,6 +26,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
     artifacts.register(
       new MediaSubtitleTranscriptionProducer(
         new MediaSubtitleRuntimeResolver(externalLibraries),
+        { progress: mediaSubtitleTranscriptionRuntime.progress },
       ),
     );
     artifacts.register(mediaSubtitleTranslationRuntime.producer);

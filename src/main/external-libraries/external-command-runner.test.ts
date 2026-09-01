@@ -52,6 +52,28 @@ describe('ExternalCommandRunner', () => {
     expect(result.stdout).toBe('D:\\isolated-runtime');
   });
 
+  it('publishes live stdout and stderr without changing bounded capture', async () => {
+    const runner = new ExternalCommandRunner();
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const result = await runner.run({
+      command: process.execPath,
+      args: [
+        '-e',
+        'process.stdout.write("first"); process.stderr.write("warning")',
+      ],
+      timeoutMs: 5_000,
+      outputLimit: 3,
+      onStdout: (content) => stdout.push(content),
+      onStderr: (content) => stderr.push(content),
+    });
+
+    expect(stdout.join('')).toBe('first');
+    expect(stderr.join('')).toBe('warning');
+    expect(result).toEqual({ stdout: 'fir', stderr: 'war' });
+  });
+
   it('maps non-zero exits and timeouts to install failures', async () => {
     const runner = new ExternalCommandRunner();
 

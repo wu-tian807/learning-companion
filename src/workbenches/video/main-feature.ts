@@ -11,6 +11,7 @@ import { MediaSubtitleService } from '../media-subtitles/media-subtitle-service'
 import { mediaSubtitleSourceTaskQueue } from '../media-subtitles/source-task-queue';
 import { mediaSubtitleSrtRuntime } from '../media-subtitles/srt-runtime';
 import { mediaSubtitleTranslationRuntime } from '../media-subtitles/translation-runtime';
+import { mediaSubtitleTranscriptionRuntime } from '../media-subtitles/transcription-runtime';
 import { videoAgentMainFeature } from './agent/main';
 import { videoExplanationMainFeature } from './explanations/main';
 import { VideoWorkbenchProvider } from './main';
@@ -32,6 +33,7 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       context.generationTasks,
       mediaSubtitleTranslationRuntime.progress,
       videoWorkbenchManifest.supportedMediaTypes,
+      mediaSubtitleTranscriptionRuntime.progress,
     );
     const dubbing = new MediaDubbingService(
       context.assetService,

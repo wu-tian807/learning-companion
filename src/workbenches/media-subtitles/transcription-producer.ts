@@ -14,6 +14,7 @@ import {
 } from '../../main/external-libraries/external-command-runner';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+  type SubtitleEngineV1,
   type SubtitleSourceTrackV1,
 } from './contracts';
 import { mediaSubtitleDependencyVersions } from './external-libraries/definitions';
@@ -26,15 +27,18 @@ import type {
 import { analyzeMediaSpeakers } from './speaker-diarization';
 import {
   addPostHocSpeakerAnalysis,
+  parseSenseVoiceStreamingTranscription,
   parseSenseVoiceTranscription,
+  parseWhisperStreamingCues,
   parseWhisperTranscription,
   type ParsedTranscriptionOutput,
 } from './transcription-output-adapter';
+import type { SubtitleTranscriptionProgressHub } from './transcription-progress';
 
 export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID =
   'builtin.media-subtitles.transcription';
 export const MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY = 'source.auto';
-export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION = '5';
+export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION = '6';
 
 const PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
@@ -42,6 +46,7 @@ export interface MediaSubtitleTranscriptionProducerDependencies {
   readonly now: () => number;
   readonly commandRunner: ExternalCommandRunnerApi;
   readonly logicalCpuCount: number;
+  readonly progress?: SubtitleTranscriptionProgressHub;
 }
 
 function processingFailure(error: unknown): AppError {
@@ -61,6 +66,7 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
       now: dependencies.now ?? Date.now,
       commandRunner: dependencies.commandRunner ?? new ExternalCommandRunner(),
       logicalCpuCount: dependencies.logicalCpuCount ?? cpus().length,
+      progress: dependencies.progress,
     };
   }
 
@@ -106,44 +112,43 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
               signal,
             )
           : await this.transcribeSenseVoice(
+              request,
               runtime.transcription,
               audioPath,
               signal,
             );
       if (output.cues.length === 0) throw new Error('没有识别到字幕');
 
-      const speakerOutput = request.source.mediaType.startsWith('audio/')
-        ? addPostHocSpeakerAnalysis(
-            output.cues,
-            await analyzeMediaSpeakers({
-              runtime: runtime.speakerDiarization,
-              audioPath,
-              commandRunner: this.dependencies.commandRunner,
-              logicalCpuCount: this.dependencies.logicalCpuCount,
-              signal,
-            }),
-          )
-        : undefined;
+      this.publishProgress(request, runtime.transcription, output, 'transcribing');
+
+      let speakerOutput:
+        | ReturnType<typeof addPostHocSpeakerAnalysis>
+        | undefined;
+      if (request.source.mediaType.startsWith('audio/')) {
+        this.publishProgress(
+          request,
+          runtime.transcription,
+          output,
+          'diarizing',
+        );
+        speakerOutput = addPostHocSpeakerAnalysis(
+          output.cues,
+          await analyzeMediaSpeakers({
+            runtime: runtime.speakerDiarization,
+            audioPath,
+            commandRunner: this.dependencies.commandRunner,
+            logicalCpuCount: this.dependencies.logicalCpuCount,
+            signal,
+          }),
+        );
+      }
       const track: SubtitleSourceTrackV1 = {
         version: 1,
         kind: 'subtitle-source',
         sourceRevision: request.source.revision,
         language: output.language,
         origin: 'asr',
-        engine:
-          runtime.transcription.kind === 'whisper'
-            ? {
-                id: 'whisper.cpp',
-                version: mediaSubtitleDependencyVersions.whisper,
-                model: 'large-v3-turbo-q5_0',
-                backend: 'cuda',
-              }
-            : {
-                id: 'funasr-llama.cpp',
-                version: mediaSubtitleDependencyVersions.senseVoice,
-                model: 'sensevoice-small-q8',
-                backend: 'cpu-avx2',
-              },
+        engine: this.engine(runtime.transcription),
         ...(speakerOutput
           ? { speakerAnalysis: speakerOutput.speakerAnalysis }
           : {}),
@@ -169,6 +174,48 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
     }
   }
 
+  private engine(
+    runtime: WhisperSubtitleRuntime | SenseVoiceSubtitleRuntime,
+  ): SubtitleEngineV1 {
+    return runtime.kind === 'whisper'
+      ? {
+          id: 'whisper.cpp',
+          version: mediaSubtitleDependencyVersions.whisper,
+          model: 'large-v3-turbo-q5_0',
+          backend: 'cuda',
+        }
+      : {
+          id: 'funasr-llama.cpp',
+          version: mediaSubtitleDependencyVersions.senseVoice,
+          model: 'sensevoice-small-q8',
+          backend: 'cpu-avx2',
+        };
+  }
+
+  private publishProgress(
+    request: AssetArtifactProduceRequest,
+    runtime: WhisperSubtitleRuntime | SenseVoiceSubtitleRuntime,
+    output: ParsedTranscriptionOutput,
+    stage: 'transcribing' | 'diarizing',
+  ): void {
+    if (!this.dependencies.progress || output.cues.length === 0) return;
+    this.dependencies.progress.publish({
+      assetId: request.source.assetId,
+      sourceRevision: request.source.revision,
+      stage,
+      track: {
+        version: 1,
+        kind: 'subtitle-source',
+        sourceRevision: request.source.revision,
+        language: output.language,
+        origin: 'asr',
+        engine: this.engine(runtime),
+        generatedTime: this.dependencies.now(),
+        cues: output.cues,
+      },
+    });
+  }
+
   private async transcribeWhisper(
     request: AssetArtifactProduceRequest,
     runtime: WhisperSubtitleRuntime,
@@ -176,6 +223,21 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
     signal: AbortSignal,
   ): Promise<ParsedTranscriptionOutput> {
     const outputPrefix = join(request.stagingDirectory, 'whisper');
+    let stdout = '';
+    let stderr = '';
+    let publishedFingerprint = '';
+    const publishStreamingOutput = () => {
+      const cues = parseWhisperStreamingCues(`${stdout}\n${stderr}`);
+      const fingerprint = JSON.stringify(cues);
+      if (cues.length === 0 || fingerprint === publishedFingerprint) return;
+      publishedFingerprint = fingerprint;
+      this.publishProgress(
+        request,
+        runtime,
+        { language: 'unknown', cues },
+        'transcribing',
+      );
+    };
     await this.dependencies.commandRunner.run({
       command: runtime.executablePath,
       args: [
@@ -183,13 +245,23 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
         '-f', audioPath,
         '-l', 'auto',
         '-t', String(Math.max(4, Math.floor(this.dependencies.logicalCpuCount / 2))),
-        '-nfa',
-        '-dtw', 'large.v3.turbo',
+        '-fa',
         '-ojf',
         '-of', outputPrefix,
+        '--vad',
+        '-vm', runtime.vadModelPath,
+        '-pp',
       ],
       timeoutMs: PROCESS_TIMEOUT_MS,
       signal,
+      onStdout: (content) => {
+        stdout += content;
+        publishStreamingOutput();
+      },
+      onStderr: (content) => {
+        stderr += content;
+        publishStreamingOutput();
+      },
     });
     return parseWhisperTranscription(
       JSON.parse(await readFile(`${outputPrefix}.json`, 'utf8')),
@@ -197,6 +269,7 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
   }
 
   private async transcribeSenseVoice(
+    request: AssetArtifactProduceRequest,
     runtime: SenseVoiceSubtitleRuntime,
     audioPath: string,
     signal: AbortSignal,
@@ -207,6 +280,24 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
       timeoutMs: PROCESS_TIMEOUT_MS,
       signal,
     });
+    let recognitionOutput = '';
+    let publishedFingerprint = '';
+    const publishStreamingOutput = () => {
+      const output = parseSenseVoiceStreamingTranscription(
+        vad.stdout,
+        recognitionOutput,
+      );
+      if (!output) return;
+      const fingerprint = JSON.stringify(output.cues);
+      if (fingerprint === publishedFingerprint) return;
+      publishedFingerprint = fingerprint;
+      this.publishProgress(
+        request,
+        runtime,
+        output,
+        'transcribing',
+      );
+    };
     const recognition = await this.dependencies.commandRunner.run({
       command: runtime.executablePath,
       args: [
@@ -218,6 +309,10 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
       ],
       timeoutMs: PROCESS_TIMEOUT_MS,
       signal,
+      onStdout: (content) => {
+        recognitionOutput += content;
+        publishStreamingOutput();
+      },
     });
     return parseSenseVoiceTranscription(vad.stdout, recognition.stdout);
   }

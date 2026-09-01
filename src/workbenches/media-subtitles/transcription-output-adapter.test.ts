@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addPostHocSpeakerAnalysis,
+  parseSenseVoiceStreamingTranscription,
   parseSenseVoiceTranscription,
   parseSherpaSpeakerDiarization,
+  parseWhisperStreamingCues,
   parseWhisperTranscription,
 } from './transcription-output-adapter';
 
@@ -32,6 +34,31 @@ describe('transcription output adapters', () => {
     expect(result.cues.at(-1)?.endMs).toBe(8_000);
   });
 
+  it('extracts completed Whisper console segments incrementally and deduplicates them', () => {
+    expect(
+      parseWhisperStreamingCues(
+        '[00:00:00.000 --> 00:00:01.200] 第一段。\n' +
+          '[00:00:00.000 --> 00:00:01.200] 第一段。\n' +
+          '[00:00:01.200 --> 00:00:02.500] 第二段。\n',
+      ),
+    ).toEqual([
+      {
+        id: 'partial-000001',
+        startMs: 0,
+        endMs: 1_200,
+        text: '第一段。',
+        sourceCueIds: ['partial-000001'],
+      },
+      {
+        id: 'partial-000002',
+        startMs: 1_200,
+        endMs: 2_500,
+        text: '第二段。',
+        sourceCueIds: ['partial-000002'],
+      },
+    ]);
+  });
+
   it('keeps SenseVoice VAD timing and recognized text aligned', () => {
     expect(
       parseSenseVoiceTranscription(
@@ -45,6 +72,18 @@ describe('transcription output adapters', () => {
         { startMs: 0, endMs: 2_000, text: '第一句。' },
         { startMs: 2_000, endMs: 4_000, text: '第二句。' },
       ],
+    });
+  });
+
+  it('exposes completed SenseVoice segments before the whole command finishes', () => {
+    expect(
+      parseSenseVoiceStreamingTranscription(
+        '0 2000\n2000 4000\n',
+        '<|zh|><|NEUTRAL|><|Speech|><|woitn|>第一句。',
+      ),
+    ).toMatchObject({
+      language: 'zh-Hans',
+      cues: [{ startMs: 0, endMs: 2_000, text: '第一句。' }],
     });
   });
 

@@ -51,7 +51,8 @@ describe('segmentSubtitleTokens', () => {
       'en',
     );
     expect(english).toHaveLength(2);
-    expect(english[0]!.endMs).toBe(6_000);
+    expect(english[0]!.endMs).toBeLessThanOrEqual(6_000);
+    expect(english[1]!.startMs).toBe(english[0]!.endMs);
     expect(english.map(({ text }) => text).join(' ')).toBe(
       'Local subtitle generation continues while the video keeps playing',
     );

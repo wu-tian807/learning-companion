@@ -145,7 +145,14 @@ export function MediaLanguageControls({
           }}
           className="w-[112px] shrink-0 whitespace-nowrap"
         />
-        {subtitleSnapshot.source?.language === 'unknown' ? (
+        {subtitleSnapshot.phase === 'transcribing' ? (
+          <span
+            title={subtitleSnapshot.message ?? '正在继续生成原文字幕'}
+            className="shrink-0 text-[10px] text-indigo-200/70"
+          >
+            生成中 {subtitleSnapshot.completedCues}段
+          </span>
+        ) : subtitleSnapshot.source?.language === 'unknown' ? (
           <span
             title={
               subtitleSnapshot.message ??

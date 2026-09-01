@@ -222,6 +222,50 @@ describe('VideoLanguageControls', () => {
     expect(container.textContent).not.toContain('字幕准备中');
   });
 
+  it('keeps completed source chunks selectable while transcription continues', () => {
+    act(() =>
+      root.render(
+        <VideoLanguageControls
+          subtitleMode="source"
+          subtitleSnapshot={{
+            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+            phase: 'transcribing',
+            source: {
+              ...sourceTrack,
+              language: 'unknown',
+              cues: [
+                {
+                  id: 'partial-000001',
+                  startMs: 0,
+                  endMs: 1_000,
+                  text: '已经完成的第一段。',
+                  sourceCueIds: ['partial-000001'],
+                },
+              ],
+            },
+            completedCues: 1,
+            totalCues: 1,
+            message: '原文字幕已生成 1 段，正在继续处理…',
+          }}
+          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+          dubbingEnabled={false}
+          dubbingPlaybackActive={false}
+          onSelectSubtitleMode={vi.fn()}
+          onRetrySubtitles={vi.fn()}
+          onStartDubbing={vi.fn()}
+          onSelectDubbingEnabled={vi.fn()}
+          onRetryDubbing={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(
+      container.querySelector('[aria-label="字幕显示模式"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain('生成中 1段');
+    expect(container.textContent).not.toContain('仅原文');
+  });
+
   it('only offers source subtitles when the detected language is unknown', async () => {
     await act(async () =>
       root.render(
