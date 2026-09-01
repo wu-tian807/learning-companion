@@ -170,7 +170,7 @@ describe('Workbench contribution catalogs', () => {
     ).toBe('nvidia');
   });
 
-  it('selects the Metal subtitle profile on Apple Silicon', () => {
+  it('does not retain the obsolete Apple profile', () => {
     const libraries = new ExternalLibraryRegistry();
 
     registerMainWorkbenchExternalLibraries({
@@ -183,12 +183,10 @@ describe('Workbench contribution catalogs', () => {
       runtimeSetups: new ExternalLibraryRuntimeSetupRegistry(),
     });
 
-    expect(libraries.require('media-subtitles').defaultVariantId).toBe(
-      'apple-silicon',
-    );
-    expect(
-      libraries.selectPackage('media-subtitles', 'darwin', 'arm64').variantId,
-    ).toBe('apple-silicon');
+    expect(libraries.require('media-subtitles').defaultVariantId).toBe('cpu');
+    expect(() =>
+      libraries.selectPackage('media-subtitles', 'darwin', 'arm64'),
+    ).toThrow();
   });
 
   it('registers Renderer loaders for the same manifests', () => {

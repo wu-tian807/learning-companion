@@ -4,110 +4,73 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ExternalLibraryServiceApi } from '../../../main/external-libraries/external-library-service';
 import {
-  MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID,
   MEDIA_SUBTITLE_CPU_VARIANT_ID,
   MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
   MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
-  type MediaSubtitleVariantId,
 } from './definitions';
 import { MediaSubtitleRuntimeResolver } from './media-subtitle-runtime';
 
-function createResolver(variantId: MediaSubtitleVariantId) {
-  const runtimeDirectory = join(
-    'C:\\externalLib',
-    MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
-    'runtime',
-  );
-  const requireRuntime = vi.fn(async (libraryId: string) => ({
-    libraryId,
+function createResolver(variantId: string) {
+  const runtime = {
+    libraryId: MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
     variantId,
-    runtimeDirectory,
-  }));
-  const externalLibraries = {
-    requireRuntime,
-  } as unknown as ExternalLibraryServiceApi;
-
+    runtimeDirectory: join('C:\\externalLib', 'media-subtitles', 'runtime'),
+  };
+  const requireRuntime = vi.fn<ExternalLibraryServiceApi['requireRuntime']>(
+    async () => runtime,
+  );
+  const withRuntime = vi.fn<ExternalLibraryServiceApi['withRuntime']>(
+    async (_libraryId, signal, operation) =>
+      operation(runtime, signal ?? new AbortController().signal),
+  );
   return {
     requireRuntime,
-    resolver: new MediaSubtitleRuntimeResolver(externalLibraries),
+    resolver: new MediaSubtitleRuntimeResolver({
+      requireRuntime,
+      withRuntime,
+    } as unknown as ExternalLibraryServiceApi),
   };
 }
 
 describe('MediaSubtitleRuntimeResolver', () => {
-  it('resolves the NVIDIA-only MOSS CUDA runtime', async () => {
-    const { resolver, requireRuntime } = createResolver(
-      MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
-    );
+  it.each([
+    [MEDIA_SUBTITLE_NVIDIA_VARIANT_ID, 'whisper', 'whisper-cli.exe'],
+    [
+      MEDIA_SUBTITLE_CPU_VARIANT_ID,
+      'sensevoice',
+      'llama-funasr-sensevoice.exe',
+    ],
+  ] as const)(
+    'resolves %s transcription and the same Sherpa ownership',
+    async (variantId, expectedKind, executableName) => {
+      const { resolver } = createResolver(variantId);
+      const resolved = await resolver.withRuntime(
+        undefined,
+        async (runtime) => runtime,
+      );
 
-    const decoder = await resolver.requireMediaDecoder();
-    const transcription = await resolver.requireTranscription();
+      expect(resolved.decoder.ffmpegPath).toContain('ffmpeg.exe');
+      expect(resolved.transcription).toMatchObject({
+        kind: expectedKind,
+        executablePath: expect.stringContaining(executableName),
+      });
+      expect(resolved.speakerDiarization).toMatchObject({
+        executablePath: expect.stringContaining(
+          'sherpa-onnx-offline-speaker-diarization.exe',
+        ),
+        segmentationModelPath: expect.stringContaining(
+          join('speaker', 'models', 'pyannote-segmentation-3.0.int8.onnx'),
+        ),
+        embeddingModelPath: expect.stringContaining(
+          join('speaker', 'models', '3dspeaker-campplus-zh-en.onnx'),
+        ),
+      });
+    },
+  );
 
-    expect(requireRuntime).toHaveBeenCalledTimes(2);
-    expect(requireRuntime).toHaveBeenCalledWith(
-      MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
-    );
-    expect(decoder.ffmpegPath).toContain('ffmpeg.exe');
-    expect(decoder.ffprobePath).toContain('ffprobe.exe');
-    expect(transcription).toMatchObject({
-      kind: 'moss',
-      profile: 'nvidia',
-      backend: 'cuda',
-    });
-    if (transcription.kind !== 'moss') throw new Error('expected MOSS');
-    expect(transcription.modelPath).toContain(
-      join('moss', 'models', 'MOSS-Transcribe-Diarize-Q5_K_M.gguf'),
-    );
-    expect(transcription.nativeLibraryPath).toContain('transcribe.dll');
-    expect(transcription.environment.TRANSCRIBE_LIBRARY).toBe(
-      transcription.nativeLibraryPath,
-    );
-    expect(transcription.environment.PATH).toContain(
-      join('moss', 'cuda-cublas', 'nvidia', 'cublas', 'bin'),
-    );
-    expect(transcription.environment.PATH).toContain(
-      join('moss', 'cuda-core', 'nvidia', 'cuda_runtime', 'bin'),
-    );
-  });
-
-  it('resolves SenseVoice and FastClustering only for the CPU variant', async () => {
-    const { resolver } = createResolver(MEDIA_SUBTITLE_CPU_VARIANT_ID);
-
-    const transcription = await resolver.requireTranscription();
-
-    expect(transcription.kind).toBe('sensevoice');
-    if (transcription.kind !== 'sensevoice') {
-      throw new Error('expected SenseVoice');
-    }
-    expect(transcription.modelPath).toContain(
-      join('sensevoice', 'models', 'sensevoice-small-q8.gguf'),
-    );
-    expect(transcription.vadModelPath).toContain('fsmn-vad.gguf');
-    expect(transcription.speakerDiarizationExecutablePath).toContain(
-      'sherpa-onnx-offline-speaker-diarization.exe',
-    );
-    expect(transcription.speakerEmbeddingModelPath).toContain(
-      '3dspeaker-campplus-zh-en.onnx',
-    );
-  });
-
-  it('resolves the Apple-Silicon-only MOSS Metal runtime', async () => {
-    const { resolver } = createResolver(
-      MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID,
-    );
-
-    const decoder = await resolver.requireMediaDecoder();
-    const transcription = await resolver.requireTranscription();
-
-    expect(decoder.ffmpegPath).toMatch(/[\\/]ffmpeg$/u);
-    expect(decoder.ffprobePath).toMatch(/[\\/]ffprobe$/u);
-    expect(transcription).toMatchObject({
-      kind: 'moss',
-      profile: 'apple-silicon',
-      backend: 'metal',
-    });
-    if (transcription.kind !== 'moss') throw new Error('expected MOSS');
-    expect(transcription.nativeLibraryPath).toContain(
-      'libtranscribe.dylib',
-    );
+  it('rejects obsolete package variants', async () => {
+    await expect(
+      createResolver('apple-silicon').resolver.requireTranscription(),
+    ).rejects.toThrow('CPU/GPU');
   });
 });

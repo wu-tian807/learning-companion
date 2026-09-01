@@ -2,13 +2,13 @@ import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main
 import { createSubtitleTranslationTaskDefinition } from './generation/subtitle-translation-task-definition';
 import {
   createMediaSubtitleSuiteDefinition,
-  MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID,
   MEDIA_SUBTITLE_CPU_VARIANT_ID,
   MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
 } from './external-libraries/definitions';
 import { MediaSubtitleRuntimeResolver } from './external-libraries/media-subtitle-runtime';
 import { mediaSubtitleSrtRuntime } from './srt-runtime';
 import { MediaSubtitleTranscriptionProducer } from './transcription-producer';
+import { mediaSubtitleTranscriptionRuntime } from './transcription-runtime';
 import { mediaSubtitleTranslationRuntime } from './translation-runtime';
 
 export const mediaSubtitlesMainFeature = Object.freeze({
@@ -16,9 +16,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
   registerExternalLibraries({ libraries, hardware }): void {
     libraries.register(
       createMediaSubtitleSuiteDefinition(
-        hardware.appleSiliconAvailable
-          ? MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID
-          : hardware.nvidiaGpuAvailable
+        hardware.nvidiaGpuAvailable
           ? MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
           : MEDIA_SUBTITLE_CPU_VARIANT_ID,
       ),
@@ -28,6 +26,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
     artifacts.register(
       new MediaSubtitleTranscriptionProducer(
         new MediaSubtitleRuntimeResolver(externalLibraries),
+        { progress: mediaSubtitleTranscriptionRuntime.progress },
       ),
     );
     artifacts.register(mediaSubtitleTranslationRuntime.producer);

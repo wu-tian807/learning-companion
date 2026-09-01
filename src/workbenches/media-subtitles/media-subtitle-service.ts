@@ -40,6 +40,10 @@ import {
   type MediaSubtitleSnapshot,
 } from './presentation';
 import type { MediaSubtitleSourceTaskQueueApi } from './source-task-queue';
+import type {
+  SubtitleTranscriptionProgress,
+  SubtitleTranscriptionProgressHub,
+} from './transcription-progress';
 import {
   MEDIA_SUBTITLE_SOURCE_SRT_ARTIFACT_KEY,
   createSubtitleSrtArtifactRequest,
@@ -82,6 +86,8 @@ export interface MediaSubtitleServiceApi {
   ensureTranslation(projectId: string, assetId: string): Promise<void>;
   retry(projectId: string, assetId: string): Promise<void>;
 }
+
+type SourceRequestPriority = 'interactive' | 'background';
 
 function cloneSnapshot(snapshot: MediaSubtitleSnapshot): MediaSubtitleSnapshot {
   return Object.freeze({
@@ -152,6 +158,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   private readonly sourceTasks = new Map<string, Promise<void>>();
   private readonly translationTasks = new Map<string, Promise<void>>();
   private readonly sourceArtifacts = new Map<string, ResolvedSourceTrack>();
+  private readonly activeSourceRevisions = new Map<string, string>();
   private readonly activeTranslationTasks = new Map<
     string,
     ActiveTranslationTask
@@ -168,10 +175,14 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     private readonly generationTasks: GenerationTaskServiceApi,
     translationProgress: SubtitleTranslationProgressHub,
     supportedMediaTypes: readonly string[],
+    transcriptionProgress?: SubtitleTranscriptionProgressHub,
   ) {
     this.supportedMediaTypes = new Set(supportedMediaTypes);
     translationProgress.subscribe((progress) =>
       this.handleTranslationProgress(progress),
+    );
+    transcriptionProgress?.subscribe((progress) =>
+      this.handleTranscriptionProgress(progress),
     );
     generationTasks.subscribe((event) => {
       if (event.type === 'task-completed') {
@@ -188,7 +199,11 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         asset.contentStatus.availability === 'available' &&
         this.supportedMediaTypes.has(asset.mediaType)
       ) {
-        void this.ensureSource(asset.projectId, asset.id);
+        void this.ensureSourceWithPriority(
+          asset.projectId,
+          asset.id,
+          'background',
+        );
       }
     });
   }
@@ -213,8 +228,19 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   }
 
   async ensureSource(projectId: string, assetId: string): Promise<void> {
+    return this.ensureSourceWithPriority(projectId, assetId, 'interactive');
+  }
+
+  private async ensureSourceWithPriority(
+    projectId: string,
+    assetId: string,
+    priority: SourceRequestPriority,
+  ): Promise<void> {
     const active = this.sourceTasks.get(assetId);
-    if (active) return active;
+    if (active) {
+      if (priority === 'interactive') this.sourceTaskQueue.promote(assetId);
+      return active;
+    }
 
     this.updateSnapshot(assetId, {
       ...this.getSnapshot(assetId),
@@ -222,7 +248,11 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       message: undefined,
     });
     const task = this.sourceTaskQueue
-      .enqueue(() => this.prepareSource(projectId, assetId))
+      .enqueue(
+        assetId,
+        () => this.prepareSource(projectId, assetId),
+        priority,
+      )
       .finally(() => this.sourceTasks.delete(assetId));
     this.sourceTasks.set(assetId, task);
     return task;
@@ -268,12 +298,15 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     projectId: string,
     assetId: string,
   ): Promise<void> {
+    let activeRevision: string | undefined;
     try {
       const request = await this.createSourceRequest(projectId, assetId);
+      activeRevision = request.source.revision;
+      this.activeSourceRevisions.set(assetId, activeRevision);
       this.updateSnapshot(assetId, {
         ...this.getSnapshot(assetId),
         phase: 'transcribing',
-        message: undefined,
+        message: '正在生成原文字幕…',
       });
       const artifact = await this.artifacts.getOrCreate(request);
       if (artifact.artifact.mediaType !== SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE) {
@@ -324,7 +357,37 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         phase: 'failed',
         message: userFailureMessage(error),
       });
+    } finally {
+      if (
+        activeRevision !== undefined &&
+        this.activeSourceRevisions.get(assetId) === activeRevision
+      ) {
+        this.activeSourceRevisions.delete(assetId);
+      }
     }
+  }
+
+  private handleTranscriptionProgress(
+    progress: SubtitleTranscriptionProgress,
+  ): void {
+    if (
+      this.activeSourceRevisions.get(progress.assetId) !==
+      progress.sourceRevision
+    ) {
+      return;
+    }
+    const count = progress.track.cues.length;
+    this.updateSnapshot(progress.assetId, {
+      phase: 'transcribing',
+      source: progress.track,
+      partialTranslations: [],
+      completedCues: count,
+      totalCues: count,
+      message:
+        progress.stage === 'diarizing'
+          ? `原文字幕已生成 ${count} 段，正在识别说话人…`
+          : `原文字幕已生成 ${count} 段，正在继续处理…`,
+    });
   }
 
   private async prepareTranslation(

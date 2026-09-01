@@ -130,14 +130,15 @@ function setup(
     },
     transcription: {
       kind: 'sensevoice',
-      profile: 'cpu',
       executablePath: 'unused',
       vadExecutablePath: 'unused',
       modelPath: 'unused',
       vadModelPath: 'unused',
-      speakerDiarizationExecutablePath: 'unused',
-      speakerSegmentationModelPath: 'unused',
-      speakerEmbeddingModelPath: 'unused',
+    },
+    speakerDiarization: {
+      executablePath: 'unused',
+      segmentationModelPath: 'unused',
+      embeddingModelPath: 'unused',
     },
   };
   const requireMediaDecoder = vi.fn(async () => runtimeValue.decoder);
@@ -182,8 +183,7 @@ function setup(
             ref: {
               kind: 'local-file' as const,
               base: 'project-workspace' as const,
-              path:
-                '.learning-companion/attachments/attachment-1/answer.md',
+              path: '.learning-companion/attachments/attachment-1/answer.md',
             },
             mediaType: request.content.mediaType,
           },

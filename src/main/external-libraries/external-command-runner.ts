@@ -28,6 +28,8 @@ export interface ExternalCommandRequest {
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
   readonly outputLimit?: number;
+  readonly onStdout?: (content: string) => void;
+  readonly onStderr?: (content: string) => void;
 }
 
 export interface ExternalCommandRunnerApi {
@@ -114,15 +116,6 @@ export class ExternalCommandRunner
         return;
       }
 
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (content: string) => {
-        stdout = appendLimited(stdout, content, outputLimit);
-      });
-      child.stderr.on('data', (content: string) => {
-        stderr = appendLimited(stderr, content, outputLimit);
-      });
-
       const cleanup = () => {
         clearTimeout(timeout);
         if (forceTerminationTimer) {
@@ -165,6 +158,24 @@ export class ExternalCommandRunner
       const handleAbort = () => {
         requestTermination(createAbortError());
       };
+      const handleOutput = (
+        content: string,
+        stream: 'stdout' | 'stderr',
+      ) => {
+        try {
+          if (stream === 'stdout') {
+            stdout = appendLimited(stdout, content, outputLimit);
+            request.onStdout?.(content);
+          } else {
+            stderr = appendLimited(stderr, content, outputLimit);
+            request.onStderr?.(content);
+          }
+        } catch (error) {
+          requestTermination(
+            new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', { cause: error }),
+          );
+        }
+      };
       const timeout = setTimeout(() => {
         requestTermination(
           new AppError('EXTERNAL_LIBRARY_INSTALL_FAILED', {
@@ -178,6 +189,14 @@ export class ExternalCommandRunner
       request.signal?.addEventListener('abort', handleAbort, {
         once: true,
       });
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (content: string) =>
+        handleOutput(content, 'stdout'),
+      );
+      child.stderr.on('data', (content: string) =>
+        handleOutput(content, 'stderr'),
+      );
       if (request.signal?.aborted) {
         handleAbort();
       }

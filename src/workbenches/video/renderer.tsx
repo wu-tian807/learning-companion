@@ -169,11 +169,6 @@ function formatVttTime(milliseconds: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
 }
 
-function subtitleSpeakerPrefix(speakerId: string | undefined): string {
-  const match = speakerId ? /^speaker-(\d{4})$/u.exec(speakerId) : null;
-  return match ? `【说话人 ${Number(match[1])}】` : '';
-}
-
 export function createVideoSubtitleVtt(
   snapshot: VideoSubtitleSnapshot,
   mode: VideoSubtitleDisplayMode,
@@ -187,15 +182,12 @@ export function createVideoSubtitleVtt(
   );
   const blocks = snapshot.source.cues.map((cue) => {
     const translation = translations.get(cue.id);
-    const speakerPrefix = subtitleSpeakerPrefix(cue.speakerId);
-    let text = `${speakerPrefix}${cue.text}`;
+    let text = cue.text;
 
     if (mode === 'translated') {
-      text = `${speakerPrefix}${
-        translation ?? `〔原文 · 译文生成中〕${cue.text}`
-      }`;
+      text = translation ?? `〔原文 · 译文生成中〕${cue.text}`;
     } else if (mode === 'bilingual') {
-      text = `${speakerPrefix}${cue.text}\n${translation ?? '〔正在翻译…〕'}`;
+      text = `${cue.text}\n${translation ?? '〔正在翻译…〕'}`;
     }
     return `${formatVttTime(cue.startMs)} --> ${formatVttTime(cue.endMs)}\n${text}`;
   });

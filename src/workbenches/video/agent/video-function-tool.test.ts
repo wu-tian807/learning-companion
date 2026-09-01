@@ -52,14 +52,15 @@ function runtimeResolver() {
     },
     transcription: {
       kind: 'sensevoice',
-      profile: 'cpu',
       executablePath: 'unused.exe',
       vadExecutablePath: 'unused-vad.exe',
       modelPath: 'unused.gguf',
       vadModelPath: 'unused-vad.gguf',
-      speakerDiarizationExecutablePath: 'unused-diarization.exe',
-      speakerSegmentationModelPath: 'unused-segmentation.onnx',
-      speakerEmbeddingModelPath: 'unused-embedding.onnx',
+    },
+    speakerDiarization: {
+      executablePath: 'unused-diarization.exe',
+      segmentationModelPath: 'unused-segmentation.onnx',
+      embeddingModelPath: 'unused-embedding.onnx',
     },
   };
   const withRuntime = vi.fn(
