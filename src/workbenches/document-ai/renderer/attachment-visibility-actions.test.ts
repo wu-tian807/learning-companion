@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { WorkbenchRuntime } from "../../../renderer/workbench/runtime/workbench-runtime";
+import { officeWorkbenchManifest } from "../../office/shared";
+import { pdfWorkbenchManifest } from "../../pdf/shared";
 import { createAttachmentVisibilityActions } from "./attachment-visibility-actions";
 
 describe("document attachment visibility actions", () => {
@@ -34,4 +37,34 @@ describe("document attachment visibility actions", () => {
       badge: "0",
     });
   });
+
+  it.each([
+    ["PDF", pdfWorkbenchManifest],
+    ["Office", officeWorkbenchManifest],
+  ])(
+    "registers the header action in the real %s Workbench Runtime",
+    (_name, manifest) => {
+      const runtime = new WorkbenchRuntime(vi.fn());
+      runtime.activate(
+        {
+          projectId: "project",
+          assetId: "asset",
+          workbenchId: manifest.id,
+          sessionId: "session",
+        },
+        manifest,
+      );
+
+      expect(() =>
+        runtime.registerContributions(
+          "document-ai:asset.attachments",
+          createAttachmentVisibilityActions({
+            attachmentCount: 1,
+            visible: true,
+            onToggle: vi.fn(),
+          }),
+        ),
+      ).not.toThrow();
+    },
+  );
 });
