@@ -141,6 +141,7 @@ function AiQuestionIcon() {
 export interface ProjectHeaderActionsProps {
   readonly leftOpen: boolean;
   readonly rightPanel: ProjectRightPanelKind | null;
+  readonly conversationOpen: boolean;
   readonly leftButtonRef?: Ref<HTMLButtonElement>;
   readonly rightButtonRef?: Ref<HTMLButtonElement>;
   readonly aiQuestionButtonRef?: Ref<HTMLButtonElement>;
@@ -154,6 +155,7 @@ export interface ProjectHeaderActionsProps {
 export function ProjectHeaderActions({
   leftOpen,
   rightPanel,
+  conversationOpen,
   leftButtonRef,
   rightButtonRef,
   aiQuestionButtonRef,
@@ -165,7 +167,6 @@ export function ProjectHeaderActions({
 }: ProjectHeaderActionsProps) {
   const leftLabel = leftOpen ? '收起学习资料' : '展开学习资料';
   const generationOpen = rightPanel === 'generation';
-  const conversationOpen = rightPanel === 'conversation';
   const rightLabel = generationOpen
     ? '收起生成中心'
     : '展开生成中心';

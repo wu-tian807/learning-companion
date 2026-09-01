@@ -9,7 +9,10 @@ import {
   registerWorkbenchAnchorController,
   resetWorkbenchAnchorControllerForTests,
 } from '../../../renderer/workbench/host/workbench-anchor-bridge';
-import { AttachmentHost } from './AttachmentHost';
+import {
+  ATTACHMENT_MARKER_MOTION_CLASS,
+  AttachmentHost,
+} from './AttachmentHost';
 
 const attachment: AssetAttachment = {
   id: 'attachment-1',
@@ -65,6 +68,11 @@ describe('AttachmentHost', () => {
 
     expect(html).not.toContain('标注 1');
     expect(html).not.toContain('文档标注');
+  });
+
+  it('never animates marker geometry while pages move', () => {
+    expect(ATTACHMENT_MARKER_MOTION_CLASS).toBe('transition-colors');
+    expect(ATTACHMENT_MARKER_MOTION_CLASS).not.toContain('transition-all');
   });
 
   it('renders the boxed AI reply card at the original anchor position', async () => {

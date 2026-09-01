@@ -32,6 +32,8 @@ export interface AttachmentHostProps {
   readonly onSidebarOpenChange: (open: boolean) => void;
 }
 
+export const ATTACHMENT_MARKER_MOTION_CLASS = 'transition-colors';
+
 interface AnchorPosition {
   readonly pageNumber: number;
   readonly offset?: number;
@@ -526,7 +528,7 @@ export function AttachmentHost({
           <div key={att.id} className="contents">
             <button
               type="button"
-              className={`pointer-events-auto absolute cursor-pointer border transition-all ${
+              className={`pointer-events-auto absolute cursor-pointer border ${ATTACHMENT_MARKER_MOTION_CLASS} ${
                 isActive
                   ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
                   : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'

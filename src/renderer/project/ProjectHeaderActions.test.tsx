@@ -9,6 +9,7 @@ describe('ProjectHeaderActions', () => {
       <ProjectHeaderActions
         leftOpen
         rightPanel={null}
+        conversationOpen={false}
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
@@ -42,6 +43,7 @@ describe('ProjectHeaderActions', () => {
       <ProjectHeaderActions
         leftOpen
         rightPanel={null}
+        conversationOpen={false}
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
@@ -58,11 +60,12 @@ describe('ProjectHeaderActions', () => {
     expect(chatButton).toContain('aria-expanded="false"');
   });
 
-  it('marks chat and generation as mutually exclusive views of one right slot', () => {
+  it('shows chat and generation as independent wide-layout panels', () => {
     const markup = renderToStaticMarkup(
       <ProjectHeaderActions
         leftOpen
-        rightPanel="conversation"
+        rightPanel="generation"
+        conversationOpen
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
@@ -74,10 +77,10 @@ describe('ProjectHeaderActions', () => {
       /<button[^>]*aria-label="关闭 AI 问答"[^>]*>/u,
     )?.[0];
     const generationButton = markup.match(
-      /<button[^>]*aria-label="展开生成中心"[^>]*>/u,
+      /<button[^>]*aria-label="收起生成中心"[^>]*>/u,
     )?.[0];
 
     expect(chatButton).toContain('aria-expanded="true"');
-    expect(generationButton).toContain('aria-expanded="false"');
+    expect(generationButton).toContain('aria-expanded="true"');
   });
 });

@@ -133,5 +133,8 @@ describe('ProjectPage Project conversation lifecycle', () => {
     expect(
       container.querySelector('[data-testid="project-conversation-panel"]'),
     ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="generation-center"]'),
+    ).not.toBeNull();
   });
 });
