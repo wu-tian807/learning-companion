@@ -112,18 +112,24 @@ export function MediaLanguageControls({
       </button>
     );
   } else if (!subtitleHasSource) {
+    const preparingLabel =
+      subtitleSnapshot.phase === 'queued'
+        ? '字幕排队中'
+        : subtitleSnapshot.phase === 'transcribing'
+          ? '字幕生成中'
+          : '字幕准备中';
     subtitleControl = (
       <button
         type="button"
         title={
           subtitleSnapshot.phase === 'idle'
             ? '字幕尚未开始处理'
-            : '正在准备字幕'
+            : (subtitleSnapshot.message ?? '正在准备字幕')
         }
         disabled
         className={compactButtonClass}
       >
-        字幕准备中
+        {preparingLabel}
       </button>
     );
   } else {
@@ -139,7 +145,7 @@ export function MediaLanguageControls({
           }}
           className="w-[112px] shrink-0 whitespace-nowrap"
         />
-        {subtitleSnapshot.source?.language === 'unknown' && (
+        {subtitleSnapshot.source?.language === 'unknown' ? (
           <span
             title={
               subtitleSnapshot.message ??
@@ -149,7 +155,7 @@ export function MediaLanguageControls({
           >
             仅原文
           </span>
-        )}
+        ) : null}
       </div>
     );
   }

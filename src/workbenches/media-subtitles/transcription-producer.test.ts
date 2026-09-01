@@ -5,20 +5,19 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ExternalCommandRunnerApi } from '../../main/external-libraries/external-command-runner';
-import { isSubtitleSourceTrackV1 } from './contracts';
 import type {
+  MediaSubtitleRuntime,
   MediaSubtitleRuntimeResolverApi,
   SubtitleTranscriptionRuntime,
 } from './external-libraries/media-subtitle-runtime';
 import {
   MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
+  MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION,
   MediaSubtitleTranscriptionProducer,
 } from './transcription-producer';
 
-async function withDirectory(
-  run: (directory: string) => Promise<void>,
-): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), 'lc-subtitle-transcription-'));
+async function inTemp(run: (directory: string) => Promise<void>) {
+  const directory = await mkdtemp(join(tmpdir(), 'lc-subtitle-'));
   try {
     await run(directory);
   } finally {
@@ -26,246 +25,178 @@ async function withDirectory(
   }
 }
 
-function runtimeResolver(
-  transcription: SubtitleTranscriptionRuntime,
+function resolver(
   directory: string,
+  transcription: SubtitleTranscriptionRuntime,
 ): MediaSubtitleRuntimeResolverApi {
-  const decoder = {
-    ffmpegPath: join(directory, 'ffmpeg.exe'),
-    ffprobePath: join(directory, 'ffprobe.exe'),
+  const runtime: MediaSubtitleRuntime = {
+    decoder: {
+      ffmpegPath: join(directory, 'ffmpeg.exe'),
+      ffprobePath: join(directory, 'ffprobe.exe'),
+    },
+    transcription,
+    speakerDiarization: {
+      executablePath: join(directory, 'diarization.exe'),
+      segmentationModelPath: join(directory, 'segmentation.onnx'),
+      embeddingModelPath: join(directory, 'embedding.onnx'),
+    },
   };
   return {
-    requireMediaDecoder: vi.fn(async () => decoder),
-    requireTranscription: vi.fn(async () => transcription),
-    async withRuntime(signal, operation) {
-      return operation(
-        { decoder, transcription },
-        signal ?? new AbortController().signal,
-      );
-    },
+    requireMediaDecoder: vi.fn(async () => runtime.decoder),
+    requireTranscription: vi.fn(async () => runtime.transcription),
+    withRuntime: async (signal, operation) =>
+      operation(runtime, signal ?? new AbortController().signal),
   };
 }
 
-function request(directory: string) {
+function request(directory: string, mediaType: string) {
   return {
     artifactKey: MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
     workspacePath: directory,
     stagingDirectory: directory,
     source: {
       assetId: 'media',
-      mediaType: 'video/mp4',
-      absolutePath: join(directory, 'video.mp4'),
-      revision: 'video-revision',
+      mediaType,
+      absolutePath: join(directory, 'media.bin'),
+      revision: 'revision',
     },
-  } as const;
+  };
+}
+
+async function readTrack(filePath: string) {
+  return JSON.parse(await readFile(filePath, 'utf8')) as {
+    speakerAnalysis?: unknown;
+    cues: Array<{ speakerId?: string; text: string }>;
+    engine: { id: string };
+  };
+}
+
+function whisper(directory: string): SubtitleTranscriptionRuntime {
+  return {
+    kind: 'whisper',
+    executablePath: join(directory, 'whisper.exe'),
+    modelPath: 'whisper.bin',
+    vadModelPath: 'vad.bin',
+  };
+}
+
+function senseVoice(directory: string): SubtitleTranscriptionRuntime {
+  return {
+    kind: 'sensevoice',
+    executablePath: join(directory, 'sensevoice.exe'),
+    vadExecutablePath: join(directory, 'vad.exe'),
+    modelPath: 'sensevoice.gguf',
+    vadModelPath: 'vad.gguf',
+  };
+}
+
+function producer(
+  directory: string,
+  transcription: SubtitleTranscriptionRuntime,
+  run: ExternalCommandRunnerApi['run'],
+) {
+  return new MediaSubtitleTranscriptionProducer(
+    resolver(directory, transcription),
+    { now: () => 123, commandRunner: { run }, logicalCpuCount: 8 },
+  );
+}
+
+async function produceTrack(
+  instance: MediaSubtitleTranscriptionProducer,
+  directory: string,
+  mediaType: string,
+) {
+  const result = await instance.produce(
+    request(directory, mediaType),
+    new AbortController().signal,
+  );
+  return readTrack(result.filePath);
 }
 
 describe('MediaSubtitleTranscriptionProducer', () => {
-  it('uses MOSS Q5 to jointly produce overlapping subtitles and speakers', async () => {
-    await withDirectory(async (directory) => {
+  it('restores Whisper video subtitles without speaker analysis', async () => {
+    await inTemp(async (directory) => {
       const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
-        const outputIndex = command.args.indexOf('--output');
-        if (outputIndex >= 0) {
+        const output = command.args.indexOf('-of');
+        if (output >= 0) {
           await writeFile(
-            command.args[outputIndex + 1]!,
+            `${command.args[output + 1]}.json`,
             JSON.stringify({
-              language: 'en',
-              cues: [
-                {
-                  id: 'cue-000001',
-                  startMs: 0,
-                  endMs: 2_000,
-                  text: 'First speaker.',
-                  sourceCueIds: ['cue-000001'],
-                  speakerId: 'speaker-0001',
-                },
-                {
-                  id: 'cue-000002',
-                  startMs: 1_400,
-                  endMs: 2_800,
-                  text: 'Overlapping speaker.',
-                  sourceCueIds: ['cue-000002'],
-                  speakerId: 'speaker-0002',
-                },
-              ],
-              speakerSegments: [
-                { speakerId: 'speaker-0001', startMs: 0, endMs: 2_000 },
-                { speakerId: 'speaker-0002', startMs: 1_400, endMs: 2_800 },
+              result: { language: 'zh' },
+              transcription: [
+                { offsets: { from: 0, to: 800 }, text: 'GPT' },
+                { offsets: { from: 800, to: 2_000 }, text: '大语言模型。' },
               ],
             }),
           );
         }
         return { stdout: '', stderr: '' };
       });
-      const transcription: SubtitleTranscriptionRuntime = {
-        kind: 'moss',
-        profile: 'nvidia',
-        backend: 'cuda',
-        pythonPath: join(directory, 'python.exe'),
-        pythonPackagesPath: join(directory, 'python-packages'),
-        nativeLibraryPath: join(directory, 'transcribe.dll'),
-        modelPath: join(directory, 'MOSS-Q5.gguf'),
-        environment: {
-          TRANSCRIBE_LIBRARY: join(directory, 'transcribe.dll'),
-        },
-      };
-      const producer = new MediaSubtitleTranscriptionProducer(
-        runtimeResolver(transcription, directory),
-        {
-          now: () => 123,
-          commandRunner: { run },
-          logicalCpuCount: 12,
-        },
+      const track = await produceTrack(
+        producer(directory, whisper(directory), run),
+        directory,
+        'video/mp4',
       );
 
-      const result = await producer.produce(
-        request(directory),
-        new AbortController().signal,
-      );
-      const track = JSON.parse(await readFile(result.filePath, 'utf8')) as unknown;
-
-      expect(isSubtitleSourceTrackV1(track)).toBe(true);
-      expect(track).toMatchObject({
-        sourceRevision: 'video-revision',
-        language: 'en',
-        generatedTime: 123,
-        engine: {
-          id: 'transcribe.cpp',
-          model: 'MOSS-Transcribe-Diarize-Q5_K_M',
-          backend: 'cuda',
-        },
-        speakerAnalysis: {
-          method: 'joint-transcription-diarization',
-          supportsOverlappingTranscription: true,
-        },
-      });
+      expect(MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION).toBe('5');
+      expect(track.engine.id).toBe('whisper.cpp');
+      expect(track.cues.map(({ text }) => text)).toEqual(['GPT 大语言模型。']);
+      expect(track.speakerAnalysis).toBeUndefined();
       expect(run).toHaveBeenCalledTimes(2);
-      expect(run.mock.calls[0]![0].args).toEqual(
-        expect.arrayContaining(['-c:a', 'pcm_f32le', '-f', 'f32le']),
-      );
-      expect(run.mock.calls[1]![0]).toMatchObject({
-        command: transcription.pythonPath,
-        env: transcription.environment,
-      });
-      expect(run.mock.calls[1]![0].args).toEqual(
-        expect.arrayContaining([
-          '--model',
-          transcription.modelPath,
-          '--backend',
-          'cuda',
-          '--threads',
-          '6',
-        ]),
-      );
     });
   });
 
-  it('keeps SenseVoice on CPU and adds sherpa-onnx speaker attribution', async () => {
-    await withDirectory(async (directory) => {
-      const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
-        if (command.command.endsWith('vad.exe')) {
+  it('adds Sherpa speaker labels immediately for audio', async () => {
+    await inTemp(async (directory) => {
+      const run = vi.fn<ExternalCommandRunnerApi['run']>(async ({ command }) => {
+        if (command.endsWith('vad.exe')) {
           return { stdout: '0 2000\n2000 4000\n', stderr: '' };
         }
-        if (command.command.endsWith('sensevoice.exe')) {
+        if (command.endsWith('sensevoice.exe')) {
           return {
             stdout:
-              '<|zh|><|NEUTRAL|><|Speech|><|woitn|>第一句话。' +
-              '<|zh|><|NEUTRAL|><|Speech|><|woitn|>第二句话。',
+              '<|zh|><|N|><|S|><|T|>第一位说话。' +
+              '<|zh|><|N|><|S|><|T|>第二位回答。',
             stderr: '',
           };
         }
-        if (command.command.endsWith('diarization.exe')) {
+        if (command.endsWith('diarization.exe')) {
           return {
-            stdout:
-              '0.000 -- 2.100 speaker_00\n' +
-              '1.800 -- 2.300 speaker_01\n' +
-              '2.300 -- 4.000 speaker_01\n',
+            stdout: '0.000 -- 2.100 speaker_4\n1.900 -- 4.000 speaker_7\n',
             stderr: '',
           };
         }
         return { stdout: '', stderr: '' };
       });
-      const transcription: SubtitleTranscriptionRuntime = {
-        kind: 'sensevoice',
-        profile: 'cpu',
-        executablePath: join(directory, 'sensevoice.exe'),
-        vadExecutablePath: join(directory, 'vad.exe'),
-        modelPath: join(directory, 'sensevoice.gguf'),
-        vadModelPath: join(directory, 'vad.gguf'),
-        speakerDiarizationExecutablePath: join(directory, 'diarization.exe'),
-        speakerSegmentationModelPath: join(directory, 'segmentation.onnx'),
-        speakerEmbeddingModelPath: join(directory, 'embedding.onnx'),
-      };
-      const producer = new MediaSubtitleTranscriptionProducer(
-        runtimeResolver(transcription, directory),
-        {
-          now: () => 456,
-          commandRunner: { run },
-          logicalCpuCount: 8,
-        },
+      const track = await produceTrack(
+        producer(directory, senseVoice(directory), run),
+        directory,
+        'audio/mpeg',
       );
 
-      const result = await producer.produce(
-        request(directory),
-        new AbortController().signal,
-      );
-      const track = JSON.parse(await readFile(result.filePath, 'utf8')) as unknown;
-
-      expect(isSubtitleSourceTrackV1(track)).toBe(true);
-      expect(track).toMatchObject({
-        language: 'zh-Hans',
-        engine: {
-          id: 'funasr-llama.cpp+sherpa-onnx',
-          backend: 'cpu-avx2',
-        },
-        speakerAnalysis: {
-          method: 'post-hoc-diarization',
-          supportsOverlappingTranscription: false,
-        },
-        cues: [
-          { text: '第一句话。', speakerId: 'speaker-0001' },
-          { text: '第二句话。', speakerId: 'speaker-0002' },
-        ],
+      expect(track.cues.map(({ speakerId }) => speakerId)).toEqual([
+        'speaker-0001',
+        'speaker-0002',
+      ]);
+      expect(track.speakerAnalysis).toMatchObject({
+        method: 'post-hoc-diarization',
       });
       expect(run).toHaveBeenCalledTimes(4);
-      expect(run.mock.calls[3]![0].args).toEqual(
-        expect.arrayContaining([
-          '--clustering.cluster-threshold=0.7',
-          `--segmentation.pyannote-model=${transcription.speakerSegmentationModelPath}`,
-          `--embedding.model=${transcription.speakerEmbeddingModelPath}`,
-        ]),
-      );
     });
   });
 
-  it('preserves cancellation instead of committing an artifact', async () => {
-    await withDirectory(async (directory) => {
-      const aborted = new DOMException('cancelled', 'AbortError');
-      const transcription: SubtitleTranscriptionRuntime = {
-        kind: 'sensevoice',
-        profile: 'cpu',
-        executablePath: 'sensevoice.exe',
-        vadExecutablePath: 'vad.exe',
-        modelPath: 'sensevoice.gguf',
-        vadModelPath: 'vad.gguf',
-        speakerDiarizationExecutablePath: 'diarization.exe',
-        speakerSegmentationModelPath: 'segmentation.onnx',
-        speakerEmbeddingModelPath: 'embedding.onnx',
-      };
-      const producer = new MediaSubtitleTranscriptionProducer(
-        runtimeResolver(transcription, directory),
-        {
-          commandRunner: {
-            run: vi.fn(async () => {
-              throw aborted;
-            }),
-          },
-        },
-      );
-
-      await expect(
-        producer.produce(request(directory), new AbortController().signal),
-      ).rejects.toBe(aborted);
-    });
+  it('preserves cancellation', async () => {
+    const aborted = new DOMException('cancelled', 'AbortError');
+    const instance = producer(
+      'C:\\runtime',
+      whisper('C:\\runtime'),
+      vi.fn(async () => Promise.reject(aborted)),
+    );
+    await expect(
+      instance.produce(
+        request('C:\\runtime', 'video/mp4'),
+        new AbortController().signal,
+      ),
+    ).rejects.toBe(aborted);
   });
 });

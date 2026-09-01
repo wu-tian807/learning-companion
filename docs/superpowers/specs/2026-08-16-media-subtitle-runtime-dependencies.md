@@ -1,7 +1,7 @@
 # 媒体字幕外部依赖与模型总表
 
 > 日期：2026-08-16
-> 状态：已实现；2026-08-28 将字幕翻译迁移到 GenerationTask；2026-09-01 将说话人识别归入字幕组件
+> 状态：已实现；2026-08-28 将字幕翻译迁移到 GenerationTask；2026-09-01 恢复 Whisper/SenseVoice，并将 Sherpa 统一归入字幕组件
 > 范围：Video 与 Audio 共用的媒体解码和原文字幕识别依赖。字幕翻译不再下载本地模型。
 
 ## 1. 所有组件放在哪里
@@ -25,23 +25,18 @@
 产品只暴露一个字幕组件。安装前由 Main 自动检测平台和加速设备，并选择一套互斥的
 识别实现；用户不选择 CPU/GPU，也不会同时下载备用识别模型：
 
-| 内部能力 | 运行时与模型 | 产品角色 |
-| --- | --- | --- |
-| 媒体解码 | FFmpeg 8.1.2 | 把音视频规范化为 16 kHz 单声道 PCM，并读取媒体信息 |
-| Windows CPU 字幕与说话人 | funasr-llama.cpp 0.1.9 + SenseVoiceSmall Q8 + FSMN-VAD；sherpa-onnx FastClustering + pyannote segmentation + CAMPPlus | 先生成真实 VAD 句段，再离线把每个 Cue 归属到 speaker；不伪造重叠文本 |
-| Windows NVIDIA 字幕与说话人 | MOSS Transcribe Diarize Q5 GGUF + transcribe.cpp CUDA | 联合生成中英文字幕、说话人和重叠说话内容 |
-| Apple Silicon 字幕与说话人 | MOSS Transcribe Diarize Q5 GGUF + transcribe.cpp Metal | 与 NVIDIA 使用相同 Artifact 契约，不下载 Windows 或 CPU 模型 |
+| 内部能力            | 运行时与模型                                                  | 产品角色                                                              |
+| ------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 媒体解码            | FFmpeg 8.1.2                                                  | 把音视频规范化为 16 kHz 单声道 PCM，并读取媒体信息                    |
+| Windows CPU 字幕    | funasr-llama.cpp 0.1.9 + SenseVoiceSmall Q8 + FSMN-VAD        | 使用真实 VAD 句段生成中英文字幕                                       |
+| Windows NVIDIA 字幕 | whisper.cpp 1.9.2 + Whisper large-v3-turbo Q5 + DTW           | 使用 CUDA 识别并按词时间戳恢复播放器可读的短 Cue                      |
+| 共享说话人分析      | sherpa-onnx FastClustering + pyannote segmentation + CAMPPlus | 两个 Windows 档都安装同一份小型 speaker runtime；VoxCPM2 不再重复携带 |
 
-本机同源样例中，MOSS Q8 CUDA 在受控双人重叠音频上的 RTF 为 0.0379，三个重叠窗口
-全部找回；真实中文课程样本 CER 为 2.37%。Q5 是正式安装档，用更小权重换取可接受的
-精度与显存成本。MOSS CPU 已测得慢于实时，因此 CPU 不安装 MOSS；CPU 继续使用
-SenseVoice，并把约 30 MB 的说话人模型提前放进字幕包。SenseVoice 的时间轴来自 VAD
-句段，不提供词级时间戳，也不能从同一时段恢复两份重叠文本。
-
-MOSS 按 180 秒窗口运行，并保留 20 秒交叠区用于跨窗去重与 speaker ID 续接，避免整部
-长视频一次性占用显存。联合转写允许多个 Cue 在时间轴上重叠；CPU 后处理路径仍保持
-一条转写文本，只给 Cue 标注主 speaker。两条路径都写入统一的 speaker-aware 字幕
-Artifact，配音不再重复下载或运行说话人模型。
+Video 与 Audio 使用同一字幕协议，但调用时机不同：Video 生成原字幕时不运行 Sherpa、
+不写 speaker 标签；只有用户点击配音后，才对分离出的 vocals 运行 Sherpa，以挑选各
+音色的干净参考段。Audio 在字幕生成后立即运行 Sherpa，把主 speaker 归属写入 Cue，
+因此即使用户不使用配音，音频逐句视图也能显示说话人。Sherpa 只能给现有 Cue 做时间
+归属，不能从同一时段恢复第二份重叠文本；Artifact 不伪造该能力。
 
 `Paraformer-zh Q8` 只保留在 Demo。当前 GGUF 端口无标点、无可靠段边界与时间戳，
 实测 20 分钟中文 CER 7.79%，不注册为用户可安装组件。未来只有完整运行时解决这些
@@ -75,25 +70,24 @@ Cue 的 ID 与译文，不能修改时间轴。Bergamot、Hy-MT2 与 llama.cpp �
 设置页只显示一个 `视频/音频字幕组件` 和一个安装按钮。下表是内部自动选择结果，
 不是用户选项：
 
-| 内部配置 | 一次下载内容 | 下载量 |
-| --- | --- | ---: |
-| Windows CPU 兼容配置 | FFmpeg、SenseVoice、FSMN-VAD、sherpa-onnx 与两个说话人模型 | 约 399 MiB；安装后约 800 MiB；建议预留 1.5 GB |
-| Windows NVIDIA 加速配置 | FFmpeg、独立 Python、transcribe.cpp CUDA、所需 CUDA 运行库、MOSS Q5 | 约 1.5 GiB；安装后约 2.5 GB；建议预留 3.5 GB |
-| macOS Apple Silicon 配置 | FFmpeg、独立 Python、transcribe.cpp Metal、MOSS Q5 | 约 713 MiB；安装后约 1.3 GB；建议预留 2.0 GB |
+| 内部配置                | 一次下载内容                                                                      |                                        下载量 |
+| ----------------------- | --------------------------------------------------------------------------------- | --------------------------------------------: |
+| Windows CPU 兼容配置    | FFmpeg、SenseVoice、FSMN-VAD、sherpa-onnx 与两个说话人模型                        | 约 399 MiB；安装后约 800 MiB；建议预留 1.5 GB |
+| Windows NVIDIA 加速配置 | FFmpeg、Whisper CUDA、large-v3-turbo Q5、Silero VAD、sherpa-onnx 与两个说话人模型 | 约 1.31 GiB；安装后约 2.5 GB；建议预留 3.5 GB |
 
-Apple Silicon 选择 Metal 配置；Windows 检测到 NVIDIA GPU 时选择 CUDA 配置，否则
-使用 CPU 兼容配置。三种配置使用同一个组件 ID 和安装目录，因此同一时刻只保留一套。
+Windows 检测到 NVIDIA GPU 时选择 CUDA 配置，否则使用 CPU 兼容配置。两种配置使用
+同一个组件 ID 和安装目录，因此同一时刻只保留一套。
 底层仍按资源逐一下载和校验，但这些细节不暴露为多个按钮。
 
-本次替换保留原组件版本目录并提升安装格式号。旧 Whisper 安装会显示为“安装异常”，
-用户执行“清理异常安装”后再安装新档位；这样旧模型在原位置被完整删除，不会因新建
-日期目录而成为应用不可见的磁盘孤儿。
+本次回退把字幕 Producer 提升到版本 5、安装格式提升到 4。外部组件保留
+`2026.08.28` 路径身份，使旧 MOSS 档位在原目录中被识别为待清理的无效格式，而不是
+因新建日期目录变成磁盘孤儿；清理后重新安装时只下载恢复后的 ASR 与共享 Sherpa 资源。
 
 ## 5. 当前完成边界
 
-当前已经完成下载校验、硬件档位选择、speaker-aware 字幕识别、Artifact 缓存、逐 Cue 翻译事件、
-GenerationTask 恢复以及 Video Workbench UI。字幕组件仍只负责 FFmpeg 与 ASR；
+当前已经完成下载校验、硬件档位选择、媒体差异化 speaker 调用、Artifact 缓存、逐 Cue 翻译事件、
+GenerationTask 恢复以及 Video/Audio Workbench UI。字幕组件负责 FFmpeg、ASR 与共享 Sherpa；
 翻译所用 Connection、模型和思考力度由低智能 Provider Selector 独立决定。
 
-Video 与 Audio Workbench 均已接入这套能力。Windows CUDA 已完成真实重叠样例冒烟；
-Apple Silicon 已注册固定 Metal 产物，但仍需在真实 macOS 设备上完成安装与长视频验证。
+当前正式包只声明 Windows x64。macOS 字幕支持在重新选定并验证可维护的 ASR 运行时前
+不注册，避免保留已经撤回的 MOSS Metal 路径。

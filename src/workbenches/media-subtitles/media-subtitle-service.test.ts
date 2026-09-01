@@ -114,14 +114,10 @@ function resolvedArtifact(
 function runtimes(): MediaSubtitleRuntimeResolverApi {
   const transcription = {
     kind: 'sensevoice' as const,
-    profile: 'cpu' as const,
     executablePath: 'sensevoice.exe',
     vadExecutablePath: 'vad.exe',
     modelPath: 'sensevoice.gguf',
     vadModelPath: 'vad.gguf',
-    speakerDiarizationExecutablePath: 'diarization.exe',
-    speakerSegmentationModelPath: 'segmentation.onnx',
-    speakerEmbeddingModelPath: 'embedding.onnx',
   };
   return {
     requireTranscription: vi.fn(async () => transcription),

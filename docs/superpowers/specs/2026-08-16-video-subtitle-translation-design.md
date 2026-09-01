@@ -65,19 +65,15 @@ Artifact 生成路径。
 ### 2.2 四种显示模式
 
 ```ts
-type MediaSubtitleDisplayMode =
-  | 'off'
-  | 'source'
-  | 'translated'
-  | 'bilingual';
+type MediaSubtitleDisplayMode = 'off' | 'source' | 'translated' | 'bilingual';
 ```
 
-| 模式 | 展示行为 | 是否触发翻译 |
-| --- | --- | --- |
-| `off` | 不显示字幕 | 否 |
-| `source` | 只显示识别原文 | 否 |
-| `translated` | 只显示译文 | 是 |
-| `bilingual` | 原文在上、译文在下 | 是 |
+| 模式         | 展示行为           | 是否触发翻译 |
+| ------------ | ------------------ | ------------ |
+| `off`        | 不显示字幕         | 否           |
+| `source`     | 只显示识别原文     | 否           |
+| `translated` | 只显示译文         | 是           |
+| `bilingual`  | 原文在上、译文在下 | 是           |
 
 当译文尚未完成：
 
@@ -186,25 +182,24 @@ flowchart LR
     SERVICE --> CACHE["AssetArtifactService.getOrCreate"]
     CACHE --> NORMALIZE["FFmpeg: 16 kHz mono WAV"]
     NORMALIZE --> ASR["当前安装档位的 ASR"]
-    ASR --> SPEAKER["联合或后处理 speaker 识别"]
-    SPEAKER --> SEGMENT["speaker-aware Cue 分段"]
-    SEGMENT --> ARTIFACT["原字幕 Artifact 原子提交"]
+    ASR --> SEGMENT["按真实时间戳生成短 Cue"]
+    SEGMENT --> KIND{"媒体类型"}
+    KIND -->|Video| ARTIFACT["原字幕 Artifact 原子提交"]
+    KIND -->|Audio| SPEAKER["Sherpa speaker 归属"]
+    SPEAKER --> ARTIFACT
+    ARTIFACT -->|Video 配音时| DUBBING_SPEAKER["按需分析音色参考"]
 ```
 
 运行时选择由已安装字幕组件决定：
 
-- Windows NVIDIA 档：MOSS Transcribe Diarize Q5 + transcribe.cpp CUDA；
-- macOS Apple Silicon 档：同一 MOSS Q5 + transcribe.cpp Metal；
-- Windows CPU 档：SenseVoice Small Q8 + FSMN-VAD，随后由 sherpa-onnx FastClustering 标注 speaker；
-- 三者只下载当前设备对应的资源，并复用各自配套 FFmpeg 将输入音轨规范化。
+- Windows NVIDIA 档：Whisper large-v3-turbo Q5 + whisper.cpp CUDA，按 DTW/Token 时间戳拆分短 Cue；
+- Windows CPU 档：SenseVoice Small Q8 + FSMN-VAD，保留真实 VAD 区间；
+- 两个档位都安装 Sherpa，但 Video 原字幕不运行 speaker 分析；Audio 原字幕在 ASR 后运行；
+- 两个档位只下载当前设备对应的 ASR，并复用配套 FFmpeg 将输入音轨规范化。
 
-MOSS 的说话人时间戳与文本由同一次推理生成，因此同一时段可以保存不同 speaker 的
-多份 Cue。为限制长视频显存增长，正式 worker 以 180 秒窗口、20 秒交叠运行；交叠区
-用于 Cue 去重与跨窗 speaker ID 续接。Cue 按开始时间稳定排序，但不强制互相排斥。
-
-当前便携版 SenseVoice C++ Runtime 只暴露识别文本和 FSMN-VAD 段级时间。因此 CPU
-档只保存真实 VAD Cue，不再把 VAD 区间按字符数拆分。随后 sherpa-onnx 把每个 Cue
-归到时间重叠最大的 speaker；它不能生成第二份重叠文本，Artifact 会明确记录这一能力差异。
+Video 的原字幕 Artifact 只有文本与时间轴，不显示 speaker。Audio 的原字幕 Artifact 在
+同一协议上可附带 `speakerAnalysis` 与 Cue `speakerId`。配音点击后，Video 对人声分离结果
+按需运行同一 Sherpa runtime；这份分析用于声色参考与 phrase 路由，不反写视频字幕。
 
 ## 5. 翻译流程
 
@@ -348,10 +343,10 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 
 - 导入可用视频或音频会触发原字幕 Artifact；
 - 相同媒体修订和 Producer 版本命中现有缓存；
-- MOSS 输出保留 speaker 与重叠 Cue；长媒体分窗后不重复交叠区 Cue；
-- Cue 按开始时间稳定排序；联合转写路径允许不同 speaker 的时间窗口重叠；
+- Whisper 按 Token/DTW 时间戳恢复播放器可读的短 Cue；
+- Video 原字幕不运行或显示 speaker；
 - SenseVoice 未提供 CTC Token 时间时保持真实 VAD 区间；
-- 两条路径都写入有效 `speakerAnalysis`，所有 Cue 都有已知 speaker；
+- Audio 字幕写入有效 `speakerAnalysis`，所有 Cue 都有已知 speaker；
 - 用户只选原文时不启动翻译；
 - 用户选译文或双语时创建译文 Artifact；
 - 非中英文源轨不启动翻译；
@@ -362,6 +357,7 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 
 - 视频或音频始终可以先播放；
 - 四种模式可切换并写入 Workbench State V2；
+- 识别中明确显示“字幕生成中”，不长期停留在“字幕准备中”；
 - 逐 Cue 译文到达后立即显示；
 - 缺失译文有明确占位；
 - 未安装、识别中、翻译中、不支持语言和失败状态均有明确提示；

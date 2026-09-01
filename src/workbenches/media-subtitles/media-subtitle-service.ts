@@ -273,7 +273,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       this.updateSnapshot(assetId, {
         ...this.getSnapshot(assetId),
         phase: 'transcribing',
-        message: undefined,
+        message: '正在生成原文字幕…',
       });
       const artifact = await this.artifacts.getOrCreate(request);
       if (artifact.artifact.mediaType !== SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE) {

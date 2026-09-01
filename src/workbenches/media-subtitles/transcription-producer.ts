@@ -1,5 +1,5 @@
-import { cpus } from 'node:os';
 import { readFile, writeFile } from 'node:fs/promises';
+import { cpus } from 'node:os';
 import { join } from 'node:path';
 
 import type {
@@ -18,23 +18,23 @@ import {
 } from './contracts';
 import { mediaSubtitleDependencyVersions } from './external-libraries/definitions';
 import type {
-  MediaSubtitleRuntimeResolverApi,
   MediaSubtitleRuntime,
-  MossSubtitleRuntime,
+  MediaSubtitleRuntimeResolverApi,
   SenseVoiceSubtitleRuntime,
+  WhisperSubtitleRuntime,
 } from './external-libraries/media-subtitle-runtime';
-import { MOSS_TRANSCRIPTION_WORKER_SOURCE } from './moss-transcription-worker-source';
+import { analyzeMediaSpeakers } from './speaker-diarization';
 import {
   addPostHocSpeakerAnalysis,
-  parseMossTranscriptionWorkerOutput,
   parseSenseVoiceTranscription,
-  parseSherpaSpeakerDiarization,
+  parseWhisperTranscription,
+  type ParsedTranscriptionOutput,
 } from './transcription-output-adapter';
 
 export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID =
   'builtin.media-subtitles.transcription';
 export const MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY = 'source.auto';
-export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION = '4';
+export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION = '5';
 
 const PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
@@ -48,9 +48,7 @@ function processingFailure(error: unknown): AppError {
   return new AppError('MEDIA_SUBTITLE_PROCESSING_FAILED', { cause: error });
 }
 
-export class MediaSubtitleTranscriptionProducer
-  implements AssetArtifactProducer
-{
+export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer {
   readonly id = MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID;
   readonly version = MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION;
   private readonly dependencies: MediaSubtitleTranscriptionProducerDependencies;
@@ -84,30 +82,74 @@ export class MediaSubtitleTranscriptionProducer
     signal: AbortSignal,
   ): Promise<ProducedAssetArtifact> {
     try {
-      const normalizedPath = join(
-        request.stagingDirectory,
-        runtime.transcription.kind === 'moss' ? 'audio.f32le' : 'audio.wav',
-      );
-      await this.normalizeAudio(
-        request,
-        runtime,
-        normalizedPath,
+      const audioPath = join(request.stagingDirectory, 'audio.wav');
+      await this.dependencies.commandRunner.run({
+        command: runtime.decoder.ffmpegPath,
+        args: [
+          '-hide_banner', '-loglevel', 'error',
+          '-y',
+          '-i', request.source.absolutePath,
+          '-vn', '-ar', '16000', '-ac', '1',
+          '-c:a', 'pcm_s16le',
+          audioPath,
+        ],
+        timeoutMs: PROCESS_TIMEOUT_MS,
         signal,
-      );
-      const track =
-        runtime.transcription.kind === 'moss'
-          ? await this.transcribeMoss(
+      });
+
+      const output =
+        runtime.transcription.kind === 'whisper'
+          ? await this.transcribeWhisper(
               request,
               runtime.transcription,
-              normalizedPath,
+              audioPath,
               signal,
             )
           : await this.transcribeSenseVoice(
-              request,
               runtime.transcription,
-              normalizedPath,
+              audioPath,
               signal,
             );
+      if (output.cues.length === 0) throw new Error('没有识别到字幕');
+
+      const speakerOutput = request.source.mediaType.startsWith('audio/')
+        ? addPostHocSpeakerAnalysis(
+            output.cues,
+            await analyzeMediaSpeakers({
+              runtime: runtime.speakerDiarization,
+              audioPath,
+              commandRunner: this.dependencies.commandRunner,
+              logicalCpuCount: this.dependencies.logicalCpuCount,
+              signal,
+            }),
+          )
+        : undefined;
+      const track: SubtitleSourceTrackV1 = {
+        version: 1,
+        kind: 'subtitle-source',
+        sourceRevision: request.source.revision,
+        language: output.language,
+        origin: 'asr',
+        engine:
+          runtime.transcription.kind === 'whisper'
+            ? {
+                id: 'whisper.cpp',
+                version: mediaSubtitleDependencyVersions.whisper,
+                model: 'large-v3-turbo-q5_0',
+                backend: 'cuda',
+              }
+            : {
+                id: 'funasr-llama.cpp',
+                version: mediaSubtitleDependencyVersions.senseVoice,
+                model: 'sensevoice-small-q8',
+                backend: 'cpu-avx2',
+              },
+        ...(speakerOutput
+          ? { speakerAnalysis: speakerOutput.speakerAnalysis }
+          : {}),
+        generatedTime: this.dependencies.now(),
+        cues: speakerOutput?.cues ?? output.cues,
+      };
       const filePath = join(request.stagingDirectory, 'subtitles.json');
       await writeFile(filePath, `${JSON.stringify(track, null, 2)}\n`, 'utf8');
       return {
@@ -127,154 +169,56 @@ export class MediaSubtitleTranscriptionProducer
     }
   }
 
-  private async normalizeAudio(
+  private async transcribeWhisper(
     request: AssetArtifactProduceRequest,
-    runtime: MediaSubtitleRuntime,
-    normalizedPath: string,
+    runtime: WhisperSubtitleRuntime,
+    audioPath: string,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<ParsedTranscriptionOutput> {
+    const outputPrefix = join(request.stagingDirectory, 'whisper');
     await this.dependencies.commandRunner.run({
-      command: runtime.decoder.ffmpegPath,
+      command: runtime.executablePath,
       args: [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-y',
-        '-i',
-        request.source.absolutePath,
-        '-vn',
-        '-ar',
-        '16000',
-        '-ac',
-        '1',
-        ...(runtime.transcription.kind === 'moss'
-          ? ['-c:a', 'pcm_f32le', '-f', 'f32le']
-          : ['-c:a', 'pcm_s16le']),
-        normalizedPath,
+        '-m', runtime.modelPath,
+        '-f', audioPath,
+        '-l', 'auto',
+        '-t', String(Math.max(4, Math.floor(this.dependencies.logicalCpuCount / 2))),
+        '-nfa',
+        '-dtw', 'large.v3.turbo',
+        '-ojf',
+        '-of', outputPrefix,
       ],
       timeoutMs: PROCESS_TIMEOUT_MS,
       signal,
     });
-  }
-
-  private async transcribeMoss(
-    request: AssetArtifactProduceRequest,
-    runtime: MossSubtitleRuntime,
-    normalizedPath: string,
-    signal: AbortSignal,
-  ): Promise<SubtitleSourceTrackV1> {
-    const workerPath = join(request.stagingDirectory, 'transcribe-moss.py');
-    const outputPath = join(request.stagingDirectory, 'moss-result.json');
-    await writeFile(workerPath, MOSS_TRANSCRIPTION_WORKER_SOURCE, 'utf8');
-    await this.dependencies.commandRunner.run({
-      command: runtime.pythonPath,
-      args: [
-        workerPath,
-        '--model',
-        runtime.modelPath,
-        '--input',
-        normalizedPath,
-        '--output',
-        outputPath,
-        '--backend',
-        runtime.backend,
-        '--threads',
-        String(Math.max(4, Math.floor(this.dependencies.logicalCpuCount / 2))),
-      ],
-      cwd: request.stagingDirectory,
-      env: runtime.environment,
-      timeoutMs: PROCESS_TIMEOUT_MS,
-      signal,
-      outputLimit: 1024 * 1024,
-    });
-    const output = parseMossTranscriptionWorkerOutput(
-      JSON.parse(await readFile(outputPath, 'utf8')),
+    return parseWhisperTranscription(
+      JSON.parse(await readFile(`${outputPrefix}.json`, 'utf8')),
     );
-    return {
-      version: 1,
-      kind: 'subtitle-source',
-      sourceRevision: request.source.revision,
-      language: output.language,
-      origin: 'asr',
-      engine: {
-        id: 'transcribe.cpp',
-        version: mediaSubtitleDependencyVersions.moss,
-        model: 'MOSS-Transcribe-Diarize-Q5_K_M',
-        backend: runtime.backend,
-      },
-      speakerAnalysis: output.speakerAnalysis,
-      generatedTime: this.dependencies.now(),
-      cues: output.cues,
-    };
   }
 
   private async transcribeSenseVoice(
-    request: AssetArtifactProduceRequest,
     runtime: SenseVoiceSubtitleRuntime,
-    normalizedPath: string,
+    audioPath: string,
     signal: AbortSignal,
-  ): Promise<SubtitleSourceTrackV1> {
+  ): Promise<ParsedTranscriptionOutput> {
     const vad = await this.dependencies.commandRunner.run({
       command: runtime.vadExecutablePath,
-      args: ['-m', runtime.vadModelPath, '-a', normalizedPath],
+      args: ['-m', runtime.vadModelPath, '-a', audioPath],
       timeoutMs: PROCESS_TIMEOUT_MS,
       signal,
     });
     const recognition = await this.dependencies.commandRunner.run({
       command: runtime.executablePath,
       args: [
-        '-m',
-        runtime.modelPath,
-        '-a',
-        normalizedPath,
-        '--vad',
-        runtime.vadModelPath,
-        '--backend',
-        'cpu',
+        '-m', runtime.modelPath,
+        '-a', audioPath,
+        '--vad', runtime.vadModelPath,
+        '--backend', 'cpu',
         '--keep-tags',
       ],
       timeoutMs: PROCESS_TIMEOUT_MS,
       signal,
     });
-    const transcription = parseSenseVoiceTranscription(
-      vad.stdout,
-      recognition.stdout,
-    );
-    const diarization = await this.dependencies.commandRunner.run({
-      command: runtime.speakerDiarizationExecutablePath,
-      args: [
-        '--clustering.cluster-threshold=0.7',
-        `--segmentation.pyannote-model=${runtime.speakerSegmentationModelPath}`,
-        `--embedding.model=${runtime.speakerEmbeddingModelPath}`,
-        `--segmentation.num-threads=${Math.max(1, Math.floor(this.dependencies.logicalCpuCount / 2))}`,
-        `--embedding.num-threads=${Math.max(1, Math.floor(this.dependencies.logicalCpuCount / 2))}`,
-        normalizedPath,
-      ],
-      timeoutMs: PROCESS_TIMEOUT_MS,
-      signal,
-      outputLimit: 1024 * 1024,
-    });
-    const attributed = addPostHocSpeakerAnalysis(
-      transcription.cues,
-      parseSherpaSpeakerDiarization(
-        `${diarization.stdout}\n${diarization.stderr}`,
-      ),
-    );
-    return {
-      version: 1,
-      kind: 'subtitle-source',
-      sourceRevision: request.source.revision,
-      language: transcription.language,
-      origin: 'asr',
-      engine: {
-        id: 'funasr-llama.cpp+sherpa-onnx',
-        version: `${mediaSubtitleDependencyVersions.senseVoice}/${mediaSubtitleDependencyVersions.sherpaOnnx}`,
-        model: 'sensevoice-small-q8+pyannote3-campplus',
-        backend: 'cpu-avx2',
-      },
-      speakerAnalysis: attributed.speakerAnalysis,
-      generatedTime: this.dependencies.now(),
-      cues: attributed.cues,
-    };
+    return parseSenseVoiceTranscription(vad.stdout, recognition.stdout);
   }
 }

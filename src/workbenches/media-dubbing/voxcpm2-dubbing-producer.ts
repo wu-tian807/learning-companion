@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { cpus } from 'node:os';
 import { join } from 'node:path';
 
 import type {
@@ -22,9 +23,10 @@ import type {
   SubtitleTranslationTrackV1,
 } from '../media-subtitles/contracts';
 import type {
-  MediaDecoderRuntime,
+  MediaSubtitleRuntime,
   MediaSubtitleRuntimeResolverApi,
 } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import { analyzeMediaSpeakers } from '../media-subtitles/speaker-diarization';
 import {
   DUBBING_PHRASE_PLANNER_VERSION,
 } from './dubbing-phrase-planner';
@@ -324,11 +326,11 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       (runtime, dubbingSignal) =>
         input.subtitleRuntime.withRuntime(
           dubbingSignal,
-          ({ decoder }, usageSignal) =>
+          (subtitleRuntime, usageSignal) =>
             this.produceWithRuntimes(
               request,
               input,
-              decoder,
+              subtitleRuntime,
               runtime,
               usageSignal,
             ),
@@ -339,11 +341,12 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
   private async produceWithRuntimes(
     request: AssetArtifactProduceRequest,
     input: DubbingInput,
-    decoder: MediaDecoderRuntime,
+    subtitleRuntime: MediaSubtitleRuntime,
     runtime: VoxCpm2DubbingRuntime,
     signal: AbortSignal,
   ): Promise<ProducedAssetArtifact> {
     try {
+      const decoder = subtitleRuntime.decoder;
       const provisionalTotal = input.sourceTrack.cues.length;
       if (provisionalTotal === 0) throw new Error('没有可生成的配音段落');
       this.publish(request, 'preparing-runtime', 0, provisionalTotal, 0, 0, 0);
@@ -444,9 +447,39 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
           timeoutMs: PROCESS_TIMEOUT_MS,
           signal,
         });
-        const segments = input.sourceTrack.speakerAnalysis?.segments;
+        let segments = input.sourceTrack.speakerAnalysis?.segments;
+        const speakerAudioPath = join(
+          request.stagingDirectory,
+          'speaker-analysis.wav',
+        );
         if (!segments || segments.length === 0) {
-          throw new Error('字幕缺少说话人信息，请重新生成字幕后再配音');
+          await this.dependencies.commandRunner.run({
+            command: decoder.ffmpegPath,
+            args: [
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-y',
+              '-i',
+              checkpoint.paths.vocalsPath,
+              '-ar',
+              '16000',
+              '-ac',
+              '1',
+              '-c:a',
+              'pcm_s16le',
+              speakerAudioPath,
+            ],
+            timeoutMs: 5 * 60 * 1_000,
+            signal,
+          });
+          segments = await analyzeMediaSpeakers({
+            runtime: subtitleRuntime.speakerDiarization,
+            audioPath: speakerAudioPath,
+            commandRunner: this.dependencies.commandRunner,
+            logicalCpuCount: cpus().length,
+            signal,
+          });
         }
         plan = createDubbingSpeakerRoutingPlan(
           input.sourceTrack.cues,
@@ -516,6 +549,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         await Promise.all([
           rm(checkpoint.paths.originalAudioPath, { force: true }),
           rm(checkpoint.paths.vocalsPath, { force: true }),
+          rm(speakerAudioPath, { force: true }),
         ]);
       }
 
