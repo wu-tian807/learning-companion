@@ -697,6 +697,10 @@ describe("ExternalLibraryService", () => {
   });
 
   it("cancels active installations during shutdown", async () => {
+    let markDownloadReady!: () => void;
+    const downloadReady = new Promise<void>((resolve) => {
+      markDownloadReady = resolve;
+    });
     const download = vi.fn(
       async (
         input: Parameters<
@@ -706,11 +710,15 @@ describe("ExternalLibraryService", () => {
         await mkdir(dirname(input.destinationPath), { recursive: true });
         await writeFile(input.destinationPath, "partial");
         return new Promise<never>((_resolvePromise, rejectPromise) => {
+          const rejectAsAborted = () =>
+            rejectPromise(new DOMException("cancelled", "AbortError"));
           input.signal.addEventListener(
             "abort",
-            () => rejectPromise(new DOMException("cancelled", "AbortError")),
+            rejectAsAborted,
             { once: true },
           );
+          markDownloadReady();
+          if (input.signal.aborted) rejectAsAborted();
         });
       },
     );
@@ -718,7 +726,7 @@ describe("ExternalLibraryService", () => {
     await harness.service.initialize();
     const installation =
       await harness.service.startInstallation("libreoffice");
-    await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
+    await downloadReady;
 
     await harness.service.shutdown();
 
