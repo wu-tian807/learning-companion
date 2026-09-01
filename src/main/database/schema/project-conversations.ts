@@ -1,6 +1,9 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import type { ConversationMessageRecord } from '../../../shared/project-conversations';
+import type {
+  ConversationMessageRecord,
+  ConversationWorkspaceBinding,
+} from '../../../shared/project-conversations';
 import { projects } from './projects';
 
 export const projectConversations = sqliteTable(
@@ -10,6 +13,9 @@ export const projectConversations = sqliteTable(
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
+    modeId: text('mode_id').notNull(),
+    workspace: text('workspace_binding_json', { mode: 'json' })
+      .$type<ConversationWorkspaceBinding>(),
     title: text('title').notNull(),
     messages: text('messages_json', { mode: 'json' })
       .$type<readonly ConversationMessageRecord[]>()

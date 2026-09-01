@@ -34,6 +34,8 @@ function fromRow(
 ): ConversationRecord {
   return cloneConversationRecord({
     id: row.id,
+    modeId: row.modeId,
+    ...(row.workspace ? { workspace: row.workspace } : {}),
     title: row.title,
     messages: row.messages,
     createdTime: row.createdTime,
@@ -46,11 +48,24 @@ function toRow(projectId: string, conversation: ConversationRecord) {
   return {
     id: cloned.id,
     projectId: requireId(projectId, 'projectId'),
+    modeId: cloned.modeId,
+    workspace: cloned.workspace ?? null,
     title: cloned.title,
     messages: cloned.messages,
     createdTime: cloned.createdTime,
     updatedTime: cloned.updatedTime,
   };
+}
+
+function sameExecutionContext(
+  existing: typeof projectConversations.$inferSelect,
+  next: ReturnType<typeof toRow>,
+): boolean {
+  return (
+    existing.modeId === next.modeId &&
+    (existing.workspace?.instanceKey ?? undefined) ===
+      (next.workspace?.instanceKey ?? undefined)
+  );
 }
 
 export class ProjectConversationDatabase
@@ -109,6 +124,11 @@ export class ProjectConversationDatabase
 
     if (existing && existing.projectId !== row.projectId) {
       throw new AppError('DATABASE_WRITE_CONFLICT');
+    }
+    if (existing && !sameExecutionContext(existing, row)) {
+      throw new AppError('DATABASE_WRITE_CONFLICT', {
+        cause: new Error('Conversation Mode 或 Workspace Binding 不可修改'),
+      });
     }
     if (existing && row.updatedTime < existing.updatedTime) {
       return fromRow(existing);

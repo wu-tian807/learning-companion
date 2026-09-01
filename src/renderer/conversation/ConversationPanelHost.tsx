@@ -1,16 +1,15 @@
-import { useEffect } from 'react';
-
-import { useConversationController } from './conversation-controller';
 import { ConversationPanel } from './ConversationPanel';
+import { ConversationSession } from './ConversationSession';
 import type {
   ConversationHistoryStore,
-  ConversationLaunchRequest,
+  ConversationWorkspaceBinding,
 } from './conversation-contracts';
+import type { ConversationModeDefinition } from './conversation-mode';
+import { projectConversationMode } from './project-conversation-mode';
 import {
   useWorkbenchConversationRuntime,
   useWorkbenchConversationSnapshot,
 } from './workbench-conversation-context';
-import type { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 
 export function ConversationPanelHost({
   projectId,
@@ -19,6 +18,8 @@ export function ConversationPanelHost({
   onSelectAsset,
   onOpenSettings,
   onError,
+  mode = projectConversationMode,
+  workspace,
 }: {
   readonly projectId: string;
   readonly historyStore: ConversationHistoryStore;
@@ -26,92 +27,52 @@ export function ConversationPanelHost({
   readonly onSelectAsset: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
+  readonly mode?: ConversationModeDefinition;
+  readonly workspace?: ConversationWorkspaceBinding;
 }) {
   const runtime = useWorkbenchConversationRuntime();
   const snapshot = useWorkbenchConversationSnapshot(runtime);
 
   return (
-    <ActiveConversationPanel
+    <ConversationSession
       projectId={projectId}
       historyStore={historyStore}
-      runtime={runtime}
       open={snapshot.panelOpen}
       launchRequest={snapshot.launchRequest}
       onLaunchConsumed={(requestId) =>
         runtime.consumeLaunchRequest(requestId)
       }
-      onClose={() => {
-        if (onClose) onClose();
-        else runtime.close();
+      mode={mode}
+      workspace={workspace}
+      onPersistenceError={(error) => {
+        console.error('[conversation] persistence failed', error);
       }}
-      onSelectAsset={onSelectAsset}
-      onOpenSettings={onOpenSettings}
-      onError={onError}
-    />
-  );
-}
-
-function ActiveConversationPanel({
-  projectId,
-  historyStore,
-  runtime,
-  open,
-  launchRequest,
-  onLaunchConsumed,
-  onClose,
-  onSelectAsset,
-  onOpenSettings,
-  onError,
-}: {
-  readonly projectId: string;
-  readonly historyStore: ConversationHistoryStore;
-  readonly runtime: WorkbenchConversationRuntime;
-  readonly open: boolean;
-  readonly launchRequest: ConversationLaunchRequest | undefined;
-  readonly onLaunchConsumed: (requestId: number) => void;
-  readonly onClose: () => void;
-  readonly onSelectAsset: (assetId: string) => Promise<void> | void;
-  readonly onOpenSettings?: () => void;
-  readonly onError?: (message: string) => void;
-}) {
-  const controller = useConversationController({
-    open,
-    projectId,
-    historyStore,
-    launchRequest,
-    onLaunchConsumed,
-    onPersistenceError(error) {
-      console.error('[conversation] persistence failed', error);
-    },
-  });
-
-  useEffect(() => {
-    runtime.setBusy(controller.state.busy);
-    return () => runtime.setBusy(false);
-  }, [controller.state.busy, runtime]);
-
-  if (!open) return null;
-
-  return (
-    <ConversationPanel
-      state={controller.state}
-      actions={controller.actions}
-      projectId={projectId}
-      resolveContextContribution={(source) =>
-        runtime.resolveContribution(source)
-      }
-      onRevealContext={(source, context) =>
-        runtime.revealContext(source, context, onSelectAsset)
-      }
-      onStartNew={() =>
-        runtime.open({ fallbackToNewConversation: true })
-      }
-      onClose={() => {
-        controller.actions.setPendingContext(undefined);
-        onClose();
-      }}
-      onOpenSettings={onOpenSettings}
-      onError={onError}
-    />
+      onBusyChange={(busy) => runtime.setBusy(busy)}
+    >
+      {(controller) => (
+        <ConversationPanel
+          state={controller.state}
+          actions={controller.actions}
+          projectId={projectId}
+          resolveContextContribution={(source) =>
+            runtime.resolveContribution(source)
+          }
+          onRevealContext={(source, context) =>
+            runtime.revealContext(source, context, onSelectAsset)
+          }
+          onStartNew={() =>
+            runtime.open({ fallbackToNewConversation: true })
+          }
+          onClose={() => {
+            controller.actions.setPendingContext(undefined);
+            if (onClose) onClose();
+            else runtime.close();
+          }}
+          onOpenSettings={onOpenSettings}
+          onError={onError}
+          presentation={mode.presentation}
+        />
+      )}
+    </ConversationSession>
   );
 }

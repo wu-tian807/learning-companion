@@ -15,6 +15,11 @@ import {
   WORKBENCH_CONVERSATION_INSTRUCTION_VERSION,
 } from '../../shared/workbench-conversation';
 import { isJsonValue, type JsonValue } from '../../shared/workbench/protocol';
+import {
+  cloneConversationWorkspaceBinding,
+  isConversationWorkspaceBinding,
+  type ConversationWorkspaceBinding,
+} from '../../shared/project-conversations';
 
 const ID_PATTERN = /^[A-Za-z0-9._-]{1,160}$/u;
 const CONTEXT_PROVIDER_ID_PATTERN =
@@ -28,6 +33,7 @@ export type WorkbenchConversationInstructionSnapshot = JsonValue & {
   readonly contextProviderId: string;
   readonly assetId?: string;
   readonly conversationId: string;
+  readonly workspace?: ConversationWorkspaceBinding;
   readonly question: string;
   readonly context?: JsonValue;
   readonly commitAnswer?: boolean;
@@ -51,6 +57,7 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
   readonly contextProviderId: string;
   readonly assetId?: string;
   readonly conversationId: string;
+  readonly workspace?: ConversationWorkspaceBinding;
   readonly question: string;
   readonly context?: JsonValue;
   readonly commitAnswer: boolean;
@@ -60,6 +67,7 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
     readonly contextProviderId: string;
     readonly assetId?: string;
     readonly conversationId: string;
+    readonly workspace?: ConversationWorkspaceBinding;
     readonly question: string;
     readonly context?: JsonValue;
     readonly commitAnswer?: boolean;
@@ -85,6 +93,9 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
     this.contextProviderId = contextProviderId;
     this.assetId = assetId;
     this.conversationId = conversationId;
+    this.workspace = input.workspace
+      ? cloneConversationWorkspaceBinding(input.workspace)
+      : undefined;
     this.question = question;
     this.context = input.context;
     this.commitAnswer = input.commitAnswer === true;
@@ -98,6 +109,7 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
       contextProviderId: this.contextProviderId,
       ...(this.assetId ? { assetId: this.assetId } : {}),
       conversationId: this.conversationId,
+      ...(this.workspace ? { workspace: this.workspace } : {}),
       question: this.question,
       ...(this.context === undefined ? {} : { context: this.context }),
       ...(this.commitAnswer ? { commitAnswer: true } : {}),
@@ -120,6 +132,8 @@ export const workbenchConversationInstructionFactory: GenerationInstructionFacto
         typeof input.contextProviderId !== 'string' ||
         (input.assetId !== undefined && typeof input.assetId !== 'string') ||
         typeof input.conversationId !== 'string' ||
+        (input.workspace !== undefined &&
+          !isConversationWorkspaceBinding(input.workspace)) ||
         typeof input.question !== 'string' ||
         !isBoundedContext(input.context) ||
         (input.commitAnswer !== undefined &&
@@ -141,6 +155,9 @@ export const workbenchConversationInstructionFactory: GenerationInstructionFacto
             contextProviderId: input.contextProviderId,
             ...(input.assetId === undefined ? {} : { assetId: input.assetId }),
             conversationId: input.conversationId,
+            ...(input.workspace === undefined
+              ? {}
+              : { workspace: input.workspace }),
             question: input.question,
             ...(input.context === undefined ? {} : { context: input.context }),
             ...(input.commitAnswer === true ? { commitAnswer: true } : {}),

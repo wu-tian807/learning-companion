@@ -100,6 +100,7 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       conversation: {
         id: 'conversation',
+        modeId: 'project.general',
         title: '问题',
         messages: [question, answer],
         createdTime: 1,
@@ -158,6 +159,7 @@ describe('Document conversation contribution', () => {
       assetId: 'asset',
       conversation: {
         id: 'conversation',
+        modeId: 'project.general',
         title: '问题',
         messages: [question, answer],
         createdTime: 1,

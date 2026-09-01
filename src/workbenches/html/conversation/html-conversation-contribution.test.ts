@@ -15,6 +15,7 @@ import {
 function record(): ConversationRecord {
   return {
     id: 'conversation-1',
+    modeId: 'project.general',
     title: 'HTML 问题',
     messages: [
       {

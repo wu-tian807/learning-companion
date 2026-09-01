@@ -17,6 +17,7 @@ import type {
   ConversationControllerActions,
   ConversationControllerState,
 } from './conversation-controller';
+import type { ConversationModePresentation } from './conversation-mode';
 import { ConversationMarkdown } from './conversation-markdown';
 import { describeConversationContext } from './conversation-reference';
 import { normalizeConversationSelection } from './conversation-text';
@@ -25,6 +26,13 @@ import {
   PROJECT_CONVERSATION_INPUT_PLACEHOLDER,
   PROJECT_CONVERSATION_TITLE,
 } from './project-conversation-presentation';
+
+const DEFAULT_PRESENTATION: ConversationModePresentation = Object.freeze({
+  title: PROJECT_CONVERSATION_TITLE,
+  ariaLabel: PROJECT_CONVERSATION_TITLE,
+  emptyLabel: PROJECT_CONVERSATION_EMPTY_LABEL,
+  inputPlaceholder: PROJECT_CONVERSATION_INPUT_PLACEHOLDER,
+});
 
 function needsProviderSettings(code: string | undefined, message: string): boolean {
   return (
@@ -322,6 +330,7 @@ export function ConversationPanel({
   onClose,
   onOpenSettings,
   onError,
+  presentation = DEFAULT_PRESENTATION,
 }: {
   readonly state: ConversationControllerState;
   readonly actions: ConversationControllerActions;
@@ -337,6 +346,7 @@ export function ConversationPanel({
   readonly onClose: () => void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
+  readonly presentation?: ConversationModePresentation;
 }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -427,7 +437,7 @@ export function ConversationPanel({
     <section
       id="project-conversation-panel"
       role="dialog"
-      aria-label="AI 问答"
+      aria-label={presentation.ariaLabel}
       className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
     >
       <header className="shrink-0 border-b border-white/[0.075] px-4 pb-2 pt-3">
@@ -435,7 +445,7 @@ export function ConversationPanel({
           <span className="size-2.5 rounded-[4px] bg-gradient-to-br from-indigo-400 to-fuchsia-400 shadow-[0_0_10px_rgba(129,140,248,0.7)]" />
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold text-slate-100">
-              {PROJECT_CONVERSATION_TITLE}
+              {presentation.title}
             </h3>
             <p className="truncate text-[10px] text-slate-500">{state.conversation.title}</p>
           </div>
@@ -450,8 +460,8 @@ export function ConversationPanel({
           </button>
           <button
             type="button"
-            aria-label="关闭 AI 问答"
-            title={state.busy ? '关闭面板；当前任务会在后台继续' : '关闭 AI 问答'}
+            aria-label={`关闭${presentation.ariaLabel}`}
+            title={state.busy ? '关闭面板；当前任务会在后台继续' : `关闭${presentation.ariaLabel}`}
             onClick={onClose}
             className="grid size-7 place-items-center rounded-lg text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"
           >
@@ -490,7 +500,7 @@ export function ConversationPanel({
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4" role="log" aria-label="对话消息">
             {messages.length === 0 && !state.busy && (
               <div className="grid h-full min-h-40 place-items-center px-5 text-center text-[13px] leading-6 text-slate-600">
-                {PROJECT_CONVERSATION_EMPTY_LABEL}
+                {presentation.emptyLabel}
               </div>
             )}
             {messages.map((message) => {
@@ -627,7 +637,7 @@ export function ConversationPanel({
                 rows={1}
                 value={state.draft}
                 disabled={state.busy}
-                placeholder={PROJECT_CONVERSATION_INPUT_PLACEHOLDER}
+                placeholder={presentation.inputPlaceholder}
                 onChange={(event) => actions.setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {

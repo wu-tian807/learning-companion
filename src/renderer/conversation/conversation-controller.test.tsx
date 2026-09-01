@@ -12,6 +12,7 @@ import type {
   ConversationHistoryStore,
   ConversationLaunchRequest,
   ConversationRecord,
+  ConversationTaskInput,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
 import {
@@ -20,6 +21,7 @@ import {
   type ConversationControllerState,
 } from './conversation-controller';
 import type { ConversationTaskClient } from './conversation-task-client';
+import type { ConversationModeDefinition } from './conversation-mode';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -217,6 +219,143 @@ describe('shared Conversation controller', () => {
       (requests[1]?.instruction as { conversationId?: string })
         .conversationId,
     );
+  });
+
+  it('reuses the controller with a mode-specific Task adapter and workspace', async () => {
+    const createRequest = vi.fn((input: ConversationTaskInput) => ({
+      projectId: input.projectId,
+      definitionId: 'learning-outline.planning',
+      definitionVersion: 1,
+      instruction: {
+        conversationId: input.conversationId,
+        question: input.question,
+        ...(input.workspace ? { workspace: input.workspace } : {}),
+      },
+      assetReferences: {},
+    }));
+    const mode: ConversationModeDefinition = {
+      id: 'learning-outline.planning',
+      task: {
+        createRequest,
+        readCompletion(completed) {
+          const result = completed.result;
+          const reply =
+            typeof result === 'object' &&
+            result !== null &&
+            !Array.isArray(result)
+              ? (result as Readonly<Record<string, unknown>>).reply
+              : undefined;
+          if (
+            typeof reply !== 'string'
+          ) {
+            return undefined;
+          }
+          return { answer: reply, modelInfo: 'test/planner' };
+        },
+      },
+      presentation: {
+        title: '学习大纲规划',
+        ariaLabel: '学习大纲规划',
+        emptyLabel: '先确认学习目标',
+        inputPlaceholder: '补充你的学习要求…',
+      },
+    };
+    const historyStore = createMemoryHistory([
+      {
+        id: 'general-history',
+        modeId: 'project.general',
+        title: '普通聊天',
+        messages: [],
+        createdTime: 1,
+        updatedTime: 1,
+      },
+      {
+        id: 'outline-history',
+        modeId: mode.id,
+        workspace: { instanceKey: 'outline-draft-old' },
+        title: '大纲聊天',
+        messages: [],
+        createdTime: 2,
+        updatedTime: 2,
+      },
+    ]);
+
+    render({
+      historyStore,
+      mode,
+      workspace: { instanceKey: 'outline-draft-1' },
+    });
+    await flush();
+
+    expect(latest.state.conversation).toMatchObject({
+      modeId: mode.id,
+      workspace: { instanceKey: 'outline-draft-1' },
+    });
+    expect(latest.state.history.map(({ id }) => id)).toEqual([
+      'outline-history',
+    ]);
+
+    act(() => latest.actions.submit('我希望系统学习'));
+    await flush();
+    expect(createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspace: { instanceKey: 'outline-draft-1' },
+        question: '我希望系统学习',
+      }),
+    );
+
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        reply: '先确认你的已有基础。',
+      }),
+    });
+    expect(latest.state.conversation.messages.at(-1)?.text).toBe(
+      '先确认你的已有基础。',
+    );
+  });
+
+  it('keeps an existing workspace binding and applies a changed default only to a new conversation', async () => {
+    const requests: Array<Parameters<ConversationTaskClient['start']>[0]> = [];
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      return { taskId: 'task-1', snapshot: task('task-1') };
+    });
+    const historyStore = createMemoryHistory();
+    render({
+      historyStore,
+      workspace: { instanceKey: 'workspace-1' },
+    });
+    const firstConversationId = latest.state.conversation.id;
+
+    render({
+      historyStore,
+      workspace: { instanceKey: 'workspace-2' },
+    });
+    expect(latest.state.conversation).toMatchObject({
+      id: firstConversationId,
+      workspace: { instanceKey: 'workspace-1' },
+    });
+
+    act(() => latest.actions.submit('仍然使用原工作区'));
+    await flush();
+    expect(requests[0]?.instruction).toMatchObject({
+      workspace: { instanceKey: 'workspace-1' },
+    });
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '完成',
+        providerId: 'test',
+        modelId: 'test',
+      }),
+    });
+
+    act(() => latest.actions.startNew());
+    expect(latest.state.conversation).toMatchObject({
+      workspace: { instanceKey: 'workspace-2' },
+    });
+    expect(latest.state.conversation.id).not.toBe(firstConversationId);
   });
 
   it('uses Workbench context for only the attached turn and sends the next message through Project Conversation', async () => {
@@ -568,6 +707,7 @@ describe('shared Conversation controller', () => {
   it('does not guess a Workbench source for unattributed context during re-answer', () => {
     const saved: ConversationRecord = {
       id: 'legacy-context',
+      modeId: 'project.general',
       title: '旧上下文',
       messages: [
         {
@@ -777,6 +917,7 @@ describe('shared Conversation controller', () => {
     };
     const saved: ConversationRecord = {
       id: 'saved-conversation',
+      modeId: 'project.general',
       title: '历史对话',
       messages: [
         { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },
@@ -976,6 +1117,7 @@ describe('shared Conversation controller', () => {
   it('deletes the current saved conversation without saving it again', async () => {
     const saved: ConversationRecord = {
       id: 'saved-conversation',
+      modeId: 'project.general',
       title: '待删除对话',
       messages: [
         { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },
@@ -1048,6 +1190,7 @@ describe('shared Conversation controller', () => {
   it('restores an optimistically removed history item when deletion fails and allows retry', async () => {
     const saved: ConversationRecord = {
       id: 'saved-conversation',
+      modeId: 'project.general',
       title: '可重试删除',
       messages: [
         { id: 'q', role: 'user', text: '旧问题', createdTime: 1 },

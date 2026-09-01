@@ -40,6 +40,7 @@ function findHandler(channel: string) {
 function record(): ConversationRecord {
   return {
     id: 'conversation-1',
+    modeId: 'project.general',
     title: '测试对话',
     messages: [
       { id: 'question-1', role: 'user', text: '问题', createdTime: 1 },

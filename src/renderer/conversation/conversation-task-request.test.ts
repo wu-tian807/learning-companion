@@ -25,6 +25,22 @@ describe('Conversation task request ownership', () => {
     expect(request.assetReferences).toEqual({});
   });
 
+  it('forwards an explicit immutable workspace binding without changing sources', () => {
+    const request = createConversationTaskRequest({
+      projectId: 'project-1',
+      conversationId: 'conversation-1',
+      workspace: { instanceKey: 'outline-draft-1' },
+      question: '继续确认学习目标',
+      generateTitle: false,
+    });
+
+    expect(request.instruction).toMatchObject({
+      conversationId: 'conversation-1',
+      workspace: { instanceKey: 'outline-draft-1' },
+    });
+    expect(request.assetReferences).toEqual({});
+  });
+
   it('uses Workbench semantics only when that turn has an explicit context source', () => {
     const request = createContextualConversationTaskRequest(
       {

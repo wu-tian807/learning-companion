@@ -8,6 +8,11 @@ import {
   userMessageFromError,
 } from '../../shared/ipc-error';
 import type { JsonValue } from '../../shared/workbench/protocol';
+import {
+  cloneConversationRecord,
+  PROJECT_CONVERSATION_MODE_ID,
+  type ConversationWorkspaceBinding,
+} from '../../shared/project-conversations';
 import type { ConversationRecord } from './conversation-contracts';
 
 export interface ConversationErrorState {
@@ -24,9 +29,15 @@ export function defaultCreateConversationId(): string {
 export function createConversationRecord(
   id: string,
   now: number,
+  options: Readonly<{
+    modeId?: string;
+    workspace?: ConversationWorkspaceBinding;
+  }> = {},
 ): ConversationRecord {
-  return Object.freeze({
+  return cloneConversationRecord({
     id: `conv-${id}`.slice(0, 128),
+    modeId: options.modeId ?? PROJECT_CONVERSATION_MODE_ID,
+    ...(options.workspace ? { workspace: options.workspace } : {}),
     title: '新对话',
     messages: Object.freeze([]),
     createdTime: now,
