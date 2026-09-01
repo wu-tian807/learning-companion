@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
+  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
   registerWorkbenchAnchorController,
   resetWorkbenchAnchorControllerForTests,
 } from '../../../renderer/workbench/host/workbench-anchor-bridge';
@@ -26,11 +27,14 @@ const attachment: AssetAttachment = {
   updatedTime: 1,
 };
 
+let resolvedRect = { left: 100, top: 120, width: 60, height: 30 };
+
 describe('AttachmentHost', () => {
   let containers: HTMLDivElement[];
 
   beforeEach(() => {
     containers = [];
+    resolvedRect = { left: 100, top: 120, width: 60, height: 30 };
     (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
       observe() {}
       unobserve() {}
@@ -43,7 +47,7 @@ describe('AttachmentHost', () => {
       })),
     };
     registerWorkbenchAnchorController('test', 'asset', {
-      resolve: () => ({ left: 100, top: 120, width: 60, height: 30 }),
+      resolve: () => resolvedRect,
       reveal: () => true,
     });
   });
@@ -75,7 +79,7 @@ describe('AttachmentHost', () => {
     expect(ATTACHMENT_MARKER_MOTION_CLASS).not.toContain('transition-all');
   });
 
-  it('renders the boxed AI reply card at the original anchor position', async () => {
+  it('keeps the AI reply card collapsed until the user opens the marker', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -95,10 +99,48 @@ describe('AttachmentHost', () => {
     });
 
     const html = container.innerHTML;
-    expect(html).toContain('AI 回复');
-    expect(html).toContain('AI 回复内容');
+    expect(html).not.toContain('AI 回复内容');
     expect(html).toContain('border-indigo-400/45');
 
+    const marker = container.querySelector<HTMLButtonElement>(
+      'button[title="解释这里"]',
+    );
+    expect(marker).not.toBeNull();
+    await act(async () => marker!.click());
+    expect(container.innerHTML).toContain('AI 回复内容');
+
+    act(() => root.unmount());
+  });
+
+  it('updates marker geometry synchronously when the page layout moves', async () => {
+    const container = document.createElement('div');
+    containers.push(container);
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <AttachmentHost
+          attachments={[attachment]}
+          assetId="asset"
+          projectId="project"
+          sidebarOpen={false}
+          onSidebarOpenChange={() => undefined}
+        />,
+      );
+      await Promise.resolve();
+    });
+    const marker = container.querySelector<HTMLButtonElement>(
+      'button[title="解释这里"]',
+    )!;
+
+    resolvedRect = { left: 42, top: 64, width: 80, height: 44 };
+    window.dispatchEvent(
+      new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
+    );
+
+    expect(marker.style.transform).toBe('translate3d(42px, 64px, 0)');
+    expect(marker.style.width).toBe('80px');
+    expect(marker.style.height).toBe('44px');
     act(() => root.unmount());
   });
 });

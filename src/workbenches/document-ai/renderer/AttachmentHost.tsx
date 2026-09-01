@@ -63,6 +63,16 @@ function sameAnchorRects(
   return true;
 }
 
+function applyAnchorRect(
+  element: HTMLElement,
+  rect: WorkbenchAnchorRect,
+): void {
+  element.style.transform =
+    `translate3d(${rect.left}px, ${rect.top}px, 0)`;
+  element.style.width = `${Math.max(rect.width, 18)}px`;
+  element.style.height = `${Math.max(rect.height, 18)}px`;
+}
+
 function extractPosition(target: AssetTarget): AnchorPosition | undefined {
   if (target.scope !== 'content') {
     return undefined;
@@ -332,6 +342,7 @@ export function AttachmentHost({
   onSidebarOpenChange,
 }: AttachmentHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const markerRefs = useRef(new Map<string, HTMLButtonElement>());
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const [activeBody, setActiveBody] = useState<JsonValue>();
   const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(
@@ -346,7 +357,10 @@ export function AttachmentHost({
   );
   const [collapsedAttachmentIds, setCollapsedAttachmentIds] = useState<
     ReadonlySet<string>
-  >(new Set());
+  >(() => new Set(attachments.map((attachment) => attachment.id)));
+  const knownAttachmentIdsRef = useRef(
+    new Set(attachments.map((attachment) => attachment.id)),
+  );
   const [hostSize, setHostSize] = useState<{
     readonly width: number;
     readonly height: number;
@@ -363,11 +377,14 @@ export function AttachmentHost({
       for (const attachment of attachments) {
         const rect = resolveWorkbenchAnchor(assetId, attachment.target);
         if (rect) {
-          next.set(attachment.id, {
+          const localRect = {
             ...rect,
             left: rect.left - hostRect.left,
             top: rect.top - hostRect.top,
-          });
+          };
+          next.set(attachment.id, localRect);
+          const marker = markerRefs.current.get(attachment.id);
+          if (marker) applyAnchorRect(marker, localRect);
         }
       }
       setAnchorRects((current) =>
@@ -387,6 +404,19 @@ export function AttachmentHost({
       resizeObserver.disconnect();
     };
   }, [assetId, attachments]);
+
+  useEffect(() => {
+    const newIds = attachments
+      .map((attachment) => attachment.id)
+      .filter((id) => !knownAttachmentIdsRef.current.has(id));
+    if (newIds.length === 0) return;
+    for (const id of newIds) knownAttachmentIdsRef.current.add(id);
+    setCollapsedAttachmentIds((current) => {
+      const next = new Set(current);
+      for (const id of newIds) next.add(id);
+      return next;
+    });
+  }, [attachments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -527,15 +557,22 @@ export function AttachmentHost({
         return (
           <div key={att.id} className="contents">
             <button
+              ref={(node) => {
+                if (node) {
+                  markerRefs.current.set(att.id, node);
+                  applyAnchorRect(node, anchorRect);
+                } else {
+                  markerRefs.current.delete(att.id);
+                }
+              }}
               type="button"
-              className={`pointer-events-auto absolute cursor-pointer border ${ATTACHMENT_MARKER_MOTION_CLASS} ${
+              className={`pointer-events-auto absolute left-0 top-0 cursor-pointer border will-change-transform ${ATTACHMENT_MARKER_MOTION_CLASS} ${
                 isActive
                   ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
                   : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'
               }`}
               style={{
-                left,
-                top,
+                transform: `translate3d(${left}px, ${top}px, 0)`,
                 width: Math.max(width, 18),
                 height: Math.max(height, 18),
               }}
