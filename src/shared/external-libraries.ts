@@ -21,6 +21,8 @@ export interface ExternalLibraryVariantSnapshot {
   readonly id: string;
   readonly displayName: string;
   readonly expectedSize: number;
+  readonly estimatedInstalledSize?: number;
+  readonly recommendedFreeSpace?: number;
 }
 
 export interface ExternalLibrarySnapshot {
@@ -30,6 +32,8 @@ export interface ExternalLibrarySnapshot {
   readonly category: 'document' | 'media';
   readonly version: string;
   readonly expectedSize?: number;
+  readonly estimatedInstalledSize?: number;
+  readonly recommendedFreeSpace?: number;
   readonly variants?: readonly ExternalLibraryVariantSnapshot[];
   readonly defaultVariantId?: string;
   readonly installedVariantId?: string;
@@ -112,7 +116,7 @@ export function isExternalLibrarySnapshot(
   } else {
     if (
       !Array.isArray(value.variants) ||
-      value.variants.length < 2 ||
+      value.variants.length < 1 ||
       !value.variants.every(
         (variant) =>
           isRecord(variant) &&
@@ -120,7 +124,15 @@ export function isExternalLibrarySnapshot(
           isRequiredText(variant.displayName) &&
           typeof variant.expectedSize === 'number' &&
           Number.isSafeInteger(variant.expectedSize) &&
-          variant.expectedSize > 0,
+          variant.expectedSize > 0 &&
+          ((variant.estimatedInstalledSize === undefined &&
+            variant.recommendedFreeSpace === undefined) ||
+            (typeof variant.estimatedInstalledSize === 'number' &&
+              Number.isSafeInteger(variant.estimatedInstalledSize) &&
+              variant.estimatedInstalledSize > 0 &&
+              typeof variant.recommendedFreeSpace === 'number' &&
+              Number.isSafeInteger(variant.recommendedFreeSpace) &&
+              variant.recommendedFreeSpace >= variant.estimatedInstalledSize)),
       ) ||
       !isRequiredText(value.defaultVariantId)
     ) {
@@ -152,6 +164,20 @@ export function isExternalLibrarySnapshot(
       : typeof value.expectedSize !== 'number' ||
         !Number.isSafeInteger(value.expectedSize) ||
         value.expectedSize <= 0
+  ) {
+    return false;
+  }
+
+  if (
+    (value.estimatedInstalledSize === undefined) !==
+      (value.recommendedFreeSpace === undefined) ||
+    (value.estimatedInstalledSize !== undefined &&
+      (typeof value.estimatedInstalledSize !== 'number' ||
+        !Number.isSafeInteger(value.estimatedInstalledSize) ||
+        value.estimatedInstalledSize <= 0 ||
+        typeof value.recommendedFreeSpace !== 'number' ||
+        !Number.isSafeInteger(value.recommendedFreeSpace) ||
+        value.recommendedFreeSpace < value.estimatedInstalledSize))
   ) {
     return false;
   }
@@ -206,6 +232,12 @@ export function cloneExternalLibrarySnapshot(
     ...(value.expectedSize === undefined
       ? {}
       : { expectedSize: value.expectedSize }),
+    ...(value.estimatedInstalledSize === undefined
+      ? {}
+      : {
+          estimatedInstalledSize: value.estimatedInstalledSize,
+          recommendedFreeSpace: value.recommendedFreeSpace,
+        }),
     ...(value.variants === undefined
       ? {}
       : {
@@ -215,6 +247,12 @@ export function cloneExternalLibrarySnapshot(
                 id: variant.id.trim(),
                 displayName: variant.displayName.trim(),
                 expectedSize: variant.expectedSize,
+                ...(variant.estimatedInstalledSize === undefined
+                  ? {}
+                  : {
+                      estimatedInstalledSize: variant.estimatedInstalledSize,
+                      recommendedFreeSpace: variant.recommendedFreeSpace,
+                    }),
               }),
             ),
           ),

@@ -135,6 +135,9 @@ function setup(
       vadExecutablePath: 'unused',
       modelPath: 'unused',
       vadModelPath: 'unused',
+      speakerDiarizationExecutablePath: 'unused',
+      speakerSegmentationModelPath: 'unused',
+      speakerEmbeddingModelPath: 'unused',
     },
   };
   const requireMediaDecoder = vi.fn(async () => runtimeValue.decoder);

@@ -7,6 +7,7 @@ interface GpuDeviceLike {
 
 export interface ExternalLibraryHardwareCapabilities {
   readonly nvidiaGpuAvailable: boolean;
+  readonly appleSiliconAvailable: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,13 +52,21 @@ export function hasNvidiaGpu(gpuInfo: unknown): boolean {
 export async function detectExternalLibraryHardwareCapabilities(
   getGpuInfo: () => Promise<unknown>,
   logger: Pick<Console, 'warn'> = console,
+  platform = process.platform,
+  architecture = process.arch,
 ): Promise<ExternalLibraryHardwareCapabilities> {
+  const appleSiliconAvailable =
+    platform === 'darwin' && architecture === 'arm64';
   try {
     return Object.freeze({
       nvidiaGpuAvailable: hasNvidiaGpu(await getGpuInfo()),
+      appleSiliconAvailable,
     });
   } catch (error) {
     logger.warn('无法读取 GPU 信息，外部组件将使用兼容配置', error);
-    return Object.freeze({ nvidiaGpuAvailable: false });
+    return Object.freeze({
+      nvidiaGpuAvailable: false,
+      appleSiliconAvailable,
+    });
   }
 }

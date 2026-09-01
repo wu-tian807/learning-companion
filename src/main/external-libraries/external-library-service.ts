@@ -843,6 +843,14 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
                       externalLibraryPackageExpectedSize(
                         packageDefinition,
                       ),
+                    ...(packageDefinition.estimatedInstalledSize === undefined
+                      ? {}
+                      : {
+                          estimatedInstalledSize:
+                            packageDefinition.estimatedInstalledSize,
+                          recommendedFreeSpace:
+                            packageDefinition.recommendedFreeSpace,
+                        }),
                   }),
                 ]
               : [];
@@ -858,6 +866,14 @@ export class ExternalLibraryService implements ExternalLibraryServiceApi {
         ? {
             expectedSize:
               externalLibraryPackageExpectedSize(selectedPackage),
+            ...(selectedPackage.estimatedInstalledSize === undefined
+              ? {}
+              : {
+                  estimatedInstalledSize:
+                    selectedPackage.estimatedInstalledSize,
+                  recommendedFreeSpace:
+                    selectedPackage.recommendedFreeSpace,
+                }),
           }
         : {}),
       ...(variants === undefined

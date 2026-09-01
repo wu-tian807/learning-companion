@@ -3,8 +3,8 @@ import type { RefObject } from 'react';
 import type { ExternalLibrarySnapshot } from '../../shared/external-libraries';
 import {
   externalLibraryProgressPercent,
+  externalLibraryStorageSummary,
   externalLibraryStatusLabels,
-  formatExternalLibrarySize,
   isExternalLibraryActive,
 } from './external-library-view';
 import type { PendingExternalLibraryInstall } from './use-external-library-management';
@@ -107,11 +107,7 @@ export function ExternalLibrariesSection({
                     {library.description}
                   </p>
                   <p className="mt-1 text-[11px] text-slate-600">
-                    {library.expectedSize === undefined
-                      ? '当前平台没有可下载的安装包'
-                      : `固定组件资源约 ${formatExternalLibrarySize(
-                          library.expectedSize,
-                        )}`}
+                    {externalLibraryStorageSummary(library)}
                   </p>
                 </div>
 

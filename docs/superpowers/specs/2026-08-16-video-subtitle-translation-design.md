@@ -186,40 +186,25 @@ flowchart LR
     SERVICE --> CACHE["AssetArtifactService.getOrCreate"]
     CACHE --> NORMALIZE["FFmpeg: 16 kHz mono WAV"]
     NORMALIZE --> ASR["当前安装档位的 ASR"]
-    ASR --> ALIGN["模型 Token / VAD 时间"]
-    ALIGN --> SEGMENT["稳定 Cue 分段"]
+    ASR --> SPEAKER["联合或后处理 speaker 识别"]
+    SPEAKER --> SEGMENT["speaker-aware Cue 分段"]
     SEGMENT --> ARTIFACT["原字幕 Artifact 原子提交"]
 ```
 
 运行时选择由已安装字幕组件决定：
 
-- NVIDIA 档：Whisper `large-v3-turbo-q5_0` + Silero VAD；
-- CPU 档：SenseVoice Small Q8 + FSMN-VAD；
-- 两者都复用配套 FFmpeg 将输入音轨规范化。
+- Windows NVIDIA 档：MOSS Transcribe Diarize Q5 + transcribe.cpp CUDA；
+- macOS Apple Silicon 档：同一 MOSS Q5 + transcribe.cpp Metal；
+- Windows CPU 档：SenseVoice Small Q8 + FSMN-VAD，随后由 sherpa-onnx FastClustering 标注 speaker；
+- 三者只下载当前设备对应的资源，并复用各自配套 FFmpeg 将输入音轨规范化。
 
-Whisper 使用完整 JSON 中的 DTW Token 对齐点生成字幕 Cue。GPU 转写关闭 Flash
-Attention 并启用 `large.v3.turbo` DTW；同时不启用 Whisper 内置 VAD，因为该版本会
-压缩静音，却仍把 JSON Token `offsets` 留在压缩后的时间轴上，造成字幕随停顿累计
-提前。分段器只使用原音频轴上的 `t_dtw` 对齐点，不按字符比例推算时间：
-
-- 优先选择句末、分句标点和超过 `700 ms` 的语音停顿；
-- 其次选择完整中文词或英文单词边界；
-- 理想时长为 `2–4.5 s`，可靠 Token 时间存在时不超过 `6 s`；
-- 中文理想不超过 `22` 字、硬上限 `30` 字，英文理想不超过 `56` 字符、
-  硬上限 `72` 字符；
-- 相邻间隔超过 `700 ms` 时不得合并；
-- 保留全部原始 Token `sourceCueIds`，且最终 Cue 文本拼接后必须等于原转写文本。
-- DTW 点只表示 Token 输出时刻；显示时仅增加固定的 `250 ms` 前置和 `200 ms`
-  后置窗口，相邻窗口重叠时在两个真实对齐点之间收口，不填满真实静音。
-
-因此类似 `GPT / 大语言 / 模型` 的连续碎片会合成可读 Cue，单个十九秒长 Segment
-也会沿真实 Token 时间拆成字幕。DTW 点缺失、倒序或无法形成合法边界时，回退到
-未压缩原音频上的普通 Token `offsets`；Token 数据整体不可用时再回退为基于原始
-Segment 的保守聚合，宁可保留较长字幕，也不伪造时间。
+MOSS 的说话人时间戳与文本由同一次推理生成，因此同一时段可以保存不同 speaker 的
+多份 Cue。为限制长视频显存增长，正式 worker 以 180 秒窗口、20 秒交叠运行；交叠区
+用于 Cue 去重与跨窗 speaker ID 续接。Cue 按开始时间稳定排序，但不强制互相排斥。
 
 当前便携版 SenseVoice C++ Runtime 只暴露识别文本和 FSMN-VAD 段级时间。因此 CPU
-档只保存真实 VAD Cue，不再把 VAD 区间按字符数拆分。后续 Runtime 暴露 CTC Token
-对齐后，直接复用同一分段器，不建立第二套字幕算法。
+档只保存真实 VAD Cue，不再把 VAD 区间按字符数拆分。随后 sherpa-onnx 把每个 Cue
+归到时间重叠最大的 speaker；它不能生成第二份重叠文本，Artifact 会明确记录这一能力差异。
 
 ## 5. 翻译流程
 
@@ -351,7 +336,7 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 - 外挂字幕、内嵌字幕优先级选择；
 - 自动翻译；
 - Bergamot / Hy-MT 本地翻译档切换；
-- OCR、说话人分离或摘要；
+- OCR、真实音轨分离或摘要；
 - 字幕全文编辑器或 Audio 波形对齐编辑。
 
 这些功能只有在真实需求出现后沿现有 Artifact/Workbench 扩展点增加，不能以“以后也许
@@ -363,10 +348,10 @@ Video 不互相依赖，也不建立包含大量可选分支的通用 Media Work
 
 - 导入可用视频或音频会触发原字幕 Artifact；
 - 相同媒体修订和 Producer 版本命中现有缓存；
-- Whisper 长 Segment 按原音频轴上的 DTW Token 对齐点生成 Cue，可靠时间存在时
-  单 Cue 不超过 `6 s`；
-- Cue 文本完整守恒、时间单调且不重叠，不按字符比例推算时间；
+- MOSS 输出保留 speaker 与重叠 Cue；长媒体分窗后不重复交叠区 Cue；
+- Cue 按开始时间稳定排序；联合转写路径允许不同 speaker 的时间窗口重叠；
 - SenseVoice 未提供 CTC Token 时间时保持真实 VAD 区间；
+- 两条路径都写入有效 `speakerAnalysis`，所有 Cue 都有已知 speaker；
 - 用户只选原文时不启动翻译；
 - 用户选译文或双语时创建译文 Artifact；
 - 非中英文源轨不启动翻译；

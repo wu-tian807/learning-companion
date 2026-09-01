@@ -32,7 +32,6 @@ import {
   DUBBING_SPEAKER_PLANNER_VERSION,
   createDubbingSpeakerRoutingPlan,
   parseDubbingSpeakerRoutingPlan,
-  parseDubbingSpeakerSegments,
   type DubbingSpeakerRoutingPlan,
 } from './dubbing-speaker-planner';
 import {
@@ -51,14 +50,11 @@ import {
   removeMediaDubbingCheckpoint,
   type MediaDubbingCheckpointIdentity,
 } from './media-dubbing-checkpoint-file';
-import {
-  SOURCE_SEPARATION_WORKER_SOURCE,
-  SPEAKER_DIARIZATION_WORKER_SOURCE,
-} from './voxcpm2-worker-sources';
+import { SOURCE_SEPARATION_WORKER_SOURCE } from './voxcpm2-worker-sources';
 
 // Persisted producer ids are part of existing artifact cache keys.
 export const VOXCPM2_DUBBING_PRODUCER_ID = 'builtin.video.dubbing.voxcpm2';
-export const VOXCPM2_DUBBING_PRODUCER_VERSION = '4';
+export const VOXCPM2_DUBBING_PRODUCER_VERSION = '5';
 export const VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE = 'audio/mp4';
 
 const PROCESS_TIMEOUT_MS = 4 * 60 * 60 * 1_000;
@@ -375,30 +371,11 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         }
       } else {
         const separationWorker = join(request.stagingDirectory, 'separate.py');
-        const diarizationWorker = join(
-          request.stagingDirectory,
-          'diarize-speakers.py',
+        await this.dependencies.writeText(
+          separationWorker,
+          SOURCE_SEPARATION_WORKER_SOURCE,
+          'utf8',
         );
-        const speakerAudioPath = join(
-          request.stagingDirectory,
-          'speaker-analysis.wav',
-        );
-        const speakerResultPath = join(
-          request.stagingDirectory,
-          'speaker-analysis.json',
-        );
-        await Promise.all([
-          this.dependencies.writeText(
-            separationWorker,
-            SOURCE_SEPARATION_WORKER_SOURCE,
-            'utf8',
-          ),
-          this.dependencies.writeText(
-            diarizationWorker,
-            SPEAKER_DIARIZATION_WORKER_SOURCE,
-            'utf8',
-          ),
-        ]);
         const probe = await this.dependencies.commandRunner.run({
           command: decoder.ffprobePath,
           args: [
@@ -467,50 +444,10 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
           timeoutMs: PROCESS_TIMEOUT_MS,
           signal,
         });
-        await this.dependencies.commandRunner.run({
-          command: decoder.ffmpegPath,
-          args: [
-            '-hide_banner',
-            '-loglevel',
-            'error',
-            '-y',
-            '-i',
-            checkpoint.paths.vocalsPath,
-            '-ar',
-            '16000',
-            '-ac',
-            '1',
-            '-c:a',
-            'pcm_s16le',
-            speakerAudioPath,
-          ],
-          timeoutMs: 5 * 60 * 1_000,
-          signal,
-        });
-        await this.dependencies.commandRunner.run({
-          command: runtime.pythonPath,
-          args: [
-            diarizationWorker,
-            '--input',
-            speakerAudioPath,
-            '--segmentation-model',
-            runtime.speakerSegmentationModelPath,
-            '--embedding-model',
-            runtime.speakerEmbeddingModelPath,
-            '--output',
-            speakerResultPath,
-          ],
-          cwd: request.stagingDirectory,
-          env: runtime.environment,
-          timeoutMs: PROCESS_TIMEOUT_MS,
-          signal,
-        });
-        const segments = parseDubbingSpeakerSegments(
-          JSON.parse(
-            await this.dependencies.readText(speakerResultPath, 'utf8'),
-          ) as unknown,
-          durationMs,
-        );
+        const segments = input.sourceTrack.speakerAnalysis?.segments;
+        if (!segments || segments.length === 0) {
+          throw new Error('字幕缺少说话人信息，请重新生成字幕后再配音');
+        }
         plan = createDubbingSpeakerRoutingPlan(
           input.sourceTrack.cues,
           input.translation,
@@ -579,8 +516,6 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         await Promise.all([
           rm(checkpoint.paths.originalAudioPath, { force: true }),
           rm(checkpoint.paths.vocalsPath, { force: true }),
-          rm(speakerAudioPath, { force: true }),
-          rm(speakerResultPath, { force: true }),
         ]);
       }
 
