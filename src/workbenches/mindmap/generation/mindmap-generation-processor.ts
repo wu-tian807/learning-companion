@@ -26,6 +26,7 @@ import type {
 } from '../document';
 import { encodeMindMapDocument } from '../mindmap-content-adapter';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
+import { VIDEO_READ_FUNCTION_TOOL_ID } from '../../video/agent/video-function-tool';
 import type { MindMapGenerationInstruction } from './mindmap-generation-instruction';
 import type { MindMapGenerationCandidateV1 } from './mindmap-generation-output';
 import { MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH } from './mindmap-generation-output';
@@ -66,16 +67,23 @@ function mindMapToolRequirements(
   references: PreparedGenerationAssetReferenceBindings,
 ): readonly AgentToolRequirement[] {
   const mediaTypes = new Set(
-    flattenPreparedReferences(references).map(
-      ({ materializedMediaType, mediaType }) =>
-        materializedMediaType ?? mediaType,
-    ),
+    flattenPreparedReferences(references).flatMap((reference) => [
+      reference.materializedMediaType ?? reference.mediaType,
+      ...(reference.artifacts ?? []).map(({ mediaType }) => mediaType),
+    ]),
   );
   const requirements: AgentToolRequirement[] = [];
 
   if (mediaTypes.has('application/pdf')) {
     requirements.push({
       id: PDF_READ_FUNCTION_TOOL_ID,
+      availability: 'required',
+    });
+  }
+
+  if ([...mediaTypes].some((mediaType) => mediaType.startsWith('video/'))) {
+    requirements.push({
+      id: VIDEO_READ_FUNCTION_TOOL_ID,
       availability: 'required',
     });
   }

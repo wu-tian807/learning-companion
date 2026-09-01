@@ -14,6 +14,7 @@ import {
   isTranslatableSubtitleLanguage,
   oppositeSubtitleLanguage,
   type SubtitleSourceTrackV1,
+  type SubtitleTranslationTrackV1,
 } from './contracts';
 import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media-subtitle-runtime';
 import {
@@ -39,6 +40,12 @@ import {
   type MediaSubtitleSnapshot,
 } from './presentation';
 import type { MediaSubtitleSourceTaskQueueApi } from './source-task-queue';
+import {
+  MEDIA_SUBTITLE_SOURCE_SRT_ARTIFACT_KEY,
+  createSubtitleSrtArtifactRequest,
+  createSubtitleTranslationSrtArtifactKey,
+  type MediaSubtitleSrtProducerApi,
+} from './subtitle-srt-artifact';
 
 interface ResolvedSourceTrack {
   readonly track: SubtitleSourceTrackV1;
@@ -155,6 +162,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     private readonly assets: AssetServiceApi,
     private readonly projects: ProjectLookup,
     private readonly artifacts: AssetArtifactServiceApi,
+    private readonly srtProducer: MediaSubtitleSrtProducerApi,
     private readonly runtimes: MediaSubtitleRuntimeResolverApi,
     private readonly sourceTaskQueue: MediaSubtitleSourceTaskQueueApi,
     private readonly generationTasks: GenerationTaskServiceApi,
@@ -280,6 +288,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         artifact,
         workspacePath: request.workspacePath,
       };
+      await this.materializeSourceSrt(assetId, resolved);
       this.sourceArtifacts.set(assetId, resolved);
       this.updateSnapshot(assetId, {
         phase: 'source-ready',
@@ -518,6 +527,12 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       source.track,
       source.artifact.artifact.artifactRevision,
     );
+    await this.materializeTranslationSrt(
+      assetId,
+      source,
+      artifact,
+      translation,
+    );
     this.updateSnapshot(assetId, {
       ...this.getSnapshot(assetId),
       phase: 'ready',
@@ -527,6 +542,49 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       totalCues: translation.cues.length,
       message: undefined,
     });
+  }
+
+  private async materializeSourceSrt(
+    assetId: string,
+    source: ResolvedSourceTrack,
+  ): Promise<void> {
+    await this.srtProducer.materialize(
+      this.artifacts,
+      createSubtitleSrtArtifactRequest(
+        assetId,
+        source.workspacePath,
+        source.artifact,
+        MEDIA_SUBTITLE_SOURCE_SRT_ARTIFACT_KEY,
+      ),
+      source.track.cues,
+    );
+  }
+
+  private async materializeTranslationSrt(
+    assetId: string,
+    source: ResolvedSourceTrack,
+    artifact: ResolvedAssetArtifact,
+    translation: SubtitleTranslationTrackV1,
+  ): Promise<void> {
+    await this.srtProducer.materialize(
+      this.artifacts,
+      createSubtitleSrtArtifactRequest(
+        assetId,
+        source.workspacePath,
+        artifact,
+        createSubtitleTranslationSrtArtifactKey(
+          translation.sourceLanguage,
+          translation.targetLanguage,
+        ),
+      ),
+      source.track.cues.map((cue, index) =>
+        Object.freeze({
+          startMs: cue.startMs,
+          endMs: cue.endMs,
+          text: translation.cues[index]!.text,
+        }),
+      ),
+    );
   }
 
   private handleTranslationProgress(

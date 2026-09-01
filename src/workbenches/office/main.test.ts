@@ -70,6 +70,7 @@ async function createHarness(input?: {
     cacheHit: Boolean(input?.cached),
   };
   const artifacts: AssetArtifactServiceApi = {
+    listAvailableByAsset: vi.fn(async () => []),
     getCached: vi.fn(async () =>
       input?.cached ? resolvedArtifact : undefined,
     ),

@@ -359,10 +359,20 @@ describe('Mind Map generation contracts', () => {
           {
             alias: 'sources-0002',
             assetId: 'asset-2',
-            name: 'diagram.png',
-            mediaType: 'image/png',
+            name: 'lesson.mp4',
+            mediaType: 'video/mp4',
             contentRevision: 'revision-2',
-            relativePath: 'references/sources-0002/diagram.png',
+            relativePath: 'references/sources-0002/lesson.mp4',
+            artifacts: [
+              {
+                producerId: 'builtin.media-subtitles.srt',
+                artifactKey: 'source.srt',
+                mediaType: 'application/x-subrip',
+                contentRevision: 'subtitle-revision',
+                relativePath:
+                  'references/sources-0002/artifacts/0001.srt',
+              },
+            ],
           },
         ],
       },
@@ -376,6 +386,7 @@ describe('Mind Map generation contracts', () => {
         systemInstruction: MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
         toolRequirements: [
           { id: 'workspace_read_pdf', availability: 'required' },
+          { id: 'workspace_read_video', availability: 'required' },
         ],
       }),
     );

@@ -136,6 +136,7 @@ describe('DubbingSpeakerTrackArtifactProducer', () => {
       } satisfies ResolvedAssetArtifact;
     });
     const artifacts = {
+      listAvailableByAsset: vi.fn(async () => []),
       getCached: vi.fn(),
       getOrCreate,
     } as AssetArtifactServiceApi;
@@ -162,6 +163,7 @@ describe('DubbingSpeakerTrackArtifactProducer', () => {
     const artifactRequest = request(directory);
     const getOrCreate = vi.fn();
     const artifacts = {
+      listAvailableByAsset: vi.fn(async () => []),
       getCached: vi.fn(),
       getOrCreate,
     } as unknown as AssetArtifactServiceApi;

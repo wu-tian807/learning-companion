@@ -7,6 +7,7 @@ import {
   MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
 } from './external-libraries/definitions';
 import { MediaSubtitleRuntimeResolver } from './external-libraries/media-subtitle-runtime';
+import { mediaSubtitleSrtRuntime } from './srt-runtime';
 import { MediaSubtitleTranscriptionProducer } from './transcription-producer';
 import { mediaSubtitleTranslationRuntime } from './translation-runtime';
 
@@ -30,6 +31,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
       ),
     );
     artifacts.register(mediaSubtitleTranslationRuntime.producer);
+    artifacts.register(mediaSubtitleSrtRuntime.producer);
   },
   registerGeneration({ definitions, assets, artifacts, projects }): void {
     definitions.register(

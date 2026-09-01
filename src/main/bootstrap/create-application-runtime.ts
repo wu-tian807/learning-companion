@@ -259,7 +259,12 @@ export async function createApplicationRuntime({
     );
     const generationTaskPreparer = new GenerationTaskPreparer(
       agentWorkspaceManager,
-      new GenerationAssetReferencePreparer(assetService, workbenchRegistry),
+      new GenerationAssetReferencePreparer(
+        assetService,
+        workbenchRegistry,
+        artifactService,
+        projectDatabase,
+      ),
     );
     generationTaskService = new GenerationTaskService(
       generationTaskDatabase,

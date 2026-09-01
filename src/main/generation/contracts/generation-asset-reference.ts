@@ -18,6 +18,14 @@ export type GenerationAssetReferenceSchema = Readonly<
   Record<string, GenerationAssetReferenceSlotSchema>
 >;
 
+export interface PreparedGenerationAssetArtifact {
+  readonly producerId: string;
+  readonly artifactKey: string;
+  readonly mediaType: string;
+  readonly contentRevision: string;
+  readonly relativePath: string;
+}
+
 export interface PreparedGenerationAssetReference {
   readonly alias: string;
   readonly assetId: string;
@@ -26,6 +34,7 @@ export interface PreparedGenerationAssetReference {
   readonly materializedMediaType?: string;
   readonly contentRevision: string;
   readonly relativePath: string;
+  readonly artifacts?: readonly PreparedGenerationAssetArtifact[];
 }
 
 export type PreparedGenerationAssetReferenceBindings = Readonly<
@@ -33,6 +42,7 @@ export type PreparedGenerationAssetReferenceBindings = Readonly<
 >;
 
 const slotKeyPattern = /^[a-z][a-z0-9-]{0,63}$/u;
+const maximumPreparedArtifactsPerReference = 128;
 
 function requireText(value: string, field: string): string {
   const normalized = value.trim();
@@ -52,6 +62,27 @@ function requireSlotKey(value: string): string {
   }
 
   return normalized;
+}
+
+function requirePortableRelativePath(value: string, field: string): string {
+  const relativePath = requireText(value, field);
+
+  if (
+    relativePath.includes('\\') ||
+    relativePath.startsWith('/') ||
+    relativePath
+      .split('/')
+      .some(
+        (segment) =>
+          segment.length === 0 || segment === '.' || segment === '..',
+      )
+  ) {
+    throw new Error(
+      `Prepared generation asset reference ${field} 数据无效`,
+    );
+  }
+
+  return relativePath;
 }
 
 export function cloneGenerationAssetReferenceBindings(
@@ -167,33 +198,80 @@ export function clonePreparedGenerationAssetReferenceBindings(
         requireSlotKey(slot),
         Object.freeze(
           references.map((reference) => {
-            const relativePath = requireText(
+            const relativePath = requirePortableRelativePath(
               reference.relativePath,
               'relativePath',
             );
-
-            if (
-              relativePath.includes('\\') ||
-              relativePath.startsWith('/') ||
-              relativePath
-                .split('/')
-                .some(
-                  (segment) =>
-                    segment.length === 0 ||
-                    segment === '.' ||
-                    segment === '..',
-                )
-            ) {
-              throw new Error(
-                'Prepared generation asset reference relativePath 数据无效',
-              );
-            }
-
             const alias = requireText(reference.alias, 'alias');
 
             if (!relativePath.startsWith(`references/${alias}/`)) {
               throw new Error(
                 'Prepared generation asset reference path 与 alias 不一致',
+              );
+            }
+
+            const artifactInputs = reference.artifacts ?? [];
+
+            if (
+              !Array.isArray(artifactInputs) ||
+              artifactInputs.length > maximumPreparedArtifactsPerReference
+            ) {
+              throw new Error(
+                'Prepared generation asset reference artifacts 数据无效',
+              );
+            }
+
+            const artifacts = Object.freeze(
+              artifactInputs.map((artifact) => {
+                const artifactRelativePath = requirePortableRelativePath(
+                  artifact.relativePath,
+                  'artifact relativePath',
+                );
+
+                if (
+                  !artifactRelativePath.startsWith(
+                    `references/${alias}/artifacts/`,
+                  )
+                ) {
+                  throw new Error(
+                    'Prepared generation asset artifact path 与 alias 不一致',
+                  );
+                }
+
+                return Object.freeze({
+                  producerId: requireText(
+                    artifact.producerId,
+                    'artifact producerId',
+                  ),
+                  artifactKey: requireText(
+                    artifact.artifactKey,
+                    'artifact artifactKey',
+                  ),
+                  mediaType: requireText(
+                    artifact.mediaType,
+                    'artifact mediaType',
+                  ),
+                  contentRevision: requireText(
+                    artifact.contentRevision,
+                    'artifact contentRevision',
+                  ),
+                  relativePath: artifactRelativePath,
+                });
+              }),
+            );
+            const artifactIdentities = artifacts.map((artifact) =>
+              JSON.stringify([artifact.producerId, artifact.artifactKey]),
+            );
+            const artifactPaths = artifacts.map(
+              ({ relativePath: artifactPath }) => artifactPath,
+            );
+
+            if (
+              new Set(artifactIdentities).size !== artifactIdentities.length ||
+              new Set(artifactPaths).size !== artifactPaths.length
+            ) {
+              throw new Error(
+                'Prepared generation asset reference artifacts 包含重复项',
               );
             }
 
@@ -215,6 +293,7 @@ export function clonePreparedGenerationAssetReferenceBindings(
                 'contentRevision',
               ),
               relativePath,
+              ...(artifacts.length === 0 ? {} : { artifacts }),
             });
           }),
         ),
