@@ -118,6 +118,9 @@ function runtimes(): MediaSubtitleRuntimeResolverApi {
     vadExecutablePath: 'vad.exe',
     modelPath: 'sensevoice.gguf',
     vadModelPath: 'vad.gguf',
+    speakerDiarizationExecutablePath: 'diarization.exe',
+    speakerSegmentationModelPath: 'segmentation.onnx',
+    speakerEmbeddingModelPath: 'embedding.onnx',
   };
   return {
     requireTranscription: vi.fn(async () => transcription),

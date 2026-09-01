@@ -1,23 +1,28 @@
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import type {
   ExternalLibraryRuntime,
   ExternalLibraryServiceApi,
 } from '../../../main/external-libraries/external-library-service';
 import {
+  MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID,
   MEDIA_SUBTITLE_CPU_VARIANT_ID,
   MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
   MEDIA_SUBTITLE_SUITE_LIBRARY_ID,
+  type MediaSubtitleVariantId,
 } from './definitions';
 
-export type SubtitleTranscriptionProfile = 'cpu' | 'nvidia';
+export type SubtitleTranscriptionProfile = MediaSubtitleVariantId;
 
-export interface WhisperSubtitleRuntime {
-  readonly kind: 'whisper';
-  readonly profile: 'nvidia';
-  readonly executablePath: string;
+export interface MossSubtitleRuntime {
+  readonly kind: 'moss';
+  readonly profile: 'nvidia' | 'apple-silicon';
+  readonly backend: 'cuda' | 'metal';
+  readonly pythonPath: string;
+  readonly pythonPackagesPath: string;
+  readonly nativeLibraryPath: string;
   readonly modelPath: string;
-  readonly vadModelPath: string;
+  readonly environment: NodeJS.ProcessEnv;
 }
 
 export interface MediaDecoderRuntime {
@@ -32,10 +37,14 @@ export interface SenseVoiceSubtitleRuntime {
   readonly vadExecutablePath: string;
   readonly modelPath: string;
   readonly vadModelPath: string;
+  readonly speakerDiarizationExecutablePath: string;
+  readonly speakerSegmentationModelPath: string;
+  readonly speakerEmbeddingModelPath: string;
 }
 
 export type SubtitleTranscriptionRuntime =
-  SenseVoiceSubtitleRuntime | WhisperSubtitleRuntime;
+  | SenseVoiceSubtitleRuntime
+  | MossSubtitleRuntime;
 
 export interface MediaSubtitleRuntime {
   readonly decoder: MediaDecoderRuntime;
@@ -58,18 +67,28 @@ function runtimePath(root: string, relativePath: string): string {
   return join(root, ...relativePath.split('/'));
 }
 
-export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolverApi {
+function isSubtitleVariant(value: unknown): value is MediaSubtitleVariantId {
+  return (
+    value === MEDIA_SUBTITLE_CPU_VARIANT_ID ||
+    value === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID ||
+    value === MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID
+  );
+}
+
+export class MediaSubtitleRuntimeResolver
+  implements MediaSubtitleRuntimeResolverApi
+{
   constructor(private readonly externalLibraries: ExternalLibraryServiceApi) {}
 
-  private requireSuite(runtime: ExternalLibraryRuntime) {
-    if (
-      runtime.variantId !== MEDIA_SUBTITLE_CPU_VARIANT_ID &&
-      runtime.variantId !== MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
-    ) {
-      throw new Error('媒体字幕组件缺少有效的 CPU/GPU 档位');
+  private requireSuite(runtime: ExternalLibraryRuntime): ExternalLibraryRuntime & {
+    readonly variantId: MediaSubtitleVariantId;
+  } {
+    if (!isSubtitleVariant(runtime.variantId)) {
+      throw new Error('媒体字幕组件缺少有效的硬件档位');
     }
-
-    return runtime;
+    return runtime as ExternalLibraryRuntime & {
+      readonly variantId: MediaSubtitleVariantId;
+    };
   }
 
   async requireMediaDecoder(): Promise<MediaDecoderRuntime> {
@@ -82,16 +101,28 @@ export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolve
   }
 
   private resolveMediaDecoder(
-    runtime: ExternalLibraryRuntime,
+    runtime: ExternalLibraryRuntime & { readonly variantId: MediaSubtitleVariantId },
   ): MediaDecoderRuntime {
-    const binaryDirectory = runtimePath(
-      runtime.runtimeDirectory,
-      'decoder/engine/ffmpeg-8.1.2-essentials_build/bin',
-    );
-
+    const binaryDirectory =
+      runtime.variantId === MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID
+        ? runtimePath(runtime.runtimeDirectory, 'decoder/engine')
+        : runtimePath(
+            runtime.runtimeDirectory,
+            'decoder/engine/ffmpeg-8.1.2-essentials_build/bin',
+          );
     return Object.freeze({
-      ffmpegPath: join(binaryDirectory, 'ffmpeg.exe'),
-      ffprobePath: join(binaryDirectory, 'ffprobe.exe'),
+      ffmpegPath: join(
+        binaryDirectory,
+        runtime.variantId === MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID
+          ? 'ffmpeg'
+          : 'ffmpeg.exe',
+      ),
+      ffprobePath: join(
+        binaryDirectory,
+        runtime.variantId === MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID
+          ? 'ffprobe'
+          : 'ffprobe.exe',
+      ),
     });
   }
 
@@ -105,45 +136,109 @@ export class MediaSubtitleRuntimeResolver implements MediaSubtitleRuntimeResolve
   }
 
   private resolveTranscription(
-    runtime: ExternalLibraryRuntime,
+    runtime: ExternalLibraryRuntime & { readonly variantId: MediaSubtitleVariantId },
   ): SubtitleTranscriptionRuntime {
-    return runtime.variantId === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
-      ? Object.freeze({
-          kind: 'whisper' as const,
-          profile: 'nvidia' as const,
-          executablePath: runtimePath(
+    if (runtime.variantId === MEDIA_SUBTITLE_CPU_VARIANT_ID) {
+      return Object.freeze({
+        kind: 'sensevoice' as const,
+        profile: 'cpu' as const,
+        executablePath: runtimePath(
+          runtime.runtimeDirectory,
+          'transcription/sensevoice/engine/llama-funasr-sensevoice.exe',
+        ),
+        vadExecutablePath: runtimePath(
+          runtime.runtimeDirectory,
+          'transcription/sensevoice/engine/llama-funasr-vad.exe',
+        ),
+        modelPath: runtimePath(
+          runtime.runtimeDirectory,
+          'transcription/sensevoice/models/sensevoice-small-q8.gguf',
+        ),
+        vadModelPath: runtimePath(
+          runtime.runtimeDirectory,
+          'transcription/sensevoice/models/fsmn-vad.gguf',
+        ),
+        speakerDiarizationExecutablePath: runtimePath(
+          runtime.runtimeDirectory,
+          'speaker/engine/sherpa-onnx-v1.13.2-win-x64-shared-MD-Release-no-tts/bin/sherpa-onnx-offline-speaker-diarization.exe',
+        ),
+        speakerSegmentationModelPath: runtimePath(
+          runtime.runtimeDirectory,
+          'speaker/models/pyannote-segmentation-3.0.int8.onnx',
+        ),
+        speakerEmbeddingModelPath: runtimePath(
+          runtime.runtimeDirectory,
+          'speaker/models/3dspeaker-campplus-zh-en.onnx',
+        ),
+      });
+    }
+
+    const windows = runtime.variantId === MEDIA_SUBTITLE_NVIDIA_VARIANT_ID;
+    const nativeDirectory = runtimePath(
+      runtime.runtimeDirectory,
+      windows
+        ? 'transcription/moss/engine/transcribe-native-windows-x86_64-cuda'
+        : 'transcription/moss/engine/transcribe-native-macos-arm64-metal',
+    );
+    const pythonPackagesPath = runtimePath(
+      runtime.runtimeDirectory,
+      'transcription/moss/python-packages',
+    );
+    const windowsCudaPaths = windows
+      ? [
+          runtimePath(
             runtime.runtimeDirectory,
-            'transcription/whisper/engine/Release/whisper-cli.exe',
+            'transcription/moss/cuda-cublas/nvidia/cublas/bin',
           ),
-          modelPath: runtimePath(
+          runtimePath(
             runtime.runtimeDirectory,
-            'transcription/whisper/models/ggml-large-v3-turbo-q5_0.bin',
+            'transcription/moss/cuda-core/nvidia/cuda_runtime/bin',
           ),
-          vadModelPath: runtimePath(
-            runtime.runtimeDirectory,
-            'transcription/whisper/models/ggml-silero-v6.2.0.bin',
-          ),
-        })
-      : Object.freeze({
-          kind: 'sensevoice' as const,
-          profile: 'cpu' as const,
-          executablePath: runtimePath(
-            runtime.runtimeDirectory,
-            'transcription/sensevoice/engine/llama-funasr-sensevoice.exe',
-          ),
-          vadExecutablePath: runtimePath(
-            runtime.runtimeDirectory,
-            'transcription/sensevoice/engine/llama-funasr-vad.exe',
-          ),
-          modelPath: runtimePath(
-            runtime.runtimeDirectory,
-            'transcription/sensevoice/models/sensevoice-small-q8.gguf',
-          ),
-          vadModelPath: runtimePath(
-            runtime.runtimeDirectory,
-            'transcription/sensevoice/models/fsmn-vad.gguf',
-          ),
-        });
+        ]
+      : [];
+    return Object.freeze({
+      kind: 'moss' as const,
+      profile: windows ? ('nvidia' as const) : ('apple-silicon' as const),
+      backend: windows ? ('cuda' as const) : ('metal' as const),
+      pythonPath: runtimePath(
+        runtime.runtimeDirectory,
+        windows
+          ? 'transcription/moss/python-runtime/python/python.exe'
+          : 'transcription/moss/python-runtime/python/bin/python3.12',
+      ),
+      pythonPackagesPath,
+      nativeLibraryPath: join(
+        nativeDirectory,
+        windows ? 'transcribe.dll' : 'libtranscribe.dylib',
+      ),
+      modelPath: runtimePath(
+        runtime.runtimeDirectory,
+        'transcription/moss/models/MOSS-Transcribe-Diarize-Q5_K_M.gguf',
+      ),
+      environment: Object.freeze({
+        ...process.env,
+        PYTHONNOUSERSITE: '1',
+        PYTHONPATH: pythonPackagesPath,
+        TRANSCRIBE_LIBRARY: join(
+          nativeDirectory,
+          windows ? 'transcribe.dll' : 'libtranscribe.dylib',
+        ),
+        ...(windows
+          ? {
+              PATH: [
+                nativeDirectory,
+                ...windowsCudaPaths,
+                process.env.PATH ?? '',
+              ].join(delimiter),
+            }
+          : {
+              DYLD_LIBRARY_PATH: [
+                nativeDirectory,
+                process.env.DYLD_LIBRARY_PATH ?? '',
+              ].join(delimiter),
+            }),
+      }),
+    });
   }
 
   withRuntime<T>(

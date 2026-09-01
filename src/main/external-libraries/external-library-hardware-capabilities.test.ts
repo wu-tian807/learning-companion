@@ -32,7 +32,24 @@ describe('external library hardware capabilities', () => {
         }),
         logger,
       ),
-    ).resolves.toEqual({ nvidiaGpuAvailable: false });
+    ).resolves.toEqual({
+      nvidiaGpuAvailable: false,
+      appleSiliconAvailable: false,
+    });
     expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it('recognizes Apple Silicon independently of GPU inspection', async () => {
+    await expect(
+      detectExternalLibraryHardwareCapabilities(
+        vi.fn(async () => ({})),
+        console,
+        'darwin',
+        'arm64',
+      ),
+    ).resolves.toEqual({
+      nvidiaGpuAvailable: false,
+      appleSiliconAvailable: true,
+    });
   });
 });

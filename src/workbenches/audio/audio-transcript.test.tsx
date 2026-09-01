@@ -152,6 +152,44 @@ describe('AudioTranscript', () => {
     expect(markup).toContain('不会用作声色参考候选');
   });
 
+  it('shows subtitle-owned speaker labels before dubbing prepares references', () => {
+    const value = snapshot();
+    const speakerAware: AudioSubtitleSnapshot = {
+      ...value,
+      source: {
+        ...value.source!,
+        speakerAnalysis: {
+          method: 'joint-transcription-diarization',
+          supportsOverlappingTranscription: true,
+          segments: [
+            { speakerId: 'speaker-0002', startMs: 0, endMs: 2_000 },
+          ],
+        },
+        cues: value.source!.cues.map((cue) => ({
+          ...cue,
+          speakerId: 'speaker-0002',
+        })),
+      },
+    };
+
+    expect(resolveAudioTranscriptRows(speakerAware)[0]?.speaker).toEqual({
+      id: 'speaker-0002',
+      label: '说话人 2',
+      status: 'stable',
+      referenceMode: 'unprepared',
+    });
+    const markup = renderToStaticMarkup(
+      <AudioTranscript
+        snapshot={speakerAware}
+        mode="source"
+        currentTime={0.5}
+        onSeek={vi.fn()}
+      />,
+    );
+    expect(markup).toContain('说话人 2');
+    expect(markup).toContain('待准备声色参考');
+  });
+
   it('locates the active cue, the next cue in a gap and the last cue after the track', () => {
     const rows = [
       {
