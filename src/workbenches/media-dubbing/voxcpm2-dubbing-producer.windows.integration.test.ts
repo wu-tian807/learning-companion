@@ -93,6 +93,9 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
           },
         };
         const artifacts: AssetArtifactServiceApi = {
+          async listAvailableByAsset() {
+            return [];
+          },
           async getCached() {
             return undefined;
           },

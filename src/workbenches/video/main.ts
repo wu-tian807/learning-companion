@@ -38,6 +38,7 @@ import type {
   MediaSubtitleServiceApi,
   MediaSubtitleServiceEvent,
 } from '../media-subtitles/media-subtitle-service';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import { videoContentRevision } from './video-content-revision';
 
 interface VideoSession {
@@ -53,6 +54,7 @@ export interface VideoWorkbenchProviderDependencies {
   readonly subtitles: MediaSubtitleServiceApi;
   readonly dubbing: MediaDubbingServiceApi;
   readonly events: WorkbenchEventBusApi;
+  readonly mediaRuntime: MediaSubtitleRuntimeResolverApi;
   readonly now?: () => number;
 }
 
@@ -66,6 +68,7 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
   private readonly subtitles: MediaSubtitleServiceApi;
   private readonly dubbing: MediaDubbingServiceApi;
   private readonly events: WorkbenchEventBusApi;
+  private readonly mediaRuntime: MediaSubtitleRuntimeResolverApi;
   private readonly now: () => number;
 
   constructor(
@@ -76,7 +79,12 @@ export class VideoWorkbenchProvider implements MainWorkbenchProvider {
     this.subtitles = dependencies.subtitles;
     this.dubbing = dependencies.dubbing;
     this.events = dependencies.events;
+    this.mediaRuntime = dependencies.mediaRuntime;
     this.now = dependencies.now ?? Date.now;
+  }
+
+  getAgentMediaRuntime(): MediaSubtitleRuntimeResolverApi {
+    return this.mediaRuntime;
   }
 
   async open(context: Parameters<MainWorkbenchProvider['open']>[0]) {

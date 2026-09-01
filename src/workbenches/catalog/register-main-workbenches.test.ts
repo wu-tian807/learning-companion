@@ -39,6 +39,7 @@ import {
 } from '../pdf/shared';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
 import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../video/conversation/video-conversation-context';
+import { VIDEO_READ_FUNCTION_TOOL_ID } from '../video/agent/video-function-tool';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from '../media-dubbing/external-libraries/voxcpm2-definition';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
@@ -217,6 +218,7 @@ describe('Workbench contribution catalogs', () => {
     registerMainWorkbenchAgentFunctionTools({ functionTools, workbenches });
 
     expect(functionTools.get(PDF_READ_FUNCTION_TOOL_ID)).toBeDefined();
+    expect(functionTools.get(VIDEO_READ_FUNCTION_TOOL_ID)).toBeDefined();
     expect(functionTools.get('html_begin_edit')).toBeDefined();
     expect(functionTools.get('html_replace_edit')).toBeDefined();
   });

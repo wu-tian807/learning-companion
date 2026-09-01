@@ -29,6 +29,7 @@ import type {
   MediaSubtitleServiceApi,
   MediaSubtitleServiceListener,
 } from '../media-subtitles/media-subtitle-service';
+import type { MediaSubtitleRuntimeResolverApi } from '../media-subtitles/external-libraries/media-subtitle-runtime';
 import type { MediaDubbingServiceApi } from '../media-dubbing/media-dubbing-service';
 
 class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
@@ -114,6 +115,7 @@ function createProvider(
     subtitles: options.subtitles ?? createSubtitles(),
     dubbing: options.dubbing ?? createDubbing(),
     events: options.events ?? createEvents(),
+    mediaRuntime: {} as MediaSubtitleRuntimeResolverApi,
     now: options.now,
   });
 }

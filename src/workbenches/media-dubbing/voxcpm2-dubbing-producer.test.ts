@@ -224,6 +224,7 @@ describe('VoxCpm2DubbingProducer', () => {
     });
     const artifactRequest = request(directory);
     const artifacts = {
+      listAvailableByAsset: vi.fn(async () => []),
       getCached: vi.fn(),
       getOrCreate: vi.fn(async (_request, signal) => {
         const produced = await producer.produce(
@@ -476,7 +477,11 @@ describe('VoxCpm2DubbingProducer', () => {
 
     await expect(
       producer.materialize(
-        { getCached: vi.fn(), getOrCreate: vi.fn() },
+        {
+          listAvailableByAsset: vi.fn(async () => []),
+          getCached: vi.fn(),
+          getOrCreate: vi.fn(),
+        },
         {
           ...request(directory),
           artifactKey: createVoxCpm2DubbingArtifactKey('en'),
@@ -528,6 +533,7 @@ describe('VoxCpm2DubbingProducer', () => {
     );
     const artifactRequest = request(directory);
     const artifacts = {
+      listAvailableByAsset: vi.fn(async () => []),
       getCached: vi.fn(),
       getOrCreate: vi.fn(async (_request, signal) => {
         await producer.produce(

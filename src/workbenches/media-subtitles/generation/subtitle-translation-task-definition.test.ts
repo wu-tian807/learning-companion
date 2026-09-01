@@ -213,7 +213,11 @@ describe('subtitle translation TaskDefinition', () => {
           },
         };
       });
-      const artifacts = { getCached, getOrCreate } as AssetArtifactServiceApi;
+      const artifacts = {
+        listAvailableByAsset: vi.fn(async () => []),
+        getCached,
+        getOrCreate,
+      } as AssetArtifactServiceApi;
       const progress = new SubtitleTranslationProgressHub();
       const onProgress = vi.fn();
       progress.subscribe(onProgress);

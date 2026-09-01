@@ -30,7 +30,18 @@ export interface ResolvedAssetArtifact {
   readonly cacheHit: boolean;
 }
 
+export interface ListAvailableAssetArtifactsOptions {
+  readonly signal?: AbortSignal;
+  readonly acceptMediaType?: (mediaType: string) => boolean;
+  readonly connectedToRevision?: string;
+}
+
 export interface AssetArtifactServiceApi {
+  listAvailableByAsset(
+    assetId: string,
+    workspacePath: string,
+    options?: ListAvailableAssetArtifactsOptions,
+  ): Promise<readonly ResolvedAssetArtifact[]>;
   getCached(
     request: AssetArtifactRequest,
   ): Promise<ResolvedAssetArtifact | undefined>;
@@ -173,6 +184,92 @@ export class AssetArtifactService
     const normalized = normalizeRequest(request);
     const producer = this.registry.require(normalized.producerId);
     return this.resolveCached(normalized, producer);
+  }
+
+  async listAvailableByAsset(
+    assetId: string,
+    workspacePath: string,
+    options: ListAvailableAssetArtifactsOptions = {},
+  ): Promise<readonly ResolvedAssetArtifact[]> {
+    const normalizedAssetId = requireText(assetId);
+    const normalizedWorkspacePath = requireAbsolutePath(workspacePath);
+    const connectedToRevision =
+      options.connectedToRevision === undefined
+        ? undefined
+        : requireText(options.connectedToRevision);
+    const resolved: ResolvedAssetArtifact[] = [];
+    const available = this.database
+      .listByAsset(normalizedAssetId)
+      .filter((artifact) => {
+        const producer = this.registry.get(artifact.producerId);
+        return producer?.version === artifact.producerVersion;
+      });
+    const connected = connectedToRevision
+      ? this.findArtifactsConnectedToRevision(
+          available,
+          connectedToRevision,
+        )
+      : new Set(available);
+
+    for (const artifact of available) {
+      options.signal?.throwIfAborted();
+
+      if (
+        !connected.has(artifact) ||
+        (options.acceptMediaType &&
+          !options.acceptMediaType(artifact.mediaType))
+      ) {
+        continue;
+      }
+
+      const absolutePath = await this.fileManager.resolveValidArtifact(
+        normalizedWorkspacePath,
+        artifact,
+      );
+
+      if (absolutePath) {
+        resolved.push(
+          Object.freeze({
+            artifact: cloneAssetArtifact(artifact),
+            absolutePath,
+            cacheHit: true,
+          }),
+        );
+      }
+    }
+
+    options.signal?.throwIfAborted();
+    return Object.freeze(resolved);
+  }
+
+  private findArtifactsConnectedToRevision(
+    artifacts: readonly AssetArtifact[],
+    rootRevision: string,
+  ): ReadonlySet<AssetArtifact> {
+    const revisions = new Set([rootRevision]);
+    const connected = new Set<AssetArtifact>();
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+
+      for (const artifact of artifacts) {
+        if (
+          connected.has(artifact) ||
+          (!revisions.has(artifact.sourceRevision) &&
+            !revisions.has(artifact.artifactRevision))
+        ) {
+          continue;
+        }
+
+        connected.add(artifact);
+        revisions.add(artifact.sourceRevision);
+        revisions.add(artifact.artifactRevision);
+        changed = true;
+      }
+    }
+
+    return connected;
   }
 
   async getOrCreate(

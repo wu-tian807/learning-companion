@@ -7,9 +7,11 @@ import {
   isJsonValue,
   type JsonValue,
 } from '../../../shared/workbench/protocol';
+import type { AssetArtifactServiceApi } from '../../artifacts/asset-artifact-service';
 import type { AssetServiceApi } from '../../assets/asset-service';
 import { createFileContentRevision } from '../../content/content-revision';
 import { AppError } from '../../errors/app-error';
+import type { ProjectLookup } from '../../projects/project-database';
 import type { WorkbenchRegistry } from '../../workbench/workbench-registry';
 import {
   clonePreparedGenerationAssetReferenceBindings,
@@ -17,9 +19,11 @@ import {
   validatePreparedGenerationAssetReferenceBindings,
   type GenerationAssetReferenceBindings,
   type GenerationAssetReferenceSchema,
+  type PreparedGenerationAssetArtifact,
   type PreparedGenerationAssetReference,
   type PreparedGenerationAssetReferenceBindings,
 } from '../contracts/generation-asset-reference';
+import { isAgentReadableArtifactMediaType } from './agent-readable-artifact';
 
 export interface PrepareGenerationAssetReferencesRequest {
   readonly projectId: string;
@@ -67,6 +71,13 @@ function absoluteWorkspacePath(
   return join(workspacePath, ...relativePath.split('/'));
 }
 
+function pathIdentity(path: string): string {
+  const absolutePath = resolve(path);
+  return process.platform === 'win32'
+    ? absolutePath.toLocaleLowerCase('en-US')
+    : absolutePath;
+}
+
 function toJsonValue(value: unknown): JsonValue {
   if (!isJsonValue(value)) {
     throw new Error('Generation AssetReference JSON 数据无效');
@@ -83,6 +94,8 @@ export class GenerationAssetReferencePreparer
   constructor(
     private readonly assetService: AssetServiceApi,
     private readonly workbenches: WorkbenchRegistry,
+    private readonly artifacts: AssetArtifactServiceApi,
+    private readonly projects: ProjectLookup,
     dependencies: Partial<GenerationAssetReferencePreparerDependencies> = {},
   ) {
     this.dependencies = { ...defaultDependencies, ...dependencies };
@@ -99,6 +112,11 @@ export class GenerationAssetReferencePreparer
 
     if (this.assetService.getActiveProjectId() !== request.projectId) {
       throw new AppError('PROJECT_CONTEXT_CHANGED');
+    }
+    const project = this.projects.get(request.projectId);
+
+    if (!project) {
+      throw new AppError('PROJECT_NOT_FOUND');
     }
 
     const prepared: Record<
@@ -171,6 +189,16 @@ export class GenerationAssetReferencePreparer
             destination,
             signal,
           );
+          const projectedArtifacts = await this.prepareArtifacts(
+            asset.id,
+            alias,
+            project.workspacePath,
+            request.primaryWorkspacePath,
+            contentRevision,
+            materializedContent?.absolutePath ??
+              resolvedContent.location?.absolutePath,
+            signal,
+          );
           const preparedReference = Object.freeze({
             alias,
             assetId: asset.id,
@@ -180,6 +208,9 @@ export class GenerationAssetReferencePreparer
               materializedContent?.mediaType ?? asset.mediaType,
             contentRevision,
             relativePath,
+            ...(projectedArtifacts.length === 0
+              ? {}
+              : { artifacts: projectedArtifacts }),
           });
           preparedSlot.push(preparedReference);
           await this.writeMetadata(
@@ -226,10 +257,103 @@ export class GenerationAssetReferencePreparer
             `Generation prepared reference ${reference.alias} 内容已改变`,
           );
         }
+
+        for (const artifact of reference.artifacts ?? []) {
+          const artifactRevision =
+            await this.dependencies.createFileRevision(
+              absoluteWorkspacePath(
+                primaryWorkspacePath,
+                artifact.relativePath,
+              ),
+              signal,
+            );
+
+          if (artifactRevision !== artifact.contentRevision) {
+            throw new Error(
+              `Generation prepared artifact ${reference.alias}/${artifact.producerId}/${artifact.artifactKey} 内容已改变`,
+            );
+          }
+        }
       }
     }
 
     return normalized;
+  }
+
+  private async prepareArtifacts(
+    assetId: string,
+    alias: string,
+    projectWorkspacePath: string,
+    primaryWorkspacePath: string,
+    primaryContentRevision: string,
+    primarySourcePath?: string,
+    signal?: AbortSignal,
+  ): Promise<readonly PreparedGenerationAssetArtifact[]> {
+    const available = await this.artifacts.listAvailableByAsset(
+      assetId,
+      projectWorkspacePath,
+      {
+        ...(signal ? { signal } : {}),
+        acceptMediaType: isAgentReadableArtifactMediaType,
+        connectedToRevision: primaryContentRevision,
+      },
+    );
+    const skippedPaths = new Set(
+      primarySourcePath ? [pathIdentity(primarySourcePath)] : [],
+    );
+    const prepared: PreparedGenerationAssetArtifact[] = [];
+
+    for (const resolvedArtifact of available) {
+      signal?.throwIfAborted();
+
+      if (
+        skippedPaths.has(pathIdentity(resolvedArtifact.absolutePath))
+      ) {
+        continue;
+      }
+
+      skippedPaths.add(pathIdentity(resolvedArtifact.absolutePath));
+      const extension = safeSourceExtension(
+        resolvedArtifact.absolutePath,
+      );
+      const relativePath =
+        `references/${alias}/artifacts/` +
+        `${String(prepared.length + 1).padStart(4, '0')}${extension}`;
+      const destination = absoluteWorkspacePath(
+        primaryWorkspacePath,
+        relativePath,
+      );
+      await this.dependencies.mkdir(dirname(destination), {
+        recursive: true,
+      });
+      await this.dependencies.copyFile(
+        resolvedArtifact.absolutePath,
+        destination,
+      );
+      signal?.throwIfAborted();
+      const contentRevision = await this.dependencies.createFileRevision(
+        destination,
+        signal,
+      );
+
+      if (
+        contentRevision !== resolvedArtifact.artifact.artifactRevision
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+
+      prepared.push(
+        Object.freeze({
+          producerId: resolvedArtifact.artifact.producerId,
+          artifactKey: resolvedArtifact.artifact.artifactKey,
+          mediaType: resolvedArtifact.artifact.mediaType,
+          contentRevision,
+          relativePath,
+        }),
+      );
+    }
+
+    return Object.freeze(prepared);
   }
 
   private async copyContentToWorkspace(

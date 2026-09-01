@@ -83,6 +83,21 @@ describe('GenerationTaskPreparer', () => {
       new GenerationAssetReferencePreparer(
         assetService,
         new WorkbenchRegistry(new UnsupportedWorkbenchProvider()),
+        {
+          listAvailableByAsset: vi.fn(async () => []),
+          getCached: vi.fn(),
+          getOrCreate: vi.fn(),
+        },
+        {
+          get: () => ({
+            id: 'project-1',
+            name: 'Project',
+            icon: 'P',
+            pinned: false,
+            createdTime: 1,
+            workspacePath: directory,
+          }),
+        },
       ),
     );
     const baseDefinition = createMindMapGenerationTaskDefinitionV1({

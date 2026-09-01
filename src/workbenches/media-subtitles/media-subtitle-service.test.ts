@@ -28,6 +28,7 @@ import {
 } from './translation-producer';
 import { MediaSubtitleService } from './media-subtitle-service';
 import { MediaSubtitleSourceTaskQueue } from './source-task-queue';
+import type { MediaSubtitleSrtProducerApi } from './subtitle-srt-artifact';
 
 async function withDirectory(
   run: (directory: string) => Promise<void>,
@@ -137,6 +138,12 @@ function generationTasks(): GenerationTaskServiceApi {
   } as unknown as GenerationTaskServiceApi;
 }
 
+function srtProducer(): MediaSubtitleSrtProducerApi {
+  return {
+    materialize: vi.fn(async () => undefined),
+  };
+}
+
 async function serviceWithSource(
   directory: string,
   language: 'en' | 'unknown',
@@ -180,12 +187,19 @@ async function serviceWithSource(
       'source-artifact-revision',
     );
   });
+  const srt = srtProducer();
   return {
     getOrCreate,
+    srt,
     service: new MediaSubtitleService(
       assets,
       projects,
-      { getCached: vi.fn(), getOrCreate } as AssetArtifactServiceApi,
+      {
+        listAvailableByAsset: vi.fn(async () => []),
+        getCached: vi.fn(),
+        getOrCreate,
+      } as AssetArtifactServiceApi,
+      srt,
       runtimes(),
       new MediaSubtitleSourceTaskQueue(),
       tasks,
@@ -218,6 +232,7 @@ describe('MediaSubtitleService', () => {
       } as unknown as AssetServiceApi,
       { get: vi.fn() },
       {} as AssetArtifactServiceApi,
+      srtProducer(),
       {
         requireTranscription,
         requireMediaDecoder: vi.fn(),
@@ -294,6 +309,7 @@ describe('MediaSubtitleService', () => {
         );
       });
       const artifacts = {
+        listAvailableByAsset: vi.fn(async () => []),
         getCached: vi.fn(async (request: AssetArtifactRequest) =>
           request.producerId === MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID
             ? resolvedArtifact(
@@ -307,10 +323,12 @@ describe('MediaSubtitleService', () => {
         getOrCreate,
       } as AssetArtifactServiceApi;
       const tasks = generationTasks();
+      const srt = srtProducer();
       const service = new MediaSubtitleService(
         assets,
         projects,
         artifacts,
+        srt,
         runtimes(),
         new MediaSubtitleSourceTaskQueue(),
         tasks,
@@ -346,6 +364,23 @@ describe('MediaSubtitleService', () => {
         completedCues: 1,
         translation: { targetLanguage: 'zh-Hans' },
       });
+      const srtArtifactKeys = vi
+        .mocked(srt.materialize)
+        .mock.calls.map(([, request]) => request.artifactKey);
+      expect(srtArtifactKeys).toEqual(
+        expect.arrayContaining([
+          'source.srt',
+          'translation.en.zh-Hans.quality.srt',
+        ]),
+      );
+      expect(
+        srtArtifactKeys.every((key) =>
+          [
+            'source.srt',
+            'translation.en.zh-Hans.quality.srt',
+          ].includes(key),
+        ),
+      ).toBe(true);
       expect(tasks.start).not.toHaveBeenCalled();
     });
   });

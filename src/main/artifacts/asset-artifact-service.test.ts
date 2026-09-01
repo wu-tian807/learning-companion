@@ -253,6 +253,120 @@ describe('AssetArtifactService', () => {
     ]);
   });
 
+  it('lists only registered, current and hash-valid Artifacts without generating', async () => {
+    const produce = vi.fn<AssetArtifactProducer['produce']>(
+      async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, '%PDF-1.7\navailable');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      },
+    );
+    const harness = await createHarness(createProducer(produce));
+    const generated = await harness.service.getOrCreate(
+      createRequest(harness),
+    );
+
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+      ),
+    ).resolves.toEqual([
+      {
+        ...generated,
+        cacheHit: true,
+      },
+    ]);
+    expect(produce).toHaveBeenCalledOnce();
+
+    const acceptMediaType = vi.fn(() => false);
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+        { acceptMediaType },
+      ),
+    ).resolves.toEqual([]);
+    expect(acceptMediaType).toHaveBeenCalledWith('application/pdf');
+
+    harness.database.upsert({
+      ...generated.artifact,
+      producerVersion: 'stale-producer-version',
+    });
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+      ),
+    ).resolves.toEqual([]);
+
+    harness.database.upsert(generated.artifact);
+    await rm(generated.absolutePath);
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+      ),
+    ).resolves.toEqual([]);
+    expect(produce).toHaveBeenCalledOnce();
+  });
+
+  it('lists only the Artifact graph connected to the prepared source revision', async () => {
+    const produce = vi.fn<AssetArtifactProducer['produce']>(
+      async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, `%PDF-1.7\n${request.source.revision}`);
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      },
+    );
+    const harness = await createHarness(createProducer(produce));
+    const root = await harness.service.getOrCreate(createRequest(harness));
+    const derived = await harness.service.getOrCreate({
+      ...createRequest(harness),
+      artifactKey: 'derived',
+      source: {
+        assetId: 'asset',
+        mediaType: 'application/pdf',
+        absolutePath: root.absolutePath,
+        revision: root.artifact.artifactRevision,
+      },
+    });
+
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+        { connectedToRevision: 'source-a' },
+      ),
+    ).resolves.toEqual([
+      { ...derived, cacheHit: true },
+      { ...root, cacheHit: true },
+    ]);
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+        { connectedToRevision: root.artifact.artifactRevision },
+      ),
+    ).resolves.toHaveLength(2);
+    await expect(
+      harness.service.listAvailableByAsset(
+        'asset',
+        harness.workspacePath,
+        { connectedToRevision: 'unrelated-source' },
+      ),
+    ).resolves.toEqual([]);
+    expect(produce).toHaveBeenCalledTimes(2);
+  });
+
   it('deduplicates concurrent generation for the same stable key', async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolvePromise) => {
