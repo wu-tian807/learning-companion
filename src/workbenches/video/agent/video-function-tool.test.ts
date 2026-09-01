@@ -57,6 +57,9 @@ function runtimeResolver() {
       vadExecutablePath: 'unused-vad.exe',
       modelPath: 'unused.gguf',
       vadModelPath: 'unused-vad.gguf',
+      speakerDiarizationExecutablePath: 'unused-diarization.exe',
+      speakerSegmentationModelPath: 'unused-segmentation.onnx',
+      speakerEmbeddingModelPath: 'unused-embedding.onnx',
     },
   };
   const withRuntime = vi.fn(

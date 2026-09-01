@@ -88,6 +88,9 @@ describe.skipIf(!enabled)('workspace video tool Windows integration', () => {
             vadExecutablePath: 'unused',
             modelPath: 'unused',
             vadModelPath: 'unused',
+            speakerDiarizationExecutablePath: 'unused',
+            speakerSegmentationModelPath: 'unused',
+            speakerEmbeddingModelPath: 'unused',
           },
         };
         const resolver = {
