@@ -25,6 +25,8 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
         sha256:
           'c99fb4fe574437fc4cb820a4ca15271bca325920861f7139858b36d7f9df78ad',
         expectedSize: 297_407_265,
+        estimatedInstalledSize: 1_200 * 1024 * 1024,
+        recommendedFreeSpace: 2_000 * 1024 * 1024,
         executableRelativePath:
           'LibreOffice.app/Contents/MacOS/soffice',
         payloadRelativePath: 'LibreOffice.app',
@@ -39,6 +41,8 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
         sha256:
           'e26180298685274b54aa7fe6e1101c65465a372f457a6748ebd642720811db36',
         expectedSize: 307_933_587,
+        estimatedInstalledSize: 1_300 * 1024 * 1024,
+        recommendedFreeSpace: 2_000 * 1024 * 1024,
         executableRelativePath:
           'LibreOffice.app/Contents/MacOS/soffice',
         payloadRelativePath: 'LibreOffice.app',
@@ -53,6 +57,8 @@ export const libreOfficeDefinition: ExternalLibraryDefinition =
         sha256:
           'f15ba07bfcb0186986cf3171063506f5d207c11f8cc051ba0d135209e9e915f9',
         expectedSize: 372_948_992,
+        estimatedInstalledSize: 1_100 * 1024 * 1024,
+        recommendedFreeSpace: 2_000 * 1024 * 1024,
         // The console entry point waits for headless conversion to finish.
         executableRelativePath: 'program/soffice.com',
       }),

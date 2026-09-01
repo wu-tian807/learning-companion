@@ -47,7 +47,34 @@ export function isExternalLibraryInstalling(
 
 export function formatExternalLibrarySize(bytes: number): string {
   const megabytes = bytes / (1024 * 1024);
+  if (megabytes >= 1024) {
+    const gigabytes = megabytes / 1024;
+    return `${gigabytes >= 10 ? gigabytes.toFixed(0) : gigabytes.toFixed(1)} GB`;
+  }
   return `${megabytes >= 100 ? megabytes.toFixed(0) : megabytes.toFixed(1)} MB`;
+}
+
+export function externalLibraryStorageSummary(
+  snapshot: Pick<
+    ExternalLibrarySnapshot,
+    'expectedSize' | 'estimatedInstalledSize' | 'recommendedFreeSpace'
+  >,
+): string {
+  if (snapshot.expectedSize === undefined) {
+    return '当前平台没有可下载的安装包';
+  }
+  const download = `下载约 ${formatExternalLibrarySize(snapshot.expectedSize)}`;
+  if (
+    snapshot.estimatedInstalledSize === undefined ||
+    snapshot.recommendedFreeSpace === undefined
+  ) {
+    return download;
+  }
+  return `${download} · 安装后约 ${formatExternalLibrarySize(
+    snapshot.estimatedInstalledSize,
+  )} · 建议预留 ${formatExternalLibrarySize(
+    snapshot.recommendedFreeSpace,
+  )} 可用空间`;
 }
 
 export function externalLibraryProgressPercent(

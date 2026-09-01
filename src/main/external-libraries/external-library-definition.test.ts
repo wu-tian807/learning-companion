@@ -67,6 +67,45 @@ describe('ExternalLibraryDefinition bundles', () => {
     );
   });
 
+  it('requires installed-size and free-space estimates as a valid pair', () => {
+    const definition = createBundleDefinition();
+    const packageDefinition = definition.packages[0]!;
+    const withEstimates = {
+      ...definition,
+      packages: [
+        {
+          ...packageDefinition,
+          estimatedInstalledSize: 40,
+          recommendedFreeSpace: 60,
+        },
+      ],
+    };
+
+    expect(isExternalLibraryDefinition(withEstimates)).toBe(true);
+    expect(
+      isExternalLibraryDefinition({
+        ...withEstimates,
+        packages: [
+          {
+            ...withEstimates.packages[0],
+            recommendedFreeSpace: 30,
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isExternalLibraryDefinition({
+        ...definition,
+        packages: [
+          {
+            ...packageDefinition,
+            estimatedInstalledSize: 40,
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it('keeps the existing single-package marker fingerprint stable', () => {
     const sha256 = 'c'.repeat(64);
     expect(

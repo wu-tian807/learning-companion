@@ -68,7 +68,8 @@ describe('ExternalLibrariesSection', () => {
     expect(container.textContent).not.toContain('运行版本');
     expect(container.textContent).not.toContain('CPU 兼容版');
     expect(container.textContent).not.toContain('NVIDIA GPU 加速版');
-    expect(container.textContent).toContain('固定组件资源约');
+    expect(container.textContent).toContain('下载约');
+    expect(container.textContent).not.toContain('固定组件资源约');
 
     const installButton = [...container.querySelectorAll('button')].find(
       (button) => button.textContent === '安装',
