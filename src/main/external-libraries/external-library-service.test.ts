@@ -52,6 +52,32 @@ interface Harness {
   readonly service: ExternalLibraryService;
 }
 
+type DownloadInput = Parameters<
+  ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
+>[0];
+
+function createPendingPartialDownload() {
+  let markReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const download = vi.fn(async (input: DownloadInput) => {
+    await mkdir(dirname(input.destinationPath), { recursive: true });
+    await writeFile(input.destinationPath, "partial");
+    return new Promise<never>((_resolvePromise, rejectPromise) => {
+      const rejectAsAborted = () =>
+        rejectPromise(new DOMException("cancelled", "AbortError"));
+      input.signal.addEventListener("abort", rejectAsAborted, {
+        once: true,
+      });
+      markReady();
+      if (input.signal.aborted) rejectAsAborted();
+    });
+  });
+
+  return { download, ready };
+}
+
 function createDefinition(content: Uint8Array) {
   return {
     id: "libreoffice",
@@ -620,23 +646,8 @@ describe("ExternalLibraryService", () => {
   });
 
   it("deduplicates installation and supports cancellation", async () => {
-    const download = vi.fn(
-      async (
-        input: Parameters<
-          ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
-        >[0],
-      ) => {
-        await mkdir(dirname(input.destinationPath), { recursive: true });
-        await writeFile(input.destinationPath, "partial");
-        return new Promise<never>((_resolvePromise, rejectPromise) => {
-          input.signal.addEventListener(
-            "abort",
-            () => rejectPromise(new DOMException("cancelled", "AbortError")),
-            { once: true },
-          );
-        });
-      },
-    );
+    const { download, ready: downloadReady } =
+      createPendingPartialDownload();
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
 
@@ -644,7 +655,7 @@ describe("ExternalLibraryService", () => {
       await harness.service.startInstallation("libreoffice");
     const second =
       await harness.service.startInstallation("libreoffice");
-    await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
+    await downloadReady;
     const downloadDirectory = dirname(
       download.mock.calls[0]![0].destinationPath,
     );
@@ -697,31 +708,8 @@ describe("ExternalLibraryService", () => {
   });
 
   it("cancels active installations during shutdown", async () => {
-    let markDownloadReady!: () => void;
-    const downloadReady = new Promise<void>((resolve) => {
-      markDownloadReady = resolve;
-    });
-    const download = vi.fn(
-      async (
-        input: Parameters<
-          ConstructorParameters<typeof ExternalLibraryService>[4]["download"]
-        >[0],
-      ) => {
-        await mkdir(dirname(input.destinationPath), { recursive: true });
-        await writeFile(input.destinationPath, "partial");
-        return new Promise<never>((_resolvePromise, rejectPromise) => {
-          const rejectAsAborted = () =>
-            rejectPromise(new DOMException("cancelled", "AbortError"));
-          input.signal.addEventListener(
-            "abort",
-            rejectAsAborted,
-            { once: true },
-          );
-          markDownloadReady();
-          if (input.signal.aborted) rejectAsAborted();
-        });
-      },
-    );
+    const { download, ready: downloadReady } =
+      createPendingPartialDownload();
     const harness = await createHarness({ downloader: { download } });
     await harness.service.initialize();
     const installation =
