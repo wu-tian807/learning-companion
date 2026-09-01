@@ -7,6 +7,7 @@ import { createProjectConversationHistoryStore } from './conversation-history-st
 function record(id: string): ConversationRecord {
   return {
     id,
+    modeId: 'project.general',
     title: `对话 ${id}`,
     messages: [
       { id: `${id}-q`, role: 'user', text: '问题', createdTime: 1 },

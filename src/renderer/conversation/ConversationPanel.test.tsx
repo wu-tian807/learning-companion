@@ -10,6 +10,7 @@ import type {
   ConversationControllerState,
 } from './conversation-controller';
 import { ConversationPanel } from './ConversationPanel';
+import type { ConversationModePresentation } from './conversation-mode';
 
 const actions: ConversationControllerActions = {
   setTab: vi.fn(),
@@ -57,6 +58,7 @@ function state(
     tab: 'chat',
     conversation: {
       id: 'conversation',
+      modeId: 'project.general',
       title: '新对话',
       messages: [],
       createdTime: 1,
@@ -78,6 +80,7 @@ function render(
     source?.contextProviderId === contribution.contextProviderId
       ? contribution
       : undefined,
+  presentation?: ConversationModePresentation,
 ): string {
   return renderToStaticMarkup(
     <ConversationPanel
@@ -90,15 +93,35 @@ function render(
       onClose={vi.fn()}
       onOpenSettings={vi.fn()}
       onError={vi.fn()}
+      presentation={presentation}
     />,
   );
 }
 
 describe('ConversationPanel', () => {
+  it('accepts mode-specific presentation without changing chat behavior', () => {
+    const html = render(
+      state(),
+      undefined,
+      {
+        title: '学习大纲规划',
+        ariaLabel: '学习大纲规划会话',
+        emptyLabel: '先确认你的学习目标',
+        inputPlaceholder: '补充学习要求…',
+      },
+    );
+
+    expect(html).toContain('学习大纲规划');
+    expect(html).toContain('先确认你的学习目标');
+    expect(html).toContain('补充学习要求…');
+    expect(html).toContain('aria-label="学习大纲规划会话"');
+  });
+
   it('renders and links a persisted reference without a mounted Workbench', () => {
     const html = render(state({
       conversation: {
         id: 'conversation',
+        modeId: 'project.general',
         title: '已有引用',
         messages: [{
           id: 'question',
@@ -152,6 +175,7 @@ describe('ConversationPanel', () => {
   it('renders persisted conversations as a dedicated history tab with view and delete actions', () => {
     const conversation = {
       id: 'saved',
+      modeId: 'project.general',
       title: '历史问题',
       messages: [
         { id: 'q', role: 'user' as const, text: '旧问题', createdTime: 1 },
@@ -175,6 +199,7 @@ describe('ConversationPanel', () => {
   it('keeps the history tab available while the current answer is generating', () => {
     const conversation = {
       id: 'active',
+      modeId: 'project.general',
       title: '生成中的问题',
       messages: [
         { id: 'q', role: 'user' as const, text: '问题', createdTime: 1 },
@@ -211,6 +236,7 @@ describe('ConversationPanel', () => {
     const html = render(state({
       conversation: {
         id: 'conversation',
+        modeId: 'project.general',
         title: '问题',
         messages: [
           {

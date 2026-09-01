@@ -8,6 +8,7 @@ import { createWorkbenchConversationTaskDefinitionV1 } from './workbench-convers
 function instruction(input: {
   readonly commitAnswer?: boolean;
   readonly generateTitle?: boolean;
+  readonly workspace?: Readonly<{ instanceKey: string }>;
 } = {}) {
   return new WorkbenchConversationInstruction({
     contextProviderId: 'test.context',
@@ -81,6 +82,22 @@ describe('shared Workbench conversation TaskDefinition', () => {
     expect(resolve({ taskId: 'task-2', instruction: snapshot })).toBe(
       'conversation-stable',
     );
+  });
+
+  it('lets a conversation mode select a stable workspace instance', () => {
+    const { definition } = setup();
+    const resolve = definition.primaryWorkspaceConfig.resolveInstanceKey!;
+    const snapshot = instruction({
+      workspace: { instanceKey: 'outline-draft-1' },
+    }).toSnapshot();
+
+    expect(resolve({ taskId: 'task-1', instruction: snapshot })).toBe(
+      'outline-draft-1',
+    );
+    expect(definition.primaryWorkspaceConfig.permissions).toEqual({
+      read: true,
+      write: false,
+    });
   });
 
   it('runs one provider-prepared Agent turn and returns the common result', async () => {

@@ -8,6 +8,11 @@
 > 补充。Project 始终提供可用的全局问答；Workbench Contribution 只提供可选媒体上下文，
 > 不拥有聊天或历史。打开的问答与生成中心互斥复用同一个右侧插槽，UI 历史统一由后端
 > Project Conversation Store 持久化。
+>
+> 2026-09-01：通用 Conversation 生命周期已与默认 Project Mode 解耦，并允许新建
+> Conversation 持久化可选 Workspace instance binding。Workbench Context 的消息级
+> 边界保持不变；详见
+> [Conversation Mode 与 Workspace Binding](./2026-09-01-conversation-modes-and-workspace-binding-design.md)。
 
 ## 1. 最终结论
 
@@ -80,7 +85,8 @@ Context Provider 不创建 GenerationTask，不拥有 Session，也不直接调�
 统一负责：
 
 - 解析和校验 `WorkbenchConversationInstruction`；
-- 使用 `conversationId` 作为稳定 Workspace instance key；
+- 默认使用 `conversationId` 作为稳定 Workspace instance key；Conversation 明确持久化
+  Workspace Binding 时使用其 `instanceKey`；
 - 通过 Workbench Provider Selector 选择 AgentProvider；
 - 调用匹配的 Context Provider 准备本轮输入；
 - 通过 `TaskAgentSession.call()` 执行一次 Agent Turn；
@@ -127,7 +133,8 @@ registerGeneration({ conversationContexts }) {
 
 - 一次用户发送对应一个 GenerationTask；
 - 同一 Conversation 的多个 GenerationTask 使用相同 `conversationId`；
-- `conversationId` 映射到相同 Workspace instance 与 Provider Session；
+- 未显式绑定 Workspace 时，`conversationId` 映射到相同 Workspace instance 与
+  Provider Session；显式绑定后由不可变的 `instanceKey` 定位二者；
 - Provider Thread/Session 是模型上下文的事实来源；
 - `project_conversations` 以 `conversationId + projectId` 保存标题和 Renderer 消息投影；
 - Renderer 只通过统一 Project Conversation IPC 读写，不再由各 Workbench 使用 `localStorage`

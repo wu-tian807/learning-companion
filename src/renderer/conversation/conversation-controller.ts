@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   GenerationTaskView,
 } from '../../shared/generation-tasks';
-import { isWorkbenchConversationTaskResult } from '../../shared/workbench-conversation';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
   ConversationContextAttachment,
@@ -12,15 +11,14 @@ import type {
   ConversationMessageRecord,
   ConversationReanswerBackup,
   ConversationRecord,
+  ConversationWorkspaceBinding,
 } from './conversation-contracts';
+import type { ConversationModeDefinition } from './conversation-mode';
 import {
   conversationTaskClient,
   type ConversationTaskClient,
 } from './conversation-task-client';
-import {
-  createConversationContextSource,
-  createConversationTaskRequest,
-} from './conversation-task-request';
+import { createConversationContextSource } from './conversation-task-request';
 import {
   activityFromExecutionEvent,
   conversationContextsEqual,
@@ -33,6 +31,7 @@ import {
   taskSnapshotFromEvent,
   type ConversationErrorState,
 } from './conversation-controller-model';
+import { projectConversationMode } from './project-conversation-mode';
 
 export type { ConversationErrorState } from './conversation-controller-model';
 
@@ -75,6 +74,9 @@ interface UseConversationControllerInput {
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly onPersistenceError?: (error: unknown) => void;
+  readonly mode?: ConversationModeDefinition;
+  /** Default immutable workspace binding for conversations created by this host. */
+  readonly workspace?: ConversationWorkspaceBinding;
   readonly taskClient?: ConversationTaskClient;
   readonly createId?: () => string;
   readonly now?: () => number;
@@ -175,6 +177,8 @@ export function useConversationController({
   launchRequest,
   onLaunchConsumed,
   onPersistenceError,
+  mode: conversationMode = projectConversationMode,
+  workspace,
   taskClient = conversationTaskClient,
   createId = defaultCreateConversationId,
   now = Date.now,
@@ -184,7 +188,10 @@ export function useConversationController({
 } {
   const [tab, setTab] = useState<'chat' | 'history'>('chat');
   const [conversation, setConversationState] = useState<ConversationRecord>(() =>
-    createConversationRecord(createId(), now()),
+    createConversationRecord(createId(), now(), {
+      modeId: conversationMode.id,
+      ...(workspace ? { workspace } : {}),
+    }),
   );
   const [history, setHistory] = useState<readonly ConversationRecord[]>([]);
   const [draft, setDraft] = useState('');
@@ -208,6 +215,20 @@ export function useConversationController({
   const onPersistenceErrorRef = useRef(onPersistenceError);
   const deletedConversationIdsRef = useRef(new Set<string>());
   const historyMutationTailRef = useRef<Promise<void>>(Promise.resolve());
+  const [initialModeId] = useState(conversationMode.id);
+  if (initialModeId !== conversationMode.id) {
+    throw new Error('已有 Conversation Controller 不能切换 Mode');
+  }
+
+  const visibleHistory = useCallback(
+    (records: readonly ConversationRecord[]) =>
+      records.filter(
+        (record) =>
+          record.modeId === conversationMode.id &&
+          !deletedConversationIdsRef.current.has(record.id),
+      ),
+    [conversationMode.id],
+  );
   useEffect(() => {
     onPersistenceErrorRef.current = onPersistenceError;
   }, [onPersistenceError]);
@@ -275,9 +296,7 @@ export function useConversationController({
         return historyStore.save(record);
       });
       if (mountedRef.current && records) {
-        setHistory(records.filter(
-          ({ id }) => !deletedConversationIdsRef.current.has(id),
-        ));
+        setHistory(visibleHistory(records));
       }
     } catch (persistenceError) {
       if (mountedRef.current) {
@@ -285,7 +304,7 @@ export function useConversationController({
       }
       onPersistenceErrorRef.current?.(persistenceError);
     }
-  }, [enqueueHistoryMutation, historyStore]);
+  }, [enqueueHistoryMutation, historyStore, visibleHistory]);
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
@@ -308,13 +327,7 @@ export function useConversationController({
     if (!taskId || task.id !== taskId || !messageId) return false;
 
     if (task.status === 'completed') {
-      const result = isWorkbenchConversationTaskResult(task.result)
-        ? {
-            answer: task.result.answer,
-            ...(task.result.title ? { title: task.result.title } : {}),
-            modelInfo: `${task.result.providerId}/${task.result.modelId}`,
-          }
-        : undefined;
+      const result = conversationMode.task.readCompletion(task);
       if (!result?.answer.trim()) {
         finishTask();
         setError({ message: 'AI 任务已完成，但最终回答无效，请重试。', retryTaskId: task.id });
@@ -367,7 +380,7 @@ export function useConversationController({
       return true;
     }
     return false;
-  }, [finishTask, persist, updateConversation]);
+  }, [conversationMode.task, finishTask, persist, updateConversation]);
 
   const bindTask = useCallback(
     (
@@ -413,7 +426,7 @@ export function useConversationController({
       void historyStore.list().then(
         (records) => {
           if (!active) return;
-          setHistory(records);
+          setHistory(visibleHistory(records));
           setHistoryLoading(false);
           setHistoryReady(true);
         },
@@ -427,7 +440,7 @@ export function useConversationController({
       );
     });
     return () => { active = false; };
-  }, [historyStore, open]);
+  }, [historyStore, open, visibleHistory]);
 
   useEffect(() => taskClient.subscribe((event) => {
     const taskId = activeTaskIdRef.current;
@@ -466,12 +479,23 @@ export function useConversationController({
     } else {
       setPendingContext(context);
     }
-    replaceConversation(createConversationRecord(createId(), now()));
+    replaceConversation(createConversationRecord(createId(), now(), {
+      modeId: conversationMode.id,
+      ...(workspace ? { workspace } : {}),
+    }));
     setDraft('');
     setError(undefined);
     setActivityLabel(undefined);
     setTab('chat');
-  }, [clearTransientContext, createId, now, replaceConversation, setPendingContext]);
+  }, [
+    clearTransientContext,
+    conversationMode.id,
+    createId,
+    now,
+    replaceConversation,
+    setPendingContext,
+    workspace,
+  ]);
 
   const startNew = useCallback((
     context?: ConversationContextAttachment,
@@ -482,7 +506,10 @@ export function useConversationController({
   }, [resetConversation]);
 
   const restore = useCallback((record: ConversationRecord) => {
-    if (activeTaskIdRef.current) return;
+    if (
+      activeTaskIdRef.current ||
+      record.modeId !== conversationMode.id
+    ) return;
     void persistRef.current();
     clearTransientContext();
     replaceConversation(record);
@@ -507,7 +534,15 @@ export function useConversationController({
     }).catch((taskError: unknown) => {
       setError({ message: userMessageFromError(taskError, '无法恢复这次回答。') ?? '无法恢复这次回答。' });
     });
-  }, [applyTerminalTask, bindTask, clearTransientContext, projectId, replaceConversation, taskClient]);
+  }, [
+    applyTerminalTask,
+    bindTask,
+    clearTransientContext,
+    conversationMode.id,
+    projectId,
+    replaceConversation,
+    taskClient,
+  ]);
 
   const submit = useCallback((question = draft, context = pendingContext) => {
     const normalized = question.trim();
@@ -522,6 +557,7 @@ export function useConversationController({
       projectId,
       ...(context ? { assetId: context.assetId } : {}),
       conversationId: current.id,
+      ...(current.workspace ? { workspace: current.workspace } : {}),
       question: normalized,
       ...(context?.context === undefined
         ? {}
@@ -531,7 +567,7 @@ export function useConversationController({
     let contextSource:
       | ReturnType<typeof createConversationContextSource>
       | undefined;
-    let request: ReturnType<typeof createConversationTaskRequest>;
+    let request: ReturnType<ConversationModeDefinition['task']['createRequest']>;
     try {
       contextSource = context
         ? createConversationContextSource(
@@ -539,7 +575,7 @@ export function useConversationController({
             taskInput,
           )
         : undefined;
-      request = createConversationTaskRequest({
+      request = conversationMode.task.createRequest({
         ...taskInput,
         ...(contextSource ? { contextSource } : {}),
       });
@@ -628,6 +664,7 @@ export function useConversationController({
     applyTerminalTask,
     bindTask,
     createId,
+    conversationMode.task,
     draft,
     now,
     pendingContext,
@@ -795,11 +832,12 @@ export function useConversationController({
     setActivityLabel('正在重新回答…');
     setBusy(true);
 
-    let request: ReturnType<typeof createConversationTaskRequest>;
+    let request: ReturnType<ConversationModeDefinition['task']['createRequest']>;
     try {
-      request = createConversationTaskRequest({
+      request = conversationMode.task.createRequest({
         projectId,
         conversationId: current.id,
+        ...(current.workspace ? { workspace: current.workspace } : {}),
         question: normalized,
         ...(question?.context === undefined
           ? {}
@@ -840,6 +878,7 @@ export function useConversationController({
   }, [
     applyTerminalTask,
     bindTask,
+    conversationMode.task,
     projectId,
     taskClient,
   ]);
@@ -865,9 +904,7 @@ export function useConversationController({
     }).then(
       (records) => {
         if (!mountedRef.current) return;
-        setHistory(records.filter(
-          ({ id }) => !deletedConversationIdsRef.current.has(id),
-        ));
+        setHistory(visibleHistory(records));
       },
       (removeError: unknown) => {
         deletedConversationIdsRef.current.delete(record.id);
@@ -879,7 +916,12 @@ export function useConversationController({
         onPersistenceErrorRef.current?.(removeError);
       },
     );
-  }, [enqueueHistoryMutation, historyStore, resetConversation]);
+  }, [
+    enqueueHistoryMutation,
+    historyStore,
+    resetConversation,
+    visibleHistory,
+  ]);
 
   return {
     state: {

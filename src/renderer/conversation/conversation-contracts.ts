@@ -2,6 +2,7 @@ import type {
   ConversationMessageContextSource,
   ConversationMessageRecord,
   ConversationRecord,
+  ConversationWorkspaceBinding,
 } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
@@ -11,6 +12,7 @@ export type {
   ConversationReanswerBackup,
   ConversationRecord,
   ConversationRole,
+  ConversationWorkspaceBinding,
 } from '../../shared/project-conversations';
 
 export interface ConversationContextPresentation {
@@ -31,6 +33,7 @@ export interface ConversationTaskInput {
   readonly projectId: string;
   readonly assetId?: string;
   readonly conversationId: string;
+  readonly workspace?: ConversationWorkspaceBinding;
   readonly question: string;
   readonly context?: JsonValue;
   readonly contextSource?: ConversationMessageContextSource;

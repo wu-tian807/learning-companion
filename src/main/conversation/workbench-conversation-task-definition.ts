@@ -80,7 +80,10 @@ export function createWorkbenchConversationTaskDefinitionV1(
         if (!parsed.ok) {
           throw new Error('Invalid Workbench Conversation instruction');
         }
-        return parsed.value.conversationId;
+        return (
+          parsed.value.workspace?.instanceKey ??
+          parsed.value.conversationId
+        );
       },
     }),
     secondaryWorkspaceConfigs: Object.freeze([]),

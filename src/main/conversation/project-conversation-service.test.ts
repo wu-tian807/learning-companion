@@ -7,6 +7,7 @@ import { ProjectConversationService } from './project-conversation-service';
 function record(): ConversationRecord {
   return {
     id: 'conversation-1',
+    modeId: 'project.general',
     title: '对话',
     messages: [
       { id: 'message-1', role: 'user', text: '问题', createdTime: 1 },

@@ -8,8 +8,21 @@ export const PROJECT_CONVERSATION_MAX_CONVERSATIONS = 1_000;
 export const PROJECT_CONVERSATION_MAX_MESSAGES = 2_000;
 export const PROJECT_CONVERSATION_MAX_TEXT_LENGTH = 32_768;
 export const PROJECT_CONVERSATION_MAX_CONTEXT_BYTES = 64 * 1_024;
+export const PROJECT_CONVERSATION_MODE_ID = 'project.general';
+
+const CONVERSATION_MODE_ID_PATTERN =
+  /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
+const CONVERSATION_WORKSPACE_INSTANCE_KEY_PATTERN =
+  /^[A-Za-z0-9._-]{1,160}$/u;
 
 export type ConversationRole = 'user' | 'assistant';
+
+/**
+ * Stable Agent Workspace instance selected by the owning conversation mode.
+ * The TaskDefinition still owns the workspace namespace and permissions.
+ */
+export type ConversationWorkspaceBinding = JsonValue &
+  Readonly<{ instanceKey: string }>;
 
 export interface ConversationReanswerBackup {
   readonly text: string;
@@ -43,6 +56,8 @@ export interface ConversationMessageRecord {
 
 export interface ConversationRecord {
   readonly id: string;
+  readonly modeId: string;
+  readonly workspace?: ConversationWorkspaceBinding;
   readonly title: string;
   readonly messages: readonly ConversationMessageRecord[];
   readonly createdTime: number;
@@ -76,6 +91,25 @@ function isRequiredText(
     value.trim().length > 0 &&
     value.length <= maximum
   );
+}
+
+export function isConversationWorkspaceBinding(
+  value: unknown,
+): value is ConversationWorkspaceBinding {
+  return (
+    isRecord(value) &&
+    typeof value.instanceKey === 'string' &&
+    CONVERSATION_WORKSPACE_INSTANCE_KEY_PATTERN.test(value.instanceKey)
+  );
+}
+
+export function cloneConversationWorkspaceBinding(
+  value: ConversationWorkspaceBinding,
+): ConversationWorkspaceBinding {
+  if (!isConversationWorkspaceBinding(value)) {
+    throw new Error('Conversation Workspace Binding 数据无效');
+  }
+  return Object.freeze({ instanceKey: value.instanceKey });
 }
 
 function isTime(value: unknown): value is number {
@@ -152,6 +186,10 @@ export function isConversationRecord(
   if (!isRecord(value)) return false;
   return (
     isRequiredText(value.id, 160) &&
+    typeof value.modeId === 'string' &&
+    CONVERSATION_MODE_ID_PATTERN.test(value.modeId) &&
+    (value.workspace === undefined ||
+      isConversationWorkspaceBinding(value.workspace)) &&
     isRequiredText(value.title, 128) &&
     Array.isArray(value.messages) &&
     value.messages.length <= PROJECT_CONVERSATION_MAX_MESSAGES &&
@@ -183,6 +221,10 @@ export function cloneConversationRecord(
   }
   return Object.freeze({
     id: value.id,
+    modeId: value.modeId,
+    ...(value.workspace
+      ? { workspace: cloneConversationWorkspaceBinding(value.workspace) }
+      : {}),
     title: value.title,
     messages: Object.freeze(
       value.messages.map((message) =>

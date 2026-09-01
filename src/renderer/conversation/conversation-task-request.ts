@@ -72,6 +72,7 @@ export function createConversationTaskRequest(
         ? { assetId: source.assetId }
         : {}),
       conversationId: input.conversationId,
+      ...(input.workspace ? { workspace: input.workspace } : {}),
       question: input.question,
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(source?.commitAnswer ? { commitAnswer: true } : {}),

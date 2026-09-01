@@ -23,6 +23,7 @@ function record(
 ): ConversationRecord {
   return {
     id,
+    modeId: 'project.general',
     title,
     messages: [
       { id: `${id}-question`, role: 'user', text: '问题', createdTime: 1 },
@@ -110,6 +111,49 @@ describe('ProjectConversationDatabase', () => {
     expect(conversations.list('project-1')).toEqual([
       record('persisted', 5),
     ]);
+  });
+
+  it('persists the conversation mode and its workspace binding', () => {
+    const specialized: ConversationRecord = {
+      ...record('outline-planning', 5),
+      modeId: 'learning-outline.planning',
+      workspace: { instanceKey: 'outline-draft-1' },
+    };
+
+    conversations.save('project-1', specialized);
+    context.close();
+    context = initializeDatabase(databaseFile);
+    conversations = new ProjectConversationDatabase(context);
+
+    expect(conversations.get('outline-planning')).toEqual({
+      projectId: 'project-1',
+      conversation: specialized,
+    });
+  });
+
+  it('never rebinds an existing conversation to another mode or workspace', () => {
+    const original: ConversationRecord = {
+      ...record('bound', 5),
+      modeId: 'learning-outline.planning',
+      workspace: { instanceKey: 'outline-draft-1' },
+    };
+    conversations.save('project-1', original);
+
+    expect(() =>
+      conversations.save('project-1', {
+        ...original,
+        modeId: 'project.general',
+        updatedTime: 6,
+      }),
+    ).toThrow();
+    expect(() =>
+      conversations.save('project-1', {
+        ...original,
+        workspace: { instanceKey: 'outline-draft-2' },
+        updatedTime: 6,
+      }),
+    ).toThrow();
+    expect(conversations.get('bound')?.conversation).toEqual(original);
   });
 
   it('never moves a stable conversation id across Projects', () => {
