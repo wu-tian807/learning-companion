@@ -31,6 +31,8 @@ describe('external library hardware capabilities', () => {
           throw new Error('gpu process unavailable');
         }),
         logger,
+        'win32',
+        'x64',
       ),
     ).resolves.toEqual({
       nvidiaGpuAvailable: false,
