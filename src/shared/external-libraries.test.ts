@@ -14,6 +14,8 @@ describe('ExternalLibrarySnapshot', () => {
       category: 'document',
       version: '25.2.5.2',
       expectedSize: 300_000_000,
+      estimatedInstalledSize: 900_000_000,
+      recommendedFreeSpace: 1_200_000_000,
       rootPath: '/Users/student/Documents/Learning Companion/externalLib',
       status: 'downloading',
       statusDetail: '正在下载模型',
@@ -27,6 +29,34 @@ describe('ExternalLibrarySnapshot', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.progress)).toBe(true);
     expect(snapshot.statusDetail).toBe('正在下载模型');
+    expect(snapshot.estimatedInstalledSize).toBe(900_000_000);
+  });
+
+  it('rejects incomplete or inverted storage estimates', () => {
+    const base = {
+      id: 'media-subtitles',
+      displayName: 'Media subtitles',
+      description: 'Local subtitles',
+      category: 'media',
+      version: '1',
+      expectedSize: 100,
+      rootPath: '/externalLib',
+      status: 'not-installed',
+    } as const;
+
+    expect(
+      isExternalLibrarySnapshot({
+        ...base,
+        estimatedInstalledSize: 200,
+      }),
+    ).toBe(false);
+    expect(
+      isExternalLibrarySnapshot({
+        ...base,
+        estimatedInstalledSize: 200,
+        recommendedFreeSpace: 199,
+      }),
+    ).toBe(false);
   });
 
   it('rejects malformed progress and relative paths', () => {

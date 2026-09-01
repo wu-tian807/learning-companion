@@ -30,6 +30,8 @@ function createSnapshot(
     category: 'document',
     version: '26.2.5',
     expectedSize: 300_000_000,
+    estimatedInstalledSize: 1_100 * 1024 * 1024,
+    recommendedFreeSpace: 2_000 * 1024 * 1024,
     rootPath: '/Users/student/Documents/Learning Companion/externalLib',
     status,
     ...(status === 'downloading'
@@ -115,7 +117,9 @@ describe('FirstRunOnboarding', () => {
 
     expect(markup).toContain('准备本地功能组件');
     expect(markup).toContain('官方来源');
-    expect(markup).toContain('固定组件资源约 286 MB');
+    expect(markup).toContain('下载约 286 MB');
+    expect(markup).toContain('安装后约 1.1 GB');
+    expect(markup).toContain('建议预留 2.0 GB 可用空间');
     expect(markup).toContain('安装');
     expect(markup).toContain('开始使用');
     expect(markup).not.toContain('aria-label="关闭');

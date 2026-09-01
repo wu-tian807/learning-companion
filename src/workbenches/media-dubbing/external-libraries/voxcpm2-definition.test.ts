@@ -17,6 +17,10 @@ describe('VoxCPM2 dubbing external library', () => {
     expect(mediaDubbingVoxCpm2Definition.id).toBe(
       MEDIA_DUBBING_VOXCPM2_LIBRARY_ID,
     );
+    expect(mediaDubbingVoxCpm2Definition.version).toBe('2026.08.29');
+    expect(
+      mediaDubbingVoxCpm2Definition.installationFormatVersion,
+    ).toBe(2);
     expect(mediaDubbingVoxCpm2Definition.packages).toHaveLength(1);
     expect(mediaDubbingVoxCpm2Definition.packages[0]).toMatchObject({
       platform: 'win32',
@@ -25,20 +29,31 @@ describe('VoxCPM2 dubbing external library', () => {
     });
   });
 
-  it('installs only VoxCPM2, separation, diarization and bootstrap resources', () => {
+  it('installs only VoxCPM2, source separation and bootstrap resources', () => {
     const packageDefinition = mediaDubbingVoxCpm2Definition.packages[0]!;
     expect(packageDefinition.packageType).toBe('bundle');
     if (packageDefinition.packageType !== 'bundle') return;
 
     const resourceIds = packageDefinition.resources.map(({ id }) => id);
+    expect(resourceIds).toEqual([
+      'uv-runtime',
+      'voxcpm2-audio-vae',
+      'voxcpm2-config',
+      'voxcpm2-weights',
+      'voxcpm2-special-tokens',
+      'voxcpm2-tokenization',
+      'voxcpm2-tokenizer-config',
+      'voxcpm2-tokenizer',
+      'uvr-source-separation-model',
+    ]);
     expect(resourceIds).toContain('voxcpm2-weights');
     expect(resourceIds).toContain('uvr-source-separation-model');
-    expect(resourceIds).toContain('speaker-segmentation-model');
-    expect(resourceIds).toContain('speaker-embedding-model');
+    expect(resourceIds).not.toContain('speaker-segmentation-model');
+    expect(resourceIds).not.toContain('speaker-embedding-model');
     expect(resourceIds).toContain('uv-runtime');
     expect(resourceIds.some((id) => /f5|voxcpm1[.-]?5/iu.test(id))).toBe(false);
     expect(externalLibraryPackageExpectedSize(packageDefinition)).toBe(
-      5_066_598_244,
+      5_036_776_566,
     );
   });
 

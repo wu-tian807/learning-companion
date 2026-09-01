@@ -19,7 +19,7 @@ export interface AudioTranscriptSpeaker {
   readonly id: string;
   readonly label: string;
   readonly status: 'stable' | 'uncertain' | 'unknown';
-  readonly referenceMode: 'reference' | 'default';
+  readonly referenceMode: 'reference' | 'default' | 'unprepared';
   readonly referenceStartSeconds?: number;
   readonly referenceEndSeconds?: number;
 }
@@ -76,6 +76,9 @@ function speakerDescription(speaker: AudioTranscriptSpeaker): string {
       speaker.referenceStartSeconds,
     )}–${formatMediaTime(speaker.referenceEndSeconds)}`;
   }
+  if (speaker.referenceMode === 'unprepared') {
+    return `${speaker.label}${certainty}；字幕已识别说话人，配音声色参考尚未准备`;
+  }
   return `${speaker.label}${certainty}；配音使用默认声线`;
 }
 
@@ -89,6 +92,7 @@ function speakerReferenceLabel(speaker: AudioTranscriptSpeaker): string {
       speaker.referenceEndSeconds,
     )}`;
   }
+  if (speaker.referenceMode === 'unprepared') return '待准备声色参考';
   return '默认声线';
 }
 
@@ -117,20 +121,28 @@ export function resolveAudioTranscriptRows(
     const profile = assignment
       ? profiles.get(assignment.speakerId)
       : undefined;
-    const speaker = assignment && profile
-      ? {
-          id: assignment.speakerId,
-          label: speakerLabel(assignment.speakerId),
-          status: assignment.status,
-          referenceMode: profile.mode,
-          ...(profile.mode === 'reference'
-            ? {
-                referenceStartSeconds: profile.referenceStartMs / 1_000,
-                referenceEndSeconds: profile.referenceEndMs / 1_000,
-              }
-            : {}),
-        }
-      : undefined;
+    const speaker =
+      assignment && profile
+        ? {
+            id: assignment.speakerId,
+            label: speakerLabel(assignment.speakerId),
+            status: assignment.status,
+            referenceMode: profile.mode,
+            ...(profile.mode === 'reference'
+              ? {
+                  referenceStartSeconds: profile.referenceStartMs / 1_000,
+                  referenceEndSeconds: profile.referenceEndMs / 1_000,
+                }
+              : {}),
+          }
+        : cue.speakerId
+          ? {
+              id: cue.speakerId,
+              label: speakerLabel(cue.speakerId),
+              status: 'stable' as const,
+              referenceMode: 'unprepared' as const,
+            }
+          : undefined;
     return {
       id: cue.id,
       startSeconds: cue.startMs / 1_000,

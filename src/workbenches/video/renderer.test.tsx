@@ -171,6 +171,13 @@ describe('VideoWorkbenchView', () => {
         language: 'en' as const,
         origin: 'asr' as const,
         engine: { id: 'asr', version: '1', model: 'model', backend: 'cpu' },
+        speakerAnalysis: {
+          method: 'joint-transcription-diarization' as const,
+          supportsOverlappingTranscription: true,
+          segments: [
+            { speakerId: 'speaker-0001', startMs: 0, endMs: 2_000 },
+          ],
+        },
         generatedTime: 100,
         cues: [
           {
@@ -179,6 +186,7 @@ describe('VideoWorkbenchView', () => {
             endMs: 1_000,
             text: 'Hello.',
             sourceCueIds: ['raw-1'],
+            speakerId: 'speaker-0001',
           },
           {
             id: 'cue-2',
@@ -186,6 +194,7 @@ describe('VideoWorkbenchView', () => {
             endMs: 2_000,
             text: 'World.',
             sourceCueIds: ['raw-2'],
+            speakerId: 'speaker-0001',
           },
         ],
       },
@@ -195,6 +204,9 @@ describe('VideoWorkbenchView', () => {
     };
 
     expect(createVideoSubtitleVtt(snapshot, 'source')).toContain('Hello.');
+    expect(createVideoSubtitleVtt(snapshot, 'source')).toContain(
+      '【说话人 1】Hello.',
+    );
     expect(createVideoSubtitleVtt(snapshot, 'translated')).toContain(
       '〔原文 · 译文生成中〕World.',
     );

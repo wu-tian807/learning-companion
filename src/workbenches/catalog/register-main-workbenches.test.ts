@@ -126,7 +126,10 @@ describe('Workbench contribution catalogs', () => {
 
     registerMainWorkbenchExternalLibraries({
       libraries,
-      hardware: { nvidiaGpuAvailable: false },
+      hardware: {
+        nvidiaGpuAvailable: false,
+        appleSiliconAvailable: false,
+      },
       lifecycles,
       runtimeSetups,
     });
@@ -151,7 +154,10 @@ describe('Workbench contribution catalogs', () => {
 
     registerMainWorkbenchExternalLibraries({
       libraries,
-      hardware: { nvidiaGpuAvailable: true },
+      hardware: {
+        nvidiaGpuAvailable: true,
+        appleSiliconAvailable: false,
+      },
       lifecycles,
       runtimeSetups,
     });
@@ -162,6 +168,27 @@ describe('Workbench contribution catalogs', () => {
     expect(
       libraries.selectPackage('media-subtitles', 'win32', 'x64').variantId,
     ).toBe('nvidia');
+  });
+
+  it('selects the Metal subtitle profile on Apple Silicon', () => {
+    const libraries = new ExternalLibraryRegistry();
+
+    registerMainWorkbenchExternalLibraries({
+      libraries,
+      hardware: {
+        nvidiaGpuAvailable: false,
+        appleSiliconAvailable: true,
+      },
+      lifecycles: new ExternalLibraryLifecycleRegistry(),
+      runtimeSetups: new ExternalLibraryRuntimeSetupRegistry(),
+    });
+
+    expect(libraries.require('media-subtitles').defaultVariantId).toBe(
+      'apple-silicon',
+    );
+    expect(
+      libraries.selectPackage('media-subtitles', 'darwin', 'arm64').variantId,
+    ).toBe('apple-silicon');
   });
 
   it('registers Renderer loaders for the same manifests', () => {

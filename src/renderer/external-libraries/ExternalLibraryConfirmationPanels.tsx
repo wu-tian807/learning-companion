@@ -1,5 +1,5 @@
 import type { ExternalLibrarySnapshot } from '../../shared/external-libraries';
-import { formatExternalLibrarySize } from './external-library-view';
+import { externalLibraryStorageSummary } from './external-library-view';
 import type { PendingExternalLibraryInstall } from './use-external-library-management';
 
 interface ConfirmationPanelProps {
@@ -83,9 +83,9 @@ export function ExternalLibraryConfirmationPanels({
       {pendingInstall && (
         <ConfirmationPanel
           title={`安装 ${pendingInstall.library.displayName}？`}
-          description={`固定组件资源约 ${formatExternalLibrarySize(
-            pendingInstall.expectedSize,
-          )}。${pendingInstall.library.description} 安装时会在“${pendingInstall.library.rootPath}”内完成全部运行环境与校验；如需更换磁盘，请先取消并使用“更换位置”。`}
+          description={`${pendingInstall.library.description} ${externalLibraryStorageSummary(
+            pendingInstall.library,
+          )}。安装时会在“${pendingInstall.library.rootPath}”内完成全部运行环境与校验；如需更换磁盘，请先取消并使用“更换位置”。`}
           confirmLabel="下载并安装"
           busy={requestPendingById.has(pendingInstall.library.id)}
           onCancel={onCancelInstall}

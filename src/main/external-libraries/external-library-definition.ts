@@ -11,6 +11,8 @@ interface ExternalLibraryPackageDefinitionBase {
   readonly platform: ExternalLibraryPlatform;
   readonly architecture: ExternalLibraryArchitecture;
   readonly variantId?: string;
+  readonly estimatedInstalledSize?: number;
+  readonly recommendedFreeSpace?: number;
 }
 
 interface ExternalLibrarySinglePackageDefinitionBase
@@ -42,6 +44,10 @@ export type ExternalLibraryBundleResourceInstallation =
     }
   | {
       readonly type: 'zip';
+      readonly destinationRelativePath: string;
+    }
+  | {
+      readonly type: 'tar-gzip' | 'tar-bzip2';
       readonly destinationRelativePath: string;
     }
   | {
@@ -177,7 +183,9 @@ function isBundleResource(
     !isRecord(value.installation) ||
     (value.installation.type !== 'file' &&
       value.installation.type !== 'gzip' &&
-      value.installation.type !== 'zip') ||
+      value.installation.type !== 'zip' &&
+      value.installation.type !== 'tar-gzip' &&
+      value.installation.type !== 'tar-bzip2') ||
     !isPortableWorkspaceRelativePath(
       value.installation.destinationRelativePath,
     )
@@ -200,7 +208,13 @@ export function isExternalLibraryPackageDefinition(
     !isExternalLibraryPlatform(value.platform) ||
     !isExternalLibraryArchitecture(value.architecture) ||
     (value.variantId !== undefined &&
-      !isSafeExternalLibraryPathSegment(value.variantId))
+      !isSafeExternalLibraryPathSegment(value.variantId)) ||
+    ((value.estimatedInstalledSize === undefined) !==
+      (value.recommendedFreeSpace === undefined)) ||
+    (value.estimatedInstalledSize !== undefined &&
+      (!isPositiveSafeInteger(value.estimatedInstalledSize) ||
+        !isPositiveSafeInteger(value.recommendedFreeSpace) ||
+        value.recommendedFreeSpace < value.estimatedInstalledSize))
   ) {
     return false;
   }
@@ -377,6 +391,12 @@ function clonePackage(
       ...(value.variantId === undefined
         ? {}
         : { variantId: value.variantId }),
+      ...(value.estimatedInstalledSize === undefined
+        ? {}
+        : {
+            estimatedInstalledSize: value.estimatedInstalledSize,
+            recommendedFreeSpace: value.recommendedFreeSpace,
+          }),
       packageType: 'bundle',
       resources: Object.freeze(value.resources.map(cloneBundleResource)),
       requiredRelativePaths: Object.freeze([...value.requiredRelativePaths]),
@@ -392,6 +412,12 @@ function clonePackage(
     ...(value.variantId === undefined
       ? {}
       : { variantId: value.variantId }),
+    ...(value.estimatedInstalledSize === undefined
+      ? {}
+      : {
+          estimatedInstalledSize: value.estimatedInstalledSize,
+          recommendedFreeSpace: value.recommendedFreeSpace,
+        }),
     downloadUrl: value.downloadUrl.trim(),
     sha256: value.sha256,
     expectedSize: value.expectedSize,

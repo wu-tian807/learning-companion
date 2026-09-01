@@ -50,6 +50,8 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
+    "tar-stream": "3.2.1",
+    "unbzip2-stream": "1.4.3",
     "vditor": "3.11.2",
     "write-file-atomic": "^8.0.0",
     "zustand": "^5.0.14"
@@ -70,6 +72,8 @@
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "@types/tar-stream": "3.1.4",
+    "@types/unbzip2-stream": "1.4.3",
     "@types/write-file-atomic": "^4.0.3",
     "@vitejs/plugin-react": "6.0.4",
     "electron": "43.2.0",

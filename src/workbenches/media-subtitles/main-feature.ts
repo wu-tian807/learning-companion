@@ -2,6 +2,7 @@ import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main
 import { createSubtitleTranslationTaskDefinition } from './generation/subtitle-translation-task-definition';
 import {
   createMediaSubtitleSuiteDefinition,
+  MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID,
   MEDIA_SUBTITLE_CPU_VARIANT_ID,
   MEDIA_SUBTITLE_NVIDIA_VARIANT_ID,
 } from './external-libraries/definitions';
@@ -15,7 +16,9 @@ export const mediaSubtitlesMainFeature = Object.freeze({
   registerExternalLibraries({ libraries, hardware }): void {
     libraries.register(
       createMediaSubtitleSuiteDefinition(
-        hardware.nvidiaGpuAvailable
+        hardware.appleSiliconAvailable
+          ? MEDIA_SUBTITLE_APPLE_SILICON_VARIANT_ID
+          : hardware.nvidiaGpuAvailable
           ? MEDIA_SUBTITLE_NVIDIA_VARIANT_ID
           : MEDIA_SUBTITLE_CPU_VARIANT_ID,
       ),

@@ -67,7 +67,7 @@ describe('media subtitle contracts', () => {
     expect(oppositeSubtitleLanguage('zh-Hans')).toBe('en');
   });
 
-  it('rejects zero-duration, unordered, overlapping, duplicate, and reused source cues', () => {
+  it('accepts chronological overlaps and rejects invalid order or identity', () => {
     expect(isSubtitleSourceTrackV1({
       ...source,
       cues: [{ ...source.cues[0], endMs: 0 }],
@@ -82,7 +82,7 @@ describe('media subtitle contracts', () => {
         source.cues[0],
         { ...source.cues[1], startMs: 800 },
       ],
-    })).toBe(false);
+    })).toBe(true);
     expect(isSubtitleSourceTrackV1({
       ...source,
       cues: [source.cues[0], { ...source.cues[1], id: 'cue-1' }],
@@ -94,6 +94,34 @@ describe('media subtitle contracts', () => {
         { ...source.cues[1], sourceCueIds: ['raw-1'] },
       ],
     })).toBe(false);
+  });
+
+  it('requires every speaker-aware cue to reference a known speaker', () => {
+    const speakerAware = {
+      ...source,
+      speakerAnalysis: {
+        method: 'joint-transcription-diarization' as const,
+        supportsOverlappingTranscription: true,
+        segments: [
+          { speakerId: 'speaker-0001', startMs: 0, endMs: 1_900 },
+        ],
+      },
+      cues: source.cues.map((cue) => ({
+        ...cue,
+        speakerId: 'speaker-0001',
+      })),
+    };
+
+    expect(isSubtitleSourceTrackV1(speakerAware)).toBe(true);
+    expect(
+      isSubtitleSourceTrackV1({
+        ...speakerAware,
+        cues: [
+          speakerAware.cues[0],
+          { ...speakerAware.cues[1], speakerId: 'speaker-0002' },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it('rejects same-language, empty, and duplicate translation cues', () => {

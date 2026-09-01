@@ -34,10 +34,6 @@ const integrationEnvironment = {
   python: process.env.LC_VOXCPM2_TEST_PYTHON,
   model: process.env.LC_VOXCPM2_TEST_MODEL,
   separationModel: process.env.LC_VOXCPM2_TEST_SEPARATION_MODEL,
-  speakerSegmentationModel:
-    process.env.LC_VOXCPM2_TEST_SPEAKER_SEGMENTATION_MODEL,
-  speakerEmbeddingModel:
-    process.env.LC_VOXCPM2_TEST_SPEAKER_EMBEDDING_MODEL,
   ffmpeg: process.env.LC_VOXCPM2_TEST_FFMPEG,
   ffprobe: process.env.LC_VOXCPM2_TEST_FFPROBE,
 };
@@ -48,8 +44,6 @@ const enabled =
     integrationEnvironment.python,
     integrationEnvironment.model,
     integrationEnvironment.separationModel,
-    integrationEnvironment.speakerSegmentationModel,
-    integrationEnvironment.speakerEmbeddingModel,
     integrationEnvironment.ffmpeg,
     integrationEnvironment.ffprobe,
   ].every(
@@ -133,6 +127,9 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
             vadExecutablePath: 'unused',
             modelPath: 'unused',
             vadModelPath: 'unused',
+            speakerDiarizationExecutablePath: 'unused',
+            speakerSegmentationModelPath: 'unused',
+            speakerEmbeddingModelPath: 'unused',
           },
         };
         const subtitleRuntime: MediaSubtitleRuntimeResolverApi = {
@@ -156,12 +153,6 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
           modelPath: resolve(integrationEnvironment.model!),
           separationModelPath: resolve(
             integrationEnvironment.separationModel!,
-          ),
-          speakerSegmentationModelPath: resolve(
-            integrationEnvironment.speakerSegmentationModel!,
-          ),
-          speakerEmbeddingModelPath: resolve(
-            integrationEnvironment.speakerEmbeddingModel!,
           ),
           workerCachePath: join(directory, 'worker-cache'),
           environment,
@@ -219,6 +210,13 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
               model: 'fixture',
               backend: 'test',
             },
+            speakerAnalysis: {
+              method: 'joint-transcription-diarization',
+              supportsOverlappingTranscription: true,
+              segments: [
+                { speakerId: 'speaker-0001', startMs: 0, endMs: 9_500 },
+              ],
+            },
             generatedTime: 100,
             cues: [
               {
@@ -227,6 +225,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
                 endMs: 3_200,
                 text: 'Reference speech one.',
                 sourceCueIds: ['raw-1'],
+                speakerId: 'speaker-0001',
               },
               {
                 id: 'cue-2',
@@ -234,6 +233,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
                 endMs: 6_400,
                 text: 'Reference speech two.',
                 sourceCueIds: ['raw-2'],
+                speakerId: 'speaker-0001',
               },
               {
                 id: 'cue-3',
@@ -241,6 +241,7 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
                 endMs: 9_500,
                 text: 'Reference speech three.',
                 sourceCueIds: ['raw-3'],
+                speakerId: 'speaker-0001',
               },
             ],
           },
