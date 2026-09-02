@@ -4,6 +4,7 @@ import {
   VIDEO_FRAME_REGION_ANCHOR_VERSION,
   VIDEO_TIME_RANGE_ANCHOR_TYPE,
   VIDEO_TIME_RANGE_ANCHOR_VERSION,
+  MAX_VIDEO_FRAME_SOURCE_EDGE,
   isVideoFrameRegionAnchorV1,
   isVideoTimeRangeAnchorV1,
 } from './shared';
@@ -49,8 +50,16 @@ export const videoTargetMainFeature = Object.freeze({
             y: { type: 'number', minimum: 0, maximum: 1 },
             width: { type: 'number', exclusiveMinimum: 0, maximum: 1 },
             height: { type: 'number', exclusiveMinimum: 0, maximum: 1 },
-            sourceWidth: { type: 'integer', minimum: 1 },
-            sourceHeight: { type: 'integer', minimum: 1 },
+            sourceWidth: {
+              type: 'integer',
+              minimum: 1,
+              maximum: MAX_VIDEO_FRAME_SOURCE_EDGE,
+            },
+            sourceHeight: {
+              type: 'integer',
+              minimum: 1,
+              maximum: MAX_VIDEO_FRAME_SOURCE_EDGE,
+            },
           },
         },
         examplePayloads: [{

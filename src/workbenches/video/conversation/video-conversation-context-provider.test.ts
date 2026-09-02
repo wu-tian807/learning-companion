@@ -57,12 +57,16 @@ function processContext(
     readonly question?: string;
     readonly commitAnswer?: boolean;
     readonly conversationId?: string;
+    readonly selectionTarget?: ReturnType<typeof createVideoFrameRegionTarget>;
   } = {},
 ) {
   const selection =
     input.withSelection === false
       ? undefined
-      : createVideoConversationContext(target, input.sourceRevision ?? '100');
+      : createVideoConversationContext(
+          input.selectionTarget ?? target,
+          input.sourceRevision ?? '100',
+        );
   return {
     taskId: 'task-1',
     projectId: 'project-1',
@@ -265,6 +269,37 @@ describe('Video conversation context provider', () => {
         }),
       );
       expect(close).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('normalizes a non-square-pixel video frame to the player display dimensions', async () => {
+    await withDirectory(async (directory) => {
+      const displayTarget = createVideoFrameRegionTarget({
+        timeSeconds: 272.275629,
+        x: 0.18,
+        y: 0.14,
+        width: 0.64,
+        height: 0.86,
+        sourceWidth: 1280,
+        sourceHeight: 719,
+      });
+      const { provider, run } = setup();
+
+      await provider.prepare(
+        processContext(directory, { selectionTarget: displayTarget }),
+      );
+
+      const request = run.mock.calls[0]?.[0];
+      const filterIndex = request?.args.indexOf('-vf') ?? -1;
+      expect(request?.args.slice(filterIndex, filterIndex + 2)).toEqual([
+        '-vf',
+        'scale=1280:719:flags=lanczos,setsar=1',
+      ]);
+      expect(prepareVisualRegionInputs).toHaveBeenCalledWith(
+        expect.stringMatching(/frame\.png$/u),
+        displayTarget.targetPayload,
+        expect.stringMatching(/visual-region$/u),
+      );
     });
   });
 

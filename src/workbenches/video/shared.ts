@@ -42,6 +42,8 @@ export const VIDEO_TIME_RANGE_ANCHOR_TYPE = 'video.time-range';
 export const VIDEO_TIME_RANGE_ANCHOR_VERSION = 1;
 export const VIDEO_FRAME_REGION_ANCHOR_TYPE = 'video.frame-region';
 export const VIDEO_FRAME_REGION_ANCHOR_VERSION = 1;
+export const MAX_VIDEO_FRAME_SOURCE_EDGE = 32_768;
+export const MAX_VIDEO_FRAME_SOURCE_PIXELS = 100_000_000;
 
 export const videoWorkbenchManifest: AssetWorkbenchManifest<
   typeof VIDEO_WORKBENCH_ID
@@ -386,8 +388,12 @@ export function isVideoFrameRegionAnchorV1(
     Number(value.y) + Number(value.height) <= 1.000_001 &&
     Number.isSafeInteger(value.sourceWidth) &&
     Number(value.sourceWidth) > 0 &&
+    Number(value.sourceWidth) <= MAX_VIDEO_FRAME_SOURCE_EDGE &&
     Number.isSafeInteger(value.sourceHeight) &&
-    Number(value.sourceHeight) > 0
+    Number(value.sourceHeight) > 0 &&
+    Number(value.sourceHeight) <= MAX_VIDEO_FRAME_SOURCE_EDGE &&
+    Number(value.sourceWidth) * Number(value.sourceHeight) <=
+      MAX_VIDEO_FRAME_SOURCE_PIXELS
   );
 }
 

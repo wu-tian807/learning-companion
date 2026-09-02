@@ -152,6 +152,11 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
               sourcePath,
               '-map',
               '0:v:0',
+              // HTMLVideoElement reports display dimensions after applying the
+              // stream sample-aspect ratio. Normalize ffmpeg's decoded frame
+              // into that same coordinate space before preparing the ROI.
+              '-vf',
+              `scale=${region.sourceWidth}:${region.sourceHeight}:flags=lanczos,setsar=1`,
               '-frames:v',
               '1',
               '-an',
