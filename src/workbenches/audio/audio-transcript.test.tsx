@@ -103,7 +103,7 @@ describe('AudioTranscript', () => {
     expect(markup).toContain('Hello.');
     expect(markup).toContain('你好。');
     expect(markup).toContain('Welcome.');
-    expect(markup).toContain('正在翻译…');
+    expect(markup).toContain('〔正在翻译…〕');
     expect(markup).toContain('aria-current="true"');
     const scrollViewport = markup.match(
       /<div[^>]*data-audio-transcript-scroll="true"[^>]*>/u,
@@ -116,24 +116,18 @@ describe('AudioTranscript', () => {
     expect(markup).toContain('max-w-3xl');
   });
 
-  it('projects a stable per-speaker reference and marks uncertain cue ownership', () => {
+  it('shows speaker ownership without leaking dubbing reference internals', () => {
     const rows = resolveAudioTranscriptRows(snapshot(), speakerTrack());
     expect(rows.map(({ speaker }) => speaker)).toEqual([
       {
         id: 'speaker-0001',
         label: '说话人 1',
         status: 'stable',
-        referenceMode: 'reference',
-        referenceStartSeconds: 0,
-        referenceEndSeconds: 6,
       },
       {
         id: 'speaker-0001',
         label: '说话人 1',
         status: 'uncertain',
-        referenceMode: 'reference',
-        referenceStartSeconds: 0,
-        referenceEndSeconds: 6,
       },
     ]);
 
@@ -147,9 +141,10 @@ describe('AudioTranscript', () => {
       />,
     );
     expect(markup).toContain('说话人 1');
-    expect(markup).toContain('参考 0:00–0:06');
     expect(markup).toContain('说话人 1 ?');
-    expect(markup).toContain('不会用作声色参考候选');
+    expect(markup).toContain('该句说话人归属不够稳定');
+    expect(markup).not.toContain('声色参考');
+    expect(markup).not.toContain('默认声线');
   });
 
   it('shows subtitle-owned speaker labels before dubbing prepares references', () => {
@@ -176,7 +171,6 @@ describe('AudioTranscript', () => {
       id: 'speaker-0002',
       label: '说话人 2',
       status: 'stable',
-      referenceMode: 'unprepared',
     });
     const markup = renderToStaticMarkup(
       <AudioTranscript
@@ -187,7 +181,22 @@ describe('AudioTranscript', () => {
       />,
     );
     expect(markup).toContain('说话人 2');
-    expect(markup).toContain('待准备声色参考');
+    expect(markup).not.toContain('待准备声色参考');
+  });
+
+  it('keeps source text visible with the same prefix as video until each translation arrives', () => {
+    const markup = renderToStaticMarkup(
+      <AudioTranscript
+        snapshot={snapshot()}
+        mode="translated"
+        currentTime={1.2}
+        onSeek={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('你好。');
+    expect(markup).not.toContain('〔原文 · 译文生成中〕Hello.');
+    expect(markup).toContain('〔原文 · 译文生成中〕Welcome.');
   });
 
   it('locates the active cue, the next cue in a gap and the last cue after the track', () => {

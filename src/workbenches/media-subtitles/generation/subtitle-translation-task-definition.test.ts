@@ -11,6 +11,7 @@ import type {
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import type {
   GenerationTaskProcessContext,
+  TaskAgentCallRequest,
   TaskAgentCallResult,
 } from '../../../main/generation/contracts/task-definition';
 import type { ProjectLookup } from '../../../main/projects/project-database';
@@ -23,9 +24,8 @@ import {
 } from '../contracts';
 import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../transcription-producer';
 import {
-  MediaSubtitleTranslationProducer,
-  SubtitleTranslationProgressHub,
-} from '../translation-producer';
+  MediaSubtitleTranslationChunkProducer,
+} from '../translation-chunk-artifact';
 import {
   SubtitleTranslationInstruction,
   subtitleTranslationInstructionFactory,
@@ -55,19 +55,22 @@ function cue(index: number): SubtitleCueV1 {
   };
 }
 
-function callResult(callKey: string, output: string): TaskAgentCallResult {
+function callResult(
+  request: Pick<TaskAgentCallRequest, 'callKey' | 'purpose'>,
+  output: string,
+): TaskAgentCallResult {
   return {
-    callKey,
-    purpose: 'translate',
+    callKey: request.callKey,
+    purpose: request.purpose,
     sessionId: 'session',
     assistantOutput: output,
     metrics: {
-      callKey,
-      purpose: 'translate',
+      callKey: request.callKey,
+      purpose: request.purpose,
       sessionId: 'session',
       providerId: 'codex',
       connectionId: 'connection',
-      modelId: 'gpt-5.6-sol',
+      modelId: 'gpt-5.6-luna',
       startedTime: 100,
       completedTime: 101,
       activeDurationMs: 1,
@@ -82,17 +85,29 @@ describe('subtitle translation TaskDefinition', () => {
     const cues = Array.from({ length: 18 }, (_, index) => cue(index + 1));
     const chunks = splitSubtitleTranslationChunks(cues);
     expect(chunks).toHaveLength(2);
-    expect(chunks[0]?.targets).toHaveLength(16);
+    expect(chunks[0]?.targets).toHaveLength(8);
     expect(chunks[1]?.targets.map(({ id }) => id)).toEqual([
+      'cue-9',
+      'cue-10',
+      'cue-11',
+      'cue-12',
+      'cue-13',
+      'cue-14',
+      'cue-15',
+      'cue-16',
       'cue-17',
       'cue-18',
     ]);
     expect(chunks[1]?.previous.map(({ id }) => id)).toEqual([
-      'cue-14',
-      'cue-15',
-      'cue-16',
+      'cue-6',
+      'cue-7',
+      'cue-8',
     ]);
-    expect(chunks[0]?.next.map(({ id }) => id)).toEqual(['cue-17', 'cue-18']);
+    expect(chunks[0]?.next.map(({ id }) => id)).toEqual([
+      'cue-9',
+      'cue-10',
+      'cue-11',
+    ]);
   });
 
   it('keeps an oversized Cue intact instead of inventing a text or timing split', () => {
@@ -116,21 +131,23 @@ describe('subtitle translation TaskDefinition', () => {
     expect(
       subtitleTranslationInstructionFactory.parse({
         format: 'media-subtitle-translation',
-        version: 1,
+        version: 2,
         assetId: 'video',
         sourceTrackRevision: 'revision',
         sourceLanguage: 'en',
         targetLanguage: 'en',
+        chunkIndex: 0,
       }),
     ).toMatchObject({ ok: false });
   });
 
-  it('translates sequential chunks, repairs malformed JSON once and commits one Artifact', async () => {
+  it('translates exactly one chunk and keeps its repair turn in the same task session', async () => {
     await withDirectory(async (directory) => {
       const videoPath = join(directory, 'video.mp4');
       const sourcePath = join(directory, 'source.json');
       await writeFile(videoPath, 'video');
-      const cues = Array.from({ length: 18 }, (_, index) => cue(index + 1));
+      const cues = Array.from({ length: 105 }, (_, index) => cue(index + 1));
+      const chunks = splitSubtitleTranslationChunks(cues);
       const sourceTrack: SubtitleSourceTrackV1 = {
         version: 1,
         kind: 'subtitle-source',
@@ -172,7 +189,7 @@ describe('subtitle translation TaskDefinition', () => {
           createdTime: 100,
         })),
       };
-      const producer = new MediaSubtitleTranslationProducer();
+      const producer = new MediaSubtitleTranslationChunkProducer();
       const getCached = vi.fn(async (request: AssetArtifactRequest) =>
         request.producerId === MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID
           ? {
@@ -204,11 +221,11 @@ describe('subtitle translation TaskDefinition', () => {
             assetId: 'video',
             producerId: producer.id,
             artifactKey: request.artifactKey,
-            relativePath: 'translation.json',
+            relativePath: 'translation-chunk.json',
             mediaType: produced.mediaType,
             sourceRevision: request.source.revision,
             producerVersion: producer.version,
-            artifactRevision: 'translation-revision',
+            artifactRevision: 'translation-chunk-revision',
             updatedTime: 200,
           },
         };
@@ -218,24 +235,21 @@ describe('subtitle translation TaskDefinition', () => {
         getCached,
         getOrCreate,
       } as AssetArtifactServiceApi;
-      const progress = new SubtitleTranslationProgressHub();
-      const onProgress = vi.fn();
-      progress.subscribe(onProgress);
       const completedCalls: TaskAgentCallResult[] = [];
-      const call = vi.fn(async (request: { readonly callKey: string }) => {
-        const chunkNumber = request.callKey.startsWith('translate-0002')
-          ? 2
-          : 1;
+      const call = vi.fn(async (request: TaskAgentCallRequest) => {
+        const chunk = chunks[0]!;
         let output: string;
         if (request.callKey === 'translate-0001') {
           output = 'not json';
         } else {
-          const target = chunkNumber === 1 ? cues.slice(0, 16) : cues.slice(16);
           output = JSON.stringify({
-            translations: target.map(({ id }) => ({ id, text: `译文 ${id}` })),
+            translations: chunk.targets.map(({ id }) => ({
+              id,
+              text: `译文 ${id}`,
+            })),
           });
         }
-        const result = callResult(request.callKey, output);
+        const result = callResult(request, output);
         completedCalls.push(result);
         return result;
       });
@@ -244,6 +258,7 @@ describe('subtitle translation TaskDefinition', () => {
         sourceTrackRevision: 'source-artifact-revision',
         sourceLanguage: 'en',
         targetLanguage: 'zh-Hans',
+        chunkIndex: 0,
       });
       const context = {
         taskId: 'task',
@@ -261,7 +276,6 @@ describe('subtitle translation TaskDefinition', () => {
         artifacts,
         projects,
         producer,
-        progress,
         now: () => 300,
       });
       expect(definition.providerSelectorId).toBe(
@@ -269,24 +283,38 @@ describe('subtitle translation TaskDefinition', () => {
       );
 
       const result = await definition.process(context);
-      expect(call.mock.calls.map(([request]) => request.callKey)).toEqual([
+      expect(call.mock.calls.slice(0, 2).map(([request]) => request.callKey))
+        .toEqual([
         'translate-0001',
         'translate-0001-repair',
-        'translate-0002',
+      ]);
+      expect(
+        call.mock.calls.map(([request]) => request.callKey).sort(),
+      ).toEqual([
+        'translate-0001',
+        'translate-0001-repair',
       ]);
       expect(context.reportOutputRejected).toHaveBeenCalledOnce();
-      expect(onProgress).toHaveBeenCalledTimes(18);
       expect(getOrCreate).toHaveBeenCalledOnce();
       expect(result).toMatchObject({
-        artifactRevision: 'translation-revision',
+        chunkIndex: 0,
+        artifactRevision: 'translation-chunk-revision',
       });
       const written = JSON.parse(
-        await readFile(join(directory, 'translation.json'), 'utf8'),
+        await readFile(join(directory, 'translation-chunk.json'), 'utf8'),
       );
-      expect(written.cues).toHaveLength(18);
-      expect(written.cues[17]).toEqual({
-        sourceCueId: 'cue-18',
-        text: '译文 cue-18',
+      expect(written).toMatchObject({
+        kind: 'subtitle-translation-chunk',
+        chunkIndex: 0,
+        chunkCount: chunks.length,
+      });
+      expect(written.cues).toHaveLength(8);
+      expect(written.cues[7]).toEqual({
+        sourceCueId: 'cue-8',
+        text: '译文 cue-8',
+      });
+      expect(written).toMatchObject({
+        engine: { model: 'gpt-5.6-luna', backend: 'agent' },
       });
     });
   });

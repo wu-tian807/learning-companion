@@ -51,6 +51,7 @@ interface StoredSettingsState {
   readonly externalLibrariesPath: string;
   readonly completedOnboardingVersion: number;
   readonly defaultAgentProviderSelectorId: string;
+  readonly agentProviderSelectorMigrationVersion: number;
   readonly agentProviderConnections: Readonly<
     Record<string, AgentProviderConnectionConfiguration>
   >;
@@ -67,6 +68,7 @@ interface DeserializedSettings {
 
 const LEGACY_GENERATION_CENTER_SELECTOR_ID = 'generation-center';
 const LEGACY_WORKBENCH_SELECTOR_ID = 'workbench';
+const CURRENT_AGENT_PROVIDER_SELECTOR_MIGRATION_VERSION = 2;
 
 function clonePreferences(preferences: AppPreferences): AppPreferences {
   return Object.freeze({
@@ -139,6 +141,8 @@ function cloneState(state: StoredSettingsState): StoredSettingsState {
     externalLibrariesPath: normalizeDirectory(state.externalLibrariesPath),
     completedOnboardingVersion: state.completedOnboardingVersion,
     defaultAgentProviderSelectorId: state.defaultAgentProviderSelectorId,
+    agentProviderSelectorMigrationVersion:
+      state.agentProviderSelectorMigrationVersion,
     agentProviderConnections: connections,
     agentProviderSelectorSelections: selections,
   });
@@ -386,6 +390,8 @@ export class JsonSettingsRepository implements SettingsRepository {
       completedOnboardingVersion: 0,
       defaultAgentProviderSelectorId:
         MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+      agentProviderSelectorMigrationVersion:
+        CURRENT_AGENT_PROVIDER_SELECTOR_MIGRATION_VERSION,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
     });
@@ -413,6 +419,8 @@ export class JsonSettingsRepository implements SettingsRepository {
         completedOnboardingVersion: state.completedOnboardingVersion,
         defaultAgentProviderSelectorId:
           state.defaultAgentProviderSelectorId,
+        agentProviderSelectorMigrationVersion:
+          state.agentProviderSelectorMigrationVersion,
         agentProviderConnections: state.agentProviderConnections,
         agentProviderSelectorSelections: state.agentProviderSelectorSelections,
       },
@@ -433,6 +441,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     let completedOnboardingVersion = 0;
     let defaultAgentProviderSelectorId =
       MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID;
+    let agentProviderSelectorMigrationVersion = 0;
     let connections: Record<string, AgentProviderConnectionConfiguration> = {};
     const selections: Record<string, AgentProviderSelectorSelectionSnapshot> = {};
     const legacySelectionsByConnection: Record<
@@ -477,6 +486,22 @@ export class JsonSettingsRepository implements SettingsRepository {
         throw new Error('Settings AI Provider 默认智能强度无效');
       }
       defaultAgentProviderSelectorId = value.defaultAgentProviderSelectorId;
+    } else {
+      needsMigration = true;
+    }
+
+    if ('agentProviderSelectorMigrationVersion' in value) {
+      if (
+        !Number.isSafeInteger(value.agentProviderSelectorMigrationVersion) ||
+        Number(value.agentProviderSelectorMigrationVersion) < 0 ||
+        Number(value.agentProviderSelectorMigrationVersion) >
+          CURRENT_AGENT_PROVIDER_SELECTOR_MIGRATION_VERSION
+      ) {
+        throw new Error('Settings Agent Provider Selector 迁移版本无效');
+      }
+      agentProviderSelectorMigrationVersion = Number(
+        value.agentProviderSelectorMigrationVersion,
+      );
     } else {
       needsMigration = true;
     }
@@ -710,13 +735,31 @@ export class JsonSettingsRepository implements SettingsRepository {
       MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
       legacyWorkbench,
     );
-    migrateSelector(
-      LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
-      legacyWorkbench,
-    );
     if (legacyGeneration || legacyWorkbench) {
       delete selections[LEGACY_GENERATION_CENTER_SELECTOR_ID];
       delete selections[LEGACY_WORKBENCH_SELECTOR_ID];
+      needsMigration = true;
+    }
+
+    if (agentProviderSelectorMigrationVersion < 2) {
+      const medium =
+        selections[MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID];
+      const low = selections[LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID];
+      if (
+        medium &&
+        low &&
+        medium.providerId === low.providerId &&
+        medium.connectionId === low.connectionId &&
+        medium.modelId === low.modelId &&
+        medium.reasoningEffort === low.reasoningEffort
+      ) {
+        // The first intelligence-tier migration copied the former Workbench
+        // choice into both slots. Removing only that duplicate restores the
+        // low tier's app default without overriding an independently saved
+        // low-tier choice.
+        delete selections[LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID];
+      }
+      agentProviderSelectorMigrationVersion = 2;
       needsMigration = true;
     }
 
@@ -727,6 +770,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         externalLibrariesPath,
         completedOnboardingVersion,
         defaultAgentProviderSelectorId,
+        agentProviderSelectorMigrationVersion,
         agentProviderConnections: connections,
         agentProviderSelectorSelections: selections,
       }),

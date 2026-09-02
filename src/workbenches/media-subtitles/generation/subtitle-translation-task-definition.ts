@@ -1,7 +1,4 @@
-import type {
-  AssetArtifactRequest,
-  AssetArtifactServiceApi,
-} from '../../../main/artifacts/asset-artifact-service';
+import type { AssetArtifactServiceApi } from '../../../main/artifacts/asset-artifact-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
 import type {
@@ -17,18 +14,16 @@ import type { ProjectLookup } from '../../../main/projects/project-database';
 import { LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
-  SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   type SubtitleCueV1,
   type SubtitleTranslationCueV1,
-  type SubtitleTranslationTrackV1,
   type TranslatableSubtitleLanguage,
 } from '../contracts';
 import { resolveCachedMediaSubtitleSource } from '../subtitle-source-artifact';
 import {
-  createSubtitleTranslationArtifactKey,
-  MediaSubtitleTranslationProducer,
-  SubtitleTranslationProgressHub,
-} from '../translation-producer';
+  createSubtitleTranslationChunkArtifactRequest,
+  MediaSubtitleTranslationChunkProducer,
+  type SubtitleTranslationChunkArtifactV1,
+} from '../translation-chunk-artifact';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
   SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
@@ -36,14 +31,16 @@ import {
   subtitleTranslationInstructionFactory,
 } from './subtitle-translation-instruction';
 
-const MAXIMUM_TARGET_CUES = 16;
-const MAXIMUM_TARGET_CHARACTERS = 1_400;
+const FIRST_TARGET_CUES = 8;
+const FIRST_TARGET_CHARACTERS = 700;
+const MAXIMUM_TARGET_CUES = 32;
+const MAXIMUM_TARGET_CHARACTERS = 2_800;
 const CONTEXT_CUE_COUNT = 3;
-
 export type SubtitleTranslationTaskResult = JsonValue & {
   readonly assetId: string;
   readonly sourceTrackRevision: string;
   readonly targetLanguage: TranslatableSubtitleLanguage;
+  readonly chunkIndex: number;
   readonly artifactRevision: string;
 };
 
@@ -60,8 +57,7 @@ export interface SubtitleTranslationTaskDefinitionDependencies {
   readonly assets: AssetServiceApi;
   readonly artifacts: AssetArtifactServiceApi;
   readonly projects: ProjectLookup;
-  readonly producer: MediaSubtitleTranslationProducer;
-  readonly progress: SubtitleTranslationProgressHub;
+  readonly producer: MediaSubtitleTranslationChunkProducer;
   readonly now?: () => number;
 }
 
@@ -75,16 +71,21 @@ export function splitSubtitleTranslationChunks(
   const chunks: SubtitleTranslationChunk[] = [];
   let startIndex = 0;
   while (startIndex < cues.length) {
+    const firstChunk = chunks.length === 0;
+    const cueLimit = firstChunk ? FIRST_TARGET_CUES : MAXIMUM_TARGET_CUES;
+    const characterLimit = firstChunk
+      ? FIRST_TARGET_CHARACTERS
+      : MAXIMUM_TARGET_CHARACTERS;
     let endIndex = startIndex;
     let characters = 0;
     while (
       endIndex < cues.length &&
-      endIndex - startIndex < MAXIMUM_TARGET_CUES
+      endIndex - startIndex < cueLimit
     ) {
       const cue = cues[endIndex]!;
       if (
         endIndex > startIndex &&
-        characters + cue.text.length > MAXIMUM_TARGET_CHARACTERS
+        characters + cue.text.length > characterLimit
       ) {
         break;
       }
@@ -307,33 +308,24 @@ export function createSubtitleTranslationTaskDefinition(
         throw new AppError('OPERATION_SUPERSEDED');
       }
       const chunks = splitSubtitleTranslationChunks(source.track.cues);
-      const translated: SubtitleTranslationCueV1[] = [];
-      for (const chunk of chunks) {
-        context.signal?.throwIfAborted();
-        context.reportStatus(
-          `正在翻译字幕 ${translated.length}/${source.track.cues.length}`,
-        );
-        const cues = await translateChunk(context, chunk, chunks.length);
-        for (const cue of cues) {
-          translated.push(cue);
-          dependencies.progress.publish({
-            assetId: context.instruction.assetId,
-            sourceTrackRevision: context.instruction.sourceTrackRevision,
-            cue,
-            completedCues: translated.length,
-            totalCues: source.track.cues.length,
-          });
-        }
-      }
+      const chunk = chunks[context.instruction.chunkIndex];
+      if (!chunk) throw new AppError('OPERATION_SUPERSEDED');
+      context.reportStatus(
+        `正在翻译字幕第 ${chunk.index + 1}/${chunks.length} 段`,
+      );
+      const translated = await translateChunk(context, chunk, chunks.length);
       const execution = context.agent.completedCalls.at(-1)?.metrics;
       if (!execution) throw new AppError('GENERATION_OUTPUT_INVALID');
-      const track: SubtitleTranslationTrackV1 = Object.freeze({
+      const output: SubtitleTranslationChunkArtifactV1 = Object.freeze({
         version: 1,
-        kind: 'subtitle-translation',
+        kind: 'subtitle-translation-chunk',
         sourceTrackRevision: context.instruction.sourceTrackRevision,
         sourceLanguage: context.instruction.sourceLanguage,
         targetLanguage: context.instruction.targetLanguage,
-        profile: 'quality',
+        chunkIndex: chunk.index,
+        chunkCount: chunks.length,
+        startIndex: chunk.startIndex,
+        endIndex: chunk.endIndex,
         engine: Object.freeze({
           id: execution.providerId,
           version: String(SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION),
@@ -343,32 +335,26 @@ export function createSubtitleTranslationTaskDefinition(
         generatedTime: now(),
         cues: Object.freeze(translated),
       });
-      const request: AssetArtifactRequest = {
+      const request = createSubtitleTranslationChunkArtifactRequest({
         assetId: context.instruction.assetId,
-        producerId: dependencies.producer.id,
-        artifactKey: createSubtitleTranslationArtifactKey(
-          context.instruction.sourceLanguage,
-          context.instruction.targetLanguage,
-        ),
         workspacePath: source.request.workspacePath,
-        source: {
-          assetId: context.instruction.assetId,
-          mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
-          absolutePath: source.artifact.absolutePath,
-          revision: context.instruction.sourceTrackRevision,
-        },
-      };
-      context.reportStatus('正在保存字幕译文…');
+        sourceArtifact: source.artifact,
+        sourceLanguage: context.instruction.sourceLanguage,
+        targetLanguage: context.instruction.targetLanguage,
+        chunkIndex: chunk.index,
+      });
+      context.reportStatus(`正在保存字幕第 ${chunk.index + 1} 段…`);
       const artifact = await dependencies.producer.materialize(
         dependencies.artifacts,
         request,
-        track,
+        output,
         context.signal,
       );
       return Object.freeze({
         assetId: context.instruction.assetId,
         sourceTrackRevision: context.instruction.sourceTrackRevision,
         targetLanguage: context.instruction.targetLanguage,
+        chunkIndex: chunk.index,
         artifactRevision: artifact.artifact.artifactRevision,
       });
     },

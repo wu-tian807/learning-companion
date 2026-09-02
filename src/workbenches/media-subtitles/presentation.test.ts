@@ -34,6 +34,7 @@ function sourceSnapshot(): MediaSubtitleSnapshot {
         },
       ],
     },
+    sourceTrackRevision: 'source-artifact-revision',
     partialTranslations: [{ sourceCueId: 'cue-2', text: '二。' }],
     completedCues: 1,
     totalCues: 2,
@@ -43,7 +44,7 @@ function sourceSnapshot(): MediaSubtitleSnapshot {
 describe('media subtitle presentation protocol', () => {
   it('merges streamed cues in source order', () => {
     const updated = applyMediaSubtitleCueFinal(sourceSnapshot(), {
-      sourceTrackRevision: 'source-revision',
+      sourceTrackRevision: 'source-artifact-revision',
       cue: { sourceCueId: 'cue-1', text: '一。' },
       completedCues: 2,
       totalCues: 2,
@@ -61,6 +62,37 @@ describe('media subtitle presentation protocol', () => {
       applyMediaSubtitleCueFinal(current, {
         sourceTrackRevision: 'old-revision',
         cue: { sourceCueId: 'cue-1', text: '旧。' },
+        completedCues: 2,
+        totalCues: 2,
+      }),
+    ).toBe(current);
+  });
+
+  it('does not confuse the media revision with the source subtitle Artifact revision', () => {
+    const current = sourceSnapshot();
+    expect(current.source?.sourceRevision).toBe('source-revision');
+    expect(current.sourceTrackRevision).toBe('source-artifact-revision');
+
+    const updated = applyMediaSubtitleCueFinal(current, {
+      sourceTrackRevision: 'source-artifact-revision',
+      cue: { sourceCueId: 'cue-1', text: '一。' },
+      completedCues: 2,
+      totalCues: 2,
+    });
+
+    expect(updated).not.toBe(current);
+    expect(updated.partialTranslations[0]).toEqual({
+      sourceCueId: 'cue-1',
+      text: '一。',
+    });
+  });
+
+  it('ignores streamed cues until the committed source Artifact is known', () => {
+    const current = { ...sourceSnapshot(), sourceTrackRevision: undefined };
+    expect(
+      applyMediaSubtitleCueFinal(current, {
+        sourceTrackRevision: 'source-artifact-revision',
+        cue: { sourceCueId: 'cue-1', text: '一。' },
         completedCues: 2,
         totalCues: 2,
       }),
