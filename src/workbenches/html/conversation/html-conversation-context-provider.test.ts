@@ -33,6 +33,15 @@ function context(
         },
       ],
     },
+    workspaces: {
+      primary: {
+        key: 'workbench-conversation',
+        instanceKey: 'conversation-1',
+        path: 'C:\\workspace',
+        permissions: { read: true, write: false },
+      },
+      secondary: [],
+    },
     signal: undefined,
     reportStatus: vi.fn(),
   } as never;
@@ -67,15 +76,25 @@ describe('HTML conversation context provider', () => {
   });
 
   it('declares HTML editing tools and the trusted DOM target only when editable', async () => {
-    const editable = { canEdit: vi.fn(async () => true) };
+    const bindConversationSource = vi.fn(async () => undefined);
+    const editable = {
+      bindConversationSource,
+      canEdit: vi.fn(async () => true),
+    };
+    const processContext = context();
     const prepared = await new HtmlConversationContextProvider(
       () => editable,
-    ).prepare(context());
+    ).prepare(processContext);
     const message = prepared.userMessage.content
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
       .join('\n');
 
+    expect(bindConversationSource).toHaveBeenCalledWith(
+      'asset-1',
+      'materials/lesson.html',
+      processContext,
+    );
     expect(editable.canEdit).toHaveBeenCalledWith('project-1', 'asset-1');
     expect(prepared.toolRequirements).toEqual([
       { id: 'html_begin_edit', availability: 'required' },
