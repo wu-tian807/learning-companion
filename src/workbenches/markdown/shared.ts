@@ -319,6 +319,30 @@ export function createMarkdownImageAnchorTarget(
   };
 }
 
+/**
+ * 生成图片引用的候选文本（原始相对路径、空格转义、百分号解码），
+ * 用于在源码文本或图片 DOM 中回找同一张图。
+ */
+export function markdownImageReferenceCandidates(
+  relativePath: string,
+): readonly string[] {
+  const normalized = relativePath.trim();
+  const candidates = [normalized];
+  const spaceEncoded = normalized.replace(/ /gu, '%20');
+  if (!candidates.includes(spaceEncoded)) {
+    candidates.push(spaceEncoded);
+  }
+  try {
+    const decoded = decodeURIComponent(normalized);
+    if (!candidates.includes(decoded)) {
+      candidates.push(decoded);
+    }
+  } catch {
+    // 保留原始与空格转义候选即可。
+  }
+  return candidates;
+}
+
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/u;
 
 export function isMarkdownInsertImagePayload(

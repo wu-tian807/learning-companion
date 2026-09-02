@@ -13,6 +13,7 @@ import {
   isMarkdownReadImagePayload,
   isMarkdownReadImageResult,
   isMarkdownImageAnchorPayload,
+  markdownImageReferenceCandidates,
   isMarkdownSourceBufferPayload,
   markdownImageMediaTypeFromName,
   isMarkdownWorkbenchPayload,
@@ -71,6 +72,18 @@ describe('Markdown Workbench shared protocol', () => {
     expect(
       isMarkdownImageAnchorPayload({ relativePath: 'images/notes.txt' }),
     ).toBe(false);
+  });
+
+  it('builds image reference lookup candidates', () => {
+    expect(
+      markdownImageReferenceCandidates('images/my pic.png'),
+    ).toEqual([
+      'images/my pic.png',
+      'images/my%20pic.png',
+    ]);
+    expect(
+      markdownImageReferenceCandidates('images/%E5%9B%BE.png'),
+    ).toContain('images/图.png');
   });
 
   it('validates insert/read image payloads and results', () => {

@@ -76,6 +76,7 @@ import {
   MARKDOWN_IMAGE_ANCHOR_VERSION,
   createMarkdownImageAnchorTarget,
   isMarkdownImageAnchorPayload,
+  markdownImageReferenceCandidates,
   type MarkdownBufferSyncResult,
   type MarkdownEditMode,
   type MarkdownEncoding,
@@ -104,14 +105,20 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-function findMarkdownImageBySource(
+function findMarkdownImageByCandidates(
   element: HTMLElement | undefined,
-  relativePath: string,
+  candidates: readonly string[],
 ): HTMLImageElement | undefined {
   if (!element) return undefined;
-  return [...element.querySelectorAll<HTMLImageElement>('img')].find(
-    (image) => image.getAttribute('data-md-src') === relativePath,
-  );
+  const images = [...element.querySelectorAll<HTMLImageElement>('img')];
+  for (const candidate of candidates) {
+    const image = images.find(
+      (candidateImage) =>
+        candidateImage.getAttribute('data-md-src') === candidate,
+    );
+    if (image) return image;
+  }
+  return undefined;
 }
 
 const MARKDOWN_ANSWER_ACTION_PRESENTATION = Object.freeze({
@@ -1378,9 +1385,11 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         ) {
           return undefined;
         }
-        const image = findMarkdownImageBySource(
+        const image = findMarkdownImageByCandidates(
           wysiwygAdapterRef.current?.getEditableElement(),
-          target.anchorPayload.relativePath,
+          markdownImageReferenceCandidates(
+            target.anchorPayload.relativePath,
+          ),
         );
         if (!image) return undefined;
         const rect = image.getBoundingClientRect();
@@ -1475,13 +1484,44 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             ) {
               return false;
             }
-            const image = findMarkdownImageBySource(
-              wysiwygAdapterRef.current?.getEditableElement(),
-              target.anchorPayload.relativePath,
-            );
-            if (!image) return false;
-            image.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            return true;
+            const relativePath = target.anchorPayload.relativePath;
+            const candidates =
+              markdownImageReferenceCandidates(relativePath);
+            if (viewStateRef.current.viewMode !== 'source') {
+              const image = findMarkdownImageByCandidates(
+                wysiwygAdapterRef.current?.getEditableElement(),
+                candidates,
+              );
+              if (!image) return false;
+              image.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+              });
+              const previousOutline = image.style.outline;
+              const previousOffset = image.style.outlineOffset;
+              image.style.outline =
+                '2px solid rgba(129,140,248,0.9)';
+              image.style.outlineOffset = '2px';
+              window.setTimeout(() => {
+                image.style.outline = previousOutline;
+                image.style.outlineOffset = previousOffset;
+              }, 1_600);
+              return true;
+            }
+            const view = sourceEditorRef.current?.view;
+            if (!view) return false;
+            const doc = view.state.doc.toString();
+            for (const candidate of candidates) {
+              const index = doc.indexOf(candidate);
+              if (index < 0) continue;
+              revealSelectionInCodeMirror(
+                view,
+                index,
+                index + candidate.length,
+              );
+              return true;
+            }
+            return false;
           }
           if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
             const selection = resolveTextSelectionFromTarget(target, [
