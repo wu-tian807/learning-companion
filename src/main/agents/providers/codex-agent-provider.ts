@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { extname } from 'node:path';
 
 import type {
   AgentProviderConnectionConfiguration,
@@ -84,6 +86,17 @@ const CODEX_DEFAULT_MODELS = Object.freeze(
       }),
   ),
 );
+
+const CODEX_API_IMAGE_EXTENSION_MEDIA_TYPES: Readonly<
+  Record<string, string>
+> = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+});
 
 interface CodexAgentProviderDependencies {
   readonly now: () => number;
@@ -399,6 +412,42 @@ export class CodexAgentProvider implements AgentProvider {
     return binding;
   }
 
+  private async collectEmbeddedImageDataUrls(
+    request: GenerationAgentTurnRequest,
+  ): Promise<ReadonlyMap<string, string> | undefined> {
+    const images = request.userMessage.content.filter(
+      (part) => part.type === 'local-image',
+    );
+    if (images.length === 0) {
+      return undefined;
+    }
+    const entries = await Promise.all(
+      images.map(async (part) => {
+        if (part.type !== 'local-image') return undefined;
+        const mediaType =
+          CODEX_API_IMAGE_EXTENSION_MEDIA_TYPES[
+            extname(part.path).toLowerCase()
+          ];
+        if (!mediaType) return undefined;
+        try {
+          const bytes = await readFile(part.path);
+          if (bytes.byteLength === 0) return undefined;
+          return [
+            part.path,
+            `data:${mediaType};base64,${bytes.toString('base64')}`,
+          ] as const;
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      if (entry) map.set(entry[0], entry[1]);
+    }
+    return map.size > 0 ? map : undefined;
+  }
+
   private async *runTurn(
     runtime: CodexRuntimeServiceApi,
     connectionId: string,
@@ -469,6 +518,10 @@ export class CodexAgentProvider implements AgentProvider {
         };
       }
 
+      const embeddedImageUrls =
+        generationConnection.kind === 'api-key'
+          ? await this.collectEmbeddedImageDataUrls(request)
+          : undefined;
       return yield* this.startCodexTurn(
         runtime,
         connectionId,
@@ -478,6 +531,7 @@ export class CodexAgentProvider implements AgentProvider {
         tools,
         capabilities,
         clientUserMessageId,
+        embeddedImageUrls,
       );
     } finally {
       releaseSession();
@@ -493,13 +547,14 @@ export class CodexAgentProvider implements AgentProvider {
     tools: CodexGenerationToolSelection,
     capabilities: CodexGenerationCapabilitySelection,
     clientUserMessageId: string,
+    embeddedImageUrls?: ReadonlyMap<string, string>,
   ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
     const sessionId = resolved.binding.sessionId;
     const startedFallback = this.dependencies.now();
     const stream = runtime.startTurn({
       threadId: sessionId,
       clientUserMessageId,
-      input: toCodexUserInput(request, capabilities),
+      input: toCodexUserInput(request, capabilities, embeddedImageUrls),
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',

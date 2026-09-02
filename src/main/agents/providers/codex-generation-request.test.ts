@@ -413,3 +413,53 @@ describe('createCodexGenerationConfiguration', () => {
     expect(configuration.profileId).toBe(changedSkillVersion.profileId);
   });
 });
+
+describe('toCodexUserInput image embedding', () => {
+  it('embeds prepared data URLs as image inputs for custom Responses APIs', () => {
+    const path = 'C:\\workspace\\question-image.png';
+    const imageRequest: GenerationAgentTurnRequest = {
+      ...request(),
+      userMessage: {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看看这张图' },
+          { type: 'local-image', path, detail: 'high' },
+        ],
+      },
+    };
+    const capabilities = {
+      skills: [],
+      mcpServers: [],
+      mcpServerIdsByWireName: new Map<string, string>(),
+    } as never;
+
+    const embedded = toCodexUserInput(
+      imageRequest,
+      capabilities,
+      new Map([[path, 'data:image/png;base64,YWJj']]),
+    );
+    expect(embedded).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'image',
+          url: 'data:image/png;base64,YWJj',
+          detail: 'high',
+        },
+      ]),
+    );
+    expect(
+      embedded.some((item) => item.type === 'localImage'),
+    ).toBe(false);
+
+    const local = toCodexUserInput(imageRequest, capabilities);
+    expect(local).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'localImage',
+          path,
+          detail: 'high',
+        },
+      ]),
+    );
+  });
+});
