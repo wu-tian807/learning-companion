@@ -53,6 +53,7 @@ import {
   OpenAiChatCompletionsRunner,
   type OpenAiChatHistoryMessage,
 } from './openai-chat-completions-runner';
+import { OpenAiResponsesRunner } from './openai-responses-runner';
 import {
   codexAssistantOutputFromTurn,
   codexModelFromReroute,
@@ -158,6 +159,31 @@ class CodexConnectionRunner implements GenerationAgentRunner {
   }
 }
 
+class HybridResponsesRunner implements GenerationAgentRunner {
+  readonly providerId: string;
+  readonly connectionId: string;
+
+  constructor(
+    private readonly codexRunner: GenerationAgentRunner,
+    private readonly responsesRunner: OpenAiResponsesRunner,
+  ) {
+    this.providerId = codexRunner.providerId;
+    this.connectionId = codexRunner.connectionId;
+  }
+
+  async *runTurn(
+    request: GenerationAgentTurnRequest,
+  ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
+    const hasLocalImage = request.userMessage.content.some(
+      (part) => part.type === 'local-image',
+    );
+    if (hasLocalImage) {
+      return yield* this.responsesRunner.runTurn(request);
+    }
+    return yield* this.codexRunner.runTurn(request);
+  }
+}
+
 export class CodexAgentProvider implements AgentProvider {
   readonly id = CODEX_AGENT_PROVIDER_ID;
   readonly displayName = 'Codex';
@@ -185,6 +211,10 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly chatHistories = new Map<
     string,
     Map<string, readonly OpenAiChatHistoryMessage[]>
+  >();
+  private readonly responsesPreviousIds = new Map<
+    string,
+    Map<string, string>
   >();
   private readonly invalidationListeners = new Set<(connectionId: string) => void>();
   private readonly disposeAccountSubscription: () => void;
@@ -326,21 +356,48 @@ export class CodexAgentProvider implements AgentProvider {
         histories,
       });
     }
-    const binding = this.runtimeFor(connection);
-    return new CodexConnectionRunner(
+    const codexRunner = new CodexConnectionRunner(
       connection.configuration.id,
-      (request) =>
-        this.runTurn(
+      (request) => {
+        const binding = this.runtimeFor(connection);
+        return this.runTurn(
           binding.runtime,
           connection.configuration.id,
           binding.generationConnection,
           request,
-        ),
+        );
+      },
     );
+    if (configuration.kind === 'api-key') {
+      if (!connection.apiKey) {
+        throw new AppError('INVALID_IPC_REQUEST', {
+          cause: new Error('Responses Connection 缺少 API Key'),
+        });
+      }
+      let previousResponses =
+        this.responsesPreviousIds.get(configuration.id);
+      if (!previousResponses) {
+        previousResponses = new Map();
+        this.responsesPreviousIds.set(
+          configuration.id,
+          previousResponses,
+        );
+      }
+      const responsesRunner = new OpenAiResponsesRunner({
+        providerId: this.id,
+        connectionId: configuration.id,
+        baseUrl: configuration.baseUrl,
+        apiKey: connection.apiKey,
+        previousResponses,
+      });
+      return new HybridResponsesRunner(codexRunner, responsesRunner);
+    }
+    return codexRunner;
   }
 
   async invalidateConnection(connectionId: string): Promise<void> {
     this.chatHistories.delete(connectionId);
+    this.responsesPreviousIds.delete(connectionId);
     const binding = this.apiRuntimes.get(connectionId);
     if (!binding) {
       return;
@@ -358,6 +415,7 @@ export class CodexAgentProvider implements AgentProvider {
     this.apiRuntimes.clear();
     this.invalidationListeners.clear();
     this.chatHistories.clear();
+    this.responsesPreviousIds.clear();
     await Promise.all(
       bindings.map(async (binding) => {
         binding.disposeSubscription();
