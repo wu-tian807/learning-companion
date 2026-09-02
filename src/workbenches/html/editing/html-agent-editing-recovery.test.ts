@@ -485,7 +485,7 @@ describe('HtmlAgentEditingService recovery', () => {
       await expect(
         service.discard('project-1', 'asset-1'),
       ).rejects.toBeDefined();
-      service.dispose();
+      await service.shutdown();
 
       const restored = test.createService();
       await expect(restored.getDraft('project-1', 'asset-1')).resolves.toContain(
