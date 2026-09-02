@@ -194,7 +194,7 @@ flowchart LR
 
 运行时选择由已安装字幕组件决定：
 
-- Windows NVIDIA 档：Whisper large-v3-turbo Q5 + whisper.cpp CUDA，使用 fast attention、Silero VAD 与 Token/Offset 时间戳拆分短 Cue；
+- Windows NVIDIA 档：Whisper large-v3-turbo Q5 + whisper.cpp CUDA，正常路径使用 fast attention、Silero VAD 与 Token/Offset 时间戳流式拆分短 Cue；若检测到 Token 跨越长静音而停滞，则仅该任务追加 DTW 声学精对齐；
 - Windows CPU 档：SenseVoice Small Q8 + FSMN-VAD，保留真实 VAD 区间；
 - 两个档位都安装 Sherpa，但 Video 原字幕不运行 speaker 分析；Audio 原字幕在 ASR 后运行；
 - 两个档位只下载当前设备对应的 ASR，并复用配套 FFmpeg 将输入音轨规范化。

@@ -7,6 +7,8 @@ import {
   parseSherpaSpeakerDiarization,
   parseWhisperStreamingCues,
   parseWhisperTranscription,
+  parseWhisperVadTimeline,
+  whisperTranscriptionNeedsAlignment,
 } from './transcription-output-adapter';
 
 describe('transcription output adapters', () => {
@@ -32,6 +34,65 @@ describe('transcription output adapters', () => {
     expect(result.language).toBe('zh-Hans');
     expect(result.cues.length).toBeGreaterThan(1);
     expect(result.cues.at(-1)?.endMs).toBe(8_000);
+  });
+
+  it('restores VAD-compressed Whisper token offsets to the video timeline', () => {
+    const timeline = parseWhisperVadTimeline(
+      'whisper_vad: vad_segment_info: orig_start: 0.16, orig_end: 10.33, vad_start: 0.00, vad_end: 10.17\n' +
+        'whisper_vad: vad_segment_info: orig_start: 0.16, orig_end: 10.33, vad_start: 0.00, vad_end: 10.17\n' +
+        'whisper_vad: vad_segment_info: orig_start: 16.48, orig_end: 16.96, vad_start: 10.37, vad_end: 10.85\n' +
+        'whisper_vad: vad_segment_info: orig_start: 17.12, orig_end: 20.00, vad_start: 11.05, vad_end: 13.93\n',
+    );
+    expect(timeline).toHaveLength(3);
+    const result = parseWhisperTranscription(
+      {
+        result: { language: 'zh' },
+        transcription: [
+          {
+            offsets: { from: 160, to: 19_910 },
+            text: '好 第一个问题 为什么我们要做一个团队呢',
+            tokens: [
+              { offsets: { from: 10_400, to: 10_780 }, text: '好' },
+              { offsets: { from: 11_080, to: 11_390 }, text: '第一' },
+              { offsets: { from: 11_390, to: 11_580 }, text: '个' },
+              { offsets: { from: 11_580, to: 11_870 }, text: '问题' },
+              { offsets: { from: 12_170, to: 12_630 }, text: '为什么' },
+              { offsets: { from: 12_740, to: 12_830 }, text: '我们' },
+              { offsets: { from: 12_840, to: 12_920 }, text: '要' },
+              { offsets: { from: 12_920, to: 12_980 }, text: '做' },
+              { offsets: { from: 13_030, to: 13_140 }, text: '一个' },
+              { offsets: { from: 13_160, to: 13_400 }, text: '团' },
+              { offsets: { from: 13_400, to: 13_640 }, text: '队' },
+              { offsets: { from: 13_640, to: 13_780 }, text: '呢' },
+            ],
+          },
+        ],
+      },
+      timeline,
+    );
+
+    expect(result.cues).toEqual([
+      expect.objectContaining({
+        startMs: 16_510,
+        endMs: 19_850,
+        text: '好第一个问题为什么我们要做一个团队呢',
+      }),
+    ]);
+  });
+
+  it('detects stalled Whisper tokens that need acoustic alignment', () => {
+    expect(whisperTranscriptionNeedsAlignment({
+      transcription: [{
+        text: '好',
+        tokens: [{ offsets: { from: 0, to: 10_780 }, text: '好' }],
+      }],
+    })).toBe(true);
+    expect(whisperTranscriptionNeedsAlignment({
+      transcription: [{
+        text: '好',
+        tokens: [{ offsets: { from: 10_400, to: 10_780 }, text: '好' }],
+      }],
+    })).toBe(false);
   });
 
   it('extracts completed Whisper console segments incrementally and deduplicates them', () => {

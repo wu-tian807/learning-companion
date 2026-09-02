@@ -25,6 +25,13 @@ interface WhisperJsonOutput {
   readonly transcription?: readonly WhisperJsonSegment[];
 }
 
+export interface WhisperVadTimelineSegment {
+  readonly originalStartMs: number;
+  readonly originalEndMs: number;
+  readonly compressedStartMs: number;
+  readonly compressedEndMs: number;
+}
+
 interface SenseVoiceSegment {
   readonly language: string;
   readonly text: string;
@@ -97,8 +104,136 @@ function isWhisperSpecialToken(value: string): boolean {
   return text.startsWith('[_') && text.endsWith(']');
 }
 
+function visibleTokenCharacters(value: string): number {
+  return Math.max(1, [...value.replace(/\s+/gu, '')].length);
+}
+
+export function whisperTranscriptionNeedsAlignment(value: unknown): boolean {
+  const output = value as WhisperJsonOutput;
+  return Array.isArray(output.transcription) && output.transcription.some(
+    (segment) => Array.isArray(segment.tokens) && segment.tokens.some((token: WhisperJsonToken) => {
+      const text = String(token.text ?? '');
+      if (!text.trim() || isWhisperSpecialToken(text)) return false;
+      const startMs = optionalTime(token.offsets?.from);
+      const endMs = optionalTime(token.offsets?.to);
+      return (
+        startMs !== undefined &&
+        endMs !== undefined &&
+        endMs - startMs >
+          Math.max(1_500, visibleTokenCharacters(text) * 600)
+      );
+    }),
+  );
+}
+
+function secondsToMilliseconds(value: string): number {
+  return Math.round(Number(value) * 1_000);
+}
+
+export function parseWhisperVadTimeline(
+  source: string,
+): readonly WhisperVadTimelineSegment[] {
+  const pattern =
+    /vad_segment_info:\s*orig_start:\s*(\d+(?:\.\d+)?),\s*orig_end:\s*(\d+(?:\.\d+)?),\s*vad_start:\s*(\d+(?:\.\d+)?),\s*vad_end:\s*(\d+(?:\.\d+)?)/gu;
+  const unique = new Map<string, WhisperVadTimelineSegment>();
+
+  for (const match of source.matchAll(pattern)) {
+    const segment = {
+      originalStartMs: secondsToMilliseconds(match[1]),
+      originalEndMs: secondsToMilliseconds(match[2]),
+      compressedStartMs: secondsToMilliseconds(match[3]),
+      compressedEndMs: secondsToMilliseconds(match[4]),
+    };
+    if (
+      segment.originalEndMs <= segment.originalStartMs ||
+      segment.compressedEndMs <= segment.compressedStartMs
+    ) {
+      continue;
+    }
+    unique.set(
+      `${segment.originalStartMs}:${segment.originalEndMs}:${segment.compressedStartMs}:${segment.compressedEndMs}`,
+      segment,
+    );
+  }
+
+  return [...unique.values()].sort(
+    (left, right) =>
+      left.compressedStartMs - right.compressedStartMs ||
+      left.originalStartMs - right.originalStartMs,
+  );
+}
+
+interface WhisperVadPoint {
+  readonly segmentIndex: number;
+  readonly timeMs: number;
+}
+
+function mapWhisperVadPoint(
+  timeMs: number,
+  timeline: readonly WhisperVadTimelineSegment[],
+): WhisperVadPoint | undefined {
+  if (timeline.length === 0) return undefined;
+
+  for (let index = 0; index < timeline.length; index += 1) {
+    const segment = timeline[index];
+    if (
+      timeMs >= segment.compressedStartMs &&
+      timeMs <= segment.compressedEndMs
+    ) {
+      return {
+        segmentIndex: index,
+        timeMs: Math.min(
+          segment.originalEndMs,
+          segment.originalStartMs + timeMs - segment.compressedStartMs,
+        ),
+      };
+    }
+
+    if (timeMs < segment.compressedStartMs) {
+      if (index === 0) {
+        return { segmentIndex: 0, timeMs: segment.originalStartMs };
+      }
+      const previous = timeline[index - 1];
+      const distanceFromPrevious = timeMs - previous.compressedEndMs;
+      const distanceToNext = segment.compressedStartMs - timeMs;
+      return distanceFromPrevious <= distanceToNext
+        ? { segmentIndex: index - 1, timeMs: previous.originalEndMs }
+        : { segmentIndex: index, timeMs: segment.originalStartMs };
+    }
+  }
+
+  const lastIndex = timeline.length - 1;
+  const last = timeline[lastIndex];
+  return { segmentIndex: lastIndex, timeMs: last.originalEndMs };
+}
+
+function restoreWhisperTokenOffsets(
+  startMs: number | undefined,
+  endMs: number | undefined,
+  timeline: readonly WhisperVadTimelineSegment[],
+): { readonly startMs?: number; readonly endMs?: number } {
+  if (startMs === undefined || endMs === undefined || timeline.length === 0) {
+    return { startMs, endMs };
+  }
+  const start = mapWhisperVadPoint(startMs, timeline);
+  const end = mapWhisperVadPoint(endMs, timeline);
+  if (!start || !end) return { startMs, endMs };
+
+  // whisper.cpp remaps segment timestamps after VAD, but leaves token offsets
+  // on the silence-compressed timeline. A token can therefore span a removed
+  // silence even though its speech belongs to the later VAD interval.
+  const restoredStartMs = end.segmentIndex > start.segmentIndex
+    ? timeline[end.segmentIndex].originalStartMs
+    : start.timeMs;
+  return {
+    startMs: restoredStartMs,
+    endMs: Math.max(restoredStartMs, end.timeMs),
+  };
+}
+
 function whisperTokens(
   output: WhisperJsonOutput,
+  vadTimeline: readonly WhisperVadTimelineSegment[],
 ): readonly TimestampedSubtitleToken[] | undefined {
   if (!Array.isArray(output.transcription)) return undefined;
 
@@ -123,15 +258,20 @@ function whisperTokens(
       const token = segment.tokens[tokenIndex];
       const text = String(token.text ?? '');
       if (!text.trim() || isWhisperSpecialToken(text)) continue;
-      const startMs = optionalTime(token.offsets?.from);
-      const endMs = optionalTime(token.offsets?.to);
+      const rawStartMs = optionalTime(token.offsets?.from);
+      const rawEndMs = optionalTime(token.offsets?.to);
+      const offsets = restoreWhisperTokenOffsets(
+        rawStartMs,
+        rawEndMs,
+        vadTimeline,
+      );
       const alignmentMs = optionalDtwTime(token.t_dtw);
       contentTokens.push({
         alignmentMs,
-        endMs,
+        endMs: offsets.endMs,
         id: `raw-${String(segmentIndex + 1).padStart(6, '0')}-${String(tokenIndex + 1).padStart(6, '0')}`,
         segmentId: `raw-segment-${String(segmentIndex + 1).padStart(6, '0')}`,
-        startMs,
+        startMs: offsets.startMs,
         text,
       });
     }
@@ -326,10 +466,11 @@ export function parseWhisperStreamingCues(
 
 export function parseWhisperTranscription(
   value: unknown,
+  vadTimeline: readonly WhisperVadTimelineSegment[] = [],
 ): ParsedTranscriptionOutput {
   const output = value as WhisperJsonOutput;
   const language = normalizedLanguage(output.result?.language);
-  const timestampedTokens = whisperTokens(output);
+  const timestampedTokens = whisperTokens(output, vadTimeline);
   return {
     language,
     cues: timestampedTokens
