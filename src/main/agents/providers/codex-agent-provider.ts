@@ -1,6 +1,4 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { extname } from 'node:path';
 
 import type {
   AgentProviderConnectionConfiguration,
@@ -50,11 +48,6 @@ import {
   type ResolvedCodexThread,
 } from './codex-thread-coordinator';
 import {
-  OpenAiChatCompletionsRunner,
-  type OpenAiChatHistoryMessage,
-} from './openai-chat-completions-runner';
-import { OpenAiResponsesRunner } from './openai-responses-runner';
-import {
   codexAssistantOutputFromTurn,
   codexModelFromReroute,
   codexTokenUsageFromEvent,
@@ -87,17 +80,6 @@ const CODEX_DEFAULT_MODELS = Object.freeze(
       }),
   ),
 );
-
-const CODEX_API_IMAGE_EXTENSION_MEDIA_TYPES: Readonly<
-  Record<string, string>
-> = Object.freeze({
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.bmp': 'image/bmp',
-});
 
 interface CodexAgentProviderDependencies {
   readonly now: () => number;
@@ -159,31 +141,6 @@ class CodexConnectionRunner implements GenerationAgentRunner {
   }
 }
 
-class HybridResponsesRunner implements GenerationAgentRunner {
-  readonly providerId: string;
-  readonly connectionId: string;
-
-  constructor(
-    private readonly codexRunner: GenerationAgentRunner,
-    private readonly responsesRunner: OpenAiResponsesRunner,
-  ) {
-    this.providerId = codexRunner.providerId;
-    this.connectionId = codexRunner.connectionId;
-  }
-
-  async *runTurn(
-    request: GenerationAgentTurnRequest,
-  ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
-    const hasLocalImage = request.userMessage.content.some(
-      (part) => part.type === 'local-image',
-    );
-    if (hasLocalImage) {
-      return yield* this.responsesRunner.runTurn(request);
-    }
-    return yield* this.codexRunner.runTurn(request);
-  }
-}
-
 export class CodexAgentProvider implements AgentProvider {
   readonly id = CODEX_AGENT_PROVIDER_ID;
   readonly displayName = 'Codex';
@@ -208,14 +165,6 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly dependencies: CodexAgentProviderDependencies;
   private readonly threadCoordinator: CodexThreadCoordinator;
   private readonly apiRuntimes = new Map<string, CodexRuntimeBinding>();
-  private readonly chatHistories = new Map<
-    string,
-    Map<string, readonly OpenAiChatHistoryMessage[]>
-  >();
-  private readonly responsesPreviousIds = new Map<
-    string,
-    Map<string, string>
-  >();
   private readonly invalidationListeners = new Set<(connectionId: string) => void>();
   private readonly disposeAccountSubscription: () => void;
 
@@ -333,71 +282,20 @@ export class CodexAgentProvider implements AgentProvider {
   createRunner(
     connection: ResolvedAgentProviderConnection,
   ): GenerationAgentRunner {
-    const configuration = connection.configuration;
-    if (
-      configuration.kind === 'api-key' &&
-      configuration.apiStyle === 'chat-completions'
-    ) {
-      if (!connection.apiKey) {
-        throw new AppError('INVALID_IPC_REQUEST', {
-          cause: new Error('Chat Completions Connection 缺少 API Key'),
-        });
-      }
-      let histories = this.chatHistories.get(configuration.id);
-      if (!histories) {
-        histories = new Map();
-        this.chatHistories.set(configuration.id, histories);
-      }
-      return new OpenAiChatCompletionsRunner({
-        providerId: this.id,
-        connectionId: configuration.id,
-        baseUrl: configuration.baseUrl,
-        apiKey: connection.apiKey,
-        histories,
-      });
-    }
-    const codexRunner = new CodexConnectionRunner(
+    const binding = this.runtimeFor(connection);
+    return new CodexConnectionRunner(
       connection.configuration.id,
-      (request) => {
-        const binding = this.runtimeFor(connection);
-        return this.runTurn(
+      (request) =>
+        this.runTurn(
           binding.runtime,
           connection.configuration.id,
           binding.generationConnection,
           request,
-        );
-      },
+        ),
     );
-    if (configuration.kind === 'api-key') {
-      if (!connection.apiKey) {
-        throw new AppError('INVALID_IPC_REQUEST', {
-          cause: new Error('Responses Connection 缺少 API Key'),
-        });
-      }
-      let previousResponses =
-        this.responsesPreviousIds.get(configuration.id);
-      if (!previousResponses) {
-        previousResponses = new Map();
-        this.responsesPreviousIds.set(
-          configuration.id,
-          previousResponses,
-        );
-      }
-      const responsesRunner = new OpenAiResponsesRunner({
-        providerId: this.id,
-        connectionId: configuration.id,
-        baseUrl: configuration.baseUrl,
-        apiKey: connection.apiKey,
-        previousResponses,
-      });
-      return new HybridResponsesRunner(codexRunner, responsesRunner);
-    }
-    return codexRunner;
   }
 
   async invalidateConnection(connectionId: string): Promise<void> {
-    this.chatHistories.delete(connectionId);
-    this.responsesPreviousIds.delete(connectionId);
     const binding = this.apiRuntimes.get(connectionId);
     if (!binding) {
       return;
@@ -414,8 +312,6 @@ export class CodexAgentProvider implements AgentProvider {
     const bindings = [...this.apiRuntimes.values()];
     this.apiRuntimes.clear();
     this.invalidationListeners.clear();
-    this.chatHistories.clear();
-    this.responsesPreviousIds.clear();
     await Promise.all(
       bindings.map(async (binding) => {
         binding.disposeSubscription();
@@ -468,42 +364,6 @@ export class CodexAgentProvider implements AgentProvider {
     });
     this.apiRuntimes.set(connection.configuration.id, binding);
     return binding;
-  }
-
-  private async collectEmbeddedImageDataUrls(
-    request: GenerationAgentTurnRequest,
-  ): Promise<ReadonlyMap<string, string> | undefined> {
-    const images = request.userMessage.content.filter(
-      (part) => part.type === 'local-image',
-    );
-    if (images.length === 0) {
-      return undefined;
-    }
-    const entries = await Promise.all(
-      images.map(async (part) => {
-        if (part.type !== 'local-image') return undefined;
-        const mediaType =
-          CODEX_API_IMAGE_EXTENSION_MEDIA_TYPES[
-            extname(part.path).toLowerCase()
-          ];
-        if (!mediaType) return undefined;
-        try {
-          const bytes = await readFile(part.path);
-          if (bytes.byteLength === 0) return undefined;
-          return [
-            part.path,
-            `data:${mediaType};base64,${bytes.toString('base64')}`,
-          ] as const;
-        } catch {
-          return undefined;
-        }
-      }),
-    );
-    const map = new Map<string, string>();
-    for (const entry of entries) {
-      if (entry) map.set(entry[0], entry[1]);
-    }
-    return map.size > 0 ? map : undefined;
   }
 
   private async *runTurn(
@@ -576,10 +436,6 @@ export class CodexAgentProvider implements AgentProvider {
         };
       }
 
-      const embeddedImageUrls =
-        generationConnection.kind === 'api-key'
-          ? await this.collectEmbeddedImageDataUrls(request)
-          : undefined;
       return yield* this.startCodexTurn(
         runtime,
         connectionId,
@@ -589,7 +445,6 @@ export class CodexAgentProvider implements AgentProvider {
         tools,
         capabilities,
         clientUserMessageId,
-        embeddedImageUrls,
       );
     } finally {
       releaseSession();
@@ -605,14 +460,13 @@ export class CodexAgentProvider implements AgentProvider {
     tools: CodexGenerationToolSelection,
     capabilities: CodexGenerationCapabilitySelection,
     clientUserMessageId: string,
-    embeddedImageUrls?: ReadonlyMap<string, string>,
   ): AsyncGenerator<GenerationAgentEvent, GenerationAgentTurnResult> {
     const sessionId = resolved.binding.sessionId;
     const startedFallback = this.dependencies.now();
     const stream = runtime.startTurn({
       threadId: sessionId,
       clientUserMessageId,
-      input: toCodexUserInput(request, capabilities, embeddedImageUrls),
+      input: toCodexUserInput(request, capabilities),
       cwd: request.workspaces.primary.path,
       runtimeWorkspaceRoots: configuration.runtimeWorkspaceRoots,
       approvalPolicy: 'never',

@@ -44,9 +44,6 @@ export interface AgentProviderSetupApi {
     readonly modelId: string | null;
     readonly reasoningEffort: string | null;
   }): Promise<AgentProviderSetupSnapshot>;
-  selectDefaultAgentProviderSelector(input: {
-    readonly selectorId: string;
-  }): Promise<AgentProviderSetupSnapshot>;
   completeAgentProviderOnboarding(): Promise<AppSetupSnapshot>;
   openExternal(input: { readonly url: string }): Promise<void>;
 }
@@ -69,8 +66,6 @@ export const defaultAgentProviderSetupApi: AgentProviderSetupApi = {
     window.learningCompanion.getAgentProviderModels(input),
   selectAgentProviderForSelector: (input) =>
     window.learningCompanion.selectAgentProviderForSelector(input),
-  selectDefaultAgentProviderSelector: (input) =>
-    window.learningCompanion.selectDefaultAgentProviderSelector(input),
   completeAgentProviderOnboarding: () =>
     window.learningCompanion.completeAgentProviderOnboarding(),
   openExternal: (input) => window.learningCompanion.openExternal(input),

@@ -43,7 +43,6 @@ import type {
   ChangeProjectWorkspaceRequest,
   AgentProviderConnectionRequest,
   AgentProviderIdRequest,
-  AgentProviderSelectorIdRequest,
   CancelAgentProviderLoginRequest,
   ConfigureAgentProviderApiConnectionRequest,
   CreateAssetFolderRequest,
@@ -172,13 +171,6 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   ) =>
     invoke<AgentProviderSetupSnapshot>(
       IPC_CHANNELS.selectAgentProviderForSelector,
-      request,
-    ),
-  selectDefaultAgentProviderSelector: (
-    request: AgentProviderSelectorIdRequest,
-  ) =>
-    invoke<AgentProviderSetupSnapshot>(
-      IPC_CHANNELS.selectDefaultAgentProviderSelector,
       request,
     ),
   listExternalLibraries: () =>

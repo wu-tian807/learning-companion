@@ -103,7 +103,6 @@ export function createCodexClientUserMessageId(
 export function toCodexUserInput(
   request: GenerationAgentTurnRequest,
   capabilities: CodexGenerationCapabilitySelection,
-  embeddedImageUrls?: ReadonlyMap<string, string>,
 ): readonly CodexTurnUserInput[] {
   const messageInput = request.userMessage.content.map((part) => {
     if (part.type === 'text') {
@@ -111,14 +110,6 @@ export function toCodexUserInput(
     }
 
     if (part.type === 'local-image') {
-      const dataUrl = embeddedImageUrls?.get(part.path);
-      if (dataUrl) {
-        return {
-          type: 'image' as const,
-          url: dataUrl,
-          ...(part.detail ? { detail: part.detail } : {}),
-        };
-      }
       return {
         type: 'localImage' as const,
         path: part.path,

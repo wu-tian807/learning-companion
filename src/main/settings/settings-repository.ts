@@ -30,6 +30,4 @@ export interface SettingsRepository {
   updateAgentProviderSelectorSelection(
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<void>;
-  getDefaultAgentProviderSelectorId(): string;
-  updateDefaultAgentProviderSelectorId(selectorId: string): Promise<void>;
 }

@@ -15,7 +15,6 @@ import {
   isAgentProviderBaseUrl,
   isAgentProviderConnectionId,
   isAgentProviderId,
-  isAgentProviderSelectorId,
   isAgentProviderSelectorSelectionSnapshot,
 } from "./agent-providers";
 import {
@@ -81,7 +80,6 @@ export const IPC_CHANNELS = {
   deleteAgentProviderConnection: "agent-provider:delete-connection",
   getAgentProviderModels: "agent-provider:get-models",
   selectAgentProviderForSelector: "agent-provider:select-for-selector",
-  selectDefaultAgentProviderSelector: "agent-provider:select-default-selector",
   listExternalLibraries: "external-library:list",
   refreshExternalLibrary: "external-library:refresh",
   startExternalLibraryInstallation: "external-library:install",
@@ -178,9 +176,6 @@ export interface LearningCompanionApi {
   ) => Promise<AgentProviderModelCatalogSnapshot>;
   selectAgentProviderForSelector: (
     request: SelectAgentProviderForSelectorRequest,
-  ) => Promise<AgentProviderSetupSnapshot>;
-  selectDefaultAgentProviderSelector: (
-    request: AgentProviderSelectorIdRequest,
   ) => Promise<AgentProviderSetupSnapshot>;
   listExternalLibraries: () => Promise<ExternalLibrarySnapshot[]>;
   refreshExternalLibrary: (
@@ -361,10 +356,6 @@ export interface SelectAgentProviderForSelectorRequest {
   connectionId: string;
   modelId: string | null;
   reasoningEffort: string | null;
-}
-
-export interface AgentProviderSelectorIdRequest {
-  selectorId: string;
 }
 
 export interface RenameProjectRequest {
@@ -742,12 +733,6 @@ export function isSelectAgentProviderForSelectorRequest(
   value: unknown,
 ): value is SelectAgentProviderForSelectorRequest {
   return isAgentProviderSelectorSelectionSnapshot(value);
-}
-
-export function isAgentProviderSelectorIdRequest(
-  value: unknown,
-): value is AgentProviderSelectorIdRequest {
-  return isRecord(value) && isAgentProviderSelectorId(value.selectorId);
 }
 
 export function isDeleteAssetsRequest(

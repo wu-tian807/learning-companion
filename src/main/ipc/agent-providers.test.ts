@@ -54,14 +54,12 @@ function createService(): AgentProviderServiceApi {
   return {
     getSetup: vi.fn(async () => ({
       revision: 0,
-      defaultSelectorId: 'intelligence-medium',
       providers: [],
       selectors: [],
       selections: [],
     })),
     refreshProvider: vi.fn(async () => ({
       revision: 0,
-      defaultSelectorId: 'intelligence-medium',
       providers: [],
       selectors: [],
       selections: [],
@@ -77,14 +75,12 @@ function createService(): AgentProviderServiceApi {
     cancelLogin: vi.fn(async () => undefined),
     configureApiConnection: vi.fn(async () => ({
       revision: 1,
-      defaultSelectorId: 'intelligence-medium',
       providers: [],
       selectors: [],
       selections: [],
     })),
     deleteConnection: vi.fn(async () => ({
       revision: 2,
-      defaultSelectorId: 'intelligence-medium',
       providers: [],
       selectors: [],
       selections: [],
@@ -97,17 +93,9 @@ function createService(): AgentProviderServiceApi {
     })),
     selectForSelector: vi.fn(async (selection) => ({
       revision: 2,
-      defaultSelectorId: 'intelligence-medium',
       providers: [],
       selectors: [],
       selections: [selection],
-    })),
-    selectDefaultSelector: vi.fn(async () => ({
-      revision: 2,
-      defaultSelectorId: 'intelligence-medium',
-      providers: [],
-      selectors: [],
-      selections: [],
     })),
     dispose: vi.fn(async () => undefined),
   };
@@ -152,9 +140,6 @@ describe('Agent Provider IPC handlers', () => {
       modelId: 'gpt-test',
       reasoningEffort: 'medium',
     });
-    await findHandler(IPC_CHANNELS.selectDefaultAgentProviderSelector)({
-      selectorId: 'intelligence-medium',
-    });
 
     expect(service.getSetup).toHaveBeenCalledWith();
     expect(service.refreshProvider).toHaveBeenCalledWith('codex');
@@ -181,9 +166,6 @@ describe('Agent Provider IPC handlers', () => {
       modelId: 'gpt-test',
       reasoningEffort: 'medium',
     });
-    expect(service.selectDefaultSelector).toHaveBeenCalledWith(
-      'intelligence-medium',
-    );
   });
 
   it('rejects malformed Provider requests', async () => {
@@ -227,7 +209,6 @@ describe('Agent Provider IPC handlers', () => {
     registerAgentProviderHandlers(service, { broadcast });
     const snapshot = {
       revision: 2,
-      defaultSelectorId: 'intelligence-medium',
       providers: [],
       selectors: [],
       selections: [],
@@ -270,9 +251,6 @@ describe('Agent Provider IPC handlers', () => {
     );
     expect(electronMocks.removeHandler).toHaveBeenCalledWith(
       IPC_CHANNELS.selectAgentProviderForSelector,
-    );
-    expect(electronMocks.removeHandler).toHaveBeenCalledWith(
-      IPC_CHANNELS.selectDefaultAgentProviderSelector,
     );
   });
 });

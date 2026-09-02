@@ -55,7 +55,6 @@ describe('Agent Provider contracts', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 3,
-        defaultSelectorId: 'generation-center',
         providers: [provider],
         selectors: [selector],
         selections: [selection],
@@ -67,7 +66,6 @@ describe('Agent Provider contracts', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 4,
-        defaultSelectorId: 'generation-center',
         providers: [provider],
         selectors: [selector],
         selections: [{ ...selection, connectionId: 'missing' }],
@@ -79,7 +77,6 @@ describe('Agent Provider contracts', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 4,
-        defaultSelectorId: 'generation-center',
         providers: [provider],
         selectors: [selector],
         selections: [selection, { ...selection, modelId: 'gpt-5.6-terra' }],
@@ -91,7 +88,6 @@ describe('Agent Provider contracts', () => {
     expect(
       isAgentProviderSetupSnapshot({
         revision: 0,
-        defaultSelectorId: 'generation-center',
         providers: [
           {
             ...provider,

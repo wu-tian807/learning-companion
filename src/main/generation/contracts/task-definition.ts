@@ -108,13 +108,6 @@ export interface TaskDefinition<
   readonly version: number;
   /** Stable business slot used to resolve the execution configuration. */
   readonly providerSelectorId: string;
-  /**
-   * Optional instruction-aware override for the provider selector.
-   * Returning undefined keeps `providerSelectorId`.
-   */
-  readonly resolveProviderSelectorId?: (
-    instruction: JsonValue,
-  ) => string | undefined;
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;

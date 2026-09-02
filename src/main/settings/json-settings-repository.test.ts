@@ -56,9 +56,6 @@ describe('JsonSettingsRepository', () => {
     expect(
       repository.getAgentProviderSelectorSelection('intelligence-high'),
     ).toBeUndefined();
-    expect(repository.getDefaultAgentProviderSelectorId()).toBe(
-      'intelligence-medium',
-    );
     await expect(readFile(settingsFile, 'utf8')).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -78,7 +75,6 @@ describe('JsonSettingsRepository', () => {
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath: join(directory, 'config'),
       completedOnboardingVersion: 0,
-      defaultAgentProviderSelectorId: 'intelligence-medium',
       agentProviderSelectorMigrationVersion: 2,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
@@ -105,7 +101,6 @@ describe('JsonSettingsRepository', () => {
       modelId: 'deepseek-chat',
       reasoningEffort: 'high',
     });
-    await repository.updateDefaultAgentProviderSelectorId('intelligence-high');
 
     expect(repository.getAgentProviderConnection('codex-api-deepseek')).toEqual({
       id: 'codex-api-deepseek',
@@ -120,9 +115,6 @@ describe('JsonSettingsRepository', () => {
 
     const restored = new JsonSettingsRepository(settingsFile);
     await restored.initialize();
-    expect(restored.getDefaultAgentProviderSelectorId()).toBe(
-      'intelligence-high',
-    );
     expect(
       restored.getAgentProviderSelectorSelection(
         'intelligence-high',

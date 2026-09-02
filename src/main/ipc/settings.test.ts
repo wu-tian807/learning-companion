@@ -78,8 +78,6 @@ function createRepository() {
     deleteAgentProviderConnection: vi.fn(async () => undefined),
     getAgentProviderSelectorSelection: vi.fn(() => undefined),
     updateAgentProviderSelectorSelection: vi.fn(async () => undefined),
-    getDefaultAgentProviderSelectorId: vi.fn(() => 'intelligence-medium'),
-    updateDefaultAgentProviderSelectorId: vi.fn(async () => undefined),
   };
 
   return {

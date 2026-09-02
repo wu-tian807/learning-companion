@@ -11,7 +11,6 @@ function setup(
 ): AgentProviderSetupSnapshot {
   return {
     revision: 0,
-    defaultSelectorId: null,
     selectors: [],
     selections: [],
     providers: [
@@ -62,7 +61,6 @@ function createApi(): AgentProviderSetupApi {
     deleteAgentProviderConnection: vi.fn(),
     getAgentProviderModels: vi.fn(),
     selectAgentProviderForSelector: vi.fn(),
-    selectDefaultAgentProviderSelector: vi.fn(),
     completeAgentProviderOnboarding: vi.fn(),
     openExternal: vi.fn(),
   };

@@ -180,10 +180,7 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       projectId: task.projectId,
       definitionId: task.definitionId,
       definitionVersion: task.definitionVersion,
-      providerSelectorId:
-        definition.resolveProviderSelectorId?.(
-          instruction.toSnapshot(),
-        ) ?? definition.providerSelectorId,
+      providerSelectorId: definition.providerSelectorId,
       instruction,
       preparedUserMessage,
       workspaces,
