@@ -50,6 +50,7 @@ interface StoredSettingsState {
   readonly defaultProjectWorkspace: string;
   readonly externalLibrariesPath: string;
   readonly completedOnboardingVersion: number;
+  readonly agentProviderSelectorMigrationVersion: number;
   readonly agentProviderConnections: Readonly<
     Record<string, AgentProviderConnectionConfiguration>
   >;
@@ -66,6 +67,7 @@ interface DeserializedSettings {
 
 const LEGACY_GENERATION_CENTER_SELECTOR_ID = 'generation-center';
 const LEGACY_WORKBENCH_SELECTOR_ID = 'workbench';
+const CURRENT_AGENT_PROVIDER_SELECTOR_MIGRATION_VERSION = 2;
 
 function clonePreferences(preferences: AppPreferences): AppPreferences {
   return Object.freeze({
@@ -134,6 +136,8 @@ function cloneState(state: StoredSettingsState): StoredSettingsState {
     defaultProjectWorkspace: normalizeDirectory(state.defaultProjectWorkspace),
     externalLibrariesPath: normalizeDirectory(state.externalLibrariesPath),
     completedOnboardingVersion: state.completedOnboardingVersion,
+    agentProviderSelectorMigrationVersion:
+      state.agentProviderSelectorMigrationVersion,
     agentProviderConnections: connections,
     agentProviderSelectorSelections: selections,
   });
@@ -364,6 +368,8 @@ export class JsonSettingsRepository implements SettingsRepository {
       defaultProjectWorkspace: this.fallbackProjectWorkspace,
       externalLibrariesPath: this.fallbackExternalLibrariesPath,
       completedOnboardingVersion: 0,
+      agentProviderSelectorMigrationVersion:
+        CURRENT_AGENT_PROVIDER_SELECTOR_MIGRATION_VERSION,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
     });
@@ -389,6 +395,8 @@ export class JsonSettingsRepository implements SettingsRepository {
         defaultProjectWorkspace: state.defaultProjectWorkspace,
         externalLibrariesPath: state.externalLibrariesPath,
         completedOnboardingVersion: state.completedOnboardingVersion,
+        agentProviderSelectorMigrationVersion:
+          state.agentProviderSelectorMigrationVersion,
         agentProviderConnections: state.agentProviderConnections,
         agentProviderSelectorSelections: state.agentProviderSelectorSelections,
       },
@@ -407,6 +415,7 @@ export class JsonSettingsRepository implements SettingsRepository {
     let defaultProjectWorkspace = this.fallbackProjectWorkspace;
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
     let completedOnboardingVersion = 0;
+    let agentProviderSelectorMigrationVersion = 0;
     let connections: Record<string, AgentProviderConnectionConfiguration> = {};
     const selections: Record<string, AgentProviderSelectorSelectionSnapshot> = {};
     const legacySelectionsByConnection: Record<
@@ -442,6 +451,22 @@ export class JsonSettingsRepository implements SettingsRepository {
         throw new Error('Settings 首次运行引导版本无效');
       }
       completedOnboardingVersion = value.completedOnboardingVersion;
+    } else {
+      needsMigration = true;
+    }
+
+    if ('agentProviderSelectorMigrationVersion' in value) {
+      if (
+        !Number.isSafeInteger(value.agentProviderSelectorMigrationVersion) ||
+        Number(value.agentProviderSelectorMigrationVersion) < 0 ||
+        Number(value.agentProviderSelectorMigrationVersion) >
+          CURRENT_AGENT_PROVIDER_SELECTOR_MIGRATION_VERSION
+      ) {
+        throw new Error('Settings Agent Provider Selector 迁移版本无效');
+      }
+      agentProviderSelectorMigrationVersion = Number(
+        value.agentProviderSelectorMigrationVersion,
+      );
     } else {
       needsMigration = true;
     }
@@ -675,13 +700,31 @@ export class JsonSettingsRepository implements SettingsRepository {
       MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
       legacyWorkbench,
     );
-    migrateSelector(
-      LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
-      legacyWorkbench,
-    );
     if (legacyGeneration || legacyWorkbench) {
       delete selections[LEGACY_GENERATION_CENTER_SELECTOR_ID];
       delete selections[LEGACY_WORKBENCH_SELECTOR_ID];
+      needsMigration = true;
+    }
+
+    if (agentProviderSelectorMigrationVersion < 2) {
+      const medium =
+        selections[MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID];
+      const low = selections[LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID];
+      if (
+        medium &&
+        low &&
+        medium.providerId === low.providerId &&
+        medium.connectionId === low.connectionId &&
+        medium.modelId === low.modelId &&
+        medium.reasoningEffort === low.reasoningEffort
+      ) {
+        // The first intelligence-tier migration copied the former Workbench
+        // choice into both slots. Removing only that duplicate restores the
+        // low tier's app default without overriding an independently saved
+        // low-tier choice.
+        delete selections[LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID];
+      }
+      agentProviderSelectorMigrationVersion = 2;
       needsMigration = true;
     }
 
@@ -691,6 +734,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         defaultProjectWorkspace,
         externalLibrariesPath,
         completedOnboardingVersion,
+        agentProviderSelectorMigrationVersion,
         agentProviderConnections: connections,
         agentProviderSelectorSelections: selections,
       }),

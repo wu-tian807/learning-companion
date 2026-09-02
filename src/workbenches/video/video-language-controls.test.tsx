@@ -98,10 +98,10 @@ describe('VideoLanguageControls', () => {
     });
 
     expect(container.textContent).toContain('安装字幕');
-    expect(container.textContent).toContain('配音');
+    expect(container.textContent).toContain('等待字幕');
     expect(container.textContent).not.toContain('安装配音');
     const dubbingButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '配音',
+      (button) => button.textContent === '等待字幕',
     );
     expect(dubbingButton?.disabled).toBe(true);
     expect(dubbingButton?.parentElement?.title).toContain('字幕组件尚未安装');
@@ -141,10 +141,42 @@ describe('VideoLanguageControls', () => {
     expect(configureButton?.title).toBe(providerMessage);
     expect(onOpenSettings).toHaveBeenCalledTimes(2);
     const blockedDubbingButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '配音',
+      (button) => button.textContent === '译文异常',
     );
     expect(blockedDubbingButton?.disabled).toBe(true);
     expect(blockedDubbingButton?.parentElement?.title).toBe(providerMessage);
+  });
+
+  it('shows translation progress on the blocked dubbing control', () => {
+    act(() =>
+      root.render(
+        <VideoLanguageControls
+          subtitleMode="translated"
+          subtitleSnapshot={{
+            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+            phase: 'translating',
+            source: sourceTrack,
+            sourceTrackRevision: 'source-artifact-revision',
+            completedCues: 8,
+            totalCues: 64,
+          }}
+          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+          dubbingEnabled={false}
+          dubbingPlaybackActive={false}
+          onSelectSubtitleMode={vi.fn()}
+          onRetrySubtitles={vi.fn()}
+          onStartDubbing={vi.fn()}
+          onSelectDubbingEnabled={vi.fn()}
+          onRetryDubbing={vi.fn()}
+        />,
+      ),
+    );
+
+    const button = [...container.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent === '译文 8/64',
+    );
+    expect(button?.disabled).toBe(true);
+    expect(button?.parentElement?.title).toContain('译文正在生成（8/64）');
   });
 
   it('keeps subtitle modes in a compact menu instead of four permanent buttons', async () => {

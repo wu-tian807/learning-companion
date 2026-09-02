@@ -5,7 +5,6 @@ import type {
 } from '../../main/artifacts/asset-artifact-service';
 import type { AssetServiceApi } from '../../main/assets/asset-service';
 import { AppError, describeAppError } from '../../main/errors/app-error';
-import type { GenerationTaskSnapshot } from '../../main/generation/generation-task';
 import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
 import {
@@ -19,16 +18,15 @@ import {
 import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media-subtitle-runtime';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
+  type MediaSubtitleTranslationProducer,
   createSubtitleTranslationArtifactKey,
   type SubtitleTranslationProgressHub,
   type SubtitleTranslationProgress,
 } from './translation-producer';
 import {
-  SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
-  SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
-  SubtitleTranslationInstruction,
-  subtitleTranslationInstructionFactory,
-} from './generation/subtitle-translation-instruction';
+  SubtitleTranslationTaskAggregator,
+  type SubtitleTranslationAggregationEvent,
+} from './subtitle-translation-aggregator';
 import {
   readSubtitleSourceTrackFile,
   readSubtitleTranslationTrackFile,
@@ -55,11 +53,6 @@ interface ResolvedSourceTrack {
   readonly track: SubtitleSourceTrackV1;
   readonly artifact: ResolvedAssetArtifact;
   readonly workspacePath: string;
-}
-
-interface ActiveTranslationTask {
-  readonly assetId: string;
-  readonly request: AssetArtifactRequest;
 }
 
 export type MediaSubtitleServiceEvent =
@@ -159,10 +152,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   private readonly translationTasks = new Map<string, Promise<void>>();
   private readonly sourceArtifacts = new Map<string, ResolvedSourceTrack>();
   private readonly activeSourceRevisions = new Map<string, string>();
-  private readonly activeTranslationTasks = new Map<
-    string,
-    ActiveTranslationTask
-  >();
+  private readonly translationAggregator: SubtitleTranslationTaskAggregator;
   private readonly supportedMediaTypes: ReadonlySet<string>;
 
   constructor(
@@ -172,28 +162,28 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     private readonly srtProducer: MediaSubtitleSrtProducerApi,
     private readonly runtimes: MediaSubtitleRuntimeResolverApi,
     private readonly sourceTaskQueue: MediaSubtitleSourceTaskQueueApi,
-    private readonly generationTasks: GenerationTaskServiceApi,
+    generationTasks: GenerationTaskServiceApi,
+    translationProducer: MediaSubtitleTranslationProducer,
     translationProgress: SubtitleTranslationProgressHub,
     supportedMediaTypes: readonly string[],
     transcriptionProgress?: SubtitleTranscriptionProgressHub,
   ) {
     this.supportedMediaTypes = new Set(supportedMediaTypes);
+    this.translationAggregator = new SubtitleTranslationTaskAggregator(
+      artifacts,
+      generationTasks,
+      translationProducer,
+      translationProgress,
+    );
+    this.translationAggregator.subscribe((event) => {
+      void this.handleTranslationAggregationEvent(event);
+    });
     translationProgress.subscribe((progress) =>
       this.handleTranslationProgress(progress),
     );
     transcriptionProgress?.subscribe((progress) =>
       this.handleTranscriptionProgress(progress),
     );
-    generationTasks.subscribe((event) => {
-      if (event.type === 'task-completed') {
-        void this.completeTranslationTask(event.snapshot.id);
-      } else if (
-        event.type === 'task-changed' &&
-        (event.snapshot.failure || event.snapshot.cancelledTime !== undefined)
-      ) {
-        this.failTranslationTask(event.snapshot);
-      }
-    });
     assets.subscribe(({ asset }) => {
       if (
         asset.contentStatus.availability === 'available' &&
@@ -301,11 +291,18 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     let activeRevision: string | undefined;
     try {
       const request = await this.createSourceRequest(projectId, assetId);
+      if (
+        this.sourceArtifacts.get(assetId)?.artifact.artifact.sourceRevision !==
+          request.source.revision
+      ) {
+        this.translationAggregator.cancel(assetId);
+      }
       activeRevision = request.source.revision;
       this.activeSourceRevisions.set(assetId, activeRevision);
       this.updateSnapshot(assetId, {
         ...this.getSnapshot(assetId),
         phase: 'transcribing',
+        sourceTrackRevision: undefined,
         message: '正在生成原文字幕…',
       });
       const artifact = await this.artifacts.getOrCreate(request);
@@ -326,6 +323,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       this.updateSnapshot(assetId, {
         phase: 'source-ready',
         source: track,
+        sourceTrackRevision: artifact.artifact.artifactRevision,
         partialTranslations: [],
         completedCues: 0,
         totalCues: track.cues.length,
@@ -406,7 +404,6 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     }
 
     const targetLanguage = oppositeSubtitleLanguage(source.track.language);
-    const sourceTrackRevision = source.artifact.artifact.artifactRevision;
     const request = this.createTranslationRequest(assetId, source);
     if (await this.restoreCachedTranslation(assetId, source, request)) return;
 
@@ -420,34 +417,14 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       message: undefined,
     });
 
-    const existing = this.findTranslationTask(
+    await this.translationAggregator.ensure({
+      projectId,
       assetId,
-      sourceTrackRevision,
-      source.track.language,
+      source,
+      sourceLanguage: source.track.language,
       targetLanguage,
-    );
-    const snapshot = existing?.failure
-      ? this.generationTasks.retry(existing.id)
-      : (existing ??
-        this.generationTasks.start({
-          projectId,
-          definitionId: SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
-          definitionVersion: SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
-          instruction: new SubtitleTranslationInstruction({
-            assetId,
-            sourceTrackRevision,
-            sourceLanguage: source.track.language,
-            targetLanguage,
-          }).toSnapshot(),
-          assetReferences: Object.freeze({}),
-        }));
-    this.activeTranslationTasks.set(snapshot.id, {
-      assetId,
-      request,
+      finalArtifactRequest: request,
     });
-    if (snapshot.completed) {
-      await this.completeTranslationTask(snapshot.id);
-    }
   }
 
   private async createSourceRequest(
@@ -471,69 +448,45 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     );
   }
 
-  private findTranslationTask(
-    assetId: string,
-    sourceTrackRevision: string,
-    sourceLanguage: 'en' | 'zh-Hans',
-    targetLanguage: 'en' | 'zh-Hans',
-  ): GenerationTaskSnapshot | undefined {
-    return this.generationTasks.list().find((snapshot) => {
-      if (
-        snapshot.definitionId !== SUBTITLE_TRANSLATION_TASK_DEFINITION_ID ||
-        snapshot.definitionVersion !==
-          SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION ||
-        snapshot.cancelledTime !== undefined
-      ) {
-        return false;
-      }
-      const parsed = subtitleTranslationInstructionFactory.parse(
-        snapshot.instruction,
-      );
-      return (
-        parsed.ok &&
-        parsed.value.assetId === assetId &&
-        parsed.value.sourceTrackRevision === sourceTrackRevision &&
-        parsed.value.sourceLanguage === sourceLanguage &&
-        parsed.value.targetLanguage === targetLanguage
-      );
-    });
-  }
-
-  private async completeTranslationTask(taskId: string): Promise<void> {
-    const active = this.activeTranslationTasks.get(taskId);
-    if (!active) return;
-    const source = this.sourceArtifacts.get(active.assetId);
-    if (!source) return;
-    try {
-      const artifact = await this.artifacts.getCached(active.request);
-      if (!artifact) throw new AppError('DATA_INTEGRITY_ERROR');
-      await this.applyTranslationArtifact(active.assetId, source, artifact);
-      this.activeTranslationTasks.delete(taskId);
-    } catch (error) {
-      if (isAbortError(error)) return;
-      this.activeTranslationTasks.delete(taskId);
-      this.updateSnapshot(active.assetId, {
-        ...this.getSnapshot(active.assetId),
-        phase: 'failed',
-        message: userFailureMessage(error),
-      });
+  private async handleTranslationAggregationEvent(
+    event: SubtitleTranslationAggregationEvent,
+  ): Promise<void> {
+    const source = this.sourceArtifacts.get(event.assetId);
+    if (
+      !source ||
+      source.artifact.artifact.artifactRevision !== event.sourceTrackRevision
+    ) {
+      return;
     }
-  }
-
-  private failTranslationTask(snapshot: GenerationTaskSnapshot): void {
-    const active = this.activeTranslationTasks.get(snapshot.id);
-    if (!active) return;
-    this.activeTranslationTasks.delete(snapshot.id);
-    if (snapshot.cancelledTime !== undefined) return;
-    const providerMessage = translationProviderFailureMessage(
-      snapshot.failure?.code,
-      snapshot.failure?.detail,
-    );
-    this.updateSnapshot(active.assetId, {
-      ...this.getSnapshot(active.assetId),
+    if (event.type === 'completed') {
+      try {
+        await this.applyTranslationArtifact(
+          event.assetId,
+          source,
+          event.artifact,
+        );
+      } catch (error) {
+        if (isAbortError(error)) return;
+        this.updateSnapshot(
+          event.assetId,
+          translationFailureSnapshot(this.getSnapshot(event.assetId), error),
+        );
+      }
+      return;
+    }
+    const providerMessage = event.task
+      ? translationProviderFailureMessage(
+          event.task.failure?.code,
+          event.task.failure?.detail,
+        )
+      : undefined;
+    this.updateSnapshot(event.assetId, {
+      ...this.getSnapshot(event.assetId),
       phase: providerMessage ? 'provider-required' : 'failed',
       message:
-        providerMessage ?? snapshot.failure?.message ?? '字幕翻译没有完成。',
+        providerMessage ??
+        event.task?.failure?.message ??
+        (event.error ? userFailureMessage(event.error) : '字幕翻译没有完成。'),
     });
   }
 

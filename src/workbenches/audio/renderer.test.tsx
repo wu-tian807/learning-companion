@@ -178,7 +178,8 @@ describe('AudioWorkbenchView', () => {
     expect(markup).toContain('Hello.');
     expect(markup).toContain('你好。');
     expect(markup).toContain('说话人 1');
-    expect(markup).toContain('默认声线');
+    expect(markup).not.toContain('默认声线');
+    expect(markup).not.toContain('待准备声色参考');
     expect(markup).toContain('aria-label="音频声音"');
     expect(markup).toContain('aria-label="音频字幕与配音"');
   });
@@ -202,7 +203,7 @@ describe('AudioWorkbenchView', () => {
     });
 
     expect(markup).toContain('安装字幕');
-    expect(markup).toContain('>配音<');
+    expect(markup).toContain('>等待字幕<');
     expect(markup).toContain('VoxCPM2 视频/音频配音组件尚未安装');
   });
 

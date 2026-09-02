@@ -212,6 +212,7 @@ def rebuild_mixed_timeline(
     background_path: Path,
     voice_path: Path,
     mixed_path: Path,
+    background_gain: float,
 ) -> None:
     with (
         sf.SoundFile(background_path, mode="r") as background,
@@ -238,12 +239,37 @@ def rebuild_mixed_timeline(
             voice_block = voice.read(count, dtype="float32", always_2d=True)
             if background.channels > 1:
                 voice_block = np.repeat(voice_block, background.channels, axis=1)
-            mixed.write(np.clip(background_block * 0.9 + voice_block, -0.95, 0.95))
+            mixed.write(np.clip(background_block * background_gain + voice_block, -0.95, 0.95))
             remaining -= count
 
 
+def wait_for_file(path: Path) -> None:
+    while not path.is_file():
+        time.sleep(0.05)
+
+
 def run_job(model: VoxCPM, request: dict[str, object]) -> None:
-    raw_reference_paths = request.get("referencePaths")
+    phrases_path = Path(str(request["phrasesPath"]))
+    background_path = Path(str(request["backgroundPath"]))
+    raw_reference_paths_path = request.get("referencePathsPath")
+    reference_paths_path = (
+        Path(raw_reference_paths_path)
+        if isinstance(raw_reference_paths_path, str) and raw_reference_paths_path.strip()
+        else None
+    )
+    if bool(request.get("waitForInputs")):
+        raw_inputs_ready_path = request.get("inputsReadyPath")
+        if isinstance(raw_inputs_ready_path, str) and raw_inputs_ready_path.strip():
+            wait_for_file(Path(raw_inputs_ready_path))
+        wait_for_file(phrases_path)
+        wait_for_file(background_path)
+        if reference_paths_path is not None:
+            wait_for_file(reference_paths_path)
+    raw_reference_paths = (
+        json.loads(reference_paths_path.read_text(encoding="utf-8"))
+        if reference_paths_path is not None
+        else request.get("referencePaths")
+    )
     if not isinstance(raw_reference_paths, dict) or not raw_reference_paths:
         raise ValueError("referencePaths must be a non-empty object")
     reference_paths: dict[str, Path | None] = {}
@@ -259,13 +285,12 @@ def run_job(model: VoxCPM, request: dict[str, object]) -> None:
         if not reference_path.is_file():
             raise ValueError(f"reference audio is missing for {speaker_id}")
         reference_paths[speaker_id] = reference_path
-    phrases_path = Path(str(request["phrasesPath"]))
     output_path = Path(str(request["outputDirectory"]))
     progress_path = Path(str(request["progressPath"]))
-    background_path = Path(str(request["backgroundPath"]))
     mixed_path = Path(str(request["previewPath"]))
     ffmpeg_path = Path(str(request["ffmpegPath"]))
     duration_ms = int(request["durationMs"])
+    background_gain = float(request.get("backgroundGain", 0.9))
 
     payload = json.loads(phrases_path.read_text(encoding="utf-8"))
     phrases = payload.get("phrases")
@@ -273,6 +298,8 @@ def run_job(model: VoxCPM, request: dict[str, object]) -> None:
         raise ValueError("phrases must be a non-empty array")
     if duration_ms <= 0:
         raise ValueError("duration must be positive")
+    if background_gain < 0 or background_gain > 1:
+        raise ValueError("backgroundGain must be between zero and one")
 
     output_path.mkdir(parents=True, exist_ok=True)
     with sf.SoundFile(background_path, mode="r") as background:
@@ -313,7 +340,12 @@ def run_job(model: VoxCPM, request: dict[str, object]) -> None:
     if completed == 0:
         create_voice_timeline(timeline_path, sample_rate, total_frames)
     if not valid_audio(mixed_path, sample_rate, background_channels, total_frames):
-        rebuild_mixed_timeline(background_path, timeline_path, mixed_path)
+        rebuild_mixed_timeline(
+            background_path,
+            timeline_path,
+            mixed_path,
+            background_gain,
+        )
     ensure_writable_audio(timeline_path)
     ensure_writable_audio(mixed_path)
     if completed > 0:
@@ -436,7 +468,7 @@ def run_job(model: VoxCPM, request: dict[str, object]) -> None:
                 mixed.seek(start_frame)
                 mixed.write(
                     np.clip(
-                        background_segment * 0.9 + voice_segment,
+                        background_segment * background_gain + voice_segment,
                         -0.95,
                         0.95,
                     )
@@ -485,5 +517,10 @@ while not args.request.exists():
 request = json.loads(args.request.read_text(encoding="utf-8"))
 if not isinstance(request, dict):
     raise ValueError("request must be an object")
+bootstrap_job = request.get("bootstrapJob")
+if bootstrap_job is not None:
+    if not isinstance(bootstrap_job, dict):
+        raise ValueError("bootstrapJob must be an object")
+    run_job(model, bootstrap_job)
 run_job(model, request)
 `;
