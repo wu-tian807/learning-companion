@@ -2,6 +2,7 @@ import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
+import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
@@ -19,8 +20,12 @@ export const MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE =
   'markdown.source-range';
 export const MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE =
   'markdown.visual-selection';
+export const MARKDOWN_IMAGE_ANCHOR_TYPE = 'markdown.image-source';
+export const MARKDOWN_IMAGE_ANCHOR_VERSION = 1;
 export const MARKDOWN_STATE_SCHEMA_VERSION = 1;
 export const MARKDOWN_RECOVERY_DATA_KEY = 'recovery-content';
+export const MARKDOWN_IMAGE_DIRECTORY = 'images';
+export const MARKDOWN_MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 
 export type MarkdownViewMode = 'wysiwyg' | 'source';
 export type MarkdownEditMode = MarkdownViewMode;
@@ -131,6 +136,32 @@ export type MarkdownReopenResult = {
   readonly revision: string;
 };
 
+export type MarkdownImageMediaType =
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/gif'
+  | 'image/webp'
+  | 'image/bmp';
+
+export type MarkdownInsertImagePayload = {
+  readonly name: string;
+  readonly mediaType: MarkdownImageMediaType;
+  /** 图片原始字节的 base64；主进程写盘前会再次校验大小。 */
+  readonly data: string;
+};
+
+export type MarkdownInsertImageResult = {
+  readonly relativePath: string;
+};
+
+export type MarkdownReadImagePayload = {
+  readonly relativePath: string;
+};
+
+export type MarkdownReadImageResult = {
+  readonly dataUrl: string;
+};
+
 export const DEFAULT_MARKDOWN_WORKBENCH_STATE:
   MarkdownWorkbenchViewState = Object.freeze({
     viewMode: 'wysiwyg',
@@ -150,6 +181,7 @@ export const markdownWorkbenchManifest: AssetWorkbenchManifest<
   supportedAnchorTypes: [
     MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
     MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
+    MARKDOWN_IMAGE_ANCHOR_TYPE,
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
@@ -172,6 +204,8 @@ export const markdownCommands = {
   setLineEnding: 'markdown:set-line-ending',
   reopenWithEncoding: 'markdown:reopen-with-encoding',
   discardRecovery: 'markdown:discard-recovery',
+  insertImage: 'markdown:insert-image',
+  readImage: 'markdown:read-image',
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -180,6 +214,188 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isRequiredText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+const MARKDOWN_IMAGE_MEDIA_TYPE_EXTENSIONS: Readonly<
+  Record<MarkdownImageMediaType, string>
+> = Object.freeze({
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/bmp': '.bmp',
+});
+
+const MARKDOWN_IMAGE_EXTENSION_MEDIA_TYPES: Readonly<
+  Record<string, MarkdownImageMediaType>
+> = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+});
+
+export function isSupportedMarkdownImageMediaType(
+  value: unknown,
+): value is MarkdownImageMediaType {
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(
+      MARKDOWN_IMAGE_MEDIA_TYPE_EXTENSIONS,
+      value,
+    )
+  );
+}
+
+export function markdownImageExtensionFromMediaType(
+  mediaType: MarkdownImageMediaType,
+): string {
+  return MARKDOWN_IMAGE_MEDIA_TYPE_EXTENSIONS[mediaType];
+}
+
+export function markdownImageMediaTypeFromName(
+  name: string,
+): MarkdownImageMediaType | undefined {
+  const extension = name.slice(name.lastIndexOf('.')).toLowerCase();
+  return MARKDOWN_IMAGE_EXTENSION_MEDIA_TYPES[extension];
+}
+
+function isSafeRelativePath(value: string): boolean {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > 1_024 ||
+    value.startsWith('/') ||
+    value.includes('\\') ||
+    value.includes(':')
+  ) {
+    return false;
+  }
+  const segments = value.split('/');
+  return (
+    segments.length > 0 &&
+    segments.every(
+      (segment) =>
+        segment.length > 0 &&
+        segment !== '.' &&
+        segment !== '..' &&
+        ![...segment].some(
+          (character) =>
+            '<>"|?*'.includes(character) ||
+            character.charCodeAt(0) < 32,
+        ),
+    )
+  );
+}
+
+export interface MarkdownImageAnchorPayload {
+  readonly relativePath: string;
+}
+
+export function isMarkdownImageAnchorPayload(
+  value: unknown,
+): value is JsonValue & MarkdownImageAnchorPayload {
+  if (!isRecord(value)) return false;
+  const relativePath = value.relativePath;
+  return (
+    isRequiredText(relativePath) &&
+    isSafeRelativePath(relativePath) &&
+    markdownImageMediaTypeFromName(relativePath) !== undefined
+  );
+}
+
+export function createMarkdownImageAnchorTarget(
+  relativePath: string,
+): ContentAnchorTarget {
+  return {
+    scope: 'content',
+    anchorType: MARKDOWN_IMAGE_ANCHOR_TYPE,
+    anchorVersion: MARKDOWN_IMAGE_ANCHOR_VERSION,
+    anchorPayload: {
+      relativePath: relativePath.trim(),
+    },
+  };
+}
+
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/u;
+
+export function isMarkdownInsertImagePayload(
+  value: unknown,
+): value is JsonValue & MarkdownInsertImagePayload {
+  if (!isRecord(value)) return false;
+  if (
+    !isRequiredText(value.name) ||
+    [...String(value.name)].length > 128 ||
+    !isSupportedMarkdownImageMediaType(value.mediaType)
+  ) {
+    return false;
+  }
+  const data = value.data;
+  if (
+    typeof data !== 'string' ||
+    data.length === 0 ||
+    data.length > Math.ceil((MARKDOWN_MAX_IMAGE_BYTES * 4) / 3) + 4 ||
+    !BASE64_PATTERN.test(data)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function isMarkdownInsertImageResult(
+  value: unknown,
+): value is JsonValue & MarkdownInsertImageResult {
+  if (!isRecord(value)) return false;
+  const relativePath = value.relativePath;
+  return (
+    isRequiredText(relativePath) &&
+    isSafeRelativePath(relativePath) &&
+    markdownImageMediaTypeFromName(relativePath) !== undefined
+  );
+}
+
+export function isMarkdownReadImagePayload(
+  value: unknown,
+): value is JsonValue & MarkdownReadImagePayload {
+  if (!isRecord(value)) return false;
+  const relativePath = value.relativePath;
+  return (
+    isRequiredText(relativePath) &&
+    isSafeRelativePath(relativePath) &&
+    markdownImageMediaTypeFromName(relativePath) !== undefined
+  );
+}
+
+export function isMarkdownReadImageResult(
+  value: unknown,
+): value is JsonValue & MarkdownReadImageResult {
+  if (!isRecord(value) || typeof value.dataUrl !== 'string') {
+    return false;
+  }
+  return (
+    value.dataUrl.startsWith('data:image/') &&
+    value.dataUrl.includes(';base64,') &&
+    value.dataUrl.length <=
+      Math.ceil((MARKDOWN_MAX_IMAGE_BYTES * 4) / 3) + 128
+  );
+}
+
+/** 生成可写回 Markdown 源码的图片引用；空格会被百分号编码，其余字符原样保留。 */
+export function createMarkdownImageReference(
+  relativePath: string,
+  alt?: string,
+): string {
+  const encodedPath = relativePath
+    .split('/')
+    .map((segment) => segment.replace(/ /gu, '%20'))
+    .join('/');
+  const label = (alt ?? relativePath.split('/').at(-1) ?? '图片')
+    .replace(/[[\]]/gu, '')
+    .slice(0, 120)
+    .trim();
+  return `![${label || '图片'}](${encodedPath})`;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -455,5 +671,27 @@ export function createMarkdownSaveViewStateCommand(
     payload: {
       ...cloneMarkdownWorkbenchViewState(state),
     },
+  };
+}
+
+export function createMarkdownInsertImageCommand(
+  payload: MarkdownInsertImagePayload,
+): WorkbenchCommand {
+  return {
+    type: markdownCommands.insertImage,
+    payload: {
+      name: payload.name,
+      mediaType: payload.mediaType,
+      data: payload.data,
+    },
+  };
+}
+
+export function createMarkdownReadImageCommand(
+  relativePath: string,
+): WorkbenchCommand {
+  return {
+    type: markdownCommands.readImage,
+    payload: { relativePath },
   };
 }

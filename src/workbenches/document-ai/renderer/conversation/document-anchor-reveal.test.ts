@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentAnchorTarget } from '../../../../shared/workbench/anchor';
 import { createTextRangeTarget } from '../../../../shared/workbench/text-range-anchor';
 import {
+  rangeForExactText,
+  rangeForTextOffsets,
   resolveTextSelectionFromTarget,
   revealSelectionInCodeMirror,
   scrollRangeIntoView,
@@ -80,6 +82,34 @@ describe('resolveTextSelectionFromTarget', () => {
     expect(
       resolveTextSelectionFromTarget(blankExact, [RANGE_ANCHOR_TYPE]),
     ).toEqual({ start: 1, end: 3 });
+  });
+});
+
+describe('range helpers for comment markers', () => {
+  it('maps source offsets onto DOM text nodes split by child elements', () => {
+    const host = document.createElement('div');
+    host.append(
+      document.createTextNode('第一段'),
+      document.createElement('span'),
+      document.createTextNode('第二段内容'),
+    );
+    const range = rangeForTextOffsets(host, 1, 7);
+    expect(range?.toString()).toBe('一段第二段内');
+  });
+
+  it('finds an exact quote inside rich HTML without changing the selection', () => {
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<p>问题<strong>加粗文字</strong>结束</p><p>后面还有一段</p>';
+    const range = rangeForExactText(host, '加粗文字结束');
+    expect(range?.toString()).toBe('加粗文字结束');
+    expect(window.getSelection()?.rangeCount ?? 0).toBe(0);
+  });
+
+  it('rejects offsets beyond the rendered text length', () => {
+    const host = document.createElement('div');
+    host.append(document.createTextNode('只有五个字'));
+    expect(rangeForTextOffsets(host, 0, 99)).toBeUndefined();
   });
 });
 

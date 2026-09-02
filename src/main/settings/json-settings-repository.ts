@@ -50,6 +50,7 @@ interface StoredSettingsState {
   readonly defaultProjectWorkspace: string;
   readonly externalLibrariesPath: string;
   readonly completedOnboardingVersion: number;
+  readonly defaultAgentProviderSelectorId: string;
   readonly agentProviderConnections: Readonly<
     Record<string, AgentProviderConnectionConfiguration>
   >;
@@ -87,6 +88,9 @@ function normalizeDirectory(directory: string): string {
 function cloneState(state: StoredSettingsState): StoredSettingsState {
   if (!isCompletedOnboardingVersion(state.completedOnboardingVersion)) {
     throw new Error('Settings 首次运行引导版本无效');
+  }
+  if (!isAgentProviderSelectorId(state.defaultAgentProviderSelectorId)) {
+    throw new Error('Settings AI Provider 默认智能强度无效');
   }
 
   const connections = Object.freeze(
@@ -134,6 +138,7 @@ function cloneState(state: StoredSettingsState): StoredSettingsState {
     defaultProjectWorkspace: normalizeDirectory(state.defaultProjectWorkspace),
     externalLibrariesPath: normalizeDirectory(state.externalLibrariesPath),
     completedOnboardingVersion: state.completedOnboardingVersion,
+    defaultAgentProviderSelectorId: state.defaultAgentProviderSelectorId,
     agentProviderConnections: connections,
     agentProviderSelectorSelections: selections,
   });
@@ -358,12 +363,29 @@ export class JsonSettingsRepository implements SettingsRepository {
     }));
   }
 
+  getDefaultAgentProviderSelectorId(): string {
+    this.requireInitialized();
+    return this.state.defaultAgentProviderSelectorId;
+  }
+
+  async updateDefaultAgentProviderSelectorId(selectorId: string): Promise<void> {
+    if (!isAgentProviderSelectorId(selectorId)) {
+      throw new Error('Settings AI Provider 默认智能强度无效');
+    }
+    await this.updateState((state) => ({
+      ...state,
+      defaultAgentProviderSelectorId: selectorId,
+    }));
+  }
+
   private defaultState(): StoredSettingsState {
     return cloneState({
       preferences: DEFAULT_APP_PREFERENCES,
       defaultProjectWorkspace: this.fallbackProjectWorkspace,
       externalLibrariesPath: this.fallbackExternalLibrariesPath,
       completedOnboardingVersion: 0,
+      defaultAgentProviderSelectorId:
+        MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
     });
@@ -389,6 +411,8 @@ export class JsonSettingsRepository implements SettingsRepository {
         defaultProjectWorkspace: state.defaultProjectWorkspace,
         externalLibrariesPath: state.externalLibrariesPath,
         completedOnboardingVersion: state.completedOnboardingVersion,
+        defaultAgentProviderSelectorId:
+          state.defaultAgentProviderSelectorId,
         agentProviderConnections: state.agentProviderConnections,
         agentProviderSelectorSelections: state.agentProviderSelectorSelections,
       },
@@ -407,6 +431,8 @@ export class JsonSettingsRepository implements SettingsRepository {
     let defaultProjectWorkspace = this.fallbackProjectWorkspace;
     let externalLibrariesPath = this.fallbackExternalLibrariesPath;
     let completedOnboardingVersion = 0;
+    let defaultAgentProviderSelectorId =
+      MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID;
     let connections: Record<string, AgentProviderConnectionConfiguration> = {};
     const selections: Record<string, AgentProviderSelectorSelectionSnapshot> = {};
     const legacySelectionsByConnection: Record<
@@ -442,6 +468,15 @@ export class JsonSettingsRepository implements SettingsRepository {
         throw new Error('Settings 首次运行引导版本无效');
       }
       completedOnboardingVersion = value.completedOnboardingVersion;
+    } else {
+      needsMigration = true;
+    }
+
+    if ('defaultAgentProviderSelectorId' in value) {
+      if (!isAgentProviderSelectorId(value.defaultAgentProviderSelectorId)) {
+        throw new Error('Settings AI Provider 默认智能强度无效');
+      }
+      defaultAgentProviderSelectorId = value.defaultAgentProviderSelectorId;
     } else {
       needsMigration = true;
     }
@@ -691,6 +726,7 @@ export class JsonSettingsRepository implements SettingsRepository {
         defaultProjectWorkspace,
         externalLibrariesPath,
         completedOnboardingVersion,
+        defaultAgentProviderSelectorId,
         agentProviderConnections: connections,
         agentProviderSelectorSelections: selections,
       }),

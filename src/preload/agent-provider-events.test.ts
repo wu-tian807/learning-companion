@@ -19,6 +19,7 @@ describe('Preload AgentProvider Event subscription', () => {
     const dispose = subscribeAgentProviderEvents(ipc, listener);
     const snapshot = {
       revision: 2,
+      defaultSelectorId: null,
       selectors: [],
       selections: [],
       providers: [

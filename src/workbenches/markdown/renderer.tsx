@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { markdown } from '@codemirror/lang-markdown';
@@ -27,10 +28,12 @@ import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWork
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
-  type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
 import {
   revealSelectionInCodeMirror,
+  rangeForExactText,
+  rectFromCodeMirrorRange,
+  rectFromRange,
   resolveTextSelectionFromTarget,
   scrollRangeIntoView,
   selectTextInElement,
@@ -40,25 +43,39 @@ import {
 } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
+import type { AssetTarget } from '../../shared/workbench/anchor';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { resolveTextRangeSelection } from '../../shared/workbench/text-range-anchor';
 import { MarkdownEditorActionAdapter } from './markdown-editor-action-adapter';
 import { MarkdownEditorAdapter } from './markdown-editor-adapter';
 import {
   areMarkdownSourceViewStatesEqual,
   cloneMarkdownWorkbenchViewState,
   createMarkdownSaveViewStateCommand,
+  createMarkdownImageReference,
+  createMarkdownInsertImageCommand,
+  createMarkdownReadImageCommand,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   isMarkdownBufferSyncResult,
+  isMarkdownInsertImageResult,
   isMarkdownLineEndingResult,
+  isMarkdownReadImageResult,
   isMarkdownReopenResult,
   isMarkdownSaveResult,
   isMarkdownSaveViewStateResult,
   isMarkdownWorkbenchPayload,
+  isSupportedMarkdownImageMediaType,
+  MARKDOWN_MAX_IMAGE_BYTES,
   markdownCommands,
+  markdownImageMediaTypeFromName,
   markdownWorkbenchManifest,
   MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
   MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+  MARKDOWN_IMAGE_ANCHOR_TYPE,
+  MARKDOWN_IMAGE_ANCHOR_VERSION,
+  createMarkdownImageAnchorTarget,
+  isMarkdownImageAnchorPayload,
   type MarkdownBufferSyncResult,
   type MarkdownEditMode,
   type MarkdownEncoding,
@@ -69,18 +86,39 @@ import {
 import {
   createMarkdownRendererActions,
 } from './renderer-actions';
-import { writeMarkdownAnswerToSource } from './answer-insertion';
 
 type VisualEditorState =
   | 'loading'
   | 'ready'
   | 'failed';
 
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize),
+    );
+  }
+  return btoa(binary);
+}
+
+function findMarkdownImageBySource(
+  element: HTMLElement | undefined,
+  relativePath: string,
+): HTMLImageElement | undefined {
+  if (!element) return undefined;
+  return [...element.querySelectorAll<HTMLImageElement>('img')].find(
+    (image) => image.getAttribute('data-md-src') === relativePath,
+  );
+}
+
 const MARKDOWN_ANSWER_ACTION_PRESENTATION = Object.freeze({
   label: '回归 Markdown 原文',
   selectionLabel: '回归选中回答片段',
-  successMessage: '已写回并保存 Markdown 原文',
-  failureMessage: '写回 Markdown 原文失败',
+  successMessage: '已在原文旁创建 AI 回复批注，点击标记即可查看',
+  failureMessage: '创建原文回复批注失败',
 });
 
 const markdownSourceTheme = EditorView.theme(
@@ -268,6 +306,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     } satisfies MarkdownWorkbenchViewState);
   const sourceEditorRef = useRef<ReactCodeMirrorRef>(null);
   const wysiwygHostRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
   );
@@ -280,16 +319,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     cloneMarkdownWorkbenchViewState(initialViewState),
   );
   const wysiwygEditedSinceMountRef = useRef(false);
-  const pendingAnswerInsertionRef = useRef<
-    | {
-        readonly context?: DocumentConversationContext;
-        readonly text: string;
-        readonly resolve: () => void;
-        readonly reject: (error: unknown) => void;
-      }
-    | undefined
-  >(undefined);
   const viewStateSaveTimerRef = useRef<number | undefined>(undefined);
+  const imageDataUrlCacheRef = useRef<
+    Map<string, Promise<string | undefined>>
+  >(new Map());
+  const imageAiAskRef = useRef<
+    ((relativePath: string) => void) | undefined
+  >(undefined);
   const [workingBuffer, setWorkingBuffer] = useState(
     payload?.diskSource ?? '',
   );
@@ -515,6 +551,116 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [acceptSyncResult, executeCommand],
   );
 
+  const readMarkdownImageDataUrl = useCallback(
+    async (relativePath: string): Promise<string | undefined> => {
+      const cached =
+        imageDataUrlCacheRef.current.get(relativePath);
+      if (cached) return cached;
+      const pending = executeCommand(
+        createMarkdownReadImageCommand(relativePath),
+      )
+        .then((result) =>
+          isMarkdownReadImageResult(result.payload)
+            ? result.payload.dataUrl
+            : undefined,
+        )
+        .catch(() => undefined);
+      imageDataUrlCacheRef.current.set(relativePath, pending);
+      return pending;
+    },
+    [executeCommand],
+  );
+
+  const resolvePickedImageMediaType = useCallback(
+    (file: File) => {
+      if (isSupportedMarkdownImageMediaType(file.type)) {
+        return file.type;
+      }
+      const byName = markdownImageMediaTypeFromName(file.name);
+      return byName && isSupportedMarkdownImageMediaType(byName)
+        ? byName
+        : undefined;
+    },
+    [],
+  );
+
+  const insertLocalImage = useCallback(
+    async (file: File) => {
+      try {
+        if (
+          file.size === 0 ||
+          file.size > MARKDOWN_MAX_IMAGE_BYTES
+        ) {
+          throw new Error(
+            `图片不能超过 ${Math.round(
+              MARKDOWN_MAX_IMAGE_BYTES / 1024 / 1024,
+            )} MB。`,
+          );
+        }
+        const mediaType = resolvePickedImageMediaType(file);
+        if (!mediaType) {
+          throw new Error('仅支持 PNG / JPG / GIF / WebP / BMP 图片。');
+        }
+        const data = await fileToBase64(file);
+        const result = await executeCommand(
+          createMarkdownInsertImageCommand({
+            name: file.name,
+            mediaType,
+            data,
+          }),
+        );
+        if (!isMarkdownInsertImageResult(result.payload)) {
+          throw new Error('插入图片响应无效。');
+        }
+        const reference = createMarkdownImageReference(
+          result.payload.relativePath,
+        );
+        if (viewStateRef.current.viewMode === 'source') {
+          const view = sourceEditorRef.current?.view;
+          if (!view) {
+            throw new Error('Markdown 源码编辑器尚未准备完成。');
+          }
+          const from = view.state.selection.main.from;
+          view.dispatch({
+            changes: { from, insert: reference },
+            selection: { anchor: from + reference.length },
+            scrollIntoView: true,
+          });
+          view.focus();
+        } else {
+          const adapter = wysiwygAdapterRef.current;
+          if (!adapter) {
+            throw new Error('Markdown 可视化编辑器尚未准备完成。');
+          }
+          adapter.insertMarkdown(reference);
+          requestAnimationFrame(() => {
+            adapter.resolveLocalImages();
+          });
+        }
+        void readMarkdownImageDataUrl(
+          result.payload.relativePath,
+        );
+      } catch (error) {
+        reportError(error, '无法插入本地图片，请重试。');
+      }
+    },
+    [
+      executeCommand,
+      readMarkdownImageDataUrl,
+      reportError,
+      resolvePickedImageMediaType,
+    ],
+  );
+
+  const handleImageInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = '';
+      if (file) void insertLocalImage(file);
+    },
+    [insertLocalImage],
+  );
+
   useEffect(() => {
     if (
       !payload ||
@@ -551,13 +697,18 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         }
 
         const adapter = wysiwygAdapterRef.current;
+        const normalizedValue = adapter
+          ? adapter.normalizeImageSourcesForSource(value)
+          : value;
         const scrollTop = adapter?.getScrollTop() ?? 0;
-        workingBufferRef.current = value;
+        workingBufferRef.current = normalizedValue;
         wysiwygEditedSinceMountRef.current = true;
-        setWorkingBuffer(value);
-        void syncWysiwygBuffer(value, scrollTop).catch((error) => {
-          reportError(error, '无法同步 Markdown 可视化编辑内容。');
-        });
+        setWorkingBuffer(normalizedValue);
+        void syncWysiwygBuffer(normalizedValue, scrollTop).catch(
+          (error) => {
+            reportError(error, '无法同步 Markdown 可视化编辑内容。');
+          },
+        );
       },
       onScroll: (scrollTop) => {
         if (
@@ -579,6 +730,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           reportError(error, '无法打开外部链接。');
         });
       },
+      readLocalImageSource: readMarkdownImageDataUrl,
       onError: (error) => {
         reportError(error, 'Markdown 可视化编辑器运行异常。');
       },
@@ -623,6 +775,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   }, [
     onOpenExternal,
     payload,
+    readMarkdownImageDataUrl,
     recovery,
     reportError,
     runtime,
@@ -650,6 +803,18 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
+      const imageTarget =
+        event.target instanceof Element
+          ? event.target.closest('img')
+          : undefined;
+      const imageRelativePath = imageTarget?.getAttribute(
+        'data-md-src',
+      );
+      const askAboutImage = imageAiAskRef.current;
+      if (imageRelativePath && askAboutImage) {
+        askAboutImage(imageRelativePath);
+        return;
+      }
       const capture =
         wysiwygEditorActionAdapter.captureContextMenu(
           event.clientX,
@@ -1049,137 +1214,14 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [executeCommand, reportError],
   );
 
-  const applySourceContent = useCallback((content: string) => {
-      const view = sourceEditorRef.current?.view;
-      if (view) {
-        view.dispatch({
-          changes: {
-            from: 0,
-            to: view.state.doc.length,
-            insert: content,
-          },
-        });
-      }
-      workingBufferRef.current = content;
-      setWorkingBuffer(content);
-  }, []);
-
-  const persistMarkdownSource = useCallback(
-    async (content: string) => {
-      const sourceState =
-        viewStateRef.current.sourceViewState ?? {
-          anchor: 0,
-          head: 0,
-          scrollTop: 0,
-        };
-      await syncSourceBuffer(content, sourceState);
-      const result = await executeCommand({
-        type: markdownCommands.save,
-      });
-      requireValidResult(
-        result,
-        isMarkdownSaveResult,
-        'Markdown Workbench 保存响应无效',
-      );
-      setDiskSource(content);
-      setSavedLineEnding(lineEndingRef.current);
-      wysiwygEditedSinceMountRef.current = false;
-    },
-    [executeCommand, syncSourceBuffer],
-  );
-
-  const writeAnswerInSourceMode = useCallback(
-    async (input: {
-      readonly text: string;
-      readonly context?: DocumentConversationContext;
-    }) => {
-      if (saving || recovery) {
-        throw new Error(
-          'Markdown 正在保存或等待恢复处理，请稍后再写回原文。',
-        );
-      }
-      setSaving(true);
-      try {
-        await writeMarkdownAnswerToSource({
-          content: workingBufferRef.current,
-          context: input.context,
-          text: input.text,
-          lineEnding: lineEndingRef.current,
-          applyContent: applySourceContent,
-          persistContent: persistMarkdownSource,
-        });
-      } finally {
-        setSaving(false);
-      }
-    },
-    [applySourceContent, persistMarkdownSource, recovery, saving],
-  );
-
-  useEffect(() => {
-    if (viewState.viewMode !== 'source') return;
-    const pending = pendingAnswerInsertionRef.current;
-    if (!pending) return;
-    pendingAnswerInsertionRef.current = undefined;
-    void writeAnswerInSourceMode({
-      text: pending.text,
-      context: pending.context,
-    }).then(pending.resolve, pending.reject);
-  }, [
-    sourceEditorKey,
-    viewState.viewMode,
-    writeAnswerInSourceMode,
-  ]);
-
-  useEffect(() => () => {
-    const pending = pendingAnswerInsertionRef.current;
-    pendingAnswerInsertionRef.current = undefined;
-    pending?.reject(
-      new DOMException('Markdown Workbench 已关闭', 'AbortError'),
-    );
-  }, []);
-
-  const returnAnswerToSource = useCallback(
-    async (input: {
-      readonly text: string;
-      readonly question?: string;
-      readonly context?: DocumentConversationContext;
-    }) => {
-      if (viewStateRef.current.viewMode !== 'source') {
-        await new Promise<void>((resolve, reject) => {
-          pendingAnswerInsertionRef.current = {
-            ...(input.context ? { context: input.context } : {}),
-            text: input.text,
-            resolve,
-            reject,
-          };
-          void switchMode('source').catch((error: unknown) => {
-            const pending = pendingAnswerInsertionRef.current;
-            pendingAnswerInsertionRef.current = undefined;
-            pending?.reject(error);
-          });
-        });
-        return;
-      }
-      await writeAnswerInSourceMode({
-        text: input.text,
-        context: input.context,
-      });
-    },
-    [switchMode, writeAnswerInSourceMode],
-  );
-
   const conversationContribution = useMemo(
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
-      returnAnswerToSource,
+      allowAnswerAttachments: true,
       answerActionPresentation: MARKDOWN_ANSWER_ACTION_PRESENTATION,
     }),
-    [
-      asset.id,
-      asset.projectId,
-      returnAnswerToSource,
-    ],
+    [asset.id, asset.projectId],
   );
   const conversationOwnerId =
     `${markdownWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
@@ -1188,6 +1230,22 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     asset.id,
     conversationContribution,
   );
+
+  useEffect(() => {
+    imageAiAskRef.current = (relativePath) => {
+      conversationRuntime.open({
+        ownerId: conversationOwnerId,
+        context: createDocumentConversationContext({
+          target: createMarkdownImageAnchorTarget(relativePath),
+          image: { relativePath },
+        }),
+        question: '请解释这张图片的内容。',
+      });
+    };
+    return () => {
+      imageAiAskRef.current = undefined;
+    };
+  }, [conversationOwnerId, conversationRuntime]);
 
   const scrollSelectionIntoView = useCallback(() => {
     const selection = window.getSelection();
@@ -1290,13 +1348,141 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [revealTextFragmentInElement, scrollSelectionIntoView],
   );
 
+  const resolveMarkdownVisualTextRect = useCallback(
+    (element: HTMLElement, text: string) => {
+      const trimmed = text.trim();
+      const exactRange = trimmed
+        ? rangeForExactText(element, trimmed)
+        : undefined;
+      if (exactRange) return rectFromRange(exactRange);
+      const fragment = Array.from(trimmed)
+        .slice(0, 12)
+        .join('')
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (fragment.length < 2) return undefined;
+      const fragmentRange = rangeForExactText(element, fragment);
+      return fragmentRange ? rectFromRange(fragmentRange) : undefined;
+    },
+    [],
+  );
+
+  const resolveMarkdownAnchorRect = useCallback(
+    (target: AssetTarget) => {
+      if (target.scope !== 'content') return undefined;
+      const viewMode = viewStateRef.current.viewMode;
+      if (target.anchorType === MARKDOWN_IMAGE_ANCHOR_TYPE) {
+        if (
+          target.anchorVersion !== MARKDOWN_IMAGE_ANCHOR_VERSION ||
+          !isMarkdownImageAnchorPayload(target.anchorPayload)
+        ) {
+          return undefined;
+        }
+        const image = findMarkdownImageBySource(
+          wysiwygAdapterRef.current?.getEditableElement(),
+          target.anchorPayload.relativePath,
+        );
+        if (!image) return undefined;
+        const rect = image.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return undefined;
+        return {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+      if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
+        const selection = resolveTextSelectionFromTarget(target, [
+          MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+        ]);
+        if (!selection) return undefined;
+        if (viewMode === 'source') {
+          const view = sourceEditorRef.current?.view;
+          if (!view) return undefined;
+          const resolved = resolveTextRangeSelection(
+            view.state.doc.toString(),
+            target,
+          );
+          if (!resolved) return undefined;
+          return rectFromCodeMirrorRange(
+            view,
+            resolved.start,
+            resolved.end,
+          );
+        }
+        const element =
+          wysiwygAdapterRef.current?.getEditableElement();
+        if (!element) return undefined;
+        const resolved = resolveTextRangeSelection(
+          workingBufferRef.current,
+          target,
+        );
+        if (!resolved) return undefined;
+        return resolveMarkdownVisualTextRect(
+          element,
+          workingBufferRef.current.slice(
+            resolved.start,
+            resolved.end,
+          ),
+        );
+      }
+
+      if (target.anchorType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
+        const payload = target.anchorPayload as {
+          readonly exact?: unknown;
+        };
+        const text =
+          typeof payload.exact === 'string' ? payload.exact : '';
+        if (!text.trim()) return undefined;
+        if (viewMode === 'wysiwyg') {
+          const element =
+            wysiwygAdapterRef.current?.getEditableElement();
+          if (!element) return undefined;
+          return resolveMarkdownVisualTextRect(element, text);
+        }
+        const view = sourceEditorRef.current?.view;
+        if (!view) return undefined;
+        const trimmed = text.trim();
+        const doc = view.state.doc.toString();
+        const index = doc.indexOf(trimmed);
+        if (index < 0) return undefined;
+        return rectFromCodeMirrorRange(
+          view,
+          index,
+          index + trimmed.length,
+        );
+      }
+      return undefined;
+    },
+    [resolveMarkdownVisualTextRect],
+  );
+
   useEffect(() => {
     return registerWorkbenchAnchorController(
       `${conversationOwnerId}.anchors`,
       asset.id,
       {
+        resolve(target) {
+          return resolveMarkdownAnchorRect(target);
+        },
         reveal(target) {
           if (target.scope !== 'content') return false;
+          if (target.anchorType === MARKDOWN_IMAGE_ANCHOR_TYPE) {
+            if (
+              target.anchorVersion !== MARKDOWN_IMAGE_ANCHOR_VERSION ||
+              !isMarkdownImageAnchorPayload(target.anchorPayload)
+            ) {
+              return false;
+            }
+            const image = findMarkdownImageBySource(
+              wysiwygAdapterRef.current?.getEditableElement(),
+              target.anchorPayload.relativePath,
+            );
+            if (!image) return false;
+            image.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+          }
           if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
             const selection = resolveTextSelectionFromTarget(target, [
               MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
@@ -1321,6 +1507,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   }, [
     asset.id,
     conversationOwnerId,
+    resolveMarkdownAnchorRect,
     revealMarkdownSelection,
     revealMarkdownText,
   ]);
@@ -1413,17 +1600,28 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             >
               {mode === 'wysiwyg' ? '编辑' : '源码'}
             </button>
-          ))}
+            ))}
         </div>
-        <button
-          type="button"
-          disabled={!dirty || saving || Boolean(recovery)}
-          onClick={() => void save()}
-          className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
-          title="保存 Markdown（⌘/Ctrl + S）"
-        >
-          {saving ? '保存中…' : '保存'}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            disabled={Boolean(recovery) || saving}
+            onClick={() => imageInputRef.current?.click()}
+            className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 hover:border-indigo-300/30 hover:text-indigo-200 disabled:cursor-not-allowed disabled:opacity-35"
+            title="从本地文件插入图片；图片会复制到 Markdown 同目录的 images 文件夹"
+          >
+            + 图片
+          </button>
+          <button
+            type="button"
+            disabled={!dirty || saving || Boolean(recovery)}
+            onClick={() => void save()}
+            className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
+            title="保存 Markdown（⌘/Ctrl + S）"
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
       </div>
 
       <div className="relative min-h-0 flex-1">
@@ -1540,6 +1738,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           />,
           document.body,
         )}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
+        className="hidden"
+        onChange={handleImageInputChange}
+      />
       </div>
     </DocumentAiWorkbenchShell>
   );

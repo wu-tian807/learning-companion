@@ -18,6 +18,7 @@ function setupSnapshot(
 
   return {
     revision,
+    defaultSelectorId: 'generation-center',
     selectors: [
       {
         id: 'generation-center',

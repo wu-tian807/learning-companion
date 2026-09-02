@@ -17,6 +17,7 @@ import { normalizeCodexResponsesBaseUrl } from './providers/codex-responses-url'
 function createSettings() {
   const connections = new Map<string, AgentProviderConnectionConfiguration>();
   const selections = new Map<string, AgentProviderSelectorSelectionSnapshot>();
+  let defaultSelectorId = HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID;
   const settings: SettingsRepository = {
     initialize: vi.fn(async () => undefined),
     get: vi.fn(() => DEFAULT_APP_PREFERENCES),
@@ -51,6 +52,10 @@ function createSettings() {
     ),
     updateAgentProviderSelectorSelection: vi.fn(async (selection) => {
       selections.set(selection.selectorId, selection);
+    }),
+    getDefaultAgentProviderSelectorId: vi.fn(() => defaultSelectorId),
+    updateDefaultAgentProviderSelectorId: vi.fn(async (selectorId) => {
+      defaultSelectorId = selectorId;
     }),
   };
   return { settings, connections, selections };
@@ -188,6 +193,36 @@ function createService(input: {
 }
 
 describe('AgentProviderService', () => {
+  it('uses the saved global default strength for every declared task selector', async () => {
+    const { service, settings, selectors } = createService();
+    selectors.register({
+      id: 'intelligence-medium',
+      displayName: '中智能',
+      description: '常规任务。',
+    });
+    await service.selectForSelector({
+      selectorId: 'intelligence-medium',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+
+    const setup = await service.selectDefaultSelector('intelligence-medium');
+
+    expect(settings.updateDefaultAgentProviderSelectorId).toHaveBeenCalledWith(
+      'intelligence-medium',
+    );
+    expect(setup.defaultSelectorId).toBe('intelligence-medium');
+    expect(service.resolveSelectorConfiguration('intelligence-high')).toEqual({
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-test',
+      reasoningEffort: 'medium',
+    });
+    await service.dispose();
+  });
+
   it('resolves a declared Selector default without persisting it', async () => {
     const { service, settings, selectors } = createService({
       defaultSelection: {

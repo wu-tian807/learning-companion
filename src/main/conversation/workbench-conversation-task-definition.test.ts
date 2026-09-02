@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+  LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+  MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+} from '../../shared/agent-provider-selectors';
+import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../../workbenches/document-ai/document-conversation-context';
+import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from '../../workbenches/image/explanations/image-conversation-context';
 import { createTextAgentUserMessage } from '../generation/contracts/agent-message';
 import { WorkbenchConversationContextProviderRegistry } from './workbench-conversation-context-provider-registry';
 import { WorkbenchConversationInstruction } from './workbench-conversation-instruction';
@@ -81,6 +87,44 @@ describe('shared Workbench conversation TaskDefinition', () => {
     );
     expect(resolve({ taskId: 'task-2', instruction: snapshot })).toBe(
       'conversation-stable',
+    );
+  });
+
+  it('routes visual conversations to the low-intensity vision selector', () => {
+    const { definition } = setup();
+    const imageSnapshot = new WorkbenchConversationInstruction({
+      contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+      conversationId: 'conversation-1',
+      question: '图里是什么',
+    }).toSnapshot();
+    const markdownImageSnapshot = new WorkbenchConversationInstruction({
+      contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
+      conversationId: 'conversation-1',
+      question: '解释这张图',
+      context: {
+        target: { scope: 'asset' },
+        image: { relativePath: 'images/shot.png' },
+      },
+    }).toSnapshot();
+    const textSnapshot = new WorkbenchConversationInstruction({
+      contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
+      conversationId: 'conversation-1',
+      question: '解释这段文字',
+      context: {
+        target: { scope: 'asset' },
+        selectedText: '段落',
+      },
+    }).toSnapshot();
+
+    expect(definition.resolveProviderSelectorId?.(imageSnapshot)).toBe(
+      LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    );
+    expect(definition.resolveProviderSelectorId?.(markdownImageSnapshot)).toBe(
+      LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    );
+    expect(definition.resolveProviderSelectorId?.(textSnapshot)).toBeUndefined();
+    expect(definition.providerSelectorId).toBe(
+      MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
     );
   });
 

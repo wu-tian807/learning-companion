@@ -1,5 +1,9 @@
 export type AgentProviderConnectionKind = 'account' | 'api-key';
 
+export type AgentProviderApiConnectionStyle =
+  | 'responses'
+  | 'chat-completions';
+
 export type AgentProviderConnectionStatus =
   | 'unconfigured'
   | 'ready'
@@ -24,6 +28,11 @@ export type AgentProviderConnectionConfiguration =
       readonly kind: 'api-key';
       readonly displayName: string;
       readonly baseUrl: string;
+      /**
+       * API 形态。responses 走 Codex 原生通道；chat-completions 走
+       * OpenAI 兼容聊天补全（例如 DeepSeek 识图接口）。缺省为 responses。
+       */
+      readonly apiStyle?: AgentProviderApiConnectionStyle;
     };
 
 export interface AgentProviderConnectionSnapshot {
@@ -70,6 +79,8 @@ export interface AgentProviderSelectorSelectionSnapshot {
 
 export interface AgentProviderSetupSnapshot {
   readonly revision: number;
+  /** The intelligence profile used for every newly created task. */
+  readonly defaultSelectorId: string | null;
   readonly providers: readonly AgentProviderSnapshot[];
   readonly selectors: readonly AgentProviderSelectorDefinitionSnapshot[];
   /** One effective selection per Selector. Defaults are resolved in Main. */
@@ -186,6 +197,12 @@ export function isAgentProviderBaseUrl(value: unknown): value is string {
   }
 }
 
+function isAgentProviderApiConnectionStyle(
+  value: unknown,
+): value is AgentProviderApiConnectionStyle {
+  return value === 'responses' || value === 'chat-completions';
+}
+
 export function isAgentProviderConnectionConfiguration(
   value: unknown,
 ): value is AgentProviderConnectionConfiguration {
@@ -199,9 +216,14 @@ export function isAgentProviderConnectionConfiguration(
     return false;
   }
 
-  return value.kind === 'account'
-    ? value.baseUrl === undefined
-    : isAgentProviderBaseUrl(value.baseUrl);
+  if (value.kind === 'account') {
+    return value.baseUrl === undefined && value.apiStyle === undefined;
+  }
+  return (
+    isAgentProviderBaseUrl(value.baseUrl) &&
+    (value.apiStyle === undefined ||
+      isAgentProviderApiConnectionStyle(value.apiStyle))
+  );
 }
 
 export function isAgentProviderAccountSnapshot(
@@ -293,6 +315,8 @@ export function isAgentProviderSetupSnapshot(
     !isRecord(value) ||
     !Number.isSafeInteger(value.revision) ||
     (value.revision as number) < 0 ||
+    (value.defaultSelectorId !== null &&
+      !isAgentProviderSelectorId(value.defaultSelectorId)) ||
     !Array.isArray(value.providers) ||
     !value.providers.every(isAgentProviderSnapshot) ||
     !Array.isArray(value.selectors) ||
@@ -313,6 +337,8 @@ export function isAgentProviderSetupSnapshot(
   return (
     providers.size === value.providers.length &&
     selectorIds.size === value.selectors.length &&
+    (value.defaultSelectorId === null ||
+      selectorIds.has(value.defaultSelectorId)) &&
     selectedSelectorIds.size === selections.length &&
     selections.every((selection) => {
       const provider = providers.get(selection.providerId);

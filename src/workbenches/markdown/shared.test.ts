@@ -2,14 +2,24 @@ import { describe, expect, it } from 'vitest';
 
 import {
   areMarkdownSourceViewStatesEqual,
+  createMarkdownImageReference,
+  createMarkdownImageAnchorTarget,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
   isMarkdownBufferSyncResult,
+  isMarkdownInsertImagePayload,
+  isMarkdownInsertImageResult,
+  isMarkdownReadImagePayload,
+  isMarkdownReadImageResult,
+  isMarkdownImageAnchorPayload,
   isMarkdownSourceBufferPayload,
+  markdownImageMediaTypeFromName,
   isMarkdownWorkbenchPayload,
   isMarkdownWorkbenchStateV1,
   isMarkdownWysiwygBufferPayload,
+  isSupportedMarkdownImageMediaType,
+  MARKDOWN_MAX_IMAGE_BYTES,
   markdownCommands,
   markdownWorkbenchManifest,
 } from './shared';
@@ -25,7 +35,105 @@ describe('Markdown Workbench shared protocol', () => {
     expect(markdownWorkbenchManifest.supportedAnchorTypes).toEqual([
       'markdown.source-range',
       'markdown.visual-selection',
+      'markdown.image-source',
     ]);
+  });
+
+  it('accepts supported image types and maps names to media types', () => {
+    expect(isSupportedMarkdownImageMediaType('image/png')).toBe(true);
+    expect(isSupportedMarkdownImageMediaType('image/webp')).toBe(true);
+    expect(isSupportedMarkdownImageMediaType('image/svg+xml')).toBe(
+      false,
+    );
+    expect(
+      markdownImageMediaTypeFromName('images/截图 1.JPG'),
+    ).toBe('image/jpeg');
+    expect(markdownImageMediaTypeFromName('images/scan.png')).toBe(
+      'image/png',
+    );
+    expect(markdownImageMediaTypeFromName('images/data.bin')).toBe(
+      undefined,
+    );
+  });
+
+  it('validates markdown image anchor payloads', () => {
+    const target = createMarkdownImageAnchorTarget('images/shot.png');
+    expect(target).toMatchObject({
+      scope: 'content',
+      anchorType: 'markdown.image-source',
+      anchorVersion: 1,
+      anchorPayload: { relativePath: 'images/shot.png' },
+    });
+    expect(isMarkdownImageAnchorPayload(target.anchorPayload)).toBe(true);
+    expect(
+      isMarkdownImageAnchorPayload({ relativePath: '../secret.png' }),
+    ).toBe(false);
+    expect(
+      isMarkdownImageAnchorPayload({ relativePath: 'images/notes.txt' }),
+    ).toBe(false);
+  });
+
+  it('validates insert/read image payloads and results', () => {
+    const data = Buffer.from('png bytes').toString('base64');
+    expect(
+      isMarkdownInsertImagePayload({
+        name: '截图 1.png',
+        mediaType: 'image/png',
+        data,
+      }),
+    ).toBe(true);
+    expect(
+      isMarkdownInsertImagePayload({
+        name: '图.svg',
+        mediaType: 'image/svg+xml',
+        data,
+      }),
+    ).toBe(false);
+    expect(
+      isMarkdownInsertImagePayload({
+        name: 'x.png',
+        mediaType: 'image/png',
+        data: `${'A'.repeat(Math.ceil((MARKDOWN_MAX_IMAGE_BYTES * 4) / 3) + 8)}`,
+      }),
+    ).toBe(false);
+
+    expect(
+      isMarkdownReadImagePayload({
+        relativePath: 'images/截图 1.png',
+      }),
+    ).toBe(true);
+    expect(
+      isMarkdownReadImagePayload({
+        relativePath: '../secret.png',
+      }),
+    ).toBe(false);
+    expect(
+      isMarkdownReadImagePayload({
+        relativePath: 'images/notes.txt',
+      }),
+    ).toBe(false);
+
+    expect(
+      isMarkdownInsertImageResult({
+        relativePath: 'images/截图 1.png',
+      }),
+    ).toBe(true);
+    expect(
+      isMarkdownReadImageResult({
+        dataUrl: `data:image/png;base64,${data}`,
+      }),
+    ).toBe(true);
+    expect(
+      isMarkdownReadImageResult({
+        dataUrl: 'https://example.com/x.png',
+      }),
+    ).toBe(false);
+  });
+
+  it('builds Markdown image references with encoded spaces', () => {
+    expect(
+      createMarkdownImageReference('images/截图 1.png', '截图'),
+    ).toBe('![截图](images/截图%201.png)');
   });
 
   it('recognizes unchanged source editor view state', () => {

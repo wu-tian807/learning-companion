@@ -8,6 +8,7 @@ import { createAgentProviderStore } from './agent-provider-store';
 
 const setup: AgentProviderSetupSnapshot = {
   revision: 1,
+  defaultSelectorId: 'generation-center',
   selectors: [
     {
       id: 'generation-center',
@@ -57,6 +58,7 @@ function createApi(): AgentProviderSetupApi {
     deleteAgentProviderConnection: vi.fn(),
     getAgentProviderModels: vi.fn(),
     selectAgentProviderForSelector: vi.fn(),
+    selectDefaultAgentProviderSelector: vi.fn(),
     completeAgentProviderOnboarding: vi.fn(),
     openExternal: vi.fn(),
   };

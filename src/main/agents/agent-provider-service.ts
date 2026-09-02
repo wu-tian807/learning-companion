@@ -62,6 +62,7 @@ export interface AgentProviderServiceApi {
   selectForSelector(
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<AgentProviderSetupSnapshot>;
+  selectDefaultSelector(selectorId: string): Promise<AgentProviderSetupSnapshot>;
   dispose(): Promise<void>;
 }
 
@@ -272,6 +273,16 @@ export class AgentProviderService
     return this.createSetupSnapshot();
   }
 
+  async selectDefaultSelector(
+    selectorId: string,
+  ): Promise<AgentProviderSetupSnapshot> {
+    this.requireActive();
+    const selector = this.selectors.require(selectorId);
+    await this.settings.updateDefaultAgentProviderSelectorId(selector.id);
+    this.publish();
+    return this.createSetupSnapshot();
+  }
+
   private async resolveValidatedSelection(
     selection: AgentProviderSelectorSelectionSnapshot,
   ): Promise<AgentProviderSelectorSelectionSnapshot> {
@@ -319,7 +330,10 @@ export class AgentProviderService
     selectorId: string,
   ): GenerationAgentExecutionConfiguration {
     this.requireActive();
-    const selection = this.resolveEffectiveSelection(selectorId);
+    this.selectors.require(selectorId);
+    const selection = this.resolveEffectiveSelection(
+      this.settings.getDefaultAgentProviderSelectorId(),
+    );
     if (!selection) {
       throw new AppError('AGENT_PROVIDER_SELECTION_REQUIRED');
     }
@@ -399,6 +413,7 @@ export class AgentProviderService
 
     return Object.freeze({
       revision: this.revision,
+      defaultSelectorId: this.settings.getDefaultAgentProviderSelectorId(),
       providers: Object.freeze(providers),
       selectors: Object.freeze(selectors),
       selections: Object.freeze(selections),

@@ -48,6 +48,10 @@ import {
   type ResolvedCodexThread,
 } from './codex-thread-coordinator';
 import {
+  OpenAiChatCompletionsRunner,
+  type OpenAiChatHistoryMessage,
+} from './openai-chat-completions-runner';
+import {
   codexAssistantOutputFromTurn,
   codexModelFromReroute,
   codexTokenUsageFromEvent,
@@ -165,6 +169,10 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly dependencies: CodexAgentProviderDependencies;
   private readonly threadCoordinator: CodexThreadCoordinator;
   private readonly apiRuntimes = new Map<string, CodexRuntimeBinding>();
+  private readonly chatHistories = new Map<
+    string,
+    Map<string, readonly OpenAiChatHistoryMessage[]>
+  >();
   private readonly invalidationListeners = new Set<(connectionId: string) => void>();
   private readonly disposeAccountSubscription: () => void;
 
@@ -282,6 +290,29 @@ export class CodexAgentProvider implements AgentProvider {
   createRunner(
     connection: ResolvedAgentProviderConnection,
   ): GenerationAgentRunner {
+    const configuration = connection.configuration;
+    if (
+      configuration.kind === 'api-key' &&
+      configuration.apiStyle === 'chat-completions'
+    ) {
+      if (!connection.apiKey) {
+        throw new AppError('INVALID_IPC_REQUEST', {
+          cause: new Error('Chat Completions Connection 缺少 API Key'),
+        });
+      }
+      let histories = this.chatHistories.get(configuration.id);
+      if (!histories) {
+        histories = new Map();
+        this.chatHistories.set(configuration.id, histories);
+      }
+      return new OpenAiChatCompletionsRunner({
+        providerId: this.id,
+        connectionId: configuration.id,
+        baseUrl: configuration.baseUrl,
+        apiKey: connection.apiKey,
+        histories,
+      });
+    }
     const binding = this.runtimeFor(connection);
     return new CodexConnectionRunner(
       connection.configuration.id,
@@ -296,6 +327,7 @@ export class CodexAgentProvider implements AgentProvider {
   }
 
   async invalidateConnection(connectionId: string): Promise<void> {
+    this.chatHistories.delete(connectionId);
     const binding = this.apiRuntimes.get(connectionId);
     if (!binding) {
       return;
@@ -312,6 +344,7 @@ export class CodexAgentProvider implements AgentProvider {
     const bindings = [...this.apiRuntimes.values()];
     this.apiRuntimes.clear();
     this.invalidationListeners.clear();
+    this.chatHistories.clear();
     await Promise.all(
       bindings.map(async (binding) => {
         binding.disposeSubscription();

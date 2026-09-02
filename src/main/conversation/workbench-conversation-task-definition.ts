@@ -7,7 +7,13 @@ import type {
   GenerationTaskProcessContext,
   TaskDefinition,
 } from '../generation/contracts/task-definition';
-import { MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../shared/agent-provider-selectors';
+import {
+  LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+  MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+} from '../../shared/agent-provider-selectors';
+import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from '../../workbenches/image/explanations/image-conversation-context';
+import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../../workbenches/video/conversation/video-conversation-context';
+import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../../workbenches/document-ai/document-conversation-context';
 import {
   WORKBENCH_CONVERSATION_SOURCE_SLOT,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
@@ -22,6 +28,31 @@ import {
 } from './workbench-conversation-instruction';
 
 const DEFAULT_MAXIMUM_ANSWER_LENGTH = 32_768;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requiresVisionProvider(snapshot: JsonValue): boolean {
+  if (!isRecord(snapshot)) return false;
+  const contextProviderId = snapshot.contextProviderId;
+  if (contextProviderId === IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID) {
+    return true;
+  }
+  if (contextProviderId === VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID) {
+    return true;
+  }
+  if (contextProviderId !== DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID) {
+    return false;
+  }
+  const context = snapshot.context;
+  return (
+    isRecord(context) &&
+    isRecord(context.image) &&
+    typeof context.image.relativePath === 'string' &&
+    context.image.relativePath.length > 0
+  );
+}
 
 function appendTitleRequest(
   message: AgentUserMessage,
@@ -70,6 +101,11 @@ export function createWorkbenchConversationTaskDefinitionV1(
     id: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
     version: WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
     providerSelectorId: MEDIUM_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
+    resolveProviderSelectorId(snapshot: JsonValue) {
+      return requiresVisionProvider(snapshot)
+        ? LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID
+        : undefined;
+    },
     primaryWorkspaceConfig: Object.freeze({
       key: 'workbench-conversation',
       permissions: Object.freeze({ read: true, write: false }),

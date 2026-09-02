@@ -56,6 +56,7 @@ function createEditorHarness(input?: {
     blur: vi.fn(),
     destroy: vi.fn(),
     deleteValue: vi.fn(),
+    insertValue: vi.fn(),
     vditor: {
       lute: {
         SetYamlFrontMatter: vi.fn(),
@@ -406,5 +407,173 @@ describe('MarkdownEditorAdapter initialization lifecycle', () => {
       'Markdown 可视化编辑器初始化超时',
     );
     expect(harness.editor.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('inserts Markdown text through Vditor', async () => {
+    const harness = createEditorHarness();
+    const creation = MarkdownEditorAdapter.create(
+      createEditorOptions(),
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+    harness.triggerAfter();
+    await Promise.resolve();
+    harness.triggerFrame();
+    const adapter = await creation;
+
+    adapter.insertMarkdown('![图](images/a.png)');
+
+    expect(harness.editor.insertValue).toHaveBeenCalledWith(
+      '![图](images/a.png)',
+    );
+    adapter.destroy();
+  });
+
+  it('resolves same-directory image sources to data URLs', async () => {
+    const harness = createEditorHarness();
+    const localImage = {
+      dataset: {} as Record<string, unknown>,
+      alt: '',
+      title: '',
+      isConnected: true,
+      getAttribute: vi.fn(() => 'images/shot.png'),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+    };
+    const externalImage = {
+      dataset: {} as Record<string, unknown>,
+      alt: '',
+      title: '',
+      isConnected: true,
+      getAttribute: vi.fn(() => 'https://example.com/x.png'),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+    };
+    const element = harness.editor.vditor.wysiwyg?.element as
+      | {
+          querySelectorAll: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    if (!element) throw new Error('missing wysiwyg element');
+    element.querySelectorAll = vi.fn(() => [
+      localImage,
+      externalImage,
+    ]);
+    const readLocalImageSource = vi.fn(
+      async () => 'data:image/png;base64,YQ==',
+    );
+    const creation = MarkdownEditorAdapter.create(
+      {
+        ...createEditorOptions(),
+        readLocalImageSource,
+      },
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+    harness.triggerAfter();
+    await Promise.resolve();
+    harness.triggerFrame();
+    const adapter = await creation;
+
+    await vi.waitFor(() =>
+      expect(readLocalImageSource).toHaveBeenCalledWith(
+        'images/shot.png',
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(localImage.setAttribute).toHaveBeenCalledWith(
+        'src',
+        'data:image/png;base64,YQ==',
+      ),
+    );
+    expect(localImage.setAttribute).toHaveBeenCalledWith(
+      'data-md-src',
+      'images/shot.png',
+    );
+    expect(localImage.dataset.blockedSource).toBeUndefined();
+    expect(externalImage.dataset.blockedSource).toBe('true');
+    adapter.destroy();
+  });
+
+  it('keeps relative images blocked when no local resolver is available', async () => {
+    const harness = createEditorHarness();
+    const image = {
+      dataset: {} as Record<string, unknown>,
+      alt: '',
+      title: '',
+      isConnected: true,
+      getAttribute: vi.fn(() => 'images/blocked.png'),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+    };
+    const element = harness.editor.vditor.wysiwyg?.element as
+      | {
+          querySelectorAll: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    if (!element) throw new Error('missing wysiwyg element');
+    element.querySelectorAll = vi.fn(() => [image]);
+    const creation = MarkdownEditorAdapter.create(
+      createEditorOptions(),
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+    harness.triggerAfter();
+    await Promise.resolve();
+    harness.triggerFrame();
+    const adapter = await creation;
+
+    expect(image.dataset.blockedSource).toBe('true');
+    adapter.destroy();
+  });
+
+  it('restores relative image paths when serializing WYSIWYG Markdown', async () => {
+    const harness = createEditorHarness();
+    const image = {
+      dataset: {} as Record<string, unknown>,
+      alt: '',
+      title: '',
+      isConnected: true,
+      getAttribute: vi.fn((name: string) =>
+        name === 'src'
+          ? 'data:image/png;base64,AAAA'
+          : name === 'data-md-src'
+            ? 'images/shot.png'
+            : '',
+      ),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+    };
+    const element = harness.editor.vditor.wysiwyg?.element as
+      | {
+          querySelectorAll: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    if (!element) throw new Error('missing wysiwyg element');
+    element.querySelectorAll = vi.fn(() => [image]);
+    const creation = MarkdownEditorAdapter.create(
+      createEditorOptions(),
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+    harness.triggerAfter();
+    await Promise.resolve();
+    harness.triggerFrame();
+    const adapter = await creation;
+
+    expect(
+      adapter.normalizeImageSourcesForSource(
+        '开头 ![图](data:image/png;base64,AAAA) 结尾',
+      ),
+    ).toBe('开头 ![图](images/shot.png) 结尾');
+    adapter.destroy();
   });
 });

@@ -4,6 +4,7 @@ import {
   IPC_CHANNELS,
   isAgentProviderConnectionRequest,
   isAgentProviderIdRequest,
+  isAgentProviderSelectorIdRequest,
   isCancelAgentProviderLoginRequest,
   isConfigureAgentProviderApiConnectionRequest,
   isSelectAgentProviderForSelectorRequest,
@@ -105,6 +106,15 @@ export function registerAgentProviderHandlers(
       return service.selectForSelector(request);
     },
   );
+  registerIpcHandler(
+    IPC_CHANNELS.selectDefaultAgentProviderSelector,
+    (_event, request: unknown) => {
+      if (!isAgentProviderSelectorIdRequest(request)) {
+        throw new AppError('INVALID_IPC_REQUEST');
+      }
+      return service.selectDefaultSelector(request.selectorId);
+    },
+  );
 }
 
 export function removeAgentProviderHandlers(): void {
@@ -118,4 +128,5 @@ export function removeAgentProviderHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.deleteAgentProviderConnection);
   ipcMain.removeHandler(IPC_CHANNELS.getAgentProviderModels);
   ipcMain.removeHandler(IPC_CHANNELS.selectAgentProviderForSelector);
+  ipcMain.removeHandler(IPC_CHANNELS.selectDefaultAgentProviderSelector);
 }
