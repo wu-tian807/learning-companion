@@ -6,7 +6,7 @@ import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './html-conversation-conte
 import { HtmlConversationContextProvider } from './html-conversation-context-provider';
 
 function context(
-  anchor = createHtmlDomTarget({
+  anchor: ReturnType<typeof createHtmlDomTarget> | null = createHtmlDomTarget({
     frameUrl: 'learning-content://resource/token',
     element: {
       path: [1, 0],
@@ -23,7 +23,7 @@ function context(
       assetId: 'asset-1',
       conversationId: 'conversation-1',
       question: '解释这个公式。',
-      context: anchor,
+      context: anchor ?? undefined,
     }),
     assetReferences: {
       source: [
@@ -59,6 +59,8 @@ describe('HTML conversation context provider', () => {
 
     expect(message).toContain('公式：$x^2 + y^2 = z^2$');
     expect(message).not.toContain('x2x^2');
+    expect(message).not.toContain('materials/lesson.html');
+    expect(prepared.systemInstruction).toContain('materials/lesson.html');
     expect(prepared.toolRequirements).toEqual([]);
   });
 
@@ -101,11 +103,30 @@ describe('HTML conversation context provider', () => {
       { id: 'html_replace_edit', availability: 'required' },
     ]);
     expect(prepared.systemInstruction).toContain('html_begin_edit');
+    expect(prepared.systemInstruction).toContain('materials/lesson.html');
+    expect(prepared.systemInstruction).toContain('当前 HTML 草稿');
     expect(message).toContain('"anchorType":"html.dom"');
+    expect(message).not.toContain('materials/lesson.html');
 
     const readOnly = await new HtmlConversationContextProvider(() => ({
       canEdit: vi.fn(async () => false),
     })).prepare(context());
     expect(readOnly.toolRequirements).toEqual([]);
+  });
+
+  it('keeps a question without an Anchor free of implicit reference content', async () => {
+    const prepared = await new HtmlConversationContextProvider(() => ({
+      canEdit: vi.fn(async () => true),
+    })).prepare(context(null));
+
+    expect(prepared.userMessage).toEqual({
+      role: 'user',
+      content: [{ type: 'text', text: '问题：解释这个公式。' }],
+    });
+    expect(prepared.systemInstruction).toContain('materials/lesson.html');
+    expect(prepared.toolRequirements).toEqual([
+      { id: 'html_begin_edit', availability: 'required' },
+      { id: 'html_replace_edit', availability: 'required' },
+    ]);
   });
 });

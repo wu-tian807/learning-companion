@@ -112,25 +112,29 @@ export class HtmlConversationContextProvider
     const editingEnabled = editing?.canEdit
       ? await editing.canEdit(context.projectId, source.assetId)
       : false;
+    const systemInstruction = [
+      HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2,
+      `当前 HTML 草稿在工作区中的相对路径：${JSON.stringify(source.relativePath)}。需要查看页面内容时读取该路径，不要猜测其他位置。`,
+      editingEnabled
+        ? '仅当用户明确要求修改当前 HTML 时才使用 html_begin_edit 和 html_replace_edit。每次修改必须先 begin 冻结目标和 scope，再用返回的 editId replace；replace 成功后若要修改另一区域必须重新 begin。用户提供的 DOM Anchor 是推荐定位，不是权限边界；没有引用时可使用唯一 CSS selector。必须保证 replacement 中所有非 void 元素显式闭合。'
+        : undefined,
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join('\n\n');
+    const userMessageParts = [`问题：${context.instruction.question}`];
+    if (anchor !== undefined) {
+      userMessageParts.push(`用户选中或聚焦的内容：${describeAnchor(anchor)}`);
+      if (isRecord(anchor) && anchor.anchorType === 'html.dom') {
+        userMessageParts.push(
+          `可用于 html_begin_edit 的受信任 DOM Anchor：${JSON.stringify(anchor)}`,
+        );
+      }
+    }
     return Object.freeze({
       purpose: 'html-reading-conversation',
       statusMessage: '正在结合网页资料回答…',
-      systemInstruction: editingEnabled
-        ? `${HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2}\n\n仅当用户明确要求修改当前 HTML 时才使用 html_begin_edit 和 html_replace_edit。每次修改必须先 begin 冻结目标和 scope，再用返回的 editId replace；replace 成功后若要修改另一区域必须重新 begin。用户提供的 DOM Anchor 是推荐定位，不是权限边界；没有引用时可使用唯一 CSS selector。必须保证 replacement 中所有非 void 元素显式闭合。`
-        : HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2,
-      userMessage: createTextAgentUserMessage(
-        [
-          '用户正在阅读一份 HTML 资料，请结合参考资料直接回答。',
-          `问题：${context.instruction.question}`,
-          `资料路径：${source.relativePath}`,
-          anchor === undefined
-            ? '用户没有指定具体内容，请基于整份资料回答。'
-            : `用户选中或聚焦的内容：${describeAnchor(anchor)}`,
-          anchor !== undefined && isRecord(anchor) && anchor.anchorType === 'html.dom'
-            ? `可用于 html_begin_edit 的受信任 DOM Anchor：${JSON.stringify(anchor)}`
-            : '',
-        ].join('\n\n'),
-      ),
+      systemInstruction,
+      userMessage: createTextAgentUserMessage(userMessageParts.join('\n\n')),
       toolRequirements: Object.freeze(
         editingEnabled
           ? [

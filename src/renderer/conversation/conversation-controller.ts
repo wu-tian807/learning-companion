@@ -5,6 +5,7 @@ import type {
 } from '../../shared/generation-tasks';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
+  ActiveWorkbenchConversationContribution,
   ConversationContextAttachment,
   ConversationLaunchRequest,
   ConversationHistoryStore,
@@ -77,6 +78,8 @@ interface UseConversationControllerInput {
   readonly mode?: ConversationModeDefinition;
   /** Default immutable workspace binding for conversations created by this host. */
   readonly workspace?: ConversationWorkspaceBinding;
+  /** Workbench resolved for the Asset currently selected by the UI. */
+  readonly currentAssetSource?: ActiveWorkbenchConversationContribution;
   readonly taskClient?: ConversationTaskClient;
   readonly createId?: () => string;
   readonly now?: () => number;
@@ -93,6 +96,12 @@ function conversationContextAttachmentsEqual(
     left.contribution === right.contribution &&
     conversationContextsEqual(left.context, right.context)
   );
+}
+
+function contextlessWorkbenchSource(
+  source: ActiveWorkbenchConversationContribution | undefined,
+): ActiveWorkbenchConversationContribution | undefined {
+  return source?.contribution.contextRequired === true ? undefined : source;
 }
 
 function reanswerBackupFromMessage(
@@ -179,6 +188,7 @@ export function useConversationController({
   onPersistenceError,
   mode: conversationMode = projectConversationMode,
   workspace,
+  currentAssetSource,
   taskClient = conversationTaskClient,
   createId = defaultCreateConversationId,
   now = Date.now,
@@ -553,9 +563,11 @@ export function useConversationController({
     const firstQuestion = current.messages.every(
       (message) => message.role !== 'user',
     );
+    const taskSource =
+      context ?? contextlessWorkbenchSource(currentAssetSource);
     const taskInput = {
       projectId,
-      ...(context ? { assetId: context.assetId } : {}),
+      ...(taskSource ? { assetId: taskSource.assetId } : {}),
       conversationId: current.id,
       ...(current.workspace ? { workspace: current.workspace } : {}),
       question: normalized,
@@ -569,9 +581,9 @@ export function useConversationController({
       | undefined;
     let request: ReturnType<ConversationModeDefinition['task']['createRequest']>;
     try {
-      contextSource = context
+      contextSource = taskSource
         ? createConversationContextSource(
-            context.contribution,
+            taskSource.contribution,
             taskInput,
           )
         : undefined;
@@ -598,7 +610,9 @@ export function useConversationController({
       ...(context?.context === undefined
         ? {}
         : { context: context.context }),
-      ...(contextSource ? { contextSource } : {}),
+      ...(context?.context !== undefined && contextSource
+        ? { contextSource }
+        : {}),
     });
     const assistantMessage: ConversationMessageRecord = Object.freeze({
       id: assistantMessageId,
@@ -664,6 +678,7 @@ export function useConversationController({
     applyTerminalTask,
     bindTask,
     createId,
+    currentAssetSource,
     conversationMode.task,
     draft,
     now,
@@ -834,18 +849,32 @@ export function useConversationController({
 
     let request: ReturnType<ConversationModeDefinition['task']['createRequest']>;
     try {
-      request = conversationMode.task.createRequest({
+      const taskSource =
+        question?.contextSource === undefined
+          ? contextlessWorkbenchSource(currentAssetSource)
+          : undefined;
+      const taskInput = {
         projectId,
         conversationId: current.id,
+        ...(taskSource ? { assetId: taskSource.assetId } : {}),
         ...(current.workspace ? { workspace: current.workspace } : {}),
         question: normalized,
         ...(question?.context === undefined
           ? {}
           : { context: question.context }),
-        ...(question?.contextSource === undefined
-          ? {}
-          : { contextSource: question.contextSource }),
         generateTitle: false,
+      };
+      const contextSource =
+        question?.contextSource ??
+        (taskSource
+          ? createConversationContextSource(
+              taskSource.contribution,
+              taskInput,
+            )
+          : undefined);
+      request = conversationMode.task.createRequest({
+        ...taskInput,
+        ...(contextSource ? { contextSource } : {}),
       });
     } catch (requestError) {
       pendingCancelRef.current = false;
@@ -879,6 +908,7 @@ export function useConversationController({
     applyTerminalTask,
     bindTask,
     conversationMode.task,
+    currentAssetSource,
     projectId,
     taskClient,
   ]);

@@ -358,7 +358,7 @@ describe('shared Conversation controller', () => {
     expect(latest.state.conversation.id).not.toBe(firstConversationId);
   });
 
-  it('uses Workbench context for only the attached turn and sends the next message through Project Conversation', async () => {
+  it('uses the current Asset Workbench for a contextless follow-up without persisting another reference', async () => {
     const requests: Array<
       Parameters<ConversationTaskClient['start']>[0]
     > = [];
@@ -373,7 +373,12 @@ describe('shared Conversation controller', () => {
     });
     const context = { target: { scope: 'asset' } };
     const contextualContribution = createContribution();
-    render();
+    render({
+      currentAssetSource: {
+        assetId: 'asset',
+        contribution: contextualContribution,
+      },
+    });
 
     act(() =>
       latest.actions.submit(
@@ -405,16 +410,90 @@ describe('shared Conversation controller', () => {
     });
     expect(requests[1]).toMatchObject({
       instruction: {
-        contextProviderId: 'builtin.project.conversation',
+        contextProviderId: 'test.context',
+        assetId: 'asset',
         question: '继续说明一个普通问题',
       },
-      assetReferences: {},
+      assetReferences: {
+        source: [{ assetId: 'asset' }],
+      },
     });
+    expect(requests[1]?.instruction).not.toHaveProperty('context');
     expect(
       latest.state.conversation.messages.filter(
         (message) => message.role === 'user',
       )[1]?.contextSource,
     ).toBeUndefined();
+  });
+
+  it('keeps a context-required current Asset Project-owned until the user supplies context', async () => {
+    const requests: Array<
+      Parameters<ConversationTaskClient['start']>[0]
+    > = [];
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      return { taskId: 'task-1', snapshot: task('task-1') };
+    });
+    render({
+      currentAssetSource: {
+        assetId: 'asset-video',
+        contribution: {
+          ...createContribution(),
+          contextProviderId: 'test.video.context',
+          sourceAssetMode: 'identity',
+          contextRequired: true,
+        },
+      },
+    });
+
+    act(() => latest.actions.submit('视频讲了什么？'));
+    await flush();
+
+    expect(requests[0]).toMatchObject({
+      instruction: {
+        contextProviderId: 'builtin.project.conversation',
+      },
+      assetReferences: {},
+    });
+  });
+
+  it('prefers an explicit reference over the currently selected Asset', async () => {
+    const requests: Array<
+      Parameters<ConversationTaskClient['start']>[0]
+    > = [];
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      return { taskId: 'task-1', snapshot: task('task-1') };
+    });
+    const explicitContribution: WorkbenchConversationContribution = {
+      contextProviderId: 'test.explicit.context',
+      sourceAssetMode: 'reference',
+    };
+    render({
+      currentAssetSource: {
+        assetId: 'asset-current',
+        contribution: createContribution(),
+      },
+    });
+
+    act(() => latest.actions.submit(
+      '解释引用内容',
+      createContextAttachment(
+        { target: { scope: 'explicit' } },
+        explicitContribution,
+      ),
+    ));
+    await flush();
+
+    expect(requests[0]).toMatchObject({
+      instruction: {
+        contextProviderId: 'test.explicit.context',
+        assetId: 'asset',
+      },
+      assetReferences: {
+        source: [{ assetId: 'asset' }],
+      },
+    });
   });
 
   it('keeps and persists a sent question when Provider startup fails', async () => {
@@ -617,6 +696,57 @@ describe('shared Conversation controller', () => {
     });
 
     expect(client.cancel).toHaveBeenCalledWith('project', 'task-2');
+  });
+
+  it('re-answers a contextless question through the currently selected Asset Workbench', async () => {
+    const requests: Array<Parameters<ConversationTaskClient['start']>[0]> = [];
+    let taskIndex = 0;
+    client.start = vi.fn(async (request) => {
+      requests.push(request);
+      taskIndex += 1;
+      return { taskId: `task-${taskIndex}`, snapshot: task(`task-${taskIndex}`) };
+    });
+    render({
+      currentAssetSource: {
+        assetId: 'asset-html',
+        contribution: {
+          contextProviderId: 'builtin.html.conversation',
+          sourceAssetMode: 'reference',
+        },
+      },
+    });
+
+    act(() => latest.actions.submit('修改页面标题'));
+    await flush();
+    emit({
+      type: 'task-completed',
+      snapshot: task('task-1', 'completed', {
+        answer: '标题已修改',
+        providerId: 'codex',
+        modelId: 'gpt',
+      }),
+    });
+    const question = latest.state.conversation.messages.find(
+      (message) => message.role === 'user',
+    );
+    const assistant = latest.state.conversation.messages.find(
+      (message) => message.role === 'assistant',
+    );
+    expect(question).not.toHaveProperty('contextSource');
+
+    act(() => latest.actions.reanswer(assistant!.id));
+    await flush();
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      instruction: {
+        contextProviderId: 'builtin.html.conversation',
+        assetId: 'asset-html',
+      },
+      assetReferences: {
+        source: [{ assetId: 'asset-html' }],
+      },
+    });
   });
 
   it('re-answers a completed answer with the same question and context without duplicating messages', async () => {
