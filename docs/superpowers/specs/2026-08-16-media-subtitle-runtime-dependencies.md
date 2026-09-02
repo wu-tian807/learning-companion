@@ -29,7 +29,7 @@
 | ------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------- |
 | 媒体解码            | FFmpeg 8.1.2                                                  | 把音视频规范化为 16 kHz 单声道 PCM，并读取媒体信息                    |
 | Windows CPU 字幕    | funasr-llama.cpp 0.1.9 + SenseVoiceSmall Q8 + FSMN-VAD        | 使用真实 VAD 句段生成中英文字幕                                       |
-| Windows NVIDIA 字幕 | whisper.cpp 1.9.2 + Whisper large-v3-turbo Q5 + Silero VAD    | 使用 CUDA 快速识别，并按 Token/Offset 时间戳恢复播放器可读的短 Cue    |
+| Windows NVIDIA 字幕 | whisper.cpp 1.9.2 + Whisper large-v3-turbo Q5 + Silero VAD    | 使用 CUDA 流式识别并还原 VAD 时间轴；异常停滞 Token 才追加 DTW 精对齐 |
 | 共享说话人分析      | sherpa-onnx FastClustering + pyannote segmentation + CAMPPlus | 两个 Windows 档都安装同一份小型 speaker runtime；VoxCPM2 不再重复携带 |
 
 Video 与 Audio 使用同一字幕协议，但调用时机不同：Video 生成原字幕时不运行 Sherpa、

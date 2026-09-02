@@ -31,14 +31,16 @@ import {
   parseSenseVoiceTranscription,
   parseWhisperStreamingCues,
   parseWhisperTranscription,
+  parseWhisperVadTimeline,
   type ParsedTranscriptionOutput,
+  whisperTranscriptionNeedsAlignment,
 } from './transcription-output-adapter';
 import type { SubtitleTranscriptionProgressHub } from './transcription-progress';
 
 export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID =
   'builtin.media-subtitles.transcription';
 export const MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY = 'source.auto';
-export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION = '6';
+export const MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION = '7';
 
 const PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
@@ -238,7 +240,7 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
         'transcribing',
       );
     };
-    await this.dependencies.commandRunner.run({
+    const process = await this.dependencies.commandRunner.run({
       command: runtime.executablePath,
       args: [
         '-m', runtime.modelPath,
@@ -262,6 +264,40 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
         stderr += content;
         publishStreamingOutput();
       },
+    });
+    const commandOutput = `${stdout}\n${stderr}\n${process.stdout}\n${process.stderr}`;
+    const value = JSON.parse(await readFile(`${outputPrefix}.json`, 'utf8'));
+    const vadTimeline = parseWhisperVadTimeline(commandOutput);
+    if (
+      vadTimeline.length === 0 ||
+      whisperTranscriptionNeedsAlignment(value)
+    ) {
+      return this.transcribeWhisperAligned(request, runtime, audioPath, signal);
+    }
+    return parseWhisperTranscription(value, vadTimeline);
+  }
+
+  private async transcribeWhisperAligned(
+    request: AssetArtifactProduceRequest,
+    runtime: WhisperSubtitleRuntime,
+    audioPath: string,
+    signal: AbortSignal,
+  ): Promise<ParsedTranscriptionOutput> {
+    const outputPrefix = join(request.stagingDirectory, 'whisper-aligned');
+    await this.dependencies.commandRunner.run({
+      command: runtime.executablePath,
+      args: [
+        '-m', runtime.modelPath,
+        '-f', audioPath,
+        '-l', 'auto',
+        '-t', String(Math.max(4, Math.floor(this.dependencies.logicalCpuCount / 2))),
+        '-nfa',
+        '-dtw', 'large.v3.turbo',
+        '-ojf',
+        '-of', outputPrefix,
+      ],
+      timeoutMs: PROCESS_TIMEOUT_MS,
+      signal,
     });
     return parseWhisperTranscription(
       JSON.parse(await readFile(`${outputPrefix}.json`, 'utf8')),

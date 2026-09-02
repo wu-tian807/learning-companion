@@ -144,7 +144,11 @@ describe('MediaSubtitleTranscriptionProducer', () => {
             }),
           );
         }
-        return { stdout: '', stderr: '' };
+        return {
+          stdout: '',
+          stderr:
+            'whisper_vad: vad_segment_info: orig_start: 0.00, orig_end: 2.00, vad_start: 0.00, vad_end: 2.00\n',
+        };
       });
       const track = await produceTrack(
         producer(directory, whisper(directory), run, progress),
@@ -152,7 +156,7 @@ describe('MediaSubtitleTranscriptionProducer', () => {
         'video/mp4',
       );
 
-      expect(MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION).toBe('6');
+      expect(MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_VERSION).toBe('7');
       expect(track.engine.id).toBe('whisper.cpp');
       expect(track.cues.map(({ text }) => text)).toEqual(['GPT 大语言模型。']);
       expect(track.speakerAnalysis).toBeUndefined();
@@ -176,6 +180,57 @@ describe('MediaSubtitleTranscriptionProducer', () => {
       expect(whisperCommand?.args).not.toContain('-nfa');
       expect(whisperCommand?.args).not.toContain('-dtw');
       expect(run).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('reruns stalled Whisper timing with DTW while keeping the fast path progressive', async () => {
+    await inTemp(async (directory) => {
+      const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
+        const outputIndex = command.args.indexOf('-of');
+        if (outputIndex < 0) return { stdout: '', stderr: '' };
+        const aligned = command.args.includes('-dtw');
+        await writeFile(
+          `${command.args[outputIndex + 1]}.json`,
+          JSON.stringify({
+            result: { language: 'zh' },
+            transcription: [{
+              offsets: { from: aligned ? 16_480 : 0, to: aligned ? 16_900 : 10_780 },
+              text: '好',
+              tokens: [{
+                offsets: { from: aligned ? 16_480 : 0, to: aligned ? 16_900 : 10_780 },
+                ...(aligned ? { t_dtw: 1_648 } : {}),
+                text: '好',
+              }],
+            }],
+          }),
+        );
+        return {
+          stdout: '',
+          stderr:
+            'whisper_vad: vad_segment_info: orig_start: 16.48, orig_end: 16.96, vad_start: 0.00, vad_end: 0.48\n',
+        };
+      });
+      const track = await produceTrack(
+        producer(directory, whisper(directory), run),
+        directory,
+        'video/mp4',
+      );
+      const whisperCommands = run.mock.calls
+        .map(([command]) => command)
+        .filter(({ command }) => command.endsWith('whisper.exe'));
+
+      expect(track.cues).toEqual([
+        expect.objectContaining({ startMs: 16_230, endMs: 16_680, text: '好' }),
+      ]);
+      expect(whisperCommands).toHaveLength(2);
+      expect(whisperCommands[0]?.args).toEqual(
+        expect.arrayContaining(['-fa', '--vad']),
+      );
+      expect(whisperCommands[1]?.args).toEqual(
+        expect.arrayContaining(['-nfa', '-dtw', 'large.v3.turbo']),
+      );
+      expect(whisperCommands[1]?.args).not.toContain('--vad');
+      expect(run).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -231,5 +286,35 @@ describe('MediaSubtitleTranscriptionProducer', () => {
         new AbortController().signal,
       ),
     ).rejects.toBe(aborted);
+  });
+
+  it('preserves cancellation from the DTW alignment fallback', async () => {
+    await inTemp(async (directory) => {
+      const aborted = new DOMException('cancelled', 'AbortError');
+      const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
+        const outputIndex = command.args.indexOf('-of');
+        if (outputIndex < 0) return { stdout: '', stderr: '' };
+        if (command.args.includes('-dtw')) throw aborted;
+        await writeFile(
+          `${command.args[outputIndex + 1]}.json`,
+          JSON.stringify({
+            result: { language: 'zh' },
+            transcription: [{
+              offsets: { from: 0, to: 10_780 },
+              text: '好',
+              tokens: [{ offsets: { from: 0, to: 10_780 }, text: '好' }],
+            }],
+          }),
+        );
+        return { stdout: '', stderr: '' };
+      });
+      await expect(
+        produceTrack(
+          producer(directory, whisper(directory), run),
+          directory,
+          'video/mp4',
+        ),
+      ).rejects.toBe(aborted);
+    });
   });
 });
