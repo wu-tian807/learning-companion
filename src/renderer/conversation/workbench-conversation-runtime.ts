@@ -1,9 +1,9 @@
 import type { ConversationMessageContextSource } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import {
-  revealWorkbenchAnchor,
-  waitForWorkbenchAnchorController,
-} from '../workbench/host/workbench-anchor-bridge';
+  revealWorkbenchTarget,
+  waitForWorkbenchTargetController,
+} from '../workbench/host/workbench-target-bridge';
 import type {
   ActiveWorkbenchConversationContribution,
   ConversationLaunchRequest,
@@ -171,7 +171,7 @@ export class WorkbenchConversationRuntime {
     }
     const target = conversationContextTarget(context);
     if (!target) {
-      throw new Error('这条引用没有有效 Anchor，无法定位原文。');
+      throw new Error('这条引用没有有效 Target，无法定位原文。');
     }
     this.cancelReveal();
     const controller = new AbortController();
@@ -179,13 +179,14 @@ export class WorkbenchConversationRuntime {
     try {
       await selectAsset(source.assetId);
       if (controller.signal.aborted) throw controller.signal.reason;
-      await waitForWorkbenchAnchorController(
+      if (target.scope === 'asset') return;
+      await waitForWorkbenchTargetController(
         source.assetId,
         controller.signal,
         timeoutMs,
       );
       if (controller.signal.aborted) throw controller.signal.reason;
-      await revealWorkbenchAnchor(
+      await revealWorkbenchTarget(
         source.assetId,
         target,
         conversationContextSourceRevision(context),

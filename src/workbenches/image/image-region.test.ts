@@ -14,7 +14,7 @@ describe('image interest-region coordinates', () => {
       1000,
       500,
     );
-    expect(target?.anchorPayload).toEqual({
+    expect(target?.targetPayload).toEqual({
       x: 0.8,
       y: 0.2,
       width: 0.2,

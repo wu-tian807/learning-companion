@@ -126,8 +126,8 @@ describe('Video Workbench shared protocol', () => {
   it('creates a validated time-range anchor', () => {
     const target = createVideoTimeRangeTarget(12.5, 18);
 
-    expect(target.anchorType).toBe('video.time-range');
-    expect(isVideoTimeRangeAnchorV1(target.anchorPayload)).toBe(true);
+    expect(target.targetType).toBe('video.time-range');
+    expect(isVideoTimeRangeAnchorV1(target.targetPayload)).toBe(true);
     expect(
       isVideoTimeRangeAnchorV1({
         startSeconds: 20,

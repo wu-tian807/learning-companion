@@ -1,7 +1,7 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   isAssetTarget,
-} from '../../shared/workbench/anchor';
+} from '../../shared/workbench/asset-target';
 import {
   isAssetLink,
   isAssetReference,
@@ -49,7 +49,7 @@ export const mindMapWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: [MIND_MAP_MEDIA_TYPE],
   requiredContentCapabilities: ['read-bytes'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     MIND_MAP_NODE_ANCHOR_TYPE,
     MIND_MAP_FRAME_ANCHOR_TYPE,
   ],
@@ -155,6 +155,8 @@ function isResolvedMindMapSubjectAssociations(
         }
 
         return isAssetTarget(binding.sourceTarget) ||
+          (isNormalizedId(binding.sourceRevision) &&
+            isAssetTarget(binding.target)) ||
           (isNormalizedId(binding.sourceRevision) &&
             isMindMapAgentLocatorV1(binding.agentLocator));
       },
@@ -316,38 +318,38 @@ export function createMindMapSaveViewStateCommand(
 
 export function createMindMapNodeTarget(
   nodeId: string,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   if (!isNormalizedId(nodeId)) {
     throw new Error('Mind Map nodeId 无效');
   }
 
   return Object.freeze({
     scope: 'content',
-    anchorType: MIND_MAP_NODE_ANCHOR_TYPE,
-    anchorVersion: MIND_MAP_NODE_ANCHOR_VERSION,
-    anchorPayload: Object.freeze({ nodeId }),
+    targetType: MIND_MAP_NODE_ANCHOR_TYPE,
+    targetVersion: MIND_MAP_NODE_ANCHOR_VERSION,
+    targetPayload: Object.freeze({ nodeId }),
   });
 }
 
 export function createMindMapFrameTarget(
   frameId: string,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   if (!isNormalizedId(frameId)) {
     throw new Error('Mind Map frameId 无效');
   }
 
   return Object.freeze({
     scope: 'content',
-    anchorType: MIND_MAP_FRAME_ANCHOR_TYPE,
-    anchorVersion: MIND_MAP_FRAME_ANCHOR_VERSION,
-    anchorPayload: Object.freeze({ frameId }),
+    targetType: MIND_MAP_FRAME_ANCHOR_TYPE,
+    targetVersion: MIND_MAP_FRAME_ANCHOR_VERSION,
+    targetPayload: Object.freeze({ frameId }),
   });
 }
 
 export function isMindMapNodeTarget(
   value: unknown,
-): value is ContentAnchorTarget & {
-  readonly anchorPayload: MindMapNodeAnchorPayloadV1;
+): value is ContentAssetTarget & {
+  readonly targetPayload: MindMapNodeAnchorPayloadV1;
 } {
   if (!isRecord(value)) {
     return false;
@@ -355,17 +357,17 @@ export function isMindMapNodeTarget(
 
   return (
     value.scope === 'content' &&
-    value.anchorType === MIND_MAP_NODE_ANCHOR_TYPE &&
-    value.anchorVersion === MIND_MAP_NODE_ANCHOR_VERSION &&
-    isRecord(value.anchorPayload) &&
-    isNormalizedId(value.anchorPayload.nodeId)
+    value.targetType === MIND_MAP_NODE_ANCHOR_TYPE &&
+    value.targetVersion === MIND_MAP_NODE_ANCHOR_VERSION &&
+    isRecord(value.targetPayload) &&
+    isNormalizedId(value.targetPayload.nodeId)
   );
 }
 
 export function isMindMapFrameTarget(
   value: unknown,
-): value is ContentAnchorTarget & {
-  readonly anchorPayload: MindMapFrameAnchorPayloadV1;
+): value is ContentAssetTarget & {
+  readonly targetPayload: MindMapFrameAnchorPayloadV1;
 } {
   if (!isRecord(value)) {
     return false;
@@ -373,9 +375,9 @@ export function isMindMapFrameTarget(
 
   return (
     value.scope === 'content' &&
-    value.anchorType === MIND_MAP_FRAME_ANCHOR_TYPE &&
-    value.anchorVersion === MIND_MAP_FRAME_ANCHOR_VERSION &&
-    isRecord(value.anchorPayload) &&
-    isNormalizedId(value.anchorPayload.frameId)
+    value.targetType === MIND_MAP_FRAME_ANCHOR_TYPE &&
+    value.targetVersion === MIND_MAP_FRAME_ANCHOR_VERSION &&
+    isRecord(value.targetPayload) &&
+    isNormalizedId(value.targetPayload.frameId)
   );
 }

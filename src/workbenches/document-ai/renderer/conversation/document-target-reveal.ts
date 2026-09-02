@@ -1,7 +1,7 @@
 import type { EditorView } from '@codemirror/view';
 
-import type { ContentAnchorTarget } from '../../../../shared/workbench/anchor';
-import { isTextRangePayload } from '../../../../shared/workbench/text-range-anchor';
+import type { ContentAssetTarget } from '../../../../shared/workbench/asset-target';
+import { isTextRangePayload } from '../../../../shared/workbench/text-range-target';
 
 export interface RevealTextSelection {
   readonly start: number;
@@ -10,22 +10,22 @@ export interface RevealTextSelection {
 }
 
 /**
- * 从工作台 Anchor 中解析出可复现的文本选区。
- * 纯文本 / Markdown 源码的 Anchor 携带 ranges（start/end 偏移），
+ * 从 Workbench Target 中解析出可复现的文本选区。
+ * 纯文本 / Markdown 源码 Target 携带 ranges（start/end 偏移），
  * 并把选中的原文存进 exact 字段，供可视化视图按文字回找。
  */
 export function resolveTextSelectionFromTarget(
-  target: ContentAnchorTarget,
-  anchorTypes: readonly string[],
+  target: ContentAssetTarget,
+  targetTypes: readonly string[],
 ): RevealTextSelection | undefined {
-  if (!anchorTypes.includes(target.anchorType)) {
+  if (!targetTypes.includes(target.targetType)) {
     return undefined;
   }
-  if (!isTextRangePayload(target.anchorPayload)) {
+  if (!isTextRangePayload(target.targetPayload)) {
     return undefined;
   }
 
-  const range = target.anchorPayload.ranges[0];
+  const range = target.targetPayload.ranges[0];
   if (!range || range.end <= range.start) {
     return undefined;
   }

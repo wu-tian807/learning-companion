@@ -14,7 +14,7 @@ export async function prepareImageExplanationInputs(
 ): Promise<PreparedImageExplanationInputs> {
   return prepareVisualRegionInputs(
     sourcePath,
-    target.anchorPayload,
+    target.targetPayload,
     join(workspacePath, 'image-explanation-inputs'),
   );
 }

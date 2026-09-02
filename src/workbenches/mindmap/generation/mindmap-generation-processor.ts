@@ -3,8 +3,15 @@ import { join } from 'node:path';
 
 import type { AssetAssociationServiceApi } from '../../../main/asset-associations/asset-association-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
-import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
+import {
+  createTextAgentUserMessage,
+} from '../../../main/generation/contracts/agent-message';
+import type { AssetTargetRegistryApi } from '../../../main/workbench/asset-target-registry';
 import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
+import {
+  appendAssetTargetCatalogToUserMessage,
+  flattenPreparedGenerationAssetReferences,
+} from '../../../main/generation/preparation/generation-asset-target-catalog';
 import type {
   AgentToolRequirement,
   GenerationTaskProcessContext,
@@ -23,6 +30,7 @@ import type {
   MindMapDocument,
   MindMapDocumentV1,
   MindMapDocumentV2,
+  MindMapDocumentV3,
 } from '../document';
 import { encodeMindMapDocument } from '../mindmap-content-adapter';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
@@ -31,9 +39,11 @@ import type { MindMapGenerationInstruction } from './mindmap-generation-instruct
 import type { MindMapGenerationCandidateV1 } from './mindmap-generation-output';
 import { MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH } from './mindmap-generation-output';
 import type { MindMapGenerationCandidateV2 } from './mindmap-generation-output-v2';
+import type { MindMapGenerationCandidateV3 } from './mindmap-generation-output-v3';
 import {
   mindMapGenerationProtocolV1,
   mindMapGenerationProtocolV2,
+  mindMapGenerationProtocolV3,
   type MindMapGenerationProtocol,
   type PreparedMindMapReferenceBinding,
 } from './mindmap-generation-protocol';
@@ -41,6 +51,7 @@ import {
 export {
   MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
   MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
+  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V3,
 } from './mindmap-generation-protocol';
 
 export type MindMapGenerationTaskResult = JsonValue & {
@@ -56,11 +67,19 @@ interface MindMapGenerationProcessorDependencies {
 }
 
 const repairsPerProcessRun = 3;
+const emptyAssetTargetRegistry: AssetTargetRegistryApi = Object.freeze({
+  register: () => undefined,
+  get: () => undefined,
+  listForWorkbench: () => Object.freeze([]),
+  validate: () => false,
+  describe: () => undefined,
+  assertManifest: () => undefined,
+});
 
 function flattenPreparedReferences(
   bindings: PreparedGenerationAssetReferenceBindings,
 ) {
-  return Object.values(bindings).flatMap((references) => references);
+  return flattenPreparedGenerationAssetReferences(bindings);
 }
 
 function mindMapToolRequirements(
@@ -124,6 +143,7 @@ class ProtocolMindMapGenerationProcessor<
       TCandidate,
       TDocument
     >,
+    private readonly targets?: AssetTargetRegistryApi,
     private readonly dependencies: MindMapGenerationProcessorDependencies = {
       readFile: (path, encoding) => readFile(path, encoding),
     },
@@ -136,11 +156,18 @@ class ProtocolMindMapGenerationProcessor<
     const toolRequirements = mindMapToolRequirements(
       context.assetReferences,
     );
+    const userMessage = this.protocol.usesAssetTargets
+      ? appendAssetTargetCatalogToUserMessage(
+          context.preparedUserMessage,
+          context.assetReferences,
+          this.requireTargets(),
+        )
+      : context.preparedUserMessage;
     await context.agent.call({
       callKey: 'generate',
       purpose: 'generation',
       systemInstruction: this.protocol.systemInstruction,
-      userMessage: context.preparedUserMessage,
+      userMessage,
       toolRequirements,
       skills: [],
       mcpServers: [],
@@ -309,6 +336,7 @@ class ProtocolMindMapGenerationProcessor<
 
     const validated = this.protocol.validateCandidate(value, {
       assetReferences: context.assetReferences,
+      targets: this.requireTargets(),
     });
 
     if (!validated.ok) {
@@ -316,6 +344,16 @@ class ProtocolMindMapGenerationProcessor<
     }
 
     return validated.value;
+  }
+
+  private requireTargets(): AssetTargetRegistryApi {
+    if (this.targets) {
+      return this.targets;
+    }
+    if (this.protocol.usesAssetTargets) {
+      throw new Error('Mind Map generation 缺少 AssetTarget Registry');
+    }
+    return emptyAssetTargetRegistry;
   }
 }
 
@@ -332,6 +370,7 @@ export class LegacyMindMapGenerationProcessor extends ProtocolMindMapGenerationP
       assets,
       associations,
       mindMapGenerationProtocolV1,
+      undefined,
       dependencies,
     );
   }
@@ -350,6 +389,27 @@ export class MindMapGenerationProcessor extends ProtocolMindMapGenerationProcess
       assets,
       associations,
       mindMapGenerationProtocolV2,
+      undefined,
+      dependencies,
+    );
+  }
+}
+
+export class AssetTargetMindMapGenerationProcessor extends ProtocolMindMapGenerationProcessor<
+  MindMapGenerationCandidateV3,
+  MindMapDocumentV3
+> {
+  constructor(
+    assets: AssetServiceApi,
+    associations: AssetAssociationServiceApi,
+    targets: AssetTargetRegistryApi,
+    dependencies?: MindMapGenerationProcessorDependencies,
+  ) {
+    super(
+      assets,
+      associations,
+      mindMapGenerationProtocolV3,
+      targets,
       dependencies,
     );
   }

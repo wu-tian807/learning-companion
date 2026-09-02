@@ -33,15 +33,17 @@ import {
   resolveTextSelectionFromTarget,
   scrollRangeIntoView,
   selectOffsetsInElement,
-} from '../document-ai/renderer/conversation/document-anchor-reveal';
+} from '../document-ai/renderer/conversation/document-target-reveal';
 import {
-  registerWorkbenchAnchorController,
-} from '../../renderer/workbench/host/workbench-anchor-bridge';
+  registerWorkbenchTargetController,
+} from '../../renderer/workbench/host/workbench-target-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
-import type { AssetTarget } from '../../shared/workbench/anchor';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
-import { resolveTextRangeSelection } from '../../shared/workbench/text-range-anchor';
+import type { AssetTarget } from '../../shared/workbench/asset-target';
+import {
+  createTextRangeTarget,
+  resolveTextRangeSelection,
+} from '../../shared/workbench/text-range-target';
 import {
   createPlainTextBufferCommand,
   createPlainTextViewStateCommand,
@@ -648,7 +650,7 @@ export function PlainTextWorkbenchView({
     conversationContribution,
   );
 
-  const resolveTextAnchorRect = useCallback(
+  const resolveTextTargetRect = useCallback(
     (target: AssetTarget) => {
       if (target.scope !== 'content') return undefined;
       if (
@@ -690,12 +692,12 @@ export function PlainTextWorkbenchView({
   );
 
   useEffect(() => {
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
+    return registerWorkbenchTargetController(
+      `${conversationOwnerId}.targets`,
       asset.id,
       {
         resolve(target) {
-          return resolveTextAnchorRect(target);
+          return resolveTextTargetRect(target);
         },
         reveal(target) {
           if (target.scope !== 'content') return false;
@@ -739,7 +741,7 @@ export function PlainTextWorkbenchView({
   }, [
     asset.id,
     conversationOwnerId,
-    resolveTextAnchorRect,
+    resolveTextTargetRect,
     viewOptions.readMode,
   ]);
 
@@ -753,11 +755,11 @@ export function PlainTextWorkbenchView({
         viewOptions,
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
-        onAiExplain: (text, anchor) => {
+        onAiExplain: (text, target) => {
           conversationRuntime.open({
             ownerId: conversationOwnerId,
             context: createDocumentConversationContext({
-              target: anchor,
+              target,
               selectedText: text,
             }),
           });

@@ -30,7 +30,7 @@ export function createMindMapRendererActions({
         enabled: canToggleFocusedNode,
         execute: (context) => {
           if (isMindMapNodeTarget(context.focus)) {
-            onToggleNode(context.focus.anchorPayload.nodeId);
+            onToggleNode(context.focus.targetPayload.nodeId);
           }
         },
       },

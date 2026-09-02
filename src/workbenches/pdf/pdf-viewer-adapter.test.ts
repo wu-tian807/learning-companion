@@ -60,7 +60,7 @@ describe('PDF selection indexing', () => {
       'continuous',
     );
 
-    expect(snapshot?.target.anchorPayload).toMatchObject({
+    expect(snapshot?.target.targetPayload).toMatchObject({
       start: { pageNumber: 1, offset: 4 },
       end: { pageNumber: 1, offset: 8 },
       quote: {
@@ -95,7 +95,7 @@ describe('PDF selection indexing', () => {
     expect(snapshot).toMatchObject({
       text: '尾部\n第二页',
       target: {
-        anchorPayload: {
+        targetPayload: {
           start: { pageNumber: 2, offset: 3 },
           end: { pageNumber: 3, offset: 3 },
         },
@@ -121,7 +121,7 @@ describe('PDF selection indexing', () => {
     expect(snapshot).toMatchObject({
       text: '第一行\n第二行',
       target: {
-        anchorPayload: {
+        targetPayload: {
           start: { pageNumber: 1, offset: 0 },
           end: {
             pageNumber: 1,

@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -56,7 +56,7 @@ export const videoWorkbenchManifest: AssetWorkbenchManifest<
     'video/quicktime',
   ],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     VIDEO_TIME_RANGE_ANCHOR_TYPE,
     VIDEO_FRAME_REGION_ANCHOR_TYPE,
   ],
@@ -132,10 +132,10 @@ export interface VideoFrameRegionAnchorV1 {
   readonly sourceHeight: number;
 }
 
-export type VideoFrameRegionTarget = ContentAnchorTarget & {
-  readonly anchorType: typeof VIDEO_FRAME_REGION_ANCHOR_TYPE;
-  readonly anchorVersion: typeof VIDEO_FRAME_REGION_ANCHOR_VERSION;
-  readonly anchorPayload: VideoFrameRegionAnchorV1;
+export type VideoFrameRegionTarget = ContentAssetTarget & {
+  readonly targetType: typeof VIDEO_FRAME_REGION_ANCHOR_TYPE;
+  readonly targetVersion: typeof VIDEO_FRAME_REGION_ANCHOR_VERSION;
+  readonly targetPayload: VideoFrameRegionAnchorV1;
 };
 
 export const DEFAULT_VIDEO_VIEW_STATE: Readonly<VideoWorkbenchViewState> =
@@ -356,6 +356,22 @@ export function isVideoTimeRangeAnchorV1(
   );
 }
 
+export function isVideoTimeRangeTarget(
+  value: unknown,
+): value is ContentAssetTarget & {
+  readonly targetType: typeof VIDEO_TIME_RANGE_ANCHOR_TYPE;
+  readonly targetVersion: typeof VIDEO_TIME_RANGE_ANCHOR_VERSION;
+  readonly targetPayload: VideoTimeRangeAnchorV1;
+} {
+  return (
+    isRecord(value) &&
+    value.scope === 'content' &&
+    value.targetType === VIDEO_TIME_RANGE_ANCHOR_TYPE &&
+    value.targetVersion === VIDEO_TIME_RANGE_ANCHOR_VERSION &&
+    isVideoTimeRangeAnchorV1(value.targetPayload)
+  );
+}
+
 export function isVideoFrameRegionAnchorV1(
   value: unknown,
 ): value is VideoFrameRegionAnchorV1 {
@@ -381,9 +397,9 @@ export function isVideoFrameRegionTarget(
   return (
     isRecord(value) &&
     value.scope === 'content' &&
-    value.anchorType === VIDEO_FRAME_REGION_ANCHOR_TYPE &&
-    value.anchorVersion === VIDEO_FRAME_REGION_ANCHOR_VERSION &&
-    isVideoFrameRegionAnchorV1(value.anchorPayload)
+    value.targetType === VIDEO_FRAME_REGION_ANCHOR_TYPE &&
+    value.targetVersion === VIDEO_FRAME_REGION_ANCHOR_VERSION &&
+    isVideoFrameRegionAnchorV1(value.targetPayload)
   );
 }
 
@@ -395,21 +411,21 @@ export function createVideoFrameRegionTarget(
   }
   return Object.freeze({
     scope: 'content' as const,
-    anchorType: VIDEO_FRAME_REGION_ANCHOR_TYPE,
-    anchorVersion: VIDEO_FRAME_REGION_ANCHOR_VERSION,
-    anchorPayload: Object.freeze({ ...input }),
+    targetType: VIDEO_FRAME_REGION_ANCHOR_TYPE,
+    targetVersion: VIDEO_FRAME_REGION_ANCHOR_VERSION,
+    targetPayload: Object.freeze({ ...input }),
   });
 }
 
 export function createVideoTimeRangeTarget(
   startSeconds: number,
   endSeconds = startSeconds,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: VIDEO_TIME_RANGE_ANCHOR_TYPE,
-    anchorVersion: VIDEO_TIME_RANGE_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: VIDEO_TIME_RANGE_ANCHOR_TYPE,
+    targetVersion: VIDEO_TIME_RANGE_ANCHOR_VERSION,
+    targetPayload: {
       startSeconds,
       endSeconds,
     },

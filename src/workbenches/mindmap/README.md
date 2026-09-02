@@ -9,21 +9,19 @@ Mind Map 是正式的 generated Asset，媒体类型为
 
 关系通过稀疏的 `associations.nodes` 和 `associations.frames` 保存：
 
-- v2 `references` 使用 `referenceId + sourceRevision + agentLocator` 保存来源与
-  Agent 可重新定位的依据；`agentLocator` 是非空、自由结构的 JSON 对象，不要求所有媒体共享
-  固定字段；
-- v1 文档中的 `referenceId + sourceTarget` 继续可读，但只作为旧格式兼容；
+- v3 `references` 使用 `referenceId + sourceRevision + target`；`target` 是来源 Asset
+  所属 Workbench 声明、校验并可直接 reveal 的通用 `AssetTarget`；
+- v1/v2 文档中的 `sourceTarget` 与 `agentLocator` 继续可读，仅用于旧文档和未完成任务的恢复；
 - `linkIds` 对应从节点派生或链接的目标 Asset；
 - Asset 级来源和链接本身由通用 `AssetReference`、`AssetLink` 表保存；
 - 文档中的失效关系 ID 不阻止整张 Mind Map 打开。
 
-`agentLocator` 面向后续 Agent 获取证据内容，不是 Workbench 可直接 reveal 的
-`AttachmentAnchor`，也不注册到通用 AnchorRegistry。生成协议只校验它是可序列化的非空对象，
-并在提示词中建议按资料类型填写页码、章节路径、引文、时间范围或内容描述。新生成任务要求每个
-Node 和 Frame 至少提供一项来源定位；同一来源的多个位置会按原顺序保留，不按
-`referenceId` 去重。
+生成时 Mind Map 只向通用 `AssetTargetRegistry` 请求每个已选来源的 Target
+目录，不包含 PDF、视频、EPUB 等媒体分支。Agent 根据目录直接生成
+`AssetTarget`，应用再用对应 Workbench 的权威 payload 校验器检查。每个 Node
+和 Frame 至少提供一项来源 Target；同一来源的多个位置按原顺序保留。
 
-Node 和 Frame 分别提供 `mindmap.node`、`mindmap.frame` Anchor，供 Selection、
+Node 和 Frame 分别提供 `mindmap.node`、`mindmap.frame` Target，供 Selection、
 Attachment、AI 工具和其他 Workbench 使用。节点折叠、当前选中目标、画布坐标和
 缩放属于 Workbench Runtime/State，不写入 content。
 
@@ -42,8 +40,8 @@ Attachment、AI 工具和其他 Workbench 使用。节点折叠、当前选中�
 - `main.ts` 读取文档、解析通用关系并维护 Workbench State；
 - `layout.ts` 将可见树交给 Dagre 计算 Renderer 坐标；
 - `renderer.tsx` 提供 React Flow 画布与 Interaction；
-- `shared.ts` 保存 Manifest、Bootstrap/Command、State 与 Anchor 协议；
+- `shared.ts` 保存 Manifest、Bootstrap/Command、State 与 Target 协议；
 - Adapter 不拥有 Handle 生命周期，不存在 Mind Map 专用 `HandleManager`。
 
-当前新任务使用 `mindmap.generate@2` 和 `.mindmap` v2。`mindmap.generate@1` 与
-`.mindmap` v1 仍注册/可读，专用于恢复升级前尚未完成的任务和打开旧文件。
+当前新任务使用 `mindmap.generate@3` 和 `.mindmap` v3。`mindmap.generate@1/@2`
+与 `.mindmap` v1/v2 仍注册/可读，专用于恢复升级前尚未完成的任务和打开旧文件。

@@ -5,6 +5,7 @@ import {
   createMainWorkbenchRuntime,
   type MainWorkbenchAgentToolContext,
   type MainWorkbenchArtifactContext,
+  type MainWorkbenchAssetTargetContext,
   type MainWorkbenchAttachmentContext,
   type MainWorkbenchContribution,
   type MainWorkbenchExternalLibraryContext,
@@ -33,6 +34,7 @@ import { videoMainWorkbenchContribution } from '../video/main-contribution';
 export type {
   MainWorkbenchAgentToolContext,
   MainWorkbenchArtifactContext,
+  MainWorkbenchAssetTargetContext,
   MainWorkbenchAttachmentContext,
   MainWorkbenchContribution,
   MainWorkbenchExternalLibraryContext,
@@ -128,6 +130,17 @@ export function registerMainWorkbenchArtifacts(
 ): void {
   forEachContribution((entry) => {
     entry.registerArtifactProducers?.(context);
+  });
+}
+
+export function registerMainWorkbenchAssetTargets(
+  context: MainWorkbenchAssetTargetContext,
+): void {
+  forEachContribution((entry) => {
+    entry.registerAssetTargets?.(context);
+    if (entry.manifest) {
+      context.targets.assertManifest(entry.manifest);
+    }
   });
 }
 

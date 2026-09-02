@@ -57,9 +57,9 @@ function createResult(payload: JsonValue): WorkbenchCommandResult {
 }
 
 function anchorFrameTarget(target: {
-  readonly anchorPayload: JsonValue;
+  readonly targetPayload: JsonValue;
 }, rootUrl: string): { readonly frameUrl: string } | undefined {
-  const payload = target.anchorPayload;
+  const payload = target.targetPayload;
 
   if (
     typeof payload !== 'object' ||

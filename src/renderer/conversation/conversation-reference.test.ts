@@ -10,22 +10,22 @@ describe('Project conversation references', () => {
   it('extracts both direct HTML anchors and wrapped media anchors', () => {
     const html = {
       scope: 'content' as const,
-      anchorType: 'html.dom',
-      anchorVersion: 1,
-      anchorPayload: { element: { textQuote: '均方误差' } },
+      targetType: 'html.dom',
+      targetVersion: 1,
+      targetPayload: { element: { textQuote: '均方误差' } },
     };
     const video = {
       sourceRevision: '1',
       target: {
         scope: 'content' as const,
-        anchorType: 'video.frame-region',
-        anchorVersion: 1,
-        anchorPayload: { timeSeconds: 48.25 },
+        targetType: 'video.frame-region',
+        targetVersion: 1,
+        targetPayload: { timeSeconds: 48.25 },
       },
     };
 
-    expect(conversationContextTarget(html)).toBe(html);
-    expect(conversationContextTarget(video)).toBe(video.target);
+    expect(conversationContextTarget(html)).toEqual(html);
+    expect(conversationContextTarget(video)).toEqual(video.target);
     expect(conversationContextSourceRevision(video)).toBe('1');
   });
 
@@ -33,9 +33,9 @@ describe('Project conversation references', () => {
     expect(describeConversationContext({
       target: {
         scope: 'content',
-        anchorType: 'video.frame-region',
-        anchorVersion: 1,
-        anchorPayload: {
+        targetType: 'video.frame-region',
+        targetVersion: 1,
+        targetPayload: {
           timeSeconds: 12.345,
           x: 0.1,
           y: 0.2,
@@ -52,18 +52,18 @@ describe('Project conversation references', () => {
   it('describes persisted references without loading a Workbench', () => {
     expect(describeConversationContext({
       scope: 'content',
-      anchorType: 'html.dom',
-      anchorVersion: 1,
-      anchorPayload: { element: { textQuote: 'MSE 损失' } },
+      targetType: 'html.dom',
+      targetVersion: 1,
+      targetPayload: { element: { textQuote: 'MSE 损失' } },
     })).toEqual({ label: '引用内容', detail: 'MSE 损失' });
 
     expect(describeConversationContext({
       sourceRevision: '1',
       target: {
         scope: 'content',
-        anchorType: 'video.frame-region',
-        anchorVersion: 1,
-        anchorPayload: { timeSeconds: 48.25 },
+        targetType: 'video.frame-region',
+        targetVersion: 1,
+        targetPayload: { timeSeconds: 48.25 },
       },
     })).toEqual({ label: '48.3 秒处' });
   });

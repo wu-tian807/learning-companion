@@ -99,7 +99,7 @@ describe('Plain Text shared protocol', () => {
   });
 
   it('declares text range anchors for editor interactions', () => {
-    expect(plainTextWorkbenchManifest.supportedAnchorTypes).toEqual([
+    expect(plainTextWorkbenchManifest.supportedTargetTypes).toEqual([
       'plain-text.text-range',
     ]);
   });

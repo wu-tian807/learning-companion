@@ -7,7 +7,7 @@ import {
 import {
   cloneAssetTarget,
   type AssetTarget,
-} from '../../shared/workbench/anchor';
+} from '../../shared/workbench/asset-target';
 import {
   cloneMindMapAgentLocatorV1,
   cloneMindMapDocument,
@@ -15,6 +15,7 @@ import {
   type MindMapDocument,
   type MindMapSubjectAssociationsV1,
   type MindMapSubjectAssociationsV2,
+  type MindMapSubjectAssociationsV3,
 } from './document';
 
 export interface MindMapAssociationLookup {
@@ -33,9 +34,16 @@ export interface ResolvedMindMapAgentReferenceBinding {
   readonly agentLocator: MindMapAgentLocatorV1;
 }
 
+export interface ResolvedMindMapTargetReferenceBinding {
+  readonly reference: AssetReference;
+  readonly sourceRevision: string;
+  readonly target: AssetTarget;
+}
+
 export type ResolvedMindMapReferenceBinding =
   | ResolvedMindMapLegacyReferenceBinding
-  | ResolvedMindMapAgentReferenceBinding;
+  | ResolvedMindMapAgentReferenceBinding
+  | ResolvedMindMapTargetReferenceBinding;
 
 export interface ResolvedMindMapSubjectAssociations {
   readonly references: readonly ResolvedMindMapReferenceBinding[];
@@ -67,7 +75,9 @@ function resolveSubjectAssociationMap(
   subjectAssociations: Readonly<
     Record<
       string,
-      MindMapSubjectAssociationsV1 | MindMapSubjectAssociationsV2
+      | MindMapSubjectAssociationsV1
+      | MindMapSubjectAssociationsV2
+      | MindMapSubjectAssociationsV3
     >
   >,
   lookup: MindMapAssociationLookup,
@@ -93,22 +103,24 @@ function resolveSubjectAssociationMap(
               continue;
             }
 
-            references.push(
-              'sourceTarget' in binding
-                ? Object.freeze({
-                    reference: cloneAssetReference(reference),
-                    sourceTarget: cloneAssetTarget(
-                      binding.sourceTarget,
-                    ),
-                  })
-                : Object.freeze({
-                    reference: cloneAssetReference(reference),
-                    sourceRevision: binding.sourceRevision,
-                    agentLocator: cloneMindMapAgentLocatorV1(
-                      binding.agentLocator,
-                    ),
-                  }),
-            );
+            if ('sourceTarget' in binding) {
+              references.push(Object.freeze({
+                reference: cloneAssetReference(reference),
+                sourceTarget: cloneAssetTarget(binding.sourceTarget),
+              }));
+            } else if ('target' in binding) {
+              references.push(Object.freeze({
+                reference: cloneAssetReference(reference),
+                sourceRevision: binding.sourceRevision,
+                target: cloneAssetTarget(binding.target),
+              }));
+            } else {
+              references.push(Object.freeze({
+                reference: cloneAssetReference(reference),
+                sourceRevision: binding.sourceRevision,
+                agentLocator: cloneMindMapAgentLocatorV1(binding.agentLocator),
+              }));
+            }
           }
 
           for (const linkId of associations.linkIds) {

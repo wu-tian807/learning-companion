@@ -5,8 +5,10 @@ import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
   MIND_MAP_DOCUMENT_VERSION_V2,
+  MIND_MAP_DOCUMENT_VERSION_V3,
   type MindMapDocumentV1,
   type MindMapDocumentV2,
+  type MindMapDocumentV3,
 } from './document';
 import {
   cloneMindMapWorkbenchViewState,
@@ -57,24 +59,44 @@ const documentV2: MindMapDocumentV2 = {
   },
 };
 
+const documentV3: MindMapDocumentV3 = {
+  ...document,
+  version: MIND_MAP_DOCUMENT_VERSION_V3,
+  associations: {
+    nodes: {
+      root: {
+        references: [
+          {
+            referenceId: 'reference-source',
+            sourceRevision: 'source-revision-1',
+            target: { scope: 'asset' },
+          },
+        ],
+        linkIds: [],
+      },
+    },
+    frames: {},
+  },
+};
+
 describe('Mind Map interaction targets', () => {
-  it('creates stable Node and Frame Anchors', () => {
+  it('creates stable Node and Frame Targets', () => {
     const nodeTarget = createMindMapNodeTarget('basic-solution');
     const frameTarget = createMindMapFrameTarget('foundations');
 
     expect(isMindMapNodeTarget(nodeTarget)).toBe(true);
     expect(nodeTarget).toEqual({
       scope: 'content',
-      anchorType: 'mindmap.node',
-      anchorVersion: 1,
-      anchorPayload: { nodeId: 'basic-solution' },
+      targetType: 'mindmap.node',
+      targetVersion: 1,
+      targetPayload: { nodeId: 'basic-solution' },
     });
     expect(isMindMapFrameTarget(frameTarget)).toBe(true);
     expect(frameTarget).toEqual({
       scope: 'content',
-      anchorType: 'mindmap.frame',
-      anchorVersion: 1,
-      anchorPayload: { frameId: 'foundations' },
+      targetType: 'mindmap.frame',
+      targetVersion: 1,
+      targetPayload: { frameId: 'foundations' },
     });
     expect(() => createMindMapNodeTarget('  ')).toThrow(
       'Mind Map nodeId 无效',
@@ -188,5 +210,46 @@ describe('Mind Map interaction targets', () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it('accepts resolved Targets only when their source revision is retained', () => {
+    const reference = {
+      id: 'reference-source',
+      projectId: 'project',
+      assetId: 'mindmap',
+      sourceAssetId: 'source',
+      createdTime: 1,
+    };
+    const binding = {
+      reference,
+      sourceRevision: 'source-revision-1',
+      target: { scope: 'asset' as const },
+    };
+    const payload = {
+      document: documentV3,
+      revision: 'revision-1',
+      associations: {
+        byNode: {
+          root: { references: [binding], links: [] },
+        },
+        byFrame: {},
+        staleBindings: [],
+      },
+      viewState: { collapsedNodeIds: [] },
+    };
+
+    expect(isMindMapWorkbenchPayload(payload)).toBe(true);
+    expect(isMindMapWorkbenchPayload({
+      ...payload,
+      associations: {
+        ...payload.associations,
+        byNode: {
+          root: {
+            references: [{ ...binding, sourceRevision: ' ' }],
+            links: [],
+          },
+        },
+      },
+    })).toBe(false);
   });
 });

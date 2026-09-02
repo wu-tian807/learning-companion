@@ -4,7 +4,6 @@ import type { AssetArtifactRegistryApi } from '../artifacts/asset-artifact-regis
 import type { AssetArtifactServiceApi } from '../artifacts/asset-artifact-service';
 import type { AssetLookup } from '../assets/asset-database';
 import type { AssetServiceApi } from '../assets/asset-service';
-import type { AnchorRegistry } from '../attachments/anchor-registry';
 import type { AttachmentRegistry } from '../attachments/attachment-registry';
 import type { AttachmentServiceApi } from '../attachments/attachment-service';
 import type { ContentResourceServiceApi } from '../content/content-resource-service';
@@ -22,6 +21,7 @@ import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import type { SandboxFrameScriptExecutor } from './interaction/sandbox-frame-script-executor';
 import type { WorkbenchEventBusApi } from './workbench-event-bus';
 import type { MainWorkbenchProvider } from './workbench-session';
+import type { AssetTargetRegistryApi } from './asset-target-registry';
 import type { WorkbenchStateDataDatabaseApi } from './workbench-state-data-database';
 import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
 
@@ -55,7 +55,10 @@ export interface MainWorkbenchArtifactContext {
 
 export interface MainWorkbenchAttachmentContext {
   readonly attachments: AttachmentRegistry;
-  readonly anchors: AnchorRegistry;
+}
+
+export interface MainWorkbenchAssetTargetContext {
+  readonly targets: AssetTargetRegistryApi;
 }
 
 export interface MainWorkbenchAgentToolContext {
@@ -72,6 +75,7 @@ export interface MainWorkbenchGenerationContext {
   readonly attachments: AttachmentServiceApi;
   readonly externalLibraries: ExternalLibraryServiceApi;
   readonly projects: ProjectLookup;
+  readonly targets: AssetTargetRegistryApi;
   readonly provider?: MainWorkbenchProvider;
 }
 
@@ -94,6 +98,7 @@ export interface MainWorkbenchFeatureContribution {
     context: MainWorkbenchExternalLibraryContext,
   ): void;
   registerArtifactProducers?(context: MainWorkbenchArtifactContext): void;
+  registerAssetTargets?(context: MainWorkbenchAssetTargetContext): void;
   registerAttachmentTypes?(context: MainWorkbenchAttachmentContext): void;
   registerAgentFunctionTools?(context: MainWorkbenchAgentToolContext): void;
   registerGeneration?(context: MainWorkbenchGenerationContext): void;
@@ -181,6 +186,11 @@ export function composeMainWorkbenchContribution(
     registerArtifactProducers(context): void {
       for (const feature of ownedFeatures) {
         feature.registerArtifactProducers?.(context);
+      }
+    },
+    registerAssetTargets(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerAssetTargets?.(context);
       }
     },
     registerAttachmentTypes(context): void {

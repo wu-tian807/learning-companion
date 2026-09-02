@@ -1,4 +1,8 @@
-import { isAssetTarget, type AssetTarget } from '../../shared/workbench/anchor';
+import {
+  isAssetTarget,
+  parseAssetTarget,
+  type AssetTarget,
+} from '../../shared/workbench/asset-target';
 import type { JsonValue } from '../../shared/workbench/protocol';
 
 export const DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID =
@@ -59,6 +63,24 @@ export function isDocumentConversationContext(
           (value.image as Record<string, unknown>).relativePath,
         )))
   );
+}
+
+export function parseDocumentConversationContext(
+  value: unknown,
+): DocumentConversationContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const target = parseAssetTarget(value.target);
+  if (!target) return undefined;
+  const normalized = {
+    target,
+    ...(value.pageNumber === undefined ? {} : { pageNumber: value.pageNumber }),
+    ...(value.selectedText === undefined ? {} : { selectedText: value.selectedText }),
+    ...(value.previewDataUrl === undefined ? {} : { previewDataUrl: value.previewDataUrl }),
+    ...(value.image === undefined ? {} : { image: value.image }),
+  };
+  return isDocumentConversationContext(normalized)
+    ? Object.freeze(normalized) as DocumentConversationContext
+    : undefined;
 }
 
 export function createDocumentConversationContext(input: {

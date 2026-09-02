@@ -3,6 +3,7 @@ import { HtmlAgentEditingService } from './editing/html-agent-editing-service';
 import { htmlAssistantMainFeature } from './generation/main';
 import { HtmlWorkbenchProvider } from './main';
 import { htmlWorkbenchManifest } from './shared';
+import { htmlTargetMainFeature } from './target-main-feature';
 
 export const htmlMainWorkbenchContribution = composeMainWorkbenchContribution(
   htmlWorkbenchManifest,
@@ -19,5 +20,5 @@ export const htmlMainWorkbenchContribution = composeMainWorkbenchContribution(
       context.workbenchEvents,
     );
   },
-  [htmlAssistantMainFeature],
+  [htmlTargetMainFeature, htmlAssistantMainFeature],
 );

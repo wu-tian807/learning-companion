@@ -66,8 +66,8 @@ describe('EPUB interaction helpers', () => {
     expect(selection).toMatchObject({
       text: '选中的 EPUB 文字',
       target: {
-        anchorType: 'epub.cfi-range',
-        anchorPayload: {
+        targetType: 'epub.cfi-range',
+        targetPayload: {
           cfiRange,
           quote: {
             exact: '选中的 EPUB 文字',

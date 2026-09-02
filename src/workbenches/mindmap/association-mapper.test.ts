@@ -12,8 +12,10 @@ import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
   MIND_MAP_DOCUMENT_VERSION_V2,
+  MIND_MAP_DOCUMENT_VERSION_V3,
   type MindMapDocumentV1,
   type MindMapDocumentV2,
+  type MindMapDocumentV3,
 } from './document';
 
 function createDocument(): MindMapDocumentV1 {
@@ -98,6 +100,33 @@ function createDocumentV2(): MindMapDocumentV2 {
   };
 }
 
+function createDocumentV3(): MindMapDocumentV3 {
+  const legacy = createDocument();
+
+  return {
+    ...legacy,
+    version: MIND_MAP_DOCUMENT_VERSION_V3,
+    associations: {
+      nodes: {
+        root: {
+          references: [{
+            referenceId: 'reference',
+            sourceRevision: 'revision-2',
+            target: {
+              scope: 'content',
+              targetType: 'pdf.page',
+              targetVersion: 1,
+              targetPayload: { pageNumber: 3 },
+            },
+          }],
+          linkIds: [],
+        },
+      },
+      frames: {},
+    },
+  };
+}
+
 describe('resolveMindMapAssociations', () => {
   it('resolves repeated Agent locators without collapsing them', () => {
     const reference: AssetReference = {
@@ -133,6 +162,34 @@ describe('resolveMindMapAssociations', () => {
     expect(
       Object.isFrozen(resolved.byNode.root.references[0]),
     ).toBe(true);
+  });
+
+  it('preserves the source revision alongside a Workbench Target', () => {
+    const reference: AssetReference = {
+      id: 'reference',
+      projectId: 'project',
+      assetId: 'mindmap',
+      sourceAssetId: 'pdf',
+      createdTime: 1,
+    };
+
+    expect(resolveMindMapAssociations(
+      'mindmap',
+      createDocumentV3(),
+      {
+        getReference: () => reference,
+        getLink: () => undefined,
+      },
+    ).byNode.root.references).toEqual([{
+      reference,
+      sourceRevision: 'revision-2',
+      target: {
+        scope: 'content',
+        targetType: 'pdf.page',
+        targetVersion: 1,
+        targetPayload: { pageNumber: 3 },
+      },
+    }]);
   });
 
   it('joins sparse Node and Frame rows and reports stale bindings', () => {

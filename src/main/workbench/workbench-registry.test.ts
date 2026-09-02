@@ -28,7 +28,7 @@ function createProvider(
       : { selectionPriority }),
     supportedMediaTypes,
     requiredContentCapabilities,
-    supportedAnchorTypes: [],
+    supportedTargetTypes: [],
     facilities: [],
   };
 

@@ -14,7 +14,7 @@ export const unsupportedWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['*/*'],
   requiredContentCapabilities: [],
-  supportedAnchorTypes: [],
+  supportedTargetTypes: [],
   facilities: [],
 };
 

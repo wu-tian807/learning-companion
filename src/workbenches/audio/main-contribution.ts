@@ -14,6 +14,7 @@ import { mediaSubtitleTranslationRuntime } from '../media-subtitles/translation-
 import { mediaSubtitleTranscriptionRuntime } from '../media-subtitles/transcription-runtime';
 import { AudioWorkbenchProvider } from './main';
 import { audioWorkbenchManifest } from './shared';
+import { audioTargetMainFeature } from './target-main-feature';
 
 export const audioMainWorkbenchContribution = composeMainWorkbenchContribution(
   audioWorkbenchManifest,
@@ -55,4 +56,5 @@ export const audioMainWorkbenchContribution = composeMainWorkbenchContribution(
       },
     );
   },
+  [audioTargetMainFeature],
 );

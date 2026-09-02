@@ -11,8 +11,8 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import type {
-  ContentAnchorTarget,
-} from '../../shared/workbench/anchor';
+  ContentAssetTarget,
+} from '../../shared/workbench/asset-target';
 import type {
   WorkbenchInteractionSnapshot,
 } from '../../shared/workbench/interaction';
@@ -50,49 +50,49 @@ type PreparationState =
   | { readonly kind: 'failed'; readonly message: string };
 
 function mapOfficeTarget(
-  target: ContentAnchorTarget | undefined,
-): ContentAnchorTarget | undefined {
+  target: ContentAssetTarget | undefined,
+): ContentAssetTarget | undefined {
   if (!target) {
     return undefined;
   }
 
-  if (target.anchorType === PDF_TEXT_RANGE_ANCHOR_TYPE) {
+  if (target.targetType === PDF_TEXT_RANGE_ANCHOR_TYPE) {
     return {
       ...target,
-      anchorType: OFFICE_TEXT_RANGE_ANCHOR_TYPE,
-      anchorVersion: OFFICE_ANCHOR_VERSION,
+      targetType: OFFICE_TEXT_RANGE_ANCHOR_TYPE,
+      targetVersion: OFFICE_ANCHOR_VERSION,
     };
   }
-  if (target.anchorType === PDF_PAGE_ANCHOR_TYPE) {
+  if (target.targetType === PDF_PAGE_ANCHOR_TYPE) {
     return {
       ...target,
-      anchorType: OFFICE_PAGE_ANCHOR_TYPE,
-      anchorVersion: OFFICE_ANCHOR_VERSION,
+      targetType: OFFICE_PAGE_ANCHOR_TYPE,
+      targetVersion: OFFICE_ANCHOR_VERSION,
     };
   }
-  if (target.anchorType === PDF_REGION_ANCHOR_TYPE) {
+  if (target.targetType === PDF_REGION_ANCHOR_TYPE) {
     return {
       ...target,
-      anchorType: OFFICE_REGION_ANCHOR_TYPE,
-      anchorVersion: OFFICE_ANCHOR_VERSION,
+      targetType: OFFICE_REGION_ANCHOR_TYPE,
+      targetVersion: OFFICE_ANCHOR_VERSION,
     };
   }
 
   return target;
 }
 
-function mapOfficeTargetToPdf(target: ContentAnchorTarget | undefined): ContentAnchorTarget | undefined {
+function mapOfficeTargetToPdf(target: ContentAssetTarget | undefined): ContentAssetTarget | undefined {
   if (!target) return undefined;
-  if (target.anchorType === OFFICE_TEXT_RANGE_ANCHOR_TYPE) {
-    return { ...target, anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE, anchorVersion: 1 };
+  if (target.targetType === OFFICE_TEXT_RANGE_ANCHOR_TYPE) {
+    return { ...target, targetType: PDF_TEXT_RANGE_ANCHOR_TYPE, targetVersion: 1 };
   }
-  if (target.anchorType === OFFICE_PAGE_ANCHOR_TYPE) {
-    return { ...target, anchorType: PDF_PAGE_ANCHOR_TYPE, anchorVersion: 1 };
+  if (target.targetType === OFFICE_PAGE_ANCHOR_TYPE) {
+    return { ...target, targetType: PDF_PAGE_ANCHOR_TYPE, targetVersion: 1 };
   }
-  if (target.anchorType === OFFICE_REGION_ANCHOR_TYPE) {
-    return { ...target, anchorType: PDF_REGION_ANCHOR_TYPE, anchorVersion: 1 };
+  if (target.targetType === OFFICE_REGION_ANCHOR_TYPE) {
+    return { ...target, targetType: PDF_REGION_ANCHOR_TYPE, targetVersion: 1 };
   }
-  return target;
+  return undefined;
 }
 
 export function mapOfficePreviewInteraction(
@@ -190,8 +190,8 @@ function OfficePdfPreview({
         }
         isSaveViewStateResult={isOfficeSaveViewStateResult}
         mapInteraction={mapOfficePreviewInteraction}
-        mapAnchorTarget={(target) =>
-          target.scope === 'content' ? mapOfficeTargetToPdf(target) ?? target : target
+        mapTarget={(target) =>
+          target.scope === 'content' ? mapOfficeTargetToPdf(target) : target
         }
       />
     </DocumentAiWorkbenchShell>

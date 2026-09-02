@@ -207,8 +207,8 @@ export function sameVideoExplanationTarget(
   left: VideoFrameRegionTarget,
   right: VideoFrameRegionTarget,
 ): boolean {
-  const a = left.anchorPayload;
-  const b = right.anchorPayload;
+  const a = left.targetPayload;
+  const b = right.targetPayload;
   return (
     a.timeSeconds === b.timeSeconds &&
     a.x === b.x &&

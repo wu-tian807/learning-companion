@@ -68,7 +68,7 @@ export function EpubExplanationPanel({
         <div>
           <p className="text-xs font-semibold text-slate-100">解释这段话</p>
           <p className="mt-0.5 max-w-[280px] truncate text-[10px] text-slate-500">
-            “{explanation.target.anchorPayload.quote.exact}”
+            “{explanation.target.targetPayload.quote.exact}”
           </p>
         </div>
         <button

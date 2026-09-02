@@ -110,9 +110,9 @@ describe('HTML Workbench shared protocol', () => {
     expect(isHtmlDomTarget(wholeElement)).toBe(true);
     expect(isHtmlDomTarget(dragSelection)).toBe(true);
     expect(dragSelection).toEqual(wholeElement);
-    expect(isHtmlDomAnchorV1(dragSelection.anchorPayload)).toBe(true);
-    expect(dragSelection.anchorPayload).not.toHaveProperty('rect');
-    expect(dragSelection.anchorPayload).not.toHaveProperty('range');
+    expect(isHtmlDomAnchorV1(dragSelection.targetPayload)).toBe(true);
+    expect(dragSelection.targetPayload).not.toHaveProperty('rect');
+    expect(dragSelection.targetPayload).not.toHaveProperty('range');
     expect(
       isHtmlDomAnchorV1({
         frameUrl: 'learning-content://resource/token',
@@ -128,7 +128,7 @@ describe('HTML Workbench shared protocol', () => {
     });
 
     expect(isHtmlDomTarget(target)).toBe(true);
-    expect(target.anchorPayload).not.toHaveProperty('frameUrl');
+    expect(target.targetPayload).not.toHaveProperty('frameUrl');
   });
 
   it('keeps validating legacy quote anchors for persisted conversations', () => {
@@ -144,7 +144,7 @@ describe('HTML Workbench shared protocol', () => {
       },
     );
 
-    expect(isHtmlQuoteAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isHtmlQuoteAnchorV1(target.targetPayload)).toBe(true);
     expect(
       isHtmlQuoteAnchorV1({
         exact: '',
@@ -174,7 +174,7 @@ describe('HTML Workbench shared protocol', () => {
       'https://example.com/lesson',
     );
 
-    expect(isHtmlLinkAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isHtmlLinkAnchorV1(target.targetPayload)).toBe(true);
     expect(
       isHtmlLinkAnchorV1({
         url: 'javascript:alert(1)',
@@ -193,7 +193,7 @@ describe('HTML Workbench shared protocol', () => {
     });
 
     expect(isHtmlElementTarget(target)).toBe(true);
-    expect(isHtmlElementAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isHtmlElementAnchorV1(target.targetPayload)).toBe(true);
     expect(
       isHtmlElementAnchorV1({
         frameUrl: 'learning-content://resource/token',

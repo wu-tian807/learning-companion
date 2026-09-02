@@ -27,6 +27,7 @@ describe('videoMainContribution', () => {
 
     expect(provider?.manifest).toBe(videoWorkbenchManifest);
     expect(videoMainContribution.features?.map(({ id }) => id)).toEqual([
+      'builtin.video.targets',
       'builtin.video.frame-conversation',
       'builtin.video.agent-reader',
     ]);

@@ -67,7 +67,7 @@ export function EpubExplanationIndex({
           <ol className="space-y-1.5">
             {explanations.map((explanation, index) => {
               const active = explanation.id === activeExplanationId;
-              const quote = explanation.target.anchorPayload.quote.exact;
+              const quote = explanation.target.targetPayload.quote.exact;
 
               return (
                 <li key={explanation.id}>

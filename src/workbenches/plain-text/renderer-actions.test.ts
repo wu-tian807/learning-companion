@@ -6,7 +6,7 @@ import {
 import {
   interactionFromTextSelection,
 } from '../../shared/workbench/selection';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-target';
 import {
   createPlainTextRendererActions,
 } from './renderer-actions';

@@ -4,13 +4,17 @@ import {
   cloneMindMapDocument,
   cloneMindMapDocumentV1,
   cloneMindMapDocumentV2,
+  cloneMindMapDocumentV3,
   isMindMapDocument,
   isMindMapDocumentV1,
   isMindMapDocumentV2,
+  isMindMapDocumentV3,
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
   MIND_MAP_DOCUMENT_VERSION_V2,
+  MIND_MAP_DOCUMENT_VERSION_V3,
   type MindMapDocumentV2,
+  type MindMapDocumentV3,
 } from './document';
 
 function createDocument() {
@@ -54,9 +58,9 @@ function createDocument() {
               referenceId: 'reference-pdf',
               sourceTarget: {
                 scope: 'content',
-                anchorType: 'pdf.page-region',
-                anchorVersion: 1,
-                anchorPayload: { pageNumber: 3 },
+                targetType: 'pdf.page-region',
+                targetVersion: 1,
+                targetPayload: { pageNumber: 3 },
               },
             },
           ],
@@ -133,7 +137,116 @@ function createDocumentV2(): MindMapDocumentV2 {
   };
 }
 
+function createDocumentV3(): MindMapDocumentV3 {
+  return {
+    format: MIND_MAP_DOCUMENT_FORMAT,
+    version: MIND_MAP_DOCUMENT_VERSION_V3,
+    title: ' Target 定位 ',
+    rootNodeId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        title: '课程',
+        focus: '课程总览',
+        childIds: [],
+      },
+    },
+    frames: {},
+    associations: {
+      nodes: {
+        root: {
+          references: [{
+            referenceId: 'reference-source',
+            sourceRevision: 'revision-1',
+            target: {
+              scope: 'content',
+              targetType: 'markdown.source-range',
+              targetVersion: 1,
+              targetPayload: {
+                ranges: [{ start: 0, end: 2, exact: '课程' }],
+              },
+            },
+          }],
+          linkIds: [],
+        },
+      },
+      frames: {},
+    },
+  };
+}
+
 describe('Mind Map document contract', () => {
+  it('accepts and deeply clones the v3 AssetTarget association contract', () => {
+    const document = cloneMindMapDocumentV3(createDocumentV3());
+
+    expect(document.title).toBe('Target 定位');
+    expect(document.associations.nodes.root.references[0]).toEqual({
+      referenceId: 'reference-source',
+      sourceRevision: 'revision-1',
+      target: createDocumentV3().associations.nodes.root.references[0].target,
+    });
+    expect(Object.isFrozen(
+      document.associations.nodes.root.references[0].target,
+    )).toBe(true);
+    expect(isMindMapDocumentV3(document)).toBe(true);
+    expect(cloneMindMapDocument(document)).toEqual(document);
+  });
+
+  it('rejects a v3 Target binding without a usable source revision', () => {
+    const document = createDocumentV3();
+    const binding = document.associations.nodes.root.references[0];
+
+    expect(
+      isMindMapDocumentV3({
+        ...document,
+        associations: {
+          ...document.associations,
+          nodes: {
+            root: {
+              references: [{ ...binding, sourceRevision: '  ' }],
+              linkIds: [],
+            },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('normalizes the pre-Target anchor wire shape while reading a legacy v1 document', () => {
+    const document = createDocument();
+    const legacy = {
+      ...document,
+      associations: {
+        ...document.associations,
+        nodes: {
+          'basic-solution': {
+            references: [{
+              referenceId: 'reference-pdf',
+              sourceTarget: {
+                scope: 'content',
+                anchorType: 'pdf.page-region',
+                anchorVersion: 1,
+                anchorPayload: { pageNumber: 3 },
+              },
+            }],
+            linkIds: [],
+          },
+        },
+      },
+    };
+
+    expect(isMindMapDocumentV1(legacy)).toBe(true);
+    expect(
+      cloneMindMapDocumentV1(legacy as unknown as ReturnType<typeof createDocument>)
+        .associations.nodes['basic-solution'].references[0].sourceTarget,
+    ).toEqual({
+      scope: 'content',
+      targetType: 'pdf.page-region',
+      targetVersion: 1,
+      targetPayload: { pageNumber: 3 },
+    });
+  });
+
   it('accepts flexible Agent locators and preserves repeated locations in one source', () => {
     const document = cloneMindMapDocumentV2(createDocumentV2());
 
@@ -236,9 +349,9 @@ describe('Mind Map document contract', () => {
       referenceId: 'reference-pdf',
       sourceTarget: {
         scope: 'content',
-        anchorType: 'pdf.page-region',
-        anchorVersion: 1,
-        anchorPayload: { pageNumber: 3 },
+        targetType: 'pdf.page-region',
+        targetVersion: 1,
+        targetPayload: { pageNumber: 3 },
       },
     });
     expect(document.associations.frames.foundations.linkIds).toEqual([

@@ -1,7 +1,29 @@
 # Mind Map Agent Locator 数据结构设计
 
 日期：2026-08-31
-状态：已实现
+状态：v2 已实现，当前生成协议已由 v3 AssetTarget 方案取代
+
+## 0. 2026-09-02 更新：统一为 AssetTarget
+
+本文第 1～5 节记录的是 `.mindmap` v2 `agentLocator` 方案及其当时的设计边界，
+用于解释和恢复旧数据，不再代表新建 Mind Map 的当前协议。
+
+当前实现使用 `mindmap.generate@3` 和 `.mindmap` v3：
+
+- 每个 Node 和 Frame 的来源绑定保存
+  `referenceId + sourceRevision + target`；
+- `target` 统一使用通用 `AssetTarget`，不再为 Mind Map 单独维护自由格式的
+  `agentLocator`；
+- 各来源 Workbench 自己注册 Target 类型、Agent 描述、payload schema、示例、
+  权威校验器和可读描述；
+- Mind Map 生成只收集本次所选来源对应的 Target 目录，不包含 PDF、视频、EPUB
+  等媒体分支；
+- Agent 生成的 Target 必须属于该来源实际选中的 Workbench，并通过其 payload
+  校验；无法可靠定位内容时可使用 `{ "scope": "asset" }`；
+- `mindmap.generate@1/@2` 与 `.mindmap` v1/v2 继续保留，只用于恢复旧任务和读取
+  旧文件，不自动迁移或猜测性转换 v2 `agentLocator`。
+
+以下历史设计中的“本次不做”均指 v2 实现当时的范围。
 
 ## 1. 目标
 

@@ -11,9 +11,9 @@ const selection = {
   text: '选中的正文',
   target: {
     scope: 'content' as const,
-    anchorType: 'pdf.text-range',
-    anchorVersion: 1,
-    anchorPayload: { pageNumber: 1 },
+    targetType: 'pdf.text-range',
+    targetVersion: 1,
+    targetPayload: { pageNumber: 1 },
   },
 };
 

@@ -1,4 +1,4 @@
-import type { AssetTarget, ContentAnchorTarget } from './anchor';
+import type { AssetTarget, ContentAssetTarget } from './asset-target';
 
 export interface TextOffsetRange {
   readonly start: number;
@@ -21,11 +21,11 @@ function isTextOffsetRange(value: unknown): value is TextOffsetRange {
     Number.isSafeInteger(value.start) &&
     Number.isSafeInteger(value.end) &&
     Number(value.start) >= 0 &&
-    Number(value.end) >= Number(value.start)
+    Number(value.end) > Number(value.start)
   );
 }
 
-/** 校验 createTextRangeTarget 生成的 anchorPayload（{ ranges: [...] }）。 */
+/** 校验 createTextRangeTarget 生成的 targetPayload（{ ranges: [...] }）。 */
 export function isTextRangePayload(
   value: unknown,
 ): value is { readonly ranges: readonly TextOffsetRange[] } {
@@ -37,11 +37,11 @@ export function isTextRangePayload(
 function firstTextQuoteRange(
   target: AssetTarget | undefined,
 ): TextQuoteRange | undefined {
-  if (target?.scope !== 'content' || !isRecord(target.anchorPayload)) {
+  if (target?.scope !== 'content' || !isRecord(target.targetPayload)) {
     return undefined;
   }
-  const first = Array.isArray(target.anchorPayload.ranges)
-    ? target.anchorPayload.ranges[0]
+  const first = Array.isArray(target.targetPayload.ranges)
+    ? target.targetPayload.ranges[0]
     : undefined;
   if (
     !isTextOffsetRange(first) ||
@@ -140,10 +140,10 @@ export function resolveTextRangeEndOffset(
 const QUOTE_CONTEXT_LENGTH = 64;
 
 export function createTextRangeTarget(
-  anchorType: string,
+  targetType: string,
   source: string,
   ranges: readonly TextOffsetRange[],
-): ContentAnchorTarget {
+): ContentAssetTarget {
   const normalizedRanges = ranges.map(({ start, end }) => {
     const normalizedStart = Math.max(
       0,
@@ -171,9 +171,9 @@ export function createTextRangeTarget(
 
   return {
     scope: 'content',
-    anchorType,
-    anchorVersion: 1,
-    anchorPayload: {
+    targetType,
+    targetVersion: 1,
+    targetPayload: {
       ranges: normalizedRanges,
     },
   };

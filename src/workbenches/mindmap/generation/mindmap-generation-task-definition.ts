@@ -2,6 +2,7 @@ import {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
+  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
 } from '../../../shared/generation-definitions';
 import type {
   GenerationTaskProcessContext,
@@ -19,6 +20,7 @@ export {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
+  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
 } from '../../../shared/generation-definitions';
 
 function createMindMapGenerationTaskDefinition(
@@ -70,6 +72,21 @@ export function createMindMapGenerationTaskDefinitionV1(
 }
 
 export function createMindMapGenerationTaskDefinitionV2(
+  processor: GenerationTaskProcessor<
+    MindMapGenerationInstruction,
+    MindMapGenerationTaskResult
+  >,
+): TaskDefinition<
+  MindMapGenerationInstruction,
+  MindMapGenerationTaskResult
+> {
+  return createMindMapGenerationTaskDefinition(
+    MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
+    processor,
+  );
+}
+
+export function createMindMapGenerationTaskDefinitionV3(
   processor: GenerationTaskProcessor<
     MindMapGenerationInstruction,
     MindMapGenerationTaskResult

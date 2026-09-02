@@ -105,7 +105,7 @@ describe('HTML conversation context provider', () => {
     expect(prepared.systemInstruction).toContain('html_begin_edit');
     expect(prepared.systemInstruction).toContain('materials/lesson.html');
     expect(prepared.systemInstruction).toContain('当前 HTML 草稿');
-    expect(message).toContain('"anchorType":"html.dom"');
+    expect(message).toContain('"targetType":"html.dom"');
     expect(message).not.toContain('materials/lesson.html');
 
     const readOnly = await new HtmlConversationContextProvider(() => ({

@@ -51,7 +51,7 @@ describe('HTML edit function tools', () => {
       {
         locator: {
           kind: 'dom-anchor',
-          anchor: target.anchorPayload,
+          anchor: target.targetPayload,
         },
         scope: 'element',
       },

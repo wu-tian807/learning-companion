@@ -37,7 +37,7 @@ function explanationStatusClassName(explanation: ImageExplanationView): string {
 }
 
 function regionSummary(explanation: ImageExplanationView): string {
-  const region = explanation.target.anchorPayload;
+  const region = explanation.target.targetPayload;
   return `左侧 ${Math.round(region.x * 100)}% · 顶部 ${Math.round(region.y * 100)}% · ${Math.round(region.width * 100)}% × ${Math.round(region.height * 100)}%`;
 }
 

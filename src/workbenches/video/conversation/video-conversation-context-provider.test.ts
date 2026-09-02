@@ -239,7 +239,7 @@ describe('Video conversation context provider', () => {
       );
       expect(prepareVisualRegionInputs).toHaveBeenCalledWith(
         expect.stringMatching(/frame\.png$/u),
-        target.anchorPayload,
+        target.targetPayload,
         expect.stringMatching(/visual-region$/u),
       );
       expect(prepared.userMessage.content).toEqual(

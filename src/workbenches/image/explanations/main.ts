@@ -1,9 +1,4 @@
 import type { MainWorkbenchFeatureContribution } from '../../../main/workbench/main-workbench-contribution';
-import {
-  IMAGE_REGION_ANCHOR_TYPE,
-  IMAGE_REGION_ANCHOR_VERSION,
-  isImageRegionAnchorV1,
-} from '../shared';
 import { ImageExplanationService } from './image-explanation-service';
 import { ImageConversationContextProvider } from './generation/image-conversation-context-provider';
 import {
@@ -18,12 +13,7 @@ import {
 
 export const imageExplanationMainFeature = Object.freeze({
   id: 'builtin.image.explanations',
-  registerAttachmentTypes({ attachments, anchors }): void {
-    anchors.register({
-      anchorType: IMAGE_REGION_ANCHOR_TYPE,
-      version: IMAGE_REGION_ANCHOR_VERSION,
-      isPayload: isImageRegionAnchorV1,
-    });
+  registerAttachmentTypes({ attachments }): void {
     attachments.register({
       typeId: IMAGE_EXPLANATION_ATTACHMENT_TYPE,
       version: IMAGE_EXPLANATION_ATTACHMENT_VERSION,

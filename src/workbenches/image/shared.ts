@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -35,7 +35,7 @@ export const imageWorkbenchManifest: AssetWorkbenchManifest<
     'image/bmp',
   ],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     IMAGE_VIEWPORT_ANCHOR_TYPE,
     IMAGE_REGION_ANCHOR_TYPE,
   ],
@@ -80,10 +80,10 @@ export interface ImageRegionAnchorV1 {
   readonly sourceHeight: number;
 }
 
-export interface ImageRegionTarget extends ContentAnchorTarget {
-  readonly anchorType: typeof IMAGE_REGION_ANCHOR_TYPE;
-  readonly anchorVersion: typeof IMAGE_REGION_ANCHOR_VERSION;
-  readonly anchorPayload: JsonValue & ImageRegionAnchorV1;
+export interface ImageRegionTarget extends ContentAssetTarget {
+  readonly targetType: typeof IMAGE_REGION_ANCHOR_TYPE;
+  readonly targetVersion: typeof IMAGE_REGION_ANCHOR_VERSION;
+  readonly targetPayload: JsonValue & ImageRegionAnchorV1;
 }
 
 export interface ImageSaveViewStatePayload {
@@ -209,13 +209,29 @@ export function createImageSaveViewStateCommand(
 
 export function createImageViewportTarget(
   viewState: ImageWorkbenchViewState,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: IMAGE_VIEWPORT_ANCHOR_TYPE,
-    anchorVersion: IMAGE_VIEWPORT_ANCHOR_VERSION,
-    anchorPayload: cloneImageViewState(viewState),
+    targetType: IMAGE_VIEWPORT_ANCHOR_TYPE,
+    targetVersion: IMAGE_VIEWPORT_ANCHOR_VERSION,
+    targetPayload: cloneImageViewState(viewState),
   };
+}
+
+export function isImageViewportTarget(
+  value: unknown,
+): value is ContentAssetTarget & {
+  readonly targetType: typeof IMAGE_VIEWPORT_ANCHOR_TYPE;
+  readonly targetVersion: typeof IMAGE_VIEWPORT_ANCHOR_VERSION;
+  readonly targetPayload: JsonValue & ImageWorkbenchViewState;
+} {
+  return (
+    isRecord(value) &&
+    value.scope === 'content' &&
+    value.targetType === IMAGE_VIEWPORT_ANCHOR_TYPE &&
+    value.targetVersion === IMAGE_VIEWPORT_ANCHOR_VERSION &&
+    isImageWorkbenchViewState(value.targetPayload)
+  );
 }
 
 export function isImageRegionAnchorV1(
@@ -255,9 +271,9 @@ export function createImageRegionTarget(
 
   return {
     scope: 'content',
-    anchorType: IMAGE_REGION_ANCHOR_TYPE,
-    anchorVersion: IMAGE_REGION_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: IMAGE_REGION_ANCHOR_TYPE,
+    targetVersion: IMAGE_REGION_ANCHOR_VERSION,
+    targetPayload: {
       x: anchor.x,
       y: anchor.y,
       width: anchor.width,

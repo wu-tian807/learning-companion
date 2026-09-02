@@ -21,7 +21,6 @@ import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation
 import { AssetFolderDatabase } from '../assets/asset-folder-database';
 import { AssetService } from '../assets/asset-service';
 import { AttachmentDatabase } from '../attachments/attachment-database';
-import { AnchorRegistry } from '../attachments/anchor-registry';
 import { AttachmentContentFile } from '../attachments/attachment-content-file';
 import { AttachmentRegistry } from '../attachments/attachment-registry';
 import { AttachmentService } from '../attachments/attachment-service';
@@ -59,6 +58,7 @@ import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/work
 import { SandboxFrameInteractionBridge } from '../workbench/interaction/sandbox-frame-interaction-bridge';
 import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/workbench-transport-binding-registry';
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
+import { AssetTargetRegistry } from '../workbench/asset-target-registry';
 import { WorkbenchEventBus } from '../workbench/workbench-event-bus';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
@@ -66,6 +66,7 @@ import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
 import {
   registerMainWorkbenchAgentFunctionTools,
   registerMainWorkbenchArtifacts,
+  registerMainWorkbenchAssetTargets,
   registerMainWorkbenchAttachments,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchProviders,
@@ -196,16 +197,16 @@ export async function createApplicationRuntime({
     registerContentProtocol(contentResourceService);
     contentProtocolRegistered = true;
     const attachmentRegistry = new AttachmentRegistry();
-    const anchorRegistry = new AnchorRegistry();
+    const assetTargetRegistry = new AssetTargetRegistry();
+    registerMainWorkbenchAssetTargets({ targets: assetTargetRegistry });
     registerMainWorkbenchAttachments({
       attachments: attachmentRegistry,
-      anchors: anchorRegistry,
     });
     const attachmentFiles = new AttachmentContentFile(projectDatabase);
     const attachmentService = new AttachmentService(
       new AttachmentDatabase(databaseContext),
       attachmentRegistry,
-      anchorRegistry,
+      assetTargetRegistry,
       attachmentFiles,
       assetDatabase,
     );
@@ -311,6 +312,7 @@ export async function createApplicationRuntime({
       attachments: attachmentService,
       externalLibraries: externalLibraryService,
       projects: projectDatabase,
+      targets: assetTargetRegistry,
       workbenches: workbenchRegistry,
     });
     workbenchSessionService = new WorkbenchSessionService(

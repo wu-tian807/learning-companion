@@ -26,7 +26,9 @@ describe('audioMainWorkbenchContribution', () => {
     const provider = audioMainWorkbenchContribution.createProvider?.(context);
 
     expect(provider?.manifest).toBe(audioWorkbenchManifest);
-    expect(audioMainWorkbenchContribution.features).toEqual([]);
+    expect(audioMainWorkbenchContribution.features?.map(({ id }) => id)).toEqual([
+      'builtin.audio.targets',
+    ]);
     expect(subscribeAssets).toHaveBeenCalledOnce();
     expect(subscribeTasks).toHaveBeenCalledOnce();
   });

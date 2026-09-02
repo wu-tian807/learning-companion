@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../../shared/workbench/asset-target';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { isHtmlDomTarget } from '../shared';
 
@@ -7,7 +7,7 @@ export const htmlEditVisualCommands = {
   clear: 'html.edit-visual.clear',
 } as const;
 
-type HtmlDomTarget = JsonValue & ContentAnchorTarget;
+type HtmlDomTarget = JsonValue & ContentAssetTarget;
 
 export interface HtmlEditVisualShowPayload {
   readonly target: HtmlDomTarget;

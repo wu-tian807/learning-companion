@@ -34,7 +34,7 @@ export function VideoExplanationMarkerOverlay({
     >
       {visible &&
         markers.map(({ explanation, number }) => {
-          const region = explanation.target.anchorPayload;
+          const region = explanation.target.targetPayload;
           return (
             <button
               key={explanation.id}
@@ -61,10 +61,10 @@ export function VideoExplanationMarkerOverlay({
           data-current-selection="true"
           className="absolute border-2 border-indigo-200 bg-indigo-400/10"
           style={{
-            left: `${selectedTarget.anchorPayload.x * 100}%`,
-            top: `${selectedTarget.anchorPayload.y * 100}%`,
-            width: `${selectedTarget.anchorPayload.width * 100}%`,
-            height: `${selectedTarget.anchorPayload.height * 100}%`,
+            left: `${selectedTarget.targetPayload.x * 100}%`,
+            top: `${selectedTarget.targetPayload.y * 100}%`,
+            width: `${selectedTarget.targetPayload.width * 100}%`,
+            height: `${selectedTarget.targetPayload.height * 100}%`,
           }}
         />
       )}

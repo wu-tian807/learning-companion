@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AssetAssociationServiceApi } from '../../../main/asset-associations/asset-association-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
+import { AssetTargetRegistry } from '../../../main/workbench/asset-target-registry';
 import type {
   GenerationTaskProcessContext,
   TaskAgentSession,
@@ -10,7 +11,10 @@ import type {
 import {
   MIND_MAP_DOCUMENT_VERSION,
   MIND_MAP_DOCUMENT_VERSION_V2,
+  MIND_MAP_DOCUMENT_VERSION_V3,
 } from '../document';
+import { markdownMainFeature } from '../../markdown/main-feature';
+import { MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE } from '../../markdown/shared';
 import { decodeMindMapDocument } from '../mindmap-content-adapter';
 import { MindMapGenerationInstruction } from './mindmap-generation-instruction';
 import {
@@ -23,9 +27,15 @@ import {
   validateMindMapGenerationCandidateV2,
 } from './mindmap-generation-output-v2';
 import {
+  MIND_MAP_GENERATION_CANDIDATE_VERSION_V3,
+  validateMindMapGenerationCandidateV3,
+} from './mindmap-generation-output-v3';
+import {
+  AssetTargetMindMapGenerationProcessor,
   LegacyMindMapGenerationProcessor,
   MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
   MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
+  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V3,
   MindMapGenerationProcessor,
 } from './mindmap-generation-processor';
 
@@ -142,6 +152,68 @@ function createCandidate() {
     },
   } as const;
 }
+
+function createTargetRegistry(): AssetTargetRegistry {
+  const targets = new AssetTargetRegistry();
+  markdownMainFeature.registerAssetTargets?.({ targets });
+  return targets;
+}
+
+function createTargetCandidate() {
+  return {
+    format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+    version: MIND_MAP_GENERATION_CANDIDATE_VERSION_V3,
+    title: '课程结构',
+    rootNodeId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        title: '课程',
+        focus: '课程总览',
+        childIds: [],
+        sourceReferences: [
+          {
+            sourceAlias: 'sources-0001',
+            target: {
+              scope: 'content',
+              targetType: MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+              targetVersion: 1,
+              targetPayload: {
+                ranges: [{ start: 0, end: 2, exact: '课程' }],
+              },
+            },
+          },
+        ],
+      },
+    },
+    frames: {
+      overview: {
+        id: 'overview',
+        title: '总览',
+        nodeIds: ['root'],
+        sourceReferences: [
+          { sourceAlias: 'sources-0001', target: { scope: 'asset' } },
+        ],
+      },
+    },
+  } as const;
+}
+
+const targetValidationContext = {
+  assetReferences: {
+    sources: [
+      {
+        alias: 'sources-0001',
+        assetId: 'asset-1',
+        name: 'lesson.md',
+        mediaType: 'text/markdown',
+        workbenchId: 'builtin.markdown',
+        contentRevision: 'revision-1',
+        relativePath: 'references/sources-0001/source.md',
+      },
+    ],
+  },
+};
 
 function createProcessContext(
   overrides: Partial<
@@ -296,6 +368,185 @@ describe('Mind Map generation contracts', () => {
     expect(emptyLocator.ok).toBe(false);
     if (!emptyLocator.ok) {
       expect(emptyLocator.issues[0].message).toMatch(/来源定位/u);
+    }
+  });
+
+  it('accepts only Targets registered by the selected source Workbench', () => {
+    const targets = createTargetRegistry();
+    const valid = validateMindMapGenerationCandidateV3(
+      createTargetCandidate(),
+      { ...targetValidationContext, targets },
+    );
+    const candidate = createTargetCandidate();
+    const invalid = validateMindMapGenerationCandidateV3(
+      {
+        ...candidate,
+        nodes: {
+          root: {
+            ...candidate.nodes.root,
+            sourceReferences: [{
+              sourceAlias: 'sources-0001',
+              target: {
+                scope: 'content',
+                targetType: 'video.time-range',
+                targetVersion: 1,
+                targetPayload: { startSeconds: 0, endSeconds: 1 },
+              },
+            }],
+          },
+        },
+      },
+      { ...targetValidationContext, targets },
+    );
+
+    expect(valid.ok).toBe(true);
+    if (valid.ok) {
+      const target = valid.value.nodes.root.sourceReferences[0].target;
+      expect(target).toEqual(
+        createTargetCandidate().nodes.root.sourceReferences[0].target,
+      );
+      expect(target.scope).toBe('content');
+      if (target.scope === 'content') {
+        expect(Object.isFrozen(target.targetPayload)).toBe(true);
+      }
+    }
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) {
+      expect(invalid.issues[0]).toMatchObject({
+        path: 'output.nodes.root.sourceReferences.0.target',
+        message: expect.stringMatching(/Target/u),
+      });
+    }
+  });
+
+  it('rejects legacy anchor fields and undeclared source-reference fields in v3 output', () => {
+    const targets = createTargetRegistry();
+    const candidate = createTargetCandidate();
+    const withExtraNodeField = {
+      ...candidate,
+      nodes: {
+        root: {
+          ...candidate.nodes.root,
+          title: ' 课程 ',
+          internalNote: 'must not escape validation',
+        },
+      },
+    };
+    const normalized = validateMindMapGenerationCandidateV3(
+      withExtraNodeField,
+      { ...targetValidationContext, targets },
+    );
+    const withLegacyTarget = structuredClone(candidate) as unknown as Record<
+      string,
+      unknown
+    >;
+    const legacyRoot = (
+      withLegacyTarget.nodes as Record<string, Record<string, unknown>>
+    ).root;
+    legacyRoot.sourceReferences = [{
+      sourceAlias: 'sources-0001',
+      target: {
+        scope: 'content',
+        anchorType: MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
+        anchorVersion: 1,
+        anchorPayload: {
+          ranges: [{ start: 0, end: 2, exact: '课程' }],
+        },
+      },
+    }];
+    const withExtraField = structuredClone(candidate) as unknown as Record<
+      string,
+      unknown
+    >;
+    const extraRoot = (
+      withExtraField.nodes as Record<string, Record<string, unknown>>
+    ).root;
+    extraRoot.sourceReferences = [{
+      ...(extraRoot.sourceReferences as readonly Record<string, unknown>[])[0],
+      note: 'not part of the protocol',
+    }];
+
+    expect(validateMindMapGenerationCandidateV3(
+      withLegacyTarget as never,
+      { ...targetValidationContext, targets },
+    ).ok).toBe(false);
+    expect(validateMindMapGenerationCandidateV3(
+      withExtraField as never,
+      { ...targetValidationContext, targets },
+    ).ok).toBe(false);
+    expect(normalized.ok).toBe(true);
+    if (normalized.ok) {
+      expect(normalized.value.nodes.root.title).toBe('课程');
+      expect(normalized.value.nodes.root).not.toHaveProperty('internalNote');
+    }
+  });
+
+  it('creates a v3 Asset, gives the Agent only the selected Workbench Target catalog and persists Targets', async () => {
+    let writtenContent: Uint8Array | undefined;
+    const assets = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      stageGeneratedFile: vi.fn(async () => ({
+        asset: { id: 'generated-asset' },
+        created: true,
+      })),
+      resolveContent: vi.fn(async () => ({
+        handle: {
+          readBytes: vi.fn(async () => ({
+            content: new Uint8Array(),
+            revision: 'initial-revision',
+          })),
+          writeBytes: vi.fn(async ({ content }) => {
+            writtenContent = content;
+            return { revision: 'final-revision' };
+          }),
+          close: vi.fn(async () => undefined),
+        },
+      })),
+      refresh: vi.fn(async () => ({ id: 'generated-asset' })),
+      delete: vi.fn(async () => undefined),
+    } as unknown as AssetServiceApi;
+    const associations = {
+      getActiveProjectId: vi.fn(() => 'project-1'),
+      ensureReference: vi.fn(() => ({ id: 'reference-asset-1' })),
+    } as unknown as AssetAssociationServiceApi;
+    const targets = createTargetRegistry();
+    const processor = new AssetTargetMindMapGenerationProcessor(
+      assets,
+      associations,
+      targets,
+      { readFile: vi.fn(async () => JSON.stringify(createTargetCandidate())) },
+    );
+    const processContext = createProcessContext({
+      assetReferences: targetValidationContext.assetReferences,
+    });
+
+    await expect(processor.process(processContext)).resolves.toEqual({
+      resultAssetId: 'generated-asset',
+    });
+    const generationCall = vi.mocked(processContext.agent.call).mock.calls[0]![0];
+    expect(generationCall.systemInstruction).toBe(
+      MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V3,
+    );
+    const targetCatalogText = generationCall.userMessage.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
+    expect(targetCatalogText).toContain(MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE);
+    expect(targetCatalogText).not.toContain('video.time-range');
+
+    const document = decodeMindMapDocument(writtenContent!);
+    expect(document.version).toBe(MIND_MAP_DOCUMENT_VERSION_V3);
+    if (document.version === MIND_MAP_DOCUMENT_VERSION_V3) {
+      expect(document.associations.nodes.root.references).toEqual([{
+        referenceId: 'reference-asset-1',
+        sourceRevision: 'revision-1',
+        target: createTargetCandidate().nodes.root.sourceReferences[0].target,
+      }]);
+      expect(document.associations.frames.overview?.references).toEqual([{
+        referenceId: 'reference-asset-1',
+        sourceRevision: 'revision-1',
+        target: { scope: 'asset' },
+      }]);
     }
   });
 
