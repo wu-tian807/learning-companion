@@ -36,9 +36,12 @@ import {
   subtitleTranslationInstructionFactory,
 } from './subtitle-translation-instruction';
 
-const MAXIMUM_TARGET_CUES = 16;
-const MAXIMUM_TARGET_CHARACTERS = 1_400;
+const FIRST_TARGET_CUES = 8;
+const FIRST_TARGET_CHARACTERS = 700;
+const MAXIMUM_TARGET_CUES = 32;
+const MAXIMUM_TARGET_CHARACTERS = 2_800;
 const CONTEXT_CUE_COUNT = 3;
+const TRANSLATION_CONCURRENCY = 3;
 
 export type SubtitleTranslationTaskResult = JsonValue & {
   readonly assetId: string;
@@ -75,16 +78,21 @@ export function splitSubtitleTranslationChunks(
   const chunks: SubtitleTranslationChunk[] = [];
   let startIndex = 0;
   while (startIndex < cues.length) {
+    const firstChunk = chunks.length === 0;
+    const cueLimit = firstChunk ? FIRST_TARGET_CUES : MAXIMUM_TARGET_CUES;
+    const characterLimit = firstChunk
+      ? FIRST_TARGET_CHARACTERS
+      : MAXIMUM_TARGET_CHARACTERS;
     let endIndex = startIndex;
     let characters = 0;
     while (
       endIndex < cues.length &&
-      endIndex - startIndex < MAXIMUM_TARGET_CUES
+      endIndex - startIndex < cueLimit
     ) {
       const cue = cues[endIndex]!;
       if (
         endIndex > startIndex &&
-        characters + cue.text.length > MAXIMUM_TARGET_CHARACTERS
+        characters + cue.text.length > characterLimit
       ) {
         break;
       }
@@ -222,6 +230,7 @@ async function translateChunk(
   chunkCount: number,
 ): Promise<readonly SubtitleTranslationCueV1[]> {
   const callKey = `translate-${String(chunk.index + 1).padStart(4, '0')}`;
+  const sessionKey = callKey;
   const prompt = createSubtitleTranslationChunkPrompt(
     chunk,
     context.instruction.sourceLanguage,
@@ -230,6 +239,7 @@ async function translateChunk(
   const call = await context.agent.call({
     callKey,
     purpose: `翻译字幕第 ${chunk.index + 1}/${chunkCount} 段`,
+    sessionKey,
     systemInstruction:
       '你是专业的中英双向字幕翻译员。严格保持输入 Cue 的身份和顺序，只翻译明确标记的 target。',
     userMessage: createTextAgentUserMessage(prompt),
@@ -245,6 +255,7 @@ async function translateChunk(
   const repair = await context.agent.call({
     callKey: `${callKey}-repair`,
     purpose: `修复字幕第 ${chunk.index + 1}/${chunkCount} 段格式`,
+    sessionKey,
     systemInstruction:
       '你只负责修复字幕翻译 JSON。不要解释，不要输出 Markdown。',
     userMessage: createTextAgentUserMessage(
@@ -307,23 +318,55 @@ export function createSubtitleTranslationTaskDefinition(
         throw new AppError('OPERATION_SUPERSEDED');
       }
       const chunks = splitSubtitleTranslationChunks(source.track.cues);
-      const translated: SubtitleTranslationCueV1[] = [];
-      for (const chunk of chunks) {
+      const translatedByChunk: Array<
+        readonly SubtitleTranslationCueV1[] | undefined
+      > = Array.from({ length: chunks.length });
+      let completedCueCount = 0;
+      const translateAndPublish = async (chunk: SubtitleTranslationChunk) => {
         context.signal?.throwIfAborted();
         context.reportStatus(
-          `正在翻译字幕 ${translated.length}/${source.track.cues.length}`,
+          `正在翻译字幕 ${completedCueCount}/${source.track.cues.length}`,
         );
         const cues = await translateChunk(context, chunk, chunks.length);
+        translatedByChunk[chunk.index] = cues;
         for (const cue of cues) {
-          translated.push(cue);
+          completedCueCount += 1;
           dependencies.progress.publish({
             assetId: context.instruction.assetId,
             sourceTrackRevision: context.instruction.sourceTrackRevision,
             cue,
-            completedCues: translated.length,
+            completedCues: completedCueCount,
             totalCues: source.track.cues.length,
           });
         }
+      };
+
+      const firstChunk = chunks[0];
+      if (firstChunk) await translateAndPublish(firstChunk);
+
+      const remainingChunks = chunks.slice(1);
+      let nextChunkIndex = 0;
+      const workers = Array.from(
+        {
+          length: Math.min(
+            TRANSLATION_CONCURRENCY,
+            remainingChunks.length,
+          ),
+        },
+        async () => {
+          while (true) {
+            const chunk = remainingChunks[nextChunkIndex];
+            nextChunkIndex += 1;
+            if (!chunk) return;
+            await translateAndPublish(chunk);
+          }
+        },
+      );
+      await Promise.all(workers);
+
+      const translated = translatedByChunk.flatMap((cues) => cues ?? []);
+      if (translated.length !== source.track.cues.length) {
+        throw new AppError('GENERATION_OUTPUT_INVALID');
       }
       const execution = context.agent.completedCalls.at(-1)?.metrics;
       if (!execution) throw new AppError('GENERATION_OUTPUT_INVALID');

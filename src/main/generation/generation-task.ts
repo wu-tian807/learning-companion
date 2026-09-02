@@ -160,7 +160,11 @@ export class GenerationTask {
   }): void {
     this.requireActive();
 
-    const previousSessionId = this.snapshot.agentCalls.at(-1)?.sessionId;
+    const previousSessionId = [...this.snapshot.agentCalls]
+      .reverse()
+      .find(
+        ({ sessionKey }) => sessionKey === input.checkpoint.sessionKey,
+      )?.sessionId;
 
     if (
       !this.snapshot.prepared ||

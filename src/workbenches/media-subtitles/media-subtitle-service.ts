@@ -306,6 +306,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       this.updateSnapshot(assetId, {
         ...this.getSnapshot(assetId),
         phase: 'transcribing',
+        sourceTrackRevision: undefined,
         message: '正在生成原文字幕…',
       });
       const artifact = await this.artifacts.getOrCreate(request);
@@ -326,6 +327,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       this.updateSnapshot(assetId, {
         phase: 'source-ready',
         source: track,
+        sourceTrackRevision: artifact.artifact.artifactRevision,
         partialTranslations: [],
         completedCues: 0,
         totalCues: track.cues.length,

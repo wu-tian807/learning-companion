@@ -75,6 +75,7 @@ describe('JsonSettingsRepository', () => {
       defaultProjectWorkspace: join(directory, 'config'),
       externalLibrariesPath: join(directory, 'config'),
       completedOnboardingVersion: 0,
+      agentProviderSelectorMigrationVersion: 2,
       agentProviderConnections: {},
       agentProviderSelectorSelections: {},
     });
@@ -189,7 +190,7 @@ describe('JsonSettingsRepository', () => {
     expect(stored.agentProviderSelectorConnections).toBeUndefined();
   });
 
-  it('migrates the former Workbench choice to medium and low intelligence', async () => {
+  it('migrates the former Workbench choice only to medium intelligence', async () => {
     const directory = await temporaryDirectory();
     const settingsFile = join(directory, 'settings.json');
     await writeFile(
@@ -216,23 +217,73 @@ describe('JsonSettingsRepository', () => {
     const repository = new JsonSettingsRepository(settingsFile);
     await repository.initialize();
 
-    for (const selectorId of ['intelligence-medium', 'intelligence-low']) {
-      expect(repository.getAgentProviderSelectorSelection(selectorId)).toEqual({
-        selectorId,
-        providerId: 'codex',
-        connectionId: 'codex-account',
-        modelId: 'configured-model',
-        reasoningEffort: 'medium',
-      });
-    }
+    expect(
+      repository.getAgentProviderSelectorSelection('intelligence-medium'),
+    ).toEqual({
+      selectorId: 'intelligence-medium',
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'configured-model',
+      reasoningEffort: 'medium',
+    });
+    expect(
+      repository.getAgentProviderSelectorSelection('intelligence-low'),
+    ).toBeUndefined();
     const stored = JSON.parse(await readFile(settingsFile, 'utf8'));
     expect(stored.agentProviderSelectorSelections.workbench).toBeUndefined();
+    expect(stored.agentProviderSelectorMigrationVersion).toBe(2);
 
     const restored = new JsonSettingsRepository(settingsFile);
     await restored.initialize();
     expect(
       restored.getAgentProviderSelectorSelection('intelligence-low'),
-    ).toMatchObject({ modelId: 'configured-model' });
+    ).toBeUndefined();
+  });
+
+  it('repairs the duplicated low-tier choice written by the first intelligence migration', async () => {
+    const directory = await temporaryDirectory();
+    const settingsFile = join(directory, 'settings.json');
+    const duplicated = {
+      providerId: 'codex',
+      connectionId: 'codex-account',
+      modelId: 'gpt-5.6-sol',
+      reasoningEffort: 'high',
+    };
+    await writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...DEFAULT_APP_PREFERENCES,
+        defaultProjectWorkspace: directory,
+        externalLibrariesPath: directory,
+        completedOnboardingVersion: CURRENT_ONBOARDING_VERSION,
+        agentProviderConnections: {},
+        agentProviderSelectorSelections: {
+          'intelligence-medium': {
+            selectorId: 'intelligence-medium',
+            ...duplicated,
+          },
+          'intelligence-low': {
+            selectorId: 'intelligence-low',
+            ...duplicated,
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const repository = new JsonSettingsRepository(settingsFile);
+    await repository.initialize();
+
+    expect(
+      repository.getAgentProviderSelectorSelection('intelligence-medium'),
+    ).toMatchObject(duplicated);
+    expect(
+      repository.getAgentProviderSelectorSelection('intelligence-low'),
+    ).toBeUndefined();
+    expect(
+      JSON.parse(await readFile(settingsFile, 'utf8'))
+        .agentProviderSelectorMigrationVersion,
+    ).toBe(2);
   });
 
   it('deleting a Connection also clears selectors that reference it', async () => {

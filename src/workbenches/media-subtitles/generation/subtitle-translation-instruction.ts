@@ -15,7 +15,7 @@ import {
 
 export const SUBTITLE_TRANSLATION_TASK_DEFINITION_ID =
   'builtin.media-subtitles.translate';
-export const SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION = 1;
+export const SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION = 3;
 export const SUBTITLE_TRANSLATION_INSTRUCTION_FORMAT =
   'media-subtitle-translation';
 

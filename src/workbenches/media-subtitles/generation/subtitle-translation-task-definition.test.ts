@@ -11,6 +11,7 @@ import type {
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import type {
   GenerationTaskProcessContext,
+  TaskAgentCallRequest,
   TaskAgentCallResult,
 } from '../../../main/generation/contracts/task-definition';
 import type { ProjectLookup } from '../../../main/projects/project-database';
@@ -55,19 +56,26 @@ function cue(index: number): SubtitleCueV1 {
   };
 }
 
-function callResult(callKey: string, output: string): TaskAgentCallResult {
+function callResult(
+  request: Pick<
+    TaskAgentCallRequest,
+    'callKey' | 'purpose' | 'sessionKey'
+  >,
+  output: string,
+): TaskAgentCallResult {
   return {
-    callKey,
-    purpose: 'translate',
+    callKey: request.callKey,
+    purpose: request.purpose,
+    ...(request.sessionKey ? { sessionKey: request.sessionKey } : {}),
     sessionId: 'session',
     assistantOutput: output,
     metrics: {
-      callKey,
-      purpose: 'translate',
+      callKey: request.callKey,
+      purpose: request.purpose,
       sessionId: 'session',
       providerId: 'codex',
       connectionId: 'connection',
-      modelId: 'gpt-5.6-sol',
+      modelId: 'gpt-5.6-luna',
       startedTime: 100,
       completedTime: 101,
       activeDurationMs: 1,
@@ -82,17 +90,29 @@ describe('subtitle translation TaskDefinition', () => {
     const cues = Array.from({ length: 18 }, (_, index) => cue(index + 1));
     const chunks = splitSubtitleTranslationChunks(cues);
     expect(chunks).toHaveLength(2);
-    expect(chunks[0]?.targets).toHaveLength(16);
+    expect(chunks[0]?.targets).toHaveLength(8);
     expect(chunks[1]?.targets.map(({ id }) => id)).toEqual([
+      'cue-9',
+      'cue-10',
+      'cue-11',
+      'cue-12',
+      'cue-13',
+      'cue-14',
+      'cue-15',
+      'cue-16',
       'cue-17',
       'cue-18',
     ]);
     expect(chunks[1]?.previous.map(({ id }) => id)).toEqual([
-      'cue-14',
-      'cue-15',
-      'cue-16',
+      'cue-6',
+      'cue-7',
+      'cue-8',
     ]);
-    expect(chunks[0]?.next.map(({ id }) => id)).toEqual(['cue-17', 'cue-18']);
+    expect(chunks[0]?.next.map(({ id }) => id)).toEqual([
+      'cue-9',
+      'cue-10',
+      'cue-11',
+    ]);
   });
 
   it('keeps an oversized Cue intact instead of inventing a text or timing split', () => {
@@ -125,12 +145,13 @@ describe('subtitle translation TaskDefinition', () => {
     ).toMatchObject({ ok: false });
   });
 
-  it('translates sequential chunks, repairs malformed JSON once and commits one Artifact', async () => {
+  it('prioritizes the first chunk, translates later chunks three at a time and preserves Cue order', async () => {
     await withDirectory(async (directory) => {
       const videoPath = join(directory, 'video.mp4');
       const sourcePath = join(directory, 'source.json');
       await writeFile(videoPath, 'video');
-      const cues = Array.from({ length: 18 }, (_, index) => cue(index + 1));
+      const cues = Array.from({ length: 105 }, (_, index) => cue(index + 1));
+      const chunks = splitSubtitleTranslationChunks(cues);
       const sourceTrack: SubtitleSourceTrackV1 = {
         version: 1,
         kind: 'subtitle-source',
@@ -222,20 +243,39 @@ describe('subtitle translation TaskDefinition', () => {
       const onProgress = vi.fn();
       progress.subscribe(onProgress);
       const completedCalls: TaskAgentCallResult[] = [];
-      const call = vi.fn(async (request: { readonly callKey: string }) => {
-        const chunkNumber = request.callKey.startsWith('translate-0002')
-          ? 2
-          : 1;
+      let activeTranslations = 0;
+      let maximumActiveTranslations = 0;
+      let releaseConcurrentTranslations: () => void = () => undefined;
+      const concurrentTranslationsStarted = new Promise<void>((resolve) => {
+        releaseConcurrentTranslations = resolve;
+      });
+      const call = vi.fn(async (request: TaskAgentCallRequest) => {
+        const chunkNumber = Number(
+          /translate-(\d{4})/u.exec(request.callKey)?.[1] ?? '1',
+        );
+        const chunk = chunks[chunkNumber - 1]!;
         let output: string;
         if (request.callKey === 'translate-0001') {
           output = 'not json';
         } else {
-          const target = chunkNumber === 1 ? cues.slice(0, 16) : cues.slice(16);
+          if (chunkNumber > 1) {
+            activeTranslations += 1;
+            maximumActiveTranslations = Math.max(
+              maximumActiveTranslations,
+              activeTranslations,
+            );
+            if (activeTranslations === 3) releaseConcurrentTranslations();
+            await concurrentTranslationsStarted;
+            activeTranslations -= 1;
+          }
           output = JSON.stringify({
-            translations: target.map(({ id }) => ({ id, text: `译文 ${id}` })),
+            translations: chunk.targets.map(({ id }) => ({
+              id,
+              text: `译文 ${id}`,
+            })),
           });
         }
-        const result = callResult(request.callKey, output);
+        const result = callResult(request, output);
         completedCalls.push(result);
         return result;
       });
@@ -269,13 +309,34 @@ describe('subtitle translation TaskDefinition', () => {
       );
 
       const result = await definition.process(context);
-      expect(call.mock.calls.map(([request]) => request.callKey)).toEqual([
+      expect(call.mock.calls.slice(0, 2).map(([request]) => request.callKey))
+        .toEqual([
+        'translate-0001',
+        'translate-0001-repair',
+      ]);
+      expect(
+        call.mock.calls.map(([request]) => request.callKey).sort(),
+      ).toEqual([
         'translate-0001',
         'translate-0001-repair',
         'translate-0002',
+        'translate-0003',
+        'translate-0004',
+        'translate-0005',
       ]);
+      expect(
+        call.mock.calls.map(([request]) => request.sessionKey),
+      ).toEqual([
+        'translate-0001',
+        'translate-0001',
+        'translate-0002',
+        'translate-0003',
+        'translate-0004',
+        'translate-0005',
+      ]);
+      expect(maximumActiveTranslations).toBe(3);
       expect(context.reportOutputRejected).toHaveBeenCalledOnce();
-      expect(onProgress).toHaveBeenCalledTimes(18);
+      expect(onProgress).toHaveBeenCalledTimes(105);
       expect(getOrCreate).toHaveBeenCalledOnce();
       expect(result).toMatchObject({
         artifactRevision: 'translation-revision',
@@ -283,10 +344,10 @@ describe('subtitle translation TaskDefinition', () => {
       const written = JSON.parse(
         await readFile(join(directory, 'translation.json'), 'utf8'),
       );
-      expect(written.cues).toHaveLength(18);
-      expect(written.cues[17]).toEqual({
-        sourceCueId: 'cue-18',
-        text: '译文 cue-18',
+      expect(written.cues).toHaveLength(105);
+      expect(written.cues[104]).toEqual({
+        sourceCueId: 'cue-105',
+        text: '译文 cue-105',
       });
     });
   });
