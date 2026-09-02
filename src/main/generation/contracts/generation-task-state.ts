@@ -29,7 +29,6 @@ export type GenerationTaskPreparedCheckpoint = Readonly<
 export interface GenerationTaskAgentCallCheckpoint {
   readonly callKey: string;
   readonly purpose: string;
-  readonly sessionKey?: string;
   readonly completedTime: number;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
@@ -142,14 +141,6 @@ function cloneAgentCallCheckpoint(
   return Object.freeze({
     callKey: requireText(checkpoint.callKey, `agentCalls[${index}].callKey`),
     purpose: requireText(checkpoint.purpose, `agentCalls[${index}].purpose`),
-    ...(checkpoint.sessionKey === undefined
-      ? {}
-      : {
-          sessionKey: requireText(
-            checkpoint.sessionKey,
-            `agentCalls[${index}].sessionKey`,
-          ),
-        }),
     completedTime: requireTime(
       checkpoint.completedTime,
       `agentCalls[${index}].completedTime`,
@@ -248,14 +239,8 @@ export function cloneGenerationTaskSnapshot(
     ? cloneFailure(snapshot.failure)
     : undefined;
   const callKeys = agentCalls.map(({ callKey }) => callKey);
+  const firstSessionId = agentCalls[0]?.sessionId;
   const lastCallTime = agentCalls.at(-1)?.completedTime;
-  const sessionIdsByKey = new Map<string | undefined, string>();
-  const hasInvalidSessionGroup = agentCalls.some((call) => {
-    const sessionId = sessionIdsByKey.get(call.sessionKey);
-    if (sessionId !== undefined) return sessionId !== call.sessionId;
-    sessionIdsByKey.set(call.sessionKey, call.sessionId);
-    return false;
-  });
 
   if (
     updatedTime < createdTime ||
@@ -278,14 +263,14 @@ export function cloneGenerationTaskSnapshot(
         ) !== assignedReasoningEffort)) ||
     (agentCalls.length > 0 && assignedConnectionId === undefined) ||
     new Set(callKeys).size !== callKeys.length ||
-    hasInvalidSessionGroup ||
     agentCalls.some(
       (call, index) =>
         !prepared ||
         call.completedTime < prepared.completedTime ||
         call.completedTime > updatedTime ||
         (index > 0 &&
-          call.completedTime < agentCalls[index - 1]!.completedTime),
+          call.completedTime < agentCalls[index - 1]!.completedTime) ||
+        call.sessionId !== firstSessionId,
     ) ||
     (completed &&
       (!prepared ||

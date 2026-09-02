@@ -24,9 +24,8 @@ import {
 } from '../contracts';
 import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from '../transcription-producer';
 import {
-  MediaSubtitleTranslationProducer,
-  SubtitleTranslationProgressHub,
-} from '../translation-producer';
+  MediaSubtitleTranslationChunkProducer,
+} from '../translation-chunk-artifact';
 import {
   SubtitleTranslationInstruction,
   subtitleTranslationInstructionFactory,
@@ -57,16 +56,12 @@ function cue(index: number): SubtitleCueV1 {
 }
 
 function callResult(
-  request: Pick<
-    TaskAgentCallRequest,
-    'callKey' | 'purpose' | 'sessionKey'
-  >,
+  request: Pick<TaskAgentCallRequest, 'callKey' | 'purpose'>,
   output: string,
 ): TaskAgentCallResult {
   return {
     callKey: request.callKey,
     purpose: request.purpose,
-    ...(request.sessionKey ? { sessionKey: request.sessionKey } : {}),
     sessionId: 'session',
     assistantOutput: output,
     metrics: {
@@ -136,16 +131,17 @@ describe('subtitle translation TaskDefinition', () => {
     expect(
       subtitleTranslationInstructionFactory.parse({
         format: 'media-subtitle-translation',
-        version: 1,
+        version: 2,
         assetId: 'video',
         sourceTrackRevision: 'revision',
         sourceLanguage: 'en',
         targetLanguage: 'en',
+        chunkIndex: 0,
       }),
     ).toMatchObject({ ok: false });
   });
 
-  it('prioritizes the first chunk, translates later chunks three at a time and preserves Cue order', async () => {
+  it('translates exactly one chunk and keeps its repair turn in the same task session', async () => {
     await withDirectory(async (directory) => {
       const videoPath = join(directory, 'video.mp4');
       const sourcePath = join(directory, 'source.json');
@@ -193,7 +189,7 @@ describe('subtitle translation TaskDefinition', () => {
           createdTime: 100,
         })),
       };
-      const producer = new MediaSubtitleTranslationProducer();
+      const producer = new MediaSubtitleTranslationChunkProducer();
       const getCached = vi.fn(async (request: AssetArtifactRequest) =>
         request.producerId === MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID
           ? {
@@ -225,11 +221,11 @@ describe('subtitle translation TaskDefinition', () => {
             assetId: 'video',
             producerId: producer.id,
             artifactKey: request.artifactKey,
-            relativePath: 'translation.json',
+            relativePath: 'translation-chunk.json',
             mediaType: produced.mediaType,
             sourceRevision: request.source.revision,
             producerVersion: producer.version,
-            artifactRevision: 'translation-revision',
+            artifactRevision: 'translation-chunk-revision',
             updatedTime: 200,
           },
         };
@@ -239,35 +235,13 @@ describe('subtitle translation TaskDefinition', () => {
         getCached,
         getOrCreate,
       } as AssetArtifactServiceApi;
-      const progress = new SubtitleTranslationProgressHub();
-      const onProgress = vi.fn();
-      progress.subscribe(onProgress);
       const completedCalls: TaskAgentCallResult[] = [];
-      let activeTranslations = 0;
-      let maximumActiveTranslations = 0;
-      let releaseConcurrentTranslations: () => void = () => undefined;
-      const concurrentTranslationsStarted = new Promise<void>((resolve) => {
-        releaseConcurrentTranslations = resolve;
-      });
       const call = vi.fn(async (request: TaskAgentCallRequest) => {
-        const chunkNumber = Number(
-          /translate-(\d{4})/u.exec(request.callKey)?.[1] ?? '1',
-        );
-        const chunk = chunks[chunkNumber - 1]!;
+        const chunk = chunks[0]!;
         let output: string;
         if (request.callKey === 'translate-0001') {
           output = 'not json';
         } else {
-          if (chunkNumber > 1) {
-            activeTranslations += 1;
-            maximumActiveTranslations = Math.max(
-              maximumActiveTranslations,
-              activeTranslations,
-            );
-            if (activeTranslations === 3) releaseConcurrentTranslations();
-            await concurrentTranslationsStarted;
-            activeTranslations -= 1;
-          }
           output = JSON.stringify({
             translations: chunk.targets.map(({ id }) => ({
               id,
@@ -284,6 +258,7 @@ describe('subtitle translation TaskDefinition', () => {
         sourceTrackRevision: 'source-artifact-revision',
         sourceLanguage: 'en',
         targetLanguage: 'zh-Hans',
+        chunkIndex: 0,
       });
       const context = {
         taskId: 'task',
@@ -301,7 +276,6 @@ describe('subtitle translation TaskDefinition', () => {
         artifacts,
         projects,
         producer,
-        progress,
         now: () => 300,
       });
       expect(definition.providerSelectorId).toBe(
@@ -319,35 +293,28 @@ describe('subtitle translation TaskDefinition', () => {
       ).toEqual([
         'translate-0001',
         'translate-0001-repair',
-        'translate-0002',
-        'translate-0003',
-        'translate-0004',
-        'translate-0005',
       ]);
-      expect(
-        call.mock.calls.map(([request]) => request.sessionKey),
-      ).toEqual([
-        'translate-0001',
-        'translate-0001',
-        'translate-0002',
-        'translate-0003',
-        'translate-0004',
-        'translate-0005',
-      ]);
-      expect(maximumActiveTranslations).toBe(3);
       expect(context.reportOutputRejected).toHaveBeenCalledOnce();
-      expect(onProgress).toHaveBeenCalledTimes(105);
       expect(getOrCreate).toHaveBeenCalledOnce();
       expect(result).toMatchObject({
-        artifactRevision: 'translation-revision',
+        chunkIndex: 0,
+        artifactRevision: 'translation-chunk-revision',
       });
       const written = JSON.parse(
-        await readFile(join(directory, 'translation.json'), 'utf8'),
+        await readFile(join(directory, 'translation-chunk.json'), 'utf8'),
       );
-      expect(written.cues).toHaveLength(105);
-      expect(written.cues[104]).toEqual({
-        sourceCueId: 'cue-105',
-        text: '译文 cue-105',
+      expect(written).toMatchObject({
+        kind: 'subtitle-translation-chunk',
+        chunkIndex: 0,
+        chunkCount: chunks.length,
+      });
+      expect(written.cues).toHaveLength(8);
+      expect(written.cues[7]).toEqual({
+        sourceCueId: 'cue-8',
+        text: '译文 cue-8',
+      });
+      expect(written).toMatchObject({
+        engine: { model: 'gpt-5.6-luna', backend: 'agent' },
       });
     });
   });

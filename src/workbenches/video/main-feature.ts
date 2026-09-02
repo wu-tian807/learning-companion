@@ -31,6 +31,7 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       mediaRuntime,
       mediaSubtitleSourceTaskQueue,
       context.generationTasks,
+      mediaSubtitleTranslationRuntime.producer,
       mediaSubtitleTranslationRuntime.progress,
       videoWorkbenchManifest.supportedMediaTypes,
       mediaSubtitleTranscriptionRuntime.progress,

@@ -29,6 +29,7 @@ export const audioMainWorkbenchContribution = composeMainWorkbenchContribution(
       mediaRuntime,
       mediaSubtitleSourceTaskQueue,
       context.generationTasks,
+      mediaSubtitleTranslationRuntime.producer,
       mediaSubtitleTranslationRuntime.progress,
       audioWorkbenchManifest.supportedMediaTypes,
       mediaSubtitleTranscriptionRuntime.progress,

@@ -31,7 +31,6 @@ export interface CompletedGenerationAgentRun {
 export interface GenerationAgentExecutionRequest {
   readonly callKey: string;
   readonly purpose: string;
-  readonly sessionKey?: string;
   readonly systemInstruction: string;
   readonly userMessage: AgentUserMessage;
   readonly toolRequirements: readonly AgentToolRequirement[];
@@ -94,9 +93,7 @@ export class GenerationAgentExecutor {
     const sessionLocator = createAgentSessionLocator({
       projectId: prepared.projectId,
       workspaceKey: prepared.workspaces.primary.key,
-      instanceKey: request.sessionKey
-        ? `${prepared.workspaces.primary.instanceKey}--${request.sessionKey}`
-        : prepared.workspaces.primary.instanceKey,
+      instanceKey: prepared.workspaces.primary.instanceKey,
     });
     signal.throwIfAborted();
     const turn = runner.runTurn({

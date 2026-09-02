@@ -39,16 +39,6 @@ function requireCallText(
   return normalized;
 }
 
-function requireSessionKey(value: string): string {
-  const normalized = value.trim();
-
-  if (!/^[a-z0-9][a-z0-9-]{0,63}$/u.test(normalized)) {
-    throw new Error('GenerationTask Agent sessionKey 数据无效');
-  }
-
-  return normalized;
-}
-
 function requireSystemInstruction(value: string): string {
   const normalized = value.trim();
 
@@ -107,9 +97,7 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
   private readonly now: () => number;
   private readonly emit: (event: GenerationAgentExecutionEvent) => void;
   private runner: GenerationAgentRunner | undefined;
-  private runnerPromise: Promise<GenerationAgentRunner> | undefined;
-  private readonly activeSessionKeys = new Set<string>();
-  private readonly activeCallKeys = new Set<string>();
+  private callActive = false;
 
   constructor(
     private readonly task: GenerationTask,
@@ -134,9 +122,6 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
         return Object.freeze({
           callKey: checkpoint.callKey,
           purpose: checkpoint.purpose,
-          ...(checkpoint.sessionKey
-            ? { sessionKey: checkpoint.sessionKey }
-            : {}),
           sessionId: checkpoint.sessionId,
           ...(checkpoint.providerExecutionId
             ? { providerExecutionId: checkpoint.providerExecutionId }
@@ -154,10 +139,6 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
     this.signal.throwIfAborted();
     const callKey = requireCallText(request.callKey, 'callKey');
     const purpose = requireCallText(request.purpose, 'purpose');
-    const sessionKey = request.sessionKey
-      ? requireSessionKey(request.sessionKey)
-      : undefined;
-    const activeSessionKey = sessionKey ?? '__default__';
     const systemInstruction = requireSystemInstruction(
       request.systemInstruction,
     );
@@ -172,38 +153,26 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
     );
 
     if (existing) {
-      if (
-        existing.purpose !== purpose ||
-        existing.sessionKey !== sessionKey
-      ) {
+      if (existing.purpose !== purpose) {
         throw new Error(
-          `GenerationTask Agent callKey ${callKey} 已用于其他调用`,
+          `GenerationTask Agent callKey ${callKey} 已用于其他 purpose`,
         );
       }
 
       return existing;
     }
 
-    if (
-      this.activeCallKeys.has(callKey) ||
-      this.activeSessionKeys.has(activeSessionKey)
-    ) {
+    if (this.callActive) {
       throw new Error('GenerationTask 不支持并行调用同一 Agent session');
     }
 
-    this.activeCallKeys.add(callKey);
-    this.activeSessionKeys.add(activeSessionKey);
+    this.callActive = true;
 
     try {
       const runner = await this.resolveRunner();
       this.signal.throwIfAborted();
-      const expectedSessionId = this.task
-        .getSnapshot()
-        .agentCalls.slice()
-        .reverse()
-        .find(
-          (checkpoint) => checkpoint.sessionKey === sessionKey,
-        )?.sessionId;
+      const expectedSessionId =
+        this.task.getSnapshot().agentCalls.at(-1)?.sessionId;
       const executionConfiguration = this.task.getSnapshot();
       const turn = this.executor.run(
         this.prepared,
@@ -211,7 +180,6 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
         {
           callKey,
           purpose,
-          ...(sessionKey ? { sessionKey } : {}),
           systemInstruction,
           userMessage,
           toolRequirements,
@@ -256,7 +224,6 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
         checkpoint: {
           callKey,
           purpose,
-          ...(sessionKey ? { sessionKey } : {}),
           completedTime,
           sessionId: completed.metrics.sessionId,
           ...(completed.providerExecutionId
@@ -268,10 +235,9 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
         updatedTime: completedTime,
       });
       this.database.update(this.task.getSnapshot());
-      return this.completedCalls.find((call) => call.callKey === callKey)!;
+      return this.completedCalls.at(-1)!;
     } finally {
-      this.activeCallKeys.delete(callKey);
-      this.activeSessionKeys.delete(activeSessionKey);
+      this.callActive = false;
     }
   }
 
@@ -280,20 +246,6 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
       return this.runner;
     }
 
-    if (!this.runnerPromise) {
-      this.runnerPromise = this.loadRunner();
-    }
-
-    try {
-      this.runner = await this.runnerPromise;
-      return this.runner;
-    } catch (error) {
-      this.runnerPromise = undefined;
-      throw error;
-    }
-  }
-
-  private async loadRunner(): Promise<GenerationAgentRunner> {
     const snapshot = this.task.getSnapshot();
     const assignedProviderId = snapshot.assignedProviderId;
     const assignedConnectionId = snapshot.assignedConnectionId;
@@ -337,6 +289,7 @@ export class GenerationTaskAgentSession implements TaskAgentSession {
       this.database.update(this.task.getSnapshot());
     }
 
+    this.runner = runner;
     return runner;
   }
 }

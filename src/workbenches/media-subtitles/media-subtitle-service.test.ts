@@ -24,6 +24,7 @@ import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media
 import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from './transcription-producer';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
+  MediaSubtitleTranslationProducer,
   SubtitleTranslationProgressHub,
 } from './translation-producer';
 import { MediaSubtitleService } from './media-subtitle-service';
@@ -213,6 +214,7 @@ async function serviceWithSource(
       runtimes(),
       new MediaSubtitleSourceTaskQueue(),
       tasks,
+      new MediaSubtitleTranslationProducer(),
       translationProgress,
       ['video/mp4'],
       transcriptionProgress,
@@ -340,6 +342,7 @@ describe('MediaSubtitleService', () => {
       },
       new MediaSubtitleSourceTaskQueue(),
       generationTasks(),
+      new MediaSubtitleTranslationProducer(),
       new SubtitleTranslationProgressHub(),
       ['audio/mpeg'],
     );
@@ -432,6 +435,7 @@ describe('MediaSubtitleService', () => {
         runtimes(),
         new MediaSubtitleSourceTaskQueue(),
         tasks,
+        new MediaSubtitleTranslationProducer(),
         new SubtitleTranslationProgressHub(),
         ['video/mp4'],
       );

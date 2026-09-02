@@ -1,7 +1,4 @@
-import type {
-  AssetArtifactRequest,
-  AssetArtifactServiceApi,
-} from '../../../main/artifacts/asset-artifact-service';
+import type { AssetArtifactServiceApi } from '../../../main/artifacts/asset-artifact-service';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
 import type {
@@ -17,18 +14,16 @@ import type { ProjectLookup } from '../../../main/projects/project-database';
 import { LOW_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/agent-provider-selectors';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
-  SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   type SubtitleCueV1,
   type SubtitleTranslationCueV1,
-  type SubtitleTranslationTrackV1,
   type TranslatableSubtitleLanguage,
 } from '../contracts';
 import { resolveCachedMediaSubtitleSource } from '../subtitle-source-artifact';
 import {
-  createSubtitleTranslationArtifactKey,
-  MediaSubtitleTranslationProducer,
-  SubtitleTranslationProgressHub,
-} from '../translation-producer';
+  createSubtitleTranslationChunkArtifactRequest,
+  MediaSubtitleTranslationChunkProducer,
+  type SubtitleTranslationChunkArtifactV1,
+} from '../translation-chunk-artifact';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
   SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
@@ -41,12 +36,11 @@ const FIRST_TARGET_CHARACTERS = 700;
 const MAXIMUM_TARGET_CUES = 32;
 const MAXIMUM_TARGET_CHARACTERS = 2_800;
 const CONTEXT_CUE_COUNT = 3;
-const TRANSLATION_CONCURRENCY = 3;
-
 export type SubtitleTranslationTaskResult = JsonValue & {
   readonly assetId: string;
   readonly sourceTrackRevision: string;
   readonly targetLanguage: TranslatableSubtitleLanguage;
+  readonly chunkIndex: number;
   readonly artifactRevision: string;
 };
 
@@ -63,8 +57,7 @@ export interface SubtitleTranslationTaskDefinitionDependencies {
   readonly assets: AssetServiceApi;
   readonly artifacts: AssetArtifactServiceApi;
   readonly projects: ProjectLookup;
-  readonly producer: MediaSubtitleTranslationProducer;
-  readonly progress: SubtitleTranslationProgressHub;
+  readonly producer: MediaSubtitleTranslationChunkProducer;
   readonly now?: () => number;
 }
 
@@ -230,7 +223,6 @@ async function translateChunk(
   chunkCount: number,
 ): Promise<readonly SubtitleTranslationCueV1[]> {
   const callKey = `translate-${String(chunk.index + 1).padStart(4, '0')}`;
-  const sessionKey = callKey;
   const prompt = createSubtitleTranslationChunkPrompt(
     chunk,
     context.instruction.sourceLanguage,
@@ -239,7 +231,6 @@ async function translateChunk(
   const call = await context.agent.call({
     callKey,
     purpose: `翻译字幕第 ${chunk.index + 1}/${chunkCount} 段`,
-    sessionKey,
     systemInstruction:
       '你是专业的中英双向字幕翻译员。严格保持输入 Cue 的身份和顺序，只翻译明确标记的 target。',
     userMessage: createTextAgentUserMessage(prompt),
@@ -255,7 +246,6 @@ async function translateChunk(
   const repair = await context.agent.call({
     callKey: `${callKey}-repair`,
     purpose: `修复字幕第 ${chunk.index + 1}/${chunkCount} 段格式`,
-    sessionKey,
     systemInstruction:
       '你只负责修复字幕翻译 JSON。不要解释，不要输出 Markdown。',
     userMessage: createTextAgentUserMessage(
@@ -318,65 +308,24 @@ export function createSubtitleTranslationTaskDefinition(
         throw new AppError('OPERATION_SUPERSEDED');
       }
       const chunks = splitSubtitleTranslationChunks(source.track.cues);
-      const translatedByChunk: Array<
-        readonly SubtitleTranslationCueV1[] | undefined
-      > = Array.from({ length: chunks.length });
-      let completedCueCount = 0;
-      const translateAndPublish = async (chunk: SubtitleTranslationChunk) => {
-        context.signal?.throwIfAborted();
-        context.reportStatus(
-          `正在翻译字幕 ${completedCueCount}/${source.track.cues.length}`,
-        );
-        const cues = await translateChunk(context, chunk, chunks.length);
-        translatedByChunk[chunk.index] = cues;
-        for (const cue of cues) {
-          completedCueCount += 1;
-          dependencies.progress.publish({
-            assetId: context.instruction.assetId,
-            sourceTrackRevision: context.instruction.sourceTrackRevision,
-            cue,
-            completedCues: completedCueCount,
-            totalCues: source.track.cues.length,
-          });
-        }
-      };
-
-      const firstChunk = chunks[0];
-      if (firstChunk) await translateAndPublish(firstChunk);
-
-      const remainingChunks = chunks.slice(1);
-      let nextChunkIndex = 0;
-      const workers = Array.from(
-        {
-          length: Math.min(
-            TRANSLATION_CONCURRENCY,
-            remainingChunks.length,
-          ),
-        },
-        async () => {
-          while (true) {
-            const chunk = remainingChunks[nextChunkIndex];
-            nextChunkIndex += 1;
-            if (!chunk) return;
-            await translateAndPublish(chunk);
-          }
-        },
+      const chunk = chunks[context.instruction.chunkIndex];
+      if (!chunk) throw new AppError('OPERATION_SUPERSEDED');
+      context.reportStatus(
+        `正在翻译字幕第 ${chunk.index + 1}/${chunks.length} 段`,
       );
-      await Promise.all(workers);
-
-      const translated = translatedByChunk.flatMap((cues) => cues ?? []);
-      if (translated.length !== source.track.cues.length) {
-        throw new AppError('GENERATION_OUTPUT_INVALID');
-      }
+      const translated = await translateChunk(context, chunk, chunks.length);
       const execution = context.agent.completedCalls.at(-1)?.metrics;
       if (!execution) throw new AppError('GENERATION_OUTPUT_INVALID');
-      const track: SubtitleTranslationTrackV1 = Object.freeze({
+      const output: SubtitleTranslationChunkArtifactV1 = Object.freeze({
         version: 1,
-        kind: 'subtitle-translation',
+        kind: 'subtitle-translation-chunk',
         sourceTrackRevision: context.instruction.sourceTrackRevision,
         sourceLanguage: context.instruction.sourceLanguage,
         targetLanguage: context.instruction.targetLanguage,
-        profile: 'quality',
+        chunkIndex: chunk.index,
+        chunkCount: chunks.length,
+        startIndex: chunk.startIndex,
+        endIndex: chunk.endIndex,
         engine: Object.freeze({
           id: execution.providerId,
           version: String(SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION),
@@ -386,32 +335,26 @@ export function createSubtitleTranslationTaskDefinition(
         generatedTime: now(),
         cues: Object.freeze(translated),
       });
-      const request: AssetArtifactRequest = {
+      const request = createSubtitleTranslationChunkArtifactRequest({
         assetId: context.instruction.assetId,
-        producerId: dependencies.producer.id,
-        artifactKey: createSubtitleTranslationArtifactKey(
-          context.instruction.sourceLanguage,
-          context.instruction.targetLanguage,
-        ),
         workspacePath: source.request.workspacePath,
-        source: {
-          assetId: context.instruction.assetId,
-          mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
-          absolutePath: source.artifact.absolutePath,
-          revision: context.instruction.sourceTrackRevision,
-        },
-      };
-      context.reportStatus('正在保存字幕译文…');
+        sourceArtifact: source.artifact,
+        sourceLanguage: context.instruction.sourceLanguage,
+        targetLanguage: context.instruction.targetLanguage,
+        chunkIndex: chunk.index,
+      });
+      context.reportStatus(`正在保存字幕第 ${chunk.index + 1} 段…`);
       const artifact = await dependencies.producer.materialize(
         dependencies.artifacts,
         request,
-        track,
+        output,
         context.signal,
       );
       return Object.freeze({
         assetId: context.instruction.assetId,
         sourceTrackRevision: context.instruction.sourceTrackRevision,
         targetLanguage: context.instruction.targetLanguage,
+        chunkIndex: chunk.index,
         artifactRevision: artifact.artifact.artifactRevision,
       });
     },

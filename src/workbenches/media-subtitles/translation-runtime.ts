@@ -2,6 +2,7 @@ import {
   MediaSubtitleTranslationProducer,
   SubtitleTranslationProgressHub,
 } from './translation-producer';
+import { MediaSubtitleTranslationChunkProducer } from './translation-chunk-artifact';
 
 /**
  * App-lifetime translation collaborators shared by the subtitle task and the
@@ -10,5 +11,6 @@ import {
  */
 export const mediaSubtitleTranslationRuntime = Object.freeze({
   producer: new MediaSubtitleTranslationProducer(),
+  chunkProducer: new MediaSubtitleTranslationChunkProducer(),
   progress: new SubtitleTranslationProgressHub(),
 });

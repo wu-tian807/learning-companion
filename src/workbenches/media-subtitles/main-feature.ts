@@ -30,6 +30,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
       ),
     );
     artifacts.register(mediaSubtitleTranslationRuntime.producer);
+    artifacts.register(mediaSubtitleTranslationRuntime.chunkProducer);
     artifacts.register(mediaSubtitleSrtRuntime.producer);
   },
   registerGeneration({ definitions, assets, artifacts, projects }): void {
@@ -38,8 +39,7 @@ export const mediaSubtitlesMainFeature = Object.freeze({
         assets,
         artifacts,
         projects,
-        producer: mediaSubtitleTranslationRuntime.producer,
-        progress: mediaSubtitleTranslationRuntime.progress,
+        producer: mediaSubtitleTranslationRuntime.chunkProducer,
       }),
     );
   },

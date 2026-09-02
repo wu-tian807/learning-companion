@@ -39,12 +39,6 @@ export interface TaskAgentCallRequest {
    */
   readonly callKey: string;
   readonly purpose: string;
-  /**
-   * Stable Provider-session group inside this task. Calls with the same key
-   * continue one conversation and stay serialized; different keys may run in
-   * parallel. Omit it for the task's default sequential conversation.
-   */
-  readonly sessionKey?: string;
   /** Complete instructions for this turn. No Task-level default is applied. */
   readonly systemInstruction: string;
   readonly userMessage: AgentUserMessage;
@@ -58,7 +52,6 @@ export interface TaskAgentCallRequest {
 export interface TaskAgentCallResult {
   readonly callKey: string;
   readonly purpose: string;
-  readonly sessionKey?: string;
   readonly sessionId: string;
   readonly providerExecutionId?: string;
   /** Missing only for checkpoints created before final-output persistence. */
