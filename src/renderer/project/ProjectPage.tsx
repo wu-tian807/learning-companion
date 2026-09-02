@@ -77,7 +77,6 @@ export function ProjectPage({
   const layout = useProjectLayout();
   const {
     closeOverlays,
-    closeRight,
     openOverlay,
     openRight,
     toggleLeft,
@@ -186,9 +185,9 @@ export function ProjectPage({
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
-      closeRight();
+      openRight('generation');
     }
-  }, [closeRight, conversationRuntime, layout.rightPanel]);
+  }, [conversationRuntime, layout.rightPanel, openRight]);
   const toggleLeftPanel = useCallback(() => {
     if (
       layout.mode === 'small' &&
@@ -206,17 +205,14 @@ export function ProjectPage({
     toggleLeft,
   ]);
   const toggleGenerationPanel = useCallback(() => {
-    if (
-      conversationSnapshot.panelOpen &&
-      layout.mode !== 'wide'
-    ) {
+    if (conversationSnapshot.panelOpen) {
       dismissConversationPanel();
+      return;
     }
     toggleRight('generation');
   }, [
     conversationSnapshot.panelOpen,
     dismissConversationPanel,
-    layout.mode,
     toggleRight,
   ]);
   const toggleConversationPanel = useCallback(() => {
@@ -229,14 +225,11 @@ export function ProjectPage({
     }
 
     conversationRuntime.open();
-    openRight(
-      layout.mode === 'wide' ? 'generation' : 'conversation',
-    );
+    openRight('conversation');
   }, [
     conversationRuntime,
     conversationSnapshot.panelOpen,
     dismissConversationPanel,
-    layout.mode,
     layout.rightPanel,
     openRight,
   ]);
@@ -295,16 +288,12 @@ export function ProjectPage({
 
   useEffect(() => {
     if (conversationSnapshot.panelOpen) {
-      openRight(
-        layout.mode === 'wide' ? 'generation' : 'conversation',
-      );
+      openRight('conversation');
     } else if (layout.rightPanel === 'conversation') {
-      closeRight();
+      openRight('generation');
     }
   }, [
-    closeRight,
     conversationSnapshot.panelOpen,
-    layout.mode,
     layout.rightPanel,
     openRight,
   ]);
@@ -469,22 +458,6 @@ export function ProjectPage({
                   onError={setError}
                 />
               </div>
-              {layout.mode === 'wide' &&
-                conversationSnapshot.panelOpen && (
-                  <div
-                    id="project-conversation-panel"
-                    className="h-full min-h-0 w-[clamp(318px,20vw,390px)] min-w-0 shrink-0"
-                  >
-                    <ConversationPanelHost
-                      projectId={project.id}
-                      historyStore={conversationHistoryStore}
-                      onClose={closeConversationPanel}
-                      onSelectAsset={selectConversationAsset}
-                      onOpenSettings={onOpenSettings}
-                      onError={setError}
-                    />
-                  </div>
-                )}
               <ProjectRightPanelSlot
                 panel={layout.rightPanel}
                 inline={layout.rightInline}

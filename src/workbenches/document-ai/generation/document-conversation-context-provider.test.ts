@@ -25,7 +25,10 @@ afterEach(async () => {
 
 function createContext(input: {
   readonly mediaType: string;
+  readonly materializedMediaType?: string;
   readonly previewDataUrl?: string;
+  readonly selectedText?: string;
+  readonly question?: string;
 }) {
   const workspacePath = join(
     tmpdir(),
@@ -36,7 +39,7 @@ function createContext(input: {
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
     assetId: "asset-1",
     conversationId: "conversation-1",
-    question: "这个框里的公式是什么意思？",
+    question: input.question ?? "这个框里的公式是什么意思？",
     context: createDocumentConversationContext({
       target: {
         scope: "content",
@@ -52,6 +55,7 @@ function createContext(input: {
       },
       pageNumber: 3,
       ...(input.previewDataUrl ? { previewDataUrl: input.previewDataUrl } : {}),
+      ...(input.selectedText ? { selectedText: input.selectedText } : {}),
     }),
   });
 
@@ -77,6 +81,9 @@ function createContext(input: {
             alias: "source",
             name: "slides.pptx",
             mediaType: input.mediaType,
+            ...(input.materializedMediaType
+              ? { materializedMediaType: input.materializedMediaType }
+              : {}),
             relativePath: "references/source/slides.pptx",
             contentRevision: "revision-1",
           },
@@ -104,7 +111,9 @@ describe("DocumentConversationContextProvider", () => {
     const { context } = createContext({
       mediaType:
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      materializedMediaType: "application/pdf",
       previewDataUrl: `data:image/png;base64,${png.toString("base64")}`,
+      question: "请用通俗易懂的语言解释我框选的内容。",
     });
 
     const prepared = await new DocumentConversationContextProvider().prepare(
@@ -112,6 +121,7 @@ describe("DocumentConversationContextProvider", () => {
     );
 
     expect(prepared.toolRequirements).toEqual([]);
+    expect(prepared.statusMessage).toBe("正在快速回答框选内容…");
     expect(prepared.userMessage.content).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -129,10 +139,11 @@ describe("DocumentConversationContextProvider", () => {
     await expect(readFile(image.path)).resolves.toEqual(png);
   });
 
-  it("does not invoke the PDF reader when a selected-region image is supplied", async () => {
+  it("uses the no-tool fast path for a basic selected-region question", async () => {
     const { context } = createContext({
       mediaType: "application/pdf",
       previewDataUrl: `data:image/png;base64,${Buffer.from("pdf crop").toString("base64")}`,
+      question: "请简洁总结我框选内容的核心信息。",
     });
 
     const prepared = await new DocumentConversationContextProvider().prepare(
@@ -140,6 +151,56 @@ describe("DocumentConversationContextProvider", () => {
     );
 
     expect(prepared.toolRequirements).toEqual([]);
+  });
+
+  it("uses the no-tool fast path for a basic selected-text question", async () => {
+    const { context } = createContext({
+      mediaType: "application/pdf",
+      selectedText: "只看这段框选文字",
+      question: "请翻译我框选的内容；如果主要是中文则翻译成英文，否则翻译成中文。",
+    });
+
+    const prepared = await new DocumentConversationContextProvider().prepare(
+      context,
+    );
+
+    expect(prepared.toolRequirements).toEqual([]);
+    expect(prepared.statusMessage).toBe("正在快速回答框选内容…");
+    expect(JSON.stringify(prepared.userMessage)).toContain("只看这段框选文字");
+  });
+
+  it("keeps optional context available for an implicit-context question", async () => {
+    const { context } = createContext({
+      mediaType: "application/pdf",
+      selectedText: "这个结论成立",
+      question: "为什么会这样？",
+    });
+
+    const prepared = await new DocumentConversationContextProvider().prepare(
+      context,
+    );
+
+    expect(prepared.toolRequirements).toEqual([
+      { id: PDF_READ_FUNCTION_TOOL_ID, availability: "optional" },
+    ]);
+    expect(prepared.statusMessage).toBe("正在结合框选内容回答…");
+  });
+
+  it("offers nearby document context when the selected question explicitly needs it", async () => {
+    const { context } = createContext({
+      mediaType: "application/pdf",
+      selectedText: "这个术语",
+      question: "结合前文解释这里的术语为什么这样定义",
+    });
+
+    const prepared = await new DocumentConversationContextProvider().prepare(
+      context,
+    );
+
+    expect(prepared.toolRequirements).toEqual([
+      { id: PDF_READ_FUNCTION_TOOL_ID, availability: "optional" },
+    ]);
+    expect(prepared.statusMessage).toBe("正在结合框选内容回答…");
   });
 
   it("keeps the PDF reader for questions without a usable selection image", async () => {

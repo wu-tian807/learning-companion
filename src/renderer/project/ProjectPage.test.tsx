@@ -134,7 +134,23 @@ describe('ProjectPage Project conversation lifecycle', () => {
       container.querySelector('[data-testid="project-conversation-panel"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="generation-center"]'),
-    ).not.toBeNull();
+      container
+        .querySelector('[data-testid="generation-center"]')
+        ?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('true');
+
+    await act(async () => button!.click());
+
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      container
+        .querySelector('[data-testid="project-conversation-panel"]')
+        ?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('true');
+    expect(
+      container
+        .querySelector('[data-testid="generation-center"]')
+        ?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('false');
   });
 });

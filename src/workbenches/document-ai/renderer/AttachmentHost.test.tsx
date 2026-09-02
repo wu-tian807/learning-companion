@@ -79,7 +79,7 @@ describe('AttachmentHost', () => {
     expect(ATTACHMENT_MARKER_MOTION_CLASS).not.toContain('transition-all');
   });
 
-  it('keeps the AI reply card collapsed until the user opens the marker', async () => {
+  it('opens attachment details from the marker and leaves no inline card after closing', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -107,7 +107,21 @@ describe('AttachmentHost', () => {
     );
     expect(marker).not.toBeNull();
     await act(async () => marker!.click());
-    expect(container.innerHTML).toContain('AI 回复内容');
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(document.body.textContent).toContain('附着内容');
+    expect(document.body.textContent).toContain('AI 回复内容');
+    expect(container.innerHTML).not.toContain('aria-label="收起 AI 回复"');
+
+    const closeDetails = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent === '✕');
+    expect(closeDetails).not.toBeNull();
+    await act(async () => closeDetails!.click());
+    expect(document.body.textContent).not.toContain('附着内容');
+    expect(container.innerHTML).not.toContain('AI 回复内容');
 
     act(() => root.unmount());
   });

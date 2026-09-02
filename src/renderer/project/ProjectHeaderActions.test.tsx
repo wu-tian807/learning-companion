@@ -60,11 +60,11 @@ describe('ProjectHeaderActions', () => {
     expect(chatButton).toContain('aria-expanded="false"');
   });
 
-  it('shows chat and generation as independent wide-layout panels', () => {
+  it('shows chat and generation as mutually exclusive right-panel views', () => {
     const markup = renderToStaticMarkup(
       <ProjectHeaderActions
         leftOpen
-        rightPanel="generation"
+        rightPanel="conversation"
         conversationOpen
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
@@ -77,10 +77,10 @@ describe('ProjectHeaderActions', () => {
       /<button[^>]*aria-label="关闭 AI 问答"[^>]*>/u,
     )?.[0];
     const generationButton = markup.match(
-      /<button[^>]*aria-label="收起生成中心"[^>]*>/u,
+      /<button[^>]*aria-label="展开生成中心"[^>]*>/u,
     )?.[0];
 
     expect(chatButton).toContain('aria-expanded="true"');
-    expect(generationButton).toContain('aria-expanded="true"');
+    expect(generationButton).toContain('aria-expanded="false"');
   });
 });

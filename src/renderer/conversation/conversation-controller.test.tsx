@@ -22,6 +22,7 @@ import {
 } from './conversation-controller';
 import type { ConversationTaskClient } from './conversation-task-client';
 import type { ConversationModeDefinition } from './conversation-mode';
+import { projectConversationMode } from './project-conversation-mode';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -440,17 +441,63 @@ describe('shared Conversation controller', () => {
 
     expect(latest.state.conversation.messages).toEqual([
       expect.objectContaining({ role: 'user', text: '问题', context }),
+      expect.objectContaining({
+        role: 'assistant',
+        text: '回答失败：请先配置模型',
+        stopped: true,
+      }),
     ]);
     expect(latest.state.draft).toBe('');
     expect(latest.state.pendingContext).toBeUndefined();
     expect(historyStore.save).toHaveBeenCalledWith(expect.objectContaining({
-      messages: [expect.objectContaining({ role: 'user', text: '问题', context })],
+      messages: [
+        expect.objectContaining({ role: 'user', text: '问题', context }),
+        expect.objectContaining({
+          role: 'assistant',
+          text: '回答失败：请先配置模型',
+        }),
+      ],
     }));
     expect(latest.state.error).toEqual({
       code: 'AGENT_PROVIDER_SELECTION_REQUIRED',
       message: '请先配置模型',
     });
     expect(onContextReleased).toHaveBeenCalledWith(context);
+  });
+
+  it('persists the question and a visible failure when task preparation fails', async () => {
+    const historyStore = createMemoryHistory();
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      task: {
+        ...projectConversationMode.task,
+        createRequest() {
+          throw new Error('上下文无效');
+        },
+      },
+    };
+    render({ historyStore, mode });
+
+    act(() => latest.actions.submit('仍需保留的问题'));
+    await flush();
+
+    expect(client.start).not.toHaveBeenCalled();
+    expect(latest.state.conversation.messages).toEqual([
+      expect.objectContaining({ role: 'user', text: '仍需保留的问题' }),
+      expect.objectContaining({
+        role: 'assistant',
+        text: expect.stringContaining('回答失败'),
+        stopped: true,
+      }),
+    ]);
+    expect(historyStore.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: 'user', text: '仍需保留的问题' }),
+          expect.objectContaining({ role: 'assistant', stopped: true }),
+        ]),
+      }),
+    );
   });
 
   it('persists a sent question before the Generation Task is accepted', async () => {

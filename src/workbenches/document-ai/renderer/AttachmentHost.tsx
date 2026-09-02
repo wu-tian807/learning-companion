@@ -444,13 +444,7 @@ export function AttachmentHost({
   const handleMarkerClick = useCallback(
     (attachmentId: string, event: ReactMouseEvent) => {
       event.stopPropagation();
-      setCollapsedAttachmentIds((current) => {
-        if (!current.has(attachmentId)) return current;
-        const next = new Set(current);
-        next.delete(attachmentId);
-        return next;
-      });
-      setActivePopupId((prev) => (prev === attachmentId ? null : attachmentId));
+      setActivePopupId(attachmentId);
       onAttachmentClick?.(attachmentId);
     },
     [onAttachmentClick],

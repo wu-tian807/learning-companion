@@ -19,13 +19,16 @@ describe('ProjectRightPanelSlot', () => {
     expect(render(null)).toBe('');
   });
 
-  it('renders exactly one selected panel in the inline third column', () => {
+  it('keeps both panels mounted while showing only the selected inline view', () => {
     const generation = render('generation');
 
     expect(generation).toContain('id="project-right-panel"');
     expect(generation).toContain('data-project-right-panel="generation"');
     expect(generation).toContain('data-panel-content="generation"');
-    expect(generation).not.toContain('data-panel-content="conversation"');
+    expect(generation).toContain('data-panel-content="conversation"');
+    expect(generation).toMatch(
+      /class="hidden" aria-hidden="true"><div data-panel-content="conversation"/u,
+    );
   });
 
   it('uses the same right slot for the conversation overlay', () => {
@@ -33,7 +36,10 @@ describe('ProjectRightPanelSlot', () => {
 
     expect(conversation).toContain('data-project-right-panel="conversation"');
     expect(conversation).toContain('data-panel-content="conversation"');
-    expect(conversation).not.toContain('data-panel-content="generation"');
+    expect(conversation).toContain('data-panel-content="generation"');
+    expect(conversation).toMatch(
+      /class="hidden" aria-hidden="true"><div data-panel-content="generation"/u,
+    );
     expect(conversation).toContain('absolute');
     expect(conversation).toContain('right-0');
   });

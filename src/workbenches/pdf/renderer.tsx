@@ -144,16 +144,38 @@ export function capturePdfRegionPreview(
     sourceHeight - sy,
     Math.max(1, Math.ceil(region.height * sourceHeight)),
   );
-  const scale = Math.min(1, 180 / Math.max(sw, sh));
+  // Keep text and formulas legible in Office/PPT previews while staying below
+  // the persisted conversation-context limit. The old fixed 180px preview was
+  // often too small for slide text, so encode the largest bounded JPEG.
+  const maximumDataUrlLength = 56 * 1_024;
+  let maximumEdge = Math.min(960, Math.max(sw, sh));
   const preview = document.createElement('canvas');
-  preview.width = Math.max(1, Math.round(sw * scale));
-  preview.height = Math.max(1, Math.round(sh * scale));
   const context = preview.getContext('2d');
   if (!context) return undefined;
 
   try {
-    context.drawImage(source, sx, sy, sw, sh, 0, 0, preview.width, preview.height);
-    return preview.toDataURL('image/jpeg', 0.68);
+    while (maximumEdge >= 240) {
+      const scale = Math.min(1, maximumEdge / Math.max(sw, sh));
+      preview.width = Math.max(1, Math.round(sw * scale));
+      preview.height = Math.max(1, Math.round(sh * scale));
+      context.drawImage(
+        source,
+        sx,
+        sy,
+        sw,
+        sh,
+        0,
+        0,
+        preview.width,
+        preview.height,
+      );
+      for (const quality of [0.86, 0.74, 0.62]) {
+        const encoded = preview.toDataURL('image/jpeg', quality);
+        if (encoded.length <= maximumDataUrlLength) return encoded;
+      }
+      maximumEdge = Math.floor(maximumEdge * 0.75);
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -589,10 +611,10 @@ export function PdfDocumentWorkbenchView({
       assetId: asset.id,
       allowAnswerAttachments: true,
       answerActionPresentation: {
-        label: '显示在 PDF 原文旁',
-        selectionLabel: '在 PDF 原文旁显示选中片段',
-        successMessage: '已在 PDF 原文旁创建回复卡片',
-        failureMessage: '创建 PDF 原文回复卡片失败',
+        label: '附着原文',
+        selectionLabel: '附着原文',
+        successMessage: '已将回复附着到原文',
+        failureMessage: '附着原文失败',
       },
       onContextReleased() {
         setRegionActionMenu(undefined);
