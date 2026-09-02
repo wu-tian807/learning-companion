@@ -36,6 +36,12 @@ const textAttachment: AssetAttachment = {
   },
 };
 
+const textAttachment2: AssetAttachment = {
+  ...textAttachment,
+  id: 'attachment-text-2',
+  metadata: { questionPreview: '第二次提问' },
+};
+
 describe('AttachmentHost', () => {
   let containers: HTMLDivElement[];
 
@@ -188,6 +194,85 @@ describe('AttachmentHost', () => {
     });
     html = container.innerHTML;
     expect(html).toContain('批注 1');
+
+    act(() => root.unmount());
+  });
+
+  it('lets users choose which AI reply to view at one shared anchor', async () => {
+    const container = document.createElement('div');
+    containers.push(container);
+    document.body.appendChild(container);
+    vi.spyOn(window.learningCompanion, 'readAttachmentContent').mockImplementation(
+      async (request: { projectId: string; attachmentId: string }) => ({
+        question: '问题',
+        answer:
+          request.attachmentId === 'attachment-text-2'
+            ? '第二次的回复内容'
+            : '第一次的回复内容',
+      }),
+    );
+    const options = () =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          'button[role="option"]',
+        ),
+      );
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <AttachmentHost
+          attachments={[textAttachment, textAttachment2]}
+          assetId="asset"
+          projectId="project"
+          sidebarOpen={false}
+          onSidebarOpenChange={() => undefined}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    let html = container.innerHTML;
+    expect(html).not.toContain('第一次的回复内容');
+    const marker = container.querySelector<HTMLButtonElement>(
+      'button[title*="点击选择"]',
+    );
+    expect(marker).not.toBeNull();
+
+    await act(async () => {
+      marker?.click();
+      await Promise.resolve();
+    });
+    html = container.innerHTML;
+    expect(html).toContain('选择 AI 回复（2）');
+    expect(html).toContain('解释这里');
+    expect(html).toContain('第二次提问');
+
+    await act(async () => {
+      options()
+        .find((button) => button.textContent?.includes('第二次提问'))
+        ?.click();
+      await Promise.resolve();
+    });
+    html = container.innerHTML;
+    expect(html).toContain('第二次的回复内容');
+    expect(html).not.toContain('第一次的回复内容');
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[title*="点击选择"]')
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      options()
+        .find((button) => button.textContent?.includes('解释这里'))
+        ?.click();
+      await Promise.resolve();
+    });
+    html = container.innerHTML;
+    expect(html).toContain('第一次的回复内容');
+    expect(html).not.toContain('第二次的回复内容');
 
     act(() => root.unmount());
   });

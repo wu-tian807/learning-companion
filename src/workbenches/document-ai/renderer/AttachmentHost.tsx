@@ -167,7 +167,16 @@ function extractMetadataPreview(metadata: JsonValue): string {
 
 function attachmentAnchorKey(attachment: AssetAttachment): string {
   const position = extractPosition(attachment.target);
-  if (!position) return attachment.id;
+  if (!position) {
+    if (attachment.target.scope === 'content') {
+      return [
+        attachment.target.anchorType,
+        String(attachment.target.anchorVersion),
+        JSON.stringify(attachment.target.anchorPayload),
+      ].join(':');
+    }
+    return attachment.id;
+  }
   const round = (value: number | undefined) =>
     value === undefined ? '-' : value.toFixed(3);
   return [
@@ -401,6 +410,9 @@ export function AttachmentHost({
   const [collapsedAttachmentIds, setCollapsedAttachmentIds] = useState<
     ReadonlySet<string>
   >(new Set());
+  const [chooserGroupId, setChooserGroupId] = useState<string | null>(
+    null,
+  );
   const [hostSize, setHostSize] = useState<{
     readonly width: number;
     readonly height: number;
@@ -537,6 +549,25 @@ export function AttachmentHost({
     [onAttachmentClick],
   );
 
+  const selectGroupItem = useCallback(
+    (group: readonly AssetAttachment[], attachmentId: string) => {
+      setCollapsedAttachmentIds((current) => {
+        const next = new Set(current);
+        for (const item of group) {
+          if (item.id === attachmentId) {
+            next.delete(item.id);
+          } else {
+            next.add(item.id);
+          }
+        }
+        return next;
+      });
+      setChooserGroupId(null);
+      onAttachmentClick?.(attachmentId);
+    },
+    [onAttachmentClick],
+  );
+
   const handleClosePopup = useCallback(() => {
     setActivePopupId(null);
     setActiveBody(undefined);
@@ -602,11 +633,17 @@ export function AttachmentHost({
         const quote = extractQuote(att.target);
         const preview = extractMetadataPreview(att.metadata);
         const textAnchored = isTextAnchoredAttachment(att);
-        const cardOpen = !collapsedAttachmentIds.has(att.id);
+        const groupOpenItem = group.find(
+          (item) => !collapsedAttachmentIds.has(item.id),
+        );
+        const cardOpen = groupOpenItem?.id === att.id;
+        const anyGroupOpen = group.some(
+          (item) => !collapsedAttachmentIds.has(item.id),
+        );
         const isActive =
           group.some((item) => item.id === activeAttachmentId) ||
           group.some((item) => item.id === focusedAttachmentId) ||
-          (textAnchored && cardOpen);
+          (textAnchored && anyGroupOpen);
 
         if (!anchorRect) return null;
 
@@ -622,6 +659,20 @@ export function AttachmentHost({
           const markerSize = 22;
           const markerLeft = anchorRect.left + anchorRect.width;
           const markerTop = anchorRect.top + anchorRect.height / 2;
+          const activeItem =
+            group.find(
+              (item) => !collapsedAttachmentIds.has(item.id),
+            ) ?? att;
+          const activeBody = bodies.get(activeItem.id);
+          const {
+            answer: activeAnswer,
+            selectedAnswer: activeSelectedAnswer,
+          } = extractAnswerBody(activeBody);
+          const activeText = activeSelectedAnswer ?? activeAnswer;
+          const viewActive = () => {
+            setActivePopupId(activeItem.id);
+            onAttachmentClick?.(activeItem.id);
+          };
           const cardPosition = placeAnswerCard(
             {
               left: markerLeft,
@@ -635,8 +686,14 @@ export function AttachmentHost({
             <div key={att.id} className="contents">
               <button
                 type="button"
-                aria-label={cardOpen ? '收起 AI 回复' : '查看 AI 回复'}
-                title={preview || quote || '查看 AI 回复'}
+                aria-label={
+                  cardOpen ? '收起 AI 回复' : '查看 AI 回复'
+                }
+                title={
+                  group.length > 1
+                    ? `查看 AI 回复（${group.length} 条，点击选择）`
+                    : preview || quote || '查看 AI 回复'
+                }
                 className={`pointer-events-auto absolute z-30 grid cursor-pointer place-items-center rounded-full border transition-all ${
                   isActive
                     ? 'border-indigo-200 bg-indigo-400/60 text-white shadow-[0_0_0_3px_rgba(129,140,248,0.35)]'
@@ -648,18 +705,97 @@ export function AttachmentHost({
                   width: markerSize,
                   height: markerSize,
                 }}
-                onClick={(event) => handleMarkerClick(att.id, event)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (group.length > 1) {
+                    setChooserGroupId((current) =>
+                      current === att.id ? null : att.id,
+                    );
+                    onAttachmentClick?.(att.id);
+                    return;
+                  }
+                  handleMarkerClick(att.id, event);
+                }}
               >
                 {group.length > 1 ? group.length : '✦'}
               </button>
-              {cardPosition && attachedText && cardOpen && (
+              {group.length > 1 && chooserGroupId === att.id && (
+                <div
+                  role="listbox"
+                  aria-label="选择要查看的 AI 回复"
+                  className="pointer-events-auto absolute z-[60] w-72 overflow-hidden rounded-xl border border-indigo-400/45 bg-[#1b212b]/[0.98] shadow-[0_16px_48px_rgba(0,0,0,0.55)] backdrop-blur"
+                  style={{
+                    left: cardPosition?.left ?? markerLeft + markerSize,
+                    top: (cardPosition?.top ?? markerTop) + markerSize + 4,
+                  }}
+                >
+                  <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
+                    <span className="text-[10px] font-semibold text-indigo-300">
+                      选择 AI 回复（{group.length}）
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="关闭选择列表"
+                      onClick={() => setChooserGroupId(null)}
+                      className="grid size-5 place-items-center rounded-md text-[11px] text-slate-500 hover:bg-white/[0.06] hover:text-slate-200"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="max-h-[220px] space-y-1 overflow-y-auto p-1.5">
+                    {group.map((item, index) => {
+                      const itemBody = bodies.get(item.id);
+                      const {
+                        answer: itemAnswer,
+                        selectedAnswer: itemSelectedAnswer,
+                      } = extractAnswerBody(itemBody);
+                      const itemText =
+                        itemSelectedAnswer ?? itemAnswer ?? '';
+                      const itemPreview =
+                        extractMetadataPreview(item.metadata) ||
+                        (itemText
+                          ? Array.from(itemText).slice(0, 40).join('')
+                          : '');
+                      const open = !collapsedAttachmentIds.has(item.id);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="option"
+                          aria-selected={open}
+                          onClick={() => selectGroupItem(group, item.id)}
+                          className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${
+                            open
+                              ? 'bg-indigo-400/15 text-indigo-100'
+                              : 'text-slate-300 hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <span
+                            className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[9px] ${
+                              open
+                                ? 'bg-indigo-400/60 text-white'
+                                : 'bg-white/[0.08] text-slate-500'
+                            }`}
+                          >
+                            {index + 1}
+                          </span>
+                          <span className="line-clamp-2 min-w-0 flex-1 break-words">
+                            {itemPreview || `AI 回复 ${index + 1}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {cardPosition && activeText && anyGroupOpen && (
                 <ReplyCard
-                  attachedText={attachedText}
+                  attachedText={activeText}
                   position={cardPosition}
-                  onView={viewAttachment}
+                  onView={viewActive}
                   onClose={() =>
                     setCollapsedAttachmentIds((current) =>
-                      new Set(current).add(att.id),
+                      new Set(current).add(activeItem.id),
                     )
                   }
                 />
