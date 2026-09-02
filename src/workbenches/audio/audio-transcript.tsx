@@ -19,9 +19,6 @@ export interface AudioTranscriptSpeaker {
   readonly id: string;
   readonly label: string;
   readonly status: 'stable' | 'uncertain' | 'unknown';
-  readonly referenceMode: 'reference' | 'default' | 'unprepared';
-  readonly referenceStartSeconds?: number;
-  readonly referenceEndSeconds?: number;
 }
 
 export interface AudioTranscriptRow {
@@ -63,37 +60,11 @@ function speakerBadgeClass(speakerId: string): string {
 function speakerDescription(speaker: AudioTranscriptSpeaker): string {
   const certainty =
     speaker.status === 'uncertain'
-      ? '；该句归属不够稳定，不会用作声色参考候选'
+      ? '；该句说话人归属不够稳定'
       : speaker.status === 'unknown'
         ? '；未识别到可靠说话人'
         : '';
-  if (
-    speaker.referenceMode === 'reference' &&
-    speaker.referenceStartSeconds !== undefined &&
-    speaker.referenceEndSeconds !== undefined
-  ) {
-    return `${speaker.label}${certainty}；声色参考 ${formatMediaTime(
-      speaker.referenceStartSeconds,
-    )}–${formatMediaTime(speaker.referenceEndSeconds)}`;
-  }
-  if (speaker.referenceMode === 'unprepared') {
-    return `${speaker.label}${certainty}；字幕已识别说话人，配音声色参考尚未准备`;
-  }
-  return `${speaker.label}${certainty}；配音使用默认声线`;
-}
-
-function speakerReferenceLabel(speaker: AudioTranscriptSpeaker): string {
-  if (
-    speaker.referenceMode === 'reference' &&
-    speaker.referenceStartSeconds !== undefined &&
-    speaker.referenceEndSeconds !== undefined
-  ) {
-    return `参考 ${formatMediaTime(speaker.referenceStartSeconds)}–${formatMediaTime(
-      speaker.referenceEndSeconds,
-    )}`;
-  }
-  if (speaker.referenceMode === 'unprepared') return '待准备声色参考';
-  return '默认声线';
+  return `${speaker.label}${certainty}`;
 }
 
 export function resolveAudioTranscriptRows(
@@ -110,37 +81,20 @@ export function resolveAudioTranscriptRows(
   const assignments = new Map(
     (speakerTrack?.cues ?? []).map((cue) => [cue.sourceCueId, cue]),
   );
-  const profiles = new Map(
-    (speakerTrack?.profiles ?? []).map((profile) => [
-      profile.speakerId,
-      profile,
-    ]),
-  );
   return snapshot.source.cues.map((cue) => {
     const assignment = assignments.get(cue.id);
-    const profile = assignment
-      ? profiles.get(assignment.speakerId)
-      : undefined;
     const speaker =
-      assignment && profile
+      assignment
         ? {
             id: assignment.speakerId,
             label: speakerLabel(assignment.speakerId),
             status: assignment.status,
-            referenceMode: profile.mode,
-            ...(profile.mode === 'reference'
-              ? {
-                  referenceStartSeconds: profile.referenceStartMs / 1_000,
-                  referenceEndSeconds: profile.referenceEndMs / 1_000,
-                }
-              : {}),
           }
         : cue.speakerId
           ? {
               id: cue.speakerId,
               label: speakerLabel(cue.speakerId),
               status: 'stable' as const,
-              referenceMode: 'unprepared' as const,
             }
           : undefined;
     return {
@@ -223,7 +177,7 @@ const AudioTranscriptRowView = memo(function AudioTranscriptRowView({
       </span>
       <span className="min-w-0">
         {row.speaker && (
-          <span className="mb-1 flex items-center gap-2 text-[10px] leading-4">
+          <span className="mb-1 flex items-center text-[10px] leading-4">
             <span
               title={speakerTitle}
               aria-label={speakerTitle}
@@ -234,25 +188,24 @@ const AudioTranscriptRowView = memo(function AudioTranscriptRowView({
               {row.speaker.label}
               {row.speaker.status === 'uncertain' ? ' ?' : ''}
             </span>
-            <span className="text-slate-600">
-              {speakerReferenceLabel(row.speaker)}
-            </span>
           </span>
         )}
-        {mode !== 'translated' && (
+        {(mode === 'source' || mode === 'bilingual') && (
           <span className="block text-[13px] leading-5">
             {row.sourceText}
           </span>
         )}
-        {mode !== 'source' && (
+        {mode === 'translated' && (
+          <span className="block text-[13px] leading-5">
+            {row.translatedText ??
+              `〔原文 · 译文生成中〕${row.sourceText}`}
+          </span>
+        )}
+        {mode === 'bilingual' && (
           <span
-            className={`block leading-5 ${
-              mode === 'bilingual'
-                ? 'mt-1 text-[12px] text-indigo-200/70'
-                : 'text-[13px]'
-            }`}
+            className="mt-1 block text-[12px] leading-5 text-indigo-200/70"
           >
-            {row.translatedText ?? '正在翻译…'}
+            {row.translatedText ?? '〔正在翻译…〕'}
           </span>
         )}
       </span>
