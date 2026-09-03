@@ -8,5 +8,5 @@ export function displayEpubExplanationLocation(
   rendition: EpubExplanationLocationDisplay,
   explanation: EpubExplanationView,
 ): Promise<void> {
-  return rendition.display(explanation.target.anchorPayload.cfiRange);
+  return rendition.display(explanation.target.targetPayload.cfiRange);
 }

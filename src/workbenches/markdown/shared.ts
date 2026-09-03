@@ -2,7 +2,7 @@ import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
@@ -20,8 +20,8 @@ export const MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE =
   'markdown.source-range';
 export const MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE =
   'markdown.visual-selection';
-export const MARKDOWN_IMAGE_ANCHOR_TYPE = 'markdown.image-source';
-export const MARKDOWN_IMAGE_ANCHOR_VERSION = 1;
+export const MARKDOWN_IMAGE_TARGET_TYPE = 'markdown.image-source';
+export const MARKDOWN_IMAGE_TARGET_VERSION = 1;
 export const MARKDOWN_STATE_SCHEMA_VERSION = 1;
 export const MARKDOWN_RECOVERY_DATA_KEY = 'recovery-content';
 export const MARKDOWN_IMAGE_DIRECTORY = 'images';
@@ -178,10 +178,10 @@ export const markdownWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['text/markdown'],
   requiredContentCapabilities: ['read-bytes', 'write-bytes'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
     MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
-    MARKDOWN_IMAGE_ANCHOR_TYPE,
+    MARKDOWN_IMAGE_TARGET_TYPE,
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
@@ -290,13 +290,13 @@ function isSafeRelativePath(value: string): boolean {
   );
 }
 
-export interface MarkdownImageAnchorPayload {
+export interface MarkdownImageTargetPayload {
   readonly relativePath: string;
 }
 
-export function isMarkdownImageAnchorPayload(
+export function isMarkdownImageTargetPayload(
   value: unknown,
-): value is JsonValue & MarkdownImageAnchorPayload {
+): value is JsonValue & MarkdownImageTargetPayload {
   if (!isRecord(value)) return false;
   const relativePath = value.relativePath;
   return (
@@ -306,14 +306,14 @@ export function isMarkdownImageAnchorPayload(
   );
 }
 
-export function createMarkdownImageAnchorTarget(
+export function createMarkdownImageTarget(
   relativePath: string,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: MARKDOWN_IMAGE_ANCHOR_TYPE,
-    anchorVersion: MARKDOWN_IMAGE_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: MARKDOWN_IMAGE_TARGET_TYPE,
+    targetVersion: MARKDOWN_IMAGE_TARGET_VERSION,
+    targetPayload: {
       relativePath: relativePath.trim(),
     },
   };

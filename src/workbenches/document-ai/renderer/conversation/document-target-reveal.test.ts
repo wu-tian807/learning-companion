@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ContentAnchorTarget } from '../../../../shared/workbench/anchor';
-import { createTextRangeTarget } from '../../../../shared/workbench/text-range-anchor';
+import type { ContentAssetTarget } from '../../../../shared/workbench/asset-target';
+import { createTextRangeTarget } from '../../../../shared/workbench/text-range-target';
 import {
   rangeForExactText,
   rangeForTextOffsets,
@@ -11,7 +11,7 @@ import {
   scrollRangeIntoView,
   selectOffsetsInElement,
   selectTextInElement,
-} from './document-anchor-reveal';
+} from './document-target-reveal';
 
 const RANGE_ANCHOR_TYPE = 'test.text-range';
 
@@ -23,7 +23,7 @@ function rangeTarget(
   source: string,
   start: number,
   end: number,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return createTextRangeTarget(
     RANGE_ANCHOR_TYPE,
     source,
@@ -53,11 +53,11 @@ describe('resolveTextSelectionFromTarget', () => {
   });
 
   it('ignores anchors whose payload is not a text range', () => {
-    const target: ContentAnchorTarget = {
+    const target: ContentAssetTarget = {
       scope: 'content',
-      anchorType: RANGE_ANCHOR_TYPE,
-      anchorVersion: 1,
-      anchorPayload: { pageNumber: 1, x: 0, y: 0, width: 0.2, height: 0.2 },
+      targetType: RANGE_ANCHOR_TYPE,
+      targetVersion: 1,
+      targetPayload: { pageNumber: 1, x: 0, y: 0, width: 0.2, height: 0.2 },
     };
 
     expect(
@@ -69,9 +69,9 @@ describe('resolveTextSelectionFromTarget', () => {
     const collapsed = rangeTarget('hello', 2, 2);
     const blankExact = {
       scope: 'content',
-      anchorType: RANGE_ANCHOR_TYPE,
-      anchorVersion: 1,
-      anchorPayload: {
+      targetType: RANGE_ANCHOR_TYPE,
+      targetVersion: 1,
+      targetPayload: {
         ranges: [{ start: 1, end: 3, exact: '   ' }],
       },
     } as const;

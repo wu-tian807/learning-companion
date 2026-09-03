@@ -21,7 +21,7 @@ import {
 } from '../../../shared/workbench-conversation';
 import {
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isVideoConversationContext,
+  parseVideoConversationContext,
 } from '../conversation/video-conversation-context';
 import { isVideoFrameRegionTarget } from '../shared';
 import {
@@ -142,8 +142,8 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
     }
     return [...attachmentViews, ...taskViews].sort(
       (left, right) =>
-        left.target.anchorPayload.timeSeconds -
-          right.target.anchorPayload.timeSeconds ||
+        left.target.targetPayload.timeSeconds -
+          right.target.targetPayload.timeSeconds ||
         left.createdTime - right.createdTime ||
         left.id.localeCompare(right.id),
     );
@@ -255,7 +255,7 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
     const instruction = this.taskInstruction(snapshot);
     return instruction?.commitAnswer &&
       instruction.assetId !== undefined &&
-      isVideoConversationContext(instruction.context)
+      parseVideoConversationContext(instruction.context) !== undefined
       ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
   }
@@ -264,11 +264,13 @@ export class VideoExplanationService implements VideoExplanationServiceApi {
     snapshot: GenerationTaskSnapshot,
   ): VideoExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
-    const conversationContext = instruction?.context;
+    const conversationContext = parseVideoConversationContext(
+      instruction?.context,
+    );
     if (
       !instruction?.commitAnswer ||
       instruction.assetId === undefined ||
-      !isVideoConversationContext(conversationContext)
+      !conversationContext
     ) {
       return undefined;
     }

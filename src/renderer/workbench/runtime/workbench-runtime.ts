@@ -267,7 +267,7 @@ export class WorkbenchRuntime {
       target: WorkbenchInteractionSnapshot['focus'],
     ): boolean =>
       target === undefined ||
-      manifest.supportedAnchorTypes.includes(target.anchorType);
+      manifest.supportedTargetTypes.includes(target.targetType);
 
     if (!isSupportedTarget(interaction.focus)) {
       return false;

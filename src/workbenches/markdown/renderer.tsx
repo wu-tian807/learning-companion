@@ -37,15 +37,17 @@ import {
   resolveTextSelectionFromTarget,
   scrollRangeIntoView,
   selectTextInElement,
-} from '../document-ai/renderer/conversation/document-anchor-reveal';
+} from '../document-ai/renderer/conversation/document-target-reveal';
 import {
-  registerWorkbenchAnchorController,
-} from '../../renderer/workbench/host/workbench-anchor-bridge';
+  registerWorkbenchTargetController,
+} from '../../renderer/workbench/host/workbench-target-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
-import type { AssetTarget } from '../../shared/workbench/anchor';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
-import { resolveTextRangeSelection } from '../../shared/workbench/text-range-anchor';
+import type { AssetTarget } from '../../shared/workbench/asset-target';
+import {
+  createTextRangeTarget,
+  resolveTextRangeSelection,
+} from '../../shared/workbench/text-range-target';
 import { MarkdownEditorActionAdapter } from './markdown-editor-action-adapter';
 import { MarkdownEditorAdapter } from './markdown-editor-adapter';
 import {
@@ -72,10 +74,10 @@ import {
   markdownWorkbenchManifest,
   MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
   MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
-  MARKDOWN_IMAGE_ANCHOR_TYPE,
-  MARKDOWN_IMAGE_ANCHOR_VERSION,
-  createMarkdownImageAnchorTarget,
-  isMarkdownImageAnchorPayload,
+  MARKDOWN_IMAGE_TARGET_TYPE,
+  MARKDOWN_IMAGE_TARGET_VERSION,
+  createMarkdownImageTarget,
+  isMarkdownImageTargetPayload,
   markdownImageReferenceCandidates,
   type MarkdownBufferSyncResult,
   type MarkdownEditMode,
@@ -1243,7 +1245,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       conversationRuntime.open({
         ownerId: conversationOwnerId,
         context: createDocumentConversationContext({
-          target: createMarkdownImageAnchorTarget(relativePath),
+          target: createMarkdownImageTarget(relativePath),
           image: { relativePath },
         }),
         question: '请解释这张图片的内容。',
@@ -1374,21 +1376,21 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [],
   );
 
-  const resolveMarkdownAnchorRect = useCallback(
+  const resolveMarkdownTargetRect = useCallback(
     (target: AssetTarget) => {
       if (target.scope !== 'content') return undefined;
       const viewMode = viewStateRef.current.viewMode;
-      if (target.anchorType === MARKDOWN_IMAGE_ANCHOR_TYPE) {
+      if (target.targetType === MARKDOWN_IMAGE_TARGET_TYPE) {
         if (
-          target.anchorVersion !== MARKDOWN_IMAGE_ANCHOR_VERSION ||
-          !isMarkdownImageAnchorPayload(target.anchorPayload)
+          target.targetVersion !== MARKDOWN_IMAGE_TARGET_VERSION ||
+          !isMarkdownImageTargetPayload(target.targetPayload)
         ) {
           return undefined;
         }
         const image = findMarkdownImageByCandidates(
           wysiwygAdapterRef.current?.getEditableElement(),
           markdownImageReferenceCandidates(
-            target.anchorPayload.relativePath,
+            target.targetPayload.relativePath,
           ),
         );
         if (!image) return undefined;
@@ -1401,7 +1403,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           height: rect.height,
         };
       }
-      if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
+      if (target.targetType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
         const selection = resolveTextSelectionFromTarget(target, [
           MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
         ]);
@@ -1437,8 +1439,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         );
       }
 
-      if (target.anchorType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
-        const payload = target.anchorPayload as {
+      if (target.targetType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
+        const payload = target.targetPayload as {
           readonly exact?: unknown;
         };
         const text =
@@ -1468,23 +1470,23 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   );
 
   useEffect(() => {
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
+    return registerWorkbenchTargetController(
+      `${conversationOwnerId}.targets`,
       asset.id,
       {
         resolve(target) {
-          return resolveMarkdownAnchorRect(target);
+          return resolveMarkdownTargetRect(target);
         },
         reveal(target) {
           if (target.scope !== 'content') return false;
-          if (target.anchorType === MARKDOWN_IMAGE_ANCHOR_TYPE) {
+          if (target.targetType === MARKDOWN_IMAGE_TARGET_TYPE) {
             if (
-              target.anchorVersion !== MARKDOWN_IMAGE_ANCHOR_VERSION ||
-              !isMarkdownImageAnchorPayload(target.anchorPayload)
+              target.targetVersion !== MARKDOWN_IMAGE_TARGET_VERSION ||
+              !isMarkdownImageTargetPayload(target.targetPayload)
             ) {
               return false;
             }
-            const relativePath = target.anchorPayload.relativePath;
+            const relativePath = target.targetPayload.relativePath;
             const candidates =
               markdownImageReferenceCandidates(relativePath);
             if (viewStateRef.current.viewMode !== 'source') {
@@ -1523,7 +1525,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             }
             return false;
           }
-          if (target.anchorType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
+          if (target.targetType === MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE) {
             const selection = resolveTextSelectionFromTarget(target, [
               MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
             ]);
@@ -1532,8 +1534,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
               : false;
           }
 
-          if (target.anchorType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
-            const payload = target.anchorPayload as {
+          if (target.targetType === MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE) {
+            const payload = target.targetPayload as {
               readonly exact?: unknown;
             };
             const text =
@@ -1547,7 +1549,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   }, [
     asset.id,
     conversationOwnerId,
-    resolveMarkdownAnchorRect,
+    resolveMarkdownTargetRect,
     revealMarkdownSelection,
     revealMarkdownText,
   ]);
@@ -1562,11 +1564,11 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         viewState,
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
-        onAiExplain: (text, anchor) => {
+        onAiExplain: (text, target) => {
           conversationRuntime.open({
             ownerId: conversationOwnerId,
             context: createDocumentConversationContext({
-              target: anchor,
+              target,
               selectedText: text,
             }),
           });

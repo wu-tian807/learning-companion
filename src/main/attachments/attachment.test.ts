@@ -66,6 +66,25 @@ describe('AssetAttachment', () => {
     expect(attachment.metadata).toEqual({ format: 'markdown' });
   });
 
+  it('normalizes a persisted pre-Target attachment at the database boundary', () => {
+    const attachment = createAssetAttachment({
+      ...createInput(),
+      target: {
+        scope: 'content',
+        anchorType: 'pdf.page',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber: 3 },
+      } as never,
+    });
+
+    expect(attachment.target).toEqual({
+      scope: 'content',
+      targetType: 'pdf.page',
+      targetVersion: 1,
+      targetPayload: { pageNumber: 3 },
+    });
+  });
+
   it('rejects external content references', () => {
     expect(() =>
       createAssetAttachment({

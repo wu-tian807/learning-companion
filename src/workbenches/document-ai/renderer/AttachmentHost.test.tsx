@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
-  registerWorkbenchAnchorController,
-  resetWorkbenchAnchorControllerForTests,
-} from '../../../renderer/workbench/host/workbench-anchor-bridge';
+  registerWorkbenchTargetController,
+  resetWorkbenchTargetControllerForTests,
+} from '../../../renderer/workbench/host/workbench-target-bridge';
 import { AttachmentHost } from './AttachmentHost';
 
 const attachment: AssetAttachment = {
@@ -28,9 +28,9 @@ const textAttachment: AssetAttachment = {
   id: 'attachment-text',
   target: {
     scope: 'content',
-    anchorType: 'text.range',
-    anchorVersion: 1,
-    anchorPayload: {
+    targetType: 'text.range',
+    targetVersion: 1,
+    targetPayload: {
       ranges: [{ start: 4, end: 18, exact: '选中问题文本' }],
     },
   },
@@ -59,14 +59,14 @@ describe('AttachmentHost', () => {
         answer: 'AI 回复内容',
       })),
     };
-    registerWorkbenchAnchorController('test', 'asset', {
+    registerWorkbenchTargetController('test', 'asset', {
       resolve: () => ({ left: 100, top: 120, width: 60, height: 30 }),
       reveal: () => true,
     });
   });
 
   afterEach(() => {
-    resetWorkbenchAnchorControllerForTests();
+    resetWorkbenchTargetControllerForTests();
     for (const container of containers) {
       container.remove();
     }
@@ -87,7 +87,7 @@ describe('AttachmentHost', () => {
     expect(html).not.toContain('文档标注');
   });
 
-  it('renders the boxed AI reply card at the original anchor position', async () => {
+  it('renders the boxed AI reply card at the original Target position', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -114,7 +114,7 @@ describe('AttachmentHost', () => {
     act(() => root.unmount());
   });
 
-  it('shows a compact marker for text anchors and opens the reply card on click', async () => {
+  it('shows a compact marker for text Targets and opens the reply card on click', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -198,7 +198,7 @@ describe('AttachmentHost', () => {
     act(() => root.unmount());
   });
 
-  it('lets users choose which AI reply to view at one shared anchor', async () => {
+  it('lets users choose which AI reply to view at one shared Target', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);

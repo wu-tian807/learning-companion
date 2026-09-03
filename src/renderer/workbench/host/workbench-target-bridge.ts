@@ -1,26 +1,26 @@
-import type { AssetTarget } from '../../../shared/workbench/anchor';
+import type { AssetTarget } from '../../../shared/workbench/asset-target';
 
-export interface WorkbenchAnchorRect {
+export interface WorkbenchTargetRect {
   readonly left: number;
   readonly top: number;
   readonly width: number;
   readonly height: number;
 }
 
-export const WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT =
-  'learning-companion:workbench-anchor-layout-changed';
+export const WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT =
+  'learning-companion:workbench-target-layout-changed';
 
-export interface WorkbenchAnchorController {
+export interface WorkbenchTargetController {
   /** Current materialized content revision, when the Asset target uses one. */
   readonly sourceRevision?: string;
-  resolve?(target: AssetTarget): WorkbenchAnchorRect | undefined;
+  resolve?(target: AssetTarget): WorkbenchTargetRect | undefined;
   reveal(target: AssetTarget): boolean | void | Promise<boolean | void>;
 }
 
 interface Registration {
   readonly token: symbol;
   readonly assetId: string;
-  readonly controller: WorkbenchAnchorController;
+  readonly controller: WorkbenchTargetController;
 }
 
 const listeners = new Set<() => void>();
@@ -29,19 +29,19 @@ let active: Registration | undefined;
 function publish(): void {
   for (const listener of [...listeners]) listener();
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT));
+    window.dispatchEvent(new Event(WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT));
   }
 }
 
-export function registerWorkbenchAnchorController(
+export function registerWorkbenchTargetController(
   ownerId: string,
   assetId: string,
-  controller: WorkbenchAnchorController,
+  controller: WorkbenchTargetController,
 ): () => void {
   const normalizedOwnerId = ownerId.trim();
   const normalizedAssetId = assetId.trim();
   if (!normalizedOwnerId || !normalizedAssetId) {
-    throw new Error('Workbench Anchor controller 无效');
+    throw new Error('Workbench Target controller 无效');
   }
   const token = Symbol(normalizedOwnerId);
   active = { token, assetId: normalizedAssetId, controller };
@@ -56,24 +56,27 @@ export function registerWorkbenchAnchorController(
   };
 }
 
-function current(assetId: string): WorkbenchAnchorController | undefined {
+function current(assetId: string): WorkbenchTargetController | undefined {
   return active?.assetId === assetId.trim() ? active.controller : undefined;
 }
 
-export function resolveWorkbenchAnchor(
+export function resolveWorkbenchTarget(
   assetId: string,
   target: AssetTarget,
-): WorkbenchAnchorRect | undefined {
+): WorkbenchTargetRect | undefined {
   return current(assetId)?.resolve?.(target);
 }
 
-export async function revealWorkbenchAnchor(
+export async function revealWorkbenchTarget(
   assetId: string,
   target: AssetTarget,
   sourceRevision?: string,
 ): Promise<void> {
   const controller = current(assetId);
   if (!controller) throw new Error('目标资料尚未准备好，无法定位原文。');
+  // Selecting the Asset already reveals an asset-scoped Target. It has no
+  // content position whose revision could become stale.
+  if (target.scope === 'asset') return;
   if (
     sourceRevision !== undefined &&
     controller.sourceRevision !== sourceRevision
@@ -85,7 +88,7 @@ export async function revealWorkbenchAnchor(
   }
 }
 
-export function waitForWorkbenchAnchorController(
+export function waitForWorkbenchTargetController(
   assetId: string,
   signal: AbortSignal,
   timeoutMs = 10_000,
@@ -121,7 +124,7 @@ export function waitForWorkbenchAnchorController(
   });
 }
 
-export function resetWorkbenchAnchorControllerForTests(): void {
+export function resetWorkbenchTargetControllerForTests(): void {
   active = undefined;
   listeners.clear();
 }

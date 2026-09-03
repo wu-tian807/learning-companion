@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { isAssetTarget } from '../../shared/workbench/anchor';
+import { isAssetTarget } from '../../shared/workbench/asset-target';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
 import { isJsonValue } from '../../shared/workbench/protocol';
 import type { AttachmentServiceApi } from '../attachments/attachment-service';

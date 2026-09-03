@@ -15,7 +15,7 @@ export function videoExplanationVisibleAtTime(
   return (
     Number.isFinite(currentTimeSeconds) &&
     Math.abs(
-      explanation.target.anchorPayload.timeSeconds - currentTimeSeconds,
+      explanation.target.targetPayload.timeSeconds - currentTimeSeconds,
     ) <= toleranceSeconds
   );
 }

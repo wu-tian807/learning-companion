@@ -1,7 +1,7 @@
 import type { WorkbenchConversationContribution } from '../../../renderer/conversation/conversation-contracts';
 import {
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isVideoConversationContext,
+  parseVideoConversationContext,
   type VideoConversationContext,
 } from './video-conversation-context';
 
@@ -34,20 +34,22 @@ export function createVideoConversationContribution(input: {
     contextRequired: true,
     contextRequiredMessage: '请先在视频画面上单击或拖动选择一个区域',
     isContext(context) {
+      const parsed = parseVideoConversationContext(context);
       return (
-        isVideoConversationContext(context) &&
-        context.sourceRevision === sourceRevision
+        parsed !== undefined &&
+        parsed.sourceRevision === sourceRevision
       );
     },
     shouldCommitAnswer(taskInput) {
+      const context = parseVideoConversationContext(taskInput.context);
       return (
-        isVideoConversationContext(taskInput.context) &&
-        taskInput.context.sourceRevision === sourceRevision
+        context !== undefined &&
+        context.sourceRevision === sourceRevision
       );
     },
     onContextReleased(context) {
       input.onContextReleased?.(
-        isVideoConversationContext(context) ? context : undefined,
+        parseVideoConversationContext(context),
       );
     },
   };

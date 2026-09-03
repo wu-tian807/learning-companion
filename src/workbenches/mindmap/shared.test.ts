@@ -4,9 +4,7 @@ import { isAssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  MIND_MAP_DOCUMENT_VERSION_V2,
-  type MindMapDocumentV1,
-  type MindMapDocumentV2,
+  type MindMapDocument,
 } from './document';
 import {
   cloneMindMapWorkbenchViewState,
@@ -20,7 +18,7 @@ import {
   mindMapWorkbenchManifest,
 } from './shared';
 
-const document: MindMapDocumentV1 = {
+const document: MindMapDocument = {
   format: MIND_MAP_DOCUMENT_FORMAT,
   version: MIND_MAP_DOCUMENT_VERSION,
   title: 'Map',
@@ -37,9 +35,8 @@ const document: MindMapDocumentV1 = {
   associations: { nodes: {}, frames: {} },
 };
 
-const documentV2: MindMapDocumentV2 = {
+const documentWithTarget: MindMapDocument = {
   ...document,
-  version: MIND_MAP_DOCUMENT_VERSION_V2,
   associations: {
     nodes: {
       root: {
@@ -47,7 +44,7 @@ const documentV2: MindMapDocumentV2 = {
           {
             referenceId: 'reference-source',
             sourceRevision: 'source-revision-1',
-            agentLocator: { heading: 'Introduction' },
+            target: { scope: 'asset' },
           },
         ],
         linkIds: [],
@@ -58,23 +55,23 @@ const documentV2: MindMapDocumentV2 = {
 };
 
 describe('Mind Map interaction targets', () => {
-  it('creates stable Node and Frame Anchors', () => {
+  it('creates stable Node and Frame Targets', () => {
     const nodeTarget = createMindMapNodeTarget('basic-solution');
     const frameTarget = createMindMapFrameTarget('foundations');
 
     expect(isMindMapNodeTarget(nodeTarget)).toBe(true);
     expect(nodeTarget).toEqual({
       scope: 'content',
-      anchorType: 'mindmap.node',
-      anchorVersion: 1,
-      anchorPayload: { nodeId: 'basic-solution' },
+      targetType: 'mindmap.node',
+      targetVersion: 1,
+      targetPayload: { nodeId: 'basic-solution' },
     });
     expect(isMindMapFrameTarget(frameTarget)).toBe(true);
     expect(frameTarget).toEqual({
       scope: 'content',
-      anchorType: 'mindmap.frame',
-      anchorVersion: 1,
-      anchorPayload: { frameId: 'foundations' },
+      targetType: 'mindmap.frame',
+      targetVersion: 1,
+      targetPayload: { frameId: 'foundations' },
     });
     expect(() => createMindMapNodeTarget('  ')).toThrow(
       'Mind Map nodeId 无效',
@@ -137,7 +134,7 @@ describe('Mind Map interaction targets', () => {
     ).toBe(false);
   });
 
-  it('accepts resolved Agent locators and rejects empty locator data', () => {
+  it('accepts resolved Targets only when their source revision is retained', () => {
     const reference = {
       id: 'reference-source',
       projectId: 'project',
@@ -145,21 +142,17 @@ describe('Mind Map interaction targets', () => {
       sourceAssetId: 'source',
       createdTime: 1,
     };
+    const binding = {
+      reference,
+      sourceRevision: 'source-revision-1',
+      target: { scope: 'asset' as const },
+    };
     const payload = {
-      document: documentV2,
+      document: documentWithTarget,
       revision: 'revision-1',
       associations: {
         byNode: {
-          root: {
-            references: [
-              {
-                reference,
-                sourceRevision: 'source-revision-1',
-                agentLocator: { heading: 'Introduction' },
-              },
-            ],
-            links: [],
-          },
+          root: { references: [binding], links: [] },
         },
         byFrame: {},
         staleBindings: [],
@@ -168,25 +161,17 @@ describe('Mind Map interaction targets', () => {
     };
 
     expect(isMindMapWorkbenchPayload(payload)).toBe(true);
-    expect(
-      isMindMapWorkbenchPayload({
-        ...payload,
-        associations: {
-          ...payload.associations,
-          byNode: {
-            root: {
-              references: [
-                {
-                  reference,
-                  sourceRevision: 'source-revision-1',
-                  agentLocator: {},
-                },
-              ],
-              links: [],
-            },
+    expect(isMindMapWorkbenchPayload({
+      ...payload,
+      associations: {
+        ...payload.associations,
+        byNode: {
+          root: {
+            references: [{ ...binding, sourceRevision: ' ' }],
+            links: [],
           },
         },
-      }),
-    ).toBe(false);
+      },
+    })).toBe(false);
   });
 });

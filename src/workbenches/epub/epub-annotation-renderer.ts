@@ -33,17 +33,17 @@ export function renderEpubAnnotationWaves(
   const lanes = assignEpubExplanationLanes([
     ...explanations.map((explanation) => ({
       id: `explanation:${explanation.id}`,
-      cfiRange: explanation.target.anchorPayload.cfiRange,
+      cfiRange: explanation.target.targetPayload.cfiRange,
     })),
     ...readingNotes.map((note) => ({
       id: `note:${note.id}`,
-      cfiRange: note.target.anchorPayload.cfiRange,
+      cfiRange: note.target.targetPayload.cfiRange,
     })),
   ]);
 
   for (const explanation of explanations) {
     annotations.underline(
-      explanation.target.anchorPayload.cfiRange,
+      explanation.target.targetPayload.cfiRange,
       { explanationId: explanation.id },
       () => handlers.onExplanationClick(explanation),
       `epub-ai-explanation-${explanation.status}`,
@@ -57,7 +57,7 @@ export function renderEpubAnnotationWaves(
 
   for (const note of readingNotes) {
     annotations.highlight(
-      note.target.anchorPayload.cfiRange,
+      note.target.targetPayload.cfiRange,
       { readingNoteId: note.id },
       () => handlers.onNoteClick(note),
       'epub-authored-reading-note',
@@ -76,13 +76,13 @@ export function renderEpubAnnotationWaves(
   return () => {
     for (const explanation of explanations) {
       annotations.remove(
-        explanation.target.anchorPayload.cfiRange,
+        explanation.target.targetPayload.cfiRange,
         'underline',
       );
     }
     for (const note of readingNotes) {
       annotations.remove(
-        note.target.anchorPayload.cfiRange,
+        note.target.targetPayload.cfiRange,
         'highlight',
       );
     }

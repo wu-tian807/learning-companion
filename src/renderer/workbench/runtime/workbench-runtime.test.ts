@@ -22,7 +22,7 @@ const identity = {
 };
 
 const regionSelectionFacilityId = 'test.input.region-selection';
-const regionAnchorType = 'test.region';
+const regionTargetType = 'test.region';
 const headerBundle = {
   actions: [
     {
@@ -76,9 +76,9 @@ function createRegionSelectionFixture(): {
   return {
     manifest: {
       ...plainTextWorkbenchManifest,
-      supportedAnchorTypes: [
-        ...plainTextWorkbenchManifest.supportedAnchorTypes,
-        regionAnchorType,
+      supportedTargetTypes: [
+        ...plainTextWorkbenchManifest.supportedTargetTypes,
+        regionTargetType,
       ],
       facilities: [
         ...plainTextWorkbenchManifest.facilities,
@@ -100,9 +100,9 @@ describe('WorkbenchRuntime', () => {
       text: '当前选区',
       target: {
         scope: 'content' as const,
-        anchorType: 'plain-text.text-range',
-        anchorVersion: 1,
-        anchorPayload: {
+        targetType: 'plain-text.text-range',
+        targetVersion: 1,
+        targetPayload: {
           ranges: [{ start: 0, end: 4 }],
         },
       },
@@ -164,9 +164,9 @@ describe('WorkbenchRuntime', () => {
             version: CORE_FACILITY_VERSION,
             target: {
               scope: 'content',
-              anchorType: regionAnchorType,
-              anchorVersion: 1,
-              anchorPayload: {
+              targetType: regionTargetType,
+              targetVersion: 1,
+              targetPayload: {
                 x: 10,
                 y: 20,
                 width: 30,

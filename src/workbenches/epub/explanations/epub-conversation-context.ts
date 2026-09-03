@@ -1,4 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import { parseAssetTarget } from '../../../shared/workbench/asset-target';
 import {
   isEpubCfiRangeTarget,
   type EpubCfiRangeTarget,
@@ -18,6 +19,18 @@ export function isEpubConversationContext(
   value: unknown,
 ): value is EpubConversationContext {
   return isRecord(value) && isEpubCfiRangeTarget(value.target);
+}
+
+export function parseEpubConversationContext(
+  value: unknown,
+): EpubConversationContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const target = parseAssetTarget(value.target);
+  if (!target) return undefined;
+  const normalized = { target };
+  return isEpubConversationContext(normalized)
+    ? Object.freeze(normalized) as EpubConversationContext
+    : undefined;
 }
 
 export function createEpubConversationContext(

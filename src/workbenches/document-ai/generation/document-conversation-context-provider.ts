@@ -16,8 +16,8 @@ import { AppError } from '../../../main/errors/app-error';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
 import {
   DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isDocumentConversationContext,
   type DocumentImageReference,
+  parseDocumentConversationContext,
 } from '../document-conversation-context';
 
 export const DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V2 = `You are the document reading assistant in Learning Companion.
@@ -83,11 +83,11 @@ export class DocumentConversationContextProvider
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     const mediaType = source.materializedMediaType ?? source.mediaType;
-    const selection = context.instruction.context;
-    if (
-      selection !== undefined &&
-      !isDocumentConversationContext(selection)
-    ) {
+    const rawSelection = context.instruction.context;
+    const selection = rawSelection === undefined
+      ? undefined
+      : parseDocumentConversationContext(rawSelection);
+    if (rawSelection !== undefined && !selection) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
@@ -140,7 +140,7 @@ export class DocumentConversationContextProvider
           `Question: ${context.instruction.question}`,
           `Document path: ${source.relativePath}`,
           `Document media type: ${mediaType}`,
-          `Target anchor: ${JSON.stringify(target)}`,
+          `AssetTarget: ${JSON.stringify(target)}`,
           selection?.selectedText
             ? `Selected text:\n${selection.selectedText}`
             : 'No reliable text selection was supplied. Inspect the referenced document and the target page/region with the document tools.',

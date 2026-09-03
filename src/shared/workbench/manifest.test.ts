@@ -15,7 +15,7 @@ describe('AssetWorkbenchManifest', () => {
         protocolVersion: WORKBENCH_PROTOCOL_VERSION,
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: ['read-bytes'],
-        supportedAnchorTypes: ['markdown.text-range'],
+        supportedTargetTypes: ['markdown.text-range'],
         facilities: [],
       }),
     ).toBe(true);
@@ -29,7 +29,7 @@ describe('AssetWorkbenchManifest', () => {
         protocolVersion: WORKBENCH_PROTOCOL_VERSION,
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: [],
-        supportedAnchorTypes: [],
+        supportedTargetTypes: [],
         facilities: [],
       }),
     ).toBe(false);
@@ -41,7 +41,7 @@ describe('AssetWorkbenchManifest', () => {
         selectionPriority: 1.5,
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: [],
-        supportedAnchorTypes: [],
+        supportedTargetTypes: [],
         facilities: [],
       }),
     ).toBe(false);
@@ -52,7 +52,7 @@ describe('AssetWorkbenchManifest', () => {
         protocolVersion: WORKBENCH_PROTOCOL_VERSION,
         supportedMediaTypes: ['text/markdown'],
         requiredContentCapabilities: ['read-bytes', 'read-bytes'],
-        supportedAnchorTypes: [],
+        supportedTargetTypes: [],
         facilities: [],
       }),
     ).toBe(false);
@@ -65,7 +65,7 @@ describe('AssetWorkbenchManifest', () => {
       protocolVersion: WORKBENCH_PROTOCOL_VERSION,
       supportedMediaTypes: ['text/markdown'],
       requiredContentCapabilities: [],
-      supportedAnchorTypes: [],
+      supportedTargetTypes: [],
     };
 
     expect(
@@ -92,7 +92,7 @@ describe('AssetWorkbenchManifest', () => {
       protocolVersion: WORKBENCH_PROTOCOL_VERSION,
       supportedMediaTypes: ['text/markdown'],
       requiredContentCapabilities: ['read-bytes'] as const,
-      supportedAnchorTypes: ['markdown.text-range'],
+      supportedTargetTypes: ['markdown.text-range'],
       facilities: [
         {
           id: 'core.transport.renderer',

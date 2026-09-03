@@ -4,12 +4,13 @@ import {
 } from './shared';
 import {
   IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isImageConversationContext,
+  parseImageConversationContext,
 } from './image-conversation-context';
 
 export {
   createImageConversationContext,
   isImageConversationContext,
+  parseImageConversationContext,
   type ImageConversationContext,
 } from './image-conversation-context';
 
@@ -29,15 +30,17 @@ export function createImageConversationContribution(input: {
     contextRequiredMessage:
       '请先在图片中框选一个兴趣区域再开始问答',
     isContext(context) {
+      const parsed = parseImageConversationContext(context);
       return (
-        isImageConversationContext(context) &&
-        context.sourceRevision === sourceRevision
+        parsed !== undefined &&
+        parsed.sourceRevision === sourceRevision
       );
     },
     shouldCommitAnswer(taskInput) {
+      const context = parseImageConversationContext(taskInput.context);
       return (
-        isImageConversationContext(taskInput.context) &&
-        taskInput.context.sourceRevision === sourceRevision &&
+        context !== undefined &&
+        context.sourceRevision === sourceRevision &&
         taskInput.question.trim() === IMAGE_DEFAULT_EXPLANATION_QUESTION
       );
     },

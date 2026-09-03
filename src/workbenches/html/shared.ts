@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -36,7 +36,7 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['text/html'],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     HTML_DOM_ANCHOR_TYPE,
     HTML_QUOTE_ANCHOR_TYPE,
     HTML_LINK_ANCHOR_TYPE,
@@ -454,12 +454,12 @@ export function createHtmlQuoteTarget(
     HtmlQuoteAnchorV1,
     'domRange'
   >,
-): JsonValue & ContentAnchorTarget {
+): JsonValue & ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: HTML_QUOTE_ANCHOR_TYPE,
-    anchorVersion: HTML_QUOTE_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: HTML_QUOTE_ANCHOR_TYPE,
+    targetVersion: HTML_QUOTE_ANCHOR_VERSION,
+    targetPayload: {
       exact,
       ...(frameUrl ? { frameUrl } : {}),
       ...(locator?.domRange
@@ -483,16 +483,16 @@ export function createHtmlQuoteTarget(
 
 export function createHtmlDomTarget(
   anchor: HtmlDomAnchorV1,
-): JsonValue & ContentAnchorTarget {
+): JsonValue & ContentAssetTarget {
   if (!isHtmlDomAnchorV1(anchor)) {
     throw new Error('HTML DOM Anchor 无效');
   }
 
   return {
     scope: 'content',
-    anchorType: HTML_DOM_ANCHOR_TYPE,
-    anchorVersion: HTML_DOM_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: HTML_DOM_ANCHOR_TYPE,
+    targetVersion: HTML_DOM_ANCHOR_VERSION,
+    targetPayload: {
       ...(anchor.frameUrl ? { frameUrl: anchor.frameUrl } : {}),
       element: {
         path: [...anchor.element.path],
@@ -512,27 +512,27 @@ export function createHtmlDomTarget(
 
 export function createHtmlLinkTarget(
   url: string,
-): JsonValue & ContentAnchorTarget {
+): JsonValue & ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: HTML_LINK_ANCHOR_TYPE,
-    anchorVersion: HTML_LINK_ANCHOR_VERSION,
-    anchorPayload: { url },
+    targetType: HTML_LINK_ANCHOR_TYPE,
+    targetVersion: HTML_LINK_ANCHOR_VERSION,
+    targetPayload: { url },
   };
 }
 
 export function createHtmlElementTarget(
   anchor: HtmlElementAnchorV1,
-): JsonValue & ContentAnchorTarget {
+): JsonValue & ContentAssetTarget {
   if (!isHtmlElementAnchorV1(anchor)) {
     throw new Error('HTML 元素 Anchor 无效');
   }
 
   return {
     scope: 'content',
-    anchorType: HTML_ELEMENT_ANCHOR_TYPE,
-    anchorVersion: HTML_ELEMENT_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: HTML_ELEMENT_ANCHOR_TYPE,
+    targetVersion: HTML_ELEMENT_ANCHOR_VERSION,
+    targetPayload: {
       frameUrl: anchor.frameUrl,
       tagName: anchor.tagName,
       domPath: [...anchor.domPath],
@@ -552,7 +552,7 @@ export function createHtmlElementTarget(
 
 export function isHtmlElementTarget(
   value: unknown,
-): value is JsonValue & ContentAnchorTarget {
+): value is JsonValue & ContentAssetTarget {
   return isHtmlTarget(
     value,
     HTML_ELEMENT_ANCHOR_TYPE,
@@ -563,7 +563,7 @@ export function isHtmlElementTarget(
 
 export function isHtmlDomTarget(
   value: unknown,
-): value is JsonValue & ContentAnchorTarget {
+): value is JsonValue & ContentAssetTarget {
   return isHtmlTarget(
     value,
     HTML_DOM_ANCHOR_TYPE,
@@ -574,7 +574,7 @@ export function isHtmlDomTarget(
 
 export function isHtmlQuoteTarget(
   value: unknown,
-): value is JsonValue & ContentAnchorTarget {
+): value is JsonValue & ContentAssetTarget {
   return isHtmlTarget(
     value,
     HTML_QUOTE_ANCHOR_TYPE,
@@ -585,7 +585,7 @@ export function isHtmlQuoteTarget(
 
 export function isHtmlLinkTarget(
   value: unknown,
-): value is JsonValue & ContentAnchorTarget {
+): value is JsonValue & ContentAssetTarget {
   return isHtmlTarget(
     value,
     HTML_LINK_ANCHOR_TYPE,
@@ -596,10 +596,10 @@ export function isHtmlLinkTarget(
 
 function isHtmlTarget(
   value: unknown,
-  anchorType: string,
-  anchorVersion: number,
+  targetType: string,
+  targetVersion: number,
   validatePayload: (payload: unknown) => boolean,
-): value is JsonValue & ContentAnchorTarget {
+): value is JsonValue & ContentAssetTarget {
   if (
     typeof value !== 'object' ||
     value === null ||
@@ -608,12 +608,12 @@ function isHtmlTarget(
     return false;
   }
 
-  const target = value as Partial<ContentAnchorTarget>;
+  const target = value as Partial<ContentAssetTarget>;
 
   return (
     target.scope === 'content' &&
-    target.anchorType === anchorType &&
-    target.anchorVersion === anchorVersion &&
-    validatePayload(target.anchorPayload)
+    target.targetType === targetType &&
+    target.targetVersion === targetVersion &&
+    validatePayload(target.targetPayload)
   );
 }

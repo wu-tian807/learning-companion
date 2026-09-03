@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  registerWorkbenchAnchorController,
-  resetWorkbenchAnchorControllerForTests,
-} from '../workbench/host/workbench-anchor-bridge';
+  registerWorkbenchTargetController,
+  resetWorkbenchTargetControllerForTests,
+} from '../workbench/host/workbench-target-bridge';
 import type {
   ConversationMessageContextSource,
   WorkbenchConversationContribution,
@@ -12,9 +12,9 @@ import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 
 const target = {
   scope: 'content' as const,
-  anchorType: 'test.anchor',
-  anchorVersion: 1,
-  anchorPayload: { exact: '旧记录里的原文' },
+  targetType: 'test.anchor',
+  targetVersion: 1,
+  targetPayload: { exact: '旧记录里的原文' },
 };
 
 function contribution(id: string): WorkbenchConversationContribution {
@@ -32,7 +32,7 @@ function source(id: string, assetId: string): ConversationMessageContextSource {
   };
 }
 
-afterEach(resetWorkbenchAnchorControllerForTests);
+afterEach(resetWorkbenchTargetControllerForTests);
 
 describe('WorkbenchConversationRuntime', () => {
   it('keeps Project chat available without a Workbench', () => {
@@ -101,7 +101,7 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.getSnapshot().active).toBeUndefined();
   });
 
-  it('selects the referenced Asset and waits for its anchor controller', async () => {
+  it('selects the referenced Asset and waits for its Target controller', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const reveal = vi.fn(() => true);
     const selectAsset = vi.fn();
@@ -113,12 +113,26 @@ describe('WorkbenchConversationRuntime', () => {
 
     expect(selectAsset).toHaveBeenCalledWith('asset-html');
     expect(reveal).not.toHaveBeenCalled();
-    registerWorkbenchAnchorController('html.owner', 'asset-html', { reveal });
+    registerWorkbenchTargetController('html.owner', 'asset-html', { reveal });
     await pending;
     expect(reveal).toHaveBeenCalledWith(target);
   });
 
-  it('rejects deleted Assets and invalid anchors without guessing', async () => {
+  it('reveals an Asset-scoped Target by selecting it without waiting for a content controller', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const selectAsset = vi.fn();
+
+    await expect(runtime.revealContext(
+      source('unsupported', 'asset-whole'),
+      { target: { scope: 'asset' } },
+      selectAsset,
+      1,
+    )).resolves.toBeUndefined();
+
+    expect(selectAsset).toHaveBeenCalledWith('asset-whole');
+  });
+
+  it('rejects deleted Assets and invalid Targets without guessing', async () => {
     const runtime = new WorkbenchConversationRuntime();
     await expect(runtime.revealContext(
       source('html', 'deleted'),
@@ -129,16 +143,16 @@ describe('WorkbenchConversationRuntime', () => {
       source('html', 'asset-html'),
       { opaque: true },
       vi.fn(),
-    )).rejects.toThrow('没有有效 Anchor');
+    )).rejects.toThrow('没有有效 Target');
     expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
       '当前 Workbench 没有注册 AI 问答上下文',
     );
   });
 
-  it('rejects a stale content revision through the shared anchor controller', async () => {
+  it('rejects a stale content revision through the shared Target controller', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const reveal = vi.fn(() => true);
-    registerWorkbenchAnchorController('image.owner', 'asset-image', {
+    registerWorkbenchTargetController('image.owner', 'asset-image', {
       sourceRevision: 'new',
       reveal,
     });

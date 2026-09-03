@@ -10,6 +10,10 @@ import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/Workb
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import { WorkbenchConversationRuntime } from '../../renderer/conversation/workbench-conversation-runtime';
 import {
+  resetWorkbenchTargetControllerForTests,
+  revealWorkbenchTarget,
+} from '../../renderer/workbench/host/workbench-target-bridge';
+import {
   createVideoFrameRegionFromClientPoints,
   hasLoadedVideoMetadata,
   mediaErrorMessage,
@@ -20,6 +24,7 @@ import {
   cloneVideoViewState,
   cloneVideoSubtitleSnapshot,
   createVideoFrameRegionTarget,
+  createVideoTimeRangeTarget,
   DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
   EMPTY_VIDEO_DUBBING_SNAPSHOT,
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
@@ -156,6 +161,7 @@ async function mountVideoWorkbench(input: {
         value: previousBridge,
       });
       pause.mockRestore();
+      resetWorkbenchTargetControllerForTests();
     },
   };
 }
@@ -381,7 +387,7 @@ describe('VideoWorkbenchView', () => {
       { x: 700, y: 365 },
     );
 
-    expect(target?.anchorPayload).toEqual({
+    expect(target?.targetPayload).toEqual({
       timeSeconds: 12.5,
       x: 0.25,
       y: 0.2,
@@ -390,6 +396,50 @@ describe('VideoWorkbenchView', () => {
       sourceWidth: 1920,
       sourceHeight: 1080,
     });
+  });
+
+  it('reveals a Workbench-owned time-range Target through the generic bridge', async () => {
+    const view = await mountVideoWorkbench({
+      executeCommand: vi.fn(async (command: { readonly type: string }) => ({
+        payload: command.type === 'video:get-dubbing-snapshot'
+          ? EMPTY_VIDEO_DUBBING_SNAPSHOT
+          : command.type === 'video:get-subtitle-snapshot'
+            ? EMPTY_VIDEO_SUBTITLE_SNAPSHOT
+            : { saved: true, savedTime: 100 },
+      })) as VideoViewProps['executeCommand'],
+      payload: {
+        contentUrl: 'learning-content://resource/token',
+        sourceRevision: '100',
+        viewState: cloneVideoViewState(DEFAULT_VIDEO_VIEW_STATE),
+        subtitleState: DEFAULT_VIDEO_SUBTITLE_VIEW_STATE,
+        subtitleSnapshot: cloneVideoSubtitleSnapshot(
+          EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+        ),
+        dubbingSnapshot: EMPTY_VIDEO_DUBBING_SNAPSHOT,
+      },
+    });
+
+    try {
+      const video = view.container.querySelector('video')!;
+      Object.defineProperties(video, {
+        readyState: { configurable: true, value: 1 },
+        duration: { configurable: true, value: 60 },
+      });
+      await act(async () => {
+        video.dispatchEvent(new Event('loadedmetadata'));
+      });
+      await act(async () => {
+        await revealWorkbenchTarget(
+          asset.id,
+          createVideoTimeRangeTarget(12.5, 18),
+        );
+      });
+
+      expect(video.currentTime).toBe(12.5);
+      expect(video.paused).toBe(true);
+    } finally {
+      view.cleanup();
+    }
   });
 
   it('selects by left click or drag, replaces the region, and keeps right click inactive', async () => {

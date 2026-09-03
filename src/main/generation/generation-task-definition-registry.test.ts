@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { createMindMapGenerationTaskDefinition } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { GenerationTaskDefinitionRegistry } from './generation-task-definition-registry';
 
 function createDefinition() {
-  return createMindMapGenerationTaskDefinitionV1({
+  return createMindMapGenerationTaskDefinition({
     async process() {
       return { resultAssetId: 'asset-1' };
     },

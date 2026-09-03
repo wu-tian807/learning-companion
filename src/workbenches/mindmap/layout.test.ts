@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  type MindMapDocumentV1,
+  type MindMapDocument,
 } from './document';
 import {
   createMindMapLayout,
   MIND_MAP_LAYOUT_NODE_MIN_HEIGHT,
 } from './layout';
 
-const document: MindMapDocumentV1 = {
+const document: MindMapDocument = {
   format: MIND_MAP_DOCUMENT_FORMAT,
   version: MIND_MAP_DOCUMENT_VERSION,
   title: '线性规划',
@@ -108,7 +108,7 @@ describe('createMindMapLayout', () => {
   });
 
   it('keeps sibling positions in childIds order regardless of object order', () => {
-    const orderedDocument: MindMapDocumentV1 = {
+    const orderedDocument: MindMapDocument = {
       ...document,
       nodes: {
         simplex: document.nodes.simplex,
@@ -133,7 +133,7 @@ describe('createMindMapLayout', () => {
   });
 
   it('grows long learning nodes and reserves their complete vertical space', () => {
-    const longDocument: MindMapDocumentV1 = {
+    const longDocument: MindMapDocument = {
       ...document,
       nodes: {
         ...document.nodes,

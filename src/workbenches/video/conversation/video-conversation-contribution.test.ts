@@ -12,6 +12,7 @@ import {
 } from './video-conversation-contribution';
 import {
   createVideoConversationContext,
+  parseVideoConversationContext,
   shouldReleaseVideoConversationContext,
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
 } from './video-conversation-context';
@@ -165,5 +166,22 @@ describe('video conversation contribution', () => {
 
   it('does not own a separate per-video history store', () => {
     expect(contribution()).not.toHaveProperty('historyStore');
+  });
+
+  it('normalizes a persisted pre-Target video context at the Workbench boundary', () => {
+    const legacy = {
+      sourceRevision: '100',
+      target: {
+        scope: 'content',
+        anchorType: target.targetType,
+        anchorVersion: target.targetVersion,
+        anchorPayload: target.targetPayload,
+      },
+    };
+
+    expect(parseVideoConversationContext(legacy)).toEqual(
+      createVideoConversationContext(target, '100'),
+    );
+    expect(contribution().isContext?.(legacy)).toBe(true);
   });
 });

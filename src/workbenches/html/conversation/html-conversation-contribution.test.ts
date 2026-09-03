@@ -6,7 +6,10 @@ import {
   WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
   WORKBENCH_CONVERSATION_TASK_DEFINITION_VERSION,
 } from '../../../shared/workbench-conversation';
-import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from './html-conversation-context';
+import {
+  HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
+  parseHtmlConversationContext,
+} from './html-conversation-context';
 import {
   createHtmlConversationContribution,
   shouldClearHtmlConversationHighlight,
@@ -25,9 +28,9 @@ function record(): ConversationRecord {
         createdTime: 10,
         context: {
           scope: 'content',
-          anchorType: 'html.element',
-          anchorVersion: 1,
-          anchorPayload: {
+          targetType: 'html.element',
+          targetVersion: 1,
+          targetPayload: {
             frameUrl: 'learning-content://resource/session',
             tagName: 'button',
             domPath: [1, 2],
@@ -53,15 +56,15 @@ describe('HTML conversation contribution', () => {
   it('does not clear a newly highlighted anchor when releasing an older context', () => {
     const oldAnchor = {
       scope: 'content' as const,
-      anchorType: 'html.quote',
-      anchorVersion: 1,
-      anchorPayload: { exact: 'old selection' },
+      targetType: 'html.quote',
+      targetVersion: 1,
+      targetPayload: { exact: 'old selection' },
     };
     const newAnchor = {
       scope: 'content' as const,
-      anchorType: 'html.quote',
-      anchorVersion: 1,
-      anchorPayload: { exact: 'new selection' },
+      targetType: 'html.quote',
+      targetVersion: 1,
+      targetPayload: { exact: 'new selection' },
     };
 
     expect(shouldClearHtmlConversationHighlight(oldAnchor, newAnchor)).toBe(false);
@@ -91,5 +94,25 @@ describe('HTML conversation contribution', () => {
       },
       assetReferences: { source: [{ assetId: 'asset' }] },
     });
+  });
+
+  it('normalizes a persisted pre-Target HTML context at the Workbench boundary', () => {
+    const canonical = record().messages[0]!.context!;
+    const legacy = {
+      scope: 'content' as const,
+      anchorType: 'html.element',
+      anchorVersion: 1,
+      anchorPayload: {
+        frameUrl: 'learning-content://resource/session',
+        tagName: 'button',
+        domPath: [1, 2],
+        rect: { x: 10, y: 20, width: 80, height: 32 },
+        id: 'run',
+      },
+    };
+    const contribution = createHtmlConversationContribution({});
+
+    expect(parseHtmlConversationContext(legacy)).toEqual(canonical);
+    expect(contribution.isContext?.(legacy)).toBe(true);
   });
 });

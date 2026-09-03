@@ -16,6 +16,7 @@ import { videoAgentMainFeature } from './agent/main';
 import { videoExplanationMainFeature } from './explanations/main';
 import { VideoWorkbenchProvider } from './main';
 import { videoWorkbenchManifest } from './shared';
+import { videoTargetMainFeature } from './target-main-feature';
 
 export const videoMainContribution = composeMainWorkbenchContribution(
   videoWorkbenchManifest,
@@ -58,5 +59,5 @@ export const videoMainContribution = composeMainWorkbenchContribution(
       },
     );
   },
-  [videoExplanationMainFeature, videoAgentMainFeature],
+  [videoTargetMainFeature, videoExplanationMainFeature, videoAgentMainFeature],
 );

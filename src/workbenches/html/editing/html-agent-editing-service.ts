@@ -233,7 +233,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       scope: request.scope,
       currentHtml: edit.currentHtml,
       draftRevision: session.draftRevision,
-      resolvedTarget: createHtmlDomTarget(edit.resolvedTarget).anchorPayload,
+      resolvedTarget: createHtmlDomTarget(edit.resolvedTarget).targetPayload,
     };
   }
 
@@ -344,7 +344,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     return {
       applied: true,
       draftRevision: nextRevision,
-      resolvedTarget: createHtmlDomTarget(replaced.resolvedTarget).anchorPayload,
+      resolvedTarget: createHtmlDomTarget(replaced.resolvedTarget).targetPayload,
     };
   }
 

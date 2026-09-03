@@ -37,7 +37,7 @@ function createProvider(
     protocolVersion: WORKBENCH_PROTOCOL_VERSION,
     supportedMediaTypes,
     requiredContentCapabilities,
-    supportedAnchorTypes: [],
+    supportedTargetTypes: [],
     facilities: [],
   };
 

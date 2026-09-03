@@ -1,7 +1,7 @@
 import {
   isAssetTarget,
-  type ContentAnchorTarget,
-} from './anchor';
+  type ContentAssetTarget,
+} from './asset-target';
 import { isJsonValue, type JsonValue } from './protocol';
 import { isWorkbenchFacilityId } from './facilities/facility-declaration';
 
@@ -17,12 +17,12 @@ export type WorkbenchInvocationOrigin =
 export interface WorkbenchInteractionInput {
   readonly type: string;
   readonly version: number;
-  readonly target?: ContentAnchorTarget;
+  readonly target?: ContentAssetTarget;
   readonly payload: JsonValue;
 }
 
 export interface WorkbenchInteractionSnapshot {
-  readonly focus?: ContentAnchorTarget;
+  readonly focus?: ContentAssetTarget;
   readonly inputs: readonly WorkbenchInteractionInput[];
 }
 

@@ -1,4 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import { parseAssetTarget } from '../../../shared/workbench/asset-target';
 import {
   isVideoFrameRegionTarget,
   type VideoFrameRegionTarget,
@@ -31,6 +32,21 @@ export function isVideoConversationContext(
   );
 }
 
+export function parseVideoConversationContext(
+  value: unknown,
+): VideoConversationContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const target = parseAssetTarget(value.target);
+  if (!target) return undefined;
+  const normalized = {
+    sourceRevision: value.sourceRevision,
+    target,
+  };
+  return isVideoConversationContext(normalized)
+    ? Object.freeze(normalized) as VideoConversationContext
+    : undefined;
+}
+
 export function createVideoConversationContext(
   target: VideoFrameRegionTarget,
   sourceRevision: string,
@@ -50,8 +66,8 @@ export function areVideoConversationContextsEqual(
   left: VideoConversationContext,
   right: VideoConversationContext,
 ): boolean {
-  const leftRegion = left.target.anchorPayload;
-  const rightRegion = right.target.anchorPayload;
+  const leftRegion = left.target.targetPayload;
+  const rightRegion = right.target.targetPayload;
   return (
     left.sourceRevision === right.sourceRevision &&
     leftRegion.timeSeconds === rightRegion.timeSeconds &&

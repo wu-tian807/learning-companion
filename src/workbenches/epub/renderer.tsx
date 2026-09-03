@@ -17,7 +17,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
+import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
 import {
   useWorkbenchConversationContribution,
   useWorkbenchConversationSnapshot,
@@ -249,15 +249,15 @@ export function EpubWorkbenchView({
     `${epubWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
   useEffect(() => {
     if (loadState.kind !== 'ready') return;
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
+    return registerWorkbenchTargetController(
+      `${conversationOwnerId}.targets`,
       asset.id,
       {
         async reveal(target) {
           if (!isEpubCfiRangeTarget(target)) return false;
           const rendition = renditionRef.current;
           if (!rendition) throw new Error('EPUB 阅读器尚未就绪');
-          await rendition.display(target.anchorPayload.cfiRange);
+          await rendition.display(target.targetPayload.cfiRange);
           return true;
         },
       },
@@ -354,8 +354,8 @@ export function EpubWorkbenchView({
 
       const existing = explanations.find(
         (candidate) =>
-          candidate.target.anchorPayload.cfiRange ===
-          target.anchorPayload.cfiRange,
+          candidate.target.targetPayload.cfiRange ===
+          target.targetPayload.cfiRange,
       );
       if (existing) {
         setActiveExplanationId(existing.id);
@@ -1039,7 +1039,7 @@ export function EpubWorkbenchView({
         return;
       }
       try {
-        await rendition.display(note.target.anchorPayload.cfiRange);
+        await rendition.display(note.target.targetPayload.cfiRange);
         setActiveNoteId(note.id);
         setNoteDraftTarget(note.target);
       } catch (error) {

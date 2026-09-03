@@ -2,95 +2,49 @@ import {
   cloneAssetTarget,
   isAssetTarget,
   type AssetTarget,
-} from '../../shared/workbench/anchor';
-import {
-  cloneJsonValue,
-  isJsonValue,
-  type JsonValue,
-} from '../../shared/workbench/protocol';
+} from '../../shared/workbench/asset-target';
 
 export const MIND_MAP_DOCUMENT_FORMAT = 'learning-companion/mindmap';
-export const MIND_MAP_DOCUMENT_VERSION = 1;
-export const MIND_MAP_DOCUMENT_VERSION_V2 = 2;
+export const MIND_MAP_DOCUMENT_VERSION = 3;
 
-export interface MindMapNodeV1 {
+export interface MindMapNode {
   readonly id: string;
   readonly title: string;
   readonly focus: string;
   readonly childIds: readonly string[];
 }
 
-export interface MindMapFrameV1 {
+export interface MindMapFrame {
   readonly id: string;
   readonly title: string;
   readonly nodeIds: readonly string[];
 }
 
-export interface MindMapReferenceBindingV1 {
-  readonly referenceId: string;
-  readonly sourceTarget: AssetTarget;
-}
-
-/** Agent-interpreted source locator. Field semantics intentionally stay open. */
-export type MindMapAgentLocatorV1 = Readonly<
-  Record<string, JsonValue>
->;
-
-export interface MindMapReferenceBindingV2 {
+export interface MindMapReferenceBinding {
   readonly referenceId: string;
   readonly sourceRevision: string;
-  readonly agentLocator: MindMapAgentLocatorV1;
+  readonly target: AssetTarget;
 }
 
-export interface MindMapSubjectAssociationsV1 {
-  readonly references: readonly MindMapReferenceBindingV1[];
+export interface MindMapSubjectAssociations {
+  readonly references: readonly MindMapReferenceBinding[];
   readonly linkIds: readonly string[];
 }
 
-export interface MindMapAssociationsV1 {
-  readonly nodes: Readonly<
-    Record<string, MindMapSubjectAssociationsV1>
-  >;
-  readonly frames: Readonly<
-    Record<string, MindMapSubjectAssociationsV1>
-  >;
+export interface MindMapAssociations {
+  readonly nodes: Readonly<Record<string, MindMapSubjectAssociations>>;
+  readonly frames: Readonly<Record<string, MindMapSubjectAssociations>>;
 }
 
-export interface MindMapSubjectAssociationsV2 {
-  readonly references: readonly MindMapReferenceBindingV2[];
-  readonly linkIds: readonly string[];
-}
-
-export interface MindMapAssociationsV2 {
-  readonly nodes: Readonly<
-    Record<string, MindMapSubjectAssociationsV2>
-  >;
-  readonly frames: Readonly<
-    Record<string, MindMapSubjectAssociationsV2>
-  >;
-}
-
-export interface MindMapDocumentV1 {
+export interface MindMapDocument {
   readonly format: typeof MIND_MAP_DOCUMENT_FORMAT;
   readonly version: typeof MIND_MAP_DOCUMENT_VERSION;
   readonly title: string;
   readonly rootNodeId: string;
-  readonly nodes: Readonly<Record<string, MindMapNodeV1>>;
-  readonly frames: Readonly<Record<string, MindMapFrameV1>>;
-  readonly associations: MindMapAssociationsV1;
+  readonly nodes: Readonly<Record<string, MindMapNode>>;
+  readonly frames: Readonly<Record<string, MindMapFrame>>;
+  readonly associations: MindMapAssociations;
 }
-
-export interface MindMapDocumentV2 {
-  readonly format: typeof MIND_MAP_DOCUMENT_FORMAT;
-  readonly version: typeof MIND_MAP_DOCUMENT_VERSION_V2;
-  readonly title: string;
-  readonly rootNodeId: string;
-  readonly nodes: Readonly<Record<string, MindMapNodeV1>>;
-  readonly frames: Readonly<Record<string, MindMapFrameV1>>;
-  readonly associations: MindMapAssociationsV2;
-}
-
-export type MindMapDocument = MindMapDocumentV1 | MindMapDocumentV2;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -101,6 +55,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function hasExactlyKeys(
+  value: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean {
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key));
+}
+
 function isRequiredText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -109,7 +72,7 @@ function isNormalizedId(value: unknown): value is string {
   return isRequiredText(value) && value === value.trim();
 }
 
-function isMindMapNodeV1(value: unknown): value is MindMapNodeV1 {
+function isMindMapNode(value: unknown): value is MindMapNode {
   return (
     isRecord(value) &&
     isNormalizedId(value.id) &&
@@ -121,7 +84,7 @@ function isMindMapNodeV1(value: unknown): value is MindMapNodeV1 {
   );
 }
 
-function isMindMapFrameV1(value: unknown): value is MindMapFrameV1 {
+function isMindMapFrame(value: unknown): value is MindMapFrame {
   return (
     isRecord(value) &&
     isNormalizedId(value.id) &&
@@ -135,7 +98,7 @@ function isMindMapFrameV1(value: unknown): value is MindMapFrameV1 {
 
 function hasValidTree(
   rootNodeId: string,
-  nodes: Readonly<Record<string, MindMapNodeV1>>,
+  nodes: Readonly<Record<string, MindMapNode>>,
 ): boolean {
   if (!Object.hasOwn(nodes, rootNodeId)) {
     return false;
@@ -148,11 +111,9 @@ function hasValidTree(
   for (const node of Object.values(nodes)) {
     for (const childId of node.childIds) {
       const parentCount = parentCounts.get(childId);
-
       if (parentCount === undefined) {
         return false;
       }
-
       parentCounts.set(childId, parentCount + 1);
     }
   }
@@ -171,11 +132,9 @@ function hasValidTree(
 
   while (pending.length > 0) {
     const nodeId = pending.pop();
-
     if (nodeId === undefined || visited.has(nodeId)) {
       return false;
     }
-
     visited.add(nodeId);
     pending.push(...nodes[nodeId].childIds);
   }
@@ -184,79 +143,38 @@ function hasValidTree(
 }
 
 function hasValidFrames(
-  nodes: Readonly<Record<string, MindMapNodeV1>>,
-  frames: Readonly<Record<string, MindMapFrameV1>>,
+  nodes: Readonly<Record<string, MindMapNode>>,
+  frames: Readonly<Record<string, MindMapFrame>>,
 ): boolean {
   return Object.entries(frames).every(
     ([frameId, frame]) =>
       isNormalizedId(frameId) &&
-      isMindMapFrameV1(frame) &&
+      isMindMapFrame(frame) &&
       frame.id === frameId &&
       frame.nodeIds.every((nodeId) => Object.hasOwn(nodes, nodeId)),
   );
 }
 
-function isMindMapReferenceBindingV1(
+function isMindMapReferenceBinding(
   value: unknown,
-): value is MindMapReferenceBindingV1 {
+): value is MindMapReferenceBinding {
   return (
     isRecord(value) &&
-    isNormalizedId(value.referenceId) &&
-    isAssetTarget(value.sourceTarget)
-  );
-}
-
-export function isMindMapAgentLocatorV1(
-  value: unknown,
-): value is MindMapAgentLocatorV1 {
-  return (
-    isRecord(value) &&
-    Object.keys(value).length > 0 &&
-    isJsonValue(value)
-  );
-}
-
-function isMindMapReferenceBindingV2(
-  value: unknown,
-): value is MindMapReferenceBindingV2 {
-  return (
-    isRecord(value) &&
+    hasExactlyKeys(value, ['referenceId', 'sourceRevision', 'target']) &&
     isNormalizedId(value.referenceId) &&
     isNormalizedId(value.sourceRevision) &&
-    isMindMapAgentLocatorV1(value.agentLocator)
+    isAssetTarget(value.target)
   );
 }
 
-function isMindMapSubjectAssociationsV1(
+function isMindMapSubjectAssociations(
   value: unknown,
-): value is MindMapSubjectAssociationsV1 {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value.references) ||
-    !value.references.every(isMindMapReferenceBindingV1) ||
-    !Array.isArray(value.linkIds) ||
-    !value.linkIds.every(isNormalizedId)
-  ) {
-    return false;
-  }
-
-  const referenceIds = value.references.map(
-    ({ referenceId }) => referenceId,
-  );
-
-  return (
-    new Set(referenceIds).size === referenceIds.length &&
-    new Set(value.linkIds).size === value.linkIds.length
-  );
-}
-
-function isMindMapSubjectAssociationsV2(
-  value: unknown,
-): value is MindMapSubjectAssociationsV2 {
+): value is MindMapSubjectAssociations {
   return (
     isRecord(value) &&
+    hasExactlyKeys(value, ['references', 'linkIds']) &&
     Array.isArray(value.references) &&
-    value.references.every(isMindMapReferenceBindingV2) &&
+    value.references.every(isMindMapReferenceBinding) &&
     Array.isArray(value.linkIds) &&
     value.linkIds.every(isNormalizedId) &&
     new Set(value.linkIds).size === value.linkIds.length
@@ -265,55 +183,18 @@ function isMindMapSubjectAssociationsV2(
 
 function hasValidSubjectAssociations(
   subjects: Readonly<Record<string, unknown>>,
-  associations: Readonly<
-    Record<string, MindMapSubjectAssociationsV1>
-  >,
+  associations: Readonly<Record<string, MindMapSubjectAssociations>>,
 ): boolean {
   return Object.entries(associations).every(
     ([subjectId, subjectAssociations]) =>
       Object.hasOwn(subjects, subjectId) &&
-      isMindMapSubjectAssociationsV1(subjectAssociations),
+      isMindMapSubjectAssociations(subjectAssociations),
   );
 }
 
-function hasValidAssociations(
-  nodes: Readonly<Record<string, MindMapNodeV1>>,
-  frames: Readonly<Record<string, MindMapFrameV1>>,
-  associations: MindMapAssociationsV1,
-): boolean {
-  return (
-    hasValidSubjectAssociations(nodes, associations.nodes) &&
-    hasValidSubjectAssociations(frames, associations.frames)
-  );
-}
-
-function hasValidSubjectAssociationsV2(
-  subjects: Readonly<Record<string, unknown>>,
-  associations: Readonly<
-    Record<string, MindMapSubjectAssociationsV2>
-  >,
-): boolean {
-  return Object.entries(associations).every(
-    ([subjectId, subjectAssociations]) =>
-      Object.hasOwn(subjects, subjectId) &&
-      isMindMapSubjectAssociationsV2(subjectAssociations),
-  );
-}
-
-function hasValidAssociationsV2(
-  nodes: Readonly<Record<string, MindMapNodeV1>>,
-  frames: Readonly<Record<string, MindMapFrameV1>>,
-  associations: MindMapAssociationsV2,
-): boolean {
-  return (
-    hasValidSubjectAssociationsV2(nodes, associations.nodes) &&
-    hasValidSubjectAssociationsV2(frames, associations.frames)
-  );
-}
-
-export function isMindMapDocumentV1(
+export function isMindMapDocument(
   value: unknown,
-): value is MindMapDocumentV1 {
+): value is MindMapDocument {
   if (
     !isRecord(value) ||
     value.format !== MIND_MAP_DOCUMENT_FORMAT ||
@@ -330,134 +211,40 @@ export function isMindMapDocumentV1(
   }
 
   const nodeEntries = Object.entries(value.nodes);
-
   if (
     nodeEntries.length === 0 ||
     nodeEntries.some(
       ([nodeId, node]) =>
         !isNormalizedId(nodeId) ||
-        !isMindMapNodeV1(node) ||
+        !isMindMapNode(node) ||
         node.id !== nodeId,
     )
   ) {
     return false;
   }
 
-  const nodes = value.nodes as Readonly<Record<string, MindMapNodeV1>>;
-  const frames = value.frames as Readonly<Record<string, MindMapFrameV1>>;
-  const associations = value.associations as unknown as MindMapAssociationsV1;
+  const nodes = value.nodes as Readonly<Record<string, MindMapNode>>;
+  const frames = value.frames as Readonly<Record<string, MindMapFrame>>;
+  const associations = value.associations as unknown as MindMapAssociations;
 
   return (
     hasValidTree(value.rootNodeId, nodes) &&
     hasValidFrames(nodes, frames) &&
-    hasValidAssociations(nodes, frames, associations)
+    hasValidSubjectAssociations(nodes, associations.nodes) &&
+    hasValidSubjectAssociations(frames, associations.frames)
   );
 }
 
-export function isMindMapDocumentV2(
-  value: unknown,
-): value is MindMapDocumentV2 {
-  if (
-    !isRecord(value) ||
-    value.format !== MIND_MAP_DOCUMENT_FORMAT ||
-    value.version !== MIND_MAP_DOCUMENT_VERSION_V2 ||
-    !isRequiredText(value.title) ||
-    !isNormalizedId(value.rootNodeId) ||
-    !isRecord(value.nodes) ||
-    !isRecord(value.frames) ||
-    !isRecord(value.associations) ||
-    !isRecord(value.associations.nodes) ||
-    !isRecord(value.associations.frames)
-  ) {
-    return false;
-  }
-
-  const nodeEntries = Object.entries(value.nodes);
-
-  if (
-    nodeEntries.length === 0 ||
-    nodeEntries.some(
-      ([nodeId, node]) =>
-        !isNormalizedId(nodeId) ||
-        !isMindMapNodeV1(node) ||
-        node.id !== nodeId,
-    )
-  ) {
-    return false;
-  }
-
-  const nodes = value.nodes as Readonly<Record<string, MindMapNodeV1>>;
-  const frames = value.frames as Readonly<Record<string, MindMapFrameV1>>;
-  const associations = value.associations as unknown as MindMapAssociationsV2;
-
-  return (
-    hasValidTree(value.rootNodeId, nodes) &&
-    hasValidFrames(nodes, frames) &&
-    hasValidAssociationsV2(nodes, frames, associations)
-  );
-}
-
-export function isMindMapDocument(
-  value: unknown,
-): value is MindMapDocument {
-  return isMindMapDocumentV1(value) || isMindMapDocumentV2(value);
-}
-
-function cloneMindMapSubjectAssociationsV1(
-  associations: MindMapSubjectAssociationsV1,
-): MindMapSubjectAssociationsV1 {
-  return Object.freeze({
-    references: Object.freeze(
-      associations.references.map((binding) =>
-        Object.freeze({
-          referenceId: binding.referenceId,
-          sourceTarget: cloneAssetTarget(binding.sourceTarget),
-        }),
-      ),
-    ),
-    linkIds: Object.freeze([...associations.linkIds]),
-  });
-}
-
-function cloneMindMapSubjectAssociationMap(
-  associations: Readonly<
-    Record<string, MindMapSubjectAssociationsV1>
-  >,
-): Readonly<Record<string, MindMapSubjectAssociationsV1>> {
-  return Object.freeze(
-    Object.fromEntries(
-      Object.entries(associations).map(
-        ([subjectId, subjectAssociations]) => [
-          subjectId,
-          cloneMindMapSubjectAssociationsV1(subjectAssociations),
-        ],
-      ),
-    ),
-  );
-}
-
-export function cloneMindMapAgentLocatorV1(
-  locator: MindMapAgentLocatorV1,
-): MindMapAgentLocatorV1 {
-  if (!isMindMapAgentLocatorV1(locator)) {
-    throw new Error('Mind Map Agent locator 数据无效');
-  }
-
-  return cloneJsonValue(locator) as MindMapAgentLocatorV1;
-}
-
-function cloneMindMapSubjectAssociationsV2(
-  associations: MindMapSubjectAssociationsV2,
-): MindMapSubjectAssociationsV2 {
+function cloneSubjectAssociations(
+  associations: MindMapSubjectAssociations,
+): MindMapSubjectAssociations {
   return Object.freeze({
     references: Object.freeze(
       associations.references.map((binding) =>
         Object.freeze({
           referenceId: binding.referenceId,
           sourceRevision: binding.sourceRevision,
-          agentLocator: cloneMindMapAgentLocatorV1(
-            binding.agentLocator,
-          ),
+          target: cloneAssetTarget(binding.target),
         }),
       ),
     ),
@@ -465,131 +252,59 @@ function cloneMindMapSubjectAssociationsV2(
   });
 }
 
-function cloneMindMapSubjectAssociationMapV2(
-  associations: Readonly<
-    Record<string, MindMapSubjectAssociationsV2>
-  >,
-): Readonly<Record<string, MindMapSubjectAssociationsV2>> {
+function cloneSubjectAssociationMap(
+  associations: Readonly<Record<string, MindMapSubjectAssociations>>,
+): Readonly<Record<string, MindMapSubjectAssociations>> {
   return Object.freeze(
     Object.fromEntries(
-      Object.entries(associations).map(
-        ([subjectId, subjectAssociations]) => [
-          subjectId,
-          cloneMindMapSubjectAssociationsV2(subjectAssociations),
-        ],
-      ),
+      Object.entries(associations).map(([subjectId, subjectAssociations]) => [
+        subjectId,
+        cloneSubjectAssociations(subjectAssociations),
+      ]),
     ),
   );
 }
 
-export function cloneMindMapDocumentV1(
-  document: MindMapDocumentV1,
-): MindMapDocumentV1 {
-  if (!isMindMapDocumentV1(document)) {
-    throw new Error('MindMapDocumentV1 数据无效');
+export function cloneMindMapDocument(
+  document: MindMapDocument,
+): MindMapDocument {
+  if (!isMindMapDocument(document)) {
+    throw new Error('MindMapDocument 数据无效');
   }
-
-  const nodes = Object.freeze(
-    Object.fromEntries(
-      Object.entries(document.nodes).map(([nodeId, node]) => [
-        nodeId,
-        Object.freeze({
-          id: node.id,
-          title: node.title.trim(),
-          focus: node.focus.trim(),
-          childIds: Object.freeze([...node.childIds]),
-        }),
-      ]),
-    ),
-  );
-  const frames = Object.freeze(
-    Object.fromEntries(
-      Object.entries(document.frames).map(([frameId, frame]) => [
-        frameId,
-        Object.freeze({
-          id: frame.id,
-          title: frame.title.trim(),
-          nodeIds: Object.freeze([...frame.nodeIds]),
-        }),
-      ]),
-    ),
-  );
-  const associations = Object.freeze({
-    nodes: cloneMindMapSubjectAssociationMap(
-      document.associations.nodes,
-    ),
-    frames: cloneMindMapSubjectAssociationMap(
-      document.associations.frames,
-    ),
-  });
 
   return Object.freeze({
     format: MIND_MAP_DOCUMENT_FORMAT,
     version: MIND_MAP_DOCUMENT_VERSION,
     title: document.title.trim(),
     rootNodeId: document.rootNodeId,
-    nodes,
-    frames,
-    associations,
+    nodes: Object.freeze(
+      Object.fromEntries(
+        Object.entries(document.nodes).map(([nodeId, node]) => [
+          nodeId,
+          Object.freeze({
+            id: node.id,
+            title: node.title.trim(),
+            focus: node.focus.trim(),
+            childIds: Object.freeze([...node.childIds]),
+          }),
+        ]),
+      ),
+    ),
+    frames: Object.freeze(
+      Object.fromEntries(
+        Object.entries(document.frames).map(([frameId, frame]) => [
+          frameId,
+          Object.freeze({
+            id: frame.id,
+            title: frame.title.trim(),
+            nodeIds: Object.freeze([...frame.nodeIds]),
+          }),
+        ]),
+      ),
+    ),
+    associations: Object.freeze({
+      nodes: cloneSubjectAssociationMap(document.associations.nodes),
+      frames: cloneSubjectAssociationMap(document.associations.frames),
+    }),
   });
-}
-
-export function cloneMindMapDocumentV2(
-  document: MindMapDocumentV2,
-): MindMapDocumentV2 {
-  if (!isMindMapDocumentV2(document)) {
-    throw new Error('MindMapDocumentV2 数据无效');
-  }
-
-  const nodes = Object.freeze(
-    Object.fromEntries(
-      Object.entries(document.nodes).map(([nodeId, node]) => [
-        nodeId,
-        Object.freeze({
-          id: node.id,
-          title: node.title.trim(),
-          focus: node.focus.trim(),
-          childIds: Object.freeze([...node.childIds]),
-        }),
-      ]),
-    ),
-  );
-  const frames = Object.freeze(
-    Object.fromEntries(
-      Object.entries(document.frames).map(([frameId, frame]) => [
-        frameId,
-        Object.freeze({
-          id: frame.id,
-          title: frame.title.trim(),
-          nodeIds: Object.freeze([...frame.nodeIds]),
-        }),
-      ]),
-    ),
-  );
-  const associations = Object.freeze({
-    nodes: cloneMindMapSubjectAssociationMapV2(
-      document.associations.nodes,
-    ),
-    frames: cloneMindMapSubjectAssociationMapV2(
-      document.associations.frames,
-    ),
-  });
-
-  return Object.freeze({
-    format: MIND_MAP_DOCUMENT_FORMAT,
-    version: MIND_MAP_DOCUMENT_VERSION_V2,
-    title: document.title.trim(),
-    rootNodeId: document.rootNodeId,
-    nodes,
-    frames,
-    associations,
-  });
-}
-
-export function cloneMindMapDocument(
-  document: MindMapDocument,
-): MindMapDocument {
-  return document.version === MIND_MAP_DOCUMENT_VERSION
-    ? cloneMindMapDocumentV1(document)
-    : cloneMindMapDocumentV2(document);
 }

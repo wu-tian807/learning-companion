@@ -1,4 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import { parseAssetTarget } from '../../../shared/workbench/asset-target';
 import {
   isImageRegionTarget,
   type ImageRegionTarget,
@@ -26,6 +27,21 @@ export function isImageConversationContext(
     SOURCE_REVISION_PATTERN.test(value.sourceRevision) &&
     isImageRegionTarget(value.target)
   );
+}
+
+export function parseImageConversationContext(
+  value: unknown,
+): ImageConversationContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const target = parseAssetTarget(value.target);
+  if (!target) return undefined;
+  const normalized = {
+    sourceRevision: value.sourceRevision,
+    target,
+  };
+  return isImageConversationContext(normalized)
+    ? Object.freeze(normalized) as ImageConversationContext
+    : undefined;
 }
 
 export function createImageConversationContext(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AnchorRegistry } from '../../main/attachments/anchor-registry';
+import { AssetTargetRegistry } from '../../main/workbench/asset-target-registry';
 import { AttachmentRegistry } from '../../main/attachments/attachment-registry';
 import { epubMainWorkbenchContribution } from './main-contribution';
 import {
@@ -17,17 +17,17 @@ import {
 } from './shared';
 
 describe('EPUB main contribution composition', () => {
-  it('registers the shared CFI anchor once and keeps AI/authored Attachment types distinct', () => {
+  it('registers the shared CFI Target once and keeps AI/authored Attachment types distinct', () => {
     const attachments = new AttachmentRegistry();
-    const anchors = new AnchorRegistry();
+    const targets = new AssetTargetRegistry();
 
+    epubMainWorkbenchContribution.registerAssetTargets?.({ targets });
     epubMainWorkbenchContribution.registerAttachmentTypes?.({
       attachments,
-      anchors,
     });
 
     expect(
-      anchors.get(
+      targets.get(
         EPUB_CFI_RANGE_ANCHOR_TYPE,
         EPUB_CFI_RANGE_ANCHOR_VERSION,
       ),

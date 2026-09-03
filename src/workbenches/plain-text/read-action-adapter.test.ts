@@ -41,9 +41,9 @@ describe('PlainTextReadActionAdapter', () => {
       text: 'repeat',
       target: {
         scope: 'content',
-        anchorType: PLAIN_TEXT_RANGE_ANCHOR_TYPE,
-        anchorVersion: 1,
-        anchorPayload: {
+        targetType: PLAIN_TEXT_RANGE_ANCHOR_TYPE,
+        targetVersion: 1,
+        targetPayload: {
           ranges: [
             {
               start: 7,
@@ -86,7 +86,7 @@ describe('PlainTextReadActionAdapter', () => {
     );
 
     expect(captured?.text).toBe('st sec');
-    expect(captured?.target.anchorPayload).toEqual({
+    expect(captured?.target.targetPayload).toEqual({
       ranges: [
         {
           start: 3,

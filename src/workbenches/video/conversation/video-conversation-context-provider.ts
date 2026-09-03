@@ -18,7 +18,7 @@ import type { CachedSubtitleTrackReaderApi } from '../../media-subtitles/cached-
 import { MediaSubtitleRuntimeResolver } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
 import {
   VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isVideoConversationContext,
+  parseVideoConversationContext,
 } from './video-conversation-context';
 import { createVideoSubtitleConversationContext } from './video-subtitle-conversation-context';
 import {
@@ -56,8 +56,8 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
   ) {
     const assetId = context.instruction.assetId;
     if (!assetId) throw new AppError('DATA_INTEGRITY_ERROR');
-    const selection = context.instruction.context;
-    if (selection === undefined) {
+    const rawSelection = context.instruction.context;
+    if (rawSelection === undefined) {
       return Object.freeze({
         purpose: 'video-frame-conversation',
         statusMessage: '正在回答视频画面追问…',
@@ -68,7 +68,8 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
         toolRequirements: Object.freeze([]),
       });
     }
-    if (!isVideoConversationContext(selection)) {
+    const selection = parseVideoConversationContext(rawSelection);
+    if (!selection) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
@@ -99,7 +100,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
       if (!project) throw new AppError('PROJECT_NOT_FOUND');
       const sourcePath = resolved.location.absolutePath;
 
-      const region = selection.target.anchorPayload;
+      const region = selection.target.targetPayload;
       const subtitleContextPromise = this.subtitleTracks
         .read({
           assetId: asset.id,
@@ -146,11 +147,16 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
               '-loglevel',
               'error',
               '-ss',
-              selection.target.anchorPayload.timeSeconds.toFixed(6),
+              selection.target.targetPayload.timeSeconds.toFixed(6),
               '-i',
               sourcePath,
               '-map',
               '0:v:0',
+              // HTMLVideoElement reports display dimensions after applying the
+              // stream sample-aspect ratio. Normalize ffmpeg's decoded frame
+              // into that same coordinate space before preparing the ROI.
+              '-vf',
+              `scale=${region.sourceWidth}:${region.sourceHeight}:flags=lanczos,setsar=1`,
               '-frames:v',
               '1',
               '-an',
@@ -239,8 +245,10 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     answer: { readonly answer: string },
   ) {
     const assetId = context.instruction.assetId;
-    const selection = context.instruction.context;
-    if (!assetId || !isVideoConversationContext(selection)) {
+    const selection = parseVideoConversationContext(
+      context.instruction.context,
+    );
+    if (!assetId || !selection) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     const asset = this.assets.get(assetId);

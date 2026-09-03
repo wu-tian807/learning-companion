@@ -63,11 +63,11 @@ describe('EPUB annotation renderer', () => {
 
     cleanup();
     expect(annotations.remove).toHaveBeenCalledWith(
-      target.anchorPayload.cfiRange,
+      target.targetPayload.cfiRange,
       'underline',
     );
     expect(annotations.remove).toHaveBeenCalledWith(
-      target.anchorPayload.cfiRange,
+      target.targetPayload.cfiRange,
       'highlight',
     );
   });
