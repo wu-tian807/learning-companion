@@ -26,30 +26,14 @@ interface DocumentConversationContributionBaseInput {
   ) => void;
 }
 
-interface ReturnAnswerToSourceInput {
-  readonly text: string;
-  readonly question?: string;
-  readonly context?: DocumentConversationContext;
-}
-
 type DocumentConversationContributionInput =
   DocumentConversationContributionBaseInput & (
     | {
         readonly allowAnswerAttachments?: false;
-        readonly returnAnswerToSource?: undefined;
         readonly answerActionPresentation?: undefined;
       }
     | {
         readonly allowAnswerAttachments: true;
-        readonly returnAnswerToSource?: undefined;
-        readonly answerActionPresentation: ConversationAnswerActionPresentation;
-      }
-    | {
-        readonly allowAnswerAttachments?: false;
-        /** Workbench-owned source mutation; takes the actual selected/full answer text. */
-        readonly returnAnswerToSource: (
-          input: ReturnAnswerToSourceInput,
-        ) => Promise<void> | void;
         readonly answerActionPresentation: ConversationAnswerActionPresentation;
       }
   );
@@ -58,21 +42,13 @@ export function createDocumentConversationContribution(
   input: DocumentConversationContributionInput,
 ): WorkbenchConversationContribution {
   const answerAction: WorkbenchConversationContribution['answerAction'] =
-    input.allowAnswerAttachments || input.returnAnswerToSource
+    input.allowAnswerAttachments
       ? {
           ...input.answerActionPresentation,
           async execute({ answer, question, text }) {
             const context = isDocumentConversationContext(question?.context)
               ? question.context
               : undefined;
-            if (input.returnAnswerToSource) {
-              await input.returnAnswerToSource({
-                text,
-                ...(question?.text ? { question: question.text } : {}),
-                ...(context ? { context } : {}),
-              });
-              return;
-            }
             const target = context
               ? context.target
               : { scope: 'asset' as const };

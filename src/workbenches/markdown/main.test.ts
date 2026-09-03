@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createAssetSnapshot } from '../../main/assets/asset';
 import type {
@@ -24,6 +27,8 @@ import type {
 } from '../../main/workbench/workbench-state-database';
 import { MarkdownWorkbenchProvider } from './main';
 import {
+  createMarkdownInsertImageCommand,
+  createMarkdownReadImageCommand,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
@@ -529,6 +534,139 @@ describe('MarkdownWorkbenchProvider', () => {
       ).resolves.toBeUndefined();
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('MarkdownWorkbenchProvider image insertion', () => {
+  async function openWithDirectory(): Promise<{
+    readonly provider: MarkdownWorkbenchProvider;
+    readonly context: WorkbenchProviderContext;
+    readonly directory: string;
+    readonly cleanup: () => Promise<void>;
+  }> {
+    const directory = await mkdtemp(
+      join(tmpdir(), 'learning-companion-markdown-image-'),
+    );
+    const { handle } = createHandle(source);
+    const base = createContext('session', handle);
+    const context: WorkbenchProviderContext = {
+      ...base,
+      content: {
+        ...base.content,
+        location: {
+          kind: 'local-file',
+          absolutePath: join(directory, 'notes.md'),
+        },
+      },
+    };
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+    );
+    await provider.open(context);
+    return {
+      provider,
+      context,
+      directory,
+      cleanup: () => provider.close(context).then(() => rm(directory, {
+        recursive: true,
+        force: true,
+      })),
+    };
+  }
+
+  it('copies an inserted image beside the Markdown and reads it back', async () => {
+    const fixture = await openWithDirectory();
+    try {
+      const bytes = Buffer.from('fake-png-bytes', 'utf8');
+      const inserted = await fixture.provider.command(
+        fixture.context,
+        createMarkdownInsertImageCommand({
+          name: '截图 1.png',
+          mediaType: 'image/png',
+          data: bytes.toString('base64'),
+        }),
+      );
+
+      expect(inserted.payload).toEqual({
+        relativePath: 'images/截图 1.png',
+      });
+      await expect(
+        readFile(
+          join(
+            fixture.directory,
+            'images',
+            '截图 1.png',
+          ),
+        ),
+      ).resolves.toEqual(bytes);
+
+      const read = await fixture.provider.command(
+        fixture.context,
+        createMarkdownReadImageCommand(
+          (inserted.payload as { readonly relativePath: string })
+            .relativePath,
+        ),
+      );
+      expect(read.payload).toEqual({
+        dataUrl: `data:image/png;base64,${bytes.toString('base64')}`,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('deduplicates repeated image names', async () => {
+    const fixture = await openWithDirectory();
+    try {
+      const bytes = Buffer.from('a', 'utf8');
+      const payload = {
+        name: 'repeat.png',
+        mediaType: 'image/png' as const,
+        data: bytes.toString('base64'),
+      };
+      const first = await fixture.provider.command(
+        fixture.context,
+        createMarkdownInsertImageCommand(payload),
+      );
+      const second = await fixture.provider.command(
+        fixture.context,
+        createMarkdownInsertImageCommand(payload),
+      );
+
+      expect(first.payload).toEqual({
+        relativePath: 'images/repeat.png',
+      });
+      expect(second.payload).toEqual({
+        relativePath: 'images/repeat-2.png',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects oversized or unsafe image requests', async () => {
+    const fixture = await openWithDirectory();
+    try {
+      await expect(
+        fixture.provider.command(
+          fixture.context,
+          createMarkdownReadImageCommand('../secret.png'),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        fixture.provider.command(
+          fixture.context,
+          createMarkdownInsertImageCommand({
+            name: 'huge.png',
+            mediaType: 'image/png',
+            data: 'A'.repeat(1024 * 1024 * 32),
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await fixture.cleanup();
     }
   });
 });

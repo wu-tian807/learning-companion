@@ -24,10 +24,12 @@ import { DocumentAiWorkbenchShell } from '../document-ai/renderer/DocumentAiWork
 import {
   createDocumentConversationContext,
   createDocumentConversationContribution,
-  type DocumentConversationContext,
 } from '../document-ai/renderer/conversation/document-conversation-contribution';
 import {
   revealSelectionInCodeMirror,
+  rangeForTextOffsets,
+  rectFromCodeMirrorRange,
+  rectFromRange,
   resolveTextSelectionFromTarget,
   scrollRangeIntoView,
   selectOffsetsInElement,
@@ -37,7 +39,9 @@ import {
 } from '../../renderer/workbench/host/workbench-anchor-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
+import type { AssetTarget } from '../../shared/workbench/anchor';
 import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { resolveTextRangeSelection } from '../../shared/workbench/text-range-anchor';
 import {
   createPlainTextBufferCommand,
   createPlainTextViewStateCommand,
@@ -58,15 +62,14 @@ import {
 } from './shared';
 import { createPlainTextRendererActions } from './renderer-actions';
 import { PlainTextReadActionAdapter } from './read-action-adapter';
-import { writePlainTextAnswerToSource } from './answer-insertion';
 
 type BackupStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
 
 const PLAIN_TEXT_ANSWER_ACTION_PRESENTATION = Object.freeze({
   label: '回归文本原文',
   selectionLabel: '回归选中回答片段',
-  successMessage: '已写回并保存文本原文',
-  failureMessage: '写回文本原文失败',
+  successMessage: '已在原文旁创建 AI 回复批注，点击标记即可查看',
+  failureMessage: '创建原文回复批注失败',
 });
 
 const plainTextEditorTheme = EditorView.theme(
@@ -628,52 +631,14 @@ export function PlainTextWorkbenchView({
     reportError,
   ]);
 
-  const returnAnswerToSource = useCallback(
-    async (input: {
-      readonly text: string;
-      readonly question?: string;
-      readonly context?: DocumentConversationContext;
-    }) => {
-      if (saving || recovery) {
-        throw new Error('文本正在保存或等待恢复处理，请稍后再写回原文。');
-      }
-      setSaving(true);
-      try {
-        await writePlainTextAnswerToSource({
-          content: latestContentRef.current,
-          context: input.context,
-          text: input.text,
-          lineEnding,
-          applyContent(nextContent) {
-            latestContentRef.current = nextContent;
-            setContent(nextContent);
-          },
-          persistContent: async (nextContent) => {
-            await persistBuffer({
-              content: nextContent,
-              lineEnding,
-              viewState: viewStateRef.current,
-            });
-          },
-        });
-      } finally {
-        setSaving(false);
-      }
-    },
-    [lineEnding, persistBuffer, recovery, saving],
-  );
   const conversationContribution = useMemo(
     () => createDocumentConversationContribution({
       projectId: asset.projectId,
       assetId: asset.id,
-      returnAnswerToSource,
+      allowAnswerAttachments: true,
       answerActionPresentation: PLAIN_TEXT_ANSWER_ACTION_PRESENTATION,
     }),
-    [
-      asset.id,
-      asset.projectId,
-      returnAnswerToSource,
-    ],
+    [asset.id, asset.projectId],
   );
   const conversationOwnerId =
     `${plainTextWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
@@ -683,11 +648,55 @@ export function PlainTextWorkbenchView({
     conversationContribution,
   );
 
+  const resolveTextAnchorRect = useCallback(
+    (target: AssetTarget) => {
+      if (target.scope !== 'content') return undefined;
+      if (
+        !resolveTextSelectionFromTarget(target, [
+          PLAIN_TEXT_RANGE_ANCHOR_TYPE,
+        ])
+      ) {
+        return undefined;
+      }
+      if (viewOptions.readMode) {
+        const element = readContentRef.current;
+        if (!element) return undefined;
+        const resolved = resolveTextRangeSelection(
+          latestContentRef.current,
+          target,
+        );
+        if (!resolved) return undefined;
+        const range = rangeForTextOffsets(
+          element,
+          resolved.start,
+          resolved.end,
+        );
+        return range ? rectFromRange(range) : undefined;
+      }
+      const view = editorRef.current?.view;
+      if (!view) return undefined;
+      const resolved = resolveTextRangeSelection(
+        view.state.doc.toString(),
+        target,
+      );
+      if (!resolved) return undefined;
+      return rectFromCodeMirrorRange(
+        view,
+        resolved.start,
+        resolved.end,
+      );
+    },
+    [viewOptions.readMode],
+  );
+
   useEffect(() => {
     return registerWorkbenchAnchorController(
       `${conversationOwnerId}.anchors`,
       asset.id,
       {
+        resolve(target) {
+          return resolveTextAnchorRect(target);
+        },
         reveal(target) {
           if (target.scope !== 'content') return false;
           const selection = resolveTextSelectionFromTarget(
@@ -727,7 +736,12 @@ export function PlainTextWorkbenchView({
         },
       },
     );
-  }, [asset.id, conversationOwnerId, viewOptions.readMode]);
+  }, [
+    asset.id,
+    conversationOwnerId,
+    resolveTextAnchorRect,
+    viewOptions.readMode,
+  ]);
 
   const rendererActions = useMemo(
     () =>
