@@ -147,4 +147,24 @@ describe('ImageExplanationPanel', () => {
     act(() => root.unmount());
     container.remove();
   });
+
+  it('lets a completed attachment change its image marker color', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const onMarkerColorChange = vi.fn();
+    act(() => root.render(
+      <ImageExplanationPanel
+        explanation={{ ...completedExplanation, markerColor: 'blue' }}
+        contentUrl="learning-content://resource/token"
+        onClose={vi.fn()}
+        onRetry={vi.fn()}
+        onDelete={vi.fn()}
+        onMarkerColorChange={onMarkerColorChange}
+      />,
+    ));
+    expect(container.querySelectorAll('[aria-label$="图片标注"]')).toHaveLength(5);
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="红色图片标注"]')?.click());
+    expect(onMarkerColorChange).toHaveBeenCalledWith('red');
+    act(() => root.unmount());
+  });
 });

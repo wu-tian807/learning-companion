@@ -4,6 +4,10 @@ import {
   isImageRegionAnchorV1,
   type ImageRegionTarget,
 } from '../shared';
+import {
+  isImageMarkerColor,
+  type ImageMarkerColor,
+} from './image-marker-style';
 export type { ImageRegionTarget } from '../shared';
 
 export const IMAGE_EXPLANATION_ATTACHMENT_TYPE = 'image.ai-explanation';
@@ -16,6 +20,7 @@ export const IMAGE_EXPLANATION_IPC_CHANNELS = Object.freeze({
   create: 'image-explanation:create',
   retry: 'image-explanation:retry',
   delete: 'image-explanation:delete',
+  updateMarkerColor: 'image-explanation:update-marker-color',
   changed: 'image-explanation:changed',
 });
 
@@ -23,6 +28,7 @@ export interface ImageExplanationMetadata {
   readonly format: 'learning-companion/image-explanation';
   readonly version: 1;
   readonly sourceRevision: string;
+  readonly markerColor?: ImageMarkerColor;
 }
 
 interface ImageExplanationViewBase {
@@ -32,6 +38,7 @@ interface ImageExplanationViewBase {
   readonly target: ImageRegionTarget;
   readonly createdTime: number;
   readonly updatedTime: number;
+  readonly markerColor?: ImageMarkerColor;
 }
 
 export interface ImageExplanationTaskView extends ImageExplanationViewBase {
@@ -74,6 +81,12 @@ export interface ImageExplanationIdRequest
   readonly explanationId: string;
 }
 
+export interface UpdateImageExplanationMarkerColorRequest
+  extends ListImageExplanationsRequest {
+  readonly explanationId: string;
+  readonly markerColor: ImageMarkerColor;
+}
+
 export type ImageExplanationEvent =
   | { readonly type: 'changed'; readonly explanation: ImageExplanationView }
   | {
@@ -101,6 +114,9 @@ export interface ImageExplanationPreloadApi {
     request: ImageExplanationIdRequest,
   ): Promise<ImageExplanationView>;
   deleteImageExplanation(request: ImageExplanationIdRequest): Promise<void>;
+  updateImageExplanationMarkerColor(
+    request: UpdateImageExplanationMarkerColorRequest,
+  ): Promise<ImageExplanationAttachmentView>;
   onImageExplanationChanged(
     listener: (event: ImageExplanationEvent) => void,
   ): () => void;
@@ -141,8 +157,15 @@ export function isImageExplanationMetadata(
     isRecord(value) &&
     value.format === 'learning-companion/image-explanation' &&
     value.version === 1 &&
-    isRequiredText(value.sourceRevision, 256)
+    isRequiredText(value.sourceRevision, 256) &&
+    (value.markerColor === undefined || isImageMarkerColor(value.markerColor))
   );
+}
+
+export function imageExplanationMarkerColor(
+  metadata: ImageExplanationMetadata,
+): ImageMarkerColor {
+  return metadata.markerColor ?? 'blue';
 }
 
 export function isListImageExplanationsRequest(
@@ -178,6 +201,17 @@ export function isImageExplanationIdRequest(
   );
 }
 
+export function isUpdateImageExplanationMarkerColorRequest(
+  value: unknown,
+): value is UpdateImageExplanationMarkerColorRequest {
+  return (
+    isRecord(value) &&
+    isListImageExplanationsRequest(value) &&
+    isRequiredText(value.explanationId, 256) &&
+    isImageMarkerColor(value.markerColor)
+  );
+}
+
 export function isImageExplanationView(
   value: unknown,
 ): value is ImageExplanationView {
@@ -187,6 +221,7 @@ export function isImageExplanationView(
     isRequiredText(value.projectId, 256) &&
     isRequiredText(value.assetId, 256) &&
     isImageRegionTarget(value.target) &&
+    (value.markerColor === undefined || isImageMarkerColor(value.markerColor)) &&
     ((value.kind === 'task' &&
       (value.status === 'pending' || value.status === 'failed') &&
       value.answer === undefined &&

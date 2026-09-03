@@ -49,4 +49,26 @@ describe('ImageExplanationMarkerOverlay', () => {
     expect(markup).not.toContain('>1</text>');
     expect(markup).toContain('data-current-selection="true"');
   });
+
+  it('uses the saved color and separates colliding number badges', () => {
+    const markup = renderToStaticMarkup(
+      <ImageExplanationMarkerOverlay
+        visible
+        markers={[
+          ...markers,
+          {
+            ...markers[0],
+            explanation: { ...explanation, id: 'explanation-2', markerColor: 'red' },
+            number: 2,
+          },
+        ]}
+        onActivate={vi.fn()}
+      />,
+    );
+    expect(markup).toContain('stroke="#ef4444"');
+    expect(markup).toContain('data-marker-leader="explanation-2"');
+    const badgeCenters = [...markup.matchAll(/data-marker-badge="[^"]+" cx="([^"]+)" cy="([^"]+)"/g)]
+      .map((match) => `${match[1]},${match[2]}`);
+    expect(new Set(badgeCenters).size).toBe(2);
+  });
 });
