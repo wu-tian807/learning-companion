@@ -27,11 +27,14 @@ import {
 import type {
   WorkbenchInteractionSnapshot,
 } from '../../shared/workbench/interaction';
-import type { AssetTarget } from '../../shared/workbench/anchor';
+import type {
+  AssetTarget,
+  ContentAssetTarget,
+} from '../../shared/workbench/asset-target';
 import {
-  registerWorkbenchAnchorController,
-  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
-} from '../../renderer/workbench/host/workbench-anchor-bridge';
+  registerWorkbenchTargetController,
+  WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT,
+} from '../../renderer/workbench/host/workbench-target-bridge';
 import type {
   PdfDocumentSummary,
   PdfFindStatus,
@@ -47,6 +50,7 @@ import {
   DEFAULT_PDF_WORKBENCH_STATE,
   PDF_REGION_ANCHOR_TYPE,
   PDF_REGION_ANCHOR_VERSION,
+  isPdfContentTarget,
   isPdfSaveViewStateResult,
   isPdfWorkbenchPayload,
   pdfWorkbenchManifest,
@@ -282,6 +286,14 @@ function identityInteraction(
   return interaction;
 }
 
+export function mapPdfViewerTarget(
+  target: AssetTarget,
+  mapTarget: (target: AssetTarget) => AssetTarget | undefined,
+): ContentAssetTarget | undefined {
+  const mapped = mapTarget(target);
+  return isPdfContentTarget(mapped) ? mapped : undefined;
+}
+
 function OutlineTree({
   items,
   onActivate,
@@ -477,7 +489,7 @@ interface PdfDocumentWorkbenchViewProps
   readonly mapInteraction?: (
     interaction: WorkbenchInteractionSnapshot,
   ) => WorkbenchInteractionSnapshot;
-  readonly mapAnchorTarget?: (target: AssetTarget) => AssetTarget;
+  readonly mapTarget?: (target: AssetTarget) => AssetTarget | undefined;
 }
 
 export function PdfDocumentWorkbenchView({
@@ -495,7 +507,7 @@ export function PdfDocumentWorkbenchView({
     createPdfSaveViewStateCommand,
   isSaveViewStateResult = isPdfSaveViewStateResult,
   mapInteraction = identityInteraction,
-  mapAnchorTarget = (target) => target,
+  mapTarget = (target) => target,
 }: PdfDocumentWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isPdfWorkbenchPayload(bootstrap.payload)
@@ -524,10 +536,10 @@ export function PdfDocumentWorkbenchView({
 
   useEffect(() => {
     if (loadState.kind !== 'ready') return;
-    const findPage = (target: AssetTarget): HTMLElement | undefined => {
-      const mapped = mapAnchorTarget(target);
-      if (mapped.scope !== 'content') return undefined;
-      const payload = mapped.anchorPayload as Record<string, unknown>;
+    const findPage = (
+      target: ContentAssetTarget,
+    ): HTMLElement | undefined => {
+      const payload = target.targetPayload as Record<string, unknown>;
       const start = payload.start as Record<string, unknown> | undefined;
       const pageNumber = typeof payload.pageNumber === 'number'
         ? payload.pageNumber
@@ -538,10 +550,11 @@ export function PdfDocumentWorkbenchView({
       ) ?? undefined;
     };
     const resolve = (target: AssetTarget) => {
-      const mapped = mapAnchorTarget(target);
+      const mapped = mapPdfViewerTarget(target, mapTarget);
+      if (!mapped) return;
       const page = findPage(mapped);
-      if (!page || mapped.scope !== 'content') return;
-      const payload = mapped.anchorPayload as Record<string, unknown>;
+      if (!page) return;
+      const payload = mapped.targetPayload as Record<string, unknown>;
       const pageRect = page.getBoundingClientRect();
       const x = typeof payload.x === 'number' ? payload.x : 1;
       const y = typeof payload.y === 'number' ? payload.y : 0;
@@ -555,17 +568,19 @@ export function PdfDocumentWorkbenchView({
       };
     };
     const reveal = (target: AssetTarget) => {
-      const page = findPage(target);
+      const mapped = mapPdfViewerTarget(target, mapTarget);
+      if (!mapped) return false;
+      const page = findPage(mapped);
       if (!page) return false;
       page.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return true;
     };
     const notifyLayout = () => window.dispatchEvent(
-      new Event(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT),
+      new Event(WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT),
     );
     const container = containerRef.current;
-    const dispose = registerWorkbenchAnchorController(
-      `${pdfWorkbenchManifest.id}:${bootstrap.sessionId}.anchors`,
+    const dispose = registerWorkbenchTargetController(
+      `${pdfWorkbenchManifest.id}:${bootstrap.sessionId}.targets`,
       asset.id,
       { resolve, reveal },
     );
@@ -574,7 +589,7 @@ export function PdfDocumentWorkbenchView({
       dispose();
       container?.removeEventListener('scroll', notifyLayout);
     };
-  }, [asset.id, bootstrap.sessionId, loadState.kind, mapAnchorTarget]);
+  }, [asset.id, bootstrap.sessionId, loadState.kind, mapTarget]);
   const [summary, setSummary] = useState<PdfDocumentSummary>();
   const [outline, setOutline] = useState<readonly PdfOutlineItem[]>([]);
   const [viewState, setViewState] = useState<PdfWorkbenchViewState>(
@@ -1154,9 +1169,9 @@ export function PdfDocumentWorkbenchView({
         );
         const rawTarget: AssetTarget = {
           scope: 'content',
-          anchorType: PDF_REGION_ANCHOR_TYPE,
-          anchorVersion: PDF_REGION_ANCHOR_VERSION,
-          anchorPayload: {
+          targetType: PDF_REGION_ANCHOR_TYPE,
+          targetVersion: PDF_REGION_ANCHOR_VERSION,
+          targetPayload: {
             pageNumber: region.pageNumber,
             x: completed.x,
             y: completed.y,
@@ -1299,25 +1314,25 @@ export function PdfDocumentWorkbenchView({
         },
         onCopySelection: copySelection,
         onReveal: reveal,
-        onAiExplain: (text, anchor) => {
+        onAiExplain: (text, target) => {
           const pageNumber =
-            typeof (anchor.anchorPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
-              ? ((anchor.anchorPayload as Record<string, unknown>).pageNumber as number)
+            typeof (target.targetPayload as Record<string, unknown> | undefined)?.pageNumber === 'number'
+              ? ((target.targetPayload as Record<string, unknown>).pageNumber as number)
               : undefined;
           conversationRuntime.open({
             ownerId: conversationOwnerId,
             context: createDocumentConversationContext({
-              target: anchor,
+              target,
               ...(pageNumber === undefined ? {} : { pageNumber }),
               selectedText: text,
             }),
           });
         },
-        onAiSummarize: (pageNumber, anchor) => {
+        onAiSummarize: (pageNumber, target) => {
           conversationRuntime.open({
             ownerId: conversationOwnerId,
             context: createDocumentConversationContext({
-              target: anchor,
+              target,
               pageNumber,
             }),
             question: `请总结第 ${pageNumber} 页的主要内容。`,

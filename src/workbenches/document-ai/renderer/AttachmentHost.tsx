@@ -9,15 +9,15 @@ import {
 import { createPortal } from 'react-dom';
 
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
-import type { AssetTarget } from '../../../shared/workbench/anchor';
+import type { AssetTarget } from '../../../shared/workbench/asset-target';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { ConversationMarkdown } from '../../../renderer/conversation/conversation-markdown';
 import {
-  resolveWorkbenchAnchor,
-  revealWorkbenchAnchor,
-  WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT,
-  type WorkbenchAnchorRect,
-} from '../../../renderer/workbench/host/workbench-anchor-bridge';
+  resolveWorkbenchTarget,
+  revealWorkbenchTarget,
+  WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT,
+  type WorkbenchTargetRect,
+} from '../../../renderer/workbench/host/workbench-target-bridge';
 
 export interface AttachmentHostProps {
   readonly attachments: readonly AssetAttachment[];
@@ -36,7 +36,7 @@ export interface AttachmentHostProps {
 
 export const ATTACHMENT_MARKER_MOTION_CLASS = 'transition-colors';
 
-interface AnchorPosition {
+interface TargetPosition {
   readonly pageNumber: number;
   readonly offset?: number;
   readonly xRatio?: number;
@@ -45,9 +45,9 @@ interface AnchorPosition {
   readonly heightRatio?: number;
 }
 
-function sameAnchorRects(
-  left: ReadonlyMap<string, WorkbenchAnchorRect>,
-  right: ReadonlyMap<string, WorkbenchAnchorRect>,
+function sameTargetRects(
+  left: ReadonlyMap<string, WorkbenchTargetRect>,
+  right: ReadonlyMap<string, WorkbenchTargetRect>,
 ): boolean {
   if (left.size !== right.size) return false;
   for (const [id, rect] of left) {
@@ -65,22 +65,20 @@ function sameAnchorRects(
   return true;
 }
 
-function applyAnchorRect(
+function applyTargetRect(
   element: HTMLElement,
-  rect: WorkbenchAnchorRect,
+  rect: WorkbenchTargetRect,
 ): void {
   element.style.transform =
     `translate3d(${rect.left}px, ${rect.top}px, 0)`;
   element.style.width = `${Math.max(rect.width, 18)}px`;
   element.style.height = `${Math.max(rect.height, 18)}px`;
-}
-
-function extractPosition(target: AssetTarget): AnchorPosition | undefined {
+function extractPosition(target: AssetTarget): TargetPosition | undefined {
   if (target.scope !== 'content') {
     return undefined;
   }
 
-  const payload = target.anchorPayload as Record<string, unknown> | undefined;
+  const payload = target.targetPayload as Record<string, unknown> | undefined;
   if (!payload) {
     return undefined;
   }
@@ -126,7 +124,7 @@ function extractQuote(target: AssetTarget): string | undefined {
     return undefined;
   }
 
-  const payload = target.anchorPayload as Record<string, unknown> | undefined;
+  const payload = target.targetPayload as Record<string, unknown> | undefined;
   if (!payload) {
     return undefined;
   }
@@ -150,12 +148,12 @@ function extractQuote(target: AssetTarget): string | undefined {
 }
 
 /**
- * 文本选区批注（纯文本 / Markdown 的回归原文）没有 pageNumber，anchorPayload
+ * 文本选区批注（纯文本 / Markdown 的原文旁批注）没有 pageNumber，targetPayload
  * 携带 ranges。这类批注在工作台里用 Word 评论式的小标记展示，点击才展开悬浮回复。
  */
-function isTextAnchoredAttachment(attachment: AssetAttachment): boolean {
+function isTextTargetedAttachment(attachment: AssetAttachment): boolean {
   if (attachment.target.scope !== 'content') return false;
-  const payload = attachment.target.anchorPayload as
+  const payload = attachment.target.targetPayload as
     | Record<string, unknown>
     | undefined;
   if (Array.isArray(payload?.ranges) && payload.ranges.length > 0) {
@@ -197,14 +195,14 @@ function extractMetadataPreview(metadata: JsonValue): string {
   return '';
 }
 
-function attachmentAnchorKey(attachment: AssetAttachment): string {
+function attachmentTargetKey(attachment: AssetAttachment): string {
   const position = extractPosition(attachment.target);
   if (!position) {
     if (attachment.target.scope === 'content') {
       return [
-        attachment.target.anchorType,
-        String(attachment.target.anchorVersion),
-        JSON.stringify(attachment.target.anchorPayload),
+        attachment.target.targetType,
+        String(attachment.target.targetVersion),
+        JSON.stringify(attachment.target.targetPayload),
       ].join(':');
     }
     return attachment.id;
@@ -250,7 +248,7 @@ function extractAnswerBody(body: JsonValue | undefined): {
 }
 
 function placeAnswerCard(
-  rect: WorkbenchAnchorRect,
+  rect: WorkbenchTargetRect,
   hostSize: { readonly width: number; readonly height: number },
 ): { readonly left: number; readonly top: number } {
   const cardWidth = 300;
@@ -431,8 +429,8 @@ export function AttachmentHost({
   const [activeBody, setActiveBody] = useState<JsonValue>();
   const [focusedAttachmentId, setFocusedAttachmentId] = useState<string | null>(null);
   const focusTimerRef = useRef<number | undefined>(undefined);
-  const [anchorRects, setAnchorRects] = useState<
-    ReadonlyMap<string, WorkbenchAnchorRect>
+  const [targetRects, setTargetRects] = useState<
+    ReadonlyMap<string, WorkbenchTargetRect>
   >(
     new Map(),
   );
@@ -471,7 +469,7 @@ export function AttachmentHost({
       for (const attachment of attachments) {
         if (!known.has(attachment.id)) {
           known.add(attachment.id);
-          if (isTextAnchoredAttachment(attachment)) {
+          if (isTextTargetedAttachment(attachment)) {
             next.add(attachment.id);
             changed = true;
           }
@@ -501,7 +499,7 @@ export function AttachmentHost({
     if (!host) return;
 
     const update = () => {
-      const next = new Map<string, WorkbenchAnchorRect>();
+      const next = new Map<string, WorkbenchTargetRect>();
       const hostRect = host.getBoundingClientRect();
       const markers = new Map<string, HTMLElement>();
       for (const marker of host.querySelectorAll<HTMLElement>(
@@ -512,7 +510,7 @@ export function AttachmentHost({
       }
       setHostSize({ width: hostRect.width, height: hostRect.height });
       for (const attachment of attachments) {
-        const rect = resolveWorkbenchAnchor(assetId, attachment.target);
+        const rect = resolveWorkbenchTarget(assetId, attachment.target);
         if (rect) {
           const localRect = {
             ...rect,
@@ -521,16 +519,16 @@ export function AttachmentHost({
           };
           next.set(attachment.id, localRect);
           const marker = markers.get(attachment.id);
-          if (marker) applyAnchorRect(marker, localRect);
+          if (marker) applyTargetRect(marker, localRect);
         }
       }
-      setAnchorRects((current) =>
-        sameAnchorRects(current, next) ? current : next,
+      setTargetRects((current) =>
+        sameTargetRects(current, next) ? current : next,
       );
     };
 
     update();
-    window.addEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
+    window.addEventListener(WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT, update);
     window.addEventListener('resize', update);
     document.addEventListener('scroll', update, {
       capture: true,
@@ -542,7 +540,7 @@ export function AttachmentHost({
     const resizeObserver = new ResizeObserver(update);
     resizeObserver.observe(observedContainer);
     return () => {
-      window.removeEventListener(WORKBENCH_ANCHOR_LAYOUT_CHANGED_EVENT, update);
+      window.removeEventListener(WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT, update);
       window.removeEventListener('resize', update);
       document.removeEventListener('scroll', update, {
         capture: true,
@@ -643,7 +641,7 @@ export function AttachmentHost({
   const markerGroups = useMemo(() => {
     const groups = new Map<string, AssetAttachment[]>();
     for (const attachment of attachments) {
-      const key = attachmentAnchorKey(attachment);
+      const key = attachmentTargetKey(attachment);
       const group = groups.get(key) ?? [];
       group.push(attachment);
       groups.set(key, group);
@@ -652,7 +650,7 @@ export function AttachmentHost({
   }, [attachments]);
 
   const revealAttachment = useCallback((attachment: AssetAttachment) => {
-    void revealWorkbenchAnchor(assetId, attachment.target).catch(() => undefined);
+    void revealWorkbenchTarget(assetId, attachment.target).catch(() => undefined);
     setFocusedAttachmentId(attachment.id);
     onSidebarOpenChange(false);
     if (focusTimerRef.current !== undefined) {
@@ -672,11 +670,11 @@ export function AttachmentHost({
     <div ref={hostRef} className="pointer-events-none absolute inset-0 z-20 overflow-visible">
       {markersVisible && markerGroups.map((group) => {
         const att = group.at(-1)!;
-        const anchorRect = anchorRects.get(att.id);
+        const targetRect = targetRects.get(att.id);
         const position = extractPosition(att.target);
         const quote = extractQuote(att.target);
         const preview = extractMetadataPreview(att.metadata);
-        const textAnchored = isTextAnchoredAttachment(att);
+        const textTargeted = isTextTargetedAttachment(att);
         const groupOpenItem = group.find(
           (item) => !collapsedAttachmentIds.has(item.id),
         );
@@ -687,9 +685,9 @@ export function AttachmentHost({
         const isActive =
           group.some((item) => item.id === activeAttachmentId) ||
           group.some((item) => item.id === focusedAttachmentId) ||
-          (textAnchored && anyGroupOpen);
+          (textTargeted && anyGroupOpen);
 
-        if (!anchorRect) return null;
+        if (!targetRect) return null;
 
         const body = bodies.get(att.id);
         const { answer, selectedAnswer } = extractAnswerBody(body);
@@ -699,10 +697,10 @@ export function AttachmentHost({
           onAttachmentClick?.(att.id);
         };
 
-        if (textAnchored) {
+        if (textTargeted) {
           const markerSize = 22;
-          const markerLeft = anchorRect.left + anchorRect.width;
-          const markerTop = anchorRect.top + anchorRect.height / 2;
+          const markerLeft = targetRect.left + targetRect.width;
+          const markerTop = targetRect.top + targetRect.height / 2;
           const activeItem =
             group.find(
               (item) => !collapsedAttachmentIds.has(item.id),
@@ -720,9 +718,9 @@ export function AttachmentHost({
           const cardPosition = placeAnswerCard(
             {
               left: markerLeft,
-              top: anchorRect.top,
+              top: targetRect.top,
               width: 0,
-              height: anchorRect.height,
+              height: targetRect.height,
             },
             hostSize,
           );
@@ -848,11 +846,11 @@ export function AttachmentHost({
           );
         }
 
-        const left = anchorRect.left;
-        const top = anchorRect.top;
-        const width = Math.max(anchorRect.width, 18);
-        const height = Math.max(anchorRect.height, 18);
-        const cardPosition = placeAnswerCard(anchorRect, hostSize);
+        const left = targetRect.left;
+        const top = targetRect.top;
+        const width = Math.max(targetRect.width, 18);
+        const height = Math.max(targetRect.height, 18);
+        const cardPosition = placeAnswerCard(targetRect, hostSize);
 
         return (
           <div key={att.id} className="contents">

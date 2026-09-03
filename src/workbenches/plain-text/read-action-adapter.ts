@@ -3,7 +3,7 @@ import {
   interactionFromTextSelection,
   type WorkbenchSelectionSnapshot,
 } from '../../shared/workbench/selection';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-target';
 import type { WorkbenchContextMenuWheelEvent } from '../../renderer/workbench/runtime/workbench-runtime-store';
 import type {
   EditorActionAdapter,

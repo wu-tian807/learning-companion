@@ -233,8 +233,8 @@ describe('EPUB renderer actions', () => {
 
     expect(onCopySelection).toHaveBeenCalledWith('EPUB 选区');
     expect(interaction.inputs[0]?.target).toMatchObject({
-      anchorType: 'epub.cfi-range',
-      anchorPayload: {
+      targetType: 'epub.cfi-range',
+      targetPayload: {
         cfiRange: anchor.cfiRange,
         quote: anchor.quote,
       },

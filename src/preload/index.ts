@@ -30,7 +30,7 @@ import type {
   WorkbenchOpenRequest,
 } from "../shared/workbench/protocol";
 import type { AssetAttachment } from "../shared/attachments/contracts";
-import type { AssetTarget } from "../shared/workbench/anchor";
+import type { AssetTarget } from "../shared/workbench/asset-target";
 import type { JsonValue } from "../shared/workbench/protocol";
 import type {
   ConversationRecord,

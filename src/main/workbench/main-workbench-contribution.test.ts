@@ -12,7 +12,7 @@ const manifest = {
   protocolVersion: 2,
   supportedMediaTypes: ['text/test'],
   requiredContentCapabilities: [],
-  supportedAnchorTypes: [],
+  supportedTargetTypes: [],
   facilities: [],
 } satisfies AssetWorkbenchManifest;
 

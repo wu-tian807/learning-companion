@@ -31,6 +31,8 @@ export interface PreparedGenerationAssetReference {
   readonly assetId: string;
   readonly name: string;
   readonly mediaType: string;
+  /** Asset Workbench selected while materializing this immutable snapshot. */
+  readonly workbenchId?: string;
   readonly materializedMediaType?: string;
   readonly contentRevision: string;
   readonly relativePath: string;
@@ -280,6 +282,14 @@ export function clonePreparedGenerationAssetReferenceBindings(
               assetId: requireText(reference.assetId, 'assetId'),
               name: requireText(reference.name, 'name'),
               mediaType: requireText(reference.mediaType, 'mediaType'),
+              ...(reference.workbenchId === undefined
+                ? {}
+                : {
+                    workbenchId: requireText(
+                      reference.workbenchId,
+                      'workbenchId',
+                    ),
+                  }),
               ...(reference.materializedMediaType === undefined
                 ? {}
                 : {

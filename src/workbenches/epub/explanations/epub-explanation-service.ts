@@ -41,7 +41,7 @@ import {
 import {
   createEpubConversationContext,
   EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isEpubConversationContext,
+  parseEpubConversationContext,
 } from './epub-conversation-context';
 
 export type EpubExplanationListener = (
@@ -83,7 +83,7 @@ function sameTarget(
   left: EpubExplanationView['target'],
   right: EpubExplanationView['target'],
 ): boolean {
-  return left.anchorPayload.cfiRange === right.anchorPayload.cfiRange;
+  return left.targetPayload.cfiRange === right.targetPayload.cfiRange;
 }
 
 export class EpubExplanationService implements EpubExplanationServiceApi {
@@ -330,7 +330,7 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     const instruction = this.taskInstruction(snapshot);
     return instruction?.commitAnswer &&
       instruction.assetId !== undefined &&
-      isEpubConversationContext(instruction.context)
+      parseEpubConversationContext(instruction.context) !== undefined
       ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
   }
@@ -339,11 +339,13 @@ export class EpubExplanationService implements EpubExplanationServiceApi {
     snapshot: GenerationTaskSnapshot,
   ): EpubExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
-    const conversationContext = instruction?.context;
+    const conversationContext = parseEpubConversationContext(
+      instruction?.context,
+    );
     if (
       !instruction?.commitAnswer ||
       instruction.assetId === undefined ||
-      !isEpubConversationContext(conversationContext)
+      !conversationContext
     ) {
       return undefined;
     }

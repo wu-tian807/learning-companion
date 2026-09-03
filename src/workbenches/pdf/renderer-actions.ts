@@ -1,5 +1,5 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
 import type {
   PdfReadingMode,
@@ -23,8 +23,8 @@ export interface PdfRendererActionsOptions {
   readonly hasSelection: () => boolean;
   readonly onCopySelection: (text: string) => Promise<void> | void;
   readonly onReveal: () => Promise<void> | void;
-  readonly onAiExplain?: (text: string, anchor: ContentAnchorTarget) => void;
-  readonly onAiSummarize?: (pageNumber: number, anchor: ContentAnchorTarget) => void;
+  readonly onAiExplain?: (text: string, target: ContentAssetTarget) => void;
+  readonly onAiSummarize?: (pageNumber: number, target: ContentAssetTarget) => void;
 }
 
 export function createPdfRendererActions({
@@ -127,10 +127,10 @@ export function createPdfRendererActions({
           const selection = findTextSelectionInput(context);
           if (!selection?.text) return;
 
-          const anchor = context.focus;
-          if (!anchor) return;
+          const target = context.focus;
+          if (!target) return;
 
-          onAiExplain(selection.text, anchor);
+          onAiExplain(selection.text, target);
         },
       },
       {
@@ -139,16 +139,16 @@ export function createPdfRendererActions({
         execute: (context) => {
           if (!onAiSummarize) return;
 
-          const anchor = context.focus;
-          if (!anchor) return;
+          const target = context.focus;
+          if (!target) return;
 
-          const anchorPayload = anchor.anchorPayload as Record<string, unknown> | undefined;
+          const targetPayload = target.targetPayload as Record<string, unknown> | undefined;
           const pageNumber =
-            anchorPayload && typeof anchorPayload.pageNumber === 'number'
-              ? anchorPayload.pageNumber
+            targetPayload && typeof targetPayload.pageNumber === 'number'
+              ? targetPayload.pageNumber
               : 1;
 
-          onAiSummarize(pageNumber, anchor);
+          onAiSummarize(pageNumber, target);
         },
       },
     ],

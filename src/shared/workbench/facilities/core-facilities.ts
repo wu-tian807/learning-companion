@@ -1,8 +1,8 @@
 import type { JsonValue } from '../protocol';
 import {
   isAssetTarget,
-  type ContentAnchorTarget,
-} from '../anchor';
+  type ContentAssetTarget,
+} from '../asset-target';
 import type { WorkbenchFacilityDeclaration } from './facility-declaration';
 import { WorkbenchFacilityDefinitionRegistry } from './facility-definition-registry';
 import { defineWorkbenchFacility } from './facility-definition';
@@ -56,8 +56,8 @@ interface TextSelectionFacilityOptions extends CaptureFacilityOptions {
 export interface CoreTextSelectionFacilityEvent {
   readonly text?: string;
   readonly frameUrl?: string;
-  readonly target?: ContentAnchorTarget;
-  /** Ephemeral frame viewport geometry; never part of a persisted Anchor. */
+  readonly target?: ContentAssetTarget;
+  /** Ephemeral frame viewport geometry; never part of a persisted Target. */
   readonly rect?: CoreViewportRect;
 }
 
@@ -77,7 +77,7 @@ export interface CoreContextMenuFacilityEvent {
   readonly linkUrl?: string;
   readonly mediaType: CoreContextMediaType;
   readonly sourceUrl?: string;
-  readonly target?: ContentAnchorTarget;
+  readonly target?: ContentAssetTarget;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,9 +131,9 @@ function isExternalHttpUrl(value: unknown): value is string {
   }
 }
 
-function isContentAnchorTarget(
+function isContentAssetTarget(
   value: unknown,
-): value is ContentAnchorTarget {
+): value is ContentAssetTarget {
   return isAssetTarget(value) && value.scope === 'content';
 }
 
@@ -228,7 +228,7 @@ export function isCoreTextSelectionFacilityEvent(
     (value.frameUrl === undefined ||
       isBoundedUrl(value.frameUrl)) &&
     (value.target === undefined ||
-      isContentAnchorTarget(value.target)) &&
+      isContentAssetTarget(value.target)) &&
     (value.rect === undefined || isCoreViewportRect(value.rect))
   );
 }
@@ -276,7 +276,7 @@ export function isCoreContextMenuFacilityEvent(
     (value.sourceUrl === undefined ||
       isExternalHttpUrl(value.sourceUrl)) &&
     (value.target === undefined ||
-      isContentAnchorTarget(value.target))
+      isContentAssetTarget(value.target))
   );
 }
 

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ContentAnchorTarget } from './anchor';
+import type { ContentAssetTarget } from './asset-target';
 import {
   createTextRangeTarget,
+  isTextRangePayload,
   resolveTextRangeEndOffset,
-} from './text-range-anchor';
+} from './text-range-target';
 
 describe('Text range anchor', () => {
   it('captures offsets and quote context without leaking editor state', () => {
@@ -14,9 +15,9 @@ describe('Text range anchor', () => {
       ]),
     ).toEqual({
       scope: 'content',
-      anchorType: 'plain-text.text-range',
-      anchorVersion: 1,
-      anchorPayload: {
+      targetType: 'plain-text.text-range',
+      targetVersion: 1,
+      targetPayload: {
         ranges: [
           {
             start: 1,
@@ -51,13 +52,19 @@ describe('Text range anchor', () => {
   });
 
   it('does not authorize source mutation from a visual-only quote', () => {
-    const target: ContentAnchorTarget = {
+    const target: ContentAssetTarget = {
       scope: 'content',
-      anchorType: 'markdown.visual-selection',
-      anchorVersion: 1,
-      anchorPayload: { exact: 'hello' },
+      targetType: 'markdown.visual-selection',
+      targetVersion: 1,
+      targetPayload: { exact: 'hello' },
     };
 
     expect(resolveTextRangeEndOffset('[hello](url)', target)).toBeUndefined();
+  });
+
+  it('rejects empty ranges that cannot be revealed', () => {
+    expect(isTextRangePayload({
+      ranges: [{ start: 2, end: 2, exact: '' }],
+    })).toBe(false);
   });
 });

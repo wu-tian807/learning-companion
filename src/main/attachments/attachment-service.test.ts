@@ -4,7 +4,7 @@ import type { AssetAttachment } from '../../shared/attachments/contracts';
 import { trackAssetAggregateMutations } from '../assets/asset-aggregate-mutation';
 import { createAttachmentAggregateMutationSource } from '../bootstrap/asset-aggregate-mutation-sources';
 import type { AssetLookup } from '../assets/asset-database';
-import { AnchorRegistry } from './anchor-registry';
+import { AssetTargetRegistry } from '../workbench/asset-target-registry';
 import type { AttachmentContentFile } from './attachment-content-file';
 import type { AttachmentDatabaseApi } from './attachment-database';
 import { AttachmentRegistry } from './attachment-registry';
@@ -39,12 +39,20 @@ function createHarness() {
     isMetadata: (value) =>
       typeof value === 'object' && value !== null && 'status' in value,
   });
-  const anchors = new AnchorRegistry();
-  anchors.register({
-    anchorType: 'epub.cfi-range',
+  const targets = new AssetTargetRegistry();
+  targets.register({
+    workbenchId: 'builtin.epub',
+    targetType: 'epub.cfi-range',
     version: 1,
     isPayload: (value) =>
       typeof value === 'object' && value !== null && 'cfiRange' in value,
+    agent: {
+      description: 'EPUB CFI range',
+      payloadSchema: { type: 'object' },
+      examplePayloads: [{ cfiRange: 'epubcfi(/6/2)' }],
+    },
+    describe: (value) =>
+      (value as { readonly cfiRange: string }).cfiRange,
   });
   const contentFiles = {
     write: vi.fn(async ({ attachmentId, fileName, mediaType }) => ({
@@ -63,7 +71,7 @@ function createHarness() {
   const service = new AttachmentService(
     database,
     attachments,
-    anchors,
+    targets,
     contentFiles,
     assets,
     { createId: () => 'attachment-1', now: () => 10 },
@@ -125,9 +133,9 @@ describe('AttachmentService', () => {
       typeVersion: 1,
       target: {
         scope: 'content',
-        anchorType: 'epub.cfi-range',
-        anchorVersion: 1,
-        anchorPayload: { cfiRange: 'epubcfi(/6/2)' },
+        targetType: 'epub.cfi-range',
+        targetVersion: 1,
+        targetPayload: { cfiRange: 'epubcfi(/6/2)' },
       },
       metadata: { status: 'pending' },
     });

@@ -6,7 +6,7 @@ import { AppError } from '../../../main/errors/app-error';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
   HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isHtmlConversationContext,
+  parseHtmlConversationContext,
 } from './html-conversation-context';
 import {
   HTML_BEGIN_EDIT_TOOL_ID,
@@ -39,12 +39,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function describeAnchor(anchor: JsonValue): string {
-  if (!isRecord(anchor)) return '当前内容';
-  const payload = isRecord(anchor.anchorPayload)
-    ? anchor.anchorPayload
+function describeTarget(target: JsonValue): string {
+  if (!isRecord(target)) return '当前内容';
+  const payload = isRecord(target.targetPayload)
+    ? target.targetPayload
     : undefined;
-  if (anchor.anchorType === 'html.dom') {
+  if (target.targetType === 'html.dom') {
     const element = isRecord(payload?.element) ? payload.element : undefined;
     const parts: string[] = [];
     if (typeof element?.id === 'string' && element.id.trim()) {
@@ -56,12 +56,12 @@ function describeAnchor(anchor: JsonValue): string {
     }
     return parts.length > 0 ? `HTML 内容：${parts.join(' ')}` : 'HTML 内容';
   }
-  if (anchor.anchorType === 'html.quote') {
+  if (target.targetType === 'html.quote') {
     return typeof payload?.exact === 'string' && payload.exact.trim()
       ? `选中文本：「${payload.exact}」`
       : '选中文本';
   }
-  if (anchor.anchorType === 'html.element') {
+  if (target.targetType === 'html.element') {
     const parts = [
       typeof payload?.id === 'string' && payload.id.trim()
         ? `#${payload.id}`
@@ -73,7 +73,7 @@ function describeAnchor(anchor: JsonValue): string {
     ].filter((value): value is string => value !== undefined);
     return parts.length > 0 ? `元素：${parts.join(' ')}` : '元素';
   }
-  if (anchor.anchorType === 'html.link') {
+  if (target.targetType === 'html.link') {
     return typeof payload?.url === 'string' && payload.url.trim()
       ? `链接：${payload.url}`
       : '链接';
@@ -99,8 +99,11 @@ export class HtmlConversationContextProvider
     if (!source || source.assetId !== context.instruction.assetId) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    const anchor = context.instruction.context;
-    if (anchor !== undefined && !isHtmlConversationContext(anchor)) {
+    const rawTarget = context.instruction.context;
+    const target = rawTarget === undefined
+      ? undefined
+      : parseHtmlConversationContext(rawTarget);
+    if (rawTarget !== undefined && !target) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     const editing = this.resolveEditing();
@@ -116,17 +119,17 @@ export class HtmlConversationContextProvider
       HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2,
       `当前 HTML 草稿在工作区中的相对路径：${JSON.stringify(source.relativePath)}。需要查看页面内容时读取该路径，不要猜测其他位置。`,
       editingEnabled
-        ? '仅当用户明确要求修改当前 HTML 时才使用 html_begin_edit 和 html_replace_edit。每次修改必须先 begin 冻结目标和 scope，再用返回的 editId replace；replace 成功后若要修改另一区域必须重新 begin。用户提供的 DOM Anchor 是推荐定位，不是权限边界；没有引用时可使用唯一 CSS selector。必须保证 replacement 中所有非 void 元素显式闭合。'
+        ? '仅当用户明确要求修改当前 HTML 时才使用 html_begin_edit 和 html_replace_edit。每次修改必须先 begin 冻结目标和 scope，再用返回的 editId replace；replace 成功后若要修改另一区域必须重新 begin。用户提供的 DOM Target 是推荐定位，不是权限边界；没有引用时可使用唯一 CSS selector。必须保证 replacement 中所有非 void 元素显式闭合。'
         : undefined,
     ]
       .filter((part): part is string => part !== undefined)
       .join('\n\n');
     const userMessageParts = [`问题：${context.instruction.question}`];
-    if (anchor !== undefined) {
-      userMessageParts.push(`用户选中或聚焦的内容：${describeAnchor(anchor)}`);
-      if (isRecord(anchor) && anchor.anchorType === 'html.dom') {
+    if (target !== undefined) {
+      userMessageParts.push(`用户选中或聚焦的内容：${describeTarget(target)}`);
+      if (target.scope === 'content' && target.targetType === 'html.dom') {
         userMessageParts.push(
-          `可用于 html_begin_edit 的受信任 DOM Anchor：${JSON.stringify(anchor)}`,
+          `可用于 html_begin_edit 的受信任 DOM Target：${JSON.stringify(target)}`,
         );
       }
     }

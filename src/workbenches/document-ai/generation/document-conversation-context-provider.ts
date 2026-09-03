@@ -13,8 +13,8 @@ import { AppError } from '../../../main/errors/app-error';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
 import {
   DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isDocumentConversationContext,
   type DocumentImageReference,
+  parseDocumentConversationContext,
 } from '../document-conversation-context';
 
 export const DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V2 = `You are the document reading assistant in Learning Companion.
@@ -129,15 +129,18 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
   async prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
   ) {
-    const source = context.assetReferences.source?.[0];
-    if (!source || source.assetId !== context.instruction.assetId) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
-    const mediaType = source.materializedMediaType ?? source.mediaType;
-    const selection = context.instruction.context;
-    if (selection !== undefined && !isDocumentConversationContext(selection)) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
+  const source = context.assetReferences.source?.[0];
+  if (!source || source.assetId !== context.instruction.assetId) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
+  const mediaType = source.materializedMediaType ?? source.mediaType;
+    const rawSelection = context.instruction.context;
+    const selection = rawSelection === undefined
+      ? undefined
+      : parseDocumentConversationContext(rawSelection);
+  if (rawSelection !== undefined && !selection) {
+    throw new AppError('DATA_INTEGRITY_ERROR');
+  }
 
     if (selection?.image !== undefined) {
       const imageInput = await this.prepareImageInput(
@@ -180,7 +183,7 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
       `Question: ${context.instruction.question}`,
       `Document path: ${source.relativePath}`,
       `Document media type: ${mediaType}`,
-      `Target anchor: ${JSON.stringify(target)}`,
+      `AssetTarget: ${JSON.stringify(target)}`,
       selection?.selectedText
         ? `Selected text:\n${selection.selectedText}`
         : selection?.previewDataUrl
@@ -202,7 +205,6 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
         : hasUsableSelection
           ? '正在结合框选内容回答…'
           : '正在阅读资料并回答…',
-      systemInstruction: DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V2,
       userMessage: selection?.previewDataUrl
         ? await prepareSelectedRegionMessage(
             context,

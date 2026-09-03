@@ -8,13 +8,14 @@ import {
 } from '../../ai-annotation-attachment';
 import {
   DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isDocumentConversationContext,
+  parseDocumentConversationContext,
   type DocumentConversationContext,
 } from '../../document-conversation-context';
 
 export {
   createDocumentConversationContext,
   isDocumentConversationContext,
+  parseDocumentConversationContext,
   type DocumentConversationContext,
 } from '../../document-conversation-context';
 
@@ -46,9 +47,9 @@ export function createDocumentConversationContribution(
       ? {
           ...input.answerActionPresentation,
           async execute({ answer, question, text }) {
-            const context = isDocumentConversationContext(question?.context)
-              ? question.context
-              : undefined;
+            const context = parseDocumentConversationContext(
+              question?.context,
+            );
             const target = context
               ? context.target
               : { scope: 'asset' as const };
@@ -82,10 +83,11 @@ export function createDocumentConversationContribution(
   const contribution: WorkbenchConversationContribution = {
     contextProviderId: DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
     sourceAssetMode: 'reference',
-    isContext: isDocumentConversationContext,
+    isContext: (context) =>
+      parseDocumentConversationContext(context) !== undefined,
     onContextReleased(context) {
       input.onContextReleased?.(
-        isDocumentConversationContext(context) ? context : undefined,
+        parseDocumentConversationContext(context),
       );
     },
     ...(answerAction ? { answerAction } : {}),

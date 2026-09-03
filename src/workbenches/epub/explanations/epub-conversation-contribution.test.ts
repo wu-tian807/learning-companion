@@ -10,7 +10,10 @@ import {
   createEpubConversationContext,
   createEpubConversationContribution,
 } from './epub-conversation-contribution';
-import { EPUB_CONVERSATION_CONTEXT_PROVIDER_ID } from './epub-conversation-context';
+import {
+  EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
+  parseEpubConversationContext,
+} from './epub-conversation-context';
 import { EPUB_DEFAULT_EXPLANATION_QUESTION } from './shared';
 
 const target = createEpubCfiRangeTarget({
@@ -100,5 +103,21 @@ describe('EPUB conversation contribution', () => {
         generateTitle: true,
       }),
     ).toThrow('请先在 EPUB 中选中一段文字');
+  });
+
+  it('normalizes a persisted pre-Target EPUB context at the Workbench boundary', () => {
+    const legacy = {
+      target: {
+        scope: 'content',
+        anchorType: target.targetType,
+        anchorVersion: target.targetVersion,
+        anchorPayload: target.targetPayload,
+      },
+    };
+
+    expect(parseEpubConversationContext(legacy)).toEqual(
+      createEpubConversationContext(target),
+    );
+    expect(createContribution().isContext?.(legacy)).toBe(true);
   });
 });

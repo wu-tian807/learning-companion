@@ -29,7 +29,7 @@ describe('Document conversation contribution', () => {
     });
   });
 
-  it('turns a Workbench-owned Anchor into the shared document TaskDefinition request', () => {
+  it('turns a Workbench-owned Target into the shared document TaskDefinition request', () => {
     const contribution = createDocumentConversationContribution({
       projectId: 'project',
       assetId: 'asset',
@@ -37,9 +37,9 @@ describe('Document conversation contribution', () => {
     const context = createDocumentConversationContext({
       target: {
         scope: 'content',
-        anchorType: 'markdown.range',
-        anchorVersion: 1,
-        anchorPayload: { start: 2, end: 8 },
+        targetType: 'markdown.range',
+        targetVersion: 1,
+        targetPayload: { start: 2, end: 8 },
       },
       selectedText: 'selected',
     });

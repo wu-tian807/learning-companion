@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   areMarkdownSourceViewStatesEqual,
   createMarkdownImageReference,
-  createMarkdownImageAnchorTarget,
+  createMarkdownImageTarget,
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
@@ -12,7 +12,7 @@ import {
   isMarkdownInsertImageResult,
   isMarkdownReadImagePayload,
   isMarkdownReadImageResult,
-  isMarkdownImageAnchorPayload,
+  isMarkdownImageTargetPayload,
   markdownImageReferenceCandidates,
   isMarkdownSourceBufferPayload,
   markdownImageMediaTypeFromName,
@@ -33,7 +33,7 @@ describe('Markdown Workbench shared protocol', () => {
     expect(
       markdownWorkbenchManifest.requiredContentCapabilities,
     ).toEqual(['read-bytes', 'write-bytes']);
-    expect(markdownWorkbenchManifest.supportedAnchorTypes).toEqual([
+    expect(markdownWorkbenchManifest.supportedTargetTypes).toEqual([
       'markdown.source-range',
       'markdown.visual-selection',
       'markdown.image-source',
@@ -58,19 +58,19 @@ describe('Markdown Workbench shared protocol', () => {
   });
 
   it('validates markdown image anchor payloads', () => {
-    const target = createMarkdownImageAnchorTarget('images/shot.png');
+    const target = createMarkdownImageTarget('images/shot.png');
     expect(target).toMatchObject({
       scope: 'content',
-      anchorType: 'markdown.image-source',
-      anchorVersion: 1,
-      anchorPayload: { relativePath: 'images/shot.png' },
+      targetType: 'markdown.image-source',
+      targetVersion: 1,
+      targetPayload: { relativePath: 'images/shot.png' },
     });
-    expect(isMarkdownImageAnchorPayload(target.anchorPayload)).toBe(true);
+    expect(isMarkdownImageTargetPayload(target.targetPayload)).toBe(true);
     expect(
-      isMarkdownImageAnchorPayload({ relativePath: '../secret.png' }),
+      isMarkdownImageTargetPayload({ relativePath: '../secret.png' }),
     ).toBe(false);
     expect(
-      isMarkdownImageAnchorPayload({ relativePath: 'images/notes.txt' }),
+      isMarkdownImageTargetPayload({ relativePath: 'images/notes.txt' }),
     ).toBe(false);
   });
 

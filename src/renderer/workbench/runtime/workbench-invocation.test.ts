@@ -45,9 +45,9 @@ describe('Workbench action invocation', () => {
           payload: { text: '冻结内容' },
           target: {
           scope: 'content' as const,
-          anchorType: 'text.range',
-          anchorVersion: 1,
-          anchorPayload: { start: 0, end: 4 },
+          targetType: 'text.range',
+          targetVersion: 1,
+          targetPayload: { start: 0, end: 4 },
         },
         },
       ],

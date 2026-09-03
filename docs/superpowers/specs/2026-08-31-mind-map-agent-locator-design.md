@@ -1,7 +1,29 @@
 # Mind Map Agent Locator 数据结构设计
 
 日期：2026-08-31
-状态：已实现
+状态：历史设计归档；当前运行时只保留 v3 AssetTarget 方案
+
+## 0. 2026-09-02 更新：统一为 AssetTarget
+
+本文第 1～5 节记录的是 `.mindmap` v2 `agentLocator` 方案及其当时的设计边界，
+仅用于保留设计演进记录，不再代表可读取或可恢复的运行时协议。
+
+当前实现使用 `mindmap.generate@3` 和 `.mindmap` v3：
+
+- 每个 Node 和 Frame 的来源绑定保存
+  `referenceId + sourceRevision + target`；
+- `target` 统一使用通用 `AssetTarget`，不再为 Mind Map 单独维护自由格式的
+  `agentLocator`；
+- 各来源 Workbench 自己注册 Target 类型、Agent 描述、payload schema、示例、
+  权威校验器和可读描述；
+- Mind Map 生成只收集本次所选来源对应的 Target 目录，不包含 PDF、视频、EPUB
+  等媒体分支；
+- Agent 生成的 Target 必须属于该来源实际选中的 Workbench，并通过其 payload
+  校验；无法可靠定位内容时可使用 `{ "scope": "asset" }`；
+- 运行时只注册 `mindmap.generate@3`，Content Adapter 只读取 `.mindmap` v3；
+  v1/v2 版号不再提供兼容、迁移或任务恢复路线。
+
+以下历史设计中的“本次不做”均指 v2 实现当时的范围。
 
 ## 1. 目标
 
@@ -53,7 +75,7 @@ interface MindMapReferenceBindingV2 {
 
 ## 4. 生成协议与兼容性
 
-新生成协议为 `mindmap.generate@2`：
+当时的新生成协议为 `mindmap.generate@2`：
 
 - candidate v2 把 `sourceAliases` 改为 `sourceReferences`；
 - 每个 Node 和 Frame 至少包含一个 `sourceAlias + agentLocator`；
@@ -61,9 +83,8 @@ interface MindMapReferenceBindingV2 {
 - 提交时 alias 被映射为 `referenceId + sourceRevision`，Agent 不能自行编造数据库 ID；
 - 生成的新文件使用 `.mindmap` v2。
 
-`mindmap.generate@1` 仍使用旧提示词、candidate v1 和 `.mindmap` v1，并继续注册在 Definition
-Registry 中。这样升级前已经持久化、但尚未完成的任务能按创建时的 `id + version` 恢复。
-Content Adapter 同时读取 v1 和 v2，旧文件无需迁移即可打开。
+该阶段曾同时注册 `mindmap.generate@1` 并读取 `.mindmap` v1/v2。由于项目当前没有需要
+保留的旧 Mind Map 数据，这些兼容分支现已移除；当前实现只接受 v3。
 
 ## 5. 本次不做
 

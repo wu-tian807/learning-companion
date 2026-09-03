@@ -2,18 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cloneMindMapDocument,
-  cloneMindMapDocumentV1,
-  cloneMindMapDocumentV2,
   isMindMapDocument,
-  isMindMapDocumentV1,
-  isMindMapDocumentV2,
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  MIND_MAP_DOCUMENT_VERSION_V2,
-  type MindMapDocumentV2,
+  type MindMapDocument,
 } from './document';
 
-function createDocument() {
+function createDocument(): MindMapDocument {
   return {
     format: MIND_MAP_DOCUMENT_FORMAT,
     version: MIND_MAP_DOCUMENT_VERSION,
@@ -52,11 +47,12 @@ function createDocument() {
           references: [
             {
               referenceId: 'reference-pdf',
-              sourceTarget: {
+              sourceRevision: 'pdf-revision-1',
+              target: {
                 scope: 'content',
-                anchorType: 'pdf.page-region',
-                anchorVersion: 1,
-                anchorPayload: { pageNumber: 3 },
+                targetType: 'pdf.page-region',
+                targetVersion: 1,
+                targetPayload: { pageNumber: 3 },
               },
             },
           ],
@@ -70,368 +66,197 @@ function createDocument() {
         },
       },
     },
-  } as const;
-}
-
-function createDocumentV2(): MindMapDocumentV2 {
-  return {
-    format: MIND_MAP_DOCUMENT_FORMAT,
-    version: MIND_MAP_DOCUMENT_VERSION_V2,
-    title: ' Agent 定位 ',
-    rootNodeId: 'root',
-    nodes: {
-      root: {
-        id: 'root',
-        title: '课程',
-        focus: '课程总览',
-        childIds: ['chapter'],
-      },
-      chapter: {
-        id: 'chapter',
-        title: '第一章',
-        focus: '核心概念',
-        childIds: [],
-      },
-    },
-    frames: {
-      overview: {
-        id: 'overview',
-        title: '总览',
-        nodeIds: ['root', 'chapter'],
-      },
-    },
-    associations: {
-      nodes: {
-        root: {
-          references: [
-            {
-              referenceId: 'reference-source',
-              sourceRevision: 'source-revision-1',
-              agentLocator: {
-                headingPath: ['课程', '引言'],
-                quote: '先建立课程的整体认识',
-                customHint: {
-                  page: 3,
-                  nearby: true,
-                },
-              },
-            },
-            {
-              referenceId: 'reference-source',
-              sourceRevision: 'source-revision-1',
-              agentLocator: {
-                headingPath: ['课程', '学习路线'],
-                description: '说明章节之间依赖关系的段落',
-              },
-            },
-          ],
-          linkIds: [],
-        },
-      },
-      frames: {},
-    },
   };
 }
 
 describe('Mind Map document contract', () => {
-  it('accepts flexible Agent locators and preserves repeated locations in one source', () => {
-    const document = cloneMindMapDocumentV2(createDocumentV2());
+  it('accepts and deeply clones the current versioned AssetTarget contract', () => {
+    const document = cloneMindMapDocument(createDocument());
 
-    expect(document.title).toBe('Agent 定位');
-    expect(document.associations.nodes.root.references).toHaveLength(2);
-    expect(
-      document.associations.nodes.root.references.map(
-        ({ referenceId }) => referenceId,
-      ),
-    ).toEqual(['reference-source', 'reference-source']);
-    expect(
-      document.associations.nodes.root.references[0].agentLocator,
-    ).toEqual({
-      headingPath: ['课程', '引言'],
-      quote: '先建立课程的整体认识',
-      customHint: { page: 3, nearby: true },
-    });
-    expect(
-      Object.isFrozen(
-        document.associations.nodes.root.references[0].agentLocator
-          .customHint,
-      ),
-    ).toBe(true);
+    expect(document.version).toBe(3);
+    expect(document.title).toBe('线性规划');
+    expect(document.frames.foundations.title).toBe('基础概念讲义');
+    expect(document.associations.nodes['basic-solution'].references[0])
+      .toEqual({
+        referenceId: 'reference-pdf',
+        sourceRevision: 'pdf-revision-1',
+        target: {
+          scope: 'content',
+          targetType: 'pdf.page-region',
+          targetVersion: 1,
+          targetPayload: { pageNumber: 3 },
+        },
+      });
     expect(isMindMapDocument(document)).toBe(true);
-    expect(cloneMindMapDocument(document)).toEqual(document);
+    expect(Object.isFrozen(document)).toBe(true);
+    expect(Object.isFrozen(document.nodes.root.childIds)).toBe(true);
+    expect(Object.isFrozen(
+      document.associations.nodes['basic-solution'].references[0].target,
+    )).toBe(true);
   });
 
-  it.each([
-    {},
-    [],
-    'page 3',
-    null,
-    { page: Number.POSITIVE_INFINITY },
-  ])(
-    'rejects an unusable Agent locator: %j',
-    (agentLocator) => {
-      const document = createDocumentV2();
+  it('keeps a version marker but rejects retired document versions', () => {
+    for (const version of [1, 2, 4]) {
+      expect(isMindMapDocument({ ...createDocument(), version })).toBe(false);
+    }
+  });
 
-      expect(
-        isMindMapDocumentV2({
-          ...document,
-          associations: {
-            ...document.associations,
-            nodes: {
-              root: {
-                references: [
-                  {
-                    referenceId: 'reference-source',
-                    sourceRevision: 'source-revision-1',
-                    agentLocator,
-                  },
-                ],
-                linkIds: [],
-              },
-            },
-          },
-        }),
-      ).toBe(false);
-    },
-  );
-
-  it('rejects a missing source revision and keeps legacy v1 readable', () => {
-    const document = createDocumentV2();
-    const binding = document.associations.nodes.root.references[0];
-
-    expect(
-      isMindMapDocumentV2({
-        ...document,
-        associations: {
-          ...document.associations,
-          nodes: {
-            root: {
-              references: [{ ...binding, sourceRevision: '  ' }],
-              linkIds: [],
-            },
+  it('rejects legacy locator fields and pre-Target anchor wire fields', () => {
+    const document = createDocument();
+    const withBinding = (binding: unknown) => ({
+      ...document,
+      associations: {
+        ...document.associations,
+        nodes: {
+          'basic-solution': {
+            references: [binding],
+            linkIds: [],
           },
         },
-      }),
-    ).toBe(false);
-    expect(isMindMapDocument(createDocument())).toBe(true);
-  });
-
-  it('accepts and clones a normalized tree with sparse associations and Frames', () => {
-    const document = cloneMindMapDocumentV1(createDocument());
-
-    expect(document.title).toBe('线性规划');
-    expect(document.nodes.root.childIds).toEqual([
-      'basic-solution',
-      'simplex',
-    ]);
-    expect(document.frames.foundations).toEqual({
-      id: 'foundations',
-      title: '基础概念讲义',
-      nodeIds: ['basic-solution', 'simplex'],
+      },
     });
-    expect(document.associations.nodes.root).toBeUndefined();
-    expect(
-      document.associations.nodes['basic-solution'].references[0],
-    ).toEqual({
+
+    expect(isMindMapDocument(withBinding({
       referenceId: 'reference-pdf',
-      sourceTarget: {
+      sourceTarget: { scope: 'asset' },
+    }))).toBe(false);
+    expect(isMindMapDocument(withBinding({
+      referenceId: 'reference-pdf',
+      sourceRevision: 'pdf-revision-1',
+      agentLocator: { page: 3 },
+    }))).toBe(false);
+    expect(isMindMapDocument(withBinding({
+      referenceId: 'reference-pdf',
+      sourceRevision: 'pdf-revision-1',
+      target: {
         scope: 'content',
         anchorType: 'pdf.page-region',
         anchorVersion: 1,
         anchorPayload: { pageNumber: 3 },
       },
-    });
-    expect(document.associations.frames.foundations.linkIds).toEqual([
-      'link-foundations-lecture',
-    ]);
-    expect(Object.isFrozen(document)).toBe(true);
-    expect(Object.isFrozen(document.nodes.root.childIds)).toBe(true);
-    expect(Object.isFrozen(document.frames.foundations.nodeIds)).toBe(
-      true,
-    );
-    expect(
-      Object.isFrozen(
-        document.associations.nodes['basic-solution'].references[0]
-          .sourceTarget,
-      ),
-    ).toBe(true);
+    }))).toBe(false);
   });
 
-  it('allows sparse associations but rejects unknown Node and Frame subjects', () => {
+  it('requires source revision and a complete canonical Target', () => {
+    const document = createDocument();
+    const binding = document.associations.nodes['basic-solution'].references[0];
+    const withBinding = (replacement: unknown) => ({
+      ...document,
+      associations: {
+        ...document.associations,
+        nodes: {
+          'basic-solution': { references: [replacement], linkIds: [] },
+        },
+      },
+    });
+
+    expect(isMindMapDocument(withBinding({
+      ...binding,
+      sourceRevision: '  ',
+    }))).toBe(false);
+    expect(isMindMapDocument(withBinding({
+      ...binding,
+      target: { scope: 'content' },
+    }))).toBe(false);
+    expect(isMindMapDocument(withBinding({
+      ...binding,
+      agentLocator: { page: 3 },
+    }))).toBe(false);
+  });
+
+  it('allows repeated source references and sparse associations', () => {
+    const document = createDocument();
+    const binding = document.associations.nodes['basic-solution'].references[0];
+
+    expect(isMindMapDocument({
+      ...document,
+      associations: {
+        nodes: {
+          root: {
+            references: [
+              { ...binding, target: { scope: 'asset' } },
+              binding,
+            ],
+            linkIds: [],
+          },
+        },
+        frames: {},
+      },
+    })).toBe(true);
+    expect(isMindMapDocument({
+      ...document,
+      associations: { nodes: {}, frames: {} },
+    })).toBe(true);
+  });
+
+  it('rejects unknown association subjects and duplicate link IDs', () => {
     const document = createDocument();
 
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        associations: { nodes: {}, frames: {} },
-      }),
-    ).toBe(true);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        associations: {
-          ...document.associations,
-          nodes: {
-            unknown: { references: [], linkIds: [] },
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        associations: {
-          ...document.associations,
-          frames: {
-            unknown: { references: [], linkIds: [] },
-          },
-        },
-      }),
-    ).toBe(false);
+    expect(isMindMapDocument({
+      ...document,
+      associations: {
+        ...document.associations,
+        nodes: { unknown: { references: [], linkIds: [] } },
+      },
+    })).toBe(false);
+    expect(isMindMapDocument({
+      ...document,
+      associations: {
+        ...document.associations,
+        frames: { unknown: { references: [], linkIds: [] } },
+      },
+    })).toBe(false);
+    expect(isMindMapDocument({
+      ...document,
+      associations: {
+        ...document.associations,
+        nodes: { root: { references: [], linkIds: ['link', 'link'] } },
+      },
+    })).toBe(false);
   });
 
   it('rejects invalid Frame membership without changing tree semantics', () => {
     const document = createDocument();
 
-    expect(
-      isMindMapDocumentV1({
+    for (const frame of [
+      { ...document.frames.foundations, nodeIds: ['basic-solution', 'missing'] },
+      { ...document.frames.foundations, nodeIds: ['simplex', 'simplex'] },
+      { ...document.frames.foundations, nodeIds: [] },
+      { ...document.frames.foundations, id: 'other-frame' },
+    ]) {
+      expect(isMindMapDocument({
         ...document,
-        frames: {
-          foundations: {
-            ...document.frames.foundations,
-            nodeIds: ['basic-solution', 'missing'],
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        frames: {
-          foundations: {
-            ...document.frames.foundations,
-            nodeIds: ['simplex', 'simplex'],
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        frames: {
-          foundations: {
-            ...document.frames.foundations,
-            nodeIds: [],
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        frames: {
-          foundations: {
-            ...document.frames.foundations,
-            id: 'other-frame',
-          },
-        },
-      }),
-    ).toBe(false);
-  });
-
-  it('rejects duplicate association IDs and invalid source targets', () => {
-    const document = createDocument();
-
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        associations: {
-          ...document.associations,
-          nodes: {
-            root: {
-              references: [],
-              linkIds: ['link', 'link'],
-            },
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        associations: {
-          ...document.associations,
-          frames: {
-            foundations: {
-              references: [
-                {
-                  referenceId: 'reference',
-                  sourceTarget: { scope: 'asset' },
-                },
-                {
-                  referenceId: 'reference',
-                  sourceTarget: { scope: 'asset' },
-                },
-              ],
-              linkIds: [],
-            },
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        associations: {
-          ...document.associations,
-          nodes: {
-            root: {
-              references: [
-                {
-                  referenceId: 'reference',
-                  sourceTarget: { scope: 'content' },
-                },
-              ],
-              linkIds: [],
-            },
-          },
-        },
-      }),
-    ).toBe(false);
+        frames: { foundations: frame },
+      })).toBe(false);
+    }
   });
 
   it('rejects missing, shared and disconnected tree nodes', () => {
     const document = createDocument();
 
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        nodes: {
-          ...document.nodes,
-          root: { ...document.nodes.root, childIds: ['missing'] },
+    expect(isMindMapDocument({
+      ...document,
+      nodes: {
+        ...document.nodes,
+        root: { ...document.nodes.root, childIds: ['missing'] },
+      },
+    })).toBe(false);
+    expect(isMindMapDocument({
+      ...document,
+      nodes: {
+        ...document.nodes,
+        'basic-solution': {
+          ...document.nodes['basic-solution'],
+          childIds: ['simplex'],
         },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        nodes: {
-          ...document.nodes,
-          'basic-solution': {
-            ...document.nodes['basic-solution'],
-            childIds: ['simplex'],
-          },
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isMindMapDocumentV1({
-        ...document,
-        nodes: {
-          ...document.nodes,
-          root: { ...document.nodes.root, childIds: ['basic-solution'] },
-        },
-      }),
-    ).toBe(false);
+      },
+    })).toBe(false);
+    expect(isMindMapDocument({
+      ...document,
+      nodes: {
+        ...document.nodes,
+        root: { ...document.nodes.root, childIds: ['basic-solution'] },
+      },
+    })).toBe(false);
   });
 });

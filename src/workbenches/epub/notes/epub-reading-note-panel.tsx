@@ -115,7 +115,7 @@ export function EpubReadingNotePanel({
                     {note.text}
                   </span>
                   <span className="mt-1 line-clamp-1 block text-[10px] text-slate-600">
-                    “{note.target.anchorPayload.quote.exact}”
+                    “{note.target.targetPayload.quote.exact}”
                   </span>
                 </button>
               </li>
@@ -127,7 +127,7 @@ export function EpubReadingNotePanel({
       <form onSubmit={submit} className="border-t border-white/[0.07] p-3">
         {target ? (
           <p className="mb-2 line-clamp-2 text-[10px] leading-4 text-amber-100/60">
-            关联原文：“{target.anchorPayload.quote.exact}”
+            关联原文：“{target.targetPayload.quote.exact}”
           </p>
         ) : (
           <p className="mb-2 text-[10px] leading-4 text-amber-200/70">

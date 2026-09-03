@@ -5,8 +5,8 @@ export function orderVideoExplanations(
 ): VideoExplanationView[] {
   return [...explanations].sort(
     (left, right) =>
-      left.target.anchorPayload.timeSeconds -
-        right.target.anchorPayload.timeSeconds ||
+      left.target.targetPayload.timeSeconds -
+        right.target.targetPayload.timeSeconds ||
       left.createdTime - right.createdTime ||
       left.id.localeCompare(right.id),
   );
@@ -57,7 +57,7 @@ function explanationStatusClassName(
 }
 
 function regionSummary(explanation: VideoExplanationView): string {
-  const region = explanation.target.anchorPayload;
+  const region = explanation.target.targetPayload;
   return `左侧 ${Math.round(region.x * 100)}% · 顶部 ${Math.round(region.y * 100)}% · ${Math.round(region.width * 100)}% × ${Math.round(region.height * 100)}%`;
 }
 
@@ -131,7 +131,7 @@ export function VideoExplanationIndex({
                       <span className="text-[10px] font-medium tabular-nums text-slate-500">
                         标注 {number} ·{' '}
                         {formatVideoExplanationTime(
-                          explanation.target.anchorPayload.timeSeconds,
+                          explanation.target.targetPayload.timeSeconds,
                         )}
                       </span>
                       <span

@@ -18,7 +18,7 @@ import type { GenerationAgentRunner } from './generation-agent-runner';
 import type { GenerationTaskPreparerApi } from './preparation/generation-task-preparer';
 import type { PreparedGenerationTask } from './preparation/prepared-generation-task';
 import { MindMapGenerationInstruction } from '../../workbenches/mindmap/generation/mindmap-generation-instruction';
-import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { createMindMapGenerationTaskDefinition } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import {
   MIND_MAP_GENERATION_CANDIDATE_FORMAT,
   MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH,
@@ -224,7 +224,7 @@ describe('GenerationTaskService', () => {
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
     await mkdir(join(primaryPath, 'control'), { recursive: true });
     const committedCandidates: unknown[] = [];
-    const definition = createMindMapGenerationTaskDefinitionV1({
+    const definition = createMindMapGenerationTaskDefinition({
       async process(context) {
         await context.agent.call({
           callKey: 'generate',
@@ -610,7 +610,7 @@ describe('GenerationTaskService', () => {
     temporaryDirectories.push(directory);
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
     await mkdir(join(primaryPath, 'control'), { recursive: true });
-    const definition = createMindMapGenerationTaskDefinitionV1({
+    const definition = createMindMapGenerationTaskDefinition({
       async process(context) {
         await context.agent.call({
           callKey: 'generate',

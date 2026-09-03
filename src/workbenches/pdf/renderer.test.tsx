@@ -5,10 +5,11 @@ import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/Workb
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
-import { PdfWorkbenchView } from './renderer';
+import { mapPdfViewerTarget, PdfWorkbenchView } from './renderer';
 import {
   clonePdfWorkbenchState,
   DEFAULT_PDF_WORKBENCH_STATE,
+  PDF_PAGE_ANCHOR_TYPE,
   PDF_WORKBENCH_ID,
   pdfWorkbenchManifest,
 } from './shared';
@@ -70,6 +71,27 @@ function render(payload: WorkbenchBootstrap['payload']) {
 }
 
 describe('PdfWorkbenchView', () => {
+  it('maps a Workbench Target exactly once before PDF viewer validation', () => {
+    const mapTarget = vi.fn(() => ({
+      scope: 'content' as const,
+      targetType: PDF_PAGE_ANCHOR_TYPE,
+      targetVersion: 1,
+      targetPayload: { pageNumber: 2 },
+    }));
+    const input = {
+      scope: 'content' as const,
+      targetType: 'office.preview.page',
+      targetVersion: 1,
+      targetPayload: { pageNumber: 2 },
+    };
+
+    expect(mapPdfViewerTarget(input, mapTarget)?.targetType).toBe(
+      PDF_PAGE_ANCHOR_TYPE,
+    );
+    expect(mapTarget).toHaveBeenCalledOnce();
+    expect(mapTarget).toHaveBeenCalledWith(input);
+  });
+
   it('renders a full-height PDF canvas and local loading state', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',

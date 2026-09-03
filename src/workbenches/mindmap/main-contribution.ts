@@ -2,6 +2,7 @@ import { composeMainWorkbenchContribution } from '../../main/workbench/main-work
 import { mindMapGenerationMainFeature } from './generation/main';
 import { MindMapWorkbenchProvider } from './main';
 import { mindMapWorkbenchManifest } from './shared';
+import { mindMapTargetMainFeature } from './target-main-feature';
 
 export const mindMapMainWorkbenchContribution =
   composeMainWorkbenchContribution(
@@ -11,5 +12,5 @@ export const mindMapMainWorkbenchContribution =
         context.stateDatabase,
         context.associationService,
       ),
-    [mindMapGenerationMainFeature],
+    [mindMapTargetMainFeature, mindMapGenerationMainFeature],
   );

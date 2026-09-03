@@ -1,19 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-target';
 import { PLAIN_TEXT_RANGE_ANCHOR_TYPE } from './shared';
 import { plainTextMainFeature } from './main-feature';
 
-describe('plain text anchor registration', () => {
+describe('plain text Target registration', () => {
   it('accepts text range targets created by the renderer', () => {
     const register = vi.fn();
-    plainTextMainFeature.registerAttachmentTypes?.({
-      anchors: { register },
+    plainTextMainFeature.registerAssetTargets?.({
+      targets: { register },
     } as never);
 
     expect(register).toHaveBeenCalledWith(
       expect.objectContaining({
-        anchorType: PLAIN_TEXT_RANGE_ANCHOR_TYPE,
+        targetType: PLAIN_TEXT_RANGE_ANCHOR_TYPE,
         version: 1,
       }),
     );
@@ -25,7 +25,7 @@ describe('plain text anchor registration', () => {
       'hello world',
       [{ start: 0, end: 5 }],
     );
-    expect(definition.isPayload(target.anchorPayload)).toBe(true);
+    expect(definition.isPayload(target.targetPayload)).toBe(true);
     expect(definition.isPayload({ ranges: [{ start: 1, end: 0 }] })).toBe(
       false,
     );

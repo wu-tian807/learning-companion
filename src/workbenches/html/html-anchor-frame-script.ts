@@ -84,9 +84,9 @@ async function runHtmlAnchorFrameCommand(
       : undefined;
   const payload =
     record &&
-    typeof record.anchorPayload === 'object' &&
-    record.anchorPayload !== null
-      ? (record.anchorPayload as Record<string, unknown>)
+    typeof record.targetPayload === 'object' &&
+    record.targetPayload !== null
+      ? (record.targetPayload as Record<string, unknown>)
       : undefined;
 
   function normalizedText(value: unknown): string {
@@ -322,16 +322,16 @@ async function runHtmlAnchorFrameCommand(
       return undefined;
     }
 
-    if (record.anchorType === 'html.dom') {
+    if (record.targetType === 'html.dom') {
       const locator = asRecord(payload.element);
       return resolveElement(locator);
     }
 
-    if (record.anchorType === 'html.element') {
+    if (record.targetType === 'html.element') {
       return resolveElement(payload);
     }
 
-    if (record.anchorType === 'html.quote') {
+    if (record.targetType === 'html.quote') {
       const exact = normalizedText(payload.exact);
       if (!exact) {
         return undefined;
@@ -346,7 +346,7 @@ async function runHtmlAnchorFrameCommand(
   }
 
   const resolved: Element | Range | undefined =
-    record?.anchorType === 'html.link'
+    record?.targetType === 'html.link'
       ? resolveLink()
       : resolveDomAnchor();
 

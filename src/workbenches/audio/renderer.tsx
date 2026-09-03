@@ -12,9 +12,11 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
+import type { AssetTarget } from '../../shared/workbench/asset-target';
 import {
   MediaDubbingAudioTrack,
   useMediaDubbingPlayback,
@@ -44,6 +46,7 @@ import {
   EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
   isAudioDubbingSnapshot,
   isAudioSaveViewStateResult,
+  isAudioTimeRangeTarget,
   isAudioSubtitleCueFinalPayload,
   isAudioSubtitleSnapshot,
   isAudioWorkbenchPayload,
@@ -105,6 +108,20 @@ export function hasLoadedAudioMetadata(
   return media.readyState >= AUDIO_HAVE_METADATA;
 }
 
+export function revealAudioTarget(
+  audio: Pick<HTMLMediaElement, 'readyState' | 'pause'>,
+  target: AssetTarget,
+  seek: (timeSeconds: number) => void,
+): boolean {
+  if (!isAudioTimeRangeTarget(target)) return false;
+  if (!hasLoadedAudioMetadata(audio)) {
+    throw new Error('音频尚未就绪');
+  }
+  audio.pause();
+  seek(target.targetPayload.startSeconds);
+  return true;
+}
+
 function captureAudioState(audio: HTMLAudioElement): AudioWorkbenchViewState {
   return {
     currentTime: Number.isFinite(audio.currentTime)
@@ -117,6 +134,7 @@ function captureAudioState(audio: HTMLAudioElement): AudioWorkbenchViewState {
 }
 
 export function AudioWorkbenchView({
+  asset,
   bootstrap,
   executeCommand,
   onRelink,
@@ -362,6 +380,20 @@ export function AudioWorkbenchView({
     audio.currentTime = clamp(seconds, 0, Number.isFinite(audio.duration) ? audio.duration : seconds);
     setCurrentTime(audio.currentTime);
   }, []);
+  useEffect(() => {
+    if (!ready) return;
+    return registerWorkbenchTargetController(
+      `${audioWorkbenchManifest.id}:${bootstrap.sessionId}.targets`,
+      asset.id,
+      {
+        reveal(target) {
+          const audio = audioRef.current;
+          if (!audio) throw new Error('音频尚未就绪');
+          return revealAudioTarget(audio, target, seek);
+        },
+      },
+    );
+  }, [asset.id, bootstrap.sessionId, ready, seek]);
   const toggleMuted = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;

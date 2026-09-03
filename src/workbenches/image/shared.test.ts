@@ -26,7 +26,7 @@ describe('Image Workbench shared protocol', () => {
     expect(imageWorkbenchManifest.requiredContentCapabilities).toEqual([
       'read-stream',
     ]);
-    expect(imageWorkbenchManifest.supportedAnchorTypes).toEqual([
+    expect(imageWorkbenchManifest.supportedTargetTypes).toEqual([
       'image.viewport',
       'image.region',
     ]);
@@ -43,11 +43,11 @@ describe('Image Workbench shared protocol', () => {
     });
     expect(target).toMatchObject({
       scope: 'content',
-      anchorType: 'image.region',
-      anchorVersion: 1,
+      targetType: 'image.region',
+      targetVersion: 1,
     });
-    expect(isImageRegionAnchorV1(target.anchorPayload)).toBe(true);
-    const payload = target.anchorPayload as unknown as Record<string, unknown>;
+    expect(isImageRegionAnchorV1(target.targetPayload)).toBe(true);
+    const payload = target.targetPayload as unknown as Record<string, unknown>;
     expect(isImageRegionAnchorV1({ ...payload, x: 0.8, width: 0.3 })).toBe(false);
     expect(isImageRegionAnchorV1({ ...payload, width: 0 })).toBe(false);
   });
@@ -115,9 +115,9 @@ describe('Image Workbench shared protocol', () => {
   it('captures the visible image viewport as an AI-ready target', () => {
     expect(createImageViewportTarget(DEFAULT_IMAGE_VIEW_STATE)).toEqual({
       scope: 'content',
-      anchorType: 'image.viewport',
-      anchorVersion: 1,
-      anchorPayload: DEFAULT_IMAGE_VIEW_STATE,
+      targetType: 'image.viewport',
+      targetVersion: 1,
+      targetPayload: DEFAULT_IMAGE_VIEW_STATE,
     });
   });
 });

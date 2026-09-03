@@ -84,15 +84,15 @@ const beginInputSchema = {
               additionalProperties: false,
               required: [
                 'scope',
-                'anchorType',
-                'anchorVersion',
-                'anchorPayload',
+                'targetType',
+                'targetVersion',
+                'targetPayload',
               ],
               properties: {
                 scope: { const: 'content' },
-                anchorType: { const: HTML_DOM_ANCHOR_TYPE },
-                anchorVersion: { const: HTML_DOM_ANCHOR_VERSION },
-                anchorPayload: { type: 'object' },
+                targetType: { const: HTML_DOM_ANCHOR_TYPE },
+                targetVersion: { const: HTML_DOM_ANCHOR_VERSION },
+                targetPayload: { type: 'object' },
               },
             },
           },
@@ -146,7 +146,7 @@ export function createHtmlEditFunctionTools(
                 )
               ? {
                   kind: 'dom-anchor' as const,
-                  anchor: locator.target.anchorPayload as unknown as HtmlDomAnchorV1,
+                  anchor: locator.target.targetPayload as unknown as HtmlDomAnchorV1,
                 }
               : undefined;
         if (

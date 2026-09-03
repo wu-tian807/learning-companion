@@ -5,7 +5,7 @@ import { isWorkbenchActionEnabled } from '../../renderer/workbench/actions/workb
 import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facilities/core-facilities';
 import { createTextSelectionInput } from '../../shared/workbench/selection';
 import type { WorkbenchSelectionSnapshot } from '../../shared/workbench/selection';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import { createHtmlRendererActions } from './renderer-actions';
 import {
   createHtmlDomTarget,
@@ -23,7 +23,7 @@ const baseInvocation: WorkbenchInvocationContext = {
 
 function domSelection(
   text: string,
-  target: ContentAnchorTarget = createHtmlDomTarget({
+  target: ContentAssetTarget = createHtmlDomTarget({
     frameUrl: 'learning-content://resource/session',
     element: { path: [1], tagName: 'p', textQuote: text },
   }),
@@ -31,7 +31,7 @@ function domSelection(
   return { text, target };
 }
 
-function elementTarget(): ContentAnchorTarget {
+function elementTarget(): ContentAssetTarget {
   return createHtmlDomTarget({
     frameUrl: 'learning-content://resource/session',
     element: { path: [1], tagName: 'button', id: 'btn-mha' },
@@ -41,7 +41,7 @@ function elementTarget(): ContentAnchorTarget {
 function contextWith(
   options: {
     selectionText?: string;
-    target?: ContentAnchorTarget;
+    target?: ContentAssetTarget;
     linkUrl?: string;
   } = {},
 ): CoreContextMenuFacilityEvent {
@@ -144,7 +144,7 @@ describe('html AI renderer actions', () => {
 
     expect(onExplainSelection).toHaveBeenCalledTimes(1);
     const [targetArg] = onExplainSelection.mock.calls[0];
-    expect(targetArg.anchorType).toBe('html.dom');
+    expect(targetArg.targetType).toBe('html.dom');
     expect(targetArg).toBe(target);
   });
 
@@ -161,7 +161,7 @@ describe('html AI renderer actions', () => {
 
     expect(onExplainSelection).toHaveBeenCalledTimes(1);
     const [targetArg] = onExplainSelection.mock.calls[0];
-    expect(targetArg.anchorType).toBe('html.dom');
+    expect(targetArg.targetType).toBe('html.dom');
   });
 
   it('解释 action 无选区时回退到右键链接 target', async () => {
@@ -177,7 +177,7 @@ describe('html AI renderer actions', () => {
 
     expect(onExplainSelection).toHaveBeenCalledTimes(1);
     const [targetArg] = onExplainSelection.mock.calls[0];
-    expect(targetArg.anchorType).toBe('html.link');
+    expect(targetArg.targetType).toBe('html.link');
   });
 
   it('总结 action 执行时不传递任何选区/锚点', async () => {

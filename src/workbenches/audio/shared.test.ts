@@ -148,8 +148,8 @@ describe('Audio Workbench shared protocol', () => {
   it('creates a validated time-range anchor', () => {
     const target = createAudioTimeRangeTarget(12.5, 18);
 
-    expect(target.anchorType).toBe('audio.time-range');
-    expect(isAudioTimeRangeAnchorV1(target.anchorPayload)).toBe(true);
+    expect(target.targetType).toBe('audio.time-range');
+    expect(isAudioTimeRangeAnchorV1(target.targetPayload)).toBe(true);
     expect(
       isAudioTimeRangeAnchorV1({
         startSeconds: 20,

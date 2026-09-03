@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { AnchorRegistry } from '../../../main/attachments/anchor-registry';
 import { AttachmentRegistry } from '../../../main/attachments/attachment-registry';
 import { epubReadingNoteMainFeature } from './main';
 import {
@@ -13,7 +12,6 @@ describe('EPUB reading note main contribution', () => {
     const attachments = new AttachmentRegistry();
     epubReadingNoteMainFeature.registerAttachmentTypes?.({
       attachments,
-      anchors: new AnchorRegistry(),
     });
     const definition = attachments.get(
       EPUB_READING_NOTE_ATTACHMENT_TYPE,

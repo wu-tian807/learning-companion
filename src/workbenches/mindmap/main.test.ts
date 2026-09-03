@@ -15,7 +15,7 @@ import type { MindMapAssociationLookup } from './association-mapper';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  type MindMapDocumentV1,
+  type MindMapDocument,
 } from './document';
 import { MindMapWorkbenchProvider } from './main';
 import { encodeMindMapDocument } from './mindmap-content-adapter';
@@ -43,7 +43,7 @@ class MemoryStateDatabase implements WorkbenchStateDatabaseApi {
   }
 }
 
-const document: MindMapDocumentV1 = {
+const document: MindMapDocument = {
   format: MIND_MAP_DOCUMENT_FORMAT,
   version: MIND_MAP_DOCUMENT_VERSION,
   title: '线性规划',

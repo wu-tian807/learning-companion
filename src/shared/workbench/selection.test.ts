@@ -12,9 +12,9 @@ const selection: WorkbenchSelectionSnapshot = {
   text: '选中的正文',
   target: {
     scope: 'content',
-    anchorType: 'pdf.text-range',
-    anchorVersion: 1,
-    anchorPayload: {
+    targetType: 'pdf.text-range',
+    targetVersion: 1,
+    targetPayload: {
       documentFingerprint: 'fingerprint',
       start: { pageNumber: 1, offset: 0 },
       end: { pageNumber: 1, offset: 6 },

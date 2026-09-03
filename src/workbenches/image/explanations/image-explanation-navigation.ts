@@ -26,7 +26,7 @@ export function imageExplanationMarkerPosition<Point>(
   viewport: ImageExplanationMarkerViewport<Point>,
   target: ImageRegionTarget,
 ): { readonly x: number; readonly y: number } {
-  const region = target.anchorPayload;
+  const region = target.targetPayload;
   const point = viewport.pixelFromPoint(
     item.imageToViewportCoordinates(
       region.x * region.sourceWidth,
@@ -42,7 +42,7 @@ export function displayImageExplanationLocation<Bounds>(
   viewport: ImageExplanationLocationViewport<Bounds>,
   target: ImageRegionTarget,
 ): void {
-  const region = target.anchorPayload;
+  const region = target.targetPayload;
   const paddingX = Math.max(region.width * 0.35, 0.015);
   const paddingY = Math.max(region.height * 0.35, 0.015);
   const left = Math.max(0, region.x - paddingX);

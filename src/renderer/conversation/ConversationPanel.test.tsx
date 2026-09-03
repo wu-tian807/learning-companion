@@ -45,9 +45,9 @@ const contextSource = {
 const context = {
   target: {
     scope: 'content' as const,
-    anchorType: 'pdf.region',
-    anchorVersion: 1,
-    anchorPayload: { pageNumber: 2, quote: { exact: '框选内容' } },
+    targetType: 'pdf.region',
+    targetVersion: 1,
+    targetPayload: { pageNumber: 2, quote: { exact: '框选内容' } },
   },
 };
 

@@ -30,14 +30,14 @@ function runHtmlEditVisualFrameCommand(input: HtmlEditVisualFrameInput) {
     typeof input.target === 'object' && input.target !== null
       ? (input.target as Record<string, unknown>)
       : undefined;
-  const anchorPayload =
-    typeof target?.anchorPayload === 'object' && target.anchorPayload !== null
-      ? (target.anchorPayload as Record<string, unknown>)
+  const targetPayload =
+    typeof target?.targetPayload === 'object' && target.targetPayload !== null
+      ? (target.targetPayload as Record<string, unknown>)
       : undefined;
   const locator =
-    typeof anchorPayload?.element === 'object' &&
-    anchorPayload.element !== null
-      ? (anchorPayload.element as Record<string, unknown>)
+    typeof targetPayload?.element === 'object' &&
+    targetPayload.element !== null
+      ? (targetPayload.element as Record<string, unknown>)
       : undefined;
 
   function normalizedText(value: unknown): string {

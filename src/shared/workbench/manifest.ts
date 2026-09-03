@@ -24,7 +24,7 @@ export interface AssetWorkbenchManifest<
   readonly selectionPriority?: number;
   readonly supportedMediaTypes: readonly string[];
   readonly requiredContentCapabilities: readonly ContentCapability[];
-  readonly supportedAnchorTypes: readonly string[];
+  readonly supportedTargetTypes: readonly string[];
   readonly facilities: readonly WorkbenchFacilityDeclaration[];
 }
 
@@ -98,8 +98,8 @@ export function areAssetWorkbenchManifestsEqual(
       right.requiredContentCapabilities,
     ) ||
     !haveSameStringValues(
-      left.supportedAnchorTypes,
-      right.supportedAnchorTypes,
+      left.supportedTargetTypes,
+      right.supportedTargetTypes,
     ) ||
     left.facilities.length !== right.facilities.length
   ) {
@@ -167,9 +167,9 @@ export function isAssetWorkbenchManifest(
         contentCapabilities.includes(capability as ContentCapability),
     ) &&
     hasUniqueValues(candidate.requiredContentCapabilities) &&
-    Array.isArray(candidate.supportedAnchorTypes) &&
-    candidate.supportedAnchorTypes.every(isRequiredText) &&
-    hasUniqueValues(candidate.supportedAnchorTypes) &&
+    Array.isArray(candidate.supportedTargetTypes) &&
+    candidate.supportedTargetTypes.every(isRequiredText) &&
+    hasUniqueValues(candidate.supportedTargetTypes) &&
     Array.isArray(candidate.facilities) &&
     candidate.facilities.every(isWorkbenchFacilityDeclaration) &&
     hasUniqueValues(

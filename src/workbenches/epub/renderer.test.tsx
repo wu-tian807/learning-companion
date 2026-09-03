@@ -98,9 +98,9 @@ describe('EpubWorkbenchView', () => {
           typeVersion: 1,
           target: {
             scope: 'content',
-            anchorType: 'epub.cfi-range',
-            anchorVersion: 1,
-            anchorPayload: {
+            targetType: 'epub.cfi-range',
+            targetVersion: 1,
+            targetPayload: {
               cfiRange: 'epubcfi(/6/2!/4/2,/1:0,/1:4)',
               quote: { exact: '原文', prefix: '', suffix: '' },
             },

@@ -2,7 +2,7 @@ import type {
   JsonValue,
   WorkbenchCommand,
 } from '../../shared/workbench/protocol';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   isHtmlDomTarget,
   isHtmlElementTarget,
@@ -33,7 +33,7 @@ export interface HtmlAnchorCommandResult {
   readonly found: boolean;
 }
 
-export type HtmlAnchorTarget = JsonValue & ContentAnchorTarget;
+export type HtmlAnchorTarget = JsonValue & ContentAssetTarget;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -54,8 +54,8 @@ export function isHtmlAnchorTarget(
   );
 }
 
-function payloadOf<T>(target: ContentAnchorTarget): T {
-  return target.anchorPayload as unknown as T;
+function payloadOf<T>(target: ContentAssetTarget): T {
+  return target.targetPayload as unknown as T;
 }
 
 /**

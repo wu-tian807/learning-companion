@@ -1016,13 +1016,17 @@ Project 打开时一次加载、关闭时卸载。关系表只保存 Asset 级�
 节点、PDF 页区、视频时间段等格式位置保存在对应 content 中，通过稳定的关系 ID
 匹配。
 
-思维导图和讲义正文保存为 `assets/generated` 文件。Mind Map v1 的 `nodes` 保持
+思维导图和讲义正文保存为 `assets/generated` 文件。Mind Map v3 的 `nodes` 保持
 严格树结构，独立 `frames` 预留覆盖多个节点的生成范围；稀疏的
-`associations.nodes / associations.frames` 保存 `referenceId + sourceTarget` 和
+`associations.nodes / associations.frames` 保存
+`referenceId + sourceRevision + target` 和
 `linkIds`，失效关系不会阻止文档打开。节点折叠程度保存于 Workbench State，
 不进入 content。`MindMapContentAdapter` 在通用 `ContentHandle` 之上负责 UTF-8
 JSON、文档校验和 Revision 读写；Handle 生命周期仍由 Workbench Session 管理，
 不增加 `ContentHandleManager`。
+
+Mind Map 文件和生成任务都保留显式版号，但运行时当前只注册并读取 v3，不维护
+v1/v2 的解析、迁移或恢复分支。
 
 当前生成中心已经使用真实 `creationKind === 'generated'` Asset 列表，不再展示
 固定的“当前资料上下文”卡片，也不使用演示数据。通用生成按钮仍是占位能力；

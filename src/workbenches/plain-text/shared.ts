@@ -53,7 +53,7 @@ export const plainTextWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['text/plain'],
   requiredContentCapabilities: ['read-bytes', 'write-bytes'],
-  supportedAnchorTypes: [PLAIN_TEXT_RANGE_ANCHOR_TYPE],
+  supportedTargetTypes: [PLAIN_TEXT_RANGE_ANCHOR_TYPE],
   facilities: [
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,

@@ -3,7 +3,7 @@ import type { CoreContextMenuFacilityEvent } from '../../shared/workbench/facili
 import {
   findTextSelectionInput,
 } from '../../shared/workbench/selection';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 
 export interface HtmlRendererActionsOptions {
   readonly getContext: () =>
@@ -16,7 +16,7 @@ export interface HtmlRendererActionsOptions {
   readonly onReload: () => void;
   readonly onReveal: () => Promise<void> | void;
   /** 引用选中内容：文本滑选与右键点击都传入 Workbench 推断出的 DOM 元素。 */
-  readonly onExplainSelection: (target: ContentAnchorTarget) => void;
+  readonly onExplainSelection: (target: ContentAssetTarget) => void;
   readonly onSummarizePage: () => void;
 }
 

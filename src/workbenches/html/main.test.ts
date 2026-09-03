@@ -154,7 +154,7 @@ describe('HtmlWorkbenchProvider commands', () => {
         type: 'html.agent-edit.applied',
         payload: expect.objectContaining({
           target: expect.objectContaining({
-            anchorPayload: expect.objectContaining({
+            targetPayload: expect.objectContaining({
               frameUrl: 'learning-content://resource/token',
             }),
           }),

@@ -17,8 +17,8 @@ export function findImageExplanationAtTarget(
     if (!isImageExplanationForRevision(candidate, sourceRevision)) {
       return false;
     }
-    const left = candidate.target.anchorPayload;
-    const right = target.anchorPayload;
+    const left = candidate.target.targetPayload;
+    const right = target.targetPayload;
     return (
       left.x === right.x &&
       left.y === right.y &&

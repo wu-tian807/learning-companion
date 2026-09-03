@@ -43,7 +43,7 @@ export const officeWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: OFFICE_MEDIA_TYPES,
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     OFFICE_TEXT_RANGE_ANCHOR_TYPE,
     OFFICE_PAGE_ANCHOR_TYPE,
     OFFICE_REGION_ANCHOR_TYPE,
