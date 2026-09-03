@@ -73,6 +73,8 @@ function applyTargetRect(
     `translate3d(${rect.left}px, ${rect.top}px, 0)`;
   element.style.width = `${Math.max(rect.width, 18)}px`;
   element.style.height = `${Math.max(rect.height, 18)}px`;
+}
+
 function extractPosition(target: AssetTarget): TargetPosition | undefined {
   if (target.scope !== 'content') {
     return undefined;
