@@ -1,8 +1,6 @@
 import {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
-  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
-  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
 } from '../../../shared/generation-definitions';
 import type {
   GenerationTaskProcessContext,
@@ -19,12 +17,9 @@ import { HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID } from '../../../shared/ag
 export {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
-  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
-  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
 } from '../../../shared/generation-definitions';
 
-function createMindMapGenerationTaskDefinition(
-  version: number,
+export function createMindMapGenerationTaskDefinition(
   processor: GenerationTaskProcessor<
     MindMapGenerationInstruction,
     MindMapGenerationTaskResult
@@ -35,7 +30,7 @@ function createMindMapGenerationTaskDefinition(
 > {
   return Object.freeze({
     id: MIND_MAP_GENERATION_TASK_DEFINITION_ID,
-    version,
+    version: MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
     providerSelectorId: HIGH_INTELLIGENCE_AGENT_PROVIDER_SELECTOR_ID,
     primaryWorkspaceConfig: Object.freeze({
       key: 'generation-mindmap',
@@ -54,49 +49,4 @@ function createMindMapGenerationTaskDefinition(
       context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
     ) => processor.process(context),
   });
-}
-
-export function createMindMapGenerationTaskDefinitionV1(
-  processor: GenerationTaskProcessor<
-    MindMapGenerationInstruction,
-    MindMapGenerationTaskResult
-  >,
-): TaskDefinition<
-  MindMapGenerationInstruction,
-  MindMapGenerationTaskResult
-> {
-  return createMindMapGenerationTaskDefinition(
-    MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
-    processor,
-  );
-}
-
-export function createMindMapGenerationTaskDefinitionV2(
-  processor: GenerationTaskProcessor<
-    MindMapGenerationInstruction,
-    MindMapGenerationTaskResult
-  >,
-): TaskDefinition<
-  MindMapGenerationInstruction,
-  MindMapGenerationTaskResult
-> {
-  return createMindMapGenerationTaskDefinition(
-    MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
-    processor,
-  );
-}
-
-export function createMindMapGenerationTaskDefinitionV3(
-  processor: GenerationTaskProcessor<
-    MindMapGenerationInstruction,
-    MindMapGenerationTaskResult
-  >,
-): TaskDefinition<
-  MindMapGenerationInstruction,
-  MindMapGenerationTaskResult
-> {
-  return createMindMapGenerationTaskDefinition(
-    MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
-    processor,
-  );
 }

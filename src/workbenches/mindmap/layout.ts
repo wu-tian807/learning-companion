@@ -1,11 +1,11 @@
-import type { MindMapDocument, MindMapNodeV1 } from './document';
+import type { MindMapDocument, MindMapNode } from './document';
 
 export const MIND_MAP_LAYOUT_NODE_WIDTH = 280;
 export const MIND_MAP_LAYOUT_NODE_MIN_HEIGHT = 104;
 
 export interface MindMapLayoutNode {
   readonly id: string;
-  readonly node: MindMapNodeV1;
+  readonly node: MindMapNode;
   readonly depth: number;
   readonly hiddenDescendantCount: number;
   readonly size: Readonly<{
@@ -68,7 +68,7 @@ function wrappedLineCount(value: string, unitsPerLine: number): number {
   );
 }
 
-export function calculateMindMapNodeHeight(node: MindMapNodeV1): number {
+export function calculateMindMapNodeHeight(node: MindMapNode): number {
   const titleLines = wrappedLineCount(node.title, TITLE_UNITS_PER_LINE);
   const focusLines = wrappedLineCount(node.focus, FOCUS_UNITS_PER_LINE);
 

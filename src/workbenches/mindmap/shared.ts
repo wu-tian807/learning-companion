@@ -28,7 +28,6 @@ import type {
   StaleMindMapAssociationBinding,
 } from './association-mapper';
 import {
-  isMindMapAgentLocatorV1,
   isMindMapDocument,
   type MindMapDocument,
 } from './document';
@@ -154,11 +153,8 @@ function isResolvedMindMapSubjectAssociations(
           return false;
         }
 
-        return isAssetTarget(binding.sourceTarget) ||
-          (isNormalizedId(binding.sourceRevision) &&
-            isAssetTarget(binding.target)) ||
-          (isNormalizedId(binding.sourceRevision) &&
-            isMindMapAgentLocatorV1(binding.agentLocator));
+        return isNormalizedId(binding.sourceRevision) &&
+          isAssetTarget(binding.target);
       },
     ) &&
     Array.isArray(value.links) &&

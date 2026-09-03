@@ -4,11 +4,7 @@ import { isAssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  MIND_MAP_DOCUMENT_VERSION_V2,
-  MIND_MAP_DOCUMENT_VERSION_V3,
-  type MindMapDocumentV1,
-  type MindMapDocumentV2,
-  type MindMapDocumentV3,
+  type MindMapDocument,
 } from './document';
 import {
   cloneMindMapWorkbenchViewState,
@@ -22,7 +18,7 @@ import {
   mindMapWorkbenchManifest,
 } from './shared';
 
-const document: MindMapDocumentV1 = {
+const document: MindMapDocument = {
   format: MIND_MAP_DOCUMENT_FORMAT,
   version: MIND_MAP_DOCUMENT_VERSION,
   title: 'Map',
@@ -39,29 +35,8 @@ const document: MindMapDocumentV1 = {
   associations: { nodes: {}, frames: {} },
 };
 
-const documentV2: MindMapDocumentV2 = {
+const documentWithTarget: MindMapDocument = {
   ...document,
-  version: MIND_MAP_DOCUMENT_VERSION_V2,
-  associations: {
-    nodes: {
-      root: {
-        references: [
-          {
-            referenceId: 'reference-source',
-            sourceRevision: 'source-revision-1',
-            agentLocator: { heading: 'Introduction' },
-          },
-        ],
-        linkIds: [],
-      },
-    },
-    frames: {},
-  },
-};
-
-const documentV3: MindMapDocumentV3 = {
-  ...document,
-  version: MIND_MAP_DOCUMENT_VERSION_V3,
   associations: {
     nodes: {
       root: {
@@ -159,59 +134,6 @@ describe('Mind Map interaction targets', () => {
     ).toBe(false);
   });
 
-  it('accepts resolved Agent locators and rejects empty locator data', () => {
-    const reference = {
-      id: 'reference-source',
-      projectId: 'project',
-      assetId: 'mindmap',
-      sourceAssetId: 'source',
-      createdTime: 1,
-    };
-    const payload = {
-      document: documentV2,
-      revision: 'revision-1',
-      associations: {
-        byNode: {
-          root: {
-            references: [
-              {
-                reference,
-                sourceRevision: 'source-revision-1',
-                agentLocator: { heading: 'Introduction' },
-              },
-            ],
-            links: [],
-          },
-        },
-        byFrame: {},
-        staleBindings: [],
-      },
-      viewState: { collapsedNodeIds: [] },
-    };
-
-    expect(isMindMapWorkbenchPayload(payload)).toBe(true);
-    expect(
-      isMindMapWorkbenchPayload({
-        ...payload,
-        associations: {
-          ...payload.associations,
-          byNode: {
-            root: {
-              references: [
-                {
-                  reference,
-                  sourceRevision: 'source-revision-1',
-                  agentLocator: {},
-                },
-              ],
-              links: [],
-            },
-          },
-        },
-      }),
-    ).toBe(false);
-  });
-
   it('accepts resolved Targets only when their source revision is retained', () => {
     const reference = {
       id: 'reference-source',
@@ -226,7 +148,7 @@ describe('Mind Map interaction targets', () => {
       target: { scope: 'asset' as const },
     };
     const payload = {
-      document: documentV3,
+      document: documentWithTarget,
       revision: 'revision-1',
       associations: {
         byNode: {

@@ -19,7 +19,7 @@ import type { GenerationTaskPreparerApi } from './preparation/generation-task-pr
 import type { PreparedGenerationTask } from './preparation/prepared-generation-task';
 import { createTextAgentUserMessage } from './contracts/agent-message';
 import { MindMapGenerationInstruction } from '../../workbenches/mindmap/generation/mindmap-generation-instruction';
-import { createMindMapGenerationTaskDefinitionV1 } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { createMindMapGenerationTaskDefinition } from '../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 
 const temporaryDirectories: string[] = [];
 
@@ -75,7 +75,7 @@ describe('GenerationTask recovery', () => {
     temporaryDirectories.push(directory);
     const primaryPath = join(directory, 'generation-mindmap', 'task-1');
     let commitCount = 0;
-    const definition = createMindMapGenerationTaskDefinitionV1({
+    const definition = createMindMapGenerationTaskDefinition({
       async process(context) {
         await context.agent.call({
           callKey: 'generate',

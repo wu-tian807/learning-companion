@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MIND_MAP_DOCUMENT_FORMAT,
-  MIND_MAP_DOCUMENT_VERSION_V3,
-  type MindMapDocumentV3,
+  MIND_MAP_DOCUMENT_VERSION,
+  type MindMapDocument,
 } from './document';
 import {
   createMindMapFrameTarget,
@@ -11,9 +11,9 @@ import {
 } from './shared';
 import { resolveMindMapTargetNavigation } from './target-navigation';
 
-const document: MindMapDocumentV3 = {
+const document: MindMapDocument = {
   format: MIND_MAP_DOCUMENT_FORMAT,
-  version: MIND_MAP_DOCUMENT_VERSION_V3,
+  version: MIND_MAP_DOCUMENT_VERSION,
   title: '课程',
   rootNodeId: 'root',
   nodes: {

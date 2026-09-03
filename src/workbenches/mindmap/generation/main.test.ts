@@ -8,13 +8,11 @@ import type { MainWorkbenchGenerationContext } from '../../../main/workbench/mai
 import {
   MIND_MAP_GENERATION_TASK_DEFINITION_ID,
   MIND_MAP_GENERATION_TASK_DEFINITION_VERSION,
-  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
-  MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
 } from '../../../shared/generation-definitions';
 import { mindMapGenerationMainFeature } from './main';
 
 describe('Mind Map generation main feature', () => {
-  it('registers both the recovery protocol and the latest protocol', () => {
+  it('registers only the current generation protocol', () => {
     const definitions = new GenerationTaskDefinitionRegistry();
 
     mindMapGenerationMainFeature.registerGeneration?.({
@@ -24,18 +22,10 @@ describe('Mind Map generation main feature', () => {
       targets: new AssetTargetRegistry(),
     } as unknown as MainWorkbenchGenerationContext);
 
-    expect(
-      definitions.get(
-        MIND_MAP_GENERATION_TASK_DEFINITION_ID,
-        MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V1,
-      ),
-    ).toBeDefined();
-    expect(
-      definitions.get(
-        MIND_MAP_GENERATION_TASK_DEFINITION_ID,
-        MIND_MAP_GENERATION_TASK_DEFINITION_VERSION_V2,
-      ),
-    ).toBeDefined();
+    expect(definitions.get(MIND_MAP_GENERATION_TASK_DEFINITION_ID, 1))
+      .toBeUndefined();
+    expect(definitions.get(MIND_MAP_GENERATION_TASK_DEFINITION_ID, 2))
+      .toBeUndefined();
     expect(
       definitions.get(
         MIND_MAP_GENERATION_TASK_DEFINITION_ID,

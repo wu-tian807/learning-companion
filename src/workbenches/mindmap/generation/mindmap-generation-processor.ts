@@ -26,55 +26,32 @@ import {
   isJsonValue,
   type JsonValue,
 } from '../../../shared/workbench/protocol';
-import type {
-  MindMapDocument,
-  MindMapDocumentV1,
-  MindMapDocumentV2,
-  MindMapDocumentV3,
-} from '../document';
 import { encodeMindMapDocument } from '../mindmap-content-adapter';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
 import { VIDEO_READ_FUNCTION_TOOL_ID } from '../../video/agent/video-function-tool';
 import type { MindMapGenerationInstruction } from './mindmap-generation-instruction';
-import type { MindMapGenerationCandidateV1 } from './mindmap-generation-output';
-import { MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH } from './mindmap-generation-output';
-import type { MindMapGenerationCandidateV2 } from './mindmap-generation-output-v2';
-import type { MindMapGenerationCandidateV3 } from './mindmap-generation-output-v3';
 import {
-  mindMapGenerationProtocolV1,
-  mindMapGenerationProtocolV2,
-  mindMapGenerationProtocolV3,
-  type MindMapGenerationProtocol,
+  MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH,
+  type MindMapGenerationCandidate,
+} from './mindmap-generation-output';
+import {
+  mindMapGenerationProtocol,
   type PreparedMindMapReferenceBinding,
 } from './mindmap-generation-protocol';
 
 export {
-  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V1,
-  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V2,
-  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION_V3,
+  MIND_MAP_GENERATION_SYSTEM_INSTRUCTION,
 } from './mindmap-generation-protocol';
 
 export type MindMapGenerationTaskResult = JsonValue & {
   readonly resultAssetId: string;
 };
 
-interface MindMapGenerationCandidateBase {
-  readonly title: string;
-}
-
 interface MindMapGenerationProcessorDependencies {
   readonly readFile: (path: string, encoding: 'utf8') => Promise<string>;
 }
 
 const repairsPerProcessRun = 3;
-const emptyAssetTargetRegistry: AssetTargetRegistryApi = Object.freeze({
-  register: () => undefined,
-  get: () => undefined,
-  listForWorkbench: () => Object.freeze([]),
-  validate: () => false,
-  describe: () => undefined,
-  assertManifest: () => undefined,
-});
 
 function flattenPreparedReferences(
   bindings: PreparedGenerationAssetReferenceBindings,
@@ -126,10 +103,7 @@ ${issueList}
 请直接读取并修复现有候选文件。保留其中正确、充分且有学习价值的内容，只修改违反协议的部分；不要重新输出到聊天消息，也不要自行编写校验脚本。修复完成后简短确认。`);
 }
 
-class ProtocolMindMapGenerationProcessor<
-    TCandidate extends MindMapGenerationCandidateBase,
-    TDocument extends MindMapDocument,
-  >
+export class MindMapGenerationProcessor
   implements
     GenerationTaskProcessor<
       MindMapGenerationInstruction,
@@ -139,11 +113,7 @@ class ProtocolMindMapGenerationProcessor<
   constructor(
     private readonly assets: AssetServiceApi,
     private readonly associations: AssetAssociationServiceApi,
-    private readonly protocol: MindMapGenerationProtocol<
-      TCandidate,
-      TDocument
-    >,
-    private readonly targets?: AssetTargetRegistryApi,
+    private readonly targets: AssetTargetRegistryApi,
     private readonly dependencies: MindMapGenerationProcessorDependencies = {
       readFile: (path, encoding) => readFile(path, encoding),
     },
@@ -156,17 +126,15 @@ class ProtocolMindMapGenerationProcessor<
     const toolRequirements = mindMapToolRequirements(
       context.assetReferences,
     );
-    const userMessage = this.protocol.usesAssetTargets
-      ? appendAssetTargetCatalogToUserMessage(
-          context.preparedUserMessage,
-          context.assetReferences,
-          this.requireTargets(),
-        )
-      : context.preparedUserMessage;
+    const userMessage = appendAssetTargetCatalogToUserMessage(
+      context.preparedUserMessage,
+      context.assetReferences,
+      this.targets,
+    );
     await context.agent.call({
       callKey: 'generate',
       purpose: 'generation',
-      systemInstruction: this.protocol.systemInstruction,
+      systemInstruction: mindMapGenerationProtocol.systemInstruction,
       userMessage,
       toolRequirements,
       skills: [],
@@ -177,7 +145,7 @@ class ProtocolMindMapGenerationProcessor<
       ({ purpose }) => purpose === 'repair',
     ).length;
     let repairsThisRun = 0;
-    let candidate: TCandidate;
+    let candidate: MindMapGenerationCandidate;
 
     while (true) {
       try {
@@ -197,7 +165,7 @@ class ProtocolMindMapGenerationProcessor<
         await context.agent.call({
           callKey: `repair-${repairTurnNumber}`,
           purpose: 'repair',
-          systemInstruction: this.protocol.systemInstruction,
+          systemInstruction: mindMapGenerationProtocol.systemInstruction,
           userMessage: createRepairMessage(error.issues),
           toolRequirements,
           skills: [],
@@ -213,7 +181,7 @@ class ProtocolMindMapGenerationProcessor<
 
   private async commitCandidate(
     context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
-    candidate: TCandidate,
+    candidate: MindMapGenerationCandidate,
   ): Promise<MindMapGenerationTaskResult> {
     context.signal?.throwIfAborted();
 
@@ -224,7 +192,7 @@ class ProtocolMindMapGenerationProcessor<
       throw new Error('Mind Map generation Project 上下文已改变');
     }
 
-    const initialDocument = this.protocol.createEmptyDocument(candidate);
+    const initialDocument = mindMapGenerationProtocol.createEmptyDocument(candidate);
     const staged = await this.assets.stageGeneratedFile(
       context.projectId,
       {
@@ -265,7 +233,7 @@ class ProtocolMindMapGenerationProcessor<
         );
       }
 
-      const finalDocument = this.protocol.withAssociations(
+      const finalDocument = mindMapGenerationProtocol.withAssociations(
         initialDocument,
         candidate,
         referencesByAlias,
@@ -302,7 +270,7 @@ class ProtocolMindMapGenerationProcessor<
 
   private async readCandidate(
     context: GenerationTaskProcessContext<MindMapGenerationInstruction>,
-  ): Promise<TCandidate> {
+  ): Promise<MindMapGenerationCandidate> {
     const absolutePath = join(
       context.workspaces.primary.path,
       ...MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH.split('/'),
@@ -334,9 +302,9 @@ class ProtocolMindMapGenerationProcessor<
       ]);
     }
 
-    const validated = this.protocol.validateCandidate(value, {
+    const validated = mindMapGenerationProtocol.validateCandidate(value, {
       assetReferences: context.assetReferences,
-      targets: this.requireTargets(),
+      targets: this.targets,
     });
 
     if (!validated.ok) {
@@ -344,73 +312,5 @@ class ProtocolMindMapGenerationProcessor<
     }
 
     return validated.value;
-  }
-
-  private requireTargets(): AssetTargetRegistryApi {
-    if (this.targets) {
-      return this.targets;
-    }
-    if (this.protocol.usesAssetTargets) {
-      throw new Error('Mind Map generation 缺少 AssetTarget Registry');
-    }
-    return emptyAssetTargetRegistry;
-  }
-}
-
-export class LegacyMindMapGenerationProcessor extends ProtocolMindMapGenerationProcessor<
-  MindMapGenerationCandidateV1,
-  MindMapDocumentV1
-> {
-  constructor(
-    assets: AssetServiceApi,
-    associations: AssetAssociationServiceApi,
-    dependencies?: MindMapGenerationProcessorDependencies,
-  ) {
-    super(
-      assets,
-      associations,
-      mindMapGenerationProtocolV1,
-      undefined,
-      dependencies,
-    );
-  }
-}
-
-export class MindMapGenerationProcessor extends ProtocolMindMapGenerationProcessor<
-  MindMapGenerationCandidateV2,
-  MindMapDocumentV2
-> {
-  constructor(
-    assets: AssetServiceApi,
-    associations: AssetAssociationServiceApi,
-    dependencies?: MindMapGenerationProcessorDependencies,
-  ) {
-    super(
-      assets,
-      associations,
-      mindMapGenerationProtocolV2,
-      undefined,
-      dependencies,
-    );
-  }
-}
-
-export class AssetTargetMindMapGenerationProcessor extends ProtocolMindMapGenerationProcessor<
-  MindMapGenerationCandidateV3,
-  MindMapDocumentV3
-> {
-  constructor(
-    assets: AssetServiceApi,
-    associations: AssetAssociationServiceApi,
-    targets: AssetTargetRegistryApi,
-    dependencies?: MindMapGenerationProcessorDependencies,
-  ) {
-    super(
-      assets,
-      associations,
-      mindMapGenerationProtocolV3,
-      targets,
-      dependencies,
-    );
   }
 }

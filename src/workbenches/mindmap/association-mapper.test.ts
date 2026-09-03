@@ -11,14 +11,10 @@ import {
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  MIND_MAP_DOCUMENT_VERSION_V2,
-  MIND_MAP_DOCUMENT_VERSION_V3,
-  type MindMapDocumentV1,
-  type MindMapDocumentV2,
-  type MindMapDocumentV3,
+  type MindMapDocument,
 } from './document';
 
-function createDocument(): MindMapDocumentV1 {
+function createDocument(): MindMapDocument {
   return {
     format: MIND_MAP_DOCUMENT_FORMAT,
     version: MIND_MAP_DOCUMENT_VERSION,
@@ -51,11 +47,13 @@ function createDocument(): MindMapDocumentV1 {
           references: [
             {
               referenceId: 'reference',
-              sourceTarget: { scope: 'asset' },
+              sourceRevision: 'revision-1',
+              target: { scope: 'asset' },
             },
             {
               referenceId: 'missing-reference',
-              sourceTarget: { scope: 'asset' },
+              sourceRevision: 'revision-1',
+              target: { scope: 'asset' },
             },
           ],
           linkIds: ['foreign-link'],
@@ -71,54 +69,22 @@ function createDocument(): MindMapDocumentV1 {
   };
 }
 
-function createDocumentV2(): MindMapDocumentV2 {
-  const legacy = createDocument();
-
+function createDocumentWithRepeatedTargets(): MindMapDocument {
   return {
-    ...legacy,
-    version: MIND_MAP_DOCUMENT_VERSION_V2,
+    ...createDocument(),
     associations: {
       nodes: {
         root: {
-          references: [
-            {
-              referenceId: 'reference',
-              sourceRevision: 'revision-1',
-              agentLocator: { page: 2, quote: 'first location' },
-            },
-            {
-              referenceId: 'reference',
-              sourceRevision: 'revision-1',
-              agentLocator: { page: 5, quote: 'second location' },
-            },
-          ],
-          linkIds: [],
-        },
-      },
-      frames: {},
-    },
-  };
-}
-
-function createDocumentV3(): MindMapDocumentV3 {
-  const legacy = createDocument();
-
-  return {
-    ...legacy,
-    version: MIND_MAP_DOCUMENT_VERSION_V3,
-    associations: {
-      nodes: {
-        root: {
-          references: [{
+          references: [2, 5].map((pageNumber) => ({
             referenceId: 'reference',
             sourceRevision: 'revision-2',
             target: {
-              scope: 'content',
+              scope: 'content' as const,
               targetType: 'pdf.page',
               targetVersion: 1,
-              targetPayload: { pageNumber: 3 },
+              targetPayload: { pageNumber },
             },
-          }],
+          })),
           linkIds: [],
         },
       },
@@ -128,7 +94,7 @@ function createDocumentV3(): MindMapDocumentV3 {
 }
 
 describe('resolveMindMapAssociations', () => {
-  it('resolves repeated Agent locators without collapsing them', () => {
+  it('resolves repeated Targets without collapsing them', () => {
     const reference: AssetReference = {
       id: 'reference',
       projectId: 'project',
@@ -138,114 +104,69 @@ describe('resolveMindMapAssociations', () => {
     };
     const resolved = resolveMindMapAssociations(
       'mindmap',
-      createDocumentV2(),
+      createDocumentWithRepeatedTargets(),
       {
-        getReference: (id) =>
-          id === reference.id ? reference : undefined,
+        getReference: (id) => id === reference.id ? reference : undefined,
         getLink: () => undefined,
       },
     );
 
-    expect(resolved.byNode.root.references).toHaveLength(2);
-    expect(resolved.byNode.root.references).toEqual([
-      {
+    expect(resolved.byNode.root.references).toEqual([2, 5].map(
+      (pageNumber) => ({
         reference,
-        sourceRevision: 'revision-1',
-        agentLocator: { page: 2, quote: 'first location' },
-      },
-      {
-        reference,
-        sourceRevision: 'revision-1',
-        agentLocator: { page: 5, quote: 'second location' },
-      },
-    ]);
-    expect(
-      Object.isFrozen(resolved.byNode.root.references[0]),
-    ).toBe(true);
-  });
-
-  it('preserves the source revision alongside a Workbench Target', () => {
-    const reference: AssetReference = {
-      id: 'reference',
-      projectId: 'project',
-      assetId: 'mindmap',
-      sourceAssetId: 'pdf',
-      createdTime: 1,
-    };
-
-    expect(resolveMindMapAssociations(
-      'mindmap',
-      createDocumentV3(),
-      {
-        getReference: () => reference,
-        getLink: () => undefined,
-      },
-    ).byNode.root.references).toEqual([{
-      reference,
-      sourceRevision: 'revision-2',
-      target: {
-        scope: 'content',
-        targetType: 'pdf.page',
-        targetVersion: 1,
-        targetPayload: { pageNumber: 3 },
-      },
-    }]);
+        sourceRevision: 'revision-2',
+        target: {
+          scope: 'content',
+          targetType: 'pdf.page',
+          targetVersion: 1,
+          targetPayload: { pageNumber },
+        },
+      }),
+    ));
+    expect(Object.isFrozen(resolved.byNode.root.references[0])).toBe(true);
   });
 
   it('joins sparse Node and Frame rows and reports stale bindings', () => {
     const references = new Map<string, AssetReference>([
-      [
-        'reference',
-        {
-          id: 'reference',
-          projectId: 'project',
-          assetId: 'mindmap',
-          sourceAssetId: 'pdf',
-          createdTime: 1,
-        },
-      ],
+      ['reference', {
+        id: 'reference',
+        projectId: 'project',
+        assetId: 'mindmap',
+        sourceAssetId: 'pdf',
+        createdTime: 1,
+      }],
     ]);
     const links = new Map<string, AssetLink>([
-      [
-        'link',
-        {
-          id: 'link',
-          projectId: 'project',
-          assetId: 'mindmap',
-          targetAssetId: 'lecture',
-          createdTime: 2,
-        },
-      ],
-      [
-        'foreign-link',
-        {
-          id: 'foreign-link',
-          projectId: 'project',
-          assetId: 'other-map',
-          targetAssetId: 'lecture',
-          createdTime: 3,
-        },
-      ],
+      ['link', {
+        id: 'link',
+        projectId: 'project',
+        assetId: 'mindmap',
+        targetAssetId: 'lecture',
+        createdTime: 2,
+      }],
+      ['foreign-link', {
+        id: 'foreign-link',
+        projectId: 'project',
+        assetId: 'other-map',
+        targetAssetId: 'lecture',
+        createdTime: 3,
+      }],
     ]);
     const lookup: MindMapAssociationLookup = {
       getReference: (id) => references.get(id),
       getLink: (id) => links.get(id),
     };
 
-    const resolved = resolveMindMapAssociations(
-      'mindmap',
-      createDocument(),
-      lookup,
-    );
+    const resolved = resolveMindMapAssociations('mindmap', createDocument(), lookup);
 
     expect(resolved.byNode.root.references).toHaveLength(1);
-    expect(resolved.byNode.root.references[0].reference.id).toBe(
-      'reference',
-    );
+    expect(resolved.byNode.root.references[0]).toMatchObject({
+      reference: { id: 'reference' },
+      sourceRevision: 'revision-1',
+      target: { scope: 'asset' },
+    });
     expect(resolved.byNode.child).toBeUndefined();
-    expect(resolved.byFrame.chapter.links.map(({ id }) => id)).toEqual([
-      'link',
-    ]);
+    expect(resolved.byFrame.chapter.links.map(({ id }) => id)).toEqual(['link']);
     expect(resolved.staleBindings).toEqual([
       {
         subjectKind: 'node',
