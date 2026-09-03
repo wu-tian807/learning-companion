@@ -15,7 +15,9 @@ export const documentAiMainFeature = Object.freeze({
       isMetadata: isAiAnnotationMetadata,
     });
   },
-  registerGeneration({ conversationContexts }): void {
-    conversationContexts.register(new DocumentConversationContextProvider());
+  registerGeneration({ conversationContexts, assets }): void {
+    conversationContexts.register(
+      new DocumentConversationContextProvider(assets),
+    );
   },
 } satisfies MainWorkbenchFeatureContribution);

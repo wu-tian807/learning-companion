@@ -54,22 +54,34 @@ afterEach(async () => {
   );
 });
 
-function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
+function sourceTrack(
+  sourceRevision: string,
+  includeSpeakers = true,
+): SubtitleSourceTrackV1 {
   return {
     version: 1,
     kind: 'subtitle-source',
     sourceRevision,
     language: 'en',
     origin: 'asr',
-    engine: { id: 'moss', version: '1', model: 'q5', backend: 'cuda' },
-    speakerAnalysis: {
-      method: 'joint-transcription-diarization',
-      supportsOverlappingTranscription: true,
-      segments: [
-        { speakerId: 'speaker-0001', startMs: 0, endMs: 6_500 },
-        { speakerId: 'speaker-0002', startMs: 8_000, endMs: 8_700 },
-      ],
+    engine: {
+      id: 'whisper.cpp',
+      version: '1',
+      model: 'turbo',
+      backend: 'cuda',
     },
+    ...(includeSpeakers
+      ? {
+          speakerAnalysis: {
+            method: 'post-hoc-diarization' as const,
+            supportsOverlappingTranscription: false,
+            segments: [
+              { speakerId: 'speaker-0001', startMs: 0, endMs: 6_500 },
+              { speakerId: 'speaker-0002', startMs: 8_000, endMs: 8_700 },
+            ],
+          },
+        }
+      : {}),
     generatedTime: 100,
     cues: [
       {
@@ -78,7 +90,7 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
         endMs: 3_500,
         text: 'This is a sufficiently long reference sentence.',
         sourceCueIds: ['raw-1'],
-        speakerId: 'speaker-0001',
+        ...(includeSpeakers ? { speakerId: 'speaker-0001' } : {}),
       },
       {
         id: 'cue-2',
@@ -86,7 +98,7 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
         endMs: 6_500,
         text: 'This sentence completes the reference window.',
         sourceCueIds: ['raw-2'],
-        speakerId: 'speaker-0001',
+        ...(includeSpeakers ? { speakerId: 'speaker-0001' } : {}),
       },
       {
         id: 'cue-3',
@@ -94,7 +106,7 @@ function sourceTrack(sourceRevision: string): SubtitleSourceTrackV1 {
         endMs: 11_000,
         text: 'This phrase should be generated first.',
         sourceCueIds: ['raw-3'],
-        speakerId: 'speaker-0002',
+        ...(includeSpeakers ? { speakerId: 'speaker-0002' } : {}),
       },
     ],
   };
@@ -143,24 +155,22 @@ function createSubtitleRuntime(
     },
     transcription: {
       kind: 'sensevoice',
-      profile: 'cpu',
       executablePath: resolve(directory, 'sensevoice.exe'),
       vadExecutablePath: resolve(directory, 'vad.exe'),
       modelPath: resolve(directory, 'sensevoice.gguf'),
       vadModelPath: resolve(directory, 'vad.gguf'),
-      speakerDiarizationExecutablePath: resolve(directory, 'diarization.exe'),
-      speakerSegmentationModelPath: resolve(directory, 'segmentation.onnx'),
-      speakerEmbeddingModelPath: resolve(directory, 'embedding.onnx'),
+    },
+    speakerDiarization: {
+      executablePath: resolve(directory, 'diarization.exe'),
+      segmentationModelPath: resolve(directory, 'segmentation.onnx'),
+      embeddingModelPath: resolve(directory, 'embedding.onnx'),
     },
   };
   return {
     requireMediaDecoder: vi.fn(async () => runtime.decoder),
     requireTranscription: vi.fn(async () => runtime.transcription),
     async withRuntime(signal, operation) {
-      return operation(
-        runtime,
-        signal ?? new AbortController().signal,
-      );
+      return operation(runtime, signal ?? new AbortController().signal);
     },
   };
 }
@@ -190,7 +200,7 @@ function createDubbingRuntime(
 }
 
 describe('VoxCpm2DubbingProducer', () => {
-  it('consumes subtitle speakers, runs separation, reverse synthesis and mixing', async () => {
+  it('analyzes video speakers on demand before cloning and mixing', async () => {
     const directory = await createDirectory();
     const stagingDirectory = join(directory, 'staging');
     await mkdir(stagingDirectory, { recursive: true });
@@ -198,6 +208,12 @@ describe('VoxCpm2DubbingProducer', () => {
     const progressHub = new MediaDubbingProgressHub();
     const progress: MediaDubbingProgress[] = [];
     progressHub.subscribe((event) => progress.push(event));
+    let releaseFullPreparation!: () => void;
+    const fullPreparationGate = new Promise<void>((resolvePromise) => {
+      releaseFullPreparation = resolvePromise;
+    });
+    let separationStarted = false;
+    let diarizationStarted = false;
     const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
       if (command.command.endsWith('ffprobe.exe')) {
         return { stdout: '12.000\n', stderr: '' };
@@ -206,12 +222,22 @@ describe('VoxCpm2DubbingProducer', () => {
         await writeFile(command.args.at(-1)!, 'audio');
       }
       if (command.args.some((argument) => argument.endsWith('separate.py'))) {
+        separationStarted = true;
+        await fullPreparationGate;
         const outputPath = command.args[command.args.indexOf('--output') + 1]!;
         await mkdir(outputPath, { recursive: true });
         await Promise.all([
           writeFile(join(outputPath, 'background.wav'), 'background'),
           writeFile(join(outputPath, 'vocals.wav'), 'vocals'),
         ]);
+      }
+      if (command.command.endsWith('diarization.exe')) {
+        diarizationStarted = true;
+        await fullPreparationGate;
+        return {
+          stdout: '0.000 -- 6.500 speaker_7\n8.000 -- 8.700 speaker_2\n',
+          stderr: '',
+        };
       }
       return { stdout: '', stderr: '' };
     });
@@ -253,6 +279,25 @@ describe('VoxCpm2DubbingProducer', () => {
     const dubbingRuntime = createDubbingRuntime(
       directory,
       vi.fn(async (job) => {
+        if (job.bootstrapJob) {
+          await mkdir(job.bootstrapJob.outputDirectory, { recursive: true });
+          await Promise.all([
+            writeFile(job.bootstrapJob.previewPath, 'quick-preview'),
+            writeFile(
+              job.bootstrapJob.progressPath,
+              JSON.stringify({
+                completedPhrases: 1,
+                totalPhrases: 1,
+                completedDurationMs: 4_000,
+                readySuffixStartMs: 8_000,
+                previewReady: true,
+              }),
+            ),
+          ]);
+          await vi.waitFor(async () => {
+            await expect(access(job.inputsReadyPath!)).resolves.toBeUndefined();
+          });
+        }
         await mkdir(job.outputDirectory, { recursive: true });
         await Promise.all([
           writeFile(join(job.outputDirectory, 'voice.wav'), 'voice'),
@@ -271,14 +316,27 @@ describe('VoxCpm2DubbingProducer', () => {
       }),
     );
 
-    const artifact = await producer.materialize(
+    const materializing = producer.materialize(
       artifacts,
       artifactRequest,
-      sourceTrack('video-revision'),
+      sourceTrack('video-revision', false),
       translationTrack(),
       subtitleRuntime,
       dubbingRuntime,
     );
+    await vi.waitFor(() => {
+      expect(separationStarted).toBe(true);
+      expect(diarizationStarted).toBe(true);
+      expect(progress).toContainEqual(
+        expect.objectContaining({
+          phase: 'cloning',
+          completedPhrases: 1,
+          previewAudioPath: expect.stringContaining('first-phrase-preview'),
+        }),
+      );
+    });
+    releaseFullPreparation();
+    const artifact = await materializing;
 
     expect(artifact.artifact.mediaType).toBe(
       VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
@@ -307,38 +365,44 @@ describe('VoxCpm2DubbingProducer', () => {
       ),
     ).toBe(true);
     expect(
+      run.mock.calls.some(([call]) => call.command.endsWith('diarization.exe')),
+    ).toBe(true);
+    expect(
       run.mock.calls.find(
         ([call]) =>
           call.command.endsWith('ffmpeg.exe') &&
           call.args.at(-1)?.endsWith('original.wav'),
       )?.[0].args,
     ).toEqual(
-      expect.arrayContaining([
-        '-af',
-        'apad=pad_dur=12.000',
-        '-t',
-        '12.000',
-      ]),
+      expect.arrayContaining(['-af', 'apad=pad_dur=12.000', '-t', '12.000']),
     );
     expect(dubbingRuntime.runVoiceJob).toHaveBeenCalledOnce();
-    expect(dubbingRuntime.runVoiceJob).toHaveBeenCalledWith(
-      expect.objectContaining({
+    const voiceJob = vi.mocked(dubbingRuntime.runVoiceJob).mock.calls[0]![0];
+    expect(voiceJob).toMatchObject({
+      referencePaths: {},
+      waitForInputs: true,
+      bootstrapJob: expect.objectContaining({
+        backgroundGain: 0.12,
         referencePaths: {
-          'speaker-0001': join(
-            directory,
-            '.learning-companion',
-            'checkpoints',
-            'video-dubbing',
-            'video',
-            'dubbing-input-revision',
-            'references',
-            'speaker-0001.wav',
-          ),
-          'speaker-0002': null,
+          'speaker-0001': expect.stringContaining('reference.wav'),
         },
       }),
-      expect.any(AbortSignal),
-    );
+    });
+    await expect(
+      readFile(voiceJob.referencePathsPath!, 'utf8').then(JSON.parse),
+    ).resolves.toEqual({
+      'speaker-0001': join(
+        directory,
+        '.learning-companion',
+        'checkpoints',
+        'video-dubbing',
+        'video',
+        'dubbing-input-revision',
+        'references',
+        'speaker-0001.wav',
+      ),
+      'speaker-0002': null,
+    });
     expect(
       run.mock.calls.some(([call]) =>
         call.args.some((argument) => argument.endsWith('preview.wav')),
@@ -370,12 +434,16 @@ describe('VoxCpm2DubbingProducer', () => {
         }),
       ],
     });
-    expect(
-      progress.find(
-        ({ phase, completedPhrases }) =>
-          phase === 'cloning' && completedPhrases > 0,
-      ),
-    ).toMatchObject({
+    expect(progress).toContainEqual(
+      expect.objectContaining({
+        phase: 'cloning',
+        completedPhrases: 1,
+        previewAudioPath: expect.stringContaining('first-phrase-preview'),
+      }),
+    );
+    expect(progress).toContainEqual(expect.objectContaining({
+      phase: 'cloning',
+      completedPhrases: 3,
       previewAudioPath: join(
         directory,
         '.learning-companion',
@@ -385,7 +453,7 @@ describe('VoxCpm2DubbingProducer', () => {
         'dubbing-input-revision',
         'preview.wav',
       ),
-    });
+    }));
 
     const checkpointDirectory = join(
       directory,
@@ -408,7 +476,7 @@ describe('VoxCpm2DubbingProducer', () => {
     await expect(
       producer.getInterruptedProgress(
         artifactRequest,
-        sourceTrack('video-revision'),
+        sourceTrack('video-revision', false),
         translationTrack(),
       ),
     ).resolves.toMatchObject({
@@ -425,7 +493,7 @@ describe('VoxCpm2DubbingProducer', () => {
     await expect(
       producer.getPreparedSpeakerTrack(
         artifactRequest,
-        sourceTrack('video-revision'),
+        sourceTrack('video-revision', false),
         translationTrack(),
       ),
     ).resolves.toMatchObject({
@@ -437,7 +505,7 @@ describe('VoxCpm2DubbingProducer', () => {
     await producer.materialize(
       artifacts,
       artifactRequest,
-      sourceTrack('video-revision'),
+      sourceTrack('video-revision', false),
       translationTrack(),
       subtitleRuntime,
       dubbingRuntime,
@@ -452,11 +520,7 @@ describe('VoxCpm2DubbingProducer', () => {
       ),
     ).toBe(false);
     expect(
-      run.mock.calls.some(([call]) =>
-        call.args.some((argument) =>
-          argument.endsWith('diarize-speakers.py'),
-        ),
-      ),
+      run.mock.calls.some(([call]) => call.command.endsWith('diarization.exe')),
     ).toBe(false);
     expect(progress).toContainEqual(
       expect.objectContaining({
@@ -490,7 +554,7 @@ describe('VoxCpm2DubbingProducer', () => {
     ).rejects.toMatchObject({ code: 'DATA_INTEGRITY_ERROR' });
   });
 
-  it('propagates cancellation during separation without starting voice synthesis', async () => {
+  it('propagates cancellation during parallel preparation and aborts preview synthesis', async () => {
     const directory = await createDirectory();
     const stagingDirectory = join(directory, 'staging');
     await mkdir(stagingDirectory, { recursive: true });
@@ -503,22 +567,17 @@ describe('VoxCpm2DubbingProducer', () => {
       if (command.command.endsWith('ffmpeg.exe')) {
         await writeFile(command.args.at(-1)!, 'audio');
       }
-      if (
-        command.args.some((argument) =>
-          argument.endsWith('separate.py'),
-        )
-      ) {
-        expect(command.signal).toBe(controller.signal);
+      if (command.args.some((argument) => argument.endsWith('separate.py'))) {
+        expect(command.signal).toBeInstanceOf(AbortSignal);
         expect(command.timeoutMs).toBe(4 * 60 * 60 * 1_000);
         controller.abort();
         throw new DOMException('cancelled', 'AbortError');
       }
       return { stdout: '', stderr: '' };
     });
-    const producer = new VoxCpm2DubbingProducer(
-      new MediaDubbingProgressHub(),
-      { commandRunner: { run } },
-    );
+    const producer = new VoxCpm2DubbingProducer(new MediaDubbingProgressHub(), {
+      commandRunner: { run },
+    });
     const artifactRequest = request(directory);
     const artifacts = {
       listAvailableByAsset: vi.fn(async () => []),
@@ -537,7 +596,28 @@ describe('VoxCpm2DubbingProducer', () => {
       }),
     } as unknown as AssetArtifactServiceApi;
     const subtitleRuntime = createSubtitleRuntime(directory);
-    const runVoiceJob = vi.fn(async () => undefined);
+    const runVoiceJob = vi.fn(async (job, signal) => {
+      signal.throwIfAborted();
+      if (!job.bootstrapJob) throw new Error('missing bootstrap job');
+      await mkdir(job.bootstrapJob.outputDirectory, { recursive: true });
+      await Promise.all([
+        writeFile(job.bootstrapJob.previewPath, 'quick-preview'),
+        writeFile(
+          job.bootstrapJob.progressPath,
+          JSON.stringify({
+            completedPhrases: 1,
+            totalPhrases: 1,
+            completedDurationMs: 4_000,
+            readySuffixStartMs: 8_000,
+            previewReady: true,
+          }),
+        ),
+      ]);
+      await new Promise<never>((_resolvePromise, rejectPromise) => {
+        const rejectAborted = () => rejectPromise(signal.reason);
+        signal.addEventListener('abort', rejectAborted, { once: true });
+      });
+    });
     const dubbingRuntime = createDubbingRuntime(directory, runVoiceJob);
 
     await expect(
@@ -551,7 +631,7 @@ describe('VoxCpm2DubbingProducer', () => {
         controller.signal,
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
-    expect(runVoiceJob).not.toHaveBeenCalled();
+    expect(runVoiceJob).toHaveBeenCalledOnce();
     await expect(
       access(
         join(

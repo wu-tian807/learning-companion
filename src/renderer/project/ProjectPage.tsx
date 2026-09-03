@@ -465,6 +465,7 @@ export function ProjectPage({
                   <ConversationPanelHost
                     projectId={project.id}
                     historyStore={conversationHistoryStore}
+                    selectedAssetId={assetOperations.selectedAsset?.id}
                     onClose={closeConversationPanel}
                     onSelectAsset={selectConversationAsset}
                     onOpenSettings={onOpenSettings}

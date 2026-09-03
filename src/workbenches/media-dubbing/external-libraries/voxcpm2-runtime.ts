@@ -38,6 +38,7 @@ export interface VoxCpm2DubbingRuntime {
 
 export interface VoxCpm2VoiceJob {
   readonly referencePaths: Readonly<Record<string, string | null>>;
+  readonly referencePathsPath?: string;
   readonly phrasesPath: string;
   readonly outputDirectory: string;
   readonly progressPath: string;
@@ -45,7 +46,19 @@ export interface VoxCpm2VoiceJob {
   readonly previewPath: string;
   readonly ffmpegPath: string;
   readonly durationMs: number;
+  readonly backgroundGain?: number;
+  readonly waitForInputs?: boolean;
+  readonly inputsReadyPath?: string;
+  readonly bootstrapJob?: VoxCpm2VoiceBootstrapJob;
 }
+
+export type VoxCpm2VoiceBootstrapJob = Omit<
+  VoxCpm2VoiceJob,
+  | 'bootstrapJob'
+  | 'inputsReadyPath'
+  | 'referencePathsPath'
+  | 'waitForInputs'
+>;
 
 export interface VoxCpm2DubbingRuntimeResolverApi {
   requireInstalledBundle(): Promise<void>;

@@ -83,14 +83,15 @@ describe.skipIf(!enabled)('workspace video tool Windows integration', () => {
           },
           transcription: {
             kind: 'sensevoice',
-            profile: 'cpu',
             executablePath: 'unused',
             vadExecutablePath: 'unused',
             modelPath: 'unused',
             vadModelPath: 'unused',
-            speakerDiarizationExecutablePath: 'unused',
-            speakerSegmentationModelPath: 'unused',
-            speakerEmbeddingModelPath: 'unused',
+          },
+          speakerDiarization: {
+            executablePath: 'unused',
+            segmentationModelPath: 'unused',
+            embeddingModelPath: 'unused',
           },
         };
         const resolver = {

@@ -35,6 +35,27 @@ function isSubtitleMode(value: string): value is MediaSubtitleDisplayMode {
   return ALL_SUBTITLE_OPTIONS.some((option) => option.value === value);
 }
 
+function blockedDubbingLabel(
+  subtitle: MediaSubtitleSnapshot,
+  dubbing: MediaDubbingSnapshot,
+): string {
+  if (!subtitle.source) return '等待字幕';
+  if (!subtitle.translation) {
+    if (
+      subtitle.phase === 'provider-required' ||
+      subtitle.phase === 'failed'
+    ) {
+      return '译文异常';
+    }
+    return subtitle.phase === 'translating' && subtitle.totalCues > 0
+      ? `译文 ${subtitle.completedCues}/${subtitle.totalCues}`
+      : '等待译文';
+  }
+  if (dubbing.phase === 'runtime-required') return '安装配音';
+  if (dubbing.phase === 'unsupported') return '不支持配音';
+  return '配音';
+}
+
 const compactButtonClass =
   'ui-control h-8 shrink-0 whitespace-nowrap rounded-lg px-2.5 text-[11px] text-slate-300 hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-45';
 
@@ -74,6 +95,9 @@ export function MediaLanguageControls({
     ((dubbingSnapshot.phase === 'interrupted' ||
       dubbingSnapshot.phase === 'failed') &&
       dubbingPlaybackAvailable);
+  const startDubbingLabel = dubbingReadiness.ready
+    ? '配音'
+    : blockedDubbingLabel(subtitleSnapshot, dubbingSnapshot);
 
   let subtitleControl;
   if (subtitleSnapshot.phase === 'runtime-required') {
@@ -112,18 +136,24 @@ export function MediaLanguageControls({
       </button>
     );
   } else if (!subtitleHasSource) {
+    const preparingLabel =
+      subtitleSnapshot.phase === 'queued'
+        ? '字幕排队中'
+        : subtitleSnapshot.phase === 'transcribing'
+          ? '字幕生成中'
+          : '字幕准备中';
     subtitleControl = (
       <button
         type="button"
         title={
           subtitleSnapshot.phase === 'idle'
             ? '字幕尚未开始处理'
-            : '正在准备字幕'
+            : (subtitleSnapshot.message ?? '正在准备字幕')
         }
         disabled
         className={compactButtonClass}
       >
-        字幕准备中
+        {preparingLabel}
       </button>
     );
   } else {
@@ -139,7 +169,14 @@ export function MediaLanguageControls({
           }}
           className="w-[112px] shrink-0 whitespace-nowrap"
         />
-        {subtitleSnapshot.source?.language === 'unknown' && (
+        {subtitleSnapshot.phase === 'transcribing' ? (
+          <span
+            title={subtitleSnapshot.message ?? '正在继续生成原文字幕'}
+            className="shrink-0 text-[10px] text-indigo-200/70"
+          >
+            生成中 {subtitleSnapshot.completedCues}段
+          </span>
+        ) : subtitleSnapshot.source?.language === 'unknown' ? (
           <span
             title={
               subtitleSnapshot.message ??
@@ -149,7 +186,7 @@ export function MediaLanguageControls({
           >
             仅原文
           </span>
-        )}
+        ) : null}
       </div>
     );
   }
@@ -211,7 +248,7 @@ export function MediaLanguageControls({
             onClick={onStartDubbing}
             className={compactButtonClass}
           >
-            配音
+            {startDubbingLabel}
           </button>
         </span>
       ) : null}

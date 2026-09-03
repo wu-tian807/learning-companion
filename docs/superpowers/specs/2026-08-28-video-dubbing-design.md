@@ -34,7 +34,7 @@ Audio：逐句显示 speaker / 参考窗口，并跟随当前播放位置
 - **正式模型：VoxCPM2 官方 Python/CUDA 实现。** 当前盲听中，它的中英文 one-shot 清晰度、音色保持和跨语种表现最好。
 - **备选模型：F5-TTS、VoxCPM1.5。** Demo 保留适配器和测试资料，但主程序不下载、不注册、不出现模型选择，避免第一版同时维护三套运行时。
 - **人声分离：sherpa-onnx CUDA + UVR HQ4。** 该组合已在真实视频上验证，输出顺序明确为 background、vocals。
-- **说话人区分属于字幕组件。** CUDA/Metal 由 MOSS 联合生成字幕与 speaker；Windows CPU 由 sherpa-onnx 在 SenseVoice 之后归属 speaker。配音只消费该结果，不再维护第二份说话人模型。
+- **Sherpa 资源与执行属于字幕组件。** Audio 在字幕生成后立即分析 speaker；Video 只在点击配音后分析分离人声，视频字幕本身不携带 speaker。配音组件不再维护第二份说话人模型。
 - **翻译：Agent TaskDefinition。** 不再安装本地翻译模型；翻译复用工作台 AI Selector，并由 GenerationTask 保留任务状态和 Provider Session。
 - **存储：现有 GenerationTask + AssetArtifact。** 不增加字幕表、配音表或 Job 表。
 
@@ -79,8 +79,8 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 
 ## 4. 说话人路由、配音计划与时间轴
 
-- 新建断点直接读取字幕 Artifact 中已经归一化的 `speaker-0001`、`speaker-0002`；恢复任务读取带 SHA-256 身份校验的 `speaker-plan.json`，不重复做人声分离或聚类；
-- CPU 字幕路径的聚类阈值取 0.7，优先避免把不同人合并；MOSS 路径可保留同时段的多份 speaker 字幕。两者都通过同一 `speakerAnalysis` 契约交给配音；
+- Audio 新建断点可读取字幕 Artifact 中已经归一化的 `speaker-0001`、`speaker-0002`；Video 新建断点在完成人声分离后调用字幕组件的 Sherpa。恢复任务读取带 SHA-256 身份校验的 `speaker-plan.json`，不重复做人声分离或聚类；
+- Sherpa 聚类阈值取 0.7，优先避免把不同人合并。它只给现有 Cue 归属主 speaker，不声称恢复重叠文本；
 - 每个字幕 Cue 按时间重叠最多的 speaker 归属。若 Cue 内第二个 speaker 同时达到 250 ms 和 Cue 时长 10%，仍按主 speaker 配音，但标记为不确定并禁止用作声色参考；没有有效重叠时归为 `speaker-unknown`；
 - 每个 speaker 从分离后的纯人声中自动选择一个稳定 one-shot 参考，不让用户额外确认；参考窗口为连续 3–10 秒，跨 Cue 间隔不得超过 700 ms，并要求至少 2.5 秒目标 speaker 语音、至少 50% 覆盖率、其他 speaker 不超过 200 ms；
 - 某个 speaker 找不到合格参考时显式使用 VoxCPM2 默认声线，绝不借用另一个 speaker 的参考；
@@ -93,7 +93,7 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 - Audio 默认跟随播放头：Cue 内高亮当前句，间隙定位下一句，媒体结束后定位末句但不误高亮。用户滚轮、触摸、拖动滚动条或键盘浏览后暂停自动跟随，通过“定位当前句”或点击字幕恢复；
 - 说话人标签随原字幕出现。单纯打开 Audio 只读取已有字幕 Artifact，不会触发配音安装或人声分离；
 - 配音按钮只在原字幕 Artifact、完整译文 Artifact 与 VoxCPM2 外部组件都可用时启用；
-  字幕生成已经包含说话人分析；人声分离仍属于点击后的配音内部步骤，不作为按钮前置门禁；
+  Video 的说话人分析和人声分离都属于点击后的配音内部步骤，不作为按钮前置门禁；
 - 中文朗读文本会把阿拉伯数字转成自然中文读法，字幕画面仍保留原文字；
 - VoxCPM2 按 Phrase 倒序生成，因此进度条从最右侧向左扩展；
 - 每段生成后用 FFmpeg `atempo + apad + atrim` 精确适配对应 Cue 窗口；不按字数猜时间，也不改写时间戳；
@@ -111,7 +111,7 @@ TaskDefinition 的工作区权限为只读关闭、写入关闭，因为所有�
 - VoxCPM2 固定 revision 的 7 个官方模型文件；
 - UVR-MDX-NET-Inst_HQ_4 人声分离模型；
 - 固定版本的 `uv` 引导程序；
-- 固定资源下载约 5.04 GB；说话人模型已迁移到 Windows CPU 字幕档，CUDA/Metal 字幕档使用 MOSS 自带的联合 speaker 输出；所有资源都有固定大小和 SHA-256；
+- 固定资源下载约 5.04 GB；Sherpa runtime 与说话人模型只由字幕组件安装，VoxCPM2 包不重复下载；所有资源都有固定大小和 SHA-256；
 - 只有安装状态检查确认组件可用后，兼容的 Audio/Video Workbench 才会在后台预热；未安装、平台不支持或已经恢复完整配音 Artifact 时不准备 Python、不启动 Worker；
 - 首次成功预热或生成时，在同一个 External Library 根目录准备隔离 Python 3.12、PyTorch CUDA、VoxCPM 与 sherpa-onnx 环境；缓存也全部留在该根目录；
 - Windows 首次安装从 PyTorch 官方 cu128 wheel 索引获取固定的 `torch 2.8.0+cu128` 与 `torchaudio 2.8.0+cu128`；该索引已验证可被 `uv` 解析，其他依赖来源不在本次调整范围；
@@ -164,7 +164,7 @@ Content Resource 和 Workbench Event。`bootstrap` 不判断 VoxCPM2，也不包
 
 完整流水线约 35–40 秒。该数字包含模型加载和三段生成，只是当前机器的短片工程验证，不是产品性能承诺。
 
-CPU 字幕档的说话人分析曾使用 sherpa-onnx 官方 56.9 秒四人中文样本验证：当前固定模型和阈值输出 4 个 speaker，本机集成测试总耗时约 3 秒。该分析现在属于字幕生成，不占用 VoxCPM2 的 GPU 模型驻留。
+Sherpa 说话人分析曾使用官方 56.9 秒四人中文样本验证：当前固定模型和阈值输出 4 个 speaker，本机集成测试总耗时约 3 秒。该能力现在属于字幕组件；Audio 在字幕阶段调用，Video 在配音阶段调用，且不占用 VoxCPM2 的 GPU 模型驻留。
 
 2026-08-29 又使用本机已安装的正式 VoxCPM2、UVR、FFmpeg 与 20.8 秒 MP4 重跑新链路：说话人分析、profile 路由、三段 CUDA 生成和最终 AAC 探测全部通过，集成测试总耗时约 33 秒。该结果同样只作为回归证据。
 

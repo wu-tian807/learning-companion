@@ -1,8 +1,11 @@
 import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main-workbench-contribution';
 import { isTextRangePayload } from '../../shared/workbench/text-range-anchor';
 import {
+  isMarkdownImageAnchorPayload,
   MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
   MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
+  MARKDOWN_IMAGE_ANCHOR_TYPE,
+  MARKDOWN_IMAGE_ANCHOR_VERSION,
 } from './shared';
 
 function isMarkdownVisualSelectionPayload(
@@ -27,6 +30,11 @@ export const markdownMainFeature = Object.freeze({
       anchorType: MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE,
       version: 1,
       isPayload: isTextRangePayload,
+    });
+    anchors.register({
+      anchorType: MARKDOWN_IMAGE_ANCHOR_TYPE,
+      version: MARKDOWN_IMAGE_ANCHOR_VERSION,
+      isPayload: isMarkdownImageAnchorPayload,
     });
     anchors.register({
       anchorType: MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,

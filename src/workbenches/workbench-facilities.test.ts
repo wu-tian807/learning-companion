@@ -58,14 +58,12 @@ describe('built-in Workbench Facility matrix', () => {
       'builtin.pdf': [
         'core.input.text-selection',
         'core.surface.context-menu',
-        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],
       'builtin.office': [
         'core.input.text-selection',
         'core.surface.context-menu',
-        'core.surface.header',
         'core.surface.overflow',
         'core.transport.renderer',
       ],

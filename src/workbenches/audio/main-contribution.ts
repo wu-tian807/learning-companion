@@ -11,6 +11,7 @@ import { MediaSubtitleService } from '../media-subtitles/media-subtitle-service'
 import { mediaSubtitleSourceTaskQueue } from '../media-subtitles/source-task-queue';
 import { mediaSubtitleSrtRuntime } from '../media-subtitles/srt-runtime';
 import { mediaSubtitleTranslationRuntime } from '../media-subtitles/translation-runtime';
+import { mediaSubtitleTranscriptionRuntime } from '../media-subtitles/transcription-runtime';
 import { AudioWorkbenchProvider } from './main';
 import { audioWorkbenchManifest } from './shared';
 
@@ -28,8 +29,10 @@ export const audioMainWorkbenchContribution = composeMainWorkbenchContribution(
       mediaRuntime,
       mediaSubtitleSourceTaskQueue,
       context.generationTasks,
+      mediaSubtitleTranslationRuntime.producer,
       mediaSubtitleTranslationRuntime.progress,
       audioWorkbenchManifest.supportedMediaTypes,
+      mediaSubtitleTranscriptionRuntime.progress,
     );
     const dubbing = new MediaDubbingService(
       context.assetService,

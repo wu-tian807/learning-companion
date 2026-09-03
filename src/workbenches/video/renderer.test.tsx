@@ -204,9 +204,7 @@ describe('VideoWorkbenchView', () => {
     };
 
     expect(createVideoSubtitleVtt(snapshot, 'source')).toContain('Hello.');
-    expect(createVideoSubtitleVtt(snapshot, 'source')).toContain(
-      '【说话人 1】Hello.',
-    );
+    expect(createVideoSubtitleVtt(snapshot, 'source')).not.toContain('说话人');
     expect(createVideoSubtitleVtt(snapshot, 'translated')).toContain(
       '〔原文 · 译文生成中〕World.',
     );
@@ -340,7 +338,7 @@ describe('VideoWorkbenchView', () => {
       expect(executeCommand).toHaveBeenCalledWith({
         type: 'video:get-subtitle-snapshot',
       });
-      expect(view.container.textContent).toContain('字幕准备中');
+      expect(view.container.textContent).toContain('字幕排队中');
 
       act(() => {
         for (const listener of eventListeners) {

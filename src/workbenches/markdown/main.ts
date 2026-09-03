@@ -4,6 +4,18 @@ import {
   type TextContentAdapter,
   type WriteTextContentResult,
 } from '../../main/content/text-content';
+import {
+  mkdir,
+  readFile,
+  writeFile,
+} from 'node:fs/promises';
+import {
+  basename,
+  dirname,
+  join,
+  resolve,
+  sep,
+} from 'node:path';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
@@ -28,8 +40,14 @@ import {
   MARKDOWN_RECOVERY_DATA_KEY,
   MARKDOWN_STATE_SCHEMA_VERSION,
   MARKDOWN_WORKBENCH_ID,
+  MARKDOWN_IMAGE_DIRECTORY,
+  MARKDOWN_MAX_IMAGE_BYTES,
+  isMarkdownInsertImagePayload,
+  isMarkdownReadImagePayload,
   markdownCommands,
   markdownWorkbenchManifest,
+  markdownImageExtensionFromMediaType,
+  markdownImageMediaTypeFromName,
   type MarkdownEditMode,
   type MarkdownLineEnding,
   type MarkdownRecoveryState,
@@ -44,6 +62,8 @@ interface MarkdownSessionRuntime {
   readonly handle: NonNullable<
     Parameters<MainWorkbenchProvider['open']>[0]['content']['handle']
   >;
+  /** Markdown 源文件所在目录；缺失时图片命令不可用。 */
+  readonly assetDirectory?: string;
   source: ResolvedTextContent;
   workingBuffer: string;
   currentLineEnding: MarkdownLineEnding;
@@ -54,10 +74,28 @@ interface MarkdownSessionRuntime {
   recoveryTask: Promise<void>;
 }
 
+export interface MarkdownImageFileSystemApi {
+  readonly mkdir: (directory: string) => Promise<void>;
+  readonly writeFile: (
+    filePath: string,
+    data: Uint8Array,
+  ) => Promise<void>;
+  readonly readFile: (filePath: string) => Promise<Buffer>;
+}
+
+const defaultImageFileSystem: MarkdownImageFileSystemApi = {
+  mkdir: async (directory) => {
+    await mkdir(directory, { recursive: true });
+  },
+  writeFile,
+  readFile,
+};
+
 export interface MarkdownWorkbenchProviderDependencies {
   readonly now: () => number;
   readonly textContentAdapter: TextContentAdapter;
   readonly recoveryDebounceMs: number;
+  readonly imageFileSystem?: Partial<MarkdownImageFileSystemApi>;
 }
 
 function createResult(payload: JsonValue): WorkbenchCommandResult {
@@ -94,6 +132,7 @@ export class MarkdownWorkbenchProvider
   private readonly now: () => number;
   private readonly textContentAdapter: TextContentAdapter;
   private readonly recoveryDebounceMs: number;
+  private readonly imageFileSystem: MarkdownImageFileSystemApi;
 
   constructor(
     private readonly stateDatabase: WorkbenchStateDatabaseApi,
@@ -105,6 +144,10 @@ export class MarkdownWorkbenchProvider
       dependencies.textContentAdapter ?? new DefaultTextContentAdapter();
     this.recoveryDebounceMs =
       dependencies.recoveryDebounceMs ?? RECOVERY_DEBOUNCE_MS;
+    this.imageFileSystem = {
+      ...defaultImageFileSystem,
+      ...dependencies.imageFileSystem,
+    };
   }
 
   async open(context: Parameters<MainWorkbenchProvider['open']>[0]) {
@@ -167,9 +210,15 @@ export class MarkdownWorkbenchProvider
     }
 
     const viewState = cloneMarkdownWorkbenchViewState(state);
+    const assetLocation = context.content.location;
+    const assetDirectory =
+      assetLocation?.kind === 'local-file'
+        ? dirname(assetLocation.absolutePath)
+        : undefined;
     this.sessions.set(context.sessionId, {
       assetId: context.asset.id,
       handle,
+      ...(assetDirectory ? { assetDirectory } : {}),
       source,
       workingBuffer: source.content,
       currentLineEnding: source.lineEnding,
@@ -342,6 +391,27 @@ export class MarkdownWorkbenchProvider
         await this.clearRecovery(runtime.assetId, runtime.viewState);
         return createResult({ discarded: true });
       }
+      case markdownCommands.insertImage: {
+        if (!isMarkdownInsertImagePayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        const relativePath = await this.storeInsertedImage(runtime, {
+          name: command.payload.name,
+          mediaType: command.payload.mediaType,
+          data: command.payload.data,
+        });
+        return createResult({ relativePath });
+      }
+      case markdownCommands.readImage: {
+        if (!isMarkdownReadImagePayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        const dataUrl = await this.readStoredImage(
+          runtime,
+          command.payload.relativePath,
+        );
+        return createResult({ dataUrl });
+      }
       default:
         throw new AppError('FEATURE_NOT_SUPPORTED');
     }
@@ -413,9 +483,153 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
         return;
+      case markdownCommands.insertImage:
+        if (!isMarkdownInsertImagePayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        return;
+      case markdownCommands.readImage:
+        if (!isMarkdownReadImagePayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        return;
       default:
         throw new AppError('FEATURE_NOT_SUPPORTED');
     }
+  }
+
+  private requireAssetDirectory(
+    runtime: MarkdownSessionRuntime,
+  ): string {
+    if (!runtime.assetDirectory) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return runtime.assetDirectory;
+  }
+
+  private async storeInsertedImage(
+    runtime: MarkdownSessionRuntime,
+    input: {
+      readonly name: string;
+      readonly mediaType: Parameters<
+        typeof markdownImageExtensionFromMediaType
+      >[0];
+      readonly data: string;
+    },
+  ): Promise<string> {
+    const assetDirectory = this.requireAssetDirectory(runtime);
+    const bytes = Buffer.from(input.data, 'base64');
+    if (
+      bytes.byteLength === 0 ||
+      bytes.byteLength > MARKDOWN_MAX_IMAGE_BYTES
+    ) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    const extension = markdownImageExtensionFromMediaType(
+      input.mediaType,
+    );
+    const baseName = this.sanitizeImageBaseName(input.name);
+    const imageDirectory = join(
+      assetDirectory,
+      MARKDOWN_IMAGE_DIRECTORY,
+    );
+    await this.imageFileSystem.mkdir(imageDirectory);
+    const storedName = await this.nextAvailableImageName(
+      imageDirectory,
+      baseName,
+      extension,
+    );
+    await this.imageFileSystem.writeFile(
+      join(imageDirectory, storedName),
+      bytes,
+    );
+    return `${MARKDOWN_IMAGE_DIRECTORY}/${storedName}`;
+  }
+
+  private async readStoredImage(
+    runtime: MarkdownSessionRuntime,
+    relativePath: string,
+  ): Promise<string> {
+    const assetDirectory = this.requireAssetDirectory(runtime);
+    const absolutePath = this.resolveImageUnderDirectory(
+      assetDirectory,
+      relativePath,
+    );
+    const mediaType = markdownImageMediaTypeFromName(relativePath);
+    if (!mediaType) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    const bytes = await this.imageFileSystem.readFile(absolutePath);
+    if (
+      bytes.byteLength === 0 ||
+      bytes.byteLength > MARKDOWN_MAX_IMAGE_BYTES
+    ) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    return `data:${mediaType};base64,${bytes.toString('base64')}`;
+  }
+
+  private resolveImageUnderDirectory(
+    assetDirectory: string,
+    relativePath: string,
+  ): string {
+    const decodedSegments = relativePath
+      .split('/')
+      .map((segment) => {
+        try {
+          return decodeURIComponent(segment);
+        } catch {
+          return segment;
+        }
+      });
+    const root = resolve(assetDirectory);
+    const candidate = resolve(root, ...decodedSegments);
+    if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    return candidate;
+  }
+
+  private sanitizeImageBaseName(name: string): string {
+    const withoutExtension = name.replace(/\.[^.]+$/u, '');
+    const normalized = basename(withoutExtension)
+      .split('')
+      .filter(
+        (character) =>
+          !'<>:"/\\|?*'.includes(character) &&
+          character.charCodeAt(0) >= 32,
+      )
+      .join('')
+      .replace(/[. ]+$/gu, '')
+      .trim();
+    const base = Array.from(normalized).slice(0, 80).join('').trim();
+    return base.length > 0 ? base : 'image';
+  }
+
+  private async nextAvailableImageName(
+    directory: string,
+    baseName: string,
+    extension: string,
+  ): Promise<string> {
+    const exists = async (candidate: string) => {
+      try {
+        await this.imageFileSystem.readFile(join(directory, candidate));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const first = `${baseName}${extension}`;
+    if (!(await exists(first))) {
+      return first;
+    }
+    for (let index = 2; index < 10_000; index += 1) {
+      const candidate = `${baseName}-${index}${extension}`;
+      if (!(await exists(candidate))) {
+        return candidate;
+      }
+    }
+    throw new AppError('INVALID_IPC_REQUEST');
   }
 
   private readState(

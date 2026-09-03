@@ -15,17 +15,18 @@ import {
 
 export const SUBTITLE_TRANSLATION_TASK_DEFINITION_ID =
   'builtin.media-subtitles.translate';
-export const SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION = 1;
+export const SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION = 4;
 export const SUBTITLE_TRANSLATION_INSTRUCTION_FORMAT =
   'media-subtitle-translation';
 
 export type SubtitleTranslationInstructionSnapshot = JsonValue & {
   readonly format: typeof SUBTITLE_TRANSLATION_INSTRUCTION_FORMAT;
-  readonly version: 1;
+  readonly version: 2;
   readonly assetId: string;
   readonly sourceTrackRevision: string;
   readonly sourceLanguage: TranslatableSubtitleLanguage;
   readonly targetLanguage: TranslatableSubtitleLanguage;
+  readonly chunkIndex: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,34 +42,38 @@ export class SubtitleTranslationInstruction extends GenerationInstruction<Subtit
   readonly sourceTrackRevision: string;
   readonly sourceLanguage: TranslatableSubtitleLanguage;
   readonly targetLanguage: TranslatableSubtitleLanguage;
+  readonly chunkIndex: number;
 
   constructor(input: {
     readonly assetId: string;
     readonly sourceTrackRevision: string;
     readonly sourceLanguage: TranslatableSubtitleLanguage;
     readonly targetLanguage: TranslatableSubtitleLanguage;
+    readonly chunkIndex: number;
   }) {
     super();
     this.assetId = input.assetId.trim();
     this.sourceTrackRevision = input.sourceTrackRevision.trim();
     this.sourceLanguage = input.sourceLanguage;
     this.targetLanguage = input.targetLanguage;
+    this.chunkIndex = input.chunkIndex;
   }
 
   toSnapshot(): SubtitleTranslationInstructionSnapshot {
     return Object.freeze({
       format: SUBTITLE_TRANSLATION_INSTRUCTION_FORMAT,
-      version: 1,
+      version: 2,
       assetId: this.assetId,
       sourceTrackRevision: this.sourceTrackRevision,
       sourceLanguage: this.sourceLanguage,
       targetLanguage: this.targetLanguage,
+      chunkIndex: this.chunkIndex,
     });
   }
 
   toUserMessage() {
     return createTextAgentUserMessage(
-      `将 Asset ${this.assetId} 的 ${this.sourceLanguage} 字幕分段翻译为 ${this.targetLanguage}。`,
+      `将 Asset ${this.assetId} 的第 ${this.chunkIndex + 1} 段字幕从 ${this.sourceLanguage} 翻译为 ${this.targetLanguage}。`,
     );
   }
 }
@@ -79,12 +84,14 @@ export const subtitleTranslationInstructionFactory: GenerationInstructionFactory
       if (
         !isRecord(input) ||
         input.format !== SUBTITLE_TRANSLATION_INSTRUCTION_FORMAT ||
-        input.version !== 1 ||
+        input.version !== 2 ||
         !isRequiredText(input.assetId) ||
         !isRequiredText(input.sourceTrackRevision) ||
         !isTranslatableSubtitleLanguage(input.sourceLanguage) ||
         !isTranslatableSubtitleLanguage(input.targetLanguage) ||
-        input.sourceLanguage === input.targetLanguage
+        input.sourceLanguage === input.targetLanguage ||
+        !Number.isSafeInteger(input.chunkIndex) ||
+        Number(input.chunkIndex) < 0
       ) {
         return generationValidationFailure([
           {
@@ -99,6 +106,7 @@ export const subtitleTranslationInstructionFactory: GenerationInstructionFactory
           sourceTrackRevision: input.sourceTrackRevision,
           sourceLanguage: input.sourceLanguage,
           targetLanguage: input.targetLanguage,
+          chunkIndex: Number(input.chunkIndex),
         }),
       );
     },

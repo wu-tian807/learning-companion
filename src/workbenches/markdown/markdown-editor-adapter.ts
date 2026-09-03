@@ -16,6 +16,13 @@ export interface MarkdownEditorAdapterOptions {
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpenExternal: (url: string) => void;
   readonly onError: (error: unknown) => void;
+  /**
+   * 把 Markdown 引用指向的本地图片（相对路径）解析为可显示的 data URL。
+   * 返回 undefined 表示无法加载，图片保留“已阻止”占位。
+   */
+  readonly readLocalImageSource?: (
+    relativePath: string,
+  ) => Promise<string | undefined>;
   readonly signal?: AbortSignal;
 }
 
@@ -313,9 +320,13 @@ export class MarkdownEditorAdapter {
   private readonly scrollListener: () => void;
   private readonly inputGate = new MarkdownEditorInputGate();
   private readonly readyTask: Promise<void>;
+  private readonly readLocalImageSource:
+    | MarkdownEditorAdapterOptions['readLocalImageSource']
+    | undefined;
   private resolveReady!: () => void;
   private rejectReady!: (error: unknown) => void;
   private blockedImageObserver: MutationObserver | undefined;
+  private readonly resolvingLocalImages = new WeakSet<HTMLImageElement>();
   private readyFrame: number | undefined;
   private readySettled = false;
   private destroyed = false;
@@ -360,6 +371,7 @@ export class MarkdownEditorAdapter {
     this.dependencies = dependencies;
     this.onInput = options.onInput;
     this.onScroll = options.onScroll;
+    this.readLocalImageSource = options.readLocalImageSource;
     this.scrollListener = () => {
       this.onScroll(this.getScrollTop());
     };
@@ -661,6 +673,46 @@ export class MarkdownEditorAdapter {
     this.editor.deleteValue();
   }
 
+  /** 在光标处插入一段 Markdown；WYSIWYG 模式下会按 Markdown 渲染。 */
+  insertMarkdown(value: string): void {
+    this.editor.insertValue(value);
+  }
+
+  /** 触发一次本地图片解析（用于插入图片后立即刷新显示）。 */
+  resolveLocalImages(): void {
+    if (this.destroyed) return;
+    this.markBlockedImages();
+  }
+
+  /**
+   * Vditor 把 WYSIWYG DOM 序列化成 Markdown 时，会使用显示用的
+   * data URL 作为图片地址。这里把“我们自己解析过的本地图片”还原成
+   * 源码里的相对路径，避免 base64 泄漏进 Markdown 原文。
+   */
+  normalizeImageSourcesForSource(markdown: string): string {
+    const element = this.getEditableElement();
+    if (!element) return markdown;
+    let normalized = markdown;
+    let cursor = 0;
+    for (const image of element.querySelectorAll<HTMLImageElement>(
+      'img[data-md-src]',
+    )) {
+      const relativePath = image.getAttribute('data-md-src');
+      const source = image.getAttribute('src');
+      if (!relativePath || !source?.startsWith('data:image/')) {
+        continue;
+      }
+      const index = normalized.indexOf(source, cursor);
+      if (index < 0) continue;
+      normalized =
+        normalized.slice(0, index) +
+        relativePath +
+        normalized.slice(index + source.length);
+      cursor = index + relativePath.length;
+    }
+    return normalized;
+  }
+
   insertPlainText(value: string): void {
     if (!document.execCommand('insertText', false, value)) {
       throw new Error('Markdown 编辑器无法插入剪贴板文字');
@@ -756,7 +808,10 @@ export class MarkdownEditorAdapter {
   }
 
   private markBlockedImages(): void {
-    this.editor.vditor.wysiwyg?.element
+    const element = this.editor.vditor.wysiwyg?.element;
+    if (!element) return;
+
+    element
       .querySelectorAll<HTMLImageElement>('img')
       .forEach((image) => {
         const source =
@@ -776,6 +831,66 @@ export class MarkdownEditorAdapter {
         image.title = '外部或相对路径图片已阻止自动加载';
         image.alt =
           image.alt || '外部或相对路径图片已阻止自动加载';
+
+        const relativePath = normalizeLocalMarkdownImageSource(source);
+        const resolver = this.readLocalImageSource;
+        if (!relativePath) {
+          return;
+        }
+
+        image.setAttribute('data-md-src', relativePath);
+        if (!resolver || this.resolvingLocalImages.has(image)) {
+          return;
+        }
+
+        this.resolvingLocalImages.add(image);
+        void resolver(relativePath)
+          .then((dataUrl) => {
+            if (
+              !dataUrl ||
+              this.destroyed ||
+              !image.isConnected ||
+              image.getAttribute('src') !== source
+            ) {
+              return;
+            }
+            delete image.dataset.blockedSource;
+            image.removeAttribute('title');
+            if (image.alt === '外部或相对路径图片已阻止自动加载') {
+              image.removeAttribute('alt');
+            }
+            image.setAttribute('src', dataUrl);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            this.resolvingLocalImages.delete(image);
+          });
       });
   }
+}
+
+/**
+ * 规范化 Markdown 中的本地图片源。只允许指向资料目录内部的相对路径；
+ * 上级目录、绝对路径、Windows 分隔符与外部链接一律不解析。
+ */
+function normalizeLocalMarkdownImageSource(
+  source: string,
+): string | undefined {
+  const trimmed = source.trim();
+  if (
+    !trimmed ||
+    trimmed.startsWith('/') ||
+    trimmed.includes('\\') ||
+    /^[a-zA-Z][a-zA-Z\d+.-]*:/u.test(trimmed)
+  ) {
+    return undefined;
+  }
+  const segments = trimmed.split('/');
+  const normalized: string[] = [];
+  for (const segment of segments) {
+    if (segment === '.' || segment.length === 0) continue;
+    if (segment === '..') return undefined;
+    normalized.push(segment);
+  }
+  return normalized.length > 0 ? normalized.join('/') : undefined;
 }

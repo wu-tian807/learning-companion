@@ -75,6 +75,22 @@ describe('WorkbenchMenu', () => {
     ).toEqual(['10-view', '20-file']);
   });
 
+  it('hides disabled entries when hideDisabled is set', () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchMenu
+        ariaLabel="工作台菜单"
+        entries={entries}
+        busyActionIds={new Set()}
+        hideDisabled
+        onInvoke={vi.fn()}
+      />,
+    );
+
+    expect(markup).not.toContain('保存');
+    expect(markup).not.toContain('disabled=""');
+    expect(markup).toContain('自动换行');
+  });
+
   it('formats platform shortcuts consistently', () => {
     expect(formatWorkbenchShortcut('Mod+Shift+Z', 'mac')).toBe('⌘⇧Z');
     expect(formatWorkbenchShortcut('Mod+Shift+Z', 'windows')).toBe(

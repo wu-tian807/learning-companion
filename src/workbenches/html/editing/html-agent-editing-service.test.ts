@@ -1,25 +1,59 @@
-import { readFile, unlink } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import type { AgentFunctionToolExecutionContext } from '../../../main/agents/function-tools/agent-function-tool';
 import { createTextRevision } from '../../../main/content/text-content';
 import type { WorkbenchStateDataRecord } from '../../../main/workbench/workbench-state-data-database';
+import { HtmlConversationContextProvider } from '../conversation/html-conversation-context-provider';
+import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../conversation/html-conversation-context';
 import { HtmlAgentEditingService } from './html-agent-editing-service';
 
-function toolContext(taskId: string): AgentFunctionToolExecutionContext {
+function toolContext(
+  taskId: string,
+  path = 'C:\\workspace',
+  instanceKey = 'conversation-1',
+): AgentFunctionToolExecutionContext {
   return {
     taskId,
     projectId: 'project-1',
     workspaces: {
       primary: {
         key: 'workbench-conversation',
-        instanceKey: 'conversation-1',
-        path: 'C:\\workspace',
+        instanceKey,
+        path,
         permissions: { read: true, write: false },
       },
       secondary: [],
     },
+  };
+}
+
+async function createConversationSource(
+  root: string,
+  instanceKey: string,
+  content: string,
+) {
+  const workspacePath = join(root, instanceKey);
+  const relativePath = 'references/source-0001/source.html';
+  const absolutePath = join(workspacePath, ...relativePath.split('/'));
+  await mkdir(dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, content, 'utf8');
+  return {
+    absolutePath,
+    relativePath,
+    workspace: toolContext('task-1', workspacePath, instanceKey).workspaces
+      .primary,
   };
 }
 
@@ -75,6 +109,39 @@ function task(
     createdTime: 1,
     updatedTime: completed ? 4 : 2,
   };
+}
+
+function createEditableService(
+  original: string,
+  snapshots: ReadonlyMap<string, ReturnType<typeof task>>,
+) {
+  const bytes = new TextEncoder().encode(original);
+  return new HtmlAgentEditingService(
+    {
+      getActiveProjectId: () => 'project-1',
+      get: (assetId: string) =>
+        assetId === 'asset-1'
+          ? {
+              id: 'asset-1',
+              projectId: 'project-1',
+              mediaType: 'text/html',
+            }
+          : undefined,
+      resolveContent: vi.fn(async () => ({
+        contentStatus: { availability: 'available', checkedTime: 1 },
+        handle: {
+          capabilities: new Set(['read-bytes', 'write-bytes']),
+          readBytes: vi.fn(async () => ({
+            content: bytes,
+            revision: createTextRevision(bytes),
+          })),
+          writeBytes: vi.fn(),
+          close: vi.fn(async () => undefined),
+        },
+      })),
+    } as never,
+    { get: (taskId: string) => snapshots.get(taskId) } as never,
+  );
 }
 
 describe('HtmlAgentEditingService Workbench persistence', () => {
@@ -752,6 +819,235 @@ describe('HtmlAgentEditingService Workbench persistence', () => {
         pendingChanges: [],
       });
     });
+  });
+
+  it('refreshes every established conversation source and rolls them back with the failed task', async () => {
+    const original = '<html><body><p id="target">Before</p></body></html>';
+    const snapshots = new Map([['task-1', task('task-1')]]);
+    const root = await mkdtemp(join(tmpdir(), 'html-conversation-source-'));
+    const first = await createConversationSource(root, 'conversation-1', original);
+    const second = await createConversationSource(root, 'conversation-2', original);
+    const service = createEditableService(original, snapshots);
+
+    try {
+      const firstContext = toolContext(
+        'task-1',
+        first.workspace.path,
+        first.workspace.instanceKey,
+      );
+      await new HtmlConversationContextProvider(() => service).prepare({
+        ...firstContext,
+        instruction: new WorkbenchConversationInstruction({
+          contextProviderId: HTML_CONVERSATION_CONTEXT_PROVIDER_ID,
+          assetId: 'asset-1',
+          conversationId: 'conversation-1',
+          question: '修改目标。',
+        }),
+        assetReferences: {
+          source: [
+            {
+              assetId: 'asset-1',
+              relativePath: first.relativePath,
+            },
+          ],
+        },
+        reportStatus: vi.fn(),
+      } as never);
+      await service.bindConversationSource(
+        'asset-1',
+        second.relativePath,
+        toolContext(
+          'task-1',
+          second.workspace.path,
+          second.workspace.instanceKey,
+        ),
+      );
+      const begun = (await service.begin(
+        {
+          locator: { kind: 'selector', selector: '#target' },
+          scope: 'contents',
+        },
+        toolContext('task-1'),
+      )) as { editId: string };
+
+      await service.replace(begun.editId, 'Draft', toolContext('task-1'));
+      await expect(readFile(first.absolutePath, 'utf8')).resolves.toContain(
+        '>Draft<',
+      );
+      await expect(readFile(second.absolutePath, 'utf8')).resolves.toContain(
+        '>Draft<',
+      );
+
+      const failed = {
+        ...task('task-1'),
+        failure: {
+          phase: 'process',
+          failedTime: 4,
+          message: 'failed',
+        },
+        updatedTime: 4,
+      } as const;
+      await service.handleTaskSnapshot(failed as never);
+      await expect(readFile(first.absolutePath, 'utf8')).resolves.toContain(
+        '>Before<',
+      );
+      await expect(readFile(second.absolutePath, 'utf8')).resolves.toContain(
+        '>Before<',
+      );
+    } finally {
+      await service.shutdown();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps one stable conversation path current across undo, redo, and discard', async () => {
+    const original = '<html><body><p id="target">Before</p></body></html>';
+    const snapshots = new Map([['task-1', task('task-1')]]);
+    const root = await mkdtemp(join(tmpdir(), 'html-conversation-source-'));
+    const source = await createConversationSource(root, 'conversation-1', original);
+    const service = createEditableService(original, snapshots);
+
+    try {
+      await service.bindConversationSource(
+        'asset-1',
+        source.relativePath,
+        toolContext(
+          'task-1',
+          source.workspace.path,
+          source.workspace.instanceKey,
+        ),
+      );
+      const begun = (await service.begin(
+        {
+          locator: { kind: 'selector', selector: '#target' },
+          scope: 'contents',
+        },
+        toolContext('task-1'),
+      )) as { editId: string };
+      await service.replace(begun.editId, 'Draft', toolContext('task-1'));
+      const completed = task('task-1', true);
+      snapshots.set('task-1', completed);
+      await service.handleTaskSnapshot(completed as never);
+
+      await service.undo('project-1', 'asset-1');
+      await expect(readFile(source.absolutePath, 'utf8')).resolves.toContain(
+        '>Before<',
+      );
+      await service.redo('project-1', 'asset-1');
+      await expect(readFile(source.absolutePath, 'utf8')).resolves.toContain(
+        '>Draft<',
+      );
+      await service.discard('project-1', 'asset-1');
+      await expect(readFile(source.absolutePath, 'utf8')).resolves.toContain(
+        '>Before<',
+      );
+    } finally {
+      await service.shutdown();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects conversation source paths outside the prepared workspace', async () => {
+    const original = '<html><body><p>Before</p></body></html>';
+    const snapshots = new Map([['task-1', task('task-1')]]);
+    const root = await mkdtemp(join(tmpdir(), 'html-conversation-source-'));
+    const source = await createConversationSource(root, 'conversation-1', original);
+    const outsidePath = join(root, 'outside.html');
+    await writeFile(outsidePath, 'outside', 'utf8');
+    const service = createEditableService(original, snapshots);
+
+    try {
+      await expect(
+        service.bindConversationSource(
+          'asset-1',
+          '../outside.html',
+          toolContext(
+            'task-1',
+            source.workspace.path,
+            source.workspace.instanceKey,
+          ),
+        ),
+      ).rejects.toThrow(/相对路径/u);
+      const unreadableContext = toolContext(
+        'task-1',
+        source.workspace.path,
+        source.workspace.instanceKey,
+      );
+      await expect(
+        service.bindConversationSource(
+          'asset-1',
+          source.relativePath,
+          {
+            ...unreadableContext,
+            workspaces: {
+              ...unreadableContext.workspaces,
+              primary: {
+                ...unreadableContext.workspaces.primary,
+                permissions: { read: false, write: false },
+              },
+            },
+          },
+        ),
+      ).rejects.toThrow(/不允许读取/u);
+      await expect(readFile(outsidePath, 'utf8')).resolves.toBe('outside');
+    } finally {
+      await service.shutdown();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the draft authoritative when an established conversation copy becomes unwritable', async () => {
+    const original = '<html><body><p id="target">Before</p></body></html>';
+    const snapshots = new Map([['task-1', task('task-1')]]);
+    const root = await mkdtemp(join(tmpdir(), 'html-conversation-source-'));
+    const source = await createConversationSource(root, 'conversation-1', original);
+    const service = createEditableService(original, snapshots);
+
+    try {
+      await service.bindConversationSource(
+        'asset-1',
+        source.relativePath,
+        toolContext(
+          'task-1',
+          source.workspace.path,
+          source.workspace.instanceKey,
+        ),
+      );
+      await rm(source.absolutePath, { force: true });
+      await mkdir(source.absolutePath);
+      const begun = (await service.begin(
+        {
+          locator: { kind: 'selector', selector: '#target' },
+          scope: 'contents',
+        },
+        toolContext('task-1'),
+      )) as { editId: string };
+
+      await expect(
+        service.replace(begun.editId, 'Draft', toolContext('task-1')),
+      ).resolves.toMatchObject({ applied: true });
+      await expect(service.getDraft('project-1', 'asset-1')).resolves.toContain(
+        '>Draft<',
+      );
+
+      await rm(source.absolutePath, { recursive: true, force: true });
+      const failed = {
+        ...task('task-1'),
+        failure: {
+          phase: 'process',
+          failedTime: 4,
+          message: 'failed',
+        },
+        updatedTime: 4,
+      } as const;
+      await service.handleTaskSnapshot(failed as never);
+      await expect(readFile(source.absolutePath, 'utf8')).resolves.toContain(
+        '>Before<',
+      );
+    } finally {
+      await service.shutdown();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('materializes the current draft for the next GenerationTask reference', async () => {

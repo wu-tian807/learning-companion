@@ -122,14 +122,15 @@ describe.skipIf(!enabled)('VoxCPM2 dubbing Windows integration', () => {
           },
           transcription: {
             kind: 'sensevoice',
-            profile: 'cpu',
             executablePath: 'unused',
             vadExecutablePath: 'unused',
             modelPath: 'unused',
             vadModelPath: 'unused',
-            speakerDiarizationExecutablePath: 'unused',
-            speakerSegmentationModelPath: 'unused',
-            speakerEmbeddingModelPath: 'unused',
+          },
+          speakerDiarization: {
+            executablePath: 'unused',
+            segmentationModelPath: 'unused',
+            embeddingModelPath: 'unused',
           },
         };
         const subtitleRuntime: MediaSubtitleRuntimeResolverApi = {

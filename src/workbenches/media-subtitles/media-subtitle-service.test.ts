@@ -24,11 +24,18 @@ import type { MediaSubtitleRuntimeResolverApi } from './external-libraries/media
 import { MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID } from './transcription-producer';
 import {
   MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
+  MediaSubtitleTranslationProducer,
   SubtitleTranslationProgressHub,
 } from './translation-producer';
 import { MediaSubtitleService } from './media-subtitle-service';
+import { applyMediaSubtitleCueFinal } from './presentation';
+import {
+  SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+  SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+} from './generation/subtitle-translation-instruction';
 import { MediaSubtitleSourceTaskQueue } from './source-task-queue';
 import type { MediaSubtitleSrtProducerApi } from './subtitle-srt-artifact';
+import { SubtitleTranscriptionProgressHub } from './transcription-progress';
 
 async function withDirectory(
   run: (directory: string) => Promise<void>,
@@ -114,14 +121,10 @@ function resolvedArtifact(
 function runtimes(): MediaSubtitleRuntimeResolverApi {
   const transcription = {
     kind: 'sensevoice' as const,
-    profile: 'cpu' as const,
     executablePath: 'sensevoice.exe',
     vadExecutablePath: 'vad.exe',
     modelPath: 'sensevoice.gguf',
     vadModelPath: 'vad.gguf',
-    speakerDiarizationExecutablePath: 'diarization.exe',
-    speakerSegmentationModelPath: 'segmentation.onnx',
-    speakerEmbeddingModelPath: 'embedding.onnx',
   };
   return {
     requireTranscription: vi.fn(async () => transcription),
@@ -151,6 +154,8 @@ async function serviceWithSource(
   directory: string,
   language: 'en' | 'unknown',
   tasks: GenerationTaskServiceApi = generationTasks(),
+  transcriptionProgress?: SubtitleTranscriptionProgressHub,
+  onSourceRequest?: (request: AssetArtifactRequest) => void,
 ) {
   const videoPath = join(directory, 'video.mp4');
   const sourcePath = join(directory, 'source.json');
@@ -176,6 +181,7 @@ async function serviceWithSource(
     })),
   };
   const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
+    onSourceRequest?.(request);
     await writeFile(
       sourcePath,
       JSON.stringify({
@@ -191,9 +197,11 @@ async function serviceWithSource(
     );
   });
   const srt = srtProducer();
+  const translationProgress = new SubtitleTranslationProgressHub();
   return {
     getOrCreate,
     srt,
+    translationProgress,
     service: new MediaSubtitleService(
       assets,
       projects,
@@ -206,13 +214,104 @@ async function serviceWithSource(
       runtimes(),
       new MediaSubtitleSourceTaskQueue(),
       tasks,
-      new SubtitleTranslationProgressHub(),
+      new MediaSubtitleTranslationProducer(),
+      translationProgress,
       ['video/mp4'],
+      transcriptionProgress,
     ),
   };
 }
 
 describe('MediaSubtitleService', () => {
+  it('publishes completed source chunks before the final artifact is committed', async () => {
+    await withDirectory(async (directory) => {
+      const progress = new SubtitleTranscriptionProgressHub();
+      let sourceRevision = '';
+      const { service } = await serviceWithSource(
+        directory,
+        'en',
+        generationTasks(),
+        progress,
+        (request) => {
+          sourceRevision = request.source.revision;
+          progress.publish({
+            assetId: request.assetId,
+            sourceRevision: request.source.revision,
+            stage: 'transcribing',
+            track: {
+              version: 1,
+              kind: 'subtitle-source',
+              sourceRevision: request.source.revision,
+              language: 'unknown',
+              origin: 'asr',
+              engine: {
+                id: 'whisper.cpp',
+                version: '1',
+                model: 'turbo',
+                backend: 'cuda',
+              },
+              generatedTime: 100,
+              cues: [
+                {
+                  id: 'partial-000001',
+                  startMs: 0,
+                  endMs: 1_000,
+                  text: '第一段已经完成。',
+                  sourceCueIds: ['partial-000001'],
+                },
+              ],
+            },
+          });
+        },
+      );
+      const snapshots: Array<ReturnType<typeof service.getSnapshot>> = [];
+      service.subscribe('video', (event) => {
+        if (event.type === 'snapshot') snapshots.push(event.snapshot);
+      });
+
+      await service.ensureSource('project', 'video');
+
+      expect(
+        snapshots.some(
+          (snapshot) =>
+            snapshot.phase === 'transcribing' &&
+            snapshot.source?.cues[0]?.text === '第一段已经完成。' &&
+            snapshot.completedCues === 1,
+        ),
+      ).toBe(true);
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'source-ready',
+        source: { language: 'en' },
+      });
+
+      progress.publish({
+        assetId: 'video',
+        sourceRevision,
+        stage: 'transcribing',
+        track: {
+          ...sourceTrack('unknown'),
+          sourceRevision,
+          cues: [
+            {
+              id: 'partial-stale',
+              startMs: 0,
+              endMs: 1_000,
+              text: '迟到的旧进度',
+              sourceCueIds: ['partial-stale'],
+            },
+          ],
+        },
+      });
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'source-ready',
+        source: { language: 'en' },
+      });
+      expect(service.getSnapshot('video').source?.cues[0]?.text).not.toBe(
+        '迟到的旧进度',
+      );
+    });
+  });
+
   it('accepts audio media types supplied by the owning Workbench', async () => {
     const audioAsset: AssetSnapshot = {
       ...videoAsset,
@@ -243,6 +342,7 @@ describe('MediaSubtitleService', () => {
       },
       new MediaSubtitleSourceTaskQueue(),
       generationTasks(),
+      new MediaSubtitleTranslationProducer(),
       new SubtitleTranslationProgressHub(),
       ['audio/mpeg'],
     );
@@ -335,6 +435,7 @@ describe('MediaSubtitleService', () => {
         runtimes(),
         new MediaSubtitleSourceTaskQueue(),
         tasks,
+        new MediaSubtitleTranslationProducer(),
         new SubtitleTranslationProgressHub(),
         ['video/mp4'],
       );
@@ -402,6 +503,66 @@ describe('MediaSubtitleService', () => {
         phase: 'unsupported-language',
         message: expect.stringContaining('中文或英文'),
       });
+    });
+  });
+
+  it('delivers a completed translation chunk through the service event into the renderer snapshot', async () => {
+    await withDirectory(async (directory) => {
+      const taskSnapshot = {
+        id: 'translation-task',
+        projectId: 'project',
+        definitionId: SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+        definitionVersion: SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+        instruction: {},
+        assetReferences: {},
+        agentCalls: [],
+        metrics: {},
+        createdTime: 100,
+        updatedTime: 100,
+      };
+      const tasks = {
+        subscribe: vi.fn(() => () => undefined),
+        list: vi.fn(() => []),
+        start: vi.fn(() => taskSnapshot),
+        retry: vi.fn(),
+      } as unknown as GenerationTaskServiceApi;
+      const { service, translationProgress } = await serviceWithSource(
+        directory,
+        'en',
+        tasks,
+      );
+
+      await service.ensureTranslation('project', 'video');
+      const rendererSnapshot = service.getSnapshot('video');
+      const events: Parameters<
+        Parameters<typeof service.subscribe>[1]
+      >[0][] = [];
+      service.subscribe('video', (event) => events.push(event));
+
+      translationProgress.publish({
+        assetId: 'video',
+        sourceTrackRevision: 'source-artifact-revision',
+        cue: { sourceCueId: 'cue-1', text: '你好。' },
+        completedCues: 1,
+        totalCues: 1,
+      });
+
+      const cueEvent = events.find((event) => event.type === 'cue-final');
+      expect(cueEvent).toBeDefined();
+      if (!cueEvent || cueEvent.type !== 'cue-final') return;
+      expect(rendererSnapshot.source?.sourceRevision).not.toBe(
+        cueEvent.payload.sourceTrackRevision,
+      );
+      expect(
+        applyMediaSubtitleCueFinal(rendererSnapshot, cueEvent.payload),
+      ).toMatchObject({
+        phase: 'translating',
+        partialTranslations: [{ sourceCueId: 'cue-1', text: '你好。' }],
+        completedCues: 1,
+      });
+      expect(service.getSnapshot('video').partialTranslations).toEqual([
+        { sourceCueId: 'cue-1', text: '你好。' },
+      ]);
     });
   });
 

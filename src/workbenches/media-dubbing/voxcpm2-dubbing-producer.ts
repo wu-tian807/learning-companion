@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cpus } from 'node:os';
 import { join } from 'node:path';
 
 import type {
@@ -22,11 +23,13 @@ import type {
   SubtitleTranslationTrackV1,
 } from '../media-subtitles/contracts';
 import type {
-  MediaDecoderRuntime,
+  MediaSubtitleRuntime,
   MediaSubtitleRuntimeResolverApi,
 } from '../media-subtitles/external-libraries/media-subtitle-runtime';
+import { analyzeMediaSpeakers } from '../media-subtitles/speaker-diarization';
 import {
   DUBBING_PHRASE_PLANNER_VERSION,
+  createDubbingPhrases,
 } from './dubbing-phrase-planner';
 import {
   DUBBING_SPEAKER_PLANNER_VERSION,
@@ -54,11 +57,13 @@ import { SOURCE_SEPARATION_WORKER_SOURCE } from './voxcpm2-worker-sources';
 
 // Persisted producer ids are part of existing artifact cache keys.
 export const VOXCPM2_DUBBING_PRODUCER_ID = 'builtin.video.dubbing.voxcpm2';
-export const VOXCPM2_DUBBING_PRODUCER_VERSION = '5';
+export const VOXCPM2_DUBBING_PRODUCER_VERSION = '6';
 export const VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE = 'audio/mp4';
 
 const PROCESS_TIMEOUT_MS = 4 * 60 * 60 * 1_000;
 const PROGRESS_POLL_MS = 500;
+const QUICK_PREVIEW_SPEAKER_ID = 'speaker-0001';
+const QUICK_REFERENCE_DURATION_MS = 6_000;
 
 export type MediaDubbingProgressPhase =
   'preparing-runtime' | 'separating' | 'cloning' | 'mixing';
@@ -111,6 +116,42 @@ interface WorkerProgress {
   readonly completedDurationMs: number;
   readonly readySuffixStartMs: number;
   readonly previewReady: true;
+}
+
+interface BootstrapPreview {
+  readonly previewPath: string;
+  readonly progress: WorkerProgress;
+}
+
+function createQuickPreviewPhrases(
+  input: DubbingInput,
+): ReturnType<typeof createDubbingPhrases> {
+  return createDubbingPhrases(
+    input.sourceTrack.cues,
+    input.translation,
+    input.sourceTrack.cues.map((cue) => ({
+      cueId: cue.id,
+      speakerId: QUICK_PREVIEW_SPEAKER_ID,
+      referenceEligible: false,
+      dominantOverlapMs: 0,
+      otherSpeakerOverlapMs: 0,
+    })),
+  );
+}
+
+function quickReferenceWindow(
+  startMs: number,
+  endMs: number,
+  durationMs: number,
+): { readonly startMs: number; readonly endMs: number } {
+  const referenceEndMs = Math.min(
+    durationMs,
+    Math.max(endMs, startMs + QUICK_REFERENCE_DURATION_MS),
+  );
+  return Object.freeze({
+    startMs: Math.max(0, referenceEndMs - QUICK_REFERENCE_DURATION_MS),
+    endMs: referenceEndMs,
+  });
 }
 
 function requestKey(
@@ -324,11 +365,11 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       (runtime, dubbingSignal) =>
         input.subtitleRuntime.withRuntime(
           dubbingSignal,
-          ({ decoder }, usageSignal) =>
+          (subtitleRuntime, usageSignal) =>
             this.produceWithRuntimes(
               request,
               input,
-              decoder,
+              subtitleRuntime,
               runtime,
               usageSignal,
             ),
@@ -339,11 +380,15 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
   private async produceWithRuntimes(
     request: AssetArtifactProduceRequest,
     input: DubbingInput,
-    decoder: MediaDecoderRuntime,
+    subtitleRuntime: MediaSubtitleRuntime,
     runtime: VoxCpm2DubbingRuntime,
     signal: AbortSignal,
   ): Promise<ProducedAssetArtifact> {
+    let runningVoiceJob: Promise<void> | undefined;
+    let voiceJobController: AbortController | undefined;
+    let removeVoiceAbortListener: (() => void) | undefined;
     try {
+      const decoder = subtitleRuntime.decoder;
       const provisionalTotal = input.sourceTrack.cues.length;
       if (provisionalTotal === 0) throw new Error('没有可生成的配音段落');
       this.publish(request, 'preparing-runtime', 0, provisionalTotal, 0, 0, 0);
@@ -356,6 +401,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       const checkpoint = await openMediaDubbingCheckpoint(identity);
       let durationMs: number;
       let plan: DubbingSpeakerRoutingPlan;
+      let bootstrapPreview: BootstrapPreview | undefined;
       if (checkpoint.manifest) {
         durationMs = checkpoint.manifest.durationMs;
         plan = parseDubbingSpeakerRoutingPlan(
@@ -403,7 +449,39 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
           durationMs,
           durationMs,
         );
-        await this.dependencies.commandRunner.run({
+        const quickDirectory = join(
+          request.stagingDirectory,
+          'first-phrase-preview',
+        );
+        await rm(quickDirectory, { recursive: true, force: true });
+        await mkdir(quickDirectory, { recursive: true });
+        const quickBackgroundPath = join(quickDirectory, 'background.wav');
+        const quickReferencePath = join(quickDirectory, 'reference.wav');
+        const quickPhrasesPath = join(quickDirectory, 'phrases.json');
+        const quickVoiceDirectory = join(quickDirectory, 'voice');
+        const quickProgressPath = join(quickDirectory, 'progress.json');
+        const quickPreviewPath = join(quickDirectory, 'preview.wav');
+        const phrasesPath = join(request.stagingDirectory, 'phrases.json');
+        const referencePathsPath = join(
+          request.stagingDirectory,
+          'reference-paths.json',
+        );
+        const inputsReadyPath = join(
+          request.stagingDirectory,
+          'voice-inputs-ready.json',
+        );
+        await Promise.all([
+          rm(phrasesPath, { force: true }),
+          rm(referencePathsPath, { force: true }),
+          rm(inputsReadyPath, { force: true }),
+        ]);
+        voiceJobController = new AbortController();
+        const abortVoiceJob = () => voiceJobController?.abort();
+        signal.addEventListener('abort', abortVoiceJob, { once: true });
+        removeVoiceAbortListener = () =>
+          signal.removeEventListener('abort', abortVoiceJob);
+
+        const originalAudioReady = this.dependencies.commandRunner.run({
           command: decoder.ffmpegPath,
           args: [
             '-hide_banner',
@@ -426,97 +504,252 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
             checkpoint.paths.originalAudioPath,
           ],
           timeoutMs: PROCESS_TIMEOUT_MS,
-          signal,
+          signal: voiceJobController.signal,
         });
-        await this.dependencies.commandRunner.run({
-          command: runtime.pythonPath,
+        const quickAudioReady = this.dependencies.commandRunner.run({
+          command: decoder.ffmpegPath,
           args: [
-            separationWorker,
-            '--input',
-            checkpoint.paths.originalAudioPath,
-            '--model',
-            runtime.separationModelPath,
-            '--output',
-            checkpoint.paths.stemsDirectory,
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-y',
+            '-i',
+            request.source.absolutePath,
+            '-vn',
+            '-ar',
+            '16000',
+            '-ac',
+            '1',
+            '-af',
+            `apad=pad_dur=${(durationMs / 1_000).toFixed(3)}`,
+            '-t',
+            (durationMs / 1_000).toFixed(3),
+            '-c:a',
+            'pcm_s16le',
+            quickBackgroundPath,
           ],
-          cwd: request.stagingDirectory,
-          env: runtime.environment,
           timeoutMs: PROCESS_TIMEOUT_MS,
-          signal,
+          signal: voiceJobController.signal,
         });
-        const segments = input.sourceTrack.speakerAnalysis?.segments;
-        if (!segments || segments.length === 0) {
-          throw new Error('字幕缺少说话人信息，请重新生成字幕后再配音');
-        }
-        plan = createDubbingSpeakerRoutingPlan(
-          input.sourceTrack.cues,
-          input.translation,
-          segments,
+        const existingSegments = input.sourceTrack.speakerAnalysis?.segments;
+        const segmentsReady =
+          existingSegments && existingSegments.length > 0
+            ? Promise.resolve(existingSegments)
+            : quickAudioReady.then(() =>
+                analyzeMediaSpeakers({
+                  runtime: subtitleRuntime.speakerDiarization,
+                  audioPath: quickBackgroundPath,
+                  commandRunner: this.dependencies.commandRunner,
+                  logicalCpuCount: cpus().length,
+                  signal: voiceJobController!.signal,
+                }),
+              );
+        const quickPhrases = createQuickPreviewPhrases(input);
+        const quickPhrase = quickPhrases.at(-1);
+        if (!quickPhrase) throw new Error('没有可生成的配音段落');
+        const referenceWindow = quickReferenceWindow(
+          quickPhrase.startMs,
+          quickPhrase.endMs,
+          durationMs,
         );
-        if (plan.phrases.length === 0) {
-          throw new Error('没有可生成的配音段落');
-        }
-        const referenceProfiles = plan.voiceProfiles.filter(
-          (profile) => profile.mode === 'reference',
+        await quickAudioReady;
+        await Promise.all([
+          this.dependencies.writeText(
+            quickPhrasesPath,
+            `${JSON.stringify({ phrases: [quickPhrase] }, null, 2)}\n`,
+            'utf8',
+          ),
+          this.dependencies.commandRunner.run({
+            command: decoder.ffmpegPath,
+            args: [
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-y',
+              '-ss',
+              (referenceWindow.startMs / 1_000).toFixed(3),
+              '-t',
+              (
+                (referenceWindow.endMs - referenceWindow.startMs) /
+                1_000
+              ).toFixed(3),
+              '-i',
+              quickBackgroundPath,
+              '-c:a',
+              'pcm_s16le',
+              quickReferencePath,
+            ],
+            timeoutMs: 5 * 60 * 1_000,
+            signal: voiceJobController.signal,
+          }),
+        ]);
+
+        runningVoiceJob = input.dubbingRuntime.runVoiceJob(
+          {
+            referencePaths: {},
+            referencePathsPath,
+            phrasesPath,
+            outputDirectory: checkpoint.paths.voiceDirectory,
+            progressPath: checkpoint.paths.progressPath,
+            backgroundPath: checkpoint.paths.backgroundPath,
+            previewPath: checkpoint.paths.previewPath,
+            ffmpegPath: decoder.ffmpegPath,
+            durationMs,
+            waitForInputs: true,
+            inputsReadyPath,
+            bootstrapJob: {
+              referencePaths: {
+                [QUICK_PREVIEW_SPEAKER_ID]: quickReferencePath,
+              },
+              phrasesPath: quickPhrasesPath,
+              outputDirectory: quickVoiceDirectory,
+              progressPath: quickProgressPath,
+              backgroundPath: quickBackgroundPath,
+              previewPath: quickPreviewPath,
+              ffmpegPath: decoder.ffmpegPath,
+              durationMs,
+              backgroundGain: 0.12,
+            },
+          },
+          voiceJobController.signal,
         );
-        await Promise.all(
-          referenceProfiles.map((profile) =>
-            this.dependencies.commandRunner.run({
-              command: decoder.ffmpegPath,
-              args: [
-                '-hide_banner',
-                '-loglevel',
-                'error',
-                '-y',
-                '-ss',
-                (profile.reference.startMs / 1_000).toFixed(3),
-                '-t',
-                (
-                  (profile.reference.endMs - profile.reference.startMs) /
-                  1_000
-                ).toFixed(3),
-                '-i',
-                checkpoint.paths.vocalsPath,
-                '-ar',
-                '16000',
-                '-ac',
-                '1',
-                '-c:a',
-                'pcm_s16le',
-                mediaDubbingReferencePath(
+        const quickProgress = await this.waitForWorkerProgress(
+          runningVoiceJob,
+          quickProgressPath,
+          (progress) => progress.completedPhrases === 1,
+        );
+        bootstrapPreview = Object.freeze({
+          previewPath: quickPreviewPath,
+          progress: quickProgress,
+        });
+        this.publish(
+          request,
+          'cloning',
+          1,
+          quickPhrases.length,
+          quickProgress.completedDurationMs,
+          durationMs,
+          quickProgress.readySuffixStartMs,
+          { audioPath: quickPreviewPath },
+        );
+
+        // Source separation and VoxCPM2 both use CUDA. Starting separation
+        // before the bootstrap phrase makes the supposedly fast first result
+        // compete for the GPU (and can exceed VRAM on smaller cards). Keep the
+        // CPU-side decode/diarization concurrent, then give the first phrase
+        // exclusive access to the GPU before preparing the durable plan.
+        const separationReady = originalAudioReady.then(() =>
+          this.dependencies.commandRunner.run({
+            command: runtime.pythonPath,
+            args: [
+              separationWorker,
+              '--input',
+              checkpoint.paths.originalAudioPath,
+              '--model',
+              runtime.separationModelPath,
+              '--output',
+              checkpoint.paths.stemsDirectory,
+            ],
+            cwd: request.stagingDirectory,
+            env: runtime.environment,
+            timeoutMs: PROCESS_TIMEOUT_MS,
+            signal: voiceJobController!.signal,
+          }),
+        );
+        const fullPreparation = Promise.all([
+          separationReady,
+          segmentsReady,
+        ]).then(async ([, segments]) => {
+          const preparedPlan = createDubbingSpeakerRoutingPlan(
+            input.sourceTrack.cues,
+            input.translation,
+            segments,
+          );
+          if (preparedPlan.phrases.length === 0) {
+            throw new Error('没有可生成的配音段落');
+          }
+          const referenceProfiles = preparedPlan.voiceProfiles.filter(
+            (profile) => profile.mode === 'reference',
+          );
+          await Promise.all(
+            referenceProfiles.map((profile) =>
+              this.dependencies.commandRunner.run({
+                command: decoder.ffmpegPath,
+                args: [
+                  '-hide_banner',
+                  '-loglevel',
+                  'error',
+                  '-y',
+                  '-ss',
+                  (profile.reference.startMs / 1_000).toFixed(3),
+                  '-t',
+                  (
+                    (profile.reference.endMs - profile.reference.startMs) /
+                    1_000
+                  ).toFixed(3),
+                  '-i',
+                  checkpoint.paths.vocalsPath,
+                  '-ar',
+                  '16000',
+                  '-ac',
+                  '1',
+                  '-c:a',
+                  'pcm_s16le',
+                  mediaDubbingReferencePath(
+                    checkpoint.paths,
+                    profile.speakerId,
+                  ),
+                ],
+                timeoutMs: 5 * 60 * 1_000,
+                signal: voiceJobController!.signal,
+              }),
+            ),
+          );
+          const serializedPlan = `${JSON.stringify(preparedPlan, null, 2)}\n`;
+          await this.dependencies.writeText(
+            checkpoint.paths.speakerPlanPath,
+            serializedPlan,
+            'utf8',
+          );
+          await markMediaDubbingCheckpointPrepared(
+            checkpoint.paths,
+            identity,
+            {
+              durationMs,
+              totalPhrases: preparedPlan.phrases.length,
+              planRevision: createHash('sha256')
+                .update(serializedPlan)
+                .digest('hex'),
+              referenceSpeakerIds: referenceProfiles.map(
+                ({ speakerId }) => speakerId,
+              ),
+            },
+          );
+          await Promise.all([
+            rm(checkpoint.paths.originalAudioPath, { force: true }),
+            rm(checkpoint.paths.vocalsPath, { force: true }),
+          ]);
+          return preparedPlan;
+        });
+        void fullPreparation.catch(() => undefined);
+
+        plan = await fullPreparation;
+        const preparedReferencePaths = Object.fromEntries(
+          plan.voiceProfiles.map((profile) => [
+            profile.speakerId,
+            profile.mode === 'reference'
+              ? mediaDubbingReferencePath(
                   checkpoint.paths,
                   profile.speakerId,
-                ),
-              ],
-              timeoutMs: 5 * 60 * 1_000,
-              signal,
-            }),
-          ),
+                )
+              : null,
+          ]),
         );
-        const serializedPlan = `${JSON.stringify(plan, null, 2)}\n`;
         await this.dependencies.writeText(
-          checkpoint.paths.speakerPlanPath,
-          serializedPlan,
+          referencePathsPath,
+          `${JSON.stringify(preparedReferencePaths, null, 2)}\n`,
           'utf8',
         );
-        await markMediaDubbingCheckpointPrepared(
-          checkpoint.paths,
-          identity,
-          {
-            durationMs,
-            totalPhrases: plan.phrases.length,
-            planRevision: createHash('sha256')
-              .update(serializedPlan)
-              .digest('hex'),
-            referenceSpeakerIds: referenceProfiles.map(
-              ({ speakerId }) => speakerId,
-            ),
-          },
-        );
-        await Promise.all([
-          rm(checkpoint.paths.originalAudioPath, { force: true }),
-          rm(checkpoint.paths.vocalsPath, { force: true }),
-        ]);
       }
 
       const speakerTrack = createDubbingSpeakerTrack(
@@ -530,6 +763,13 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         `${JSON.stringify({ phrases }, null, 2)}\n`,
         'utf8',
       );
+      if (runningVoiceJob) {
+        await this.dependencies.writeText(
+          join(request.stagingDirectory, 'voice-inputs-ready.json'),
+          '{}\n',
+          'utf8',
+        );
+      }
       const referencePaths = Object.freeze(
         Object.fromEntries(
           plan.voiceProfiles.map((profile) => [
@@ -557,32 +797,41 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       this.publish(
         request,
         'cloning',
-        resumedProgress?.completedPhrases ?? 0,
+        resumedProgress?.completedPhrases ??
+          bootstrapPreview?.progress.completedPhrases ??
+          0,
         phrases.length,
-        resumedProgress?.completedDurationMs ?? 0,
+        resumedProgress?.completedDurationMs ??
+          bootstrapPreview?.progress.completedDurationMs ??
+          0,
         durationMs,
-        resumedProgress?.readySuffixStartMs ?? durationMs,
+        resumedProgress?.readySuffixStartMs ??
+          bootstrapPreview?.progress.readySuffixStartMs ??
+          durationMs,
         resumedProgress
           ? {
               audioPath: checkpoint.paths.previewPath,
             }
-          : undefined,
+          : bootstrapPreview
+            ? { audioPath: bootstrapPreview.previewPath }
+            : undefined,
         speakerTrack,
       );
       await this.runVoiceWorker(
-        input.dubbingRuntime.runVoiceJob(
-          {
-            referencePaths,
-            phrasesPath,
-            outputDirectory: checkpoint.paths.voiceDirectory,
-            progressPath: checkpoint.paths.progressPath,
-            backgroundPath: checkpoint.paths.backgroundPath,
-            previewPath: checkpoint.paths.previewPath,
-            ffmpegPath: decoder.ffmpegPath,
-            durationMs,
-          },
-          signal,
-        ),
+        runningVoiceJob ??
+          input.dubbingRuntime.runVoiceJob(
+            {
+              referencePaths,
+              phrasesPath,
+              outputDirectory: checkpoint.paths.voiceDirectory,
+              progressPath: checkpoint.paths.progressPath,
+              backgroundPath: checkpoint.paths.backgroundPath,
+              previewPath: checkpoint.paths.previewPath,
+              ffmpegPath: decoder.ffmpegPath,
+              durationMs,
+            },
+            signal,
+          ),
         checkpoint.paths.progressPath,
         request,
         durationMs,
@@ -630,6 +879,9 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         extension: 'm4a',
       });
     } catch (error) {
+      voiceJobController?.abort();
+      await runningVoiceJob?.catch(() => undefined);
+      signal.throwIfAborted();
       if (error instanceof Error && error.name === 'AbortError') throw error;
       if (
         error instanceof AppError &&
@@ -639,6 +891,30 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         throw error;
       }
       throw new AppError('MEDIA_DUBBING_FAILED', { cause: error });
+    } finally {
+      removeVoiceAbortListener?.();
+    }
+  }
+
+  private async waitForWorkerProgress(
+    runningJob: Promise<void>,
+    progressPath: string,
+    predicate: (progress: WorkerProgress) => boolean,
+  ): Promise<WorkerProgress> {
+    const completion = runningJob.then(
+      () => ({ status: 'fulfilled' as const }),
+      (error: unknown) => ({ status: 'rejected' as const, error }),
+    );
+    while (true) {
+      const parsed = await this.readWorkerProgress(progressPath);
+      if (parsed && predicate(parsed)) return parsed;
+      const outcome = await Promise.race([
+        completion,
+        delay(PROGRESS_POLL_MS).then(() => undefined),
+      ]);
+      if (!outcome) continue;
+      if (outcome.status === 'rejected') throw outcome.error;
+      throw new Error('VoxCPM2 worker stopped before publishing progress');
     }
   }
 

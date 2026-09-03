@@ -34,6 +34,8 @@ export type MediaSubtitlePhase =
 export interface MediaSubtitleSnapshot {
   readonly phase: MediaSubtitlePhase;
   readonly source?: SubtitleSourceTrackV1;
+  /** Revision of the committed source-subtitle Artifact, not the media file. */
+  readonly sourceTrackRevision?: string;
   readonly translation?: SubtitleTranslationTrackV1;
   readonly partialTranslations: readonly SubtitleTranslationCueV1[];
   readonly completedCues: number;
@@ -93,6 +95,9 @@ export function isMediaSubtitleSnapshot(
       value.phase === 'unsupported-language' ||
       value.phase === 'failed') &&
     (value.source === undefined || isSubtitleSourceTrackV1(value.source)) &&
+    (value.sourceTrackRevision === undefined ||
+      (typeof value.sourceTrackRevision === 'string' &&
+        value.sourceTrackRevision.trim().length > 0)) &&
     (value.translation === undefined ||
       isSubtitleTranslationTrackV1(value.translation)) &&
     Array.isArray(value.partialTranslations) &&
@@ -114,6 +119,9 @@ export function cloneMediaSubtitleSnapshot(
   const normalized = {
     phase: snapshot.phase,
     ...(snapshot.source === undefined ? {} : { source: snapshot.source }),
+    ...(snapshot.sourceTrackRevision === undefined
+      ? {}
+      : { sourceTrackRevision: snapshot.sourceTrackRevision }),
     ...(snapshot.translation === undefined
       ? {}
       : { translation: snapshot.translation }),
@@ -155,10 +163,7 @@ export function applyMediaSubtitleCueFinal(
   snapshot: MediaSubtitleSnapshot,
   payload: MediaSubtitleCueFinalPayload,
 ): MediaSubtitleSnapshot {
-  if (
-    snapshot.source &&
-    snapshot.source.sourceRevision !== payload.sourceTrackRevision
-  ) {
+  if (snapshot.sourceTrackRevision !== payload.sourceTrackRevision) {
     return snapshot;
   }
   const translations = new Map(

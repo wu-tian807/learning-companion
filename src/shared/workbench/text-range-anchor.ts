@@ -60,6 +60,42 @@ function firstTextQuoteRange(
   };
 }
 
+export interface ResolvedTextRangeSelection {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Resolves a captured source range against current content.
+ * Exact offsets are accepted only while their quote still matches; moved
+ * content must leave exactly one unambiguous quote/context match.
+ */
+export function resolveTextRangeSelection(
+  source: string,
+  target: AssetTarget | undefined,
+): ResolvedTextRangeSelection | undefined {
+  const quote = firstTextQuoteRange(target);
+  if (!quote) return undefined;
+  if (
+    quote.end <= source.length &&
+    source.slice(quote.start, quote.end) === quote.exact
+  ) {
+    return { start: quote.start, end: quote.end };
+  }
+
+  const starts = allQuoteStarts(source, quote.exact);
+  if (starts.length === 1) {
+    const start = starts[0]!;
+    return { start, end: start + quote.exact.length };
+  }
+  const contextual = starts.filter((start) =>
+    matchesQuoteContext(source, start, quote),
+  );
+  return contextual.length === 1
+    ? { start: contextual[0]!, end: contextual[0]! + quote.exact.length }
+    : undefined;
+}
+
 function allQuoteStarts(source: string, exact: string): readonly number[] {
   const starts: number[] = [];
   let from = 0;
@@ -98,25 +134,7 @@ export function resolveTextRangeEndOffset(
   source: string,
   target: AssetTarget | undefined,
 ): number | undefined {
-  const quote = firstTextQuoteRange(target);
-  if (!quote) return undefined;
-  if (
-    quote.end <= source.length &&
-    source.slice(quote.start, quote.end) === quote.exact
-  ) {
-    return quote.end;
-  }
-
-  const starts = allQuoteStarts(source, quote.exact);
-  if (starts.length === 1) {
-    return starts[0]! + quote.exact.length;
-  }
-  const contextual = starts.filter((start) =>
-    matchesQuoteContext(source, start, quote),
-  );
-  return contextual.length === 1
-    ? contextual[0]! + quote.exact.length
-    : undefined;
+  return resolveTextRangeSelection(source, target)?.end;
 }
 
 const QUOTE_CONTEXT_LENGTH = 64;

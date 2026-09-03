@@ -4,12 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('./AttachmentHost', () => ({
   AttachmentHost: () => null,
 }));
-vi.mock(
-  '../../../renderer/workbench/runtime/use-workbench-contributions',
-  () => ({
-    useWorkbenchContributions: vi.fn(),
-  }),
-);
 
 import { DocumentAiWorkbenchShell } from './DocumentAiWorkbenchShell';
 

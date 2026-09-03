@@ -59,7 +59,9 @@ describe('VideoLanguageControls', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    document.querySelectorAll('[role="listbox"]').forEach((node) => node.remove());
+    document
+      .querySelectorAll('[role="listbox"]')
+      .forEach((node) => node.remove());
   });
 
   it('opens subtitle settings but keeps dubbing disabled with every missing prerequisite', () => {
@@ -96,10 +98,10 @@ describe('VideoLanguageControls', () => {
     });
 
     expect(container.textContent).toContain('安装字幕');
-    expect(container.textContent).toContain('配音');
+    expect(container.textContent).toContain('等待字幕');
     expect(container.textContent).not.toContain('安装配音');
     const dubbingButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '配音',
+      (button) => button.textContent === '等待字幕',
     );
     expect(dubbingButton?.disabled).toBe(true);
     expect(dubbingButton?.parentElement?.title).toContain('字幕组件尚未安装');
@@ -139,10 +141,42 @@ describe('VideoLanguageControls', () => {
     expect(configureButton?.title).toBe(providerMessage);
     expect(onOpenSettings).toHaveBeenCalledTimes(2);
     const blockedDubbingButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '配音',
+      (button) => button.textContent === '译文异常',
     );
     expect(blockedDubbingButton?.disabled).toBe(true);
     expect(blockedDubbingButton?.parentElement?.title).toBe(providerMessage);
+  });
+
+  it('shows translation progress on the blocked dubbing control', () => {
+    act(() =>
+      root.render(
+        <VideoLanguageControls
+          subtitleMode="translated"
+          subtitleSnapshot={{
+            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+            phase: 'translating',
+            source: sourceTrack,
+            sourceTrackRevision: 'source-artifact-revision',
+            completedCues: 8,
+            totalCues: 64,
+          }}
+          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+          dubbingEnabled={false}
+          dubbingPlaybackActive={false}
+          onSelectSubtitleMode={vi.fn()}
+          onRetrySubtitles={vi.fn()}
+          onStartDubbing={vi.fn()}
+          onSelectDubbingEnabled={vi.fn()}
+          onRetryDubbing={vi.fn()}
+        />,
+      ),
+    );
+
+    const button = [...container.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent === '译文 8/64',
+    );
+    expect(button?.disabled).toBe(true);
+    expect(button?.parentElement?.title).toContain('译文正在生成（8/64）');
   });
 
   it('keeps subtitle modes in a compact menu instead of four permanent buttons', async () => {
@@ -190,6 +224,78 @@ describe('VideoLanguageControls', () => {
     await act(async () => sourceOption?.click());
 
     expect(onSelectSubtitleMode).toHaveBeenCalledWith('source');
+  });
+
+  it('shows active subtitle generation instead of looking stuck in preparation', () => {
+    act(() =>
+      root.render(
+        <VideoLanguageControls
+          subtitleMode="source"
+          subtitleSnapshot={{
+            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+            phase: 'transcribing',
+            message: '正在生成原文字幕…',
+          }}
+          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+          dubbingEnabled={false}
+          dubbingPlaybackActive={false}
+          onSelectSubtitleMode={vi.fn()}
+          onRetrySubtitles={vi.fn()}
+          onStartDubbing={vi.fn()}
+          onSelectDubbingEnabled={vi.fn()}
+          onRetryDubbing={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain('字幕生成中');
+    expect(container.querySelector('button')?.title).toContain('生成原文字幕');
+    expect(container.querySelector('[aria-label="字幕显示模式"]')).toBeNull();
+    expect(container.textContent).not.toContain('字幕准备中');
+  });
+
+  it('keeps completed source chunks selectable while transcription continues', () => {
+    act(() =>
+      root.render(
+        <VideoLanguageControls
+          subtitleMode="source"
+          subtitleSnapshot={{
+            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+            phase: 'transcribing',
+            source: {
+              ...sourceTrack,
+              language: 'unknown',
+              cues: [
+                {
+                  id: 'partial-000001',
+                  startMs: 0,
+                  endMs: 1_000,
+                  text: '已经完成的第一段。',
+                  sourceCueIds: ['partial-000001'],
+                },
+              ],
+            },
+            completedCues: 1,
+            totalCues: 1,
+            message: '原文字幕已生成 1 段，正在继续处理…',
+          }}
+          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+          dubbingEnabled={false}
+          dubbingPlaybackActive={false}
+          onSelectSubtitleMode={vi.fn()}
+          onRetrySubtitles={vi.fn()}
+          onStartDubbing={vi.fn()}
+          onSelectDubbingEnabled={vi.fn()}
+          onRetryDubbing={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(
+      container.querySelector('[aria-label="字幕显示模式"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain('生成中 1段');
+    expect(container.textContent).not.toContain('仅原文');
   });
 
   it('only offers source subtitles when the detected language is unknown', async () => {
@@ -324,7 +430,9 @@ describe('VideoLanguageControls', () => {
     );
     expect(container.textContent).toContain('原声配音继续配音');
     const failedButtons = [...container.querySelectorAll('button')];
-    act(() => failedButtons.find((button) => button.textContent === '配音')?.click());
+    act(() =>
+      failedButtons.find((button) => button.textContent === '配音')?.click(),
+    );
     expect(onSelectDubbingEnabled).toHaveBeenCalledWith(true);
     act(() => failedButtons.at(-1)?.click());
     expect(onRetryDubbing).toHaveBeenCalledOnce();

@@ -40,6 +40,117 @@ export function resolveTextSelectionFromTarget(
   };
 }
 
+export interface ResolvedTextRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * 用文本节点累计偏移把 [start, end) 映射为 DOM Range。
+ * 纯文本阅读视图只有一个文本节点；富文本/Markdown 可视化内容会被拆到
+ * 多个节点，这里按节点顺序拼接处理，保证两类内容都能定位。
+ */
+export function rangeForTextOffsets(
+  element: HTMLElement,
+  start: number,
+  end: number,
+): Range | undefined {
+  const clampedStart = Math.max(0, Math.trunc(start));
+  const clampedEnd = Math.max(clampedStart, Math.trunc(end));
+  if (clampedEnd <= clampedStart) return undefined;
+  const positions: DomTextPosition[] = [];
+  let fullText = '';
+  const walker = element.ownerDocument.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+  );
+  let node: Node | null;
+  while ((node = walker.nextNode()) !== null) {
+    const value = node.nodeValue ?? '';
+    positions.push({
+      node: node as Text,
+      startOffset: fullText.length,
+      endOffset: fullText.length + value.length,
+    });
+    fullText += value;
+  }
+  if (clampedEnd > fullText.length) return undefined;
+  const startPosition = resolvePosition(positions, clampedStart);
+  const endPosition = resolvePosition(positions, clampedEnd);
+  if (!startPosition || !endPosition) return undefined;
+  const range = element.ownerDocument.createRange();
+  range.setStart(startPosition.node, startPosition.offset);
+  range.setEnd(endPosition.node, endPosition.offset);
+  return range;
+}
+
+/** 在富文本元素中按原文搜索，返回首个匹配的 DOM Range（不修改选区）。 */
+export function rangeForExactText(
+  element: HTMLElement,
+  text: string,
+): Range | undefined {
+  const normalized = text.trim();
+  if (!normalized) return undefined;
+  const match = findTextRange(element, normalized);
+  if (!match) return undefined;
+  const range = element.ownerDocument.createRange();
+  range.setStart(match.startNode, match.startOffset);
+  range.setEnd(match.endNode, match.endOffset);
+  return range;
+}
+
+/** 取 Range 最后一行客户端矩形；单行退化为整段矩形。返回视口坐标。 */
+export function rectFromRange(range: Range): {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+} | undefined {
+  const clientRects = range.getClientRects();
+  const last =
+    clientRects.length > 0
+      ? clientRects.item(clientRects.length - 1)
+      : undefined;
+  const rect = last ?? range.getBoundingClientRect();
+  if (rect.width <= 0 && rect.height <= 0) return undefined;
+  return Object.freeze({
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  });
+}
+
+/** 取 CodeMirror 文档位置 [start, end) 的矩形（视口坐标）。 */
+export function rectFromCodeMirrorRange(
+  view: EditorView | undefined,
+  start: number,
+  end: number,
+): {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+} | undefined {
+  if (!view) return undefined;
+  const length = view.state.doc.length;
+  const clampedStart = clampOffset(start, 0, length);
+  const clampedEnd = clampOffset(end, clampedStart, length);
+  if (clampedEnd <= clampedStart) return undefined;
+  const startDom = view.domAtPos(clampedStart);
+  const endDom = view.domAtPos(clampedEnd);
+  const ownerDocument = view.dom.ownerDocument;
+  if (!startDom.node || !endDom.node || !ownerDocument) return undefined;
+  const range = ownerDocument.createRange();
+  try {
+    range.setStart(startDom.node, startDom.offset);
+    range.setEnd(endDom.node, endDom.offset);
+  } catch {
+    return undefined;
+  }
+  return rectFromRange(range);
+}
+
 /**
  * 在内容为连续纯文本的 DOM 元素（阅读模式）中，按字符偏移选中一段文字。
  */
