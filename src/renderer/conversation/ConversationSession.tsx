@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import type {
+  ActiveWorkbenchConversationContribution,
   ConversationHistoryStore,
   ConversationLaunchRequest,
   ConversationWorkspaceBinding,
@@ -25,6 +26,7 @@ export function ConversationSession({
   onBusyChange,
   mode = projectConversationMode,
   workspace,
+  currentAssetSource,
   children,
 }: {
   readonly open: boolean;
@@ -36,6 +38,7 @@ export function ConversationSession({
   readonly onBusyChange?: (busy: boolean) => void;
   readonly mode?: ConversationModeDefinition;
   readonly workspace?: ConversationWorkspaceBinding;
+  readonly currentAssetSource?: ActiveWorkbenchConversationContribution;
   readonly children: (controller: ConversationController) => ReactNode;
 }) {
   const controller = useConversationController({
@@ -47,6 +50,7 @@ export function ConversationSession({
     onPersistenceError,
     mode,
     workspace,
+    currentAssetSource,
   });
   const onBusyChangeRef = useRef(onBusyChange);
 

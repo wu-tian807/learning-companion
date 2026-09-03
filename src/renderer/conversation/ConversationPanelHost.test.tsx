@@ -48,13 +48,17 @@ describe('ConversationPanelHost Project ownership', () => {
     vi.restoreAllMocks();
   });
 
-  async function render(runtime: WorkbenchConversationRuntime) {
+  async function render(
+    runtime: WorkbenchConversationRuntime,
+    selectedAssetId?: string,
+  ) {
     await act(async () => {
       root.render(
         <WorkbenchConversationRuntimeProvider runtime={runtime}>
           <ConversationPanelHost
             projectId="project-1"
             historyStore={historyStore}
+            selectedAssetId={selectedAssetId}
             onSelectAsset={vi.fn()}
           />
         </WorkbenchConversationRuntimeProvider>,
@@ -102,6 +106,52 @@ describe('ConversationPanelHost Project ownership', () => {
       assetReferences: {},
     });
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('uses the selected Asset Workbench for a contextless Task without rendering a reference card', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('html.owner', 'asset-html', {
+      contextProviderId: 'builtin.html.conversation',
+      sourceAssetMode: 'reference',
+    });
+    runtime.open();
+    await render(runtime, 'asset-html');
+
+    await send('把标题改成课程介绍');
+
+    expect(startGenerationTask).toHaveBeenCalledOnce();
+    expect(startGenerationTask.mock.calls[0]?.[0]).toMatchObject({
+      projectId: 'project-1',
+      instruction: {
+        contextProviderId: 'builtin.html.conversation',
+        assetId: 'asset-html',
+        question: '把标题改成课程介绍',
+      },
+      assetReferences: {
+        source: [{ assetId: 'asset-html' }],
+      },
+    });
+    expect(container.textContent).not.toContain('引用内容');
+  });
+
+  it('does not use a stale Workbench registration after the selected Asset changes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('html.owner', 'asset-old', {
+      contextProviderId: 'builtin.html.conversation',
+      sourceAssetMode: 'reference',
+    });
+    runtime.open();
+    await render(runtime, 'asset-new');
+
+    await send('这是新资料的问题');
+
+    expect(startGenerationTask).toHaveBeenCalledOnce();
+    expect(startGenerationTask.mock.calls[0]?.[0]).toMatchObject({
+      instruction: {
+        contextProviderId: 'builtin.project.conversation',
+      },
+      assetReferences: {},
+    });
   });
 
   it('new conversation releases Workbench context and the next send stays Project-owned', async () => {
