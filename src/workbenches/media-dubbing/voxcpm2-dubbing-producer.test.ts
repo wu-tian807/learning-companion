@@ -212,7 +212,10 @@ describe('VoxCpm2DubbingProducer', () => {
     const fullPreparationGate = new Promise<void>((resolvePromise) => {
       releaseFullPreparation = resolvePromise;
     });
-    let separationStarted = false;
+    let resolveSeparationStarted!: () => void;
+    const separationStarted = new Promise<void>((resolvePromise) => {
+      resolveSeparationStarted = resolvePromise;
+    });
     let diarizationStarted = false;
     const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
       if (command.command.endsWith('ffprobe.exe')) {
@@ -222,7 +225,7 @@ describe('VoxCpm2DubbingProducer', () => {
         await writeFile(command.args.at(-1)!, 'audio');
       }
       if (command.args.some((argument) => argument.endsWith('separate.py'))) {
-        separationStarted = true;
+        resolveSeparationStarted();
         await fullPreparationGate;
         const outputPath = command.args[command.args.indexOf('--output') + 1]!;
         await mkdir(outputPath, { recursive: true });
@@ -324,20 +327,19 @@ describe('VoxCpm2DubbingProducer', () => {
       subtitleRuntime,
       dubbingRuntime,
     );
-    await vi.waitFor(() => {
-      expect(separationStarted).toBe(true);
-      expect(diarizationStarted).toBe(true);
-      expect(progress).toContainEqual(
-        expect.objectContaining({
-          phase: 'cloning',
-          completedPhrases: 1,
-          previewAudioPath: expect.stringContaining('first-phrase-preview'),
-        }),
-      );
-    });
+    await separationStarted;
+    const diarizationWasStartedBeforeFullPreparation = diarizationStarted;
+    const bootstrapPreviewWasPublishedBeforeFullPreparation = progress.some(
+      (event) =>
+        event.phase === 'cloning' &&
+        event.completedPhrases === 1 &&
+        event.previewAudioPath?.includes('first-phrase-preview'),
+    );
     releaseFullPreparation();
     const artifact = await materializing;
 
+    expect(diarizationWasStartedBeforeFullPreparation).toBe(true);
+    expect(bootstrapPreviewWasPublishedBeforeFullPreparation).toBe(true);
     expect(artifact.artifact.mediaType).toBe(
       VOXCPM2_DUBBING_ARTIFACT_MEDIA_TYPE,
     );
