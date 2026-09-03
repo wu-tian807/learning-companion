@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 import type { AgentFunctionToolExecutionContext } from '../../../main/agents/function-tools/agent-function-tool';
+import { resolveReadableWorkspaceToolPath } from '../../../main/agents/function-tools/workspace/workspace-tool-paths';
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import {
   createTextRevision,
@@ -39,6 +40,12 @@ interface ActiveHtmlEdit {
   readonly assetId: string;
   readonly draftRevision: string;
   readonly edit: BegunHtmlSourceEdit;
+}
+
+interface HtmlConversationSourceBinding {
+  readonly projectId: string;
+  readonly assetId: string;
+  readonly absolutePath: string;
 }
 
 export type HtmlAgentEditEvent =
@@ -92,6 +99,11 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   private readonly sessions = new Map<string, Promise<HtmlDraftSession>>();
   private readonly sessionMutations = new Map<string, Promise<void>>();
   private readonly writableSources = new Map<string, boolean>();
+  private readonly conversationSources = new Map<
+    string,
+    HtmlConversationSourceBinding
+  >();
+  private readonly conversationSourceWrites = new Map<string, Promise<void>>();
   private readonly store?: HtmlDraftStore;
   private readonly lifecycleTasks = new Set<Promise<void>>();
   private readonly listeners = new Set<(event: HtmlAgentEditEvent) => void>();
@@ -115,6 +127,44 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     }
     this.unsubscribe = this.generationTasks.subscribe?.((event) => {
       this.acceptLifecycleEvent(event);
+    });
+  }
+
+  async bindConversationSource(
+    assetId: string,
+    relativePath: string,
+    context: AgentFunctionToolExecutionContext,
+  ): Promise<void> {
+    context.signal?.throwIfAborted();
+    if (this.resolveTaskAsset(context) !== assetId) {
+      throw new Error('HTML 会话资料与当前任务不匹配');
+    }
+    await this.runSessionMutation(context.projectId, assetId, async () => {
+      const session = await this.getSession(context.projectId, assetId);
+      const resolved = await resolveReadableWorkspaceToolPath(
+        context,
+        { path: relativePath },
+      );
+      const binding = Object.freeze({
+        projectId: context.projectId,
+        assetId,
+        absolutePath: resolved.absolutePath,
+      });
+      const previous = this.conversationSources.get(binding.absolutePath);
+      this.conversationSources.set(binding.absolutePath, binding);
+      try {
+        await this.writeConversationSource(binding, session.draft);
+      } catch (error) {
+        if (this.conversationSources.get(binding.absolutePath) === binding) {
+          if (previous) {
+            this.conversationSources.set(binding.absolutePath, previous);
+          } else {
+            this.conversationSources.delete(binding.absolutePath);
+          }
+        }
+        throw error;
+      }
+      context.signal?.throwIfAborted();
     });
   }
 
@@ -338,6 +388,7 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
     this.disposed = true;
     this.stopLifecycleSubscription();
     this.activeEdits.clear();
+    this.conversationSources.clear();
     this.listeners.clear();
     void rm(this.materializationRoot, { recursive: true, force: true }).catch(
       () => undefined,
@@ -352,10 +403,13 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
         const pending = new Set([
           ...this.lifecycleTasks,
           ...this.sessionMutations.values(),
+          ...this.conversationSourceWrites.values(),
         ]);
         if (pending.size === 0) break;
         await Promise.all(pending);
       }
+      this.conversationSources.clear();
+      this.conversationSourceWrites.clear();
       await rm(this.materializationRoot, { recursive: true, force: true });
     })();
     return this.shutdownTask;
@@ -631,6 +685,12 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
       throw new Error('Agent 修改尚未收口，无法放弃草稿');
     }
     const materializedPath = this.materializationPath(projectId, assetId);
+    try {
+      const refreshed = await this.refreshSourceSession(session);
+      await this.refreshConversationSources(refreshed);
+    } catch {
+      await this.removeConversationSources(projectId, assetId);
+    }
     await rm(materializedPath, { force: true });
     await this.store?.delete(assetId);
     this.sessions.delete(`${projectId}\0${assetId}`);
@@ -791,14 +851,79 @@ export class HtmlAgentEditingService implements HtmlEditToolRuntime {
   }
 
   private async persist(session: HtmlDraftSession): Promise<void> {
-    if (!this.store) {
-      const key = `${session.projectId}\0${session.assetId}`;
-      this.sessions.set(key, Promise.resolve(session));
-      return;
-    }
-    await this.store.save(session);
     const key = `${session.projectId}\0${session.assetId}`;
+    await this.store?.save(session);
     this.sessions.set(key, Promise.resolve(session));
+    await this.refreshConversationSources(session);
+  }
+
+  private async refreshConversationSources(
+    session: HtmlDraftSession,
+  ): Promise<void> {
+    const bindings = [...this.conversationSources.values()].filter(
+      (binding) =>
+        binding.projectId === session.projectId &&
+        binding.assetId === session.assetId,
+    );
+    await Promise.all(
+      bindings.map(async (binding) => {
+        try {
+          await this.writeConversationSource(binding, session.draft);
+        } catch {
+          // Never leave a known-stale copy for the Agent to read. The binding
+          // remains registered so the next draft transition can retry it.
+          await rm(binding.absolutePath, { force: true }).catch(() => undefined);
+        }
+      }),
+    );
+  }
+
+  private async removeConversationSources(
+    projectId: string,
+    assetId: string,
+  ): Promise<void> {
+    const bindings = [...this.conversationSources.values()].filter(
+      (binding) =>
+        binding.projectId === projectId && binding.assetId === assetId,
+    );
+    for (const binding of bindings) {
+      if (this.conversationSources.get(binding.absolutePath) === binding) {
+        this.conversationSources.delete(binding.absolutePath);
+      }
+    }
+    await Promise.all(
+      bindings.map((binding) => rm(binding.absolutePath, { force: true })),
+    );
+  }
+
+  private async writeConversationSource(
+    binding: HtmlConversationSourceBinding,
+    content: string,
+  ): Promise<void> {
+    const previous =
+      this.conversationSourceWrites.get(binding.absolutePath) ??
+      Promise.resolve();
+    const operation = previous.catch(() => undefined).then(async () => {
+      if (
+        this.conversationSources.get(binding.absolutePath) !== binding
+      ) return;
+      await writeFileAtomic(binding.absolutePath, content, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+    });
+    const completion = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.conversationSourceWrites.set(binding.absolutePath, completion);
+    try {
+      await operation;
+    } finally {
+      if (this.conversationSourceWrites.get(binding.absolutePath) === completion) {
+        this.conversationSourceWrites.delete(binding.absolutePath);
+      }
+    }
   }
 
   private async refreshSourceSession(

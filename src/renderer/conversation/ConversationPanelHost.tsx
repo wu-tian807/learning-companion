@@ -20,6 +20,7 @@ export function ConversationPanelHost({
   onError,
   mode = projectConversationMode,
   workspace,
+  selectedAssetId,
 }: {
   readonly projectId: string;
   readonly historyStore: ConversationHistoryStore;
@@ -29,9 +30,14 @@ export function ConversationPanelHost({
   readonly onError?: (message: string) => void;
   readonly mode?: ConversationModeDefinition;
   readonly workspace?: ConversationWorkspaceBinding;
+  readonly selectedAssetId?: string;
 }) {
   const runtime = useWorkbenchConversationRuntime();
   const snapshot = useWorkbenchConversationSnapshot(runtime);
+  const currentAssetSource =
+    snapshot.active?.assetId === selectedAssetId
+      ? snapshot.active
+      : undefined;
 
   return (
     <ConversationSession
@@ -44,6 +50,7 @@ export function ConversationPanelHost({
       }
       mode={mode}
       workspace={workspace}
+      currentAssetSource={currentAssetSource}
       onPersistenceError={(error) => {
         console.error('[conversation] persistence failed', error);
       }}

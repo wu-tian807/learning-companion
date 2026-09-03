@@ -8,8 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectPage } from './ProjectPage';
 
 vi.mock('../conversation/ConversationPanelHost', () => ({
-  ConversationPanelHost: () => (
-    <div data-testid="project-conversation-panel" />
+  ConversationPanelHost: ({
+    selectedAssetId,
+  }: {
+    selectedAssetId?: string;
+  }) => (
+    <div
+      data-testid="project-conversation-panel"
+      data-selected-asset-id={selectedAssetId}
+    />
   ),
 }));
 
@@ -49,7 +56,7 @@ vi.mock('./use-project-session', () => ({
 vi.mock('./use-project-assets', () => ({
   useProjectAssets: () => ({
     importedAssetState: { kind: 'ready', assets: [] },
-    selectedAsset: undefined,
+    selectedAsset: { id: 'asset-html' },
     busy: false,
     refreshingAll: false,
     folderState: { kind: 'ready', folders: [] },
@@ -145,6 +152,11 @@ describe('ProjectPage Project conversation lifecycle', () => {
     expect(
       container.querySelector('[data-testid="project-conversation-panel"]'),
     ).not.toBeNull();
+    expect(
+      container
+        .querySelector('[data-testid="project-conversation-panel"]')
+        ?.getAttribute('data-selected-asset-id'),
+    ).toBe('asset-html');
   });
 
   it('opens and collapses the Project learning note from the main action row', async () => {

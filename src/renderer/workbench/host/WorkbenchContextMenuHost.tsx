@@ -208,6 +208,7 @@ export function WorkbenchContextMenuHost() {
         ariaLabel="工作台右键菜单"
         entries={entries}
         busyActionIds={busyActionIds}
+        hideDisabled
         onWheel={(event) => {
           const root = rootRef.current;
 
