@@ -3,13 +3,17 @@ import { describe, expect, it } from 'vitest';
 
 import { ProjectRightPanelSlot } from './ProjectRightPanelSlot';
 
-function render(panel: 'generation' | 'conversation' | null, inline = true) {
+function render(
+  panel: 'generation' | 'conversation' | 'learning-note' | null,
+  inline = true,
+) {
   return renderToStaticMarkup(
     <ProjectRightPanelSlot
       panel={panel}
       inline={inline}
       generation={<div data-panel-content="generation" />}
       conversation={<div data-panel-content="conversation" />}
+      learningNote={<div data-panel-content="learning-note" />}
     />,
   );
 }
@@ -36,5 +40,14 @@ describe('ProjectRightPanelSlot', () => {
     expect(conversation).not.toContain('data-panel-content="generation"');
     expect(conversation).toContain('absolute');
     expect(conversation).toContain('right-0');
+  });
+
+  it('uses the same right slot for the Project learning note', () => {
+    const note = render('learning-note');
+
+    expect(note).toContain('data-project-right-panel="learning-note"');
+    expect(note).toContain('data-panel-content="learning-note"');
+    expect(note).not.toContain('data-panel-content="generation"');
+    expect(note).not.toContain('data-panel-content="conversation"');
   });
 });

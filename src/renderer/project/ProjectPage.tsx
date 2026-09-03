@@ -16,6 +16,7 @@ import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeP
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
+import { ProjectLearningNotePanel } from './ProjectLearningNotePanel';
 import { ProjectRightPanelSlot } from './ProjectRightPanelSlot';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
@@ -25,6 +26,7 @@ import {
 } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
 import { useProjectLayout } from './use-project-layout';
+import { useProjectLearningNote } from './use-project-learning-note';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
 
@@ -73,6 +75,7 @@ export function ProjectPage({
   const leftToggleRef = useRef<HTMLButtonElement>(null);
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
+  const learningNoteToggleRef = useRef<HTMLButtonElement>(null);
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
   const {
@@ -84,6 +87,8 @@ export function ProjectPage({
     toggleRight,
   } = layout;
   const session = useProjectSession(project.id, setError);
+  const learningNote = useProjectLearningNote(project.id);
+  const flushLearningNote = learningNote.flush;
   const assetOperations = useProjectAssets({
     projectId: project.id,
     loadState: session.loadState,
@@ -213,6 +218,21 @@ export function ProjectPage({
     dismissConversationPanel,
     toggleRight,
   ]);
+  const toggleLearningNotePanel = useCallback(() => {
+    if (conversationSnapshot.panelOpen) {
+      dismissConversationPanel();
+    }
+    if (layout.rightPanel === 'learning-note') {
+      void flushLearningNote().catch(() => undefined);
+    }
+    toggleRight('learning-note');
+  }, [
+    conversationSnapshot.panelOpen,
+    dismissConversationPanel,
+    layout.rightPanel,
+    flushLearningNote,
+    toggleRight,
+  ]);
   const toggleConversationPanel = useCallback(() => {
     if (
       layout.rightPanel === 'conversation' &&
@@ -237,6 +257,13 @@ export function ProjectPage({
       aiQuestionToggleRef.current?.focus();
     });
   }, [dismissConversationPanel]);
+  const closeLearningNotePanel = useCallback(() => {
+    void flushLearningNote().catch(() => undefined);
+    closeRight();
+    window.requestAnimationFrame(() => {
+      learningNoteToggleRef.current?.focus();
+    });
+  }, [closeRight, flushLearningNote]);
   const closeOpenOverlay = useCallback(() => {
     const closingSide = openOverlay;
     const closingRightPanel = layout.rightPanel;
@@ -251,12 +278,20 @@ export function ProjectPage({
     ) {
       dismissConversationPanel();
     }
+    if (
+      closingSide === 'right' &&
+      closingRightPanel === 'learning-note'
+    ) {
+      void flushLearningNote().catch(() => undefined);
+    }
     closeOverlays();
     window.requestAnimationFrame(() => {
       if (closingSide === 'left') {
         leftToggleRef.current?.focus();
       } else if (closingRightPanel === 'conversation') {
         aiQuestionToggleRef.current?.focus();
+      } else if (closingRightPanel === 'learning-note') {
+        learningNoteToggleRef.current?.focus();
       } else {
         rightToggleRef.current?.focus();
       }
@@ -265,6 +300,7 @@ export function ProjectPage({
     closeOverlays,
     dismissConversationPanel,
     layout.rightPanel,
+    flushLearningNote,
     openOverlay,
   ]);
 
@@ -331,7 +367,11 @@ export function ProjectPage({
           <button
             type="button"
             aria-label="返回首页"
-            onClick={onBack}
+            onClick={() => {
+              void flushLearningNote()
+                .catch(() => undefined)
+                .finally(onBack);
+            }}
             className="ui-icon-button grid size-[30px] place-items-center rounded-[10px] border border-white/10 text-slate-400"
           >
             <BackIcon />
@@ -354,12 +394,14 @@ export function ProjectPage({
           leftButtonRef={leftToggleRef}
           rightButtonRef={rightToggleRef}
           aiQuestionButtonRef={aiQuestionToggleRef}
+          learningNoteButtonRef={learningNoteToggleRef}
           onToggleLeft={toggleLeftPanel}
           onToggleGeneration={toggleGenerationPanel}
           onOpenWorkspace={() => {
             void openProjectWorkspace();
           }}
           onToggleAiQuestion={toggleConversationPanel}
+          onToggleLearningNote={toggleLearningNotePanel}
           onOpenSettings={onOpenSettings}
         />
       </header>
@@ -467,6 +509,12 @@ export function ProjectPage({
                     onSelectAsset={selectConversationAsset}
                     onOpenSettings={onOpenSettings}
                     onError={setError}
+                  />
+                }
+                learningNote={
+                  <ProjectLearningNotePanel
+                    controller={learningNote}
+                    onClose={closeLearningNotePanel}
                   />
                 }
                 generation={

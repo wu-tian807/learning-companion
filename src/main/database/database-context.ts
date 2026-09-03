@@ -9,6 +9,7 @@ import type * as assetReferenceSchema from './schema/asset-references';
 import type * as generationTaskSchema from './schema/generation-tasks';
 import type * as assetSchema from './schema/assets';
 import type * as projectSchema from './schema/projects';
+import type * as projectLearningNoteSchema from './schema/project-learning-notes';
 import type * as workbenchStateSchema from './schema/workbench-state';
 
 type LearningCompanionSchema = typeof assetAttachmentSchema &
@@ -19,6 +20,7 @@ type LearningCompanionSchema = typeof assetAttachmentSchema &
   typeof generationTaskSchema &
   typeof assetSchema &
   typeof projectSchema &
+  typeof projectLearningNoteSchema &
   typeof workbenchStateSchema;
 
 export type LearningCompanionDatabase =

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
 
 describe('ProjectHeaderActions', () => {
-  it('always exposes all five Project actions and the shared right-slot state', () => {
+  it('always exposes all six Project actions and the shared right-slot state', () => {
     const markup = renderToStaticMarkup(
       <ProjectHeaderActions
         leftOpen
@@ -13,6 +13,7 @@ describe('ProjectHeaderActions', () => {
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
         onToggleAiQuestion={vi.fn()}
+        onToggleLearningNote={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
     );
@@ -34,7 +35,30 @@ describe('ProjectHeaderActions', () => {
     expect(markup).toContain('peer-focus-visible:opacity-100');
     expect(markup).not.toContain('group-focus-within:opacity-100');
     expect(markup).toContain('aria-label="打开 AI 问答"');
+    expect(markup).toContain('aria-label="打开学习笔记"');
     expect(markup).not.toContain('data-project-ai-context-actions');
+  });
+
+  it('marks the learning note as the selected shared right-slot view', () => {
+    const markup = renderToStaticMarkup(
+      <ProjectHeaderActions
+        leftOpen
+        rightPanel="learning-note"
+        onToggleLeft={vi.fn()}
+        onToggleGeneration={vi.fn()}
+        onOpenWorkspace={vi.fn()}
+        onToggleAiQuestion={vi.fn()}
+        onToggleLearningNote={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+    const noteButton = markup.match(
+      /<button[^>]*aria-label="收起学习笔记"[^>]*>/u,
+    )?.[0];
+
+    expect(noteButton).toContain('aria-expanded="true"');
+    expect(markup).toContain('aria-label="打开 AI 问答"');
+    expect(markup).toContain('aria-label="展开生成中心"');
   });
 
   it('keeps the global Project chat button enabled without a Workbench conversation', () => {
@@ -46,6 +70,7 @@ describe('ProjectHeaderActions', () => {
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
         onToggleAiQuestion={vi.fn()}
+        onToggleLearningNote={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
     );
@@ -67,6 +92,7 @@ describe('ProjectHeaderActions', () => {
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
         onToggleAiQuestion={vi.fn()}
+        onToggleLearningNote={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
     );
