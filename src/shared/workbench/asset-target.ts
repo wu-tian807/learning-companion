@@ -13,13 +13,6 @@ export interface ContentAssetTarget {
 
 export type AssetTarget = WholeAssetTarget | ContentAssetTarget;
 
-interface LegacyContentAssetTarget {
-  readonly scope: 'content';
-  readonly anchorType: string;
-  readonly anchorVersion: number;
-  readonly anchorPayload: JsonValue;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -72,30 +65,7 @@ export function isAssetTarget(value: unknown): value is AssetTarget {
 }
 
 export function parseAssetTarget(value: unknown): AssetTarget | undefined {
-  if (isAssetTarget(value)) return cloneAssetTarget(value);
-  if (!isRecord(value)) return undefined;
-  const keys = Object.keys(value).sort();
-  if (
-    keys.length !== 4 ||
-    !keys.every((key, index) =>
-      key === ['anchorPayload', 'anchorType', 'anchorVersion', 'scope'][index],
-    ) ||
-    value.scope !== 'content' ||
-    typeof value.anchorType !== 'string' ||
-    value.anchorType.trim().length === 0 ||
-    !Number.isSafeInteger(value.anchorVersion) ||
-    Number(value.anchorVersion) <= 0 ||
-    !isJsonValue(value.anchorPayload)
-  ) {
-    return undefined;
-  }
-  const legacy = value as unknown as LegacyContentAssetTarget;
-  return Object.freeze({
-    scope: 'content',
-    targetType: legacy.anchorType.trim(),
-    targetVersion: legacy.anchorVersion,
-    targetPayload: cloneJsonValue(legacy.anchorPayload),
-  });
+  return isAssetTarget(value) ? cloneAssetTarget(value) : undefined;
 }
 
 export function cloneAssetTarget(target: AssetTarget): AssetTarget {

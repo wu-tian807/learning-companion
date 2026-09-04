@@ -109,6 +109,7 @@ function MindMapCanvas({
     latestViewStateRef.current,
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [sourceChoiceNodeId, setSourceChoiceNodeId] = useState<string>();
   const [growthWave, setGrowthWave] = useState<MindMapGrowthWave>();
   const growthTimerRef = useRef<
     ReturnType<typeof setTimeout> | undefined
@@ -326,6 +327,39 @@ function MindMapCanvas({
     }
   }, [onReveal, reportError]);
 
+  const revealReference = useCallback(
+    async (reference: (typeof payload.associations.byNode[string]['references'])[number]) => {
+      if (!onSelectAsset) return;
+      await onSelectAsset(reference.reference.sourceAssetId);
+      if (reference.binding.target.scope === 'asset') return;
+      const controller = new AbortController();
+      await waitForWorkbenchTargetController(
+        reference.reference.sourceAssetId,
+        controller.signal,
+        10_000,
+      );
+      await revealWorkbenchTarget(
+        reference.reference.sourceAssetId,
+        reference.binding.target,
+        reference.binding.contentRevision,
+      );
+    },
+    [onSelectAsset],
+  );
+
+  const revealNodeSource = useCallback(
+    async (nodeId: string) => {
+      const references = payload.associations.byNode[nodeId]?.references ?? [];
+      if (!onSelectAsset || references.length === 0) return;
+      if (references.length > 1) {
+        setSourceChoiceNodeId(nodeId);
+        return;
+      }
+      await revealReference(references[0]);
+    },
+    [onSelectAsset, payload.associations.byNode, revealReference],
+  );
+
   const rendererActions = useMemo(
     () =>
       createMindMapRendererActions({
@@ -365,27 +399,11 @@ function MindMapCanvas({
           return Boolean(
             onSelectAsset &&
               isMindMapNodeTarget(focus) &&
-              payload.associations.byNode[focus.targetPayload.nodeId]
-                ?.references.length === 1,
+              (payload.associations.byNode[focus.targetPayload.nodeId]
+                ?.references.length ?? 0) > 0,
           );
         },
-        onRevealNodeSource: async (nodeId) => {
-          const reference = payload.associations.byNode[nodeId]?.references[0];
-          if (!reference || !onSelectAsset) return;
-          await onSelectAsset(reference.reference.sourceAssetId);
-          if (reference.binding.target.scope === 'asset') return;
-          const controller = new AbortController();
-          await waitForWorkbenchTargetController(
-            reference.reference.sourceAssetId,
-            controller.signal,
-            10_000,
-          );
-          await revealWorkbenchTarget(
-            reference.reference.sourceAssetId,
-            reference.binding.target,
-            reference.binding.contentRevision,
-          );
-        },
+        onRevealNodeSource: revealNodeSource,
       }),
     [
       conversationContribution,
@@ -396,6 +414,7 @@ function MindMapCanvas({
       payload.document.nodes,
       payload.associations.byNode,
       reveal,
+      revealNodeSource,
       runtime,
       toggleNode,
       onSelectAsset,
@@ -502,6 +521,9 @@ function MindMapCanvas({
     zoom: 1,
   };
   const staleCount = payload.associations.staleBindings.length;
+  const sourceChoices = sourceChoiceNodeId
+    ? payload.associations.byNode[sourceChoiceNodeId]?.references ?? []
+    : [];
 
   return (
     <div
@@ -582,6 +604,53 @@ function MindMapCanvas({
           onExpandAll={expandAll}
         />
       </ReactFlow>
+      {sourceChoiceNodeId && sourceChoices.length > 1 && (
+        <div
+          role="dialog"
+          aria-label="选择关联资料"
+          className="absolute inset-0 z-[80] grid place-items-center bg-black/45 p-6 backdrop-blur-[2px]"
+        >
+          <div className="w-full max-w-[420px] rounded-2xl border border-white/[0.1] bg-[#1a2027] p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-sm font-semibold text-slate-100">
+                选择要定位的关联资料
+              </h2>
+              <button
+                type="button"
+                className="ui-control rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                aria-label="取消选择关联资料"
+                onClick={() => setSourceChoiceNodeId(undefined)}
+              >
+                取消
+              </button>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {sourceChoices.map((reference) => (
+                <button
+                  key={`${reference.reference.id}:${reference.binding.contentRevision}`}
+                  type="button"
+                  className="ui-control rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-left hover:border-indigo-300/40 hover:bg-indigo-300/[0.08]"
+                  onClick={() => {
+                    setSourceChoiceNodeId(undefined);
+                    void revealReference(reference).catch((error) => {
+                      reportError(error, '无法定位关联资料。');
+                    });
+                  }}
+                >
+                  <span className="block truncate text-xs font-medium text-slate-100">
+                    {reference.reference.sourceAssetId}
+                  </span>
+                  <span className="mt-1 block truncate text-[10px] text-slate-500">
+                    {reference.binding.target.scope === 'asset'
+                      ? '整份资料'
+                      : reference.binding.target.targetType}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,21 @@ export class MindMapConversationContextProvider
     const selection = parseMindMapConversationContext(context.instruction.context);
     if (!selection) throw new AppError('DATA_INTEGRITY_ERROR');
     const references = context.assetReferences.source ?? [];
+    if (source.contentRevision !== selection.sourceRevision) {
+      throw new AppError('DATA_INTEGRITY_ERROR', {
+        cause: new Error('Mind Map 上下文对应的导图内容已更新'),
+      });
+    }
+    if (selection.references.some((selectionReference) => {
+      const prepared = references.find(
+        (reference) => reference.assetId === selectionReference.assetId,
+      );
+      return !prepared || prepared.contentRevision !== selectionReference.contentRevision;
+    })) {
+      throw new AppError('DATA_INTEGRITY_ERROR', {
+        cause: new Error('Mind Map 上下文对应的来源资料已更新'),
+      });
+    }
     const files = references.map((reference) =>
       `${reference.name}：${reference.relativePath}`,
     ).join('\n');

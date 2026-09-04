@@ -15,7 +15,7 @@ describe('AssetTarget', () => {
     expect(parseAssetTarget(target)).toEqual(target);
   });
 
-  it('normalizes pre-Target values only at compatibility boundaries', () => {
+  it('rejects retired pre-Target values', () => {
     expect(
       parseAssetTarget({
         scope: 'content',
@@ -23,12 +23,7 @@ describe('AssetTarget', () => {
         anchorVersion: 1,
         anchorPayload: { pageNumber: 2 },
       }),
-    ).toEqual({
-      scope: 'content',
-      targetType: 'pdf.page',
-      targetVersion: 1,
-      targetPayload: { pageNumber: 2 },
-    });
+    ).toBeUndefined();
   });
 
   it('rejects ambiguous wire values with undeclared fields', () => {

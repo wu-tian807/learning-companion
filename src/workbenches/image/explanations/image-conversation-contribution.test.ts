@@ -106,7 +106,7 @@ describe('image conversation contribution', () => {
     expect(createContribution()).not.toHaveProperty('historyStore');
   });
 
-  it('normalizes a persisted pre-Target image context at the Workbench boundary', () => {
+  it('rejects persisted pre-Target image context', () => {
     const legacy = {
       sourceRevision: 'revision-1',
       target: {
@@ -117,9 +117,7 @@ describe('image conversation contribution', () => {
       },
     };
 
-    expect(parseImageConversationContext(legacy)).toEqual(
-      createImageConversationContext(target, 'revision-1'),
-    );
-    expect(createContribution().isContext?.(legacy)).toBe(true);
+    expect(parseImageConversationContext(legacy)).toBeUndefined();
+    expect(createContribution().isContext?.(legacy)).toBe(false);
   });
 });
