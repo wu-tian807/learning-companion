@@ -138,6 +138,24 @@ function AiQuestionIcon() {
   );
 }
 
+function LearningNoteIcon() {
+  return (
+    <svg
+      className="size-4"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 3.5h9.2L16 6.3v10.2H4v-13Z" />
+      <path d="M13 3.8v2.8h2.8M7 10h6M7 13h4" />
+    </svg>
+  );
+}
+
 export interface ProjectHeaderActionsProps {
   readonly leftOpen: boolean;
   readonly rightPanel: ProjectRightPanelKind | null;
@@ -145,10 +163,12 @@ export interface ProjectHeaderActionsProps {
   readonly leftButtonRef?: Ref<HTMLButtonElement>;
   readonly rightButtonRef?: Ref<HTMLButtonElement>;
   readonly aiQuestionButtonRef?: Ref<HTMLButtonElement>;
+  readonly learningNoteButtonRef?: Ref<HTMLButtonElement>;
   readonly onToggleLeft: () => void;
   readonly onToggleGeneration: () => void;
   readonly onOpenWorkspace: () => void;
   readonly onToggleAiQuestion: () => void;
+  readonly onToggleLearningNote: () => void;
   readonly onOpenSettings: () => void;
 }
 
@@ -159,20 +179,26 @@ export function ProjectHeaderActions({
   leftButtonRef,
   rightButtonRef,
   aiQuestionButtonRef,
+  learningNoteButtonRef,
   onToggleLeft,
   onToggleGeneration,
   onOpenWorkspace,
   onToggleAiQuestion,
+  onToggleLearningNote,
   onOpenSettings,
 }: ProjectHeaderActionsProps) {
   const leftLabel = leftOpen ? '收起学习资料' : '展开学习资料';
   const generationOpen = rightPanel === 'generation';
+  const learningNoteOpen = rightPanel === 'learning-note';
   const rightLabel = generationOpen
     ? '收起生成中心'
     : '展开生成中心';
   const aiQuestionLabel = conversationOpen
     ? '关闭 AI 问答'
     : '打开 AI 问答';
+  const learningNoteLabel = learningNoteOpen
+    ? '收起学习笔记'
+    : '打开学习笔记';
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -184,6 +210,15 @@ export function ProjectHeaderActions({
         onClick={onToggleAiQuestion}
       >
         <AiQuestionIcon />
+      </HeaderActionButton>
+      <HeaderActionButton
+        ref={learningNoteButtonRef}
+        label={learningNoteLabel}
+        aria-controls="project-right-panel"
+        aria-expanded={learningNoteOpen}
+        onClick={onToggleLearningNote}
+      >
+        <LearningNoteIcon />
       </HeaderActionButton>
       <HeaderActionButton
         ref={leftButtonRef}

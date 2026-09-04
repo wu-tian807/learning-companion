@@ -31,6 +31,7 @@ import { createAssetFoldersMigration } from './migrations/0023-create-asset-fold
 import { createProjectConversationsMigration } from './migrations/0024-create-project-conversations';
 import { backfillConversationContextSourcesMigration } from './migrations/0025-backfill-conversation-context-sources';
 import { addConversationExecutionContextMigration } from './migrations/0026-add-conversation-execution-context';
+import { createProjectLearningNotesMigration } from './migrations/0027-create-project-learning-notes';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetFolderSchema from './schema/asset-folders';
@@ -40,6 +41,7 @@ import * as assetSchema from './schema/assets';
 import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
 import * as projectConversationSchema from './schema/project-conversations';
+import * as projectLearningNoteSchema from './schema/project-learning-notes';
 import * as workbenchStateSchema from './schema/workbench-state';
 
 interface DatabaseMigration {
@@ -76,12 +78,14 @@ const migrations: readonly DatabaseMigration[] = [
   createProjectConversationsMigration,
   backfillConversationContextSourcesMigration,
   addConversationExecutionContextMigration,
+  createProjectLearningNotesMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,
   ...assetFolderSchema,
   ...projectSchema,
   ...projectConversationSchema,
+  ...projectLearningNoteSchema,
   ...assetSchema,
   ...assetArtifactSchema,
   ...assetLinkSchema,

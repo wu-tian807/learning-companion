@@ -4,7 +4,10 @@ export const PROJECT_WIDE_LAYOUT_QUERY = '(min-width: 1180px)';
 export const PROJECT_SMALL_LAYOUT_QUERY = '(max-width: 719px)';
 
 export type ProjectLayoutMode = 'wide' | 'medium' | 'small';
-export type ProjectRightPanelKind = 'generation' | 'conversation';
+export type ProjectRightPanelKind =
+  | 'generation'
+  | 'conversation'
+  | 'learning-note';
 
 export interface ProjectLayoutState {
   readonly mode: ProjectLayoutMode;

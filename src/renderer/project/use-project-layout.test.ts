@@ -120,6 +120,25 @@ describe('Project responsive layout', () => {
     });
   });
 
+  it('switches between conversation and learning note in the same right slot', () => {
+    const conversation = reduceProjectLayout(
+      createDefaultProjectLayoutState('wide'),
+      { type: 'open-right', panel: 'conversation' },
+    );
+    const note = reduceProjectLayout(conversation, {
+      type: 'toggle-right',
+      panel: 'learning-note',
+    });
+
+    expect(note.rightPanel).toBe('learning-note');
+    expect(
+      reduceProjectLayout(note, {
+        type: 'toggle-right',
+        panel: 'learning-note',
+      }).rightPanel,
+    ).toBeNull();
+  });
+
   it('opens the source panel idempotently and closes a small-screen generation overlay', () => {
     const wide = createDefaultProjectLayoutState('wide');
     const smallWithGenerationOpen = reduceProjectLayout(
