@@ -15,7 +15,7 @@ describe('AssetTarget', () => {
     expect(parseAssetTarget(target)).toEqual(target);
   });
 
-  it('normalizes persisted pre-Target anchor fields at read boundaries', () => {
+  it('normalizes pre-Target values only at compatibility boundaries', () => {
     expect(
       parseAssetTarget({
         scope: 'content',

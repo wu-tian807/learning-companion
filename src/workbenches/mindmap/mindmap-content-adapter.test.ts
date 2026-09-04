@@ -60,7 +60,7 @@ function createDocumentWithTarget(): MindMapDocument {
           references: [
             {
               referenceId: 'reference-source',
-              sourceRevision: 'source-revision-1',
+              contentRevision: 'source-revision-1',
               target: {
                 scope: 'content',
                 targetType: 'pdf.page',
@@ -69,7 +69,7 @@ function createDocumentWithTarget(): MindMapDocument {
               },
             },
           ],
-          linkIds: [],
+          links: [],
         },
       },
       frames: {},
@@ -88,7 +88,7 @@ describe('MindMapContentAdapter', () => {
       current.associations.nodes.root.references[0],
     ).toMatchObject({
       referenceId: 'reference-source',
-      sourceRevision: 'source-revision-1',
+      contentRevision: 'source-revision-1',
       target: {
         scope: 'content',
         targetType: 'pdf.page',

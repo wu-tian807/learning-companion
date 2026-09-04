@@ -20,9 +20,14 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
+import {
+  registerWorkbenchTargetController,
+  revealWorkbenchTarget,
+  waitForWorkbenchTargetController,
+} from '../../renderer/workbench/host/workbench-target-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
+import { useWorkbenchConversationContribution } from '../../renderer/conversation/workbench-conversation-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { EMPTY_WORKBENCH_INTERACTION } from '../../shared/workbench/interaction';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
@@ -67,6 +72,7 @@ import {
   expandMindMapNodeOneLevel,
   toggleMindMapNode,
 } from './view-state';
+import { createMindMapConversationContribution } from './conversation/mindmap-conversation-contribution';
 
 interface MindMapCanvasProps extends RendererWorkbenchViewProps {
   readonly payload: MindMapWorkbenchPayload;
@@ -76,12 +82,23 @@ function MindMapCanvas({
   asset,
   bootstrap,
   executeCommand,
+  onSelectAsset,
   onInteractionChange,
   onReveal,
   onError,
   payload,
 }: MindMapCanvasProps) {
   const runtime = useWorkbenchRuntime();
+  const conversationOwnerId = `${mindMapWorkbenchManifest.id}:${bootstrap.sessionId}.conversation`;
+  const conversationContribution = useMemo(
+    () => createMindMapConversationContribution(payload),
+    [payload],
+  );
+  const conversationRuntime = useWorkbenchConversationContribution(
+    conversationOwnerId,
+    asset.id,
+    conversationContribution,
+  );
   const flowRef = useRef<
     ReactFlowInstance<MindMapFlowNode, MindMapFlowEdge> | undefined
   >(undefined);
@@ -327,8 +344,62 @@ function MindMapCanvas({
         onToggleNode: toggleNode,
         onExpandAll: expandAll,
         onReveal: reveal,
+        onAskNode: (nodeId) => {
+          const context = conversationContribution.createContext(nodeId);
+          if (!context) return;
+          conversationRuntime.open({
+            ownerId: conversationOwnerId,
+            context,
+            question: `请解释“${context.title}”这个节点，并结合关联资料说明重点。`,
+          });
+        },
+        canAskNode: () => {
+          const focus = runtime.interactionContext()?.focus;
+          return Boolean(
+            isMindMapNodeTarget(focus) &&
+              payload.document.nodes[focus.targetPayload.nodeId],
+          );
+        },
+        canRevealNodeSource: () => {
+          const focus = runtime.interactionContext()?.focus;
+          return Boolean(
+            onSelectAsset &&
+              isMindMapNodeTarget(focus) &&
+              payload.associations.byNode[focus.targetPayload.nodeId]
+                ?.references.length === 1,
+          );
+        },
+        onRevealNodeSource: async (nodeId) => {
+          const reference = payload.associations.byNode[nodeId]?.references[0];
+          if (!reference || !onSelectAsset) return;
+          await onSelectAsset(reference.reference.sourceAssetId);
+          if (reference.binding.target.scope === 'asset') return;
+          const controller = new AbortController();
+          await waitForWorkbenchTargetController(
+            reference.reference.sourceAssetId,
+            controller.signal,
+            10_000,
+          );
+          await revealWorkbenchTarget(
+            reference.reference.sourceAssetId,
+            reference.binding.target,
+            reference.binding.contentRevision,
+          );
+        },
       }),
-    [expandAll, fit, payload.document.nodes, reveal, runtime, toggleNode],
+    [
+      conversationContribution,
+      conversationOwnerId,
+      conversationRuntime,
+      expandAll,
+      fit,
+      payload.document.nodes,
+      payload.associations.byNode,
+      reveal,
+      runtime,
+      toggleNode,
+      onSelectAsset,
+    ],
   );
   useWorkbenchContributions(MIND_MAP_WORKBENCH_ID, rendererActions);
 

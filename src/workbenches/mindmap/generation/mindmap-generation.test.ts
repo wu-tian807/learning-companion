@@ -401,12 +401,12 @@ describe('Mind Map generation contracts', () => {
     expect(document.associations.nodes.root.references).toEqual([
       {
         referenceId: 'reference-asset-1',
-        sourceRevision: 'revision-1',
+        contentRevision: 'revision-1',
         target: createCandidate().nodes.root.sourceReferences[0].target,
       },
       {
         referenceId: 'reference-asset-1',
-        sourceRevision: 'revision-1',
+        contentRevision: 'revision-1',
         target: { scope: 'asset' },
       },
     ]);

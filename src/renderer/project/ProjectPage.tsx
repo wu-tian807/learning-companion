@@ -453,6 +453,7 @@ export function ProjectPage({
                         )
                       : Promise.resolve()
                   }
+                  onSelectAsset={session.selectAsset}
                   onOpenSettings={onOpenSettings}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
