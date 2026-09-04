@@ -88,4 +88,35 @@ describe('migration 27 canonical AssetTarget data', () => {
       (sqlite.prepare('SELECT target_json FROM asset_attachments').get() as { target_json: string }).target_json,
     )).toEqual(value);
   });
+
+  it('fails closed on malformed persisted JSON', () => {
+    const sqlite = createDatabase();
+    sqlite.prepare('INSERT INTO asset_attachments VALUES (?, ?)').run(
+      'attachment-1',
+      '{not-json',
+    );
+
+    expect(() => canonicalizeAssetTargetsMigration.apply(sqlite))
+      .toThrow('无法迁移 asset_attachments.target_json：attachment-1');
+  });
+
+  it('is idempotent after the first canonicalization', () => {
+    const sqlite = createDatabase();
+    sqlite.prepare('INSERT INTO asset_attachments VALUES (?, ?)').run(
+      'attachment-1',
+      JSON.stringify({
+        scope: 'content',
+        anchorType: 'pdf.page',
+        anchorVersion: 1,
+        anchorPayload: { pageNumber: 2 },
+      }),
+    );
+
+    canonicalizeAssetTargetsMigration.apply(sqlite);
+    const first = (sqlite.prepare('SELECT target_json FROM asset_attachments').get() as { target_json: string }).target_json;
+    canonicalizeAssetTargetsMigration.apply(sqlite);
+    const second = (sqlite.prepare('SELECT target_json FROM asset_attachments').get() as { target_json: string }).target_json;
+
+    expect(second).toBe(first);
+  });
 });
