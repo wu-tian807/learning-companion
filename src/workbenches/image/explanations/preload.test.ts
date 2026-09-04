@@ -30,6 +30,23 @@ describe('image explanation preload API', () => {
       projectId: request.projectId, assetId: request.assetId,
       kind: 'attachment', explanationId: 'attachment-1',
     });
+    await api.updateImageExplanationMarkerColor({
+      projectId: request.projectId,
+      assetId: request.assetId,
+      explanationId: 'attachment-1',
+      sourceRevision: request.sourceRevision,
+      markerColor: 'red',
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      'image-explanation:update-marker-color',
+      {
+        projectId: request.projectId,
+        assetId: request.assetId,
+        explanationId: 'attachment-1',
+        sourceRevision: request.sourceRevision,
+        markerColor: 'red',
+      },
+    );
 
     const listener = vi.fn();
     const remove = api.onImageExplanationChanged(listener);

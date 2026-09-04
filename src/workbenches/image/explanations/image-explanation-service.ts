@@ -31,6 +31,7 @@ import {
   IMAGE_EXPLANATION_ATTACHMENT_TYPE,
   IMAGE_EXPLANATION_ATTACHMENT_VERSION,
   IMAGE_DEFAULT_EXPLANATION_QUESTION,
+  imageExplanationMarkerColor,
   isImageExplanationMetadata,
   isImageRegionTarget,
   type CreateImageExplanationRequest,
@@ -41,6 +42,7 @@ import {
   type ImageExplanationTaskView,
   type ImageExplanationView,
   type ListImageExplanationsRequest,
+  type UpdateImageExplanationMarkerColorRequest,
 } from './shared';
 import { isImageExplanationForRevision } from './image-explanation-revision';
 
@@ -55,6 +57,9 @@ export interface ImageExplanationServiceApi {
   create(request: CreateImageExplanationRequest): Promise<ImageExplanationView>;
   retry(request: ImageExplanationIdRequest): Promise<ImageExplanationView>;
   delete(request: ImageExplanationIdRequest): Promise<void>;
+  updateMarkerColor(
+    request: UpdateImageExplanationMarkerColorRequest,
+  ): Promise<ImageExplanationAttachmentView>;
   subscribe(listener: ImageExplanationListener): () => void;
   dispose(): void;
 }
@@ -249,6 +254,34 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     await this.attachments.delete(attachment.projectId, attachment.id);
   }
 
+  async updateMarkerColor(
+    request: UpdateImageExplanationMarkerColorRequest,
+  ): Promise<ImageExplanationAttachmentView> {
+    const current = await this.requireAttachment({
+      projectId: request.projectId,
+      assetId: request.assetId,
+      kind: 'attachment',
+      explanationId: request.explanationId,
+    });
+    if (current.metadata.sourceRevision !== request.sourceRevision) {
+      throw new AppError('OPERATION_SUPERSEDED');
+    }
+    const updated = await this.attachments.update({
+      projectId: current.projectId,
+      attachmentId: current.id,
+      metadata: {
+        format: 'learning-companion/image-explanation',
+        version: 1,
+        sourceRevision: current.metadata.sourceRevision,
+        markerColor: request.markerColor,
+      },
+    });
+    if (!isExplanationAttachment(updated)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return this.toAttachmentView(updated);
+  }
+
   subscribe(listener: ImageExplanationListener): () => void {
     return this.projection.subscribe(listener);
   }
@@ -376,6 +409,7 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
       status: 'completed',
       answer,
       sourceRevision: attachment.metadata.sourceRevision,
+      markerColor: imageExplanationMarkerColor(attachment.metadata),
       createdTime: attachment.createdTime,
       updatedTime: attachment.updatedTime,
     });

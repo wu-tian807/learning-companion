@@ -10,6 +10,8 @@ import {
 } from '../../markdown/markdown-editor-adapter';
 import { normalizeConversationMarkdown } from '../../../renderer/conversation/conversation-text';
 import type { ImageExplanationRuntimeView } from './image-explanation-runtime';
+import { ImageMarkerColorPicker } from './image-marker-color-picker';
+import type { ImageMarkerColor } from './image-marker-style';
 import type { ImageExplanationView } from './shared';
 
 function MarkdownAnswer({ markdown }: { readonly markdown: string }) {
@@ -79,6 +81,7 @@ export function ImageExplanationPanel({
   onRetry,
   onDelete,
   onContinueQuestion,
+  onMarkerColorChange,
   continueQuestionDisabled = false,
 }: {
   readonly explanation: ImageExplanationView;
@@ -88,6 +91,7 @@ export function ImageExplanationPanel({
   readonly onRetry: () => void;
   readonly onDelete: () => void;
   readonly onContinueQuestion?: () => void;
+  readonly onMarkerColorChange?: (color: ImageMarkerColor) => void;
   readonly continueQuestionDisabled?: boolean;
 }) {
   return (
@@ -121,22 +125,33 @@ export function ImageExplanationPanel({
           )}
         </div>
       </div>
-      <div data-image-explanation-actions className="flex shrink-0 items-center justify-between border-t border-white/[0.07] px-3 py-2">
-        {explanation.status === 'completed' && onContinueQuestion ? (
-          <button
-            type="button"
-            disabled={continueQuestionDisabled}
-            onClick={onContinueQuestion}
-            className="ui-control rounded-full border border-indigo-300/15 bg-indigo-300/[0.06] px-3 py-1.5 text-[11px] text-indigo-200 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            继续追问
-          </button>
-        ) : (
-          <span />
+      <div data-image-explanation-actions className="shrink-0 border-t border-white/[0.07] px-3 py-2">
+        {explanation.status === 'completed' && onMarkerColorChange && (
+          <div className="mb-2 flex items-center justify-between gap-2 border-b border-white/[0.05] pb-2">
+            <span className="text-[10px] text-slate-500">标注颜色</span>
+            <ImageMarkerColorPicker
+              value={explanation.markerColor ?? 'blue'}
+              onChange={onMarkerColorChange}
+            />
+          </div>
         )}
-        <button type="button" onClick={onDelete} className="ui-control rounded-full border border-rose-300/15 bg-rose-300/[0.04] px-3 py-1.5 text-[11px] text-rose-300/80 hover:border-rose-300/30 hover:text-rose-200">
-          {explanation.kind === 'attachment' ? '删除解释' : explanation.status === 'pending' ? '取消生成' : '移除任务'}
-        </button>
+        <div className="flex items-center justify-between">
+          {explanation.status === 'completed' && onContinueQuestion ? (
+            <button
+              type="button"
+              disabled={continueQuestionDisabled}
+              onClick={onContinueQuestion}
+              className="ui-control rounded-full border border-indigo-300/15 bg-indigo-300/[0.06] px-3 py-1.5 text-[11px] text-indigo-200 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              继续追问
+            </button>
+          ) : (
+            <span />
+          )}
+          <button type="button" onClick={onDelete} className="ui-control rounded-full border border-rose-300/15 bg-rose-300/[0.04] px-3 py-1.5 text-[11px] text-rose-300/80 hover:border-rose-300/30 hover:text-rose-200">
+            {explanation.kind === 'attachment' ? '删除解释' : explanation.status === 'pending' ? '取消生成' : '移除任务'}
+          </button>
+        </div>
       </div>
     </aside>
   );

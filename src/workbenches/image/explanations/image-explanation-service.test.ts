@@ -315,6 +315,80 @@ describe('ImageExplanationService', () => {
     service.dispose();
   });
 
+  it('updates marker color only for the owned current-revision Attachment', async () => {
+    const attachment = {
+      id: 'attachment-1',
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'image.ai-explanation',
+      typeVersion: 1,
+      target,
+      metadata: {
+        format: 'learning-companion/image-explanation',
+        version: 1,
+        sourceRevision: 'revision-1',
+      },
+      content: {
+        ref: {
+          kind: 'local-file',
+          base: 'project-workspace',
+          path: '.learning-companion/attachments/attachment-1/answer.md',
+        },
+        mediaType: 'text/markdown',
+      },
+      createdTime: 1,
+      updatedTime: 1,
+    } as const;
+    const update = vi.fn(async (
+      input: Parameters<AttachmentServiceApi['update']>[0],
+    ) => ({
+      ...attachment,
+      metadata: input.metadata,
+      updatedTime: 2,
+    }));
+    const service = new ImageExplanationService(
+      {
+        get: vi.fn(async () => attachment),
+        update,
+        readTextContent: vi.fn(async () => '# 解释'),
+        subscribe: () => () => undefined,
+      } as unknown as AttachmentServiceApi,
+      {
+        getActiveProjectId: () => 'project-1',
+        subscribe: () => () => undefined,
+      } as unknown as GenerationTaskServiceApi,
+      { get: () => ({ mediaType: 'image/png' }) } as never,
+    );
+
+    await expect(service.updateMarkerColor({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      explanationId: 'attachment-1',
+      sourceRevision: 'revision-1',
+      markerColor: 'red',
+    })).resolves.toMatchObject({ markerColor: 'red', answer: '# 解释' });
+    expect(update).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      attachmentId: 'attachment-1',
+      metadata: {
+        format: 'learning-companion/image-explanation',
+        version: 1,
+        sourceRevision: 'revision-1',
+        markerColor: 'red',
+      },
+    });
+
+    await expect(service.updateMarkerColor({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      explanationId: 'attachment-1',
+      sourceRevision: 'revision-2',
+      markerColor: 'yellow',
+    })).rejects.toMatchObject({ code: 'OPERATION_SUPERSEDED' });
+    expect(update).toHaveBeenCalledOnce();
+    service.dispose();
+  });
+
   it('does not project a follow-up task in the same Session as another image marker', async () => {
     const instruction = new WorkbenchConversationInstruction({
       contextProviderId: IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,

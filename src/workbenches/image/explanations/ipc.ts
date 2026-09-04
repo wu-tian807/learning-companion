@@ -8,6 +8,7 @@ import {
   isCreateImageExplanationRequest,
   isImageExplanationIdRequest,
   isListImageExplanationsRequest,
+  isUpdateImageExplanationMarkerColorRequest,
 } from './shared';
 
 let removeSubscription: (() => void) | undefined;
@@ -44,6 +45,15 @@ export function registerImageExplanationHandlers(
     if (!isImageExplanationIdRequest(request)) throw invalidRequest();
     return service.delete(request);
   });
+  registerIpcHandler(
+    IMAGE_EXPLANATION_IPC_CHANNELS.updateMarkerColor,
+    (_event, request: unknown) => {
+      if (!isUpdateImageExplanationMarkerColorRequest(request)) {
+        throw invalidRequest();
+      }
+      return service.updateMarkerColor(request);
+    },
+  );
 }
 
 export function removeImageExplanationHandlers(): void {
@@ -53,4 +63,5 @@ export function removeImageExplanationHandlers(): void {
   ipcMain.removeHandler(IMAGE_EXPLANATION_IPC_CHANNELS.create);
   ipcMain.removeHandler(IMAGE_EXPLANATION_IPC_CHANNELS.retry);
   ipcMain.removeHandler(IMAGE_EXPLANATION_IPC_CHANNELS.delete);
+  ipcMain.removeHandler(IMAGE_EXPLANATION_IPC_CHANNELS.updateMarkerColor);
 }

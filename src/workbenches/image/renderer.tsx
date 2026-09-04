@@ -42,6 +42,9 @@ import {
   createImageConversationContribution,
 } from './explanations/image-conversation-contribution';
 import { ImageExplanationMarkerOverlay } from './explanations/image-explanation-marker-overlay';
+import { ImageRegionSelectionActions } from './explanations/image-region-selection-actions';
+import { createImageRegionConversationOpenOptions } from './explanations/image-region-conversation';
+import type { ImageMarkerColor } from './explanations/image-marker-style';
 import {
   ImageExplanationIndex,
   orderImageExplanations,
@@ -60,7 +63,6 @@ import {
   isImageExplanationForRevision,
 } from './explanations/image-explanation-revision';
 import {
-  IMAGE_DEFAULT_EXPLANATION_QUESTION,
   isImageRegionTarget,
   type ImageExplanationView,
   type ImageRegionTarget,
@@ -523,12 +525,11 @@ export function ImageWorkbenchView({
     }
     conversationRuntime.open({
       ownerId: conversationOwnerId,
-      context: createImageConversationContext(
+      ...createImageRegionConversationOpenOptions(
         selectedTarget,
         payload.sourceRevision,
+        'explain',
       ),
-      question: IMAGE_DEFAULT_EXPLANATION_QUESTION,
-      submit: true,
     });
     setSelectedTarget(undefined);
   }, [
@@ -538,6 +539,19 @@ export function ImageWorkbenchView({
     payload,
     selectedTarget,
   ]);
+
+  const askSelectedRegion = useCallback(() => {
+    if (!selectedTarget || !payload) return;
+    conversationRuntime.open({
+      ownerId: conversationOwnerId,
+      ...createImageRegionConversationOpenOptions(
+        selectedTarget,
+        payload.sourceRevision,
+        'ask',
+      ),
+    });
+    setSelectedTarget(undefined);
+  }, [conversationOwnerId, conversationRuntime, payload, selectedTarget]);
 
   const retryExplanation = useCallback(async (explanation: ImageExplanationView) => {
     setExplanationRuntimeByTaskId((current) => removeImageExplanationRuntime(current, explanation.id));
@@ -570,6 +584,28 @@ export function ImageWorkbenchView({
       reportError(error, '无法删除图片 AI 解释。');
     }
   }, [asset.id, asset.projectId, clearExplanationRuntime, reportError]);
+
+  const updateExplanationMarkerColor = useCallback(async (
+    explanation: ImageExplanationView,
+    markerColor: ImageMarkerColor,
+  ) => {
+    if (explanation.kind !== 'attachment' || !payload) return;
+    try {
+      const updated =
+        await window.learningCompanion.updateImageExplanationMarkerColor({
+          projectId: asset.projectId,
+          assetId: asset.id,
+          explanationId: explanation.id,
+          sourceRevision: payload.sourceRevision,
+          markerColor,
+        });
+      setExplanations((current) =>
+        current.map((item) => item.id === updated.id ? updated : item),
+      );
+    } catch (error) {
+      reportError(error, '无法修改图片标注颜色。');
+    }
+  }, [asset.id, asset.projectId, payload, reportError]);
 
   const revealExplanation = useCallback((explanation: ImageExplanationView) => {
     const viewer = viewerRef.current;
@@ -1070,6 +1106,13 @@ export function ImageWorkbenchView({
       })),
     [orderedExplanations, overlayRevision],
   );
+  const markerViewportSize = useMemo(() => {
+    const host = viewerHostRef.current;
+    if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) {
+      return undefined;
+    }
+    return { width: host.clientWidth, height: host.clientHeight };
+  }, [overlayRevision]);
   const selectedPolygon = useMemo(
     () => selectedTarget ? targetPolygon(viewerRef.current, selectedTarget) : undefined,
     [overlayRevision, selectedTarget],
@@ -1182,6 +1225,7 @@ export function ImageWorkbenchView({
           visible={explanationMarkersVisible}
           markers={markerPolygons}
           selectedPolygon={selectedPolygon}
+          viewportSize={markerViewportSize}
           onActivate={revealExplanation}
         />
       )}
@@ -1210,12 +1254,13 @@ export function ImageWorkbenchView({
       )}
 
       {selectedTarget && !selectionMode && (
-        <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-white/[0.1] bg-[#20262e]/94 p-2 shadow-xl backdrop-blur">
-          <span className="px-2 text-xs text-slate-300">已选中兴趣区域</span>
-          <button type="button" disabled={conversationBusy} onClick={createExplanation} className="ui-control rounded-lg bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">AI 解释</button>
-          <button type="button" onClick={startRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-400">重选</button>
-          <button type="button" onClick={cancelRegionSelection} className="ui-control rounded-lg px-2 py-1.5 text-xs text-slate-500">取消</button>
-        </div>
+        <ImageRegionSelectionActions
+          busy={conversationBusy}
+          onExplain={createExplanation}
+          onAsk={askSelectedRegion}
+          onReselect={startRegionSelection}
+          onCancel={cancelRegionSelection}
+        />
       )}
 
       {loadState.kind === 'loading' && (
@@ -1365,6 +1410,12 @@ export function ImageWorkbenchView({
           onClose={() => setActiveExplanationId(undefined)}
           onRetry={() => void retryExplanation(activeExplanation)}
           onDelete={() => void deleteExplanation(activeExplanation)}
+          onMarkerColorChange={
+            activeExplanation.kind === 'attachment'
+              ? (color) =>
+                  void updateExplanationMarkerColor(activeExplanation, color)
+              : undefined
+          }
           onContinueQuestion={
             activeExplanation.status === 'completed'
               ? () => {
