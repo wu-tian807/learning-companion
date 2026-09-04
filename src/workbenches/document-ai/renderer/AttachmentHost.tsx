@@ -34,6 +34,8 @@ export interface AttachmentHostProps {
   readonly onSidebarOpenChange: (open: boolean) => void;
 }
 
+export const ATTACHMENT_MARKER_MOTION_CLASS = 'transition-colors';
+
 interface TargetPosition {
   readonly pageNumber: number;
   readonly offset?: number;
@@ -41,6 +43,36 @@ interface TargetPosition {
   readonly yRatio?: number;
   readonly widthRatio?: number;
   readonly heightRatio?: number;
+}
+
+function sameTargetRects(
+  left: ReadonlyMap<string, WorkbenchTargetRect>,
+  right: ReadonlyMap<string, WorkbenchTargetRect>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [id, rect] of left) {
+    const other = right.get(id);
+    if (
+      !other ||
+      rect.left !== other.left ||
+      rect.top !== other.top ||
+      rect.width !== other.width ||
+      rect.height !== other.height
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function applyTargetRect(
+  element: HTMLElement,
+  rect: WorkbenchTargetRect,
+): void {
+  element.style.transform =
+    `translate3d(${rect.left}px, ${rect.top}px, 0)`;
+  element.style.width = `${Math.max(rect.width, 18)}px`;
+  element.style.height = `${Math.max(rect.height, 18)}px`;
 }
 
 function extractPosition(target: AssetTarget): TargetPosition | undefined {
@@ -471,18 +503,30 @@ export function AttachmentHost({
     const update = () => {
       const next = new Map<string, WorkbenchTargetRect>();
       const hostRect = host.getBoundingClientRect();
+      const markers = new Map<string, HTMLElement>();
+      for (const marker of host.querySelectorAll<HTMLElement>(
+        '[data-attachment-marker-id]',
+      )) {
+        const attachmentId = marker.dataset.attachmentMarkerId;
+        if (attachmentId) markers.set(attachmentId, marker);
+      }
       setHostSize({ width: hostRect.width, height: hostRect.height });
       for (const attachment of attachments) {
         const rect = resolveWorkbenchTarget(assetId, attachment.target);
         if (rect) {
-          next.set(attachment.id, {
+          const localRect = {
             ...rect,
             left: rect.left - hostRect.left,
             top: rect.top - hostRect.top,
-          });
+          };
+          next.set(attachment.id, localRect);
+          const marker = markers.get(attachment.id);
+          if (marker) applyTargetRect(marker, localRect);
         }
       }
-      setTargetRects(next);
+      setTargetRects((current) =>
+        sameTargetRects(current, next) ? current : next,
+      );
     };
 
     update();
@@ -813,13 +857,18 @@ export function AttachmentHost({
         return (
           <div key={att.id} className="contents">
             <button
+              data-attachment-marker-id={att.id}
               type="button"
-              className={`pointer-events-auto absolute cursor-pointer border transition-all ${
+              className={`pointer-events-auto absolute left-0 top-0 cursor-pointer border will-change-transform ${ATTACHMENT_MARKER_MOTION_CLASS} ${
                 isActive
                   ? 'z-40 animate-pulse border-indigo-200 bg-indigo-400/30 ring-2 ring-indigo-300/50'
                   : 'z-30 border-indigo-400/45 bg-indigo-400/[0.08] hover:border-indigo-300/80 hover:bg-indigo-400/15'
               }`}
-              style={{ left, top, width, height }}
+              style={{
+                transform: `translate3d(${left}px, ${top}px, 0)`,
+                width,
+                height,
+              }}
               onClick={(event) => handleMarkerClick(att.id, event)}
               title={preview || quote || '标注'}
             >

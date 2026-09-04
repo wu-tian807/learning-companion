@@ -8,8 +8,9 @@ import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
   registerWorkbenchTargetController,
   resetWorkbenchTargetControllerForTests,
+  WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT,
 } from '../../../renderer/workbench/host/workbench-target-bridge';
-import { AttachmentHost } from './AttachmentHost';
+import { ATTACHMENT_MARKER_MOTION_CLASS, AttachmentHost } from './AttachmentHost';
 
 const attachment: AssetAttachment = {
   id: 'attachment-1',
@@ -22,6 +23,8 @@ const attachment: AssetAttachment = {
   createdTime: 1,
   updatedTime: 1,
 };
+
+let resolvedRect = { left: 100, top: 120, width: 60, height: 30 };
 
 const textAttachment: AssetAttachment = {
   ...attachment,
@@ -47,6 +50,7 @@ describe('AttachmentHost', () => {
 
   beforeEach(() => {
     containers = [];
+    resolvedRect = { left: 100, top: 120, width: 60, height: 30 };
     window.localStorage.clear();
     (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
       observe() {}
@@ -60,7 +64,7 @@ describe('AttachmentHost', () => {
       })),
     };
     registerWorkbenchTargetController('test', 'asset', {
-      resolve: () => ({ left: 100, top: 120, width: 60, height: 30 }),
+      resolve: () => resolvedRect,
       reveal: () => true,
     });
   });
@@ -111,6 +115,40 @@ describe('AttachmentHost', () => {
     expect(html).toContain('AI 回复内容');
     expect(html).toContain('border-indigo-400/45');
 
+    act(() => root.unmount());
+  });
+
+  it('updates marker geometry synchronously when the page layout moves', async () => {
+    const container = document.createElement('div');
+    containers.push(container);
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <AttachmentHost
+          attachments={[attachment]}
+          assetId="asset"
+          projectId="project"
+          sidebarOpen={false}
+          onSidebarOpenChange={() => undefined}
+        />,
+      );
+      await Promise.resolve();
+    });
+    const marker = container.querySelector<HTMLButtonElement>(
+      'button[title="解释这里"]',
+    )!;
+    expect(marker.className).toContain(ATTACHMENT_MARKER_MOTION_CLASS);
+    expect(marker.className).not.toContain('transition-all');
+
+    resolvedRect = { left: 42, top: 64, width: 80, height: 44 };
+    window.dispatchEvent(
+      new Event(WORKBENCH_TARGET_LAYOUT_CHANGED_EVENT),
+    );
+
+    expect(marker.style.transform).toBe('translate3d(42px, 64px, 0)');
+    expect(marker.style.width).toBe('80px');
+    expect(marker.style.height).toBe('44px');
     act(() => root.unmount());
   });
 
