@@ -47,7 +47,7 @@ function createDocument(): MindMapDocument {
           references: [
             {
               referenceId: 'reference-pdf',
-              sourceRevision: 'pdf-revision-1',
+              contentRevision: 'pdf-revision-1',
               target: {
                 scope: 'content',
                 targetType: 'pdf.page-region',
@@ -56,13 +56,21 @@ function createDocument(): MindMapDocument {
               },
             },
           ],
-          linkIds: ['link-basic-solution-answer'],
+          links: [{
+            linkId: 'link-basic-solution-answer',
+            contentRevision: 'answer-revision-1',
+            target: { scope: 'asset' },
+          }],
         },
       },
       frames: {
         foundations: {
           references: [],
-          linkIds: ['link-foundations-lecture'],
+          links: [{
+            linkId: 'link-foundations-lecture',
+            contentRevision: 'lecture-revision-1',
+            target: { scope: 'asset' },
+          }],
         },
       },
     },
@@ -73,13 +81,13 @@ describe('Mind Map document contract', () => {
   it('accepts and deeply clones the current versioned AssetTarget contract', () => {
     const document = cloneMindMapDocument(createDocument());
 
-    expect(document.version).toBe(3);
+    expect(document.version).toBe(4);
     expect(document.title).toBe('线性规划');
     expect(document.frames.foundations.title).toBe('基础概念讲义');
     expect(document.associations.nodes['basic-solution'].references[0])
       .toEqual({
         referenceId: 'reference-pdf',
-        sourceRevision: 'pdf-revision-1',
+        contentRevision: 'pdf-revision-1',
         target: {
           scope: 'content',
           targetType: 'pdf.page-region',
@@ -96,7 +104,7 @@ describe('Mind Map document contract', () => {
   });
 
   it('keeps a version marker but rejects retired document versions', () => {
-    for (const version of [1, 2, 4]) {
+    for (const version of [1, 2, 3]) {
       expect(isMindMapDocument({ ...createDocument(), version })).toBe(false);
     }
   });
@@ -110,7 +118,7 @@ describe('Mind Map document contract', () => {
         nodes: {
           'basic-solution': {
             references: [binding],
-            linkIds: [],
+            links: [],
           },
         },
       },
@@ -122,12 +130,12 @@ describe('Mind Map document contract', () => {
     }))).toBe(false);
     expect(isMindMapDocument(withBinding({
       referenceId: 'reference-pdf',
-      sourceRevision: 'pdf-revision-1',
+      contentRevision: 'pdf-revision-1',
       agentLocator: { page: 3 },
     }))).toBe(false);
     expect(isMindMapDocument(withBinding({
       referenceId: 'reference-pdf',
-      sourceRevision: 'pdf-revision-1',
+      contentRevision: 'pdf-revision-1',
       target: {
         scope: 'content',
         anchorType: 'pdf.page-region',
@@ -145,14 +153,14 @@ describe('Mind Map document contract', () => {
       associations: {
         ...document.associations,
         nodes: {
-          'basic-solution': { references: [replacement], linkIds: [] },
+          'basic-solution': { references: [replacement], links: [] },
         },
       },
     });
 
     expect(isMindMapDocument(withBinding({
       ...binding,
-      sourceRevision: '  ',
+      contentRevision: '  ',
     }))).toBe(false);
     expect(isMindMapDocument(withBinding({
       ...binding,
@@ -177,7 +185,7 @@ describe('Mind Map document contract', () => {
               { ...binding, target: { scope: 'asset' } },
               binding,
             ],
-            linkIds: [],
+            links: [],
           },
         },
         frames: {},
@@ -196,21 +204,21 @@ describe('Mind Map document contract', () => {
       ...document,
       associations: {
         ...document.associations,
-        nodes: { unknown: { references: [], linkIds: [] } },
+        nodes: { unknown: { references: [], links: [] } },
       },
     })).toBe(false);
     expect(isMindMapDocument({
       ...document,
       associations: {
         ...document.associations,
-        frames: { unknown: { references: [], linkIds: [] } },
+        frames: { unknown: { references: [], links: [] } },
       },
     })).toBe(false);
     expect(isMindMapDocument({
       ...document,
       associations: {
         ...document.associations,
-        nodes: { root: { references: [], linkIds: ['link', 'link'] } },
+        nodes: { root: { references: [], links: ['link', 'link'] } },
       },
     })).toBe(false);
   });

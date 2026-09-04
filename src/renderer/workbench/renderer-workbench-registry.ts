@@ -31,6 +31,8 @@ export interface RendererWorkbenchViewProps {
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
+  /** Select another Asset in the owning Project. */
+  readonly onSelectAsset?: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onInteractionChange: (
     interaction: WorkbenchInteractionSnapshot,

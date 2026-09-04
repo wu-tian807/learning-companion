@@ -13,13 +13,6 @@ export interface ContentAssetTarget {
 
 export type AssetTarget = WholeAssetTarget | ContentAssetTarget;
 
-interface LegacyContentAssetTarget {
-  readonly scope: 'content';
-  readonly anchorType: string;
-  readonly anchorVersion: number;
-  readonly anchorPayload: JsonValue;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -71,44 +64,8 @@ export function isAssetTarget(value: unknown): value is AssetTarget {
   );
 }
 
-function isLegacyContentAssetTarget(
-  value: unknown,
-): value is LegacyContentAssetTarget {
-  return (
-    isRecord(value) &&
-    value.scope === 'content' &&
-    hasOnlyKeys(value, [
-      'scope',
-      'anchorType',
-      'anchorVersion',
-      'anchorPayload',
-    ]) &&
-    isTargetIdentity(value.anchorType, value.anchorVersion) &&
-    value.anchorPayload !== undefined &&
-    isJsonValue(value.anchorPayload)
-  );
-}
-
-/**
- * Reads the canonical AssetTarget wire shape and the pre-Target `anchor*`
- * shape. Callers always receive the canonical representation, so legacy
- * persistence never leaks into Workbench implementations.
- */
 export function parseAssetTarget(value: unknown): AssetTarget | undefined {
-  if (isAssetTarget(value)) {
-    return cloneAssetTarget(value);
-  }
-
-  if (!isLegacyContentAssetTarget(value)) {
-    return undefined;
-  }
-
-  return Object.freeze({
-    scope: 'content',
-    targetType: value.anchorType.trim(),
-    targetVersion: value.anchorVersion,
-    targetPayload: cloneJsonValue(value.anchorPayload),
-  });
+  return isAssetTarget(value) ? cloneAssetTarget(value) : undefined;
 }
 
 export function cloneAssetTarget(target: AssetTarget): AssetTarget {

@@ -1,9 +1,9 @@
 import type { MainWorkbenchFeatureContribution } from '../../main/workbench/main-workbench-contribution';
 import {
-  MIND_MAP_FRAME_ANCHOR_TYPE,
-  MIND_MAP_FRAME_ANCHOR_VERSION,
-  MIND_MAP_NODE_ANCHOR_TYPE,
-  MIND_MAP_NODE_ANCHOR_VERSION,
+  MIND_MAP_FRAME_TARGET_TYPE,
+  MIND_MAP_FRAME_TARGET_VERSION,
+  MIND_MAP_NODE_TARGET_TYPE,
+  MIND_MAP_NODE_TARGET_VERSION,
   isMindMapFrameTarget,
   isMindMapNodeTarget,
 } from './shared';
@@ -11,8 +11,8 @@ import {
 function isNodePayload(payload: unknown): boolean {
   return isMindMapNodeTarget({
     scope: 'content',
-    targetType: MIND_MAP_NODE_ANCHOR_TYPE,
-    targetVersion: MIND_MAP_NODE_ANCHOR_VERSION,
+    targetType: MIND_MAP_NODE_TARGET_TYPE,
+    targetVersion: MIND_MAP_NODE_TARGET_VERSION,
     targetPayload: payload,
   });
 }
@@ -20,8 +20,8 @@ function isNodePayload(payload: unknown): boolean {
 function isFramePayload(payload: unknown): boolean {
   return isMindMapFrameTarget({
     scope: 'content',
-    targetType: MIND_MAP_FRAME_ANCHOR_TYPE,
-    targetVersion: MIND_MAP_FRAME_ANCHOR_VERSION,
+    targetType: MIND_MAP_FRAME_TARGET_TYPE,
+    targetVersion: MIND_MAP_FRAME_TARGET_VERSION,
     targetPayload: payload,
   });
 }
@@ -31,8 +31,8 @@ export const mindMapTargetMainFeature = Object.freeze({
   registerAssetTargets({ targets }): void {
     targets.register({
       workbenchId: 'builtin.mindmap',
-      targetType: MIND_MAP_NODE_ANCHOR_TYPE,
-      version: MIND_MAP_NODE_ANCHOR_VERSION,
+      targetType: MIND_MAP_NODE_TARGET_TYPE,
+      version: MIND_MAP_NODE_TARGET_VERSION,
       isPayload: isNodePayload,
       agent: {
         description: '思维导图中由稳定 nodeId 标识的节点',
@@ -49,8 +49,8 @@ export const mindMapTargetMainFeature = Object.freeze({
     });
     targets.register({
       workbenchId: 'builtin.mindmap',
-      targetType: MIND_MAP_FRAME_ANCHOR_TYPE,
-      version: MIND_MAP_FRAME_ANCHOR_VERSION,
+      targetType: MIND_MAP_FRAME_TARGET_TYPE,
+      version: MIND_MAP_FRAME_TARGET_VERSION,
       isPayload: isFramePayload,
       agent: {
         description: '思维导图中由稳定 frameId 标识的一组节点',

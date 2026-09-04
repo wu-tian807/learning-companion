@@ -3,20 +3,28 @@ import { isMindMapNodeTarget } from './shared';
 
 export interface MindMapRendererActionsOptions {
   readonly canToggleFocusedNode: () => boolean;
+  readonly canAskNode?: () => boolean;
   readonly hasCollapsedNodes: () => boolean;
   readonly onFit: () => void;
   readonly onToggleNode: (nodeId: string) => void;
   readonly onExpandAll: () => void;
   readonly onReveal: () => Promise<void> | void;
+  readonly onAskNode?: (nodeId: string) => void;
+  readonly canRevealNodeSource?: () => boolean;
+  readonly onRevealNodeSource?: (nodeId: string) => Promise<void> | void;
 }
 
 export function createMindMapRendererActions({
   canToggleFocusedNode,
+  canAskNode,
   hasCollapsedNodes,
   onFit,
   onToggleNode,
   onExpandAll,
   onReveal,
+  onAskNode,
+  canRevealNodeSource,
+  onRevealNodeSource,
 }: MindMapRendererActionsOptions): WorkbenchActionBundle {
   return {
     actions: [
@@ -46,8 +54,21 @@ export function createMindMapRendererActions({
       },
       {
         id: 'mindmap.ai.ask-node',
-        enabled: false,
-        execute: () => undefined,
+        enabled: canAskNode ?? canToggleFocusedNode,
+        execute: (context) => {
+          if (isMindMapNodeTarget(context.focus)) {
+            onAskNode?.(context.focus.targetPayload.nodeId);
+          }
+        },
+      },
+      {
+        id: 'mindmap.ai.reveal-node-source',
+        enabled: canRevealNodeSource ?? (() => false),
+        execute: async (context) => {
+          if (isMindMapNodeTarget(context.focus)) {
+            await onRevealNodeSource?.(context.focus.targetPayload.nodeId);
+          }
+        },
       },
       {
         id: 'mindmap.ai.generate-from-node',
@@ -128,7 +149,7 @@ export function createMindMapRendererActions({
           kind: 'action',
           label: '围绕此节点提问',
           description: '将当前节点作为资料上下文',
-          disabledReason: '等待 Agent Lane 接入',
+          disabledReason: '请先选择一个节点',
         },
       },
       {
@@ -142,6 +163,19 @@ export function createMindMapRendererActions({
           label: '从此节点派生资料',
           description: '生成与节点关联的新 Asset',
           disabledReason: '等待 Generated Asset 工作流接入',
+        },
+      },
+      {
+        id: 'mindmap.ai.reveal-node-source.context-menu',
+        actionId: 'mindmap.ai.reveal-node-source',
+        surface: 'context-menu',
+        group: '80-ai',
+        order: 15,
+        presentation: {
+          kind: 'action',
+          label: '定位关联资料',
+          description: '跳转到该节点唯一的来源资料',
+          disabledReason: '该节点没有唯一关联资料',
         },
       },
       {

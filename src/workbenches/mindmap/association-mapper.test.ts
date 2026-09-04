@@ -47,22 +47,29 @@ function createDocument(): MindMapDocument {
           references: [
             {
               referenceId: 'reference',
-              sourceRevision: 'revision-1',
+              contentRevision: 'revision-1',
               target: { scope: 'asset' },
             },
             {
               referenceId: 'missing-reference',
-              sourceRevision: 'revision-1',
+              contentRevision: 'revision-1',
               target: { scope: 'asset' },
             },
           ],
-          linkIds: ['foreign-link'],
+          links: [{
+            linkId: 'foreign-link',
+            contentRevision: 'revision-1',
+            target: { scope: 'asset' },
+          }],
         },
       },
       frames: {
         chapter: {
           references: [],
-          linkIds: ['link', 'missing-link'],
+          links: [
+            { linkId: 'link', contentRevision: 'revision-1', target: { scope: 'asset' } },
+            { linkId: 'missing-link', contentRevision: 'revision-1', target: { scope: 'asset' } },
+          ],
         },
       },
     },
@@ -77,7 +84,7 @@ function createDocumentWithRepeatedTargets(): MindMapDocument {
         root: {
           references: [2, 5].map((pageNumber) => ({
             referenceId: 'reference',
-            sourceRevision: 'revision-2',
+            contentRevision: 'revision-2',
             target: {
               scope: 'content' as const,
               targetType: 'pdf.page',
@@ -85,7 +92,7 @@ function createDocumentWithRepeatedTargets(): MindMapDocument {
               targetPayload: { pageNumber },
             },
           })),
-          linkIds: [],
+          links: [],
         },
       },
       frames: {},
@@ -114,12 +121,15 @@ describe('resolveMindMapAssociations', () => {
     expect(resolved.byNode.root.references).toEqual([2, 5].map(
       (pageNumber) => ({
         reference,
-        sourceRevision: 'revision-2',
-        target: {
-          scope: 'content',
-          targetType: 'pdf.page',
-          targetVersion: 1,
-          targetPayload: { pageNumber },
+        binding: {
+          referenceId: 'reference',
+          contentRevision: 'revision-2',
+          target: {
+            scope: 'content',
+            targetType: 'pdf.page',
+            targetVersion: 1,
+            targetPayload: { pageNumber },
+          },
         },
       }),
     ));
@@ -162,11 +172,14 @@ describe('resolveMindMapAssociations', () => {
     expect(resolved.byNode.root.references).toHaveLength(1);
     expect(resolved.byNode.root.references[0]).toMatchObject({
       reference: { id: 'reference' },
-      sourceRevision: 'revision-1',
-      target: { scope: 'asset' },
+      binding: {
+        referenceId: 'reference',
+        contentRevision: 'revision-1',
+        target: { scope: 'asset' },
+      },
     });
     expect(resolved.byNode.child).toBeUndefined();
-    expect(resolved.byFrame.chapter.links.map(({ id }) => id)).toEqual(['link']);
+    expect(resolved.byFrame.chapter.links.map(({ link }) => link.id)).toEqual(['link']);
     expect(resolved.staleBindings).toEqual([
       {
         subjectKind: 'node',

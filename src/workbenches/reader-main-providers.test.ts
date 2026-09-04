@@ -78,7 +78,14 @@ function createContext(
       contentStatus: createAssetContentStatus('available', 100),
       handle: {
         capabilities: new Set(['read-stream']),
-        openByteStream: vi.fn(),
+        openByteStream: vi.fn(async () => ({
+          stream: new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.close();
+            },
+          }),
+          byteLength: 0,
+        })),
         close: vi.fn(async () => undefined),
       },
     },
@@ -132,6 +139,7 @@ describe('stream reader main providers', () => {
     await expect(provider.open(context)).resolves.toEqual({
       payload: {
         contentUrl: `learning-content://resource/${context.sessionId}`,
+        sourceRevision: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       },
       transportBindings: [
         {

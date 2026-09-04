@@ -35,6 +35,8 @@ export interface ConversationMessageContextSource {
   /** Main provider that prepares this one message's optional Workbench context. */
   readonly contextProviderId: string;
   readonly assetId?: string;
+  /** Additional read-only assets attached to this message's workspace. */
+  readonly contextAssetIds?: readonly string[];
   readonly sourceAssetMode?: 'identity' | 'reference';
   readonly commitAnswer?: true;
 }
@@ -150,6 +152,11 @@ function isConversationMessageContextSource(
       value.sourceAssetMode === 'identity' ||
       value.sourceAssetMode === 'reference') &&
     (value.sourceAssetMode === undefined || value.assetId !== undefined) &&
+    (value.contextAssetIds === undefined ||
+      (Array.isArray(value.contextAssetIds) &&
+        value.contextAssetIds.length <= 32 &&
+        value.contextAssetIds.every((id) => isRequiredText(id, 160)) &&
+        new Set(value.contextAssetIds).size === value.contextAssetIds.length)) &&
     (value.commitAnswer === undefined || value.commitAnswer === true)
   );
 }
@@ -248,6 +255,13 @@ export function cloneConversationRecord(
                   contextProviderId: message.contextSource.contextProviderId,
                   ...(message.contextSource.assetId
                     ? { assetId: message.contextSource.assetId }
+                    : {}),
+                  ...(message.contextSource.contextAssetIds
+                    ? {
+                        contextAssetIds: Object.freeze(
+                          [...message.contextSource.contextAssetIds],
+                        ),
+                      }
                     : {}),
                   ...(message.contextSource.sourceAssetMode
                     ? {

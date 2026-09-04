@@ -1,13 +1,13 @@
 import {
   cloneAssetLink,
   cloneAssetReference,
+  cloneAssetLinkTarget,
+  cloneAssetReferenceTarget,
   type AssetLink,
   type AssetReference,
+  type AssetLinkTarget,
+  type AssetReferenceTarget,
 } from '../../shared/asset-associations';
-import {
-  cloneAssetTarget,
-  type AssetTarget,
-} from '../../shared/workbench/asset-target';
 import {
   cloneMindMapDocument,
   type MindMapDocument,
@@ -21,13 +21,17 @@ export interface MindMapAssociationLookup {
 
 export interface ResolvedMindMapReferenceBinding {
   readonly reference: AssetReference;
-  readonly sourceRevision: string;
-  readonly target: AssetTarget;
+  readonly binding: AssetReferenceTarget;
+}
+
+export interface ResolvedMindMapLinkBinding {
+  readonly link: AssetLink;
+  readonly binding: AssetLinkTarget;
 }
 
 export interface ResolvedMindMapSubjectAssociations {
   readonly references: readonly ResolvedMindMapReferenceBinding[];
-  readonly links: readonly AssetLink[];
+  readonly links: readonly ResolvedMindMapLinkBinding[];
 }
 
 export type MindMapAssociationSubjectKind = 'node' | 'frame';
@@ -63,7 +67,7 @@ function resolveSubjectAssociationMap(
       Object.entries(subjectAssociations).map(
         ([subjectId, associations]) => {
           const references: ResolvedMindMapReferenceBinding[] = [];
-          const links: AssetLink[] = [];
+          const links: ResolvedMindMapLinkBinding[] = [];
 
           for (const binding of associations.references) {
             const reference = lookup.getReference(binding.referenceId);
@@ -80,25 +84,27 @@ function resolveSubjectAssociationMap(
 
             references.push(Object.freeze({
               reference: cloneAssetReference(reference),
-              sourceRevision: binding.sourceRevision,
-              target: cloneAssetTarget(binding.target),
+              binding: cloneAssetReferenceTarget(binding),
             }));
           }
 
-          for (const linkId of associations.linkIds) {
-            const link = lookup.getLink(linkId);
+          for (const binding of associations.links) {
+            const link = lookup.getLink(binding.linkId);
 
             if (!link || link.assetId !== assetId) {
               staleBindings.push({
                 subjectKind,
                 subjectId,
                 kind: 'link',
-                associationId: linkId,
+                associationId: binding.linkId,
               });
               continue;
             }
 
-            links.push(cloneAssetLink(link));
+            links.push(Object.freeze({
+              link: cloneAssetLink(link),
+              binding: cloneAssetLinkTarget(binding),
+            }));
           }
 
           return [

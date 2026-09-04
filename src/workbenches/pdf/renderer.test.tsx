@@ -95,6 +95,7 @@ describe('PdfWorkbenchView', () => {
   it('renders a full-height PDF canvas and local loading state', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'test-revision',
       viewState: clonePdfWorkbenchState(
         DEFAULT_PDF_WORKBENCH_STATE,
       ),
@@ -111,6 +112,7 @@ describe('PdfWorkbenchView', () => {
   it('rejects an unsafe bootstrap URL before loading PDF.js', () => {
     const markup = render({
       contentUrl: 'file:///tmp/private/learning.pdf',
+      sourceRevision: 'test-revision',
       viewState: clonePdfWorkbenchState(
         DEFAULT_PDF_WORKBENCH_STATE,
       ),

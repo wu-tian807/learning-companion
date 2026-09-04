@@ -77,6 +77,8 @@ export interface WorkbenchConversationContribution {
   readonly contextRequired?: boolean;
   readonly contextRequiredMessage?: string;
   isContext?(context: JsonValue): boolean;
+  /** Returns additional project assets to expose read-only for this context. */
+  contextAssetIds?(context: JsonValue): readonly string[];
   shouldCommitAnswer?(input: ConversationTaskInput): boolean;
   /** Clears Workbench-owned transient context UI after send, discard, restore or close. */
   onContextReleased?(context: JsonValue | undefined): void;

@@ -1,11 +1,14 @@
 import {
-  cloneAssetTarget,
-  isAssetTarget,
-  type AssetTarget,
-} from '../../shared/workbench/asset-target';
+  cloneAssetLinkTarget,
+  cloneAssetReferenceTarget,
+  isAssetLinkTarget,
+  isAssetReferenceTarget,
+  type AssetLinkTarget,
+  type AssetReferenceTarget,
+} from '../../shared/asset-associations';
 
 export const MIND_MAP_DOCUMENT_FORMAT = 'learning-companion/mindmap';
-export const MIND_MAP_DOCUMENT_VERSION = 3;
+export const MIND_MAP_DOCUMENT_VERSION = 4;
 
 export interface MindMapNode {
   readonly id: string;
@@ -20,15 +23,9 @@ export interface MindMapFrame {
   readonly nodeIds: readonly string[];
 }
 
-export interface MindMapReferenceBinding {
-  readonly referenceId: string;
-  readonly sourceRevision: string;
-  readonly target: AssetTarget;
-}
-
 export interface MindMapSubjectAssociations {
-  readonly references: readonly MindMapReferenceBinding[];
-  readonly linkIds: readonly string[];
+  readonly references: readonly AssetReferenceTarget[];
+  readonly links: readonly AssetLinkTarget[];
 }
 
 export interface MindMapAssociations {
@@ -155,29 +152,16 @@ function hasValidFrames(
   );
 }
 
-function isMindMapReferenceBinding(
-  value: unknown,
-): value is MindMapReferenceBinding {
-  return (
-    isRecord(value) &&
-    hasExactlyKeys(value, ['referenceId', 'sourceRevision', 'target']) &&
-    isNormalizedId(value.referenceId) &&
-    isNormalizedId(value.sourceRevision) &&
-    isAssetTarget(value.target)
-  );
-}
-
 function isMindMapSubjectAssociations(
   value: unknown,
 ): value is MindMapSubjectAssociations {
   return (
     isRecord(value) &&
-    hasExactlyKeys(value, ['references', 'linkIds']) &&
+    hasExactlyKeys(value, ['references', 'links']) &&
     Array.isArray(value.references) &&
-    value.references.every(isMindMapReferenceBinding) &&
-    Array.isArray(value.linkIds) &&
-    value.linkIds.every(isNormalizedId) &&
-    new Set(value.linkIds).size === value.linkIds.length
+    value.references.every(isAssetReferenceTarget) &&
+    Array.isArray(value.links) &&
+    value.links.every(isAssetLinkTarget)
   );
 }
 
@@ -241,14 +225,12 @@ function cloneSubjectAssociations(
   return Object.freeze({
     references: Object.freeze(
       associations.references.map((binding) =>
-        Object.freeze({
-          referenceId: binding.referenceId,
-          sourceRevision: binding.sourceRevision,
-          target: cloneAssetTarget(binding.target),
-        }),
+        cloneAssetReferenceTarget(binding),
       ),
     ),
-    linkIds: Object.freeze([...associations.linkIds]),
+    links: Object.freeze(
+      associations.links.map((binding) => cloneAssetLinkTarget(binding)),
+    ),
   });
 }
 

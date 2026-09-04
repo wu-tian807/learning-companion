@@ -40,6 +40,7 @@ describe('PDF Workbench shared protocol', () => {
     expect(
       isPdfWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: 'revision',
         viewState: {
           readingMode: 'paged',
           pageNumber: 12,

@@ -1,4 +1,9 @@
 import { isUnixMilliseconds } from './projects';
+import {
+  cloneAssetTarget,
+  isAssetTarget,
+  type AssetTarget,
+} from './workbench/asset-target';
 
 export interface AssetReference {
   readonly id: string;
@@ -10,6 +15,13 @@ export interface AssetReference {
 
 export interface CreateAssetReferenceInput {
   readonly sourceAssetId: string;
+}
+
+/** A source AssetReference used at a concrete content location. */
+export interface AssetReferenceTarget {
+  readonly referenceId: string;
+  readonly contentRevision: string;
+  readonly target: AssetTarget;
 }
 
 export interface AssetLink {
@@ -24,12 +36,77 @@ export interface CreateAssetLinkInput {
   readonly targetAssetId: string;
 }
 
+/** A related AssetLink used at a concrete content location. */
+export interface AssetLinkTarget {
+  readonly linkId: string;
+  readonly contentRevision: string;
+  readonly target: AssetTarget;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isRequiredText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasExactlyKeys(
+  value: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key));
+}
+
+function isAssetTargetBinding(
+  value: unknown,
+  idKey: 'referenceId' | 'linkId',
+): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    hasExactlyKeys(value, [idKey, 'contentRevision', 'target']) &&
+    isRequiredText(value[idKey]) &&
+    isRequiredText(value.contentRevision) &&
+    isAssetTarget(value.target)
+  );
+}
+
+export function isAssetReferenceTarget(
+  value: unknown,
+): value is AssetReferenceTarget {
+  return isAssetTargetBinding(value, 'referenceId');
+}
+
+export function cloneAssetReferenceTarget(
+  value: AssetReferenceTarget,
+): AssetReferenceTarget {
+  if (!isAssetReferenceTarget(value)) {
+    throw new Error('AssetReferenceTarget 数据无效');
+  }
+  return Object.freeze({
+    referenceId: value.referenceId.trim(),
+    contentRevision: value.contentRevision.trim(),
+    target: cloneAssetTarget(value.target),
+  });
+}
+
+export function isAssetLinkTarget(value: unknown): value is AssetLinkTarget {
+  return isAssetTargetBinding(value, 'linkId');
+}
+
+export function cloneAssetLinkTarget(
+  value: AssetLinkTarget,
+): AssetLinkTarget {
+  if (!isAssetLinkTarget(value)) {
+    throw new Error('AssetLinkTarget 数据无效');
+  }
+  return Object.freeze({
+    linkId: value.linkId.trim(),
+    contentRevision: value.contentRevision.trim(),
+    target: cloneAssetTarget(value.target),
+  });
 }
 
 export function isCreateAssetReferenceInput(

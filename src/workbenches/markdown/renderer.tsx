@@ -305,6 +305,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const payload = isMarkdownWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
+  const [sourceRevision, setSourceRevision] = useState(payload?.revision ?? '');
   const initialViewState =
     payload?.state ??
     ({
@@ -993,6 +994,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         isMarkdownSaveResult,
         'Markdown Workbench 保存响应无效',
       );
+      setSourceRevision(result.payload.revision);
       setDiskSource(workingBufferRef.current);
       setSavedLineEnding(lineEndingRef.current);
       wysiwygEditedSinceMountRef.current = false;
@@ -1203,6 +1205,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           isMarkdownReopenResult,
           'Markdown Workbench 编码重开响应无效',
         );
+        setSourceRevision(result.payload.revision);
         workingBufferRef.current = result.payload.diskSource;
         lineEndingRef.current = result.payload.lineEnding;
         setWorkingBuffer(result.payload.diskSource);
@@ -1474,6 +1477,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       `${conversationOwnerId}.targets`,
       asset.id,
       {
+        sourceRevision,
         resolve(target) {
           return resolveMarkdownTargetRect(target);
         },
@@ -1552,6 +1556,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     resolveMarkdownTargetRect,
     revealMarkdownSelection,
     revealMarkdownText,
+    sourceRevision,
   ]);
 
   const rendererActions = useMemo(

@@ -167,6 +167,7 @@ function OfficePdfPreview({
       ...props.bootstrap,
       payload: {
         contentUrl: payload.contentUrl,
+        sourceRevision: payload.sourceRevision,
         viewState: clonePdfWorkbenchState(payload.viewState),
       },
     }),
