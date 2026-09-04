@@ -1,5 +1,6 @@
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
 import { AppError } from '../../main/errors/app-error';
+import { createStreamContentRevision } from '../../main/content/content-revision';
 import type {
   MainWorkbenchProvider,
   MaterializedWorkbenchContent,
@@ -188,6 +189,10 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
       throw new AppError('REGISTRATION_CONFLICT');
     }
 
+    const sourceRevision = await createStreamContentRevision(
+      handle.openByteStream.bind(handle),
+      context.signal,
+    );
     const previewHandle = this.editing
       ? new HtmlPreviewContentHandle(
           this.editing,
@@ -216,6 +221,7 @@ export class HtmlWorkbenchProvider implements MainWorkbenchProvider {
     return {
       payload: {
         contentUrl,
+        sourceRevision,
         ...(editingStatus ? { editing: editingStatus } : {}),
       },
       transportBindings: [

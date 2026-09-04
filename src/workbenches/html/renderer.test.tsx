@@ -55,6 +55,15 @@ const asset: AssetSnapshot = {
 };
 
 function render(payload: WorkbenchBootstrap['payload']) {
+  const normalizedPayload =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? {
+          ...(payload as Record<string, unknown>),
+          sourceRevision:
+            (payload as Record<string, unknown>).sourceRevision ??
+            'test-revision',
+        }
+      : payload;
   const bootstrap: WorkbenchBootstrap = {
     sessionId: 'session',
     workbenchId: HTML_WORKBENCH_ID,
@@ -63,7 +72,7 @@ function render(payload: WorkbenchBootstrap['payload']) {
     assetId: asset.id,
     mediaType: asset.mediaType,
     availability: 'available',
-    payload,
+    payload: normalizedPayload as WorkbenchBootstrap['payload'],
   };
 
   return renderToStaticMarkup(
@@ -146,6 +155,7 @@ async function mountHtmlWorkbench(options: {
     availability: 'available',
     payload: {
       contentUrl: 'learning-content://resource/html',
+      sourceRevision: 'test-revision',
       editing: options.initialEditingStatus ?? editingStatus,
     } as unknown as JsonValue,
   };

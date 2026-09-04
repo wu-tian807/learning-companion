@@ -25,6 +25,8 @@ export interface WorkbenchMaterializationContext {
 export interface MaterializedWorkbenchContent {
   readonly absolutePath: string;
   readonly mediaType: string;
+  /** Revision of the source content represented by this materialization. */
+  readonly sourceRevision?: string;
 }
 
 export interface WorkbenchProviderContext

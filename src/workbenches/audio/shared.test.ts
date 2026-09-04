@@ -45,6 +45,7 @@ describe('Audio Workbench shared protocol', () => {
     expect(
       isAudioWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: 'revision',
         viewState: DEFAULT_AUDIO_VIEW_STATE,
         subtitleState: DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
         subtitleSnapshot: EMPTY_AUDIO_SUBTITLE_SNAPSHOT,
@@ -108,6 +109,7 @@ describe('Audio Workbench shared protocol', () => {
   it('validates the optional speaker track at the bootstrap boundary', () => {
     const payload = {
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'revision',
       viewState: DEFAULT_AUDIO_VIEW_STATE,
       subtitleState: DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
       subtitleSnapshot: EMPTY_AUDIO_SUBTITLE_SNAPSHOT,

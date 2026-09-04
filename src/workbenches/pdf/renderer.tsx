@@ -582,14 +582,18 @@ export function PdfDocumentWorkbenchView({
     const dispose = registerWorkbenchTargetController(
       `${pdfWorkbenchManifest.id}:${bootstrap.sessionId}.targets`,
       asset.id,
-      { resolve, reveal },
+      {
+        sourceRevision: payload?.sourceRevision,
+        resolve,
+        reveal,
+      },
     );
     container?.addEventListener('scroll', notifyLayout, { passive: true });
     return () => {
       dispose();
       container?.removeEventListener('scroll', notifyLayout);
     };
-  }, [asset.id, bootstrap.sessionId, loadState.kind, mapTarget]);
+  }, [asset.id, bootstrap.sessionId, loadState.kind, mapTarget, payload?.sourceRevision]);
   const [summary, setSummary] = useState<PdfDocumentSummary>();
   const [outline, setOutline] = useState<readonly PdfOutlineItem[]>([]);
   const [viewState, setViewState] = useState<PdfWorkbenchViewState>(

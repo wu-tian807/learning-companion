@@ -134,7 +134,14 @@ function createContext(
         options.handle ??
         ({
           capabilities: new Set(['read-stream']),
-          openByteStream: vi.fn(),
+          openByteStream: vi.fn(async () => ({
+            stream: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close();
+              },
+            }),
+            byteLength: 0,
+          })),
           close: vi.fn(async () => undefined),
         } satisfies ContentHandle),
     },
@@ -176,6 +183,7 @@ describe('AudioWorkbenchProvider', () => {
     await expect(provider.open(context)).resolves.toEqual({
       payload: {
         contentUrl: 'learning-content://resource/audio',
+        sourceRevision: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
         viewState,
         subtitleState: { displayMode: 'source' },
         subtitleSnapshot: {

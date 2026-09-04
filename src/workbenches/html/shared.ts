@@ -56,6 +56,7 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
 
 export interface HtmlWorkbenchPayload {
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly editing?: HtmlEditingStatus;
 }
 
@@ -215,6 +216,9 @@ export function isHtmlWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     value.contentUrl.startsWith('learning-content://resource/') &&
+    typeof value.sourceRevision === 'string' &&
+    value.sourceRevision.trim().length > 0 &&
+    value.sourceRevision.length <= 256 &&
     (value.editing === undefined || isHtmlEditingStatus(value.editing))
   );
 }

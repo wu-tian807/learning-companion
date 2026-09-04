@@ -386,6 +386,7 @@ export function AudioWorkbenchView({
       `${audioWorkbenchManifest.id}:${bootstrap.sessionId}.targets`,
       asset.id,
       {
+        sourceRevision: payload?.sourceRevision,
         reveal(target) {
           const audio = audioRef.current;
           if (!audio) throw new Error('音频尚未就绪');
@@ -393,7 +394,7 @@ export function AudioWorkbenchView({
         },
       },
     );
-  }, [asset.id, bootstrap.sessionId, ready, seek]);
+  }, [asset.id, bootstrap.sessionId, payload?.sourceRevision, ready, seek]);
   const toggleMuted = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
