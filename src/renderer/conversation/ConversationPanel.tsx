@@ -636,7 +636,6 @@ export function ConversationPanel({
                 ref={inputRef}
                 rows={1}
                 value={state.draft}
-                disabled={state.busy}
                 placeholder={presentation.inputPlaceholder}
                 onChange={(event) => actions.setDraft(event.target.value)}
                 onKeyDown={(event) => {

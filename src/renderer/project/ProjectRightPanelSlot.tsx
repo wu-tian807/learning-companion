@@ -25,7 +25,18 @@ export function ProjectRightPanelSlot({
           : 'absolute inset-y-0 right-0 z-30 h-full min-h-0 w-[min(390px,calc(100%-20px))] min-w-0 shadow-2xl'
       }
     >
-      {panel === 'conversation' ? conversation : generation}
+      <div
+        className={panel === 'conversation' ? 'h-full min-h-0' : 'hidden'}
+        aria-hidden={panel !== 'conversation'}
+      >
+        {conversation}
+      </div>
+      <div
+        className={panel === 'generation' ? 'h-full min-h-0' : 'hidden'}
+        aria-hidden={panel !== 'generation'}
+      >
+        {generation}
+      </div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ describe('ProjectHeaderActions', () => {
       <ProjectHeaderActions
         leftOpen
         rightPanel={null}
+        conversationOpen={false}
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
@@ -42,6 +43,7 @@ describe('ProjectHeaderActions', () => {
       <ProjectHeaderActions
         leftOpen
         rightPanel={null}
+        conversationOpen={false}
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
@@ -58,11 +60,12 @@ describe('ProjectHeaderActions', () => {
     expect(chatButton).toContain('aria-expanded="false"');
   });
 
-  it('marks chat and generation as mutually exclusive views of one right slot', () => {
+  it('shows chat and generation as mutually exclusive right-panel views', () => {
     const markup = renderToStaticMarkup(
       <ProjectHeaderActions
         leftOpen
         rightPanel="conversation"
+        conversationOpen
         onToggleLeft={vi.fn()}
         onToggleGeneration={vi.fn()}
         onOpenWorkspace={vi.fn()}
