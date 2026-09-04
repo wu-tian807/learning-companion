@@ -6,7 +6,7 @@ import {
 import {
   interactionFromTextSelection,
 } from '../../shared/workbench/selection';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-target';
 import {
   createMarkdownRendererActions,
 } from './renderer-actions';
@@ -45,7 +45,7 @@ describe('Markdown renderer actions', () => {
     ).toEqual(['就选中内容问 AI']);
   });
 
-  it('asks AI with the selected text and its source anchor', async () => {
+  it('asks AI with the selected text and its source Target', async () => {
     const onAiExplain = vi.fn();
     const bundle = createMarkdownRendererActions({
       disabled: false,

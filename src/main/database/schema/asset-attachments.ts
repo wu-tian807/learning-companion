@@ -1,7 +1,7 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import type { ProjectWorkspaceLocalFileContentRef } from '../../../shared/assets';
-import type { AssetTarget } from '../../../shared/workbench/anchor';
+import type { AssetTarget } from '../../../shared/workbench/asset-target';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import { assets } from './assets';
 import { projects } from './projects';

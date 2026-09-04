@@ -135,6 +135,7 @@ describe('GenerationAssetReferencePreparer', () => {
     expect(reference).toMatchObject({
       assetId: asset.id,
       mediaType: asset.mediaType,
+      workbenchId: officeWorkbenchManifest.id,
       materializedMediaType: 'application/pdf',
       relativePath: 'references/sources-0001/source.pdf',
     });

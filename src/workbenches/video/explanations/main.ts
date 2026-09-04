@@ -3,11 +3,6 @@ import { CachedSubtitleTrackReader } from '../../media-subtitles/cached-subtitle
 import { MediaSubtitleRuntimeResolver } from '../../media-subtitles/external-libraries/media-subtitle-runtime';
 import { VideoConversationContextProvider } from '../conversation/video-conversation-context-provider';
 import {
-  VIDEO_FRAME_REGION_ANCHOR_TYPE,
-  VIDEO_FRAME_REGION_ANCHOR_VERSION,
-  isVideoFrameRegionAnchorV1,
-} from '../shared';
-import {
   registerVideoExplanationHandlers,
   removeVideoExplanationHandlers,
 } from './ipc';
@@ -20,12 +15,7 @@ import { VideoExplanationService } from './video-explanation-service';
 
 export const videoExplanationMainFeature = Object.freeze({
   id: 'builtin.video.frame-conversation',
-  registerAttachmentTypes({ attachments, anchors }): void {
-    anchors.register({
-      anchorType: VIDEO_FRAME_REGION_ANCHOR_TYPE,
-      version: VIDEO_FRAME_REGION_ANCHOR_VERSION,
-      isPayload: isVideoFrameRegionAnchorV1,
-    });
+  registerAttachmentTypes({ attachments }): void {
     attachments.register({
       typeId: VIDEO_EXPLANATION_ATTACHMENT_TYPE,
       version: VIDEO_EXPLANATION_ATTACHMENT_VERSION,

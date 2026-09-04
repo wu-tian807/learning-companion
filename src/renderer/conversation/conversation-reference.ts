@@ -1,4 +1,4 @@
-import { isAssetTarget, type AssetTarget } from '../../shared/workbench/anchor';
+import { parseAssetTarget, type AssetTarget } from '../../shared/workbench/asset-target';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { ConversationContextPresentation } from './conversation-contracts';
 
@@ -17,9 +17,10 @@ function text(value: unknown): string | undefined {
 export function conversationContextTarget(
   context: JsonValue | undefined,
 ): AssetTarget | undefined {
-  if (isAssetTarget(context)) return context;
+  const direct = parseAssetTarget(context);
+  if (direct) return direct;
   const target = record(context)?.target;
-  return isAssetTarget(target) ? target : undefined;
+  return parseAssetTarget(target);
 }
 
 export function conversationContextSourceRevision(
@@ -28,9 +29,9 @@ export function conversationContextSourceRevision(
   return text(record(context)?.sourceRevision);
 }
 
-function anchorDetail(target: AssetTarget): string | undefined {
+function targetDetail(target: AssetTarget): string | undefined {
   if (target.scope !== 'content') return undefined;
-  const payload = record(target.anchorPayload);
+  const payload = record(target.targetPayload);
   const quote = record(payload?.quote);
   const element = record(payload?.element);
   const firstRange = Array.isArray(payload?.ranges)
@@ -52,9 +53,9 @@ function anchorDetail(target: AssetTarget): string | undefined {
   );
 }
 
-function anchorLabel(target: AssetTarget, context: Record<string, unknown>): string {
+function targetLabel(target: AssetTarget, context: Record<string, unknown>): string {
   if (target.scope === 'asset') return '整份资料';
-  const payload = record(target.anchorPayload);
+  const payload = record(target.targetPayload);
   const pageNumber = Number.isSafeInteger(context.pageNumber)
     ? Number(context.pageNumber)
     : Number.isSafeInteger(payload?.pageNumber)
@@ -78,10 +79,10 @@ export function describeConversationContext(
   const target = conversationContextTarget(context);
   if (!target) return { label: '引用内容' };
   const selectedText = text(contextRecord.selectedText);
-  const detail = selectedText ?? anchorDetail(target);
+  const detail = selectedText ?? targetDetail(target);
   const previewDataUrl = text(contextRecord.previewDataUrl);
   return {
-    label: anchorLabel(target, contextRecord),
+    label: targetLabel(target, contextRecord),
     ...(detail ? { detail } : {}),
     ...(previewDataUrl ? { previewDataUrl } : {}),
   };

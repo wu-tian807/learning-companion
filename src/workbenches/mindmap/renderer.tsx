@@ -20,10 +20,12 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
+import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { EMPTY_WORKBENCH_INTERACTION } from '../../shared/workbench/interaction';
+import type { AssetTarget } from '../../shared/workbench/asset-target';
 import type { MindMapWorkbenchPayload } from './shared';
 import {
   cloneMindMapWorkbenchViewState,
@@ -41,6 +43,7 @@ import {
 } from './layout';
 import { createMindMapRendererActions } from './renderer-actions';
 import { mindMapEdgeTypes } from './renderer-edge';
+import { resolveMindMapTargetNavigation } from './target-navigation';
 import {
   createMindMapFlowEdges,
   createMindMapFlowNodes,
@@ -70,6 +73,7 @@ interface MindMapCanvasProps extends RendererWorkbenchViewProps {
 }
 
 function MindMapCanvas({
+  asset,
   bootstrap,
   executeCommand,
   onInteractionChange,
@@ -255,6 +259,48 @@ function MindMapCanvas({
     });
   }, []);
 
+  const revealTarget = useCallback((target: AssetTarget): boolean => {
+    if (target.scope !== 'content') return false;
+    const navigation = resolveMindMapTargetNavigation(
+      payload.document,
+      target,
+    );
+    if (!navigation) return false;
+    const current = latestViewStateRef.current;
+    const collapsedNodeIds = current.collapsedNodeIds.filter(
+      (nodeId) => !navigation.visibleNodeIds.includes(nodeId),
+    );
+    if (collapsedNodeIds.length !== current.collapsedNodeIds.length) {
+      commitViewState({
+        ...current,
+        collapsedNodeIds,
+      });
+    }
+
+    if (navigation.selectedNodeId) {
+      setSelectedNodeId(navigation.selectedNodeId);
+    }
+    onInteractionChange({ focus: target, inputs: [] });
+    window.requestAnimationFrame(() => {
+      void flowRef.current?.fitView({
+        nodes: navigation.nodeIds.map((id) => ({ id })),
+        padding: 0.4,
+        duration: 240,
+        maxZoom: 1.3,
+      });
+    });
+    return true;
+  }, [commitViewState, onInteractionChange, payload.document]);
+
+  useEffect(() => registerWorkbenchTargetController(
+    `${mindMapWorkbenchManifest.id}:${bootstrap.sessionId}.targets`,
+    asset.id,
+    {
+      sourceRevision: payload.revision,
+      reveal: revealTarget,
+    },
+  ), [asset.id, bootstrap.sessionId, payload.revision, revealTarget]);
+
   const reveal = useCallback(async () => {
     try {
       await onReveal();
@@ -271,7 +317,7 @@ function MindMapCanvas({
 
           return Boolean(
             isMindMapNodeTarget(focus) &&
-              payload.document.nodes[focus.anchorPayload.nodeId]
+              payload.document.nodes[focus.targetPayload.nodeId]
                 ?.childIds.length,
           );
         },

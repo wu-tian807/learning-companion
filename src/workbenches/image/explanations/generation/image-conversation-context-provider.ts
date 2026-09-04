@@ -11,7 +11,7 @@ import {
 import type { GenerationTaskProcessContext } from '../../../../main/generation/contracts/task-definition';
 import {
   IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isImageConversationContext,
+  parseImageConversationContext,
 } from '../image-conversation-context';
 import {
   IMAGE_EXPLANATION_ATTACHMENT_TYPE,
@@ -32,8 +32,8 @@ function sameTarget(
   left: ImageRegionTarget,
   right: ImageRegionTarget,
 ): boolean {
-  const a = left.anchorPayload;
-  const b = right.anchorPayload;
+  const a = left.targetPayload;
+  const b = right.targetPayload;
   return (
     a.x === b.x &&
     a.y === b.y &&
@@ -58,8 +58,11 @@ export class ImageConversationContextProvider
     if (!source || source.assetId !== context.instruction.assetId) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    const selection = context.instruction.context;
-    if (selection !== undefined && !isImageConversationContext(selection)) {
+    const rawSelection = context.instruction.context;
+    const selection = rawSelection === undefined
+      ? undefined
+      : parseImageConversationContext(rawSelection);
+    if (rawSelection !== undefined && selection === undefined) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     if (
@@ -88,7 +91,7 @@ export class ImageConversationContextProvider
         context.workspaces.primary.path,
       );
       context.signal?.throwIfAborted();
-      const region = selection.target.anchorPayload;
+      const region = selection.target.targetPayload;
       userMessage = Object.freeze({
         role: 'user',
         content: Object.freeze([
@@ -144,8 +147,10 @@ export class ImageConversationContextProvider
     answer: { readonly answer: string },
   ) {
     const source = context.assetReferences.source?.[0];
-    const selection = context.instruction.context;
-    if (!source || !isImageConversationContext(selection)) {
+    const selection = parseImageConversationContext(
+      context.instruction.context,
+    );
+    if (!source || !selection) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     const target = selection.target;

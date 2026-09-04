@@ -453,12 +453,12 @@ describe('HtmlWorkbenchView', () => {
     );
 
     expect(pending?.target).toBe(target);
-    expect(pending?.target.anchorPayload).toMatchObject({
+    expect(pending?.target.targetPayload).toMatchObject({
       element: { path: [1, 2], tagName: 'tr' },
     });
     expect(pending?.rect).toEqual(rect);
-    expect(pending?.target.anchorPayload).not.toHaveProperty('rect');
-    expect(pending?.target.anchorPayload).not.toHaveProperty('range');
+    expect(pending?.target.targetPayload).not.toHaveProperty('rect');
+    expect(pending?.target.targetPayload).not.toHaveProperty('range');
   });
 
   it('shows the target edit state and reloads exactly once after a successful replace', async () => {

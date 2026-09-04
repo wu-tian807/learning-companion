@@ -56,7 +56,7 @@ export function VideoExplanationPanel({
   readonly onContinueQuestion?: () => void;
   readonly continueQuestionDisabled?: boolean;
 }) {
-  const region = explanation.target.anchorPayload;
+  const region = explanation.target.targetPayload;
   return (
     <aside
       aria-label="视频 AI 解释"

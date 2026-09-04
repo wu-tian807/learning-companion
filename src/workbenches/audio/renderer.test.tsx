@@ -8,6 +8,7 @@ import {
   audioErrorMessage,
   AudioWorkbenchView,
   hasLoadedAudioMetadata,
+  revealAudioTarget,
 } from './renderer';
 import {
   AUDIO_WORKBENCH_ID,
@@ -16,6 +17,7 @@ import {
   cloneAudioSpeakerTrackSnapshot,
   cloneAudioSubtitleSnapshot,
   cloneAudioViewState,
+  createAudioTimeRangeTarget,
   DEFAULT_AUDIO_SUBTITLE_VIEW_STATE,
   DEFAULT_AUDIO_VIEW_STATE,
   EMPTY_AUDIO_DUBBING_SNAPSHOT,
@@ -78,6 +80,24 @@ describe('AudioWorkbenchView', () => {
     expect(hasLoadedAudioMetadata({ readyState: 0 })).toBe(false);
     expect(hasLoadedAudioMetadata({ readyState: 1 })).toBe(true);
     expect(audioErrorMessage({ code: 4 })).toContain('不支持');
+  });
+
+  it('reveals a Workbench-owned time-range Target without exposing media semantics to the bridge', () => {
+    const pause = vi.fn();
+    const seek = vi.fn();
+
+    expect(revealAudioTarget(
+      { readyState: 1, pause },
+      createAudioTimeRangeTarget(12.5, 18),
+      seek,
+    )).toBe(true);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(seek).toHaveBeenCalledWith(12.5);
+    expect(revealAudioTarget(
+      { readyState: 1, pause },
+      { scope: 'asset' },
+      seek,
+    )).toBe(false);
   });
 
   it('renders compact media controls and the transcript area', () => {

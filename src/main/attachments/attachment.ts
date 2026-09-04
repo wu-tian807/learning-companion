@@ -6,7 +6,7 @@ import type {
   AssetAttachment,
   AssetAttachmentContent,
 } from '../../shared/attachments/contracts';
-import { isAssetTarget } from '../../shared/workbench/anchor';
+import { parseAssetTarget } from '../../shared/workbench/asset-target';
 import { isJsonValue } from '../../shared/workbench/protocol';
 import { isUnixMilliseconds } from '../../shared/projects';
 
@@ -58,7 +58,8 @@ export function createAssetAttachment(
     throw new Error('AssetAttachment metadata 必须是 JSON 值');
   }
 
-  if (!isAssetTarget(input.target)) {
+  const target = parseAssetTarget(input.target);
+  if (!target) {
     throw new Error('AssetAttachment target 无效');
   }
 
@@ -68,7 +69,7 @@ export function createAssetAttachment(
     assetId: requireText(input.assetId, 'assetId'),
     typeId: requireText(input.typeId, 'typeId'),
     typeVersion: input.typeVersion,
-    target: input.target,
+    target,
     metadata: input.metadata,
     content: createAttachmentContent(input.content),
     createdTime: requireTimestamp(input.createdTime, 'createdTime'),

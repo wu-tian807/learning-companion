@@ -17,6 +17,9 @@ function createAssetReferencePrompt(
           `- alias=${JSON.stringify(reference.alias)}`,
           `name=${JSON.stringify(reference.name)}`,
           `mediaType=${JSON.stringify(reference.mediaType)}`,
+          ...(reference.workbenchId
+            ? [`workbenchId=${JSON.stringify(reference.workbenchId)}`]
+            : []),
           `materializedMediaType=${JSON.stringify(materializedMediaType)}`,
           `path=${JSON.stringify(reference.relativePath)}`,
         ].join('; '),

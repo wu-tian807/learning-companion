@@ -43,7 +43,7 @@ describe('HTML anchor commands', () => {
   it('rejects malformed anchors and unbounded lifecycle values', () => {
     expect(
       isHtmlAnchorHighlightCommandPayload({
-        target: { anchorType: 'html.quote' },
+        target: { targetType: 'html.quote' },
         revision: 0,
         reveal: true,
         durationMs: 2_800,

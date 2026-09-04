@@ -13,7 +13,7 @@ import type { AssetServiceApi } from '../../assets/asset-service';
 import { WorkbenchRegistry } from '../../workbench/workbench-registry';
 import { GenerationTask } from '../generation-task';
 import { MindMapGenerationInstruction } from '../../../workbenches/mindmap/generation/mindmap-generation-instruction';
-import { createMindMapGenerationTaskDefinitionV1 } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
+import { createMindMapGenerationTaskDefinition } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../../workbenches/unsupported/main';
 import { GenerationAssetReferencePreparer } from './generation-asset-reference-preparer';
 import { GenerationTaskPreparer } from './generation-task-preparer';
@@ -100,7 +100,7 @@ describe('GenerationTaskPreparer', () => {
         },
       ),
     );
-    const baseDefinition = createMindMapGenerationTaskDefinitionV1({
+    const baseDefinition = createMindMapGenerationTaskDefinition({
       async process() {
         return { resultAssetId: 'unused' };
       },

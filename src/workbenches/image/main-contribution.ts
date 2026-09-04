@@ -2,6 +2,7 @@ import { composeMainWorkbenchContribution } from '../../main/workbench/main-work
 import { imageExplanationMainFeature } from './explanations/main';
 import { ImageWorkbenchProvider } from './main';
 import { imageWorkbenchManifest } from './shared';
+import { imageTargetMainFeature } from './target-main-feature';
 
 export const imageMainWorkbenchContribution = composeMainWorkbenchContribution(
   imageWorkbenchManifest,
@@ -10,5 +11,5 @@ export const imageMainWorkbenchContribution = composeMainWorkbenchContribution(
       context.contentResourceService,
       context.stateDatabase,
     ),
-  [imageExplanationMainFeature],
+  [imageTargetMainFeature, imageExplanationMainFeature],
 );

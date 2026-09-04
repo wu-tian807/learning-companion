@@ -23,8 +23,8 @@ import type {
   CoreViewportRect,
 } from '../../shared/workbench/facilities/core-facilities';
 import type { JsonValue } from '../../shared/workbench/protocol';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
-import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
+import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
 import { SelectionFloatBar } from './conversation/SelectionFloatBar';
 import {
   createHtmlConversationContribution,
@@ -255,8 +255,8 @@ export function HtmlWorkbenchView({
 
   useEffect(() => {
     if (loadedFrameKey !== frameKey) return;
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
+    return registerWorkbenchTargetController(
+      `${conversationOwnerId}.targets`,
       asset.id,
       {
         async reveal(target) {
@@ -268,7 +268,7 @@ export function HtmlWorkbenchView({
     );
   }, [asset.id, conversationOwnerId, frameKey, loadedFrameKey, showHighlight]);
 
-  const explainSelection = useCallback((target: ContentAnchorTarget) => {
+  const explainSelection = useCallback((target: ContentAssetTarget) => {
     if (isHtmlAnchorTarget(target)) {
       void showHighlight(target, { reveal: false, durationMs: 0 }).catch(
         reportAnchorError,

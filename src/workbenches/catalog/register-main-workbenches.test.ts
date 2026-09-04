@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { AnchorRegistry } from '../../main/attachments/anchor-registry';
+import { AssetTargetRegistry } from '../../main/workbench/asset-target-registry';
 import { AttachmentRegistry } from '../../main/attachments/attachment-registry';
 import { GenerationTaskDefinitionRegistry } from '../../main/generation/generation-task-definition-registry';
 import { WorkbenchConversationContextProviderRegistry } from '../../main/conversation/workbench-conversation-context-provider-registry';
@@ -49,6 +49,7 @@ import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
   registerMainWorkbenchAgentFunctionTools,
+  registerMainWorkbenchAssetTargets,
   registerMainWorkbenchAttachments,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchExternalLibraries,
@@ -208,11 +209,12 @@ describe('Workbench contribution catalogs', () => {
     ).toBe(true);
   });
 
-  it('registers Attachment and Anchor extensions through the same Main catalog', () => {
+  it('registers Attachment and Target extensions through separate Main hooks', () => {
     const attachments = new AttachmentRegistry();
-    const anchors = new AnchorRegistry();
+    const targets = new AssetTargetRegistry();
 
-    registerMainWorkbenchAttachments({ attachments, anchors });
+    registerMainWorkbenchAssetTargets({ targets });
+    registerMainWorkbenchAttachments({ attachments });
 
     expect(
       attachments.get(
@@ -221,12 +223,12 @@ describe('Workbench contribution catalogs', () => {
       ),
     ).toBeDefined();
     expect(
-      anchors
+      targets
         .get(PDF_REGION_ANCHOR_TYPE, PDF_REGION_ANCHOR_VERSION)
         ?.isPayload({ pageNumber: 1, x: 0, y: 0, width: 0.5, height: 0.5 }),
     ).toBe(true);
     expect(
-      anchors.get(OFFICE_REGION_ANCHOR_TYPE, OFFICE_ANCHOR_VERSION)?.isPayload({
+      targets.get(OFFICE_REGION_ANCHOR_TYPE, OFFICE_ANCHOR_VERSION)?.isPayload({
         pageNumber: 1,
         x: 0.5,
         y: 0.5,
@@ -253,6 +255,8 @@ describe('Workbench contribution catalogs', () => {
     const conversationContexts =
       new WorkbenchConversationContextProviderRegistry();
     const workbenches = createRegisteredMainWorkbenchRegistry();
+    const targets = new AssetTargetRegistry();
+    registerMainWorkbenchAssetTargets({ targets });
 
     registerMainWorkbenchGeneration({
       definitions,
@@ -263,6 +267,7 @@ describe('Workbench contribution catalogs', () => {
       attachments: {} as never,
       externalLibraries: {} as never,
       projects: {} as never,
+      targets,
       workbenches,
     });
 

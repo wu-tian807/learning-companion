@@ -131,16 +131,16 @@ describe('HTML Main Facility adapters', () => {
     ).toBe(true);
     expect(payload).toMatchObject({
       target: {
-        anchorType: 'html.dom',
-        anchorPayload: {
+        targetType: 'html.dom',
+        targetPayload: {
           element: { path: [1, 0], tagName: 'p' },
         },
       },
       rect: { x: 10, y: 20, width: 120, height: 18 },
     });
     expect(
-      (payload as { target?: { anchorPayload?: Record<string, unknown> } })
-        .target?.anchorPayload,
+      (payload as { target?: { targetPayload?: Record<string, unknown> } })
+        .target?.targetPayload,
     ).not.toHaveProperty('frameUrl');
   });
 
@@ -159,7 +159,7 @@ describe('HTML Main Facility adapters', () => {
 
     expect(payload).toMatchObject({
       target: {
-        anchorPayload: { frameUrl: 'https://widgets.example.com/chapter' },
+        targetPayload: { frameUrl: 'https://widgets.example.com/chapter' },
       },
     });
   });

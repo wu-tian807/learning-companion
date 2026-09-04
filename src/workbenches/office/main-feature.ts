@@ -7,11 +7,7 @@ import {
   LIBREOFFICE_VERSION,
   libreOfficeDefinition,
 } from './external-libraries/libreoffice';
-import {
-  isPdfPageAnchorV1,
-  isPdfRegionAnchorV1,
-  isPdfTextRangeAnchorV1,
-} from '../pdf/shared';
+import { registerPagedDocumentTargets } from '../document-ai/paged-document-targets';
 import {
   OFFICE_ANCHOR_VERSION,
   OFFICE_PAGE_ANCHOR_TYPE,
@@ -24,10 +20,17 @@ export const officeArtifactMainFeature = Object.freeze({
   registerExternalLibraries({ libraries }): void {
     libraries.register(libreOfficeDefinition);
   },
-  registerAttachmentTypes({ anchors }): void {
-    anchors.register({ anchorType: OFFICE_TEXT_RANGE_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfTextRangeAnchorV1 });
-    anchors.register({ anchorType: OFFICE_PAGE_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfPageAnchorV1 });
-    anchors.register({ anchorType: OFFICE_REGION_ANCHOR_TYPE, version: OFFICE_ANCHOR_VERSION, isPayload: isPdfRegionAnchorV1 });
+  registerAssetTargets({ targets }): void {
+    registerPagedDocumentTargets(targets, {
+      workbenchId: 'builtin.office',
+      label: 'Office 文档预览',
+      types: {
+        textRange: OFFICE_TEXT_RANGE_ANCHOR_TYPE,
+        page: OFFICE_PAGE_ANCHOR_TYPE,
+        region: OFFICE_REGION_ANCHOR_TYPE,
+        version: OFFICE_ANCHOR_VERSION,
+      },
+    });
   },
   registerArtifactProducers({
     artifacts,

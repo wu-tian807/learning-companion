@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  type MindMapDocumentV1,
+  type MindMapDocument,
 } from './document';
 import {
   createMindMapExpandAllGrowthWave,
   createMindMapNodeGrowthWave,
 } from './renderer-growth';
 
-const document: MindMapDocumentV1 = {
+const document: MindMapDocument = {
   format: MIND_MAP_DOCUMENT_FORMAT,
   version: MIND_MAP_DOCUMENT_VERSION,
   title: 'Map',

@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import {
@@ -11,7 +11,7 @@ import type {
   EditorActionState,
   EditorContextMenuCapture,
 } from '../../renderer/workbench/editor/editor-action-adapter';
-import { createTextRangeTarget } from '../../shared/workbench/text-range-anchor';
+import { createTextRangeTarget } from '../../shared/workbench/text-range-target';
 import { MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE } from './shared';
 import type { MarkdownEditorAdapter } from './markdown-editor-adapter';
 
@@ -162,14 +162,14 @@ function createVisualSelectionTarget(
   editor?: MarkdownEditorAdapter,
   range?: Range,
   element?: HTMLElement,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   const base = {
     scope: 'content',
-    anchorType: MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
-    anchorVersion: 1,
+    targetType: MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
+    targetVersion: 1,
   } as const;
   if (!text || !editor || !range || !element) {
-    return { ...base, anchorPayload: { exact: text } };
+    return { ...base, targetPayload: { exact: text } };
   }
   const source = editor.getValue();
   const sourceRange = resolveMarkdownVisualSelectionSourceRange({
@@ -180,7 +180,7 @@ function createVisualSelectionTarget(
     renderedDocument: element.textContent ?? '',
   });
   if (!sourceRange) {
-    return { ...base, anchorPayload: { exact: text } };
+    return { ...base, targetPayload: { exact: text } };
   }
   const ranged = createTextRangeTarget(
     MARKDOWN_VISUAL_SELECTION_ANCHOR_TYPE,
@@ -189,9 +189,9 @@ function createVisualSelectionTarget(
   );
   return {
     ...ranged,
-    anchorPayload: {
+    targetPayload: {
       exact: text,
-      ...(ranged.anchorPayload as {
+      ...(ranged.targetPayload as {
         readonly ranges: readonly JsonValue[];
       }),
     },
@@ -429,7 +429,7 @@ export class MarkdownEditorActionAdapter
 function createVisualInteraction(
   text: string,
   includeEmptyTarget = false,
-  target: ContentAnchorTarget = createVisualSelectionTarget(text),
+  target: ContentAssetTarget = createVisualSelectionTarget(text),
 ): WorkbenchInteractionSnapshot {
   if (!text && !includeEmptyTarget) {
     return { inputs: [] };

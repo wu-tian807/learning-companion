@@ -35,8 +35,8 @@ describe('HTML Workbench Facility event mapper', () => {
     ).toMatchObject({
       text: '即时选区',
       target: {
-        anchorType: 'html.dom',
-        anchorPayload: {
+        targetType: 'html.dom',
+        targetPayload: {
           frameUrl: 'learning-content://resource/token',
           element: { path: [1, 0], tagName: 'p' },
         },

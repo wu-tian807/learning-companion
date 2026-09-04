@@ -47,7 +47,7 @@ function RegionOverview({
   readonly contentUrl: string;
   readonly explanation: ImageExplanationView;
 }) {
-  const region = explanation.target.anchorPayload;
+  const region = explanation.target.targetPayload;
   return (
     <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-black/20">
       <svg

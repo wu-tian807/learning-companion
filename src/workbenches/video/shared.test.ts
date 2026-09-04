@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cloneVideoSubtitleSnapshot,
   cloneVideoDubbingSnapshot,
+  createVideoFrameRegionTarget,
   createVideoGetDubbingSnapshotCommand,
   createVideoGetSubtitleSnapshotCommand,
   createVideoSaveViewStateCommand,
@@ -13,6 +14,7 @@ import {
   DEFAULT_VIDEO_VIEW_STATE,
   isVideoSaveViewStatePayload,
   isVideoDubbingSnapshot,
+  isVideoFrameRegionAnchorV1,
   isVideoTimeRangeAnchorV1,
   isVideoWorkbenchPayload,
   isVideoWorkbenchViewState,
@@ -126,12 +128,40 @@ describe('Video Workbench shared protocol', () => {
   it('creates a validated time-range anchor', () => {
     const target = createVideoTimeRangeTarget(12.5, 18);
 
-    expect(target.anchorType).toBe('video.time-range');
-    expect(isVideoTimeRangeAnchorV1(target.anchorPayload)).toBe(true);
+    expect(target.targetType).toBe('video.time-range');
+    expect(isVideoTimeRangeAnchorV1(target.targetPayload)).toBe(true);
     expect(
       isVideoTimeRangeAnchorV1({
         startSeconds: 20,
         endSeconds: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it('validates bounded video-frame display dimensions', () => {
+    const validPayload = {
+      timeSeconds: 272.275629,
+      x: 0.18,
+      y: 0.14,
+      width: 0.64,
+      height: 0.86,
+      sourceWidth: 1280,
+      sourceHeight: 719,
+    } as const;
+    const target = createVideoFrameRegionTarget(validPayload);
+
+    expect(isVideoFrameRegionAnchorV1(target.targetPayload)).toBe(true);
+    expect(
+      isVideoFrameRegionAnchorV1({
+        ...validPayload,
+        sourceWidth: 32_769,
+      }),
+    ).toBe(false);
+    expect(
+      isVideoFrameRegionAnchorV1({
+        ...validPayload,
+        sourceWidth: 10_000,
+        sourceHeight: 10_001,
       }),
     ).toBe(false);
   });

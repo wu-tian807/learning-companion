@@ -1,7 +1,7 @@
 import {
   isAssetTarget,
-  type ContentAnchorTarget,
-} from './anchor';
+  type ContentAssetTarget,
+} from './asset-target';
 import {
   CORE_FACILITY_VERSION,
   CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
@@ -13,7 +13,7 @@ import type {
 
 export interface WorkbenchSelectionSnapshot {
   readonly text: string;
-  readonly target: ContentAnchorTarget;
+  readonly target: ContentAssetTarget;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,7 +78,7 @@ export function findTextSelectionInput(
 
 export function interactionFromTextSelection(
   selection: WorkbenchSelectionSnapshot | undefined,
-  focus: ContentAnchorTarget | undefined = selection?.target,
+  focus: ContentAssetTarget | undefined = selection?.target,
 ): WorkbenchInteractionSnapshot {
   return {
     ...(focus ? { focus } : {}),

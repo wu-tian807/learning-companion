@@ -23,9 +23,9 @@ function context(
         payload: { text: '选区' },
         target: {
         scope: 'content',
-        anchorType: 'pdf.text-range',
-        anchorVersion: 1,
-        anchorPayload: { pageNumber: 1 },
+        targetType: 'pdf.text-range',
+        targetVersion: 1,
+        targetPayload: { pageNumber: 1 },
       },
       },
     ],

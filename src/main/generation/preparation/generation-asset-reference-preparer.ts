@@ -204,6 +204,7 @@ export class GenerationAssetReferencePreparer
             assetId: asset.id,
             name: asset.name,
             mediaType: asset.mediaType,
+            workbenchId: workbenchSelection.provider.manifest.id,
             materializedMediaType:
               materializedContent?.mediaType ?? asset.mediaType,
             contentRevision,

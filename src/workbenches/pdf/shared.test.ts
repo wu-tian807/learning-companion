@@ -8,6 +8,7 @@ import {
   createPdfTextRangeTarget,
   DEFAULT_PDF_WORKBENCH_STATE,
   isPdfDocumentIdentity,
+  isPdfContentTarget,
   isPdfPageAnchorV1,
   isPdfSaveViewStatePayload,
   isPdfSaveViewStateResult,
@@ -27,7 +28,7 @@ describe('PDF Workbench shared protocol', () => {
     expect(pdfWorkbenchManifest.requiredContentCapabilities).toEqual([
       'read-stream',
     ]);
-    expect(pdfWorkbenchManifest.supportedAnchorTypes).toEqual([
+    expect(pdfWorkbenchManifest.supportedTargetTypes).toEqual([
       'pdf.text-range',
       'pdf.page',
       'pdf.region',
@@ -102,12 +103,17 @@ describe('PDF text range anchor', () => {
 
     expect(target).toEqual({
       scope: 'content',
-      anchorType: 'pdf.page',
-      anchorVersion: 1,
-      anchorPayload: { pageNumber: 7 },
+      targetType: 'pdf.page',
+      targetVersion: 1,
+      targetPayload: { pageNumber: 7 },
     });
-    expect(isPdfPageAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isPdfPageAnchorV1(target.targetPayload)).toBe(true);
     expect(isPdfPageAnchorV1({ pageNumber: 0 })).toBe(false);
+    expect(isPdfContentTarget(target)).toBe(true);
+    expect(isPdfContentTarget({
+      ...target,
+      targetType: 'office.preview.page',
+    })).toBe(false);
   });
 
   it('normalizes PDF.js fingerprints into a stable document identity', () => {
@@ -145,9 +151,9 @@ describe('PDF text range anchor', () => {
     expect(isPdfTextRangeAnchorV1(anchor)).toBe(true);
     expect(createPdfTextRangeTarget(anchor)).toEqual({
       scope: 'content',
-      anchorType: 'pdf.text-range',
-      anchorVersion: 1,
-      anchorPayload: anchor,
+      targetType: 'pdf.text-range',
+      targetVersion: 1,
+      targetPayload: anchor,
     });
   });
 

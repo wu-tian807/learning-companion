@@ -144,9 +144,9 @@ export function isImageRegionTarget(
   return (
     isRecord(value) &&
     value.scope === 'content' &&
-    value.anchorType === IMAGE_REGION_ANCHOR_TYPE &&
-    value.anchorVersion === IMAGE_REGION_ANCHOR_VERSION &&
-    isImageRegionAnchorV1(value.anchorPayload)
+    value.targetType === IMAGE_REGION_ANCHOR_TYPE &&
+    value.targetVersion === IMAGE_REGION_ANCHOR_VERSION &&
+    isImageRegionAnchorV1(value.targetPayload)
   );
 }
 

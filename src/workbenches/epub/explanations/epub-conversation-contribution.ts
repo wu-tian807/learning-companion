@@ -4,12 +4,13 @@ import {
 } from './shared';
 import {
   EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isEpubConversationContext,
+  parseEpubConversationContext,
 } from './epub-conversation-context';
 
 export {
   createEpubConversationContext,
   isEpubConversationContext,
+  parseEpubConversationContext,
   type EpubConversationContext,
 } from './epub-conversation-context';
 
@@ -20,10 +21,11 @@ export function createEpubConversationContribution(): WorkbenchConversationContr
     contextRequired: true,
     contextRequiredMessage:
       '请先在 EPUB 中选中一段文字再开始问答',
-    isContext: isEpubConversationContext,
+    isContext: (context) =>
+      parseEpubConversationContext(context) !== undefined,
     shouldCommitAnswer(taskInput) {
       return (
-        isEpubConversationContext(taskInput.context) &&
+        parseEpubConversationContext(taskInput.context) !== undefined &&
         taskInput.question.trim() === EPUB_DEFAULT_EXPLANATION_QUESTION
       );
     },

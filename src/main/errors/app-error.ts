@@ -23,7 +23,7 @@ export type AppErrorCode =
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_TYPE_NOT_REGISTERED'
   | 'ATTACHMENT_METADATA_INVALID'
-  | 'ATTACHMENT_ANCHOR_INVALID'
+  | 'ASSET_TARGET_INVALID'
   | 'PROJECT_NOT_FOUND'
   | 'PROJECT_WORKSPACE_UNAVAILABLE'
   | 'PROJECT_WORKSPACE_CONFLICT'
@@ -205,7 +205,7 @@ const errorPolicies: Record<AppErrorCode, ErrorPolicy> = {
     retryable: true,
     logLevel: 'error',
   },
-  ATTACHMENT_ANCHOR_INVALID: {
+  ASSET_TARGET_INVALID: {
     kind: 'internal',
     userMessage: '标注位置无效，请重新选择内容。',
     retryable: true,

@@ -78,7 +78,7 @@ export function findEpubReadingNoteAtTarget(
 ): EpubReadingNoteView | undefined {
   return notes.find(
     (note) =>
-      note.target.anchorPayload.cfiRange === target.anchorPayload.cfiRange,
+      note.target.targetPayload.cfiRange === target.targetPayload.cfiRange,
   );
 }
 

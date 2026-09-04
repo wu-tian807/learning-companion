@@ -1,4 +1,7 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import {
+  isAssetTarget,
+  type ContentAssetTarget,
+} from '../../shared/workbench/asset-target';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -32,7 +35,7 @@ export const pdfWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['application/pdf'],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [
+  supportedTargetTypes: [
     PDF_TEXT_RANGE_ANCHOR_TYPE,
     PDF_PAGE_ANCHOR_TYPE,
     PDF_REGION_ANCHOR_TYPE,
@@ -349,12 +352,12 @@ export function createPdfTextRangeAnchor(
 
 export function createPdfTextRangeTarget(
   anchor: PdfTextRangeAnchorV1,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: PDF_TEXT_RANGE_ANCHOR_TYPE,
-    anchorVersion: PDF_TEXT_RANGE_ANCHOR_VERSION,
-    anchorPayload: createPdfTextRangeAnchor(anchor),
+    targetType: PDF_TEXT_RANGE_ANCHOR_TYPE,
+    targetVersion: PDF_TEXT_RANGE_ANCHOR_VERSION,
+    targetPayload: createPdfTextRangeAnchor(anchor),
   };
 }
 
@@ -370,12 +373,12 @@ export function isPdfPageAnchorV1(
 
 export function createPdfPageTarget(
   pageNumber: number,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: PDF_PAGE_ANCHOR_TYPE,
-    anchorVersion: PDF_PAGE_ANCHOR_VERSION,
-    anchorPayload: { pageNumber },
+    targetType: PDF_PAGE_ANCHOR_TYPE,
+    targetVersion: PDF_PAGE_ANCHOR_VERSION,
+    targetPayload: { pageNumber },
   };
 }
 
@@ -398,17 +401,37 @@ export function isPdfRegionAnchorV1(
 
 export function createPdfRegionTarget(
   region: PdfRegionAnchorV1,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   if (!isPdfRegionAnchorV1(region)) {
     throw new TypeError('PDF region Anchor is invalid');
   }
 
   return {
     scope: 'content',
-    anchorType: PDF_REGION_ANCHOR_TYPE,
-    anchorVersion: PDF_REGION_ANCHOR_VERSION,
-    anchorPayload: { ...region },
+    targetType: PDF_REGION_ANCHOR_TYPE,
+    targetVersion: PDF_REGION_ANCHOR_VERSION,
+    targetPayload: { ...region },
   };
+}
+
+export function isPdfContentTarget(
+  value: unknown,
+): value is ContentAssetTarget {
+  if (!isAssetTarget(value) || value.scope !== 'content') {
+    return false;
+  }
+
+  return (
+    (value.targetType === PDF_TEXT_RANGE_ANCHOR_TYPE &&
+      value.targetVersion === PDF_TEXT_RANGE_ANCHOR_VERSION &&
+      isPdfTextRangeAnchorV1(value.targetPayload)) ||
+    (value.targetType === PDF_PAGE_ANCHOR_TYPE &&
+      value.targetVersion === PDF_PAGE_ANCHOR_VERSION &&
+      isPdfPageAnchorV1(value.targetPayload)) ||
+    (value.targetType === PDF_REGION_ANCHOR_TYPE &&
+      value.targetVersion === PDF_REGION_ANCHOR_VERSION &&
+      isPdfRegionAnchorV1(value.targetPayload))
+  );
 }
 
 export function matchesPdfDocumentIdentity(

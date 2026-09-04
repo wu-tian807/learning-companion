@@ -1490,7 +1490,7 @@
               tag: "LOCAL SEMANTICS",
               caption: "referenceId / linkIds + AssetTarget",
               summary: "哪个节点或 Frame 对应哪条通用关系，保存在 Mind Map document 的 associations.nodes / frames 中，而不是扩展通用表。",
-              keys: ["referenceId", "sourceTarget", "linkIds"],
+              keys: ["referenceId", "sourceRevision", "target", "linkIds"],
               files: ["src/workbenches/mindmap/document.ts", "src/workbenches/mindmap/association-mapper.ts"],
               col: 9,
               row: 4,
@@ -2271,7 +2271,7 @@
             N("definitions", "TaskDefinition Registry", {
               tag: "BUSINESS DEFINITIONS",
               caption: "definitionId@version → TaskDefinition",
-              summary: "校验并保存具体生成任务的声明与 process。当前注册 mindmap.generate@1。",
+              summary: "校验并保存具体生成任务的声明与 process。当前只注册 mindmap.generate@3。",
               files: ["src/main/generation/generation-task-definition-registry.ts", "src/workbenches/mindmap/generation/mindmap-generation-task-definition.ts"],
               child: "task-definition",
               col: 5,
@@ -2331,7 +2331,7 @@
             N("current-global", "当前：Mind Map Global Entry", {
               tag: "IMPLEMENTED · SPECIALIZED",
               caption: "GenerationCenter + MindMap dialog + hook",
-              summary: "从 Project 的 selected sources 构造 mindmap.generate@1 请求。它能工作，但不应继续复制成第二套、第三套硬编码工具。",
+              summary: "从 Project 的 selected sources 构造 mindmap.generate@3 请求。它能工作，但不应继续复制成第二套、第三套硬编码工具。",
               files: ["src/renderer/generation/GenerationCenter.tsx", "src/renderer/generation/MindMapGenerationDialog.tsx", "src/renderer/generation/use-generation-tasks.ts"],
               col: 1,
               row: 1,

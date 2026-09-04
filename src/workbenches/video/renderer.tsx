@@ -15,7 +15,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
+import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { createVideoRendererActions } from './renderer-actions';
@@ -60,6 +60,7 @@ import {
   isVideoSubtitleSnapshot,
   isVideoSaveViewStateResult,
   isVideoFrameRegionTarget,
+  isVideoTimeRangeTarget,
   isVideoWorkbenchPayload,
   type VideoSubtitleDisplayMode,
   type VideoSubtitleSnapshot,
@@ -363,10 +364,10 @@ export function VideoWorkbenchView({
       }
       video.pause();
       const targetTime = Math.min(
-        explanation.target.anchorPayload.timeSeconds,
+        explanation.target.targetPayload.timeSeconds,
         Number.isFinite(video.duration)
           ? Math.max(0, video.duration)
-          : explanation.target.anchorPayload.timeSeconds,
+          : explanation.target.targetPayload.timeSeconds,
       );
       video.currentTime = targetTime;
       setCurrentTime(targetTime);
@@ -377,29 +378,39 @@ export function VideoWorkbenchView({
   );
   useEffect(() => {
     if (loadState.kind !== 'ready') return;
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
+    return registerWorkbenchTargetController(
+      `${conversationOwnerId}.targets`,
       asset.id,
       {
         sourceRevision,
         reveal(target) {
-          if (!isVideoFrameRegionTarget(target)) return false;
+          if (
+            !isVideoFrameRegionTarget(target) &&
+            !isVideoTimeRangeTarget(target)
+          ) return false;
           const video = videoRef.current;
           if (!video || !hasLoadedVideoMetadata(video)) {
             throw new Error('视频尚未就绪');
           }
           video.pause();
+          const requestedTime = isVideoFrameRegionTarget(target)
+            ? target.targetPayload.timeSeconds
+            : target.targetPayload.startSeconds;
           const targetTime = Math.min(
-            target.anchorPayload.timeSeconds,
+            requestedTime,
             Number.isFinite(video.duration)
               ? Math.max(0, video.duration)
-              : target.anchorPayload.timeSeconds,
+              : requestedTime,
           );
           video.currentTime = targetTime;
           setCurrentTime(targetTime);
-          commitConversationContext(
-            createVideoConversationContext(target, sourceRevision),
-          );
+          if (isVideoFrameRegionTarget(target)) {
+            commitConversationContext(
+              createVideoConversationContext(target, sourceRevision),
+            );
+          } else {
+            releaseConversationContext(undefined);
+          }
           return true;
         },
       },
@@ -409,6 +420,7 @@ export function VideoWorkbenchView({
     commitConversationContext,
     conversationOwnerId,
     loadState.kind,
+    releaseConversationContext,
     sourceRevision,
   ]);
   const conversationContribution = useMemo(
@@ -1014,10 +1026,10 @@ export function VideoWorkbenchView({
               aria-label="已选择的视频画面区域"
               className="pointer-events-none absolute border-2 border-indigo-300 bg-indigo-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
               style={{
-                left: `${selectedConversationContext.target.anchorPayload.x * 100}%`,
-                top: `${selectedConversationContext.target.anchorPayload.y * 100}%`,
-                width: `${selectedConversationContext.target.anchorPayload.width * 100}%`,
-                height: `${selectedConversationContext.target.anchorPayload.height * 100}%`,
+                left: `${selectedConversationContext.target.targetPayload.x * 100}%`,
+                top: `${selectedConversationContext.target.targetPayload.y * 100}%`,
+                width: `${selectedConversationContext.target.targetPayload.width * 100}%`,
+                height: `${selectedConversationContext.target.targetPayload.height * 100}%`,
               }}
             />
           )}
@@ -1037,9 +1049,9 @@ export function VideoWorkbenchView({
             <div
               className="pointer-events-none absolute right-2 left-2 z-50 flex justify-center"
               style={{
-                top: `${selectedConversationContext.target.anchorPayload.y * 100}%`,
+                top: `${selectedConversationContext.target.targetPayload.y * 100}%`,
                 transform:
-                  selectedConversationContext.target.anchorPayload.y >= 0.12
+                  selectedConversationContext.target.targetPayload.y >= 0.12
                     ? 'translateY(calc(-100% - 8px))'
                     : 'translateY(8px)',
               }}

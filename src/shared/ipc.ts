@@ -51,7 +51,7 @@ import type {
 } from "./workbench/protocol";
 import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-event";
 import type { AssetAttachment } from "./attachments/contracts";
-import type { AssetTarget } from "./workbench/anchor";
+import type { AssetTarget } from "./workbench/asset-target";
 import type { JsonValue } from "./workbench/protocol";
 import type {
   ConversationRecord,

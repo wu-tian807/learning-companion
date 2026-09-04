@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -27,7 +27,7 @@ export const epubWorkbenchManifest: AssetWorkbenchManifest<
   protocolVersion: WORKBENCH_PROTOCOL_VERSION,
   supportedMediaTypes: ['application/epub+zip'],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [EPUB_CFI_RANGE_ANCHOR_TYPE],
+  supportedTargetTypes: [EPUB_CFI_RANGE_ANCHOR_TYPE],
   facilities: [
     rendererTransportFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
@@ -77,10 +77,10 @@ export interface EpubCfiRangeAnchorV1 {
   };
 }
 
-export interface EpubCfiRangeTarget extends ContentAnchorTarget {
-  readonly anchorType: typeof EPUB_CFI_RANGE_ANCHOR_TYPE;
-  readonly anchorVersion: typeof EPUB_CFI_RANGE_ANCHOR_VERSION;
-  readonly anchorPayload: JsonValue & EpubCfiRangeAnchorV1;
+export interface EpubCfiRangeTarget extends ContentAssetTarget {
+  readonly targetType: typeof EPUB_CFI_RANGE_ANCHOR_TYPE;
+  readonly targetVersion: typeof EPUB_CFI_RANGE_ANCHOR_VERSION;
+  readonly targetPayload: JsonValue & EpubCfiRangeAnchorV1;
 }
 
 export const DEFAULT_EPUB_VIEW_STATE: Readonly<EpubWorkbenchViewState> =
@@ -202,9 +202,9 @@ export function isEpubCfiRangeTarget(
   return (
     isRecord(value) &&
     value.scope === 'content' &&
-    value.anchorType === EPUB_CFI_RANGE_ANCHOR_TYPE &&
-    value.anchorVersion === EPUB_CFI_RANGE_ANCHOR_VERSION &&
-    isEpubCfiRangeAnchorV1(value.anchorPayload)
+    value.targetType === EPUB_CFI_RANGE_ANCHOR_TYPE &&
+    value.targetVersion === EPUB_CFI_RANGE_ANCHOR_VERSION &&
+    isEpubCfiRangeAnchorV1(value.targetPayload)
   );
 }
 
@@ -213,9 +213,9 @@ export function createEpubCfiRangeTarget(
 ): EpubCfiRangeTarget {
   return {
     scope: 'content',
-    anchorType: EPUB_CFI_RANGE_ANCHOR_TYPE,
-    anchorVersion: EPUB_CFI_RANGE_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: EPUB_CFI_RANGE_ANCHOR_TYPE,
+    targetVersion: EPUB_CFI_RANGE_ANCHOR_VERSION,
+    targetPayload: {
       cfiRange: anchor.cfiRange,
       quote: {
         exact: anchor.quote.exact,

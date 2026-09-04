@@ -8,7 +8,7 @@ import {
 import { openSearchPanel } from '@codemirror/search';
 import type { EditorView } from '@codemirror/view';
 
-import type { ContentAnchorTarget } from '../../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../../shared/workbench/asset-target';
 import type { WorkbenchInteractionSnapshot } from '../../../shared/workbench/interaction';
 import {
   interactionFromTextSelection,
@@ -37,7 +37,7 @@ export interface CodeMirrorEditorActionAdapterOptions {
   readonly isEditable: () => boolean;
   readonly createTarget: (
     input: CodeMirrorSelectionTargetInput,
-  ) => ContentAnchorTarget;
+  ) => ContentAssetTarget;
   readonly clipboard?: {
     readonly readText: () => Promise<string>;
     readonly writeText: (text: string) => Promise<void>;

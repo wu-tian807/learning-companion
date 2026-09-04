@@ -1,5 +1,5 @@
 import type { WorkbenchActionBundle } from '../../renderer/workbench/actions/workbench-action-bundle';
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import { findTextSelectionInput } from '../../shared/workbench/selection';
 import type {
   PlainTextEncoding,
@@ -16,7 +16,7 @@ export interface PlainTextRendererActionsOptions {
   readonly hasSelection: () => boolean;
   readonly onAiExplain: (
     text: string,
-    anchor: ContentAnchorTarget,
+    target: ContentAssetTarget,
   ) => Promise<void> | void;
   readonly onSetEncoding: (encoding: PlainTextEncoding) => Promise<void>;
   readonly onSetLineEnding: (
@@ -82,13 +82,13 @@ export function createPlainTextRendererActions({
         enabled: hasSelection,
         execute: (context) => {
           const selection = findTextSelectionInput(context);
-          const anchor = context.focus;
+          const target = context.focus;
 
-          if (!selection?.text || !anchor) {
+          if (!selection?.text || !target) {
             return;
           }
 
-          return onAiExplain(selection.text, anchor);
+          return onAiExplain(selection.text, target);
         },
       },
       ...(['lf', 'crlf'] as const).map((candidate) => ({

@@ -25,7 +25,7 @@ import {
 import {
   createImageConversationContext,
   IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
-  isImageConversationContext,
+  parseImageConversationContext,
 } from './image-conversation-context';
 import {
   IMAGE_EXPLANATION_ATTACHMENT_TYPE,
@@ -91,8 +91,8 @@ function sameTarget(
   left: ImageExplanationView['target'],
   right: ImageExplanationView['target'],
 ): boolean {
-  const a = left.anchorPayload;
-  const b = right.anchorPayload;
+  const a = left.targetPayload;
+  const b = right.targetPayload;
   return (
     a.x === b.x &&
     a.y === b.y &&
@@ -354,7 +354,7 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     const instruction = this.taskInstruction(snapshot);
     return instruction?.commitAnswer &&
       instruction.assetId !== undefined &&
-      isImageConversationContext(instruction.context)
+      parseImageConversationContext(instruction.context) !== undefined
       ? { projectId: snapshot.projectId, assetId: instruction.assetId }
       : undefined;
   }
@@ -363,11 +363,13 @@ export class ImageExplanationService implements ImageExplanationServiceApi {
     snapshot: GenerationTaskSnapshot,
   ): ImageExplanationTaskView | undefined {
     const instruction = this.taskInstruction(snapshot);
-    const conversationContext = instruction?.context;
+    const conversationContext = parseImageConversationContext(
+      instruction?.context,
+    );
     if (
       !instruction?.commitAnswer ||
       instruction.assetId === undefined ||
-      !isImageConversationContext(conversationContext)
+      !conversationContext
     )
       return undefined;
     const status = new GenerationTask(snapshot).getStatus();

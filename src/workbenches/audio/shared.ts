@@ -1,4 +1,4 @@
-import type { ContentAnchorTarget } from '../../shared/workbench/anchor';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   WORKBENCH_PROTOCOL_VERSION,
   type AssetWorkbenchManifest,
@@ -69,7 +69,7 @@ export const audioWorkbenchManifest: AssetWorkbenchManifest<
     'audio/webm',
   ],
   requiredContentCapabilities: ['read-stream'],
-  supportedAnchorTypes: [AUDIO_TIME_RANGE_ANCHOR_TYPE],
+  supportedTargetTypes: [AUDIO_TIME_RANGE_ANCHOR_TYPE],
   facilities: [
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
@@ -333,15 +333,31 @@ export function isAudioTimeRangeAnchorV1(
   );
 }
 
+export function isAudioTimeRangeTarget(
+  value: unknown,
+): value is ContentAssetTarget & {
+  readonly targetType: typeof AUDIO_TIME_RANGE_ANCHOR_TYPE;
+  readonly targetVersion: typeof AUDIO_TIME_RANGE_ANCHOR_VERSION;
+  readonly targetPayload: JsonValue & AudioTimeRangeAnchorV1;
+} {
+  return (
+    isRecord(value) &&
+    value.scope === 'content' &&
+    value.targetType === AUDIO_TIME_RANGE_ANCHOR_TYPE &&
+    value.targetVersion === AUDIO_TIME_RANGE_ANCHOR_VERSION &&
+    isAudioTimeRangeAnchorV1(value.targetPayload)
+  );
+}
+
 export function createAudioTimeRangeTarget(
   startSeconds: number,
   endSeconds = startSeconds,
-): ContentAnchorTarget {
+): ContentAssetTarget {
   return {
     scope: 'content',
-    anchorType: AUDIO_TIME_RANGE_ANCHOR_TYPE,
-    anchorVersion: AUDIO_TIME_RANGE_ANCHOR_VERSION,
-    anchorPayload: {
+    targetType: AUDIO_TIME_RANGE_ANCHOR_TYPE,
+    targetVersion: AUDIO_TIME_RANGE_ANCHOR_VERSION,
+    targetPayload: {
       startSeconds,
       endSeconds,
     },

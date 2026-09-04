@@ -15,7 +15,7 @@ describe('EPUB Workbench shared protocol', () => {
     expect(epubWorkbenchManifest.supportedMediaTypes).toEqual([
       'application/epub+zip',
     ]);
-    expect(epubWorkbenchManifest.supportedAnchorTypes).toEqual([
+    expect(epubWorkbenchManifest.supportedTargetTypes).toEqual([
       'epub.cfi-range',
     ]);
   });
@@ -50,7 +50,7 @@ describe('EPUB Workbench shared protocol', () => {
     };
     const target = createEpubCfiRangeTarget(anchor);
 
-    expect(isEpubCfiRangeAnchorV1(target.anchorPayload)).toBe(true);
+    expect(isEpubCfiRangeAnchorV1(target.targetPayload)).toBe(true);
     expect(isEpubCfiRangeTarget(target)).toBe(true);
   });
 });

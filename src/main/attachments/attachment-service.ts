@@ -4,12 +4,12 @@ import type {
   AssetAttachment,
   AssetAttachmentContent,
 } from '../../shared/attachments/contracts';
-import type { AssetTarget } from '../../shared/workbench/anchor';
+import type { AssetTarget } from '../../shared/workbench/asset-target';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AssetLookup } from '../assets/asset-database';
 import { AppError } from '../errors/app-error';
 import { createAssetAttachment } from './attachment';
-import type { AnchorRegistry } from './anchor-registry';
+import type { AssetTargetRegistryApi } from '../workbench/asset-target-registry';
 import type { AttachmentContentFile } from './attachment-content-file';
 import type { AttachmentDatabaseApi } from './attachment-database';
 import type { AttachmentRegistry } from './attachment-registry';
@@ -82,7 +82,7 @@ export class AttachmentService implements AttachmentServiceApi {
   constructor(
     private readonly database: AttachmentDatabaseApi,
     private readonly registry: AttachmentRegistry,
-    private readonly anchors: AnchorRegistry,
+    private readonly targets: AssetTargetRegistryApi,
     private readonly contentFiles: AttachmentContentFile,
     private readonly assets: AssetLookup,
     dependencies: Partial<AttachmentServiceDependencies> = {},
@@ -258,12 +258,12 @@ export class AttachmentService implements AttachmentServiceApi {
     if (target.scope === 'asset') {
       return;
     }
-    const definition = this.anchors.get(
-      target.anchorType,
-      target.anchorVersion,
+    const definition = this.targets.get(
+      target.targetType,
+      target.targetVersion,
     );
-    if (!definition || !definition.isPayload(target.anchorPayload)) {
-      throw new AppError('ATTACHMENT_ANCHOR_INVALID');
+    if (!definition || !definition.isPayload(target.targetPayload)) {
+      throw new AppError('ASSET_TARGET_INVALID');
     }
   }
 

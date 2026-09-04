@@ -17,7 +17,7 @@ import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
-import { registerWorkbenchAnchorController } from '../../renderer/workbench/host/workbench-anchor-bridge';
+import { registerWorkbenchTargetController } from '../../renderer/workbench/host/workbench-target-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { userMessageFromError } from '../../shared/ipc-error';
@@ -28,6 +28,7 @@ import {
   DEFAULT_IMAGE_VIEW_STATE,
   imageWorkbenchManifest,
   isImageSaveViewStateResult,
+  isImageViewportTarget,
   isImageWorkbenchPayload,
   type ImageWorkbenchRotation,
   type ImageWorkbenchViewMode,
@@ -170,7 +171,7 @@ function targetPolygon(
   if (!viewer) return undefined;
   const item = getImageItem(viewer);
   if (!item) return undefined;
-  const region = target.anchorPayload;
+  const region = target.targetPayload;
   const left = region.x * region.sourceWidth;
   const top = region.y * region.sourceHeight;
   const right = left + region.width * region.sourceWidth;
@@ -447,20 +448,29 @@ export function ImageWorkbenchView({
     `${imageWorkbenchManifest.id}:${bootstrap.sessionId}:${currentSourceRevision}.conversation`;
   useEffect(() => {
     if (loadState.kind !== 'ready') return;
-    return registerWorkbenchAnchorController(
-      `${conversationOwnerId}.anchors`,
+    return registerWorkbenchTargetController(
+      `${conversationOwnerId}.targets`,
       asset.id,
       {
         sourceRevision: currentSourceRevision,
         reveal(target) {
-          if (!isImageRegionTarget(target)) return false;
           const viewer = viewerRef.current;
           const item = viewer ? getImageItem(viewer) : undefined;
           if (!viewer || !item || loadStateRef.current.kind !== 'ready') {
             throw new Error('图片阅读器尚未就绪');
           }
-          displayImageExplanationLocation(item, viewer.viewport, target);
-          modeRef.current = 'manual';
+          if (isImageRegionTarget(target)) {
+            displayImageExplanationLocation(item, viewer.viewport, target);
+            modeRef.current = 'manual';
+          } else if (isImageViewportTarget(target)) {
+            applyStoredState(viewer, target.targetPayload);
+            modeRef.current = target.targetPayload.mode;
+            latestViewStateRef.current = cloneImageViewState(
+              target.targetPayload,
+            );
+          } else {
+            return false;
+          }
           setExplanationIndexOpen(false);
           return true;
         },

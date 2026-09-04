@@ -79,16 +79,16 @@ describe('OfficeWorkbenchView', () => {
       mapOfficePreviewInteraction({
         focus: {
           scope: 'content',
-          anchorType: PDF_PAGE_ANCHOR_TYPE,
-          anchorVersion: 1,
-          anchorPayload: { pageNumber: 2 },
+          targetType: PDF_PAGE_ANCHOR_TYPE,
+          targetVersion: 1,
+          targetPayload: { pageNumber: 2 },
         },
         inputs: [],
       }),
     ).toMatchObject({
       focus: {
-        anchorType: OFFICE_PAGE_ANCHOR_TYPE,
-        anchorPayload: { pageNumber: 2 },
+        targetType: OFFICE_PAGE_ANCHOR_TYPE,
+        targetPayload: { pageNumber: 2 },
       },
     });
   });

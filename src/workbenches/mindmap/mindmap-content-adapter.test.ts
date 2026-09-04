@@ -5,9 +5,7 @@ import { createContentRevision } from '../../main/content/content-revision';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
   MIND_MAP_DOCUMENT_VERSION,
-  MIND_MAP_DOCUMENT_VERSION_V2,
-  type MindMapDocumentV1,
-  type MindMapDocumentV2,
+  type MindMapDocument,
 } from './document';
 import {
   decodeMindMapDocument,
@@ -17,7 +15,7 @@ import {
 
 function createDocument(
   title = ' Map ',
-): MindMapDocumentV1 {
+): MindMapDocument {
   return {
     format: MIND_MAP_DOCUMENT_FORMAT,
     version: MIND_MAP_DOCUMENT_VERSION,
@@ -51,12 +49,11 @@ function createDocument(
   };
 }
 
-function createDocumentV2(): MindMapDocumentV2 {
-  const legacy = createDocument('Locator Map');
+function createDocumentWithTarget(): MindMapDocument {
+  const document = createDocument('Target Map');
 
   return {
-    ...legacy,
-    version: MIND_MAP_DOCUMENT_VERSION_V2,
+    ...document,
     associations: {
       nodes: {
         root: {
@@ -64,9 +61,11 @@ function createDocumentV2(): MindMapDocumentV2 {
             {
               referenceId: 'reference-source',
               sourceRevision: 'source-revision-1',
-              agentLocator: {
-                page: 8,
-                headingPath: ['Chapter 1', 'Overview'],
+              target: {
+                scope: 'content',
+                targetType: 'pdf.page',
+                targetVersion: 1,
+                targetPayload: { pageNumber: 8 },
               },
             },
           ],
@@ -79,26 +78,33 @@ function createDocumentV2(): MindMapDocumentV2 {
 }
 
 describe('MindMapContentAdapter', () => {
-  it('round-trips v2 Agent locators while retaining v1 read support', () => {
+  it('round-trips the current AssetTarget document format', () => {
     const current = decodeMindMapDocument(
-      encodeMindMapDocument(createDocumentV2()),
-    );
-    const legacy = decodeMindMapDocument(
-      encodeMindMapDocument(createDocument()),
+      encodeMindMapDocument(createDocumentWithTarget()),
     );
 
-    expect(current.version).toBe(MIND_MAP_DOCUMENT_VERSION_V2);
+    expect(current.version).toBe(MIND_MAP_DOCUMENT_VERSION);
     expect(
       current.associations.nodes.root.references[0],
     ).toMatchObject({
       referenceId: 'reference-source',
       sourceRevision: 'source-revision-1',
-      agentLocator: {
-        page: 8,
-        headingPath: ['Chapter 1', 'Overview'],
+      target: {
+        scope: 'content',
+        targetType: 'pdf.page',
+        targetVersion: 1,
+        targetPayload: { pageNumber: 8 },
       },
     });
-    expect(legacy.version).toBe(MIND_MAP_DOCUMENT_VERSION);
+  });
+
+  it('rejects retired Mind Map document versions', () => {
+    for (const version of [1, 2]) {
+      expect(() => decodeMindMapDocument(Buffer.from(JSON.stringify({
+        ...createDocument(),
+        version,
+      })))).toThrow('DATA_INTEGRITY_ERROR');
+    }
   });
 
   it('decodes UTF-8 JSON with BOM and encodes normalized JSON', () => {

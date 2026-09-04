@@ -11,7 +11,10 @@ import {
   createImageConversationContext,
   createImageConversationContribution,
 } from './image-conversation-contribution';
-import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from './image-conversation-context';
+import {
+  IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
+  parseImageConversationContext,
+} from './image-conversation-context';
 import { IMAGE_DEFAULT_EXPLANATION_QUESTION } from './shared';
 
 const target = createImageRegionTarget({
@@ -101,5 +104,22 @@ describe('image conversation contribution', () => {
     expect(conversationContextsEqual(firstContext, secondContext)).toBe(false);
 
     expect(createContribution()).not.toHaveProperty('historyStore');
+  });
+
+  it('normalizes a persisted pre-Target image context at the Workbench boundary', () => {
+    const legacy = {
+      sourceRevision: 'revision-1',
+      target: {
+        scope: 'content',
+        anchorType: target.targetType,
+        anchorVersion: target.targetVersion,
+        anchorPayload: target.targetPayload,
+      },
+    };
+
+    expect(parseImageConversationContext(legacy)).toEqual(
+      createImageConversationContext(target, 'revision-1'),
+    );
+    expect(createContribution().isContext?.(legacy)).toBe(true);
   });
 });

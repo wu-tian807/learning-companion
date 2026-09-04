@@ -1,122 +1,202 @@
-import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import {
   generationValidationFailure,
   generationValidationSuccess,
   type GenerationValidationIssue,
 } from '../../../main/generation/contracts/generation-validation';
-import { isMindMapDocumentV1 } from '../document';
+import type { AssetTargetRegistryApi } from '../../../main/workbench/asset-target-registry';
+import {
+  cloneAssetTarget,
+  isAssetTarget,
+  type AssetTarget,
+} from '../../../shared/workbench/asset-target';
+import type { JsonValue } from '../../../shared/workbench/protocol';
+import {
+  isMindMapDocument,
+  MIND_MAP_DOCUMENT_FORMAT,
+  MIND_MAP_DOCUMENT_VERSION,
+} from '../document';
 
 export const MIND_MAP_GENERATION_CANDIDATE_FORMAT =
   'learning-companion/mindmap-generation-candidate';
-export const MIND_MAP_GENERATION_CANDIDATE_VERSION = 1;
+export const MIND_MAP_GENERATION_CANDIDATE_VERSION = 3;
 export const MIND_MAP_GENERATION_CANDIDATE_RELATIVE_PATH =
   'output/mindmap-candidate.json';
 
-export interface MindMapGenerationCandidateNodeV1 {
+export interface MindMapGenerationCandidateSourceReference {
+  readonly sourceAlias: string;
+  readonly target: AssetTarget;
+}
+
+export interface MindMapGenerationCandidateNode {
   readonly id: string;
   readonly title: string;
   readonly focus: string;
   readonly childIds: readonly string[];
-  readonly sourceAliases: readonly string[];
+  readonly sourceReferences: readonly MindMapGenerationCandidateSourceReference[];
 }
 
-export interface MindMapGenerationCandidateFrameV1 {
+export interface MindMapGenerationCandidateFrame {
   readonly id: string;
   readonly title: string;
   readonly nodeIds: readonly string[];
-  readonly sourceAliases: readonly string[];
+  readonly sourceReferences: readonly MindMapGenerationCandidateSourceReference[];
 }
 
-export interface MindMapGenerationCandidateV1 {
+export interface MindMapGenerationCandidate {
   readonly format: typeof MIND_MAP_GENERATION_CANDIDATE_FORMAT;
   readonly version: typeof MIND_MAP_GENERATION_CANDIDATE_VERSION;
   readonly title: string;
   readonly rootNodeId: string;
-  readonly nodes: Readonly<Record<string, MindMapGenerationCandidateNodeV1>>;
-  readonly frames: Readonly<Record<string, MindMapGenerationCandidateFrameV1>>;
+  readonly nodes: Readonly<Record<string, MindMapGenerationCandidateNode>>;
+  readonly frames: Readonly<Record<string, MindMapGenerationCandidateFrame>>;
 }
 
 export interface MindMapGenerationCandidateValidationContext {
   readonly assetReferences: PreparedGenerationAssetReferenceBindings;
+  readonly targets: AssetTargetRegistryApi;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isRequiredText(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
+function hasExactlyKeys(
+  value: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean {
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key));
 }
 
-function isUniqueTextList(value: unknown): value is readonly string[] {
-  return (
-    Array.isArray(value) &&
-    value.every(isRequiredText) &&
-    new Set(value).size === value.length
+function normalizedRequiredText(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizedUniqueTextList(
+  value: unknown,
+): readonly string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const normalized = value.map(normalizedRequiredText);
+  if (
+    normalized.some((entry) => entry === undefined) ||
+    new Set(normalized).size !== normalized.length
+  ) {
+    return undefined;
+  }
+
+  return normalized as readonly string[];
+}
+
+function cloneSourceReference(
+  value: unknown,
+): MindMapGenerationCandidateSourceReference | undefined {
+  if (
+    !isRecord(value) ||
+    !hasExactlyKeys(value, ['sourceAlias', 'target']) ||
+    !isAssetTarget(value.target)
+  ) {
+    return undefined;
+  }
+
+  const sourceAlias = normalizedRequiredText(value.sourceAlias);
+  if (!sourceAlias) {
+    return undefined;
+  }
+
+  return Object.freeze({
+    sourceAlias,
+    target: cloneAssetTarget(value.target),
+  });
+}
+
+function cloneSourceReferences(
+  value: unknown,
+): readonly MindMapGenerationCandidateSourceReference[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+
+  const references = value.map(cloneSourceReference);
+  if (references.some((reference) => reference === undefined)) {
+    return undefined;
+  }
+
+  return Object.freeze(
+    references as MindMapGenerationCandidateSourceReference[],
   );
 }
 
 function cloneCandidateNode(
   value: unknown,
-): MindMapGenerationCandidateNodeV1 | undefined {
-  if (
-    !isRecord(value) ||
-    !isRequiredText(value.id) ||
-    !isRequiredText(value.title) ||
-    !isRequiredText(value.focus) ||
-    !isUniqueTextList(value.childIds) ||
-    !isUniqueTextList(value.sourceAliases)
-  ) {
+): MindMapGenerationCandidateNode | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const id = normalizedRequiredText(value.id);
+  const title = normalizedRequiredText(value.title);
+  const focus = normalizedRequiredText(value.focus);
+  const childIds = normalizedUniqueTextList(value.childIds);
+  const sourceReferences = cloneSourceReferences(value.sourceReferences);
+
+  if (!id || !title || !focus || !childIds || !sourceReferences) {
     return undefined;
   }
 
   return Object.freeze({
-    id: value.id.trim(),
-    title: value.title.trim(),
-    focus: value.focus.trim(),
-    childIds: Object.freeze(value.childIds.map((id) => id.trim())),
-    sourceAliases: Object.freeze(
-      value.sourceAliases.map((alias) => alias.trim()),
-    ),
+    id,
+    title,
+    focus,
+    childIds: Object.freeze(childIds),
+    sourceReferences,
   });
 }
 
 function cloneCandidateFrame(
   value: unknown,
-): MindMapGenerationCandidateFrameV1 | undefined {
-  if (
-    !isRecord(value) ||
-    !isRequiredText(value.id) ||
-    !isRequiredText(value.title) ||
-    !isUniqueTextList(value.nodeIds) ||
-    value.nodeIds.length === 0 ||
-    !isUniqueTextList(value.sourceAliases)
-  ) {
+): MindMapGenerationCandidateFrame | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const id = normalizedRequiredText(value.id);
+  const title = normalizedRequiredText(value.title);
+  const nodeIds = normalizedUniqueTextList(value.nodeIds);
+  const sourceReferences = cloneSourceReferences(value.sourceReferences);
+
+  if (!id || !title || !nodeIds || nodeIds.length === 0 || !sourceReferences) {
     return undefined;
   }
 
   return Object.freeze({
-    id: value.id.trim(),
-    title: value.title.trim(),
-    nodeIds: Object.freeze(value.nodeIds.map((id) => id.trim())),
-    sourceAliases: Object.freeze(
-      value.sourceAliases.map((alias) => alias.trim()),
-    ),
+    id,
+    title,
+    nodeIds: Object.freeze(nodeIds),
+    sourceReferences,
   });
 }
 
-function availableSourceAliases(
-  context: MindMapGenerationCandidateValidationContext,
-): ReadonlySet<string> {
-  return new Set(
-    Object.values(context.assetReferences).flatMap((references) =>
-      references.map(({ alias }) => alias),
-    ),
+function referencesByAlias(
+  bindings: PreparedGenerationAssetReferenceBindings,
+) {
+  return new Map(
+    Object.values(bindings)
+      .flatMap((references) => references)
+      .map((reference) => [reference.alias, reference] as const),
   );
 }
 
-export function validateMindMapGenerationCandidateV1(
+export function validateMindMapGenerationCandidate(
   value: JsonValue,
   context: MindMapGenerationCandidateValidationContext,
 ) {
@@ -126,77 +206,71 @@ export function validateMindMapGenerationCandidateV1(
     !isRecord(value) ||
     value.format !== MIND_MAP_GENERATION_CANDIDATE_FORMAT ||
     value.version !== MIND_MAP_GENERATION_CANDIDATE_VERSION ||
-    !isRequiredText(value.title) ||
-    !isRequiredText(value.rootNodeId) ||
+    !normalizedRequiredText(value.title) ||
+    !normalizedRequiredText(value.rootNodeId) ||
     !isRecord(value.nodes) ||
     !isRecord(value.frames)
   ) {
-    return generationValidationFailure<MindMapGenerationCandidateV1>([
+    return generationValidationFailure<MindMapGenerationCandidate>([
       { path: 'output', message: 'Mind Map candidate 顶层结构无效' },
     ]);
   }
 
-  const nodes = Object.fromEntries(
+  const title = normalizedRequiredText(value.title)!;
+  const rootNodeId = normalizedRequiredText(value.rootNodeId)!;
+  const nodes: Record<string, MindMapGenerationCandidateNode> =
+    Object.fromEntries(
     Object.entries(value.nodes).flatMap(([nodeId, node]) => {
       const cloned = cloneCandidateNode(node);
-
       if (!cloned || cloned.id !== nodeId) {
         issues.push({
           path: `output.nodes.${nodeId}`,
-          message: 'Mind Map node 数据无效或 ID 与键不一致',
+          message: 'Mind Map node 数据无效、缺少来源 Target 或 ID 与键不一致',
         });
         return [];
       }
-
       return [[nodeId, cloned]];
     }),
   );
-  const frames = Object.fromEntries(
+  const frames: Record<string, MindMapGenerationCandidateFrame> =
+    Object.fromEntries(
     Object.entries(value.frames).flatMap(([frameId, frame]) => {
       const cloned = cloneCandidateFrame(frame);
-
       if (!cloned || cloned.id !== frameId) {
         issues.push({
           path: `output.frames.${frameId}`,
-          message: 'Mind Map frame 数据无效或 ID 与键不一致',
+          message: 'Mind Map frame 数据无效、缺少来源 Target 或 ID 与键不一致',
         });
         return [];
       }
-
       return [[frameId, cloned]];
     }),
   );
 
   if (issues.length > 0) {
-    return generationValidationFailure<MindMapGenerationCandidateV1>(issues);
+    return generationValidationFailure<MindMapGenerationCandidate>(issues);
   }
 
   if (
-    !isMindMapDocumentV1({
-      format: 'learning-companion/mindmap',
-      version: 1,
-      title: value.title,
-      rootNodeId: value.rootNodeId,
+    !isMindMapDocument({
+      format: MIND_MAP_DOCUMENT_FORMAT,
+      version: MIND_MAP_DOCUMENT_VERSION,
+      title,
+      rootNodeId,
       nodes: Object.fromEntries(
-        Object.entries(nodes).map(([nodeId, node]) => [
-          nodeId,
-          {
-            id: node.id,
-            title: node.title,
-            focus: node.focus,
-            childIds: node.childIds,
-          },
-        ]),
+        Object.entries(nodes).map(([nodeId, node]) => [nodeId, {
+          id: node.id,
+          title: node.title,
+          focus: node.focus,
+          childIds: node.childIds,
+        }]),
       ),
       frames: Object.fromEntries(
-        Object.entries(frames).map(([frameId, frame]) => [
-          frameId,
-          {
-            id: frame.id,
-            title: frame.title,
-            nodeIds: frame.nodeIds,
-          },
-        ]),
+        Object.entries(frames).map(([frameId, frame]) => [frameId, {
+          id: frame.id,
+          title: frame.title,
+          nodeIds: frame.nodeIds,
+        }]),
       ),
       associations: { nodes: {}, frames: {} },
     })
@@ -207,36 +281,49 @@ export function validateMindMapGenerationCandidateV1(
     });
   }
 
-  const aliases = availableSourceAliases(context);
-
-  for (const [subjectKind, subjects] of [
-    ['nodes', nodes],
-    ['frames', frames],
-  ] as const) {
+  const preparedByAlias = referencesByAlias(context.assetReferences);
+  const validateReferences = (
+    subjectKind: 'nodes' | 'frames',
+    subjects: Readonly<Record<
+      string,
+      MindMapGenerationCandidateNode | MindMapGenerationCandidateFrame
+    >>,
+  ) => {
     for (const [subjectId, subject] of Object.entries(subjects)) {
-      for (const alias of subject.sourceAliases) {
-        if (!aliases.has(alias)) {
+      subject.sourceReferences.forEach((reference, index) => {
+        const prepared = preparedByAlias.get(reference.sourceAlias);
+        if (!prepared) {
           issues.push({
-            path: `output.${subjectKind}.${subjectId}.sourceAliases`,
-            message: `引用了未知来源 alias：${alias}`,
+            path: `output.${subjectKind}.${subjectId}.sourceReferences.${index}.sourceAlias`,
+            message: `引用了未知来源 alias：${reference.sourceAlias}`,
+          });
+          return;
+        }
+        if (
+          !prepared.workbenchId ||
+          !context.targets.validate(prepared.workbenchId, reference.target)
+        ) {
+          issues.push({
+            path: `output.${subjectKind}.${subjectId}.sourceReferences.${index}.target`,
+            message: `Target 不属于来源 ${reference.sourceAlias} 的 Workbench，或 payload 无效`,
           });
         }
-      }
+      });
     }
-  }
+  };
+  validateReferences('nodes', nodes);
+  validateReferences('frames', frames);
 
   if (issues.length > 0) {
-    return generationValidationFailure<MindMapGenerationCandidateV1>(issues);
+    return generationValidationFailure<MindMapGenerationCandidate>(issues);
   }
 
-  return generationValidationSuccess(
-    Object.freeze({
-      format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
-      version: MIND_MAP_GENERATION_CANDIDATE_VERSION,
-      title: value.title.trim(),
-      rootNodeId: value.rootNodeId.trim(),
-      nodes: Object.freeze(nodes),
-      frames: Object.freeze(frames),
-    }),
-  );
+  return generationValidationSuccess(Object.freeze({
+    format: MIND_MAP_GENERATION_CANDIDATE_FORMAT,
+    version: MIND_MAP_GENERATION_CANDIDATE_VERSION,
+    title,
+    rootNodeId,
+    nodes: Object.freeze(nodes),
+    frames: Object.freeze(frames),
+  }));
 }
