@@ -4,6 +4,7 @@ import { WorkbenchConversationInstruction } from '../../../main/conversation/wor
 import type { GenerationTaskProcessContext } from '../../../main/generation/contracts/task-definition';
 import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import type { JsonValue } from '../../../shared/workbench/protocol';
+import { materialsContextFromConversation } from '../../../main/conversation/workbench-conversation-context-provider';
 import { MindMapConversationContextProvider } from './mindmap-conversation-context-provider';
 import {
   MIND_MAP_CONVERSATION_CONTEXT_PROVIDER_ID,
@@ -96,6 +97,30 @@ describe('Mind Map conversation context provider', () => {
     expect(textOf(prepared)).toContain('节点 focus：理解节点一的核心概念');
     expect(textOf(prepared)).toContain('sources/course.pdf');
     expect(textOf(prepared)).toContain('不要修改任何文件');
+  });
+
+  it('exposes the same node materials without importing answer policy', async () => {
+    const process = createProcessContext([
+      {
+        alias: 'source-1',
+        assetId: 'mindmap-1',
+        name: '课程导图',
+        mediaType: 'application/x-mindmap',
+        contentRevision: 'mindmap-revision',
+        relativePath: 'sources/mindmap.mindmap',
+      },
+    ]);
+    const prepared = await new MindMapConversationContextProvider().prepareMaterials(
+      materialsContextFromConversation(process),
+    );
+    const text = prepared.userMessage.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
+
+    expect(text).toContain('节点路径：课程 > 节点一');
+    expect(text).not.toContain('不要修改任何文件');
+    expect(prepared.toolRequirements).toEqual([]);
   });
 
   it('rejects a task whose primary source is not the Mind Map asset', async () => {

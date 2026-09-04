@@ -50,6 +50,15 @@ export interface UpdateAttachmentInput {
   readonly content?: AssetAttachmentContent | null;
 }
 
+export interface UpdateAttachmentWithContentInput
+  extends Omit<UpdateAttachmentInput, 'content'> {
+  readonly content: {
+    readonly fileName: string;
+    readonly mediaType: string;
+    readonly data: string | Uint8Array;
+  };
+}
+
 export interface AttachmentServiceApi {
   get(attachmentId: string): Promise<AssetAttachment | undefined>;
   listByAsset(
@@ -65,6 +74,9 @@ export interface AttachmentServiceApi {
     input: CreateAttachmentWithContentInput,
   ): Promise<AssetAttachment>;
   update(input: UpdateAttachmentInput): Promise<AssetAttachment>;
+  updateWithContent(
+    input: UpdateAttachmentWithContentInput,
+  ): Promise<AssetAttachment>;
   delete(projectId: string, attachmentId: string): Promise<void>;
   removeByAsset(projectId: string, assetId: string): Promise<void>;
   subscribe(listener: AttachmentServiceListener): () => void;
@@ -197,6 +209,51 @@ export class AttachmentService implements AttachmentServiceApi {
     );
     this.publish({ type: 'changed', attachment: updated });
     return updated;
+  }
+
+  async updateWithContent(
+    input: UpdateAttachmentWithContentInput,
+  ): Promise<AssetAttachment> {
+    const current = this.requireOwned(input.projectId, input.attachmentId);
+    this.requireAsset(current.projectId, current.assetId);
+    const target = input.target ?? current.target;
+    const metadata = input.metadata ?? current.metadata;
+    this.assertRegistered(current.typeId, current.typeVersion, metadata);
+    this.assertTarget(target);
+    const now = Math.max(this.dependencies.now(), current.updatedTime);
+    const content = await this.contentFiles.write({
+      projectId: input.projectId,
+      attachmentId: current.id,
+      fileName: input.content.fileName,
+      mediaType: input.content.mediaType,
+      content: input.content.data,
+    });
+    const updated = createAssetAttachment({
+      ...current,
+      target,
+      metadata,
+      content,
+      updatedTime: now,
+    });
+
+    try {
+      const saved = this.database.update(updated);
+      this.publish({ type: 'changed', attachment: saved });
+      if (current.content) {
+        await this.contentFiles.removeContent(
+          current.projectId,
+          current.content.ref,
+        );
+      }
+      return saved;
+    } catch (error) {
+      await this.contentFiles
+        .removeContent(input.projectId, content.ref)
+        .catch((cleanupError: unknown) => {
+          console.error('回滚 Attachment 新内容文件失败', cleanupError);
+        });
+      throw error;
+    }
   }
 
   async delete(projectId: string, attachmentId: string): Promise<void> {

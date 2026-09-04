@@ -15,6 +15,10 @@ const CONVERSATION_MODE_ID_PATTERN =
 const CONVERSATION_WORKSPACE_INSTANCE_KEY_PATTERN =
   /^[A-Za-z0-9._-]{1,160}$/u;
 
+export function isConversationModeId(value: unknown): value is string {
+  return typeof value === 'string' && CONVERSATION_MODE_ID_PATTERN.test(value);
+}
+
 export type ConversationRole = 'user' | 'assistant';
 
 /**
@@ -59,6 +63,8 @@ export interface ConversationMessageRecord {
 export interface ConversationRecord {
   readonly id: string;
   readonly modeId: string;
+  /** Immutable business Asset this conversation belongs to, when present. */
+  readonly boundAssetId?: string;
   readonly workspace?: ConversationWorkspaceBinding;
   readonly title: string;
   readonly messages: readonly ConversationMessageRecord[];
@@ -68,6 +74,12 @@ export interface ConversationRecord {
 
 export interface ProjectConversationProjectRequest {
   readonly projectId: string;
+}
+
+export interface GetOrCreateBoundProjectConversationRequest
+  extends ProjectConversationProjectRequest {
+  readonly boundAssetId: string;
+  readonly modeId: string;
 }
 
 export interface SaveProjectConversationRequest
@@ -193,8 +205,9 @@ export function isConversationRecord(
   if (!isRecord(value)) return false;
   return (
     isRequiredText(value.id, 160) &&
-    typeof value.modeId === 'string' &&
-    CONVERSATION_MODE_ID_PATTERN.test(value.modeId) &&
+    isConversationModeId(value.modeId) &&
+    (value.boundAssetId === undefined ||
+      isRequiredText(value.boundAssetId, 160)) &&
     (value.workspace === undefined ||
       isConversationWorkspaceBinding(value.workspace)) &&
     isRequiredText(value.title, 128) &&
@@ -229,6 +242,7 @@ export function cloneConversationRecord(
   return Object.freeze({
     id: value.id,
     modeId: value.modeId,
+    ...(value.boundAssetId ? { boundAssetId: value.boundAssetId } : {}),
     ...(value.workspace
       ? { workspace: cloneConversationWorkspaceBinding(value.workspace) }
       : {}),

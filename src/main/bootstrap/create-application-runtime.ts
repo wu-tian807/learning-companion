@@ -60,6 +60,7 @@ import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/work
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
 import { AssetTargetRegistry } from '../workbench/asset-target-registry';
 import { WorkbenchEventBus } from '../workbench/workbench-event-bus';
+import { WorkbenchActionRegistry } from '../workbench/workbench-action-registry';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
@@ -68,6 +69,7 @@ import {
   registerMainWorkbenchArtifacts,
   registerMainWorkbenchAssetTargets,
   registerMainWorkbenchAttachments,
+  registerMainWorkbenchActions,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchProviders,
   startMainWorkbenchContributions,
@@ -144,9 +146,11 @@ export async function createApplicationRuntime({
     );
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
+    const assetDatabase = new AssetDatabase(databaseContext);
     const projectConversationService = new ProjectConversationService(
       new ProjectConversationDatabase(databaseContext),
       projectDatabase,
+      assetDatabase,
     );
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
@@ -182,7 +186,6 @@ export async function createApplicationRuntime({
       new AssetArtifactFileManager(),
       artifactRegistry,
     );
-    const assetDatabase = new AssetDatabase(databaseContext);
     const associationService = new AssetAssociationService(
       new AssetReferenceDatabase(databaseContext),
       new AssetLinkDatabase(databaseContext),
@@ -251,6 +254,7 @@ export async function createApplicationRuntime({
       databaseContext,
     );
     const workbenchEvents = new WorkbenchEventBus();
+    const workbenchActions = new WorkbenchActionRegistry();
     const generationTaskDatabase = new GenerationTaskDatabase(databaseContext);
     const generationTaskDefinitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
@@ -286,11 +290,18 @@ export async function createApplicationRuntime({
       contentResourceService,
       externalLibraryService,
       generationTasks: generationTaskService,
+      attachmentService,
+      projectConversationService,
+      agentWorkspaces: agentWorkspaceManager,
       projectLookup: projectDatabase,
       stateDatabase: workbenchStateRepository,
       stateDataDatabase: workbenchStateDataRepository,
       sandboxFrameScripts: sandboxFrameInteractionBridge,
       workbenchEvents,
+    });
+    registerMainWorkbenchActions({
+      actions: workbenchActions,
+      workbenches: workbenchRegistry,
     });
     mainWorkbenchFeatures = startMainWorkbenchContributions({
       attachments: attachmentService,
@@ -341,6 +352,7 @@ export async function createApplicationRuntime({
       generationTaskService,
       projectService,
       projectConversationService,
+      workbenchActions,
       settingsRepository,
       workbenchSessionService,
       workbenchEvents,

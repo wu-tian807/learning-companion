@@ -22,7 +22,8 @@ export class WorkbenchConversationContextProviderRegistry {
     const id = requireProviderId(provider.id);
     if (
       this.providers.has(id) ||
-      typeof provider.prepare !== 'function'
+      (typeof provider.prepare !== 'function' &&
+        typeof provider.prepareMaterials !== 'function')
     ) {
       throw new AppError('REGISTRATION_CONFLICT');
     }

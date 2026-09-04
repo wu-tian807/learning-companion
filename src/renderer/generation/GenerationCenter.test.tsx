@@ -249,7 +249,7 @@ describe('GenerationCenter', () => {
     expect(mindMapButtonWithSources).toContain(
       '梳理主题与知识关系',
     );
-    expect(outlineButton).toContain(' disabled=""');
+    expect(outlineButton).not.toContain(' disabled=""');
   });
 
   it('shows every active task in the Asset list with retry and cancel actions', () => {

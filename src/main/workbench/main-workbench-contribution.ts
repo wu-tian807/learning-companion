@@ -24,6 +24,9 @@ import type { MainWorkbenchProvider } from './workbench-session';
 import type { AssetTargetRegistryApi } from './asset-target-registry';
 import type { WorkbenchStateDataDatabaseApi } from './workbench-state-data-database';
 import type { WorkbenchStateDatabaseApi } from './workbench-state-database';
+import type { WorkbenchActionRegistryApi } from './workbench-action-registry';
+import type { AgentWorkspacePreparationApi } from '../agents/workspaces/agent-workspace-manager';
+import type { ProjectConversationServiceApi } from '../conversation/project-conversation-service';
 
 export interface MainWorkbenchExternalLibraryContext {
   readonly libraries: ExternalLibraryRegistryApi;
@@ -40,6 +43,9 @@ export interface MainWorkbenchProviderContext {
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly generationTasks: GenerationTaskServiceApi;
+  readonly attachmentService?: AttachmentServiceApi;
+  readonly projectConversationService?: ProjectConversationServiceApi;
+  readonly agentWorkspaces?: AgentWorkspacePreparationApi;
   readonly projectLookup: ProjectLookup;
   readonly stateDatabase: WorkbenchStateDatabaseApi;
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;
@@ -79,6 +85,11 @@ export interface MainWorkbenchGenerationContext {
   readonly provider?: MainWorkbenchProvider;
 }
 
+export interface MainWorkbenchActionContext {
+  readonly actions: WorkbenchActionRegistryApi;
+  readonly provider?: MainWorkbenchProvider;
+}
+
 export interface MainWorkbenchStartContext {
   readonly attachments: AttachmentServiceApi;
   readonly generationTasks: GenerationTaskServiceApi;
@@ -101,6 +112,7 @@ export interface MainWorkbenchFeatureContribution {
   registerAssetTargets?(context: MainWorkbenchAssetTargetContext): void;
   registerAttachmentTypes?(context: MainWorkbenchAttachmentContext): void;
   registerAgentFunctionTools?(context: MainWorkbenchAgentToolContext): void;
+  registerActions?(context: MainWorkbenchActionContext): void;
   registerGeneration?(context: MainWorkbenchGenerationContext): void;
   start?(context: MainWorkbenchStartContext): MainWorkbenchRuntime;
 }

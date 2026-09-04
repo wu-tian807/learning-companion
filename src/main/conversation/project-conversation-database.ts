@@ -15,6 +15,11 @@ export interface ProjectConversationDatabaseApi {
     | Readonly<{ projectId: string; conversation: ConversationRecord }>
     | undefined;
   list(projectId: string): readonly ConversationRecord[];
+  getBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+  ): ConversationRecord | undefined;
   save(projectId: string, conversation: ConversationRecord): ConversationRecord;
   remove(projectId: string, conversationId: string): void;
 }
@@ -35,6 +40,7 @@ function fromRow(
   return cloneConversationRecord({
     id: row.id,
     modeId: row.modeId,
+    ...(row.boundAssetId ? { boundAssetId: row.boundAssetId } : {}),
     ...(row.workspace ? { workspace: row.workspace } : {}),
     title: row.title,
     messages: row.messages,
@@ -49,6 +55,7 @@ function toRow(projectId: string, conversation: ConversationRecord) {
     id: cloned.id,
     projectId: requireId(projectId, 'projectId'),
     modeId: cloned.modeId,
+    boundAssetId: cloned.boundAssetId ?? null,
     workspace: cloned.workspace ?? null,
     title: cloned.title,
     messages: cloned.messages,
@@ -63,6 +70,7 @@ function sameExecutionContext(
 ): boolean {
   return (
     existing.modeId === next.modeId &&
+    existing.boundAssetId === next.boundAssetId &&
     (existing.workspace?.instanceKey ?? undefined) ===
       (next.workspace?.instanceKey ?? undefined)
   );
@@ -109,6 +117,25 @@ export class ProjectConversationDatabase
       .all()
       .map(fromRow);
     return cloneConversationRecords(rows);
+  }
+
+  getBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+  ): ConversationRecord | undefined {
+    const row = this.context.db
+      .select()
+      .from(projectConversations)
+      .where(
+        and(
+          eq(projectConversations.projectId, requireId(projectId, 'projectId')),
+          eq(projectConversations.boundAssetId, requireId(boundAssetId, 'boundAssetId')),
+          eq(projectConversations.modeId, requireId(modeId, 'modeId')),
+        ),
+      )
+      .get();
+    return row ? fromRow(row) : undefined;
   }
 
   save(

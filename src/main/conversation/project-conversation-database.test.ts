@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ConversationRecord } from '../../shared/project-conversations';
+import { createAbsoluteLocalFileContentRef } from '../content/content-ref';
 import type { DatabaseContext } from '../database/database-context';
 import { initializeDatabase } from '../database/initialize-database';
+import { assets } from '../database/schema/assets';
 import { ProjectDatabase } from '../projects/project-database';
 import { ProjectConversationDatabase } from './project-conversation-database';
 
@@ -99,6 +101,43 @@ describe('ProjectConversationDatabase', () => {
       projectId: 'project-1',
       conversation: record('conversation', 6, '更新标题'),
     });
+  });
+
+  it('persists an immutable Asset binding and enforces one mode per Asset', () => {
+    context.db.insert(assets).values({
+      id: 'outline-1',
+      projectId: 'project-1',
+      name: '学习大纲',
+      mediaType: 'application/vnd.learning-companion.learning-outline',
+      creationKind: 'generated',
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+      createdTime: 1,
+      updatedTime: 1,
+    }).run();
+    const bound: ConversationRecord = {
+      ...record('outline-conversation', 5),
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+    };
+    conversations.save('project-1', bound);
+
+    expect(
+      conversations.getBound('project-1', 'outline-1', 'learning-outline.intake'),
+    ).toEqual(bound);
+    expect(() =>
+      conversations.save('project-1', {
+        ...bound,
+        boundAssetId: 'outline-2',
+        updatedTime: 6,
+      }),
+    ).toThrow();
+    expect(() =>
+      conversations.save('project-1', {
+        ...bound,
+        id: 'outline-conversation-2',
+        updatedTime: 6,
+      }),
+    ).toThrow();
   });
 
   it('restores Project history after the application database is reopened', () => {

@@ -34,7 +34,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -160,7 +160,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        27,
+        28,
       );
     } finally {
       secondContext.close();
@@ -207,7 +207,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM assets')
@@ -284,7 +284,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -369,7 +369,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<
@@ -449,7 +449,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -517,7 +517,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -862,7 +862,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -968,7 +968,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -1084,7 +1084,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
       const migrated = context.sqlite
         .prepare<
           [],
@@ -1118,7 +1118,7 @@ describe('initializeDatabase', () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 28');
+    newer.pragma('user_version = 29');
     newer.close();
 
     expect(() => initializeDatabase(databaseFile)).toThrow(/28/);

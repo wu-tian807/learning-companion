@@ -44,6 +44,7 @@ const services: ApplicationIpcServices = {
   settingsRepository: {} as never,
   workbenchSessionService: {} as never,
   workbenchEvents: {} as never,
+  workbenchActions: {} as never,
 };
 
 describe('registerApplicationIpc', () => {
@@ -78,6 +79,7 @@ describe('registerApplicationIpc', () => {
     expect(registrations.registerWorkbench).toHaveBeenCalledWith(
       services.workbenchSessionService,
       services.workbenchEvents,
+      services.workbenchActions,
     );
 
     dispose();

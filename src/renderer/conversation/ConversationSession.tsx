@@ -25,6 +25,7 @@ export function ConversationSession({
   onPersistenceError,
   onBusyChange,
   mode = projectConversationMode,
+  boundAssetId,
   workspace,
   currentAssetSource,
   children,
@@ -37,6 +38,7 @@ export function ConversationSession({
   readonly onPersistenceError?: (error: unknown) => void;
   readonly onBusyChange?: (busy: boolean) => void;
   readonly mode?: ConversationModeDefinition;
+  readonly boundAssetId?: string;
   readonly workspace?: ConversationWorkspaceBinding;
   readonly currentAssetSource?: ActiveWorkbenchConversationContribution;
   readonly children: (controller: ConversationController) => ReactNode;
@@ -49,6 +51,7 @@ export function ConversationSession({
     onLaunchConsumed,
     onPersistenceError,
     mode,
+    boundAssetId,
     workspace,
     currentAssetSource,
   });

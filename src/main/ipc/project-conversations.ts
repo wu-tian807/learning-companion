@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import {
   isConversationRecord,
   type DeleteProjectConversationRequest,
+  type GetOrCreateBoundProjectConversationRequest,
   type ProjectConversationProjectRequest,
   type SaveProjectConversationRequest,
 } from '../../shared/project-conversations';
@@ -41,6 +42,17 @@ function isDeleteRequest(
   );
 }
 
+function isBoundRequest(
+  value: unknown,
+): value is GetOrCreateBoundProjectConversationRequest {
+  return (
+    isRecord(value) &&
+    isProjectRequest(value) &&
+    typeof value.boundAssetId === 'string' &&
+    typeof value.modeId === 'string'
+  );
+}
+
 function invalidRequest(): AppError {
   return new AppError('INVALID_IPC_REQUEST');
 }
@@ -48,6 +60,17 @@ function invalidRequest(): AppError {
 export function registerProjectConversationHandlers(
   service: ProjectConversationServiceApi,
 ): void {
+  registerIpcHandler(
+    IPC_CHANNELS.getOrCreateBoundProjectConversation,
+    async (_event, request: unknown) => {
+      if (!isBoundRequest(request)) throw invalidRequest();
+      return service.getOrCreateBoundConversation(
+        request.projectId,
+        request.boundAssetId,
+        request.modeId,
+      );
+    },
+  );
   registerIpcHandler(
     IPC_CHANNELS.listProjectConversations,
     async (_event, request: unknown) => {
@@ -73,6 +96,7 @@ export function registerProjectConversationHandlers(
 
 export function removeProjectConversationHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.listProjectConversations);
+  ipcMain.removeHandler(IPC_CHANNELS.getOrCreateBoundProjectConversation);
   ipcMain.removeHandler(IPC_CHANNELS.saveProjectConversation);
   ipcMain.removeHandler(IPC_CHANNELS.deleteProjectConversation);
 }

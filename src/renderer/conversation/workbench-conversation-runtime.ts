@@ -1,4 +1,5 @@
 import type { ConversationMessageContextSource } from '../../shared/project-conversations';
+import { PROJECT_CONVERSATION_MODE_ID } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import {
   revealWorkbenchTarget,
@@ -25,6 +26,8 @@ export interface OpenWorkbenchConversationInput {
   /** Present only when a Workbench explicitly attaches its provider/context. */
   readonly ownerId?: string;
   readonly conversationId?: string;
+  readonly modeId?: string;
+  readonly boundAssetId?: string;
   readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
@@ -50,6 +53,7 @@ export class WorkbenchConversationRuntime {
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
     busy: false,
+    modeId: PROJECT_CONVERSATION_MODE_ID,
   });
 
   subscribe = (listener: () => void): (() => void) => {
@@ -94,6 +98,12 @@ export class WorkbenchConversationRuntime {
         this.update({
           panelOpen: this.snapshot.panelOpen,
           busy: this.snapshot.busy,
+          ...(this.snapshot.modeId
+            ? { modeId: this.snapshot.modeId }
+            : {}),
+          ...(this.snapshot.boundAssetId
+            ? { boundAssetId: this.snapshot.boundAssetId }
+            : {}),
           ...(this.snapshot.panelOpen
             ? {
                 launchRequest: Object.freeze({
@@ -118,9 +128,13 @@ export class WorkbenchConversationRuntime {
     }
 
     const contextSource = ownerId ? registration?.source : undefined;
+    const modeId = input.modeId?.trim() || PROJECT_CONVERSATION_MODE_ID;
+    const boundAssetId = input.boundAssetId?.trim();
     this.launchId += 1;
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
+      modeId,
+      ...(boundAssetId ? { boundAssetId } : {}),
       ...(input.conversationId?.trim()
         ? { conversationId: input.conversationId.trim() }
         : {}),
@@ -134,7 +148,17 @@ export class WorkbenchConversationRuntime {
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
     });
-    this.update({ ...this.snapshot, panelOpen: true, launchRequest });
+    this.update({
+      ...this.snapshot,
+      panelOpen: true,
+      modeId,
+      ...(boundAssetId
+        ? { boundAssetId }
+        : modeId === PROJECT_CONVERSATION_MODE_ID
+          ? { boundAssetId: undefined }
+          : {}),
+      launchRequest,
+    });
   }
 
   close(): void {

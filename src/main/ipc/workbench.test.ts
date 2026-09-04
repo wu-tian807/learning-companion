@@ -5,6 +5,7 @@ import { isIpcResult } from '../../shared/ipc-error';
 import { WORKBENCH_PROTOCOL_VERSION } from '../../shared/workbench/manifest';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import { WorkbenchEventBus } from '../workbench/workbench-event-bus';
+import { WorkbenchActionRegistry } from '../workbench/workbench-action-registry';
 import {
   registerWorkbenchHandlers,
   removeWorkbenchHandlers,
@@ -81,7 +82,16 @@ beforeEach(() => {
 describe('Workbench IPC handlers', () => {
   it('forwards validated lifecycle requests to the service', async () => {
     const manager = createManager();
-    registerWorkbenchHandlers(manager, new WorkbenchEventBus());
+    const actions = new WorkbenchActionRegistry();
+    actions.register('test.create', async () => ({ created: true }));
+    registerWorkbenchHandlers(manager, new WorkbenchEventBus(), actions);
+
+    await expect(
+      findHandler(IPC_CHANNELS.invokeWorkbenchAction)({
+        actionId: 'test.create',
+        projectId: 'project',
+      }),
+    ).resolves.toEqual({ created: true });
 
     await expect(
       findHandler(IPC_CHANNELS.openWorkbench)({ assetId: 'asset' }),
@@ -109,7 +119,7 @@ describe('Workbench IPC handlers', () => {
 
   it('rejects malformed requests before calling the manager', async () => {
     const manager = createManager();
-    registerWorkbenchHandlers(manager, new WorkbenchEventBus());
+    registerWorkbenchHandlers(manager, new WorkbenchEventBus(), new WorkbenchActionRegistry());
 
     await expect(
       findHandler(IPC_CHANNELS.openWorkbench)({ assetId: '' }),
@@ -131,6 +141,7 @@ describe('Workbench IPC handlers', () => {
 
     expect(electronMocks.removeHandler.mock.calls).toEqual([
       [IPC_CHANNELS.openWorkbench],
+      [IPC_CHANNELS.invokeWorkbenchAction],
       [IPC_CHANNELS.commandWorkbench],
       [IPC_CHANNELS.closeWorkbench],
     ]);
@@ -143,7 +154,7 @@ describe('Workbench IPC handlers', () => {
       { isDestroyed: () => true, webContents: { send } },
     ]);
     const events = new WorkbenchEventBus();
-    registerWorkbenchHandlers(createManager(), events);
+    registerWorkbenchHandlers(createManager(), events, new WorkbenchActionRegistry());
     const event = {
       sessionId: 'session',
       type: 'test:status',

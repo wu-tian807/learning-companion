@@ -10,6 +10,7 @@ import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conv
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
+import type { RendererGenerationToolResult } from '../generation/renderer-generation-tool';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
@@ -137,6 +138,21 @@ export function ProjectPage({
       }
     },
     [startMindMap],
+  );
+  const handleGenerationToolResult = useCallback(
+    async (result: RendererGenerationToolResult) => {
+      if (!result.assetId) return;
+      await assetOperations.refreshAllAssets();
+      session.selectAsset(result.assetId);
+      if (result.modeId && result.boundAssetId && result.conversationId) {
+        conversationRuntime.open({
+          modeId: result.modeId,
+          boundAssetId: result.boundAssetId,
+          conversationId: result.conversationId,
+        });
+      }
+    },
+    [assetOperations, conversationRuntime, session],
   );
   const allImportedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
@@ -496,6 +512,8 @@ export function ProjectPage({
                     }
                     onRevealSources={layout.openLeft}
                     onMindMapDraftReady={startMindMapGeneration}
+                    onGenerationToolResult={handleGenerationToolResult}
+                    onError={setError}
                     mindMapTasks={mindMapTasks}
                     onRetryMindMapTask={retryMindMapTask}
                     onCancelMindMapTask={cancelMindMapTask}

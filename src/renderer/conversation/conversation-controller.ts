@@ -78,6 +78,8 @@ interface UseConversationControllerInput {
   readonly mode?: ConversationModeDefinition;
   /** Default immutable workspace binding for conversations created by this host. */
   readonly workspace?: ConversationWorkspaceBinding;
+  /** Immutable Asset this mode is working for, when applicable. */
+  readonly boundAssetId?: string;
   /** Workbench resolved for the Asset currently selected by the UI. */
   readonly currentAssetSource?: ActiveWorkbenchConversationContribution;
   readonly taskClient?: ConversationTaskClient;
@@ -188,6 +190,7 @@ export function useConversationController({
   onPersistenceError,
   mode: conversationMode = projectConversationMode,
   workspace,
+  boundAssetId,
   currentAssetSource,
   taskClient = conversationTaskClient,
   createId = defaultCreateConversationId,
@@ -200,6 +203,7 @@ export function useConversationController({
   const [conversation, setConversationState] = useState<ConversationRecord>(() =>
     createConversationRecord(createId(), now(), {
       modeId: conversationMode.id,
+      ...(boundAssetId ? { boundAssetId } : {}),
       ...(workspace ? { workspace } : {}),
     }),
   );
@@ -226,8 +230,12 @@ export function useConversationController({
   const deletedConversationIdsRef = useRef(new Set<string>());
   const historyMutationTailRef = useRef<Promise<void>>(Promise.resolve());
   const [initialModeId] = useState(conversationMode.id);
+  const [initialBoundAssetId] = useState(boundAssetId);
   if (initialModeId !== conversationMode.id) {
     throw new Error('已有 Conversation Controller 不能切换 Mode');
+  }
+  if (initialBoundAssetId !== boundAssetId) {
+    throw new Error('已有 Conversation Controller 不能切换绑定 Asset');
   }
 
   const visibleHistory = useCallback(
@@ -235,9 +243,10 @@ export function useConversationController({
       records.filter(
         (record) =>
           record.modeId === conversationMode.id &&
+          record.boundAssetId === initialBoundAssetId &&
           !deletedConversationIdsRef.current.has(record.id),
       ),
-    [conversationMode.id],
+    [conversationMode.id, initialBoundAssetId],
   );
   useEffect(() => {
     onPersistenceErrorRef.current = onPersistenceError;
@@ -504,6 +513,7 @@ export function useConversationController({
     }
     replaceConversation(createConversationRecord(createId(), now(), {
       modeId: conversationMode.id,
+      ...(boundAssetId ? { boundAssetId } : {}),
       ...(workspace ? { workspace } : {}),
     }));
     setDraft('');
@@ -513,6 +523,7 @@ export function useConversationController({
   }, [
     clearTransientContext,
     conversationMode.id,
+    boundAssetId,
     createId,
     now,
     replaceConversation,
@@ -531,7 +542,8 @@ export function useConversationController({
   const restore = useCallback((record: ConversationRecord) => {
     if (
       activeTaskIdRef.current ||
-      record.modeId !== conversationMode.id
+      record.modeId !== conversationMode.id ||
+      record.boundAssetId !== initialBoundAssetId
     ) return;
     void persistRef.current();
     clearTransientContext();
@@ -562,6 +574,7 @@ export function useConversationController({
     bindTask,
     clearTransientContext,
     conversationMode.id,
+    initialBoundAssetId,
     projectId,
     replaceConversation,
     taskClient,
@@ -580,6 +593,11 @@ export function useConversationController({
       context ?? contextlessWorkbenchSource(currentAssetSource);
     const taskInput = {
       projectId,
+      ...(current.boundAssetId
+        ? { boundAssetId: current.boundAssetId }
+        : boundAssetId
+          ? { boundAssetId }
+          : {}),
       ...(taskSource ? { assetId: taskSource.assetId } : {}),
       conversationId: current.id,
       ...(current.workspace ? { workspace: current.workspace } : {}),
@@ -727,6 +745,7 @@ export function useConversationController({
   }, [
     applyTerminalTask,
     bindTask,
+    boundAssetId,
     createId,
     currentAssetSource,
     conversationMode.task,
@@ -905,6 +924,11 @@ export function useConversationController({
           : undefined;
       const taskInput = {
         projectId,
+        ...(current.boundAssetId
+          ? { boundAssetId: current.boundAssetId }
+          : boundAssetId
+            ? { boundAssetId }
+            : {}),
         conversationId: current.id,
         ...(taskSource ? { assetId: taskSource.assetId } : {}),
         ...(current.workspace ? { workspace: current.workspace } : {}),
@@ -958,6 +982,7 @@ export function useConversationController({
     applyTerminalTask,
     bindTask,
     conversationMode.task,
+    boundAssetId,
     currentAssetSource,
     projectId,
     taskClient,

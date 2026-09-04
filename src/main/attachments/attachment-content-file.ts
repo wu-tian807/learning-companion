@@ -125,6 +125,18 @@ export class AttachmentContentFile {
     );
   }
 
+  async removeContent(
+    projectId: string,
+    ref: ProjectWorkspaceLocalFileContentRef,
+  ): Promise<void> {
+    const project = this.requireProject(projectId);
+    const absolutePath = resolvePortableWorkspacePath(
+      project.workspacePath,
+      ref.path,
+    );
+    await rm(absolutePath, { force: true });
+  }
+
   private requireProject(projectId: string) {
     const project = this.projects.get(projectId.trim());
 

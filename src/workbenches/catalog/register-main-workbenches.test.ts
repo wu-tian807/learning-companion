@@ -29,6 +29,7 @@ import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../document-ai/docume
 import { EPUB_CONVERSATION_CONTEXT_PROVIDER_ID } from '../epub/explanations/epub-conversation-context';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../html/conversation/html-conversation-context';
 import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from '../image/explanations/image-conversation-context';
+import { MIND_MAP_CONVERSATION_CONTEXT_PROVIDER_ID } from '../mindmap/conversation/mindmap-conversation-context';
 import {
   OFFICE_ANCHOR_VERSION,
   OFFICE_REGION_ANCHOR_TYPE,
@@ -80,6 +81,9 @@ function createRegisteredMainWorkbenchRegistry(): WorkbenchRegistry {
     contentResourceService: {} as never,
     externalLibraryService: {} as never,
     generationTasks: { subscribe: vi.fn(() => () => undefined) } as never,
+    attachmentService: {} as never,
+    projectConversationService: {} as never,
+    agentWorkspaces: {} as never,
     projectLookup: {} as never,
     stateDatabase: {} as never,
     stateDataDatabase: {} as never,
@@ -272,16 +276,24 @@ describe('Workbench contribution catalogs', () => {
     });
 
     for (const id of [
+      MIND_MAP_CONVERSATION_CONTEXT_PROVIDER_ID,
       DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
       EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
       IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
       VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
     ]) {
       expect(conversationContexts.require(id).id).toBe(id);
+      expect(typeof conversationContexts.require(id).prepareMaterials).toBe(
+        'function',
+      );
     }
     expect(
       conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID).id,
     ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
+    expect(
+      typeof conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID)
+        .prepareMaterials,
+    ).toBe('function');
     expect(
       definitions.require(
         WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,

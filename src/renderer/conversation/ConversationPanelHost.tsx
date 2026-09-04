@@ -7,6 +7,10 @@ import type {
 import type { ConversationModeDefinition } from './conversation-mode';
 import { projectConversationMode } from './project-conversation-mode';
 import {
+  defaultConversationModeRegistry,
+  type ConversationModeRegistry,
+} from './conversation-mode-registry';
+import {
   useWorkbenchConversationRuntime,
   useWorkbenchConversationSnapshot,
 } from './workbench-conversation-context';
@@ -19,6 +23,7 @@ export function ConversationPanelHost({
   onOpenSettings,
   onError,
   mode = projectConversationMode,
+  modeRegistry = defaultConversationModeRegistry,
   workspace,
   selectedAssetId,
 }: {
@@ -29,6 +34,7 @@ export function ConversationPanelHost({
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
   readonly mode?: ConversationModeDefinition;
+  readonly modeRegistry?: ConversationModeRegistry;
   readonly workspace?: ConversationWorkspaceBinding;
   readonly selectedAssetId?: string;
 }) {
@@ -38,9 +44,11 @@ export function ConversationPanelHost({
     snapshot.active?.assetId === selectedAssetId
       ? snapshot.active
       : undefined;
+  const activeMode = modeRegistry.resolve(snapshot.modeId, mode);
 
   return (
     <ConversationSession
+      key={`${activeMode.id}:${snapshot.boundAssetId ?? ''}`}
       projectId={projectId}
       historyStore={historyStore}
       open={snapshot.panelOpen}
@@ -48,7 +56,8 @@ export function ConversationPanelHost({
       onLaunchConsumed={(requestId) =>
         runtime.consumeLaunchRequest(requestId)
       }
-      mode={mode}
+      mode={activeMode}
+      boundAssetId={snapshot.boundAssetId}
       workspace={workspace}
       currentAssetSource={currentAssetSource}
       onPersistenceError={(error) => {
@@ -77,7 +86,7 @@ export function ConversationPanelHost({
           }}
           onOpenSettings={onOpenSettings}
           onError={onError}
-          presentation={mode.presentation}
+          presentation={activeMode.presentation}
         />
       )}
     </ConversationSession>

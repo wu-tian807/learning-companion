@@ -1,6 +1,11 @@
 import { createTextAgentUserMessage } from '../../../main/generation/contracts/agent-message';
 import type { GenerationTaskProcessContext } from '../../../main/generation/contracts/task-definition';
-import type { WorkbenchConversationContextProvider } from '../../../main/conversation/workbench-conversation-context-provider';
+import type {
+  WorkbenchConversationContextProvider,
+  WorkbenchConversationMaterialsContext,
+  PreparedWorkbenchConversationMaterials,
+} from '../../../main/conversation/workbench-conversation-context-provider';
+import { materialsContextFromConversation } from '../../../main/conversation/workbench-conversation-context-provider';
 import type { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { AppError } from '../../../main/errors/app-error';
 import type { JsonValue } from '../../../shared/workbench/protocol';
@@ -92,6 +97,35 @@ export class HtmlConversationContextProvider
       | undefined = () => undefined,
   ) {}
 
+  async prepareMaterials(
+    context: WorkbenchConversationMaterialsContext,
+  ): Promise<PreparedWorkbenchConversationMaterials> {
+    const source = context.assetReferences.source?.[0];
+    if (!source || source.assetId !== context.assetId) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    const rawTarget = context.context;
+    const target = rawTarget === undefined
+      ? undefined
+      : parseHtmlConversationContext(rawTarget);
+    if (rawTarget !== undefined && !target) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    const userMessageParts = [`问题：${context.question}`];
+    if (target !== undefined) {
+      userMessageParts.push(`用户选中或聚焦的内容：${describeTarget(target)}`);
+      if (target.scope === 'content' && target.targetType === 'html.dom') {
+        userMessageParts.push(
+          `可用于 html_begin_edit 的受信任 DOM Target：${JSON.stringify(target)}`,
+        );
+      }
+    }
+    return Object.freeze({
+      userMessage: createTextAgentUserMessage(userMessageParts.join('\n\n')),
+      toolRequirements: Object.freeze([]),
+    });
+  }
+
   async prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
   ) {
@@ -99,13 +133,9 @@ export class HtmlConversationContextProvider
     if (!source || source.assetId !== context.instruction.assetId) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    const rawTarget = context.instruction.context;
-    const target = rawTarget === undefined
-      ? undefined
-      : parseHtmlConversationContext(rawTarget);
-    if (rawTarget !== undefined && !target) {
-      throw new AppError('DATA_INTEGRITY_ERROR');
-    }
+    const materials = await this.prepareMaterials(
+      materialsContextFromConversation(context),
+    );
     const editing = this.resolveEditing();
     await editing?.bindConversationSource?.(
       source.assetId,
@@ -124,20 +154,11 @@ export class HtmlConversationContextProvider
     ]
       .filter((part): part is string => part !== undefined)
       .join('\n\n');
-    const userMessageParts = [`问题：${context.instruction.question}`];
-    if (target !== undefined) {
-      userMessageParts.push(`用户选中或聚焦的内容：${describeTarget(target)}`);
-      if (target.scope === 'content' && target.targetType === 'html.dom') {
-        userMessageParts.push(
-          `可用于 html_begin_edit 的受信任 DOM Target：${JSON.stringify(target)}`,
-        );
-      }
-    }
     return Object.freeze({
       purpose: 'html-reading-conversation',
       statusMessage: '正在结合网页资料回答…',
       systemInstruction,
-      userMessage: createTextAgentUserMessage(userMessageParts.join('\n\n')),
+      userMessage: materials.userMessage,
       toolRequirements: Object.freeze(
         editingEnabled
           ? [

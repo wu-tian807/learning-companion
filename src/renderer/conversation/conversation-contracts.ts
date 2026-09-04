@@ -31,6 +31,7 @@ export interface ConversationHistoryStore {
 
 export interface ConversationTaskInput {
   readonly projectId: string;
+  readonly boundAssetId?: string;
   readonly assetId?: string;
   readonly conversationId: string;
   readonly workspace?: ConversationWorkspaceBinding;
@@ -89,6 +90,8 @@ export interface WorkbenchConversationContribution {
 export interface ConversationLaunchRequest {
   readonly id: number;
   readonly conversationId?: string;
+  readonly modeId?: string;
+  readonly boundAssetId?: string;
   readonly fallbackToNewConversation?: boolean;
   readonly clearContext?: boolean;
   readonly contextSource?: ActiveWorkbenchConversationContribution;
@@ -111,5 +114,7 @@ export interface WorkbenchConversationRuntimeSnapshot {
   readonly active?: ActiveWorkbenchConversationContribution;
   readonly panelOpen: boolean;
   readonly busy: boolean;
+  readonly modeId?: string;
+  readonly boundAssetId?: string;
   readonly launchRequest?: ConversationLaunchRequest;
 }

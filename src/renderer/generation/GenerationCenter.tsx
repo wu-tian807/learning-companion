@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../shared/assets';
+import { userMessageFromError } from '../../shared/ipc-error';
 import type { AssetSelectionScope } from '../project/asset-panel-selection';
 import { useProjectAssetSelection } from '../project/asset-selection-context';
 import { AssetPanel } from '../project/AssetPanel';
@@ -9,6 +10,8 @@ import { MindMapGenerationDialog } from './MindMapGenerationDialog';
 import { GenerationTaskListItem } from './GenerationTaskListItem';
 import type { MindMapGenerationDraft } from './mind-map-generation-draft';
 import type { GenerationTaskPresentation } from './use-generation-tasks';
+import { rendererGenerationTools } from '../../workbenches/catalog/register-renderer-workbenches';
+import type { RendererGenerationToolResult } from './renderer-generation-tool';
 
 export interface GenerationCenterProps {
   readonly projectId: string;
@@ -34,6 +37,10 @@ export interface GenerationCenterProps {
   readonly mindMapTasks?: readonly GenerationTaskPresentation[];
   readonly onRetryMindMapTask?: (taskId: string) => Promise<void> | void;
   readonly onCancelMindMapTask?: (taskId: string) => Promise<void> | void;
+  readonly onGenerationToolResult?: (
+    result: RendererGenerationToolResult,
+  ) => Promise<void> | void;
+  readonly onError?: (message: string) => void;
 }
 
 const applicationTools = [
@@ -41,11 +48,6 @@ const applicationTools = [
     id: 'mind-map',
     label: '思维导图',
     description: '梳理主题与知识关系',
-  },
-  {
-    id: 'study-outline',
-    label: '学习提纲',
-    description: '提炼章节与复习路径',
   },
   {
     id: 'flashcards',
@@ -78,6 +80,8 @@ export function GenerationCenter({
   mindMapTasks = [],
   onRetryMindMapTask,
   onCancelMindMapTask,
+  onGenerationToolResult,
+  onError,
 }: GenerationCenterProps) {
   const [mindMapSourceAssets, setMindMapSourceAssets] = useState<
     readonly AssetSnapshot[] | null
@@ -86,6 +90,7 @@ export function GenerationCenter({
   const selectionCoordinator = useProjectAssetSelection();
   const sourceSelection = selectionCoordinator.imported;
   const generatedSelection = selectionCoordinator.generated;
+  const tools = [...applicationTools, ...rendererGenerationTools];
 
   const closeMindMapDialog = useCallback(() => {
     setMindMapSourceAssets(null);
@@ -114,10 +119,15 @@ export function GenerationCenter({
             </span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-1.5">
-            {applicationTools.map((tool) => {
+            {tools.map((tool) => {
               const isMindMap = tool.id === 'mind-map';
-              const disabled = !isMindMap;
+              const isWorkbenchTool = 'activate' in tool;
+              const requiresSources =
+                isWorkbenchTool && tool.requiresSources === true;
+              const disabled = !isMindMap && !isWorkbenchTool;
               const sourceAssets = sourceSelection.selectedAssets;
+              const sourceMissing =
+                (isMindMap || requiresSources) && sourceAssets.length === 0;
 
               return (
                 <div key={tool.id} className="group relative">
@@ -127,12 +137,12 @@ export function GenerationCenter({
                     data-generation-tool={tool.id}
                     disabled={disabled}
                     aria-describedby={
-                      isMindMap && sourceAssets.length === 0
-                        ? 'mind-map-source-tooltip'
+                      (isMindMap || requiresSources) && sourceMissing
+                        ? `${tool.id}-source-tooltip`
                         : undefined
                     }
                     title={
-                      isMindMap
+                      isMindMap || isWorkbenchTool
                         ? sourceAssets.length > 0
                           ? tool.description
                           : undefined
@@ -149,7 +159,29 @@ export function GenerationCenter({
 
                             setMindMapSourceAssets([...sourceAssets]);
                           }
-                        : undefined
+                        : isWorkbenchTool
+                          ? () => {
+                              if (sourceMissing) {
+                                sourceSelection.enter();
+                                onRevealSources();
+                                return;
+                              }
+                              void tool.activate({
+                                projectId,
+                                sourceAssets,
+                              }).then((result) => {
+                                if (result) {
+                                  return onGenerationToolResult?.(result);
+                                }
+                                return undefined;
+                              }).catch((error: unknown) => {
+                                onError?.(
+                                  userMessageFromError(error, '无法创建生成内容。') ??
+                                    '无法创建生成内容。',
+                                );
+                              });
+                            }
+                          : undefined
                     }
                     className="ui-control min-h-[76px] w-full rounded-[11px] border border-white/[0.08] bg-indigo-300/[0.075] p-3 text-left hover:border-indigo-200/20 hover:bg-indigo-300/[0.12] disabled:cursor-not-allowed disabled:opacity-45"
                   >
@@ -160,9 +192,9 @@ export function GenerationCenter({
                       {tool.description}
                     </span>
                   </button>
-                  {isMindMap && sourceAssets.length === 0 && (
+                  {(isMindMap || requiresSources) && sourceMissing && (
                     <span
-                      id="mind-map-source-tooltip"
+                      id={`${tool.id}-source-tooltip`}
                       role="tooltip"
                       className="pointer-events-none absolute top-[calc(100%-3px)] left-1/2 z-30 w-max -translate-x-1/2 rounded-md border border-white/10 bg-[#303640] px-2.5 py-1.5 text-[9px] font-medium text-slate-100 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                     >
