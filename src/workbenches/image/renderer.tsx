@@ -1106,6 +1106,13 @@ export function ImageWorkbenchView({
       })),
     [orderedExplanations, overlayRevision],
   );
+  const markerViewportSize = useMemo(() => {
+    const host = viewerHostRef.current;
+    if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) {
+      return undefined;
+    }
+    return { width: host.clientWidth, height: host.clientHeight };
+  }, [overlayRevision]);
   const selectedPolygon = useMemo(
     () => selectedTarget ? targetPolygon(viewerRef.current, selectedTarget) : undefined,
     [overlayRevision, selectedTarget],
@@ -1218,6 +1225,7 @@ export function ImageWorkbenchView({
           visible={explanationMarkersVisible}
           markers={markerPolygons}
           selectedPolygon={selectedPolygon}
+          viewportSize={markerViewportSize}
           onActivate={revealExplanation}
         />
       )}

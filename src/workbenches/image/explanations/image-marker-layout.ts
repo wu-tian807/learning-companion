@@ -13,6 +13,11 @@ export interface ImageMarkerLayoutResult {
   readonly position: ImageMarkerPoint;
 }
 
+export interface ImageMarkerViewport {
+  readonly width: number;
+  readonly height: number;
+}
+
 const MARKER_RADIUS = 9;
 const MARKER_GAP = 4;
 const MARKER_SPACING = MARKER_RADIUS * 2 + MARKER_GAP;
@@ -28,18 +33,28 @@ function isAvailable(
   );
 }
 
-function clampToTopLeftEdges(point: ImageMarkerPoint): ImageMarkerPoint {
+function clampToViewport(
+  point: ImageMarkerPoint,
+  viewport?: ImageMarkerViewport,
+): ImageMarkerPoint {
+  const maximumX = viewport
+    ? Math.max(MARKER_RADIUS, viewport.width - MARKER_RADIUS)
+    : Number.POSITIVE_INFINITY;
+  const maximumY = viewport
+    ? Math.max(MARKER_RADIUS, viewport.height - MARKER_RADIUS)
+    : Number.POSITIVE_INFINITY;
   return {
-    x: Math.max(MARKER_RADIUS, point.x),
-    y: Math.max(MARKER_RADIUS, point.y),
+    x: Math.min(maximumX, Math.max(MARKER_RADIUS, point.x)),
+    y: Math.min(maximumY, Math.max(MARKER_RADIUS, point.y)),
   };
 }
 
 function candidatesAround(
   preferred: ImageMarkerPoint,
   maximumRing: number,
+  viewport?: ImageMarkerViewport,
 ): readonly ImageMarkerPoint[] {
-  const candidates: ImageMarkerPoint[] = [clampToTopLeftEdges(preferred)];
+  const candidates: ImageMarkerPoint[] = [clampToViewport(preferred, viewport)];
   for (let ring = 1; ring <= maximumRing; ring += 1) {
     const offset = ring * MARKER_SPACING;
     for (const [x, y] of [
@@ -52,10 +67,10 @@ function candidatesAround(
       [-offset, offset],
       [offset, offset],
     ] as const) {
-      const candidate = clampToTopLeftEdges({
-        x: preferred.x + x,
-        y: preferred.y + y,
-      });
+      const candidate = clampToViewport(
+        { x: preferred.x + x, y: preferred.y + y },
+        viewport,
+      );
       if (!candidates.some((item) => item.x === candidate.x && item.y === candidate.y)) {
         candidates.push(candidate);
       }
@@ -66,17 +81,43 @@ function candidatesAround(
 
 export function layoutImageMarkerPositions(
   markers: readonly ImageMarkerLayoutInput[],
+  viewport?: ImageMarkerViewport,
 ): readonly ImageMarkerLayoutResult[] {
   const occupied: ImageMarkerPoint[] = [];
   return markers.map(({ id, preferredPosition }) => {
-    const candidates = candidatesAround(preferredPosition, markers.length + 1);
+    const candidates = candidatesAround(
+      preferredPosition,
+      markers.length + 1,
+      viewport,
+    );
     let position = candidates.find((candidate) =>
       isAvailable(candidate, occupied),
     );
     if (!position) {
-      position = clampToTopLeftEdges(preferredPosition);
-      while (!isAvailable(position, occupied)) {
-        position = { x: position.x + MARKER_SPACING, y: position.y };
+      position = clampToViewport(preferredPosition, viewport);
+      if (viewport) {
+        for (
+          let y = MARKER_RADIUS;
+          !isAvailable(position, occupied) &&
+          y <= viewport.height - MARKER_RADIUS;
+          y += MARKER_SPACING
+        ) {
+          for (
+            let x = MARKER_RADIUS;
+            x <= viewport.width - MARKER_RADIUS;
+            x += MARKER_SPACING
+          ) {
+            const candidate = { x, y };
+            if (isAvailable(candidate, occupied)) {
+              position = candidate;
+              break;
+            }
+          }
+        }
+      } else {
+        while (!isAvailable(position, occupied)) {
+          position = { x: position.x + MARKER_SPACING, y: position.y };
+        }
       }
     }
     occupied.push(position);
