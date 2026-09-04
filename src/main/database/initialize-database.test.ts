@@ -34,7 +34,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -53,6 +53,7 @@ describe('initializeDatabase', () => {
         'assets',
         'generation_tasks',
         'project_conversations',
+        'project_learning_notes',
         'projects',
         'workbench_state_data',
         'workbench_states',
@@ -160,7 +161,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        26,
+        27,
       );
     } finally {
       secondContext.close();
@@ -207,7 +208,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM assets')
@@ -284,7 +285,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -369,7 +370,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<
@@ -449,7 +450,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -517,7 +518,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -862,7 +863,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -968,7 +969,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -1084,7 +1085,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(26);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(27);
       const migrated = context.sqlite
         .prepare<
           [],
@@ -1118,9 +1119,9 @@ describe('initializeDatabase', () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 27');
+    newer.pragma('user_version = 28');
     newer.close();
 
-    expect(() => initializeDatabase(databaseFile)).toThrow(/27/);
+    expect(() => initializeDatabase(databaseFile)).toThrow(/28/);
   });
 });

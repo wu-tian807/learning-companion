@@ -86,6 +86,18 @@ describe('ProjectPage Project conversation lifecycle', () => {
         listProjectConversations: vi.fn(async () => []),
         saveProjectConversation: vi.fn(async () => []),
         deleteProjectConversation: vi.fn(async () => []),
+        getProjectLearningNote: vi.fn(async ({ projectId }) => ({
+          projectId,
+          markdown: '',
+          revision: 0,
+          updatedTime: null,
+        })),
+        saveProjectLearningNote: vi.fn(async (request) => ({
+          projectId: request.projectId,
+          markdown: request.markdown,
+          revision: request.expectedRevision + 1,
+          updatedTime: 1,
+        })),
       },
     });
     Object.defineProperty(window, 'matchMedia', {
@@ -165,5 +177,44 @@ describe('ProjectPage Project conversation lifecycle', () => {
         .querySelector('[data-testid="generation-center"]')
         ?.parentElement?.getAttribute('aria-hidden'),
     ).toBe('false');
+  });
+
+  it('opens and collapses the Project learning note from the main action row', async () => {
+    await act(async () => {
+      root.render(
+        <ProjectPage
+          project={{
+            id: 'project-1',
+            name: '测试 Project',
+            icon: '📘',
+            createdTime: 1,
+            pinned: false,
+            workspacePath: 'D:\\Workspace\\project-1',
+            assetCount: 0,
+          }}
+          onBack={vi.fn()}
+          onOpenSettings={vi.fn()}
+        />,
+      );
+    });
+
+    const openButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="打开学习笔记"]',
+    );
+    expect(openButton).not.toBeNull();
+
+    await act(async () => openButton!.click());
+    expect(
+      container.querySelector('textarea[aria-label="Markdown 学习笔记编辑器"]'),
+    ).not.toBeNull();
+
+    const collapseButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="收起学习笔记"]',
+    );
+    expect(collapseButton).not.toBeNull();
+    await act(async () => collapseButton!.click());
+    expect(
+      container.querySelector('textarea[aria-label="Markdown 学习笔记编辑器"]'),
+    ).toBeNull();
   });
 });

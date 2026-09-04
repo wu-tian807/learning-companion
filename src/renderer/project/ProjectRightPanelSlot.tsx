@@ -7,11 +7,13 @@ export function ProjectRightPanelSlot({
   inline,
   generation,
   conversation,
+  learningNote,
 }: {
   readonly panel: ProjectRightPanelKind | null;
   readonly inline: boolean;
   readonly generation: ReactNode;
   readonly conversation: ReactNode;
+  readonly learningNote: ReactNode;
 }) {
   if (!panel) return null;
 
@@ -36,6 +38,12 @@ export function ProjectRightPanelSlot({
         aria-hidden={panel !== 'generation'}
       >
         {generation}
+      </div>
+      <div
+        className={panel === 'learning-note' ? 'h-full min-h-0' : 'hidden'}
+        aria-hidden={panel !== 'learning-note'}
+      >
+        {learningNote}
       </div>
     </div>
   );
