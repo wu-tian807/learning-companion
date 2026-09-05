@@ -4,6 +4,7 @@ import {
   type JsonValue,
 } from './workbench/protocol';
 
+/** Maximum number of ordinary, unbound conversations retained per Project. */
 export const PROJECT_CONVERSATION_MAX_CONVERSATIONS = 1_000;
 export const PROJECT_CONVERSATION_MAX_MESSAGES = 2_000;
 export const PROJECT_CONVERSATION_MAX_TEXT_LENGTH = 32_768;
@@ -81,6 +82,9 @@ export interface GetOrCreateBoundProjectConversationRequest
   readonly boundAssetId: string;
   readonly modeId: string;
 }
+
+export type RebuildBoundProjectConversationRequest =
+  GetOrCreateBoundProjectConversationRequest;
 
 export interface SaveProjectConversationRequest
   extends ProjectConversationProjectRequest {
@@ -309,10 +313,7 @@ export function cloneConversationRecord(
 export function cloneConversationRecords(
   value: readonly ConversationRecord[],
 ): readonly ConversationRecord[] {
-  if (
-    !Array.isArray(value) ||
-    value.length > PROJECT_CONVERSATION_MAX_CONVERSATIONS
-  ) {
+  if (!Array.isArray(value)) {
     throw new Error('Project Conversation 列表数据无效');
   }
   const ids = new Set<string>();
@@ -324,5 +325,11 @@ export function cloneConversationRecords(
     ids.add(cloned.id);
     return cloned;
   });
+  const unboundCount = records.filter(
+    (record) => record.boundAssetId === undefined,
+  ).length;
+  if (unboundCount > PROJECT_CONVERSATION_MAX_CONVERSATIONS) {
+    throw new Error('普通 Project Conversation 列表超过容量上限');
+  }
   return Object.freeze(records);
 }

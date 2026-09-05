@@ -17,6 +17,8 @@ export interface RendererGenerationToolDefinition {
   readonly label: string;
   readonly description: string;
   readonly requiresSources?: boolean;
+  readonly sourceScope?: 'imported' | 'generated';
+  readonly acceptsSource?: (asset: AssetSnapshot) => boolean;
   activate(
     context: RendererGenerationToolContext,
   ): Promise<RendererGenerationToolResult | undefined>;

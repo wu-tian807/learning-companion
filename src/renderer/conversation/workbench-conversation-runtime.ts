@@ -128,16 +128,34 @@ export class WorkbenchConversationRuntime {
     }
 
     const contextSource = ownerId ? registration?.source : undefined;
-    const modeId = input.modeId?.trim() || PROJECT_CONVERSATION_MODE_ID;
-    const boundAssetId = input.boundAssetId?.trim();
+    const explicitIdentity = Boolean(
+      input.modeId?.trim() ||
+        input.boundAssetId?.trim() ||
+        input.conversationId?.trim(),
+    );
+    const preserveCurrentIdentity =
+      !explicitIdentity &&
+      (input.context !== undefined || input.fallbackToNewConversation === true) &&
+      this.snapshot.modeId !== undefined;
+    const modeId =
+      input.modeId?.trim() ||
+      (preserveCurrentIdentity
+        ? this.snapshot.modeId!
+        : PROJECT_CONVERSATION_MODE_ID);
+    const boundAssetId =
+      input.boundAssetId?.trim() ||
+      (preserveCurrentIdentity ? this.snapshot.boundAssetId : undefined);
+    const conversationId =
+      input.conversationId?.trim() ||
+      (!input.fallbackToNewConversation && preserveCurrentIdentity
+        ? this.snapshot.conversationId
+        : undefined);
     this.launchId += 1;
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
       modeId,
       ...(boundAssetId ? { boundAssetId } : {}),
-      ...(input.conversationId?.trim()
-        ? { conversationId: input.conversationId.trim() }
-        : {}),
+      ...(conversationId ? { conversationId } : {}),
       ...(input.fallbackToNewConversation === true
         ? { fallbackToNewConversation: true }
         : {}),
@@ -157,7 +175,18 @@ export class WorkbenchConversationRuntime {
         : modeId === PROJECT_CONVERSATION_MODE_ID
           ? { boundAssetId: undefined }
           : {}),
+      ...(conversationId ? { conversationId } : {}),
       launchRequest,
+    });
+  }
+
+  setConversationIdentity(conversationId: string | undefined): void {
+    const normalized = conversationId?.trim();
+    const next = normalized ? normalized : undefined;
+    if (this.snapshot.conversationId === next) return;
+    this.update({
+      ...this.snapshot,
+      ...(next ? { conversationId: next } : { conversationId: undefined }),
     });
   }
 
@@ -241,6 +270,9 @@ export class WorkbenchConversationRuntime {
       this.snapshot.active === next.active &&
       this.snapshot.panelOpen === next.panelOpen &&
       this.snapshot.busy === next.busy &&
+      this.snapshot.modeId === next.modeId &&
+      this.snapshot.boundAssetId === next.boundAssetId &&
+      this.snapshot.conversationId === next.conversationId &&
       this.snapshot.launchRequest === next.launchRequest
     ) {
       return;

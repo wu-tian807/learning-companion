@@ -10,6 +10,11 @@ import type { MainWorkbenchProvider } from '../../main/workbench/workbench-sessi
 import { AppError } from '../../main/errors/app-error';
 import { isJsonValue, type JsonValue } from '../../shared/workbench/protocol';
 import { learningOutlineActions } from './shared';
+import {
+  isLearningOutlineBriefAttachmentMetadata,
+  LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
+  LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
+} from './shared';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,6 +82,16 @@ export const learningOutlineMainWorkbenchContribution =
       return new LearningOutlineWorkbenchProvider(service, context.workbenchEvents);
     },
     [
+      {
+        id: 'builtin.learning-outline.brief-attachment',
+        registerAttachmentTypes({ attachments }): void {
+          attachments.register({
+            typeId: LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
+            version: LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
+            isMetadata: isLearningOutlineBriefAttachmentMetadata,
+          });
+        },
+      },
       {
         id: 'builtin.learning-outline.generation',
         registerActions(context): void {

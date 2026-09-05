@@ -30,6 +30,12 @@ export interface ProjectConversationServiceApi {
     boundAssetId: string,
     modeId: string,
   ): ConversationRecord;
+  /** Explicitly replace the unique bound conversation through Main. */
+  rebuildBoundConversation(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+  ): ConversationRecord;
 }
 
 function requireId(value: string): string {
@@ -104,6 +110,44 @@ export class ProjectConversationService
       if (raced) return cloneConversationRecord(raced);
       throw error;
     }
+  }
+
+  rebuildBoundConversation(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+  ): ConversationRecord {
+    const normalizedProjectId = this.requireProject(projectId);
+    const normalizedAssetId = requireId(boundAssetId);
+    const normalizedModeId = requireId(modeId);
+    if (!isConversationModeId(normalizedModeId)) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    const asset = this.assets?.get(normalizedProjectId, normalizedAssetId);
+    if (!asset || asset.projectId !== normalizedProjectId) {
+      throw new AppError('ASSET_NOT_FOUND');
+    }
+    const existing = this.database.getBound(
+      normalizedProjectId,
+      normalizedAssetId,
+      normalizedModeId,
+    );
+    if (existing) {
+      this.database.remove(normalizedProjectId, existing.id);
+    }
+    const now = Date.now();
+    const candidate = cloneConversationRecord({
+      id: `conv-${randomUUID()}`,
+      modeId: normalizedModeId,
+      boundAssetId: normalizedAssetId,
+      title: '新对话',
+      messages: [],
+      createdTime: now,
+      updatedTime: now,
+    });
+    return cloneConversationRecord(
+      this.database.save(normalizedProjectId, candidate),
+    );
   }
 
   requireBoundConversation(

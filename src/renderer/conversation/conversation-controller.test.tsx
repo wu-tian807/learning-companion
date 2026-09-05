@@ -1318,6 +1318,113 @@ describe('shared Conversation controller', () => {
     expect(latest.state.conversation.id).not.toBe(saved.id);
   });
 
+  it('rebuilds a bound conversation through Main instead of inventing a duplicate id', async () => {
+    const bound: ConversationRecord = {
+      id: 'bound-conversation',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      title: '学习需求',
+      messages: [],
+      createdTime: 1,
+      updatedTime: 1,
+    };
+    const rebuilt: ConversationRecord = {
+      ...bound,
+      id: 'rebuilt-conversation',
+      createdTime: 2,
+      updatedTime: 2,
+    };
+    let records: ConversationRecord[] = [bound];
+    const historyStore: ConversationHistoryStore = {
+      list: vi.fn(async () => records),
+      save: vi.fn(async (record) => {
+        records = [...records.filter(({ id }) => id !== record.id), record];
+        return records;
+      }),
+      remove: vi.fn(async (conversationId) => {
+        records = records.filter(({ id }) => id !== conversationId);
+        return records;
+      }),
+      rebuildBoundConversation: vi.fn(async () => {
+        records = [rebuilt];
+        return rebuilt;
+      }),
+      getOrCreateBoundConversation: vi.fn(async () => rebuilt),
+    };
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      id: 'learning-outline.intake',
+    };
+
+    render({ historyStore, mode, boundAssetId: 'outline-1' });
+    await flush();
+    act(() => latest.actions.restore(bound));
+    expect(latest.state.conversation.id).toBe(bound.id);
+
+    await act(async () => {
+      await latest.actions.startNew();
+    });
+
+    expect(historyStore.rebuildBoundConversation).toHaveBeenCalledWith(
+      'outline-1',
+      'learning-outline.intake',
+    );
+    expect(latest.state.conversation.id).toBe(rebuilt.id);
+    expect(records).toEqual([rebuilt]);
+  });
+
+  it('uses the Main-created record after deleting the current bound conversation', async () => {
+    const bound: ConversationRecord = {
+      id: 'bound-conversation',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      title: '学习需求',
+      messages: [],
+      createdTime: 1,
+      updatedTime: 1,
+    };
+    const rebuilt: ConversationRecord = {
+      ...bound,
+      id: 'restored-bound-conversation',
+      createdTime: 2,
+      updatedTime: 2,
+    };
+    let records: ConversationRecord[] = [bound];
+    const getOrCreateBoundConversation = vi.fn(async () => {
+      records = [rebuilt];
+      return rebuilt;
+    });
+    const historyStore: ConversationHistoryStore = {
+      list: vi.fn(async () => records),
+      save: vi.fn(async (record) => {
+        records = [...records.filter(({ id }) => id !== record.id), record];
+        return records;
+      }),
+      remove: vi.fn(async (conversationId) => {
+        records = records.filter(({ id }) => id !== conversationId);
+        return records;
+      }),
+      getOrCreateBoundConversation,
+    };
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      id: 'learning-outline.intake',
+    };
+
+    render({ historyStore, mode, boundAssetId: 'outline-1' });
+    await flush();
+    act(() => latest.actions.restore(bound));
+    act(() => latest.actions.remove(bound));
+    await flush();
+
+    expect(getOrCreateBoundConversation).toHaveBeenCalledWith(
+      'outline-1',
+      'learning-outline.intake',
+    );
+    expect(latest.state.conversation.id).toBe(rebuilt.id);
+    expect(latest.state.conversation.boundAssetId).toBe('outline-1');
+  });
+
   it('serializes a delete behind an in-flight save and ignores duplicate deletes', async () => {
     let saveCount = 0;
     let resolveFinalSave!: (records: readonly ConversationRecord[]) => void;

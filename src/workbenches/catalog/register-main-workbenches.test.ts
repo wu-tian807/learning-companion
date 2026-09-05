@@ -41,6 +41,12 @@ import {
 import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
 import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../video/conversation/video-conversation-context';
 import { VIDEO_READ_FUNCTION_TOOL_ID } from '../video/agent/video-function-tool';
+import {
+  LEARNING_BRIEF_FORMAT,
+  LEARNING_BRIEF_VERSION,
+  LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
+  LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
+} from '../learning-outline/shared';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from '../media-dubbing/external-libraries/voxcpm2-definition';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
@@ -226,6 +232,18 @@ describe('Workbench contribution catalogs', () => {
         AI_ANNOTATION_ATTACHMENT_VERSION,
       ),
     ).toBeDefined();
+    const brief = attachments.get(
+      LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
+      LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
+    );
+    expect(brief).toBeDefined();
+    expect(
+      brief?.isMetadata({
+        format: LEARNING_BRIEF_FORMAT,
+        version: LEARNING_BRIEF_VERSION,
+        revision: 'a'.repeat(64),
+      }),
+    ).toBe(true);
     expect(
       targets
         .get(PDF_REGION_ANCHOR_TYPE, PDF_REGION_ANCHOR_VERSION)

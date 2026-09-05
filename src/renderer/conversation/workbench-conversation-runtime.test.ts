@@ -71,6 +71,36 @@ describe('WorkbenchConversationRuntime', () => {
     });
   });
 
+  it('injects node context without changing the current mode or bound Asset', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('outline.owner', 'outline-1', contribution('outline'));
+    runtime.open({
+      ownerId: 'outline.owner',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      conversationId: 'conversation-1',
+    });
+
+    runtime.open({
+      ownerId: 'outline.owner',
+      context: { target },
+      question: '请把这个节点纳入学习需求。',
+      submit: true,
+    });
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      conversationId: 'conversation-1',
+      launchRequest: {
+        modeId: 'learning-outline.intake',
+        boundAssetId: 'outline-1',
+        conversationId: 'conversation-1',
+        context: { target },
+      },
+    });
+  });
+
   it('does not let stale cleanup replace an active registration', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const original = contribution('plain-text');

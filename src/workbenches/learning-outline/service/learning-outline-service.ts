@@ -12,6 +12,7 @@ import {
   type LearningOutlineSnapshot,
   type LearningUnitStatus,
 } from '../shared';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../../shared/asset-media-types';
 import type { LearningOutlineChangedEvent } from '../shared';
 import type { ConversationRecord } from '../../../shared/project-conversations';
 import type { AssetAssociationServiceApi } from '../../../main/asset-associations/asset-association-service';
@@ -38,6 +39,11 @@ export interface LearningOutlineServiceApi {
     boundAssetId: string,
   ): ConversationRecord;
   readDocument(assetId: string): Promise<LearningOutlineDocument>;
+  /** Return the persisted MindMap sources of a bound outline for Main task preparation. */
+  listIntakeSourceAssetIds(
+    projectId: string,
+    boundAssetId: string,
+  ): Promise<readonly string[]>;
   updateDocument(
     assetId: string,
     expectedUpdatedTime: number,
@@ -122,9 +128,18 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
     const sourceAssetIds = [...new Set(
       (input.sourceAssetIds ?? []).map((assetId) => requireId(assetId, 'sourceAssetId')),
     )];
+    if (sourceAssetIds.length === 0) {
+      throw new AppError('INVALID_IPC_REQUEST', {
+        cause: new Error('学习大纲必须至少绑定一个 MindMap 来源。'),
+      });
+    }
     for (const sourceAssetId of sourceAssetIds) {
       const source = this.assets.get(sourceAssetId);
-      if (!source || source.projectId !== normalizedProjectId) {
+      if (
+        !source ||
+        source.projectId !== normalizedProjectId ||
+        source.mediaType !== MIND_MAP_ASSET_MEDIA_TYPE
+      ) {
         throw new AppError('ASSET_NOT_FOUND');
       }
     }
@@ -189,6 +204,46 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
     return this.documents.read(requireId(assetId, 'assetId'));
   }
 
+  async listIntakeSourceAssetIds(
+    projectId: string,
+    boundAssetId: string,
+  ): Promise<readonly string[]> {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedAssetId = requireId(boundAssetId, 'boundAssetId');
+    const outline = this.assets.get(normalizedAssetId);
+    if (
+      !outline ||
+      outline.projectId !== normalizedProjectId ||
+      outline.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE
+    ) {
+      throw new AppError('ASSET_NOT_FOUND');
+    }
+
+    const document = await this.readDocument(normalizedAssetId);
+    const references = this.associations
+      .listReferences(normalizedAssetId)
+      .map((reference) => reference.sourceAssetId);
+    const referenceIds = new Set(references);
+    const sourceAssetIds = [...new Set(document.sourceAssetIds)];
+    if (
+      sourceAssetIds.some((sourceAssetId) => !referenceIds.has(sourceAssetId))
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+
+    for (const sourceAssetId of sourceAssetIds) {
+      const source = this.assets.get(sourceAssetId);
+      if (
+        !source ||
+        source.projectId !== normalizedProjectId ||
+        source.mediaType !== MIND_MAP_ASSET_MEDIA_TYPE
+      ) {
+        throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+    }
+    return Object.freeze(sourceAssetIds);
+  }
+
   async updateDocument(
     assetId: string,
     expectedUpdatedTime: number,
@@ -246,9 +301,19 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
     const asset = this.assets.get(requireId(assetId, 'assetId'));
     if (!asset) throw new AppError('ASSET_NOT_FOUND');
     const normalized = [...new Set(sourceAssetIds.map((id) => requireId(id, 'sourceAssetId')))];
+    if (normalized.length === 0) {
+      throw new AppError('INVALID_IPC_REQUEST', {
+        cause: new Error('学习大纲必须至少保留一个 MindMap 来源。'),
+      });
+    }
     for (const sourceAssetId of normalized) {
       const source = this.assets.get(sourceAssetId);
-      if (!source || source.projectId !== asset.projectId || source.id === asset.id) {
+      if (
+        !source ||
+        source.projectId !== asset.projectId ||
+        source.id === asset.id ||
+        source.mediaType !== MIND_MAP_ASSET_MEDIA_TYPE
+      ) {
         throw new AppError('ASSET_NOT_FOUND');
       }
     }

@@ -36,6 +36,7 @@ import type {
   ConversationRecord,
   DeleteProjectConversationRequest,
   GetOrCreateBoundProjectConversationRequest,
+  RebuildBoundProjectConversationRequest,
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "../shared/project-conversations";
@@ -240,6 +241,13 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   ) =>
     invoke<ConversationRecord>(
       IPC_CHANNELS.getOrCreateBoundProjectConversation,
+      request,
+    ),
+  rebuildBoundProjectConversation: (
+    request: RebuildBoundProjectConversationRequest,
+  ) =>
+    invoke<ConversationRecord>(
+      IPC_CHANNELS.rebuildBoundProjectConversation,
       request,
     ),
   saveProjectConversation: (request: SaveProjectConversationRequest) =>

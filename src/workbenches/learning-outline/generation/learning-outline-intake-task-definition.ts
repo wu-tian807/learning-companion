@@ -7,6 +7,8 @@ import type {
   GenerationTaskProcessContext,
   TaskDefinition,
 } from '../../../main/generation/contracts/task-definition';
+import type { GenerationInstruction } from '../../../main/generation/contracts/generation-instruction';
+import type { GenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
   LEARNING_OUTLINE_INTAKE_TASK_DEFINITION_ID,
@@ -113,6 +115,44 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
       }),
     }),
     instruction: learningOutlineIntakeInstructionFactory,
+    async resolveAssetReferences({
+      projectId,
+      instruction,
+      assetReferences,
+    }: {
+      readonly taskId: string;
+      readonly projectId: string;
+      readonly instruction: GenerationInstruction;
+      readonly assetReferences: GenerationAssetReferenceBindings;
+    }) {
+      const parsedInstruction = learningOutlineIntakeInstructionFactory.parse(
+        instruction.toSnapshot(),
+      );
+      if (!parsedInstruction.ok) throw new AppError('DATA_INTEGRITY_ERROR');
+      const outlineInstruction = parsedInstruction.value;
+      const formalSourceAssetIds =
+        await outlines.listIntakeSourceAssetIds(
+          projectId,
+          outlineInstruction.boundAssetId,
+        );
+      const existingSourceAssetIds = (assetReferences.source ?? []).map(
+        ({ assetId }) => assetId,
+      );
+      const sourceAssetIds = [
+        ...new Set([...existingSourceAssetIds, ...formalSourceAssetIds]),
+      ];
+      if (sourceAssetIds.length > 32) {
+        throw new AppError('INVALID_IPC_REQUEST', {
+          cause: new Error('学习大纲本轮参考资料超过 32 个 Asset'),
+        });
+      }
+      return Object.freeze({
+        ...assetReferences,
+        source: Object.freeze(
+          sourceAssetIds.map((assetId) => Object.freeze({ assetId })),
+        ),
+      });
+    },
     async process(
       context: GenerationTaskProcessContext<LearningOutlineIntakeInstruction>,
     ) {

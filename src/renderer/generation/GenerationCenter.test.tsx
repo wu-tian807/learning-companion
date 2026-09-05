@@ -6,6 +6,7 @@ import {
   type AssetSnapshot,
 } from '../../shared/assets';
 import type { GenerationTaskView } from '../../shared/generation-tasks';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import { AssetSelectionCoordinatorProvider } from '../project/AssetSelectionCoordinatorProvider';
 import type { AssetLoadState } from '../project/project-asset-view';
 import type {
@@ -250,6 +251,24 @@ describe('GenerationCenter', () => {
       '梳理主题与知识关系',
     );
     expect(outlineButton).not.toContain(' disabled=""');
+  });
+
+  it('uses generated Mind Maps as the formal source for the study outline tool', () => {
+    const mindMap = {
+      ...generatedAsset,
+      mediaType: MIND_MAP_ASSET_MEDIA_TYPE,
+    };
+    const html = renderGenerationCenter({
+      generatedSelection: createSelection('generated', [mindMap]),
+    });
+    const outlineButton = html.match(
+      /<button[^>]*data-generation-tool="study-outline"[^>]*>/,
+    )?.[0];
+
+    expect(outlineButton).not.toContain(
+      'aria-describedby="study-outline-source-tooltip"',
+    );
+    expect(html).not.toContain('study-outline-source-tooltip');
   });
 
   it('shows every active task in the Asset list with retry and cancel actions', () => {

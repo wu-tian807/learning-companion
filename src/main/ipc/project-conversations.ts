@@ -4,6 +4,7 @@ import {
   isConversationRecord,
   type DeleteProjectConversationRequest,
   type GetOrCreateBoundProjectConversationRequest,
+  type RebuildBoundProjectConversationRequest,
   type ProjectConversationProjectRequest,
   type SaveProjectConversationRequest,
 } from '../../shared/project-conversations';
@@ -53,6 +54,12 @@ function isBoundRequest(
   );
 }
 
+function isRebuildRequest(
+  value: unknown,
+): value is RebuildBoundProjectConversationRequest {
+  return isBoundRequest(value);
+}
+
 function invalidRequest(): AppError {
   return new AppError('INVALID_IPC_REQUEST');
 }
@@ -65,6 +72,17 @@ export function registerProjectConversationHandlers(
     async (_event, request: unknown) => {
       if (!isBoundRequest(request)) throw invalidRequest();
       return service.getOrCreateBoundConversation(
+        request.projectId,
+        request.boundAssetId,
+        request.modeId,
+      );
+    },
+  );
+  registerIpcHandler(
+    IPC_CHANNELS.rebuildBoundProjectConversation,
+    async (_event, request: unknown) => {
+      if (!isRebuildRequest(request)) throw invalidRequest();
+      return service.rebuildBoundConversation(
         request.projectId,
         request.boundAssetId,
         request.modeId,
@@ -97,6 +115,7 @@ export function registerProjectConversationHandlers(
 export function removeProjectConversationHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.listProjectConversations);
   ipcMain.removeHandler(IPC_CHANNELS.getOrCreateBoundProjectConversation);
+  ipcMain.removeHandler(IPC_CHANNELS.rebuildBoundProjectConversation);
   ipcMain.removeHandler(IPC_CHANNELS.saveProjectConversation);
   ipcMain.removeHandler(IPC_CHANNELS.deleteProjectConversation);
 }

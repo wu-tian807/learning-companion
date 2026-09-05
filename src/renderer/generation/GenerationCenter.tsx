@@ -121,11 +121,18 @@ export function GenerationCenter({
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             {tools.map((tool) => {
               const isMindMap = tool.id === 'mind-map';
-              const isWorkbenchTool = 'activate' in tool;
+              const workbenchTool = 'activate' in tool ? tool : undefined;
+              const isWorkbenchTool = workbenchTool !== undefined;
               const requiresSources =
-                isWorkbenchTool && tool.requiresSources === true;
+                workbenchTool?.requiresSources === true;
               const disabled = !isMindMap && !isWorkbenchTool;
-              const sourceAssets = sourceSelection.selectedAssets;
+              const candidateSelection =
+                workbenchTool?.sourceScope === 'generated'
+                  ? generatedSelection
+                  : sourceSelection;
+              const sourceAssets = candidateSelection.selectedAssets.filter(
+                (asset) => workbenchTool?.acceptsSource?.(asset) ?? true,
+              );
               const sourceMissing =
                 (isMindMap || requiresSources) && sourceAssets.length === 0;
 
@@ -152,7 +159,7 @@ export function GenerationCenter({
                       isMindMap
                         ? () => {
                             if (sourceAssets.length === 0) {
-                              sourceSelection.enter();
+                              candidateSelection.enter();
                               onRevealSources();
                               return;
                             }
@@ -162,11 +169,11 @@ export function GenerationCenter({
                         : isWorkbenchTool
                           ? () => {
                               if (sourceMissing) {
-                                sourceSelection.enter();
+                                candidateSelection.enter();
                                 onRevealSources();
                                 return;
                               }
-                              void tool.activate({
+                              void workbenchTool!.activate({
                                 projectId,
                                 sourceAssets,
                               }).then((result) => {

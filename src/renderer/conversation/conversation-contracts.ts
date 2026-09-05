@@ -25,6 +25,14 @@ export interface ConversationHistoryStore {
   list(): Promise<readonly ConversationRecord[]>;
   save(record: ConversationRecord): Promise<readonly ConversationRecord[]>;
   remove(conversationId: string): Promise<readonly ConversationRecord[]>;
+  getOrCreateBoundConversation?(
+    boundAssetId: string,
+    modeId: string,
+  ): Promise<ConversationRecord>;
+  rebuildBoundConversation?(
+    boundAssetId: string,
+    modeId: string,
+  ): Promise<ConversationRecord>;
   subscribe?(listener: () => void): () => void;
   getSnapshot?(): readonly ConversationRecord[];
 }
@@ -116,5 +124,6 @@ export interface WorkbenchConversationRuntimeSnapshot {
   readonly busy: boolean;
   readonly modeId?: string;
   readonly boundAssetId?: string;
+  readonly conversationId?: string;
   readonly launchRequest?: ConversationLaunchRequest;
 }

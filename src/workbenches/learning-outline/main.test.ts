@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAbsoluteLocalFileContentRef } from '../../main/content/content-ref';
 import { createAssetSnapshot } from '../../main/assets/asset';
 import { WorkbenchActionRegistry } from '../../main/workbench/workbench-action-registry';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import { createDraftLearningOutline } from './shared';
 import { learningOutlineActions } from './shared';
 import type { LearningOutlineServiceApi } from './service/learning-outline-service';
@@ -102,6 +103,26 @@ describe('Learning Outline contribution lifecycle', () => {
       createdTime: 1,
       updatedTime: 1,
     });
+    const sourceAsset = createAssetSnapshot({
+      id: 'mindmap-1',
+      projectId: 'project-1',
+      name: '知识导图',
+      mediaType: MIND_MAP_ASSET_MEDIA_TYPE,
+      creationKind: 'generated',
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/mindmap.json'),
+      createdTime: 1,
+      updatedTime: 1,
+    });
+    const pdfAsset = createAssetSnapshot({
+      id: 'pdf-1',
+      projectId: 'project-1',
+      name: '课程讲义.pdf',
+      mediaType: 'application/pdf',
+      creationKind: 'imported',
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/lesson.pdf'),
+      createdTime: 1,
+      updatedTime: 1,
+    });
     const conversation = {
       id: 'conversation-1',
       modeId: 'learning-outline.intake',
@@ -114,7 +135,13 @@ describe('Learning Outline contribution lifecycle', () => {
     const dependencies = {
       associationService: { ensureReference: vi.fn() },
       assetService: {
-        get: vi.fn(() => undefined),
+        get: vi.fn((assetId: string) =>
+          assetId === sourceAsset.id
+            ? sourceAsset
+            : assetId === pdfAsset.id
+              ? pdfAsset
+              : undefined,
+        ),
         stageGeneratedFile: vi.fn(async () => ({ asset, created: true })),
         delete: vi.fn(async () => undefined),
       },
@@ -139,7 +166,9 @@ describe('Learning Outline contribution lifecycle', () => {
       workbenchEvents: {},
     } as never);
     const actions = new WorkbenchActionRegistry();
-    const feature = learningOutlineMainWorkbenchContribution.features?.[0];
+    const feature = learningOutlineMainWorkbenchContribution.features?.find(
+      ({ registerActions }) => registerActions,
+    );
     feature?.registerActions?.({
       actions,
       provider,
@@ -148,6 +177,7 @@ describe('Learning Outline contribution lifecycle', () => {
     await expect(
       actions.invoke(learningOutlineActions.createDraft, 'project-1', {
         title: '机器学习路线',
+        sourceAssetIds: [sourceAsset.id],
       }),
     ).resolves.toMatchObject({
       asset: { id: 'outline-1' },
@@ -157,6 +187,16 @@ describe('Learning Outline contribution lifecycle', () => {
     expect(
       dependencies.projectConversationService.getOrCreateBoundConversation,
     ).toHaveBeenCalledWith('project-1', 'outline-1', 'learning-outline.intake');
+    await expect(
+      actions.invoke(learningOutlineActions.createDraft, 'project-1', {
+        sourceAssetIds: [pdfAsset.id],
+      }),
+    ).rejects.toThrow('ASSET_NOT_FOUND');
+    await expect(
+      actions.invoke(learningOutlineActions.createDraft, 'project-1', {
+        sourceAssetIds: [],
+      }),
+    ).rejects.toThrow('INVALID_IPC_REQUEST');
   });
 
   it('owns the service shutdown and disposal through the contribution runtime', async () => {

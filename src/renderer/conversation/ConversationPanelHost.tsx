@@ -64,6 +64,9 @@ export function ConversationPanelHost({
         console.error('[conversation] persistence failed', error);
       }}
       onBusyChange={(busy) => runtime.setBusy(busy)}
+      onConversationIdentityChange={(conversationId) =>
+        runtime.setConversationIdentity(conversationId)
+      }
     >
       {(controller) => (
         <ConversationPanel

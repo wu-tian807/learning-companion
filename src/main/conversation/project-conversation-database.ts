@@ -215,6 +215,7 @@ export class ProjectConversationDatabase
              SELECT id
              FROM project_conversations
              WHERE project_id = ?
+               AND bound_asset_id IS NULL
              ORDER BY updated_time DESC, id ASC
              LIMIT -1 OFFSET ?
            )`,

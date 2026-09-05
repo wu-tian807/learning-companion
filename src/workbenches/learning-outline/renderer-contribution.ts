@@ -5,6 +5,7 @@ import {
   LEARNING_OUTLINE_INTAKE_MODE_ID,
   learningOutlineActions,
 } from './shared';
+import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 
 export const learningOutlineRendererWorkbenchContribution =
   defineRendererWorkbenchContribution({
@@ -16,6 +17,8 @@ export const learningOutlineRendererWorkbenchContribution =
         label: '学习提纲',
         description: '整理章节与学习路线',
         requiresSources: true,
+        sourceScope: 'generated',
+        acceptsSource: (asset) => asset.mediaType === MIND_MAP_ASSET_MEDIA_TYPE,
         async activate({ projectId, sourceAssets }) {
           const result = await window.learningCompanion.invokeWorkbenchAction({
             actionId: learningOutlineActions.createDraft,

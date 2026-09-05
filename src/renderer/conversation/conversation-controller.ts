@@ -65,7 +65,9 @@ export interface ConversationControllerActions {
   readonly reanswer: (answerId: string) => void;
   readonly restore: (record: ConversationRecord) => void;
   readonly remove: (record: ConversationRecord) => void;
-  readonly startNew: (context?: ConversationContextAttachment) => void;
+  readonly startNew: (
+    context?: ConversationContextAttachment,
+  ) => void | Promise<void>;
 }
 
 interface UseConversationControllerInput {
@@ -503,19 +505,20 @@ export function useConversationController({
     }
   }), [applyTerminalTask, projectId, taskClient, updateConversation]);
 
-  const resetConversation = useCallback((
+  const applyNewConversation = useCallback((
     context?: ConversationContextAttachment,
+    next: ConversationRecord = createConversationRecord(createId(), now(), {
+      modeId: conversationMode.id,
+      ...(boundAssetId ? { boundAssetId } : {}),
+      ...(workspace ? { workspace } : {}),
+    }),
   ) => {
     if (context === undefined) {
       clearTransientContext();
     } else {
       setPendingContext(context);
     }
-    replaceConversation(createConversationRecord(createId(), now(), {
-      modeId: conversationMode.id,
-      ...(boundAssetId ? { boundAssetId } : {}),
-      ...(workspace ? { workspace } : {}),
-    }));
+    replaceConversation(next);
     setDraft('');
     setError(undefined);
     setActivityLabel(undefined);
@@ -531,13 +534,44 @@ export function useConversationController({
     workspace,
   ]);
 
+  const resetConversation = useCallback((
+    context?: ConversationContextAttachment,
+  ) => applyNewConversation(context), [applyNewConversation]);
+
   const startNew = useCallback((
     context?: ConversationContextAttachment,
-  ) => {
+  ): void | Promise<void> => {
     if (activeTaskIdRef.current) return;
+    if (initialBoundAssetId) {
+      const rebuild = historyStore.rebuildBoundConversation;
+      if (!rebuild) {
+        const error = new Error('绑定对话必须通过 Main 重建');
+        setError({ message: error.message });
+        onPersistenceErrorRef.current?.(error);
+        return Promise.reject(error);
+      }
+      return (async () => {
+        await persistRef.current();
+        const next = await rebuild(initialBoundAssetId, conversationMode.id);
+        if (!mountedRef.current) return;
+        applyNewConversation(context, next);
+      })().catch((error: unknown) => {
+        if (mountedRef.current) {
+          setError({ message: '无法创建新的绑定对话，请稍后重试。' });
+        }
+        onPersistenceErrorRef.current?.(error);
+        throw error;
+      });
+    }
     void persistRef.current();
     resetConversation(context);
-  }, [resetConversation]);
+  }, [
+    applyNewConversation,
+    conversationMode.id,
+    historyStore.rebuildBoundConversation,
+    initialBoundAssetId,
+    resetConversation,
+  ]);
 
   const restore = useCallback((record: ConversationRecord) => {
     if (
@@ -794,14 +828,15 @@ export function useConversationController({
               ? {}
               : { context: request.context }),
           });
+    let conversationTransition: void | Promise<void> = undefined;
     if (request.conversationId !== undefined) {
       if (matching) {
-        restore(matching);
+        conversationTransition = restore(matching);
       } else {
-        startNew(launchContext);
+        conversationTransition = startNew(launchContext);
       }
     } else if (request.fallbackToNewConversation === true) {
-      startNew(launchContext);
+      conversationTransition = startNew(launchContext);
     }
     if (
       request.conversationId === undefined &&
@@ -819,7 +854,16 @@ export function useConversationController({
 
     if (request.question?.trim()) {
       if (request.submit) {
-        queueMicrotask(() => submitRef.current(request.question, launchContext));
+        const submitAfterTransition = () => {
+          queueMicrotask(() =>
+            submitRef.current(request.question!, launchContext),
+          );
+        };
+        if (conversationTransition instanceof Promise) {
+          void conversationTransition.then(submitAfterTransition, () => undefined);
+        } else {
+          submitAfterTransition();
+        }
       } else {
         setDraft(request.question);
       }
@@ -997,7 +1041,8 @@ export function useConversationController({
     }
     deletedConversationIdsRef.current.add(record.id);
     setHistory((current) => current.filter(({ id }) => id !== record.id));
-    if (record.id === conversationRef.current.id) {
+    const removingCurrent = record.id === conversationRef.current.id;
+    if (removingCurrent && !initialBoundAssetId) {
       resetConversation();
     }
     void enqueueHistoryMutation(async () => {
@@ -1007,9 +1052,32 @@ export function useConversationController({
       }
       return records;
     }).then(
-      (records) => {
-        if (!mountedRef.current) return;
-        setHistory(visibleHistory(records));
+      async (records) => {
+        let nextRecords = records;
+        if (removingCurrent && initialBoundAssetId) {
+          const getOrCreate = historyStore.getOrCreateBoundConversation;
+          if (!getOrCreate) {
+            const error = new Error('绑定对话删除后必须通过 Main 重建');
+            onPersistenceErrorRef.current?.(error);
+            if (mountedRef.current) setError({ message: error.message });
+            return;
+          }
+          try {
+            const next = await getOrCreate(
+              initialBoundAssetId,
+              conversationMode.id,
+            );
+            nextRecords = await historyStore.list();
+            if (mountedRef.current) applyNewConversation(undefined, next);
+          } catch (rebuildError: unknown) {
+            onPersistenceErrorRef.current?.(rebuildError);
+            if (mountedRef.current) {
+              setError({ message: '无法恢复绑定对话，请稍后重试。' });
+            }
+            return;
+          }
+        }
+        if (mountedRef.current) setHistory(visibleHistory(nextRecords));
       },
       (removeError: unknown) => {
         deletedConversationIdsRef.current.delete(record.id);
@@ -1023,7 +1091,10 @@ export function useConversationController({
     );
   }, [
     enqueueHistoryMutation,
+    applyNewConversation,
+    conversationMode.id,
     historyStore,
+    initialBoundAssetId,
     resetConversation,
     visibleHistory,
   ]);

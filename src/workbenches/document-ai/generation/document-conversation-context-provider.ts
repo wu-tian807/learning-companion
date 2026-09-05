@@ -77,7 +77,7 @@ async function prepareSelectedRegionMessage(
     content: Object.freeze([
       Object.freeze({
         type: 'text' as const,
-        text: `${text}\n\n优先只根据图中内容回答；只有确有必要时才补充最小范围的文档上下文。`,
+        text,
       }),
       Object.freeze({
         type: 'text' as const,

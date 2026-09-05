@@ -246,4 +246,41 @@ describe('ProjectConversationDatabase', () => {
     expect(conversations.get('latest')).toBeDefined();
     expect(conversations.get('old-0')).toBeUndefined();
   });
+
+  it('retains a bound conversation while trimming ordinary history', () => {
+    context.db.insert(assets).values({
+      id: 'outline-1',
+      projectId: 'project-1',
+      name: '学习大纲',
+      mediaType: 'application/vnd.learning-companion.learning-outline',
+      creationKind: 'generated',
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+      createdTime: 1,
+      updatedTime: 1,
+    }).run();
+    conversations.save('project-1', {
+      ...record('bound', 1),
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+    });
+
+    const insert = context.sqlite.prepare(
+      `INSERT INTO project_conversations (
+         id, project_id, title, messages_json, created_time, updated_time
+       ) VALUES (?, 'project-1', ?, '[]', ?, ?)`,
+    );
+    context.sqlite.transaction(() => {
+      for (let index = 0; index < 1_001; index += 1) {
+        insert.run(`ordinary-${index}`, `普通对话 ${index}`, index + 2, index + 2);
+      }
+    })();
+
+    conversations.save('project-1', record('latest', 2_000));
+
+    expect(conversations.get('bound')?.conversation.boundAssetId).toBe(
+      'outline-1',
+    );
+    expect(conversations.get('ordinary-0')).toBeUndefined();
+    expect(conversations.list('project-1')).toHaveLength(1_001);
+  });
 });

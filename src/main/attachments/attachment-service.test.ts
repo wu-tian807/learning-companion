@@ -24,10 +24,10 @@ function createHarness() {
       stored.set(attachment.id, attachment);
       return attachment;
     },
-    update: (attachment) => {
+    update: vi.fn((attachment) => {
       stored.set(attachment.id, attachment);
       return attachment;
-    },
+    }),
     delete: (id) => {
       stored.delete(id);
     },
@@ -64,6 +64,7 @@ function createHarness() {
       mediaType,
     })),
     removeAttachment: vi.fn(async () => undefined),
+    removeContent: vi.fn(async () => undefined),
     removeProject: vi.fn(async () => undefined),
   } as unknown as AttachmentContentFile;
   const assetLookupGet = vi.fn<AssetLookup['get']>(() => ({} as never));
@@ -76,7 +77,7 @@ function createHarness() {
     assets,
     { createId: () => 'attachment-1', now: () => 10 },
   );
-  return { service, stored, contentFiles, assetLookupGet };
+  return { service, stored, contentFiles, assetLookupGet, database };
 }
 
 describe('AttachmentService', () => {
@@ -231,6 +232,101 @@ describe('AttachmentService', () => {
       mediaType: 'text/markdown',
     });
     expect(stored.get(created.id)).toEqual(created);
+  });
+
+  it('keeps a committed replacement when old-file cleanup fails', async () => {
+    const { service, stored, contentFiles } = createHarness();
+    const created = await service.createWithContent({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'epub.note',
+      typeVersion: 1,
+      target: { scope: 'asset' },
+      metadata: { status: 'completed' },
+      content: {
+        fileName: 'brief.json',
+        mediaType: 'application/json',
+        data: '{}',
+      },
+    });
+    const oldContent = created.content!;
+    vi.mocked(contentFiles.removeContent).mockRejectedValueOnce(
+      new Error('文件被占用'),
+    );
+
+    const updated = await service.updateWithContent({
+      projectId: 'project-1',
+      attachmentId: created.id,
+      content: {
+        fileName: 'brief.json',
+        mediaType: 'application/json',
+        data: '{"ready":true}',
+      },
+    });
+
+    expect(updated.content?.ref.path).not.toBe(oldContent.ref.path);
+    expect(stored.get(created.id)).toEqual(updated);
+    expect(contentFiles.removeContent).toHaveBeenCalledWith(
+      'project-1',
+      oldContent.ref,
+    );
+
+    await service.updateWithContent({
+      projectId: 'project-1',
+      attachmentId: created.id,
+      content: {
+        fileName: 'brief.json',
+        mediaType: 'application/json',
+        data: '{"ready":false}',
+      },
+    });
+
+    expect(contentFiles.removeContent).toHaveBeenCalledWith(
+      'project-1',
+      oldContent.ref,
+    );
+  });
+
+  it('removes only staged replacement content when the database update fails', async () => {
+    const { service, stored, contentFiles, database } = createHarness();
+    const created = await service.createWithContent({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      typeId: 'epub.note',
+      typeVersion: 1,
+      target: { scope: 'asset' },
+      metadata: { status: 'completed' },
+      content: {
+        fileName: 'brief.json',
+        mediaType: 'application/json',
+        data: '{}',
+      },
+    });
+    const oldContent = created.content!;
+    vi.mocked(database.update).mockImplementation(() => {
+      throw new Error('数据库写入失败');
+    });
+
+    await expect(
+      service.updateWithContent({
+        projectId: 'project-1',
+        attachmentId: created.id,
+        content: {
+          fileName: 'brief.json',
+          mediaType: 'application/json',
+          data: '{"next":true}',
+        },
+      }),
+    ).rejects.toThrow('数据库写入失败');
+
+    expect(stored.get(created.id)).toEqual(created);
+    expect(contentFiles.removeContent).toHaveBeenCalledWith(
+      'project-1',
+      expect.any(Object),
+    );
+    expect(vi.mocked(contentFiles.removeContent).mock.calls[0]?.[1]).not.toEqual(
+      oldContent.ref,
+    );
   });
 
   it('removes staged content when the referenced Asset is missing', async () => {

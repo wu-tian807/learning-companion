@@ -55,18 +55,21 @@ function createService() {
   const save = vi.fn(() => [record()]);
   const remove = vi.fn(() => []);
   const getOrCreateBoundConversation = vi.fn(() => record());
+  const rebuildBoundConversation = vi.fn(() => record());
   const requireBoundConversation = vi.fn(() => record());
   return {
     list,
     save,
     remove,
     getOrCreateBoundConversation,
+    rebuildBoundConversation,
     requireBoundConversation,
     service: {
       list,
       save,
       remove,
       getOrCreateBoundConversation,
+      rebuildBoundConversation,
       requireBoundConversation,
     } satisfies ProjectConversationServiceApi,
   };
@@ -133,6 +136,7 @@ describe('Project Conversation IPC handlers', () => {
     expect(electronMocks.removeHandler.mock.calls.map(([channel]) => channel)).toEqual([
       IPC_CHANNELS.listProjectConversations,
       IPC_CHANNELS.getOrCreateBoundProjectConversation,
+      IPC_CHANNELS.rebuildBoundProjectConversation,
       IPC_CHANNELS.saveProjectConversation,
       IPC_CHANNELS.deleteProjectConversation,
     ]);

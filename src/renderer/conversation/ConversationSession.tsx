@@ -24,6 +24,7 @@ export function ConversationSession({
   onLaunchConsumed,
   onPersistenceError,
   onBusyChange,
+  onConversationIdentityChange,
   mode = projectConversationMode,
   boundAssetId,
   workspace,
@@ -37,6 +38,7 @@ export function ConversationSession({
   readonly onLaunchConsumed?: (requestId: number) => void;
   readonly onPersistenceError?: (error: unknown) => void;
   readonly onBusyChange?: (busy: boolean) => void;
+  readonly onConversationIdentityChange?: (conversationId: string) => void;
   readonly mode?: ConversationModeDefinition;
   readonly boundAssetId?: string;
   readonly workspace?: ConversationWorkspaceBinding;
@@ -64,6 +66,10 @@ export function ConversationSession({
   useEffect(() => {
     onBusyChangeRef.current?.(controller.state.busy);
   }, [controller.state.busy]);
+
+  useEffect(() => {
+    onConversationIdentityChange?.(controller.state.conversation.id);
+  }, [controller.state.conversation.id, onConversationIdentityChange]);
 
   useEffect(
     () => () => onBusyChangeRef.current?.(false),

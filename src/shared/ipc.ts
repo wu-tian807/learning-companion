@@ -58,6 +58,7 @@ import type {
   ConversationRecord,
   DeleteProjectConversationRequest,
   GetOrCreateBoundProjectConversationRequest,
+  RebuildBoundProjectConversationRequest,
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "./project-conversations";
@@ -102,6 +103,7 @@ export const IPC_CHANNELS = {
   closeProject: "project:close",
   listProjectConversations: "project-conversation:list",
   getOrCreateBoundProjectConversation: "project-conversation:get-or-create-bound",
+  rebuildBoundProjectConversation: "project-conversation:rebuild-bound",
   saveProjectConversation: "project-conversation:save",
   deleteProjectConversation: "project-conversation:delete",
   selectLocalAssetFiles: "asset:select-local-files",
@@ -223,6 +225,9 @@ export interface LearningCompanionApi {
   ) => Promise<ConversationRecord[]>;
   getOrCreateBoundProjectConversation: (
     request: GetOrCreateBoundProjectConversationRequest,
+  ) => Promise<ConversationRecord>;
+  rebuildBoundProjectConversation: (
+    request: RebuildBoundProjectConversationRequest,
   ) => Promise<ConversationRecord>;
   saveProjectConversation: (
     request: SaveProjectConversationRequest,

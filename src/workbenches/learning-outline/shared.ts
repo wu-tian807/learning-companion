@@ -145,6 +145,18 @@ export interface LearningOutlineBriefState {
   readonly updatedTime?: number;
 }
 
+export function isLearningOutlineBriefAttachmentMetadata(
+  value: JsonValue,
+): boolean {
+  return (
+    isRecord(value) &&
+    value.format === LEARNING_BRIEF_FORMAT &&
+    value.version === LEARNING_BRIEF_VERSION &&
+    typeof value.revision === 'string' &&
+    /^[a-f0-9]{64}$/u.test(value.revision)
+  );
+}
+
 export interface LearningOutlineSnapshot {
   readonly asset: AssetSnapshot;
   readonly document: LearningOutlineDocument;
