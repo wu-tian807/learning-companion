@@ -21,6 +21,7 @@ function createDatabase(): ProjectConversationDatabaseApi {
   return {
     get: vi.fn(),
     getBound: vi.fn(),
+    replaceBound: vi.fn((_projectId, _boundAssetId, _modeId, conversation) => conversation),
     list: vi.fn(() => [record()]),
     save: vi.fn((_projectId, conversation) => conversation),
     remove: vi.fn(),
@@ -91,5 +92,33 @@ describe('ProjectConversationService', () => {
         'learning-outline.intake',
       ),
     ).toThrow();
+  });
+
+  it('delegates bound conversation replacement as one database operation', () => {
+    const database = createDatabase();
+    const projects = { get: vi.fn(() => ({ id: 'project-1' })) };
+    const assets = {
+      get: vi.fn(() => ({ id: 'outline-1', projectId: 'project-1' })),
+    };
+    const service = new ProjectConversationService(
+      database,
+      projects as never,
+      assets as never,
+    );
+
+    const result = service.rebuildBoundConversation(
+      'project-1',
+      'outline-1',
+      'learning-outline.intake',
+    );
+
+    expect(database.replaceBound).toHaveBeenCalledOnce();
+    expect(database.remove).not.toHaveBeenCalled();
+    expect(database.save).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      messages: [],
+    });
   });
 });

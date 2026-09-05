@@ -20,6 +20,12 @@ export interface ProjectConversationDatabaseApi {
     boundAssetId: string,
     modeId: string,
   ): ConversationRecord | undefined;
+  replaceBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+    conversation: ConversationRecord,
+  ): ConversationRecord;
   save(projectId: string, conversation: ConversationRecord): ConversationRecord;
   remove(projectId: string, conversationId: string): void;
 }
@@ -101,13 +107,19 @@ export class ProjectConversationDatabase
   }
 
   list(projectId: string): readonly ConversationRecord[] {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    // Asset deletion uses ON DELETE SET NULL for bound conversations. Enforce
+    // the same ordinary-history limit at the read boundary so a conversation
+    // becoming unbound cannot make the entire history invalid until the next
+    // write.
+    this.trim(normalizedProjectId);
     const rows = this.context.db
       .select()
       .from(projectConversations)
       .where(
         eq(
           projectConversations.projectId,
-          requireId(projectId, 'projectId'),
+          normalizedProjectId,
         ),
       )
       .orderBy(
@@ -136,6 +148,73 @@ export class ProjectConversationDatabase
       )
       .get();
     return row ? fromRow(row) : undefined;
+  }
+
+  replaceBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+    conversation: ConversationRecord,
+  ): ConversationRecord {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedBoundAssetId = requireId(boundAssetId, 'boundAssetId');
+    const normalizedModeId = requireId(modeId, 'modeId');
+    const row = toRow(normalizedProjectId, conversation);
+    if (
+      row.boundAssetId !== normalizedBoundAssetId ||
+      row.modeId !== normalizedModeId
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR', {
+        cause: new Error('替换的 Project Conversation 绑定不一致'),
+      });
+    }
+
+    return this.context.db.transaction((transaction) => {
+      const existing = transaction
+        .select()
+        .from(projectConversations)
+        .where(
+          and(
+            eq(projectConversations.projectId, normalizedProjectId),
+            eq(projectConversations.boundAssetId, normalizedBoundAssetId),
+            eq(projectConversations.modeId, normalizedModeId),
+          ),
+        )
+        .get();
+
+      if (existing?.id === row.id) {
+        throw new AppError('DATABASE_WRITE_CONFLICT', {
+          cause: new Error('绑定 Conversation 替换必须使用新的 id'),
+        });
+      }
+      if (existing) {
+        const removed = transaction
+          .delete(projectConversations)
+          .where(
+            and(
+              eq(projectConversations.projectId, normalizedProjectId),
+              eq(projectConversations.id, existing.id),
+            ),
+          )
+          .run();
+        if (removed.changes !== 1) {
+          throw new AppError('DATABASE_WRITE_CONFLICT');
+        }
+      }
+
+      const inserted = transaction
+        .insert(projectConversations)
+        .values(row)
+        .run();
+      if (inserted.changes !== 1) {
+        throw new AppError('DATABASE_WRITE_CONFLICT');
+      }
+
+      return fromRow({
+        ...row,
+        createdTime: existing?.createdTime ?? row.createdTime,
+      });
+    });
   }
 
   save(

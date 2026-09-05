@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 
 import type { ConversationRecord } from '../../shared/project-conversations';
 import { createAbsoluteLocalFileContentRef } from '../content/content-ref';
@@ -282,5 +283,91 @@ describe('ProjectConversationDatabase', () => {
     );
     expect(conversations.get('ordinary-0')).toBeUndefined();
     expect(conversations.list('project-1')).toHaveLength(1_001);
+  });
+
+  it('rolls back a bound replacement when inserting the new row fails', () => {
+    context.db.insert(assets).values({
+      id: 'outline-1',
+      projectId: 'project-1',
+      name: '学习大纲',
+      mediaType: 'application/vnd.learning-companion.learning-outline',
+      creationKind: 'generated',
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+      createdTime: 1,
+      updatedTime: 1,
+    }).run();
+    const original: ConversationRecord = {
+      ...record('bound', 5),
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+    };
+    const conflictingId = record('conflict', 6);
+    conversations.save('project-1', original);
+    conversations.save('project-1', conflictingId);
+
+    expect(() =>
+      conversations.replaceBound(
+        'project-1',
+        'outline-1',
+        'learning-outline.intake',
+        {
+          ...original,
+          id: conflictingId.id,
+          messages: [],
+          updatedTime: 7,
+        },
+      ),
+    ).toThrow();
+
+    expect(conversations.getBound(
+      'project-1',
+      'outline-1',
+      'learning-outline.intake',
+    )).toEqual(original);
+    expect(conversations.get(conflictingId.id)?.conversation).toEqual(
+      conflictingId,
+    );
+  });
+
+  it('trims a conversation unbound by Asset deletion before exposing history', () => {
+    context.db.insert(assets).values({
+      id: 'outline-1',
+      projectId: 'project-1',
+      name: '学习大纲',
+      mediaType: 'application/vnd.learning-companion.learning-outline',
+      creationKind: 'generated',
+      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+      createdTime: 1,
+      updatedTime: 2_000,
+    }).run();
+    conversations.save('project-1', {
+      ...record('bound', 2_000),
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+    });
+
+    const insert = context.sqlite.prepare(
+      `INSERT INTO project_conversations (
+         id, project_id, mode_id, title, messages_json, created_time, updated_time
+       ) VALUES (?, 'project-1', 'project.general', ?, '[]', ?, ?)`,
+    );
+    context.sqlite.transaction(() => {
+      for (let index = 0; index < 1_000; index += 1) {
+        insert.run(`ordinary-${index}`, `普通对话 ${index}`, index + 2, index + 2);
+      }
+    })();
+
+    context.db.delete(assets).where(eq(assets.id, 'outline-1')).run();
+
+    const listed = conversations.list('project-1');
+    expect(listed).toHaveLength(1_000);
+    expect(listed.some(({ id }) => id === 'bound')).toBe(true);
+
+    context.close();
+    context = initializeDatabase(databaseFile);
+    conversations = new ProjectConversationDatabase(context);
+    const reopened = conversations.list('project-1');
+    expect(reopened).toHaveLength(1_000);
+    expect(reopened.some(({ id }) => id === 'bound')).toBe(true);
   });
 });

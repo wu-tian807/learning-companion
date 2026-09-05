@@ -127,14 +127,6 @@ export class ProjectConversationService
     if (!asset || asset.projectId !== normalizedProjectId) {
       throw new AppError('ASSET_NOT_FOUND');
     }
-    const existing = this.database.getBound(
-      normalizedProjectId,
-      normalizedAssetId,
-      normalizedModeId,
-    );
-    if (existing) {
-      this.database.remove(normalizedProjectId, existing.id);
-    }
     const now = Date.now();
     const candidate = cloneConversationRecord({
       id: `conv-${randomUUID()}`,
@@ -146,7 +138,12 @@ export class ProjectConversationService
       updatedTime: now,
     });
     return cloneConversationRecord(
-      this.database.save(normalizedProjectId, candidate),
+      this.database.replaceBound(
+        normalizedProjectId,
+        normalizedAssetId,
+        normalizedModeId,
+        candidate,
+      ),
     );
   }
 

@@ -108,6 +108,20 @@ function contextlessWorkbenchSource(
   return source?.contribution.contextRequired === true ? undefined : source;
 }
 
+function deferConversationTransition(
+  operation: () => void | Promise<void>,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    queueMicrotask(() => {
+      try {
+        Promise.resolve(operation()).then(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
 function reanswerBackupFromMessage(
   message: ConversationMessageRecord,
 ): ConversationReanswerBackup {
@@ -819,36 +833,34 @@ export function useConversationController({
         ? currentConversation
         : history.find((record) => record.id === request.conversationId)
       : undefined;
-    const launchContext =
-      matching || !request.contextSource
-        ? undefined
-        : Object.freeze({
-            ...request.contextSource,
-            ...(request.context === undefined
-              ? {}
-              : { context: request.context }),
-          });
+    // Selecting an existing conversation and attaching this launch's context
+    // are independent operations. A Workbench may intentionally address the
+    // current conversation while adding a new node/selection reference.
+    const launchContext = request.contextSource
+      ? Object.freeze({
+          ...request.contextSource,
+          ...(request.context === undefined
+            ? {}
+            : { context: request.context }),
+        })
+      : undefined;
     let conversationTransition: void | Promise<void> = undefined;
     if (request.conversationId !== undefined) {
       if (matching) {
         conversationTransition = restore(matching);
       } else {
-        conversationTransition = startNew(launchContext);
+        conversationTransition = deferConversationTransition(() =>
+          startNew(launchContext),
+        );
       }
     } else if (request.fallbackToNewConversation === true) {
-      conversationTransition = startNew(launchContext);
+      conversationTransition = deferConversationTransition(() =>
+        startNew(launchContext),
+      );
     }
-    if (
-      request.conversationId === undefined &&
-      request.fallbackToNewConversation !== true &&
-      launchContext !== undefined
-    ) {
+    if (launchContext !== undefined) {
       setPendingContext(launchContext);
-    } else if (
-      request.conversationId === undefined &&
-      request.fallbackToNewConversation !== true &&
-      request.clearContext
-    ) {
+    } else if (request.clearContext) {
       setPendingContext(undefined);
     }
 
@@ -865,8 +877,21 @@ export function useConversationController({
           submitAfterTransition();
         }
       } else {
-        setDraft(request.question);
+        if (conversationTransition instanceof Promise) {
+          void conversationTransition.then(
+            () => setDraft(request.question!),
+            () => undefined,
+          );
+        } else {
+          setDraft(request.question);
+        }
       }
+    }
+    if (
+      conversationTransition instanceof Promise &&
+      !(request.question?.trim() && request.submit)
+    ) {
+      void conversationTransition.catch(() => undefined);
     }
     setTab('chat');
     onLaunchConsumed?.(request.id);
