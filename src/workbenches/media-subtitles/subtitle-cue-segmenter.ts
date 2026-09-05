@@ -1,6 +1,7 @@
 import type {
   SubtitleCueV1,
   SubtitleLanguage,
+  SubtitleSpeakerAnalysisV1,
 } from './contracts';
 
 export interface TimestampedSubtitleToken {
@@ -38,6 +39,9 @@ const ALIGNMENT_POINT_PAUSE_MS = 700;
 const MAXIMUM_INTERNAL_GAP_MS = 700;
 const ALIGNMENT_POINT_PREROLL_MS = 250;
 const ALIGNMENT_POINT_POSTROLL_MS = 200;
+const MINIMUM_REPAIR_DISPLAY_WINDOW_MS = 200;
+const REPAIR_DISPLAY_WINDOW_MS =
+  ALIGNMENT_POINT_PREROLL_MS + ALIGNMENT_POINT_POSTROLL_MS;
 
 const SENTENCE_END = /[。！？!?…]["'”’）》】]*$/u;
 const CLAUSE_END = /[，,；;：:、]["'”’）》】]*$/u;
@@ -128,6 +132,129 @@ function applyAlignmentPointDisplayWindow(
     current.startMs = boundary;
   }
   return result;
+}
+
+export interface ZeroDurationSubtitleCueRepairOptions {
+  readonly speakerAnalysis?: SubtitleSpeakerAnalysisV1;
+}
+
+function createRepairDisplayWindow(
+  pointMs: number,
+  lowerBoundMs: number,
+  upperBoundMs: number,
+): readonly [startMs: number, endMs: number] {
+  const preferredStartMs = Math.max(
+    lowerBoundMs,
+    pointMs - ALIGNMENT_POINT_PREROLL_MS,
+  );
+  const preferredEndMs = Math.min(
+    upperBoundMs,
+    pointMs + ALIGNMENT_POINT_POSTROLL_MS,
+  );
+  if (
+    preferredEndMs - preferredStartMs >= MINIMUM_REPAIR_DISPLAY_WINDOW_MS
+  ) {
+    return [preferredStartMs, preferredEndMs];
+  }
+
+  const availableMs = upperBoundMs - lowerBoundMs;
+  if (availableMs < MINIMUM_REPAIR_DISPLAY_WINDOW_MS) {
+    throw new Error('字幕零时长 Cue 没有可用的显示窗口');
+  }
+
+  const widthMs = Math.min(REPAIR_DISPLAY_WINDOW_MS, availableMs);
+  const startMs = Math.min(
+    Math.max(lowerBoundMs, pointMs - ALIGNMENT_POINT_PREROLL_MS),
+    upperBoundMs - widthMs,
+  );
+  return [startMs, startMs + widthMs];
+}
+
+function speakerBoundsForCue(
+  cue: SubtitleCueV1,
+  speakerAnalysis: SubtitleSpeakerAnalysisV1 | undefined,
+): readonly [startMs: number, endMs: number] | undefined {
+  if (!speakerAnalysis || cue.speakerId === undefined) return undefined;
+  const candidates = speakerAnalysis.segments
+    .filter(
+      (segment) =>
+        segment.speakerId === cue.speakerId &&
+        cue.startMs >= segment.startMs &&
+        cue.startMs <= segment.endMs,
+    )
+    .sort(
+      (left, right) =>
+        left.endMs - left.startMs - (right.endMs - right.startMs),
+    );
+  const segment = candidates[0];
+  if (!segment) {
+    throw new Error(
+      `字幕 Cue ${cue.id} 的时间点超出说话人 ${cue.speakerId} 边界，无法修复`,
+    );
+  }
+  return [segment.startMs, segment.endMs];
+}
+
+function repairCueDisplayWindow(
+  cue: SubtitleCueV1,
+  index: number,
+  cues: readonly SubtitleCueV1[],
+  options: ZeroDurationSubtitleCueRepairOptions,
+): SubtitleCueV1 {
+  if (cue.endMs > cue.startMs) return cue;
+  if (cue.endMs < cue.startMs) {
+    throw new Error(`字幕 Cue ${cue.id} 的 endMs 早于 startMs`);
+  }
+
+  const speakerBounds = speakerBoundsForCue(cue, options.speakerAnalysis);
+  const lowerBoundMs = speakerBounds?.[0] ?? 0;
+  const upperBoundMs = speakerBounds?.[1] ?? Number.POSITIVE_INFINITY;
+  const previous = cues[index - 1];
+  const next = cues[index + 1];
+  const hasPreviousGap = previous === undefined || previous.endMs <= cue.startMs;
+  const hasNextGap = next === undefined || cue.startMs <= next.startMs;
+
+  let window: readonly [startMs: number, endMs: number];
+  if (hasPreviousGap && hasNextGap) {
+    try {
+      window = createRepairDisplayWindow(
+        cue.startMs,
+        Math.max(lowerBoundMs, previous?.endMs ?? lowerBoundMs),
+        Math.min(upperBoundMs, next?.startMs ?? upperBoundMs),
+      );
+    } catch {
+      window = createRepairDisplayWindow(
+        cue.startMs,
+        lowerBoundMs,
+        upperBoundMs,
+      );
+    }
+  } else {
+    window = createRepairDisplayWindow(
+      cue.startMs,
+      lowerBoundMs,
+      upperBoundMs,
+    );
+  }
+
+  return {
+    ...cue,
+    startMs: window[0],
+    endMs: window[1],
+  };
+}
+
+/** Repairs only zero-duration cues; all valid cues retain their original timing. */
+export function repairZeroDurationSubtitleCues(
+  cues: readonly SubtitleCueV1[],
+  options: ZeroDurationSubtitleCueRepairOptions = {},
+): readonly SubtitleCueV1[] {
+  if (cues.length === 0) return cues;
+  return Object.freeze(
+    cues.map((cue, index) =>
+      repairCueDisplayWindow(cue, index, cues, options),
+    ),
+  );
 }
 
 function boundaryPenalty(kind: BoundaryKind, pointAligned: boolean): number {
@@ -301,5 +428,7 @@ export function segmentSubtitleTokens(
       sourceCueIds: cueTokens.map(({ id }) => id),
     };
   });
-  return pointAligned ? applyAlignmentPointDisplayWindow(cues) : cues;
+  return repairZeroDurationSubtitleCues(
+    pointAligned ? applyAlignmentPointDisplayWindow(cues) : cues,
+  );
 }
