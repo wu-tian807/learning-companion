@@ -10,6 +10,7 @@ import { ExternalLibraryLifecycleRegistry } from '../../main/external-libraries/
 import { ExternalLibraryRuntimeSetupRegistry } from '../../main/external-libraries/external-library-runtime-setup';
 import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
+import { WorkbenchActionRegistry } from '../../main/workbench/workbench-action-registry';
 import type { RendererWorkbenchLoader } from '../../renderer/workbench/renderer-workbench-registry';
 import {
   CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
@@ -56,12 +57,14 @@ import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
   registerMainWorkbenchAgentFunctionTools,
+  registerMainWorkbenchActions,
   registerMainWorkbenchAssetTargets,
   registerMainWorkbenchAttachments,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchExternalLibraries,
   registerMainWorkbenchProviders,
 } from './register-main-workbenches';
+import { learningOutlineActions } from '../learning-outline/shared';
 import { preloadWorkbenchContributions } from './register-preload-workbench-features';
 import {
   registerRendererWorkbenches,
@@ -90,7 +93,11 @@ function createRegisteredMainWorkbenchRegistry(): WorkbenchRegistry {
     attachmentService: {} as never,
     projectConversationService: {} as never,
     agentWorkspaces: {} as never,
-    projectLookup: {} as never,
+    projectLookup: {
+      get: vi.fn((projectId: string) =>
+        projectId === 'project-1' ? { id: projectId } : undefined,
+      ),
+    } as never,
     stateDatabase: {} as never,
     stateDataDatabase: {} as never,
     sandboxFrameScripts: {} as never,
@@ -270,6 +277,17 @@ describe('Workbench contribution catalogs', () => {
     expect(functionTools.get(VIDEO_READ_FUNCTION_TOOL_ID)).toBeDefined();
     expect(functionTools.get('html_begin_edit')).toBeDefined();
     expect(functionTools.get('html_replace_edit')).toBeDefined();
+  });
+
+  it('registers child actions through the real Main catalog composition', async () => {
+    const actions = new WorkbenchActionRegistry();
+    const workbenches = createRegisteredMainWorkbenchRegistry();
+
+    registerMainWorkbenchActions({ actions, workbenches });
+
+    await expect(
+      actions.invoke(learningOutlineActions.createDraft, 'project-1', {}),
+    ).rejects.toThrow('INVALID_IPC_REQUEST');
   });
 
   it('registers Workbench conversation context providers through the same Main catalog', () => {

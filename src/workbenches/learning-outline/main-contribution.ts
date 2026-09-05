@@ -23,6 +23,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseCreateDraftPayload(payload: JsonValue | undefined): {
   readonly title?: string;
   readonly sourceAssetIds?: readonly string[];
+  readonly createRequestId?: string;
 } {
   if (payload === undefined) return {};
   if (!isJsonValue(payload) || !isRecord(payload)) {
@@ -30,13 +31,21 @@ function parseCreateDraftPayload(payload: JsonValue | undefined): {
   }
   const title = payload.title;
   const sourceAssetIds = payload.sourceAssetIds;
+  const createRequestId = payload.createRequestId;
   if (
     (title !== undefined &&
-      (typeof title !== 'string' || title.trim().length === 0 || title.length > 512)) ||
+      (typeof title !== 'string' ||
+        title.trim().length === 0 ||
+        title.length > 512)) ||
+    (createRequestId !== undefined &&
+      (typeof createRequestId !== 'string' ||
+        !/^[A-Za-z0-9._-]{1,160}$/u.test(createRequestId))) ||
     (sourceAssetIds !== undefined &&
       (!Array.isArray(sourceAssetIds) ||
         sourceAssetIds.length > 128 ||
-        sourceAssetIds.some((assetId) => typeof assetId !== 'string' || !assetId.trim()) ||
+        sourceAssetIds.some(
+          (assetId) => typeof assetId !== 'string' || !assetId.trim(),
+        ) ||
         new Set(sourceAssetIds).size !== sourceAssetIds.length))
   ) {
     throw new AppError('INVALID_IPC_REQUEST');
@@ -44,7 +53,20 @@ function parseCreateDraftPayload(payload: JsonValue | undefined): {
   return {
     ...(title === undefined ? {} : { title }),
     ...(sourceAssetIds === undefined ? {} : { sourceAssetIds }),
+    ...(createRequestId === undefined ? {} : { createRequestId }),
   };
+}
+
+function parseBoundAssetId(payload: JsonValue | undefined): string {
+  if (
+    !isJsonValue(payload) ||
+    !isRecord(payload) ||
+    typeof payload.assetId !== 'string' ||
+    !payload.assetId.trim()
+  ) {
+    throw new AppError('INVALID_IPC_REQUEST');
+  }
+  return payload.assetId;
 }
 
 export interface LearningOutlineWorkbenchRuntimeOwner {
@@ -73,13 +95,17 @@ export const learningOutlineMainWorkbenchContribution =
       }
       const service = new LearningOutlineService(
         context.assetService,
+        context.assetLookup,
         context.attachmentService,
         context.associationService,
         context.projectLookup,
         context.projectConversationService,
         context.agentWorkspaces,
       );
-      return new LearningOutlineWorkbenchProvider(service, context.workbenchEvents);
+      return new LearningOutlineWorkbenchProvider(
+        service,
+        context.workbenchEvents,
+      );
     },
     [
       {
@@ -95,12 +121,25 @@ export const learningOutlineMainWorkbenchContribution =
       {
         id: 'builtin.learning-outline.generation',
         registerActions(context): void {
-          const service = requireRuntimeOwner(context.provider).learningOutlineService;
-          context.actions.register(learningOutlineActions.createDraft, async (projectId, payload) =>
-            (await service.createDraft(
-              projectId,
-              parseCreateDraftPayload(payload),
-            )) as unknown as JsonValue,
+          const service = requireRuntimeOwner(
+            context.provider,
+          ).learningOutlineService;
+          context.actions.register(
+            learningOutlineActions.createDraft,
+            async (projectId, payload) =>
+              (await service.createDraft(
+                projectId,
+                parseCreateDraftPayload(payload),
+              )) as unknown as JsonValue,
+          );
+          context.actions.register(
+            learningOutlineActions.getBriefState,
+            async (projectId, payload) => {
+              const assetId = parseBoundAssetId(payload);
+              await service.startBriefMonitor(projectId, assetId);
+              await service.flushBrief(assetId);
+              return service.getBriefState(assetId) as unknown as JsonValue;
+            },
           );
         },
         registerGeneration(context): void {
@@ -112,7 +151,9 @@ export const learningOutlineMainWorkbenchContribution =
           );
         },
         start(context) {
-          const service = requireRuntimeOwner(context.provider).learningOutlineService;
+          const service = requireRuntimeOwner(
+            context.provider,
+          ).learningOutlineService;
           return service;
         },
       },

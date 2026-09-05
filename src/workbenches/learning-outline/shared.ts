@@ -10,9 +10,7 @@ import {
 import type { AssetSnapshot } from '../../shared/assets';
 import type { ConversationRecord } from '../../shared/project-conversations';
 import type { WorkbenchCommand } from '../../shared/workbench/protocol';
-import {
-  LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
-} from '../../shared/asset-media-types';
+import { LEARNING_OUTLINE_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 
 export { LEARNING_OUTLINE_ASSET_MEDIA_TYPE };
 
@@ -30,8 +28,7 @@ export const LEARNING_OUTLINE_INTAKE_TASK_DEFINITION_VERSION = 1;
 export const LEARNING_OUTLINE_GENERATION_TASK_DEFINITION_ID =
   'learning-outline.generate';
 export const LEARNING_OUTLINE_GENERATION_TASK_DEFINITION_VERSION = 1;
-export const LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE =
-  'learning-outline.brief';
+export const LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE = 'learning-outline.brief';
 export const LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION = 1;
 export const LEARNING_OUTLINE_DOCUMENT_FORMAT =
   'learning-companion/learning-outline';
@@ -39,16 +36,12 @@ export const LEARNING_OUTLINE_DOCUMENT_VERSION = 1;
 export const LEARNING_BRIEF_FORMAT = 'learning-companion/learning-brief';
 export const LEARNING_BRIEF_VERSION = 1;
 export const LEARNING_OUTLINE_BRIEF_FILE_NAME = 'learning-brief.json';
-export const LEARNING_OUTLINE_GENERATED_FILE_NAME =
-  'learning-outline.outline';
+export const LEARNING_OUTLINE_GENERATED_FILE_NAME = 'learning-outline.outline';
 
 export type LearningBriefReadiness = 'collecting' | 'ready';
 export type LearningOutlineStatus = 'draft' | 'published';
 export type LearningUnitStatus =
-  | 'not-started'
-  | 'learning'
-  | 'completed'
-  | 'skipped';
+  'not-started' | 'learning' | 'completed' | 'skipped';
 
 export interface LearningBriefRoadmapItem {
   readonly id: string;
@@ -129,13 +122,14 @@ export const learningOutlineCommands = {
 
 export const learningOutlineActions = {
   createDraft: 'learning-outline.create-draft',
+  getBriefState: 'learning-outline.get-brief-state',
 } as const;
 
 export interface LearningOutlineWorkflowState {
   readonly validBriefRevision?: string;
   readonly promptedBriefRevision?: string;
   readonly readinessNote?: string;
-};
+}
 
 export interface LearningOutlineBriefState {
   readonly valid: boolean;
@@ -143,6 +137,8 @@ export interface LearningOutlineBriefState {
   readonly revision?: string;
   readonly error?: string;
   readonly updatedTime?: number;
+  /** Last valid structured brief; an invalid rewrite must not erase it. */
+  readonly brief?: LearningBrief;
 }
 
 export function isLearningOutlineBriefAttachmentMetadata(
@@ -252,7 +248,8 @@ export function isLearningBrief(value: unknown): value is LearningBrief {
     Array.isArray(value.roadmap) &&
     value.roadmap.length <= 128 &&
     value.roadmap.every(isRoadmapItem) &&
-    new Set(value.roadmap.map((item) => item.id)).size === value.roadmap.length &&
+    new Set(value.roadmap.map((item) => item.id)).size ===
+      value.roadmap.length &&
     Array.isArray(value.openQuestions) &&
     value.openQuestions.length <= 128 &&
     value.openQuestions.every((item) => isText(item, false)) &&
@@ -298,7 +295,9 @@ function isChapter(value: unknown): value is LearningOutlineChapter {
   );
 }
 
-function isProgressEntry(value: unknown): value is LearningOutlineProgressEntry {
+function isProgressEntry(
+  value: unknown,
+): value is LearningOutlineProgressEntry {
   return (
     isRecord(value) &&
     isId(value.unitId) &&
@@ -327,11 +326,13 @@ export function isLearningOutlineDocument(
     Array.isArray(value.chapters) &&
     value.chapters.length <= 128 &&
     value.chapters.every(isChapter) &&
-    new Set(value.chapters.map((item) => item.id)).size === value.chapters.length &&
+    new Set(value.chapters.map((item) => item.id)).size ===
+      value.chapters.length &&
     Array.isArray(value.progress) &&
     value.progress.length <= 4_096 &&
     value.progress.every(isProgressEntry) &&
-    new Set(value.progress.map((item) => item.unitId)).size === value.progress.length &&
+    new Set(value.progress.map((item) => item.unitId)).size ===
+      value.progress.length &&
     isNonNegativeInteger(value.createdTime) &&
     isNonNegativeInteger(value.updatedTime) &&
     isJsonValue(value)
@@ -347,14 +348,20 @@ export function isLearningOutlineBriefState(
     (value.ready === undefined || typeof value.ready === 'boolean') &&
     (value.revision === undefined || isText(value.revision, false)) &&
     (value.error === undefined || isText(value.error)) &&
-    (value.updatedTime === undefined || isNonNegativeInteger(value.updatedTime))
+    (value.updatedTime === undefined ||
+      isNonNegativeInteger(value.updatedTime)) &&
+    (value.brief === undefined || isLearningBrief(value.brief))
   );
 }
 
 export function isLearningOutlineChangedEvent(
   value: unknown,
 ): value is LearningOutlineChangedEvent {
-  if (!isRecord(value) || !isText(value.projectId, false) || !isText(value.assetId, false)) {
+  if (
+    !isRecord(value) ||
+    !isText(value.projectId, false) ||
+    !isText(value.assetId, false)
+  ) {
     return false;
   }
   if (value.type === 'brief-changed') {
@@ -363,7 +370,10 @@ export function isLearningOutlineChangedEvent(
       isLearningOutlineBriefState(value.state)
     );
   }
-  return value.type === 'document-changed' && isLearningOutlineDocument(value.document);
+  return (
+    value.type === 'document-changed' &&
+    isLearningOutlineDocument(value.document)
+  );
 }
 
 export function isLearningOutlineWorkbenchPayload(
@@ -405,7 +415,9 @@ export function createLearningOutlineSetUnitStatusCommand(
 
 export function cloneLearningBrief(value: LearningBrief): LearningBrief {
   if (!isLearningBrief(value)) throw new Error('Learning brief 数据无效');
-  return cloneJsonValue(value as unknown as JsonValue) as unknown as LearningBrief;
+  return cloneJsonValue(
+    value as unknown as JsonValue,
+  ) as unknown as LearningBrief;
 }
 
 export function cloneLearningOutlineDocument(
@@ -414,7 +426,9 @@ export function cloneLearningOutlineDocument(
   if (!isLearningOutlineDocument(value)) {
     throw new Error('Learning outline 文档数据无效');
   }
-  return cloneJsonValue(value as unknown as JsonValue) as unknown as LearningOutlineDocument;
+  return cloneJsonValue(
+    value as unknown as JsonValue,
+  ) as unknown as LearningOutlineDocument;
 }
 
 export function createEmptyLearningBrief(): LearningBrief {
@@ -461,8 +475,10 @@ export function isLearningOutlineWorkflowState(
 ): value is LearningOutlineWorkflowState {
   return (
     isRecord(value) &&
-    (value.validBriefRevision === undefined || isText(value.validBriefRevision, false)) &&
-    (value.promptedBriefRevision === undefined || isText(value.promptedBriefRevision, false)) &&
+    (value.validBriefRevision === undefined ||
+      isText(value.validBriefRevision, false)) &&
+    (value.promptedBriefRevision === undefined ||
+      isText(value.promptedBriefRevision, false)) &&
     (value.readinessNote === undefined || isText(value.readinessNote))
   );
 }

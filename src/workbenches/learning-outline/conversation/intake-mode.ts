@@ -7,6 +7,7 @@ import {
 import type { StartGenerationTaskRequest } from '../../../shared/generation-tasks';
 import type { ConversationModeDefinition } from '../../../renderer/conversation/conversation-mode';
 import type { ConversationTaskInput } from '../../../renderer/conversation/conversation-contracts';
+import { LearningOutlineIntakeStatus } from './intake-status';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -37,6 +38,7 @@ export const learningOutlineIntakeMode: ConversationModeDefinition =
             conversationId: input.conversationId,
             boundAssetId: input.boundAssetId,
             question: input.question,
+            ...(input.generateTitle ? { generateTitle: true } : {}),
             ...(input.assetId ? { assetId: input.assetId } : {}),
             ...(input.context === undefined ? {} : { context: input.context }),
             ...(input.contextSource
@@ -70,5 +72,7 @@ export const learningOutlineIntakeMode: ConversationModeDefinition =
       ariaLabel: '学习大纲需求对话',
       emptyLabel: '先告诉我你想学什么，我会帮你整理需求。',
       inputPlaceholder: '描述你想达成的学习目标…',
+      allowNewConversation: false,
+      status: LearningOutlineIntakeStatus,
     }),
   });

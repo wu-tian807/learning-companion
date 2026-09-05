@@ -63,10 +63,7 @@ export function ProjectPage({
     () => new WorkbenchConversationRuntime(),
     [],
   );
-  useEffect(
-    () => () => conversationRuntime.dispose(),
-    [conversationRuntime],
-  );
+  useEffect(() => () => conversationRuntime.dispose(), [conversationRuntime]);
   const conversationSnapshot =
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
@@ -76,13 +73,8 @@ export function ProjectPage({
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
-  const {
-    closeOverlays,
-    openOverlay,
-    openRight,
-    toggleLeft,
-    toggleRight,
-  } = layout;
+  const { closeOverlays, openOverlay, openRight, toggleLeft, toggleRight } =
+    layout;
   const session = useProjectSession(project.id, setError);
   const assetOperations = useProjectAssets({
     projectId: project.id,
@@ -141,9 +133,17 @@ export function ProjectPage({
   );
   const handleGenerationToolResult = useCallback(
     async (result: RendererGenerationToolResult) => {
-      if (!result.assetId) return;
-      await assetOperations.refreshAllAssets();
-      session.selectAsset(result.assetId);
+      const assetId = result.asset?.id ?? result.assetId;
+      if (!assetId) return;
+      if (result.asset) {
+        if (result.asset.projectId !== project.id) {
+          throw new Error('生成结果不属于当前 Project。');
+        }
+        assetOperations.upsertAsset(result.asset);
+      } else {
+        await assetOperations.refreshAllAssets();
+      }
+      session.selectAsset(assetId);
       if (result.modeId && result.boundAssetId && result.conversationId) {
         conversationRuntime.open({
           modeId: result.modeId,
@@ -152,7 +152,7 @@ export function ProjectPage({
         });
       }
     },
-    [assetOperations, conversationRuntime, session],
+    [assetOperations, conversationRuntime, project.id, session],
   );
   const allImportedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
@@ -189,15 +189,18 @@ export function ProjectPage({
       }
     }
   }, [project.id]);
-  const selectConversationAsset = useCallback((assetId: string) => {
-    if (
-      session.loadState.kind !== 'ready' ||
-      !session.loadState.assets.some((asset) => asset.id === assetId)
-    ) {
-      throw new Error('引用的资料已不存在，无法定位原文。');
-    }
-    session.selectAsset(assetId);
-  }, [session]);
+  const selectConversationAsset = useCallback(
+    (assetId: string) => {
+      if (
+        session.loadState.kind !== 'ready' ||
+        !session.loadState.assets.some((asset) => asset.id === assetId)
+      ) {
+        throw new Error('引用的资料已不存在，无法定位原文。');
+      }
+      session.selectAsset(assetId);
+    },
+    [session],
+  );
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
@@ -226,11 +229,7 @@ export function ProjectPage({
       return;
     }
     toggleRight('generation');
-  }, [
-    conversationSnapshot.panelOpen,
-    dismissConversationPanel,
-    toggleRight,
-  ]);
+  }, [conversationSnapshot.panelOpen, dismissConversationPanel, toggleRight]);
   const toggleConversationPanel = useCallback(() => {
     if (
       layout.rightPanel === 'conversation' &&
@@ -263,10 +262,7 @@ export function ProjectPage({
       return;
     }
 
-    if (
-      closingSide === 'right' &&
-      closingRightPanel === 'conversation'
-    ) {
+    if (closingSide === 'right' && closingRightPanel === 'conversation') {
       dismissConversationPanel();
     }
     closeOverlays();
@@ -279,12 +275,7 @@ export function ProjectPage({
         rightToggleRef.current?.focus();
       }
     });
-  }, [
-    closeOverlays,
-    dismissConversationPanel,
-    layout.rightPanel,
-    openOverlay,
-  ]);
+  }, [closeOverlays, dismissConversationPanel, layout.rightPanel, openOverlay]);
 
   useEffect(() => {
     if (!openOverlay) {
@@ -308,11 +299,7 @@ export function ProjectPage({
     } else if (layout.rightPanel === 'conversation') {
       openRight('generation');
     }
-  }, [
-    conversationSnapshot.panelOpen,
-    layout.rightPanel,
-    openRight,
-  ]);
+  }, [conversationSnapshot.panelOpen, layout.rightPanel, openRight]);
 
   return (
     <main
@@ -384,10 +371,10 @@ export function ProjectPage({
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
         <WorkbenchRuntimeProvider onError={setError}>
-            <AssetSelectionCoordinatorProvider
-              coordinator={assetOperations.selectionCoordinator}
-            >
-              <section className="relative flex min-h-0 flex-1 gap-3">
+          <AssetSelectionCoordinatorProvider
+            coordinator={assetOperations.selectionCoordinator}
+          >
+            <section className="relative flex min-h-0 flex-1 gap-3">
               {openOverlay && (
                 <button
                   type="button"
@@ -520,8 +507,8 @@ export function ProjectPage({
                   />
                 }
               />
-              </section>
-            </AssetSelectionCoordinatorProvider>
+            </section>
+          </AssetSelectionCoordinatorProvider>
         </WorkbenchRuntimeProvider>
       </WorkbenchConversationRuntimeProvider>
 

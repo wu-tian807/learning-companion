@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 import type { AgentWorkspacePreparationApi } from '../../../main/agents/workspaces/agent-workspace-manager';
-import type { AssetServiceApi } from '../../../main/assets/asset-service';
+import type { AssetLookup } from '../../../main/assets/asset-database';
 import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import {
@@ -28,9 +28,12 @@ const BRIEF_DIRECTORY_KEY = 'learning-outline-brief';
 const MAX_BRIEF_BYTES = 512 * 1_024;
 
 function isMissing(error: unknown): boolean {
-  return error instanceof Error && 'code' in error &&
+  return (
+    error instanceof Error &&
+    'code' in error &&
     ((error as NodeJS.ErrnoException).code === 'ENOENT' ||
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR');
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR')
+  );
 }
 
 function stableStringify(value: unknown): string {
@@ -52,6 +55,18 @@ function briefRevision(brief: LearningBrief): string {
 
 function jsonBytes(value: unknown): Buffer {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+function retainLastValidBrief(
+  state: LearningOutlineBriefState,
+): Pick<LearningOutlineBriefState, 'brief' | 'revision' | 'updatedTime'> {
+  return {
+    ...(state.brief ? { brief: state.brief } : {}),
+    ...(state.revision ? { revision: state.revision } : {}),
+    ...(state.updatedTime === undefined
+      ? {}
+      : { updatedTime: state.updatedTime }),
+  };
 }
 
 function createAssetTarget(): { readonly scope: 'asset' } {
@@ -89,13 +104,13 @@ export class LearningOutlineBriefMonitor {
   private disposed = false;
 
   constructor(
-    private readonly assets: AssetServiceApi,
+    private readonly assets: AssetLookup,
     private readonly attachments: AttachmentServiceApi,
     private readonly agentWorkspaces: AgentWorkspacePreparationApi,
   ) {}
 
   async ensureWorkspace(projectId: string, assetId: string): Promise<string> {
-    const asset = this.assets.get(assetId);
+    const asset = this.assets.get(projectId, assetId);
     if (
       !asset ||
       asset.projectId !== projectId ||
@@ -151,10 +166,15 @@ export class LearningOutlineBriefMonitor {
   }
 
   getState(assetId: string): LearningOutlineBriefState {
-    return this.runtimes.get(assetId.trim())?.state ?? Object.freeze({ valid: false });
+    return (
+      this.runtimes.get(assetId.trim())?.state ??
+      Object.freeze({ valid: false })
+    );
   }
 
-  subscribe(listener: (event: LearningOutlineChangedEvent) => void): () => void {
+  subscribe(
+    listener: (event: LearningOutlineChangedEvent) => void,
+  ): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -162,12 +182,21 @@ export class LearningOutlineBriefMonitor {
   async shutdown(): Promise<void> {
     this.disposed = true;
     await Promise.allSettled([...this.starts.values()]);
-    for (const runtime of this.runtimes.values()) {
-      if (runtime.scanTimer) clearTimeout(runtime.scanTimer);
-      runtime.watcher?.close();
-      await runtime.scanSerial.catch(() => undefined);
-    }
+    const runtimes = [...this.runtimes.values()];
+    for (const runtime of runtimes) runtime.watcher?.close();
+    await Promise.allSettled(
+      runtimes.map((runtime) => this.flushRuntime(runtime)),
+    );
     this.runtimes.clear();
+  }
+
+  async flush(assetId?: string): Promise<void> {
+    const runtimes = assetId
+      ? [this.runtimes.get(assetId.trim())].filter(
+          (runtime): runtime is BriefRuntime => runtime !== undefined,
+        )
+      : [...this.runtimes.values()];
+    await Promise.all(runtimes.map((runtime) => this.flushRuntime(runtime)));
   }
 
   dispose(): void {
@@ -180,7 +209,10 @@ export class LearningOutlineBriefMonitor {
     this.listeners.clear();
   }
 
-  private async startInternal(projectId: string, assetId: string): Promise<void> {
+  private async startInternal(
+    projectId: string,
+    assetId: string,
+  ): Promise<void> {
     const directory = await this.ensureWorkspace(projectId, assetId);
     if (this.disposed) return;
     const runtime: BriefRuntime = {
@@ -197,28 +229,45 @@ export class LearningOutlineBriefMonitor {
   }
 
   private scheduleScan(runtime: BriefRuntime, immediate = false): void {
+    if (this.disposed || !this.runtimes.has(runtime.assetId)) return;
     if (runtime.scanTimer) clearTimeout(runtime.scanTimer);
     runtime.scanTimer = setTimeout(
       () => {
         runtime.scanTimer = undefined;
-        runtime.scanSerial = runtime.scanSerial
-          .then(() => this.scan(runtime))
-          .catch((error: unknown) => {
-            if (!this.runtimes.has(runtime.assetId)) return;
-            runtime.state = Object.freeze({
-              valid: false,
-              error: error instanceof Error ? error.message : '无法读取学习需求文件。',
-            });
-            this.publishBrief(runtime);
-          });
+        void this.enqueueScan(runtime);
       },
       immediate ? 0 : 80,
     );
   }
 
+  private flushRuntime(runtime: BriefRuntime): Promise<void> {
+    if (runtime.scanTimer) {
+      clearTimeout(runtime.scanTimer);
+      runtime.scanTimer = undefined;
+    }
+    return this.enqueueScan(runtime);
+  }
+
+  private enqueueScan(runtime: BriefRuntime): Promise<void> {
+    const task = runtime.scanSerial
+      .then(() => this.scan(runtime))
+      .catch((error: unknown) => {
+        if (!this.runtimes.has(runtime.assetId)) return;
+        runtime.state = Object.freeze({
+          valid: false,
+          ...retainLastValidBrief(runtime.state),
+          error:
+            error instanceof Error ? error.message : '无法读取学习需求文件。',
+        });
+        this.publishBrief(runtime);
+      });
+    runtime.scanSerial = task;
+    return task;
+  }
+
   private async scan(runtime: BriefRuntime): Promise<void> {
-    const asset = this.assets.get(runtime.assetId);
-    if (!asset || asset.projectId !== runtime.projectId) {
+    const asset = this.assets.get(runtime.projectId, runtime.assetId);
+    if (!asset || asset.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE) {
       runtime.watcher?.close();
       this.runtimes.delete(runtime.assetId);
       return;
@@ -229,13 +278,20 @@ export class LearningOutlineBriefMonitor {
     } catch (error) {
       runtime.state = Object.freeze({
         valid: false,
-        error: isMissing(error) ? '学习需求文件不存在。' : '学习需求文件无法读取。',
+        ...retainLastValidBrief(runtime.state),
+        error: isMissing(error)
+          ? '学习需求文件不存在。'
+          : '学习需求文件无法读取。',
       });
       this.publishBrief(runtime);
       return;
     }
     if (new TextEncoder().encode(raw).byteLength > MAX_BRIEF_BYTES) {
-      runtime.state = Object.freeze({ valid: false, error: '学习需求文件过大。' });
+      runtime.state = Object.freeze({
+        valid: false,
+        ...retainLastValidBrief(runtime.state),
+        error: '学习需求文件过大。',
+      });
       this.publishBrief(runtime);
       return;
     }
@@ -243,12 +299,20 @@ export class LearningOutlineBriefMonitor {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      runtime.state = Object.freeze({ valid: false, error: '学习需求 JSON 格式无效。' });
+      runtime.state = Object.freeze({
+        valid: false,
+        ...retainLastValidBrief(runtime.state),
+        error: '学习需求 JSON 格式无效。',
+      });
       this.publishBrief(runtime);
       return;
     }
     if (!isLearningBrief(parsed)) {
-      runtime.state = Object.freeze({ valid: false, error: '学习需求结构或版本无效。' });
+      runtime.state = Object.freeze({
+        valid: false,
+        ...retainLastValidBrief(runtime.state),
+        error: '学习需求结构或版本无效。',
+      });
       this.publishBrief(runtime);
       return;
     }
@@ -261,6 +325,7 @@ export class LearningOutlineBriefMonitor {
       ready: brief.readiness === 'ready',
       revision,
       updatedTime: attachment.updatedTime,
+      brief,
     });
     this.publishBrief(runtime);
   }
@@ -284,7 +349,8 @@ export class LearningOutlineBriefMonitor {
         typeof existing.metadata === 'object' &&
         !Array.isArray(existing.metadata) &&
         (existing.metadata as Record<string, unknown>).revision === revision
-      ) return existing;
+      )
+        return existing;
       return this.attachments.updateWithContent({
         projectId: runtime.projectId,
         attachmentId: existing.id,

@@ -11,7 +11,9 @@ import { projectConversations } from '../database/schema/project-conversations';
 import { AppError } from '../errors/app-error';
 
 export interface ProjectConversationDatabaseApi {
-  get(conversationId: string):
+  get(
+    conversationId: string,
+  ):
     | Readonly<{ projectId: string; conversation: ConversationRecord }>
     | undefined;
   list(projectId: string): readonly ConversationRecord[];
@@ -82,9 +84,7 @@ function sameExecutionContext(
   );
 }
 
-export class ProjectConversationDatabase
-  implements ProjectConversationDatabaseApi
-{
+export class ProjectConversationDatabase implements ProjectConversationDatabaseApi {
   constructor(private readonly context: DatabaseContext) {}
 
   get(conversationId: string) {
@@ -116,12 +116,7 @@ export class ProjectConversationDatabase
     const rows = this.context.db
       .select()
       .from(projectConversations)
-      .where(
-        eq(
-          projectConversations.projectId,
-          normalizedProjectId,
-        ),
-      )
+      .where(eq(projectConversations.projectId, normalizedProjectId))
       .orderBy(
         asc(projectConversations.createdTime),
         asc(projectConversations.id),
@@ -142,7 +137,10 @@ export class ProjectConversationDatabase
       .where(
         and(
           eq(projectConversations.projectId, requireId(projectId, 'projectId')),
-          eq(projectConversations.boundAssetId, requireId(boundAssetId, 'boundAssetId')),
+          eq(
+            projectConversations.boundAssetId,
+            requireId(boundAssetId, 'boundAssetId'),
+          ),
           eq(projectConversations.modeId, requireId(modeId, 'modeId')),
         ),
       )
@@ -210,10 +208,7 @@ export class ProjectConversationDatabase
         throw new AppError('DATABASE_WRITE_CONFLICT');
       }
 
-      return fromRow({
-        ...row,
-        createdTime: existing?.createdTime ?? row.createdTime,
-      });
+      return fromRow(row);
     });
   }
 
@@ -272,10 +267,7 @@ export class ProjectConversationDatabase
       .delete(projectConversations)
       .where(
         and(
-          eq(
-            projectConversations.projectId,
-            requireId(projectId, 'projectId'),
-          ),
+          eq(projectConversations.projectId, requireId(projectId, 'projectId')),
           eq(
             projectConversations.id,
             requireId(conversationId, 'conversationId'),
@@ -299,10 +291,6 @@ export class ProjectConversationDatabase
              LIMIT -1 OFFSET ?
            )`,
       )
-      .run(
-        projectId,
-        projectId,
-        PROJECT_CONVERSATION_MAX_CONVERSATIONS,
-      );
+      .run(projectId, projectId, PROJECT_CONVERSATION_MAX_CONVERSATIONS);
   }
 }

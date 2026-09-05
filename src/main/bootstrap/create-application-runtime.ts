@@ -285,6 +285,7 @@ export async function createApplicationRuntime({
     registerMainWorkbenchProviders(workbenchRegistry, {
       associationService,
       assetService,
+      assetLookup: assetDatabase,
       artifactRegistry,
       artifactService,
       contentResourceService,

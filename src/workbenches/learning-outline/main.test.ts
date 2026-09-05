@@ -57,7 +57,9 @@ describe('LearningOutlineWorkbenchProvider', () => {
       getBriefState: vi.fn(() => ({ valid: false })),
     } as unknown as LearningOutlineServiceApi;
     const publish = vi.fn();
-    const provider = new LearningOutlineWorkbenchProvider(service, { publish } as never);
+    const provider = new LearningOutlineWorkbenchProvider(service, {
+      publish,
+    } as never);
     const context = {
       sessionId: 'session-1',
       asset: {
@@ -187,6 +189,25 @@ describe('Learning Outline contribution lifecycle', () => {
     expect(
       dependencies.projectConversationService.getOrCreateBoundConversation,
     ).toHaveBeenCalledWith('project-1', 'outline-1', 'learning-outline.intake');
+    const retryablePayload = {
+      title: '可重试路线',
+      sourceAssetIds: [sourceAsset.id],
+      createRequestId: 'create-attempt-1',
+    };
+    const firstAttempt = await actions.invoke(
+      learningOutlineActions.createDraft,
+      'project-1',
+      retryablePayload,
+    );
+    const repeatedAttempt = await actions.invoke(
+      learningOutlineActions.createDraft,
+      'project-1',
+      retryablePayload,
+    );
+    expect(repeatedAttempt).toEqual(firstAttempt);
+    expect(dependencies.assetService.stageGeneratedFile).toHaveBeenCalledTimes(
+      2,
+    );
     await expect(
       actions.invoke(learningOutlineActions.createDraft, 'project-1', {
         sourceAssetIds: [pdfAsset.id],

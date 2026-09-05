@@ -38,6 +38,7 @@ export interface MainWorkbenchExternalLibraryContext {
 export interface MainWorkbenchProviderContext {
   readonly associationService: AssetAssociationServiceApi;
   readonly assetService: AssetServiceApi;
+  readonly assetLookup?: AssetLookup;
   readonly artifactRegistry: AssetArtifactRegistryApi;
   readonly artifactService: AssetArtifactServiceApi;
   readonly contentResourceService: ContentResourceServiceApi;
@@ -213,6 +214,11 @@ export function composeMainWorkbenchContribution(
     registerAgentFunctionTools(context): void {
       for (const feature of ownedFeatures) {
         feature.registerAgentFunctionTools?.(context);
+      }
+    },
+    registerActions(context): void {
+      for (const feature of ownedFeatures) {
+        feature.registerActions?.(context);
       }
     },
     registerGeneration(context): void {

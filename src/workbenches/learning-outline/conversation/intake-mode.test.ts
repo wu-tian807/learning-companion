@@ -28,4 +28,16 @@ describe('learning outline intake mode', () => {
       source: [{ assetId: 'mindmap-1' }, { assetId: 'pdf-1' }],
     });
   });
+
+  it('passes the first-question title request into the task instruction', () => {
+    const request = learningOutlineIntakeMode.task.createRequest({
+      projectId: 'project-1',
+      boundAssetId: 'outline-1',
+      conversationId: 'conversation-1',
+      question: '我想从基础开始学习',
+      generateTitle: true,
+    });
+
+    expect(request.instruction).toMatchObject({ generateTitle: true });
+  });
 });

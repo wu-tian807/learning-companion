@@ -88,15 +88,9 @@ describe('ProjectConversationDatabase', () => {
       record('conversation', 5, '当前标题'),
     ]);
     expect(
-      conversations.save(
-        'project-1',
-        record('conversation', 4, '过期标题'),
-      ),
+      conversations.save('project-1', record('conversation', 4, '过期标题')),
     ).toEqual(record('conversation', 5, '当前标题'));
-    conversations.save(
-      'project-1',
-      record('conversation', 6, '更新标题'),
-    );
+    conversations.save('project-1', record('conversation', 6, '更新标题'));
 
     expect(conversations.get('conversation')).toEqual({
       projectId: 'project-1',
@@ -105,16 +99,19 @@ describe('ProjectConversationDatabase', () => {
   });
 
   it('persists an immutable Asset binding and enforces one mode per Asset', () => {
-    context.db.insert(assets).values({
-      id: 'outline-1',
-      projectId: 'project-1',
-      name: '学习大纲',
-      mediaType: 'application/vnd.learning-companion.learning-outline',
-      creationKind: 'generated',
-      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
-      createdTime: 1,
-      updatedTime: 1,
-    }).run();
+    context.db
+      .insert(assets)
+      .values({
+        id: 'outline-1',
+        projectId: 'project-1',
+        name: '学习大纲',
+        mediaType: 'application/vnd.learning-companion.learning-outline',
+        creationKind: 'generated',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+        createdTime: 1,
+        updatedTime: 1,
+      })
+      .run();
     const bound: ConversationRecord = {
       ...record('outline-conversation', 5),
       modeId: 'learning-outline.intake',
@@ -123,7 +120,11 @@ describe('ProjectConversationDatabase', () => {
     conversations.save('project-1', bound);
 
     expect(
-      conversations.getBound('project-1', 'outline-1', 'learning-outline.intake'),
+      conversations.getBound(
+        'project-1',
+        'outline-1',
+        'learning-outline.intake',
+      ),
     ).toEqual(bound);
     expect(() =>
       conversations.save('project-1', {
@@ -148,9 +149,7 @@ describe('ProjectConversationDatabase', () => {
     context = initializeDatabase(databaseFile);
     conversations = new ProjectConversationDatabase(context);
 
-    expect(conversations.list('project-1')).toEqual([
-      record('persisted', 5),
-    ]);
+    expect(conversations.list('project-1')).toEqual([record('persisted', 5)]);
   });
 
   it('persists the conversation mode and its workspace binding', () => {
@@ -249,16 +248,19 @@ describe('ProjectConversationDatabase', () => {
   });
 
   it('retains a bound conversation while trimming ordinary history', () => {
-    context.db.insert(assets).values({
-      id: 'outline-1',
-      projectId: 'project-1',
-      name: '学习大纲',
-      mediaType: 'application/vnd.learning-companion.learning-outline',
-      creationKind: 'generated',
-      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
-      createdTime: 1,
-      updatedTime: 1,
-    }).run();
+    context.db
+      .insert(assets)
+      .values({
+        id: 'outline-1',
+        projectId: 'project-1',
+        name: '学习大纲',
+        mediaType: 'application/vnd.learning-companion.learning-outline',
+        creationKind: 'generated',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+        createdTime: 1,
+        updatedTime: 1,
+      })
+      .run();
     conversations.save('project-1', {
       ...record('bound', 1),
       modeId: 'learning-outline.intake',
@@ -272,7 +274,12 @@ describe('ProjectConversationDatabase', () => {
     );
     context.sqlite.transaction(() => {
       for (let index = 0; index < 1_001; index += 1) {
-        insert.run(`ordinary-${index}`, `普通对话 ${index}`, index + 2, index + 2);
+        insert.run(
+          `ordinary-${index}`,
+          `普通对话 ${index}`,
+          index + 2,
+          index + 2,
+        );
       }
     })();
 
@@ -286,16 +293,19 @@ describe('ProjectConversationDatabase', () => {
   });
 
   it('rolls back a bound replacement when inserting the new row fails', () => {
-    context.db.insert(assets).values({
-      id: 'outline-1',
-      projectId: 'project-1',
-      name: '学习大纲',
-      mediaType: 'application/vnd.learning-companion.learning-outline',
-      creationKind: 'generated',
-      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
-      createdTime: 1,
-      updatedTime: 1,
-    }).run();
+    context.db
+      .insert(assets)
+      .values({
+        id: 'outline-1',
+        projectId: 'project-1',
+        name: '学习大纲',
+        mediaType: 'application/vnd.learning-companion.learning-outline',
+        creationKind: 'generated',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+        createdTime: 1,
+        updatedTime: 1,
+      })
+      .run();
     const original: ConversationRecord = {
       ...record('bound', 5),
       modeId: 'learning-outline.intake',
@@ -319,27 +329,80 @@ describe('ProjectConversationDatabase', () => {
       ),
     ).toThrow();
 
-    expect(conversations.getBound(
-      'project-1',
-      'outline-1',
-      'learning-outline.intake',
-    )).toEqual(original);
+    expect(
+      conversations.getBound(
+        'project-1',
+        'outline-1',
+        'learning-outline.intake',
+      ),
+    ).toEqual(original);
     expect(conversations.get(conflictingId.id)?.conversation).toEqual(
       conflictingId,
     );
   });
 
+  it('returns the inserted record after replacing a bound conversation', () => {
+    context.db
+      .insert(assets)
+      .values({
+        id: 'outline-1',
+        projectId: 'project-1',
+        name: '学习大纲',
+        mediaType: 'application/vnd.learning-companion.learning-outline',
+        creationKind: 'generated',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+        createdTime: 1,
+        updatedTime: 1,
+      })
+      .run();
+    const original: ConversationRecord = {
+      ...record('bound', 5),
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+    };
+    conversations.save('project-1', original);
+
+    const replacement: ConversationRecord = {
+      ...original,
+      id: 'replacement',
+      title: '新的需求沟通',
+      createdTime: 9,
+      updatedTime: 10,
+      messages: [],
+    };
+
+    expect(
+      conversations.replaceBound(
+        'project-1',
+        'outline-1',
+        'learning-outline.intake',
+        replacement,
+      ),
+    ).toEqual(replacement);
+    expect(conversations.get('replacement')?.conversation).toEqual(replacement);
+    expect(
+      conversations.getBound(
+        'project-1',
+        'outline-1',
+        'learning-outline.intake',
+      ),
+    ).toEqual(replacement);
+  });
+
   it('trims a conversation unbound by Asset deletion before exposing history', () => {
-    context.db.insert(assets).values({
-      id: 'outline-1',
-      projectId: 'project-1',
-      name: '学习大纲',
-      mediaType: 'application/vnd.learning-companion.learning-outline',
-      creationKind: 'generated',
-      contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
-      createdTime: 1,
-      updatedTime: 2_000,
-    }).run();
+    context.db
+      .insert(assets)
+      .values({
+        id: 'outline-1',
+        projectId: 'project-1',
+        name: '学习大纲',
+        mediaType: 'application/vnd.learning-companion.learning-outline',
+        creationKind: 'generated',
+        contentRef: createAbsoluteLocalFileContentRef('/tmp/outline.outline'),
+        createdTime: 1,
+        updatedTime: 2_000,
+      })
+      .run();
     conversations.save('project-1', {
       ...record('bound', 2_000),
       modeId: 'learning-outline.intake',
@@ -353,7 +416,12 @@ describe('ProjectConversationDatabase', () => {
     );
     context.sqlite.transaction(() => {
       for (let index = 0; index < 1_000; index += 1) {
-        insert.run(`ordinary-${index}`, `普通对话 ${index}`, index + 2, index + 2);
+        insert.run(
+          `ordinary-${index}`,
+          `普通对话 ${index}`,
+          index + 2,
+          index + 2,
+        );
       }
     })();
 

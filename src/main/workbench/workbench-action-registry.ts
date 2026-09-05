@@ -15,8 +15,7 @@ export interface WorkbenchActionRegistryApi {
   ): Promise<JsonValue>;
 }
 
-const ACTION_ID_PATTERN =
-  /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
+const ACTION_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
 
 export class WorkbenchActionRegistry implements WorkbenchActionRegistryApi {
   private readonly handlers = new Map<string, WorkbenchActionHandler>();
@@ -34,7 +33,10 @@ export class WorkbenchActionRegistry implements WorkbenchActionRegistryApi {
     payload: JsonValue | undefined,
   ): Promise<JsonValue> {
     const handler = this.handlers.get(id);
-    if (!handler) throw new AppError('FEATURE_NOT_SUPPORTED');
+    if (!handler) {
+      console.error(`[WorkbenchActionRegistry] action 未注册: ${id}`);
+      throw new AppError('FEATURE_NOT_SUPPORTED');
+    }
     return handler(projectId, payload);
   }
 }

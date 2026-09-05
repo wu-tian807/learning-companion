@@ -2,10 +2,14 @@ import { defineRendererWorkbenchContribution } from '../../renderer/workbench/re
 import { learningOutlineWorkbenchManifest } from './shared';
 import { learningOutlineIntakeMode } from './conversation/intake-mode';
 import {
+  LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
   LEARNING_OUTLINE_INTAKE_MODE_ID,
   learningOutlineActions,
 } from './shared';
 import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
+import { isAssetSnapshot } from '../../shared/assets';
+import { isConversationRecord } from '../../shared/project-conversations';
+import { LearningOutlineSourceSetup } from './outline-source-setup';
 
 export const learningOutlineRendererWorkbenchContribution =
   defineRendererWorkbenchContribution({
@@ -14,17 +18,25 @@ export const learningOutlineRendererWorkbenchContribution =
     generationTools: [
       {
         id: 'study-outline',
-        label: '学习提纲',
+        label: '学习大纲',
         description: '整理章节与学习路线',
+        order: 20,
         requiresSources: true,
         sourceScope: 'generated',
         acceptsSource: (asset) => asset.mediaType === MIND_MAP_ASSET_MEDIA_TYPE,
-        async activate({ projectId, sourceAssets }) {
+        setup: LearningOutlineSourceSetup,
+        async activate({ projectId, sourceAssets, requestId }) {
+          if (sourceAssets.length !== 1 || !sourceAssets[0]) {
+            throw new Error('学习大纲一次只能选择一份思维导图。');
+          }
+          const sourceAsset = sourceAssets[0];
           const result = await window.learningCompanion.invokeWorkbenchAction({
             actionId: learningOutlineActions.createDraft,
             projectId,
             payload: {
-              sourceAssetIds: sourceAssets.map(({ id }) => id),
+              title: `${sourceAsset.name} · 学习大纲`,
+              ...(requestId ? { createRequestId: requestId } : {}),
+              sourceAssetIds: [sourceAsset.id],
             },
           });
           if (
@@ -35,24 +47,23 @@ export const learningOutlineRendererWorkbenchContribution =
             throw new Error('学习大纲草稿响应无效');
           }
           const record = result as Record<string, unknown>;
-          const asset = record.asset;
-          const conversation = record.conversation;
           if (
-            typeof asset !== 'object' ||
-            asset === null ||
-            Array.isArray(asset) ||
-            typeof conversation !== 'object' ||
-            conversation === null ||
-            Array.isArray(conversation) ||
-            typeof (asset as Record<string, unknown>).id !== 'string' ||
-            typeof (conversation as Record<string, unknown>).id !== 'string'
+            !isAssetSnapshot(record.asset) ||
+            !isConversationRecord(record.conversation) ||
+            record.asset.projectId !== projectId ||
+            record.asset.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE ||
+            record.asset.creationKind !== 'generated' ||
+            record.conversation.boundAssetId !== record.asset.id ||
+            record.conversation.modeId !== LEARNING_OUTLINE_INTAKE_MODE_ID
           ) {
             throw new Error('学习大纲草稿响应无效');
           }
-          const assetId = (asset as Record<string, unknown>).id as string;
+          const assetId = record.asset.id;
           return {
             assetId,
-            conversationId: (conversation as Record<string, unknown>).id as string,
+            asset: record.asset,
+            conversation: record.conversation,
+            conversationId: record.conversation.id,
             modeId: LEARNING_OUTLINE_INTAKE_MODE_ID,
             boundAssetId: assetId,
           };

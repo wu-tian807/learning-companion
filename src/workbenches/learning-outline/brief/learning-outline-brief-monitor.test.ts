@@ -25,9 +25,9 @@ describe('LearningOutlineBriefMonitor', () => {
 
   afterEach(async () => {
     await Promise.all(
-      temporaryDirectories.splice(0).map((directory) =>
-        rm(directory, { recursive: true, force: true }),
-      ),
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
     );
   });
 
@@ -36,11 +36,15 @@ describe('LearningOutlineBriefMonitor', () => {
     temporaryDirectories.push(directory);
     const createWithContent = vi.fn(async () => ({ updatedTime: 42 }));
     const assets = {
-      get: vi.fn(() => ({
-        id: 'outline-1',
-        projectId: 'project-1',
-        mediaType: 'application/vnd.learning-companion.learning-outline',
-      })),
+      get: vi.fn((projectId: string, assetId: string) =>
+        projectId === 'project-1' && assetId === 'outline-1'
+          ? {
+              id: assetId,
+              projectId,
+              mediaType: 'application/vnd.learning-companion.learning-outline',
+            }
+          : undefined,
+      ),
     };
     const attachments = {
       listByAsset: vi.fn(async () => []),
@@ -59,8 +63,9 @@ describe('LearningOutlineBriefMonitor', () => {
 
     const workspace = await monitor.ensureWorkspace('project-1', 'outline-1');
     expect(workspace).toBe(directory);
-    await expect(readFile(join(directory, 'learning-brief.json'), 'utf8'))
-      .resolves.toContain('learning-companion/learning-brief');
+    await expect(
+      readFile(join(directory, 'learning-brief.json'), 'utf8'),
+    ).resolves.toContain('learning-companion/learning-brief');
 
     const events: unknown[] = [];
     monitor.subscribe((event) => events.push(event));
@@ -95,8 +100,7 @@ describe('LearningOutlineBriefMonitor', () => {
         [...stored.values()].filter((item) => item.projectId === projectId),
       listByAsset: (projectId, assetId) =>
         [...stored.values()].filter(
-          (item) =>
-            item.projectId === projectId && item.assetId === assetId,
+          (item) => item.projectId === projectId && item.assetId === assetId,
         ),
       create: (attachment) => {
         stored.set(attachment.id, attachment);
@@ -132,10 +136,22 @@ describe('LearningOutlineBriefMonitor', () => {
       attachmentRegistry,
       new AssetTargetRegistry(),
       contentFiles,
-      { get: vi.fn(() => asset) } as never,
+      {
+        get: vi.fn((projectId: string, assetId: string) =>
+          projectId === asset.projectId && assetId === asset.id
+            ? asset
+            : undefined,
+        ),
+      } as never,
     );
     const monitor = new LearningOutlineBriefMonitor(
-      { get: vi.fn(() => asset) } as never,
+      {
+        get: vi.fn((projectId: string, assetId: string) =>
+          projectId === asset.projectId && assetId === asset.id
+            ? asset
+            : undefined,
+        ),
+      } as never,
       realAttachments,
       { prepare: vi.fn(async () => directory) } as never,
     );
@@ -165,6 +181,78 @@ describe('LearningOutlineBriefMonitor', () => {
     expect(monitor.getState('outline-1')).toMatchObject({
       valid: true,
       ready: true,
+    });
+    await monitor.shutdown();
+  });
+
+  it('flushes a debounced rewrite during shutdown', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lc-outline-brief-flush-'));
+    temporaryDirectories.push(directory);
+    const createWithContent = vi.fn(async () => ({ updatedTime: 42 }));
+    const asset = {
+      id: 'outline-1',
+      projectId: 'project-1',
+      mediaType: LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
+    };
+    const monitor = new LearningOutlineBriefMonitor(
+      {
+        get: vi.fn((projectId: string, assetId: string) =>
+          projectId === asset.projectId && assetId === asset.id
+            ? asset
+            : undefined,
+        ),
+      } as never,
+      {
+        listByAsset: vi.fn(async () => []),
+        readTextContent: vi.fn(async () => undefined),
+        createWithContent,
+        updateWithContent: vi.fn(),
+      } as never,
+      { prepare: vi.fn(async () => directory) } as never,
+    );
+
+    await monitor.start('project-1', 'outline-1');
+    await monitor.shutdown();
+
+    expect(createWithContent).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the last valid brief visible when a rewrite is invalid', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lc-outline-brief-invalid-'));
+    temporaryDirectories.push(directory);
+    const asset = {
+      id: 'outline-1',
+      projectId: 'project-1',
+      mediaType: LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
+    };
+    const monitor = new LearningOutlineBriefMonitor(
+      {
+        get: vi.fn((projectId: string, assetId: string) =>
+          projectId === asset.projectId && assetId === asset.id
+            ? asset
+            : undefined,
+        ),
+      } as never,
+      {
+        listByAsset: vi.fn(async () => []),
+        readTextContent: vi.fn(async () => undefined),
+        createWithContent: vi.fn(async () => ({ updatedTime: 42 })),
+        updateWithContent: vi.fn(),
+      } as never,
+      { prepare: vi.fn(async () => directory) } as never,
+    );
+
+    await monitor.start('project-1', 'outline-1');
+    await monitor.flush('outline-1');
+    const validState = monitor.getState('outline-1');
+    await writeFile(join(directory, 'learning-brief.json'), '{ invalid');
+    await monitor.flush('outline-1');
+
+    expect(monitor.getState('outline-1')).toMatchObject({
+      valid: false,
+      revision: validState.revision,
+      brief: validState.brief,
+      error: '学习需求 JSON 格式无效。',
     });
     await monitor.shutdown();
   });
