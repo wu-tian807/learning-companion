@@ -12,7 +12,10 @@ import { WorkbenchConversationRuntime } from '../conversation/workbench-conversa
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import type { RendererGenerationToolResult } from '../generation/renderer-generation-tool';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
-import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
+import {
+  AssetWorkbenchHost,
+  type AssetWorkbenchOpenStateChange,
+} from '../workbench/host/AssetWorkbenchHost';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -33,6 +36,11 @@ interface ProjectPageProps {
   readonly project: ProjectSnapshot;
   readonly onBack: () => void;
   readonly onOpenSettings: () => void;
+}
+
+interface WorkbenchOpenWaiter {
+  readonly resolve: () => void;
+  readonly reject: (error: unknown) => void;
 }
 
 function BackIcon() {
@@ -76,6 +84,13 @@ export function ProjectPage({
   const { closeOverlays, openOverlay, openRight, toggleLeft, toggleRight } =
     layout;
   const session = useProjectSession(project.id, setError);
+  const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
+  const workbenchOpenStateRef = useRef(
+    new Map<string, AssetWorkbenchOpenStateChange>(),
+  );
+  const workbenchOpenWaitersRef = useRef(
+    new Map<string, Set<WorkbenchOpenWaiter>>(),
+  );
   const assetOperations = useProjectAssets({
     projectId: project.id,
     loadState: session.loadState,
@@ -131,6 +146,43 @@ export function ProjectPage({
     },
     [startMindMap],
   );
+  const handleWorkbenchOpenState = useCallback(
+    (change: AssetWorkbenchOpenStateChange) => {
+      workbenchOpenStateRef.current.set(change.assetId, change);
+      if (change.status === 'opening') return;
+      const waiters = workbenchOpenWaitersRef.current.get(change.assetId);
+      if (!waiters) return;
+      workbenchOpenWaitersRef.current.delete(change.assetId);
+      for (const waiter of waiters) {
+        if (change.status === 'ready') {
+          waiter.resolve();
+        } else {
+          waiter.reject(
+            change.error instanceof Error
+              ? change.error
+              : new Error('无法打开资料工作台，请重试。'),
+          );
+        }
+      }
+    },
+    [],
+  );
+  const waitForWorkbenchOpen = useCallback((assetId: string) => {
+    const current = workbenchOpenStateRef.current.get(assetId);
+    if (current?.status === 'ready') return Promise.resolve();
+    if (current?.status === 'failed') {
+      return Promise.reject(
+        current.error instanceof Error
+          ? current.error
+          : new Error('无法打开资料工作台，请重试。'),
+      );
+    }
+    return new Promise<void>((resolve, reject) => {
+      const waiters = workbenchOpenWaitersRef.current.get(assetId) ?? new Set();
+      waiters.add({ resolve, reject });
+      workbenchOpenWaitersRef.current.set(assetId, waiters);
+    });
+  }, []);
   const handleGenerationToolResult = useCallback(
     async (result: RendererGenerationToolResult) => {
       const assetId = result.asset?.id ?? result.assetId;
@@ -139,20 +191,34 @@ export function ProjectPage({
         if (result.asset.projectId !== project.id) {
           throw new Error('生成结果不属于当前 Project。');
         }
+        const previousOpenState = workbenchOpenStateRef.current.get(assetId);
+        if (previousOpenState?.status === 'failed') {
+          workbenchOpenStateRef.current.delete(assetId);
+          setWorkbenchOpenAttempt((current) => current + 1);
+        }
+        const workbenchOpened = waitForWorkbenchOpen(assetId);
         assetOperations.upsertAsset(result.asset);
+        session.selectAsset(assetId);
+        await workbenchOpened;
       } else {
         await assetOperations.refreshAllAssets();
+        session.selectAsset(assetId);
       }
-      session.selectAsset(assetId);
       if (result.modeId && result.boundAssetId && result.conversationId) {
-        conversationRuntime.open({
+        await conversationRuntime.openAndWait({
           modeId: result.modeId,
           boundAssetId: result.boundAssetId,
           conversationId: result.conversationId,
         });
       }
     },
-    [assetOperations, conversationRuntime, project.id, session],
+    [
+      assetOperations,
+      conversationRuntime,
+      project.id,
+      session,
+      waitForWorkbenchOpen,
+    ],
   );
   const allImportedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
@@ -458,6 +524,8 @@ export function ProjectPage({
                   }
                   onSelectAsset={session.selectAsset}
                   onOpenSettings={onOpenSettings}
+                  openAttempt={workbenchOpenAttempt}
+                  onOpenStateChange={handleWorkbenchOpenState}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
                 />

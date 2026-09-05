@@ -22,6 +22,7 @@ export function ConversationSession({
   historyStore,
   launchRequest,
   onLaunchConsumed,
+  onLaunchSettled,
   onPersistenceError,
   onBusyChange,
   onConversationIdentityChange,
@@ -36,6 +37,7 @@ export function ConversationSession({
   readonly historyStore: ConversationHistoryStore;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
+  readonly onLaunchSettled?: (requestId: number, error?: unknown) => void;
   readonly onPersistenceError?: (error: unknown) => void;
   readonly onBusyChange?: (busy: boolean) => void;
   readonly onConversationIdentityChange?: (conversationId: string) => void;
@@ -51,6 +53,7 @@ export function ConversationSession({
     historyStore,
     launchRequest,
     onLaunchConsumed,
+    onLaunchSettled,
     onPersistenceError,
     mode,
     boundAssetId,
@@ -71,10 +74,7 @@ export function ConversationSession({
     onConversationIdentityChange?.(controller.state.conversation.id);
   }, [controller.state.conversation.id, onConversationIdentityChange]);
 
-  useEffect(
-    () => () => onBusyChangeRef.current?.(false),
-    [],
-  );
+  useEffect(() => () => onBusyChangeRef.current?.(false), []);
 
   return open ? children(controller) : null;
 }

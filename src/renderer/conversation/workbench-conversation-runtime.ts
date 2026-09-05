@@ -22,6 +22,14 @@ interface ActiveRegistration {
   readonly source: ActiveWorkbenchConversationContribution;
 }
 
+interface PendingLaunch {
+  readonly resolve: () => void;
+  readonly reject: (error: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+const OPEN_LAUNCH_TIMEOUT_MS = 10_000;
+
 export interface OpenWorkbenchConversationInput {
   /** Present only when a Workbench explicitly attaches its provider/context. */
   readonly ownerId?: string;
@@ -40,13 +48,14 @@ function matchesSource(
 ): active is ActiveWorkbenchConversationContribution {
   return Boolean(
     active &&
-      source?.assetId === active.assetId &&
-      source.contextProviderId === active.contribution.contextProviderId,
+    source?.assetId === active.assetId &&
+    source.contextProviderId === active.contribution.contextProviderId,
   );
 }
 
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
+  private readonly pendingLaunches = new Map<number, PendingLaunch>();
   private activeRegistration: ActiveRegistration | undefined;
   private launchId = 0;
   private revealAbortController: AbortController | undefined;
@@ -94,13 +103,12 @@ export class WorkbenchConversationRuntime {
       queueMicrotask(() => {
         if (this.activeRegistration?.token !== token) return;
         this.activeRegistration = undefined;
+        this.rejectPendingLaunches('AI 问答来源已关闭。');
         this.launchId += 1;
         this.update({
           panelOpen: this.snapshot.panelOpen,
           busy: this.snapshot.busy,
-          ...(this.snapshot.modeId
-            ? { modeId: this.snapshot.modeId }
-            : {}),
+          ...(this.snapshot.modeId ? { modeId: this.snapshot.modeId } : {}),
           ...(this.snapshot.boundAssetId
             ? { boundAssetId: this.snapshot.boundAssetId }
             : {}),
@@ -118,6 +126,50 @@ export class WorkbenchConversationRuntime {
   }
 
   open(input: OpenWorkbenchConversationInput = {}): void {
+    this.openInternal(input);
+  }
+
+  /** Opens the panel and waits until ConversationSession accepts the request. */
+  openAndWait(input: OpenWorkbenchConversationInput = {}): Promise<void> {
+    let resolvePending: (() => void) | undefined;
+    let rejectPending: ((error: unknown) => void) | undefined;
+    const completion = new Promise<void>((resolve, reject) => {
+      resolvePending = resolve;
+      rejectPending = reject;
+    });
+
+    try {
+      const pending: PendingLaunch = {
+        resolve: resolvePending!,
+        reject: rejectPending!,
+      };
+      this.openInternal(input, pending);
+      pending.timer = setTimeout(() => {
+        const requestId = this.launchId;
+        this.settleLaunchRequest(
+          requestId,
+          new Error('AI 问答面板打开超时，请重试。'),
+        );
+      }, OPEN_LAUNCH_TIMEOUT_MS);
+    } catch (error: unknown) {
+      rejectPending!(error);
+    }
+    return completion;
+  }
+
+  settleLaunchRequest(requestId: number, error?: unknown): void {
+    const pending = this.pendingLaunches.get(requestId);
+    if (!pending) return;
+    this.pendingLaunches.delete(requestId);
+    if (pending.timer) clearTimeout(pending.timer);
+    if (error === undefined) pending.resolve();
+    else pending.reject(error);
+  }
+
+  private openInternal(
+    input: OpenWorkbenchConversationInput,
+    pending?: PendingLaunch,
+  ): void {
     const ownerId = input.ownerId?.trim();
     const registration = this.activeRegistration;
     if (ownerId && registration?.ownerId !== ownerId) {
@@ -130,12 +182,13 @@ export class WorkbenchConversationRuntime {
     const contextSource = ownerId ? registration?.source : undefined;
     const explicitIdentity = Boolean(
       input.modeId?.trim() ||
-        input.boundAssetId?.trim() ||
-        input.conversationId?.trim(),
+      input.boundAssetId?.trim() ||
+      input.conversationId?.trim(),
     );
     const preserveCurrentIdentity =
       !explicitIdentity &&
-      (input.context !== undefined || input.fallbackToNewConversation === true) &&
+      (input.context !== undefined ||
+        input.fallbackToNewConversation === true) &&
       this.snapshot.modeId !== undefined;
     const modeId =
       input.modeId?.trim() ||
@@ -150,7 +203,10 @@ export class WorkbenchConversationRuntime {
       (!input.fallbackToNewConversation && preserveCurrentIdentity
         ? this.snapshot.conversationId
         : undefined);
+
+    this.rejectPendingLaunches('AI 问答打开请求已被新的请求替换。');
     this.launchId += 1;
+    if (pending) this.pendingLaunches.set(this.launchId, pending);
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
       modeId,
@@ -159,9 +215,7 @@ export class WorkbenchConversationRuntime {
       ...(input.fallbackToNewConversation === true
         ? { fallbackToNewConversation: true }
         : {}),
-      ...(contextSource
-        ? { contextSource }
-        : { clearContext: true }),
+      ...(contextSource ? { contextSource } : { clearContext: true }),
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
@@ -192,6 +246,7 @@ export class WorkbenchConversationRuntime {
 
   close(): void {
     if (!this.snapshot.panelOpen) return;
+    this.rejectPendingLaunches('AI 问答面板已关闭。');
     this.cancelReveal();
     this.update({ ...this.snapshot, panelOpen: false });
   }
@@ -252,6 +307,7 @@ export class WorkbenchConversationRuntime {
   }
 
   dispose(): void {
+    this.rejectPendingLaunches('AI 问答面板已关闭。');
     this.cancelReveal();
     this.activeRegistration = undefined;
     this.update({ panelOpen: false, busy: false });
@@ -263,6 +319,14 @@ export class WorkbenchConversationRuntime {
       new DOMException('已切换到另一条引用。', 'AbortError'),
     );
     this.revealAbortController = undefined;
+  }
+
+  private rejectPendingLaunches(message: string): void {
+    for (const [requestId, pending] of this.pendingLaunches) {
+      this.pendingLaunches.delete(requestId);
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.reject(new Error(message));
+    }
   }
 
   private update(next: WorkbenchConversationRuntimeSnapshot): void {

@@ -37,8 +37,16 @@ interface AssetWorkbenchHostProps {
   readonly onReveal: () => Promise<void> | void;
   readonly onSelectAsset?: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings: () => void;
+  readonly openAttempt?: number;
+  readonly onOpenStateChange?: (change: AssetWorkbenchOpenStateChange) => void;
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
+}
+
+export interface AssetWorkbenchOpenStateChange {
+  readonly assetId: string;
+  readonly status: 'opening' | 'ready' | 'failed';
+  readonly error?: unknown;
 }
 
 type SettledWorkbenchHostState =
@@ -71,15 +79,16 @@ export function AssetWorkbenchHost({
   onReveal,
   onSelectAsset,
   onOpenSettings,
+  openAttempt = 0,
+  onOpenStateChange,
   onLifecycleTaskChange,
   onError,
 }: AssetWorkbenchHostProps) {
   const runtime = useWorkbenchRuntime();
-  const [settledState, setSettledState] =
-    useState<SettledWorkbenchHostState>();
-  const [attachments, setAttachments] = useState<
-    readonly AssetAttachment[]
-  >([]);
+  const [settledState, setSettledState] = useState<SettledWorkbenchHostState>();
+  const [attachments, setAttachments] = useState<readonly AssetAttachment[]>(
+    [],
+  );
   const activeSessionIdRef = useRef<string | undefined>(undefined);
   const lifecycleRef = useRef(new WorkbenchLifecycleCoordinator());
   const assetId = asset?.id;
@@ -90,8 +99,7 @@ export function AssetWorkbenchHost({
       ? `${assetId}:${checkedTime}:${mediaType}`
       : undefined;
   const readySessionId =
-    settledState?.kind === 'ready' &&
-    settledState.assetKey === assetKey
+    settledState?.kind === 'ready' && settledState.assetKey === assetKey
       ? settledState.bootstrap.sessionId
       : undefined;
   const reportInteraction = useCallback(
@@ -110,9 +118,7 @@ export function AssetWorkbenchHost({
   );
   const subscribeEvent = useCallback(
     (
-      listener: Parameters<
-        typeof window.learningCompanion.onWorkbenchEvent
-      >[0],
+      listener: Parameters<typeof window.learningCompanion.onWorkbenchEvent>[0],
     ) =>
       window.learningCompanion.onWorkbenchEvent((event) => {
         if (event.sessionId === readySessionId) listener(event);
@@ -124,10 +130,7 @@ export function AssetWorkbenchHost({
       try {
         await window.learningCompanion.openExternal({ url });
       } catch (openError) {
-        const message = userMessageFromError(
-          openError,
-          '无法打开外部链接。',
-        );
+        const message = userMessageFromError(openError, '无法打开外部链接。');
 
         if (message) {
           onError(message);
@@ -143,17 +146,13 @@ export function AssetWorkbenchHost({
     }
 
     try {
-      const list =
-        await window.learningCompanion.listAttachments({
-          projectId,
-          assetId,
-        });
+      const list = await window.learningCompanion.listAttachments({
+        projectId,
+        assetId,
+      });
       setAttachments(list);
     } catch (loadError) {
-      const message = userMessageFromError(
-        loadError,
-        '无法读取文档标注。',
-      );
+      const message = userMessageFromError(loadError, '无法读取文档标注。');
       if (message) {
         console.error(message, loadError);
       }
@@ -174,14 +173,13 @@ export function AssetWorkbenchHost({
 
   useEffect(() => {
     const refreshChangedAssetAttachments = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        projectId?: string;
-        assetId?: string;
-      }>).detail;
-      if (
-        detail?.projectId !== projectId ||
-        detail.assetId !== assetId
-      ) {
+      const detail = (
+        event as CustomEvent<{
+          projectId?: string;
+          assetId?: string;
+        }>
+      ).detail;
+      if (detail?.projectId !== projectId || detail.assetId !== assetId) {
         return;
       }
       void refreshAttachments();
@@ -191,10 +189,11 @@ export function AssetWorkbenchHost({
       'learning-companion:attachments-changed',
       refreshChangedAssetAttachments,
     );
-    return () => window.removeEventListener(
-      'learning-companion:attachments-changed',
-      refreshChangedAssetAttachments,
-    );
+    return () =>
+      window.removeEventListener(
+        'learning-companion:attachments-changed',
+        refreshChangedAssetAttachments,
+      );
   }, [assetId, projectId, refreshAttachments]);
 
   useEffect(() => {
@@ -203,6 +202,9 @@ export function AssetWorkbenchHost({
     let commandTail: Promise<void> = Promise.resolve();
     const lease = lifecycleRef.current.acquire();
 
+    if (assetId && assetKey) {
+      onOpenStateChange?.({ assetId, status: 'opening' });
+    }
     onLifecycleTaskChange(lease.completed);
 
     const closeOpenedSession = async () => {
@@ -216,10 +218,7 @@ export function AssetWorkbenchHost({
       if (activeSessionIdRef.current === sessionId) {
         activeSessionIdRef.current = undefined;
       }
-      runtime.publishInteraction(
-        sessionId,
-        EMPTY_WORKBENCH_INTERACTION,
-      );
+      runtime.publishInteraction(sessionId, EMPTY_WORKBENCH_INTERACTION);
       // React may run the Host cleanup before the active View cleanup.
       // Yield once so a View can synchronously enqueue its final state command.
       await Promise.resolve();
@@ -247,17 +246,16 @@ export function AssetWorkbenchHost({
       }
 
       try {
-        const bootstrap =
-          await window.learningCompanion.openWorkbench({ assetId });
+        const bootstrap = await window.learningCompanion.openWorkbench({
+          assetId,
+        });
 
         if (!isWorkbenchBootstrap(bootstrap)) {
           throw new Error('Workbench Bootstrap 响应无效');
         }
 
         openedSessionId = bootstrap.sessionId;
-        const module = await defaultRegistry.resolve(
-          bootstrap.workbenchId,
-        );
+        const module = await defaultRegistry.resolve(bootstrap.workbenchId);
 
         assertRendererWorkbenchCompatibility(module, bootstrap);
         const executeCommand = (
@@ -297,6 +295,7 @@ export function AssetWorkbenchHost({
           module,
           executeCommand,
         });
+        onOpenStateChange?.({ assetId, status: 'ready' });
       } catch (openError: unknown) {
         await closeOpenedSession().catch(reportCloseError);
 
@@ -315,6 +314,11 @@ export function AssetWorkbenchHost({
 
         console.error('打开资料工作台失败', openError);
         setSettledState({ kind: 'failed', assetKey, message });
+        onOpenStateChange?.({
+          assetId,
+          status: 'failed',
+          error: openError,
+        });
         onError(message);
       }
     })();
@@ -340,6 +344,8 @@ export function AssetWorkbenchHost({
     assetKey,
     onError,
     onLifecycleTaskChange,
+    onOpenStateChange,
+    openAttempt,
     projectId,
     runtime,
   ]);
@@ -357,9 +363,7 @@ export function AssetWorkbenchHost({
         <p className="text-sm font-medium text-slate-400">
           选择一份资料开始学习
         </p>
-        <p className="mt-2 text-xs text-slate-600">
-          资料工作台会显示在这里
-        </p>
+        <p className="mt-2 text-xs text-slate-600">资料工作台会显示在这里</p>
       </div>
     </div>
   );

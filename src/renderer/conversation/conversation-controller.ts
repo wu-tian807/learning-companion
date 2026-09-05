@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type {
-  GenerationTaskView,
-} from '../../shared/generation-tasks';
+import type { GenerationTaskView } from '../../shared/generation-tasks';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type {
   ActiveWorkbenchConversationContribution,
@@ -76,6 +74,7 @@ interface UseConversationControllerInput {
   readonly historyStore: ConversationHistoryStore;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
+  readonly onLaunchSettled?: (requestId: number, error?: unknown) => void;
   readonly onPersistenceError?: (error: unknown) => void;
   readonly mode?: ConversationModeDefinition;
   /** Default immutable workspace binding for conversations created by this host. */
@@ -155,8 +154,7 @@ function startReanswerMessage(
   message: ConversationMessageRecord,
   taskId: string,
 ): ConversationMessageRecord {
-  const backup =
-    message.reanswerBackup ?? reanswerBackupFromMessage(message);
+  const backup = message.reanswerBackup ?? reanswerBackupFromMessage(message);
   return Object.freeze({
     ...conversationMessageBase(message),
     text: '',
@@ -203,6 +201,7 @@ export function useConversationController({
   historyStore,
   launchRequest,
   onLaunchConsumed,
+  onLaunchSettled,
   onPersistenceError,
   mode: conversationMode = projectConversationMode,
   workspace,
@@ -216,12 +215,13 @@ export function useConversationController({
   readonly actions: ConversationControllerActions;
 } {
   const [tab, setTab] = useState<'chat' | 'history'>('chat');
-  const [conversation, setConversationState] = useState<ConversationRecord>(() =>
-    createConversationRecord(createId(), now(), {
-      modeId: conversationMode.id,
-      ...(boundAssetId ? { boundAssetId } : {}),
-      ...(workspace ? { workspace } : {}),
-    }),
+  const [conversation, setConversationState] = useState<ConversationRecord>(
+    () =>
+      createConversationRecord(createId(), now(), {
+        modeId: conversationMode.id,
+        ...(boundAssetId ? { boundAssetId } : {}),
+        ...(workspace ? { workspace } : {}),
+      }),
   );
   const [history, setHistory] = useState<readonly ConversationRecord[]>([]);
   const [draft, setDraft] = useState('');
@@ -234,9 +234,9 @@ export function useConversationController({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const conversationRef = useRef(conversation);
-  const pendingContextRef = useRef<
-    ConversationContextAttachment | undefined
-  >(pendingContext);
+  const pendingContextRef = useRef<ConversationContextAttachment | undefined>(
+    pendingContext,
+  );
   const activeTaskIdRef = useRef<string | undefined>(undefined);
   const activeAssistantMessageIdRef = useRef<string | undefined>(undefined);
   const pendingCancelRef = useRef(false);
@@ -268,16 +268,17 @@ export function useConversationController({
     onPersistenceErrorRef.current = onPersistenceError;
   }, [onPersistenceError]);
 
-  const enqueueHistoryMutation = useCallback(<T,>(
-    operation: () => Promise<T>,
-  ): Promise<T> => {
-    const result = historyMutationTailRef.current.then(operation, operation);
-    historyMutationTailRef.current = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
-  }, []);
+  const enqueueHistoryMutation = useCallback(
+    <T>(operation: () => Promise<T>): Promise<T> => {
+      const result = historyMutationTailRef.current.then(operation, operation);
+      historyMutationTailRef.current = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+    [],
+  );
 
   const replaceConversation = useCallback((next: ConversationRecord) => {
     conversationRef.current = next;
@@ -285,9 +286,11 @@ export function useConversationController({
     return next;
   }, []);
 
-  const updateConversation = useCallback((
-    updater: (current: ConversationRecord) => ConversationRecord,
-  ) => replaceConversation(updater(conversationRef.current)), [replaceConversation]);
+  const updateConversation = useCallback(
+    (updater: (current: ConversationRecord) => ConversationRecord) =>
+      replaceConversation(updater(conversationRef.current)),
+    [replaceConversation],
+  );
 
   const writePendingContext = useCallback(
     (next: ConversationContextAttachment | undefined) => {
@@ -297,16 +300,17 @@ export function useConversationController({
     [],
   );
 
-  const setPendingContext = useCallback((
-    next: ConversationContextAttachment | undefined,
-  ) => {
-    const current = pendingContextRef.current;
-    const unchanged = conversationContextAttachmentsEqual(current, next);
-    if (!unchanged && current !== undefined) {
-      current.contribution.onContextReleased?.(current.context);
-    }
-    writePendingContext(next);
-  }, [writePendingContext]);
+  const setPendingContext = useCallback(
+    (next: ConversationContextAttachment | undefined) => {
+      const current = pendingContextRef.current;
+      const unchanged = conversationContextAttachmentsEqual(current, next);
+      if (!unchanged && current !== undefined) {
+        current.contribution.onContextReleased?.(current.context);
+      }
+      writePendingContext(next);
+    },
+    [writePendingContext],
+  );
 
   const clearTransientContext = useCallback(() => {
     const current = pendingContextRef.current;
@@ -314,32 +318,35 @@ export function useConversationController({
     writePendingContext(undefined);
   }, [writePendingContext]);
 
-  const persist = useCallback(async (record = conversationRef.current) => {
-    if (
-      record.messages.length === 0 ||
-      deletedConversationIdsRef.current.has(record.id)
-    ) {
-      return;
-    }
-    try {
-      const records = await enqueueHistoryMutation(() => {
-        if (deletedConversationIdsRef.current.has(record.id)) {
-          return Promise.resolve<readonly ConversationRecord[] | undefined>(
-            undefined,
-          );
+  const persist = useCallback(
+    async (record = conversationRef.current) => {
+      if (
+        record.messages.length === 0 ||
+        deletedConversationIdsRef.current.has(record.id)
+      ) {
+        return;
+      }
+      try {
+        const records = await enqueueHistoryMutation(() => {
+          if (deletedConversationIdsRef.current.has(record.id)) {
+            return Promise.resolve<readonly ConversationRecord[] | undefined>(
+              undefined,
+            );
+          }
+          return historyStore.save(record);
+        });
+        if (mountedRef.current && records) {
+          setHistory(visibleHistory(records));
         }
-        return historyStore.save(record);
-      });
-      if (mountedRef.current && records) {
-        setHistory(visibleHistory(records));
+      } catch (persistenceError) {
+        if (mountedRef.current) {
+          setError({ message: '无法保存对话记录，请稍后重试。' });
+        }
+        onPersistenceErrorRef.current?.(persistenceError);
       }
-    } catch (persistenceError) {
-      if (mountedRef.current) {
-        setError({ message: '无法保存对话记录，请稍后重试。' });
-      }
-      onPersistenceErrorRef.current?.(persistenceError);
-    }
-  }, [enqueueHistoryMutation, historyStore, visibleHistory]);
+    },
+    [enqueueHistoryMutation, historyStore, visibleHistory],
+  );
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
@@ -356,79 +363,99 @@ export function useConversationController({
     }
   }, []);
 
-  const applyTerminalTask = useCallback((task: GenerationTaskView) => {
-    const taskId = activeTaskIdRef.current;
-    const messageId = activeAssistantMessageIdRef.current;
-    if (!taskId || task.id !== taskId || !messageId) return false;
+  const applyTerminalTask = useCallback(
+    (task: GenerationTaskView) => {
+      const taskId = activeTaskIdRef.current;
+      const messageId = activeAssistantMessageIdRef.current;
+      if (!taskId || task.id !== taskId || !messageId) return false;
 
-    if (task.status === 'completed') {
-      const result = conversationMode.task.readCompletion(task);
-      if (!result?.answer.trim()) {
-        const failure = 'AI 任务已完成，但最终回答无效，请重试。';
-        const next = updateConversation((current) => Object.freeze({
-          ...current,
-          messages: Object.freeze(current.messages.map((message) =>
-            message.id === messageId
-              ? Object.freeze({ ...message, text: `回答失败：${failure}`, stopped: true as const })
-              : message,
-          )),
-          updatedTime: Math.max(task.updatedTime, current.updatedTime),
-        }));
+      if (task.status === 'completed') {
+        const result = conversationMode.task.readCompletion(task);
+        if (!result?.answer.trim()) {
+          const failure = 'AI 任务已完成，但最终回答无效，请重试。';
+          const next = updateConversation((current) =>
+            Object.freeze({
+              ...current,
+              messages: Object.freeze(
+                current.messages.map((message) =>
+                  message.id === messageId
+                    ? Object.freeze({
+                        ...message,
+                        text: `回答失败：${failure}`,
+                        stopped: true as const,
+                      })
+                    : message,
+                ),
+              ),
+              updatedTime: Math.max(task.updatedTime, current.updatedTime),
+            }),
+          );
+          finishTask();
+          setError({ message: failure, retryTaskId: task.id });
+          void persist(next);
+          return true;
+        }
+        const next = updateConversation((current) =>
+          Object.freeze({
+            ...current,
+            title: result.title?.trim().slice(0, 128) || current.title,
+            messages: Object.freeze(
+              current.messages.map((message) =>
+                message.id === messageId
+                  ? completeAnswerMessage(
+                      message,
+                      result.answer,
+                      result.modelInfo,
+                    )
+                  : message,
+              ),
+            ),
+            updatedTime: Math.max(task.updatedTime, current.updatedTime),
+          }),
+        );
         finishTask();
-        setError({ message: failure, retryTaskId: task.id });
+        setError(undefined);
         void persist(next);
         return true;
       }
-      const next = updateConversation((current) => Object.freeze({
-        ...current,
-        title: result.title?.trim().slice(0, 128) || current.title,
-        messages: Object.freeze(current.messages.map((message) =>
-          message.id === messageId
-            ? completeAnswerMessage(
-                message,
-                result.answer,
-                result.modelInfo,
-              )
-            : message,
-        )),
-        updatedTime: Math.max(task.updatedTime, current.updatedTime),
-      }));
-      finishTask();
-      setError(undefined);
-      void persist(next);
-      return true;
-    }
 
-    if (task.status === 'failed' || task.status === 'cancelled') {
-      const terminalFailure = failureFromTask(task);
-      const next = updateConversation((current) => Object.freeze({
-        ...current,
-        messages: Object.freeze(current.messages.map((message) =>
-          message.id === messageId
-            ? message.reanswerBackup
-              ? restoreReanswerMessage(
-                  message,
-                  task.id,
-                  task.status === 'failed',
-                )
-              : Object.freeze({
-                  ...message,
-                  text: task.status === 'cancelled'
-                    ? '本次回答已停止。'
-                    : `回答失败：${terminalFailure.message}`,
-                  stopped: true as const,
-                })
-            : message,
-        )),
-        updatedTime: Math.max(task.updatedTime, current.updatedTime),
-      }));
-      finishTask();
-      setError(terminalFailure);
-      void persist(next);
-      return true;
-    }
-    return false;
-  }, [conversationMode.task, finishTask, persist, updateConversation]);
+      if (task.status === 'failed' || task.status === 'cancelled') {
+        const terminalFailure = failureFromTask(task);
+        const next = updateConversation((current) =>
+          Object.freeze({
+            ...current,
+            messages: Object.freeze(
+              current.messages.map((message) =>
+                message.id === messageId
+                  ? message.reanswerBackup
+                    ? restoreReanswerMessage(
+                        message,
+                        task.id,
+                        task.status === 'failed',
+                      )
+                    : Object.freeze({
+                        ...message,
+                        text:
+                          task.status === 'cancelled'
+                            ? '本次回答已停止。'
+                            : `回答失败：${terminalFailure.message}`,
+                        stopped: true as const,
+                      })
+                  : message,
+              ),
+            ),
+            updatedTime: Math.max(task.updatedTime, current.updatedTime),
+          }),
+        );
+        finishTask();
+        setError(terminalFailure);
+        void persist(next);
+        return true;
+      }
+      return false;
+    },
+    [conversationMode.task, finishTask, persist, updateConversation],
+  );
 
   const bindTask = useCallback(
     (
@@ -442,16 +469,20 @@ export function useConversationController({
         setActiveTaskId(taskId);
         setBusy(true);
       }
-      const next = updateConversation((current) => Object.freeze({
-        ...current,
-        messages: Object.freeze(current.messages.map((message) =>
-          message.id === assistantMessageId
-            ? mode === 'reanswer'
-              ? startReanswerMessage(message, taskId)
-              : Object.freeze({ ...message, generationTaskId: taskId })
-            : message,
-        )),
-      }));
+      const next = updateConversation((current) =>
+        Object.freeze({
+          ...current,
+          messages: Object.freeze(
+            current.messages.map((message) =>
+              message.id === assistantMessageId
+                ? mode === 'reanswer'
+                  ? startReanswerMessage(message, taskId)
+                  : Object.freeze({ ...message, generationTaskId: taskId })
+                : message,
+            ),
+          ),
+        }),
+      );
       void persist(next);
     },
     [persist, updateConversation],
@@ -487,325 +518,372 @@ export function useConversationController({
         },
       );
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [historyStore, open, visibleHistory]);
 
-  useEffect(() => taskClient.subscribe((event) => {
-    const taskId = activeTaskIdRef.current;
-    if (!taskId) return;
-    if (event.type === 'execution-event') {
-      if (event.projectId !== projectId || event.taskId !== taskId) return;
-      const executionEvent = event.event;
-      if (executionEvent.type === 'assistant-delta') {
-        const messageId = activeAssistantMessageIdRef.current;
-        if (!messageId) return;
-        updateConversation((current) => Object.freeze({
+  useEffect(
+    () =>
+      taskClient.subscribe((event) => {
+        const taskId = activeTaskIdRef.current;
+        if (!taskId) return;
+        if (event.type === 'execution-event') {
+          if (event.projectId !== projectId || event.taskId !== taskId) return;
+          const executionEvent = event.event;
+          if (executionEvent.type === 'assistant-delta') {
+            const messageId = activeAssistantMessageIdRef.current;
+            if (!messageId) return;
+            updateConversation((current) =>
+              Object.freeze({
+                ...current,
+                messages: Object.freeze(
+                  current.messages.map((message) =>
+                    message.id === messageId
+                      ? Object.freeze({
+                          ...message,
+                          text: message.text + executionEvent.delta,
+                        })
+                      : message,
+                  ),
+                ),
+              }),
+            );
+            return;
+          }
+          const label = activityFromExecutionEvent(executionEvent);
+          if (label) setActivityLabel(label);
+          return;
+        }
+        const snapshot = taskSnapshotFromEvent(event);
+        if (snapshot?.projectId === projectId && snapshot.id === taskId) {
+          applyTerminalTask(snapshot);
+        }
+      }),
+    [applyTerminalTask, projectId, taskClient, updateConversation],
+  );
+
+  const applyNewConversation = useCallback(
+    (
+      context?: ConversationContextAttachment,
+      next: ConversationRecord = createConversationRecord(createId(), now(), {
+        modeId: conversationMode.id,
+        ...(boundAssetId ? { boundAssetId } : {}),
+        ...(workspace ? { workspace } : {}),
+      }),
+    ) => {
+      if (context === undefined) {
+        clearTransientContext();
+      } else {
+        setPendingContext(context);
+      }
+      replaceConversation(next);
+      setDraft('');
+      setError(undefined);
+      setActivityLabel(undefined);
+      setTab('chat');
+    },
+    [
+      clearTransientContext,
+      conversationMode.id,
+      boundAssetId,
+      createId,
+      now,
+      replaceConversation,
+      setPendingContext,
+      workspace,
+    ],
+  );
+
+  const resetConversation = useCallback(
+    (context?: ConversationContextAttachment) => applyNewConversation(context),
+    [applyNewConversation],
+  );
+
+  const startNew = useCallback(
+    (context?: ConversationContextAttachment): void | Promise<void> => {
+      if (activeTaskIdRef.current) return;
+      if (initialBoundAssetId) {
+        const rebuild = historyStore.rebuildBoundConversation;
+        if (!rebuild) {
+          const error = new Error('绑定对话必须通过 Main 重建');
+          setError({ message: error.message });
+          onPersistenceErrorRef.current?.(error);
+          return Promise.reject(error);
+        }
+        return (async () => {
+          await persistRef.current();
+          const next = await rebuild(initialBoundAssetId, conversationMode.id);
+          if (!mountedRef.current) return;
+          applyNewConversation(context, next);
+        })().catch((error: unknown) => {
+          if (mountedRef.current) {
+            setError({ message: '无法创建新的绑定对话，请稍后重试。' });
+          }
+          onPersistenceErrorRef.current?.(error);
+          throw error;
+        });
+      }
+      void persistRef.current();
+      resetConversation(context);
+    },
+    [
+      applyNewConversation,
+      conversationMode.id,
+      historyStore.rebuildBoundConversation,
+      initialBoundAssetId,
+      resetConversation,
+    ],
+  );
+
+  const restore = useCallback(
+    (record: ConversationRecord) => {
+      if (
+        activeTaskIdRef.current ||
+        record.modeId !== conversationMode.id ||
+        record.boundAssetId !== initialBoundAssetId
+      )
+        return;
+      void persistRef.current();
+      clearTransientContext();
+      replaceConversation(record);
+      setDraft('');
+      setError(undefined);
+      setTab('chat');
+
+      const candidate = [...record.messages]
+        .reverse()
+        .find(
+          (message) => message.role === 'assistant' && message.generationTaskId,
+        );
+      if (!candidate?.generationTaskId) return;
+      void taskClient
+        .get(projectId, candidate.generationTaskId)
+        .then((snapshot) => {
+          if (
+            !mountedRef.current ||
+            conversationRef.current.id !== record.id ||
+            !snapshot
+          )
+            return;
+          if (
+            snapshot.status === 'created' ||
+            snapshot.status === 'prepared' ||
+            snapshot.status === 'processing'
+          ) {
+            bindTask(snapshot.id, candidate.id);
+            setActivityLabel('正在恢复回答进度…');
+          } else {
+            activeTaskIdRef.current = snapshot.id;
+            activeAssistantMessageIdRef.current = candidate.id;
+            applyTerminalTask(snapshot);
+          }
+        })
+        .catch((taskError: unknown) => {
+          setError({
+            message:
+              userMessageFromError(taskError, '无法恢复这次回答。') ??
+              '无法恢复这次回答。',
+          });
+        });
+    },
+    [
+      applyTerminalTask,
+      bindTask,
+      clearTransientContext,
+      conversationMode.id,
+      initialBoundAssetId,
+      projectId,
+      replaceConversation,
+      taskClient,
+    ],
+  );
+
+  const submit = useCallback(
+    (question = draft, context = pendingContext) => {
+      const normalized = question.trim();
+      if (!normalized || activeTaskIdRef.current) return;
+      setError(undefined);
+      setActivityLabel('正在创建回答任务…');
+      const current = conversationRef.current;
+      const firstQuestion = current.messages.every(
+        (message) => message.role !== 'user',
+      );
+      const taskSource =
+        context ?? contextlessWorkbenchSource(currentAssetSource);
+      const taskInput = {
+        projectId,
+        ...(current.boundAssetId
+          ? { boundAssetId: current.boundAssetId }
+          : boundAssetId
+            ? { boundAssetId }
+            : {}),
+        ...(taskSource ? { assetId: taskSource.assetId } : {}),
+        conversationId: current.id,
+        ...(current.workspace ? { workspace: current.workspace } : {}),
+        question: normalized,
+        ...(context?.context === undefined ? {} : { context: context.context }),
+        generateTitle: firstQuestion,
+      };
+      const userMessageId = createConversationMessageId(createId());
+      const assistantMessageId = createConversationMessageId(createId());
+      const timestamp = now();
+      let contextSource:
+        ReturnType<typeof createConversationContextSource> | undefined;
+      let request: ReturnType<
+        ConversationModeDefinition['task']['createRequest']
+      >;
+      try {
+        contextSource = taskSource
+          ? createConversationContextSource(taskSource.contribution, taskInput)
+          : undefined;
+        request = conversationMode.task.createRequest({
+          ...taskInput,
+          ...(contextSource ? { contextSource } : {}),
+        });
+      } catch (requestError) {
+        const preparationFailure = failureFromError(
+          requestError,
+          '无法准备 AI 问答任务。',
+        );
+        const failedRecord = Object.freeze({
           ...current,
-          messages: Object.freeze(current.messages.map((message) =>
-            message.id === messageId
-              ? Object.freeze({ ...message, text: message.text + executionEvent.delta })
-              : message,
-          )),
-        }));
+          title: firstQuestion
+            ? fallbackConversationTitle(normalized)
+            : current.title,
+          messages: Object.freeze([
+            ...current.messages,
+            Object.freeze({
+              id: userMessageId,
+              role: 'user' as const,
+              text: normalized,
+              createdTime: timestamp,
+              ...(context?.context === undefined
+                ? {}
+                : { context: context.context }),
+            }),
+            Object.freeze({
+              id: assistantMessageId,
+              role: 'assistant' as const,
+              text: `回答失败：${preparationFailure.message}`,
+              createdTime: timestamp,
+              replyToMessageId: userMessageId,
+              stopped: true as const,
+            }),
+          ]),
+          updatedTime: timestamp,
+        });
+        replaceConversation(failedRecord);
+        void persist(failedRecord);
+        setDraft('');
+        writePendingContext(undefined);
+        setActivityLabel(undefined);
+        setError(preparationFailure);
         return;
       }
-      const label = activityFromExecutionEvent(executionEvent);
-      if (label) setActivityLabel(label);
-      return;
-    }
-    const snapshot = taskSnapshotFromEvent(event);
-    if (snapshot?.projectId === projectId && snapshot.id === taskId) {
-      applyTerminalTask(snapshot);
-    }
-  }), [applyTerminalTask, projectId, taskClient, updateConversation]);
 
-  const applyNewConversation = useCallback((
-    context?: ConversationContextAttachment,
-    next: ConversationRecord = createConversationRecord(createId(), now(), {
-      modeId: conversationMode.id,
-      ...(boundAssetId ? { boundAssetId } : {}),
-      ...(workspace ? { workspace } : {}),
-    }),
-  ) => {
-    if (context === undefined) {
-      clearTransientContext();
-    } else {
-      setPendingContext(context);
-    }
-    replaceConversation(next);
-    setDraft('');
-    setError(undefined);
-    setActivityLabel(undefined);
-    setTab('chat');
-  }, [
-    clearTransientContext,
-    conversationMode.id,
-    boundAssetId,
-    createId,
-    now,
-    replaceConversation,
-    setPendingContext,
-    workspace,
-  ]);
-
-  const resetConversation = useCallback((
-    context?: ConversationContextAttachment,
-  ) => applyNewConversation(context), [applyNewConversation]);
-
-  const startNew = useCallback((
-    context?: ConversationContextAttachment,
-  ): void | Promise<void> => {
-    if (activeTaskIdRef.current) return;
-    if (initialBoundAssetId) {
-      const rebuild = historyStore.rebuildBoundConversation;
-      if (!rebuild) {
-        const error = new Error('绑定对话必须通过 Main 重建');
-        setError({ message: error.message });
-        onPersistenceErrorRef.current?.(error);
-        return Promise.reject(error);
-      }
-      return (async () => {
-        await persistRef.current();
-        const next = await rebuild(initialBoundAssetId, conversationMode.id);
-        if (!mountedRef.current) return;
-        applyNewConversation(context, next);
-      })().catch((error: unknown) => {
-        if (mountedRef.current) {
-          setError({ message: '无法创建新的绑定对话，请稍后重试。' });
-        }
-        onPersistenceErrorRef.current?.(error);
-        throw error;
-      });
-    }
-    void persistRef.current();
-    resetConversation(context);
-  }, [
-    applyNewConversation,
-    conversationMode.id,
-    historyStore.rebuildBoundConversation,
-    initialBoundAssetId,
-    resetConversation,
-  ]);
-
-  const restore = useCallback((record: ConversationRecord) => {
-    if (
-      activeTaskIdRef.current ||
-      record.modeId !== conversationMode.id ||
-      record.boundAssetId !== initialBoundAssetId
-    ) return;
-    void persistRef.current();
-    clearTransientContext();
-    replaceConversation(record);
-    setDraft('');
-    setError(undefined);
-    setTab('chat');
-
-    const candidate = [...record.messages].reverse().find(
-      (message) => message.role === 'assistant' && message.generationTaskId,
-    );
-    if (!candidate?.generationTaskId) return;
-    void taskClient.get(projectId, candidate.generationTaskId).then((snapshot) => {
-      if (!mountedRef.current || conversationRef.current.id !== record.id || !snapshot) return;
-      if (snapshot.status === 'created' || snapshot.status === 'prepared' || snapshot.status === 'processing') {
-        bindTask(snapshot.id, candidate.id);
-        setActivityLabel('正在恢复回答进度…');
-      } else {
-        activeTaskIdRef.current = snapshot.id;
-        activeAssistantMessageIdRef.current = candidate.id;
-        applyTerminalTask(snapshot);
-      }
-    }).catch((taskError: unknown) => {
-      setError({ message: userMessageFromError(taskError, '无法恢复这次回答。') ?? '无法恢复这次回答。' });
-    });
-  }, [
-    applyTerminalTask,
-    bindTask,
-    clearTransientContext,
-    conversationMode.id,
-    initialBoundAssetId,
-    projectId,
-    replaceConversation,
-    taskClient,
-  ]);
-
-  const submit = useCallback((question = draft, context = pendingContext) => {
-    const normalized = question.trim();
-    if (!normalized || activeTaskIdRef.current) return;
-    setError(undefined);
-    setActivityLabel('正在创建回答任务…');
-    const current = conversationRef.current;
-    const firstQuestion = current.messages.every(
-      (message) => message.role !== 'user',
-    );
-    const taskSource =
-      context ?? contextlessWorkbenchSource(currentAssetSource);
-    const taskInput = {
-      projectId,
-      ...(current.boundAssetId
-        ? { boundAssetId: current.boundAssetId }
-        : boundAssetId
-          ? { boundAssetId }
+      const userMessage: ConversationMessageRecord = Object.freeze({
+        id: userMessageId,
+        role: 'user',
+        text: normalized,
+        createdTime: timestamp,
+        ...(context?.context === undefined ? {} : { context: context.context }),
+        ...(context?.context !== undefined && contextSource
+          ? { contextSource }
           : {}),
-      ...(taskSource ? { assetId: taskSource.assetId } : {}),
-      conversationId: current.id,
-      ...(current.workspace ? { workspace: current.workspace } : {}),
-      question: normalized,
-      ...(context?.context === undefined
-        ? {}
-        : { context: context.context }),
-      generateTitle: firstQuestion,
-    };
-    const userMessageId = createConversationMessageId(createId());
-    const assistantMessageId = createConversationMessageId(createId());
-    const timestamp = now();
-    let contextSource:
-      | ReturnType<typeof createConversationContextSource>
-      | undefined;
-    let request: ReturnType<ConversationModeDefinition['task']['createRequest']>;
-    try {
-      contextSource = taskSource
-        ? createConversationContextSource(
-            taskSource.contribution,
-            taskInput,
-          )
-        : undefined;
-      request = conversationMode.task.createRequest({
-        ...taskInput,
-        ...(contextSource ? { contextSource } : {}),
       });
-    } catch (requestError) {
-      const preparationFailure = failureFromError(
-        requestError,
-        '无法准备 AI 问答任务。',
-      );
-      const failedRecord = Object.freeze({
+      const assistantMessage: ConversationMessageRecord = Object.freeze({
+        id: assistantMessageId,
+        role: 'assistant',
+        text: '',
+        createdTime: timestamp,
+        replyToMessageId: userMessageId,
+      });
+      const next = Object.freeze({
         ...current,
-        title: firstQuestion ? fallbackConversationTitle(normalized) : current.title,
-        messages: Object.freeze([
-          ...current.messages,
-          Object.freeze({
-            id: userMessageId,
-            role: 'user' as const,
-            text: normalized,
-            createdTime: timestamp,
-            ...(context?.context === undefined ? {} : { context: context.context }),
-          }),
-          Object.freeze({
-            id: assistantMessageId,
-            role: 'assistant' as const,
-            text: `回答失败：${preparationFailure.message}`,
-            createdTime: timestamp,
-            replyToMessageId: userMessageId,
-            stopped: true as const,
-          }),
-        ]),
-        updatedTime: timestamp,
-      });
-      replaceConversation(failedRecord);
-      void persist(failedRecord);
-      setDraft('');
-      writePendingContext(undefined);
-      setActivityLabel(undefined);
-      setError(preparationFailure);
-      return;
-    }
-
-    const userMessage: ConversationMessageRecord = Object.freeze({
-      id: userMessageId,
-      role: 'user',
-      text: normalized,
-      createdTime: timestamp,
-      ...(context?.context === undefined
-        ? {}
-        : { context: context.context }),
-      ...(context?.context !== undefined && contextSource
-        ? { contextSource }
-        : {}),
-    });
-    const assistantMessage: ConversationMessageRecord = Object.freeze({
-      id: assistantMessageId,
-      role: 'assistant',
-      text: '',
-      createdTime: timestamp,
-      replyToMessageId: userMessageId,
-    });
-    const next = Object.freeze({
-      ...current,
-      title: firstQuestion ? fallbackConversationTitle(normalized) : current.title,
-      messages: Object.freeze([...current.messages, userMessage, assistantMessage]),
-      updatedTime: timestamp,
-    });
-    replaceConversation(next);
-    setDraft('');
-    writePendingContext(undefined);
-    setBusy(true);
-
-    // A sent question belongs to local history immediately. Persistence must
-    // not depend on Provider startup, Assistant completion, or the optional
-    // action that attaches an answer back to a document.
-    void persist(next);
-
-    const retainFailedQuestion = (nextError: ConversationErrorState) => {
-      pendingCancelRef.current = false;
-      if (!mountedRef.current) return;
-      const failedRecord = Object.freeze({
-        ...next,
+        title: firstQuestion
+          ? fallbackConversationTitle(normalized)
+          : current.title,
         messages: Object.freeze([
           ...current.messages,
           userMessage,
-          Object.freeze({
-            ...assistantMessage,
-            text: `回答失败：${nextError.message}`,
-            stopped: true as const,
-          }),
+          assistantMessage,
         ]),
+        updatedTime: timestamp,
       });
-      replaceConversation(failedRecord);
-      void persist(failedRecord);
+      replaceConversation(next);
       setDraft('');
       writePendingContext(undefined);
-      setBusy(false);
-      setActivityLabel(undefined);
-      setError(nextError);
-      if (context !== undefined) {
-        context.contribution.onContextReleased?.(context.context);
-      }
-    };
+      setBusy(true);
 
-    void taskClient.start(request).then(
-      (started) => {
-        bindTask(started.taskId, assistantMessageId);
+      // A sent question belongs to local history immediately. Persistence must
+      // not depend on Provider startup, Assistant completion, or the optional
+      // action that attaches an answer back to a document.
+      void persist(next);
+
+      const retainFailedQuestion = (nextError: ConversationErrorState) => {
+        pendingCancelRef.current = false;
+        if (!mountedRef.current) return;
+        const failedRecord = Object.freeze({
+          ...next,
+          messages: Object.freeze([
+            ...current.messages,
+            userMessage,
+            Object.freeze({
+              ...assistantMessage,
+              text: `回答失败：${nextError.message}`,
+              stopped: true as const,
+            }),
+          ]),
+        });
+        replaceConversation(failedRecord);
+        void persist(failedRecord);
+        setDraft('');
+        writePendingContext(undefined);
+        setBusy(false);
+        setActivityLabel(undefined);
+        setError(nextError);
         if (context !== undefined) {
           context.contribution.onContextReleased?.(context.context);
         }
-        if (started.snapshot && applyTerminalTask(started.snapshot)) return;
-        if (pendingCancelRef.current) {
-          pendingCancelRef.current = false;
-          void taskClient.cancel(projectId, started.taskId);
-        }
-      },
-      (startError: unknown) => {
-        retainFailedQuestion(
-          failureFromError(startError, '无法发起 AI 对话。'),
-        );
-      },
-    );
-  }, [
-    applyTerminalTask,
-    bindTask,
-    boundAssetId,
-    createId,
-    currentAssetSource,
-    conversationMode.task,
-    draft,
-    now,
-    pendingContext,
-    persist,
-    projectId,
-    replaceConversation,
-    taskClient,
-    writePendingContext,
-  ]);
+      };
+
+      void taskClient.start(request).then(
+        (started) => {
+          bindTask(started.taskId, assistantMessageId);
+          if (context !== undefined) {
+            context.contribution.onContextReleased?.(context.context);
+          }
+          if (started.snapshot && applyTerminalTask(started.snapshot)) return;
+          if (pendingCancelRef.current) {
+            pendingCancelRef.current = false;
+            void taskClient.cancel(projectId, started.taskId);
+          }
+        },
+        (startError: unknown) => {
+          retainFailedQuestion(
+            failureFromError(startError, '无法发起 AI 对话。'),
+          );
+        },
+      );
+    },
+    [
+      applyTerminalTask,
+      bindTask,
+      boundAssetId,
+      createId,
+      currentAssetSource,
+      conversationMode.task,
+      draft,
+      now,
+      pendingContext,
+      persist,
+      projectId,
+      replaceConversation,
+      taskClient,
+      writePendingContext,
+    ],
+  );
 
   const submitRef = useRef(submit);
   useEffect(() => {
@@ -864,43 +942,46 @@ export function useConversationController({
       setPendingContext(undefined);
     }
 
-    if (request.question?.trim()) {
+    const applyQuestionAfterTransition = () => {
+      if (!request.question?.trim()) return;
       if (request.submit) {
-        const submitAfterTransition = () => {
-          queueMicrotask(() =>
-            submitRef.current(request.question!, launchContext),
-          );
-        };
-        if (conversationTransition instanceof Promise) {
-          void conversationTransition.then(submitAfterTransition, () => undefined);
-        } else {
-          submitAfterTransition();
-        }
+        queueMicrotask(() =>
+          submitRef.current(request.question!, launchContext),
+        );
       } else {
-        if (conversationTransition instanceof Promise) {
-          void conversationTransition.then(
-            () => setDraft(request.question!),
-            () => undefined,
-          );
-        } else {
-          setDraft(request.question);
-        }
+        setDraft(request.question);
+      }
+    };
+
+    if (request.question?.trim()) {
+      if (!(conversationTransition instanceof Promise)) {
+        applyQuestionAfterTransition();
       }
     }
-    if (
-      conversationTransition instanceof Promise &&
-      !(request.question?.trim() && request.submit)
-    ) {
-      void conversationTransition.catch(() => undefined);
-    }
-    setTab('chat');
+    queueMicrotask(() => {
+      if (mountedRef.current) setTab('chat');
+    });
     onLaunchConsumed?.(request.id);
+    if (conversationTransition instanceof Promise) {
+      void conversationTransition.then(
+        () => {
+          applyQuestionAfterTransition();
+          onLaunchSettled?.(request.id);
+        },
+        (transitionError: unknown) => {
+          onLaunchSettled?.(request.id, transitionError);
+        },
+      );
+    } else {
+      onLaunchSettled?.(request.id);
+    }
   }, [
     busy,
     history,
     historyReady,
     launchRequest,
     onLaunchConsumed,
+    onLaunchSettled,
     open,
     restore,
     setPendingContext,
@@ -918,16 +999,18 @@ export function useConversationController({
     setActivityLabel('正在停止…');
     void taskClient.cancel(projectId, taskId).catch((cancelError: unknown) => {
       setError({
-        message: userMessageFromError(cancelError, '无法停止当前回答。') ?? '无法停止当前回答。',
+        message:
+          userMessageFromError(cancelError, '无法停止当前回答。') ??
+          '无法停止当前回答。',
       });
     });
   }, [busy, projectId, taskClient]);
 
   const retry = useCallback(() => {
     const retryTaskId = error?.retryTaskId;
-    const assistant = [...conversationRef.current.messages].reverse().find(
-      (message) => message.generationTaskId === retryTaskId,
-    );
+    const assistant = [...conversationRef.current.messages]
+      .reverse()
+      .find((message) => message.generationTaskId === retryTaskId);
     if (!retryTaskId || !assistant || activeTaskIdRef.current) return;
     setError(undefined);
     setActivityLabel('正在重试…');
@@ -950,179 +1033,191 @@ export function useConversationController({
         setBusy(false);
         setActivityLabel(undefined);
         setError({
-          message: userMessageFromError(retryError, '无法重试当前回答。') ?? '无法重试当前回答。',
+          message:
+            userMessageFromError(retryError, '无法重试当前回答。') ??
+            '无法重试当前回答。',
           retryTaskId,
         });
       },
     );
   }, [applyTerminalTask, bindTask, error?.retryTaskId, projectId, taskClient]);
 
-  const reanswer = useCallback((answerId: string) => {
-    if (activeTaskIdRef.current) return;
-    const current = conversationRef.current;
-    const assistant = current.messages.find(
-      (message) => message.id === answerId && message.role === 'assistant',
-    );
-    if (!assistant) return;
-    const question = assistant.replyToMessageId
-      ? current.messages.find(
-          (message) => message.id === assistant.replyToMessageId,
-        )
-      : undefined;
-    const normalized = (question?.text ?? '').trim();
-    if (!normalized) return;
-    if (
-      question?.context !== undefined &&
-      question.contextSource === undefined
-    ) {
-      setError({
-        message: '这条旧问答缺少上下文来源，请从原文重新发起。',
-      });
-      return;
-    }
+  const reanswer = useCallback(
+    (answerId: string) => {
+      if (activeTaskIdRef.current) return;
+      const current = conversationRef.current;
+      const assistant = current.messages.find(
+        (message) => message.id === answerId && message.role === 'assistant',
+      );
+      if (!assistant) return;
+      const question = assistant.replyToMessageId
+        ? current.messages.find(
+            (message) => message.id === assistant.replyToMessageId,
+          )
+        : undefined;
+      const normalized = (question?.text ?? '').trim();
+      if (!normalized) return;
+      if (
+        question?.context !== undefined &&
+        question.contextSource === undefined
+      ) {
+        setError({
+          message: '这条旧问答缺少上下文来源，请从原文重新发起。',
+        });
+        return;
+      }
 
-    setError(undefined);
-    setActivityLabel('正在重新回答…');
-    setBusy(true);
+      setError(undefined);
+      setActivityLabel('正在重新回答…');
+      setBusy(true);
 
-    let request: ReturnType<ConversationModeDefinition['task']['createRequest']>;
-    try {
-      const taskSource =
-        question?.contextSource === undefined
-          ? contextlessWorkbenchSource(currentAssetSource)
-          : undefined;
-      const taskInput = {
-        projectId,
-        ...(current.boundAssetId
-          ? { boundAssetId: current.boundAssetId }
-          : boundAssetId
-            ? { boundAssetId }
-            : {}),
-        conversationId: current.id,
-        ...(taskSource ? { assetId: taskSource.assetId } : {}),
-        ...(current.workspace ? { workspace: current.workspace } : {}),
-        question: normalized,
-        ...(question?.context === undefined
-          ? {}
-          : { context: question.context }),
-        generateTitle: false,
-      };
-      const contextSource =
-        question?.contextSource ??
-        (taskSource
-          ? createConversationContextSource(
-              taskSource.contribution,
-              taskInput,
-            )
-          : undefined);
-      request = conversationMode.task.createRequest({
-        ...taskInput,
-        ...(contextSource ? { contextSource } : {}),
-      });
-    } catch (requestError) {
-      pendingCancelRef.current = false;
-      setBusy(false);
-      setActivityLabel(undefined);
-      setError(failureFromError(requestError, '无法准备重新回答。'));
-      return;
-    }
-
-    void taskClient.start(request).then(
-      (started) => {
-        bindTask(started.taskId, assistant.id, 'reanswer');
-        if (started.snapshot && applyTerminalTask(started.snapshot)) return;
-        if (pendingCancelRef.current) {
-          pendingCancelRef.current = false;
-          void taskClient.cancel(projectId, started.taskId);
-        }
-      },
-      (reanswerError: unknown) => {
+      let request: ReturnType<
+        ConversationModeDefinition['task']['createRequest']
+      >;
+      try {
+        const taskSource =
+          question?.contextSource === undefined
+            ? contextlessWorkbenchSource(currentAssetSource)
+            : undefined;
+        const taskInput = {
+          projectId,
+          ...(current.boundAssetId
+            ? { boundAssetId: current.boundAssetId }
+            : boundAssetId
+              ? { boundAssetId }
+              : {}),
+          conversationId: current.id,
+          ...(taskSource ? { assetId: taskSource.assetId } : {}),
+          ...(current.workspace ? { workspace: current.workspace } : {}),
+          question: normalized,
+          ...(question?.context === undefined
+            ? {}
+            : { context: question.context }),
+          generateTitle: false,
+        };
+        const contextSource =
+          question?.contextSource ??
+          (taskSource
+            ? createConversationContextSource(
+                taskSource.contribution,
+                taskInput,
+              )
+            : undefined);
+        request = conversationMode.task.createRequest({
+          ...taskInput,
+          ...(contextSource ? { contextSource } : {}),
+        });
+      } catch (requestError) {
         pendingCancelRef.current = false;
         setBusy(false);
         setActivityLabel(undefined);
-        setError({
-          message:
-            userMessageFromError(reanswerError, '无法重新回答。') ??
-            '无法重新回答。',
-        });
-      },
-    );
-  }, [
-    applyTerminalTask,
-    bindTask,
-    conversationMode.task,
-    boundAssetId,
-    currentAssetSource,
-    projectId,
-    taskClient,
-  ]);
-
-  const remove = useCallback((record: ConversationRecord) => {
-    if (
-      deletedConversationIdsRef.current.has(record.id) ||
-      (record.id === conversationRef.current.id && activeTaskIdRef.current)
-    ) {
-      return;
-    }
-    deletedConversationIdsRef.current.add(record.id);
-    setHistory((current) => current.filter(({ id }) => id !== record.id));
-    const removingCurrent = record.id === conversationRef.current.id;
-    if (removingCurrent && !initialBoundAssetId) {
-      resetConversation();
-    }
-    void enqueueHistoryMutation(async () => {
-      const records = await historyStore.remove(record.id);
-      if (records.some(({ id }) => id === record.id)) {
-        throw new Error('Conversation 删除后仍存在');
+        setError(failureFromError(requestError, '无法准备重新回答。'));
+        return;
       }
-      return records;
-    }).then(
-      async (records) => {
-        let nextRecords = records;
-        if (removingCurrent && initialBoundAssetId) {
-          const getOrCreate = historyStore.getOrCreateBoundConversation;
-          if (!getOrCreate) {
-            const error = new Error('绑定对话删除后必须通过 Main 重建');
-            onPersistenceErrorRef.current?.(error);
-            if (mountedRef.current) setError({ message: error.message });
-            return;
+
+      void taskClient.start(request).then(
+        (started) => {
+          bindTask(started.taskId, assistant.id, 'reanswer');
+          if (started.snapshot && applyTerminalTask(started.snapshot)) return;
+          if (pendingCancelRef.current) {
+            pendingCancelRef.current = false;
+            void taskClient.cancel(projectId, started.taskId);
           }
-          try {
-            const next = await getOrCreate(
-              initialBoundAssetId,
-              conversationMode.id,
-            );
-            nextRecords = await historyStore.list();
-            if (mountedRef.current) applyNewConversation(undefined, next);
-          } catch (rebuildError: unknown) {
-            onPersistenceErrorRef.current?.(rebuildError);
-            if (mountedRef.current) {
-              setError({ message: '无法恢复绑定对话，请稍后重试。' });
-            }
-            return;
-          }
+        },
+        (reanswerError: unknown) => {
+          pendingCancelRef.current = false;
+          setBusy(false);
+          setActivityLabel(undefined);
+          setError({
+            message:
+              userMessageFromError(reanswerError, '无法重新回答。') ??
+              '无法重新回答。',
+          });
+        },
+      );
+    },
+    [
+      applyTerminalTask,
+      bindTask,
+      conversationMode.task,
+      boundAssetId,
+      currentAssetSource,
+      projectId,
+      taskClient,
+    ],
+  );
+
+  const remove = useCallback(
+    (record: ConversationRecord) => {
+      if (
+        deletedConversationIdsRef.current.has(record.id) ||
+        (record.id === conversationRef.current.id && activeTaskIdRef.current)
+      ) {
+        return;
+      }
+      deletedConversationIdsRef.current.add(record.id);
+      setHistory((current) => current.filter(({ id }) => id !== record.id));
+      const removingCurrent = record.id === conversationRef.current.id;
+      if (removingCurrent && !initialBoundAssetId) {
+        resetConversation();
+      }
+      void enqueueHistoryMutation(async () => {
+        const records = await historyStore.remove(record.id);
+        if (records.some(({ id }) => id === record.id)) {
+          throw new Error('Conversation 删除后仍存在');
         }
-        if (mountedRef.current) setHistory(visibleHistory(nextRecords));
-      },
-      (removeError: unknown) => {
-        deletedConversationIdsRef.current.delete(record.id);
-        if (!mountedRef.current) return;
-        setHistory((current) => current.some(({ id }) => id === record.id)
-          ? current
-          : [...current, record]);
-        setError({ message: '无法删除对话记录，请稍后重试。' });
-        onPersistenceErrorRef.current?.(removeError);
-      },
-    );
-  }, [
-    enqueueHistoryMutation,
-    applyNewConversation,
-    conversationMode.id,
-    historyStore,
-    initialBoundAssetId,
-    resetConversation,
-    visibleHistory,
-  ]);
+        return records;
+      }).then(
+        async (records) => {
+          let nextRecords = records;
+          if (removingCurrent && initialBoundAssetId) {
+            const getOrCreate = historyStore.getOrCreateBoundConversation;
+            if (!getOrCreate) {
+              const error = new Error('绑定对话删除后必须通过 Main 重建');
+              onPersistenceErrorRef.current?.(error);
+              if (mountedRef.current) setError({ message: error.message });
+              return;
+            }
+            try {
+              const next = await getOrCreate(
+                initialBoundAssetId,
+                conversationMode.id,
+              );
+              nextRecords = await historyStore.list();
+              if (mountedRef.current) applyNewConversation(undefined, next);
+            } catch (rebuildError: unknown) {
+              onPersistenceErrorRef.current?.(rebuildError);
+              if (mountedRef.current) {
+                setError({ message: '无法恢复绑定对话，请稍后重试。' });
+              }
+              return;
+            }
+          }
+          if (mountedRef.current) setHistory(visibleHistory(nextRecords));
+        },
+        (removeError: unknown) => {
+          deletedConversationIdsRef.current.delete(record.id);
+          if (!mountedRef.current) return;
+          setHistory((current) =>
+            current.some(({ id }) => id === record.id)
+              ? current
+              : [...current, record],
+          );
+          setError({ message: '无法删除对话记录，请稍后重试。' });
+          onPersistenceErrorRef.current?.(removeError);
+        },
+      );
+    },
+    [
+      enqueueHistoryMutation,
+      applyNewConversation,
+      conversationMode.id,
+      historyStore,
+      initialBoundAssetId,
+      resetConversation,
+      visibleHistory,
+    ],
+  );
 
   return {
     state: {

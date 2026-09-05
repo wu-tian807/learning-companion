@@ -76,7 +76,7 @@ function OutlineView({
           boundAssetId: asset.id,
           modeId: LEARNING_OUTLINE_INTAKE_MODE_ID,
         });
-      conversationRuntime.open({
+      await conversationRuntime.openAndWait({
         conversationId: conversation.id,
         modeId: LEARNING_OUTLINE_INTAKE_MODE_ID,
         boundAssetId: asset.id,

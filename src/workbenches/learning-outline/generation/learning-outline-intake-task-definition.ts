@@ -42,6 +42,23 @@ function appendText(message: AgentUserMessage, text: string): AgentUserMessage {
   });
 }
 
+function appendMaterials(
+  preparedMessage: AgentUserMessage,
+  materialsMessage: AgentUserMessage,
+): AgentUserMessage {
+  return cloneAgentUserMessage({
+    role: 'user',
+    content: [
+      ...preparedMessage.content,
+      {
+        type: 'text',
+        text: '以下是当前 Workbench 提供的临时参考材料，仅服务本轮讨论，不替代上方正式来源：',
+      },
+      ...materialsMessage.content,
+    ],
+  });
+}
+
 function appendTitleRequest(
   message: AgentUserMessage,
   generateTitle: boolean,
@@ -211,9 +228,12 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
               ...(context.signal ? { signal: context.signal } : {}),
               reportStatus: context.reportStatus,
             });
-            userMessage = appendText(
-              materials.userMessage,
-              `用户本轮需求：${instruction.question}`,
+            userMessage = appendMaterials(
+              context.preparedUserMessage,
+              appendText(
+                materials.userMessage,
+                `用户本轮需求：${instruction.question}`,
+              ),
             );
             context.reportStatus('正在准备参考资料…');
             const call = await context.agent.call({

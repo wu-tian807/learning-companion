@@ -108,6 +108,15 @@ describe('ConversationPanelHost Project ownership', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('settles an explicit runtime open after the ConversationSession accepts it', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const pending = runtime.openAndWait();
+
+    await render(runtime);
+    await expect(pending).resolves.toBeUndefined();
+    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
+  });
+
   it('uses the selected Asset Workbench for a contextless Task without rendering a reference card', async () => {
     const runtime = new WorkbenchConversationRuntime();
     runtime.register('html.owner', 'asset-html', {
@@ -163,8 +172,7 @@ describe('ConversationPanelHost Project ownership', () => {
       sourceAssetMode: 'identity',
       contextRequired: true,
       contextRequiredMessage: '请先选择视频画面',
-      isContext: (value) =>
-        JSON.stringify(value) === JSON.stringify(context),
+      isContext: (value) => JSON.stringify(value) === JSON.stringify(context),
       onContextReleased,
     };
     runtime.register('video.owner', 'asset-video', videoContribution);
@@ -174,8 +182,9 @@ describe('ConversationPanelHost Project ownership', () => {
     });
     await render(runtime);
 
-    const newConversation = [...container.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('新对话'));
+    const newConversation = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('新对话'),
+    );
     expect(newConversation).toBeDefined();
     await act(async () => {
       newConversation!.click();

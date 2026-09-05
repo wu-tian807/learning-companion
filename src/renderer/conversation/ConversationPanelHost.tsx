@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+
 import { ConversationPanel } from './ConversationPanel';
 import { ConversationSession } from './ConversationSession';
 import type {
@@ -40,10 +42,14 @@ export function ConversationPanelHost({
 }) {
   const runtime = useWorkbenchConversationRuntime();
   const snapshot = useWorkbenchConversationSnapshot(runtime);
+  const settleLaunchRequest = useCallback(
+    (requestId: number, error?: unknown) => {
+      runtime.settleLaunchRequest(requestId, error);
+    },
+    [runtime],
+  );
   const currentAssetSource =
-    snapshot.active?.assetId === selectedAssetId
-      ? snapshot.active
-      : undefined;
+    snapshot.active?.assetId === selectedAssetId ? snapshot.active : undefined;
   const activeMode = modeRegistry.resolve(snapshot.modeId, mode);
 
   return (
@@ -53,9 +59,8 @@ export function ConversationPanelHost({
       historyStore={historyStore}
       open={snapshot.panelOpen}
       launchRequest={snapshot.launchRequest}
-      onLaunchConsumed={(requestId) =>
-        runtime.consumeLaunchRequest(requestId)
-      }
+      onLaunchConsumed={(requestId) => runtime.consumeLaunchRequest(requestId)}
+      onLaunchSettled={settleLaunchRequest}
       mode={activeMode}
       boundAssetId={snapshot.boundAssetId}
       workspace={workspace}
@@ -79,9 +84,7 @@ export function ConversationPanelHost({
           onRevealContext={(source, context) =>
             runtime.revealContext(source, context, onSelectAsset)
           }
-          onStartNew={() =>
-            runtime.open({ fallbackToNewConversation: true })
-          }
+          onStartNew={() => runtime.open({ fallbackToNewConversation: true })}
           onClose={() => {
             controller.actions.setPendingContext(undefined);
             if (onClose) onClose();
