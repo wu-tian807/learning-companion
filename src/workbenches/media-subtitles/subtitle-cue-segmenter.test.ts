@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SubtitleLanguage } from './contracts';
-import { segmentSubtitleTokens } from './subtitle-cue-segmenter';
+import {
+  repairZeroDurationSubtitleCues,
+  segmentSubtitleTokens,
+} from './subtitle-cue-segmenter';
 
 type TokenTuple = readonly [text: string, startMs: number, endMs: number];
 
@@ -22,6 +25,187 @@ function segment(
 }
 
 describe('segmentSubtitleTokens', () => {
+  it('does not emit a zero-duration cue for the reported Minecraft timeline', () => {
+    const cues = segment([
+      ['正常句子。', 674_750, 678_820],
+      ['so', 679_840, 679_840],
+      ['正常句子。', 680_870, 682_720],
+    ]);
+
+    expect(cues).toHaveLength(3);
+    expect(cues.map(({ text }) => text)).toEqual([
+      '正常句子。',
+      'so',
+      '正常句子。',
+    ]);
+    expect(cues.every(({ endMs, startMs }) => endMs > startMs)).toBe(true);
+    expect(cues[1]).toMatchObject({ startMs: 679_590, endMs: 680_040 });
+  });
+
+  it('repairs zero-duration cues across the reported boundary cases', () => {
+    const cases: readonly (readonly TokenTuple[])[] = [
+      [
+        ['第一句。', 1_000, 2_000],
+        ['so', 2_500, 2_500],
+        ['第二句。', 3_000, 4_000],
+      ],
+      [
+        ['第一句。', 1_000, 2_000],
+        ['so。', 2_500, 2_500],
+        ['第二句。', 3_000, 4_000],
+      ],
+      [
+        ['a', 2_000, 2_000],
+        ['b', 2_000, 2_000],
+        ['c', 2_000, 2_000],
+      ],
+      [
+        ['so', 0, 0],
+        ['第一句。', 1_000, 2_000],
+      ],
+      [
+        ['第一句。', 1_000, 2_000],
+        ['so', 3_000, 3_000],
+      ],
+      [
+        ['第一句。', 1_000, 2_000],
+        ['so', 2_000, 2_000],
+        ['第二句。', 2_000, 3_000],
+      ],
+    ];
+    for (const source of cases) {
+      const cues = segment(source);
+      expect(cues.every(({ endMs, startMs }) => endMs > startMs)).toBe(true);
+    }
+  });
+
+  it('repairs only zero-duration cues and preserves valid timings and identity', () => {
+    const cues = [
+      {
+        id: 'cue-1',
+        startMs: 1_000,
+        endMs: 2_000,
+        text: '第一句。',
+        sourceCueIds: ['raw-1'],
+      },
+      {
+        id: 'cue-2',
+        startMs: 2_500,
+        endMs: 2_500,
+        text: 'so',
+        sourceCueIds: ['raw-2'],
+      },
+      {
+        id: 'cue-3',
+        startMs: 3_000,
+        endMs: 4_000,
+        text: '第二句。',
+        sourceCueIds: ['raw-3'],
+      },
+    ] as const;
+    const repaired = repairZeroDurationSubtitleCues(cues);
+
+    expect(repaired[0]).toBe(cues[0]);
+    expect(repaired[2]).toBe(cues[2]);
+    expect(repaired[1]).toMatchObject({
+      id: 'cue-2',
+      sourceCueIds: ['raw-2'],
+      startMs: 2_250,
+      endMs: 2_700,
+    });
+  });
+
+  it('uses an overlapping readable window when adjacent cues leave no gap', () => {
+    const repaired = repairZeroDurationSubtitleCues([
+      {
+        id: 'cue-1',
+        startMs: 1_000,
+        endMs: 2_000,
+        text: '第一句。',
+        sourceCueIds: ['raw-1'],
+      },
+      {
+        id: 'cue-2',
+        startMs: 2_000,
+        endMs: 2_000,
+        text: 'so',
+        sourceCueIds: ['raw-2'],
+      },
+      {
+        id: 'cue-3',
+        startMs: 2_000,
+        endMs: 3_000,
+        text: '第二句。',
+        sourceCueIds: ['raw-3'],
+      },
+    ]);
+
+    expect(repaired[1]).toMatchObject({ startMs: 1_750, endMs: 2_200 });
+    expect(repaired.every(({ endMs, startMs }) => endMs > startMs)).toBe(true);
+  });
+
+  it('repairs point-aligned output and respects speaker boundaries and overlap', () => {
+    const repaired = repairZeroDurationSubtitleCues(
+      [
+        {
+          id: 'cue-1',
+          startMs: 2_000,
+          endMs: 2_000,
+          text: '甲',
+          sourceCueIds: ['raw-1'],
+          speakerId: 'speaker-0001',
+        },
+        {
+          id: 'cue-2',
+          startMs: 2_000,
+          endMs: 2_400,
+          text: '乙',
+          sourceCueIds: ['raw-2'],
+          speakerId: 'speaker-0002',
+        },
+      ],
+      {
+        speakerAnalysis: {
+          method: 'joint-transcription-diarization',
+          supportsOverlappingTranscription: true,
+          segments: [
+            { speakerId: 'speaker-0001', startMs: 1_800, endMs: 2_600 },
+            { speakerId: 'speaker-0002', startMs: 2_000, endMs: 2_400 },
+          ],
+        },
+      },
+    );
+
+    expect(repaired[0]).toMatchObject({ startMs: 1_800, endMs: 2_000 });
+    expect(repaired[1]).toMatchObject({ startMs: 2_000, endMs: 2_400 });
+  });
+
+  it('rejects a zero-duration cue outside its speaker segment', () => {
+    expect(() =>
+      repairZeroDurationSubtitleCues(
+        [
+          {
+            id: 'cue-1',
+            startMs: 3_000,
+            endMs: 3_000,
+            text: 'so',
+            sourceCueIds: ['raw-1'],
+            speakerId: 'speaker-0001',
+          },
+        ],
+        {
+          speakerAnalysis: {
+            method: 'post-hoc-diarization',
+            supportsOverlappingTranscription: false,
+            segments: [
+              { speakerId: 'speaker-0001', startMs: 1_000, endMs: 2_000 },
+            ],
+          },
+        },
+      ),
+    ).toThrow('speaker-0001');
+  });
+
   it('splits a long Chinese result at model-timed clauses', () => {
     const source = [
       ['今天我们验证一条本地字幕生成链路，', 130, 3_430],
