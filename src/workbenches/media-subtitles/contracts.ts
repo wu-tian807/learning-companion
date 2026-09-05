@@ -119,16 +119,13 @@ function isSubtitleSpeakerAnalysisV1(
   }
 
   let previousStartMs = -1;
-  let previousEndMs = -1;
   for (const segment of value.segments) {
     if (
-      segment.startMs < previousStartMs ||
-      (segment.startMs === previousStartMs && segment.endMs < previousEndMs)
+      segment.startMs < previousStartMs
     ) {
       return false;
     }
     previousStartMs = segment.startMs;
-    previousEndMs = segment.endMs;
   }
   return true;
 }
@@ -153,13 +150,18 @@ function isSubtitleEngineV1(value: unknown): value is SubtitleEngineV1 {
   );
 }
 
-export function isSubtitleCueV1(value: unknown): value is SubtitleCueV1 {
+export function isSubtitleCueV1(
+  value: unknown,
+  options: { readonly allowZeroDuration?: boolean } = {},
+): value is SubtitleCueV1 {
   return (
     isRecord(value) &&
     isText(value.id, 256) &&
     isTime(value.startMs) &&
     isTime(value.endMs) &&
-    value.endMs > value.startMs &&
+    (options.allowZeroDuration
+      ? value.endMs >= value.startMs
+      : value.endMs > value.startMs) &&
     isText(value.text) &&
     Array.isArray(value.sourceCueIds) &&
     value.sourceCueIds.length > 0 &&
@@ -173,13 +175,11 @@ function hasValidCueOrder(cues: readonly SubtitleCueV1[]): boolean {
   const ids = new Set<string>();
   const sourceCueIds = new Set<string>();
   let previousStart = -1;
-  let previousEnd = -1;
 
   for (const cue of cues) {
     if (
       ids.has(cue.id) ||
-      cue.startMs < previousStart ||
-      (cue.startMs === previousStart && cue.endMs < previousEnd)
+      cue.startMs < previousStart
     ) {
       return false;
     }
@@ -189,13 +189,13 @@ function hasValidCueOrder(cues: readonly SubtitleCueV1[]): boolean {
       sourceCueIds.add(sourceCueId);
     }
     previousStart = cue.startMs;
-    previousEnd = cue.endMs;
   }
   return true;
 }
 
 export function isSubtitleSourceTrackV1(
   value: unknown,
+  options: { readonly allowZeroDuration?: boolean } = {},
 ): value is SubtitleSourceTrackV1 {
   if (
     !(
@@ -211,7 +211,7 @@ export function isSubtitleSourceTrackV1(
       isTime(value.generatedTime) &&
       Array.isArray(value.cues) &&
       value.cues.length > 0 &&
-      value.cues.every(isSubtitleCueV1) &&
+      value.cues.every((cue) => isSubtitleCueV1(cue, options)) &&
       hasValidCueOrder(value.cues)
     )
   ) {
