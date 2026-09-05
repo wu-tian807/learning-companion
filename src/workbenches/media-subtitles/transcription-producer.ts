@@ -14,6 +14,7 @@ import {
 } from '../../main/external-libraries/external-command-runner';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+  isSubtitleSourceTrackV1,
   type SubtitleEngineV1,
   type SubtitleSourceTrackV1,
 } from './contracts';
@@ -157,6 +158,9 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
         generatedTime: this.dependencies.now(),
         cues: speakerOutput?.cues ?? output.cues,
       };
+      if (!isSubtitleSourceTrackV1(track)) {
+        throw new Error('生成的字幕数据无效，未替换已有字幕');
+      }
       const filePath = join(request.stagingDirectory, 'subtitles.json');
       await writeFile(filePath, `${JSON.stringify(track, null, 2)}\n`, 'utf8');
       return {
