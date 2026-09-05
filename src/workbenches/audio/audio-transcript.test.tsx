@@ -262,6 +262,26 @@ describe('AudioTranscript', () => {
     expect(markup).toContain('未检测到明确的中文或英文');
     expect(markup).toContain('Hello.');
   });
+
+  it('shows a stable subtitle error state instead of an endless loading indicator', () => {
+    const markup = renderToStaticMarkup(
+      <AudioTranscript
+        snapshot={{
+          ...snapshot(),
+          phase: 'failed',
+          source: undefined,
+          message: '字幕异常：缓存无法修复。请重新生成字幕。',
+        }}
+        mode="source"
+        currentTime={0}
+        onSeek={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('字幕异常');
+    expect(markup).toContain('bg-amber-300/25');
+    expect(markup).not.toContain('animate-pulse');
+  });
 });
 
 describe('AudioTranscript current cue following', () => {

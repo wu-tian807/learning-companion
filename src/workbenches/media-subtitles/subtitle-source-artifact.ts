@@ -12,7 +12,7 @@ import {
   MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
   MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
 } from './transcription-producer';
-import { readSubtitleSourceTrackFile } from './subtitle-artifact-files';
+import { readOrRepairSubtitleSourceArtifact } from './subtitle-artifact-files';
 import type { SubtitleSourceTrackV1 } from './contracts';
 
 export interface ResolvedMediaSubtitleSource {
@@ -86,9 +86,15 @@ export async function resolveCachedMediaSubtitleSource(
   if (artifact.artifact.mediaType !== SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE) {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
-  const track = await readSubtitleSourceTrackFile(artifact.absolutePath);
-  if (track.sourceRevision !== artifact.artifact.sourceRevision) {
+  const resolved = await readOrRepairSubtitleSourceArtifact(
+    artifacts,
+    request,
+    artifact,
+    signal,
+  );
+  const track = resolved.track;
+  if (track.sourceRevision !== resolved.artifact.artifact.sourceRevision) {
     throw new AppError('DATA_INTEGRITY_ERROR');
   }
-  return Object.freeze({ request, artifact, track });
+  return Object.freeze({ request, artifact: resolved.artifact, track });
 }

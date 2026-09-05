@@ -132,16 +132,18 @@ export function MediaLanguageControls({
         onClick={onRetrySubtitles}
         className={compactButtonClass}
       >
-        重试字幕
+        {subtitleSnapshot.source ? '重试字幕' : '重新生成字幕'}
       </button>
     );
   } else if (!subtitleHasSource) {
     const preparingLabel =
       subtitleSnapshot.phase === 'queued'
         ? '字幕排队中'
-        : subtitleSnapshot.phase === 'transcribing'
-          ? '字幕生成中'
-          : '字幕准备中';
+        : subtitleSnapshot.phase === 'repairing'
+          ? '字幕恢复中'
+          : subtitleSnapshot.phase === 'transcribing'
+            ? '字幕生成中'
+            : '字幕准备中';
     subtitleControl = (
       <button
         type="button"

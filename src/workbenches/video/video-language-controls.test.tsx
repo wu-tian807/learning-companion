@@ -254,6 +254,38 @@ describe('VideoLanguageControls', () => {
     expect(container.textContent).not.toContain('字幕准备中');
   });
 
+  it('offers regeneration for an unrecoverable subtitle cache', () => {
+    const onRetrySubtitles = vi.fn();
+    const message = '字幕异常：Cue cue-1 的时间轴无法修复。请重新生成字幕。';
+    act(() =>
+      root.render(
+        <VideoLanguageControls
+          subtitleMode="source"
+          subtitleSnapshot={{
+            ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+            phase: 'failed',
+            message,
+          }}
+          dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+          dubbingEnabled={false}
+          dubbingPlaybackActive={false}
+          onSelectSubtitleMode={vi.fn()}
+          onRetrySubtitles={onRetrySubtitles}
+          onStartDubbing={vi.fn()}
+          onSelectDubbingEnabled={vi.fn()}
+          onRetryDubbing={vi.fn()}
+        />,
+      ),
+    );
+
+    const button = container.querySelector<HTMLButtonElement>('button');
+    expect(button?.textContent).toBe('重新生成字幕');
+    expect(button?.textContent).not.toBe('重试字幕');
+    expect(button?.title).toBe(message);
+    act(() => button?.click());
+    expect(onRetrySubtitles).toHaveBeenCalledOnce();
+  });
+
   it('keeps completed source chunks selectable while transcription continues', () => {
     act(() =>
       root.render(
