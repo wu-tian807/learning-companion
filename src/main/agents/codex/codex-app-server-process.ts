@@ -38,12 +38,14 @@ export interface CodexAppServerProcessDependencies {
 export interface CodexAppServerProcessOptions {
   readonly executablePath: string | (() => string);
   readonly codexHomePath: string;
+  readonly credentialStore?: 'file';
   readonly environment?: Readonly<NodeJS.ProcessEnv>;
 }
 
 const AUTH_ENVIRONMENT_VARIABLES = [
   'AZURE_OPENAI_API_KEY',
   'CODEX_API_KEY',
+  'CODEX_ACCESS_TOKEN',
   'OPENAI_API_KEY',
   'OPENAI_BASE_URL',
 ] as const;
@@ -51,10 +53,12 @@ const AUTH_ENVIRONMENT_VARIABLES = [
 function createRuntimeEnvironment(
   source: NodeJS.ProcessEnv,
   codexHomePath: string,
+  sqliteHomePath: string,
 ): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     ...source,
     CODEX_HOME: codexHomePath,
+    CODEX_SQLITE_HOME: sqliteHomePath,
   };
 
   for (const name of AUTH_ENVIRONMENT_VARIABLES) {
@@ -93,6 +97,7 @@ export class CodexAppServerConnectionFactory
   }
 
   async connect(): Promise<CodexRpcConnectionApi> {
+    const sqliteHomePath = this.options.codexHomePath;
     const executablePath =
       typeof this.options.executablePath === 'string'
         ? this.options.executablePath
@@ -109,7 +114,16 @@ export class CodexAppServerConnectionFactory
 
     const child = this.dependencies.spawnProcess(
       executablePath,
-      ['app-server', '--listen', 'stdio://'],
+      [
+        'app-server', '--listen', 'stdio://',
+        '-c', `sqlite_home=${JSON.stringify(sqliteHomePath)}`,
+        '-c', 'features.apps=false',
+        '-c', 'features.plugins=false',
+        '-c', 'features.remote_plugin=false',
+        ...(this.options.credentialStore
+          ? ['-c', `cli_auth_credentials_store="${this.options.credentialStore}"`]
+          : []),
+      ],
       {
         cwd: this.options.codexHomePath,
         env: createRuntimeEnvironment(
@@ -118,6 +132,7 @@ export class CodexAppServerConnectionFactory
             ...this.options.environment,
           },
           this.options.codexHomePath,
+          sqliteHomePath,
         ),
         shell: false,
         windowsHide: true,

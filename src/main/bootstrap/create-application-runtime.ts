@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { safeStorage } from 'electron';
 
-import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
+import { createManagedCodexHomePath, resolveCodexAuthHomePath } from '../agents/codex/codex-home-resolver';
 import { AgentFunctionToolRegistry } from '../agents/function-tools/agent-function-tool-registry';
 import { createAgentCapabilityPaths } from '../agents/capabilities/agent-capability-paths';
 import { AgentMcpService } from '../agents/mcp/agent-mcp-service';
@@ -112,12 +112,15 @@ export async function createApplicationRuntime({
 
   try {
     const appPaths = createAppPaths(userDataPath);
-    const codexHomePath = await resolveCodexHomePath({
-      managedCodexHomePath: appPaths.codexHomeDirectory,
+    const codexHomePath = createManagedCodexHomePath(documentsPath);
+    const authHomePath = () => resolveCodexAuthHomePath({
+      managedCodexHomePath: codexHomePath,
+      legacyCodexHomePath: appPaths.codexHomeDirectory,
       userHomePath: homedir(),
     });
     codexRuntimeService = createCodexRuntime({
       codexHomePath,
+      authHomePath,
       isPackaged,
       resourcesPath,
     });
