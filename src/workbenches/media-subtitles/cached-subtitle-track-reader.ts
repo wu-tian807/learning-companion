@@ -18,7 +18,7 @@ import {
   createSubtitleTranslationArtifactKey,
 } from './translation-producer';
 import {
-  readSubtitleSourceTrackFile,
+  readOrRepairSubtitleSourceArtifact,
   readSubtitleTranslationTrackFile,
 } from './subtitle-artifact-files';
 
@@ -95,10 +95,28 @@ export class CachedSubtitleTrackReader implements CachedSubtitleTrackReaderApi {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
-    const source = await readSubtitleSourceTrackFile(
-      sourceArtifact.absolutePath,
+    const resolvedSource = await readOrRepairSubtitleSourceArtifact(
+      this.artifacts,
+      {
+        assetId: request.assetId,
+        producerId: MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
+        artifactKey: MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
+        workspacePath: request.workspacePath,
+        source: {
+          assetId: request.assetId,
+          mediaType: request.mediaType,
+          absolutePath: request.absolutePath,
+          revision: contentRevision,
+        },
+      },
+      sourceArtifact,
+      request.signal,
     );
-    if (source.sourceRevision !== sourceArtifact.artifact.sourceRevision) {
+    const source = resolvedSource.track;
+    if (
+      source.sourceRevision !==
+      resolvedSource.artifact.artifact.sourceRevision
+    ) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
     if (!isTranslatableSubtitleLanguage(source.language)) {
@@ -106,7 +124,7 @@ export class CachedSubtitleTrackReader implements CachedSubtitleTrackReaderApi {
     }
 
     const targetLanguage = oppositeSubtitleLanguage(source.language);
-    const sourceTrackRevision = sourceArtifact.artifact.artifactRevision;
+    const sourceTrackRevision = resolvedSource.artifact.artifact.artifactRevision;
     const translationArtifact = await this.artifacts.getCached({
       assetId: request.assetId,
       producerId: MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID,
@@ -118,7 +136,7 @@ export class CachedSubtitleTrackReader implements CachedSubtitleTrackReaderApi {
       source: {
         assetId: request.assetId,
         mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
-        absolutePath: sourceArtifact.absolutePath,
+        absolutePath: resolvedSource.artifact.absolutePath,
         revision: sourceTrackRevision,
       },
     });

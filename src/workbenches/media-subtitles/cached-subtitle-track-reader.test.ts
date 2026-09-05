@@ -1,10 +1,11 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
 import { createContentRevision } from '../../main/content/content-revision';
+import type { AssetArtifactServiceApi } from '../../main/artifacts/asset-artifact-service';
 import {
   SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
   SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
@@ -143,7 +144,7 @@ describe('CachedSubtitleTrackReader', () => {
       expect(tracks?.translation?.cues).toEqual([
         { sourceCueId: 'cue-1', text: '你好。' },
       ]);
-      expect(getCached).toHaveBeenCalledTimes(2);
+      expect(getCached).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -161,6 +162,92 @@ describe('CachedSubtitleTrackReader', () => {
         }),
       ).resolves.toBeUndefined();
       expect(getCached).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('repairs the source before looking up translations and does not reuse the old source revision', async () => {
+    await withFixture(async (fixture) => {
+      const invalidSource = {
+        ...fixture.source,
+        cues: [{
+          ...fixture.source.cues[0]!,
+          startMs: 1_000,
+          endMs: 1_000,
+          text: 'so',
+        }],
+      };
+      await writeFile(fixture.sourcePath, JSON.stringify(invalidSource));
+      let current = {
+        artifact: {
+          assetId: 'asset-1',
+          producerId: MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID,
+          artifactKey: MEDIA_SUBTITLE_SOURCE_ARTIFACT_KEY,
+          relativePath: 'source.json',
+          mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+          sourceRevision: fixture.source.sourceRevision,
+          producerVersion: '3',
+          artifactRevision: 'track-revision',
+          updatedTime: 1,
+        },
+        absolutePath: fixture.sourcePath,
+        cacheHit: true,
+      };
+      const getCached = vi.fn(async (request: {
+        readonly producerId: string;
+        readonly source: { readonly revision: string };
+      }) => {
+        if (request.producerId === MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID) {
+          return current;
+        }
+        expect(request.source.revision).toBe('repaired-track-revision');
+        return undefined;
+      });
+      const replace = vi.fn<NonNullable<AssetArtifactServiceApi['replace']>>(
+        async (request, produce, signal) => {
+          if (!produce) throw new Error('replacement producer missing');
+          const stagingDirectory = join(fixture.directory, 'staging');
+          await mkdir(stagingDirectory, { recursive: true });
+          const produced = await produce(
+            {
+              source: request.source,
+              artifactKey: request.artifactKey,
+              workspacePath: request.workspacePath,
+              stagingDirectory,
+            },
+            signal ?? new AbortController().signal,
+          );
+          current = {
+            ...current,
+            absolutePath: produced.filePath,
+            cacheHit: false,
+            artifact: {
+              ...current.artifact,
+              artifactRevision: 'repaired-track-revision',
+              relativePath: 'repaired-source.json',
+            },
+          };
+          return current;
+        },
+      );
+      const reader = new CachedSubtitleTrackReader({
+        getCached,
+        replace,
+      } as unknown as AssetArtifactServiceApi);
+
+      const tracks = await reader.read({
+        assetId: 'asset-1',
+        mediaType: 'video/mp4',
+        absolutePath: fixture.videoPath,
+        workspacePath: fixture.directory,
+        contentVersion: '100',
+      });
+
+      expect(replace).toHaveBeenCalledOnce();
+      expect(tracks).toEqual({
+        source: expect.objectContaining({
+          cues: [expect.objectContaining({ startMs: 750, endMs: 1_200 })],
+        }),
+      });
     });
   });
 

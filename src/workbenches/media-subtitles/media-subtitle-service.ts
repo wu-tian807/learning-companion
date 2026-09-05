@@ -28,8 +28,9 @@ import {
   type SubtitleTranslationAggregationEvent,
 } from './subtitle-translation-aggregator';
 import {
-  readSubtitleSourceTrackFile,
+  readOrRepairSubtitleSourceArtifact,
   readSubtitleTranslationTrackFile,
+  SubtitleTrackValidationError,
 } from './subtitle-artifact-files';
 import { createMediaSubtitleSourceArtifactRequest } from './subtitle-source-artifact';
 import {
@@ -94,6 +95,9 @@ function isAbortError(error: unknown): boolean {
 }
 
 function userFailureMessage(error: unknown): string {
+  if (error instanceof SubtitleTrackValidationError) {
+    return `字幕异常：${error.message}。请重新生成字幕。`;
+  }
   const described = describeAppError(error);
   if (described.userMessage) return described.userMessage;
   if (
@@ -123,7 +127,21 @@ function translationProviderFailureMessage(
   if (code === 'AGENT_PROVIDER_SELECTION_REQUIRED') {
     return '尚未为“低智能”选择可用的 AI Provider。请先在设置中完成配置。';
   }
-  return '“低智能”当前选择的 AI Provider 不可用。请在设置中重新选择。';
+  if (code === 'AGENT_PROVIDER_NOT_FOUND') {
+    return '“低智能”当前选择的 AI Provider 不可用。请在设置中重新选择。';
+  }
+  return undefined;
+}
+
+function translationFailureMessage(error: unknown): string {
+  const described = describeAppError(error);
+  if (described.code === 'DATA_INTEGRITY_ERROR') {
+    return '译文异常：缓存与当前原文不匹配，请重新生成译文。';
+  }
+  if (described.userMessage && described.code !== 'INTERNAL_ERROR') {
+    return described.userMessage;
+  }
+  return '译文处理没有完成。';
 }
 
 function translationFailureSnapshot(
@@ -138,7 +156,7 @@ function translationFailureSnapshot(
   return {
     ...snapshot,
     phase: providerMessage ? 'provider-required' : 'failed',
-    message: providerMessage ?? userFailureMessage(error),
+    message: providerMessage ?? translationFailureMessage(error),
   };
 }
 
@@ -151,9 +169,11 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   private readonly sourceTasks = new Map<string, Promise<void>>();
   private readonly translationTasks = new Map<string, Promise<void>>();
   private readonly sourceArtifacts = new Map<string, ResolvedSourceTrack>();
+  private readonly sourceFailures = new Set<string>();
   private readonly activeSourceRevisions = new Map<string, string>();
   private readonly translationAggregator: SubtitleTranslationTaskAggregator;
   private readonly supportedMediaTypes: ReadonlySet<string>;
+  private readonly logger: Pick<Console, 'warn'>;
 
   constructor(
     private readonly assets: AssetServiceApi,
@@ -167,8 +187,10 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     translationProgress: SubtitleTranslationProgressHub,
     supportedMediaTypes: readonly string[],
     transcriptionProgress?: SubtitleTranscriptionProgressHub,
+    logger: Pick<Console, 'warn'> = console,
   ) {
     this.supportedMediaTypes = new Set(supportedMediaTypes);
+    this.logger = logger;
     this.translationAggregator = new SubtitleTranslationTaskAggregator(
       artifacts,
       generationTasks,
@@ -225,6 +247,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     projectId: string,
     assetId: string,
     priority: SourceRequestPriority,
+    forceRegenerate = false,
   ): Promise<void> {
     const active = this.sourceTasks.get(assetId);
     if (active) {
@@ -240,7 +263,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     const task = this.sourceTaskQueue
       .enqueue(
         assetId,
-        () => this.prepareSource(projectId, assetId),
+        () => this.prepareSource(projectId, assetId, forceRegenerate),
         priority,
       )
       .finally(() => this.sourceTasks.delete(assetId));
@@ -249,6 +272,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   }
 
   async ensureTranslation(projectId: string, assetId: string): Promise<void> {
+    if (this.sourceFailures.has(assetId)) return;
     const active = this.translationTasks.get(assetId);
     if (active) return active;
 
@@ -277,7 +301,9 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   }
 
   async retry(projectId: string, assetId: string): Promise<void> {
-    if (this.sourceArtifacts.has(assetId)) {
+    if (this.sourceFailures.has(assetId)) {
+      await this.ensureSourceWithPriority(projectId, assetId, 'interactive', true);
+    } else if (this.sourceArtifacts.has(assetId)) {
       await this.ensureTranslation(projectId, assetId);
     } else {
       await this.ensureSource(projectId, assetId);
@@ -287,6 +313,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
   private async prepareSource(
     projectId: string,
     assetId: string,
+    forceRegenerate = false,
   ): Promise<void> {
     let activeRevision: string | undefined;
     try {
@@ -305,30 +332,77 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         sourceTrackRevision: undefined,
         message: '正在生成原文字幕…',
       });
-      const artifact = await this.artifacts.getOrCreate(request);
+      let artifact: ResolvedAssetArtifact;
+      if (forceRegenerate) {
+        if (!this.artifacts.replace) {
+          throw new SubtitleTrackValidationError(
+            'unrepairable',
+            'artifact.replace',
+            undefined,
+            '字幕重新生成服务未就绪',
+          );
+        }
+        artifact = await this.artifacts.replace(request);
+      } else {
+        artifact = await this.artifacts.getOrCreate(request);
+      }
       if (artifact.artifact.mediaType !== SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
-      const track = await readSubtitleSourceTrackFile(artifact.absolutePath);
-      if (track.sourceRevision !== artifact.artifact.sourceRevision) {
+      if (artifact.cacheHit) {
+        this.updateSnapshot(assetId, {
+          ...this.getSnapshot(assetId),
+          phase: 'repairing',
+          message: '正在检查并修复字幕缓存…',
+        });
+      }
+      const resolvedArtifact = await readOrRepairSubtitleSourceArtifact(
+        this.artifacts,
+        request,
+        artifact,
+      );
+      const track = resolvedArtifact.track;
+      if (
+        track.sourceRevision !==
+        resolvedArtifact.artifact.artifact.sourceRevision
+      ) {
         throw new AppError('DATA_INTEGRITY_ERROR');
+      }
+      const previousArtifactRevision = this.sourceArtifacts.get(assetId)
+        ?.artifact.artifact.artifactRevision;
+      if (
+        previousArtifactRevision !== undefined &&
+        previousArtifactRevision !==
+          resolvedArtifact.artifact.artifact.artifactRevision
+      ) {
+        this.translationAggregator.cancel(assetId);
       }
       const resolved = {
         track,
-        artifact,
+        artifact: resolvedArtifact.artifact,
         workspacePath: request.workspacePath,
       };
       await this.materializeSourceSrt(assetId, resolved);
       this.sourceArtifacts.set(assetId, resolved);
+      this.sourceFailures.delete(assetId);
       this.updateSnapshot(assetId, {
         phase: 'source-ready',
         source: track,
-        sourceTrackRevision: artifact.artifact.artifactRevision,
+        sourceTrackRevision:
+          resolvedArtifact.artifact.artifact.artifactRevision,
         partialTranslations: [],
         completedCues: 0,
         totalCues: track.cues.length,
       });
-      await this.restoreCachedTranslation(assetId, resolved);
+      try {
+        await this.restoreCachedTranslation(assetId, resolved);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        this.updateSnapshot(
+          assetId,
+          translationFailureSnapshot(this.getSnapshot(assetId), error),
+        );
+      }
     } catch (error) {
       if (isAbortError(error)) return;
       if (
@@ -355,6 +429,16 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
         phase: 'failed',
         message: userFailureMessage(error),
       });
+      if (error instanceof SubtitleTrackValidationError) {
+        this.logger.warn('字幕源 Artifact 校验失败', {
+          assetId,
+          kind: error.kind,
+          field: error.field,
+          cueId: error.cueId,
+          message: error.message,
+        });
+        this.sourceFailures.add(assetId);
+      }
     } finally {
       if (
         activeRevision !== undefined &&
@@ -486,7 +570,9 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       message:
         providerMessage ??
         event.task?.failure?.message ??
-        (event.error ? userFailureMessage(event.error) : '字幕翻译没有完成。'),
+        (event.error
+          ? translationFailureMessage(event.error)
+          : '字幕翻译没有完成。'),
     });
   }
 

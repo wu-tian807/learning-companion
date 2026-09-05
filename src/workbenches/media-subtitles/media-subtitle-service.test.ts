@@ -156,6 +156,11 @@ async function serviceWithSource(
   tasks: GenerationTaskServiceApi = generationTasks(),
   transcriptionProgress?: SubtitleTranscriptionProgressHub,
   onSourceRequest?: (request: AssetArtifactRequest) => void,
+  onCachedArtifact?: (
+    request: AssetArtifactRequest,
+  ) => ResolvedAssetArtifact | undefined | Promise<ResolvedAssetArtifact | undefined>,
+  sourceValue?: (request: AssetArtifactRequest) => unknown,
+  onReplace?: NonNullable<AssetArtifactServiceApi['replace']>,
 ) {
   const videoPath = join(directory, 'video.mp4');
   const sourcePath = join(directory, 'source.json');
@@ -182,12 +187,13 @@ async function serviceWithSource(
   };
   const getOrCreate = vi.fn(async (request: AssetArtifactRequest) => {
     onSourceRequest?.(request);
+    const value = sourceValue?.(request) ?? {
+      ...sourceTrack(language),
+      sourceRevision: request.source.revision,
+    };
     await writeFile(
       sourcePath,
-      JSON.stringify({
-        ...sourceTrack(language),
-        sourceRevision: request.source.revision,
-      }),
+      JSON.stringify(value),
     );
     return resolvedArtifact(
       request,
@@ -198,18 +204,23 @@ async function serviceWithSource(
   });
   const srt = srtProducer();
   const translationProgress = new SubtitleTranslationProgressHub();
+  const artifacts = {
+    listAvailableByAsset: vi.fn(async () => []),
+    getCached: vi.fn(async (request: AssetArtifactRequest) =>
+      onCachedArtifact?.(request),
+    ),
+    getOrCreate,
+    ...(onReplace ? { replace: vi.fn(onReplace) } : {}),
+  } as AssetArtifactServiceApi;
   return {
     getOrCreate,
+    artifacts,
     srt,
     translationProgress,
     service: new MediaSubtitleService(
       assets,
       projects,
-      {
-        listAvailableByAsset: vi.fn(async () => []),
-        getCached: vi.fn(),
-        getOrCreate,
-      } as AssetArtifactServiceApi,
+      artifacts,
       srt,
       runtimes(),
       new MediaSubtitleSourceTaskQueue(),
@@ -503,6 +514,115 @@ describe('MediaSubtitleService', () => {
         phase: 'unsupported-language',
         message: expect.stringContaining('中文或英文'),
       });
+    });
+  });
+
+  it('reports an unrecoverable source cache as a subtitle error and regenerates only on retry', async () => {
+    await withDirectory(async (directory) => {
+      const invalidSource = (request: AssetArtifactRequest) => ({
+        ...sourceTrack('en'),
+        sourceRevision: request.source.revision,
+        cues: [
+          {
+            id: 'cue-invalid',
+            startMs: 2_000,
+            endMs: 1_000,
+            text: '损坏的字幕',
+            sourceCueIds: ['raw-invalid'],
+          },
+        ],
+      });
+      const { service, getOrCreate, artifacts } = await serviceWithSource(
+        directory,
+        'en',
+        generationTasks(),
+        undefined,
+        undefined,
+        undefined,
+        invalidSource,
+        async (request) => {
+          const regenerated = {
+            ...sourceTrack('en'),
+            sourceRevision: request.source.revision,
+          };
+          await writeFile(
+            join(directory, 'source.json'),
+            JSON.stringify(regenerated),
+          );
+          return resolvedArtifact(
+            request,
+            join(directory, 'source.json'),
+            SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
+            'regenerated-source-revision',
+          );
+        },
+      );
+
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        await service.ensureSource('project', 'video');
+        expect(service.getSnapshot('video')).toMatchObject({
+          phase: 'failed',
+          message: expect.stringContaining('字幕异常'),
+        });
+        expect(warning).toHaveBeenCalledWith(
+          '字幕源 Artifact 校验失败',
+          expect.objectContaining({
+            assetId: 'video',
+            kind: 'malformed',
+            field: 'cue-invalid.endMs',
+            cueId: 'cue-invalid',
+          }),
+        );
+        expect(service.getSnapshot('video').message).not.toContain(
+          '本地数据异常',
+        );
+      } finally {
+        warning.mockRestore();
+      }
+
+      await service.retry('project', 'video');
+
+      expect(getOrCreate).toHaveBeenCalledOnce();
+      expect(artifacts.replace).toHaveBeenCalledOnce();
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'source-ready',
+        source: { cues: [{ text: 'Hello.' }] },
+      });
+    });
+  });
+
+  it('keeps source subtitles available when a cached translation is invalid', async () => {
+    await withDirectory(async (directory) => {
+      const translationPath = join(directory, 'translation.json');
+      await writeFile(translationPath, '{ invalid translation }');
+      const { service } = await serviceWithSource(
+        directory,
+        'en',
+        generationTasks(),
+        undefined,
+        undefined,
+        (request) =>
+          request.producerId === MEDIA_SUBTITLE_TRANSLATION_PRODUCER_ID
+            ? resolvedArtifact(
+                request,
+                translationPath,
+                SUBTITLE_TRANSLATION_ARTIFACT_MEDIA_TYPE,
+                'translation-revision',
+              )
+            : undefined,
+      );
+
+      await service.ensureSource('project', 'video');
+
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'failed',
+        source: { language: 'en' },
+        message: expect.stringContaining('译文异常'),
+      });
+      expect(service.getSnapshot('video').message).not.toContain(
+        '本地数据异常',
+      );
     });
   });
 

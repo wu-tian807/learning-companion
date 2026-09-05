@@ -19,6 +19,7 @@ import {
   SubtitleTranscriptionProgressHub,
   type SubtitleTranscriptionProgress,
 } from './transcription-progress';
+import { readSubtitleSourceTrackFile } from './subtitle-artifact-files';
 
 async function inTemp(run: (directory: string) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), 'lc-subtitle-'));
@@ -180,6 +181,76 @@ describe('MediaSubtitleTranscriptionProducer', () => {
       expect(whisperCommand?.args).not.toContain('-nfa');
       expect(whisperCommand?.args).not.toContain('-dtw');
       expect(run).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('writes a readable positive-duration track when Whisper returns a zero-duration sentence', async () => {
+    await inTemp(async (directory) => {
+      const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
+        const outputIndex = command.args.indexOf('-of');
+        if (outputIndex >= 0) {
+          await writeFile(
+            `${command.args[outputIndex + 1]}.json`,
+            JSON.stringify({
+              result: { language: 'en' },
+              transcription: [
+                {
+                  offsets: { from: 674_750, to: 678_820 },
+                  text: 'normal',
+                  tokens: [{
+                    offsets: { from: 674_750, to: 678_820 },
+                    text: 'normal',
+                  }],
+                },
+                {
+                  offsets: { from: 679_840, to: 679_840 },
+                  text: 'so',
+                  tokens: [{
+                    offsets: { from: 679_840, to: 679_840 },
+                    text: 'so',
+                  }],
+                },
+                {
+                  offsets: { from: 680_870, to: 682_720 },
+                  text: 'again',
+                  tokens: [{
+                    offsets: { from: 680_870, to: 682_720 },
+                    text: 'again',
+                  }],
+                },
+              ],
+            }),
+          );
+        }
+        return {
+          stdout: '',
+          stderr:
+            'whisper_vad: vad_segment_info: orig_start: 674.75, orig_end: 682.72, vad_start: 0.00, vad_end: 7.97\n',
+        };
+      });
+
+      const result = await producer(
+        directory,
+        whisper(directory),
+        run,
+      ).produce(
+        request(directory, 'video/mp4'),
+        new AbortController().signal,
+      );
+      const track = await readSubtitleSourceTrackFile(result.filePath);
+
+      expect(track.cues.map(({ text }) => text)).toEqual([
+        'normal',
+        'so',
+        'again',
+      ]);
+      expect(track.cues.find(({ text }) => text === 'so')).toMatchObject({
+        startMs: 679_590,
+        endMs: 680_040,
+      });
+      expect(track.cues.every(({ endMs, startMs }) => endMs > startMs)).toBe(
+        true,
+      );
     });
   });
 

@@ -302,10 +302,20 @@ export function AudioTranscript({
   }
 
   if (rows.length === 0) {
+    const pending =
+      snapshot.phase === 'queued' ||
+      snapshot.phase === 'repairing' ||
+      snapshot.phase === 'transcribing';
     return (
       <div className="grid h-full place-items-center px-8 text-center">
         <div>
-          <span className="mx-auto block size-4 animate-pulse rounded-full bg-indigo-300/35" />
+          {pending ? (
+            <span className="mx-auto block size-4 animate-pulse rounded-full bg-indigo-300/35" />
+          ) : (
+            <span className="mx-auto block size-4 rounded-full bg-amber-300/25 text-[10px] leading-4 text-amber-100">
+              !
+            </span>
+          )}
           <p className="mt-3 max-w-sm text-xs leading-5 text-slate-500">
             {transcriptStatus(snapshot)}
           </p>

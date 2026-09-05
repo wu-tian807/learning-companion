@@ -23,6 +23,7 @@ export type MediaSubtitlePhase =
   | 'idle'
   | 'queued'
   | 'runtime-required'
+  | 'repairing'
   | 'transcribing'
   | 'source-ready'
   | 'translating'
@@ -87,6 +88,7 @@ export function isMediaSubtitleSnapshot(
     (value.phase === 'idle' ||
       value.phase === 'queued' ||
       value.phase === 'runtime-required' ||
+      value.phase === 'repairing' ||
       value.phase === 'transcribing' ||
       value.phase === 'source-ready' ||
       value.phase === 'translating' ||

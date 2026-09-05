@@ -14,9 +14,11 @@ import type {
   AssetArtifactFileManagerApi,
 } from './asset-artifact-file-manager';
 import type {
+  AssetArtifactProduceRequest,
   AssetArtifactProducer,
   AssetArtifactRegistryApi,
   AssetArtifactSource,
+  ProducedAssetArtifact,
 } from './asset-artifact-registry';
 
 export interface AssetArtifactRequest extends AssetArtifactKey {
@@ -47,6 +49,15 @@ export interface AssetArtifactServiceApi {
   ): Promise<ResolvedAssetArtifact | undefined>;
   getOrCreate(
     request: AssetArtifactRequest,
+    signal?: AbortSignal,
+  ): Promise<ResolvedAssetArtifact>;
+  /** Commits a caller-validated replacement without consulting the current cache. */
+  replace?(
+    request: AssetArtifactRequest,
+    produce?: (
+      request: AssetArtifactProduceRequest,
+      signal: AbortSignal,
+    ) => Promise<ProducedAssetArtifact>,
     signal?: AbortSignal,
   ): Promise<ResolvedAssetArtifact>;
 }
@@ -327,6 +338,54 @@ export class AssetArtifactService
     return this.consumeTask(task, signal);
   }
 
+  async replace(
+    request: AssetArtifactRequest,
+    produce?: (
+      request: AssetArtifactProduceRequest,
+      signal: AbortSignal,
+    ) => Promise<ProducedAssetArtifact>,
+    signal?: AbortSignal,
+  ): Promise<ResolvedAssetArtifact> {
+    if (signal?.aborted) {
+      throw createAbortError();
+    }
+
+    const normalized = normalizeRequest(request);
+    const producer = this.registry.require(normalized.producerId);
+    const taskKey = createTaskKey(normalized);
+    const activeTask = this.activeTasks.get(taskKey);
+    if (activeTask) {
+      await this.waitForDifferentTask(activeTask.promise, signal);
+      return this.replace(normalized, produce, signal);
+    }
+
+    const fingerprint = createTaskFingerprint(normalized, producer);
+    const controller = new AbortController();
+    const task = {} as ActiveGenerationTask;
+    const promise = this.generate(
+      normalized,
+      producer,
+      controller.signal,
+      produce,
+    ).finally(() => {
+      task.settled = true;
+      if (this.activeTasks.get(taskKey) === task) {
+        this.activeTasks.delete(taskKey);
+      }
+    });
+    Object.assign(task, {
+      assetId: normalized.assetId,
+      workspacePath: normalized.workspacePath,
+      fingerprint,
+      controller,
+      promise,
+      consumers: 0,
+      settled: false,
+    });
+    this.activeTasks.set(taskKey, task);
+    return this.consumeTask(task, signal);
+  }
+
   async removeByAsset(
     assetId: string,
     workspacePath: string,
@@ -405,17 +464,25 @@ export class AssetArtifactService
     request: AssetArtifactRequest,
     producer: AssetArtifactProducer,
     signal: AbortSignal,
+    produce: (
+      request: AssetArtifactProduceRequest,
+      signal: AbortSignal,
+    ) => Promise<ProducedAssetArtifact> = (produceRequest, produceSignal) =>
+      producer.produce(produceRequest, produceSignal),
   ): Promise<ResolvedAssetArtifact> {
     const previous = this.database.get(request);
     const stagingDirectory =
       await this.fileManager.createStagingDirectory(request.workspacePath);
+    let committed: Awaited<
+      ReturnType<AssetArtifactFileManagerApi['commitFile']>
+    > | undefined;
 
     try {
       if (signal.aborted) {
         throw createAbortError();
       }
 
-      const produced = await producer.produce(
+      const produced = await produce(
         {
           source: request.source,
           artifactKey: request.artifactKey,
@@ -431,7 +498,7 @@ export class AssetArtifactService
 
       const producedFilePath = requireAbsolutePath(produced.filePath);
       const producedMediaType = requireMediaType(produced.mediaType);
-      const committed = await this.fileManager.commitFile({
+      committed = await this.fileManager.commitFile({
         workspacePath: request.workspacePath,
         stagingDirectory,
         producedFilePath,
@@ -440,27 +507,39 @@ export class AssetArtifactService
         extension: produced.extension,
       });
 
-      if (signal.aborted) {
-        throw createAbortError();
+      let artifact: AssetArtifact;
+      try {
+        if (signal.aborted) {
+          throw createAbortError();
+        }
+
+        const updatedTime = this.now();
+
+        if (!isUnixMilliseconds(updatedTime)) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+
+        artifact = this.database.upsert({
+          assetId: request.assetId,
+          producerId: producer.id,
+          artifactKey: request.artifactKey,
+          relativePath: committed.relativePath,
+          mediaType: producedMediaType,
+          sourceRevision: request.source.revision,
+          producerVersion: producer.version,
+          artifactRevision: committed.artifactRevision,
+          updatedTime,
+        });
+      } catch (error) {
+        if (!previous || previous.relativePath !== committed.relativePath) {
+          await this.fileManager
+            .removeArtifactFile(request.workspacePath, committed.relativePath)
+            .catch((cleanupError: unknown) => {
+              this.logger.warn('清理未登记的 Asset Artifact 失败', cleanupError);
+            });
+        }
+        throw error;
       }
-
-      const updatedTime = this.now();
-
-      if (!isUnixMilliseconds(updatedTime)) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
-      const artifact = this.database.upsert({
-        assetId: request.assetId,
-        producerId: producer.id,
-        artifactKey: request.artifactKey,
-        relativePath: committed.relativePath,
-        mediaType: producedMediaType,
-        sourceRevision: request.source.revision,
-        producerVersion: producer.version,
-        artifactRevision: committed.artifactRevision,
-        updatedTime,
-      });
       this.publishCommitted(artifact);
 
       if (

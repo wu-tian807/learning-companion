@@ -26,6 +26,11 @@ import type {
 } from './external-libraries/media-subtitle-runtime';
 import { analyzeMediaSpeakers } from './speaker-diarization';
 import {
+  SubtitleTrackValidationError,
+  serializeSubtitleSourceTrack,
+  validateSubtitleSourceTrackForCommit,
+} from './subtitle-artifact-files';
+import {
   addPostHocSpeakerAnalysis,
   parseSenseVoiceStreamingTranscription,
   parseSenseVoiceTranscription,
@@ -157,8 +162,9 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
         generatedTime: this.dependencies.now(),
         cues: speakerOutput?.cues ?? output.cues,
       };
+      validateSubtitleSourceTrackForCommit(track);
       const filePath = join(request.stagingDirectory, 'subtitles.json');
-      await writeFile(filePath, `${JSON.stringify(track, null, 2)}\n`, 'utf8');
+      await writeFile(filePath, serializeSubtitleSourceTrack(track), 'utf8');
       return {
         filePath,
         mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE,
@@ -170,6 +176,9 @@ export class MediaSubtitleTranscriptionProducer implements AssetArtifactProducer
         error instanceof AppError &&
         error.code === 'EXTERNAL_LIBRARY_NOT_INSTALLED'
       ) {
+        throw error;
+      }
+      if (error instanceof SubtitleTrackValidationError) {
         throw error;
       }
       throw processingFailure(error);
