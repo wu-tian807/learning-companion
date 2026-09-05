@@ -2,6 +2,7 @@ import {
   access,
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
   rm,
   writeFile,
@@ -251,6 +252,129 @@ describe('AssetArtifactService', () => {
     expect(harness.database.listByAsset('asset')).toEqual([
       updated.artifact,
     ]);
+  });
+
+  it('force-replaces a cached Artifact without consulting the cache', async () => {
+    const produce = vi.fn<AssetArtifactProducer['produce']>(
+      async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, 'original');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      },
+    );
+    const harness = await createHarness(createProducer(produce));
+    const request = createRequest(harness);
+    const original = await harness.service.getOrCreate(request);
+
+    const repaired = await harness.service.replace(request, async (input) => {
+      const filePath = join(input.stagingDirectory, 'preview.pdf');
+      await writeFile(filePath, 'repaired');
+      return {
+        filePath,
+        mediaType: 'application/pdf',
+        extension: 'pdf',
+      };
+    });
+
+    expect(repaired.cacheHit).toBe(false);
+    expect(repaired.absolutePath).not.toBe(original.absolutePath);
+    expect(await readFile(repaired.absolutePath, 'utf8')).toBe('repaired');
+    expect(produce).toHaveBeenCalledOnce();
+    await expect(access(original.absolutePath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(harness.service.getCached(request)).resolves.toMatchObject({
+      absolutePath: repaired.absolutePath,
+      cacheHit: true,
+    });
+  });
+
+  it('keeps the old Artifact when replacement index persistence fails', async () => {
+    const harness = await createHarness(
+      createProducer(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, 'original');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+    );
+    const request = createRequest(harness);
+    const original = await harness.service.getOrCreate(request);
+    vi.spyOn(harness.database, 'upsert').mockImplementationOnce(() => {
+      throw new Error('index write failed');
+    });
+
+    await expect(
+      harness.service.replace(request, async (input) => {
+        const filePath = join(input.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, 'replacement');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+    ).rejects.toThrow('index write failed');
+
+    expect(harness.database.listByAsset('asset')).toEqual([
+      original.artifact,
+    ]);
+    await expect(access(original.absolutePath)).resolves.toBeUndefined();
+    await expect(harness.service.getCached(request)).resolves.toMatchObject({
+      absolutePath: original.absolutePath,
+      cacheHit: true,
+    });
+  });
+
+  it('keeps the old Artifact when replacement is cancelled before commit', async () => {
+    const harness = await createHarness(
+      createProducer(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, 'original');
+        return {
+          filePath,
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+        };
+      }),
+    );
+    const request = createRequest(harness);
+    const original = await harness.service.getOrCreate(request);
+    let startedResolve: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      startedResolve = resolve;
+    });
+    const controller = new AbortController();
+    const replacement = harness.service.replace(
+      request,
+      async (_input, signal) => {
+        startedResolve!();
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('cancelled', 'AbortError')),
+            { once: true },
+          );
+        });
+        throw new Error('unreachable');
+      },
+      controller.signal,
+    );
+    await started;
+    controller.abort();
+
+    await expect(replacement).rejects.toMatchObject({ name: 'AbortError' });
+    expect(harness.database.listByAsset('asset')).toEqual([
+      original.artifact,
+    ]);
+    await expect(access(original.absolutePath)).resolves.toBeUndefined();
   });
 
   it('lists only registered, current and hash-valid Artifacts without generating', async () => {
