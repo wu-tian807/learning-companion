@@ -11,6 +11,7 @@ import {
 } from './shared';
 import { useWorkbenchConversationRuntime } from '../../renderer/conversation/workbench-conversation-context';
 import { LearningBriefCompletion } from './conversation/brief-completion';
+import { LearningBriefDetails } from './brief-details';
 import {
   createLearningOutlineSetUnitStatusCommand,
   isLearningOutlineWorkbenchPayload,
@@ -162,45 +163,7 @@ function OutlineView({
             <summary className="cursor-pointer text-[10px] text-slate-300">
               查看最近一次有效需求
             </summary>
-            <dl className="mt-3 grid gap-2 text-[10px] leading-5 text-slate-400">
-              <div>
-                <dt className="text-slate-600">学习目标</dt>
-                <dd>{brief.goal || '未填写'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-600">当前基础</dt>
-                <dd>{brief.currentLevel || '未填写'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-600">困难与约束</dt>
-                <dd>
-                  {[brief.difficulties, brief.constraints]
-                    .filter(Boolean)
-                    .join('；') || '未填写'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-600">范围</dt>
-                <dd>{brief.scope || '未填写'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-600">路线草案</dt>
-                <dd>
-                  {brief.roadmap.map((item) => item.title).join('、') ||
-                    '未填写'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-600">待确认问题</dt>
-                <dd>{brief.openQuestions.join('；') || '无'}</dd>
-              </div>
-              {brief.detailed && (
-                <div>
-                  <dt className="text-slate-600">额外补充（可选）</dt>
-                  <dd className="whitespace-pre-wrap">{brief.detailed}</dd>
-                </div>
-              )}
-            </dl>
+            <LearningBriefDetails brief={brief} />
           </details>
         )}
         <LearningBriefCompletion state={payload.brief} />

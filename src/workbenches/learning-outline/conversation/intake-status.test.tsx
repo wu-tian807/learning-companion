@@ -35,6 +35,9 @@ it('shows required gaps and hides generation even if the model marks an empty br
   invoke.mockResolvedValue({ valid: true, ready: true, brief: { ...createEmptyLearningBrief(), readiness: 'ready' } });
   await render();
   expect(container.textContent).toContain('待确认：学习目标');
+  expect(container.querySelectorAll('dt')).toHaveLength(9);
+  expect(container.textContent).toContain('尚未确认；可以明确告知无特殊偏好');
+  expect(container.textContent).toContain('尚未整理路线草案');
   expect(container.querySelector('button')).toBeNull();
 });
 
@@ -42,6 +45,12 @@ it('announces completion without detailed and shows only a disabled generation p
   invoke.mockResolvedValue(completeState());
   await render();
   expect(container.textContent).toContain('所有必填项已填写完成');
+  expect(Array.from(container.querySelectorAll('dt')).map((item) => item.firstChild?.textContent)).toEqual([
+    '学习目标', '当前基础', '困难', '约束', '学习偏好', '学习范围', '路线草案', '待确认问题', '额外补充',
+  ]);
+  expect(container.textContent).toContain('暂无，可在对话中继续补充');
+  expect(container.textContent).toContain('实践');
+  expect(container.querySelector('ol li')?.textContent).toContain('第一周');
   const button = container.querySelector('button')!;
   expect(button.textContent?.trim()).toBe('生成大纲');
   expect(button.disabled).toBe(true);
@@ -55,7 +64,7 @@ it('displays later optional supplements while keeping the brief complete', async
   const state = completeState();
   invoke.mockResolvedValue({ ...state, brief: { ...state.brief!, detailed: '希望有可运行的例子。' } });
   await render();
-  expect(container.textContent).toContain('额外补充：希望有可运行的例子。');
+  expect(container.textContent).toContain('希望有可运行的例子。');
   expect(container.querySelector('button')).not.toBeNull();
 });
 
