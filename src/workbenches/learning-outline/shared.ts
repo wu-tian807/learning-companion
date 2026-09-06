@@ -59,6 +59,8 @@ export interface LearningBrief {
   readonly constraints: string;
   readonly preferences: string;
   readonly scope: string;
+  /** Optional user-provided information not covered by the structured fields. */
+  readonly detailed?: string;
   readonly roadmap: readonly LearningBriefRoadmapItem[];
   readonly openQuestions: readonly string[];
   readonly readiness: LearningBriefReadiness;
@@ -224,40 +226,91 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
-function isRoadmapItem(value: unknown): value is LearningBriefRoadmapItem {
-  return (
-    isRecord(value) &&
-    isId(value.id) &&
-    isText(value.title, false) &&
-    (value.goal === undefined || isText(value.goal)) &&
-    (value.notes === undefined || isText(value.notes))
-  );
+export const LEARNING_BRIEF_REQUIRED_FIELDS = Object.freeze({
+  goal: '学习目标', currentLevel: '当前基础', difficulties: '困难',
+  constraints: '约束', preferences: '偏好', scope: '学习范围',
+});
+
+const briefTextSchema = { type: 'string', maxLength: 32_768 } as const;
+const briefIdSchema = { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$' } as const;
+
+/** The file contract supplied to the Agent, including non-empty array items. */
+export const LEARNING_BRIEF_SCHEMA = {
+  type: 'object',
+  required: ['format', 'version', ...Object.keys(LEARNING_BRIEF_REQUIRED_FIELDS),
+    'roadmap', 'openQuestions', 'readiness', 'readinessNote'],
+  properties: {
+    format: { const: LEARNING_BRIEF_FORMAT }, version: { const: LEARNING_BRIEF_VERSION },
+    ...Object.fromEntries(Object.entries(LEARNING_BRIEF_REQUIRED_FIELDS).map(([key, label]) =>
+      [key, { ...briefTextSchema, description: `${label}；收集时可为空，完成前需明确。` }])),
+    detailed: { ...briefTextSchema, description: '可选的额外补充；没有补充时省略或留空。' },
+    roadmap: { type: 'array', maxItems: 128, items: {
+      type: 'object', required: ['id', 'title'], properties: {
+        id: briefIdSchema, title: { ...briefTextSchema, minLength: 1, pattern: '\\S' },
+        goal: briefTextSchema, notes: briefTextSchema,
+      },
+    } },
+    openQuestions: { type: 'array', maxItems: 128,
+      items: { ...briefTextSchema, minLength: 1, pattern: '\\S' } },
+    readiness: { enum: ['collecting', 'ready'] }, readinessNote: briefTextSchema,
+  },
+} as const;
+
+export function validateLearningBrief(value: unknown): readonly string[] {
+  if (!isRecord(value)) return ['brief：必须是 JSON 对象'];
+  const issues: string[] = [];
+  if (value.format !== LEARNING_BRIEF_FORMAT) issues.push(`format：必须为 ${LEARNING_BRIEF_FORMAT}`);
+  if (value.version !== LEARNING_BRIEF_VERSION) issues.push(`version：必须为 ${LEARNING_BRIEF_VERSION}`);
+  for (const key of [...Object.keys(LEARNING_BRIEF_REQUIRED_FIELDS), 'readinessNote']) {
+    if (!isText(value[key])) issues.push(`${key}：必须是字符串（最多 32768 字符）`);
+  }
+  if (value.detailed !== undefined && !isText(value.detailed)) issues.push('detailed：可选，填写时必须是字符串（最多 32768 字符）');
+  if (!Array.isArray(value.roadmap) || value.roadmap.length > 128) {
+    issues.push('roadmap：必须是最多 128 项的数组');
+  } else {
+    const ids = new Set<string>();
+    value.roadmap.forEach((item: unknown, index) => {
+      const prefix = `roadmap[${index}]`;
+      if (!isRecord(item)) { issues.push(`${prefix}：必须是对象`); return; }
+      if (!isId(item.id)) issues.push(`${prefix}.id：必须是唯一的字母或数字标识，可包含 . _ -`);
+      else if (ids.has(item.id)) issues.push(`${prefix}.id：标识重复`);
+      else ids.add(item.id);
+      if (!isText(item.title, false)) issues.push(`${prefix}.title：必须填写非空标题`);
+      for (const key of ['goal', 'notes']) {
+        if (item[key] !== undefined && !isText(item[key])) issues.push(`${prefix}.${key}：必须是字符串`);
+      }
+    });
+  }
+  if (!Array.isArray(value.openQuestions) || value.openQuestions.length > 128 ||
+      !value.openQuestions.every((item) => isText(item, false))) {
+    issues.push('openQuestions：必须是最多 128 个非空问题的字符串数组');
+  }
+  if (value.readiness !== 'collecting' && value.readiness !== 'ready') issues.push('readiness：必须为 collecting 或 ready');
+  if (!isJsonValue(value)) issues.push('brief：必须只包含可序列化的 JSON 值');
+  return issues;
 }
 
 export function isLearningBrief(value: unknown): value is LearningBrief {
-  return (
-    isRecord(value) &&
-    value.format === LEARNING_BRIEF_FORMAT &&
-    value.version === LEARNING_BRIEF_VERSION &&
-    isText(value.goal) &&
-    isText(value.currentLevel) &&
-    isText(value.difficulties) &&
-    isText(value.constraints) &&
-    isText(value.preferences) &&
-    isText(value.scope) &&
-    Array.isArray(value.roadmap) &&
-    value.roadmap.length <= 128 &&
-    value.roadmap.every(isRoadmapItem) &&
-    new Set(value.roadmap.map((item) => item.id)).size ===
-      value.roadmap.length &&
-    Array.isArray(value.openQuestions) &&
-    value.openQuestions.length <= 128 &&
-    value.openQuestions.every((item) => isText(item, false)) &&
-    (value.readiness === 'collecting' || value.readiness === 'ready') &&
-    isText(value.readinessNote) &&
-    isJsonValue(value)
-  );
+  return validateLearningBrief(value).length === 0;
 }
+
+export function getLearningBriefMissingFields(brief: LearningBrief): readonly string[] {
+  return [
+    ...Object.entries(LEARNING_BRIEF_REQUIRED_FIELDS)
+      .filter(([key]) => !brief[key as keyof typeof LEARNING_BRIEF_REQUIRED_FIELDS].trim())
+      .map(([, label]) => label),
+    ...(brief.roadmap.length === 0 ? ['路线草案'] : []),
+    ...(brief.openQuestions.length > 0 ? ['待确认问题'] : []),
+  ];
+}
+
+/** Model readiness is advisory; a saved brief must satisfy the actual fields. */
+export function isLearningBriefComplete(brief: LearningBrief): boolean {
+  return getLearningBriefMissingFields(brief).length === 0;
+}
+
+export const LEARNING_BRIEF_COMPLETION_NOTICE =
+  '所有必填项已填写完成。你可以继续补充额外信息；生成大纲功能即将开放。';
 
 function isReference(value: unknown): value is LearningOutlineReference {
   return (
@@ -441,6 +494,7 @@ export function createEmptyLearningBrief(): LearningBrief {
     constraints: '',
     preferences: '',
     scope: '',
+    detailed: '',
     roadmap: Object.freeze([]),
     openQuestions: Object.freeze([]),
     readiness: 'collecting',

@@ -13,6 +13,8 @@ import {
   cloneLearningBrief,
   createEmptyLearningBrief,
   isLearningBrief,
+  isLearningBriefComplete,
+  validateLearningBrief,
   LEARNING_BRIEF_FORMAT,
   LEARNING_BRIEF_VERSION,
   LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
@@ -313,7 +315,7 @@ export class LearningOutlineBriefMonitor {
       runtime.state = Object.freeze({
         valid: false,
         ...retainLastValidBrief(runtime.state),
-        error: '学习需求结构或版本无效。',
+        error: `学习需求结构或版本无效：${validateLearningBrief(parsed).slice(0, 12).join('；')}`,
       });
       this.publishBrief(runtime);
       return;
@@ -324,7 +326,7 @@ export class LearningOutlineBriefMonitor {
     const attachment = await this.saveSnapshot(runtime, brief, revision);
     runtime.state = Object.freeze({
       valid: true,
-      ready: brief.readiness === 'ready',
+      ready: isLearningBriefComplete(brief),
       revision,
       updatedTime: attachment.updatedTime,
       brief,

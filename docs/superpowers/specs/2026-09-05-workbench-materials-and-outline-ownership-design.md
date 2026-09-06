@@ -86,3 +86,25 @@ Generation Center
 回归测试覆盖六类 Provider 的注册和材料入口、MindMap 的材料/问答组合、视频/图像/文档等已有目标及版本校验、通用 Panel 的 mode 注册、绑定会话持久化、草稿创建动作和 brief 监测释放。`pnpm check`、涉及 Main/Preload 的 `pnpm package` 和目标 worktree 的完整测试作为阶段门禁执行。
 
 本阶段不包含正式大纲生成、候选发布、完成进度迭代及真实 Electron 点击验证；这些属于计划中的后续阶段，不能由类型检查或启动进程替代。
+
+
+## 2026-09-06 需求收集完成条件与结构纠错
+
+实际错误文件的 roadmap 使用 chapter/outcomes，缺少契约要求的 id/title。旧指令只列顶层字段，没有完整路线项 schema；旧监测器只向 UI 报通用错误，Agent 无法在同轮获得字段反馈。此次修复保留结构校验，向 Agent 提供完整 schema，并在每轮 flush 后反馈具体错误，最多再修正两次。失败时明确提示仍未保存，不承诺完成；检查点恢复会复用最后一次修正结果，取消仍向上传播。
+
+完成条件由有效已保存 brief 的内容计算：goal、currentLevel、difficulties、constraints、preferences、scope 均已明确，roadmap 至少一项，openQuestions 已清空。readiness 仅为 Agent 建议，不可绕过条件。用户明确没有、不确定或跳过时如实记录；已有信息直接复用，每轮通常只问最关键的缺口，不按轮数结束。
+
+新增可选 detailed 字符串，承接其他字段无法涵盖的后续补充；缺省或空字符串不阻止完成，旧 v1 文件无需迁移。明确属于已有字段的纠正仍更新对应字段。完成后最终回复主动告知，并在大纲及对话状态区显示禁用的“生成大纲 / 即将开放”按钮，不注册生成动作。
+
+所有变化均位于 learning-outline Workbench；通用 Host、IPC、Provider、数据库不增加业务逻辑。
+
+| 行为 | 测试层 | 正常和边界证据 |
+|---|---|---|
+| schema 与完成判断 | shared.test.ts | 原始 chapter/outcomes 形状；字段路径错误；旧 v1 无 detailed；空白必填、重复 id、未知版本、非法补充、路线与未决问题 |
+| 保存与恢复 | BriefMonitor | 完成计算不信任 ready；无效重写保留有效快照；detailed 重启保留；实际 Windows 8.3 watcher 回归 |
+| Agent 回合 | TaskDefinition | 完整 schema、修正成功、提前 ready、修正次数上限、取消、修正检查点恢复、完成后继续补充 |
+| 文件到结果 | intake-composition.test.ts | 真实文件与 Monitor；模拟 Agent 错写并收到字段反馈后修复；无效文件不入快照；最终保存并提示 |
+| 对话状态 | intake-status.test.tsx | 完成按钮、可选补充、无效状态、切换 Asset 的加载和过期响应、按钮不触发任务 |
+| Electron 显示 | 独立临时 fixture 窗口 | 实际生产组件和 CSS；缺项隐藏按钮、完整信息显示禁用按钮和补充、无效状态隐藏按钮；未使用用户数据库或真实模型 |
+
+最终验证：大纲相关 8 文件 / 39 测试通过；pnpm check 的 TypeScript、ESLint 通过，406 文件 / 1933 测试通过，4 文件 / 8 测试条件跳过；pnpm package 在 Windows x64 通过。Electron fixture 截图和结果保存在本次本地验证目录 lc-intake-ui-RlR81D。修复的自动验证通过；真实 Agent 的自然多轮提问体验仍交由用户在现有数据窗口验收，不能将 fixture 等同真实模型验收。正式大纲生成继续属于后续范围。

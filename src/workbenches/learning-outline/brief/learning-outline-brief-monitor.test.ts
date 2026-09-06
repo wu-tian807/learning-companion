@@ -21,6 +21,13 @@ import { AssetTargetRegistry } from '../../../main/workbench/asset-target-regist
 import { registerMainWorkbenchAttachments } from '../../catalog/register-main-workbenches';
 import { LearningOutlineBriefMonitor } from './learning-outline-brief-monitor';
 
+function completeBrief() {
+  return { ...createEmptyLearningBrief(), goal: '读懂论文', currentLevel: '有基础',
+    difficulties: '暂无', constraints: '每周两天', preferences: '实践', scope: '核心方法',
+    roadmap: [{ id: 'week-1', title: '基础与方法' }],
+    readiness: 'ready' as const, readinessNote: '可以开始生成。' };
+}
+
 describe('LearningOutlineBriefMonitor', () => {
   const temporaryDirectories: string[] = [];
   const monitors: LearningOutlineBriefMonitor[] = [];
@@ -68,7 +75,7 @@ describe('LearningOutlineBriefMonitor', () => {
     await monitor.start(asset.projectId, asset.id);
     await monitor.flush(asset.id);
     await writeFile(join(directory, 'learning-brief.json'), JSON.stringify({
-      ...createEmptyLearningBrief(), readiness: 'ready', readinessNote: 'Ready.',
+      ...completeBrief(),
     }));
     // No flush here: this assertion must be driven by the actual native watcher.
     await vi.waitFor(() => expect(monitor.getState(asset.id)).toMatchObject({
@@ -214,7 +221,7 @@ describe('LearningOutlineBriefMonitor', () => {
     expect(first?.content).toBeDefined();
 
     const readyBrief = {
-      ...createEmptyLearningBrief(),
+      ...completeBrief(),
       readiness: 'ready' as const,
       readinessNote: '可以开始生成。',
     };
@@ -304,5 +311,44 @@ describe('LearningOutlineBriefMonitor', () => {
       error: '学习需求 JSON 格式无效。',
     });
     await monitor.shutdown();
+  });
+
+  it('gates premature readiness, reports exact schema errors and retains optional detail across restart', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lc-outline-completion-'));
+    temporaryDirectories.push(directory);
+    const asset = { id: 'outline-1', projectId: 'project-1', mediaType: LEARNING_OUTLINE_ASSET_MEDIA_TYPE };
+    const makeMonitor = () => {
+      const monitor = new LearningOutlineBriefMonitor(
+        { get: () => asset } as never,
+        { listByAsset: async () => [], createWithContent: async () => ({ updatedTime: 42 }) } as never,
+        { prepare: async () => directory } as never,
+      );
+      monitors.push(monitor);
+      return monitor;
+    };
+    const monitor = makeMonitor();
+    await monitor.start(asset.projectId, asset.id);
+    const file = join(directory, 'learning-brief.json');
+    await writeFile(file, JSON.stringify({ ...completeBrief(), difficulties: '' }));
+    await monitor.flush(asset.id);
+    expect(monitor.getState(asset.id)).toMatchObject({ valid: true, ready: false });
+    const completed = { ...completeBrief(), detailed: '我还希望有例子。' };
+    await writeFile(file, JSON.stringify(completed));
+    await monitor.flush(asset.id);
+    const revision = monitor.getState(asset.id).revision;
+    await writeFile(file, JSON.stringify({ ...completed, roadmap: [{ chapter: '第 1 周', outcomes: '读懂基础' }] }));
+    await monitor.flush(asset.id);
+    expect(monitor.getState(asset.id)).toMatchObject({ valid: false, revision,
+      brief: { detailed: '我还希望有例子。' } });
+    expect(monitor.getState(asset.id).error).toContain('roadmap[0].id');
+    expect(monitor.getState(asset.id).error).toContain('roadmap[0].title');
+    expect(monitor.getState(asset.id).ready).toBeUndefined();
+    await writeFile(file, JSON.stringify(completed));
+    await monitor.shutdown();
+    const restarted = makeMonitor();
+    await restarted.start(asset.projectId, asset.id);
+    await restarted.flush(asset.id);
+    expect(restarted.getState(asset.id)).toMatchObject({ valid: true, ready: true,
+      brief: { detailed: '我还希望有例子。' } });
   });
 });

@@ -10,6 +10,7 @@ import {
   LEARNING_OUTLINE_INTAKE_MODE_ID,
 } from './shared';
 import { useWorkbenchConversationRuntime } from '../../renderer/conversation/workbench-conversation-context';
+import { LearningBriefCompletion } from './conversation/brief-completion';
 import {
   createLearningOutlineSetUnitStatusCommand,
   isLearningOutlineWorkbenchPayload,
@@ -193,14 +194,16 @@ function OutlineView({
                 <dt className="text-slate-600">待确认问题</dt>
                 <dd>{brief.openQuestions.join('；') || '无'}</dd>
               </div>
+              {brief.detailed && (
+                <div>
+                  <dt className="text-slate-600">额外补充（可选）</dt>
+                  <dd className="whitespace-pre-wrap">{brief.detailed}</dd>
+                </div>
+              )}
             </dl>
           </details>
         )}
-        {payload.brief.ready && (
-          <p className="mt-3 text-[10px] text-indigo-200/80">
-            需求已整理，可继续补充；正式章节生成功能待接入。
-          </p>
-        )}
+        <LearningBriefCompletion state={payload.brief} />
       </section>
       {payload.document.chapters.length === 0 ? (
         <div className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">
