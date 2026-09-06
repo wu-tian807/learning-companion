@@ -1,3 +1,4 @@
+import { materialsContextFromConversation } from '../../../main/conversation/workbench-conversation-context-provider';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
@@ -48,6 +49,19 @@ function context(
 }
 
 describe('HTML conversation context provider', () => {
+  it('prepares HTML material without binding editing or advertising edit tools', async () => {
+    const resolveEditing = vi.fn(() => ({ canEdit: vi.fn(async () => true) }));
+    const materials = await new HtmlConversationContextProvider(resolveEditing).prepareMaterials(
+      materialsContextFromConversation(context()),
+    );
+    const text = JSON.stringify(materials.userMessage);
+    expect(text).toContain('用户选中或聚焦的内容');
+    expect(text).not.toContain('html_begin_edit');
+    expect(text).not.toContain('受信任 DOM Target');
+    expect(materials.toolRequirements).toEqual([]);
+    expect(resolveEditing).not.toHaveBeenCalled();
+  });
+
   it('passes the formula-source DOM quote to the Agent', async () => {
     const prepared = await new HtmlConversationContextProvider().prepare(
       context(),

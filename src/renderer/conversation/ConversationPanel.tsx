@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import type {
   ConversationContextPresentation,
@@ -34,7 +28,10 @@ const DEFAULT_PRESENTATION: ConversationModePresentation = Object.freeze({
   inputPlaceholder: PROJECT_CONVERSATION_INPUT_PLACEHOLDER,
 });
 
-function needsProviderSettings(code: string | undefined, message: string): boolean {
+function needsProviderSettings(
+  code: string | undefined,
+  message: string,
+): boolean {
   return (
     code === 'AGENT_PROVIDER_SELECTION_REQUIRED' ||
     code === 'AGENT_PROVIDER_AUTH_REQUIRED' ||
@@ -96,7 +93,9 @@ function ContextCard({
             查看原文位置
           </span>
         </button>
-      ) : content}
+      ) : (
+        content
+      )}
       {removable && (
         <button
           type="button"
@@ -115,7 +114,9 @@ function QuestionForAnswer(
   conversation: ConversationRecord,
   answer: ConversationMessageRecord,
 ): ConversationMessageRecord | undefined {
-  return conversation.messages.find((message) => message.id === answer.replyToMessageId);
+  return conversation.messages.find(
+    (message) => message.id === answer.replyToMessageId,
+  );
 }
 
 function MessageBubble({
@@ -139,25 +140,30 @@ function MessageBubble({
   readonly onContinue: () => void;
   readonly onReanswer: (answerId: string) => void;
   readonly onSelectedAnswer: (messageId: string, text: string) => void;
-  readonly onAnswerAction: (answer: ConversationMessageRecord, text: string) => void;
+  readonly onAnswerAction: (
+    answer: ConversationMessageRecord,
+    text: string,
+  ) => void;
   readonly onRevealContext?: () => Promise<void> | void;
   readonly onRevealError?: (error: unknown) => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+    <div
+      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+    >
       <div className="max-w-[88%]">
         {message.role === 'user' &&
           (message.context !== undefined ||
             message.contextSource !== undefined) && (
-          <div className="mb-1.5">
-            <ContextCard
-              presentation={contextPresentation}
-              onReveal={onRevealContext}
-              onRevealError={onRevealError}
-            />
-          </div>
-        )}
+            <div className="mb-1.5">
+              <ContextCard
+                presentation={contextPresentation}
+                onReveal={onRevealContext}
+                onRevealError={onRevealError}
+              />
+            </div>
+          )}
         <div
           onMouseUp={() => {
             if (
@@ -166,7 +172,9 @@ function MessageBubble({
             ) {
               return;
             }
-            const selected = normalizeConversationSelection(window.getSelection()?.toString() ?? '');
+            const selected = normalizeConversationSelection(
+              window.getSelection()?.toString() ?? '',
+            );
             if (selected) onSelectedAnswer(message.id, selected);
           }}
           className={`rounded-2xl border px-3.5 py-2.5 text-[13px] leading-6 ${
@@ -208,7 +216,11 @@ function MessageBubble({
               <button
                 type="button"
                 disabled={busy}
-                title={busy ? '当前回答生成中，完成或停止后可重新回答' : '不满意时让 AI 重新回答'}
+                title={
+                  busy
+                    ? '当前回答生成中，完成或停止后可重新回答'
+                    : '不满意时让 AI 重新回答'
+                }
                 onClick={() => onReanswer(message.id)}
                 className="rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200 disabled:opacity-40"
               >
@@ -233,7 +245,9 @@ function MessageBubble({
                 继续追问
               </button>
               {message.modelInfo && (
-                <span className="ml-auto text-[10px] text-slate-600">{message.modelInfo}</span>
+                <span className="ml-auto text-[10px] text-slate-600">
+                  {message.modelInfo}
+                </span>
               )}
             </div>
           )}
@@ -259,7 +273,11 @@ function HistoryView({
   readonly onRemove: (record: ConversationRecord) => void;
 }) {
   if (loading) {
-    return <p className="grid h-full place-items-center text-xs text-slate-500">正在读取对话记录…</p>;
+    return (
+      <p className="grid h-full place-items-center text-xs text-slate-500">
+        正在读取对话记录…
+      </p>
+    );
   }
   if (history.length === 0) {
     return (
@@ -270,52 +288,64 @@ function HistoryView({
   }
   return (
     <div className="space-y-2 overflow-y-auto p-3">
-      {[...history].sort((left, right) => right.updatedTime - left.updatedTime).map((record) => {
-        const firstQuestion = record.messages.find((message) => message.role === 'user');
-        const currentIsGenerating = busy && record.id === currentConversationId;
-        return (
-          <article
-            key={record.id}
-            className="group rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 hover:border-indigo-300/25 hover:bg-indigo-400/[0.07]"
-          >
-            <button
-              type="button"
-              disabled={busy}
-              title={busy ? '当前回答完成或停止后可切换对话' : undefined}
-              onClick={() => onRestore(record)}
-              className="block w-full text-left disabled:cursor-not-allowed disabled:opacity-60"
+      {[...history]
+        .sort((left, right) => right.updatedTime - left.updatedTime)
+        .map((record) => {
+          const firstQuestion = record.messages.find(
+            (message) => message.role === 'user',
+          );
+          const currentIsGenerating =
+            busy && record.id === currentConversationId;
+          return (
+            <article
+              key={record.id}
+              className="group rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 hover:border-indigo-300/25 hover:bg-indigo-400/[0.07]"
             >
-              <span className="block truncate text-[13px] font-medium text-slate-200">{record.title}</span>
-              <span className="mt-1 block line-clamp-2 text-[11px] leading-5 text-slate-500">
-                {firstQuestion?.text ?? '（空对话）'}
-              </span>
-              <span className="mt-2 block text-[9px] text-slate-600">
-                {record.messages.length} 条消息 · {new Date(record.updatedTime).toLocaleString('zh-CN')}
-              </span>
-            </button>
-            <div className="mt-2 flex items-center gap-2 border-t border-white/[0.05] pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  if (!busy) onRestore(record);
-                }}
-                className="text-[11px] text-indigo-300 hover:text-indigo-200"
+                disabled={busy}
+                title={busy ? '当前回答完成或停止后可切换对话' : undefined}
+                onClick={() => onRestore(record)}
+                className="block w-full text-left disabled:cursor-not-allowed disabled:opacity-60"
               >
-                查看
+                <span className="block truncate text-[13px] font-medium text-slate-200">
+                  {record.title}
+                </span>
+                <span className="mt-1 block line-clamp-2 text-[11px] leading-5 text-slate-500">
+                  {firstQuestion?.text ?? '（空对话）'}
+                </span>
+                <span className="mt-2 block text-[9px] text-slate-600">
+                  {record.messages.length} 条消息 ·{' '}
+                  {new Date(record.updatedTime).toLocaleString('zh-CN')}
+                </span>
               </button>
-              <button
-                type="button"
-                disabled={currentIsGenerating}
-                title={currentIsGenerating ? '当前回答生成中，停止后可删除' : undefined}
-                onClick={() => onRemove(record)}
-                className="text-[11px] text-slate-500 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                删除
-              </button>
-            </div>
-          </article>
-        );
-      })}
+              <div className="mt-2 flex items-center gap-2 border-t border-white/[0.05] pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!busy) onRestore(record);
+                  }}
+                  className="text-[11px] text-indigo-300 hover:text-indigo-200"
+                >
+                  查看
+                </button>
+                <button
+                  type="button"
+                  disabled={currentIsGenerating}
+                  title={
+                    currentIsGenerating
+                      ? '当前回答生成中，停止后可删除'
+                      : undefined
+                  }
+                  onClick={() => onRemove(record)}
+                  className="text-[11px] text-slate-500 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  删除
+                </button>
+              </div>
+            </article>
+          );
+        })}
     </div>
   );
 }
@@ -350,7 +380,10 @@ export function ConversationPanel({
 }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [selectedAnswer, setSelectedAnswer] = useState<{ messageId: string; text: string }>();
+  const [selectedAnswer, setSelectedAnswer] = useState<{
+    messageId: string;
+    text: string;
+  }>();
   const [notice, setNotice] = useState<string>();
   const [answerActionPending, setAnswerActionPending] = useState(false);
   const messages = state.conversation.messages;
@@ -413,9 +446,10 @@ export function ConversationPanel({
     if (revealError instanceof Error && revealError.name === 'AbortError') {
       return;
     }
-    const message = revealError instanceof Error
-      ? revealError.message
-      : '无法在原文中定位该内容。';
+    const message =
+      revealError instanceof Error
+        ? revealError.message
+        : '无法在原文中定位该内容。';
     setNotice('定位失败');
     onError?.(message);
   };
@@ -432,6 +466,7 @@ export function ConversationPanel({
         contextProviderId: pendingContext.contribution.contextProviderId,
       }
     : undefined;
+  const Status = presentation.status;
 
   return (
     <section
@@ -447,21 +482,33 @@ export function ConversationPanel({
             <h3 className="truncate text-sm font-semibold text-slate-100">
               {presentation.title}
             </h3>
-            <p className="truncate text-[10px] text-slate-500">{state.conversation.title}</p>
+            <p className="truncate text-[10px] text-slate-500">
+              {state.conversation.title}
+            </p>
           </div>
-          {notice && <span className="ml-auto text-[10px] text-emerald-300">{notice}</span>}
-          <button
-            type="button"
-            disabled={state.busy}
-            onClick={onStartNew}
-            className={`${notice ? '' : 'ml-auto '}rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:border-indigo-300/30 hover:text-indigo-200 disabled:opacity-40`}
-          >
-            ＋ 新对话
-          </button>
+          {notice && (
+            <span className="ml-auto text-[10px] text-emerald-300">
+              {notice}
+            </span>
+          )}
+          {presentation.allowNewConversation !== false && (
+            <button
+              type="button"
+              disabled={state.busy}
+              onClick={onStartNew}
+              className={`${notice ? '' : 'ml-auto '}rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:border-indigo-300/30 hover:text-indigo-200 disabled:opacity-40`}
+            >
+              ＋ {presentation.newConversationLabel ?? '新对话'}
+            </button>
+          )}
           <button
             type="button"
             aria-label={`关闭${presentation.ariaLabel}`}
-            title={state.busy ? '关闭面板；当前任务会在后台继续' : `关闭${presentation.ariaLabel}`}
+            title={
+              state.busy
+                ? '关闭面板；当前任务会在后台继续'
+                : `关闭${presentation.ariaLabel}`
+            }
             onClick={onClose}
             className="grid size-7 place-items-center rounded-lg text-sm text-slate-500 hover:bg-white/5 hover:text-slate-200"
           >
@@ -480,10 +527,19 @@ export function ConversationPanel({
                   : 'text-slate-500 hover:text-slate-300'
               } disabled:opacity-40`}
             >
-              {tab === 'chat' ? '对话' : `历史${state.history.length ? ` ${state.history.length}` : ''}`}
+              {tab === 'chat'
+                ? '对话'
+                : `历史${state.history.length ? ` ${state.history.length}` : ''}`}
             </button>
           ))}
         </nav>
+        {Status && (
+          <Status
+            projectId={projectId}
+            boundAssetId={state.conversation.boundAssetId}
+            refreshKey={state.conversation.updatedTime}
+          />
+        )}
       </header>
 
       {state.tab === 'history' ? (
@@ -497,7 +553,11 @@ export function ConversationPanel({
         />
       ) : (
         <>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4" role="log" aria-label="对话消息">
+          <div
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
+            role="log"
+            aria-label="对话消息"
+          >
             {messages.length === 0 && !state.busy && (
               <div className="grid h-full min-h-40 place-items-center px-5 text-center text-[13px] leading-6 text-slate-600">
                 {presentation.emptyLabel}
@@ -539,8 +599,7 @@ export function ConversationPanel({
                   }
                   onRevealContext={
                     context !== undefined && contextSource?.assetId
-                      ? () =>
-                          onRevealContext(contextSource, context)
+                      ? () => onRevealContext(contextSource, context)
                       : undefined
                   }
                   onRevealError={reportRevealError}
@@ -569,7 +628,10 @@ export function ConversationPanel({
 
           <footer className="shrink-0 border-t border-white/[0.075] p-3">
             {state.error && (
-              <div role="alert" className="mb-2 rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs leading-5 text-rose-200">
+              <div
+                role="alert"
+                className="mb-2 rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs leading-5 text-rose-200"
+              >
                 <p>{state.error.message}</p>
                 {state.error.code && (
                   <p className="mt-1 font-mono text-[10px] text-rose-200/60">
@@ -578,51 +640,72 @@ export function ConversationPanel({
                 )}
                 <div className="mt-1.5 flex gap-2">
                   {state.error.retryTaskId && (
-                    <button type="button" onClick={actions.retry} className="rounded-full border border-rose-300/35 px-2.5 py-0.5 text-[9px] hover:bg-rose-300/10">
+                    <button
+                      type="button"
+                      onClick={actions.retry}
+                      className="rounded-full border border-rose-300/35 px-2.5 py-0.5 text-[9px] hover:bg-rose-300/10"
+                    >
                       重试原任务
                     </button>
                   )}
-                  {onOpenSettings && needsProviderSettings(state.error.code, state.error.message) && (
-                    <button type="button" onClick={onOpenSettings} className="rounded-full border border-white/15 px-2.5 py-0.5 text-[9px] text-slate-200 hover:bg-white/10">
-                      打开模型设置
-                    </button>
-                  )}
+                  {onOpenSettings &&
+                    needsProviderSettings(
+                      state.error.code,
+                      state.error.message,
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={onOpenSettings}
+                        className="rounded-full border border-white/15 px-2.5 py-0.5 text-[9px] text-slate-200 hover:bg-white/10"
+                      >
+                        打开模型设置
+                      </button>
+                    )}
                 </div>
               </div>
             )}
             {selectedAnswer &&
               selectedAnswerMessage &&
               selectedAnswerContribution?.answerAction && (
-              <div className="mb-2 flex items-center gap-2 rounded-xl border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-[10px] text-indigo-200">
-                <span className="min-w-0 flex-1 truncate">已选中回答片段</span>
-                <button
-                  type="button"
-                  disabled={answerActionPending}
-                  onClick={() =>
-                    void executeAnswerAction(
-                      selectedAnswerMessage,
-                      selectedAnswer.text,
-                    )
-                  }
-                  className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30 disabled:opacity-40"
-                >
-                  {selectedAnswerContribution.answerAction.selectionLabel}
-                </button>
-                <button type="button" onClick={() => setSelectedAnswer(undefined)} className="text-slate-500">×</button>
-              </div>
-            )}
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-[10px] text-indigo-200">
+                  <span className="min-w-0 flex-1 truncate">
+                    已选中回答片段
+                  </span>
+                  <button
+                    type="button"
+                    disabled={answerActionPending}
+                    onClick={() =>
+                      void executeAnswerAction(
+                        selectedAnswerMessage,
+                        selectedAnswer.text,
+                      )
+                    }
+                    className="rounded-full bg-indigo-400/20 px-2.5 py-1 hover:bg-indigo-400/30 disabled:opacity-40"
+                  >
+                    {selectedAnswerContribution.answerAction.selectionLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnswer(undefined)}
+                    className="text-slate-500"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
             {pendingContextValue !== undefined && (
               <div className="mb-2">
                 <ContextCard
-                  presentation={
-                    describeConversationContext(pendingContextValue)
-                  }
+                  presentation={describeConversationContext(
+                    pendingContextValue,
+                  )}
                   onReveal={
                     pendingContextValue !== undefined && pendingContextSource
-                      ? () => onRevealContext(
-                          pendingContextSource,
-                          pendingContextValue,
-                        )
+                      ? () =>
+                          onRevealContext(
+                            pendingContextSource,
+                            pendingContextValue,
+                          )
                       : undefined
                   }
                   removable
@@ -631,7 +714,10 @@ export function ConversationPanel({
                 />
               </div>
             )}
-            <form onSubmit={handleSubmit} className="flex items-end gap-2 rounded-xl border border-white/10 bg-black/15 p-2 focus-within:border-indigo-300/35">
+            <form
+              onSubmit={handleSubmit}
+              className="flex items-end gap-2 rounded-xl border border-white/10 bg-black/15 p-2 focus-within:border-indigo-300/35"
+            >
               <textarea
                 ref={inputRef}
                 rows={1}
@@ -644,7 +730,7 @@ export function ConversationPanel({
                     actions.submit();
                   }
                 }}
-                className="min-h-6 max-h-28 min-w-0 flex-1 resize-none bg-transparent px-1 text-[13px] leading-6 text-slate-100 outline-none placeholder:text-slate-600 disabled:opacity-50"
+                className="min-h-6 max-h-36 min-w-0 flex-1 resize-none overflow-y-auto [field-sizing:content] bg-transparent px-1 text-[13px] leading-6 text-slate-100 outline-none placeholder:text-slate-600 disabled:opacity-50"
               />
               <button
                 type="submit"

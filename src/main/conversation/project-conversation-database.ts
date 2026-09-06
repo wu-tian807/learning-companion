@@ -11,10 +11,23 @@ import { projectConversations } from '../database/schema/project-conversations';
 import { AppError } from '../errors/app-error';
 
 export interface ProjectConversationDatabaseApi {
-  get(conversationId: string):
+  get(
+    conversationId: string,
+  ):
     | Readonly<{ projectId: string; conversation: ConversationRecord }>
     | undefined;
   list(projectId: string): readonly ConversationRecord[];
+  getBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+  ): ConversationRecord | undefined;
+  replaceBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+    conversation: ConversationRecord,
+  ): ConversationRecord;
   save(projectId: string, conversation: ConversationRecord): ConversationRecord;
   remove(projectId: string, conversationId: string): void;
 }
@@ -35,6 +48,7 @@ function fromRow(
   return cloneConversationRecord({
     id: row.id,
     modeId: row.modeId,
+    ...(row.boundAssetId ? { boundAssetId: row.boundAssetId } : {}),
     ...(row.workspace ? { workspace: row.workspace } : {}),
     title: row.title,
     messages: row.messages,
@@ -49,6 +63,7 @@ function toRow(projectId: string, conversation: ConversationRecord) {
     id: cloned.id,
     projectId: requireId(projectId, 'projectId'),
     modeId: cloned.modeId,
+    boundAssetId: cloned.boundAssetId ?? null,
     workspace: cloned.workspace ?? null,
     title: cloned.title,
     messages: cloned.messages,
@@ -63,14 +78,13 @@ function sameExecutionContext(
 ): boolean {
   return (
     existing.modeId === next.modeId &&
+    existing.boundAssetId === next.boundAssetId &&
     (existing.workspace?.instanceKey ?? undefined) ===
       (next.workspace?.instanceKey ?? undefined)
   );
 }
 
-export class ProjectConversationDatabase
-  implements ProjectConversationDatabaseApi
-{
+export class ProjectConversationDatabase implements ProjectConversationDatabaseApi {
   constructor(private readonly context: DatabaseContext) {}
 
   get(conversationId: string) {
@@ -93,15 +107,16 @@ export class ProjectConversationDatabase
   }
 
   list(projectId: string): readonly ConversationRecord[] {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    // Asset deletion uses ON DELETE SET NULL for bound conversations. Enforce
+    // the same ordinary-history limit at the read boundary so a conversation
+    // becoming unbound cannot make the entire history invalid until the next
+    // write.
+    this.trim(normalizedProjectId);
     const rows = this.context.db
       .select()
       .from(projectConversations)
-      .where(
-        eq(
-          projectConversations.projectId,
-          requireId(projectId, 'projectId'),
-        ),
-      )
+      .where(eq(projectConversations.projectId, normalizedProjectId))
       .orderBy(
         asc(projectConversations.createdTime),
         asc(projectConversations.id),
@@ -109,6 +124,92 @@ export class ProjectConversationDatabase
       .all()
       .map(fromRow);
     return cloneConversationRecords(rows);
+  }
+
+  getBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+  ): ConversationRecord | undefined {
+    const row = this.context.db
+      .select()
+      .from(projectConversations)
+      .where(
+        and(
+          eq(projectConversations.projectId, requireId(projectId, 'projectId')),
+          eq(
+            projectConversations.boundAssetId,
+            requireId(boundAssetId, 'boundAssetId'),
+          ),
+          eq(projectConversations.modeId, requireId(modeId, 'modeId')),
+        ),
+      )
+      .get();
+    return row ? fromRow(row) : undefined;
+  }
+
+  replaceBound(
+    projectId: string,
+    boundAssetId: string,
+    modeId: string,
+    conversation: ConversationRecord,
+  ): ConversationRecord {
+    const normalizedProjectId = requireId(projectId, 'projectId');
+    const normalizedBoundAssetId = requireId(boundAssetId, 'boundAssetId');
+    const normalizedModeId = requireId(modeId, 'modeId');
+    const row = toRow(normalizedProjectId, conversation);
+    if (
+      row.boundAssetId !== normalizedBoundAssetId ||
+      row.modeId !== normalizedModeId
+    ) {
+      throw new AppError('DATA_INTEGRITY_ERROR', {
+        cause: new Error('替换的 Project Conversation 绑定不一致'),
+      });
+    }
+
+    return this.context.db.transaction((transaction) => {
+      const existing = transaction
+        .select()
+        .from(projectConversations)
+        .where(
+          and(
+            eq(projectConversations.projectId, normalizedProjectId),
+            eq(projectConversations.boundAssetId, normalizedBoundAssetId),
+            eq(projectConversations.modeId, normalizedModeId),
+          ),
+        )
+        .get();
+
+      if (existing?.id === row.id) {
+        throw new AppError('DATABASE_WRITE_CONFLICT', {
+          cause: new Error('绑定 Conversation 替换必须使用新的 id'),
+        });
+      }
+      if (existing) {
+        const removed = transaction
+          .delete(projectConversations)
+          .where(
+            and(
+              eq(projectConversations.projectId, normalizedProjectId),
+              eq(projectConversations.id, existing.id),
+            ),
+          )
+          .run();
+        if (removed.changes !== 1) {
+          throw new AppError('DATABASE_WRITE_CONFLICT');
+        }
+      }
+
+      const inserted = transaction
+        .insert(projectConversations)
+        .values(row)
+        .run();
+      if (inserted.changes !== 1) {
+        throw new AppError('DATABASE_WRITE_CONFLICT');
+      }
+
+      return fromRow(row);
+    });
   }
 
   save(
@@ -166,10 +267,7 @@ export class ProjectConversationDatabase
       .delete(projectConversations)
       .where(
         and(
-          eq(
-            projectConversations.projectId,
-            requireId(projectId, 'projectId'),
-          ),
+          eq(projectConversations.projectId, requireId(projectId, 'projectId')),
           eq(
             projectConversations.id,
             requireId(conversationId, 'conversationId'),
@@ -188,14 +286,11 @@ export class ProjectConversationDatabase
              SELECT id
              FROM project_conversations
              WHERE project_id = ?
+               AND bound_asset_id IS NULL
              ORDER BY updated_time DESC, id ASC
              LIMIT -1 OFFSET ?
            )`,
       )
-      .run(
-        projectId,
-        projectId,
-        PROJECT_CONVERSATION_MAX_CONVERSATIONS,
-      );
+      .run(projectId, projectId, PROJECT_CONVERSATION_MAX_CONVERSATIONS);
   }
 }

@@ -15,6 +15,8 @@ import { GenerationTask } from '../generation-task';
 import { MindMapGenerationInstruction } from '../../../workbenches/mindmap/generation/mindmap-generation-instruction';
 import { createMindMapGenerationTaskDefinition } from '../../../workbenches/mindmap/generation/mindmap-generation-task-definition';
 import { UnsupportedWorkbenchProvider } from '../../../workbenches/unsupported/main';
+import { createLearningOutlineIntakeTaskDefinitionV1 } from '../../../workbenches/learning-outline/generation/learning-outline-intake-task-definition';
+import { LearningOutlineIntakeInstruction } from '../../../workbenches/learning-outline/generation/learning-outline-intake-instruction';
 import { GenerationAssetReferencePreparer } from './generation-asset-reference-preparer';
 import { GenerationTaskPreparer } from './generation-task-preparer';
 
@@ -231,6 +233,80 @@ describe('GenerationTaskPreparer', () => {
         'workbench-conversation',
         'conversation-1',
       ),
+    );
+  });
+
+  it('adds persisted outline sources to the Agent workspace beside turn materials', async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), 'learning-companion-outline-sources-'),
+    );
+    temporaryDirectories.push(workspaceRoot);
+    const outlines = {
+      listIntakeSourceAssetIds: vi.fn(async () => ['mindmap-formal']),
+    };
+    const definition = createLearningOutlineIntakeTaskDefinitionV1(
+      new WorkbenchConversationContextProviderRegistry(),
+      outlines as never,
+    );
+    const preparedReferences = vi.fn(async ({
+      bindings,
+    }: {
+      readonly bindings: Readonly<
+        Record<string, readonly { readonly assetId: string }[]>
+      >;
+    }) => ({
+      source: Object.freeze(
+        (bindings.source ?? []).map(({ assetId }, index) =>
+          Object.freeze({
+            alias: `sources-${String(index + 1).padStart(4, '0')}`,
+            assetId,
+            name: `${assetId}.mindmap`,
+            mediaType: 'application/json',
+            contentRevision: 'revision-1',
+            relativePath: `references/sources-${String(index + 1).padStart(4, '0')}/source.json`,
+          }),
+        ),
+      ),
+    }));
+    const preparer = new GenerationTaskPreparer(
+      new AgentWorkspaceManager(workspaceRoot),
+      {
+        prepare: preparedReferences,
+        verify: vi.fn(async () => preparedReferences({ bindings: {} })),
+      },
+    );
+    const task = GenerationTask.create({
+      id: 'outline-task-1',
+      projectId: 'project-1',
+      definitionId: definition.id,
+      definitionVersion: definition.version,
+      instruction: new LearningOutlineIntakeInstruction({
+        conversationId: 'conversation-1',
+        boundAssetId: 'outline-1',
+        question: '我想系统学习这个主题。',
+      }).toSnapshot(),
+      assetReferences: {
+        source: [{ assetId: 'turn-material' }],
+      },
+      createdTime: 10,
+    });
+
+    await preparer.prepare(task.getSnapshot(), definition);
+
+    expect(outlines.listIntakeSourceAssetIds).toHaveBeenCalledWith(
+      'project-1',
+      'outline-1',
+    );
+    expect(preparedReferences).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bindings: {
+          source: [
+            { assetId: 'turn-material' },
+            { assetId: 'mindmap-formal' },
+          ],
+        },
+      }),
+      undefined,
     );
   });
 

@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, isWorkbenchActionRequest } from '../../shared/ipc';
 import {
   isWorkbenchCloseRequest,
   isWorkbenchCommandRequest,
@@ -9,6 +9,7 @@ import {
 import { AppError } from '../errors/app-error';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import type { WorkbenchEventBusApi } from '../workbench/workbench-event-bus';
+import type { WorkbenchActionRegistryApi } from '../workbench/workbench-action-registry';
 import { registerIpcHandler } from './register-handler';
 
 let removeEventSubscription: (() => void) | undefined;
@@ -20,6 +21,7 @@ function invalidRequest(): Error {
 export function registerWorkbenchHandlers(
   service: WorkbenchSessionServiceApi,
   events: WorkbenchEventBusApi,
+  actions: WorkbenchActionRegistryApi,
 ): void {
   removeEventSubscription?.();
   removeEventSubscription = events.subscribe((event) => {
@@ -29,6 +31,14 @@ export function registerWorkbenchHandlers(
       }
     }
   });
+  registerIpcHandler(
+    IPC_CHANNELS.invokeWorkbenchAction,
+    async (_event, request: unknown) => {
+      if (!isWorkbenchActionRequest(request)) throw invalidRequest();
+      return actions.invoke(request.actionId, request.projectId, request.payload);
+    },
+  );
+
   registerIpcHandler(
     IPC_CHANNELS.openWorkbench,
     async (_event, request: unknown) => {
@@ -67,6 +77,7 @@ export function removeWorkbenchHandlers(): void {
   removeEventSubscription?.();
   removeEventSubscription = undefined;
   ipcMain.removeHandler(IPC_CHANNELS.openWorkbench);
+  ipcMain.removeHandler(IPC_CHANNELS.invokeWorkbenchAction);
   ipcMain.removeHandler(IPC_CHANNELS.commandWorkbench);
   ipcMain.removeHandler(IPC_CHANNELS.closeWorkbench);
 }

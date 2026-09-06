@@ -32,7 +32,8 @@ import { createProjectConversationsMigration } from './migrations/0024-create-pr
 import { backfillConversationContextSourcesMigration } from './migrations/0025-backfill-conversation-context-sources';
 import { addConversationExecutionContextMigration } from './migrations/0026-add-conversation-execution-context';
 import { canonicalizeAssetTargetsMigration } from './migrations/0027-canonicalize-asset-targets';
-import { createProjectLearningNotesMigration } from './migrations/0028-create-project-learning-notes';
+import { bindProjectConversationsToAssetsMigration } from './migrations/0028-bind-project-conversations-to-assets';
+import { createProjectLearningNotesMigration } from './migrations/0029-create-project-learning-notes';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetFolderSchema from './schema/asset-folders';
@@ -80,6 +81,7 @@ const migrations: readonly DatabaseMigration[] = [
   backfillConversationContextSourcesMigration,
   addConversationExecutionContextMigration,
   canonicalizeAssetTargetsMigration,
+  bindProjectConversationsToAssetsMigration,
   createProjectLearningNotesMigration,
 ];
 const schema = {

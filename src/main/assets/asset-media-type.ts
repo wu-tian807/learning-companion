@@ -1,6 +1,7 @@
 import { basename, extname } from 'node:path';
 
 import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
+import { LEARNING_OUTLINE_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import { detectFileTextEncoding } from '../content/text-encoding';
 
 export const UNKNOWN_ASSET_MEDIA_TYPE = 'application/octet-stream';
@@ -25,6 +26,7 @@ const mediaTypeByExtension = new Map<string, string>([
   ['.markdown', 'text/markdown'],
   ['.md', 'text/markdown'],
   ['.mindmap', MIND_MAP_ASSET_MEDIA_TYPE],
+  ['.outline', LEARNING_OUTLINE_ASSET_MEDIA_TYPE],
   ['.mov', 'video/quicktime'],
   ['.mp3', 'audio/mpeg'],
   ['.mp4', 'video/mp4'],

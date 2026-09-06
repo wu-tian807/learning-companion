@@ -19,7 +19,7 @@
     "start": "electron-forge start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "test": "vitest run",
+    "test": "install-electron && vitest run",
     "test:deepseek-integration": "vitest run src/main/agents/providers/codex-deepseek.integration.test.ts",
     "test:windows-integration": "vitest run src/main/external-libraries/external-command-runner.windows.integration.test.ts",
     "check": "pnpm typecheck && pnpm lint && pnpm test",

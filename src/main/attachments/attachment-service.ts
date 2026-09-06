@@ -50,6 +50,15 @@ export interface UpdateAttachmentInput {
   readonly content?: AssetAttachmentContent | null;
 }
 
+export interface UpdateAttachmentWithContentInput
+  extends Omit<UpdateAttachmentInput, 'content'> {
+  readonly content: {
+    readonly fileName: string;
+    readonly mediaType: string;
+    readonly data: string | Uint8Array;
+  };
+}
+
 export interface AttachmentServiceApi {
   get(attachmentId: string): Promise<AssetAttachment | undefined>;
   listByAsset(
@@ -65,6 +74,9 @@ export interface AttachmentServiceApi {
     input: CreateAttachmentWithContentInput,
   ): Promise<AssetAttachment>;
   update(input: UpdateAttachmentInput): Promise<AssetAttachment>;
+  updateWithContent(
+    input: UpdateAttachmentWithContentInput,
+  ): Promise<AssetAttachment>;
   delete(projectId: string, attachmentId: string): Promise<void>;
   removeByAsset(projectId: string, assetId: string): Promise<void>;
   subscribe(listener: AttachmentServiceListener): () => void;
@@ -77,6 +89,15 @@ export interface AttachmentServiceDependencies {
 
 export class AttachmentService implements AttachmentServiceApi {
   private readonly listeners = new Set<AttachmentServiceListener>();
+  private readonly mutationTails = new Map<string, Promise<void>>();
+  private readonly pendingContentCleanups = new Map<
+    string,
+    {
+      readonly projectId: string;
+      readonly attachmentId: string;
+      readonly ref: AssetAttachmentContent['ref'];
+    }
+  >();
   private readonly dependencies: AttachmentServiceDependencies;
 
   constructor(
@@ -177,47 +198,105 @@ export class AttachmentService implements AttachmentServiceApi {
   }
 
   async update(input: UpdateAttachmentInput): Promise<AssetAttachment> {
-    const current = this.requireOwned(input.projectId, input.attachmentId);
-    this.requireAsset(current.projectId, current.assetId);
-    const target = input.target ?? current.target;
-    const metadata = input.metadata ?? current.metadata;
-    this.assertRegistered(current.typeId, current.typeVersion, metadata);
-    this.assertTarget(target);
-    const now = Math.max(this.dependencies.now(), current.updatedTime);
-    const hasContent = Object.prototype.hasOwnProperty.call(input, 'content');
-    const content = hasContent ? input.content ?? undefined : current.content;
-    const updated = this.database.update(
-      createAssetAttachment({
+    return this.enqueueMutation(input.attachmentId, async () => {
+      const current = this.requireOwned(input.projectId, input.attachmentId);
+      this.requireAsset(current.projectId, current.assetId);
+      const target = input.target ?? current.target;
+      const metadata = input.metadata ?? current.metadata;
+      this.assertRegistered(current.typeId, current.typeVersion, metadata);
+      this.assertTarget(target);
+      const now = Math.max(this.dependencies.now(), current.updatedTime);
+      const hasContent = Object.prototype.hasOwnProperty.call(input, 'content');
+      const content = hasContent ? input.content ?? undefined : current.content;
+      const updated = this.database.update(
+        createAssetAttachment({
+          ...current,
+          target,
+          metadata,
+          content,
+          updatedTime: now,
+        }),
+      );
+      this.publish({ type: 'changed', attachment: updated });
+      return updated;
+    });
+  }
+
+  async updateWithContent(
+    input: UpdateAttachmentWithContentInput,
+  ): Promise<AssetAttachment> {
+    return this.enqueueMutation(input.attachmentId, async () => {
+      await this.retryPendingContentCleanups();
+      const current = this.requireOwned(input.projectId, input.attachmentId);
+      this.requireAsset(current.projectId, current.assetId);
+      const target = input.target ?? current.target;
+      const metadata = input.metadata ?? current.metadata;
+      this.assertRegistered(current.typeId, current.typeVersion, metadata);
+      this.assertTarget(target);
+      const now = Math.max(this.dependencies.now(), current.updatedTime);
+      const content = await this.contentFiles.write({
+        projectId: input.projectId,
+        attachmentId: current.id,
+        // An update must never write over the file referenced by the current
+        // row. The database update below is the ownership/visibility boundary.
+        fileName: `${input.content.fileName}.${randomUUID()}`,
+        mediaType: input.content.mediaType,
+        content: input.content.data,
+      });
+      const updated = createAssetAttachment({
         ...current,
         target,
         metadata,
         content,
         updatedTime: now,
-      }),
-    );
-    this.publish({ type: 'changed', attachment: updated });
-    return updated;
+      });
+
+      let committed = false;
+      try {
+        const saved = this.database.update(updated);
+        committed = true;
+        this.publish({ type: 'changed', attachment: saved });
+        if (
+          current.content &&
+          current.content.ref.path !== saved.content?.ref.path
+        ) {
+          await this.removeContentAfterCommit(
+            current.projectId,
+            current.id,
+            current.content.ref,
+          );
+        }
+        return saved;
+      } catch (error) {
+        // Once the row is committed, the new ref is authoritative. In
+        // particular, cleanup failure must not remove it or report a rollback.
+        if (!committed) {
+          await this.removeContentBestEffort(input.projectId, current.id, content.ref);
+        }
+        throw error;
+      }
+    });
   }
 
   async delete(projectId: string, attachmentId: string): Promise<void> {
-    const current = this.requireOwned(projectId, attachmentId);
-    this.requireAsset(current.projectId, current.assetId);
-    await this.contentFiles.removeAttachment(current.projectId, current.id);
-    this.database.delete(current.id);
-    this.publish({
-      type: 'deleted',
-      attachment: {
-        ...current,
-        updatedTime: Math.max(this.dependencies.now(), current.updatedTime),
-      },
+    return this.enqueueMutation(attachmentId, async () => {
+      const current = this.requireOwned(projectId, attachmentId);
+      this.requireAsset(current.projectId, current.assetId);
+      await this.contentFiles.removeAttachment(current.projectId, current.id);
+      this.database.delete(current.id);
+      this.publish({
+        type: 'deleted',
+        attachment: {
+          ...current,
+          updatedTime: Math.max(this.dependencies.now(), current.updatedTime),
+        },
+      });
     });
   }
 
   async removeByAsset(projectId: string, assetId: string): Promise<void> {
     for (const attachment of this.database.listByAsset(projectId, assetId)) {
-      await this.contentFiles.removeAttachment(projectId, attachment.id);
-      this.database.delete(attachment.id);
-      this.publish({ type: 'deleted', attachment });
+      await this.delete(projectId, attachment.id);
     }
   }
 
@@ -277,5 +356,78 @@ export class AttachmentService implements AttachmentServiceApi {
         console.error('发布 Attachment 事件失败', error);
       }
     }
+  }
+
+  private enqueueMutation<T>(
+    attachmentId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const key = attachmentId.trim();
+    const previous = this.mutationTails.get(key) ?? Promise.resolve();
+    const task = previous.then(operation, operation);
+    const settled = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.mutationTails.set(key, settled);
+    void settled.then(
+      () => {
+        if (this.mutationTails.get(key) === settled) {
+          this.mutationTails.delete(key);
+        }
+      },
+      () => {
+        if (this.mutationTails.get(key) === settled) {
+          this.mutationTails.delete(key);
+        }
+      },
+    );
+    return task;
+  }
+
+  private async removeContentAfterCommit(
+    projectId: string,
+    attachmentId: string,
+    ref: AssetAttachmentContent['ref'],
+  ): Promise<void> {
+    const key = this.contentCleanupKey(projectId, attachmentId, ref);
+    try {
+      await this.contentFiles.removeContent(projectId, attachmentId, ref);
+      this.pendingContentCleanups.delete(key);
+    } catch (error) {
+      this.pendingContentCleanups.set(key, { projectId, attachmentId, ref });
+      console.error('Attachment 旧内容文件清理已延期', error);
+    }
+  }
+
+  private async removeContentBestEffort(
+    projectId: string,
+    attachmentId: string,
+    ref: AssetAttachmentContent['ref'],
+  ): Promise<void> {
+    try {
+      await this.contentFiles.removeContent(projectId, attachmentId, ref);
+    } catch (cleanupError: unknown) {
+      console.error('回滚 Attachment 新内容文件失败', cleanupError);
+    }
+  }
+
+  private async retryPendingContentCleanups(): Promise<void> {
+    for (const [key, pending] of [...this.pendingContentCleanups]) {
+      try {
+        await this.contentFiles.removeContent(pending.projectId, pending.attachmentId, pending.ref);
+        this.pendingContentCleanups.delete(key);
+      } catch (error) {
+        console.error('Attachment 延期内容文件清理失败', error);
+      }
+    }
+  }
+
+  private contentCleanupKey(
+    projectId: string,
+    attachmentId: string,
+    ref: AssetAttachmentContent['ref'],
+  ): string {
+    return `${projectId}\u0000${attachmentId}\u0000${ref.path}`;
   }
 }

@@ -117,6 +117,22 @@ describe('ConversationPanel', () => {
     expect(html).toContain('aria-label="学习大纲规划会话"');
   });
 
+  it('allows a bound mode to hide the destructive new-conversation action', () => {
+    const html = render(
+      state(),
+      undefined,
+      {
+        title: '学习大纲需求',
+        ariaLabel: '学习大纲需求对话',
+        emptyLabel: '继续补充需求',
+        inputPlaceholder: '描述学习目标…',
+        allowNewConversation: false,
+      },
+    );
+
+    expect(html).not.toContain('＋ 新对话');
+  });
+
   it('renders and links a persisted reference without a mounted Workbench', () => {
     const html = render(state({
       conversation: {

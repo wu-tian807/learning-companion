@@ -47,6 +47,35 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.getSnapshot().active).toBeUndefined();
   });
 
+  it('waits for the ConversationSession to settle an explicit open request', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const pending = runtime.openAndWait();
+    const requestId = runtime.getSnapshot().launchRequest?.id;
+
+    expect(requestId).toBe(1);
+    let resolved = false;
+    void pending.then(
+      () => {
+        resolved = true;
+      },
+      () => undefined,
+    );
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    runtime.settleLaunchRequest(requestId!, new Error('打开失败'));
+    await expect(pending).rejects.toThrow('打开失败');
+  });
+
+  it('rejects an old open waiter when a newer launch supersedes it', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const first = runtime.openAndWait();
+
+    runtime.open();
+
+    await expect(first).rejects.toThrow('新的请求替换');
+  });
+
   it('attaches only an explicitly named active Workbench to a launch', () => {
     const runtime = new WorkbenchConversationRuntime();
     const pdf = contribution('pdf');
@@ -71,6 +100,36 @@ describe('WorkbenchConversationRuntime', () => {
     });
   });
 
+  it('injects node context without changing the current mode or bound Asset', () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('outline.owner', 'outline-1', contribution('outline'));
+    runtime.open({
+      ownerId: 'outline.owner',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      conversationId: 'conversation-1',
+    });
+
+    runtime.open({
+      ownerId: 'outline.owner',
+      context: { target },
+      question: '请把这个节点纳入学习需求。',
+      submit: true,
+    });
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      conversationId: 'conversation-1',
+      launchRequest: {
+        modeId: 'learning-outline.intake',
+        boundAssetId: 'outline-1',
+        conversationId: 'conversation-1',
+        context: { target },
+      },
+    });
+  });
+
   it('does not let stale cleanup replace an active registration', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const original = contribution('plain-text');
@@ -89,7 +148,11 @@ describe('WorkbenchConversationRuntime', () => {
 
   it('clears only transient context when its Workbench unmounts', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    const unregister = runtime.register('owner', 'asset-1', contribution('pdf'));
+    const unregister = runtime.register(
+      'owner',
+      'asset-1',
+      contribution('pdf'),
+    );
     runtime.open({ ownerId: 'owner', context: { target } });
     unregister();
     await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -122,28 +185,32 @@ describe('WorkbenchConversationRuntime', () => {
     const runtime = new WorkbenchConversationRuntime();
     const selectAsset = vi.fn();
 
-    await expect(runtime.revealContext(
-      source('unsupported', 'asset-whole'),
-      { target: { scope: 'asset' } },
-      selectAsset,
-      1,
-    )).resolves.toBeUndefined();
+    await expect(
+      runtime.revealContext(
+        source('unsupported', 'asset-whole'),
+        { target: { scope: 'asset' } },
+        selectAsset,
+        1,
+      ),
+    ).resolves.toBeUndefined();
 
     expect(selectAsset).toHaveBeenCalledWith('asset-whole');
   });
 
   it('rejects deleted Assets and invalid Targets without guessing', async () => {
     const runtime = new WorkbenchConversationRuntime();
-    await expect(runtime.revealContext(
-      source('html', 'deleted'),
-      { target },
-      () => { throw new Error('引用的资料已不存在，无法定位原文。'); },
-    )).rejects.toThrow('引用的资料已不存在');
-    await expect(runtime.revealContext(
-      source('html', 'asset-html'),
-      { opaque: true },
-      vi.fn(),
-    )).rejects.toThrow('没有有效 Target');
+    await expect(
+      runtime.revealContext(source('html', 'deleted'), { target }, () => {
+        throw new Error('引用的资料已不存在，无法定位原文。');
+      }),
+    ).rejects.toThrow('引用的资料已不存在');
+    await expect(
+      runtime.revealContext(
+        source('html', 'asset-html'),
+        { opaque: true },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('没有有效 Target');
     expect(() => runtime.open({ ownerId: 'missing' })).toThrow(
       '当前 Workbench 没有注册 AI 问答上下文',
     );
@@ -157,11 +224,13 @@ describe('WorkbenchConversationRuntime', () => {
       reveal,
     });
 
-    await expect(runtime.revealContext(
-      source('image', 'asset-image'),
-      { sourceRevision: 'old', target },
-      vi.fn(),
-    )).rejects.toThrow('资料内容已更新');
+    await expect(
+      runtime.revealContext(
+        source('image', 'asset-image'),
+        { sourceRevision: 'old', target },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('资料内容已更新');
     expect(reveal).not.toHaveBeenCalled();
   });
 });

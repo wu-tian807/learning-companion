@@ -31,6 +31,7 @@ export type WorkbenchConversationInstructionSnapshot = JsonValue & {
   readonly format: typeof WORKBENCH_CONVERSATION_INSTRUCTION_FORMAT;
   readonly version: typeof WORKBENCH_CONVERSATION_INSTRUCTION_VERSION;
   readonly contextProviderId: string;
+  readonly boundAssetId?: string;
   readonly assetId?: string;
   readonly conversationId: string;
   readonly workspace?: ConversationWorkspaceBinding;
@@ -55,6 +56,7 @@ function isBoundedContext(value: unknown): value is JsonValue | undefined {
 
 export class WorkbenchConversationInstruction extends GenerationInstruction<WorkbenchConversationInstructionSnapshot> {
   readonly contextProviderId: string;
+  readonly boundAssetId?: string;
   readonly assetId?: string;
   readonly conversationId: string;
   readonly workspace?: ConversationWorkspaceBinding;
@@ -65,6 +67,7 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
 
   constructor(input: {
     readonly contextProviderId: string;
+    readonly boundAssetId?: string;
     readonly assetId?: string;
     readonly conversationId: string;
     readonly workspace?: ConversationWorkspaceBinding;
@@ -75,12 +78,14 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
   }) {
     super();
     const contextProviderId = input.contextProviderId.trim();
+    const boundAssetId = input.boundAssetId?.trim();
     const assetId = input.assetId?.trim();
     const conversationId = input.conversationId.trim();
     const question = input.question.trim();
 
     if (
       !CONTEXT_PROVIDER_ID_PATTERN.test(contextProviderId) ||
+      (boundAssetId !== undefined && !ID_PATTERN.test(boundAssetId)) ||
       (assetId !== undefined && !ID_PATTERN.test(assetId)) ||
       !ID_PATTERN.test(conversationId) ||
       question.length === 0 ||
@@ -91,6 +96,7 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
     }
 
     this.contextProviderId = contextProviderId;
+    this.boundAssetId = boundAssetId;
     this.assetId = assetId;
     this.conversationId = conversationId;
     this.workspace = input.workspace
@@ -107,6 +113,7 @@ export class WorkbenchConversationInstruction extends GenerationInstruction<Work
       format: WORKBENCH_CONVERSATION_INSTRUCTION_FORMAT,
       version: WORKBENCH_CONVERSATION_INSTRUCTION_VERSION,
       contextProviderId: this.contextProviderId,
+      ...(this.boundAssetId ? { boundAssetId: this.boundAssetId } : {}),
       ...(this.assetId ? { assetId: this.assetId } : {}),
       conversationId: this.conversationId,
       ...(this.workspace ? { workspace: this.workspace } : {}),
@@ -130,6 +137,7 @@ export const workbenchConversationInstructionFactory: GenerationInstructionFacto
         input.format !== WORKBENCH_CONVERSATION_INSTRUCTION_FORMAT ||
         input.version !== WORKBENCH_CONVERSATION_INSTRUCTION_VERSION ||
         typeof input.contextProviderId !== 'string' ||
+        (input.boundAssetId !== undefined && typeof input.boundAssetId !== 'string') ||
         (input.assetId !== undefined && typeof input.assetId !== 'string') ||
         typeof input.conversationId !== 'string' ||
         (input.workspace !== undefined &&
@@ -153,6 +161,7 @@ export const workbenchConversationInstructionFactory: GenerationInstructionFacto
         return generationValidationSuccess(
           new WorkbenchConversationInstruction({
             contextProviderId: input.contextProviderId,
+            ...(input.boundAssetId === undefined ? {} : { boundAssetId: input.boundAssetId }),
             ...(input.assetId === undefined ? {} : { assetId: input.assetId }),
             conversationId: input.conversationId,
             ...(input.workspace === undefined

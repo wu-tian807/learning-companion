@@ -11,9 +11,11 @@ import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conv
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
+import type { RendererGenerationToolResult } from '../generation/renderer-generation-tool';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
 import { selectAndRevealWorkbenchTarget } from '../workbench/host/workbench-target-bridge';
+import { WorkbenchOpenCoordinator } from '../workbench/workbench-open-coordinator';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -67,10 +69,7 @@ export function ProjectPage({
     () => new WorkbenchConversationRuntime(),
     [],
   );
-  useEffect(
-    () => () => conversationRuntime.dispose(),
-    [conversationRuntime],
-  );
+  useEffect(() => () => conversationRuntime.dispose(), [conversationRuntime]);
   const conversationSnapshot =
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
@@ -95,6 +94,12 @@ export function ProjectPage({
   const session = useProjectSession(project.id, setError);
   const learningNote = useProjectLearningNote(project.id);
   const flushLearningNote = learningNote.flush;
+  const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
+  const workbenchOpening = useMemo(() => new WorkbenchOpenCoordinator(project.id), [project.id]);
+  useEffect(() => () => workbenchOpening.dispose(), [workbenchOpening]);
+  useEffect(() => {
+    workbenchOpening.cancelExcept(session.selectedAssetId ?? undefined);
+  }, [session.selectedAssetId, workbenchOpening]);
   const assetOperations = useProjectAssets({
     projectId: project.id,
     loadState: session.loadState,
@@ -149,6 +154,37 @@ export function ProjectPage({
       }
     },
     [startMindMap],
+  );
+  const handleGenerationToolResult = useCallback(
+    async (result: RendererGenerationToolResult) => {
+      const assetId = result.asset?.id ?? result.assetId;
+      if (!assetId) return;
+      if (result.asset) {
+        if (result.asset.projectId !== project.id) {
+          throw new Error('生成结果不属于当前 Project。');
+        }
+        if (workbenchOpening.needsRetry(assetId)) {
+          setWorkbenchOpenAttempt((current) => current + 1);
+        }
+        const workbenchOpened = workbenchOpening.waitFor(assetId);
+        assetOperations.upsertAsset(result.asset);
+        session.selectAsset(assetId);
+        await workbenchOpened;
+      } else {
+        await assetOperations.refreshAllAssets();
+        session.selectAsset(assetId);
+      }
+      if (result.conversation) {
+        await conversationRuntime.openAndWait(result.conversation);
+      }
+    },
+    [
+      assetOperations,
+      conversationRuntime,
+      project.id,
+      session,
+      workbenchOpening,
+    ],
   );
   const allImportedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
@@ -341,10 +377,7 @@ export function ProjectPage({
       return;
     }
 
-    if (
-      closingSide === 'right' &&
-      closingRightPanel === 'conversation'
-    ) {
+    if (closingSide === 'right' && closingRightPanel === 'conversation') {
       dismissConversationPanel();
     }
     if (
@@ -395,11 +428,7 @@ export function ProjectPage({
     } else if (layout.rightPanel === 'conversation') {
       openRight('generation');
     }
-  }, [
-    conversationSnapshot.panelOpen,
-    layout.rightPanel,
-    openRight,
-  ]);
+  }, [conversationSnapshot.panelOpen, layout.rightPanel, openRight]);
 
   return (
     <main
@@ -477,10 +506,10 @@ export function ProjectPage({
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
         <WorkbenchRuntimeProvider onError={setError}>
-            <AssetSelectionCoordinatorProvider
-              coordinator={assetOperations.selectionCoordinator}
-            >
-              <section className="relative flex min-h-0 flex-1 gap-3">
+          <AssetSelectionCoordinatorProvider
+            coordinator={assetOperations.selectionCoordinator}
+          >
+            <section className="relative flex min-h-0 flex-1 gap-3">
               {openOverlay && (
                 <button
                   type="button"
@@ -564,6 +593,8 @@ export function ProjectPage({
                   }
                   onSelectAsset={session.selectAsset}
                   onOpenSettings={onOpenSettings}
+                  openAttempt={workbenchOpenAttempt}
+                  onOpenStateChange={workbenchOpening.report}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
                 />
@@ -615,14 +646,16 @@ export function ProjectPage({
                     }
                     onRevealSources={layout.openLeft}
                     onMindMapDraftReady={startMindMapGeneration}
+                    onGenerationToolResult={handleGenerationToolResult}
+                    onError={setError}
                     mindMapTasks={mindMapTasks}
                     onRetryMindMapTask={retryMindMapTask}
                     onCancelMindMapTask={cancelMindMapTask}
                   />
                 }
               />
-              </section>
-            </AssetSelectionCoordinatorProvider>
+            </section>
+          </AssetSelectionCoordinatorProvider>
         </WorkbenchRuntimeProvider>
       </WorkbenchConversationRuntimeProvider>
 

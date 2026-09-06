@@ -1,4 +1,5 @@
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { createProjectWorkspaceContentRef } from '../../shared/assets';
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +19,23 @@ afterEach(async () => {
 });
 
 describe('AttachmentContentFile', () => {
+  it('does not follow an owned-looking junction to delete an original', async () => {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'lc-attachment-junction-'));
+    directories.push(workspacePath);
+    const files = new AttachmentContentFile({
+      get: (id) => ({ id, name: 'Test', icon: '📘', pinned: false, createdTime: 1, workspacePath }),
+    });
+    const originalDirectory = join(workspacePath, 'originals');
+    await mkdir(originalDirectory);
+    await writeFile(join(originalDirectory, 'notes.txt'), 'original');
+    await files.write({ projectId: 'project-1', attachmentId: 'attachment-1',
+      fileName: 'owned.txt', mediaType: 'text/plain', content: 'owned' });
+    const alias = '.learning-companion/attachments/attachment-1/linked';
+    await symlink(originalDirectory, join(workspacePath, alias), process.platform === 'win32' ? 'junction' : 'dir');
+    await files.removeContent('project-1', 'attachment-1', createProjectWorkspaceContentRef(alias + '/notes.txt'));
+    await expect(readFile(join(originalDirectory, 'notes.txt'), 'utf8')).resolves.toBe('original');
+  });
+
   it('atomically writes, reads and removes an Attachment directory', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'lc-attachment-file-'));
     directories.push(workspacePath);

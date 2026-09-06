@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { safeStorage } from 'electron';
 
-import { resolveCodexHomePath } from '../agents/codex/codex-home-resolver';
+import { createManagedCodexHomePath, resolveCodexAuthHomePath } from '../agents/codex/codex-home-resolver';
 import { AgentFunctionToolRegistry } from '../agents/function-tools/agent-function-tool-registry';
 import { createAgentCapabilityPaths } from '../agents/capabilities/agent-capability-paths';
 import { AgentMcpService } from '../agents/mcp/agent-mcp-service';
@@ -62,6 +62,7 @@ import { WorkbenchTransportBindingRegistry } from '../workbench/interaction/work
 import { WorkbenchRegistry } from '../workbench/workbench-registry';
 import { AssetTargetRegistry } from '../workbench/asset-target-registry';
 import { WorkbenchEventBus } from '../workbench/workbench-event-bus';
+import { WorkbenchActionRegistry } from '../workbench/workbench-action-registry';
 import { WorkbenchSessionService } from '../workbench/workbench-session-service';
 import { WorkbenchStateDataDatabase } from '../workbench/workbench-state-data-database';
 import { WorkbenchStateDatabase } from '../workbench/workbench-state-database';
@@ -70,6 +71,7 @@ import {
   registerMainWorkbenchArtifacts,
   registerMainWorkbenchAssetTargets,
   registerMainWorkbenchAttachments,
+  registerMainWorkbenchActions,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchProviders,
   startMainWorkbenchContributions,
@@ -112,12 +114,15 @@ export async function createApplicationRuntime({
 
   try {
     const appPaths = createAppPaths(userDataPath);
-    const codexHomePath = await resolveCodexHomePath({
-      managedCodexHomePath: appPaths.codexHomeDirectory,
+    const codexHomePath = createManagedCodexHomePath(documentsPath);
+    const authHomePath = () => resolveCodexAuthHomePath({
+      managedCodexHomePath: codexHomePath,
+      legacyCodexHomePath: appPaths.codexHomeDirectory,
       userHomePath: homedir(),
     });
     codexRuntimeService = createCodexRuntime({
       codexHomePath,
+      authHomePath,
       isPackaged,
       resourcesPath,
     });
@@ -146,9 +151,11 @@ export async function createApplicationRuntime({
     );
     const projectDatabase = new ProjectDatabase(databaseContext);
     projectDatabase.initialize();
+    const assetDatabase = new AssetDatabase(databaseContext);
     const projectConversationService = new ProjectConversationService(
       new ProjectConversationDatabase(databaseContext),
       projectDatabase,
+      assetDatabase,
     );
     const projectLearningNoteService = new ProjectLearningNoteService(
       new ProjectLearningNoteDatabase(databaseContext),
@@ -188,7 +195,6 @@ export async function createApplicationRuntime({
       new AssetArtifactFileManager(),
       artifactRegistry,
     );
-    const assetDatabase = new AssetDatabase(databaseContext);
     const associationService = new AssetAssociationService(
       new AssetReferenceDatabase(databaseContext),
       new AssetLinkDatabase(databaseContext),
@@ -257,6 +263,7 @@ export async function createApplicationRuntime({
       databaseContext,
     );
     const workbenchEvents = new WorkbenchEventBus();
+    const workbenchActions = new WorkbenchActionRegistry();
     const generationTaskDatabase = new GenerationTaskDatabase(databaseContext);
     const generationTaskDefinitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
@@ -287,16 +294,24 @@ export async function createApplicationRuntime({
     registerMainWorkbenchProviders(workbenchRegistry, {
       associationService,
       assetService,
+      assetLookup: assetDatabase,
       artifactRegistry,
       artifactService,
       contentResourceService,
       externalLibraryService,
       generationTasks: generationTaskService,
+      attachmentService,
+      projectConversationService,
+      agentWorkspaces: agentWorkspaceManager,
       projectLookup: projectDatabase,
       stateDatabase: workbenchStateRepository,
       stateDataDatabase: workbenchStateDataRepository,
       sandboxFrameScripts: sandboxFrameInteractionBridge,
       workbenchEvents,
+    });
+    registerMainWorkbenchActions({
+      actions: workbenchActions,
+      workbenches: workbenchRegistry,
     });
     mainWorkbenchFeatures = startMainWorkbenchContributions({
       attachments: attachmentService,
@@ -348,6 +363,7 @@ export async function createApplicationRuntime({
       projectService,
       projectConversationService,
       projectLearningNoteService,
+      workbenchActions,
       settingsRepository,
       workbenchSessionService,
       workbenchEvents,
