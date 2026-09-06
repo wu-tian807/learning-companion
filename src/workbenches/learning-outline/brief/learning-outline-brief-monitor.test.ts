@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,13 +23,57 @@ import { LearningOutlineBriefMonitor } from './learning-outline-brief-monitor';
 
 describe('LearningOutlineBriefMonitor', () => {
   const temporaryDirectories: string[] = [];
+  const monitors: LearningOutlineBriefMonitor[] = [];
 
   afterEach(async () => {
+    await Promise.all(monitors.splice(0).map(async (monitor) => {
+      await monitor.shutdown();
+      monitor.dispose();
+    }));
     await Promise.all(
       temporaryDirectories
         .splice(0)
         .map((directory) => rm(directory, { recursive: true, force: true })),
     );
+  });
+
+  it.runIf(process.platform === 'win32')('observes rewrites through a Windows 8.3 workspace path without aborting', async (context) => {
+    const directory = await mkdtemp(join(tmpdir(), 'lc-outline-brief-short-path-'));
+    temporaryDirectories.push(directory);
+    const shortDirectory = execFileSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      '(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:LC_TEST_SHORT_PATH).ShortPath',
+    ], {
+      encoding: 'utf8',
+      windowsHide: true,
+      env: { ...process.env, LC_TEST_SHORT_PATH: directory },
+    }).trim();
+    if (shortDirectory.toLowerCase() === (await realpath(directory)).toLowerCase()) {
+      context.skip(); // The test volume does not provide 8.3 aliases.
+      return;
+    }
+    const asset = {
+      id: 'outline-1', projectId: 'project-1',
+      mediaType: LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
+    };
+    const monitor = new LearningOutlineBriefMonitor(
+      { get: vi.fn(() => asset) } as never,
+      {
+        listByAsset: vi.fn(async () => []),
+        createWithContent: vi.fn(async () => ({ updatedTime: 42 })),
+      } as never,
+      { prepare: vi.fn(async () => shortDirectory) } as never,
+    );
+    monitors.push(monitor);
+    await monitor.start(asset.projectId, asset.id);
+    await monitor.flush(asset.id);
+    await writeFile(join(directory, 'learning-brief.json'), JSON.stringify({
+      ...createEmptyLearningBrief(), readiness: 'ready', readinessNote: 'Ready.',
+    }));
+    // No flush here: this assertion must be driven by the actual native watcher.
+    await vi.waitFor(() => expect(monitor.getState(asset.id)).toMatchObject({
+      valid: true, ready: true,
+    }));
   });
 
   it('restores a snapshot, observes a valid rewrite, and releases the watcher', async () => {
@@ -61,6 +106,7 @@ describe('LearningOutlineBriefMonitor', () => {
       workspaces as never,
     );
 
+    monitors.push(monitor);
     const workspace = await monitor.ensureWorkspace('project-1', 'outline-1');
     expect(workspace).toBe(directory);
     await expect(
@@ -74,7 +120,7 @@ describe('LearningOutlineBriefMonitor', () => {
       join(directory, 'learning-brief.json'),
       `${JSON.stringify(createEmptyLearningBrief())}\n`,
     );
-    await new Promise((resolve) => setTimeout(resolve, 160));
+    await vi.waitFor(() => expect(monitor.getState('outline-1').valid).toBe(true));
 
     expect(createWithContent).toHaveBeenCalledOnce();
     expect(monitor.getState('outline-1')).toMatchObject({
@@ -156,8 +202,9 @@ describe('LearningOutlineBriefMonitor', () => {
       { prepare: vi.fn(async () => directory) } as never,
     );
 
+    monitors.push(monitor);
     await monitor.start('project-1', 'outline-1');
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await vi.waitFor(() => expect(monitor.getState('outline-1').valid).toBe(true));
 
     const first = [...stored.values()][0];
     expect(first).toMatchObject({
@@ -175,7 +222,7 @@ describe('LearningOutlineBriefMonitor', () => {
       join(directory, 'learning-brief.json'),
       `${JSON.stringify(readyBrief)}\n`,
     );
-    await new Promise((resolve) => setTimeout(resolve, 160));
+    await vi.waitFor(() => expect(monitor.getState('outline-1').ready).toBe(true));
 
     expect(stored.size).toBe(1);
     expect(monitor.getState('outline-1')).toMatchObject({
@@ -211,6 +258,7 @@ describe('LearningOutlineBriefMonitor', () => {
       { prepare: vi.fn(async () => directory) } as never,
     );
 
+    monitors.push(monitor);
     await monitor.start('project-1', 'outline-1');
     await monitor.shutdown();
 
@@ -242,6 +290,7 @@ describe('LearningOutlineBriefMonitor', () => {
       { prepare: vi.fn(async () => directory) } as never,
     );
 
+    monitors.push(monitor);
     await monitor.start('project-1', 'outline-1');
     await monitor.flush('outline-1');
     const validState = monitor.getState('outline-1');

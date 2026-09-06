@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
-import { access, mkdir, readFile } from 'node:fs/promises';
+import { access, mkdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
@@ -213,7 +213,9 @@ export class LearningOutlineBriefMonitor {
     projectId: string,
     assetId: string,
   ): Promise<void> {
-    const directory = await this.ensureWorkspace(projectId, assetId);
+    // libuv compares event paths with the watched directory. Windows 8.3
+    // aliases can abort the process, so resolve the existing directory first.
+    const directory = await realpath(await this.ensureWorkspace(projectId, assetId));
     if (this.disposed) return;
     const runtime: BriefRuntime = {
       projectId,
