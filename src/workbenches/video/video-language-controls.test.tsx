@@ -8,6 +8,7 @@ import {
   EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
 } from './shared';
 import { VideoLanguageControls } from './video-language-controls';
+import { MediaLanguageControls } from '../media-subtitles/media-language-controls';
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -62,6 +63,43 @@ describe('VideoLanguageControls', () => {
     document
       .querySelectorAll('[role="listbox"]')
       .forEach((node) => node.remove());
+  });
+
+  it.each(['音频', '视频'] as const)('offers regeneration only for failed source and hides it while busy (%s)', (mediaLabel) => {
+    const onRetrySubtitles = vi.fn();
+    const render = (phase: 'failed' | 'queued' | 'transcribing', translated = false) => act(() => root.render(
+      <MediaLanguageControls
+        mediaLabel={mediaLabel}
+        subtitleMode="source"
+        subtitleSnapshot={{
+          ...EMPTY_VIDEO_SUBTITLE_SNAPSHOT,
+          phase,
+          ...(translated ? { source: sourceTrack, sourceTrackRevision: 'saved' } : {}),
+        }}
+        dubbingSnapshot={EMPTY_VIDEO_DUBBING_SNAPSHOT}
+        dubbingEnabled={false}
+        dubbingPlaybackActive={false}
+        onSelectSubtitleMode={vi.fn()}
+        onRetrySubtitles={onRetrySubtitles}
+        onStartDubbing={vi.fn()}
+        onSelectDubbingEnabled={vi.fn()}
+        onRetryDubbing={vi.fn()}
+      />,
+    ));
+    render('failed');
+    const regenerate = [...container.querySelectorAll('button')].find((button) => button.textContent === '重新生成字幕');
+    expect(regenerate?.title).toContain('成功后替换');
+    expect(container.textContent).toContain('字幕不可用');
+    act(() => regenerate?.click());
+    expect(onRetrySubtitles).toHaveBeenCalledOnce();
+    for (const phase of ['queued', 'transcribing'] as const) {
+      render(phase);
+      expect(container.textContent).not.toContain('重新生成字幕');
+      expect([...container.querySelectorAll('button')].every((button) => button.disabled)).toBe(true);
+    }
+    render('failed', true);
+    expect(container.textContent).toContain('重试翻译');
+    expect(container.textContent).not.toContain('重新生成字幕');
   });
 
   it('opens subtitle settings but keeps dubbing disabled with every missing prerequisite', () => {

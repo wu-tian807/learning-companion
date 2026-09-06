@@ -94,6 +94,9 @@ function isAbortError(error: unknown): boolean {
 }
 
 function userFailureMessage(error: unknown): string {
+  if (error instanceof AppError && error.code === 'DATA_INTEGRITY_ERROR') {
+    return '字幕数据无效，请重新生成字幕；不影响原始音视频播放。';
+  }
   const described = describeAppError(error);
   if (described.userMessage) return described.userMessage;
   if (
@@ -225,6 +228,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     projectId: string,
     assetId: string,
     priority: SourceRequestPriority,
+    forceRegenerate = false,
   ): Promise<void> {
     const active = this.sourceTasks.get(assetId);
     if (active) {
@@ -240,7 +244,7 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     const task = this.sourceTaskQueue
       .enqueue(
         assetId,
-        () => this.prepareSource(projectId, assetId),
+        () => this.prepareSource(projectId, assetId, forceRegenerate),
         priority,
       )
       .finally(() => this.sourceTasks.delete(assetId));
@@ -280,13 +284,14 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     if (this.sourceArtifacts.has(assetId)) {
       await this.ensureTranslation(projectId, assetId);
     } else {
-      await this.ensureSource(projectId, assetId);
+      await this.ensureSourceWithPriority(projectId, assetId, 'interactive', true);
     }
   }
 
   private async prepareSource(
     projectId: string,
     assetId: string,
+    forceRegenerate = false,
   ): Promise<void> {
     let activeRevision: string | undefined;
     try {
@@ -300,12 +305,18 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       activeRevision = request.source.revision;
       this.activeSourceRevisions.set(assetId, activeRevision);
       this.updateSnapshot(assetId, {
-        ...this.getSnapshot(assetId),
+        ...(forceRegenerate
+          ? EMPTY_MEDIA_SUBTITLE_SNAPSHOT
+          : this.getSnapshot(assetId)),
         phase: 'transcribing',
         sourceTrackRevision: undefined,
         message: '正在生成原文字幕…',
       });
-      const artifact = await this.artifacts.getOrCreate(request);
+      const artifact = forceRegenerate
+        ? await this.artifacts.getOrCreate(request, undefined, {
+            forceRegenerate: true,
+          })
+        : await this.artifacts.getOrCreate(request);
       if (artifact.artifact.mediaType !== SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE) {
         throw new AppError('DATA_INTEGRITY_ERROR');
       }
