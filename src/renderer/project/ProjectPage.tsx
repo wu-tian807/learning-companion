@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
+import type { ProjectLearningNoteTargetLink } from '../../shared/project-learning-notes';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
@@ -12,6 +13,7 @@ import { WorkbenchConversationRuntime } from '../conversation/workbench-conversa
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
+import { selectAndRevealWorkbenchTarget } from '../workbench/host/workbench-target-bridge';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -76,6 +78,9 @@ export function ProjectPage({
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
   const learningNoteToggleRef = useRef<HTMLButtonElement>(null);
+  const learningNoteNavigationRef = useRef<AbortController | undefined>(
+    undefined,
+  );
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
   const {
@@ -188,6 +193,57 @@ export function ProjectPage({
     }
     session.selectAsset(assetId);
   }, [session]);
+  const revealLearningNoteTarget = useCallback(
+    async (link: ProjectLearningNoteTargetLink) => {
+      if (link.projectId !== project.id) {
+        throw new Error('这条资料引用不属于当前 Project。');
+      }
+      if (
+        session.loadState.kind !== 'ready' ||
+        !session.loadState.assets.some((asset) => asset.id === link.assetId)
+      ) {
+        throw new Error('引用的资料已不存在，无法定位原文。');
+      }
+
+      learningNoteNavigationRef.current?.abort(
+        new DOMException('已开始新的资料定位。', 'AbortError'),
+      );
+      const controller = new AbortController();
+      learningNoteNavigationRef.current = controller;
+      if (!layout.rightInline) {
+        closeRight();
+      }
+      try {
+        await selectAndRevealWorkbenchTarget({
+          assetId: link.assetId,
+          target: link.target,
+          sourceRevision: link.sourceRevision,
+          selectAsset: session.selectAsset,
+          signal: controller.signal,
+          timeoutMs: 10_000,
+        });
+      } finally {
+        if (learningNoteNavigationRef.current === controller) {
+          learningNoteNavigationRef.current = undefined;
+        }
+      }
+    },
+    [
+      closeRight,
+      layout.rightInline,
+      project.id,
+      session.loadState,
+      session.selectAsset,
+    ],
+  );
+  useEffect(
+    () => () => {
+      learningNoteNavigationRef.current?.abort(
+        new DOMException('Project 已关闭。', 'AbortError'),
+      );
+    },
+    [],
+  );
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
@@ -518,7 +574,11 @@ export function ProjectPage({
                 }
                 learningNote={
                   <ProjectLearningNotePanel
+                    active={layout.rightPanel === 'learning-note'}
+                    projectId={project.id}
+                    selectedAsset={assetOperations.selectedAsset}
                     controller={learningNote}
+                    onRevealTarget={revealLearningNoteTarget}
                     onClose={closeLearningNotePanel}
                   />
                 }

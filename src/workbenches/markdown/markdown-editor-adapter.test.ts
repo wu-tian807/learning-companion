@@ -25,6 +25,7 @@ import {
 
 interface TestLuteParser {
   Md2VditorDOM(markdown: string): string;
+  VditorDOM2Md(html: string): string;
   SetYamlFrontMatter(enabled: boolean): void;
 }
 
@@ -37,6 +38,7 @@ function createEditorHarness(input?: {
 }) {
   let after: (() => void) | undefined;
   let frame: FrameRequestCallback | undefined;
+  let linkClick: ((element: HTMLElement) => void) | undefined;
   const editableElement = {
     scrollTop: 0,
     addEventListener: vi.fn(),
@@ -80,6 +82,7 @@ function createEditorHarness(input?: {
     },
     createEditor: vi.fn((_host, options) => {
       after = options.after;
+      linkClick = options.link?.click;
       return editor;
     }),
     requestFrame: vi.fn((callback) => {
@@ -105,6 +108,11 @@ function createEditorHarness(input?: {
     editor,
     triggerAfter: () => after?.(),
     triggerFrame: () => frame?.(0),
+    triggerLink: (href: string) => {
+      linkClick?.({
+        getAttribute: (name: string) => name === 'href' ? href : null,
+      } as unknown as HTMLElement);
+    },
   };
 }
 
@@ -260,6 +268,17 @@ describe('Markdown YAML front matter tolerance', () => {
   });
 });
 
+describe('Markdown link round-trip', () => {
+  it('preserves an application-owned fragment link as Markdown', () => {
+    const href = '#learning-companion-target-v1=%7B%22assetId%22%3A%22a%22%7D';
+    const lute = createTestLuteParser();
+    const rendered = lute.Md2VditorDOM(`[定位原文](${href})`);
+    const roundTrip = lute.VditorDOM2Md(rendered);
+
+    expect(roundTrip).toContain(`[定位原文](${href})`);
+  });
+});
+
 describe('MarkdownEditorInputGate', () => {
   it('blocks delayed input until editor initialization finishes', () => {
     const gate = new MarkdownEditorInputGate();
@@ -324,6 +343,34 @@ describe('MarkdownEditorInputGate', () => {
 });
 
 describe('MarkdownEditorAdapter initialization lifecycle', () => {
+  it('routes only explicitly accepted internal links to the host', async () => {
+    const harness = createEditorHarness();
+    const onOpenInternalLink = vi.fn();
+    const creation = MarkdownEditorAdapter.create(
+      {
+        ...createEditorOptions(),
+        isInternalLinkAllowed: (href) => href.startsWith('#learning-target='),
+        onOpenInternalLink,
+      },
+      harness.dependencies,
+    );
+    await vi.waitFor(() =>
+      expect(harness.dependencies.createEditor).toHaveBeenCalledOnce(),
+    );
+    harness.triggerAfter();
+    await Promise.resolve();
+    harness.triggerFrame();
+    const adapter = await creation;
+
+    harness.triggerLink('#learning-target=valid');
+    harness.triggerLink('#other-fragment');
+    harness.triggerLink('javascript:alert(1)');
+
+    expect(onOpenInternalLink).toHaveBeenCalledOnce();
+    expect(onOpenInternalLink).toHaveBeenCalledWith('#learning-target=valid');
+    adapter.destroy();
+  });
+
   it('resolves create only after Vditor after and the ready frame', async () => {
     const harness = createEditorHarness();
     const creation = MarkdownEditorAdapter.create(

@@ -89,11 +89,7 @@ import {
 import {
   createMarkdownRendererActions,
 } from './renderer-actions';
-
-type VisualEditorState =
-  | 'loading'
-  | 'ready'
-  | 'failed';
+import { useMarkdownVisualEditor } from './use-markdown-visual-editor';
 
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -315,12 +311,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       outlineVisible: false,
     } satisfies MarkdownWorkbenchViewState);
   const sourceEditorRef = useRef<ReactCodeMirrorRef>(null);
-  const wysiwygHostRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
   );
-  const wysiwygInitializationRef = useRef(0);
   const workingBufferRef = useRef(payload?.diskSource ?? '');
   const lineEndingRef = useRef<MarkdownLineEnding>(
     payload?.lineEnding ?? 'lf',
@@ -353,8 +347,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [viewState, setViewState] = useState<MarkdownWorkbenchViewState>(
     initialViewState,
   );
-  const [visualEditorState, setVisualEditorState] =
-    useState<VisualEditorState>('loading');
   const [recovery, setRecovery] = useState(payload?.recovery);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -671,129 +663,57 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [insertLocalImage],
   );
 
-  useEffect(() => {
-    if (
-      !payload ||
-      recovery ||
-      viewState.viewMode !== 'wysiwyg' ||
-      !wysiwygHostRef.current
-    ) {
-      return;
-    }
-
-    let active = true;
-    const initialization = ++wysiwygInitializationRef.current;
-    const abortController = new AbortController();
-    setVisualEditorState('loading');
-    wysiwygEditedSinceMountRef.current = false;
-    const host = wysiwygHostRef.current;
-    const editorHost = document.createElement('div');
-    editorHost.style.height = '100%';
-    editorHost.style.minHeight = '0';
-    host.replaceChildren(editorHost);
-    let ownedAdapter: MarkdownEditorAdapter | undefined;
-
-    void MarkdownEditorAdapter.create({
-      host: editorHost,
-      initialValue: workingBufferRef.current,
-      initialScrollTop: viewStateRef.current.wysiwygScrollTop,
-      outlineVisible: viewStateRef.current.outlineVisible,
-      onInput: (value) => {
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization
-        ) {
-          return;
-        }
-
-        const adapter = wysiwygAdapterRef.current;
-        const normalizedValue = adapter
-          ? adapter.normalizeImageSourcesForSource(value)
-          : value;
-        const scrollTop = adapter?.getScrollTop() ?? 0;
-        workingBufferRef.current = normalizedValue;
-        wysiwygEditedSinceMountRef.current = true;
-        setWorkingBuffer(normalizedValue);
-        void syncWysiwygBuffer(normalizedValue, scrollTop).catch(
-          (error) => {
-            reportError(error, '无法同步 Markdown 可视化编辑内容。');
-          },
-        );
-      },
-      onScroll: (scrollTop) => {
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization
-        ) {
-          return;
-        }
-
-        runtime.closeContextMenu();
-        scheduleViewStateSave({
-          ...viewStateRef.current,
-          viewMode: 'wysiwyg',
-          wysiwygScrollTop: scrollTop,
-        });
-      },
-      onOpenExternal: (url) => {
-        void onOpenExternal(url).catch((error) => {
-          reportError(error, '无法打开外部链接。');
-        });
-      },
-      readLocalImageSource: readMarkdownImageDataUrl,
-      onError: (error) => {
-        reportError(error, 'Markdown 可视化编辑器运行异常。');
-      },
-      signal: abortController.signal,
-    })
-      .then((adapter) => {
-        ownedAdapter = adapter;
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization
-        ) {
-          adapter.destroy();
-          return;
-        }
-
-        wysiwygAdapterRef.current = adapter;
-        setVisualEditorState('ready');
-      })
-      .catch((error) => {
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization ||
-          (error instanceof DOMException && error.name === 'AbortError')
-        ) {
-          return;
-        }
-
-        editorHost.replaceChildren();
-        setVisualEditorState('failed');
-        reportError(error, '无法启动 Markdown 可视化编辑器。');
+  const {
+    hostRef: wysiwygHostRef,
+    state: visualEditorState,
+  } = useMarkdownVisualEditor({
+    enabled:
+      Boolean(payload) &&
+      !recovery &&
+      viewState.viewMode === 'wysiwyg',
+    resetKey: wysiwygEditorKey,
+    initialValue: workingBufferRef.current,
+    initialScrollTop: viewStateRef.current.wysiwygScrollTop,
+    outlineVisible: viewStateRef.current.outlineVisible,
+    onInput: (value) => {
+      const adapter = wysiwygAdapterRef.current;
+      const normalizedValue = adapter
+        ? adapter.normalizeImageSourcesForSource(value)
+        : value;
+      const scrollTop = adapter?.getScrollTop() ?? 0;
+      workingBufferRef.current = normalizedValue;
+      wysiwygEditedSinceMountRef.current = true;
+      setWorkingBuffer(normalizedValue);
+      void syncWysiwygBuffer(normalizedValue, scrollTop).catch(
+        (error) => {
+          reportError(error, '无法同步 Markdown 可视化编辑内容。');
+        },
+      );
+    },
+    onScroll: (scrollTop) => {
+      runtime.closeContextMenu();
+      scheduleViewStateSave({
+        ...viewStateRef.current,
+        viewMode: 'wysiwyg',
+        wysiwygScrollTop: scrollTop,
       });
-
-    return () => {
-      active = false;
-      abortController.abort();
-      if (wysiwygAdapterRef.current === ownedAdapter) {
-        wysiwygAdapterRef.current = undefined;
+    },
+    onOpenExternal: (url) => {
+      void onOpenExternal(url).catch((error) => {
+        reportError(error, '无法打开外部链接。');
+      });
+    },
+    readLocalImageSource: readMarkdownImageDataUrl,
+    onError: (error) => {
+      reportError(error, 'Markdown 可视化编辑器运行异常。');
+    },
+    onAdapterChange: (adapter) => {
+      wysiwygAdapterRef.current = adapter;
+      if (adapter) {
+        wysiwygEditedSinceMountRef.current = false;
       }
-      ownedAdapter?.destroy();
-      editorHost.remove();
-    };
-  }, [
-    onOpenExternal,
-    payload,
-    readMarkdownImageDataUrl,
-    recovery,
-    reportError,
-    runtime,
-    scheduleViewStateSave,
-    syncWysiwygBuffer,
-    viewState.viewMode,
-    wysiwygEditorKey,
-  ]);
+    },
+  });
 
   useEffect(() => {
     if (

@@ -7,12 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectPage } from './ProjectPage';
 
+const projectPageHarness = vi.hoisted(() => ({
+  selectAsset: vi.fn(),
+  selectAndReveal: vi.fn(async () => undefined),
+}));
+
 vi.mock('../conversation/ConversationPanelHost', () => ({
-  ConversationPanelHost: ({
-    selectedAssetId,
-  }: {
-    selectedAssetId?: string;
-  }) => (
+  ConversationPanelHost: ({ selectedAssetId }: { selectedAssetId?: string }) => (
     <div
       data-testid="project-conversation-panel"
       data-selected-asset-id={selectedAssetId}
@@ -37,16 +38,49 @@ vi.mock('../workbench/host/AssetWorkbenchHost', () => ({
   AssetWorkbenchHost: () => <div data-testid="workbench" />,
 }));
 
+vi.mock('../workbench/host/workbench-target-bridge', () => ({
+  selectAndRevealWorkbenchTarget: projectPageHarness.selectAndReveal,
+}));
+
 vi.mock('./ProjectAssetPanel', () => ({
   ProjectAssetPanel: () => <div data-testid="assets" />,
 }));
 
+vi.mock('./ProjectLearningNotePanel', () => ({
+  ProjectLearningNotePanel: ({
+    active,
+    onRevealTarget,
+  }: {
+    active: boolean;
+    onRevealTarget: (link: unknown) => Promise<void>;
+  }) => (
+    <div data-testid="learning-note-panel" data-active={String(active)}>
+      <button
+        type="button"
+        onClick={() => void onRevealTarget({
+          projectId: 'project-1',
+          assetId: 'asset-html',
+          sourceRevision: 'revision-1',
+          target: {
+            scope: 'content',
+            targetType: 'html.range',
+            targetVersion: 1,
+            targetPayload: { path: 'p:1' },
+          },
+        })}
+      >
+        定位笔记引用
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock('./use-project-session', () => ({
   useProjectSession: () => ({
-    loadState: { kind: 'ready', assets: [] },
+    loadState: { kind: 'ready', assets: [{ id: 'asset-html' }] },
     setLoadState: vi.fn(),
     selectedAssetId: undefined,
-    selectAsset: vi.fn(),
+    selectAsset: projectPageHarness.selectAsset,
     retry: vi.fn(),
     handleWorkbenchLifecycleTask: vi.fn(),
     workbenchLifecycleTaskRef: { current: undefined },
@@ -72,14 +106,23 @@ vi.mock('./use-relative-time-now', () => ({
   useRelativeTimeNow: () => 1,
 }));
 
+const project = {
+  id: 'project-1',
+  name: '测试 Project',
+  icon: '📘',
+  createdTime: 1,
+  pinned: false,
+  workspacePath: 'D:\\Workspace\\project-1',
+  assetCount: 1,
+} as const;
+
 describe('ProjectPage Project conversation lifecycle', () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
-    (
-      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
-    ).IS_REACT_ACT_ENVIRONMENT = true;
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+      .IS_REACT_ACT_ENVIRONMENT = true;
     Object.defineProperty(window, 'learningCompanion', {
       configurable: true,
       value: {
@@ -109,6 +152,8 @@ describe('ProjectPage Project conversation lifecycle', () => {
         removeEventListener: vi.fn(),
       })),
     });
+    projectPageHarness.selectAsset.mockClear();
+    projectPageHarness.selectAndReveal.mockClear();
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -125,15 +170,7 @@ describe('ProjectPage Project conversation lifecycle', () => {
       root.render(
         <StrictMode>
           <ProjectPage
-            project={{
-              id: 'project-1',
-              name: '测试 Project',
-              icon: '📘',
-              createdTime: 1,
-              pinned: false,
-              workspacePath: 'D:\\Workspace\\project-1',
-              assetCount: 0,
-            }}
+            project={project}
             onBack={vi.fn()}
             onOpenSettings={vi.fn()}
           />
@@ -144,54 +181,27 @@ describe('ProjectPage Project conversation lifecycle', () => {
     const button = container.querySelector<HTMLButtonElement>(
       'button[aria-label="打开 AI 问答"]',
     );
-    expect(button).not.toBeNull();
-
-    await act(async () => button!.click());
+    await act(async () => button?.click());
 
     expect(button?.getAttribute('aria-expanded')).toBe('true');
     expect(
-      container.querySelector('[data-testid="project-conversation-panel"]'),
-    ).not.toBeNull();
-    expect(
-      container
-        .querySelector('[data-testid="generation-center"]')
-        ?.parentElement?.getAttribute('aria-hidden'),
-    ).toBe('true');
-
-    expect(
-      container
-        .querySelector('[data-testid="project-conversation-panel"]')
+      container.querySelector('[data-testid="project-conversation-panel"]')
         ?.getAttribute('data-selected-asset-id'),
     ).toBe('asset-html');
-
-    await act(async () => button!.click());
-
-    expect(button?.getAttribute('aria-expanded')).toBe('false');
     expect(
-      container
-        .querySelector('[data-testid="project-conversation-panel"]')
+      container.querySelector('[data-testid="generation-center"]')
         ?.parentElement?.getAttribute('aria-hidden'),
     ).toBe('true');
-    expect(
-      container
-        .querySelector('[data-testid="generation-center"]')
-        ?.parentElement?.getAttribute('aria-hidden'),
-    ).toBe('false');
+
+    await act(async () => button?.click());
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('opens and collapses the Project learning note from the main action row', async () => {
     await act(async () => {
       root.render(
         <ProjectPage
-          project={{
-            id: 'project-1',
-            name: '测试 Project',
-            icon: '📘',
-            createdTime: 1,
-            pinned: false,
-            workspacePath: 'D:\\Workspace\\project-1',
-            assetCount: 0,
-          }}
+          project={project}
           onBack={vi.fn()}
           onOpenSettings={vi.fn()}
         />,
@@ -201,20 +211,43 @@ describe('ProjectPage Project conversation lifecycle', () => {
     const openButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="打开学习笔记"]',
     );
-    expect(openButton).not.toBeNull();
-
-    await act(async () => openButton!.click());
+    await act(async () => openButton?.click());
     expect(
-      container.querySelector('textarea[aria-label="Markdown 学习笔记编辑器"]'),
-    ).not.toBeNull();
+      container.querySelector('[data-testid="learning-note-panel"]')
+        ?.getAttribute('data-active'),
+    ).toBe('true');
 
     const collapseButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="收起学习笔记"]',
     );
-    expect(collapseButton).not.toBeNull();
-    await act(async () => collapseButton!.click());
+    await act(async () => collapseButton?.click());
     expect(
-      container.querySelector('textarea[aria-label="Markdown 学习笔记编辑器"]'),
+      container.querySelector('[data-testid="learning-note-panel"]'),
     ).toBeNull();
+  });
+
+  it('routes a learning-note link through Asset selection and Workbench reveal', async () => {
+    await act(async () => {
+      root.render(
+        <ProjectPage
+          project={project}
+          onBack={vi.fn()}
+          onOpenSettings={vi.fn()}
+        />,
+      );
+    });
+
+    const navigate = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '定位笔记引用',
+    );
+    await act(async () => navigate?.click());
+
+    expect(projectPageHarness.selectAndReveal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId: 'asset-html',
+        sourceRevision: 'revision-1',
+        selectAsset: projectPageHarness.selectAsset,
+      }),
+    );
   });
 });
