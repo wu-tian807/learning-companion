@@ -5,13 +5,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createProjectLearningNoteAttachmentHref } from '../../shared/project-learning-notes';
 import { ProjectPage } from './ProjectPage';
 
 const projectPageHarness = vi.hoisted(() => ({
   selectAsset: vi.fn(),
   selectAndReveal: vi.fn(async () => undefined),
-  workbenchProps: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock('../conversation/ConversationPanelHost', () => ({
@@ -37,10 +35,7 @@ vi.mock('../generation/use-generation-tasks', () => ({
 }));
 
 vi.mock('../workbench/host/AssetWorkbenchHost', () => ({
-  AssetWorkbenchHost: (props: Record<string, unknown>) => {
-    projectPageHarness.workbenchProps = props;
-    return <div data-testid="workbench" />;
-  },
+  AssetWorkbenchHost: () => <div data-testid="workbench" />,
 }));
 
 vi.mock('../workbench/host/workbench-target-bridge', () => ({
@@ -169,44 +164,9 @@ describe('ProjectPage Project conversation lifecycle', () => {
     });
     projectPageHarness.selectAsset.mockClear();
     projectPageHarness.selectAndReveal.mockClear();
-    projectPageHarness.workbenchProps = undefined;
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
-  });
-
-  it('passes persisted learning-note references into the active Workbench', async () => {
-    const href = createProjectLearningNoteAttachmentHref({
-      projectId: 'project-1',
-      assetId: 'asset-html',
-      attachmentId: 'attachment-1',
-    });
-    vi.mocked(
-      window.learningCompanion.getProjectLearningNote,
-    ).mockResolvedValue({
-      projectId: 'project-1',
-      markdown: `[资料 · 定位](${href})`,
-      revision: 1,
-      updatedTime: 1,
-    });
-
-    await act(async () => {
-      root.render(
-        <ProjectPage
-          project={project}
-          onBack={vi.fn()}
-          onOpenSettings={vi.fn()}
-        />,
-      );
-    });
-
-    expect(projectPageHarness.workbenchProps?.learningNoteReferences).toEqual([
-      {
-        projectId: 'project-1',
-        assetId: 'asset-html',
-        attachmentId: 'attachment-1',
-      },
-    ]);
   });
 
   afterEach(() => {
@@ -302,6 +262,7 @@ describe('ProjectPage Project conversation lifecycle', () => {
           targetPayload: { path: 'p:1' },
         },
         selectAsset: projectPageHarness.selectAsset,
+        emphasize: true,
       }),
     );
   });

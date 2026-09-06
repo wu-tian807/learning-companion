@@ -16,18 +16,11 @@ import type {
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
-import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
-
-export interface LearningNoteSourceMark {
-  readonly id: string;
-  readonly target: ContentAssetTarget;
-}
 
 export interface RendererWorkbenchViewProps {
   readonly asset: AssetSnapshot;
   readonly bootstrap: WorkbenchBootstrap;
   readonly attachments?: readonly AssetAttachment[];
-  readonly learningNoteSourceMarks?: readonly LearningNoteSourceMark[];
   readonly refreshAttachments?: () => Promise<void>;
   readonly executeCommand: (
     command: WorkbenchCommand,

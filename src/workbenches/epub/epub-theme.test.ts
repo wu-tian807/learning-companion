@@ -19,6 +19,8 @@ describe('EPUB live theme switching', () => {
     applyEpubThemeToDocument(chapter, 'dark');
     const style = chapter.getElementById(EPUB_THEME_STYLE_ID);
     expect(style?.textContent).toContain('#151a20');
+    expect(style?.textContent).toContain('::selection');
+    expect(style?.textContent).toContain('#facc15');
 
     applyEpubThemeToDocument(chapter, 'light');
     expect(chapter.getElementById(EPUB_THEME_STYLE_ID)).toBe(style);

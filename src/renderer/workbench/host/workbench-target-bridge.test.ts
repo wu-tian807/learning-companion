@@ -97,11 +97,13 @@ describe('workbench Target bridge', () => {
 
   it('selects another Asset, waits for its Workbench and reveals the versioned Target', async () => {
     const reveal = vi.fn(() => true);
+    const emphasize = vi.fn();
     const selectAsset = vi.fn(async (assetId: string) => {
       expect(assetId).toBe('target');
       registerWorkbenchTargetController('epub', assetId, {
         sourceRevision: 'revision-1',
         reveal,
+        emphasize,
       });
     });
 
@@ -111,10 +113,12 @@ describe('workbench Target bridge', () => {
       sourceRevision: 'revision-1',
       selectAsset,
       signal: new AbortController().signal,
+      emphasize: true,
     });
 
     expect(selectAsset).toHaveBeenCalledOnce();
     expect(reveal).toHaveBeenCalledWith(target);
+    expect(emphasize).toHaveBeenCalledWith(target);
   });
 
   it('does not select or reveal after navigation has been cancelled', async () => {

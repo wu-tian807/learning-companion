@@ -64,6 +64,7 @@ import { renderEpubAnnotationWaves } from './epub-annotation-renderer';
 import { stabilizeEpubContinuousScroll } from './epub-continuous-scroll';
 import { EpubReadingNotePanel } from './notes/epub-reading-note-panel';
 import { EpubReadingTimerControl } from './timer/epub-reading-timer-control';
+import { emphasizeEpubRange } from './epub-target-emphasis';
 import {
   applyEpubRenditionAppearance,
   applyEpubThemeToDocument,
@@ -163,7 +164,6 @@ export function EpubWorkbenchView({
   asset,
   bootstrap,
   attachments = [],
-  learningNoteSourceMarks = [],
   refreshAttachments,
   executeCommand,
   onRelink,
@@ -180,6 +180,7 @@ export function EpubWorkbenchView({
   const viewerHostRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<Rendition | undefined>(undefined);
   const bookRef = useRef<Book | undefined>(undefined);
+  const targetEmphasisCleanupRef = useRef<(() => void) | undefined>(undefined);
   const saveTimerRef = useRef<number | undefined>(undefined);
   const selectionRef = useRef<
     WorkbenchSelectionSnapshot | undefined
@@ -262,9 +263,22 @@ export function EpubWorkbenchView({
           await rendition.display(target.targetPayload.cfiRange);
           return true;
         },
+        emphasize(target) {
+          if (!isEpubCfiRangeTarget(target)) return;
+          const rendition = renditionRef.current;
+          if (!rendition) return;
+          const range = rendition.getRange(target.targetPayload.cfiRange);
+          if (!range) return;
+          targetEmphasisCleanupRef.current?.();
+          targetEmphasisCleanupRef.current = emphasizeEpubRange(range);
+        },
       },
     );
   }, [asset.id, conversationOwnerId, loadState.kind, payload?.sourceRevision]);
+  useEffect(
+    () => () => targetEmphasisCleanupRef.current?.(),
+    [],
+  );
   const conversationContribution = useMemo(
     () => createEpubConversationContribution(),
     [],
@@ -854,7 +868,6 @@ export function EpubWorkbenchView({
       rendition.annotations,
       explanations,
       readingNotes,
-      learningNoteSourceMarks,
       {
         onExplanationClick: (explanation) =>
           setActiveExplanationId(explanation.id),
@@ -864,7 +877,7 @@ export function EpubWorkbenchView({
         },
       },
     );
-  }, [explanations, learningNoteSourceMarks, loadState.kind, readingNotes]);
+  }, [explanations, loadState.kind, readingNotes]);
 
   const retryExplanation = useCallback(
     async (explanation: EpubExplanationView) => {
