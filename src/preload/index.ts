@@ -39,11 +39,6 @@ import type {
   SaveProjectConversationRequest,
 } from "../shared/project-conversations";
 import type {
-  ProjectLearningNoteProjectRequest,
-  ProjectLearningNoteSnapshot,
-  SaveProjectLearningNoteRequest,
-} from '../shared/project-learning-notes';
-import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
   AgentProviderConnectionRequest,
@@ -244,16 +239,6 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   deleteProjectConversation: (request: DeleteProjectConversationRequest) =>
     invoke<ConversationRecord[]>(
       IPC_CHANNELS.deleteProjectConversation,
-      request,
-    ),
-  getProjectLearningNote: (request: ProjectLearningNoteProjectRequest) =>
-    invoke<ProjectLearningNoteSnapshot>(
-      IPC_CHANNELS.getProjectLearningNote,
-      request,
-    ),
-  saveProjectLearningNote: (request: SaveProjectLearningNoteRequest) =>
-    invoke<ProjectLearningNoteSnapshot>(
-      IPC_CHANNELS.saveProjectLearningNote,
       request,
     ),
   selectLocalAssetFiles: (request: ProjectLifecycleRequest) =>

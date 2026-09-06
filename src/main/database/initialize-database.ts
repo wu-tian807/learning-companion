@@ -32,7 +32,6 @@ import { createProjectConversationsMigration } from './migrations/0024-create-pr
 import { backfillConversationContextSourcesMigration } from './migrations/0025-backfill-conversation-context-sources';
 import { addConversationExecutionContextMigration } from './migrations/0026-add-conversation-execution-context';
 import { canonicalizeAssetTargetsMigration } from './migrations/0027-canonicalize-asset-targets';
-import { createProjectLearningNotesMigration } from './migrations/0028-create-project-learning-notes';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetFolderSchema from './schema/asset-folders';
@@ -42,7 +41,6 @@ import * as assetSchema from './schema/assets';
 import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
 import * as projectConversationSchema from './schema/project-conversations';
-import * as projectLearningNoteSchema from './schema/project-learning-notes';
 import * as workbenchStateSchema from './schema/workbench-state';
 
 interface DatabaseMigration {
@@ -80,14 +78,12 @@ const migrations: readonly DatabaseMigration[] = [
   backfillConversationContextSourcesMigration,
   addConversationExecutionContextMigration,
   canonicalizeAssetTargetsMigration,
-  createProjectLearningNotesMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,
   ...assetFolderSchema,
   ...projectSchema,
   ...projectConversationSchema,
-  ...projectLearningNoteSchema,
   ...assetSchema,
   ...assetArtifactSchema,
   ...assetLinkSchema,
