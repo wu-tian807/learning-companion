@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { createServer } from 'node:http';
 import writeFileAtomic from 'write-file-atomic';
 import { describe, expect, it } from 'vitest';
@@ -63,6 +63,9 @@ describe.runIf(['darwin', 'win32'].includes(process.platform))('native shared au
       clearTimeout(timer);
       expect(result.turn.status).toBe('completed');
       expect(JSON.stringify(result.turn.items)).toContain('LC_ISOLATED_OK');
+      const persistedRollout = await realpath(String(thread.thread.path));
+      expect(relative(await realpath(home), persistedRollout).split(sep)[0]).toBe('sessions');
+      expect((await stat(persistedRollout)).isFile()).toBe(true);
       expect(authenticatedRequests).toBe(1);
       expect(await readFile(join(source, 'auth.json'), 'utf8')).toBe(original);
       expect(await readdir(source)).toEqual(['auth.json']);
@@ -77,10 +80,16 @@ describe.runIf(['darwin', 'win32'].includes(process.platform))('native shared au
     }
   }, 30_000);
 
-  it('keeps sessions isolated, reuses native login, repairs replacement and clears deletion across restart', async () => {
+  it.each(['direct', 'directory-alias'] as const)('keeps sessions isolated, reuses native login, repairs replacement and clears deletion across restart (%s)', async (pathForm) => {
     const root = await mkdtemp(join(tmpdir(), 'lc-native-auth-composition-'));
     const user = join(root, 'user'); const source = join(user, '.codex');
-    const home = createManagedCodexHomePath(join(root, 'Documents'));
+    const documents = join(root, 'Documents');
+    const documentsAlias = join(root, 'Documents alias');
+    await mkdir(documents);
+    if (pathForm === 'directory-alias') {
+      await symlink(documents, documentsAlias, process.platform === 'win32' ? 'junction' : 'dir');
+    }
+    const home = createManagedCodexHomePath(pathForm === 'directory-alias' ? documentsAlias : documents);
     await mkdir(source, { recursive: true });
     const sourceFile = join(source, 'auth.json');
     await writeFile(sourceFile, authFixture('first@example.invalid'));
@@ -90,7 +99,11 @@ describe.runIf(['darwin', 'win32'].includes(process.platform))('native shared au
       expect((await service.getAccount()).account).toMatchObject({ type: 'chatgpt', email: 'first@example.invalid' });
       const thread = await service.createThread({ cwd: home, model: 'gpt-test', approvalPolicy: 'never',
         configOverrides: { features: { memories: false }, web_search: 'disabled' } });
-      expect(String(thread.thread.path).replaceAll('\\', '/')).toContain(home.replaceAll('\\', '/'));
+      // Codex canonicalizes Windows short paths and directory aliases. Compare
+      // the canonical Home and a directory boundary, not lexical substrings.
+      // An empty thread's rollout is only written after its first turn.
+      const relativeRollout = relative(await realpath(home), String(thread.thread.path));
+      expect(relativeRollout.split(sep)[0]).toBe('sessions');
       expect(await readdir(source)).toEqual(['auth.json']);
       expect((await stat(sourceFile)).ino).toBe((await stat(join(home, 'auth.json'))).ino);
       await writeFile(sourceFile, authFixture('in-place@example.invalid'));
