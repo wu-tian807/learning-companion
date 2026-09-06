@@ -25,9 +25,9 @@ export class ConversationModeRegistry {
   resolve(
     modeId: string | undefined,
     fallback: ConversationModeDefinition,
-  ): ConversationModeDefinition {
-    if (!modeId || modeId === fallback.id) return fallback;
-    return this.modes.get(modeId) ?? fallback;
+  ): ConversationModeDefinition | undefined {
+    if (modeId === undefined || modeId === fallback.id) return fallback;
+    return this.modes.get(modeId);
   }
 }
 

@@ -8,9 +8,6 @@ import {
   type CreateLearningOutlineResult,
   type LearningOutlineBriefState,
   type LearningOutlineDocument,
-  type LearningOutlineProgressEntry,
-  type LearningOutlineSnapshot,
-  type LearningUnitStatus,
 } from '../shared';
 import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../../shared/asset-media-types';
 import type { LearningOutlineChangedEvent } from '../shared';
@@ -37,7 +34,6 @@ export interface LearningOutlineServiceApi {
       readonly createRequestId?: string;
     },
   ): Promise<CreateLearningOutlineResult>;
-  getSnapshot(assetId: string): Promise<LearningOutlineSnapshot | undefined>;
   requireBoundConversation(
     projectId: string,
     conversationId: string,
@@ -49,25 +45,8 @@ export interface LearningOutlineServiceApi {
     projectId: string,
     boundAssetId: string,
   ): Promise<readonly string[]>;
-  updateDocument(
-    assetId: string,
-    expectedUpdatedTime: number,
-    update: (document: LearningOutlineDocument) => LearningOutlineDocument,
-  ): Promise<LearningOutlineDocument>;
-  updateUnitStatus(
-    assetId: string,
-    unitId: string,
-    status: LearningUnitStatus,
-  ): Promise<LearningOutlineDocument>;
-  setSources(
-    assetId: string,
-    sourceAssetIds: readonly string[],
-  ): Promise<LearningOutlineDocument>;
-  ensureBriefWorkspace(projectId: string, assetId: string): Promise<string>;
-  startBriefMonitor(projectId: string, assetId: string): Promise<void>;
-  flushBrief(assetId: string): Promise<void>;
+  readBriefState(projectId: string, assetId: string): Promise<LearningOutlineBriefState>;
   runBriefTask<T>(assetId: string, operation: () => Promise<T>): Promise<T>;
-  getBriefState(assetId: string): LearningOutlineBriefState;
   subscribe(listener: (event: LearningOutlineServiceEvent) => void): () => void;
   shutdown(): Promise<void>;
   dispose(): void;
@@ -87,21 +66,10 @@ function jsonBytes(value: unknown): Buffer {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
-function progressForUnit(
-  document: LearningOutlineDocument,
-  unitId: string,
-  status: LearningUnitStatus,
-  updatedTime: number,
-): readonly LearningOutlineProgressEntry[] {
-  const existing = document.progress.filter((entry) => entry.unitId !== unitId);
-  return [...existing, { unitId, status, updatedTime }];
-}
-
 export class LearningOutlineService implements LearningOutlineServiceApi {
   private readonly listeners = new Set<
     (event: LearningOutlineServiceEvent) => void
   >();
-  private readonly documentTails = new Map<string, Promise<void>>();
   private readonly briefTaskTails = new Map<string, Promise<void>>();
   private readonly draftRequests = new Map<
     string,
@@ -114,7 +82,7 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
 
   constructor(
     private readonly assets: AssetServiceApi,
-    assetLookup: AssetLookup | undefined,
+    assetLookup: AssetLookup,
     private readonly attachments: AttachmentServiceApi,
     private readonly associations: AssetAssociationServiceApi,
     private readonly projects: ProjectLookup,
@@ -123,12 +91,7 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
   ) {
     this.documents = new LearningOutlineDocumentStore(this.assets);
     this.briefMonitor = new LearningOutlineBriefMonitor(
-      assetLookup ?? {
-        get: (projectId, assetId) => {
-          const asset = this.assets.get(assetId);
-          return asset?.projectId === projectId ? asset : undefined;
-        },
-      },
+      assetLookup,
       this.attachments,
       this.agentWorkspaces,
     );
@@ -244,22 +207,6 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
     }
   }
 
-  async getSnapshot(
-    assetId: string,
-  ): Promise<LearningOutlineSnapshot | undefined> {
-    const normalizedAssetId = requireId(assetId, 'assetId');
-    const asset = this.assets.get(normalizedAssetId);
-    if (!asset || asset.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE) {
-      return undefined;
-    }
-    const document = await this.readDocument(normalizedAssetId);
-    return Object.freeze({
-      asset,
-      document,
-      brief: this.getBriefState(normalizedAssetId),
-    });
-  }
-
   requireBoundConversation(
     projectId: string,
     conversationId: string,
@@ -316,125 +263,16 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
     return Object.freeze(sourceAssetIds);
   }
 
-  async updateDocument(
-    assetId: string,
-    expectedUpdatedTime: number,
-    update: (document: LearningOutlineDocument) => LearningOutlineDocument,
-  ): Promise<LearningOutlineDocument> {
-    const normalizedAssetId = requireId(assetId, 'assetId');
-    const previous =
-      this.documentTails.get(normalizedAssetId) ?? Promise.resolve();
-    let result: LearningOutlineDocument | undefined;
-    const operation = previous.then(async () => {
-      const current = await this.readDocument(normalizedAssetId);
-      if (current.updatedTime !== expectedUpdatedTime) {
-        throw new AppError('DATABASE_WRITE_CONFLICT');
-      }
-      const next = cloneLearningOutlineDocument(update(current));
-      const asset = this.assets.get(normalizedAssetId);
-      if (!asset) throw new AppError('ASSET_NOT_FOUND');
-      await this.documents.write(normalizedAssetId, next);
-      this.assets.update(normalizedAssetId, {
-        updatedTime: { mode: 'now' },
-      });
-      result = next;
-      this.publish({
-        type: 'document-changed',
-        projectId: asset.projectId,
-        assetId: normalizedAssetId,
-        document: next,
-      });
-    });
-    this.documentTails.set(
-      normalizedAssetId,
-      operation.then(
-        () => undefined,
-        () => undefined,
-      ),
-    );
-    await operation;
-    return result!;
-  }
-
-  async updateUnitStatus(
-    assetId: string,
-    unitId: string,
-    status: LearningUnitStatus,
-  ): Promise<LearningOutlineDocument> {
-    const document = await this.readDocument(assetId);
-    const unitExists = document.chapters.some((chapter) =>
-      chapter.units.some((unit) => unit.id === unitId),
-    );
-    if (!unitExists) throw new AppError('DATA_INTEGRITY_ERROR');
-    return this.updateDocument(assetId, document.updatedTime, (current) => ({
-      ...current,
-      progress: progressForUnit(current, unitId, status, Date.now()),
-      updatedTime: Math.max(Date.now(), current.updatedTime),
-    }));
-  }
-
-  async setSources(
-    assetId: string,
-    sourceAssetIds: readonly string[],
-  ): Promise<LearningOutlineDocument> {
-    const asset = this.assets.get(requireId(assetId, 'assetId'));
-    if (!asset) throw new AppError('ASSET_NOT_FOUND');
-    const normalized = [
-      ...new Set(sourceAssetIds.map((id) => requireId(id, 'sourceAssetId'))),
-    ];
-    if (normalized.length === 0) {
-      throw new AppError('INVALID_IPC_REQUEST', {
-        cause: new Error('学习大纲必须至少保留一个 MindMap 来源。'),
-      });
-    }
-    for (const sourceAssetId of normalized) {
-      const source = this.assets.get(sourceAssetId);
-      if (
-        !source ||
-        source.projectId !== asset.projectId ||
-        source.id === asset.id ||
-        source.mediaType !== MIND_MAP_ASSET_MEDIA_TYPE
-      ) {
-        throw new AppError('ASSET_NOT_FOUND');
-      }
-    }
-    for (const reference of this.associations.listReferences(asset.id)) {
-      if (!normalized.includes(reference.sourceAssetId)) {
-        this.associations.deleteReference(reference.id);
-      }
-    }
-    for (const sourceAssetId of normalized) {
-      this.associations.ensureReference(asset.id, { sourceAssetId });
-    }
-    const document = await this.readDocument(asset.id);
-    return this.updateDocument(asset.id, document.updatedTime, (current) => ({
-      ...current,
-      sourceAssetIds: normalized,
-      updatedTime: Math.max(Date.now(), current.updatedTime),
-    }));
-  }
-
-  async ensureBriefWorkspace(
+  async readBriefState(
     projectId: string,
     assetId: string,
-  ): Promise<string> {
-    return this.briefMonitor.ensureWorkspace(
-      requireId(projectId, 'projectId'),
-      requireId(assetId, 'assetId'),
-    );
-  }
-
-  async startBriefMonitor(projectId: string, assetId: string): Promise<void> {
-    if (this.disposed) return;
-    await this.briefMonitor.start(
-      requireId(projectId, 'projectId'),
-      requireId(assetId, 'assetId'),
-    );
-  }
-
-  async flushBrief(assetId: string): Promise<void> {
-    if (this.disposed) return;
-    await this.briefMonitor.flush(requireId(assetId, 'assetId'));
+  ): Promise<LearningOutlineBriefState> {
+    if (this.disposed) throw new AppError('SERVICE_NOT_READY');
+    const owner = requireId(projectId, 'projectId');
+    const id = requireId(assetId, 'assetId');
+    await this.briefMonitor.start(owner, id);
+    await this.briefMonitor.flush(owner, id);
+    return this.briefMonitor.getState(owner, id);
   }
 
   async runBriefTask<T>(
@@ -463,10 +301,6 @@ export class LearningOutlineService implements LearningOutlineServiceApi {
         this.briefTaskTails.delete(normalizedAssetId);
       }
     }
-  }
-
-  getBriefState(assetId: string): LearningOutlineBriefState {
-    return this.briefMonitor.getState(assetId);
   }
 
   subscribe(

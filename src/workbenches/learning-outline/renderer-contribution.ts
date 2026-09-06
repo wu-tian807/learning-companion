@@ -60,12 +60,12 @@ export const learningOutlineRendererWorkbenchContribution =
           }
           const assetId = record.asset.id;
           return {
-            assetId,
             asset: record.asset,
-            conversation: record.conversation,
-            conversationId: record.conversation.id,
-            modeId: LEARNING_OUTLINE_INTAKE_MODE_ID,
-            boundAssetId: assetId,
+            conversation: {
+              conversationId: record.conversation.id,
+              modeId: LEARNING_OUTLINE_INTAKE_MODE_ID,
+              boundAssetId: assetId,
+            },
           };
         },
       },

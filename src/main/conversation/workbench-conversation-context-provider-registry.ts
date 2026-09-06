@@ -1,5 +1,5 @@
 import { AppError } from '../errors/app-error';
-import type { WorkbenchConversationContextProvider } from './workbench-conversation-context-provider';
+import type { WorkbenchConversationContextProvider, WorkbenchMaterialsProvider } from './workbench-conversation-context-provider';
 
 const PROVIDER_ID_PATTERN =
   /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
@@ -22,12 +22,22 @@ export class WorkbenchConversationContextProviderRegistry {
     const id = requireProviderId(provider.id);
     if (
       this.providers.has(id) ||
-      (typeof provider.prepare !== 'function' &&
-        typeof provider.prepareMaterials !== 'function')
+      typeof provider.prepare !== 'function'
     ) {
       throw new AppError('REGISTRATION_CONFLICT');
     }
     this.providers.set(id, provider);
+  }
+
+  requireMaterials(id: string): WorkbenchMaterialsProvider {
+    const provider = this.require(id);
+    const prepareMaterials = provider.prepareMaterials;
+    if (typeof prepareMaterials !== 'function') {
+      throw new AppError('FEATURE_NOT_SUPPORTED', {
+        cause: new Error('Workbench 未提供独立材料能力'),
+      });
+    }
+    return { prepareMaterials: (context) => prepareMaterials.call(provider, context) };
   }
 
   require(id: string): WorkbenchConversationContextProvider {

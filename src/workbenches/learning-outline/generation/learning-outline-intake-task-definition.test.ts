@@ -104,9 +104,7 @@ function createOutlineService(): LearningOutlineServiceApi {
       id: 'conversation-1',
       modeId: LEARNING_OUTLINE_INTAKE_MODE_ID,
     })),
-    startBriefMonitor: vi.fn(async () => undefined),
-    flushBrief: vi.fn(async () => undefined),
-    getBriefState: vi.fn(() => ({ valid: true, ready: false, brief: createEmptyLearningBrief() })),
+    readBriefState: vi.fn(async () => ({ valid: true, ready: false, brief: createEmptyLearningBrief() })),
   } as unknown as LearningOutlineServiceApi;
 }
 
@@ -189,7 +187,7 @@ describe('Intake validation feedback and completion', () => {
   it('supplies the full file contract and repairs invalid output before announcing completion', async () => {
     let state: LearningOutlineBriefState = { valid: true, brief: createEmptyLearningBrief() };
     const service = createOutlineService();
-    vi.mocked(service.getBriefState).mockImplementation(() => state);
+    vi.mocked(service.readBriefState).mockImplementation(async () => state);
     const call = vi.fn(async (request: TaskAgentCallRequest) => {
       state = request.callKey === 'answer'
         ? { valid: false, error: 'roadmap[0].id：缺少标识；roadmap[0].title：缺少标题' }
@@ -210,7 +208,7 @@ describe('Intake validation feedback and completion', () => {
     let state: LearningOutlineBriefState = { valid: true, ready: false,
       brief: { ...full, difficulties: '', readiness: 'ready' } };
     const service = createOutlineService();
-    vi.mocked(service.getBriefState).mockImplementation(() => state);
+    vi.mocked(service.readBriefState).mockImplementation(async () => state);
     const call = vi.fn(async (request: TaskAgentCallRequest) => {
       if (request.callKey.startsWith('repair')) state = { ...state, brief: { ...state.brief!, readiness: 'collecting' } };
       return { ...createCallResult(request), assistantOutput: request.callKey === 'answer' ? '可以生成了。' : '你目前遇到的主要困难是什么？没有也可以直接告诉我。' };
@@ -223,7 +221,7 @@ describe('Intake validation feedback and completion', () => {
 
   it('bounds failed repairs and never returns a false completion claim', async () => {
     const service = createOutlineService();
-    vi.mocked(service.getBriefState).mockReturnValue({ valid: false, error: 'roadmap[0].title：缺少标题' });
+    vi.mocked(service.readBriefState).mockResolvedValue({ valid: false, error: 'roadmap[0].title：缺少标题' });
     const call = vi.fn(async (request: TaskAgentCallRequest) => ({ ...createCallResult(request), assistantOutput: '所有必填项已填写完成。' }));
     const result = await createLearningOutlineIntakeTaskDefinitionV1(new WorkbenchConversationContextProviderRegistry(), service).process(plainContext(call));
     expect(call).toHaveBeenCalledTimes(3);
@@ -234,7 +232,7 @@ describe('Intake validation feedback and completion', () => {
   it('allows additional detailed information after completion without requiring another repair', async () => {
     const service = createOutlineService();
     const state = completeState();
-    vi.mocked(service.getBriefState).mockReturnValue({ ...state, brief: { ...state.brief!, detailed: '希望配套例子。' } });
+    vi.mocked(service.readBriefState).mockResolvedValue({ ...state, brief: { ...state.brief!, detailed: '希望配套例子。' } });
     const call = vi.fn(async (request: TaskAgentCallRequest) => ({ ...createCallResult(request), assistantOutput: `补充已保存。\n\n${LEARNING_BRIEF_COMPLETION_NOTICE}` }));
     const result = await createLearningOutlineIntakeTaskDefinitionV1(new WorkbenchConversationContextProviderRegistry(), service).process(plainContext(call));
     expect(call).toHaveBeenCalledOnce();
@@ -244,7 +242,7 @@ describe('Intake validation feedback and completion', () => {
 
   it('uses the checkpointed repaired answer when resuming after the file is already valid', async () => {
     const service = createOutlineService();
-    vi.mocked(service.getBriefState).mockReturnValue(completeState());
+    vi.mocked(service.readBriefState).mockResolvedValue(completeState());
     const call = vi.fn(async (request: TaskAgentCallRequest) => createCallResult(request));
     const context = plainContext(call);
     const repair = { ...createCallResult({ callKey: 'repair-brief-1', purpose: 'learning-outline-intake-repair' } as TaskAgentCallRequest), assistantOutput: '恢复的最终答复。' };
@@ -255,7 +253,7 @@ describe('Intake validation feedback and completion', () => {
 
   it('honors cancellation during repair and does not report completion', async () => {
     const service = createOutlineService();
-    vi.mocked(service.getBriefState).mockReturnValue({ valid: false, error: 'invalid' });
+    vi.mocked(service.readBriefState).mockResolvedValue({ valid: false, error: 'invalid' });
     const controller = new AbortController();
     const call = vi.fn(async (request: TaskAgentCallRequest) => {
       if (request.callKey.startsWith('repair')) controller.abort();

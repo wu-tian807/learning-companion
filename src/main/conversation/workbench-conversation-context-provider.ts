@@ -1,3 +1,5 @@
+import type { PreparedAgentWorkspaces } from '../generation/contracts/generation-workspace';
+import type { PreparedGenerationAssetReferenceBindings } from '../generation/contracts/generation-asset-reference';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import type { AgentUserMessage } from '../generation/contracts/agent-message';
 import type {
@@ -21,8 +23,8 @@ export interface WorkbenchConversationMaterialsContext {
   readonly assetId?: string;
   readonly context?: JsonValue;
   readonly contextSource?: JsonValue;
-  readonly workspaces: GenerationTaskProcessContext<WorkbenchConversationInstruction>['workspaces'];
-  readonly assetReferences: GenerationTaskProcessContext<WorkbenchConversationInstruction>['assetReferences'];
+  readonly workspaces: PreparedAgentWorkspaces;
+  readonly assetReferences: PreparedGenerationAssetReferenceBindings;
   readonly signal?: AbortSignal;
   reportStatus(message: string): void;
 }
@@ -73,11 +75,14 @@ export interface WorkbenchConversationAnswer {
   readonly call: TaskAgentCallResult;
 }
 
-export interface WorkbenchConversationContextProvider {
-  readonly id: string;
-  prepareMaterials?(
+export interface WorkbenchMaterialsProvider {
+  prepareMaterials(
     context: WorkbenchConversationMaterialsContext,
   ): Promise<PreparedWorkbenchConversationMaterials>;
+}
+
+export interface WorkbenchConversationContextProvider extends Partial<WorkbenchMaterialsProvider> {
+  readonly id: string;
   prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
   ): Promise<PreparedWorkbenchConversationContext>;

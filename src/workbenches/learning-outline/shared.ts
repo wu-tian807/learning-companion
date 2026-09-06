@@ -9,7 +9,6 @@ import {
 } from '../../shared/workbench/manifest';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { ConversationRecord } from '../../shared/project-conversations';
-import type { WorkbenchCommand } from '../../shared/workbench/protocol';
 import { LEARNING_OUTLINE_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 
 export { LEARNING_OUTLINE_ASSET_MEDIA_TYPE };
@@ -25,9 +24,6 @@ export const LEARNING_OUTLINE_INTAKE_TASK_RESULT_VERSION = 1;
 export const LEARNING_OUTLINE_INTAKE_TASK_DEFINITION_ID =
   'learning-outline.intake';
 export const LEARNING_OUTLINE_INTAKE_TASK_DEFINITION_VERSION = 1;
-export const LEARNING_OUTLINE_GENERATION_TASK_DEFINITION_ID =
-  'learning-outline.generate';
-export const LEARNING_OUTLINE_GENERATION_TASK_DEFINITION_VERSION = 1;
 export const LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE = 'learning-outline.brief';
 export const LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION = 1;
 export const LEARNING_OUTLINE_DOCUMENT_FORMAT =
@@ -113,25 +109,10 @@ export interface LearningOutlineWorkbenchPayload {
   readonly brief: LearningOutlineBriefState;
 }
 
-export interface LearningOutlineSetUnitStatusPayload {
-  readonly unitId: string;
-  readonly status: LearningUnitStatus;
-}
-
-export const learningOutlineCommands = {
-  setUnitStatus: 'learning-outline:set-unit-status',
-} as const;
-
 export const learningOutlineActions = {
   createDraft: 'learning-outline.create-draft',
   getBriefState: 'learning-outline.get-brief-state',
 } as const;
-
-export interface LearningOutlineWorkflowState {
-  readonly validBriefRevision?: string;
-  readonly promptedBriefRevision?: string;
-  readonly readinessNote?: string;
-}
 
 export interface LearningOutlineBriefState {
   readonly valid: boolean;
@@ -155,11 +136,7 @@ export function isLearningOutlineBriefAttachmentMetadata(
   );
 }
 
-export interface LearningOutlineSnapshot {
-  readonly asset: AssetSnapshot;
-  readonly document: LearningOutlineDocument;
-  readonly brief: LearningOutlineBriefState;
-}
+
 
 export type LearningOutlineChangedEvent =
   | {
@@ -440,32 +417,6 @@ export function isLearningOutlineWorkbenchPayload(
   );
 }
 
-export function isLearningOutlineSetUnitStatusPayload(
-  value: unknown,
-): value is JsonValue & LearningOutlineSetUnitStatusPayload {
-  return (
-    isRecord(value) &&
-    isId(value.unitId) &&
-    (value.status === 'not-started' ||
-      value.status === 'learning' ||
-      value.status === 'completed' ||
-      value.status === 'skipped') &&
-    isJsonValue(value)
-  );
-}
-
-export function createLearningOutlineSetUnitStatusCommand(
-  payload: LearningOutlineSetUnitStatusPayload,
-): WorkbenchCommand {
-  if (!isLearningOutlineSetUnitStatusPayload(payload)) {
-    throw new Error('Learning Outline Unit 状态无效');
-  }
-  return {
-    type: learningOutlineCommands.setUnitStatus,
-    payload: { unitId: payload.unitId, status: payload.status },
-  };
-}
-
 export function cloneLearningBrief(value: LearningBrief): LearningBrief {
   if (!isLearningBrief(value)) throw new Error('Learning brief 数据无效');
   return cloneJsonValue(
@@ -522,17 +473,4 @@ export function createDraftLearningOutline(
     createdTime: now,
     updatedTime: now,
   });
-}
-
-export function isLearningOutlineWorkflowState(
-  value: unknown,
-): value is LearningOutlineWorkflowState {
-  return (
-    isRecord(value) &&
-    (value.validBriefRevision === undefined ||
-      isText(value.validBriefRevision, false)) &&
-    (value.promptedBriefRevision === undefined ||
-      isText(value.promptedBriefRevision, false)) &&
-    (value.readinessNote === undefined || isText(value.readinessNote))
-  );
 }

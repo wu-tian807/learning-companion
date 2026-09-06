@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
@@ -13,6 +13,7 @@ import type { ProjectLookup } from '../projects/project-database';
 import {
   PROJECT_WORKSPACE_METADATA_DIRECTORY,
   resolvePortableWorkspacePath,
+  isPathInside,
 } from '../projects/project-workspace-paths';
 
 const ATTACHMENT_DIRECTORY =
@@ -127,6 +128,7 @@ export class AttachmentContentFile {
 
   async removeContent(
     projectId: string,
+    attachmentId: string,
     ref: ProjectWorkspaceLocalFileContentRef,
   ): Promise<void> {
     const project = this.requireProject(projectId);
@@ -134,6 +136,24 @@ export class AttachmentContentFile {
       project.workspacePath,
       ref.path,
     );
+    const ownedDirectory = resolvePortableWorkspacePath(
+      project.workspacePath,
+      `${ATTACHMENT_DIRECTORY}/${requireSegment(attachmentId, 'id')}`,
+    );
+    // Replacing a reference transfers no ownership of linked originals.
+    if (!isPathInside(ownedDirectory, absolutePath)) return;
+    try {
+      const physicalWorkspace = await realpath(project.workspacePath);
+      const physicalOwnedDirectory = resolvePortableWorkspacePath(
+        physicalWorkspace,
+        `${ATTACHMENT_DIRECTORY}/${requireSegment(attachmentId, 'id')}`,
+      );
+      // A junction must not turn an owned-looking ref into another owner's file.
+      if (!isPathInside(physicalOwnedDirectory, await realpath(absolutePath))) return;
+    } catch (error) {
+      if (isMissingFile(error)) return;
+      throw error;
+    }
     await rm(absolutePath, { force: true });
   }
 

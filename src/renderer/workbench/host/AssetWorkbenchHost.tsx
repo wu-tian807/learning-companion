@@ -24,6 +24,8 @@ import {
   RendererWorkbenchRegistry,
   type RendererWorkbenchModule,
 } from '../renderer-workbench-registry';
+import type { AssetWorkbenchOpenStateChange } from '../workbench-open-coordinator';
+export type { AssetWorkbenchOpenStateChange } from '../workbench-open-coordinator';
 import { WorkbenchLifecycleCoordinator } from '../workbench-lifecycle';
 import { closeWorkbenchSession } from '../workbench-session-cleanup';
 import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
@@ -41,12 +43,6 @@ interface AssetWorkbenchHostProps {
   readonly onOpenStateChange?: (change: AssetWorkbenchOpenStateChange) => void;
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
-}
-
-export interface AssetWorkbenchOpenStateChange {
-  readonly assetId: string;
-  readonly status: 'opening' | 'ready' | 'failed';
-  readonly error?: unknown;
 }
 
 type SettledWorkbenchHostState =
@@ -198,12 +194,13 @@ export function AssetWorkbenchHost({
 
   useEffect(() => {
     let active = true;
+    const attempt = Symbol('workbench-open');
     let openedSessionId: string | undefined;
     let commandTail: Promise<void> = Promise.resolve();
     const lease = lifecycleRef.current.acquire();
 
     if (assetId && assetKey) {
-      onOpenStateChange?.({ assetId, status: 'opening' });
+      onOpenStateChange?.({ projectId, assetId, attempt, status: 'opening' });
     }
     onLifecycleTaskChange(lease.completed);
 
@@ -295,7 +292,7 @@ export function AssetWorkbenchHost({
           module,
           executeCommand,
         });
-        onOpenStateChange?.({ assetId, status: 'ready' });
+        onOpenStateChange?.({ projectId, assetId, attempt, status: 'ready' });
       } catch (openError: unknown) {
         await closeOpenedSession().catch(reportCloseError);
 
@@ -309,13 +306,16 @@ export function AssetWorkbenchHost({
         );
 
         if (!message) {
+          onOpenStateChange?.({ projectId, assetId, attempt, status: 'cancelled', error: openError });
           return;
         }
 
         console.error('打开资料工作台失败', openError);
         setSettledState({ kind: 'failed', assetKey, message });
         onOpenStateChange?.({
+          projectId,
           assetId,
+          attempt,
           status: 'failed',
           error: openError,
         });
@@ -325,6 +325,9 @@ export function AssetWorkbenchHost({
 
     return () => {
       active = false;
+      if (assetId && assetKey) {
+        onOpenStateChange?.({ projectId, assetId, attempt, status: 'cancelled' });
+      }
       if (openedSessionId) {
         runtime.publishInteraction(
           openedSessionId,

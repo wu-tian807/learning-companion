@@ -71,7 +71,7 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     if (rawSelection === undefined) {
       return Object.freeze({
         userMessage: createTextAgentUserMessage(
-          `用户在当前视频画面对话中继续追问：\n\n${context.question}\n\n以下内容依赖同一 Agent Session 中已有的完整画面、兴趣区域和前文，作为本轮参考背景。`,
+          `本轮没有提供视频画面选区。\n\n问题：${context.question}`,
         ),
         toolRequirements: Object.freeze([]),
       });
@@ -257,7 +257,9 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
             ? '正在结合完整画面解释兴趣区域…'
             : '正在理解选中的视频画面…',
       systemInstruction: VIDEO_CONVERSATION_SYSTEM_INSTRUCTION_V1,
-      userMessage: materials.userMessage,
+      userMessage: context.instruction.context === undefined
+        ? createTextAgentUserMessage(`用户在当前视频画面对话中继续追问：\n\n${context.instruction.question}\n\n请继承同一 Agent Session 中已有的完整画面、兴趣区域和前文。`)
+        : materials.userMessage,
       toolRequirements: materials.toolRequirements,
       ...(context.instruction.context === undefined
         ? {}

@@ -112,14 +112,7 @@ export class LearningOutlineBriefMonitor {
   ) {}
 
   async ensureWorkspace(projectId: string, assetId: string): Promise<string> {
-    const asset = this.assets.get(projectId, assetId);
-    if (
-      !asset ||
-      asset.projectId !== projectId ||
-      asset.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE
-    ) {
-      throw new Error('学习大纲 Asset 不存在或不属于当前项目。');
-    }
+    this.requireAsset(projectId, assetId);
     const directory = await this.agentWorkspaces.prepare([
       projectId,
       BRIEF_DIRECTORY_KEY,
@@ -130,32 +123,20 @@ export class LearningOutlineBriefMonitor {
       await access(filePath);
     } catch (error) {
       if (!isMissing(error)) throw error;
-      const existing = findBriefAttachment(
-        await this.attachments.listByAsset(projectId, assetId),
-      );
-      const restored = existing
-        ? await this.attachments.readTextContent(projectId, existing.id)
-        : undefined;
-      let restoredBrief: LearningBrief | undefined;
-      if (restored) {
-        try {
-          const parsed: unknown = JSON.parse(restored);
-          if (isLearningBrief(parsed)) restoredBrief = parsed;
-        } catch {
-          restoredBrief = undefined;
-        }
-      }
+      const restored = await this.readSavedSnapshot(projectId, assetId);
       await mkdir(dirname(filePath), { recursive: true });
       await writeFileAtomic(
         filePath,
-        `${JSON.stringify(restoredBrief ?? createEmptyLearningBrief(), null, 2)}\n`,
+        `${JSON.stringify(restored?.brief ?? createEmptyLearningBrief(), null, 2)}\n`,
       );
     }
     return directory;
   }
 
   async start(projectId: string, assetId: string): Promise<void> {
-    if (this.disposed || this.runtimes.has(assetId)) return;
+    this.requireAsset(projectId, assetId);
+    if (this.disposed) throw new Error('学习需求监视器已关闭。');
+    if (this.runtimes.has(assetId)) return;
     const previous = this.starts.get(assetId);
     if (previous) return previous;
     const task = this.startInternal(projectId, assetId);
@@ -167,7 +148,8 @@ export class LearningOutlineBriefMonitor {
     }
   }
 
-  getState(assetId: string): LearningOutlineBriefState {
+  getState(projectId: string, assetId: string): LearningOutlineBriefState {
+    this.requireAsset(projectId, assetId);
     return (
       this.runtimes.get(assetId.trim())?.state ??
       Object.freeze({ valid: false })
@@ -192,13 +174,10 @@ export class LearningOutlineBriefMonitor {
     this.runtimes.clear();
   }
 
-  async flush(assetId?: string): Promise<void> {
-    const runtimes = assetId
-      ? [this.runtimes.get(assetId.trim())].filter(
-          (runtime): runtime is BriefRuntime => runtime !== undefined,
-        )
-      : [...this.runtimes.values()];
-    await Promise.all(runtimes.map((runtime) => this.flushRuntime(runtime)));
+  async flush(projectId: string, assetId: string): Promise<void> {
+    this.requireAsset(projectId, assetId);
+    const runtime = this.runtimes.get(assetId);
+    if (runtime) await this.flushRuntime(runtime);
   }
 
   dispose(): void {
@@ -211,6 +190,41 @@ export class LearningOutlineBriefMonitor {
     this.listeners.clear();
   }
 
+  private requireAsset(projectId: string, assetId: string): void {
+    const asset = this.assets.get(projectId, assetId);
+    if (
+      !asset ||
+      asset.projectId !== projectId ||
+      asset.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE
+    ) {
+      throw new Error('学习大纲 Asset 不存在或不属于当前项目。');
+    }
+  }
+
+  private async readSavedSnapshot(
+    projectId: string,
+    assetId: string,
+  ): Promise<Pick<LearningOutlineBriefState, 'brief' | 'revision' | 'updatedTime'> | undefined> {
+    const existing = findBriefAttachment(
+      await this.attachments.listByAsset(projectId, assetId),
+    );
+    if (!existing) return undefined;
+    const raw = await this.attachments.readTextContent(projectId, existing.id);
+    if (!raw || Buffer.byteLength(raw, 'utf8') > MAX_BRIEF_BYTES) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isLearningBrief(parsed)) return undefined;
+      const brief = cloneLearningBrief(parsed);
+      const revision = briefRevision(brief);
+      const metadata = existing.metadata;
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) ||
+          (metadata as Record<string, unknown>).revision !== revision) return undefined;
+      return { brief, revision, updatedTime: existing.updatedTime };
+    } catch {
+      return undefined;
+    }
+  }
+
   private async startInternal(
     projectId: string,
     assetId: string,
@@ -218,6 +232,8 @@ export class LearningOutlineBriefMonitor {
     // libuv compares event paths with the watched directory. Windows 8.3
     // aliases can abort the process, so resolve the existing directory first.
     const directory = await realpath(await this.ensureWorkspace(projectId, assetId));
+    const saved = await this.readSavedSnapshot(projectId, assetId);
+    this.requireAsset(projectId, assetId);
     if (this.disposed) return;
     const runtime: BriefRuntime = {
       projectId,
@@ -225,7 +241,7 @@ export class LearningOutlineBriefMonitor {
       directory,
       filePath: join(directory, LEARNING_OUTLINE_BRIEF_FILE_NAME),
       scanSerial: Promise.resolve(),
-      state: Object.freeze({ valid: false }),
+      state: Object.freeze({ valid: false, ...saved }),
     };
     runtime.watcher = watch(directory, () => this.scheduleScan(runtime));
     this.runtimes.set(assetId, runtime);
@@ -348,7 +364,9 @@ export class LearningOutlineBriefMonitor {
       revision,
     } as const;
     if (existing) {
+      const saved = await this.readSavedSnapshot(runtime.projectId, runtime.assetId);
       if (
+        saved?.revision === revision &&
         existing.metadata &&
         typeof existing.metadata === 'object' &&
         !Array.isArray(existing.metadata) &&

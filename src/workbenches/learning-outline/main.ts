@@ -6,9 +6,7 @@ import type {
   WorkbenchCommandResult,
 } from '../../shared/workbench/protocol';
 import {
-  isLearningOutlineSetUnitStatusPayload,
   isLearningOutlineWorkbenchPayload,
-  learningOutlineCommands,
   learningOutlineWorkbenchManifest,
   type LearningOutlineWorkbenchPayload,
 } from './shared';
@@ -43,14 +41,10 @@ export class LearningOutlineWorkbenchProvider implements MainWorkbenchProvider {
     });
     this.eventSubscriptions.set(context.sessionId, unsubscribe);
     try {
-      await this.learningOutlineService.startBriefMonitor(
-        context.asset.projectId,
-        context.asset.id,
-      );
       const document = await this.learningOutlineService.readDocument(context.asset.id);
       const payload: LearningOutlineWorkbenchPayload = {
         document,
-        brief: this.learningOutlineService.getBriefState(context.asset.id),
+        brief: await this.learningOutlineService.readBriefState(context.asset.projectId, context.asset.id),
       };
       if (!isLearningOutlineWorkbenchPayload(payload)) {
         throw new AppError('DATA_INTEGRITY_ERROR');
@@ -63,31 +57,8 @@ export class LearningOutlineWorkbenchProvider implements MainWorkbenchProvider {
     }
   }
 
-  async command(
-    context: Parameters<MainWorkbenchProvider['command']>[0],
-    command: Parameters<MainWorkbenchProvider['command']>[1],
-  ): Promise<WorkbenchCommandResult> {
-    if (
-      command.type !== learningOutlineCommands.setUnitStatus ||
-      !isLearningOutlineSetUnitStatusPayload(command.payload)
-    ) {
-      throw new AppError(
-        command.type === learningOutlineCommands.setUnitStatus
-          ? 'INVALID_IPC_REQUEST'
-          : 'FEATURE_NOT_SUPPORTED',
-      );
-    }
-    const document = await this.learningOutlineService.updateUnitStatus(
-      context.asset.id,
-      command.payload.unitId,
-      command.payload.status,
-    );
-    return {
-      payload: {
-        document,
-        brief: this.learningOutlineService.getBriefState(context.asset.id),
-      } as unknown as JsonValue,
-    };
+  async command(): Promise<WorkbenchCommandResult> {
+    throw new AppError('FEATURE_NOT_SUPPORTED');
   }
 
   async close(

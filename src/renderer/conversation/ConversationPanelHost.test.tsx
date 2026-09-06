@@ -89,6 +89,20 @@ describe('ConversationPanelHost Project ownership', () => {
     });
   }
 
+  it('rejects unavailable explicit modes without starting a general conversation', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const save = vi.spyOn(historyStore, 'save');
+    const pending = runtime.openAndWait({ modeId: 'unavailable.mode', boundAssetId: 'outline-1' });
+    const rejected = expect(pending).rejects.toThrow('模式暂不可用');
+    await render(runtime);
+    await rejected;
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('模式暂不可用');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(startGenerationTask).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    runtime.dispose();
+  });
+
   it('sends a new message with no Workbench registered through Project Conversation', async () => {
     const runtime = new WorkbenchConversationRuntime();
     runtime.open();

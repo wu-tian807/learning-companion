@@ -38,15 +38,15 @@ export interface MainWorkbenchExternalLibraryContext {
 export interface MainWorkbenchProviderContext {
   readonly associationService: AssetAssociationServiceApi;
   readonly assetService: AssetServiceApi;
-  readonly assetLookup?: AssetLookup;
+  readonly assetLookup: AssetLookup;
   readonly artifactRegistry: AssetArtifactRegistryApi;
   readonly artifactService: AssetArtifactServiceApi;
   readonly contentResourceService: ContentResourceServiceApi;
   readonly externalLibraryService: ExternalLibraryServiceApi;
   readonly generationTasks: GenerationTaskServiceApi;
-  readonly attachmentService?: AttachmentServiceApi;
-  readonly projectConversationService?: ProjectConversationServiceApi;
-  readonly agentWorkspaces?: AgentWorkspacePreparationApi;
+  readonly attachmentService: AttachmentServiceApi;
+  readonly projectConversationService: ProjectConversationServiceApi;
+  readonly agentWorkspaces: AgentWorkspacePreparationApi;
   readonly projectLookup: ProjectLookup;
   readonly stateDatabase: WorkbenchStateDatabaseApi;
   readonly stateDataDatabase: WorkbenchStateDataDatabaseApi;

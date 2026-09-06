@@ -1,3 +1,4 @@
+import { materialsContextFromConversation } from '../../../../main/conversation/workbench-conversation-context-provider';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchConversationInstruction } from '../../../../main/conversation/workbench-conversation-instruction';
@@ -32,6 +33,17 @@ function context(commitAnswer = true) {
 }
 
 describe('EPUB conversation context provider', () => {
+  it('does not claim another task has an EPUB conversation history', async () => {
+    const provider = new EpubConversationContextProvider({} as never);
+    const materials = await provider.prepareMaterials({
+      ...materialsContextFromConversation(context(false)), context: undefined,
+    });
+    const text = JSON.stringify(materials.userMessage);
+    expect(text).toContain('本轮没有提供 EPUB 选区');
+    expect(text).not.toContain('Agent Session');
+    expect(text).not.toContain('继续追问');
+  });
+
   it('turns the exact CFI quote and nearby text into Agent input', async () => {
     const provider = new EpubConversationContextProvider({} as never);
     const prepared = await provider.prepare(context(false));

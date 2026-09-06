@@ -114,11 +114,6 @@ export class HtmlConversationContextProvider
     const userMessageParts = [`问题：${context.question}`];
     if (target !== undefined) {
       userMessageParts.push(`用户选中或聚焦的内容：${describeTarget(target)}`);
-      if (target.scope === 'content' && target.targetType === 'html.dom') {
-        userMessageParts.push(
-          `可用于 html_begin_edit 的受信任 DOM Target：${JSON.stringify(target)}`,
-        );
-      }
     }
     return Object.freeze({
       userMessage: createTextAgentUserMessage(userMessageParts.join('\n\n')),
@@ -145,6 +140,7 @@ export class HtmlConversationContextProvider
     const editingEnabled = editing?.canEdit
       ? await editing.canEdit(context.projectId, source.assetId)
       : false;
+    const target = parseHtmlConversationContext(context.instruction.context);
     const systemInstruction = [
       HTML_CONVERSATION_SYSTEM_INSTRUCTION_V2,
       `当前 HTML 草稿在工作区中的相对路径：${JSON.stringify(source.relativePath)}。需要查看页面内容时读取该路径，不要猜测其他位置。`,
@@ -158,7 +154,10 @@ export class HtmlConversationContextProvider
       purpose: 'html-reading-conversation',
       statusMessage: '正在结合网页资料回答…',
       systemInstruction,
-      userMessage: materials.userMessage,
+      userMessage: editingEnabled && target?.scope === 'content' && target.targetType === 'html.dom'
+        ? { role: 'user' as const, content: [...materials.userMessage.content,
+            { type: 'text' as const, text: `可用于 html_begin_edit 的受信任 DOM Target：${JSON.stringify(target)}` }] }
+        : materials.userMessage,
       toolRequirements: Object.freeze(
         editingEnabled
           ? [

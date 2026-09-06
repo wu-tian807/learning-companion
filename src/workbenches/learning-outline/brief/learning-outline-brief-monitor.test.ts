@@ -11,10 +11,9 @@ import {
   LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
   LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
 } from '../shared';
-import { createProjectWorkspaceContentRef } from '../../../shared/assets';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
 import { AttachmentRegistry } from '../../../main/attachments/attachment-registry';
-import type { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
+import { AttachmentContentFile } from '../../../main/attachments/attachment-content-file';
 import type { AttachmentDatabaseApi } from '../../../main/attachments/attachment-database';
 import { AttachmentService } from '../../../main/attachments/attachment-service';
 import { AssetTargetRegistry } from '../../../main/workbench/asset-target-registry';
@@ -73,12 +72,12 @@ describe('LearningOutlineBriefMonitor', () => {
     );
     monitors.push(monitor);
     await monitor.start(asset.projectId, asset.id);
-    await monitor.flush(asset.id);
+    await monitor.flush(asset.projectId, asset.id);
     await writeFile(join(directory, 'learning-brief.json'), JSON.stringify({
       ...completeBrief(),
     }));
     // No flush here: this assertion must be driven by the actual native watcher.
-    await vi.waitFor(() => expect(monitor.getState(asset.id)).toMatchObject({
+    await vi.waitFor(() => expect(monitor.getState(asset.projectId, asset.id)).toMatchObject({
       valid: true, ready: true,
     }));
   });
@@ -127,10 +126,10 @@ describe('LearningOutlineBriefMonitor', () => {
       join(directory, 'learning-brief.json'),
       `${JSON.stringify(createEmptyLearningBrief())}\n`,
     );
-    await vi.waitFor(() => expect(monitor.getState('outline-1').valid).toBe(true));
+    await vi.waitFor(() => expect(monitor.getState('project-1', 'outline-1').valid).toBe(true));
 
     expect(createWithContent).toHaveBeenCalledOnce();
-    expect(monitor.getState('outline-1')).toMatchObject({
+    expect(monitor.getState('project-1', 'outline-1')).toMatchObject({
       valid: true,
       ready: false,
     });
@@ -140,7 +139,7 @@ describe('LearningOutlineBriefMonitor', () => {
 
     await monitor.shutdown();
     monitor.dispose();
-    expect(monitor.getState('outline-1')).toEqual({ valid: false });
+    expect(monitor.getState('project-1', 'outline-1')).toEqual({ valid: false });
   });
 
   it('persists snapshots through the registered real Attachment type', async () => {
@@ -169,16 +168,9 @@ describe('LearningOutlineBriefMonitor', () => {
     };
     const attachmentRegistry = new AttachmentRegistry();
     registerMainWorkbenchAttachments({ attachments: attachmentRegistry });
-    const contentFiles = {
-      write: vi.fn(async ({ attachmentId, fileName, mediaType }) => ({
-        ref: createProjectWorkspaceContentRef(
-          `.learning-companion/attachments/${attachmentId}/${fileName}`,
-        ),
-        mediaType,
-      })),
-      removeContent: vi.fn(async () => undefined),
-      removeAttachment: vi.fn(async () => undefined),
-    } as unknown as AttachmentContentFile;
+    const contentFiles = new AttachmentContentFile({
+      get: (id) => ({ id, workspacePath: directory, name: 'Test', icon: '📘', pinned: false, createdTime: 1 }),
+    });
     const asset = {
       id: 'outline-1',
       projectId: 'project-1',
@@ -211,7 +203,7 @@ describe('LearningOutlineBriefMonitor', () => {
 
     monitors.push(monitor);
     await monitor.start('project-1', 'outline-1');
-    await vi.waitFor(() => expect(monitor.getState('outline-1').valid).toBe(true));
+    await vi.waitFor(() => expect(monitor.getState('project-1', 'outline-1').valid).toBe(true));
 
     const first = [...stored.values()][0];
     expect(first).toMatchObject({
@@ -229,10 +221,10 @@ describe('LearningOutlineBriefMonitor', () => {
       join(directory, 'learning-brief.json'),
       `${JSON.stringify(readyBrief)}\n`,
     );
-    await vi.waitFor(() => expect(monitor.getState('outline-1').ready).toBe(true));
+    await vi.waitFor(() => expect(monitor.getState('project-1', 'outline-1').ready).toBe(true));
 
     expect(stored.size).toBe(1);
-    expect(monitor.getState('outline-1')).toMatchObject({
+    expect(monitor.getState('project-1', 'outline-1')).toMatchObject({
       valid: true,
       ready: true,
     });
@@ -299,12 +291,12 @@ describe('LearningOutlineBriefMonitor', () => {
 
     monitors.push(monitor);
     await monitor.start('project-1', 'outline-1');
-    await monitor.flush('outline-1');
-    const validState = monitor.getState('outline-1');
+    await monitor.flush('project-1', 'outline-1');
+    const validState = monitor.getState('project-1', 'outline-1');
     await writeFile(join(directory, 'learning-brief.json'), '{ invalid');
-    await monitor.flush('outline-1');
+    await monitor.flush('project-1', 'outline-1');
 
-    expect(monitor.getState('outline-1')).toMatchObject({
+    expect(monitor.getState('project-1', 'outline-1')).toMatchObject({
       valid: false,
       revision: validState.revision,
       brief: validState.brief,
@@ -330,25 +322,25 @@ describe('LearningOutlineBriefMonitor', () => {
     await monitor.start(asset.projectId, asset.id);
     const file = join(directory, 'learning-brief.json');
     await writeFile(file, JSON.stringify({ ...completeBrief(), difficulties: '' }));
-    await monitor.flush(asset.id);
-    expect(monitor.getState(asset.id)).toMatchObject({ valid: true, ready: false });
+    await monitor.flush(asset.projectId, asset.id);
+    expect(monitor.getState(asset.projectId, asset.id)).toMatchObject({ valid: true, ready: false });
     const completed = { ...completeBrief(), detailed: '我还希望有例子。' };
     await writeFile(file, JSON.stringify(completed));
-    await monitor.flush(asset.id);
-    const revision = monitor.getState(asset.id).revision;
+    await monitor.flush(asset.projectId, asset.id);
+    const revision = monitor.getState(asset.projectId, asset.id).revision;
     await writeFile(file, JSON.stringify({ ...completed, roadmap: [{ chapter: '第 1 周', outcomes: '读懂基础' }] }));
-    await monitor.flush(asset.id);
-    expect(monitor.getState(asset.id)).toMatchObject({ valid: false, revision,
+    await monitor.flush(asset.projectId, asset.id);
+    expect(monitor.getState(asset.projectId, asset.id)).toMatchObject({ valid: false, revision,
       brief: { detailed: '我还希望有例子。' } });
-    expect(monitor.getState(asset.id).error).toContain('roadmap[0].id');
-    expect(monitor.getState(asset.id).error).toContain('roadmap[0].title');
-    expect(monitor.getState(asset.id).ready).toBeUndefined();
+    expect(monitor.getState(asset.projectId, asset.id).error).toContain('roadmap[0].id');
+    expect(monitor.getState(asset.projectId, asset.id).error).toContain('roadmap[0].title');
+    expect(monitor.getState(asset.projectId, asset.id).ready).toBeUndefined();
     await writeFile(file, JSON.stringify(completed));
     await monitor.shutdown();
     const restarted = makeMonitor();
     await restarted.start(asset.projectId, asset.id);
-    await restarted.flush(asset.id);
-    expect(restarted.getState(asset.id)).toMatchObject({ valid: true, ready: true,
+    await restarted.flush(asset.projectId, asset.id);
+    expect(restarted.getState(asset.projectId, asset.id)).toMatchObject({ valid: true, ready: true,
       brief: { detailed: '我还希望有例子。' } });
   });
 });

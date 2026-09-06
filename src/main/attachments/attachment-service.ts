@@ -92,7 +92,11 @@ export class AttachmentService implements AttachmentServiceApi {
   private readonly mutationTails = new Map<string, Promise<void>>();
   private readonly pendingContentCleanups = new Map<
     string,
-    { readonly projectId: string; readonly ref: AssetAttachmentContent['ref'] }
+    {
+      readonly projectId: string;
+      readonly attachmentId: string;
+      readonly ref: AssetAttachmentContent['ref'];
+    }
   >();
   private readonly dependencies: AttachmentServiceDependencies;
 
@@ -258,6 +262,7 @@ export class AttachmentService implements AttachmentServiceApi {
         ) {
           await this.removeContentAfterCommit(
             current.projectId,
+            current.id,
             current.content.ref,
           );
         }
@@ -266,7 +271,7 @@ export class AttachmentService implements AttachmentServiceApi {
         // Once the row is committed, the new ref is authoritative. In
         // particular, cleanup failure must not remove it or report a rollback.
         if (!committed) {
-          await this.removeContentBestEffort(input.projectId, content.ref);
+          await this.removeContentBestEffort(input.projectId, current.id, content.ref);
         }
         throw error;
       }
@@ -382,24 +387,26 @@ export class AttachmentService implements AttachmentServiceApi {
 
   private async removeContentAfterCommit(
     projectId: string,
+    attachmentId: string,
     ref: AssetAttachmentContent['ref'],
   ): Promise<void> {
-    const key = this.contentCleanupKey(projectId, ref);
+    const key = this.contentCleanupKey(projectId, attachmentId, ref);
     try {
-      await this.contentFiles.removeContent(projectId, ref);
+      await this.contentFiles.removeContent(projectId, attachmentId, ref);
       this.pendingContentCleanups.delete(key);
     } catch (error) {
-      this.pendingContentCleanups.set(key, { projectId, ref });
+      this.pendingContentCleanups.set(key, { projectId, attachmentId, ref });
       console.error('Attachment 旧内容文件清理已延期', error);
     }
   }
 
   private async removeContentBestEffort(
     projectId: string,
+    attachmentId: string,
     ref: AssetAttachmentContent['ref'],
   ): Promise<void> {
     try {
-      await this.contentFiles.removeContent(projectId, ref);
+      await this.contentFiles.removeContent(projectId, attachmentId, ref);
     } catch (cleanupError: unknown) {
       console.error('回滚 Attachment 新内容文件失败', cleanupError);
     }
@@ -408,7 +415,7 @@ export class AttachmentService implements AttachmentServiceApi {
   private async retryPendingContentCleanups(): Promise<void> {
     for (const [key, pending] of [...this.pendingContentCleanups]) {
       try {
-        await this.contentFiles.removeContent(pending.projectId, pending.ref);
+        await this.contentFiles.removeContent(pending.projectId, pending.attachmentId, pending.ref);
         this.pendingContentCleanups.delete(key);
       } catch (error) {
         console.error('Attachment 延期内容文件清理失败', error);
@@ -418,8 +425,9 @@ export class AttachmentService implements AttachmentServiceApi {
 
   private contentCleanupKey(
     projectId: string,
+    attachmentId: string,
     ref: AssetAttachmentContent['ref'],
   ): string {
-    return `${projectId}\u0000${ref.path}`;
+    return `${projectId}\u0000${attachmentId}\u0000${ref.path}`;
   }
 }

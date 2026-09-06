@@ -82,6 +82,7 @@ function createRegisteredMainWorkbenchRegistry(): WorkbenchRegistry {
   );
   registerMainWorkbenchProviders(providers, {
     associationService: {} as never,
+    assetLookup: { get: () => undefined },
     assetService: {
       subscribe: vi.fn(() => () => undefined),
     } as never,

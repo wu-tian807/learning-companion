@@ -9,6 +9,7 @@ import {
   type AssetSnapshot,
 } from '../../../shared/assets';
 import { unsupportedWorkbenchManifest } from '../../../workbenches/unsupported/shared';
+import { WorkbenchOpenCoordinator } from '../workbench-open-coordinator';
 import { WorkbenchRuntimeProvider } from '../runtime/WorkbenchRuntimeProvider';
 import {
   AssetWorkbenchHost,
@@ -78,6 +79,30 @@ describe('AssetWorkbenchHost opening lifecycle', () => {
       ),
     );
   }
+
+  it('cancels the waiting opener on unmount and closes a late session without reporting ready', async () => {
+    let finish!: (value: unknown) => void;
+    const openWorkbench = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const coordinator = new WorkbenchOpenCoordinator('project-1');
+    const waiting = coordinator.waitFor(asset.id);
+    const rejected = expect(waiting).rejects.toThrow('取消');
+    const states: string[] = [];
+    renderHost(openWorkbench, (change) => { states.push(change.status); coordinator.report(change); });
+    await act(async () => { await Promise.resolve(); });
+    act(() => root.render(null));
+    await rejected;
+    await act(async () => {
+      finish({
+        sessionId: 'late-session', workbenchId: unsupportedWorkbenchManifest.id,
+        workbenchVersion: unsupportedWorkbenchManifest.version,
+        protocolVersion: unsupportedWorkbenchManifest.protocolVersion,
+        assetId: asset.id, mediaType: asset.mediaType, availability: 'available', payload: {},
+      });
+      await Promise.resolve();
+    });
+    expect(states).toEqual(['opening', 'cancelled']);
+    expect(window.learningCompanion.closeWorkbench).toHaveBeenCalledWith({ sessionId: 'late-session' });
+  });
 
   it('reports ready only after the Workbench bootstrap is validated', async () => {
     const openWorkbench = vi.fn(async () => ({

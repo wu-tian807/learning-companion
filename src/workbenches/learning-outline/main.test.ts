@@ -15,9 +15,8 @@ describe('LearningOutlineWorkbenchProvider', () => {
     const document = createDraftLearningOutline('学习目标', 100);
     const service = {
       subscribe: vi.fn(() => () => undefined),
-      startBriefMonitor: vi.fn(async () => undefined),
       readDocument: vi.fn(async () => document),
-      getBriefState: vi.fn(() => ({ valid: false })),
+      readBriefState: vi.fn(async () => ({ valid: false })),
     } as unknown as LearningOutlineServiceApi;
     const provider = new LearningOutlineWorkbenchProvider(service);
 
@@ -35,7 +34,7 @@ describe('LearningOutlineWorkbenchProvider', () => {
       selectionReason: 'matched',
     } as never);
 
-    expect(service.startBriefMonitor).toHaveBeenCalledWith(
+    expect(service.readBriefState).toHaveBeenCalledWith(
       'project-1',
       'outline-1',
     );
@@ -52,9 +51,8 @@ describe('LearningOutlineWorkbenchProvider', () => {
           listener = undefined;
         };
       }),
-      startBriefMonitor: vi.fn(async () => undefined),
       readDocument: vi.fn(async () => document),
-      getBriefState: vi.fn(() => ({ valid: false })),
+      readBriefState: vi.fn(async () => ({ valid: false })),
     } as unknown as LearningOutlineServiceApi;
     const publish = vi.fn();
     const provider = new LearningOutlineWorkbenchProvider(service, {
@@ -224,6 +222,7 @@ describe('Learning Outline contribution lifecycle', () => {
     const provider = learningOutlineMainWorkbenchContribution.createProvider?.({
       associationService: {} as never,
       assetService: {} as never,
+      assetLookup: { get: () => undefined },
       artifactRegistry: {} as never,
       artifactService: {} as never,
       contentResourceService: {} as never,

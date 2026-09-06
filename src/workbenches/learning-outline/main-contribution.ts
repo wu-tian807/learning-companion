@@ -86,13 +86,6 @@ export const learningOutlineMainWorkbenchContribution =
   composeMainWorkbenchContribution(
     learningOutlineWorkbenchManifest,
     (context) => {
-      if (
-        !context.attachmentService ||
-        !context.projectConversationService ||
-        !context.agentWorkspaces
-      ) {
-        throw new Error('Learning Outline Workbench 缺少通用运行时依赖');
-      }
       const service = new LearningOutlineService(
         context.assetService,
         context.assetLookup,
@@ -136,9 +129,7 @@ export const learningOutlineMainWorkbenchContribution =
             learningOutlineActions.getBriefState,
             async (projectId, payload) => {
               const assetId = parseBoundAssetId(payload);
-              await service.startBriefMonitor(projectId, assetId);
-              await service.flushBrief(assetId);
-              return service.getBriefState(assetId) as unknown as JsonValue;
+              return await service.readBriefState(projectId, assetId) as unknown as JsonValue;
             },
           );
         },

@@ -13,7 +13,6 @@ import { useWorkbenchConversationRuntime } from '../../renderer/conversation/wor
 import { LearningBriefCompletion } from './conversation/brief-completion';
 import { LearningBriefDetails } from './brief-details';
 import {
-  createLearningOutlineSetUnitStatusCommand,
   isLearningOutlineWorkbenchPayload,
   learningOutlineWorkbenchManifest,
   type LearningOutlineWorkbenchPayload,
@@ -32,7 +31,6 @@ function statusLabel(status: LearningUnitStatus): string {
 function OutlineView({
   asset,
   bootstrap,
-  executeCommand,
   subscribeEvent,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -204,50 +202,7 @@ function OutlineView({
                           {statusLabel(status)}
                         </span>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {(
-                          [
-                            'not-started',
-                            'learning',
-                            'completed',
-                            'skipped',
-                          ] as const
-                        ).map((nextStatus) => (
-                          <button
-                            key={nextStatus}
-                            type="button"
-                            className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-300 hover:bg-white/[0.06]"
-                            onClick={() => {
-                              void executeCommand(
-                                createLearningOutlineSetUnitStatusCommand({
-                                  unitId: unit.id,
-                                  status: nextStatus,
-                                }),
-                              )
-                                .then((result) => {
-                                  if (
-                                    !isLearningOutlineWorkbenchPayload(
-                                      result.payload,
-                                    )
-                                  ) {
-                                    throw new Error('学习大纲状态响应无效');
-                                  }
-                                  setPayload(result.payload);
-                                })
-                                .catch((error: unknown) => {
-                                  onError(
-                                    userMessageFromError(
-                                      error,
-                                      '无法更新学习进度。',
-                                    ) ?? '无法更新学习进度。',
-                                  );
-                                });
-                            }}
-                          >
-                            {statusLabel(nextStatus)}
-                          </button>
-                        ))}
-                      </div>
+
                     </div>
                   );
                 })}

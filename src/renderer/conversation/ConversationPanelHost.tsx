@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 
 import { ConversationPanel } from './ConversationPanel';
 import { ConversationSession } from './ConversationSession';
@@ -51,6 +51,18 @@ export function ConversationPanelHost({
   const currentAssetSource =
     snapshot.active?.assetId === selectedAssetId ? snapshot.active : undefined;
   const activeMode = modeRegistry.resolve(snapshot.modeId, mode);
+  useEffect(() => {
+    if (!activeMode && snapshot.launchRequest) {
+      runtime.settleLaunchRequest(snapshot.launchRequest.id, new Error('此对话模式暂不可用。'));
+    }
+  }, [activeMode, runtime, snapshot.launchRequest]);
+
+  if (!activeMode) {
+    return <div role="alert" className="p-4 text-sm text-slate-400">
+      <p>此对话模式暂不可用，请重新打开对应资料。</p>
+      <button type="button" onClick={() => { runtime.close(); onClose?.(); }}>关闭</button>
+    </div>;
+  }
 
   return (
     <ConversationSession

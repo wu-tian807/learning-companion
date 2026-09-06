@@ -3,13 +3,16 @@ import type { ComponentType } from 'react';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetLoadState } from '../project/project-asset-view';
 
-export interface RendererGenerationToolResult {
-  readonly assetId?: string;
-  readonly asset?: AssetSnapshot;
-  readonly conversationId?: string;
-  readonly modeId?: string;
-  readonly boundAssetId?: string;
+export interface GeneratedConversationBinding {
+  readonly conversationId: string;
+  readonly modeId: string;
+  readonly boundAssetId: string;
 }
+
+export type RendererGenerationToolResult = (
+  | { readonly asset: AssetSnapshot; readonly assetId?: never }
+  | { readonly assetId: string; readonly asset?: never }
+) & { readonly conversation?: GeneratedConversationBinding };
 
 export interface RendererGenerationToolSetupProps {
   readonly projectId: string;

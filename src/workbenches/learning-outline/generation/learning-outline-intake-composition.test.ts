@@ -33,9 +33,11 @@ it('validates actual Agent file writes, feeds back field errors and persists a r
     const service = {
       runBriefTask: async <T>(_assetId: string, operation: () => Promise<T>) => operation(),
       requireBoundConversation: () => ({ id: 'conversation-1', modeId: LEARNING_OUTLINE_INTAKE_MODE_ID }),
-      startBriefMonitor: (projectId: string, assetId: string) => monitor.start(projectId, assetId),
-      flushBrief: (assetId: string) => monitor.flush(assetId),
-      getBriefState: (assetId: string) => monitor.getState(assetId),
+      readBriefState: async (projectId: string, assetId: string) => {
+        await monitor.start(projectId, assetId);
+        await monitor.flush(projectId, assetId);
+        return monitor.getState(projectId, assetId);
+      },
     } as unknown as LearningOutlineServiceApi;
     const result = await createLearningOutlineIntakeTaskDefinitionV1(new WorkbenchConversationContextProviderRegistry(), service).process({
       taskId: 'task-1', projectId: asset.projectId,
@@ -68,7 +70,7 @@ it('validates actual Agent file writes, feeds back field errors and persists a r
     expect(JSON.stringify(requests[1]!.userMessage)).toContain('roadmap[0].title');
     expect(snapshots).toHaveLength(2); // Initial template and the repaired file; never the rejected shape.
     expect(snapshots[1]).toMatchObject({ detailed: '保留这条额外补充。', roadmap: [{ id: 'unit-1', title: '基础与方法', goal: '理解方法' }] });
-    expect(monitor.getState(asset.id)).toMatchObject({ valid: true, ready: true });
+    expect(monitor.getState(asset.projectId, asset.id)).toMatchObject({ valid: true, ready: true });
     expect(result.answer).toContain(LEARNING_BRIEF_COMPLETION_NOTICE);
   } finally {
     await monitor.shutdown(); monitor.dispose(); await rm(directory, { recursive: true, force: true });

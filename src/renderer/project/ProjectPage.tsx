@@ -14,8 +14,8 @@ import type { RendererGenerationToolResult } from '../generation/renderer-genera
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import {
   AssetWorkbenchHost,
-  type AssetWorkbenchOpenStateChange,
 } from '../workbench/host/AssetWorkbenchHost';
+import { WorkbenchOpenCoordinator } from '../workbench/workbench-open-coordinator';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -36,11 +36,6 @@ interface ProjectPageProps {
   readonly project: ProjectSnapshot;
   readonly onBack: () => void;
   readonly onOpenSettings: () => void;
-}
-
-interface WorkbenchOpenWaiter {
-  readonly resolve: () => void;
-  readonly reject: (error: unknown) => void;
 }
 
 function BackIcon() {
@@ -85,12 +80,11 @@ export function ProjectPage({
     layout;
   const session = useProjectSession(project.id, setError);
   const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
-  const workbenchOpenStateRef = useRef(
-    new Map<string, AssetWorkbenchOpenStateChange>(),
-  );
-  const workbenchOpenWaitersRef = useRef(
-    new Map<string, Set<WorkbenchOpenWaiter>>(),
-  );
+  const workbenchOpening = useMemo(() => new WorkbenchOpenCoordinator(project.id), [project.id]);
+  useEffect(() => () => workbenchOpening.dispose(), [workbenchOpening]);
+  useEffect(() => {
+    workbenchOpening.cancelExcept(session.selectedAssetId ?? undefined);
+  }, [session.selectedAssetId, workbenchOpening]);
   const assetOperations = useProjectAssets({
     projectId: project.id,
     loadState: session.loadState,
@@ -146,43 +140,6 @@ export function ProjectPage({
     },
     [startMindMap],
   );
-  const handleWorkbenchOpenState = useCallback(
-    (change: AssetWorkbenchOpenStateChange) => {
-      workbenchOpenStateRef.current.set(change.assetId, change);
-      if (change.status === 'opening') return;
-      const waiters = workbenchOpenWaitersRef.current.get(change.assetId);
-      if (!waiters) return;
-      workbenchOpenWaitersRef.current.delete(change.assetId);
-      for (const waiter of waiters) {
-        if (change.status === 'ready') {
-          waiter.resolve();
-        } else {
-          waiter.reject(
-            change.error instanceof Error
-              ? change.error
-              : new Error('无法打开资料工作台，请重试。'),
-          );
-        }
-      }
-    },
-    [],
-  );
-  const waitForWorkbenchOpen = useCallback((assetId: string) => {
-    const current = workbenchOpenStateRef.current.get(assetId);
-    if (current?.status === 'ready') return Promise.resolve();
-    if (current?.status === 'failed') {
-      return Promise.reject(
-        current.error instanceof Error
-          ? current.error
-          : new Error('无法打开资料工作台，请重试。'),
-      );
-    }
-    return new Promise<void>((resolve, reject) => {
-      const waiters = workbenchOpenWaitersRef.current.get(assetId) ?? new Set();
-      waiters.add({ resolve, reject });
-      workbenchOpenWaitersRef.current.set(assetId, waiters);
-    });
-  }, []);
   const handleGenerationToolResult = useCallback(
     async (result: RendererGenerationToolResult) => {
       const assetId = result.asset?.id ?? result.assetId;
@@ -191,12 +148,10 @@ export function ProjectPage({
         if (result.asset.projectId !== project.id) {
           throw new Error('生成结果不属于当前 Project。');
         }
-        const previousOpenState = workbenchOpenStateRef.current.get(assetId);
-        if (previousOpenState?.status === 'failed') {
-          workbenchOpenStateRef.current.delete(assetId);
+        if (workbenchOpening.needsRetry(assetId)) {
           setWorkbenchOpenAttempt((current) => current + 1);
         }
-        const workbenchOpened = waitForWorkbenchOpen(assetId);
+        const workbenchOpened = workbenchOpening.waitFor(assetId);
         assetOperations.upsertAsset(result.asset);
         session.selectAsset(assetId);
         await workbenchOpened;
@@ -204,12 +159,8 @@ export function ProjectPage({
         await assetOperations.refreshAllAssets();
         session.selectAsset(assetId);
       }
-      if (result.modeId && result.boundAssetId && result.conversationId) {
-        await conversationRuntime.openAndWait({
-          modeId: result.modeId,
-          boundAssetId: result.boundAssetId,
-          conversationId: result.conversationId,
-        });
+      if (result.conversation) {
+        await conversationRuntime.openAndWait(result.conversation);
       }
     },
     [
@@ -217,7 +168,7 @@ export function ProjectPage({
       conversationRuntime,
       project.id,
       session,
-      waitForWorkbenchOpen,
+      workbenchOpening,
     ],
   );
   const allImportedAssetState = useMemo(
@@ -525,7 +476,7 @@ export function ProjectPage({
                   onSelectAsset={session.selectAsset}
                   onOpenSettings={onOpenSettings}
                   openAttempt={workbenchOpenAttempt}
-                  onOpenStateChange={handleWorkbenchOpenState}
+                  onOpenStateChange={workbenchOpening.report}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
                 />

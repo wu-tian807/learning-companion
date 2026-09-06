@@ -199,10 +199,7 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
       const instruction = context.instruction;
       return outlines.runBriefTask(instruction.boundAssetId, async () => {
         context.signal?.throwIfAborted();
-        const requireBoundConversation = outlines.requireBoundConversation;
-        if (!requireBoundConversation) throw new AppError('SERVICE_NOT_READY');
-        const conversation = requireBoundConversation.call(
-          outlines,
+        const conversation = outlines.requireBoundConversation(
           context.projectId,
           instruction.conversationId,
           instruction.boundAssetId,
@@ -210,19 +207,13 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
         if (conversation.modeId !== LEARNING_OUTLINE_INTAKE_MODE_ID) {
           throw new AppError('DATA_INTEGRITY_ERROR');
         }
-        await outlines.startBriefMonitor(
-          context.projectId,
-          instruction.boundAssetId,
-        );
-
         try {
           context.signal?.throwIfAborted();
           const secondary = context.workspaces.secondary.find(
             (workspace) => workspace.key === 'learning-outline-brief',
           );
           if (!secondary) throw new AppError('INVALID_EXTENSION_DEFINITION');
-          await outlines.flushBrief(instruction.boundAssetId);
-          const initialState = outlines.getBriefState(instruction.boundAssetId);
+          const initialState = await outlines.readBriefState(context.projectId, instruction.boundAssetId);
           const systemInstruction = `${INTAKE_SYSTEM_INSTRUCTION}\n\n学习需求文件路径：${join(secondary.path, 'learning-brief.json')}\n该路径属于次工作区，允许写入；主工作区只读。\n当前文件检查结果：${initialState.valid && initialState.brief ? `尚需确认：${getLearningBriefMissingFields(initialState.brief).join('、') || '无；可继续补充 detailed'}` : initialState.error ?? '请读取并检查文件。'}`;
           let userMessage = context.preparedUserMessage;
           let toolRequirements: TaskAgentCallRequest['toolRequirements'] = [];
@@ -236,12 +227,7 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
                 ? record.contextProviderId
                 : undefined;
             if (!providerId) throw new AppError('DATA_INTEGRITY_ERROR');
-            const provider = providers.require(providerId);
-            if (!provider.prepareMaterials) {
-              throw new AppError('FEATURE_NOT_SUPPORTED', {
-                cause: new Error(`Workbench ${providerId} 未提供独立材料能力`),
-              });
-            }
+            const provider = providers.requireMaterials(providerId);
             const materials = await provider.prepareMaterials({
               taskId: context.taskId,
               projectId: context.projectId,
@@ -283,8 +269,7 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
             assistantEvents: 'runtime',
           });
           const firstAnswer = parseAssistantOutput(call.assistantOutput);
-          await outlines.flushBrief(instruction.boundAssetId);
-          let state = outlines.getBriefState(instruction.boundAssetId);
+          let state = await outlines.readBriefState(context.projectId, instruction.boundAssetId);
           for (let attempt = 1; attempt <= 2; attempt += 1) {
             context.signal?.throwIfAborted();
             const callKey = `repair-brief-${attempt}`;
@@ -300,8 +285,7 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
                 `这是本轮文件检查反馈，不是新的用户需求：${correction}\n请读取并修复同一 brief；保留用户原意，只纠正结构或询问缺失信息。roadmap 的 chapter/outcomes 可对应 title/goal，并补唯一 id；其他有意义的信息放入可选 detailed，不能删除。修复后给出本轮面向用户的最终回复，不要要求用户编辑 JSON。`),
               toolRequirements, skills, mcpServers, assistantEvents: 'none',
             });
-            await outlines.flushBrief(instruction.boundAssetId);
-            state = outlines.getBriefState(instruction.boundAssetId);
+            state = await outlines.readBriefState(context.projectId, instruction.boundAssetId);
           }
           context.signal?.throwIfAborted();
           const parsed = parseAssistantOutput(call.assistantOutput);
@@ -326,7 +310,7 @@ export function createLearningOutlineIntakeTaskDefinitionV1(
           }) as LearningOutlineIntakeTaskResult;
         } finally {
           await outlines
-            .flushBrief(instruction.boundAssetId)
+            .readBriefState(context.projectId, instruction.boundAssetId)
             .catch((flushError: unknown) => {
               context.reportStatus(
                 '学习需求回答已结束，但最新 brief 尚未保存。',

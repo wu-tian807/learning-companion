@@ -50,7 +50,7 @@ export class EpubConversationContextProvider
           `<selection>\n${target.targetPayload.quote.exact}\n</selection>`,
           `<context-after>\n${target.targetPayload.quote.suffix || '（无）'}\n</context-after>`,
         ].join('\n\n')
-      : '这是同一 EPUB 阅读对话中的继续追问，请继承当前 Agent Session 已有的选区和前文。';
+      : '本轮没有提供 EPUB 选区。';
     return Object.freeze({
       userMessage: createTextAgentUserMessage(
         `用户问题：${context.question}\n\n${selectionMessage}`,
@@ -72,7 +72,9 @@ export class EpubConversationContextProvider
         ? '正在解释选中的文字…'
         : '正在回答追问…',
       systemInstruction: EPUB_CONVERSATION_SYSTEM_INSTRUCTION_V2,
-      userMessage: materials.userMessage,
+      userMessage: context.instruction.context === undefined
+        ? createTextAgentUserMessage(`这是同一 EPUB 阅读对话中的继续追问，请继承当前 Agent Session 已有的选区和前文。\n\n问题：${context.instruction.question}`)
+        : materials.userMessage,
       toolRequirements: materials.toolRequirements,
       commitStatusMessage: '回答已生成，正在保存解释标注…',
     });
