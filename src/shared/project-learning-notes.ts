@@ -11,10 +11,6 @@ export const PROJECT_LEARNING_NOTE_ATTACHMENT_LINK_PREFIX =
   '#learning-companion-attachment-v1=';
 
 const PROJECT_LEARNING_NOTE_TARGET_LINK_MAX_LENGTH = 100_000;
-const PROJECT_LEARNING_NOTE_REFERENCE_PATTERN = new RegExp(
-  String.raw`\]\((#learning-companion-(?:target|attachment)-v1=(?:%[0-9A-Fa-f]{2}|[A-Za-z0-9._~-])+?)\)`,
-  'gu',
-);
 
 export interface ProjectLearningNoteSnapshot {
   readonly projectId: string;
@@ -218,22 +214,6 @@ export function parseProjectLearningNoteReferenceHref(
     parseProjectLearningNoteAttachmentHref(href) ??
     parseProjectLearningNoteTargetHref(href)
   );
-}
-
-export function listProjectLearningNoteReferenceLinks(
-  markdown: string,
-): readonly ProjectLearningNoteReferenceLink[] {
-  const links: ProjectLearningNoteReferenceLink[] = [];
-  const seenHrefs = new Set<string>();
-  for (const match of markdown.matchAll(PROJECT_LEARNING_NOTE_REFERENCE_PATTERN)) {
-    const href = match[1];
-    if (!href || seenHrefs.has(href)) continue;
-    const link = parseProjectLearningNoteReferenceHref(href);
-    if (!link) continue;
-    seenHrefs.add(href);
-    links.push(link);
-  }
-  return Object.freeze(links);
 }
 
 export function isProjectLearningNoteProjectRequest(

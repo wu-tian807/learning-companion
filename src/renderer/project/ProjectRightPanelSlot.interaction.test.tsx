@@ -76,11 +76,17 @@ describe('ProjectRightPanelSlot resizing', () => {
 
     // Only 180px can be taken from the 600px workbench because it must keep
     // the configured 420px readable area.
-    expect(panel.style.width).toBe('570px');
+    const preview = container.querySelector<HTMLElement>(
+      '[data-learning-note-resize-preview="true"]',
+    )!;
+    expect(panel.style.width).toBe('390px');
+    expect(preview.style.width).toBe('570px');
     expect(separator.getAttribute('aria-valuenow')).toBe('570');
     act(() => {
       window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
     });
+    expect(panel.style.width).toBe('570px');
+    expect(preview.style.width).toBe('');
   });
 
   it('supports keyboard resizing and clamps to the minimum width', () => {

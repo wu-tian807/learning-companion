@@ -2,10 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
-import {
-  listProjectLearningNoteReferenceLinks,
-  type ProjectLearningNoteReferenceLink,
-} from '../../shared/project-learning-notes';
+import type { ProjectLearningNoteReferenceLink } from '../../shared/project-learning-notes';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
@@ -97,13 +94,6 @@ export function ProjectPage({
   } = layout;
   const session = useProjectSession(project.id, setError);
   const learningNote = useProjectLearningNote(project.id);
-  const learningNoteReferences = useMemo(
-    () =>
-      listProjectLearningNoteReferenceLinks(learningNote.markdown).filter(
-        (reference) => reference.projectId === project.id,
-      ),
-    [learningNote.markdown, project.id],
-  );
   const flushLearningNote = learningNote.flush;
   const assetOperations = useProjectAssets({
     projectId: project.id,
@@ -240,6 +230,7 @@ export function ProjectPage({
           selectAsset: session.selectAsset,
           signal: controller.signal,
           timeoutMs: 10_000,
+          emphasize: true,
         });
       } finally {
         if (learningNoteNavigationRef.current === controller) {
@@ -549,7 +540,6 @@ export function ProjectPage({
                 <AssetWorkbenchHost
                   projectId={project.id}
                   asset={assetOperations.selectedAsset}
-                  learningNoteReferences={learningNoteReferences}
                   mediaLabel={assetMediaLabel}
                   onRelink={() => {
                     if (assetOperations.selectedAsset) {

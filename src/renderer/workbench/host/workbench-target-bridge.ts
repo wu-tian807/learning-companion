@@ -15,6 +15,7 @@ export interface WorkbenchTargetController {
   readonly sourceRevision?: string;
   resolve?(target: AssetTarget): WorkbenchTargetRect | undefined;
   reveal(target: AssetTarget): boolean | void | Promise<boolean | void>;
+  emphasize?(target: AssetTarget): void | Promise<void>;
 }
 
 interface Registration {
@@ -77,6 +78,7 @@ export async function revealWorkbenchTarget(
   assetId: string,
   target: AssetTarget,
   sourceRevision?: string,
+  emphasize = false,
 ): Promise<void> {
   const controller = current(assetId);
   if (!controller) throw new Error('目标资料尚未准备好，无法定位原文。');
@@ -92,6 +94,7 @@ export async function revealWorkbenchTarget(
   if (await controller.reveal(target) === false) {
     throw new Error('原文内容可能已经变化，无法定位该引用。');
   }
+  if (emphasize) await controller.emphasize?.(target);
 }
 
 export function waitForWorkbenchTargetController(
@@ -137,6 +140,7 @@ export async function selectAndRevealWorkbenchTarget({
   selectAsset,
   signal,
   timeoutMs,
+  emphasize,
 }: {
   readonly assetId: string;
   readonly target: AssetTarget;
@@ -144,6 +148,7 @@ export async function selectAndRevealWorkbenchTarget({
   readonly selectAsset: (assetId: string) => Promise<void> | void;
   readonly signal: AbortSignal;
   readonly timeoutMs?: number;
+  readonly emphasize?: boolean;
 }): Promise<void> {
   if (signal.aborted) throw signal.reason;
   await selectAsset(assetId);
@@ -151,7 +156,7 @@ export async function selectAndRevealWorkbenchTarget({
   if (target.scope === 'asset') return;
   await waitForWorkbenchTargetController(assetId, signal, timeoutMs);
   if (signal.aborted) throw signal.reason;
-  await revealWorkbenchTarget(assetId, target, sourceRevision);
+  await revealWorkbenchTarget(assetId, target, sourceRevision, emphasize);
 }
 
 export function resetWorkbenchTargetControllerForTests(): void {

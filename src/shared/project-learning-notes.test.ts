@@ -5,7 +5,6 @@ import {
   createProjectLearningNoteTargetHref,
   isProjectLearningNoteProjectRequest,
   isSaveProjectLearningNoteRequest,
-  listProjectLearningNoteReferenceLinks,
   parseProjectLearningNoteAttachmentHref,
   parseProjectLearningNoteReferenceHref,
   parseProjectLearningNoteTargetHref,
@@ -41,36 +40,6 @@ describe('Project learning note contracts', () => {
         expectedRevision: 0,
       }),
     ).toBe(false);
-  });
-
-  it('lists valid source references from persisted Markdown once', () => {
-    const targetHref = createProjectLearningNoteTargetHref({
-      projectId: 'project-1',
-      assetId: 'asset-1',
-      sourceRevision: 'revision-1',
-      target: {
-        scope: 'content',
-        targetType: 'epub.cfi-range',
-        targetVersion: 1,
-        targetPayload: { cfiRange: 'epubcfi(/6/2!/4/2)' },
-      },
-    });
-    const attachmentHref = createProjectLearningNoteAttachmentHref({
-      projectId: 'project-1',
-      assetId: 'asset-2',
-      attachmentId: 'attachment-1',
-    });
-    const markdown = [
-      `[资料一 · 定位](${targetHref})`,
-      `[资料二 · 定位](${attachmentHref})`,
-      `[重复](${attachmentHref})`,
-      '[无效](#learning-companion-attachment-v1=bad)',
-    ].join('\n');
-
-    expect(listProjectLearningNoteReferenceLinks(markdown)).toEqual([
-      parseProjectLearningNoteTargetHref(targetHref),
-      parseProjectLearningNoteAttachmentHref(attachmentHref),
-    ]);
   });
 
   it('round-trips a versioned AssetTarget without Markdown URL delimiters', () => {

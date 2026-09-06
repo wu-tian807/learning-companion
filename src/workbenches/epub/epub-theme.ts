@@ -46,6 +46,10 @@ body {
 a, a:visited {
   color: ${palette.link} !important;
 }
+::selection {
+  background: #facc15 !important;
+  color: #111827 !important;
+}
 blockquote, figcaption {
   color: ${palette.muted} !important;
 }

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../../shared/assets';
 import type { AssetAttachment } from '../../../shared/attachments/contracts';
-import type { ProjectLearningNoteReferenceLink } from '../../../shared/project-learning-notes';
 import { userMessageFromError } from '../../../shared/ipc-error';
 import {
   isWorkbenchBootstrap,
@@ -28,7 +27,6 @@ import {
 import { WorkbenchLifecycleCoordinator } from '../workbench-lifecycle';
 import { closeWorkbenchSession } from '../workbench-session-cleanup';
 import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
-import { resolveLearningNoteSourceMarks } from './learning-note-source-marks';
 
 interface AssetWorkbenchHostProps {
   readonly projectId: string;
@@ -41,7 +39,6 @@ interface AssetWorkbenchHostProps {
   readonly onOpenSettings: () => void;
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
-  readonly learningNoteReferences?: readonly ProjectLearningNoteReferenceLink[];
 }
 
 type SettledWorkbenchHostState =
@@ -76,7 +73,6 @@ export function AssetWorkbenchHost({
   onOpenSettings,
   onLifecycleTaskChange,
   onError,
-  learningNoteReferences = [],
 }: AssetWorkbenchHostProps) {
   const runtime = useWorkbenchRuntime();
   const [settledState, setSettledState] =
@@ -98,18 +94,6 @@ export function AssetWorkbenchHost({
     settledState.assetKey === assetKey
       ? settledState.bootstrap.sessionId
       : undefined;
-  const learningNoteSourceMarks = useMemo(
-    () =>
-      assetId
-        ? resolveLearningNoteSourceMarks(
-            projectId,
-            assetId,
-            learningNoteReferences,
-            attachments,
-          )
-        : [],
-    [assetId, attachments, learningNoteReferences, projectId],
-  );
   const reportInteraction = useCallback(
     (interaction: WorkbenchInteractionSnapshot) => {
       if (
@@ -403,7 +387,6 @@ export function AssetWorkbenchHost({
               asset={asset}
               bootstrap={state.bootstrap}
               attachments={attachments}
-              learningNoteSourceMarks={learningNoteSourceMarks}
               refreshAttachments={refreshAttachments}
               executeCommand={state.executeCommand}
               subscribeEvent={subscribeEvent}

@@ -26,6 +26,7 @@ export function ProjectRightPanelSlot({
   const hostRef = useRef<HTMLDivElement>(null);
   const dragCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [learningNoteWidth, setLearningNoteWidth] = useState(390);
+  const [previewWidth, setPreviewWidth] = useState<number>();
   const [dragging, setDragging] = useState(false);
 
   const widthBounds = useCallback(() => {
@@ -73,29 +74,36 @@ export function ProjectRightPanelSlot({
       learningNoteWidth;
     const previousCursor = document.body.style.cursor;
     const previousUserSelect = document.body.style.userSelect;
+    let latestWidth = startWidth;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
+    setPreviewWidth(startWidth);
     setDragging(true);
 
     const move = (moveEvent: globalThis.PointerEvent) => {
       const next = startWidth + startX - moveEvent.clientX;
-      setLearningNoteWidth(Math.min(maximum, Math.max(minimum, next)));
+      latestWidth = Math.min(maximum, Math.max(minimum, next));
+      setPreviewWidth(latestWidth);
     };
-    const cleanup = () => {
+    const finish = () => cleanup(true);
+    const cancel = () => cleanup(false);
+    const cleanup = (commit: boolean) => {
       window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', cleanup);
-      window.removeEventListener('pointercancel', cleanup);
-      window.removeEventListener('blur', cleanup);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('blur', finish);
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
       dragCleanupRef.current = undefined;
+      if (commit) setLearningNoteWidth(latestWidth);
+      setPreviewWidth(undefined);
       setDragging(false);
     };
-    dragCleanupRef.current = cleanup;
+    dragCleanupRef.current = cancel;
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', cleanup, { once: true });
-    window.addEventListener('pointercancel', cleanup, { once: true });
-    window.addEventListener('blur', cleanup, { once: true });
+    window.addEventListener('pointerup', finish, { once: true });
+    window.addEventListener('pointercancel', cancel, { once: true });
+    window.addEventListener('blur', finish, { once: true });
   }, [learningNoteWidth, widthBounds]);
 
   useEffect(() => () => dragCleanupRef.current?.(), []);
@@ -103,6 +111,7 @@ export function ProjectRightPanelSlot({
   if (!panel) return null;
 
   const learningNoteResizable = panel === 'learning-note';
+  const visibleLearningNoteWidth = previewWidth ?? learningNoteWidth;
 
   return (
     <div
@@ -121,40 +130,54 @@ export function ProjectRightPanelSlot({
             : 'absolute inset-y-0 right-0 z-30 h-full min-h-0 w-[min(390px,calc(100%-20px))] min-w-0 shadow-2xl'
       }
     >
-      {learningNoteResizable && (
+      <div
+        data-learning-note-resize-preview={dragging || undefined}
+        style={
+          learningNoteResizable && dragging
+            ? { width: visibleLearningNoteWidth }
+            : undefined
+        }
+        className={
+          learningNoteResizable && dragging
+            ? 'absolute inset-y-0 right-0 h-full'
+            : 'h-full w-full'
+        }
+      >
+        {learningNoteResizable && (
+          <div
+            role="separator"
+            aria-label="调整学习笔记宽度"
+            aria-orientation="vertical"
+            aria-valuemin={318}
+            aria-valuemax={720}
+            aria-valuenow={Math.round(visibleLearningNoteWidth)}
+            data-resizing={dragging || undefined}
+            tabIndex={0}
+            onPointerDown={beginResize}
+            onKeyDown={resizeByKeyboard}
+            className="group absolute inset-y-2 -left-1.5 z-40 w-3 cursor-col-resize touch-none outline-none"
+          >
+            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 rounded-full bg-transparent transition-colors group-hover:bg-indigo-300/70 group-focus:bg-indigo-300/80 group-data-[resizing=true]:bg-indigo-300" />
+          </div>
+        )}
         <div
-          role="separator"
-          aria-label="调整学习笔记宽度"
-          aria-orientation="vertical"
-          aria-valuemin={318}
-          aria-valuemax={720}
-          aria-valuenow={Math.round(learningNoteWidth)}
-          data-resizing={dragging || undefined}
-          tabIndex={0}
-          onPointerDown={beginResize}
-          onKeyDown={resizeByKeyboard}
-          className="group absolute inset-y-2 -left-1.5 z-40 w-3 cursor-col-resize touch-none outline-none"
+          className={panel === 'conversation' ? 'h-full min-h-0' : 'hidden'}
+          aria-hidden={panel !== 'conversation'}
         >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 rounded-full bg-transparent transition-colors group-hover:bg-indigo-300/70 group-focus:bg-indigo-300/80 group-data-[resizing=true]:bg-indigo-300" />
+          {conversation}
         </div>
-      )}
-      <div
-        className={panel === 'conversation' ? 'h-full min-h-0' : 'hidden'}
-        aria-hidden={panel !== 'conversation'}
-      >
-        {conversation}
-      </div>
-      <div
-        className={panel === 'generation' ? 'h-full min-h-0' : 'hidden'}
-        aria-hidden={panel !== 'generation'}
-      >
-        {generation}
-      </div>
-      <div
-        className={panel === 'learning-note' ? 'h-full min-h-0' : 'hidden'}
-        aria-hidden={panel !== 'learning-note'}
-      >
-        {learningNote}
+        <div
+          className={panel === 'generation' ? 'h-full min-h-0' : 'hidden'}
+          aria-hidden={panel !== 'generation'}
+        >
+          {generation}
+        </div>
+        <div
+          className={panel === 'learning-note' ? 'h-full min-h-0' : 'hidden'}
+          aria-hidden={panel !== 'learning-note'}
+        >
+          {learningNote}
+        </div>
       </div>
     </div>
   );
