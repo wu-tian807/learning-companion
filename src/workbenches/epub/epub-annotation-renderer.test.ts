@@ -44,6 +44,7 @@ describe('EPUB annotation renderer', () => {
           updatedTime: 1,
         },
       ],
+      [],
       { onExplanationClick: vi.fn(), onNoteClick: vi.fn() },
     );
 
@@ -70,5 +71,76 @@ describe('EPUB annotation renderer', () => {
       target.targetPayload.cfiRange,
       'highlight',
     );
+  });
+
+  it('renders a persisted learning-note link as a separate source wave', () => {
+    const annotations = {
+      underline: vi.fn(),
+      highlight: vi.fn(),
+      remove: vi.fn(),
+    };
+
+    const cleanup = renderEpubAnnotationWaves(
+      annotations,
+      [],
+      [],
+      [{ id: 'reference-1', target }],
+      { onExplanationClick: vi.fn(), onNoteClick: vi.fn() },
+    );
+
+    expect(annotations.underline).toHaveBeenCalledOnce();
+    expect(annotations.underline.mock.calls[0]?.[1]).toEqual({
+      learningNoteReferenceId: 'reference-1',
+    });
+    expect(annotations.underline.mock.calls[0]?.[3]).toBe(
+      'epub-project-learning-note-reference',
+    );
+    expect(annotations.underline.mock.calls[0]?.[4]).toMatchObject({
+      'data-epub-wave-color': '#ef4444',
+      'data-epub-wave-lane': '0',
+    });
+
+    cleanup();
+    expect(annotations.remove).toHaveBeenCalledWith(
+      target.targetPayload.cfiRange,
+      'underline',
+    );
+  });
+
+  it('uses the other EPUB annotation channel beside an existing AI wave', () => {
+    const annotations = {
+      underline: vi.fn(),
+      highlight: vi.fn(),
+      remove: vi.fn(),
+    };
+    const explanation = {
+      kind: 'attachment' as const,
+      id: 'explanation-1',
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      target,
+      status: 'completed' as const,
+      answer: '解释',
+      markerColor: 'blue' as const,
+      createdTime: 1,
+      updatedTime: 1,
+    };
+
+    renderEpubAnnotationWaves(
+      annotations,
+      [explanation],
+      [],
+      [{ id: 'reference-1', target }],
+      { onExplanationClick: vi.fn(), onNoteClick: vi.fn() },
+    );
+
+    expect(annotations.underline).toHaveBeenCalledOnce();
+    expect(annotations.highlight).toHaveBeenCalledOnce();
+    expect(annotations.highlight.mock.calls[0]?.[1]).toEqual({
+      learningNoteReferenceId: 'reference-1',
+    });
+    expect(annotations.highlight.mock.calls[0]?.[4]).toMatchObject({
+      'data-epub-wave-lane': '1',
+    });
   });
 });

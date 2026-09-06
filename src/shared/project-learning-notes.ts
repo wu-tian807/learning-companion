@@ -7,8 +7,14 @@ import {
 export const PROJECT_LEARNING_NOTE_MAX_LENGTH = 1_000_000;
 export const PROJECT_LEARNING_NOTE_TARGET_LINK_PREFIX =
   '#learning-companion-target-v1=';
+export const PROJECT_LEARNING_NOTE_ATTACHMENT_LINK_PREFIX =
+  '#learning-companion-attachment-v1=';
 
 const PROJECT_LEARNING_NOTE_TARGET_LINK_MAX_LENGTH = 100_000;
+const PROJECT_LEARNING_NOTE_REFERENCE_PATTERN = new RegExp(
+  String.raw`\]\((#learning-companion-(?:target|attachment)-v1=(?:%[0-9A-Fa-f]{2}|[A-Za-z0-9._~-])+?)\)`,
+  'gu',
+);
 
 export interface ProjectLearningNoteSnapshot {
   readonly projectId: string;
@@ -33,6 +39,16 @@ export interface ProjectLearningNoteTargetLink {
   readonly sourceRevision: string;
   readonly target: ContentAssetTarget;
 }
+
+export interface ProjectLearningNoteAttachmentLink {
+  readonly projectId: string;
+  readonly assetId: string;
+  readonly attachmentId: string;
+}
+
+export type ProjectLearningNoteReferenceLink =
+  | ProjectLearningNoteTargetLink
+  | ProjectLearningNoteAttachmentLink;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -98,6 +114,31 @@ export function cloneProjectLearningNoteTargetLink(
   });
 }
 
+export function isProjectLearningNoteAttachmentLink(
+  value: unknown,
+): value is ProjectLearningNoteAttachmentLink {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['projectId', 'assetId', 'attachmentId']) &&
+    isProjectId(value.projectId) &&
+    isRequiredText(value.assetId) &&
+    isRequiredText(value.attachmentId)
+  );
+}
+
+export function cloneProjectLearningNoteAttachmentLink(
+  link: ProjectLearningNoteAttachmentLink,
+): ProjectLearningNoteAttachmentLink {
+  if (!isProjectLearningNoteAttachmentLink(link)) {
+    throw new Error('学习笔记 Attachment 引用链接无效');
+  }
+  return Object.freeze({
+    projectId: link.projectId,
+    assetId: link.assetId,
+    attachmentId: link.attachmentId,
+  });
+}
+
 function encodeMarkdownLinkPayload(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/gu, (character) =>
     `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
@@ -135,6 +176,64 @@ export function parseProjectLearningNoteTargetHref(
   } catch {
     return undefined;
   }
+}
+
+export function createProjectLearningNoteAttachmentHref(
+  link: ProjectLearningNoteAttachmentLink,
+): string {
+  return (
+    PROJECT_LEARNING_NOTE_ATTACHMENT_LINK_PREFIX +
+    encodeMarkdownLinkPayload(
+      JSON.stringify(cloneProjectLearningNoteAttachmentLink(link)),
+    )
+  );
+}
+
+export function parseProjectLearningNoteAttachmentHref(
+  href: string,
+): ProjectLearningNoteAttachmentLink | undefined {
+  if (
+    !href.startsWith(PROJECT_LEARNING_NOTE_ATTACHMENT_LINK_PREFIX) ||
+    href.length > PROJECT_LEARNING_NOTE_TARGET_LINK_MAX_LENGTH
+  ) {
+    return undefined;
+  }
+  try {
+    const decoded = decodeURIComponent(
+      href.slice(PROJECT_LEARNING_NOTE_ATTACHMENT_LINK_PREFIX.length),
+    );
+    const value: unknown = JSON.parse(decoded);
+    return isProjectLearningNoteAttachmentLink(value)
+      ? cloneProjectLearningNoteAttachmentLink(value)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseProjectLearningNoteReferenceHref(
+  href: string,
+): ProjectLearningNoteReferenceLink | undefined {
+  return (
+    parseProjectLearningNoteAttachmentHref(href) ??
+    parseProjectLearningNoteTargetHref(href)
+  );
+}
+
+export function listProjectLearningNoteReferenceLinks(
+  markdown: string,
+): readonly ProjectLearningNoteReferenceLink[] {
+  const links: ProjectLearningNoteReferenceLink[] = [];
+  const seenHrefs = new Set<string>();
+  for (const match of markdown.matchAll(PROJECT_LEARNING_NOTE_REFERENCE_PATTERN)) {
+    const href = match[1];
+    if (!href || seenHrefs.has(href)) continue;
+    const link = parseProjectLearningNoteReferenceHref(href);
+    if (!link) continue;
+    seenHrefs.add(href);
+    links.push(link);
+  }
+  return Object.freeze(links);
 }
 
 export function isProjectLearningNoteProjectRequest(

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createProjectLearningNoteAttachmentHref,
   createProjectLearningNoteTargetHref,
   isProjectLearningNoteProjectRequest,
   isSaveProjectLearningNoteRequest,
+  listProjectLearningNoteReferenceLinks,
+  parseProjectLearningNoteAttachmentHref,
+  parseProjectLearningNoteReferenceHref,
   parseProjectLearningNoteTargetHref,
   PROJECT_LEARNING_NOTE_MAX_LENGTH,
 } from './project-learning-notes';
@@ -37,6 +41,36 @@ describe('Project learning note contracts', () => {
         expectedRevision: 0,
       }),
     ).toBe(false);
+  });
+
+  it('lists valid source references from persisted Markdown once', () => {
+    const targetHref = createProjectLearningNoteTargetHref({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-1',
+      target: {
+        scope: 'content',
+        targetType: 'epub.cfi-range',
+        targetVersion: 1,
+        targetPayload: { cfiRange: 'epubcfi(/6/2!/4/2)' },
+      },
+    });
+    const attachmentHref = createProjectLearningNoteAttachmentHref({
+      projectId: 'project-1',
+      assetId: 'asset-2',
+      attachmentId: 'attachment-1',
+    });
+    const markdown = [
+      `[资料一 · 定位](${targetHref})`,
+      `[资料二 · 定位](${attachmentHref})`,
+      `[重复](${attachmentHref})`,
+      '[无效](#learning-companion-attachment-v1=bad)',
+    ].join('\n');
+
+    expect(listProjectLearningNoteReferenceLinks(markdown)).toEqual([
+      parseProjectLearningNoteTargetHref(targetHref),
+      parseProjectLearningNoteAttachmentHref(attachmentHref),
+    ]);
   });
 
   it('round-trips a versioned AssetTarget without Markdown URL delimiters', () => {
@@ -83,6 +117,33 @@ describe('Project learning note contracts', () => {
     expect(
       parseProjectLearningNoteTargetHref(
         `#learning-companion-target-v1=${wholeAsset}`,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('round-trips an Attachment reference without copying its AssetTarget', () => {
+    const link = {
+      projectId: 'project-1',
+      assetId: 'asset-epub',
+      attachmentId: 'attachment-explanation-1',
+    };
+    const href = createProjectLearningNoteAttachmentHref(link);
+
+    expect(href).not.toMatch(/[()]/u);
+    expect(parseProjectLearningNoteAttachmentHref(href)).toEqual(link);
+    expect(parseProjectLearningNoteReferenceHref(href)).toEqual(link);
+    expect(href).not.toContain('target');
+  });
+
+  it('rejects malformed Attachment references and unknown versions', () => {
+    expect(
+      parseProjectLearningNoteAttachmentHref(
+        '#learning-companion-attachment-v1=%7B%22projectId%22%3A%22project-1%22%7D',
+      ),
+    ).toBeUndefined();
+    expect(
+      parseProjectLearningNoteReferenceHref(
+        '#learning-companion-attachment-v2=%7B%7D',
       ),
     ).toBeUndefined();
   });

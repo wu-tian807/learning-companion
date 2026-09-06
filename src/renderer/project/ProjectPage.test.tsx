@@ -5,11 +5,13 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createProjectLearningNoteAttachmentHref } from '../../shared/project-learning-notes';
 import { ProjectPage } from './ProjectPage';
 
 const projectPageHarness = vi.hoisted(() => ({
   selectAsset: vi.fn(),
   selectAndReveal: vi.fn(async () => undefined),
+  workbenchProps: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock('../conversation/ConversationPanelHost', () => ({
@@ -35,7 +37,10 @@ vi.mock('../generation/use-generation-tasks', () => ({
 }));
 
 vi.mock('../workbench/host/AssetWorkbenchHost', () => ({
-  AssetWorkbenchHost: () => <div data-testid="workbench" />,
+  AssetWorkbenchHost: (props: Record<string, unknown>) => {
+    projectPageHarness.workbenchProps = props;
+    return <div data-testid="workbench" />;
+  },
 }));
 
 vi.mock('../workbench/host/workbench-target-bridge', () => ({
@@ -49,24 +54,18 @@ vi.mock('./ProjectAssetPanel', () => ({
 vi.mock('./ProjectLearningNotePanel', () => ({
   ProjectLearningNotePanel: ({
     active,
-    onRevealTarget,
+    onRevealReference,
   }: {
     active: boolean;
-    onRevealTarget: (link: unknown) => Promise<void>;
+    onRevealReference: (link: unknown) => Promise<void>;
   }) => (
     <div data-testid="learning-note-panel" data-active={String(active)}>
       <button
         type="button"
-        onClick={() => void onRevealTarget({
+        onClick={() => void onRevealReference({
           projectId: 'project-1',
           assetId: 'asset-html',
-          sourceRevision: 'revision-1',
-          target: {
-            scope: 'content',
-            targetType: 'html.range',
-            targetVersion: 1,
-            targetPayload: { path: 'p:1' },
-          },
+          attachmentId: 'attachment-1',
         })}
       >
         定位笔记引用
@@ -141,6 +140,22 @@ describe('ProjectPage Project conversation lifecycle', () => {
           revision: request.expectedRevision + 1,
           updatedTime: 1,
         })),
+        listAttachments: vi.fn(async () => [{
+          id: 'attachment-1',
+          projectId: 'project-1',
+          assetId: 'asset-html',
+          typeId: 'ai.annotation',
+          typeVersion: 1,
+          target: {
+            scope: 'content',
+            targetType: 'html.range',
+            targetVersion: 1,
+            targetPayload: { path: 'p:1' },
+          },
+          metadata: {},
+          createdTime: 1,
+          updatedTime: 1,
+        }]),
       },
     });
     Object.defineProperty(window, 'matchMedia', {
@@ -154,9 +169,44 @@ describe('ProjectPage Project conversation lifecycle', () => {
     });
     projectPageHarness.selectAsset.mockClear();
     projectPageHarness.selectAndReveal.mockClear();
+    projectPageHarness.workbenchProps = undefined;
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
+  });
+
+  it('passes persisted learning-note references into the active Workbench', async () => {
+    const href = createProjectLearningNoteAttachmentHref({
+      projectId: 'project-1',
+      assetId: 'asset-html',
+      attachmentId: 'attachment-1',
+    });
+    vi.mocked(
+      window.learningCompanion.getProjectLearningNote,
+    ).mockResolvedValue({
+      projectId: 'project-1',
+      markdown: `[资料 · 定位](${href})`,
+      revision: 1,
+      updatedTime: 1,
+    });
+
+    await act(async () => {
+      root.render(
+        <ProjectPage
+          project={project}
+          onBack={vi.fn()}
+          onOpenSettings={vi.fn()}
+        />,
+      );
+    });
+
+    expect(projectPageHarness.workbenchProps?.learningNoteReferences).toEqual([
+      {
+        projectId: 'project-1',
+        assetId: 'asset-html',
+        attachmentId: 'attachment-1',
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -245,7 +295,12 @@ describe('ProjectPage Project conversation lifecycle', () => {
     expect(projectPageHarness.selectAndReveal).toHaveBeenCalledWith(
       expect.objectContaining({
         assetId: 'asset-html',
-        sourceRevision: 'revision-1',
+        target: {
+          scope: 'content',
+          targetType: 'html.range',
+          targetVersion: 1,
+          targetPayload: { path: 'p:1' },
+        },
         selectAsset: projectPageHarness.selectAsset,
       }),
     );
