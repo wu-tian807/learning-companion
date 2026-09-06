@@ -67,6 +67,12 @@ export function resolveWorkbenchTarget(
   return current(assetId)?.resolve?.(target);
 }
 
+export function getWorkbenchTargetSourceRevision(
+  assetId: string,
+): string | undefined {
+  return current(assetId)?.sourceRevision;
+}
+
 export async function revealWorkbenchTarget(
   assetId: string,
   target: AssetTarget,
@@ -122,6 +128,30 @@ export function waitForWorkbenchTargetController(
     signal.addEventListener('abort', abort, { once: true });
     check();
   });
+}
+
+export async function selectAndRevealWorkbenchTarget({
+  assetId,
+  target,
+  sourceRevision,
+  selectAsset,
+  signal,
+  timeoutMs,
+}: {
+  readonly assetId: string;
+  readonly target: AssetTarget;
+  readonly sourceRevision?: string;
+  readonly selectAsset: (assetId: string) => Promise<void> | void;
+  readonly signal: AbortSignal;
+  readonly timeoutMs?: number;
+}): Promise<void> {
+  if (signal.aborted) throw signal.reason;
+  await selectAsset(assetId);
+  if (signal.aborted) throw signal.reason;
+  if (target.scope === 'asset') return;
+  await waitForWorkbenchTargetController(assetId, signal, timeoutMs);
+  if (signal.aborted) throw signal.reason;
+  await revealWorkbenchTarget(assetId, target, sourceRevision);
 }
 
 export function resetWorkbenchTargetControllerForTests(): void {

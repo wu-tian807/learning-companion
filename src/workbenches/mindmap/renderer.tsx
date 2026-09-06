@@ -22,8 +22,7 @@ import type {
 } from '../../renderer/workbench/renderer-workbench-registry';
 import {
   registerWorkbenchTargetController,
-  revealWorkbenchTarget,
-  waitForWorkbenchTargetController,
+  selectAndRevealWorkbenchTarget,
 } from '../../renderer/workbench/host/workbench-target-bridge';
 import { useWorkbenchContributions } from '../../renderer/workbench/runtime/use-workbench-contributions';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
@@ -330,19 +329,15 @@ function MindMapCanvas({
   const revealReference = useCallback(
     async (reference: (typeof payload.associations.byNode[string]['references'])[number]) => {
       if (!onSelectAsset) return;
-      await onSelectAsset(reference.reference.sourceAssetId);
-      if (reference.binding.target.scope === 'asset') return;
       const controller = new AbortController();
-      await waitForWorkbenchTargetController(
-        reference.reference.sourceAssetId,
-        controller.signal,
-        10_000,
-      );
-      await revealWorkbenchTarget(
-        reference.reference.sourceAssetId,
-        reference.binding.target,
-        reference.binding.contentRevision,
-      );
+      await selectAndRevealWorkbenchTarget({
+        assetId: reference.reference.sourceAssetId,
+        target: reference.binding.target,
+        sourceRevision: reference.binding.contentRevision,
+        selectAsset: onSelectAsset,
+        signal: controller.signal,
+        timeoutMs: 10_000,
+      });
     },
     [onSelectAsset],
   );

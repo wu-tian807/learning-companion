@@ -1,4 +1,14 @@
+import {
+  cloneAssetTarget,
+  isAssetTarget,
+  type ContentAssetTarget,
+} from './workbench/asset-target';
+
 export const PROJECT_LEARNING_NOTE_MAX_LENGTH = 1_000_000;
+export const PROJECT_LEARNING_NOTE_TARGET_LINK_PREFIX =
+  '#learning-companion-target-v1=';
+
+const PROJECT_LEARNING_NOTE_TARGET_LINK_MAX_LENGTH = 100_000;
 
 export interface ProjectLearningNoteSnapshot {
   readonly projectId: string;
@@ -17,6 +27,13 @@ export interface SaveProjectLearningNoteRequest
   readonly expectedRevision: number;
 }
 
+export interface ProjectLearningNoteTargetLink {
+  readonly projectId: string;
+  readonly assetId: string;
+  readonly sourceRevision: string;
+  readonly target: ContentAssetTarget;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -27,6 +44,97 @@ function isProjectId(value: unknown): value is string {
     value.length > 0 &&
     value === value.trim()
   );
+}
+
+function hasOnlyKeys(
+  value: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean {
+  const actual = Object.keys(value);
+  return (
+    actual.length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key))
+  );
+}
+
+function isRequiredText(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value === value.trim()
+  );
+}
+
+export function isProjectLearningNoteTargetLink(
+  value: unknown,
+): value is ProjectLearningNoteTargetLink {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      'projectId',
+      'assetId',
+      'sourceRevision',
+      'target',
+    ]) &&
+    isProjectId(value.projectId) &&
+    isRequiredText(value.assetId) &&
+    isRequiredText(value.sourceRevision) &&
+    isAssetTarget(value.target) &&
+    value.target.scope === 'content'
+  );
+}
+
+export function cloneProjectLearningNoteTargetLink(
+  link: ProjectLearningNoteTargetLink,
+): ProjectLearningNoteTargetLink {
+  if (!isProjectLearningNoteTargetLink(link)) {
+    throw new Error('学习笔记资料定位链接无效');
+  }
+  return Object.freeze({
+    projectId: link.projectId,
+    assetId: link.assetId,
+    sourceRevision: link.sourceRevision,
+    target: cloneAssetTarget(link.target) as ContentAssetTarget,
+  });
+}
+
+function encodeMarkdownLinkPayload(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/gu, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+export function createProjectLearningNoteTargetHref(
+  link: ProjectLearningNoteTargetLink,
+): string {
+  return (
+    PROJECT_LEARNING_NOTE_TARGET_LINK_PREFIX +
+    encodeMarkdownLinkPayload(
+      JSON.stringify(cloneProjectLearningNoteTargetLink(link)),
+    )
+  );
+}
+
+export function parseProjectLearningNoteTargetHref(
+  href: string,
+): ProjectLearningNoteTargetLink | undefined {
+  if (
+    !href.startsWith(PROJECT_LEARNING_NOTE_TARGET_LINK_PREFIX) ||
+    href.length > PROJECT_LEARNING_NOTE_TARGET_LINK_MAX_LENGTH
+  ) {
+    return undefined;
+  }
+  try {
+    const decoded = decodeURIComponent(
+      href.slice(PROJECT_LEARNING_NOTE_TARGET_LINK_PREFIX.length),
+    );
+    const value: unknown = JSON.parse(decoded);
+    return isProjectLearningNoteTargetLink(value)
+      ? cloneProjectLearningNoteTargetLink(value)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function isProjectLearningNoteProjectRequest(
