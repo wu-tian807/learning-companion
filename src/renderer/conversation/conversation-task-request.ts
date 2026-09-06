@@ -82,6 +82,7 @@ export function createConversationTaskRequest(
       contextProviderId:
         source?.contextProviderId ??
         PROJECT_CONVERSATION_CONTEXT_PROVIDER_ID,
+      ...(input.boundAssetId ? { boundAssetId: input.boundAssetId } : {}),
       ...(source?.sourceAssetMode && source.assetId
         ? { assetId: source.assetId }
         : {}),

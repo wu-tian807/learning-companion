@@ -11,6 +11,7 @@ import { htmlPreloadWorkbenchContribution } from '../html/preload-contribution';
 import { imagePreloadWorkbenchContribution } from '../image/preload-contribution';
 import { markdownPreloadWorkbenchContribution } from '../markdown/preload-contribution';
 import { mindMapPreloadWorkbenchContribution } from '../mindmap/preload-contribution';
+import { learningOutlinePreloadWorkbenchContribution } from '../learning-outline/preload-contribution';
 import { officePreloadWorkbenchContribution } from '../office/preload-contribution';
 import { pdfPreloadWorkbenchContribution } from '../pdf/preload-contribution';
 import { plainTextPreloadWorkbenchContribution } from '../plain-text/preload-contribution';
@@ -20,6 +21,7 @@ export const preloadWorkbenchContributions = Object.freeze([
   plainTextPreloadWorkbenchContribution,
   markdownPreloadWorkbenchContribution,
   mindMapPreloadWorkbenchContribution,
+  learningOutlinePreloadWorkbenchContribution,
   pdfPreloadWorkbenchContribution,
   officePreloadWorkbenchContribution,
   htmlPreloadWorkbenchContribution,

@@ -4,6 +4,7 @@ import {
   type JsonValue,
 } from './workbench/protocol';
 
+/** Maximum number of ordinary, unbound conversations retained per Project. */
 export const PROJECT_CONVERSATION_MAX_CONVERSATIONS = 1_000;
 export const PROJECT_CONVERSATION_MAX_MESSAGES = 2_000;
 export const PROJECT_CONVERSATION_MAX_TEXT_LENGTH = 32_768;
@@ -14,6 +15,10 @@ const CONVERSATION_MODE_ID_PATTERN =
   /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/u;
 const CONVERSATION_WORKSPACE_INSTANCE_KEY_PATTERN =
   /^[A-Za-z0-9._-]{1,160}$/u;
+
+export function isConversationModeId(value: unknown): value is string {
+  return typeof value === 'string' && CONVERSATION_MODE_ID_PATTERN.test(value);
+}
 
 export type ConversationRole = 'user' | 'assistant';
 
@@ -59,6 +64,8 @@ export interface ConversationMessageRecord {
 export interface ConversationRecord {
   readonly id: string;
   readonly modeId: string;
+  /** Immutable business Asset this conversation belongs to, when present. */
+  readonly boundAssetId?: string;
   readonly workspace?: ConversationWorkspaceBinding;
   readonly title: string;
   readonly messages: readonly ConversationMessageRecord[];
@@ -69,6 +76,15 @@ export interface ConversationRecord {
 export interface ProjectConversationProjectRequest {
   readonly projectId: string;
 }
+
+export interface GetOrCreateBoundProjectConversationRequest
+  extends ProjectConversationProjectRequest {
+  readonly boundAssetId: string;
+  readonly modeId: string;
+}
+
+export type RebuildBoundProjectConversationRequest =
+  GetOrCreateBoundProjectConversationRequest;
 
 export interface SaveProjectConversationRequest
   extends ProjectConversationProjectRequest {
@@ -193,8 +209,9 @@ export function isConversationRecord(
   if (!isRecord(value)) return false;
   return (
     isRequiredText(value.id, 160) &&
-    typeof value.modeId === 'string' &&
-    CONVERSATION_MODE_ID_PATTERN.test(value.modeId) &&
+    isConversationModeId(value.modeId) &&
+    (value.boundAssetId === undefined ||
+      isRequiredText(value.boundAssetId, 160)) &&
     (value.workspace === undefined ||
       isConversationWorkspaceBinding(value.workspace)) &&
     isRequiredText(value.title, 128) &&
@@ -229,6 +246,7 @@ export function cloneConversationRecord(
   return Object.freeze({
     id: value.id,
     modeId: value.modeId,
+    ...(value.boundAssetId ? { boundAssetId: value.boundAssetId } : {}),
     ...(value.workspace
       ? { workspace: cloneConversationWorkspaceBinding(value.workspace) }
       : {}),
@@ -295,10 +313,7 @@ export function cloneConversationRecord(
 export function cloneConversationRecords(
   value: readonly ConversationRecord[],
 ): readonly ConversationRecord[] {
-  if (
-    !Array.isArray(value) ||
-    value.length > PROJECT_CONVERSATION_MAX_CONVERSATIONS
-  ) {
+  if (!Array.isArray(value)) {
     throw new Error('Project Conversation 列表数据无效');
   }
   const ids = new Set<string>();
@@ -310,5 +325,11 @@ export function cloneConversationRecords(
     ids.add(cloned.id);
     return cloned;
   });
+  const unboundCount = records.filter(
+    (record) => record.boundAssetId === undefined,
+  ).length;
+  if (unboundCount > PROJECT_CONVERSATION_MAX_CONVERSATIONS) {
+    throw new Error('普通 Project Conversation 列表超过容量上限');
+  }
   return Object.freeze(records);
 }

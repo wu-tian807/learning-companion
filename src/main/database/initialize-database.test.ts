@@ -86,6 +86,18 @@ function seedLegacyLearningNoteVersion27(
   earlier.close();
 }
 
+function promoteLegacyLearningNoteDatabaseToVersion28(
+  databaseFile: string,
+): void {
+  const earlier = new Database(databaseFile);
+  earlier.exec(`
+    DROP INDEX IF EXISTS project_conversations_bound_asset_mode_index;
+    ALTER TABLE project_conversations DROP COLUMN bound_asset_id;
+  `);
+  earlier.pragma('user_version = 28');
+  earlier.close();
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) =>
@@ -100,7 +112,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -227,7 +239,7 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        28,
+        29,
       );
     } finally {
       secondContext.close();
@@ -274,7 +286,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM assets')
@@ -351,7 +363,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -436,7 +448,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<
@@ -516,7 +528,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -584,7 +596,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -929,7 +941,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -1035,7 +1047,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -1151,7 +1163,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       const migrated = context.sqlite
         .prepare<
           [],
@@ -1195,7 +1207,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         context.sqlite
           .prepare(
@@ -1228,7 +1240,7 @@ describe('initializeDatabase', () => {
 
     const restarted = initializeDatabase(databaseFile);
     try {
-      expect(restarted.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(restarted.sqlite.pragma('user_version', { simple: true })).toBe(29);
       expect(
         restarted.sqlite
           .prepare('SELECT markdown FROM project_learning_notes')
@@ -1236,6 +1248,33 @@ describe('initializeDatabase', () => {
       ).toEqual({ markdown: '# 原有学习笔记' });
     } finally {
       restarted.close();
+    }
+  });
+
+  it('reconciles the old learning-note version 28 with the main conversation binding', async () => {
+    const databaseFile = await createDatabaseFile();
+    seedLegacyLearningNoteVersion27(
+      databaseFile,
+      JSON.stringify({ scope: 'asset' }),
+    );
+    promoteLegacyLearningNoteDatabaseToVersion28(databaseFile);
+
+    const context = initializeDatabase(databaseFile);
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(29);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(project_conversations)')
+          .all()
+          .map(({ name }) => name),
+      ).toContain('bound_asset_id');
+      expect(
+        context.sqlite
+          .prepare('SELECT markdown FROM project_learning_notes')
+          .get(),
+      ).toEqual({ markdown: '# 原有学习笔记' });
+    } finally {
+      context.close();
     }
   });
 
@@ -1269,9 +1308,11 @@ describe('initializeDatabase', () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 29');
+    newer.pragma('user_version = 30');
     newer.close();
 
-    expect(() => initializeDatabase(databaseFile)).toThrow(/29/);
+    expect(() => initializeDatabase(databaseFile)).toThrow(
+      '数据库版本 30 高于应用支持的版本 29',
+    );
   });
 });

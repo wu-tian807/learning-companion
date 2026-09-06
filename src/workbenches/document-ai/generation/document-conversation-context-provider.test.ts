@@ -129,7 +129,11 @@ describe('DocumentConversationContextProvider selected regions', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('优先只根据图中内容回答'),
+          text: expect.not.stringContaining('优先只根据图中内容回答'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: '下图就是用户框选的内容，用于提供该选区的视觉材料。',
         }),
         expect.objectContaining({ type: 'local-image', detail: 'original' }),
       ]),

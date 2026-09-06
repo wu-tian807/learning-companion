@@ -1,10 +1,12 @@
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { isAbsolute, join, normalize } from 'node:path';
+import { readCodexAuthSource } from './codex-auth-file-link';
 
 export interface ResolveCodexHomePathInput {
   readonly managedCodexHomePath: string;
   readonly userHomePath: string;
+  readonly legacyCodexHomePath?: string;
   readonly environment?: NodeJS.ProcessEnv;
 }
 
@@ -31,10 +33,12 @@ function optionalAbsolutePath(value: string | undefined): string | null {
     : null;
 }
 
-export async function resolveCodexHomePath(
+// Resolves only the credential source. Never use this result as the execution Home.
+export async function resolveCodexAuthHomePath(
   {
     managedCodexHomePath,
     userHomePath,
+    legacyCodexHomePath,
     environment = process.env,
   }: ResolveCodexHomePathInput,
   dependencies: Partial<CodexHomeResolverDependencies> = {},
@@ -47,9 +51,12 @@ export async function resolveCodexHomePath(
   }
 
   const managedHome = normalize(managedCodexHomePath);
+  const source = await readCodexAuthSource(managedHome);
+  if (source) return source.sourceHomePath ?? managedHome;
   const configuredHome = optionalAbsolutePath(environment.CODEX_HOME);
   const defaultHome = normalize(join(userHomePath, '.codex'));
-  const candidates = [configuredHome, managedHome, defaultHome].filter(
+  const legacyHome = optionalAbsolutePath(legacyCodexHomePath);
+  const candidates = [managedHome, configuredHome, legacyHome, defaultHome].filter(
     (candidate, index, values): candidate is string =>
       candidate !== null && values.indexOf(candidate) === index,
   );
@@ -63,4 +70,11 @@ export async function resolveCodexHomePath(
   }
 
   return managedHome;
+}
+
+export function createManagedCodexHomePath(documentsPath: string): string {
+  if (!documentsPath.trim() || !isAbsolute(documentsPath)) {
+    throw new Error('Documents 路径必须是绝对路径');
+  }
+  return join(normalize(documentsPath), 'Learning Companion', '.codex');
 }

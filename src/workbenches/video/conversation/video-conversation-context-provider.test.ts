@@ -1,3 +1,4 @@
+import { materialsContextFromConversation } from '../../../main/conversation/workbench-conversation-context-provider';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -219,6 +220,19 @@ function setup(
 describe('Video conversation context provider', () => {
   beforeEach(() => {
     vi.mocked(prepareVisualRegionInputs).mockClear();
+  });
+
+  it('does not give a material consumer the ordinary video session follow-up policy', async () => {
+    const { provider, runtime, run } = setup();
+    const materials = await provider.prepareMaterials(materialsContextFromConversation(
+      processContext('C:\\\\workspace', { withSelection: false }),
+    ));
+    const text = JSON.stringify(materials.userMessage);
+    expect(text).toContain('本轮没有提供视频画面选区');
+    expect(text).not.toContain('Agent Session');
+    expect(text).not.toContain('继续追问');
+    expect(runtime.requireMediaDecoder).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('extracts one exact frame and supplies overview, marked and crop images', async () => {

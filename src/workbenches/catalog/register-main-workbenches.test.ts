@@ -10,6 +10,7 @@ import { ExternalLibraryLifecycleRegistry } from '../../main/external-libraries/
 import { ExternalLibraryRuntimeSetupRegistry } from '../../main/external-libraries/external-library-runtime-setup';
 import { SANDBOX_CONTEXT_MENU_TRIGGER } from '../../main/workbench/interaction/sandbox-frame-interaction-triggers';
 import { WorkbenchRegistry } from '../../main/workbench/workbench-registry';
+import { WorkbenchActionRegistry } from '../../main/workbench/workbench-action-registry';
 import type { RendererWorkbenchLoader } from '../../renderer/workbench/renderer-workbench-registry';
 import {
   CORE_CONTEXT_MENU_SURFACE_FACILITY_ID,
@@ -29,6 +30,7 @@ import { DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID } from '../document-ai/docume
 import { EPUB_CONVERSATION_CONTEXT_PROVIDER_ID } from '../epub/explanations/epub-conversation-context';
 import { HTML_CONVERSATION_CONTEXT_PROVIDER_ID } from '../html/conversation/html-conversation-context';
 import { IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID } from '../image/explanations/image-conversation-context';
+import { MIND_MAP_CONVERSATION_CONTEXT_PROVIDER_ID } from '../mindmap/conversation/mindmap-conversation-context';
 import {
   OFFICE_ANCHOR_VERSION,
   OFFICE_REGION_ANCHOR_TYPE,
@@ -40,6 +42,12 @@ import {
 import { PDF_READ_FUNCTION_TOOL_ID } from '../pdf/agent/pdf-function-tool';
 import { VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID } from '../video/conversation/video-conversation-context';
 import { VIDEO_READ_FUNCTION_TOOL_ID } from '../video/agent/video-function-tool';
+import {
+  LEARNING_BRIEF_FORMAT,
+  LEARNING_BRIEF_VERSION,
+  LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
+  LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
+} from '../learning-outline/shared';
 import { MEDIA_DUBBING_VOXCPM2_LIBRARY_ID } from '../media-dubbing/external-libraries/voxcpm2-definition';
 import {
   SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
@@ -49,12 +57,14 @@ import { UnsupportedWorkbenchProvider } from '../unsupported/main';
 import {
   mainWorkbenchContributions,
   registerMainWorkbenchAgentFunctionTools,
+  registerMainWorkbenchActions,
   registerMainWorkbenchAssetTargets,
   registerMainWorkbenchAttachments,
   registerMainWorkbenchGeneration,
   registerMainWorkbenchExternalLibraries,
   registerMainWorkbenchProviders,
 } from './register-main-workbenches';
+import { learningOutlineActions } from '../learning-outline/shared';
 import { preloadWorkbenchContributions } from './register-preload-workbench-features';
 import {
   registerRendererWorkbenches,
@@ -72,6 +82,7 @@ function createRegisteredMainWorkbenchRegistry(): WorkbenchRegistry {
   );
   registerMainWorkbenchProviders(providers, {
     associationService: {} as never,
+    assetLookup: { get: () => undefined },
     assetService: {
       subscribe: vi.fn(() => () => undefined),
     } as never,
@@ -80,7 +91,14 @@ function createRegisteredMainWorkbenchRegistry(): WorkbenchRegistry {
     contentResourceService: {} as never,
     externalLibraryService: {} as never,
     generationTasks: { subscribe: vi.fn(() => () => undefined) } as never,
-    projectLookup: {} as never,
+    attachmentService: {} as never,
+    projectConversationService: {} as never,
+    agentWorkspaces: {} as never,
+    projectLookup: {
+      get: vi.fn((projectId: string) =>
+        projectId === 'project-1' ? { id: projectId } : undefined,
+      ),
+    } as never,
     stateDatabase: {} as never,
     stateDataDatabase: {} as never,
     sandboxFrameScripts: {} as never,
@@ -222,6 +240,18 @@ describe('Workbench contribution catalogs', () => {
         AI_ANNOTATION_ATTACHMENT_VERSION,
       ),
     ).toBeDefined();
+    const brief = attachments.get(
+      LEARNING_OUTLINE_BRIEF_ATTACHMENT_TYPE,
+      LEARNING_OUTLINE_BRIEF_ATTACHMENT_VERSION,
+    );
+    expect(brief).toBeDefined();
+    expect(
+      brief?.isMetadata({
+        format: LEARNING_BRIEF_FORMAT,
+        version: LEARNING_BRIEF_VERSION,
+        revision: 'a'.repeat(64),
+      }),
+    ).toBe(true);
     expect(
       targets
         .get(PDF_REGION_ANCHOR_TYPE, PDF_REGION_ANCHOR_VERSION)
@@ -250,6 +280,17 @@ describe('Workbench contribution catalogs', () => {
     expect(functionTools.get('html_replace_edit')).toBeDefined();
   });
 
+  it('registers child actions through the real Main catalog composition', async () => {
+    const actions = new WorkbenchActionRegistry();
+    const workbenches = createRegisteredMainWorkbenchRegistry();
+
+    registerMainWorkbenchActions({ actions, workbenches });
+
+    await expect(
+      actions.invoke(learningOutlineActions.createDraft, 'project-1', {}),
+    ).rejects.toThrow('INVALID_IPC_REQUEST');
+  });
+
   it('registers Workbench conversation context providers through the same Main catalog', () => {
     const definitions = new GenerationTaskDefinitionRegistry();
     const conversationContexts =
@@ -272,16 +313,24 @@ describe('Workbench contribution catalogs', () => {
     });
 
     for (const id of [
+      MIND_MAP_CONVERSATION_CONTEXT_PROVIDER_ID,
       DOCUMENT_CONVERSATION_CONTEXT_PROVIDER_ID,
       EPUB_CONVERSATION_CONTEXT_PROVIDER_ID,
       IMAGE_CONVERSATION_CONTEXT_PROVIDER_ID,
       VIDEO_CONVERSATION_CONTEXT_PROVIDER_ID,
     ]) {
       expect(conversationContexts.require(id).id).toBe(id);
+      expect(typeof conversationContexts.require(id).prepareMaterials).toBe(
+        'function',
+      );
     }
     expect(
       conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID).id,
     ).toBe(HTML_CONVERSATION_CONTEXT_PROVIDER_ID);
+    expect(
+      typeof conversationContexts.require(HTML_CONVERSATION_CONTEXT_PROVIDER_ID)
+        .prepareMaterials,
+    ).toBe('function');
     expect(
       definitions.require(
         WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,

@@ -1,4 +1,5 @@
 import type { ConversationMessageContextSource } from '../../shared/project-conversations';
+import { PROJECT_CONVERSATION_MODE_ID } from '../../shared/project-conversations';
 import type { JsonValue } from '../../shared/workbench/protocol';
 import {
   revealWorkbenchTarget,
@@ -21,10 +22,20 @@ interface ActiveRegistration {
   readonly source: ActiveWorkbenchConversationContribution;
 }
 
+interface PendingLaunch {
+  readonly resolve: () => void;
+  readonly reject: (error: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+const OPEN_LAUNCH_TIMEOUT_MS = 10_000;
+
 export interface OpenWorkbenchConversationInput {
   /** Present only when a Workbench explicitly attaches its provider/context. */
   readonly ownerId?: string;
   readonly conversationId?: string;
+  readonly modeId?: string;
+  readonly boundAssetId?: string;
   readonly fallbackToNewConversation?: boolean;
   readonly context?: JsonValue;
   readonly question?: string;
@@ -37,19 +48,21 @@ function matchesSource(
 ): active is ActiveWorkbenchConversationContribution {
   return Boolean(
     active &&
-      source?.assetId === active.assetId &&
-      source.contextProviderId === active.contribution.contextProviderId,
+    source?.assetId === active.assetId &&
+    source.contextProviderId === active.contribution.contextProviderId,
   );
 }
 
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
+  private readonly pendingLaunches = new Map<number, PendingLaunch>();
   private activeRegistration: ActiveRegistration | undefined;
   private launchId = 0;
   private revealAbortController: AbortController | undefined;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
     panelOpen: false,
     busy: false,
+    modeId: PROJECT_CONVERSATION_MODE_ID,
   });
 
   subscribe = (listener: () => void): (() => void) => {
@@ -90,10 +103,15 @@ export class WorkbenchConversationRuntime {
       queueMicrotask(() => {
         if (this.activeRegistration?.token !== token) return;
         this.activeRegistration = undefined;
+        this.rejectPendingLaunches('AI 问答来源已关闭。');
         this.launchId += 1;
         this.update({
           panelOpen: this.snapshot.panelOpen,
           busy: this.snapshot.busy,
+          ...(this.snapshot.modeId ? { modeId: this.snapshot.modeId } : {}),
+          ...(this.snapshot.boundAssetId
+            ? { boundAssetId: this.snapshot.boundAssetId }
+            : {}),
           ...(this.snapshot.panelOpen
             ? {
                 launchRequest: Object.freeze({
@@ -108,6 +126,50 @@ export class WorkbenchConversationRuntime {
   }
 
   open(input: OpenWorkbenchConversationInput = {}): void {
+    this.openInternal(input);
+  }
+
+  /** Opens the panel and waits until ConversationSession accepts the request. */
+  openAndWait(input: OpenWorkbenchConversationInput = {}): Promise<void> {
+    let resolvePending: (() => void) | undefined;
+    let rejectPending: ((error: unknown) => void) | undefined;
+    const completion = new Promise<void>((resolve, reject) => {
+      resolvePending = resolve;
+      rejectPending = reject;
+    });
+
+    try {
+      const pending: PendingLaunch = {
+        resolve: resolvePending!,
+        reject: rejectPending!,
+      };
+      this.openInternal(input, pending);
+      pending.timer = setTimeout(() => {
+        const requestId = this.launchId;
+        this.settleLaunchRequest(
+          requestId,
+          new Error('AI 问答面板打开超时，请重试。'),
+        );
+      }, OPEN_LAUNCH_TIMEOUT_MS);
+    } catch (error: unknown) {
+      rejectPending!(error);
+    }
+    return completion;
+  }
+
+  settleLaunchRequest(requestId: number, error?: unknown): void {
+    const pending = this.pendingLaunches.get(requestId);
+    if (!pending) return;
+    this.pendingLaunches.delete(requestId);
+    if (pending.timer) clearTimeout(pending.timer);
+    if (error === undefined) pending.resolve();
+    else pending.reject(error);
+  }
+
+  private openInternal(
+    input: OpenWorkbenchConversationInput,
+    pending?: PendingLaunch,
+  ): void {
     const ownerId = input.ownerId?.trim();
     const registration = this.activeRegistration;
     if (ownerId && registration?.ownerId !== ownerId) {
@@ -118,27 +180,73 @@ export class WorkbenchConversationRuntime {
     }
 
     const contextSource = ownerId ? registration?.source : undefined;
+    const explicitIdentity = Boolean(
+      input.modeId?.trim() ||
+      input.boundAssetId?.trim() ||
+      input.conversationId?.trim(),
+    );
+    const preserveCurrentIdentity =
+      !explicitIdentity &&
+      (input.context !== undefined ||
+        input.fallbackToNewConversation === true) &&
+      this.snapshot.modeId !== undefined;
+    const modeId =
+      input.modeId?.trim() ||
+      (preserveCurrentIdentity
+        ? this.snapshot.modeId!
+        : PROJECT_CONVERSATION_MODE_ID);
+    const boundAssetId =
+      input.boundAssetId?.trim() ||
+      (preserveCurrentIdentity ? this.snapshot.boundAssetId : undefined);
+    const conversationId =
+      input.conversationId?.trim() ||
+      (!input.fallbackToNewConversation && preserveCurrentIdentity
+        ? this.snapshot.conversationId
+        : undefined);
+
+    this.rejectPendingLaunches('AI 问答打开请求已被新的请求替换。');
     this.launchId += 1;
+    if (pending) this.pendingLaunches.set(this.launchId, pending);
     const launchRequest: ConversationLaunchRequest = Object.freeze({
       id: this.launchId,
-      ...(input.conversationId?.trim()
-        ? { conversationId: input.conversationId.trim() }
-        : {}),
+      modeId,
+      ...(boundAssetId ? { boundAssetId } : {}),
+      ...(conversationId ? { conversationId } : {}),
       ...(input.fallbackToNewConversation === true
         ? { fallbackToNewConversation: true }
         : {}),
-      ...(contextSource
-        ? { contextSource }
-        : { clearContext: true }),
+      ...(contextSource ? { contextSource } : { clearContext: true }),
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
     });
-    this.update({ ...this.snapshot, panelOpen: true, launchRequest });
+    this.update({
+      ...this.snapshot,
+      panelOpen: true,
+      modeId,
+      ...(boundAssetId
+        ? { boundAssetId }
+        : modeId === PROJECT_CONVERSATION_MODE_ID
+          ? { boundAssetId: undefined }
+          : {}),
+      ...(conversationId ? { conversationId } : {}),
+      launchRequest,
+    });
+  }
+
+  setConversationIdentity(conversationId: string | undefined): void {
+    const normalized = conversationId?.trim();
+    const next = normalized ? normalized : undefined;
+    if (this.snapshot.conversationId === next) return;
+    this.update({
+      ...this.snapshot,
+      ...(next ? { conversationId: next } : { conversationId: undefined }),
+    });
   }
 
   close(): void {
     if (!this.snapshot.panelOpen) return;
+    this.rejectPendingLaunches('AI 问答面板已关闭。');
     this.cancelReveal();
     this.update({ ...this.snapshot, panelOpen: false });
   }
@@ -199,6 +307,7 @@ export class WorkbenchConversationRuntime {
   }
 
   dispose(): void {
+    this.rejectPendingLaunches('AI 问答面板已关闭。');
     this.cancelReveal();
     this.activeRegistration = undefined;
     this.update({ panelOpen: false, busy: false });
@@ -212,11 +321,22 @@ export class WorkbenchConversationRuntime {
     this.revealAbortController = undefined;
   }
 
+  private rejectPendingLaunches(message: string): void {
+    for (const [requestId, pending] of this.pendingLaunches) {
+      this.pendingLaunches.delete(requestId);
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.reject(new Error(message));
+    }
+  }
+
   private update(next: WorkbenchConversationRuntimeSnapshot): void {
     if (
       this.snapshot.active === next.active &&
       this.snapshot.panelOpen === next.panelOpen &&
       this.snapshot.busy === next.busy &&
+      this.snapshot.modeId === next.modeId &&
+      this.snapshot.boundAssetId === next.boundAssetId &&
+      this.snapshot.conversationId === next.conversationId &&
       this.snapshot.launchRequest === next.launchRequest
     ) {
       return;

@@ -11,7 +11,14 @@ type ProjectConversationApi = Pick<
   | 'listProjectConversations'
   | 'saveProjectConversation'
   | 'deleteProjectConversation'
->;
+> &
+  Partial<
+    Pick<
+      LearningCompanionApi,
+      | 'getOrCreateBoundProjectConversation'
+      | 'rebuildBoundProjectConversation'
+    >
+  >;
 
 interface ProjectConversationHistoryStoreOptions {
   readonly projectId: string;
@@ -85,6 +92,34 @@ export function createProjectConversationHistoryStore({
           conversationId,
         }),
       );
+    },
+    async getOrCreateBoundConversation(boundAssetId, modeId) {
+      await load();
+      if (!api.getOrCreateBoundProjectConversation) {
+        throw new Error('绑定对话恢复能力未接入');
+      }
+      const conversation = await api.getOrCreateBoundProjectConversation({
+        projectId,
+        boundAssetId,
+        modeId,
+      });
+      const records = await api.listProjectConversations({ projectId });
+      publish(records);
+      return conversation;
+    },
+    async rebuildBoundConversation(boundAssetId, modeId) {
+      await load();
+      if (!api.rebuildBoundProjectConversation) {
+        throw new Error('绑定对话重建能力未接入');
+      }
+      const conversation = await api.rebuildBoundProjectConversation({
+        projectId,
+        boundAssetId,
+        modeId,
+      });
+      const records = await api.listProjectConversations({ projectId });
+      publish(records);
+      return conversation;
     },
   };
 }

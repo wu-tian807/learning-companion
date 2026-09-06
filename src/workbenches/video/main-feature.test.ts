@@ -10,6 +10,10 @@ describe('videoMainContribution', () => {
     const registerArtifact = vi.fn();
     const context: MainWorkbenchProviderContext = {
       associationService: {} as never,
+    attachmentService: {} as never,
+    projectConversationService: {} as never,
+    agentWorkspaces: {} as never,
+    assetLookup: { get: () => undefined },
       assetService: { subscribe } as never,
       artifactRegistry: { register: registerArtifact } as never,
       artifactService: {} as never,

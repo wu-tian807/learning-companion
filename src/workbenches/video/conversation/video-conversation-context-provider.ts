@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 import type { AssetServiceApi } from '../../../main/assets/asset-service';
 import type { AttachmentServiceApi } from '../../../main/attachments/attachment-service';
-import type { WorkbenchConversationContextProvider } from '../../../main/conversation/workbench-conversation-context-provider';
+import type {
+  WorkbenchConversationContextProvider,
+  WorkbenchConversationMaterialsContext,
+  PreparedWorkbenchConversationMaterials,
+} from '../../../main/conversation/workbench-conversation-context-provider';
+import { materialsContextFromConversation } from '../../../main/conversation/workbench-conversation-context-provider';
 import type { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { prepareVisualRegionInputs } from '../../../main/conversation/visual-region-input-preparer';
 import { AppError } from '../../../main/errors/app-error';
@@ -51,19 +56,22 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
     private readonly commands: ExternalCommandRunnerApi = new ExternalCommandRunner(),
   ) {}
 
-  async prepare(
-    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
-  ) {
-    const assetId = context.instruction.assetId;
+  async prepareMaterials(
+    context: WorkbenchConversationMaterialsContext,
+  ): Promise<PreparedWorkbenchConversationMaterials> {
+    return this.prepareVideoMaterials(context);
+  }
+
+  private async prepareVideoMaterials(
+    context: WorkbenchConversationMaterialsContext,
+  ): Promise<PreparedWorkbenchConversationMaterials> {
+    const assetId = context.assetId;
     if (!assetId) throw new AppError('DATA_INTEGRITY_ERROR');
-    const rawSelection = context.instruction.context;
+    const rawSelection = context.context;
     if (rawSelection === undefined) {
       return Object.freeze({
-        purpose: 'video-frame-conversation',
-        statusMessage: '正在回答视频画面追问…',
-        systemInstruction: VIDEO_CONVERSATION_SYSTEM_INSTRUCTION_V1,
         userMessage: createTextAgentUserMessage(
-          `用户在当前视频画面对话中继续追问：\n\n${context.instruction.question}\n\n请结合同一 Agent Session 中已有的完整画面、兴趣区域和前文直接回答。`,
+          `本轮没有提供视频画面选区。\n\n问题：${context.question}`,
         ),
         toolRequirements: Object.freeze([]),
       });
@@ -183,17 +191,12 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
       context.signal?.throwIfAborted();
 
       return Object.freeze({
-        purpose: 'video-frame-conversation',
-        statusMessage: context.instruction.commitAnswer
-          ? '正在结合完整画面解释兴趣区域…'
-          : '正在理解选中的视频画面…',
-        systemInstruction: VIDEO_CONVERSATION_SYSTEM_INSTRUCTION_V1,
         userMessage: Object.freeze({
           role: 'user' as const,
           content: Object.freeze([
             Object.freeze({
               type: 'text' as const,
-              text: `用户问题：${context.instruction.question}\n\n画面时间：${region.timeSeconds.toFixed(3)} 秒。兴趣区域归一化坐标：x=${region.x.toFixed(6)}, y=${region.y.toFixed(6)}, width=${region.width.toFixed(6)}, height=${region.height.toFixed(6)}。`,
+              text: `用户问题：${context.question}\n\n画面时间：${region.timeSeconds.toFixed(3)} 秒。兴趣区域归一化坐标：x=${region.x.toFixed(6)}, y=${region.y.toFixed(6)}, width=${region.width.toFixed(6)}, height=${region.height.toFixed(6)}。`,
             }),
             ...(subtitleContext
               ? [
@@ -233,11 +236,35 @@ export class VideoConversationContextProvider implements WorkbenchConversationCo
           ]),
         }),
         toolRequirements: Object.freeze([]),
-        commitStatusMessage: '回答已生成，正在保存视频解释标注…',
       });
     } finally {
       await resolved.handle?.close();
     }
+  }
+
+  async prepare(
+    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
+  ) {
+    const materials = await this.prepareMaterials(
+      materialsContextFromConversation(context),
+    );
+    return Object.freeze({
+      purpose: 'video-frame-conversation',
+      statusMessage:
+        context.instruction.context === undefined
+          ? '正在回答视频画面追问…'
+          : context.instruction.commitAnswer
+            ? '正在结合完整画面解释兴趣区域…'
+            : '正在理解选中的视频画面…',
+      systemInstruction: VIDEO_CONVERSATION_SYSTEM_INSTRUCTION_V1,
+      userMessage: context.instruction.context === undefined
+        ? createTextAgentUserMessage(`用户在当前视频画面对话中继续追问：\n\n${context.instruction.question}\n\n请继承同一 Agent Session 中已有的完整画面、兴趣区域和前文。`)
+        : materials.userMessage,
+      toolRequirements: materials.toolRequirements,
+      ...(context.instruction.context === undefined
+        ? {}
+        : { commitStatusMessage: '回答已生成，正在保存视频解释标注…' }),
+    });
   }
 
   async commitAnswer(

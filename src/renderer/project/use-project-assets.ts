@@ -61,8 +61,7 @@ interface UseProjectAssetsOptions {
   readonly setLoadState: Dispatch<SetStateAction<AssetLoadState>>;
   readonly selectedAssetId: string | null;
   readonly selectAsset: (assetId: string | null) => void;
-  readonly workbenchLifecycleTaskRef:
-    MutableRefObject<Promise<void>>;
+  readonly workbenchLifecycleTaskRef: MutableRefObject<Promise<void>>;
   readonly setError: Dispatch<SetStateAction<string | null>>;
 }
 
@@ -77,14 +76,14 @@ export function useProjectAssets({
 }: UseProjectAssetsOptions) {
   const [busy, setBusy] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
-  const [renameTarget, setRenameTarget] =
-    useState<AssetSnapshot | null>(null);
-  const [deleteRequest, setDeleteRequest] =
-    useState<AssetDeleteRequest | null>(null);
-  const [folderState, setFolderState] =
-    useState<AssetFolderState | null>(null);
-  const [folderLoadFailureProjectId, setFolderLoadFailureProjectId] =
-    useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<AssetSnapshot | null>(null);
+  const [deleteRequest, setDeleteRequest] = useState<AssetDeleteRequest | null>(
+    null,
+  );
+  const [folderState, setFolderState] = useState<AssetFolderState | null>(null);
+  const [folderLoadFailureProjectId, setFolderLoadFailureProjectId] = useState<
+    string | null
+  >(null);
   const [folderLocation, setFolderLocation] = useState<{
     readonly projectId: string;
     readonly path: string | null;
@@ -138,6 +137,23 @@ export function useProjectAssets({
     },
     [setLoadState],
   );
+  const upsertAsset = useCallback(
+    (asset: AssetSnapshot) => {
+      if (asset.projectId !== projectId) {
+        throw new Error('不能把其他 Project 的 Asset 放入当前列表。');
+      }
+      updateAssets((current) => {
+        const index = current.findIndex(
+          (candidate) => candidate.id === asset.id,
+        );
+        if (index < 0) return [...current, asset];
+        const next = [...current];
+        next[index] = asset;
+        return next;
+      });
+    },
+    [projectId, updateAssets],
+  );
 
   useEffect(
     () =>
@@ -166,10 +182,7 @@ export function useProjectAssets({
       setFolderLoadFailureProjectId(null);
     } catch (folderError) {
       if (folderRequestVersionRef.current !== requestVersion) return;
-      const message = userMessageFromError(
-        folderError,
-        '无法读取资料文件夹。',
-      );
+      const message = userMessageFromError(folderError, '无法读取资料文件夹。');
       if (message) {
         console.error(message, folderError);
         setError(message);
@@ -213,10 +226,7 @@ export function useProjectAssets({
   );
   const applyFolderState = useCallback(
     (nextState: AssetFolderState) => {
-      if (
-        !isAssetFolderState(nextState) ||
-        nextState.projectId !== projectId
-      ) {
+      if (!isAssetFolderState(nextState) || nextState.projectId !== projectId) {
         throw new Error('Asset Folder 响应无效');
       }
       setFolderState(nextState);
@@ -338,10 +348,7 @@ export function useProjectAssets({
                 folderPathByAssetId: {
                   ...current.folderPathByAssetId,
                   ...Object.fromEntries(
-                    result.added.map((asset) => [
-                      asset.id,
-                      currentFolderPath,
-                    ]),
+                    result.added.map((asset) => [asset.id, currentFolderPath]),
                   ),
                 },
               }
@@ -361,10 +368,7 @@ export function useProjectAssets({
     [currentFolderPath, projectId, selectAsset, setError, setLoadState],
   );
   const addPaths = useCallback(
-    async (
-      paths: string[],
-      mode: LocalAssetImportMode = 'copy',
-    ) => {
+    async (paths: string[], mode: LocalAssetImportMode = 'copy') => {
       if (paths.length === 0) {
         return;
       }
@@ -379,10 +383,9 @@ export function useProjectAssets({
 
   const chooseAndAdd = async (mode: LocalAssetImportMode) => {
     await runMutation(async () => {
-      const paths =
-        await window.learningCompanion.selectLocalAssetFiles({
-          projectId,
-        });
+      const paths = await window.learningCompanion.selectLocalAssetFiles({
+        projectId,
+      });
 
       if (paths.length > 0) {
         await importPaths(paths, mode);
@@ -457,10 +460,9 @@ export function useProjectAssets({
     setRefreshingAll(true);
     try {
       await runMutation(async () => {
-        const refreshed =
-          await window.learningCompanion.refreshAllAssets({
-            projectId,
-          });
+        const refreshed = await window.learningCompanion.refreshAllAssets({
+          projectId,
+        });
         if (!isAssetSnapshotList(refreshed)) {
           throw new Error('Asset 批量刷新响应无效');
         }
@@ -472,10 +474,7 @@ export function useProjectAssets({
   };
 
   const requestDelete = useCallback(
-    (
-      scope: AssetSelectionScope | null,
-      targets: readonly AssetSnapshot[],
-    ) => {
+    (scope: AssetSelectionScope | null, targets: readonly AssetSnapshot[]) => {
       if (targets.length === 0 || mutationLockRef.current) {
         return;
       }
@@ -502,8 +501,7 @@ export function useProjectAssets({
     const targets = request.assets;
     const targetIds = targets.map((asset) => asset.id);
     const selectedBeforeDeletion = selectedAssetId;
-    const activeWorkbenchClosed =
-      workbenchLifecycleTaskRef.current;
+    const activeWorkbenchClosed = workbenchLifecycleTaskRef.current;
     let receivedResult = false;
     const succeeded = await runMutation(async () => {
       let result: DeleteAssetsResult | undefined;
@@ -695,6 +693,7 @@ export function useProjectAssets({
     revealAssetInFolder,
     refreshAsset,
     refreshAllAssets,
+    upsertAsset,
     requestDelete,
     cancelDelete,
     deleteAssets,

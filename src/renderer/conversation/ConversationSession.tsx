@@ -22,9 +22,12 @@ export function ConversationSession({
   historyStore,
   launchRequest,
   onLaunchConsumed,
+  onLaunchSettled,
   onPersistenceError,
   onBusyChange,
+  onConversationIdentityChange,
   mode = projectConversationMode,
+  boundAssetId,
   workspace,
   currentAssetSource,
   children,
@@ -34,9 +37,12 @@ export function ConversationSession({
   readonly historyStore: ConversationHistoryStore;
   readonly launchRequest?: ConversationLaunchRequest;
   readonly onLaunchConsumed?: (requestId: number) => void;
+  readonly onLaunchSettled?: (requestId: number, error?: unknown) => void;
   readonly onPersistenceError?: (error: unknown) => void;
   readonly onBusyChange?: (busy: boolean) => void;
+  readonly onConversationIdentityChange?: (conversationId: string) => void;
   readonly mode?: ConversationModeDefinition;
+  readonly boundAssetId?: string;
   readonly workspace?: ConversationWorkspaceBinding;
   readonly currentAssetSource?: ActiveWorkbenchConversationContribution;
   readonly children: (controller: ConversationController) => ReactNode;
@@ -47,8 +53,10 @@ export function ConversationSession({
     historyStore,
     launchRequest,
     onLaunchConsumed,
+    onLaunchSettled,
     onPersistenceError,
     mode,
+    boundAssetId,
     workspace,
     currentAssetSource,
   });
@@ -62,10 +70,11 @@ export function ConversationSession({
     onBusyChangeRef.current?.(controller.state.busy);
   }, [controller.state.busy]);
 
-  useEffect(
-    () => () => onBusyChangeRef.current?.(false),
-    [],
-  );
+  useEffect(() => {
+    onConversationIdentityChange?.(controller.state.conversation.id);
+  }, [controller.state.conversation.id, onConversationIdentityChange]);
+
+  useEffect(() => () => onBusyChangeRef.current?.(false), []);
 
   return open ? children(controller) : null;
 }

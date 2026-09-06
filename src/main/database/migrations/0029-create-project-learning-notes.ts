@@ -13,7 +13,7 @@ function tableExists(sqlite: Database.Database, tableName: string): boolean {
 }
 
 export const createProjectLearningNotesMigration = {
-  version: 28,
+  version: 29,
   sql: '',
   apply(sqlite: Database.Database): void {
     const upgradingFromLegacyLearningNotesVersion = tableExists(

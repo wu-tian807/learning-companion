@@ -10,7 +10,10 @@ import type { GenerationTaskProcessContext } from '../../../main/generation/cont
 import type {
   PreparedWorkbenchConversationContext,
   WorkbenchConversationContextProvider,
+  PreparedWorkbenchConversationMaterials,
+  WorkbenchConversationMaterialsContext,
 } from '../../../main/conversation/workbench-conversation-context-provider';
+import { materialsContextFromConversation } from '../../../main/conversation/workbench-conversation-context-provider';
 import type { WorkbenchConversationInstruction } from '../../../main/conversation/workbench-conversation-instruction';
 import { AppError } from '../../../main/errors/app-error';
 import { PDF_READ_FUNCTION_TOOL_ID } from '../../pdf/agent/pdf-function-tool';
@@ -42,7 +45,7 @@ export function shouldUseSelectionFastPath(question: string): boolean {
 }
 
 async function prepareSelectedRegionMessage(
-  context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
+  context: WorkbenchConversationMaterialsContext,
   previewDataUrl: string,
   text: string,
 ): Promise<AgentUserMessage> {
@@ -72,10 +75,13 @@ async function prepareSelectedRegionMessage(
   return Object.freeze({
     role: 'user' as const,
     content: Object.freeze([
-      Object.freeze({ type: 'text' as const, text }),
       Object.freeze({
         type: 'text' as const,
-        text: '下图就是用户框选的内容。优先只根据图中内容回答；不要为了重新定位该区域而调用工具。',
+        text,
+      }),
+      Object.freeze({
+        type: 'text' as const,
+        text: '下图就是用户框选的内容，用于提供该选区的视觉材料。',
       }),
       Object.freeze({
         type: 'local-image' as const,
@@ -129,21 +135,21 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
     };
   }
 
-  async prepare(
-    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
-  ): Promise<PreparedWorkbenchConversationContext> {
-  const source = context.assetReferences.source?.[0];
-  if (!source || source.assetId !== context.instruction.assetId) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
-  const mediaType = source.materializedMediaType ?? source.mediaType;
-    const rawSelection = context.instruction.context;
+  async prepareMaterials(
+    context: WorkbenchConversationMaterialsContext,
+  ): Promise<PreparedWorkbenchConversationMaterials> {
+    const source = context.assetReferences.source?.[0];
+    if (!source || source.assetId !== context.assetId) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    const mediaType = source.materializedMediaType ?? source.mediaType;
+    const rawSelection = context.context;
     const selection = rawSelection === undefined
       ? undefined
       : parseDocumentConversationContext(rawSelection);
-  if (rawSelection !== undefined && !selection) {
-    throw new AppError('DATA_INTEGRITY_ERROR');
-  }
+    if (rawSelection !== undefined && !selection) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
 
     if (selection?.image !== undefined) {
       const imageInput = await this.prepareImageInput(
@@ -152,18 +158,15 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
         selection.image,
       );
       return Object.freeze({
-        purpose: 'document-image-question',
-        statusMessage: '正在准备 Markdown 中的图片…',
-        systemInstruction: DOCUMENT_IMAGE_QUESTION_SYSTEM_INSTRUCTION_V2,
         userMessage: Object.freeze({
           role: 'user',
           content: Object.freeze([
             Object.freeze({
               type: 'text',
               text:
-                `用户问题：${context.instruction.question}\n\n` +
+                `用户问题：${context.question}\n\n` +
                 `图片来自当前文档引用的本地文件（${selection.image.relativePath}）。` +
-                '请结合图片内容直接回答，不要访问或修改任何文件。',
+                '附图内容是本轮要分析的视觉材料。',
             }),
             Object.freeze({
               type: 'text',
@@ -183,7 +186,7 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
     const target = selection?.target ?? { scope: 'asset' as const };
 
     const prompt = [
-      `Question: ${context.instruction.question}`,
+      `Question: ${context.question}`,
       `Document path: ${source.relativePath}`,
       `Document media type: ${mediaType}`,
       `AssetTarget: ${JSON.stringify(target)}`,
@@ -192,23 +195,15 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
         : selection?.previewDataUrl
           ? 'A selected-region image is attached below.'
           : 'No reliable selection was supplied. Inspect the referenced document with the document tools.',
-      'Answer in clear Chinese unless the user explicitly requests another language.',
     ].join('\n\n');
     const hasSelectedText = Boolean(selection?.selectedText?.trim());
     const hasRegionImage = Boolean(selection?.previewDataUrl);
     const hasUsableSelection = hasSelectedText || hasRegionImage;
     const useFastPath =
       hasUsableSelection &&
-      shouldUseSelectionFastPath(context.instruction.question);
+      shouldUseSelectionFastPath(context.question);
 
     return Object.freeze({
-      purpose: 'document-question',
-      statusMessage: useFastPath
-        ? '正在快速回答框选内容…'
-        : hasUsableSelection
-          ? '正在结合框选内容回答…'
-          : '正在阅读资料并回答…',
-      systemInstruction: DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V2,
       userMessage: selection?.previewDataUrl
         ? await prepareSelectedRegionMessage(
             context,
@@ -230,8 +225,39 @@ export class DocumentConversationContextProvider implements WorkbenchConversatio
     });
   }
 
-  private async prepareImageInput(
+  async prepare(
     context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
+  ): Promise<PreparedWorkbenchConversationContext> {
+    const materials = await this.prepareMaterials(
+      materialsContextFromConversation(context),
+    );
+    const selection = context.instruction.context === undefined
+      ? undefined
+      : parseDocumentConversationContext(context.instruction.context);
+    const hasSelectedText = Boolean(selection?.selectedText?.trim());
+    const hasRegionImage = Boolean(selection?.previewDataUrl);
+    const useFastPath =
+      (hasSelectedText || hasRegionImage) &&
+      shouldUseSelectionFastPath(context.instruction.question);
+    return Object.freeze({
+      purpose: selection?.image ? 'document-image-question' : 'document-question',
+      statusMessage: selection?.image
+        ? '正在准备 Markdown 中的图片…'
+        : useFastPath
+          ? '正在快速回答框选内容…'
+          : hasSelectedText || hasRegionImage
+            ? '正在结合框选内容回答…'
+            : '正在阅读资料并回答…',
+      systemInstruction: selection?.image
+        ? DOCUMENT_IMAGE_QUESTION_SYSTEM_INSTRUCTION_V2
+        : DOCUMENT_QUESTION_SYSTEM_INSTRUCTION_V2,
+      userMessage: materials.userMessage,
+      toolRequirements: materials.toolRequirements,
+    });
+  }
+
+  private async prepareImageInput(
+    context: WorkbenchConversationMaterialsContext,
     source: {
       readonly assetId: string;
       readonly alias?: string;

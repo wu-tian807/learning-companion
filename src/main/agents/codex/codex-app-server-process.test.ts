@@ -64,6 +64,9 @@ describe('CodexAppServerConnectionFactory', () => {
       {
         environment: {
           PATH: 'test-path',
+          CODEX_HOME: join(temporaryDirectory, 'user-home'),
+          CODEX_SQLITE_HOME: join(temporaryDirectory, 'user-state'),
+          CODEX_ACCESS_TOKEN: 'must-not-leak-token',
           OPENAI_API_KEY: 'must-not-leak',
           OPENAI_BASE_URL: 'https://example.invalid',
         },
@@ -77,7 +80,7 @@ describe('CodexAppServerConnectionFactory', () => {
 
       expect(spawnProcess).toHaveBeenCalledWith(
         process.execPath,
-        ['app-server', '--listen', 'stdio://'],
+        expect.arrayContaining(['app-server', '--listen', 'stdio://', '-c', `sqlite_home=${JSON.stringify(codexHomePath)}`]),
         expect.objectContaining({
           cwd: codexHomePath,
           shell: false,
@@ -89,6 +92,7 @@ describe('CodexAppServerConnectionFactory', () => {
       expect(options.env).toEqual({
         PATH: 'test-path',
         CODEX_HOME: codexHomePath,
+        CODEX_SQLITE_HOME: codexHomePath,
       });
 
       await connection.close();

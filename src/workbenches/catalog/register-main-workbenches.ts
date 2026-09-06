@@ -4,6 +4,7 @@ import { ProjectConversationContextProvider } from '../../main/conversation/proj
 import {
   createMainWorkbenchRuntime,
   type MainWorkbenchAgentToolContext,
+  type MainWorkbenchActionContext,
   type MainWorkbenchArtifactContext,
   type MainWorkbenchAssetTargetContext,
   type MainWorkbenchAttachmentContext,
@@ -26,6 +27,7 @@ import { markdownMainWorkbenchContribution } from '../markdown/main-contribution
 import { mediaDubbingMainWorkbenchContribution } from '../media-dubbing/main-contribution';
 import { mediaSubtitlesMainWorkbenchContribution } from '../media-subtitles/main-contribution';
 import { mindMapMainWorkbenchContribution } from '../mindmap/main-contribution';
+import { learningOutlineMainWorkbenchContribution } from '../learning-outline/main-contribution';
 import { officeMainWorkbenchContribution } from '../office/main-contribution';
 import { pdfMainWorkbenchContribution } from '../pdf/main-contribution';
 import { plainTextMainWorkbenchContribution } from '../plain-text/main-contribution';
@@ -33,6 +35,7 @@ import { videoMainWorkbenchContribution } from '../video/main-contribution';
 
 export type {
   MainWorkbenchAgentToolContext,
+  MainWorkbenchActionContext,
   MainWorkbenchArtifactContext,
   MainWorkbenchAssetTargetContext,
   MainWorkbenchAttachmentContext,
@@ -49,6 +52,7 @@ export const mainWorkbenchContributions: readonly MainWorkbenchContribution[] =
     plainTextMainWorkbenchContribution,
     markdownMainWorkbenchContribution,
     mindMapMainWorkbenchContribution,
+    learningOutlineMainWorkbenchContribution,
     pdfMainWorkbenchContribution,
     officeMainWorkbenchContribution,
     htmlMainWorkbenchContribution,
@@ -158,6 +162,18 @@ export function registerMainWorkbenchAgentFunctionTools(
   const { workbenches, ...featureContext } = context;
   forEachContribution((entry) => {
     entry.registerAgentFunctionTools?.({
+      ...featureContext,
+      provider: resolveContributionProvider(entry, workbenches),
+    });
+  });
+}
+
+export function registerMainWorkbenchActions(
+  context: RegisteredProviderContext<MainWorkbenchActionContext>,
+): void {
+  const { workbenches, ...featureContext } = context;
+  forEachContribution((entry) => {
+    entry.registerActions?.({
       ...featureContext,
       provider: resolveContributionProvider(entry, workbenches),
     });

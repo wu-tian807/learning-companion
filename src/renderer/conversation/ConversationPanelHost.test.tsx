@@ -89,6 +89,20 @@ describe('ConversationPanelHost Project ownership', () => {
     });
   }
 
+  it('rejects unavailable explicit modes without starting a general conversation', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const save = vi.spyOn(historyStore, 'save');
+    const pending = runtime.openAndWait({ modeId: 'unavailable.mode', boundAssetId: 'outline-1' });
+    const rejected = expect(pending).rejects.toThrow('模式暂不可用');
+    await render(runtime);
+    await rejected;
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('模式暂不可用');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(startGenerationTask).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    runtime.dispose();
+  });
+
   it('sends a new message with no Workbench registered through Project Conversation', async () => {
     const runtime = new WorkbenchConversationRuntime();
     runtime.open();
@@ -106,6 +120,15 @@ describe('ConversationPanelHost Project ownership', () => {
       assetReferences: {},
     });
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('settles an explicit runtime open after the ConversationSession accepts it', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const pending = runtime.openAndWait();
+
+    await render(runtime);
+    await expect(pending).resolves.toBeUndefined();
+    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
   });
 
   it('uses the selected Asset Workbench for a contextless Task without rendering a reference card', async () => {
@@ -163,8 +186,7 @@ describe('ConversationPanelHost Project ownership', () => {
       sourceAssetMode: 'identity',
       contextRequired: true,
       contextRequiredMessage: '请先选择视频画面',
-      isContext: (value) =>
-        JSON.stringify(value) === JSON.stringify(context),
+      isContext: (value) => JSON.stringify(value) === JSON.stringify(context),
       onContextReleased,
     };
     runtime.register('video.owner', 'asset-video', videoContribution);
@@ -174,8 +196,9 @@ describe('ConversationPanelHost Project ownership', () => {
     });
     await render(runtime);
 
-    const newConversation = [...container.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('新对话'));
+    const newConversation = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('新对话'),
+    );
     expect(newConversation).toBeDefined();
     await act(async () => {
       newConversation!.click();

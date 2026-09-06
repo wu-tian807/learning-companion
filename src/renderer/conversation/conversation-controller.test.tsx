@@ -1083,7 +1083,7 @@ describe('shared Conversation controller', () => {
     expect(latest.state.conversation.messages.at(-1)?.text).toBe('旧回答');
   });
 
-  it('restores an explicitly requested history tab only after asynchronous history is ready', async () => {
+  it('restores an explicitly requested history tab and attaches its context', async () => {
     let resolveHistory!: (records: readonly ConversationRecord[]) => void;
     const historyStore: ConversationHistoryStore = {
       list: vi.fn(() => new Promise<readonly ConversationRecord[]>((resolve) => {
@@ -1122,11 +1122,13 @@ describe('shared Conversation controller', () => {
       await Promise.resolve();
     });
     expect(latest.state.conversation).toEqual(saved);
-    expect(latest.state.pendingContext).toBeUndefined();
+    expect(latest.state.pendingContext).toEqual(
+      createContextAttachment(context),
+    );
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
   });
 
-  it('reuses an exact current identity and creates context-bound fallbacks only when unavailable', async () => {
+  it('reuses an exact current identity while attaching context and creates fallbacks only when unavailable', async () => {
     const historyStore = createMemoryHistory();
     const contribution = createContribution();
     render({ historyStore });
@@ -1145,7 +1147,12 @@ describe('shared Conversation controller', () => {
     });
     await flush();
     expect(latest.state.conversation.id).toBe(previousConversationId);
-    expect(latest.state.pendingContext).toBeUndefined();
+    expect(latest.state.pendingContext).toEqual(
+      createContextAttachment(
+        { target: { scope: 'must-not-rebind' } },
+        contribution,
+      ),
+    );
 
     const context = { target: { scope: 'missing-history-fallback' } };
 
@@ -1224,6 +1231,120 @@ describe('shared Conversation controller', () => {
       createContextAttachment(context, contribution),
     );
     expect(onLaunchConsumed).toHaveBeenCalledWith(1);
+  });
+
+  it('attaches new node context while restoring the addressed conversation', async () => {
+    const bound: ConversationRecord = {
+      id: 'bound-1',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      title: '学习需求',
+      messages: [
+        { id: 'old-question', role: 'user', text: '旧问题', createdTime: 1 },
+      ],
+      createdTime: 1,
+      updatedTime: 1,
+    };
+    const historyStore = createMemoryHistory([bound]);
+    const contribution = createContribution();
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      id: 'learning-outline.intake',
+    };
+    const context = {
+      nodeId: 'n1',
+      references: [{ sourceAssetId: 'mindmap-1', nodeId: 'n1' }],
+    };
+
+    render({
+      historyStore,
+      mode,
+      boundAssetId: 'outline-1',
+    });
+    await flush();
+    act(() => latest.actions.restore(bound));
+
+    render({
+      historyStore,
+      mode,
+      boundAssetId: 'outline-1',
+      launchRequest: createContextLaunch(
+        context,
+        {
+          id: 1,
+          modeId: mode.id,
+          boundAssetId: 'outline-1',
+          conversationId: bound.id,
+        },
+        contribution,
+      ),
+    });
+    await flush();
+
+    expect(latest.state.conversation.id).toBe(bound.id);
+    expect(latest.state.pendingContext).toEqual(
+      createContextAttachment(context, contribution),
+    );
+  });
+
+  it('passes context through when an addressed conversation submits immediately', async () => {
+    const bound: ConversationRecord = {
+      id: 'bound-1',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      title: '学习需求',
+      messages: [],
+      createdTime: 1,
+      updatedTime: 1,
+    };
+    const historyStore = createMemoryHistory([bound]);
+    const contribution = createContribution();
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      id: 'learning-outline.intake',
+    };
+    const context = { nodeId: 'n1' };
+    const start = vi.fn(async (
+      request: Parameters<ConversationTaskClient['start']>[0],
+    ) => {
+      void request;
+      return {
+        taskId: 'task-context',
+        snapshot: task('task-context'),
+      };
+    });
+    client.start = start;
+
+    render({
+      historyStore,
+      mode,
+      boundAssetId: 'outline-1',
+      launchRequest: createContextLaunch(
+        context,
+        {
+          id: 1,
+          modeId: mode.id,
+          boundAssetId: 'outline-1',
+          conversationId: bound.id,
+          question: '请把这个节点纳入学习需求。',
+          submit: true,
+        },
+        contribution,
+      ),
+    });
+    await flush();
+
+    expect(start).toHaveBeenCalledOnce();
+    const request = start.mock.calls[0]?.[0];
+    if (!request) throw new Error('未创建带上下文的 Conversation Task');
+    expect(request.instruction).toMatchObject({
+      conversationId: bound.id,
+      context,
+    });
+    expect(latest.state.conversation.messages[0]).toMatchObject({
+      role: 'user',
+      context,
+    });
   });
 
   it('keeps a user-selected new conversation instead of restoring history by context', async () => {
@@ -1316,6 +1437,113 @@ describe('shared Conversation controller', () => {
     expect(historyStore.save).not.toHaveBeenCalled();
     expect(latest.state.history).toEqual([]);
     expect(latest.state.conversation.id).not.toBe(saved.id);
+  });
+
+  it('rebuilds a bound conversation through Main instead of inventing a duplicate id', async () => {
+    const bound: ConversationRecord = {
+      id: 'bound-conversation',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      title: '学习需求',
+      messages: [],
+      createdTime: 1,
+      updatedTime: 1,
+    };
+    const rebuilt: ConversationRecord = {
+      ...bound,
+      id: 'rebuilt-conversation',
+      createdTime: 2,
+      updatedTime: 2,
+    };
+    let records: ConversationRecord[] = [bound];
+    const historyStore: ConversationHistoryStore = {
+      list: vi.fn(async () => records),
+      save: vi.fn(async (record) => {
+        records = [...records.filter(({ id }) => id !== record.id), record];
+        return records;
+      }),
+      remove: vi.fn(async (conversationId) => {
+        records = records.filter(({ id }) => id !== conversationId);
+        return records;
+      }),
+      rebuildBoundConversation: vi.fn(async () => {
+        records = [rebuilt];
+        return rebuilt;
+      }),
+      getOrCreateBoundConversation: vi.fn(async () => rebuilt),
+    };
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      id: 'learning-outline.intake',
+    };
+
+    render({ historyStore, mode, boundAssetId: 'outline-1' });
+    await flush();
+    act(() => latest.actions.restore(bound));
+    expect(latest.state.conversation.id).toBe(bound.id);
+
+    await act(async () => {
+      await latest.actions.startNew();
+    });
+
+    expect(historyStore.rebuildBoundConversation).toHaveBeenCalledWith(
+      'outline-1',
+      'learning-outline.intake',
+    );
+    expect(latest.state.conversation.id).toBe(rebuilt.id);
+    expect(records).toEqual([rebuilt]);
+  });
+
+  it('uses the Main-created record after deleting the current bound conversation', async () => {
+    const bound: ConversationRecord = {
+      id: 'bound-conversation',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      title: '学习需求',
+      messages: [],
+      createdTime: 1,
+      updatedTime: 1,
+    };
+    const rebuilt: ConversationRecord = {
+      ...bound,
+      id: 'restored-bound-conversation',
+      createdTime: 2,
+      updatedTime: 2,
+    };
+    let records: ConversationRecord[] = [bound];
+    const getOrCreateBoundConversation = vi.fn(async () => {
+      records = [rebuilt];
+      return rebuilt;
+    });
+    const historyStore: ConversationHistoryStore = {
+      list: vi.fn(async () => records),
+      save: vi.fn(async (record) => {
+        records = [...records.filter(({ id }) => id !== record.id), record];
+        return records;
+      }),
+      remove: vi.fn(async (conversationId) => {
+        records = records.filter(({ id }) => id !== conversationId);
+        return records;
+      }),
+      getOrCreateBoundConversation,
+    };
+    const mode: ConversationModeDefinition = {
+      ...projectConversationMode,
+      id: 'learning-outline.intake',
+    };
+
+    render({ historyStore, mode, boundAssetId: 'outline-1' });
+    await flush();
+    act(() => latest.actions.restore(bound));
+    act(() => latest.actions.remove(bound));
+    await flush();
+
+    expect(getOrCreateBoundConversation).toHaveBeenCalledWith(
+      'outline-1',
+      'learning-outline.intake',
+    );
+    expect(latest.state.conversation.id).toBe(rebuilt.id);
+    expect(latest.state.conversation.boundAssetId).toBe('outline-1');
   });
 
   it('serializes a delete behind an in-flight save and ignores duplicate deletes', async () => {

@@ -2,6 +2,8 @@ import type {
   GenerationTaskView,
   StartGenerationTaskRequest,
 } from '../../shared/generation-tasks';
+import type { ComponentType } from 'react';
+
 import type { ConversationTaskInput } from './conversation-contracts';
 
 export interface ConversationTaskCompletion {
@@ -23,6 +25,16 @@ export interface ConversationModePresentation {
   readonly ariaLabel: string;
   readonly emptyLabel: string;
   readonly inputPlaceholder: string;
+  readonly allowNewConversation?: boolean;
+  readonly newConversationLabel?: string;
+  readonly status?: ComponentType<ConversationModeStatusProps>;
+}
+
+export interface ConversationModeStatusProps {
+  readonly projectId: string;
+  readonly boundAssetId?: string;
+  /** Changes when the conversation is persisted, allowing an owner status to refresh. */
+  readonly refreshKey: number;
 }
 
 /**
