@@ -1,7 +1,12 @@
 import { join } from 'node:path';
 
 import type { AttachmentServiceApi } from '../../../../main/attachments/attachment-service';
-import type { WorkbenchConversationContextProvider } from '../../../../main/conversation/workbench-conversation-context-provider';
+import type {
+  WorkbenchConversationContextProvider,
+  WorkbenchConversationMaterialsContext,
+  PreparedWorkbenchConversationMaterials,
+} from '../../../../main/conversation/workbench-conversation-context-provider';
+import { materialsContextFromConversation } from '../../../../main/conversation/workbench-conversation-context-provider';
 import type { WorkbenchConversationInstruction } from '../../../../main/conversation/workbench-conversation-instruction';
 import { AppError } from '../../../../main/errors/app-error';
 import {
@@ -51,14 +56,14 @@ export class ImageConversationContextProvider
 
   constructor(private readonly attachments: AttachmentServiceApi) {}
 
-  async prepare(
-    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
-  ) {
+  async prepareMaterials(
+    context: WorkbenchConversationMaterialsContext,
+  ): Promise<PreparedWorkbenchConversationMaterials> {
     const source = context.assetReferences.source?.[0];
-    if (!source || source.assetId !== context.instruction.assetId) {
+    if (!source || source.assetId !== context.assetId) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-    const rawSelection = context.instruction.context;
+    const rawSelection = context.context;
     const selection = rawSelection === undefined
       ? undefined
       : parseImageConversationContext(rawSelection);
@@ -77,7 +82,7 @@ export class ImageConversationContextProvider
     let userMessage: AgentUserMessage;
     if (!selection) {
       userMessage = createTextAgentUserMessage(
-        `用户在当前图片解读对话中继续追问：\n\n${context.instruction.question}\n\n请结合同一 Agent Session 中已有的整张图片、兴趣区域和前文直接回答。`,
+        `用户在当前图片解读对话中继续追问：\n\n${context.question}\n\n以下材料来自同一图片会话的整图、兴趣区域和前文。`,
       );
     } else {
       context.reportStatus('正在准备整图、兴趣区域标注和局部放大图…');
@@ -97,7 +102,7 @@ export class ImageConversationContextProvider
         content: Object.freeze([
           Object.freeze({
             type: 'text' as const,
-            text: `用户问题：${context.instruction.question}\n\n请解释用户选中的兴趣区域。区域归一化坐标：x=${region.x.toFixed(6)}, y=${region.y.toFixed(6)}, width=${region.width.toFixed(6)}, height=${region.height.toFixed(6)}。`,
+            text: `用户问题：${context.question}\n\n用户选中的兴趣区域。区域归一化坐标：x=${region.x.toFixed(6)}, y=${region.y.toFixed(6)}, width=${region.width.toFixed(6)}, height=${region.height.toFixed(6)}。`,
           }),
           Object.freeze({
             type: 'text' as const,
@@ -131,13 +136,25 @@ export class ImageConversationContextProvider
     }
 
     return Object.freeze({
+      userMessage,
+      toolRequirements: Object.freeze([]),
+    });
+  }
+
+  async prepare(
+    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
+  ) {
+    const materials = await this.prepareMaterials(
+      materialsContextFromConversation(context),
+    );
+    return Object.freeze({
       purpose: 'image-reading-conversation',
       statusMessage: context.instruction.commitAnswer
         ? '正在结合整张图片解释兴趣区域…'
         : '正在回答图片追问…',
       systemInstruction: IMAGE_CONVERSATION_SYSTEM_INSTRUCTION_V2,
-      userMessage,
-      toolRequirements: Object.freeze([]),
+      userMessage: materials.userMessage,
+      toolRequirements: materials.toolRequirements,
       commitStatusMessage: '回答已生成，正在保存图片解释标注…',
     });
   }

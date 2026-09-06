@@ -72,11 +72,19 @@ export class GenerationTaskPreparer implements GenerationTaskPreparerApi {
       definition,
       instruction,
     );
+    const resolvedAssetReferences = definition.resolveAssetReferences
+      ? await definition.resolveAssetReferences({
+          taskId: task.id,
+          projectId: task.projectId,
+          instruction,
+          assetReferences: task.assetReferences,
+        })
+      : task.assetReferences;
     const assetReferences = await this.assetReferencePreparer.prepare(
       {
         projectId: task.projectId,
         schema: definition.assetReferenceSchema,
-        bindings: task.assetReferences,
+        bindings: resolvedAssetReferences,
         primaryWorkspacePath: workspaces.primary.path,
       },
       signal,

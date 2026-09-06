@@ -55,6 +55,7 @@ describe('built-in Workbench Facility matrix', () => {
         'core.surface.overflow',
         'core.transport.renderer',
       ],
+      'builtin.learning-outline': [],
       'builtin.pdf': [
         'core.input.text-selection',
         'core.surface.context-menu',

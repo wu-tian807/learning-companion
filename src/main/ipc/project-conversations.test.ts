@@ -54,14 +54,23 @@ function createService() {
   const list = vi.fn(() => [record()]);
   const save = vi.fn(() => [record()]);
   const remove = vi.fn(() => []);
+  const getOrCreateBoundConversation = vi.fn(() => record());
+  const rebuildBoundConversation = vi.fn(() => record());
+  const requireBoundConversation = vi.fn(() => record());
   return {
     list,
     save,
     remove,
+    getOrCreateBoundConversation,
+    rebuildBoundConversation,
+    requireBoundConversation,
     service: {
       list,
       save,
       remove,
+      getOrCreateBoundConversation,
+      rebuildBoundConversation,
+      requireBoundConversation,
     } satisfies ProjectConversationServiceApi,
   };
 }
@@ -72,11 +81,22 @@ beforeEach(() => {
 
 describe('Project Conversation IPC handlers', () => {
   it('forwards validated Project conversation operations to the backend service', async () => {
-    const { list, remove, save, service } = createService();
+    const {
+      list,
+      remove,
+      save,
+      getOrCreateBoundConversation,
+      service,
+    } = createService();
     registerProjectConversationHandlers(service);
 
     await findHandler(IPC_CHANNELS.listProjectConversations)({
       projectId: 'project-1',
+    });
+    await findHandler(IPC_CHANNELS.getOrCreateBoundProjectConversation)({
+      projectId: 'project-1',
+      boundAssetId: 'outline-1',
+      modeId: 'learning-outline.intake',
     });
     await findHandler(IPC_CHANNELS.saveProjectConversation)({
       projectId: 'project-1',
@@ -88,6 +108,11 @@ describe('Project Conversation IPC handlers', () => {
     });
 
     expect(list).toHaveBeenCalledWith('project-1');
+    expect(getOrCreateBoundConversation).toHaveBeenCalledWith(
+      'project-1',
+      'outline-1',
+      'learning-outline.intake',
+    );
     expect(save).toHaveBeenCalledWith('project-1', record());
     expect(remove).toHaveBeenCalledWith('project-1', 'conversation-1');
   });
@@ -110,6 +135,8 @@ describe('Project Conversation IPC handlers', () => {
 
     expect(electronMocks.removeHandler.mock.calls.map(([channel]) => channel)).toEqual([
       IPC_CHANNELS.listProjectConversations,
+      IPC_CHANNELS.getOrCreateBoundProjectConversation,
+      IPC_CHANNELS.rebuildBoundProjectConversation,
       IPC_CHANNELS.saveProjectConversation,
       IPC_CHANNELS.deleteProjectConversation,
     ]);

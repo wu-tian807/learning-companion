@@ -2,6 +2,7 @@ import type { JsonValue } from '../../../shared/workbench/protocol';
 import type { AgentUserMessage } from './agent-message';
 import type {
   GenerationAssetReferenceSchema,
+  GenerationAssetReferenceBindings,
   PreparedGenerationAssetReferenceBindings,
 } from './generation-asset-reference';
 import type {
@@ -111,6 +112,17 @@ export interface TaskDefinition<
   readonly primaryWorkspaceConfig: AgentWorkspaceConfig;
   readonly secondaryWorkspaceConfigs: readonly AgentWorkspaceConfig[];
   readonly assetReferenceSchema: GenerationAssetReferenceSchema;
+  /**
+   * Resolve trusted, persisted references immediately before materialization.
+   * This is intentionally a Main-side hook: a Renderer request may add
+   * per-turn material, but it cannot replace a Workbench's formal sources.
+   */
+  readonly resolveAssetReferences?: (context: {
+    readonly taskId: string;
+    readonly projectId: string;
+    readonly instruction: GenerationInstruction;
+    readonly assetReferences: GenerationAssetReferenceBindings;
+  }) => Promise<GenerationAssetReferenceBindings>;
   readonly instruction: GenerationInstructionFactory<TInstruction>;
 }
 

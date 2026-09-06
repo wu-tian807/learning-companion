@@ -31,12 +31,14 @@ export function createConversationRecord(
   now: number,
   options: Readonly<{
     modeId?: string;
+    boundAssetId?: string;
     workspace?: ConversationWorkspaceBinding;
   }> = {},
 ): ConversationRecord {
   return cloneConversationRecord({
     id: `conv-${id}`.slice(0, 128),
     modeId: options.modeId ?? PROJECT_CONVERSATION_MODE_ID,
+    ...(options.boundAssetId ? { boundAssetId: options.boundAssetId } : {}),
     ...(options.workspace ? { workspace: options.workspace } : {}),
     title: '新对话',
     messages: Object.freeze([]),

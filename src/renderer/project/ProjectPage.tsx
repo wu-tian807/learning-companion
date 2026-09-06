@@ -10,8 +10,12 @@ import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conv
 import { WorkbenchConversationRuntimeProvider } from '../conversation/WorkbenchConversationRuntimeProvider';
 import { WorkbenchConversationRuntime } from '../conversation/workbench-conversation-runtime';
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
+import type { RendererGenerationToolResult } from '../generation/renderer-generation-tool';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
-import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
+import {
+  AssetWorkbenchHost,
+} from '../workbench/host/AssetWorkbenchHost';
+import { WorkbenchOpenCoordinator } from '../workbench/workbench-open-coordinator';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
@@ -62,10 +66,7 @@ export function ProjectPage({
     () => new WorkbenchConversationRuntime(),
     [],
   );
-  useEffect(
-    () => () => conversationRuntime.dispose(),
-    [conversationRuntime],
-  );
+  useEffect(() => () => conversationRuntime.dispose(), [conversationRuntime]);
   const conversationSnapshot =
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
@@ -75,14 +76,15 @@ export function ProjectPage({
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
-  const {
-    closeOverlays,
-    openOverlay,
-    openRight,
-    toggleLeft,
-    toggleRight,
-  } = layout;
+  const { closeOverlays, openOverlay, openRight, toggleLeft, toggleRight } =
+    layout;
   const session = useProjectSession(project.id, setError);
+  const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
+  const workbenchOpening = useMemo(() => new WorkbenchOpenCoordinator(project.id), [project.id]);
+  useEffect(() => () => workbenchOpening.dispose(), [workbenchOpening]);
+  useEffect(() => {
+    workbenchOpening.cancelExcept(session.selectedAssetId ?? undefined);
+  }, [session.selectedAssetId, workbenchOpening]);
   const assetOperations = useProjectAssets({
     projectId: project.id,
     loadState: session.loadState,
@@ -138,6 +140,37 @@ export function ProjectPage({
     },
     [startMindMap],
   );
+  const handleGenerationToolResult = useCallback(
+    async (result: RendererGenerationToolResult) => {
+      const assetId = result.asset?.id ?? result.assetId;
+      if (!assetId) return;
+      if (result.asset) {
+        if (result.asset.projectId !== project.id) {
+          throw new Error('生成结果不属于当前 Project。');
+        }
+        if (workbenchOpening.needsRetry(assetId)) {
+          setWorkbenchOpenAttempt((current) => current + 1);
+        }
+        const workbenchOpened = workbenchOpening.waitFor(assetId);
+        assetOperations.upsertAsset(result.asset);
+        session.selectAsset(assetId);
+        await workbenchOpened;
+      } else {
+        await assetOperations.refreshAllAssets();
+        session.selectAsset(assetId);
+      }
+      if (result.conversation) {
+        await conversationRuntime.openAndWait(result.conversation);
+      }
+    },
+    [
+      assetOperations,
+      conversationRuntime,
+      project.id,
+      session,
+      workbenchOpening,
+    ],
+  );
   const allImportedAssetState = useMemo(
     () => filterAssetLoadStateByCreationKind(session.loadState, 'imported'),
     [session.loadState],
@@ -173,15 +206,18 @@ export function ProjectPage({
       }
     }
   }, [project.id]);
-  const selectConversationAsset = useCallback((assetId: string) => {
-    if (
-      session.loadState.kind !== 'ready' ||
-      !session.loadState.assets.some((asset) => asset.id === assetId)
-    ) {
-      throw new Error('引用的资料已不存在，无法定位原文。');
-    }
-    session.selectAsset(assetId);
-  }, [session]);
+  const selectConversationAsset = useCallback(
+    (assetId: string) => {
+      if (
+        session.loadState.kind !== 'ready' ||
+        !session.loadState.assets.some((asset) => asset.id === assetId)
+      ) {
+        throw new Error('引用的资料已不存在，无法定位原文。');
+      }
+      session.selectAsset(assetId);
+    },
+    [session],
+  );
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
@@ -210,11 +246,7 @@ export function ProjectPage({
       return;
     }
     toggleRight('generation');
-  }, [
-    conversationSnapshot.panelOpen,
-    dismissConversationPanel,
-    toggleRight,
-  ]);
+  }, [conversationSnapshot.panelOpen, dismissConversationPanel, toggleRight]);
   const toggleConversationPanel = useCallback(() => {
     if (
       layout.rightPanel === 'conversation' &&
@@ -247,10 +279,7 @@ export function ProjectPage({
       return;
     }
 
-    if (
-      closingSide === 'right' &&
-      closingRightPanel === 'conversation'
-    ) {
+    if (closingSide === 'right' && closingRightPanel === 'conversation') {
       dismissConversationPanel();
     }
     closeOverlays();
@@ -263,12 +292,7 @@ export function ProjectPage({
         rightToggleRef.current?.focus();
       }
     });
-  }, [
-    closeOverlays,
-    dismissConversationPanel,
-    layout.rightPanel,
-    openOverlay,
-  ]);
+  }, [closeOverlays, dismissConversationPanel, layout.rightPanel, openOverlay]);
 
   useEffect(() => {
     if (!openOverlay) {
@@ -292,11 +316,7 @@ export function ProjectPage({
     } else if (layout.rightPanel === 'conversation') {
       openRight('generation');
     }
-  }, [
-    conversationSnapshot.panelOpen,
-    layout.rightPanel,
-    openRight,
-  ]);
+  }, [conversationSnapshot.panelOpen, layout.rightPanel, openRight]);
 
   return (
     <main
@@ -368,10 +388,10 @@ export function ProjectPage({
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
         <WorkbenchRuntimeProvider onError={setError}>
-            <AssetSelectionCoordinatorProvider
-              coordinator={assetOperations.selectionCoordinator}
-            >
-              <section className="relative flex min-h-0 flex-1 gap-3">
+          <AssetSelectionCoordinatorProvider
+            coordinator={assetOperations.selectionCoordinator}
+          >
+            <section className="relative flex min-h-0 flex-1 gap-3">
               {openOverlay && (
                 <button
                   type="button"
@@ -455,6 +475,8 @@ export function ProjectPage({
                   }
                   onSelectAsset={session.selectAsset}
                   onOpenSettings={onOpenSettings}
+                  openAttempt={workbenchOpenAttempt}
+                  onOpenStateChange={workbenchOpening.report}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
                 />
@@ -496,14 +518,16 @@ export function ProjectPage({
                     }
                     onRevealSources={layout.openLeft}
                     onMindMapDraftReady={startMindMapGeneration}
+                    onGenerationToolResult={handleGenerationToolResult}
+                    onError={setError}
                     mindMapTasks={mindMapTasks}
                     onRetryMindMapTask={retryMindMapTask}
                     onCancelMindMapTask={cancelMindMapTask}
                   />
                 }
               />
-              </section>
-            </AssetSelectionCoordinatorProvider>
+            </section>
+          </AssetSelectionCoordinatorProvider>
         </WorkbenchRuntimeProvider>
       </WorkbenchConversationRuntimeProvider>
 

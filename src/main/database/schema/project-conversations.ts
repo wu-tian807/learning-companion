@@ -5,6 +5,7 @@ import type {
   ConversationWorkspaceBinding,
 } from '../../../shared/project-conversations';
 import { projects } from './projects';
+import { assets } from './assets';
 
 export const projectConversations = sqliteTable(
   'project_conversations',
@@ -14,6 +15,9 @@ export const projectConversations = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     modeId: text('mode_id').notNull(),
+    boundAssetId: text('bound_asset_id').references(() => assets.id, {
+      onDelete: 'set null',
+    }),
     workspace: text('workspace_binding_json', { mode: 'json' })
       .$type<ConversationWorkspaceBinding>(),
     title: text('title').notNull(),

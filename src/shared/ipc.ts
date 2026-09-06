@@ -41,21 +41,24 @@ import {
   PROJECT_NAME_MAX_LENGTH,
   type ProjectSnapshot,
 } from "./projects";
-import type {
-  WorkbenchBootstrap,
-  WorkbenchCloseRequest,
-  WorkbenchCommandRequest,
-  WorkbenchCommandResult,
-  WorkbenchEvent,
-  WorkbenchOpenRequest,
+import {
+  isJsonValue,
+  type JsonValue,
+  type WorkbenchBootstrap,
+  type WorkbenchCloseRequest,
+  type WorkbenchCommandRequest,
+  type WorkbenchCommandResult,
+  type WorkbenchEvent,
+  type WorkbenchOpenRequest,
 } from "./workbench/protocol";
 import type { WorkbenchFacilityEvent } from "./workbench/facilities/facility-event";
 import type { AssetAttachment } from "./attachments/contracts";
 import type { AssetTarget } from "./workbench/asset-target";
-import type { JsonValue } from "./workbench/protocol";
 import type {
   ConversationRecord,
   DeleteProjectConversationRequest,
+  GetOrCreateBoundProjectConversationRequest,
+  RebuildBoundProjectConversationRequest,
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "./project-conversations";
@@ -99,6 +102,8 @@ export const IPC_CHANNELS = {
   openProject: "project:open",
   closeProject: "project:close",
   listProjectConversations: "project-conversation:list",
+  getOrCreateBoundProjectConversation: "project-conversation:get-or-create-bound",
+  rebuildBoundProjectConversation: "project-conversation:rebuild-bound",
   saveProjectConversation: "project-conversation:save",
   deleteProjectConversation: "project-conversation:delete",
   selectLocalAssetFiles: "asset:select-local-files",
@@ -123,6 +128,7 @@ export const IPC_CHANNELS = {
   discardGenerationTask: "generation-task:discard",
   generationTaskChanged: "generation-task:changed",
   openWorkbench: "workbench:open",
+  invokeWorkbenchAction: "workbench:invoke-action",
   commandWorkbench: "workbench:command",
   closeWorkbench: "workbench:close",
   workbenchEvent: "workbench:event",
@@ -211,9 +217,18 @@ export interface LearningCompanionApi {
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
   openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
   closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
+  invokeWorkbenchAction: (
+    request: WorkbenchActionRequest,
+  ) => Promise<JsonValue>;
   listProjectConversations: (
     request: ProjectConversationProjectRequest,
   ) => Promise<ConversationRecord[]>;
+  getOrCreateBoundProjectConversation: (
+    request: GetOrCreateBoundProjectConversationRequest,
+  ) => Promise<ConversationRecord>;
+  rebuildBoundProjectConversation: (
+    request: RebuildBoundProjectConversationRequest,
+  ) => Promise<ConversationRecord>;
   saveProjectConversation: (
     request: SaveProjectConversationRequest,
   ) => Promise<ConversationRecord[]>;
@@ -445,6 +460,12 @@ export interface AssetIdRequest {
   assetId: string;
 }
 
+export interface WorkbenchActionRequest {
+  readonly actionId: string;
+  readonly projectId: string;
+  readonly payload?: JsonValue;
+}
+
 export interface ExternalLibraryIdRequest {
   libraryId: string;
 }
@@ -590,6 +611,17 @@ export function isProjectLifecycleRequest(
   value: unknown,
 ): value is ProjectLifecycleRequest {
   return isRecord(value) && isRequiredText(value.projectId);
+}
+
+export function isWorkbenchActionRequest(
+  value: unknown,
+): value is WorkbenchActionRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.actionId, 160) &&
+    isRequiredText(value.projectId) &&
+    (value.payload === undefined || isJsonValue(value.payload))
+  );
 }
 
 export function isAddLocalAssetsRequest(

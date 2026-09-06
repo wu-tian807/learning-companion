@@ -35,6 +35,8 @@ import type { JsonValue } from "../shared/workbench/protocol";
 import type {
   ConversationRecord,
   DeleteProjectConversationRequest,
+  GetOrCreateBoundProjectConversationRequest,
+  RebuildBoundProjectConversationRequest,
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "../shared/project-conversations";
@@ -70,6 +72,7 @@ import type {
   SelectAgentProviderForSelectorRequest,
   UpdateHomePreferencesRequest,
   UpdateAssetFolderRequest,
+  WorkbenchActionRequest,
 } from "../shared/ipc";
 import { IPC_CHANNELS } from "../shared/ipc";
 import { subscribeWorkbenchFacilityEvents } from "./workbench-facility-events";
@@ -226,9 +229,25 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<AssetSnapshot[]>(IPC_CHANNELS.openProject, request),
   closeProject: (request: ProjectLifecycleRequest) =>
     invoke<void>(IPC_CHANNELS.closeProject, request),
+  invokeWorkbenchAction: (request: WorkbenchActionRequest) =>
+    invoke<JsonValue>(IPC_CHANNELS.invokeWorkbenchAction, request),
   listProjectConversations: (request: ProjectConversationProjectRequest) =>
     invoke<ConversationRecord[]>(
       IPC_CHANNELS.listProjectConversations,
+      request,
+    ),
+  getOrCreateBoundProjectConversation: (
+    request: GetOrCreateBoundProjectConversationRequest,
+  ) =>
+    invoke<ConversationRecord>(
+      IPC_CHANNELS.getOrCreateBoundProjectConversation,
+      request,
+    ),
+  rebuildBoundProjectConversation: (
+    request: RebuildBoundProjectConversationRequest,
+  ) =>
+    invoke<ConversationRecord>(
+      IPC_CHANNELS.rebuildBoundProjectConversation,
       request,
     ),
   saveProjectConversation: (request: SaveProjectConversationRequest) =>

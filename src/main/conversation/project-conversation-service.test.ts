@@ -20,6 +20,8 @@ function record(): ConversationRecord {
 function createDatabase(): ProjectConversationDatabaseApi {
   return {
     get: vi.fn(),
+    getBound: vi.fn(),
+    replaceBound: vi.fn((_projectId, _boundAssetId, _modeId, conversation) => conversation),
     list: vi.fn(() => [record()]),
     save: vi.fn((_projectId, conversation) => conversation),
     remove: vi.fn(),
@@ -46,5 +48,77 @@ describe('ProjectConversationService', () => {
 
     expect(() => service.list('missing')).toThrow();
     expect(database.list).not.toHaveBeenCalled();
+  });
+
+  it('reuses an existing Asset-bound conversation and checks Asset ownership', () => {
+    const bound: ConversationRecord = {
+      ...record(),
+      id: 'bound-1',
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+    };
+    const database = createDatabase();
+    vi.mocked(database.getBound).mockReturnValue(bound);
+    const projects = { get: vi.fn(() => ({ id: 'project-1' })) };
+    const assets = {
+      get: vi.fn((projectId: string, assetId: string) =>
+        projectId === 'project-1' && assetId === 'outline-1'
+          ? { id: assetId, projectId }
+          : undefined),
+    };
+    const service = new ProjectConversationService(
+      database,
+      projects as never,
+      assets as never,
+    );
+
+    expect(
+      service.getOrCreateBoundConversation(
+        'project-1',
+        'outline-1',
+        'learning-outline.intake',
+      ),
+    ).toEqual(bound);
+    expect(database.getBound).toHaveBeenCalledWith(
+      'project-1',
+      'outline-1',
+      'learning-outline.intake',
+    );
+    expect(database.save).not.toHaveBeenCalled();
+    expect(() =>
+      service.getOrCreateBoundConversation(
+        'project-2',
+        'outline-1',
+        'learning-outline.intake',
+      ),
+    ).toThrow();
+  });
+
+  it('delegates bound conversation replacement as one database operation', () => {
+    const database = createDatabase();
+    const projects = { get: vi.fn(() => ({ id: 'project-1' })) };
+    const assets = {
+      get: vi.fn(() => ({ id: 'outline-1', projectId: 'project-1' })),
+    };
+    const service = new ProjectConversationService(
+      database,
+      projects as never,
+      assets as never,
+    );
+
+    const result = service.rebuildBoundConversation(
+      'project-1',
+      'outline-1',
+      'learning-outline.intake',
+    );
+
+    expect(database.replaceBound).toHaveBeenCalledOnce();
+    expect(database.remove).not.toHaveBeenCalled();
+    expect(database.save).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      modeId: 'learning-outline.intake',
+      boundAssetId: 'outline-1',
+      messages: [],
+    });
   });
 });

@@ -1,5 +1,10 @@
 import type { AttachmentServiceApi } from '../../../../main/attachments/attachment-service';
-import type { WorkbenchConversationContextProvider } from '../../../../main/conversation/workbench-conversation-context-provider';
+import type {
+  WorkbenchConversationContextProvider,
+  WorkbenchConversationMaterialsContext,
+  PreparedWorkbenchConversationMaterials,
+} from '../../../../main/conversation/workbench-conversation-context-provider';
+import { materialsContextFromConversation } from '../../../../main/conversation/workbench-conversation-context-provider';
 import type { WorkbenchConversationInstruction } from '../../../../main/conversation/workbench-conversation-instruction';
 import { AppError } from '../../../../main/errors/app-error';
 import { createTextAgentUserMessage } from '../../../../main/generation/contracts/agent-message';
@@ -27,17 +32,16 @@ export class EpubConversationContextProvider
 
   constructor(private readonly attachments: AttachmentServiceApi) {}
 
-  async prepare(
-    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
-  ) {
-    const rawSelection = context.instruction.context;
+  async prepareMaterials(
+    context: WorkbenchConversationMaterialsContext,
+  ): Promise<PreparedWorkbenchConversationMaterials> {
+    const rawSelection = context.context;
     const selection = rawSelection === undefined
       ? undefined
       : parseEpubConversationContext(rawSelection);
     if (rawSelection !== undefined && selection === undefined) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
-
     const target = selection?.target;
     const selectionMessage = target
       ? [
@@ -46,7 +50,21 @@ export class EpubConversationContextProvider
           `<selection>\n${target.targetPayload.quote.exact}\n</selection>`,
           `<context-after>\n${target.targetPayload.quote.suffix || '（无）'}\n</context-after>`,
         ].join('\n\n')
-      : '这是同一 EPUB 阅读对话中的继续追问，请继承当前 Agent Session 已有的选区和前文。';
+      : '本轮没有提供 EPUB 选区。';
+    return Object.freeze({
+      userMessage: createTextAgentUserMessage(
+        `用户问题：${context.question}\n\n${selectionMessage}`,
+      ),
+      toolRequirements: Object.freeze([]),
+    });
+  }
+
+  async prepare(
+    context: GenerationTaskProcessContext<WorkbenchConversationInstruction>,
+  ) {
+    const materials = await this.prepareMaterials(
+      materialsContextFromConversation(context),
+    );
 
     return Object.freeze({
       purpose: 'epub-reading-conversation',
@@ -54,10 +72,10 @@ export class EpubConversationContextProvider
         ? '正在解释选中的文字…'
         : '正在回答追问…',
       systemInstruction: EPUB_CONVERSATION_SYSTEM_INSTRUCTION_V2,
-      userMessage: createTextAgentUserMessage(
-        `用户问题：${context.instruction.question}\n\n${selectionMessage}`,
-      ),
-      toolRequirements: Object.freeze([]),
+      userMessage: context.instruction.context === undefined
+        ? createTextAgentUserMessage(`这是同一 EPUB 阅读对话中的继续追问，请继承当前 Agent Session 已有的选区和前文。\n\n问题：${context.instruction.question}`)
+        : materials.userMessage,
+      toolRequirements: materials.toolRequirements,
       commitStatusMessage: '回答已生成，正在保存解释标注…',
     });
   }

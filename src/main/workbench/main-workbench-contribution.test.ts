@@ -22,11 +22,13 @@ describe('Main Workbench contribution composition', () => {
     const features: MainWorkbenchFeatureContribution[] = [
       {
         id: 'test.first',
-        registerAttachmentTypes: () => calls.push('first'),
+        registerAttachmentTypes: () => calls.push('attachment:first'),
+        registerActions: () => calls.push('action:first'),
       },
       {
         id: 'test.second',
-        registerAttachmentTypes: () => calls.push('second'),
+        registerAttachmentTypes: () => calls.push('attachment:second'),
+        registerActions: () => calls.push('action:second'),
       },
     ];
     const contribution = composeMainWorkbenchContribution(
@@ -37,7 +39,14 @@ describe('Main Workbench contribution composition', () => {
 
     contribution.registerAttachmentTypes?.({} as never);
 
-    expect(calls).toEqual(['first', 'second']);
+    contribution.registerActions?.({} as never);
+
+    expect(calls).toEqual([
+      'attachment:first',
+      'attachment:second',
+      'action:first',
+      'action:second',
+    ]);
     expect(contribution.features).toEqual(features);
   });
 
@@ -168,10 +177,7 @@ describe('Main Workbench contribution composition', () => {
     [[{ id: 'test.duplicate' }, { id: 'test.duplicate' }]],
   ])('rejects invalid owned feature identities', (features) => {
     expect(() =>
-      composeMainWorkbenchContribution(
-        manifest,
-        vi.fn() as never,
-        features,
-      )).toThrow();
+      composeMainWorkbenchContribution(manifest, vi.fn() as never, features),
+    ).toThrow();
   });
 });
