@@ -1,5 +1,7 @@
 import {
   createProjectLearningNoteAttachmentHref,
+  createProjectLearningNoteTargetHref,
+  type ProjectLearningNoteTargetLink,
 } from '../../shared/project-learning-notes';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
@@ -61,6 +63,19 @@ export function projectLearningNoteAttachmentOptionLabel(
   const excerpt = normalizeExcerpt(quoteFromTarget(attachment.target));
   const kind = attachmentKindLabel(attachment.typeId);
   return excerpt ? `${kind} · “${excerpt}”` : `${kind} · ${attachment.typeId}`;
+}
+
+export function projectLearningNoteSelectionOptionLabel(text: string): string {
+  const excerpt = normalizeExcerpt(text);
+  return excerpt ? `当前原文 · “${excerpt}”` : '当前原文选区';
+}
+
+export function createLearningNoteTargetMarkdown(
+  assetName: string,
+  link: ProjectLearningNoteTargetLink,
+): string {
+  const label = escapeMarkdownLinkLabel(`${assetName} · 定位`);
+  return `[${label}](${createProjectLearningNoteTargetHref(link)})`;
 }
 
 export function createLearningNoteAttachmentMarkdown(

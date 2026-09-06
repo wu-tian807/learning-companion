@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AssetAttachment } from '../../shared/attachments/contracts';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   parseProjectLearningNoteAttachmentHref,
+  parseProjectLearningNoteTargetHref,
   PROJECT_LEARNING_NOTE_ATTACHMENT_LINK_PREFIX,
   PROJECT_LEARNING_NOTE_TARGET_LINK_PREFIX,
 } from '../../shared/project-learning-notes';
 import {
   createLearningNoteAttachmentMarkdown,
+  createLearningNoteTargetMarkdown,
   projectLearningNoteAttachmentOptionLabel,
+  projectLearningNoteSelectionOptionLabel,
 } from './project-learning-note-links';
 
 const attachment: AssetAttachment = {
@@ -36,6 +40,33 @@ const attachment: AssetAttachment = {
 };
 
 describe('Project learning-note Attachment links', () => {
+  it('creates a direct link for a newly selected source range', () => {
+    const markdown = createLearningNoteTargetMarkdown('教材', {
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-1',
+      target: attachment.target as ContentAssetTarget,
+    });
+    const href = markdown.match(/\((#[^)]+)\)$/u)?.[1];
+
+    expect(markdown).toContain('[教材 · 定位]');
+    expect(parseProjectLearningNoteTargetHref(href ?? '')).toEqual({
+      projectId: 'project-1',
+      assetId: 'asset-1',
+      sourceRevision: 'revision-1',
+      target: attachment.target as ContentAssetTarget,
+    });
+  });
+
+  it('shows the newly selected source excerpt as a bounded option', () => {
+    expect(projectLearningNoteSelectionOptionLabel('  新选择的   原文  ')).toBe(
+      '当前原文 · “新选择的 原文”',
+    );
+    expect(projectLearningNoteSelectionOptionLabel('学'.repeat(90))).toBe(
+      `当前原文 · “${'学'.repeat(80)}…”`,
+    );
+  });
+
   it('keeps the Markdown label limited to the Asset name and locator', () => {
     const markdown = createLearningNoteAttachmentMarkdown(
       '教材 [上]',

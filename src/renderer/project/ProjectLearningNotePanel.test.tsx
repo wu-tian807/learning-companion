@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
-import { parseProjectLearningNoteAttachmentHref } from '../../shared/project-learning-notes';
+import {
+  parseProjectLearningNoteAttachmentHref,
+  parseProjectLearningNoteTargetHref,
+} from '../../shared/project-learning-notes';
+import { interactionFromTextSelection } from '../../shared/workbench/selection';
+import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import type { MarkdownEditorAdapter } from '../../workbenches/markdown/markdown-editor-adapter';
 import { ProjectLearningNotePanel } from './ProjectLearningNotePanel';
 import type { ProjectLearningNoteController } from './use-project-learning-note';
@@ -22,6 +28,18 @@ const harness = vi.hoisted(() => ({
         onOpenInternalLink?: (href: string) => void;
       }
     | undefined,
+  runtimeState: {
+    identity: undefined as
+      | {
+          projectId: string;
+          assetId: string;
+          workbenchId: string;
+          sessionId: string;
+        }
+      | undefined,
+    interaction: { inputs: [] } as WorkbenchInteractionSnapshot,
+  },
+  sourceRevision: 'revision-1',
 }));
 
 vi.mock('../../workbenches/markdown/use-markdown-visual-editor', () => ({
@@ -32,6 +50,16 @@ vi.mock('../../workbenches/markdown/use-markdown-visual-editor', () => ({
     );
     return { hostRef: { current: null }, state: 'ready' };
   },
+}));
+
+vi.mock('../workbench/runtime/workbench-runtime-context', () => ({
+  useWorkbenchRuntimeSelector: (
+    selector: (state: typeof harness.runtimeState) => unknown,
+  ) => selector(harness.runtimeState),
+}));
+
+vi.mock('../workbench/host/workbench-target-bridge', () => ({
+  getWorkbenchTargetSourceRevision: () => harness.sourceRevision,
 }));
 
 function controller(
@@ -104,6 +132,9 @@ describe('ProjectLearningNotePanel', () => {
     harness.editor.insertMarkdown.mockClear();
     harness.editor.focus.mockClear();
     harness.editorOptions = undefined;
+    harness.runtimeState.identity = undefined;
+    harness.runtimeState.interaction = { inputs: [] };
+    harness.sourceRevision = 'revision-1';
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -163,7 +194,7 @@ describe('ProjectLearningNotePanel', () => {
     });
 
     const button = Array.from(container.querySelectorAll('button')).find(
-      (candidate) => candidate.textContent?.includes('引用标注'),
+      (candidate) => candidate.textContent?.includes('插入引用'),
     );
     await act(async () => button?.click());
 
@@ -184,6 +215,70 @@ describe('ProjectLearningNotePanel', () => {
     expect(href).not.toContain('cfiRange');
   });
 
+  it('switches from a previously selected Attachment to a newly selected source range', async () => {
+    const renderPanel = () => (
+      <ProjectLearningNotePanel
+        active
+        projectId="project-1"
+        selectedAsset={asset}
+        controller={controller()}
+        onRevealReference={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />
+    );
+    await act(async () => root.render(renderPanel()));
+
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="选择要插入的资料引用"]',
+    );
+    expect(select?.value).toBe('attachment:attachment-explanation-1');
+
+    const sourceTarget: ContentAssetTarget = {
+      scope: 'content',
+      targetType: 'epub.cfi-range',
+      targetVersion: 1,
+      targetPayload: {
+        cfiRange: 'epubcfi(/6/4!/4/2,/1:0,/1:8)',
+        quote: {
+          exact: '这是后来重新选择的原文。',
+          prefix: '',
+          suffix: '',
+        },
+      },
+    };
+    harness.runtimeState.identity = {
+      projectId: 'project-1',
+      assetId: asset.id,
+      workbenchId: 'epub.reader',
+      sessionId: 'session-1',
+    };
+    harness.runtimeState.interaction = interactionFromTextSelection({
+      text: '这是后来重新选择的原文。',
+      target: sourceTarget,
+    });
+    await act(async () => root.render(renderPanel()));
+
+    expect(select?.value).toBe('current-selection');
+    expect(select?.textContent).toContain('当前原文 · “这是后来重新选择的原文。”');
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.includes('插入引用'),
+    );
+    await act(async () => button?.click());
+
+    expect(harness.editor.insertMarkdown).toHaveBeenCalledOnce();
+    const markdown = harness.editor.insertMarkdown.mock.calls[0]?.[0] as string;
+    const href = markdown.match(/\((#[^)]+)\)$/u)?.[1] ?? '';
+    expect(parseProjectLearningNoteAttachmentHref(href)).toBeUndefined();
+    expect(parseProjectLearningNoteTargetHref(href)).toEqual({
+      projectId: 'project-1',
+      assetId: asset.id,
+      sourceRevision: 'revision-1',
+      target: sourceTarget,
+    });
+    expect(markdown).toContain('[机器学习 \\[教材\\] · 定位]');
+    expect(markdown).not.toContain('这是后来重新选择的原文。');
+  });
+
   it('routes a persisted internal link to the Project target navigator', async () => {
     const onRevealReference = vi.fn(async () => undefined);
     await act(async () => {
@@ -200,7 +295,7 @@ describe('ProjectLearningNotePanel', () => {
     });
     const markdown = harness.editor.insertMarkdown;
     const createButton = Array.from(container.querySelectorAll('button')).find(
-      (candidate) => candidate.textContent?.includes('引用标注'),
+      (candidate) => candidate.textContent?.includes('插入引用'),
     );
     await act(async () => createButton?.click());
     const href = (markdown.mock.calls[0]?.[0] as string).match(
@@ -246,13 +341,13 @@ describe('ProjectLearningNotePanel', () => {
     });
 
     const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="选择要引用的标注"]',
+      'select[aria-label="选择要插入的资料引用"]',
     );
     expect(select?.textContent).toContain(`${'学'.repeat(80)}…`);
     expect(select?.textContent).not.toContain('学'.repeat(81));
 
     const button = Array.from(container.querySelectorAll('button')).find(
-      (candidate) => candidate.textContent?.includes('引用标注'),
+      (candidate) => candidate.textContent?.includes('插入引用'),
     );
     await act(async () => button?.click());
     const markdown = harness.editor.insertMarkdown.mock.calls[0]?.[0] as string;
@@ -279,10 +374,10 @@ describe('ProjectLearningNotePanel', () => {
     });
 
     const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="选择要引用的标注"]',
+      'select[aria-label="选择要插入的资料引用"]',
     );
     const insert = Array.from(container.querySelectorAll('button')).find(
-      (candidate) => candidate.textContent?.includes('引用标注'),
+      (candidate) => candidate.textContent?.includes('插入引用'),
     );
     expect(select?.textContent).toContain('当前资料暂无可定位标注');
     expect(select?.disabled).toBe(true);

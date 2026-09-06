@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
@@ -7,13 +7,19 @@ import {
   parseProjectLearningNoteReferenceHref,
   type ProjectLearningNoteReferenceLink,
 } from '../../shared/project-learning-notes';
+import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
+import { getWorkbenchTargetSourceRevision } from '../workbench/host/workbench-target-bridge';
+import { useWorkbenchRuntimeSelector } from '../workbench/runtime/workbench-runtime-context';
 import type { MarkdownEditorAdapter } from '../../workbenches/markdown/markdown-editor-adapter';
 import { useMarkdownVisualEditor } from '../../workbenches/markdown/use-markdown-visual-editor';
 import '../../workbenches/markdown/markdown-workbench.css';
 
 import {
   createLearningNoteAttachmentMarkdown,
+  createLearningNoteTargetMarkdown,
   projectLearningNoteAttachmentOptionLabel,
+  projectLearningNoteSelectionOptionLabel,
 } from './project-learning-note-links';
 import type { ProjectLearningNoteController } from './use-project-learning-note';
 
@@ -31,6 +37,25 @@ function CloseIcon() {
       <path d="m5 5 10 10M15 5 5 15" />
     </svg>
   );
+}
+
+const CURRENT_SELECTION_REFERENCE = 'current-selection';
+const ATTACHMENT_REFERENCE_PREFIX = 'attachment:';
+
+function attachmentReferenceValue(attachmentId: string): string {
+  return `${ATTACHMENT_REFERENCE_PREFIX}${attachmentId}`;
+}
+
+function attachmentIdFromReference(value: string): string | undefined {
+  return value.startsWith(ATTACHMENT_REFERENCE_PREFIX)
+    ? value.slice(ATTACHMENT_REFERENCE_PREFIX.length)
+    : undefined;
+}
+
+interface ManualReferenceChoice {
+  readonly value: string;
+  readonly assetId: string;
+  readonly interaction: WorkbenchInteractionSnapshot;
 }
 
 function statusLabel(controller: ProjectLearningNoteController): string {
@@ -64,13 +89,63 @@ export function ProjectLearningNotePanel({
   ) => Promise<void>;
   readonly onClose: () => void;
 }) {
+  const runtimeIdentity = useWorkbenchRuntimeSelector((state) => state.identity);
+  const runtimeInteraction = useWorkbenchRuntimeSelector(
+    (state) => state.interaction,
+  );
   const editorRef = useRef<MarkdownEditorAdapter | undefined>(undefined);
   const [editorKey, setEditorKey] = useState(0);
   const [interactionError, setInteractionError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<readonly AssetAttachment[]>([]);
   const [attachmentLoading, setAttachmentLoading] = useState(false);
-  const [selectedAttachmentId, setSelectedAttachmentId] = useState('');
+  const [manualReferenceChoice, setManualReferenceChoice] =
+    useState<ManualReferenceChoice>();
   const attachmentLoadRevisionRef = useRef(0);
+  const currentSelection = useMemo(() => {
+    if (
+      !selectedAsset ||
+      runtimeIdentity?.projectId !== projectId ||
+      runtimeIdentity.assetId !== selectedAsset.id
+    ) {
+      return undefined;
+    }
+    return findTextSelectionInput(runtimeInteraction);
+  }, [projectId, runtimeIdentity, runtimeInteraction, selectedAsset]);
+  const selectedReferenceValue = useMemo(() => {
+    const assetId = selectedAsset?.id;
+    const manualChoice = manualReferenceChoice?.assetId === assetId
+      ? manualReferenceChoice
+      : undefined;
+    const manualAttachmentId = manualChoice
+      ? attachmentIdFromReference(manualChoice.value)
+      : undefined;
+    const hasManualAttachment = manualAttachmentId !== undefined &&
+      attachments.some((attachment) => attachment.id === manualAttachmentId);
+
+    if (
+      currentSelection &&
+      (!manualChoice || manualChoice.interaction !== runtimeInteraction)
+    ) {
+      return CURRENT_SELECTION_REFERENCE;
+    }
+    if (
+      currentSelection &&
+      manualChoice?.value === CURRENT_SELECTION_REFERENCE
+    ) {
+      return CURRENT_SELECTION_REFERENCE;
+    }
+    if (hasManualAttachment) return manualChoice!.value;
+    if (currentSelection) return CURRENT_SELECTION_REFERENCE;
+    return attachments[0]
+      ? attachmentReferenceValue(attachments[0].id)
+      : '';
+  }, [
+    attachments,
+    currentSelection,
+    manualReferenceChoice,
+    runtimeInteraction,
+    selectedAsset?.id,
+  ]);
   const ready = controller.loadState.kind === 'ready';
   const { hostRef, state: editorState } = useMarkdownVisualEditor({
     enabled: active && ready,
@@ -127,7 +202,6 @@ export function ProjectLearningNotePanel({
     const revision = ++attachmentLoadRevisionRef.current;
     if (!active || !asset) {
       setAttachments([]);
-      setSelectedAttachmentId('');
       setAttachmentLoading(false);
       return;
     }
@@ -145,15 +219,9 @@ export function ProjectLearningNotePanel({
           attachment.target.scope === 'content',
       );
       setAttachments(owned);
-      setSelectedAttachmentId((current) =>
-        owned.some((attachment) => attachment.id === current)
-          ? current
-          : (owned[0]?.id ?? ''),
-      );
     } catch (error) {
       if (revision !== attachmentLoadRevisionRef.current) return;
       setAttachments([]);
-      setSelectedAttachmentId('');
       setInteractionError(
         userMessageFromError(error, '无法读取当前资料的标注。') ??
           '无法读取当前资料的标注。',
@@ -176,18 +244,49 @@ export function ProjectLearningNotePanel({
     };
   }, [loadAttachments]);
 
-  const insertSelectedAttachment = () => {
+  const insertSelectedReference = () => {
     const asset = selectedAsset;
+    const editor = editorRef.current;
+    if (!asset) {
+      setInteractionError('请先打开一份资料。');
+      return;
+    }
+    if (!editor || editorState !== 'ready') {
+      setInteractionError('Markdown 编辑器尚未准备好。');
+      return;
+    }
+
+    if (selectedReferenceValue === CURRENT_SELECTION_REFERENCE) {
+      if (!currentSelection) {
+        setInteractionError('当前原文选区已经失效，请重新选择。');
+        return;
+      }
+      const sourceRevision = getWorkbenchTargetSourceRevision(asset.id);
+      if (!sourceRevision) {
+        setInteractionError('当前资料尚未准备好，暂时无法创建定位引用。');
+        return;
+      }
+      editor.insertMarkdown(
+        createLearningNoteTargetMarkdown(asset.name, {
+          projectId,
+          assetId: asset.id,
+          sourceRevision,
+          target: currentSelection.target,
+        }),
+      );
+      editor.focus();
+      setInteractionError(null);
+      return;
+    }
+
+    const selectedAttachmentId = attachmentIdFromReference(
+      selectedReferenceValue,
+    );
     const attachment = attachments.find(
       (candidate) => candidate.id === selectedAttachmentId,
     );
-    if (!asset || !attachment) {
+    if (!attachment) {
       setInteractionError('请先选择当前资料中要引用的标注。');
-      return;
-    }
-    const editor = editorRef.current;
-    if (!editor || editorState !== 'ready') {
-      setInteractionError('Markdown 编辑器尚未准备好。');
       return;
     }
 
@@ -231,19 +330,38 @@ export function ProjectLearningNotePanel({
 
       <div className="flex shrink-0 items-center gap-2 border-b border-white/8 px-3 py-2">
         <select
-          aria-label="选择要引用的标注"
-          value={selectedAttachmentId}
-          disabled={!selectedAsset || attachmentLoading || attachments.length === 0}
-          onChange={(event) => setSelectedAttachmentId(event.target.value)}
+          aria-label="选择要插入的资料引用"
+          value={selectedReferenceValue}
+          disabled={
+            !selectedAsset ||
+            (!currentSelection && attachmentLoading) ||
+            (!currentSelection && attachments.length === 0)
+          }
+          onChange={(event) => {
+            if (!selectedAsset) return;
+            setManualReferenceChoice({
+              value: event.target.value,
+              assetId: selectedAsset.id,
+              interaction: runtimeInteraction,
+            });
+          }}
           className="ui-control min-w-0 flex-1 rounded-lg border border-white/10 bg-[#1b2027] px-2 py-1.5 text-[11px] text-slate-300 outline-none disabled:cursor-not-allowed disabled:opacity-45"
         >
+          {currentSelection && (
+            <option value={CURRENT_SELECTION_REFERENCE}>
+              {projectLearningNoteSelectionOptionLabel(currentSelection.text)}
+            </option>
+          )}
           {attachmentLoading ? (
             <option value="">正在读取标注…</option>
-          ) : attachments.length === 0 ? (
+          ) : !currentSelection && attachments.length === 0 ? (
             <option value="">当前资料暂无可定位标注</option>
           ) : (
             attachments.map((attachment) => (
-              <option key={attachment.id} value={attachment.id}>
+              <option
+                key={attachment.id}
+                value={attachmentReferenceValue(attachment.id)}
+              >
                 {projectLearningNoteAttachmentOptionLabel(attachment)}
               </option>
             ))
@@ -264,13 +382,13 @@ export function ProjectLearningNotePanel({
           disabled={
             !ready ||
             editorState !== 'ready' ||
-            !selectedAttachmentId
+            !selectedReferenceValue
           }
-          onClick={insertSelectedAttachment}
+          onClick={insertSelectedReference}
           className="ui-control shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-indigo-200 hover:border-indigo-300/35 hover:bg-indigo-300/10 disabled:cursor-not-allowed disabled:opacity-40"
-          title="把所选 Attachment 及其原文定位插入学习笔记"
+          title="把当前原文选区或所选 Attachment 的定位插入学习笔记"
         >
-          + 引用标注
+          + 插入引用
         </button>
       </div>
 
