@@ -29,6 +29,8 @@ import { ContentResourceService } from '../content/content-resource-service';
 import { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
 import { ProjectConversationDatabase } from '../conversation/project-conversation-database';
 import { ProjectConversationService } from '../conversation/project-conversation-service';
+import { ProjectLearningNoteDatabase } from '../project-learning-notes/project-learning-note-database';
+import { ProjectLearningNoteService } from '../project-learning-notes/project-learning-note-service';
 import {
   registerContentProtocol,
   removeContentProtocol,
@@ -146,6 +148,10 @@ export async function createApplicationRuntime({
     projectDatabase.initialize();
     const projectConversationService = new ProjectConversationService(
       new ProjectConversationDatabase(databaseContext),
+      projectDatabase,
+    );
+    const projectLearningNoteService = new ProjectLearningNoteService(
+      new ProjectLearningNoteDatabase(databaseContext),
       projectDatabase,
     );
     const agentSessionService = new AgentSessionService(projectDatabase);
@@ -341,6 +347,7 @@ export async function createApplicationRuntime({
       generationTaskService,
       projectService,
       projectConversationService,
+      projectLearningNoteService,
       settingsRepository,
       workbenchSessionService,
       workbenchEvents,
