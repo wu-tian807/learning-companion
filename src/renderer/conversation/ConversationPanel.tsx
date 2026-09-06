@@ -730,7 +730,7 @@ export function ConversationPanel({
                     actions.submit();
                   }
                 }}
-                className="min-h-6 max-h-28 min-w-0 flex-1 resize-none bg-transparent px-1 text-[13px] leading-6 text-slate-100 outline-none placeholder:text-slate-600 disabled:opacity-50"
+                className="min-h-6 max-h-36 min-w-0 flex-1 resize-none overflow-y-auto [field-sizing:content] bg-transparent px-1 text-[13px] leading-6 text-slate-100 outline-none placeholder:text-slate-600 disabled:opacity-50"
               />
               <button
                 type="submit"

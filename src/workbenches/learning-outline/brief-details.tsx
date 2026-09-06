@@ -9,10 +9,9 @@ const textFields = [
   { key: 'scope', label: '学习范围', hint: '重点、深度以及不包含的内容', empty: '尚未确认学习范围' },
 ] as const;
 
-/** Shared by the outline view and its conversation; all fields stay visible. */
-export function LearningBriefDetails({ brief, compact = false }: {
+/** Full field details belong to the outline view, outside the chat sidebar. */
+export function LearningBriefDetails({ brief }: {
   readonly brief: LearningBrief;
-  readonly compact?: boolean;
 }) {
   const cardClass = 'min-w-0 rounded-lg border border-white/[0.07] bg-black/10 p-3';
   const titleClass = 'flex items-center justify-between gap-2 text-xs font-medium text-slate-200';
@@ -21,7 +20,7 @@ export function LearningBriefDetails({ brief, compact = false }: {
   const contentClass = 'mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-300';
 
   return (
-    <dl className="mt-3 grid gap-2" style={compact ? undefined : {
+    <dl className="mt-3 grid gap-2" style={{
       gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 18rem), 1fr))',
     }}>
       {textFields.map(({ key, label, hint, empty }) => (

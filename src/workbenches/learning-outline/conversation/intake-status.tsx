@@ -4,7 +4,6 @@ import type { ConversationModeStatusProps } from '../../../renderer/conversation
 import { getLearningBriefMissingFields, isLearningBriefComplete, isLearningOutlineBriefState, learningOutlineActions } from '../shared';
 import type { LearningOutlineBriefState } from '../shared';
 import { LearningBriefCompletion } from './brief-completion';
-import { LearningBriefDetails } from '../brief-details';
 
 const initialState: LearningOutlineBriefState = Object.freeze({ valid: false });
 
@@ -89,7 +88,12 @@ export function LearningOutlineIntakeStatus({
           <summary className="cursor-pointer text-[9px] text-slate-500">
             查看最近有效需求
           </summary>
-          <LearningBriefDetails brief={state.brief} compact />
+          <div className="mt-1.5 max-h-32 space-y-1 overflow-y-auto pr-1 text-[10px] leading-4 text-slate-400">
+            <p>目标：{state.brief.goal || '未填写'}</p>
+            <p>范围：{state.brief.scope || '未填写'}</p>
+            <p>路线：{state.brief.roadmap.map((item) => item.title).join('、') || '未填写'}</p>
+            {state.brief.detailed?.trim() && <p>额外补充：{state.brief.detailed}</p>}
+          </div>
         </details>
       )}
       <LearningBriefCompletion state={state} />
