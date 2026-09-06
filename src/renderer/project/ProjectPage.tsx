@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
-import type { ProjectLearningNoteTargetLink } from '../../shared/project-learning-notes';
+import {
+  listProjectLearningNoteReferenceLinks,
+  type ProjectLearningNoteReferenceLink,
+} from '../../shared/project-learning-notes';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
@@ -19,6 +22,7 @@ import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
 import { ProjectLearningNotePanel } from './ProjectLearningNotePanel';
+import { resolveProjectLearningNoteReference } from './project-learning-note-navigation';
 import { ProjectRightPanelSlot } from './ProjectRightPanelSlot';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
@@ -93,6 +97,13 @@ export function ProjectPage({
   } = layout;
   const session = useProjectSession(project.id, setError);
   const learningNote = useProjectLearningNote(project.id);
+  const learningNoteReferences = useMemo(
+    () =>
+      listProjectLearningNoteReferenceLinks(learningNote.markdown).filter(
+        (reference) => reference.projectId === project.id,
+      ),
+    [learningNote.markdown, project.id],
+  );
   const flushLearningNote = learningNote.flush;
   const assetOperations = useProjectAssets({
     projectId: project.id,
@@ -193,8 +204,8 @@ export function ProjectPage({
     }
     session.selectAsset(assetId);
   }, [session]);
-  const revealLearningNoteTarget = useCallback(
-    async (link: ProjectLearningNoteTargetLink) => {
+  const revealLearningNoteReference = useCallback(
+    async (link: ProjectLearningNoteReferenceLink) => {
       if (link.projectId !== project.id) {
         throw new Error('这条资料引用不属于当前 Project。');
       }
@@ -210,14 +221,22 @@ export function ProjectPage({
       );
       const controller = new AbortController();
       learningNoteNavigationRef.current = controller;
-      if (!layout.rightInline) {
-        closeRight();
-      }
       try {
+        const resolved = await resolveProjectLearningNoteReference(
+          project.id,
+          link,
+          window.learningCompanion.listAttachments,
+          controller.signal,
+        );
+        if (!layout.rightInline) {
+          closeRight();
+        }
         await selectAndRevealWorkbenchTarget({
-          assetId: link.assetId,
-          target: link.target,
-          sourceRevision: link.sourceRevision,
+          assetId: resolved.assetId,
+          target: resolved.target,
+          ...(resolved.sourceRevision
+            ? { sourceRevision: resolved.sourceRevision }
+            : {}),
           selectAsset: session.selectAsset,
           signal: controller.signal,
           timeoutMs: 10_000,
@@ -530,6 +549,7 @@ export function ProjectPage({
                 <AssetWorkbenchHost
                   projectId={project.id}
                   asset={assetOperations.selectedAsset}
+                  learningNoteReferences={learningNoteReferences}
                   mediaLabel={assetMediaLabel}
                   onRelink={() => {
                     if (assetOperations.selectedAsset) {
@@ -578,7 +598,7 @@ export function ProjectPage({
                     projectId={project.id}
                     selectedAsset={assetOperations.selectedAsset}
                     controller={learningNote}
-                    onRevealTarget={revealLearningNoteTarget}
+                    onRevealReference={revealLearningNoteReference}
                     onClose={closeLearningNotePanel}
                   />
                 }

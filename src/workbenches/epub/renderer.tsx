@@ -163,6 +163,7 @@ export function EpubWorkbenchView({
   asset,
   bootstrap,
   attachments = [],
+  learningNoteSourceMarks = [],
   refreshAttachments,
   executeCommand,
   onRelink,
@@ -853,6 +854,7 @@ export function EpubWorkbenchView({
       rendition.annotations,
       explanations,
       readingNotes,
+      learningNoteSourceMarks,
       {
         onExplanationClick: (explanation) =>
           setActiveExplanationId(explanation.id),
@@ -862,7 +864,7 @@ export function EpubWorkbenchView({
         },
       },
     );
-  }, [explanations, loadState.kind, readingNotes]);
+  }, [explanations, learningNoteSourceMarks, loadState.kind, readingNotes]);
 
   const retryExplanation = useCallback(
     async (explanation: EpubExplanationView) => {

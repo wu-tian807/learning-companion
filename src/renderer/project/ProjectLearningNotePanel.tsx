@@ -1,18 +1,20 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AssetSnapshot } from '../../shared/assets';
+import type { AssetAttachment } from '../../shared/attachments/contracts';
 import { userMessageFromError } from '../../shared/ipc-error';
 import {
-  createProjectLearningNoteTargetHref,
-  parseProjectLearningNoteTargetHref,
-  type ProjectLearningNoteTargetLink,
+  parseProjectLearningNoteReferenceHref,
+  type ProjectLearningNoteReferenceLink,
 } from '../../shared/project-learning-notes';
-import { getWorkbenchTargetSourceRevision } from '../workbench/host/workbench-target-bridge';
-import { useWorkbenchRuntime } from '../workbench/runtime/workbench-runtime-context';
 import type { MarkdownEditorAdapter } from '../../workbenches/markdown/markdown-editor-adapter';
 import { useMarkdownVisualEditor } from '../../workbenches/markdown/use-markdown-visual-editor';
 import '../../workbenches/markdown/markdown-workbench.css';
 
+import {
+  createLearningNoteAttachmentMarkdown,
+  projectLearningNoteAttachmentOptionLabel,
+} from './project-learning-note-links';
 import type { ProjectLearningNoteController } from './use-project-learning-note';
 
 function CloseIcon() {
@@ -45,39 +47,30 @@ function statusLabel(controller: ProjectLearningNoteController): string {
   }
 }
 
-function escapeMarkdownLinkLabel(value: string): string {
-  return value.replace(/[\\[\]]/gu, (character) => `\\${character}`);
-}
-
-function createLearningNoteTargetMarkdown(
-  assetName: string,
-  link: ProjectLearningNoteTargetLink,
-): string {
-  const label = escapeMarkdownLinkLabel(`${assetName} · 定位原文`);
-  return `[${label}](${createProjectLearningNoteTargetHref(link)})`;
-}
-
 export function ProjectLearningNotePanel({
   active,
   projectId,
   selectedAsset,
   controller,
-  onRevealTarget,
+  onRevealReference,
   onClose,
 }: {
   readonly active: boolean;
   readonly projectId: string;
   readonly selectedAsset: AssetSnapshot | undefined;
   readonly controller: ProjectLearningNoteController;
-  readonly onRevealTarget: (
-    link: ProjectLearningNoteTargetLink,
+  readonly onRevealReference: (
+    link: ProjectLearningNoteReferenceLink,
   ) => Promise<void>;
   readonly onClose: () => void;
 }) {
-  const runtime = useWorkbenchRuntime();
   const editorRef = useRef<MarkdownEditorAdapter | undefined>(undefined);
   const [editorKey, setEditorKey] = useState(0);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<readonly AssetAttachment[]>([]);
+  const [attachmentLoading, setAttachmentLoading] = useState(false);
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState('');
+  const attachmentLoadRevisionRef = useRef(0);
   const ready = controller.loadState.kind === 'ready';
   const { hostRef, state: editorState } = useMarkdownVisualEditor({
     enabled: active && ready,
@@ -103,15 +96,15 @@ export function ProjectLearningNotePanel({
       });
     },
     isInternalLinkAllowed: (href) =>
-      parseProjectLearningNoteTargetHref(href) !== undefined,
+      parseProjectLearningNoteReferenceHref(href) !== undefined,
     onOpenInternalLink: (href) => {
-      const link = parseProjectLearningNoteTargetHref(href);
+      const link = parseProjectLearningNoteReferenceHref(href);
       if (!link || link.projectId !== projectId) {
         setInteractionError('这条资料引用不属于当前 Project。');
         return;
       }
       setInteractionError(null);
-      void onRevealTarget(link).catch((error) => {
+      void onRevealReference(link).catch((error) => {
         setInteractionError(
           userMessageFromError(error, '无法定位引用的资料。') ??
             '无法定位引用的资料。',
@@ -129,20 +122,67 @@ export function ProjectLearningNotePanel({
     },
   });
 
-  const insertCurrentTarget = () => {
+  const loadAttachments = useCallback(async () => {
     const asset = selectedAsset;
-    const context = runtime.interactionContext();
-    if (!asset || !context || context.assetId !== asset.id) {
-      setInteractionError('请先打开一份资料并选择要引用的位置。');
+    const revision = ++attachmentLoadRevisionRef.current;
+    if (!active || !asset) {
+      setAttachments([]);
+      setSelectedAttachmentId('');
+      setAttachmentLoading(false);
       return;
     }
-    if (!context.focus) {
-      setInteractionError('请先在当前资料中选择一段内容或一个具体位置。');
-      return;
+    setAttachmentLoading(true);
+    try {
+      const listed = await window.learningCompanion.listAttachments({
+        projectId,
+        assetId: asset.id,
+      });
+      if (revision !== attachmentLoadRevisionRef.current) return;
+      const owned = listed.filter(
+        (attachment) =>
+          attachment.projectId === projectId &&
+          attachment.assetId === asset.id &&
+          attachment.target.scope === 'content',
+      );
+      setAttachments(owned);
+      setSelectedAttachmentId((current) =>
+        owned.some((attachment) => attachment.id === current)
+          ? current
+          : (owned[0]?.id ?? ''),
+      );
+    } catch (error) {
+      if (revision !== attachmentLoadRevisionRef.current) return;
+      setAttachments([]);
+      setSelectedAttachmentId('');
+      setInteractionError(
+        userMessageFromError(error, '无法读取当前资料的标注。') ??
+          '无法读取当前资料的标注。',
+      );
+    } finally {
+      if (revision === attachmentLoadRevisionRef.current) {
+        setAttachmentLoading(false);
+      }
     }
-    const sourceRevision = getWorkbenchTargetSourceRevision(asset.id);
-    if (!sourceRevision) {
-      setInteractionError('当前资料尚未准备好，暂时无法创建定位引用。');
+  }, [active, projectId, selectedAsset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void loadAttachments();
+    });
+    return () => {
+      cancelled = true;
+      attachmentLoadRevisionRef.current += 1;
+    };
+  }, [loadAttachments]);
+
+  const insertSelectedAttachment = () => {
+    const asset = selectedAsset;
+    const attachment = attachments.find(
+      (candidate) => candidate.id === selectedAttachmentId,
+    );
+    if (!asset || !attachment) {
+      setInteractionError('请先选择当前资料中要引用的标注。');
       return;
     }
     const editor = editorRef.current;
@@ -152,12 +192,7 @@ export function ProjectLearningNotePanel({
     }
 
     editor.insertMarkdown(
-      createLearningNoteTargetMarkdown(asset.name, {
-        projectId,
-        assetId: asset.id,
-        sourceRevision,
-        target: context.focus,
-      }),
+      createLearningNoteAttachmentMarkdown(asset.name, attachment),
     );
     editor.focus();
     setInteractionError(null);
@@ -180,7 +215,8 @@ export function ProjectLearningNotePanel({
                 : 'text-slate-500',
             ].join(' ')}
           >
-            {statusLabel(controller)} · 当前 Project 跨资料共享
+            {statusLabel(controller)} · 当前 Project 跨资料共享 ·{' '}
+            {controller.markdown.length.toLocaleString()} 字符
           </p>
         </div>
         <button
@@ -193,20 +229,49 @@ export function ProjectLearningNotePanel({
         </button>
       </header>
 
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-3 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-white/8 px-3 py-2">
+        <select
+          aria-label="选择要引用的标注"
+          value={selectedAttachmentId}
+          disabled={!selectedAsset || attachmentLoading || attachments.length === 0}
+          onChange={(event) => setSelectedAttachmentId(event.target.value)}
+          className="ui-control min-w-0 flex-1 rounded-lg border border-white/10 bg-[#1b2027] px-2 py-1.5 text-[11px] text-slate-300 outline-none disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {attachmentLoading ? (
+            <option value="">正在读取标注…</option>
+          ) : attachments.length === 0 ? (
+            <option value="">当前资料暂无可定位标注</option>
+          ) : (
+            attachments.map((attachment) => (
+              <option key={attachment.id} value={attachment.id}>
+                {projectLearningNoteAttachmentOptionLabel(attachment)}
+              </option>
+            ))
+          )}
+        </select>
         <button
           type="button"
-          disabled={!ready || editorState !== 'ready'}
-          onClick={insertCurrentTarget}
-          className="ui-control rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-indigo-200 hover:border-indigo-300/35 hover:bg-indigo-300/10 disabled:cursor-not-allowed disabled:opacity-40"
-          title="先在资料中选择内容，再把可点击的定位链接插入笔记"
+          aria-label="刷新可引用标注"
+          disabled={!selectedAsset || attachmentLoading}
+          onClick={() => void loadAttachments()}
+          className="ui-icon-button grid size-7 shrink-0 place-items-center rounded-lg border border-white/10 text-sm text-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
+          title="刷新当前资料的 Attachment 列表"
         >
-          + 引用当前位置
+          ↻
         </button>
-        <span className="text-[10px] tabular-nums text-slate-600">
-          {controller.markdown.length.toLocaleString()} /{' '}
-          {controller.maxLength.toLocaleString()}
-        </span>
+        <button
+          type="button"
+          disabled={
+            !ready ||
+            editorState !== 'ready' ||
+            !selectedAttachmentId
+          }
+          onClick={insertSelectedAttachment}
+          className="ui-control shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-indigo-200 hover:border-indigo-300/35 hover:bg-indigo-300/10 disabled:cursor-not-allowed disabled:opacity-40"
+          title="把所选 Attachment 及其原文定位插入学习笔记"
+        >
+          + 引用标注
+        </button>
       </div>
 
       {controller.loadState.kind === 'loading' ? (

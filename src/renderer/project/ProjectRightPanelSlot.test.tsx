@@ -61,5 +61,15 @@ describe('ProjectRightPanelSlot', () => {
     expect(note).toMatch(
       /class="hidden" aria-hidden="true"><div data-panel-content="conversation"/u,
     );
+    expect(note).toContain('role="separator"');
+    expect(note).toContain('aria-label="调整学习笔记宽度"');
+    expect(note).toContain('aria-valuemin="318"');
+    expect(note).toContain('aria-valuemax="720"');
+    expect(note).toContain('cursor-col-resize');
+  });
+
+  it('does not expose the resize handle for the other shared panels', () => {
+    expect(render('generation')).not.toContain('role="separator"');
+    expect(render('conversation')).not.toContain('role="separator"');
   });
 });
