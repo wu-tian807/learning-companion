@@ -1,10 +1,9 @@
 import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
-  isAssetTarget,
-} from '../../shared/workbench/asset-target';
-import {
   isAssetLink,
   isAssetReference,
+  isAssetLinkTarget,
+  isAssetReferenceTarget,
 } from '../../shared/asset-associations';
 import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import {
@@ -35,10 +34,10 @@ import {
 export const MIND_MAP_MEDIA_TYPE = MIND_MAP_ASSET_MEDIA_TYPE;
 export const MIND_MAP_WORKBENCH_ID = 'builtin.mindmap';
 export const MIND_MAP_STATE_SCHEMA_VERSION = 2;
-export const MIND_MAP_NODE_ANCHOR_TYPE = 'mindmap.node';
-export const MIND_MAP_NODE_ANCHOR_VERSION = 1;
-export const MIND_MAP_FRAME_ANCHOR_TYPE = 'mindmap.frame';
-export const MIND_MAP_FRAME_ANCHOR_VERSION = 1;
+export const MIND_MAP_NODE_TARGET_TYPE = 'mindmap.node';
+export const MIND_MAP_NODE_TARGET_VERSION = 1;
+export const MIND_MAP_FRAME_TARGET_TYPE = 'mindmap.frame';
+export const MIND_MAP_FRAME_TARGET_VERSION = 1;
 
 export const mindMapWorkbenchManifest: AssetWorkbenchManifest<
   typeof MIND_MAP_WORKBENCH_ID
@@ -49,8 +48,8 @@ export const mindMapWorkbenchManifest: AssetWorkbenchManifest<
   supportedMediaTypes: [MIND_MAP_MEDIA_TYPE],
   requiredContentCapabilities: ['read-bytes'],
   supportedTargetTypes: [
-    MIND_MAP_NODE_ANCHOR_TYPE,
-    MIND_MAP_FRAME_ANCHOR_TYPE,
+    MIND_MAP_NODE_TARGET_TYPE,
+    MIND_MAP_FRAME_TARGET_TYPE,
   ],
   facilities: [
     rendererTransportFacilityDeclaration,
@@ -61,11 +60,11 @@ export const mindMapWorkbenchManifest: AssetWorkbenchManifest<
   ],
 };
 
-export interface MindMapNodeAnchorPayloadV1 {
+export interface MindMapNodeTargetPayloadV1 {
   readonly nodeId: string;
 }
 
-export interface MindMapFrameAnchorPayloadV1 {
+export interface MindMapFrameTargetPayloadV1 {
   readonly frameId: string;
 }
 
@@ -153,12 +152,16 @@ function isResolvedMindMapSubjectAssociations(
           return false;
         }
 
-        return isNormalizedId(binding.sourceRevision) &&
-          isAssetTarget(binding.target);
+        return isAssetReferenceTarget(binding.binding);
       },
     ) &&
     Array.isArray(value.links) &&
-    value.links.every(isAssetLink)
+    value.links.every(
+      (binding) =>
+        isRecord(binding) &&
+        isAssetLink(binding.link) &&
+        isAssetLinkTarget(binding.binding),
+    )
   );
 }
 
@@ -321,8 +324,8 @@ export function createMindMapNodeTarget(
 
   return Object.freeze({
     scope: 'content',
-    targetType: MIND_MAP_NODE_ANCHOR_TYPE,
-    targetVersion: MIND_MAP_NODE_ANCHOR_VERSION,
+    targetType: MIND_MAP_NODE_TARGET_TYPE,
+    targetVersion: MIND_MAP_NODE_TARGET_VERSION,
     targetPayload: Object.freeze({ nodeId }),
   });
 }
@@ -336,8 +339,8 @@ export function createMindMapFrameTarget(
 
   return Object.freeze({
     scope: 'content',
-    targetType: MIND_MAP_FRAME_ANCHOR_TYPE,
-    targetVersion: MIND_MAP_FRAME_ANCHOR_VERSION,
+    targetType: MIND_MAP_FRAME_TARGET_TYPE,
+    targetVersion: MIND_MAP_FRAME_TARGET_VERSION,
     targetPayload: Object.freeze({ frameId }),
   });
 }
@@ -345,7 +348,7 @@ export function createMindMapFrameTarget(
 export function isMindMapNodeTarget(
   value: unknown,
 ): value is ContentAssetTarget & {
-  readonly targetPayload: MindMapNodeAnchorPayloadV1;
+  readonly targetPayload: MindMapNodeTargetPayloadV1;
 } {
   if (!isRecord(value)) {
     return false;
@@ -353,8 +356,8 @@ export function isMindMapNodeTarget(
 
   return (
     value.scope === 'content' &&
-    value.targetType === MIND_MAP_NODE_ANCHOR_TYPE &&
-    value.targetVersion === MIND_MAP_NODE_ANCHOR_VERSION &&
+    value.targetType === MIND_MAP_NODE_TARGET_TYPE &&
+    value.targetVersion === MIND_MAP_NODE_TARGET_VERSION &&
     isRecord(value.targetPayload) &&
     isNormalizedId(value.targetPayload.nodeId)
   );
@@ -363,7 +366,7 @@ export function isMindMapNodeTarget(
 export function isMindMapFrameTarget(
   value: unknown,
 ): value is ContentAssetTarget & {
-  readonly targetPayload: MindMapFrameAnchorPayloadV1;
+  readonly targetPayload: MindMapFrameTargetPayloadV1;
 } {
   if (!isRecord(value)) {
     return false;
@@ -371,8 +374,8 @@ export function isMindMapFrameTarget(
 
   return (
     value.scope === 'content' &&
-    value.targetType === MIND_MAP_FRAME_ANCHOR_TYPE &&
-    value.targetVersion === MIND_MAP_FRAME_ANCHOR_VERSION &&
+    value.targetType === MIND_MAP_FRAME_TARGET_TYPE &&
+    value.targetVersion === MIND_MAP_FRAME_TARGET_VERSION &&
     isRecord(value.targetPayload) &&
     isNormalizedId(value.targetPayload.frameId)
   );

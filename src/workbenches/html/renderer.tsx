@@ -259,6 +259,7 @@ export function HtmlWorkbenchView({
       `${conversationOwnerId}.targets`,
       asset.id,
       {
+        sourceRevision: payload?.sourceRevision,
         async reveal(target) {
           if (!isHtmlAnchorTarget(target)) return false;
           await showHighlight(target, { reveal: true, durationMs: 2_800 });
@@ -266,7 +267,7 @@ export function HtmlWorkbenchView({
         },
       },
     );
-  }, [asset.id, conversationOwnerId, frameKey, loadedFrameKey, showHighlight]);
+  }, [asset.id, conversationOwnerId, frameKey, loadedFrameKey, payload?.sourceRevision, showHighlight]);
 
   const explainSelection = useCallback((target: ContentAssetTarget) => {
     if (isHtmlAnchorTarget(target)) {

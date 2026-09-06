@@ -90,9 +90,9 @@ export function createWorkbenchConversationTaskDefinitionV1(
     assetReferenceSchema: Object.freeze({
       [WORKBENCH_CONVERSATION_SOURCE_SLOT]: Object.freeze({
         required: false,
-        cardinality: 'one' as const,
+        cardinality: 'many' as const,
         minItems: 0,
-        maxItems: 1,
+        maxItems: 32,
       }),
     }),
     instruction: workbenchConversationInstructionFactory,

@@ -56,6 +56,7 @@ export interface EpubWorkbenchStateV1 {
 
 export interface EpubWorkbenchPayload {
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly viewState: EpubWorkbenchViewState;
 }
 
@@ -152,6 +153,9 @@ export function isEpubWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     value.contentUrl.startsWith('learning-content://resource/') &&
+    typeof value.sourceRevision === 'string' &&
+    value.sourceRevision.trim().length > 0 &&
+    value.sourceRevision.length <= 256 &&
     isEpubWorkbenchViewState(value.viewState)
   );
 }

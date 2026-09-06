@@ -25,6 +25,7 @@ describe('EPUB Workbench shared protocol', () => {
     expect(
       isEpubWorkbenchPayload({
         contentUrl: 'learning-content://resource/epub',
+        sourceRevision: 'revision',
         viewState: {
           ...DEFAULT_EPUB_VIEW_STATE,
           location: 'epubcfi(/6/2!/4/2/1:0)',

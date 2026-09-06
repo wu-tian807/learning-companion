@@ -168,7 +168,7 @@ describe('video conversation contribution', () => {
     expect(contribution()).not.toHaveProperty('historyStore');
   });
 
-  it('normalizes a persisted pre-Target video context at the Workbench boundary', () => {
+  it('rejects persisted pre-Target video context', () => {
     const legacy = {
       sourceRevision: '100',
       target: {
@@ -179,9 +179,7 @@ describe('video conversation contribution', () => {
       },
     };
 
-    expect(parseVideoConversationContext(legacy)).toEqual(
-      createVideoConversationContext(target, '100'),
-    );
-    expect(contribution().isContext?.(legacy)).toBe(true);
+    expect(parseVideoConversationContext(legacy)).toBeUndefined();
+    expect(contribution().isContext?.(legacy)).toBe(false);
   });
 });

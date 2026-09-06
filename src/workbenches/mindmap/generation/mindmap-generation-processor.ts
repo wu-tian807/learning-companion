@@ -228,7 +228,7 @@ export class MindMapGenerationProcessor
           prepared.alias,
           Object.freeze({
             referenceId,
-            sourceRevision: prepared.contentRevision,
+            contentRevision: prepared.contentRevision,
           }),
         );
       }

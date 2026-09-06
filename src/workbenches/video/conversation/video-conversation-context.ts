@@ -1,5 +1,5 @@
 import type { JsonValue } from '../../../shared/workbench/protocol';
-import { parseAssetTarget } from '../../../shared/workbench/asset-target';
+import { isAssetTarget, cloneAssetTarget } from '../../../shared/workbench/asset-target';
 import {
   isVideoFrameRegionTarget,
   type VideoFrameRegionTarget,
@@ -36,8 +36,8 @@ export function parseVideoConversationContext(
   value: unknown,
 ): VideoConversationContext | undefined {
   if (!isRecord(value)) return undefined;
-  const target = parseAssetTarget(value.target);
-  if (!target) return undefined;
+  if (!isAssetTarget(value.target)) return undefined;
+  const target = cloneAssetTarget(value.target);
   const normalized = {
     sourceRevision: value.sourceRevision,
     target,

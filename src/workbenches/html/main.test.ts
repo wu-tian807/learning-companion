@@ -45,7 +45,14 @@ async function createProvider() {
     content: {
       handle: {
         capabilities: new Set(['read-stream']),
-        openByteStream: vi.fn(),
+        openByteStream: vi.fn(async () => ({
+          stream: new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.close();
+            },
+          }),
+          byteLength: 0,
+        })),
       },
     },
     attachments: [],
@@ -122,7 +129,15 @@ describe('HtmlWorkbenchProvider commands', () => {
         handle: {
           capabilities: new Set(['read-bytes', 'read-stream']),
           readBytes: vi.fn(async () => ({ content: sourceBytes, revision: 'source' })),
-          openByteStream: vi.fn(),
+          openByteStream: vi.fn(async () => ({
+            stream: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(sourceBytes);
+                controller.close();
+              },
+            }),
+            byteLength: sourceBytes.byteLength,
+          })),
           close: vi.fn(async () => undefined),
         },
       },

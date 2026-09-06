@@ -108,6 +108,7 @@ export interface AudioWorkbenchStateV2 {
 
 export interface AudioWorkbenchPayload {
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly viewState: AudioWorkbenchViewState;
   readonly subtitleState: AudioSubtitleViewState;
   readonly subtitleSnapshot: AudioSubtitleSnapshot;
@@ -290,6 +291,9 @@ export function isAudioWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     value.contentUrl.startsWith('learning-content://resource/') &&
+    typeof value.sourceRevision === 'string' &&
+    value.sourceRevision.trim().length > 0 &&
+    value.sourceRevision.length <= 256 &&
     isAudioWorkbenchViewState(value.viewState) &&
     isMediaSubtitleViewState(value.subtitleState) &&
     isAudioSubtitleSnapshot(value.subtitleSnapshot) &&

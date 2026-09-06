@@ -9,9 +9,9 @@ Mind Map 是正式的 generated Asset，媒体类型为
 
 关系通过稀疏的 `associations.nodes` 和 `associations.frames` 保存：
 
-- `references` 使用 `referenceId + sourceRevision + target`；`target` 是来源 Asset
+- `references` 使用共享的 `referenceId + contentRevision + target` 包装；`target` 是来源 Asset
   所属 Workbench 声明、校验并可直接 reveal 的通用 `AssetTarget`；
-- `linkIds` 对应从节点派生或链接的目标 Asset；
+- `links` 使用共享的 `linkId + contentRevision + target` 包装，对应从节点派生或链接的目标 Asset；
 - Asset 级来源和链接本身由通用 `AssetReference`、`AssetLink` 表保存；
 - 文档中的失效关系 ID 不阻止整张 Mind Map 打开。
 
@@ -42,5 +42,5 @@ Attachment、AI 工具和其他 Workbench 使用。节点折叠、当前选中�
 - `shared.ts` 保存 Manifest、Bootstrap/Command、State 与 Target 协议；
 - Adapter 不拥有 Handle 生命周期，不存在 Mind Map 专用 `HandleManager`。
 
-当前唯一运行路线使用 `mindmap.generate@3` 和 `.mindmap` v3。文件与任务都保留显式
+当前唯一运行路线使用 `mindmap.generate@3` 和 `.mindmap` v4。文件与任务都保留显式
 版本号，供未来升级协议使用；运行时不注册或读取已经废弃的 v1/v2 路线。

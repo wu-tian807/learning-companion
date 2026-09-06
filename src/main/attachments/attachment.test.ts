@@ -66,8 +66,8 @@ describe('AssetAttachment', () => {
     expect(attachment.metadata).toEqual({ format: 'markdown' });
   });
 
-  it('normalizes a persisted pre-Target attachment at the database boundary', () => {
-    const attachment = createAssetAttachment({
+  it('rejects retired pre-Target attachments', () => {
+    expect(() => createAssetAttachment({
       ...createInput(),
       target: {
         scope: 'content',
@@ -75,14 +75,7 @@ describe('AssetAttachment', () => {
         anchorVersion: 1,
         anchorPayload: { pageNumber: 3 },
       } as never,
-    });
-
-    expect(attachment.target).toEqual({
-      scope: 'content',
-      targetType: 'pdf.page',
-      targetVersion: 1,
-      targetPayload: { pageNumber: 3 },
-    });
+    })).toThrow('AssetAttachment target 无效');
   });
 
   it('rejects external content references', () => {

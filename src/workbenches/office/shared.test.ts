@@ -40,6 +40,7 @@ describe('Office Workbench shared contract', () => {
       isOfficeWorkbenchPayload({
         status: 'ready',
         contentUrl: 'learning-content://resource/preview',
+        sourceRevision: 'revision',
         viewState,
       }),
     ).toBe(true);

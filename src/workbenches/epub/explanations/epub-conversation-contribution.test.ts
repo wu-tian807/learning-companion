@@ -105,7 +105,7 @@ describe('EPUB conversation contribution', () => {
     ).toThrow('请先在 EPUB 中选中一段文字');
   });
 
-  it('normalizes a persisted pre-Target EPUB context at the Workbench boundary', () => {
+  it('rejects persisted pre-Target EPUB context', () => {
     const legacy = {
       target: {
         scope: 'content',
@@ -115,9 +115,7 @@ describe('EPUB conversation contribution', () => {
       },
     };
 
-    expect(parseEpubConversationContext(legacy)).toEqual(
-      createEpubConversationContext(target),
-    );
-    expect(createContribution().isContext?.(legacy)).toBe(true);
+    expect(parseEpubConversationContext(legacy)).toBeUndefined();
+    expect(createContribution().isContext?.(legacy)).toBe(false);
   });
 });

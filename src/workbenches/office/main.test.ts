@@ -181,6 +181,7 @@ describe('OfficeWorkbenchProvider', () => {
     ).resolves.toEqual({
       absolutePath: expect.stringContaining('preview.pdf'),
       mediaType: 'application/pdf',
+      sourceRevision: 'source',
     });
     expect(harness.artifacts.getOrCreate).toHaveBeenCalledWith(
       expect.objectContaining({
