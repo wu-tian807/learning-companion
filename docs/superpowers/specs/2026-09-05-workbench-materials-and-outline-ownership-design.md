@@ -139,3 +139,12 @@ Generation Center
 | 输入与摘要兼容 | 实际生产 ConversationPanel + intake status | 摘要 128px；输入 24→72→144px，超出滚动、缩窄折行、切换历史和发送清空恢复 |
 
 本次完整检查：TypeScript、ESLint 通过；410 个测试文件 / 1954 项测试通过，4 文件 / 8 项平台或 opt-in 条件跳过。Electron fixture 的本地证据在 lc-chain-smoke/result.json 与 lc-chat-compact-smoke/result.json。真实模型自然多轮验收仍由用户进行；这些确定性验证不声称替代真实 Agent 体验。
+
+
+### Electron 首次导入的并发安装竞态
+
+当前 Electron 43.2.0 包没有 postinstall，index.js 在 path.txt 或可执行文件缺失时同步启动 install.js。CI 的 pnpm install 完成不代表 Electron 运行时已解压。多个 Vitest worker 首次导入完整 Workbench Catalog 时会并发触发安装，Windows 在同一 dist/locales 目录出现 os error 183，导致 suite 在收集阶段失败。
+
+测试入口改为 `install-electron && vitest run`：先使用包自带 CLI 完成一次串行准备，再启动并行测试。已有安装直接通过；不降低并发、不跳过测试、不使用重试掩盖安装失败。
+
+隔离冷安装实验只复制 Electron 包文件，不修改应用正在使用的 node_modules：8 个进程直接并发导入时 5 个失败；先执行同一 install.js 后，8 个并发导入全部成功，且没有再次下载。证据在本地 lc-electron-install-order-result.json。安装顺序修复后重新运行完整 pnpm check。
