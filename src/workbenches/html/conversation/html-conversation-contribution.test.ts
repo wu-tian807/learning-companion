@@ -96,8 +96,7 @@ describe('HTML conversation contribution', () => {
     });
   });
 
-  it('normalizes a persisted pre-Target HTML context at the Workbench boundary', () => {
-    const canonical = record().messages[0]!.context!;
+  it('rejects persisted pre-Target HTML context', () => {
     const legacy = {
       scope: 'content' as const,
       anchorType: 'html.element',
@@ -112,7 +111,7 @@ describe('HTML conversation contribution', () => {
     };
     const contribution = createHtmlConversationContribution({});
 
-    expect(parseHtmlConversationContext(legacy)).toEqual(canonical);
-    expect(contribution.isContext?.(legacy)).toBe(true);
+    expect(parseHtmlConversationContext(legacy)).toBeUndefined();
+    expect(contribution.isContext?.(legacy)).toBe(false);
   });
 });

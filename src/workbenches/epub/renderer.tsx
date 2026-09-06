@@ -253,6 +253,7 @@ export function EpubWorkbenchView({
       `${conversationOwnerId}.targets`,
       asset.id,
       {
+        sourceRevision: payload?.sourceRevision,
         async reveal(target) {
           if (!isEpubCfiRangeTarget(target)) return false;
           const rendition = renditionRef.current;
@@ -262,7 +263,7 @@ export function EpubWorkbenchView({
         },
       },
     );
-  }, [asset.id, conversationOwnerId, loadState.kind]);
+  }, [asset.id, conversationOwnerId, loadState.kind, payload?.sourceRevision]);
   const conversationContribution = useMemo(
     () => createEpubConversationContribution(),
     [],

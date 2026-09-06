@@ -339,8 +339,19 @@ export function useConversationController({
     if (task.status === 'completed') {
       const result = conversationMode.task.readCompletion(task);
       if (!result?.answer.trim()) {
+        const failure = 'AI 任务已完成，但最终回答无效，请重试。';
+        const next = updateConversation((current) => Object.freeze({
+          ...current,
+          messages: Object.freeze(current.messages.map((message) =>
+            message.id === messageId
+              ? Object.freeze({ ...message, text: `回答失败：${failure}`, stopped: true as const })
+              : message,
+          )),
+          updatedTime: Math.max(task.updatedTime, current.updatedTime),
+        }));
         finishTask();
-        setError({ message: 'AI 任务已完成，但最终回答无效，请重试。', retryTaskId: task.id });
+        setError({ message: failure, retryTaskId: task.id });
+        void persist(next);
         return true;
       }
       const next = updateConversation((current) => Object.freeze({
@@ -364,6 +375,7 @@ export function useConversationController({
     }
 
     if (task.status === 'failed' || task.status === 'cancelled') {
+      const terminalFailure = failureFromTask(task);
       const next = updateConversation((current) => Object.freeze({
         ...current,
         messages: Object.freeze(current.messages.map((message) =>
@@ -376,16 +388,17 @@ export function useConversationController({
                 )
               : Object.freeze({
                   ...message,
-                  ...(task.status === 'cancelled'
-                    ? { stopped: true as const }
-                    : {}),
+                  text: task.status === 'cancelled'
+                    ? '本次回答已停止。'
+                    : `回答失败：${terminalFailure.message}`,
+                  stopped: true as const,
                 })
             : message,
         )),
         updatedTime: Math.max(task.updatedTime, current.updatedTime),
       }));
       finishTask();
-      setError(failureFromTask(task));
+      setError(terminalFailure);
       void persist(next);
       return true;
     }
@@ -576,6 +589,9 @@ export function useConversationController({
         : { context: context.context }),
       generateTitle: firstQuestion,
     };
+    const userMessageId = createConversationMessageId(createId());
+    const assistantMessageId = createConversationMessageId(createId());
+    const timestamp = now();
     let contextSource:
       | ReturnType<typeof createConversationContextSource>
       | undefined;
@@ -592,16 +608,42 @@ export function useConversationController({
         ...(contextSource ? { contextSource } : {}),
       });
     } catch (requestError) {
-      setActivityLabel(undefined);
-      setError(
-        failureFromError(requestError, '无法准备 AI 问答任务。'),
+      const preparationFailure = failureFromError(
+        requestError,
+        '无法准备 AI 问答任务。',
       );
+      const failedRecord = Object.freeze({
+        ...current,
+        title: firstQuestion ? fallbackConversationTitle(normalized) : current.title,
+        messages: Object.freeze([
+          ...current.messages,
+          Object.freeze({
+            id: userMessageId,
+            role: 'user' as const,
+            text: normalized,
+            createdTime: timestamp,
+            ...(context?.context === undefined ? {} : { context: context.context }),
+          }),
+          Object.freeze({
+            id: assistantMessageId,
+            role: 'assistant' as const,
+            text: `回答失败：${preparationFailure.message}`,
+            createdTime: timestamp,
+            replyToMessageId: userMessageId,
+            stopped: true as const,
+          }),
+        ]),
+        updatedTime: timestamp,
+      });
+      replaceConversation(failedRecord);
+      void persist(failedRecord);
+      setDraft('');
+      writePendingContext(undefined);
+      setActivityLabel(undefined);
+      setError(preparationFailure);
       return;
     }
 
-    const userMessageId = createConversationMessageId(createId());
-    const assistantMessageId = createConversationMessageId(createId());
-    const timestamp = now();
     const userMessage: ConversationMessageRecord = Object.freeze({
       id: userMessageId,
       role: 'user',
@@ -642,7 +684,15 @@ export function useConversationController({
       if (!mountedRef.current) return;
       const failedRecord = Object.freeze({
         ...next,
-        messages: Object.freeze([...current.messages, userMessage]),
+        messages: Object.freeze([
+          ...current.messages,
+          userMessage,
+          Object.freeze({
+            ...assistantMessage,
+            text: `回答失败：${nextError.message}`,
+            stopped: true as const,
+          }),
+        ]),
       });
       replaceConversation(failedRecord);
       void persist(failedRecord);

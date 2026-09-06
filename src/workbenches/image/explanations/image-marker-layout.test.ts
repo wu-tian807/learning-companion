@@ -40,4 +40,23 @@ describe('layoutImageMarkerPositions', () => {
       { id: 'edge', preferredPosition: { x: 0, y: 2 } },
     ])).toEqual([{ id: 'edge', position: { x: 9, y: 9 } }]);
   });
+
+  it('keeps crowded badges inside all four viewport edges', () => {
+    const layout = layoutImageMarkerPositions(
+      [
+        { id: 'one', preferredPosition: { x: 99, y: 79 } },
+        { id: 'two', preferredPosition: { x: 99, y: 79 } },
+        { id: 'three', preferredPosition: { x: 99, y: 79 } },
+        { id: 'four', preferredPosition: { x: 99, y: 79 } },
+      ],
+      { width: 100, height: 80 },
+    );
+    expect(layout).toHaveLength(4);
+    for (const { position } of layout) {
+      expect(position.x).toBeGreaterThanOrEqual(9);
+      expect(position.x).toBeLessThanOrEqual(91);
+      expect(position.y).toBeGreaterThanOrEqual(9);
+      expect(position.y).toBeLessThanOrEqual(71);
+    }
+  });
 });

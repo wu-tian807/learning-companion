@@ -1,4 +1,5 @@
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
+import { createStreamContentRevision } from '../../main/content/content-revision';
 import { AppError } from '../../main/errors/app-error';
 import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
@@ -93,6 +94,10 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
 
     await this.dependencies.dubbing.refreshRuntimeAvailability(context.asset.id);
     const state = this.readState(context.state);
+    const sourceRevision = await createStreamContentRevision(
+      handle.openByteStream.bind(handle),
+      context.signal,
+    );
     const contentUrl = this.resourceService.register(
       context.sessionId,
       handle,
@@ -148,6 +153,7 @@ export class AudioWorkbenchProvider implements MainWorkbenchProvider {
     return {
       payload: {
         contentUrl,
+        sourceRevision,
         viewState: cloneAudioViewState(state.viewState),
         subtitleState: { ...state.subtitleState },
         subtitleSnapshot: cloneAudioSubtitleSnapshot(

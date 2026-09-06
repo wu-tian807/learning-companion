@@ -43,11 +43,11 @@ const documentWithTarget: MindMapDocument = {
         references: [
           {
             referenceId: 'reference-source',
-            sourceRevision: 'source-revision-1',
+            contentRevision: 'source-revision-1',
             target: { scope: 'asset' },
           },
         ],
-        linkIds: [],
+        links: [],
       },
     },
     frames: {},
@@ -144,8 +144,11 @@ describe('Mind Map interaction targets', () => {
     };
     const binding = {
       reference,
-      sourceRevision: 'source-revision-1',
-      target: { scope: 'asset' as const },
+      binding: {
+        referenceId: reference.id,
+        contentRevision: 'source-revision-1',
+        target: { scope: 'asset' as const },
+      },
     };
     const payload = {
       document: documentWithTarget,
@@ -167,7 +170,10 @@ describe('Mind Map interaction targets', () => {
         ...payload.associations,
         byNode: {
           root: {
-            references: [{ ...binding, sourceRevision: ' ' }],
+            references: [{
+              ...binding,
+              binding: { ...binding.binding, contentRevision: ' ' },
+            }],
             links: [],
           },
         },

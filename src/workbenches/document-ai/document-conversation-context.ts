@@ -1,6 +1,6 @@
 import {
+  cloneAssetTarget,
   isAssetTarget,
-  parseAssetTarget,
   type AssetTarget,
 } from '../../shared/workbench/asset-target';
 import type { JsonValue } from '../../shared/workbench/protocol';
@@ -69,8 +69,8 @@ export function parseDocumentConversationContext(
   value: unknown,
 ): DocumentConversationContext | undefined {
   if (!isRecord(value)) return undefined;
-  const target = parseAssetTarget(value.target);
-  if (!target) return undefined;
+  if (!isAssetTarget(value.target)) return undefined;
+  const target = cloneAssetTarget(value.target);
   const normalized = {
     target,
     ...(value.pageNumber === undefined ? {} : { pageNumber: value.pageNumber }),

@@ -46,6 +46,7 @@ describe('HTML Workbench shared protocol', () => {
     expect(
       isHtmlWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: 'revision',
       }),
     ).toBe(true);
     expect(
@@ -56,6 +57,7 @@ describe('HTML Workbench shared protocol', () => {
     expect(
       isHtmlWorkbenchPayload({
         contentUrl: 'learning-content://resource/token',
+        sourceRevision: 'revision',
         editing: {
           editable: true,
           hasDraft: true,

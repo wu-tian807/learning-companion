@@ -300,6 +300,7 @@ export class OfficeWorkbenchProvider
     return Object.freeze({
       absolutePath: artifact.absolutePath,
       mediaType: artifact.artifact.mediaType,
+      sourceRevision: artifact.artifact.sourceRevision,
     });
   }
 
@@ -309,6 +310,9 @@ export class OfficeWorkbenchProvider
     content: MaterializedWorkbenchContent,
   ): Promise<JsonValue & OfficePreparePreviewResult> {
     if (content.mediaType !== 'application/pdf') {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    if (!content.sourceRevision) {
       throw new AppError('DATA_INTEGRITY_ERROR');
     }
 
@@ -325,6 +329,7 @@ export class OfficeWorkbenchProvider
     const payload: JsonValue & OfficePreparePreviewResult = {
       status: 'ready',
       contentUrl,
+      sourceRevision: content.sourceRevision,
       viewState: clonePdfWorkbenchState(session.viewState),
     };
     session.artifactHandle = handle;

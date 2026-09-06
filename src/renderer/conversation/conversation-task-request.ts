@@ -40,6 +40,12 @@ export function createConversationContextSource(
   const commitAnswer =
     input.context !== undefined &&
     contribution.shouldCommitAnswer?.(input) === true;
+  const contextAssetIds = input.context === undefined
+    ? []
+    : contribution.contextAssetIds?.(input.context) ?? [];
+  const normalizedContextAssetIds = [...new Set(
+    contextAssetIds.map((assetId) => assetId.trim()).filter(Boolean),
+  )].slice(0, 32);
   return Object.freeze({
     contextProviderId: contribution.contextProviderId,
     ...(input.assetId ? { assetId: input.assetId } : {}),
@@ -47,6 +53,9 @@ export function createConversationContextSource(
       ? { sourceAssetMode: contribution.sourceAssetMode }
       : {}),
     ...(commitAnswer ? { commitAnswer: true as const } : {}),
+    ...(normalizedContextAssetIds.length > 0
+      ? { contextAssetIds: Object.freeze(normalizedContextAssetIds) }
+      : {}),
   });
 }
 
@@ -58,6 +67,11 @@ export function createConversationTaskRequest(
     throw new Error('当前聊天上下文缺少来源。');
   }
 
+  const referenceAssetIds = source
+    ? [source.assetId, ...(source.contextAssetIds ?? [])]
+        .filter((assetId): assetId is string => Boolean(assetId))
+        .filter((assetId, index, all) => all.indexOf(assetId) === index)
+    : [];
   return Object.freeze({
     projectId: input.projectId,
     definitionId: WORKBENCH_CONVERSATION_TASK_DEFINITION_ID,
@@ -81,9 +95,9 @@ export function createConversationTaskRequest(
     assetReferences:
       source?.sourceAssetMode === 'reference' && source.assetId
         ? Object.freeze({
-            [WORKBENCH_CONVERSATION_SOURCE_SLOT]: Object.freeze([
-              Object.freeze({ assetId: source.assetId }),
-            ]),
+            [WORKBENCH_CONVERSATION_SOURCE_SLOT]: Object.freeze(
+              referenceAssetIds.map((assetId) => Object.freeze({ assetId })),
+            ),
           })
         : Object.freeze({}),
   });

@@ -232,6 +232,16 @@ describe('ConversationPanel', () => {
     expect(historyHtml).toContain('当前回答生成中，停止后可删除');
   });
 
+  it('keeps the question draft editable while the current answer is generating', () => {
+    const html = render(state({ busy: true, draft: '下一问' }));
+    const textarea = html.match(/<textarea[^>]*>/u)?.[0];
+    const submit = html.match(/<button[^>]*aria-label="发送问题"[^>]*>/u)?.[0];
+
+    expect(textarea).toBeDefined();
+    expect(textarea).not.toContain('disabled=""');
+    expect(submit).toContain('disabled=""');
+  });
+
   it('renders Markdown answers and Workbench-owned answer-action presentation', () => {
     const html = render(state({
       conversation: {

@@ -274,6 +274,7 @@ export function PlainTextWorkbenchView({
   const payload = isPlainTextWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
     : undefined;
+  const [sourceRevision, setSourceRevision] = useState(payload?.revision ?? '');
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const viewStateRef = useRef<PlainTextViewState>(
     payload?.viewState ?? { anchor: 0, head: 0, scrollTop: 0 },
@@ -512,6 +513,7 @@ export function PlainTextWorkbenchView({
           throw new Error('Plain Text Workbench 编码重开响应无效');
         }
 
+        setSourceRevision(result.payload.revision);
         latestContentRef.current = result.payload.content;
         setContent(result.payload.content);
         setSavedContent(result.payload.content);
@@ -535,7 +537,10 @@ export function PlainTextWorkbenchView({
     const result = await executeCommand(
       createPlainTextBufferCommand(plainTextCommands.save, buffer),
     );
-    validateCommandResult(result, isPlainTextSaveResult);
+    if (!isPlainTextSaveResult(result.payload)) {
+      throw new Error('Plain Text Workbench 保存响应无效');
+    }
+    setSourceRevision(result.payload.revision);
     setSavedContent(buffer.content);
     setSavedLineEnding(buffer.lineEnding);
     setBackupStatus('idle');
@@ -696,6 +701,7 @@ export function PlainTextWorkbenchView({
       `${conversationOwnerId}.targets`,
       asset.id,
       {
+        sourceRevision,
         resolve(target) {
           return resolveTextTargetRect(target);
         },
@@ -742,6 +748,7 @@ export function PlainTextWorkbenchView({
     asset.id,
     conversationOwnerId,
     resolveTextTargetRect,
+    sourceRevision,
     viewOptions.readMode,
   ]);
 

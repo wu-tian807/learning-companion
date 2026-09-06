@@ -75,6 +75,7 @@ export type PdfWorkbenchViewState = PdfWorkbenchStateV1;
 
 export interface PdfWorkbenchPayload {
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly viewState: PdfWorkbenchViewState;
 }
 
@@ -216,6 +217,9 @@ export function isPdfWorkbenchPayload(
     isRecord(value) &&
     typeof value.contentUrl === 'string' &&
     /^learning-content:\/\/resource\/[^/?#]+$/.test(value.contentUrl) &&
+    typeof value.sourceRevision === 'string' &&
+    value.sourceRevision.trim().length > 0 &&
+    value.sourceRevision.length <= 256 &&
     isPdfWorkbenchStateV1(value.viewState)
   );
 }

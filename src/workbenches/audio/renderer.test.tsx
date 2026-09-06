@@ -103,6 +103,7 @@ describe('AudioWorkbenchView', () => {
   it('renders compact media controls and the transcript area', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'test-revision',
       viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
       subtitleState: { ...DEFAULT_AUDIO_SUBTITLE_VIEW_STATE },
       subtitleSnapshot: cloneAudioSubtitleSnapshot(
@@ -138,6 +139,7 @@ describe('AudioWorkbenchView', () => {
   it('renders progressive bilingual text and reverse dubbing progress', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'test-revision',
       viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
       subtitleState: { displayMode: 'bilingual' },
       subtitleSnapshot: cloneAudioSubtitleSnapshot({
@@ -207,6 +209,7 @@ describe('AudioWorkbenchView', () => {
   it('offers subtitle installation and blocks dubbing when runtimes are absent', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/token',
+      sourceRevision: 'test-revision',
       viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
       subtitleState: { displayMode: 'source' },
       subtitleSnapshot: cloneAudioSubtitleSnapshot({
@@ -230,6 +233,7 @@ describe('AudioWorkbenchView', () => {
   it('rejects an invalid bootstrap URL', () => {
     const markup = render({
       contentUrl: 'file:///tmp/private/lesson.mp3',
+      sourceRevision: 'test-revision',
       viewState: cloneAudioViewState(DEFAULT_AUDIO_VIEW_STATE),
     });
 

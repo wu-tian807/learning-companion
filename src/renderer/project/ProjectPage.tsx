@@ -190,8 +190,10 @@ export function ProjectPage({
   }, [session]);
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
-    closeRight();
-  }, [closeRight, conversationRuntime]);
+    if (layout.rightPanel === 'conversation') {
+      openRight('generation');
+    }
+  }, [conversationRuntime, layout.rightPanel, openRight]);
   const toggleLeftPanel = useCallback(() => {
     if (
       layout.mode === 'small' &&
@@ -211,6 +213,7 @@ export function ProjectPage({
   const toggleGenerationPanel = useCallback(() => {
     if (conversationSnapshot.panelOpen) {
       dismissConversationPanel();
+      return;
     }
     toggleRight('generation');
   }, [
@@ -324,10 +327,9 @@ export function ProjectPage({
     if (conversationSnapshot.panelOpen) {
       openRight('conversation');
     } else if (layout.rightPanel === 'conversation') {
-      closeRight();
+      openRight('generation');
     }
   }, [
-    closeRight,
     conversationSnapshot.panelOpen,
     layout.rightPanel,
     openRight,
@@ -391,6 +393,7 @@ export function ProjectPage({
         <ProjectHeaderActions
           leftOpen={layout.leftOpen}
           rightPanel={layout.rightPanel}
+          conversationOpen={conversationSnapshot.panelOpen}
           leftButtonRef={leftToggleRef}
           rightButtonRef={rightToggleRef}
           aiQuestionButtonRef={aiQuestionToggleRef}
@@ -493,6 +496,7 @@ export function ProjectPage({
                         )
                       : Promise.resolve()
                   }
+                  onSelectAsset={session.selectAsset}
                   onOpenSettings={onOpenSettings}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createContentRevision,
   createFileContentRevision,
+  createStreamContentRevision,
 } from './content-revision';
 
 const temporaryDirectories: string[] = [];
@@ -43,5 +44,38 @@ describe('content revision', () => {
     await expect(
       createFileContentRevision('/not/opened', controller.signal),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('hashes a resolved byte stream and closes its reader', async () => {
+    const content = new TextEncoder().encode('stream source');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(content);
+        controller.close();
+      },
+    });
+
+    await expect(
+      createStreamContentRevision(async () => ({
+        stream,
+        byteLength: content.byteLength,
+      })),
+    ).resolves.toBe(createContentRevision(content));
+  });
+
+  it('uses a resolver-provided revision without consuming the stream', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+
+    await expect(
+      createStreamContentRevision(async () => ({
+        stream,
+        byteLength: 0,
+        revision: 'resolver-revision',
+      })),
+    ).resolves.toBe('resolver-revision');
   });
 });

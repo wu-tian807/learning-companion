@@ -67,6 +67,7 @@ export type OfficeWorkbenchPayload =
   | {
       readonly status: 'ready';
       readonly contentUrl: string;
+      readonly sourceRevision: string;
       readonly viewState: PdfWorkbenchViewState;
     }
   | {
@@ -77,6 +78,7 @@ export type OfficeWorkbenchPayload =
 export interface OfficePreparePreviewResult {
   readonly status: 'ready';
   readonly contentUrl: string;
+  readonly sourceRevision: string;
   readonly viewState: PdfWorkbenchViewState;
 }
 
@@ -109,6 +111,10 @@ function isContentUrl(value: unknown): value is string {
   );
 }
 
+function isRequiredText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 export function isOfficeMediaType(value: string): boolean {
   return (OFFICE_MEDIA_TYPES as readonly string[]).includes(value);
 }
@@ -124,7 +130,9 @@ export function isOfficeWorkbenchPayload(
   }
 
   return value.status === 'ready'
-    ? isContentUrl(value.contentUrl)
+    ? isContentUrl(value.contentUrl) &&
+      isRequiredText(value.sourceRevision) &&
+      value.sourceRevision.length <= 256
     : value.status === 'runtime-required' ||
         value.status === 'conversion-required';
 }
@@ -136,6 +144,8 @@ export function isOfficePreparePreviewResult(
     isRecord(value) &&
     value.status === 'ready' &&
     isContentUrl(value.contentUrl) &&
+    isRequiredText(value.sourceRevision) &&
+    value.sourceRevision.length <= 256 &&
     isPdfWorkbenchStateV1(value.viewState)
   );
 }

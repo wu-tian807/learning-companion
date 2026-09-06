@@ -154,9 +154,29 @@ describe('ProjectPage Project conversation lifecycle', () => {
     ).not.toBeNull();
     expect(
       container
+        .querySelector('[data-testid="generation-center"]')
+        ?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('true');
+
+    expect(
+      container
         .querySelector('[data-testid="project-conversation-panel"]')
         ?.getAttribute('data-selected-asset-id'),
     ).toBe('asset-html');
+
+    await act(async () => button!.click());
+
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      container
+        .querySelector('[data-testid="project-conversation-panel"]')
+        ?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('true');
+    expect(
+      container
+        .querySelector('[data-testid="generation-center"]')
+        ?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('false');
   });
 
   it('opens and collapses the Project learning note from the main action row', async () => {

@@ -1,4 +1,5 @@
 import type { ContentResourceServiceApi } from '../../main/content/content-resource-service';
+import { createStreamContentRevision } from '../../main/content/content-revision';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type {
@@ -63,6 +64,10 @@ export class PdfWorkbenchProvider implements MainWorkbenchProvider {
     }
 
     const viewState = this.readViewState(context.state);
+    const sourceRevision = await createStreamContentRevision(
+      handle.openByteStream.bind(handle),
+      context.signal,
+    );
     const contentUrl = this.resourceService.register(
       context.sessionId,
       handle,
@@ -73,6 +78,7 @@ export class PdfWorkbenchProvider implements MainWorkbenchProvider {
     return {
       payload: {
         contentUrl,
+        sourceRevision,
         viewState: clonePdfWorkbenchState(viewState),
       },
     };

@@ -1,6 +1,10 @@
 import { cloneConversationRecords } from '../../shared/project-conversations';
 import type { LearningCompanionApi } from '../../shared/ipc';
 import type { ConversationHistoryStore } from './conversation-contracts';
+import {
+  migrateLegacyProjectConversations,
+  type LegacyConversationStorage,
+} from './legacy-project-conversation-migration';
 
 type ProjectConversationApi = Pick<
   LearningCompanionApi,
@@ -12,6 +16,7 @@ type ProjectConversationApi = Pick<
 interface ProjectConversationHistoryStoreOptions {
   readonly projectId: string;
   readonly api?: ProjectConversationApi;
+  readonly legacyStorage?: LegacyConversationStorage;
 }
 
 function defaultApi(): ProjectConversationApi | undefined {
@@ -21,6 +26,7 @@ function defaultApi(): ProjectConversationApi | undefined {
 export function createProjectConversationHistoryStore({
   projectId,
   api = defaultApi(),
+  legacyStorage,
 }: ProjectConversationHistoryStoreOptions): ConversationHistoryStore {
   if (!projectId.trim() || !api) {
     throw new Error('Project Conversation Store 初始化失败');
@@ -39,7 +45,12 @@ export function createProjectConversationHistoryStore({
   const load = async (): Promise<typeof memory> => {
     if (loaded) return memory;
     loadTask ??= (async () => {
-      const records = await api.listProjectConversations({ projectId });
+      const migrated = await migrateLegacyProjectConversations({
+        projectId,
+        api,
+        ...(legacyStorage ? { storage: legacyStorage } : {}),
+      });
+      const records = migrated ?? await api.listProjectConversations({ projectId });
       loaded = true;
       return publish(records);
     })().finally(() => {

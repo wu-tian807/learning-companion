@@ -72,6 +72,7 @@ describe('EpubWorkbenchView', () => {
   it('renders a stable reader host without exposing its file path', () => {
     const markup = render({
       contentUrl: 'learning-content://resource/epub',
+      sourceRevision: 'test-revision',
       viewState: cloneEpubViewState(DEFAULT_EPUB_VIEW_STATE),
     });
 
@@ -87,6 +88,7 @@ describe('EpubWorkbenchView', () => {
     const markup = render(
       {
         contentUrl: 'learning-content://resource/epub',
+        sourceRevision: 'test-revision',
         viewState: cloneEpubViewState(DEFAULT_EPUB_VIEW_STATE),
       },
       [
@@ -123,6 +125,7 @@ describe('EpubWorkbenchView', () => {
   it('rejects an unsafe bootstrap URL', () => {
     const markup = render({
       contentUrl: 'file:///private/book.epub',
+      sourceRevision: 'test-revision',
       viewState: cloneEpubViewState(DEFAULT_EPUB_VIEW_STATE),
     });
 

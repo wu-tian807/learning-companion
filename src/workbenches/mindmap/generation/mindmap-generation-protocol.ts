@@ -1,7 +1,7 @@
 import type { PreparedGenerationAssetReferenceBindings } from '../../../main/generation/contracts/generation-asset-reference';
 import type { GenerationValidationResult } from '../../../main/generation/contracts/generation-validation';
 import type { AssetTargetRegistryApi } from '../../../main/workbench/asset-target-registry';
-import { cloneAssetTarget } from '../../../shared/workbench/asset-target';
+import { cloneAssetReferenceTarget } from '../../../shared/asset-associations';
 import type { JsonValue } from '../../../shared/workbench/protocol';
 import {
   MIND_MAP_DOCUMENT_FORMAT,
@@ -21,7 +21,7 @@ import {
 
 export interface PreparedMindMapReferenceBinding {
   readonly referenceId: string;
-  readonly sourceRevision: string;
+  readonly contentRevision: string;
 }
 
 export interface MindMapGenerationProtocol {
@@ -105,13 +105,15 @@ function createSubjectAssociations(
               );
             }
             return Object.freeze({
-              referenceId: prepared.referenceId,
-              sourceRevision: prepared.sourceRevision,
-              target: cloneAssetTarget(sourceReference.target),
+              ...cloneAssetReferenceTarget({
+                referenceId: prepared.referenceId,
+                contentRevision: prepared.contentRevision,
+                target: sourceReference.target,
+              }),
             });
           }),
         ),
-        linkIds: Object.freeze([]),
+        links: Object.freeze([]),
       }),
     ]),
   ));

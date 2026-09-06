@@ -1,5 +1,6 @@
 import type { ImageExplanationView } from './shared';
 import { layoutImageMarkerPositions } from './image-marker-layout';
+import type { ImageMarkerViewport } from './image-marker-layout';
 import { IMAGE_MARKER_VISUAL_STYLES } from './image-marker-style';
 
 export interface ImageExplanationScreenMarker {
@@ -105,11 +106,13 @@ export function ImageExplanationMarkerOverlay({
   visible,
   markers,
   selectedPolygon,
+  viewportSize,
   onActivate,
 }: {
   readonly visible: boolean;
   readonly markers: readonly ImageExplanationScreenMarker[];
   readonly selectedPolygon?: string;
+  readonly viewportSize?: ImageMarkerViewport;
   readonly onActivate: (explanation: ImageExplanationView) => void;
 }) {
   const markerLayout = new Map(
@@ -119,6 +122,7 @@ export function ImageExplanationMarkerOverlay({
           ? [{ id: explanation.id, preferredPosition: markerPosition }]
           : [],
       ),
+      viewportSize,
     ).map(({ id, position }) => [id, position]),
   );
   return (
